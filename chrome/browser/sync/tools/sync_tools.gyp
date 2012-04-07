@@ -15,13 +15,8 @@
         '<(DEPTH)/chrome/chrome.gyp:sync_notifier',
         '<(DEPTH)/chrome/chrome.gyp:test_support_common',
         '<(DEPTH)/content/content.gyp:content_browser',
+        '<(DEPTH)/net/net.gyp:net',
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

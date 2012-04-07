@@ -6,51 +6,46 @@
 #define CHROME_BROWSER_UI_VIEWS_INFOBARS_EXTENSION_INFOBAR_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/browser/ui/views/extensions/extension_view.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
-#include "views/controls/menu/view_menu_delegate.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
 
-class ExtensionContextMenuModel;
-class TabContentsWrapper;
+class Browser;
 namespace views {
 class MenuButton;
-class Menu2;
 }
 
 class ExtensionInfoBar : public InfoBarView,
-                         public ExtensionView::Container,
                          public ImageLoadingTracker::Observer,
                          public ExtensionInfoBarDelegate::DelegateObserver,
                          public views::ViewMenuDelegate {
  public:
-  ExtensionInfoBar(TabContentsWrapper* owner,
+  ExtensionInfoBar(Browser* browser,
+                   InfoBarTabHelper* owner,
                    ExtensionInfoBarDelegate* delegate);
 
  private:
   virtual ~ExtensionInfoBar();
 
   // InfoBarView:
-  virtual void Layout();
-  virtual void ViewHierarchyChanged(bool is_add, View* parent, View* child);
-  virtual int ContentMinimumWidth() const;
-
-  // ExtensionView::Container:
-  virtual void OnExtensionMouseMove(ExtensionView* view);
-  virtual void OnExtensionMouseLeave(ExtensionView* view);
-  virtual void OnExtensionPreferredSizeChanged(ExtensionView* view);
+  virtual void Layout() OVERRIDE;
+  virtual void ViewHierarchyChanged(bool is_add,
+                                    View* parent,
+                                    View* child) OVERRIDE;
+  virtual int ContentMinimumWidth() const OVERRIDE;
 
   // ImageLoadingTracker::Observer:
   virtual void OnImageLoaded(SkBitmap* image,
                              const ExtensionResource& resource,
-                             int index);
+                             int index) OVERRIDE;
 
   // ExtensionInfoBarDelegate::DelegateObserver:
-  virtual void OnDelegateDeleted();
+  virtual void OnDelegateDeleted() OVERRIDE;
 
   // views::ViewMenuDelegate:
-  virtual void RunMenu(View* source, const gfx::Point& pt);
+  virtual void RunMenu(View* source, const gfx::Point& pt) OVERRIDE;
 
   ExtensionInfoBarDelegate* GetDelegate();
 
@@ -59,9 +54,9 @@ class ExtensionInfoBar : public InfoBarView,
   // functionality).  For now, almost everyone should use GetDelegate() instead.
   InfoBarDelegate* delegate_;
 
+  Browser* browser_;
+
   // The dropdown menu for accessing the contextual extension actions.
-  scoped_refptr<ExtensionContextMenuModel> options_menu_contents_;
-  scoped_ptr<views::Menu2> options_menu_menu_;
   views::MenuButton* menu_;
 
   // Keeps track of images being loaded on the File thread.

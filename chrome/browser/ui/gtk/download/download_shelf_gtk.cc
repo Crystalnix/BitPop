@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "chrome/browser/download/download_item.h"
+#include "base/bind.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -17,14 +17,17 @@
 #include "chrome/browser/ui/gtk/gtk_chrome_shrinkable_hbox.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -59,13 +62,15 @@ const int kShelfAuraSize = 40;
 
 }  // namespace
 
+using content::DownloadItem;
+
 DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
     : browser_(browser),
       is_showing_(false),
       theme_service_(GtkThemeService::GetFrom(browser->profile())),
       close_on_mouse_out_(false),
       mouse_in_shelf_(false),
-      auto_close_factory_(this) {
+      weak_factory_(this) {
   // Logically, the shelf is a vbox that contains two children: a one pixel
   // tall event box, which serves as the top border, and an hbox, which holds
   // the download items and other shelf widgets (close button, show-all-
@@ -117,9 +122,8 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
                    G_CALLBACK(OnButtonClickThunk), this);
 
   // Create the "Show all downloads..." link and connect to the click event.
-  std::string link_text =
-      l10n_util::GetStringUTF8(IDS_SHOW_ALL_DOWNLOADS);
-  link_button_ = gtk_chrome_link_button_new(link_text.c_str());
+  link_button_ = theme_service_->BuildChromeLinkButton(
+      l10n_util::GetStringUTF8(IDS_SHOW_ALL_DOWNLOADS));
   g_signal_connect(link_button_, "clicked",
                    G_CALLBACK(OnButtonClickThunk), this);
   gtk_util::SetButtonTriggersNavigation(link_button_);
@@ -129,7 +133,7 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
                                 13.4);
 
   // Make the download arrow icon.
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   GdkPixbuf* download_pixbuf = rb.GetNativeImageNamed(IDR_DOWNLOADS_FAVICON);
   GtkWidget* download_image = gtk_image_new_from_pixbuf(download_pixbuf);
 
@@ -143,8 +147,8 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
                                            false, true, this));
 
   theme_service_->InitThemesFor(this);
-  registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                 content::Source<ThemeService>(theme_service_));
 
   gtk_widget_show_all(shelf_.get());
 
@@ -153,7 +157,6 @@ DownloadShelfGtk::DownloadShelfGtk(Browser* browser, GtkWidget* parent)
                    FALSE, FALSE, 0);
   // Make sure we are at the very end.
   gtk_box_reorder_child(GTK_BOX(parent), slide_widget_->widget(), 0);
-  Show();
 }
 
 DownloadShelfGtk::~DownloadShelfGtk() {
@@ -169,9 +172,8 @@ DownloadShelfGtk::~DownloadShelfGtk() {
   SetCloseOnMouseOut(false);
 }
 
-void DownloadShelfGtk::AddDownload(BaseDownloadItemModel* download_model_) {
-  download_items_.push_back(new DownloadItemGtk(this, download_model_));
-  Show();
+void DownloadShelfGtk::DoAddDownload(BaseDownloadItemModel* download_model) {
+  download_items_.push_back(new DownloadItemGtk(this, download_model));
 }
 
 bool DownloadShelfGtk::IsShowing() const {
@@ -182,18 +184,25 @@ bool DownloadShelfGtk::IsClosing() const {
   return slide_widget_->IsClosing();
 }
 
-void DownloadShelfGtk::Show() {
+void DownloadShelfGtk::DoShow() {
   slide_widget_->Open();
   browser_->UpdateDownloadShelfVisibility(true);
   CancelAutoClose();
 }
 
-void DownloadShelfGtk::Close() {
+void DownloadShelfGtk::DoClose() {
   // When we are closing, we can vertically overlap the render view. Make sure
   // we are on top.
-  gdk_window_raise(shelf_.get()->window);
+  gdk_window_raise(gtk_widget_get_window(shelf_.get()));
   slide_widget_->Close();
   browser_->UpdateDownloadShelfVisibility(false);
+  int num_in_progress = 0;
+  for (size_t i = 0; i < download_items_.size(); ++i) {
+    if (download_items_[i]->get_download()->IsInProgress())
+      ++num_in_progress;
+  }
+  download_util::RecordShelfClose(
+      download_items_.size(), num_in_progress, close_on_mouse_out_);
   SetCloseOnMouseOut(false);
 }
 
@@ -202,6 +211,10 @@ Browser* DownloadShelfGtk::browser() const {
 }
 
 void DownloadShelfGtk::Closed() {
+  // Don't remove completed downloads if the shelf is just being auto-hidden
+  // rather than explicitly closed by the user.
+  if (is_hidden())
+    return;
   // When the close animation is complete, remove all completed downloads.
   size_t i = 0;
   while (i < download_items_.size()) {
@@ -210,31 +223,27 @@ void DownloadShelfGtk::Closed() {
                             download->IsCancelled() ||
                             download->IsInterrupted();
     if (is_transfer_done &&
-        download->safety_state() != DownloadItem::DANGEROUS) {
+        download->GetSafetyState() != DownloadItem::DANGEROUS) {
       RemoveDownloadItem(download_items_[i]);
     } else {
       // We set all remaining items as "opened", so that the shelf will auto-
       // close in the future without the user clicking on them.
-      download->set_opened(true);
+      download->SetOpened(true);
       ++i;
     }
   }
 }
 
-void DownloadShelfGtk::Observe(NotificationType type,
-                               const NotificationSource& source,
-                               const NotificationDetails& details) {
-  if (type == NotificationType::BROWSER_THEME_CHANGED) {
+void DownloadShelfGtk::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED) {
     GdkColor color = theme_service_->GetGdkColor(
         ThemeService::COLOR_TOOLBAR);
     gtk_widget_modify_bg(padding_bg_, GTK_STATE_NORMAL, &color);
 
     color = theme_service_->GetBorderColor();
     gtk_widget_modify_bg(top_border_, GTK_STATE_NORMAL, &color);
-
-    gtk_chrome_link_button_set_use_gtk_theme(
-        GTK_CHROME_LINK_BUTTON(link_button_),
-        theme_service_->UsingNativeTheme());
 
     // When using a non-standard, non-gtk theme, we make the link color match
     // the bookmark text color. Otherwise, standard link blue can look very
@@ -249,7 +258,7 @@ void DownloadShelfGtk::Observe(NotificationType type,
         GTK_CHROME_LINK_BUTTON(link_button_),
         use_default_color ? NULL : &bookmark_color);
 
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetBackground(
         theme_service_->GetColor(ThemeService::COLOR_TAB_TEXT),
         rb.GetBitmapNamed(IDR_CLOSE_BAR),
@@ -258,7 +267,9 @@ void DownloadShelfGtk::Observe(NotificationType type,
 }
 
 int DownloadShelfGtk::GetHeight() const {
-  return slide_widget_->widget()->allocation.height;
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(slide_widget_->widget(), &allocation);
+  return allocation.height;
 }
 
 void DownloadShelfGtk::RemoveDownloadItem(DownloadItemGtk* download_item) {
@@ -298,7 +309,7 @@ void DownloadShelfGtk::OnButtonClick(GtkWidget* button) {
 void DownloadShelfGtk::AutoCloseIfPossible() {
   for (std::vector<DownloadItemGtk*>::iterator iter = download_items_.begin();
        iter != download_items_.end(); ++iter) {
-    if (!(*iter)->get_download()->opened())
+    if (!(*iter)->get_download()->GetOpened())
       return;
   }
 
@@ -307,7 +318,7 @@ void DownloadShelfGtk::AutoCloseIfPossible() {
 
 void DownloadShelfGtk::CancelAutoClose() {
   SetCloseOnMouseOut(false);
-  auto_close_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void DownloadShelfGtk::ItemOpened() {
@@ -358,9 +369,11 @@ void DownloadShelfGtk::DidProcessEvent(GdkEvent* event) {
 
 bool DownloadShelfGtk::IsCursorInShelfZone(
     const gfx::Point& cursor_screen_coords) {
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(shelf_.get(), &allocation);
+
   gfx::Rect bounds(gtk_util::GetWidgetScreenPosition(shelf_.get()),
-                   gfx::Size(shelf_.get()->allocation.width,
-                             shelf_.get()->allocation.height));
+                   gfx::Size(allocation.width, allocation.height));
 
   // Negative insets expand the rectangle. We only expand the top.
   bounds.Inset(gfx::Insets(-kShelfAuraSize, 0, 0, 0));
@@ -373,10 +386,10 @@ void DownloadShelfGtk::MouseLeftShelf() {
 
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      auto_close_factory_.NewRunnableMethod(&DownloadShelfGtk::Close),
-      kAutoCloseDelayMs);
+      base::Bind(&DownloadShelfGtk::Close, weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(kAutoCloseDelayMs));
 }
 
 void DownloadShelfGtk::MouseEnteredShelf() {
-  auto_close_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }

@@ -25,8 +25,11 @@ def GetConfigurationForBuild(defines):
       'app_name': 'Chromium',
       'frame_name': 'Chromium Frame',
       'os_name': 'Chromium OS',
-      'win_reg_key_name': 'Software\\Policies\\Chromium',
-      'win_category_path': ['chromium'],
+      'win_reg_mandatory_key_name': 'Software\\Policies\\Chromium',
+      'win_reg_recommended_key_name':
+          'Software\\Policies\\Chromium\\Recommended',
+      'win_mandatory_category_path': ['chromium'],
+      'win_recommended_category_path': ['chromium_recommended'],
       'admx_namespace': 'Chromium.Policies.Chromium',
       'admx_prefix': 'chromium',
     }
@@ -36,8 +39,11 @@ def GetConfigurationForBuild(defines):
       'app_name': 'Google Chrome',
       'frame_name': 'Google Chrome Frame',
       'os_name': 'Google Chrome OS',
-      'win_reg_key_name': 'Software\\Policies\\Google\\Chrome',
-      'win_category_path': ['google', 'googlechrome'],
+      'win_reg_mandatory_key_name': 'Software\\Policies\\Google\\Chrome',
+      'win_reg_recommended_key_name':
+          'Software\\Policies\\Google\\Chrome\\Recommended',
+      'win_mandatory_category_path': ['google', 'googlechrome'],
+      'win_recommended_category_path': ['google', 'googlechrome_recommended'],
       'admx_namespace': 'Google.Policies.Chrome',
       'admx_prefix': 'chrome',
     }

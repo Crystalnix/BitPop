@@ -8,15 +8,22 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/api/sync_change_processor.h"
 #include "chrome/browser/sync/api/sync_data.h"
+#include "chrome/browser/sync/api/sync_error.h"
 
 class SyncData;
 
 typedef std::vector<SyncData> SyncDataList;
 
-class SyncableService : public SyncChangeProcessor {
+// TODO(zea): remove SupportsWeakPtr in favor of having all SyncableService
+// implementers provide a way of getting a weak pointer to themselves.
+// See crbug.com/100114.
+class SyncableService : public SyncChangeProcessor,
+                        public base::SupportsWeakPtr<SyncableService> {
  public:
   // Informs the service to begin syncing the specified synced datatype |type|.
   // The service should then merge |initial_sync_data| into it's local data,
@@ -24,7 +31,10 @@ class SyncableService : public SyncChangeProcessor {
   // two. After this, the SyncableService's local data should match the server
   // data, and the service should be ready to receive and process any further
   // SyncChange's as they occur.
-  virtual bool MergeDataAndStartSyncing(
+  // Returns: A default SyncError (IsSet() == false) if no errors were
+  //          encountered, and a filled SyncError (IsSet() == true)
+  //          otherwise.
+  virtual SyncError MergeDataAndStartSyncing(
       syncable::ModelType type,
       const SyncDataList& initial_sync_data,
       SyncChangeProcessor* sync_processor) = 0;
@@ -39,7 +49,12 @@ class SyncableService : public SyncChangeProcessor {
 
   // SyncChangeProcessor interface.
   // Process a list of new SyncChanges and update the local data as necessary.
-  virtual void ProcessSyncChanges(const SyncChangeList& change_list) = 0;
+  // Returns: A default SyncError (IsSet() == false) if no errors were
+  //          encountered, and a filled SyncError (IsSet() == true)
+  //          otherwise.
+  virtual SyncError ProcessSyncChanges(
+      const tracked_objects::Location& from_here,
+      const SyncChangeList& change_list) OVERRIDE = 0;
 
  protected:
   virtual ~SyncableService();

@@ -12,14 +12,13 @@
 #include "chrome/browser/autofill/form_structure.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "googleurl/src/gurl.h"
 
 namespace {
 
 const FilePath::CharType kTestName[] = FILE_PATH_LITERAL("heuristics");
-const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("*.html");
 
 // Convert the |html| snippet to a data URI.
 GURL HTMLToDataURI(const std::string& html) {
@@ -78,13 +77,168 @@ std::string FormStructureBrowserTest::FormStructuresToString(
          field_iter != (*iter)->end();
          ++field_iter) {
       forms_string += AutofillType::FieldTypeToString((*field_iter)->type());
+      forms_string += " | " + UTF16ToUTF8((*field_iter)->name);
+      forms_string += " | " + UTF16ToUTF8((*field_iter)->label);
+      forms_string += " | " + UTF16ToUTF8((*field_iter)->value);
       forms_string += "\n";
     }
   }
   return forms_string;
 }
 
-IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest, DataDrivenHeuristics) {
+// Heuristics tests timeout on Windows.  See http://crbug.com/85276
+#if defined(OS_WIN)
+#define MAYBE_DataDrivenHeuristics(n) DISABLED_DataDrivenHeuristics##n
+#else
+#define MAYBE_DataDrivenHeuristics(n) DataDrivenHeuristics##n
+#endif
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest, DataDrivenHeuristics00) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("00_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest, DataDrivenHeuristics01) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("01_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(02)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("02_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(03)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("03_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(04)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("04_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(05)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("05_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(06)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("06_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+// Has been failing on Mac since http://trac.webkit.org/changeset/105029
+// (WebKit roll http://crrev.com/117847).
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    DISABLED_DataDrivenHeuristics07) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("07_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(08)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("08_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(09)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("09_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(10)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("10_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(11)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("11_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(12)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("12_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(13)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("13_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(14)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("14_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(15)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("15_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(16)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("16_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(17)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("17_*.html");
+  RunDataDrivenTest(GetInputDirectory(kTestName),
+                    GetOutputDirectory(kTestName),
+                    kFileNamePattern);
+}
+
+IN_PROC_BROWSER_TEST_F(FormStructureBrowserTest,
+    MAYBE_DataDrivenHeuristics(20)) {
+  const FilePath::CharType kFileNamePattern[] = FILE_PATH_LITERAL("20_*.html");
   RunDataDrivenTest(GetInputDirectory(kTestName),
                     GetOutputDirectory(kTestName),
                     kFileNamePattern);

@@ -1,14 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/socket/ssl_host_info.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
 #include "base/string_piece.h"
-#include "net/base/dns_util.h"
-#include "net/base/dnsrr_resolver.h"
+#include "net/base/crl_set.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/x509_certificate.h"
 #include "net/socket/ssl_client_socket.h"
@@ -31,28 +31,13 @@ SSLHostInfo::SSLHostInfo(
       cert_verification_error_(ERR_CERT_INVALID),
       hostname_(hostname),
       cert_parsing_failed_(false),
-      cert_verification_callback_(NULL),
       rev_checking_enabled_(ssl_config.rev_checking_enabled),
       verify_ev_cert_(ssl_config.verify_ev_cert),
       verifier_(cert_verifier),
-      callback_(new CancelableCompletionCallback<SSLHostInfo>(
-                        ALLOW_THIS_IN_INITIALIZER_LIST(this),
-                        &SSLHostInfo::VerifyCallback)),
-      dnsrr_resolver_(NULL),
-      dns_callback_(NULL),
-      dns_handle_(DnsRRResolver::kInvalidHandle) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 SSLHostInfo::~SSLHostInfo() {
-  if (dns_handle_ != DnsRRResolver::kInvalidHandle) {
-    dnsrr_resolver_->CancelResolve(dns_handle_);
-    delete dns_callback_;
-  }
-}
-
-void SSLHostInfo::StartDnsLookup(DnsRRResolver* dnsrr_resolver) {
-  dnsrr_resolver_ = dnsrr_resolver;
-  // Note: currently disabled.
 }
 
 const SSLHostInfo::State& SSLHostInfo::state() const {
@@ -128,13 +113,17 @@ bool SSLHostInfo::ParseInner(const std::string& data) {
       VLOG(1) << "Kicking off verification for " << hostname_;
       verification_start_time_ = base::TimeTicks::Now();
       verification_end_time_ = base::TimeTicks();
-      int rv = verifier_.Verify(cert_.get(), hostname_, flags,
-                           &cert_verify_result_, callback_);
+      scoped_refptr<CRLSet> crl_set(SSLConfigService::GetCRLSet());
+      int rv = verifier_.Verify(
+          cert_.get(), hostname_, flags, crl_set, &cert_verify_result_,
+          base::Bind(&SSLHostInfo::VerifyCallback, weak_factory_.GetWeakPtr()),
+          // TODO(willchan): Figure out how to use NetLog here.
+          BoundNetLog());
       if (rv != ERR_IO_PENDING)
         VerifyCallback(rv);
     } else {
       cert_parsing_failed_ = true;
-      DCHECK(!cert_verification_callback_);
+      DCHECK(cert_verification_callback_.is_null());
     }
   }
 
@@ -179,11 +168,12 @@ const CertVerifyResult& SSLHostInfo::cert_verify_result() const {
   return cert_verify_result_;
 }
 
-int SSLHostInfo::WaitForCertVerification(CompletionCallback* callback) {
+int SSLHostInfo::WaitForCertVerification(const CompletionCallback& callback) {
   if (cert_verification_complete_)
     return cert_verification_error_;
+
   DCHECK(!cert_parsing_failed_);
-  DCHECK(!cert_verification_callback_);
+  DCHECK(cert_verification_callback_.is_null());
   DCHECK(!state_.certs.empty());
   cert_verification_callback_ = callback;
   return ERR_IO_PENDING;
@@ -204,10 +194,10 @@ void SSLHostInfo::VerifyCallback(int rv) {
   verification_end_time_ = now;
   cert_verification_complete_ = true;
   cert_verification_error_ = rv;
-  if (cert_verification_callback_) {
-    CompletionCallback* callback = cert_verification_callback_;
-    cert_verification_callback_ = NULL;
-    callback->Run(rv);
+  if (!cert_verification_callback_.is_null()) {
+    CompletionCallback callback = cert_verification_callback_;
+    cert_verification_callback_.Reset();
+    callback.Run(rv);
   }
 }
 

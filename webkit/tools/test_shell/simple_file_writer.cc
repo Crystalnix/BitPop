@@ -1,23 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/tools/test_shell/simple_file_writer.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop_proxy.h"
 #include "net/url_request/url_request_context.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
 #include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_file_util.h"
-#include "webkit/fileapi/file_system_operation.h"
+#include "webkit/fileapi/file_system_operation_interface.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 
 using fileapi::FileSystemCallbackDispatcher;
 using fileapi::FileSystemContext;
-using fileapi::FileSystemFileUtil;
-using fileapi::FileSystemOperation;
+using fileapi::FileSystemOperationInterface;
 using fileapi::WebFileWriterBase;
 using WebKit::WebFileWriterClient;
 using WebKit::WebString;
@@ -31,15 +30,15 @@ net::URLRequestContext* SimpleFileWriter::request_context_ = NULL;
 class SimpleFileWriter::IOThreadProxy
     : public base::RefCountedThreadSafe<SimpleFileWriter::IOThreadProxy> {
  public:
-  explicit IOThreadProxy(const base::WeakPtr<SimpleFileWriter>& simple_writer,
-                         FileSystemContext* file_system_context)
+  IOThreadProxy(const base::WeakPtr<SimpleFileWriter>& simple_writer,
+                FileSystemContext* file_system_context)
       : simple_writer_(simple_writer),
         operation_(NULL),
         file_system_context_(file_system_context) {
     // The IO thread needs to be running for this class to work.
     SimpleResourceLoaderBridge::EnsureIOThread();
     io_thread_ = SimpleResourceLoaderBridge::GetIoThread();
-    main_thread_ = base::MessageLoopProxy::CreateForCurrentThread();
+    main_thread_ = base::MessageLoopProxy::current();
   }
 
   virtual ~IOThreadProxy() {
@@ -47,45 +46,53 @@ class SimpleFileWriter::IOThreadProxy
 
   void Truncate(const GURL& path, int64 offset) {
     if (!io_thread_->BelongsToCurrentThread()) {
-      io_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::Truncate, path, offset));
+      io_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::Truncate, this, path, offset));
       return;
     }
     DCHECK(!operation_);
-    operation_ = GetNewOperation();
+    operation_ = GetNewOperation(path);
     operation_->Truncate(path, offset);
   }
 
   void Write(const GURL& path, const GURL& blob_url, int64 offset) {
     if (!io_thread_->BelongsToCurrentThread()) {
-      io_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::Write, path, blob_url, offset));
+      io_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::Write, this, path, blob_url, offset));
       return;
     }
     DCHECK(request_context_);
     DCHECK(!operation_);
-    operation_ = GetNewOperation();
+    operation_ = GetNewOperation(path);
     operation_->Write(request_context_, path, blob_url, offset);
   }
 
   void Cancel() {
     if (!io_thread_->BelongsToCurrentThread()) {
-      io_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::Cancel));
+      io_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::Cancel, this));
       return;
     }
     if (!operation_) {
       DidFail(base::PLATFORM_FILE_ERROR_INVALID_OPERATION);
       return;
     }
-    operation_->Cancel(GetNewOperation());
+    operation_->Cancel(CallbackDispatcher::Create(this));
   }
 
  private:
   // Inner class to receive callbacks from FileSystemOperation.
   class CallbackDispatcher : public FileSystemCallbackDispatcher {
    public:
-    explicit CallbackDispatcher(IOThreadProxy* proxy) : proxy_(proxy) {
+    // An instance of this class must be created by Create()
+    // (so that we do not leak ownerships).
+    static scoped_ptr<FileSystemCallbackDispatcher> Create(
+        IOThreadProxy* proxy) {
+      return scoped_ptr<FileSystemCallbackDispatcher>(
+          new CallbackDispatcher(proxy));
     }
 
     ~CallbackDispatcher() {
@@ -122,20 +129,22 @@ class SimpleFileWriter::IOThreadProxy
       NOTREACHED();
     }
 
+   private:
+    explicit CallbackDispatcher(IOThreadProxy* proxy) : proxy_(proxy) {}
     scoped_refptr<IOThreadProxy> proxy_;
   };
 
-  FileSystemOperation* GetNewOperation() {
+  FileSystemOperationInterface* GetNewOperation(const GURL& path) {
     // The FileSystemOperation takes ownership of the CallbackDispatcher.
-    return new FileSystemOperation(new CallbackDispatcher(this),
-                                   io_thread_, file_system_context_.get(),
-                                   NULL);
+    return file_system_context_->CreateFileSystemOperation(
+        path, CallbackDispatcher::Create(this), io_thread_);
   }
 
   void DidSucceed() {
     if (!main_thread_->BelongsToCurrentThread()) {
-      main_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::DidSucceed));
+      main_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::DidSucceed, this));
       return;
     }
     if (simple_writer_)
@@ -144,8 +153,9 @@ class SimpleFileWriter::IOThreadProxy
 
   void DidFail(base::PlatformFileError error_code) {
     if (!main_thread_->BelongsToCurrentThread()) {
-      main_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::DidFail, error_code));
+      main_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::DidFail, this, error_code));
       return;
     }
     if (simple_writer_)
@@ -154,8 +164,9 @@ class SimpleFileWriter::IOThreadProxy
 
   void DidWrite(int64 bytes, bool complete) {
     if (!main_thread_->BelongsToCurrentThread()) {
-      main_thread_->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &IOThreadProxy::DidWrite, bytes, complete));
+      main_thread_->PostTask(
+          FROM_HERE,
+          base::Bind(&IOThreadProxy::DidWrite, this, bytes, complete));
       return;
     }
     if (simple_writer_)
@@ -174,7 +185,7 @@ class SimpleFileWriter::IOThreadProxy
   base::WeakPtr<SimpleFileWriter> simple_writer_;
 
   // Only used on the io thread.
-  FileSystemOperation* operation_;
+  FileSystemOperationInterface* operation_;
 
   scoped_refptr<FileSystemContext> file_system_context_;
 };

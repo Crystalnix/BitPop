@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "remoting/jingle_glue/jingle_thread.h"
 
@@ -18,7 +19,7 @@ namespace remoting {
 class ChromotingHostContext {
  public:
   // Create a context.
-  ChromotingHostContext();
+  explicit ChromotingHostContext(base::MessageLoopProxy* ui_message_loop);
   virtual ~ChromotingHostContext();
 
   // TODO(ajwong): Move the Start/Stop methods out of this class. Then
@@ -30,10 +31,11 @@ class ChromotingHostContext {
 
   virtual JingleThread* jingle_thread();
 
+  virtual base::MessageLoopProxy* ui_message_loop();
   virtual MessageLoop* main_message_loop();
   virtual MessageLoop* encode_message_loop();
-  virtual MessageLoop* network_message_loop();
-  virtual MessageLoop* ui_message_loop();
+  virtual base::MessageLoopProxy* network_message_loop();
+  virtual MessageLoop* desktop_message_loop();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ChromotingHostContextTest, StartAndStop);
@@ -47,15 +49,15 @@ class ChromotingHostContext {
   // A thread that hosts all encode operations.
   base::Thread encode_thread_;
 
-  // A thread that hosts UI integration (capture, input injection, etc)
+  // A thread that hosts desktop integration (capture, input injection, etc)
   // This is NOT a Chrome-style UI thread.
-  base::Thread ui_thread_;
+  base::Thread desktop_thread_;
+
+  scoped_refptr<base::MessageLoopProxy> ui_message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingHostContext);
 };
 
 }  // namespace remoting
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::ChromotingHostContext);
 
 #endif  // REMOTING_HOST_CHROMOTING_HOST_CONTEXT_H_

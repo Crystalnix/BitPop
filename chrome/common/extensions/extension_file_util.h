@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,15 @@
 #include <map>
 
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_message_bundle.h"
 
 class Extension;
 class ExtensionMessageBundle;
 class FilePath;
 class GURL;
+namespace base {
+class DictionaryValue;
+}
 
 // Utilties for manipulating the on-disk storage of extensions.
 namespace extension_file_util {
@@ -42,9 +46,21 @@ scoped_refptr<Extension> LoadExtension(const FilePath& extension_root,
                                        int flags,
                                        std::string* error);
 
+// The same as LoadExtension except use the provided |extension_id|.
+scoped_refptr<Extension> LoadExtension(const FilePath& extension_root,
+                                       std::string extension_id,
+                                       Extension::Location location,
+                                       int flags,
+                                       std::string* error);
+
+// Loads an extension manifest from the specified directory. Returns NULL
+// on failure, with a description of the error in |error|.
+base::DictionaryValue* LoadManifest(const FilePath& extension_root,
+                                    std::string* error);
+
 // Returns true if the given extension object is valid and consistent.
 // Otherwise, a description of the error is returned in |error|.
-bool ValidateExtension(Extension* extension, std::string* error);
+bool ValidateExtension(const Extension* extension, std::string* error);
 
 // Cleans up the extension install directory. It can end up with garbage in it
 // if extensions can't initially be removed when they are uninstalled (eg if a
@@ -65,6 +81,14 @@ ExtensionMessageBundle* LoadExtensionMessageBundle(
     const FilePath& extension_path,
     const std::string& default_locale,
     std::string* error);
+
+// Loads the extension message bundle substitution map. Contains at least
+// extension_id item.
+ExtensionMessageBundle::SubstitutionMap*
+    LoadExtensionMessageBundleSubstitutionMap(
+    const FilePath& extension_path,
+    const std::string& extension_id,
+    const std::string& default_locale);
 
 // We need to reserve the namespace of entries that start with "_" for future
 // use by Chrome.

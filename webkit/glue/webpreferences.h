@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -16,18 +16,29 @@
 
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace WebKit {
 class WebView;
 }
 
-struct WebPreferences {
+struct WEBKIT_GLUE_EXPORT WebPreferences {
+  // Map of ISO 15924 four-letter script code to font family.  For example,
+  // "Arab" to "My Arabic Font".
+  typedef std::vector<std::pair<std::string, string16> > ScriptFontFamilyMap;
+
   string16 standard_font_family;
   string16 fixed_font_family;
   string16 serif_font_family;
   string16 sans_serif_font_family;
   string16 cursive_font_family;
   string16 fantasy_font_family;
+  ScriptFontFamilyMap standard_font_family_map;
+  ScriptFontFamilyMap fixed_font_family_map;
+  ScriptFontFamilyMap serif_font_family_map;
+  ScriptFontFamilyMap sans_serif_font_family_map;
+  ScriptFontFamilyMap cursive_font_family_map;
+  ScriptFontFamilyMap fantasy_font_family_map;
   int default_font_size;
   int default_fixed_font_size;
   int minimum_font_size;
@@ -37,6 +48,7 @@ struct WebPreferences {
   bool web_security_enabled;
   bool javascript_can_open_windows_automatically;
   bool loads_images_automatically;
+  bool images_enabled;
   bool plugins_enabled;
   bool dom_paste_enabled;
   bool developer_extras_enabled;
@@ -63,7 +75,7 @@ struct WebPreferences {
   bool tabs_to_links;
   bool caret_browsing_enabled;
   bool hyperlink_auditing_enabled;
-
+  bool is_online;
   bool user_style_sheet_enabled;
   GURL user_style_sheet_location;
   bool author_and_user_styles_enabled;
@@ -73,24 +85,36 @@ struct WebPreferences {
   bool webaudio_enabled;
   bool experimental_webgl_enabled;
   bool gl_multisampling_enabled;
+  bool privileged_webgl_extensions_enabled;
   bool show_composited_layer_borders;
   bool show_composited_layer_tree;
   bool show_fps_counter;
   bool asynchronous_spell_checking_enabled;
+  bool unified_textchecker_enabled;
   bool accelerated_compositing_enabled;
+  bool threaded_compositing_enabled;
   bool force_compositing_mode;
+  bool allow_webui_compositing;
   bool composite_to_texture_enabled;
+  bool fixed_position_compositing_enabled;
   bool accelerated_layers_enabled;
+  bool accelerated_animation_enabled;
   bool accelerated_video_enabled;
   bool accelerated_2d_canvas_enabled;
-  bool accelerated_drawing_enabled;
+  bool accelerated_painting_enabled;
+  bool accelerated_filters_enabled;
   bool accelerated_plugins_enabled;
+  bool partial_swap_enabled;
   bool memory_info_enabled;
   bool interactive_form_validation_enabled;
   bool fullscreen_enabled;
   bool allow_displaying_insecure_content;
   bool allow_running_insecure_content;
-
+  bool should_print_backgrounds;
+  bool enable_scroll_animator;
+  bool hixie76_websocket_protocol_enabled;
+  bool visual_word_movement_enabled;
+  bool per_tile_painting_enabled;
   // We try to keep the default values the same as the default values in
   // chrome, except for the cases where it would require lots of extra work for
   // the embedder to use the same default value.

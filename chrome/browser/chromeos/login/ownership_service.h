@@ -10,23 +10,23 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/chromeos/login/owner_key_utils.h"
 #include "chrome/browser/chromeos/login/owner_manager.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 namespace base {
 template <typename T> struct DefaultLazyInstanceTraits;
 }
 
-namespace em = enterprise_management;
 namespace chromeos {
 
-class OwnershipService : public NotificationObserver {
+class OwnershipService : public content::NotificationObserver {
  public:
   enum Status {
     // Listed in upgrade order.
@@ -42,17 +42,6 @@ class OwnershipService : public NotificationObserver {
   // Called after FILE thread is created to prefetch ownership status and avoid
   // blocking on UI thread.
   void Prewarm();
-
-  // Owner settings are being re-implemented as a single, signed protobuf
-  // that is stored by the session manager.  Thus, to write a setting, you
-  // need to have the existing policy, update it, re-sign it, and then have
-  // it stored.  This could be done by requesting the policy every time, or
-  // by caching it and updating it upon every successful store.
-  // Caching is faster and easier, so we'll do that.  These are the
-  // getters/setters for the cached policy.
-  virtual void set_cached_policy(const em::PolicyData& pol);
-  virtual bool has_cached_policy();
-  virtual const em::PolicyData& cached_policy();
 
   // Sets a new owner key. This will _not_ load the key material from disk, but
   // rather update Chrome's in-memory copy of the key. |callback| will be
@@ -102,10 +91,10 @@ class OwnershipService : public NotificationObserver {
  protected:
   OwnershipService();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend struct base::DefaultLazyInstanceTraits<OwnershipService>;
@@ -118,16 +107,16 @@ class OwnershipService : public NotificationObserver {
   void SetStatus(Status new_status);
 
   static void UpdateOwnerKey(OwnershipService* service,
-                             const BrowserThread::ID thread_id,
+                             const content::BrowserThread::ID thread_id,
                              const std::vector<uint8>& new_key,
                              OwnerManager::KeyUpdateDelegate* d);
   static void TryLoadOwnerKeyAttempt(OwnershipService* service);
   static void TrySigningAttempt(OwnershipService* service,
-                                const BrowserThread::ID thread_id,
+                                const content::BrowserThread::ID thread_id,
                                 const std::string& data,
                                 OwnerManager::Delegate* d);
   static void TryVerifyAttempt(OwnershipService* service,
-                               const BrowserThread::ID thread_id,
+                               const content::BrowserThread::ID thread_id,
                                const std::string& data,
                                const std::vector<uint8>& signature,
                                OwnerManager::Delegate* d);
@@ -137,10 +126,12 @@ class OwnershipService : public NotificationObserver {
 
   scoped_refptr<OwnerManager> manager_;
   scoped_refptr<OwnerKeyUtils> utils_;
-  scoped_ptr<em::PolicyData> policy_;
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
   volatile Status ownership_status_;
   base::Lock ownership_status_lock_;
+
+  // If true, current user is regarded as owner (for testing only).
+  bool force_ownership_;
 };
 
 }  // namespace chromeos

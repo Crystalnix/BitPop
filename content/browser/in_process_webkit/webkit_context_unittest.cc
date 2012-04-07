@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/browser_thread_impl.h"
 #include "content/browser/in_process_webkit/dom_storage_context.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
+#include "content/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
+using content::BrowserThreadImpl;
 
 class MockDOMStorageContext : public DOMStorageContext {
  public:
@@ -18,7 +21,7 @@ class MockDOMStorageContext : public DOMStorageContext {
 
   virtual void PurgeMemory() {
     EXPECT_FALSE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
+    EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
     ++purge_count_;
   }
 
@@ -29,18 +32,16 @@ class MockDOMStorageContext : public DOMStorageContext {
 };
 
 TEST(WebKitContextTest, Basic) {
-  TestingProfile profile;
+  TestBrowserContext browser_context;
   scoped_refptr<WebKitContext> context1(new WebKitContext(
-          profile.IsOffTheRecord(), profile.GetPath(),
-          profile.GetSpecialStoragePolicy(),
-          false));
-  EXPECT_TRUE(profile.GetPath() == context1->data_path());
-  EXPECT_TRUE(profile.IsOffTheRecord() == context1->is_incognito());
+          browser_context.IsOffTheRecord(), browser_context.GetPath(),
+          NULL, false, NULL, NULL));
+  EXPECT_TRUE(browser_context.GetPath() == context1->data_path());
+  EXPECT_TRUE(browser_context.IsOffTheRecord() == context1->is_incognito());
 
   scoped_refptr<WebKitContext> context2(new WebKitContext(
-          profile.IsOffTheRecord(), profile.GetPath(),
-          profile.GetSpecialStoragePolicy(),
-          false));
+          browser_context.IsOffTheRecord(), browser_context.GetPath(),
+          NULL, false, NULL, NULL));
   EXPECT_TRUE(context1->data_path() == context2->data_path());
   EXPECT_TRUE(context1->is_incognito() == context2->is_incognito());
 }
@@ -48,22 +49,29 @@ TEST(WebKitContextTest, Basic) {
 TEST(WebKitContextTest, PurgeMemory) {
   // Start up a WebKit thread for the WebKitContext to call the
   // DOMStorageContext on.
-  BrowserThread webkit_thread(BrowserThread::WEBKIT);
-  webkit_thread.Start();
+  MessageLoop message_loop(MessageLoop::TYPE_DEFAULT);
+  BrowserThreadImpl webkit_thread(BrowserThread::WEBKIT_DEPRECATED,
+                                  &message_loop);
 
-  // Create the contexts.
-  TestingProfile profile;
-  scoped_refptr<WebKitContext> context(new WebKitContext(
-          profile.IsOffTheRecord(), profile.GetPath(),
-          profile.GetSpecialStoragePolicy(),
-          false));
-  MockDOMStorageContext* mock_context = new MockDOMStorageContext(
-      context.get(), profile.GetSpecialStoragePolicy());
-  context->set_dom_storage_context(mock_context);  // Takes ownership.
+  {
+    // Create the contexts.
+    TestBrowserContext browser_context;
+    scoped_refptr<WebKitContext> context(new WebKitContext(
+            browser_context.IsOffTheRecord(), browser_context.GetPath(),
+            NULL, false, NULL, NULL));
+    MockDOMStorageContext* mock_context = new MockDOMStorageContext(
+        context.get(), NULL);
+    // Takes ownership.
+    context->set_dom_storage_context_for_testing(mock_context);
 
-  // Ensure PurgeMemory() calls our mock object on the right thread.
-  EXPECT_EQ(0, mock_context->purge_count());
-  context->PurgeMemory();
-  webkit_thread.Stop();  // Blocks until all tasks are complete.
-  EXPECT_EQ(1, mock_context->purge_count());
+    // Ensure PurgeMemory() calls our mock object on the right thread.
+    EXPECT_EQ(0, mock_context->purge_count());
+    context->PurgeMemory();
+    MessageLoop::current()->RunAllPending();
+    EXPECT_EQ(1, mock_context->purge_count());
+  }
+  // WebKitContext's destructor posts stuff to the webkit thread.  Let
+  // WebKitContext go out of scope here before processing WebKitContext's
+  // clean-up tasks.
+  MessageLoop::current()->RunAllPending();
 }

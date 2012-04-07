@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 #define UI_GFX_SIZE_H_
 #pragma once
 
-#include "build/build_config.h"
+#include <string>
 
-#include <iosfwd>
+#include "build/build_config.h"
+#include "ui/base/ui_export.h"
 
 #if defined(OS_WIN)
 typedef struct tagSIZE SIZE;
@@ -19,9 +20,9 @@ typedef struct tagSIZE SIZE;
 namespace gfx {
 
 // A size has width and height values.
-class Size {
+class UI_EXPORT Size {
  public:
-  Size() : width_(0), height_(0) {}
+  Size();
   Size(int width, int height);
 #if defined(OS_MACOSX)
   explicit Size(const CGSize& s);
@@ -70,12 +71,12 @@ class Size {
   CGSize ToCGSize() const;
 #endif
 
+  std::string ToString() const;
+
  private:
   int width_;
   int height_;
 };
-
-std::ostream& operator<<(std::ostream& out, const gfx::Size& s);
 
 }  // namespace gfx
 

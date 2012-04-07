@@ -13,6 +13,7 @@
 #include "chrome/browser/password_manager/password_store_default.h"
 
 class LoginDatabase;
+class PrefService;
 class Profile;
 class WebDataService;
 
@@ -29,18 +30,18 @@ class PasswordStoreX : public PasswordStoreDefault {
   // with return values rather than implicit consumer notification.
   class NativeBackend {
    public:
-    typedef std::vector<webkit_glue::PasswordForm*> PasswordFormList;
+    typedef std::vector<webkit::forms::PasswordForm*> PasswordFormList;
 
     virtual ~NativeBackend() {}
 
     virtual bool Init() = 0;
 
-    virtual bool AddLogin(const webkit_glue::PasswordForm& form) = 0;
-    virtual bool UpdateLogin(const webkit_glue::PasswordForm& form) = 0;
-    virtual bool RemoveLogin(const webkit_glue::PasswordForm& form) = 0;
+    virtual bool AddLogin(const webkit::forms::PasswordForm& form) = 0;
+    virtual bool UpdateLogin(const webkit::forms::PasswordForm& form) = 0;
+    virtual bool RemoveLogin(const webkit::forms::PasswordForm& form) = 0;
     virtual bool RemoveLoginsCreatedBetween(const base::Time& delete_begin,
                                             const base::Time& delete_end) = 0;
-    virtual bool GetLogins(const webkit_glue::PasswordForm& form,
+    virtual bool GetLogins(const webkit::forms::PasswordForm& form,
                            PasswordFormList* forms) = 0;
     virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
                                          const base::Time& get_end,
@@ -56,25 +57,40 @@ class PasswordStoreX : public PasswordStoreDefault {
                    WebDataService* web_data_service,
                    NativeBackend* backend);
 
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
+  // Registers the pref setting used for the methods below.
+  static void RegisterUserPrefs(PrefService* prefs);
+
+  // Returns true if passwords have been tagged with the local profile id.
+  static bool PasswordsUseLocalProfileId(PrefService* prefs);
+
+  // Sets the persistent bit indicating that passwords have been tagged with the
+  // local profile id. This cannot be unset; passwords get migrated only once.
+  // The caller promises that |prefs| will not be deleted any time soon.
+  static void SetPasswordsUseLocalProfileId(PrefService* prefs);
+#endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
+
  private:
   friend class PasswordStoreXTest;
 
   virtual ~PasswordStoreX();
 
   // Implements PasswordStore interface.
-  virtual void AddLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void UpdateLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void RemoveLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
-                                              const base::Time& delete_end);
+  virtual void AddLoginImpl(const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void UpdateLoginImpl(
+      const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void RemoveLoginImpl(
+      const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void RemoveLoginsCreatedBetweenImpl(
+      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(GetLoginsRequest* request,
-                             const webkit_glue::PasswordForm& form);
-  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request);
-  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request);
+                             const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
+  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual bool FillAutofillableLogins(
-      std::vector<webkit_glue::PasswordForm*>* forms);
+      std::vector<webkit::forms::PasswordForm*>* forms) OVERRIDE;
   virtual bool FillBlacklistLogins(
-      std::vector<webkit_glue::PasswordForm*>* forms);
+      std::vector<webkit::forms::PasswordForm*>* forms) OVERRIDE;
 
   // Sort logins by origin, like the ORDER BY clause in login_database.cc.
   void SortLoginsByOrigin(NativeBackend::PasswordFormList* list);

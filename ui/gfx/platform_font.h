@@ -1,33 +1,35 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef UI_GFX_PLATFORM_FONT_
-#define UI_GFX_PLATFORM_FONT_
+#ifndef UI_GFX_PLATFORM_FONT_H_
+#define UI_GFX_PLATFORM_FONT_H_
 #pragma once
 
 #include <string>
 
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
 
 class Font;
 
-class PlatformFont : public base::RefCounted<PlatformFont> {
+class UI_EXPORT PlatformFont : public base::RefCounted<PlatformFont> {
  public:
-  // Create an appropriate PlatformFont implementation.
+  // Creates an appropriate PlatformFont implementation.
   static PlatformFont* CreateDefault();
   static PlatformFont* CreateFromFont(const Font& other);
   static PlatformFont* CreateFromNativeFont(NativeFont native_font);
-  static PlatformFont* CreateFromNameAndSize(const string16& font_name,
+  // Creates a PlatformFont implementation with the specified |font_name|
+  // (encoded in UTF-8) and |font_size| in pixels.
+  static PlatformFont* CreateFromNameAndSize(const std::string& font_name,
                                              int font_size);
 
   // Returns a new Font derived from the existing font.
-  // size_delta is the size to add to the current font. See the single
-  // argument version of this method for an example.
+  // |size_delta| is the size in pixels to add to the current font.
   // The style parameter specifies the new style for the font, and is a
   // bitmask of the values: BOLD, ITALIC and UNDERLINED.
   virtual Font DeriveFont(int size_delta, int style) const = 0;
@@ -45,10 +47,6 @@ class PlatformFont : public base::RefCounted<PlatformFont> {
   // Returns the average character width for the font.
   virtual int GetAverageCharacterWidth() const = 0;
 
-  // Returns the number of horizontal pixels needed to display the specified
-  // string.
-  virtual int GetStringWidth(const string16& text) const = 0;
-
   // Returns the expected number of horizontal pixels needed to display the
   // specified length of characters. Call GetStringWidth() to retrieve the
   // actual number.
@@ -57,8 +55,8 @@ class PlatformFont : public base::RefCounted<PlatformFont> {
   // Returns the style of the font.
   virtual int GetStyle() const = 0;
 
-  // Returns the font name.
-  virtual string16 GetFontName() const = 0;
+  // Returns the font name in UTF-8.
+  virtual std::string GetFontName() const = 0;
 
   // Returns the font size in pixels.
   virtual int GetFontSize() const = 0;
@@ -75,5 +73,5 @@ class PlatformFont : public base::RefCounted<PlatformFont> {
 
 }  // namespace gfx
 
-#endif  // UI_GFX_PLATFORM_FONT_
+#endif  // UI_GFX_PLATFORM_FONT_H_
 

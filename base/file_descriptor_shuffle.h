@@ -24,7 +24,8 @@
 
 #include <vector>
 
-#include "base/base_api.h"
+#include "base/base_export.h"
+#include "base/compiler_specific.h"
 
 namespace base {
 
@@ -48,9 +49,9 @@ class InjectionDelegate {
 // An implementation of the InjectionDelegate interface using the file
 // descriptor table of the current process as the domain.
 class FileDescriptorTableInjection : public InjectionDelegate {
-  virtual bool Duplicate(int* result, int fd);
-  virtual bool Move(int src, int dest);
-  virtual void Close(int fd);
+  virtual bool Duplicate(int* result, int fd) OVERRIDE;
+  virtual bool Move(int src, int dest) OVERRIDE;
+  virtual void Close(int fd) OVERRIDE;
 };
 
 // A single arc of the directed graph which describes an injective multimapping.
@@ -69,11 +70,12 @@ struct InjectionArc {
 
 typedef std::vector<InjectionArc> InjectiveMultimap;
 
-BASE_API bool PerformInjectiveMultimap(const InjectiveMultimap& map,
-                                       InjectionDelegate* delegate);
+BASE_EXPORT bool PerformInjectiveMultimap(const InjectiveMultimap& map,
+                                          InjectionDelegate* delegate);
 
-BASE_API bool PerformInjectiveMultimapDestructive(InjectiveMultimap* map,
-                                                  InjectionDelegate* delegate);
+BASE_EXPORT bool PerformInjectiveMultimapDestructive(
+    InjectiveMultimap* map,
+    InjectionDelegate* delegate);
 
 // This function will not call malloc but will mutate |map|
 static inline bool ShuffleFileDescriptors(InjectiveMultimap* map) {

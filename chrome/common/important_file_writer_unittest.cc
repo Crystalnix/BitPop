@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,7 +58,7 @@ class ImportantFileWriterTest : public testing::Test {
 
 TEST_F(ImportantFileWriterTest, Basic) {
   ImportantFileWriter writer(file_,
-                             base::MessageLoopProxy::CreateForCurrentThread());
+                             base::MessageLoopProxy::current());
   EXPECT_FALSE(file_util::PathExists(writer.path()));
   writer.WriteNow("foo");
   loop_.RunAllPending();
@@ -69,14 +69,16 @@ TEST_F(ImportantFileWriterTest, Basic) {
 
 TEST_F(ImportantFileWriterTest, ScheduleWrite) {
   ImportantFileWriter writer(file_,
-                             base::MessageLoopProxy::CreateForCurrentThread());
+                             base::MessageLoopProxy::current());
   writer.set_commit_interval(base::TimeDelta::FromMilliseconds(25));
   EXPECT_FALSE(writer.HasPendingWrite());
   DataSerializer serializer("foo");
   writer.ScheduleWrite(&serializer);
   EXPECT_TRUE(writer.HasPendingWrite());
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          new MessageLoop::QuitTask(), 100);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      MessageLoop::QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
   EXPECT_FALSE(writer.HasPendingWrite());
   ASSERT_TRUE(file_util::PathExists(writer.path()));
@@ -85,30 +87,35 @@ TEST_F(ImportantFileWriterTest, ScheduleWrite) {
 
 TEST_F(ImportantFileWriterTest, DoScheduledWrite) {
   ImportantFileWriter writer(file_,
-                             base::MessageLoopProxy::CreateForCurrentThread());
+                             base::MessageLoopProxy::current());
   EXPECT_FALSE(writer.HasPendingWrite());
   DataSerializer serializer("foo");
   writer.ScheduleWrite(&serializer);
   EXPECT_TRUE(writer.HasPendingWrite());
   writer.DoScheduledWrite();
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          new MessageLoop::QuitTask(), 100);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      MessageLoop::QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
   EXPECT_FALSE(writer.HasPendingWrite());
   ASSERT_TRUE(file_util::PathExists(writer.path()));
   EXPECT_EQ("foo", GetFileContent(writer.path()));
 }
 
-TEST_F(ImportantFileWriterTest, BatchingWrites) {
+// Flaky - http://crbug.com/109292
+TEST_F(ImportantFileWriterTest, FLAKY_BatchingWrites) {
   ImportantFileWriter writer(file_,
-                             base::MessageLoopProxy::CreateForCurrentThread());
+                             base::MessageLoopProxy::current());
   writer.set_commit_interval(base::TimeDelta::FromMilliseconds(25));
   DataSerializer foo("foo"), bar("bar"), baz("baz");
   writer.ScheduleWrite(&foo);
   writer.ScheduleWrite(&bar);
   writer.ScheduleWrite(&baz);
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          new MessageLoop::QuitTask(), 100);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      MessageLoop::QuitClosure(),
+      base::TimeDelta::FromMilliseconds(100));
   MessageLoop::current()->Run();
   ASSERT_TRUE(file_util::PathExists(writer.path()));
   EXPECT_EQ("baz", GetFileContent(writer.path()));

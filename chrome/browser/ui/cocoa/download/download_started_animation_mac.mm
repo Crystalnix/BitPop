@@ -11,31 +11,34 @@
 
 #import <QuartzCore/QuartzCore.h>
 
-#include "chrome/browser/tab_contents/tab_contents_view_mac.h"
+#include "chrome/browser/tab_contents/moving_to_content/tab_contents_view_mac.h"
 #import "chrome/browser/ui/cocoa/animatable_image.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/theme_resources.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "third_party/skia/include/utils/mac/SkCGUtils.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
-class DownloadAnimationTabObserver;
+class DownloadAnimationWebObserver;
+
+using content::WebContents;
 
 // A class for managing the Core Animation download animation.
-// Should be instantiated using +startAnimationWithTabContents:.
+// Should be instantiated using +startAnimationWithWebContents:.
 @interface DownloadStartedAnimationMac : NSObject {
  @private
-  // The observer for the TabContents we are drawing on.
-  scoped_ptr<DownloadAnimationTabObserver> observer_;
+  // The observer for the WebContents we are drawing on.
+  scoped_ptr<DownloadAnimationWebObserver> observer_;
   CGFloat imageWidth_;
   AnimatableImage* animation_;
 };
 
-+ (void)startAnimationWithTabContents:(TabContents*)tabContents;
++ (void)startAnimationWithWebContents:(WebContents*)webContents;
 
 // Called by the Observer if the tab is hidden or closed.
 - (void)closeAnimation;
@@ -44,25 +47,25 @@ class DownloadAnimationTabObserver;
 
 // A helper class to monitor tab hidden and closed notifications. If we receive
 // such a notification, we stop the animation.
-class DownloadAnimationTabObserver : public NotificationObserver {
+class DownloadAnimationWebObserver : public content::NotificationObserver {
  public:
-  DownloadAnimationTabObserver(DownloadStartedAnimationMac* owner,
-                               TabContents* tab_contents)
+  DownloadAnimationWebObserver(DownloadStartedAnimationMac* owner,
+                               WebContents* web_contents)
       : owner_(owner),
-        tab_contents_(tab_contents) {
+        web_contents_(web_contents) {
     registrar_.Add(this,
-                   NotificationType::TAB_CONTENTS_HIDDEN,
-                   Source<TabContents>(tab_contents_));
+                   content::NOTIFICATION_WEB_CONTENTS_HIDDEN,
+                   content::Source<WebContents>(web_contents_));
     registrar_.Add(this,
-                   NotificationType::TAB_CONTENTS_DESTROYED,
-                   Source<TabContents>(tab_contents_));
+                   content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                   content::Source<WebContents>(web_contents_));
   }
 
   // Runs when a tab is hidden or destroyed. Let our owner know we should end
   // the animation.
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
     // This ends up deleting us.
     [owner_ closeAnimation];
   }
@@ -72,17 +75,17 @@ class DownloadAnimationTabObserver : public NotificationObserver {
   DownloadStartedAnimationMac* owner_;
 
   // The tab we are observing. Weak.
-  TabContents* tab_contents_;
+  WebContents* web_contents_;
 
   // Used for registering to receive notifications and automatic clean up.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
-  DISALLOW_COPY_AND_ASSIGN(DownloadAnimationTabObserver);
+  DISALLOW_COPY_AND_ASSIGN(DownloadAnimationWebObserver);
 };
 
 @implementation DownloadStartedAnimationMac
 
-- (id)initWithTabContents:(TabContents*)tabContents {
+- (id)initWithWebContents:(WebContents*)webContents {
   if ((self = [super init])) {
     // Load the image of the download arrow.
     ResourceBundle& bundle = ResourceBundle::GetSharedInstance();
@@ -93,7 +96,7 @@ class DownloadAnimationTabObserver : public NotificationObserver {
     // the bottom of the tab, assuming there is enough room. If there isn't
     // enough, don't show the animation and let the shelf speak for itself.
     gfx::Rect bounds;
-    tabContents->GetContainerBounds(&bounds);
+    webContents->GetContainerBounds(&bounds);
     imageWidth_ = [image size].width;
     CGFloat imageHeight = [image size].height;
 
@@ -103,7 +106,7 @@ class DownloadAnimationTabObserver : public NotificationObserver {
       return nil;
     }
 
-    NSView* tabContentsView = tabContents->GetNativeView();
+    NSView* tabContentsView = webContents->GetNativeView();
     NSWindow* parentWindow = [tabContentsView window];
     if (!parentWindow) {
       // The tab is no longer frontmost.
@@ -131,7 +134,7 @@ class DownloadAnimationTabObserver : public NotificationObserver {
     [animation_ setEndOpacity:0.4];
     [animation_ setDuration:0.6];
 
-    observer_.reset(new DownloadAnimationTabObserver(self, tabContents));
+    observer_.reset(new DownloadAnimationWebObserver(self, webContents));
 
     // Set up to get notified about resize events on the parent window.
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
@@ -175,10 +178,10 @@ class DownloadAnimationTabObserver : public NotificationObserver {
   [self release];
 }
 
-+ (void)startAnimationWithTabContents:(TabContents*)contents {
++ (void)startAnimationWithWebContents:(WebContents*)contents {
   // Will be deleted when the animation window closes.
   DownloadStartedAnimationMac* controller =
-      [[self alloc] initWithTabContents:contents];
+      [[self alloc] initWithWebContents:contents];
   // The initializer can return nil.
   if (!controller)
     return;
@@ -189,9 +192,9 @@ class DownloadAnimationTabObserver : public NotificationObserver {
 
 @end
 
-void DownloadStartedAnimation::Show(TabContents* tab_contents) {
-  DCHECK(tab_contents);
+void DownloadStartedAnimation::Show(WebContents* web_contents) {
+  DCHECK(web_contents);
 
   // Will be deleted when the animation is complete.
-  [DownloadStartedAnimationMac startAnimationWithTabContents:tab_contents];
+  [DownloadStartedAnimationMac startAnimationWithWebContents:web_contents];
 }

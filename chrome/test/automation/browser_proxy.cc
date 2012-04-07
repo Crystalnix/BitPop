@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,10 @@
 
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
-#include "chrome/test/automation/autocomplete_edit_proxy.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
@@ -21,7 +19,6 @@
 
 using base::TimeDelta;
 using base::TimeTicks;
-
 
 bool BrowserProxy::ActivateTab(int tab_index) {
   if (!is_valid())
@@ -70,6 +67,17 @@ bool BrowserProxy::AppendTab(const GURL& tab_url) {
 
   sender_->Send(new AutomationMsg_AppendTab(handle_, tab_url,
                                             &append_tab_response));
+  return append_tab_response >= 0;
+}
+
+bool BrowserProxy::AppendBackgroundTab(const GURL& tab_url) {
+  if (!is_valid())
+    return false;
+
+  int append_tab_response = -1;
+
+  sender_->Send(new AutomationMsg_AppendBackgroundTab(handle_, tab_url,
+                                                      &append_tab_response));
   return append_tab_response >= 0;
 }
 
@@ -222,7 +230,8 @@ bool BrowserProxy::WaitForTabToBecomeActive(int tab,
   const TimeTicks start = TimeTicks::Now();
   const TimeDelta timeout = TimeDelta::FromMilliseconds(wait_timeout);
   while (TimeTicks::Now() - start < timeout) {
-    base::PlatformThread::Sleep(automation::kSleepTime);
+    base::PlatformThread::Sleep(
+        base::TimeDelta::FromMilliseconds(automation::kSleepTime));
     int active_tab;
     if (GetActiveTabIndex(&active_tab) && active_tab == tab)
       return true;
@@ -286,7 +295,8 @@ bool BrowserProxy::RunCommand(int browser_command) const {
 }
 
 bool BrowserProxy::GetBookmarkBarVisibility(bool* is_visible,
-                                            bool* is_animating) {
+                                            bool* is_animating,
+                                            bool* is_detached) {
   if (!is_valid())
     return false;
 
@@ -296,7 +306,7 @@ bool BrowserProxy::GetBookmarkBarVisibility(bool* is_visible,
   }
 
   return sender_->Send(new AutomationMsg_BookmarkBarVisibility(
-      handle_, is_visible, is_animating));
+      handle_, is_visible, is_animating, is_detached));
 }
 
 bool BrowserProxy::GetBookmarksAsJSON(std::string *json_string) {
@@ -510,33 +520,6 @@ scoped_refptr<WindowProxy> BrowserProxy::GetWindow() const {
   return result;
 }
 
-scoped_refptr<AutocompleteEditProxy> BrowserProxy::GetAutocompleteEdit() {
-  if (!is_valid())
-    return NULL;
-
-  bool handle_ok = false;
-  int autocomplete_edit_handle = 0;
-
-  sender_->Send(new AutomationMsg_AutocompleteEditForBrowser(
-      handle_, &handle_ok, &autocomplete_edit_handle));
-
-  if (!handle_ok)
-    return NULL;
-
-  AutocompleteEditProxy* p = static_cast<AutocompleteEditProxy*>(
-        tracker_->GetResource(autocomplete_edit_handle));
-
-  if (!p) {
-    p = new AutocompleteEditProxy(sender_, tracker_, autocomplete_edit_handle);
-    p->AddRef();
-  }
-
-  // Since there is no scoped_refptr::attach.
-  scoped_refptr<AutocompleteEditProxy> result;
-  result.swap(&p);
-  return result;
-}
-
 bool BrowserProxy::IsFullscreen(bool* is_fullscreen) {
   DCHECK(is_fullscreen);
 
@@ -607,7 +590,8 @@ bool BrowserProxy::SendJSONRequest(const std::string& request,
   return result;
 }
 
-bool BrowserProxy::GetInitialLoadTimes(float* min_start_time,
+bool BrowserProxy::GetInitialLoadTimes(int timeout_ms,
+                                       float* min_start_time,
                                        float* max_stop_time,
                                        std::vector<float>* stop_times) {
   std::string json_response;
@@ -615,9 +599,7 @@ bool BrowserProxy::GetInitialLoadTimes(float* min_start_time,
 
   *max_stop_time = 0;
   *min_start_time = -1;
-  if (!SendJSONRequest(kJSONCommand,
-                       TestTimeouts::action_max_timeout_ms(),
-                       &json_response)) {
+  if (!SendJSONRequest(kJSONCommand, timeout_ms, &json_response)) {
     // Older browser versions do not support GetInitialLoadTimes.
     // Fail gracefully and do not record them in this case.
     return false;

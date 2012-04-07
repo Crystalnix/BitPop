@@ -6,19 +6,23 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/views/content_setting_bubble_contents.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/browser/ui/views/window.h"
+#include "content/public/browser/web_contents.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/skia_util.h"
-#include "views/border.h"
+#include "ui/views/border.h"
+
+using content::WebContents;
 
 namespace {
 // Animation parameters.
@@ -45,15 +49,12 @@ const double kAnimatingFraction = kOpenTimeMs * 1.0 / kMoveTimeMs;
 
 ContentSettingImageView::ContentSettingImageView(
     ContentSettingsType content_type,
-    LocationBarView* parent,
-    Profile* profile)
+    LocationBarView* parent)
     : ui::LinearAnimation(kMoveTimeMs, kFrameRateHz, NULL),
       content_setting_image_model_(
           ContentSettingImageModel::CreateContentSettingImageModel(
               content_type)),
       parent_(parent),
-      profile_(profile),
-      bubble_(NULL),
       animation_in_progress_(false),
       text_size_(0),
       visible_text_size_(0) {
@@ -61,25 +62,23 @@ ContentSettingImageView::ContentSettingImageView(
 }
 
 ContentSettingImageView::~ContentSettingImageView() {
-  if (bubble_)
-    bubble_->Close();
 }
 
-void ContentSettingImageView::UpdateFromTabContents(TabContents* tab_contents) {
-  content_setting_image_model_->UpdateFromTabContents(tab_contents);
+void ContentSettingImageView::UpdateFromWebContents(WebContents* web_contents) {
+  content_setting_image_model_->UpdateFromWebContents(web_contents);
   if (!content_setting_image_model_->is_visible()) {
     SetVisible(false);
     return;
   }
   SetImage(ResourceBundle::GetSharedInstance().GetBitmapNamed(
       content_setting_image_model_->get_icon()));
-  SetTooltipText(UTF8ToWide(content_setting_image_model_->get_tooltip()));
+  SetTooltipText(UTF8ToUTF16(content_setting_image_model_->get_tooltip()));
   SetVisible(true);
 
   TabSpecificContentSettings* content_settings = NULL;
-  if (tab_contents) {
+  if (web_contents) {
     content_settings = TabContentsWrapper::GetCurrentWrapperForContents(
-        tab_contents)->content_settings();
+        web_contents)->content_settings();
   }
   if (!content_settings || content_settings->IsBlockageIndicated(
       content_setting_image_model_->get_content_settings_type()))
@@ -132,31 +131,19 @@ void ContentSettingImageView::OnMouseReleased(const views::MouseEvent& event) {
   if (!tab_contents)
     return;
 
-  // Prerender does not have a bubble.
-  ContentSettingsType content_settings_type =
-      content_setting_image_model_->get_content_settings_type();
-  if (content_settings_type == CONTENT_SETTINGS_TYPE_PRERENDER)
-    return;
-
-  gfx::Rect screen_bounds(GetImageBounds());
-  gfx::Point origin(screen_bounds.origin());
-  views::View::ConvertPointToScreen(this, &origin);
-  screen_bounds.set_origin(origin);
-  ContentSettingBubbleContents* bubble_contents =
-      new ContentSettingBubbleContents(
-          ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-              parent_->browser(), tab_contents, profile_,
-              content_settings_type),
-          profile_, tab_contents->tab_contents());
-  bubble_ = Bubble::Show(GetWidget(), screen_bounds, BubbleBorder::TOP_RIGHT,
-                         bubble_contents, this);
-  bubble_contents->set_bubble(bubble_);
-}
-
-void ContentSettingImageView::VisibilityChanged(View* starting_from,
-                                                bool is_visible) {
-  if (!is_visible && bubble_)
-    bubble_->Close();
+  Profile* profile = parent_->browser()->profile();
+  ContentSettingBubbleContents* bubble = new ContentSettingBubbleContents(
+      ContentSettingBubbleModel::CreateContentSettingBubbleModel(
+          parent_->browser(),
+          tab_contents,
+          profile,
+          content_setting_image_model_->get_content_settings_type()),
+      profile,
+      tab_contents->web_contents(),
+      this,
+      views::BubbleBorder::TOP_RIGHT);
+  browser::CreateViewsBubble(bubble);
+  bubble->Show();
 }
 
 void ContentSettingImageView::OnPaint(gfx::Canvas* canvas) {
@@ -207,28 +194,15 @@ void ContentSettingImageView::OnPaintBackground(gfx::Canvas* canvas) {
   SkSafeUnref(paint.getShader());
   SkRect color_rect;
   color_rect.iset(0, 0, width() - 1, height() - 1);
-  canvas->AsCanvasSkia()->drawRoundRect(color_rect, kBoxCornerRadius,
-                                        kBoxCornerRadius, paint);
+  canvas->GetSkCanvas()->drawRoundRect(color_rect, kBoxCornerRadius,
+                                       kBoxCornerRadius, paint);
   SkPaint outer_paint;
   outer_paint.setStyle(SkPaint::kStroke_Style);
   outer_paint.setColor(kBorderColor);
   color_rect.inset(SkIntToScalar(kEdgeThickness),
                    SkIntToScalar(kEdgeThickness));
-  canvas->AsCanvasSkia()->drawRoundRect(color_rect, kBoxCornerRadius,
-                                        kBoxCornerRadius, outer_paint);
-}
-
-void ContentSettingImageView::BubbleClosing(Bubble* bubble,
-                                            bool closed_by_escape) {
-  bubble_ = NULL;
-}
-
-bool ContentSettingImageView::CloseOnEscape() {
-  return true;
-}
-
-bool ContentSettingImageView::FadeInOnShow() {
-  return false;
+  canvas->GetSkCanvas()->drawRoundRect(color_rect, kBoxCornerRadius,
+                                       kBoxCornerRadius, outer_paint);
 }
 
 void ContentSettingImageView::AnimateToState(double state) {
@@ -248,4 +222,3 @@ void ContentSettingImageView::AnimateToState(double state) {
   parent_->Layout();
   parent_->SchedulePaint();
 }
-

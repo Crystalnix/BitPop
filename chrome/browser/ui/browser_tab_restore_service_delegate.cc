@@ -7,6 +7,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "content/public/browser/navigation_controller.h"
+
+using content::NavigationController;
+using content::WebContents;
 
 void BrowserTabRestoreServiceDelegate::ShowBrowserWindow() {
   browser_->window()->Show();
@@ -24,20 +28,20 @@ int BrowserTabRestoreServiceDelegate::GetSelectedIndex() const {
   return browser_->active_index();
 }
 
-TabContents* BrowserTabRestoreServiceDelegate::GetTabContentsAt(
+WebContents* BrowserTabRestoreServiceDelegate::GetWebContentsAt(
     int index) const {
-  return browser_->GetTabContentsAt(index);
+  return browser_->GetWebContentsAt(index);
 }
 
-TabContents* BrowserTabRestoreServiceDelegate::GetSelectedTabContents() const {
-  return browser_->GetSelectedTabContents();
+WebContents* BrowserTabRestoreServiceDelegate::GetSelectedWebContents() const {
+  return browser_->GetSelectedWebContents();
 }
 
 bool BrowserTabRestoreServiceDelegate::IsTabPinned(int index) const {
   return browser_->IsTabPinned(index);
 }
 
-TabContents* BrowserTabRestoreServiceDelegate::AddRestoredTab(
+WebContents* BrowserTabRestoreServiceDelegate::AddRestoredTab(
       const std::vector<TabNavigation>& navigations,
       int tab_index,
       int selected_navigation,

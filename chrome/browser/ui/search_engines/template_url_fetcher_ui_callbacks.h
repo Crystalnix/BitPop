@@ -7,44 +7,46 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/search_engines/template_url_fetcher_callbacks.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class SearchEngineTabHelper;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 // Callbacks which display UI for the TemplateURLFetcher.
 class TemplateURLFetcherUICallbacks : public TemplateURLFetcherCallbacks,
-                                      public NotificationObserver {
+                                      public content::NotificationObserver {
  public:
-  explicit TemplateURLFetcherUICallbacks(SearchEngineTabHelper* tab_helper,
-                                         TabContents* tab_contents);
+  TemplateURLFetcherUICallbacks(SearchEngineTabHelper* tab_helper,
+                                content::WebContents* tab_contents);
   virtual ~TemplateURLFetcherUICallbacks();
 
   // TemplateURLFetcherCallback implementation.
-  virtual void ConfirmSetDefaultSearchProvider(
-      TemplateURL* template_url,
-      TemplateURLModel* template_url_model);
-  virtual void ConfirmAddSearchProvider(
-      TemplateURL* template_url,
-      Profile* profile);
+  virtual void ConfirmSetDefaultSearchProvider(TemplateURL* template_url,
+                                               Profile* profile) OVERRIDE;
+  virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
+                                        Profile* profile) OVERRIDE;
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // The SearchEngineTabHelper where this request originated. Can be NULL if the
   // originating tab is closed. If NULL, the engine is not added.
   SearchEngineTabHelper* source_;
 
-  // The TabContents where this request originated.
-  TabContents* tab_contents_;
+  // The WebContents where this request originated.
+  content::WebContents* web_contents_;
 
   // Handles registering for our notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLFetcherUICallbacks);
 };

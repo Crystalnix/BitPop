@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
@@ -20,10 +21,13 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_common.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::UserMetricsAction;
 
 LanguageOptionsHandlerCommon::LanguageOptionsHandlerCommon() {
 }
@@ -35,8 +39,6 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
     DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
   string16 product_name = GetProductName();
-  RegisterTitle(localized_strings, "languagePage",
-                IDS_OPTIONS_SETTINGS_LANGUAGES_DIALOG_TITLE);
   localized_strings->SetString("add_button",
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_LANGUAGES_ADD_BUTTON));
   localized_strings->SetString("languages",
@@ -65,6 +67,10 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
       l10n_util::GetStringFUTF16(
           IDS_OPTIONS_SETTINGS_LANGUAGES_THIS_LANGUAGE_IS_CURRENTLY_IN_USE,
           product_name));
+  localized_strings->SetString("restart_required",
+          l10n_util::GetStringUTF16(IDS_OPTIONS_RELAUNCH_REQUIRED));
+  // OS X uses the OS native spellchecker so no need for these strings.
+#if !defined(OS_MACOSX)
   localized_strings->SetString("use_this_for_spell_checking",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_USE_THIS_FOR_SPELL_CHECKING));
@@ -74,12 +80,11 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
   localized_strings->SetString("is_used_for_spell_checking",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_IS_USED_FOR_SPELL_CHECKING));
-  localized_strings->SetString("restart_required",
-          l10n_util::GetStringUTF16(IDS_OPTIONS_RELAUNCH_REQUIRED));
   localized_strings->SetString("enable_spell_check",
           l10n_util::GetStringUTF16(IDS_OPTIONS_ENABLE_SPELLCHECK));
   localized_strings->SetString("enable_auto_spell_correction",
           l10n_util::GetStringUTF16(IDS_OPTIONS_ENABLE_AUTO_SPELL_CORRECTION));
+#endif  // !OS_MACOSX
   localized_strings->SetString("add_language_title",
           l10n_util::GetStringUTF16(IDS_OPTIONS_LANGUAGES_ADD_TITLE));
   localized_strings->SetString("add_language_select_label",
@@ -103,19 +108,18 @@ void LanguageOptionsHandlerCommon::GetLocalizedValues(
 }
 
 void LanguageOptionsHandlerCommon::RegisterMessages() {
-  DCHECK(web_ui_);
-  web_ui_->RegisterMessageCallback("languageOptionsOpen",
-      NewCallback(
-          this,
-          &LanguageOptionsHandlerCommon::LanguageOptionsOpenCallback));
-  web_ui_->RegisterMessageCallback("spellCheckLanguageChange",
-      NewCallback(
-          this,
-          &LanguageOptionsHandlerCommon::SpellCheckLanguageChangeCallback));
-  web_ui_->RegisterMessageCallback("uiLanguageChange",
-      NewCallback(
-          this,
-          &LanguageOptionsHandlerCommon::UiLanguageChangeCallback));
+  web_ui()->RegisterMessageCallback("languageOptionsOpen",
+      base::Bind(
+          &LanguageOptionsHandlerCommon::LanguageOptionsOpenCallback,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("spellCheckLanguageChange",
+      base::Bind(
+          &LanguageOptionsHandlerCommon::SpellCheckLanguageChangeCallback,
+          base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("uiLanguageChange",
+      base::Bind(
+          &LanguageOptionsHandlerCommon::UiLanguageChangeCallback,
+          base::Unretained(this)));
 }
 
 DictionaryValue* LanguageOptionsHandlerCommon::GetUILanguageCodeSet() {
@@ -140,7 +144,7 @@ DictionaryValue* LanguageOptionsHandlerCommon::GetSpellCheckLanguageCodeSet() {
 
 void LanguageOptionsHandlerCommon::LanguageOptionsOpenCallback(
     const ListValue* args) {
-  UserMetrics::RecordAction(UserMetricsAction("LanguageOptions_Open"));
+  content::RecordAction(UserMetricsAction("LanguageOptions_Open"));
 }
 
 void LanguageOptionsHandlerCommon::UiLanguageChangeCallback(
@@ -149,9 +153,9 @@ void LanguageOptionsHandlerCommon::UiLanguageChangeCallback(
   CHECK(!language_code.empty());
   const std::string action = base::StringPrintf(
       "LanguageOptions_UiLanguageChange_%s", language_code.c_str());
-  UserMetrics::RecordComputedAction(action);
+  content::RecordComputedAction(action);
   SetApplicationLocale(language_code);
-    web_ui_->CallJavascriptFunction("options.LanguageOptions.uiLanguageSaved");
+    web_ui()->CallJavascriptFunction("options.LanguageOptions.uiLanguageSaved");
 }
 
 void LanguageOptionsHandlerCommon::SpellCheckLanguageChangeCallback(
@@ -160,5 +164,5 @@ void LanguageOptionsHandlerCommon::SpellCheckLanguageChangeCallback(
   CHECK(!language_code.empty());
   const std::string action = base::StringPrintf(
       "LanguageOptions_SpellCheckLanguageChange_%s", language_code.c_str());
-  UserMetrics::RecordComputedAction(action);
+  content::RecordComputedAction(action);
 }

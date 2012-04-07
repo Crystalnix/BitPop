@@ -12,8 +12,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/automation/tab_proxy.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
+#include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/ui/ui_test.h"
 #include "googleurl/src/gurl.h"
@@ -141,7 +142,10 @@ TEST_F(SessionRestoreUITest, RestoresForwardAndBackwardNavs) {
   ASSERT_TRUE(GetActiveTabURL() == url3_);
   ASSERT_TRUE(tab_proxy->GoBack());
   ASSERT_TRUE(GetActiveTabURL() == url2_);
-  ASSERT_TRUE(tab_proxy->GoBack());
+
+  // Test renderer-initiated back/forward as well.
+  GURL go_back_url("javascript:history.back();");
+  ASSERT_TRUE(tab_proxy->NavigateToURL(go_back_url));
   ASSERT_TRUE(GetActiveTabURL() == url1_);
 }
 
@@ -194,7 +198,9 @@ TEST_F(SessionRestoreUITest, RestoresCrossSiteForwardAndBackwardNavs) {
   ASSERT_TRUE(tab_proxy->GetCurrentURL(&url));
   ASSERT_EQ(cross_site_url, url);
 
-  ASSERT_TRUE(tab_proxy->GoForward());
+  // Test renderer-initiated back/forward as well.
+  GURL go_forward_url("javascript:history.forward();");
+  ASSERT_TRUE(tab_proxy->NavigateToURL(go_forward_url));
   ASSERT_TRUE(tab_proxy->GetCurrentURL(&url));
   ASSERT_EQ(url2_, url);
 }
@@ -439,11 +445,6 @@ TEST_F(SessionRestoreUITest, TwoWindowsCloseOneRestoreOnlyOne) {
 // breaks NTP background image refreshing, so ThemeSource had to revert to
 // replacing the existing data source.
 TEST_F(SessionRestoreUITest, FLAKY_ShareProcessesOnRestore) {
-  if (ProxyLauncher::in_process_renderer()) {
-    // No point in running this test in single process mode.
-    return;
-  }
-
   scoped_refptr<BrowserProxy> browser_proxy(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser_proxy.get() != NULL);
   int tab_count;

@@ -8,25 +8,21 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/chromeos/input_method/ibus_ui_controller.h"
 #include "chrome/browser/extensions/extension_function.h"
 
-class InputUiController;
-class ListValue;
 class Profile;
 
-namespace chromeos {
-class InputMethodLookupTable;
-}
-
-class ExtensionInputUiEventRouter {
+class ExtensionInputUiEventRouter
+    : public chromeos::input_method::IBusUiController::Observer {
  public:
   static ExtensionInputUiEventRouter* GetInstance();
   void Init();
 
  private:
-  friend class InputUiController;
   friend class CandidateClickedInputUiFunction;
   friend class CursorUpInputUiFunction;
   friend class CursorDownInputUiFunction;
@@ -36,7 +32,7 @@ class ExtensionInputUiEventRouter {
   friend struct DefaultSingletonTraits<ExtensionInputUiEventRouter>;
 
   ExtensionInputUiEventRouter();
-  ~ExtensionInputUiEventRouter();
+  virtual ~ExtensionInputUiEventRouter();
 
   void Register(Profile* profile, const std::string& extension_id);
   void CandidateClicked(Profile* profile,
@@ -46,12 +42,23 @@ class ExtensionInputUiEventRouter {
   void PageUp(Profile* profile, const std::string& extension_id);
   void PageDown(Profile* profile, const std::string& extension_id);
 
-  void OnHideAuxiliaryText();
-  void OnHideLookupTable();
-  void OnSetCursorLocation(int x, int y, int width, int height);
-  void OnUpdateAuxiliaryText(const std::string& utf8_text);
-  void OnUpdateLookupTable(
-      const chromeos::InputMethodLookupTable& lookup_table);
+  // IBusUiController overrides.
+  virtual void OnHideAuxiliaryText() OVERRIDE;
+  virtual void OnHideLookupTable() OVERRIDE;
+  virtual void OnHidePreeditText() OVERRIDE;
+  virtual void OnSetCursorLocation(int x,
+                                   int y,
+                                   int width,
+                                   int height) OVERRIDE;
+  virtual void OnUpdateAuxiliaryText(const std::string& utf8_text,
+                                     bool visible) OVERRIDE;
+  virtual void OnUpdateLookupTable(
+      const chromeos::input_method::InputMethodLookupTable& lookup_table)
+          OVERRIDE;
+  virtual void OnUpdatePreeditText(const std::string& utf8_text,
+                                   unsigned int cursor,
+                                   bool visible) OVERRIDE;
+  virtual void OnConnectionChange(bool connected) OVERRIDE;
 
   void DispatchEvent(Profile* profile,
                      const char* event_name,
@@ -59,45 +66,45 @@ class ExtensionInputUiEventRouter {
 
   Profile* profile_;
   std::string extension_id_;
-  scoped_ptr<InputUiController> ui_controller_;
+  scoped_ptr<chromeos::input_method::IBusUiController> ibus_ui_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionInputUiEventRouter);
 };
 
 class RegisterInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.register");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.register");
 };
 
 class CandidateClickedInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.candidateClicked");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.candidateClicked");
 };
 
 class CursorUpInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.cursorUp");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.cursorUp");
 };
 
 class CursorDownInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.cursorDown");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.cursorDown");
 };
 
 class PageUpInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.pageUp");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.pageUp");
 };
 
 class PageDownInputUiFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.inputUI.pageDown");
+  virtual bool RunImpl() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION_NAME("experimental.input.ui.pageDown");
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_INPUT_UI_API_H_

@@ -1,19 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sessions/base_session_service.h"
 
+#include "base/bind.h"
+#include "base/metrics/histogram.h"
 #include "base/pickle.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/common/referrer.h"
 #include "webkit/glue/webkit_glue.h"
+
+using WebKit::WebReferrerPolicy;
+using content::BrowserThread;
+using content::NavigationEntry;
 
 // InternalGetCommandsRequest -------------------------------------------------
 
@@ -65,8 +73,7 @@ BaseSessionService::BaseSessionService(SessionType type,
                                        const FilePath& path)
     : profile_(profile),
       path_(path),
-      backend_thread_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(save_factory_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       pending_reset_(false),
       commands_since_reset_(0) {
   if (profile) {
@@ -76,22 +83,25 @@ BaseSessionService::BaseSessionService(SessionType type,
   backend_ = new SessionBackend(type,
       profile_ ? profile_->GetPath() : path_);
   DCHECK(backend_.get());
-  backend_thread_ = g_browser_process->file_thread();
-  if (!backend_thread_)
+
+  if (!RunningInProduction()) {
+    // We seem to be running as part of a test, in which case we need
+    // to explicitly initialize the backend.  In production, the
+    // backend will automatically initialize itself just in time.
+    //
+    // Note that it's important not to initialize too early in
+    // production; this can cause e.g. http://crbug.com/110785.
     backend_->Init();
-  // If backend_thread is non-null, backend will init itself as appropriate.
+  }
 }
 
 BaseSessionService::~BaseSessionService() {
 }
 
 void BaseSessionService::DeleteLastSession() {
-  if (!backend_thread()) {
-    backend()->DeleteLastSession();
-  } else {
-    backend_thread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        backend(), &SessionBackend::DeleteLastSession));
-  }
+  RunTaskOnBackendThread(
+      FROM_HERE,
+      base::Bind(&SessionBackend::DeleteLastSession, backend()));
 }
 
 void BaseSessionService::ScheduleCommand(SessionCommand* command) {
@@ -104,10 +114,11 @@ void BaseSessionService::ScheduleCommand(SessionCommand* command) {
 void BaseSessionService::StartSaveTimer() {
   // Don't start a timer when testing (profile == NULL or
   // MessageLoop::current() is NULL).
-  if (MessageLoop::current() && profile() && save_factory_.empty()) {
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        save_factory_.NewRunnableMethod(&BaseSessionService::Save),
-        kSaveDelayMS);
+  if (MessageLoop::current() && profile() && !weak_factory_.HasWeakPtrs()) {
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&BaseSessionService::Save, weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(kSaveDelayMS));
   }
 }
 
@@ -117,15 +128,12 @@ void BaseSessionService::Save() {
   if (pending_commands_.empty())
     return;
 
-  if (!backend_thread()) {
-    backend()->AppendCommands(
-        new std::vector<SessionCommand*>(pending_commands_), pending_reset_);
-  } else {
-    backend_thread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        backend(), &SessionBackend::AppendCommands,
-        new std::vector<SessionCommand*>(pending_commands_),
-        pending_reset_));
-  }
+  RunTaskOnBackendThread(
+      FROM_HERE,
+      base::Bind(&SessionBackend::AppendCommands, backend(),
+                 new std::vector<SessionCommand*>(pending_commands_),
+                 pending_reset_));
+
   // Backend took ownership of commands.
   pending_commands_.clear();
 
@@ -157,25 +165,32 @@ SessionCommand* BaseSessionService::CreateUpdateTabNavigationCommand(
   int bytes_written = 0;
 
   WriteStringToPickle(pickle, &bytes_written, max_state_size,
-                      entry.virtual_url().spec());
+                      entry.GetVirtualURL().spec());
 
-  WriteString16ToPickle(pickle, &bytes_written, max_state_size, entry.title());
+  WriteString16ToPickle(pickle, &bytes_written, max_state_size,
+                        entry.GetTitle());
 
-  if (entry.has_post_data()) {
+  if (entry.GetHasPostData()) {
+    UMA_HISTOGRAM_MEMORY_KB("SessionService.ContentStateSizeWithPost",
+                            entry.GetContentState().size() / 1024);
     // Remove the form data, it may contain sensitive information.
     WriteStringToPickle(pickle, &bytes_written, max_state_size,
-        webkit_glue::RemoveFormDataFromHistoryState(entry.content_state()));
+        webkit_glue::RemoveFormDataFromHistoryState(entry.GetContentState()));
   } else {
+    UMA_HISTOGRAM_MEMORY_KB("SessionService.ContentStateSize",
+                            entry.GetContentState().size() / 1024);
     WriteStringToPickle(pickle, &bytes_written, max_state_size,
-                        entry.content_state());
+                        entry.GetContentState());
   }
 
-  pickle.WriteInt(entry.transition_type());
-  int type_mask = entry.has_post_data() ? TabNavigation::HAS_POST_DATA : 0;
+  pickle.WriteInt(entry.GetTransitionType());
+  int type_mask = entry.GetHasPostData() ? TabNavigation::HAS_POST_DATA : 0;
   pickle.WriteInt(type_mask);
 
   WriteStringToPickle(pickle, &bytes_written, max_state_size,
-      entry.referrer().is_valid() ? entry.referrer().spec() : std::string());
+      entry.GetReferrer().url.is_valid() ?
+          entry.GetReferrer().url.spec() : std::string());
+  pickle.WriteInt(entry.GetReferrer().policy);
 
   // Adding more data? Be sure and update TabRestoreService too.
   return new SessionCommand(command_id, pickle);
@@ -226,8 +241,17 @@ bool BaseSessionService::RestoreUpdateTabNavigationCommand(
     // stream. As such, we don't fail if it can't be read.
     std::string referrer_spec;
     pickle->ReadString(&iterator, &referrer_spec);
-    if (!referrer_spec.empty())
-      navigation->referrer_ = GURL(referrer_spec);
+    // The "referrer policy" property was added even later, so we fall back to
+    // the default policy if the property is not present.
+    int policy_int;
+    WebReferrerPolicy policy;
+    if (pickle->ReadInt(&iterator, &policy_int))
+      policy = static_cast<WebReferrerPolicy>(policy_int);
+    else
+      policy = WebKit::WebReferrerPolicyDefault;
+    navigation->referrer_ = content::Referrer(
+        referrer_spec.empty() ? GURL() : GURL(referrer_spec),
+        policy);
   }
 
   navigation->virtual_url_ = GURL(url_spec);
@@ -258,28 +282,27 @@ BaseSessionService::Handle BaseSessionService::ScheduleGetLastSessionCommands(
     CancelableRequestConsumerBase* consumer) {
   scoped_refptr<InternalGetCommandsRequest> request_wrapper(request);
   AddRequest(request, consumer);
-  if (backend_thread()) {
-    backend_thread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        backend(), &SessionBackend::ReadLastSessionCommands, request_wrapper));
-  } else {
-    backend()->ReadLastSessionCommands(request);
-  }
+  RunTaskOnBackendThread(
+      FROM_HERE,
+      base::Bind(&SessionBackend::ReadLastSessionCommands, backend(),
+                 request_wrapper));
   return request->handle();
 }
 
-BaseSessionService::Handle
-    BaseSessionService::ScheduleGetCurrentSessionCommands(
-        InternalGetCommandsRequest* request,
-        CancelableRequestConsumerBase* consumer) {
-  scoped_refptr<InternalGetCommandsRequest> request_wrapper(request);
-  AddRequest(request, consumer);
-  if (backend_thread()) {
-    backend_thread()->message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(backend(),
-                          &SessionBackend::ReadCurrentSessionCommands,
-                          request_wrapper));
+bool BaseSessionService::RunningInProduction() const {
+  return profile_ && BrowserThread::IsMessageLoopValid(BrowserThread::FILE);
+}
+
+bool BaseSessionService::RunTaskOnBackendThread(
+    const tracked_objects::Location& from_here,
+    const base::Closure& task) {
+  if (RunningInProduction()) {
+    return BrowserThread::PostTask(BrowserThread::FILE, from_here, task);
   } else {
-    backend()->ReadCurrentSessionCommands(request);
+    // Fall back to executing on the main thread if the file thread
+    // has gone away (around shutdown time) or if we're running as
+    // part of a unit test that does not set profile_.
+    task.Run();
+    return true;
   }
-  return request->handle();
 }

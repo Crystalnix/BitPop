@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,12 +11,9 @@
 #include <string>
 
 #include "base/win/scoped_comptr.h"
-
+#include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test/simulate_input.h"
 #include "chrome_frame/test_utils.h"
-
-// Include without path to make GYP build see it.
-#include "chrome_tab.h"  // NOLINT
 
 namespace chrome_frame_test {
 
@@ -214,19 +211,13 @@ END_SINK_MAP()
                                    VARIANT_BOOL* cancel);
   STDMETHOD_(void, OnQuit)();
 
-#ifndef NDEBUG
   STDMETHOD(Invoke)(DISPID dispid,
                     REFIID riid, LCID lcid,
                     WORD flags,
                     DISPPARAMS* params,
                     VARIANT* result,
                     EXCEPINFO* except_info,
-                    UINT* arg_error) {
-    DVLOG(1) << __FUNCTION__ << L" disp id :"  << dispid;
-    return DispEventsImpl::Invoke(dispid, riid, lcid, flags, params, result,
-                                  except_info, arg_error);
-  }
-#endif  // _DEBUG
+                    UINT* arg_error);
 
   // IChromeFrame callbacks
   HRESULT OnLoad(const VARIANT* param);

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -104,7 +104,6 @@ class DatasetGenerator(object):
       [u'ADDRESS_HOME_ZIP', self.GenerateZip],
       [u'ADDRESS_HOME_COUNTRY', u'United States'],
       [u'PHONE_HOME_WHOLE_NUMBER', None],
-      [u'PHONE_FAX_WHOLE_NUMBER', u'6501234555'],
     ]
 
     self.next_dict = {}
@@ -172,7 +171,7 @@ class DatasetGenerator(object):
     Returns:
       A zip code matched to the corresponding city.
     """
-    city_selected = self.next_dict['ADDRESS_HOME_CITY']
+    city_selected = self.next_dict['ADDRESS_HOME_CITY'][0]
     index = self.city_construct[0][1].index(city_selected)
     return self.zip_construct[index]
 
@@ -216,11 +215,11 @@ class DatasetGenerator(object):
     self.next_dict = {}
     for key, method_or_value in self.fields:
       if not method_or_value:
-        self.next_dict[key] = ''
+        self.next_dict[key] = ['']
       elif type(method_or_value) in [str, unicode]:
-        self.next_dict[key] = '%s' % method_or_value
+        self.next_dict[key] = ['%s' % method_or_value]
       else:
-        self.next_dict[key] = method_or_value()
+        self.next_dict[key] = [method_or_value()]
     return self.next_dict
 
   def GenerateDataset(self, num_of_dict_to_generate=10):
@@ -254,8 +253,8 @@ class DatasetGenerator(object):
           output_file.write(output_line)
           output_file.write(os.linesep)
         self.logger.info(
-            '%d: %s' % (self.dict_no, output_line.encode(sys.stdout.encoding,
-                                                         'ignore')))
+            '%d: [%s]' % (self.dict_no, output_line.encode(sys.stdout.encoding,
+                                                           'ignore')))
 
       if output_file:
         output_file.write(']')
@@ -269,7 +268,6 @@ class DatasetGenerator(object):
 
 
 def main():
-  # Command line options.
   parser = OptionParser()
   parser.add_option(
     '-o', '--output', dest='output_filename', default='',
@@ -285,7 +283,7 @@ def main():
   (options, args) = parser.parse_args()
   if args:
     parser.print_help()
-    sys.exit(1)
+    return 1
   options.log_level = options.log_level.lower()
   if options.log_level not in ['debug', 'info', 'warning', 'error']:
     parser.error('Wrong log_level argument.')
@@ -302,7 +300,8 @@ def main():
 
   gen = DatasetGenerator(options.output_filename, options.log_level)
   gen.GenerateDataset(options.dict_no)
+  return 0
 
 
 if __name__ == '__main__':
-  main()
+  sys.exit(main())

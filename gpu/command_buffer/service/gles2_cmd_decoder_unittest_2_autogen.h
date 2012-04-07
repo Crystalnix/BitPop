@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This file is auto-generated. DO NOT EDIT!
+// This file is auto-generated from
+// gpu/command_buffer/build_gles2_cmd_buffer.py
+// DO NOT EDIT!
 
 // It is included by gles2_cmd_decoder_unittest_2.cc
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_2_AUTOGEN_H_
@@ -282,10 +284,10 @@ TEST_F(GLES2DecoderTest2, RenderbufferStorageInvalidArgs3_0) {
 }
 
 TEST_F(GLES2DecoderTest2, SampleCoverageValidArgs) {
-  EXPECT_CALL(*gl_, SampleCoverage(1, 2));
+  EXPECT_CALL(*gl_, SampleCoverage(1, true));
   SpecializedSetup<SampleCoverage, 0>(true);
   SampleCoverage cmd;
-  cmd.Init(1, 2);
+  cmd.Init(1, true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
@@ -343,7 +345,6 @@ TEST_F(GLES2DecoderTest2, StencilFuncSeparateValidArgs) {
 }
 
 TEST_F(GLES2DecoderTest2, StencilMaskValidArgs) {
-  EXPECT_CALL(*gl_, StencilMask(1));
   SpecializedSetup<StencilMask, 0>(true);
   StencilMask cmd;
   cmd.Init(1);
@@ -352,7 +353,6 @@ TEST_F(GLES2DecoderTest2, StencilMaskValidArgs) {
 }
 
 TEST_F(GLES2DecoderTest2, StencilMaskSeparateValidArgs) {
-  EXPECT_CALL(*gl_, StencilMaskSeparate(GL_FRONT, 2));
   SpecializedSetup<StencilMaskSeparate, 0>(true);
   StencilMaskSeparate cmd;
   cmd.Init(GL_FRONT, 2);
@@ -1696,6 +1696,7 @@ TEST_F(GLES2DecoderTest2, ViewportInvalidArgs3_0) {
 }
 // TODO(gman): BlitFramebufferEXT
 // TODO(gman): RenderbufferStorageMultisampleEXT
+// TODO(gman): TexStorage2DEXT
 // TODO(gman): SwapBuffers
 // TODO(gman): GetMaxValueInBufferCHROMIUM
 // TODO(gman): GenSharedIdsCHROMIUM
@@ -1704,15 +1705,14 @@ TEST_F(GLES2DecoderTest2, ViewportInvalidArgs3_0) {
 
 // TODO(gman): RegisterSharedIdsCHROMIUM
 
-// TODO(gman): CommandBufferEnableCHROMIUM
+// TODO(gman): EnableFeatureCHROMIUM
 
-// TODO(gman): CopyTextureToParentTextureCHROMIUM
 // TODO(gman): ResizeCHROMIUM
 // TODO(gman): GetRequestableExtensionsCHROMIUM
 
 // TODO(gman): RequestExtensionCHROMIUM
 
-// TODO(gman): SetLatchCHROMIUM
+// TODO(gman): GetMultipleIntegervCHROMIUM
 
 #endif  // GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_2_AUTOGEN_H_
 

@@ -8,12 +8,12 @@
 
 @implementation FakeAppDelegate
 
-@synthesize helper = helper_;
+@synthesize test = test_;
 
-- (Profile*)defaultProfile {
-  if (!helper_)
+- (Profile*)lastProfile {
+  if (!test_)
     return NULL;
-  return helper_->profile();
+  return test_->profile();
 }
 @end
 
@@ -47,21 +47,27 @@ static FakeScriptCommand* kFakeCurrentCommand;
 @end
 
 BookmarkAppleScriptTest::BookmarkAppleScriptTest() {
-  appDelegate_.reset([[FakeAppDelegate alloc] init]);
-  [appDelegate_.get() setHelper:&helper_];
-  DCHECK([NSApp delegate] == nil);
-  [NSApp setDelegate:appDelegate_];
-  const BookmarkNode* root = model().GetBookmarkBarNode();
-  const std::string modelString("a f1:[ b d c ] d f2:[ e f g ] h ");
-  model_test_utils::AddNodesFromModelString(model(), root, modelString);
-  bookmarkBar_.reset([[BookmarkFolderAppleScript alloc]
-      initWithBookmarkNode:model().GetBookmarkBarNode()]);
 }
 
 BookmarkAppleScriptTest::~BookmarkAppleScriptTest() {
   [NSApp setDelegate:nil];
 }
 
+void BookmarkAppleScriptTest::SetUp() {
+  CocoaProfileTest::SetUp();
+  ASSERT_TRUE(profile());
+
+  appDelegate_.reset([[FakeAppDelegate alloc] init]);
+  [appDelegate_.get() setTest:this];
+  DCHECK([NSApp delegate] == nil);
+  [NSApp setDelegate:appDelegate_];
+  const BookmarkNode* root = model().bookmark_bar_node();
+  const std::string modelString("a f1:[ b d c ] d f2:[ e f g ] h ");
+  model_test_utils::AddNodesFromModelString(model(), root, modelString);
+  bookmarkBar_.reset([[BookmarkFolderAppleScript alloc]
+      initWithBookmarkNode:model().bookmark_bar_node()]);
+}
+
 BookmarkModel& BookmarkAppleScriptTest::model() {
-  return *helper_.profile()->GetBookmarkModel();
+  return *profile()->GetBookmarkModel();
 }

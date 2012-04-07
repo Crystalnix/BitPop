@@ -34,20 +34,19 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptController.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 #include "webkit/glue/glue_serialize.h"
+#include "webkit/glue/user_agent.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
-#include "webkit/plugins/npapi/plugin_list.h"
-#include "webkit/plugins/npapi/webplugininfo.h"
 #include "webkit/tools/test_shell/notification_presenter.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
@@ -145,6 +144,8 @@ TestShell::TestShell()
     filter->AddHostnameHandler("test-shell-resource", "inspector",
                                &URLRequestTestShellFileJob::InspectorFactory);
     url_util::AddStandardScheme("test-shell-resource");
+    webkit_glue::SetUserAgent(webkit_glue::BuildUserAgentFromProduct(
+        "TestShell/0.0.0.0"), false);
 }
 
 TestShell::~TestShell() {
@@ -360,6 +361,7 @@ void TestShell::ResetWebPreferences() {
         // LayoutTests/http/tests/local, to access http server.
         if (layout_test_mode_)
           web_prefs_->allow_universal_access_from_file_urls = true;
+        web_prefs_->visual_word_movement_enabled = false;
     }
 }
 
@@ -482,20 +484,19 @@ void TestShell::ResetTestController() {
 }
 
 void TestShell::LoadFile(const FilePath& file) {
-  LoadURLForFrame(net::FilePathToFileURL(file), std::wstring());
+  LoadURLForFrame(net::FilePathToFileURL(file), string16());
 }
 
 void TestShell::LoadURL(const GURL& url) {
-  LoadURLForFrame(url, std::wstring());
+  LoadURLForFrame(url, string16());
 }
 
 bool TestShell::Navigate(const TestNavigationEntry& entry, bool reload) {
   // Get the right target frame for the entry.
   WebFrame* frame = webView()->mainFrame();
-  if (!entry.GetTargetFrame().empty()) {
-      frame = webView()->findFrameByName(
-          WideToUTF16Hack(entry.GetTargetFrame()));
-  }
+  if (!entry.GetTargetFrame().empty())
+      frame = webView()->findFrameByName(entry.GetTargetFrame());
+
   // TODO(mpcomplete): should we clear the target frame, or should
   // back/forward navigations maintain the target frame?
 
@@ -603,8 +604,10 @@ WebKit::WebSpeechInputControllerMock*
 TestShell::CreateSpeechInputControllerMock(
     WebKit::WebSpeechInputListener* listener) {
   DCHECK(!speech_input_controller_mock_.get());
+#if defined(ENABLE_INPUT_SPEECH)
   speech_input_controller_mock_.reset(
       WebKit::WebSpeechInputControllerMock::create(listener));
+#endif
   return speech_input_controller_mock_.get();
 }
 
@@ -620,95 +623,3 @@ WebKit::WebGeolocationClientMock* TestShell::geolocation_client_mock() {
   }
   return geolocation_client_mock_.get();
 }
-
-//-----------------------------------------------------------------------------
-
-namespace webkit_glue {
-
-bool IsProtocolSupportedForMedia(const GURL& url) {
-  if (url.SchemeIsFile() ||
-      url.SchemeIs("http") ||
-      url.SchemeIs("https") ||
-      url.SchemeIs("data"))
-    return true;
-  return false;
-}
-
-std::string GetWebKitLocale() {
-  return "en-US";
-}
-
-void CloseCurrentConnections() {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void SetCacheMode(bool enabled) {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void ClearCache(bool preserve_ssl_entries) {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void ClearHostResolverCache() {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void ClearPredictorCache() {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void EnableSpdy(bool enable) {
-  // Used in benchmarking,  Ignored for test_shell.
-}
-
-void UserMetricsRecordAction(const std::string& action) {
-}
-
-std::string GetProductVersion() {
-  return std::string("Chrome/0.0.0.0");
-}
-
-bool IsSingleProcess() {
-  return true;
-}
-
-bool LaunchSelLdr(const char* alleged_url, int socket_count, void* imc_handles,
-                  void* nacl_process_handle, int* nacl_process_id) {
-  return false;
-}
-
-#if defined(OS_LINUX)
-int MatchFontWithFallback(const std::string& face, bool bold,
-                          bool italic, int charset) {
-  return -1;
-}
-
-bool GetFontTable(int fd, uint32_t table, uint8_t* output,
-                  size_t* output_length) {
-  return false;
-}
-#endif
-
-void GetPlugins(bool refresh,
-                std::vector<webkit::npapi::WebPluginInfo>* plugins) {
-  webkit::npapi::PluginList::Singleton()->GetPlugins(refresh, plugins);
-  // Don't load the forked TestNetscapePlugIn in the chromium code, use
-  // the copy in webkit.org's repository instead.
-  const FilePath::StringType kPluginBlackList[] = {
-    FILE_PATH_LITERAL("npapi_layout_test_plugin.dll"),
-    FILE_PATH_LITERAL("WebKitTestNetscapePlugIn.plugin"),
-    FILE_PATH_LITERAL("libnpapi_layout_test_plugin.so"),
-  };
-  for (int i = plugins->size() - 1; i >= 0; --i) {
-    webkit::npapi::WebPluginInfo plugin_info = plugins->at(i);
-    for (size_t j = 0; j < arraysize(kPluginBlackList); ++j) {
-      if (plugin_info.path.BaseName() == FilePath(kPluginBlackList[j])) {
-        webkit::npapi::PluginList::Singleton()->DisablePlugin(plugin_info.path);
-        plugins->erase(plugins->begin() + i);
-      }
-    }
-  }
-}
-
-}  // namespace webkit_glue

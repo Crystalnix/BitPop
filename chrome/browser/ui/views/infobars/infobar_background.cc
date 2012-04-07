@@ -4,39 +4,23 @@
 
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
 
+#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia_paint.h"
-#include "third_party/skia/include/effects/SkGradientShader.h"
-#include "views/view.h"
+#include "ui/gfx/color_utils.h"
+#include "ui/views/view.h"
 
 InfoBarBackground::InfoBarBackground(InfoBarDelegate::Type infobar_type)
     : separator_color_(SK_ColorBLACK),
-      top_color_(GetTopColor(infobar_type)),
-      bottom_color_(GetBottomColor(infobar_type)) {
+      top_color_(GetInfoBarTopColor(infobar_type)),
+      bottom_color_(GetInfoBarBottomColor(infobar_type)) {
+  SetNativeControlColor(
+      color_utils::AlphaBlend(top_color_, bottom_color_, 128));
 }
 
 InfoBarBackground::~InfoBarBackground() {
-}
-
-SkColor InfoBarBackground::GetTopColor(InfoBarDelegate::Type infobar_type) {
-  static const SkColor kWarningBackgroundColorTop =
-      SkColorSetRGB(255, 242, 183);
-  static const SkColor kPageActionBackgroundColorTop =
-      SkColorSetRGB(218, 231, 249);
-
-  return (infobar_type == InfoBarDelegate::WARNING_TYPE) ?
-      kWarningBackgroundColorTop : kPageActionBackgroundColorTop;
-}
-
-SkColor InfoBarBackground::GetBottomColor(InfoBarDelegate::Type infobar_type) {
-  static const SkColor kWarningBackgroundColorBottom =
-      SkColorSetRGB(250, 230, 145);
-  static const SkColor kPageActionBackgroundColorBottom =
-      SkColorSetRGB(179, 202, 231);
-
-  return (infobar_type == InfoBarDelegate::WARNING_TYPE) ?
-      kWarningBackgroundColorBottom : kPageActionBackgroundColorBottom;
 }
 
 void InfoBarBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
@@ -58,8 +42,8 @@ void InfoBarBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   gradient_shader->unref();
 
   InfoBarView* infobar = static_cast<InfoBarView*>(view);
-  gfx::CanvasSkia* canvas_skia = canvas->AsCanvasSkia();
-  canvas_skia->drawPath(*infobar->fill_path(), paint);
+  SkCanvas* canvas_skia = canvas->GetSkCanvas();
+  canvas_skia->drawPath(infobar->fill_path(), paint);
 
   paint.setShader(NULL);
   paint.setColor(SkColorSetA(separator_color_,
@@ -69,11 +53,11 @@ void InfoBarBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   // degree angles, but don't anti-alias anything else, especially not the fill,
   // lest we get weird color bleeding problems.
   paint.setAntiAlias(true);
-  canvas_skia->drawPath(*infobar->stroke_path(), paint);
+  canvas_skia->drawPath(infobar->stroke_path(), paint);
   paint.setAntiAlias(false);
 
   // Now draw the separator at the bottom.
-  canvas->FillRectInt(separator_color_, 0,
-                      view->height() - InfoBar::kSeparatorLineHeight,
-                      view->width(), InfoBar::kSeparatorLineHeight);
+  canvas->FillRect(separator_color_,
+                   gfx::Rect(0, view->height() - InfoBar::kSeparatorLineHeight,
+                             view->width(), InfoBar::kSeparatorLineHeight));
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,8 @@
 //   class MyClass {
 //    public:
 //     void StartDoingStuff() {
-//       timer_.Start(TimeDelta::FromSeconds(1), this, &MyClass::DoStuff);
+//       timer_.Start(FROM_HERE, TimeDelta::FromSeconds(1),
+//                    this, &MyClass::DoStuff);
 //     }
 //     void StopDoingStuff() {
 //       timer_.Stop();
@@ -47,9 +48,9 @@
 // because they're flaky on the buildbot, but when you run them locally you
 // should be able to tell the difference.
 
-#include "base/base_api.h"
+#include "base/base_export.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/task.h"
 #include "base/time.h"
 
 class MessageLoop;
@@ -62,7 +63,7 @@ namespace base {
 //
 // This class exists to share code between BaseTimer<T> template instantiations.
 //
-class BASE_API BaseTimer_Helper {
+class BASE_EXPORT BaseTimer_Helper {
  public:
   // Stops the timer.
   ~BaseTimer_Helper() {
@@ -85,11 +86,17 @@ class BASE_API BaseTimer_Helper {
   BaseTimer_Helper() : delayed_task_(NULL) {}
 
   // We have access to the timer_ member so we can orphan this task.
-  class TimerTask : public Task {
+  class TimerTask {
    public:
-    explicit TimerTask(TimeDelta delay) : timer_(NULL), delay_(delay) {
+    TimerTask(const tracked_objects::Location& posted_from,
+              TimeDelta delay)
+        : posted_from_(posted_from),
+          timer_(NULL),
+          delay_(delay) {
     }
     virtual ~TimerTask() {}
+    virtual void Run() = 0;
+    tracked_objects::Location posted_from_;
     BaseTimer_Helper* timer_;
     TimeDelta delay_;
   };
@@ -116,9 +123,12 @@ class BaseTimer : public BaseTimer_Helper {
 
   // Call this method to start the timer.  It is an error to call this method
   // while the timer is already running.
-  void Start(TimeDelta delay, Receiver* receiver, ReceiverMethod method) {
+  void Start(const tracked_objects::Location& posted_from,
+             TimeDelta delay,
+             Receiver* receiver,
+             ReceiverMethod method) {
     DCHECK(!IsRunning());
-    InitiateDelayedTask(new TimerTask(delay, receiver, method));
+    InitiateDelayedTask(new TimerTask(posted_from, delay, receiver, method));
   }
 
   // Call this method to stop the timer.  It is a no-op if the timer is not
@@ -138,8 +148,11 @@ class BaseTimer : public BaseTimer_Helper {
 
   class TimerTask : public BaseTimer_Helper::TimerTask {
    public:
-    TimerTask(TimeDelta delay, Receiver* receiver, ReceiverMethod method)
-        : BaseTimer_Helper::TimerTask(delay),
+    TimerTask(const tracked_objects::Location& posted_from,
+              TimeDelta delay,
+              Receiver* receiver,
+              ReceiverMethod method)
+        : BaseTimer_Helper::TimerTask(posted_from, delay),
           receiver_(receiver),
           method_(method) {
     }
@@ -158,11 +171,11 @@ class BaseTimer : public BaseTimer_Helper {
         ResetBaseTimer();
       else
         ClearBaseTimer();
-      DispatchToMethod(receiver_, method_, Tuple0());
+      (receiver_->*method_)();
     }
 
     TimerTask* Clone() const {
-      return new TimerTask(delay_, receiver_, method_);
+      return new TimerTask(posted_from_, delay_, receiver_, method_);
     }
 
    private:
@@ -221,8 +234,12 @@ class DelayTimer {
  public:
   typedef void (Receiver::*ReceiverMethod)();
 
-  DelayTimer(TimeDelta delay, Receiver* receiver, ReceiverMethod method)
-      : receiver_(receiver),
+  DelayTimer(const tracked_objects::Location& posted_from,
+             TimeDelta delay,
+             Receiver* receiver,
+             ReceiverMethod method)
+      : posted_from_(posted_from),
+        receiver_(receiver),
         method_(method),
         delay_(delay) {
   }
@@ -242,7 +259,7 @@ class DelayTimer {
 
     // The timer isn't running, or will expire too late, so restart it.
     timer_.Stop();
-    timer_.Start(delay, this, &DelayTimer<Receiver>::Check);
+    timer_.Start(posted_from_, delay, this, &DelayTimer<Receiver>::Check);
   }
 
   void Check() {
@@ -259,6 +276,7 @@ class DelayTimer {
     (receiver_->*method_)();
   }
 
+  tracked_objects::Location posted_from_;
   Receiver *const receiver_;
   const ReceiverMethod method_;
   const TimeDelta delay_;

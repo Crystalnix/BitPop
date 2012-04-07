@@ -17,10 +17,26 @@
     <script type="text/javascript" src="js/bootstrap.js"></script>
     <script type="text/javascript" src="js/sidebar.js"></script>
   <title>chrome.experimental.* APIs - Google Chrome Extensions - Google Code</title></head>
-  <body>  <div id="gc-container" class="labs">
-      <div id="devModeWarning">
-        You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
-      </div>
+  <body>  <div id="devModeWarning" class="displayModeWarning">
+    You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
+  </div>
+  <div id="branchWarning" class="displayModeWarning">
+    <span>WARNING: This is the <span id="branchName">BETA</span> documentation.
+    It may not work with the stable release of Chrome.</span>
+    <select id="branchChooser">
+      <option>Choose a different version...
+      </option><option value="">Stable
+      </option><option value="beta">Beta
+      </option><option value="dev">Dev
+      </option><option value="trunk">Trunk
+    </option></select>
+  </div>
+  <div id="unofficialWarning" class="displayModeWarning">
+    <span>WARNING: This is unofficial documentation. It may not work with the
+    current release of Chrome.</span>
+    <button id="goToOfficialDocs">Go to the official docs</button>
+  </div>
+  <div id="gc-container" class="labs">
       <!-- SUBTEMPLATES: DO NOT MOVE FROM THIS LOCATION -->
       <!-- In particular, sub-templates that recurse, must be used by allowing
            jstemplate to make a copy of the template in this section which
@@ -107,6 +123,46 @@
             </div>
           </dl>
         </div>
+
+        <!-- Individual subsections from the table of contents -->
+        <ol>
+          <li id="propertiesTocTemplate">
+            <a href="#properties">Properties</a>
+            <ol>
+              <li>
+                <a href="#property-anchor">propertyName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="methodsTocTemplate">
+            <a>Methods</a>
+            <ol>
+              <li>
+                <a href="#method-anchor">methodName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="eventsTocTemplate">
+            <a>Events</a>
+            <ol>
+              <li>
+                <a href="#event-anchor">eventName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="typesTocTemplate">
+            <a href="#types">Types</a>
+            <ol>
+              <li>
+                <a href="#id-anchor">id</a>
+                <ol>
+                  <div></div>
+                  <div></div>
+                </ol>
+              </li>
+            </ol>
+          </li>
+        </ol>
       </div> <!-- /SUBTEMPLATES -->
 
   <a id="top"></a>
@@ -130,10 +186,10 @@
             </div>
           </form>
 
-          <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+          <script type="text/javascript" src="https://www.google.com/jsapi"></script>
           <script type="text/javascript">google.load("elements", "1", {packages: "transliteration"});</script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
         </td>
       </tr>
     </tbody></table>
@@ -158,6 +214,9 @@
           </li>
           <li id="group_link">
             <a href="http://groups.google.com/a/chromium.org/group/chromium-extensions" title="Google Chrome Extensions developer forum">Group</a>
+          </li>
+          <li id="so_link">
+            <a href="http://stackoverflow.com/questions/tagged/google-chrome-extension" title="[google-chrome-extension] tag on Stack Overflow">Questions?</a>
           </li>
         </ul>
       </div> <!-- end gc-topnav -->
@@ -186,6 +245,7 @@
                 <ul>
                   <li><a href="bookmarks.html">Bookmarks</a></li>
                   <li><a href="cookies.html">Cookies</a></li>
+                  <li><a href="devtools.html">Developer Tools</a></li>
                   <li><a href="events.html">Events</a></li>
                   <li><a href="history.html">History</a></li>
                   <li><a href="management.html">Management</a></li>
@@ -199,9 +259,9 @@
                   <li><a href="background_pages.html">Background Pages</a></li>
                   <li><a href="content_scripts.html">Content Scripts</a></li>
                   <li><a href="xhr.html">Cross-Origin XHR</a></li>
-                  <li><a href="idle.html">Idle</a></li>
                   <li><a href="i18n.html">Internationalization</a></li>
                   <li><a href="messaging.html">Message Passing</a></li>
+                  <li><a href="permissions.html">Optional Permissions</a></li>
                   <li><a href="npapi.html">NPAPI Plugins</a></li>
                 </ul>
               </li>
@@ -254,52 +314,40 @@
         <h1 class="page_title">chrome.experimental.* APIs</h1>
       </div>
         <!-- TABLE OF CONTENTS -->
-        <div id="toc" style="display: none; ">
+        <div id="toc">
           <h2>Contents</h2>
           <ol>
             <li>
-              <a>h2Name</a>
+              <a href="#overview">
+List of APIs
+</a>
               <ol>
-                <li>
+                <li style="display: none; ">
+                  <a>h3Name</a>
+                </li>
+              </ol>
+            </li><li>
+              <a href="#using">How to use experimental APIs</a>
+              <ol>
+                <li style="display: none; ">
+                  <a>h3Name</a>
+                </li>
+              </ol>
+            </li><li>
+              <a href="#other">More APIs</a>
+              <ol>
+                <li style="display: none; ">
                   <a>h3Name</a>
                 </li>
               </ol>
             </li>
-              <li>
+              <li style="display: none; ">
                 <a href="#apiReference">API reference</a>
                 <ol>
-                  <li>
-                    <a href="#properties">Properties</a>
-                    <ol>
-                      <li>
-                        <a href="#property-anchor">propertyName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Methods</a>
-                    <ol>
-                      <li>
-                        <a href="#method-anchor">methodName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Events</a>
-                    <ol>
-                      <li>
-                        <a href="#event-anchor">eventName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a href="#types">Types</a>
-                    <ol>
-                      <li>
-                        <a href="#id-anchor">id</a>
-                      </li>
-                    </ol>
-                  </li>
+                  <div></div>
+                  <div></div>
+                  <div></div>
+                  <div></div>
                 </ol>
               </li>
           </ol>
@@ -313,6 +361,29 @@
 
         <!-- STATIC CONTENT PLACEHOLDER -->
         <div id="static"><div id="pageData-name" class="pageData">chrome.experimental.* APIs</div>
+<div id="pageData-showTOC" class="pageData">true</div>
+
+<p>
+Before you start, <strong>choose the right version of this page.</strong>
+You should read either:
+</p>
+
+<ul>
+  <li> <a href="http://code.google.com/chrome/extensions/trunk/experimental.html">Most recent experimental APIs</a>
+  </li><li> <a href="http://code.google.com/chrome/extensions/dev/experimental.html">Dev channel experimental APIs</a></li>
+</ul>
+
+<p>
+For information about browser versions such as
+Canary (bleeding edge) and the Dev channel, see
+<a href="http://www.chromium.org/getting-involved/dev-channel">Chrome Release Channels</a>.
+For details about channel-specific docs,
+see <a href="docs.html#versions">Doc versions</a>.
+</p>
+
+<h2 id="overview">
+List of APIs
+</h2>
 
 <p>
 We'd like your <a href="http://groups.google.com/a/chromium.org/group/chromium-extensions/topics">feedback</a>
@@ -321,41 +392,50 @@ on the following experimental APIs:
 
 <ul>
   <li>
-  <a href="experimental.contentSettings.misc.html">experimental.contentSettings.misc</a></li><li>
-  <a href="experimental.debugger.html">experimental.debugger</a></li><li>
+  <a href="experimental.app.html">experimental.app</a></li><li>
+  <a href="experimental.clear.html">experimental.clear</a></li><li>
   <a href="experimental.devtools.audits.html">experimental.devtools.audits</a></li><li>
-  <a href="experimental.devtools.panels.html">experimental.devtools.panels</a></li><li>
-  <a href="experimental.devtools.resources.html">experimental.devtools.resources</a></li><li>
+  <a href="experimental.devtools.console.html">experimental.devtools.console</a></li><li>
   <a href="experimental.infobars.html">experimental.infobars</a></li><li>
-  <a href="experimental.processes.html">experimental.processes</a></li><li>
-  <a href="experimental.sidebar.html">experimental.sidebar</a></li><li>
-  <a href="experimental.tts.html">experimental.tts</a></li><li>
-  <a href="experimental.webNavigation.html">experimental.webNavigation</a></li><li>
-  <a href="experimental.webRequest.html">experimental.webRequest</a></li>
+  <a href="experimental.speechInput.html">experimental.speechInput</a></li><li>
+  <a href="experimental.storage.html">experimental.storage</a></li>
 </ul>
+
+<p>
+Pay special attention to the following APIs,
+which we expect to finalize soon:
+<b>devtools</b>,
+<b>infobars</b>,
+<b>permissions</b>,
+For examples of using the experimental APIs, see
+<a href="samples.html#experimental">Samples</a>.
+</p>
 
 <p class="warning">
 <b>Caution:</b>
 Don't depend on these experimental APIs.
 They might disappear,
 and they <em>will</em> change.
-Also, the Chrome Developer Dashboard doesn't allow you to
+Also, the Chrome Web Store doesn't allow you to
 upload extensions that use experimental APIs.
 </p>
+
 
 <h2 id="using">How to use experimental APIs</h2>
 
 <ol>
   <li>
-    Make sure you're using the
-<a href="http://www.chromium.org/getting-involved/dev-channel">Dev channel</a>
-    of Google Chrome.
+    Make sure you're using either
+    <a href="http://tools.google.com/dlpage/chromesxs">Canary</a>
+    (which you can use at the same time as other Chrome channels) or the
+<a href="http://www.chromium.org/getting-involved/dev-channel">Dev channel</a>.
     Although the experimental APIs might work in other versions,
     we need your feedback on the latest incarnation of the APIs,
-    which you can find on the Dev channel.
+    which you can find in Canary and on the Dev channel.
   </li>
   <li>
-    Using the
+    Using either the
+    <a href="http://code.google.com/chrome/extensions/trunk/experimental.html">most recent API documentation</a> (if you're using Canary) or the
     <a href="http://code.google.com/chrome/extensions/dev/experimental.html">API documentation for the Dev channel</a>,
     write the code for your extension.
   </li>
@@ -400,7 +480,7 @@ upload extensions that use experimental APIs.
   </li>
 </ol>
 
-<h2 id="other">More information</h2>
+<h2 id="other">More APIs</h2>
 
 <p>
 For information on the standard APIs that extensions can use, see
@@ -519,7 +599,7 @@ For information on the standard APIs that extensions can use, see
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>);
               </div>
 
               <div class="description">
@@ -598,8 +678,8 @@ For information on the standard APIs that extensions can use, see
   </p>
 
 <!-- begin analytics -->
-<script src="http://www.google-analytics.com/urchin.js" type="text/javascript"></script>
-<script src="http://www.google-analytics.com/ga.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/ga.js" type="text/javascript"></script>
 
 <script type="text/javascript">
   // chrome doc tracking

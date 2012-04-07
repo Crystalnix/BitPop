@@ -1,8 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/message_loop.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
@@ -16,22 +17,29 @@
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "net/test/test_server.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/views/find_bar_host.h"
-#include "views/focus/focus_manager.h"
+#include "ui/views/focus/focus_manager.h"
+#include "ui/views/widget/widget.h"
 #elif defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/slide_animator_gtk.h"
 #elif defined(OS_MACOSX)
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #endif
+
+using content::NavigationController;
+using content::WebContents;
 
 const std::string kSimplePage = "404_is_enough_for_us.html";
 const std::string kFramePage = "files/find_in_page/frames.html";
@@ -216,12 +224,12 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindInPageFrames) {
 }
 
 // Specifying a prototype so that we can add the WARN_UNUSED_RESULT attribute.
-bool FocusedOnPage(TabContents* tab_contents, std::string* result)
+bool FocusedOnPage(WebContents* web_contents, std::string* result)
     WARN_UNUSED_RESULT;
 
-bool FocusedOnPage(TabContents* tab_contents, std::string* result) {
+bool FocusedOnPage(WebContents* web_contents, std::string* result) {
   return ui_test_utils::ExecuteJavaScriptAndExtractString(
-      tab_contents->render_view_host(),
+      web_contents->GetRenderViewHost(),
       L"",
       L"window.domAutomationController.send(getFocusedElement());",
       result);
@@ -242,7 +250,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindInPageEndState) {
 
   // Verify that nothing has focus.
   std::string result;
-  ASSERT_TRUE(FocusedOnPage(tab_contents->tab_contents(), &result));
+  ASSERT_TRUE(FocusedOnPage(tab_contents->web_contents(), &result));
   ASSERT_STREQ("{nothing focused}", result.c_str());
 
   // Search for a text that exists within a link on the page.
@@ -256,7 +264,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindInPageEndState) {
       find_tab_helper()->StopFinding(FindBarController::kKeepSelection);
 
   // Verify that the link is focused.
-  ASSERT_TRUE(FocusedOnPage(tab_contents->tab_contents(), &result));
+  ASSERT_TRUE(FocusedOnPage(tab_contents->web_contents(), &result));
   EXPECT_STREQ("link1", result.c_str());
 
   // Search for a text that exists within a link on the page.
@@ -266,7 +274,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindInPageEndState) {
 
   // Move the selection to link 1, after searching.
   ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractString(
-      tab_contents->render_view_host(),
+      tab_contents->web_contents()->GetRenderViewHost(),
       L"",
       L"window.domAutomationController.send(selectLink1());",
       &result));
@@ -276,7 +284,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindInPageEndState) {
       find_tab_helper()->StopFinding(FindBarController::kKeepSelection);
 
   // Verify that link2 is not focused.
-  ASSERT_TRUE(FocusedOnPage(tab_contents->tab_contents(), &result));
+  ASSERT_TRUE(FocusedOnPage(tab_contents->web_contents(), &result));
   EXPECT_STREQ("", result.c_str());
 }
 
@@ -340,7 +348,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
   // Move the selection to link 1, after searching.
   std::string result;
   ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractString(
-      tab->render_view_host(),
+      tab->web_contents()->GetRenderViewHost(),
       L"",
       L"window.domAutomationController.send(selectLink1());",
       &result));
@@ -580,8 +588,13 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindDisappearOnNavigate) {
   EXPECT_TRUE(fully_visible);
 
   // Reload the tab and make sure Find window doesn't go away.
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<NavigationController>(
+          &browser()->GetSelectedTabContentsWrapper()->web_contents()->
+              GetController()));
   browser()->Reload(CURRENT_TAB);
-  ui_test_utils::WaitForNavigationInCurrentTab(browser());
+  observer.Wait();
 
   EXPECT_TRUE(GetFindBarWindowInfo(&position, &fully_visible));
   EXPECT_TRUE(fully_visible);
@@ -694,12 +707,20 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FindMovesWhenObscuring) {
 #if defined(OS_MACOSX)
 // FindNextInNewTabUsesPrepopulate times-out, at least on Mac.
 // See http://crbug.com/43070
-#define FindNextInNewTabUsesPrepopulate DISABLED_FindNextInNewTabUsesPrepopulate
+#define MAYBE_FindNextInNewTabUsesPrepopulate \
+    DISABLED_FindNextInNewTabUsesPrepopulate
+#elif defined(OS_WIN) || defined(USE_AURA)
+// Occasionally times-out on Windows or aura, too.
+// See http://crbug.com/43070
+#define MAYBE_FindNextInNewTabUsesPrepopulate \
+    DISABLED_FindNextInNewTabUsesPrepopulate
+#else
+#define MAYBE_FindNextInNewTabUsesPrepopulate FindNextInNewTabUsesPrepopulate
 #endif
 
 // Make sure F3 in a new tab works if Find has previous string to search for.
 IN_PROC_BROWSER_TEST_F(FindInPageControllerTest,
-                       FindNextInNewTabUsesPrepopulate) {
+                       MAYBE_FindNextInNewTabUsesPrepopulate) {
   ASSERT_TRUE(test_server()->Start());
 
   // First we navigate to any page.
@@ -743,20 +764,20 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, AcceleratorRestoring) {
   GURL url = test_server()->GetURL(kSimplePage);
   ui_test_utils::NavigateToURL(browser(), url);
 
-  views::FocusManager* focus_manager =
-      views::FocusManager::GetFocusManagerForNativeWindow(
-          browser()->window()->GetNativeHandle());
+  gfx::NativeWindow window = browser()->window()->GetNativeHandle();
+  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
+  views::FocusManager* focus_manager = widget->GetFocusManager();
 
   // See where Escape is registered.
-  views::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
-  views::AcceleratorTarget* old_target =
+  ui::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
+  ui::AcceleratorTarget* old_target =
       focus_manager->GetCurrentTargetForAccelerator(escape);
   EXPECT_TRUE(old_target != NULL);
 
   browser()->ShowFindBar();
 
   // Our Find bar should be the new target.
-  views::AcceleratorTarget* new_target =
+  ui::AcceleratorTarget* new_target =
       focus_manager->GetCurrentTargetForAccelerator(escape);
 
   EXPECT_TRUE(new_target != NULL);
@@ -768,6 +789,13 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, AcceleratorRestoring) {
 
   // The accelerator for Escape should be back to what it was before.
   EXPECT_EQ(old_target,
+            focus_manager->GetCurrentTargetForAccelerator(escape));
+
+  // Show find bar again with animation on, and the target should be
+  // on find bar.
+  DropdownBarHost::disable_animations_during_testing_ = false;
+  browser()->ShowFindBar();
+  EXPECT_EQ(new_target,
             focus_manager->GetCurrentTargetForAccelerator(escape));
 }
 #endif  // TOOLKIT_VIEWS
@@ -923,7 +951,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, PrepopulateInNewTab) {
   EXPECT_EQ(ASCIIToUTF16("1 of 1"), GetMatchCountText());
 
   // Now create a second tab and load the same page.
-  browser()->AddSelectedTabWithURL(url, PageTransition::TYPED);
+  browser()->AddSelectedTabWithURL(url, content::PAGE_TRANSITION_TYPED);
   TabContentsWrapper* tab2 = browser()->GetSelectedTabContentsWrapper();
   EXPECT_NE(tab1, tab2);
 
@@ -934,7 +962,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, PrepopulateInNewTab) {
   // in the first tab.
   EXPECT_EQ(ASCIIToUTF16("page"), GetFindBarText());
   // But it should not seem like a search has been issued.
-  EXPECT_EQ(ASCIIToUTF16(""), GetMatchCountText());
+  EXPECT_EQ(string16(), GetMatchCountText());
 }
 
 // This makes sure that we can search for A in tabA, then for B in tabB and
@@ -1039,9 +1067,12 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, MAYBE_NoIncognitoPrepopulate) {
   // Open a new incognito window and navigate to the same page.
   Profile* incognito_profile = browser()->profile()->GetOffTheRecordProfile();
   Browser* incognito_browser = Browser::Create(incognito_profile);
-  incognito_browser->AddSelectedTabWithURL(url, PageTransition::START_PAGE);
-  ui_test_utils::WaitForNavigation(
-      &incognito_browser->GetSelectedTabContents()->controller());
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
+  incognito_browser->AddSelectedTabWithURL(
+      url, content::PAGE_TRANSITION_START_PAGE);
+  observer.Wait();
   incognito_browser->window()->Show();
 
   // Open the find box and make sure that it is prepopulated with "page".
@@ -1060,7 +1091,7 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, MAYBE_NoIncognitoPrepopulate) {
       FindBarController::kKeepSelection);
 
   // Now open a new tab in the original (non-incognito) browser.
-  browser()->AddSelectedTabWithURL(url, PageTransition::TYPED);
+  browser()->AddSelectedTabWithURL(url, content::PAGE_TRANSITION_TYPED);
   TabContentsWrapper* tab2 = browser()->GetSelectedTabContentsWrapper();
   EXPECT_NE(tab1, tab2);
 
@@ -1084,8 +1115,12 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, ActivateLinkNavigatesPage) {
   EXPECT_EQ(ordinal, 1);
 
   // End the find session, click on the link.
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<NavigationController>(
+          &tab->web_contents()->GetController()));
   tab->find_tab_helper()->StopFinding(FindBarController::kActivateSelection);
-  EXPECT_TRUE(ui_test_utils::WaitForNavigationInCurrentTab(browser()));
+  observer.Wait();
 }
 
 // Tests that FindBar fits within a narrow browser window.
@@ -1093,12 +1128,13 @@ IN_PROC_BROWSER_TEST_F(FindInPageControllerTest, FitWindow) {
   Browser::CreateParams params(Browser::TYPE_POPUP, browser()->profile());
   params.initial_bounds = gfx::Rect(0, 0, 250, 500);
   Browser* popup = Browser::CreateWithParams(params);
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
   popup->AddSelectedTabWithURL(GURL(chrome::kAboutBlankURL),
-                               PageTransition::LINK);
-
+                               content::PAGE_TRANSITION_LINK);
   // Wait for the page to finish loading.
-  ui_test_utils::WaitForNavigation(
-      &popup->GetSelectedTabContents()->controller());
+  observer.Wait();
   popup->window()->Show();
 
   // On GTK, bounds change is asynchronous.

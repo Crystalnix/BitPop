@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,9 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop_proxy.h"
-#include "base/task.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/file_system_util.h"
@@ -138,7 +136,7 @@ class FileSystemQuotaClient::DeleteOriginTask
       scoped_refptr<MessageLoopProxy> file_message_loop,
       const GURL& origin,
       FileSystemType type,
-      DeletionCallback* callback)
+      const DeletionCallback& callback)
       : QuotaThreadTask(quota_client, file_message_loop),
         file_system_context_(quota_client->file_system_context_),
         origin_(origin),
@@ -158,14 +156,14 @@ class FileSystemQuotaClient::DeleteOriginTask
   }
 
   virtual void Completed() OVERRIDE {
-    callback_->Run(status_);
+    callback_.Run(status_);
   }
  private:
   FileSystemContext* file_system_context_;
   GURL origin_;
   FileSystemType type_;
   quota::QuotaStatusCode status_;
-  scoped_ptr<DeletionCallback> callback_;
+  DeletionCallback callback_;
 };
 
 FileSystemQuotaClient::FileSystemQuotaClient(
@@ -192,13 +190,12 @@ void FileSystemQuotaClient::OnQuotaManagerDestroyed() {
 void FileSystemQuotaClient::GetOriginUsage(
     const GURL& origin_url,
     StorageType storage_type,
-    GetUsageCallback* callback_ptr) {
-  DCHECK(callback_ptr);
-  scoped_ptr<GetUsageCallback> callback(callback_ptr);
+    const GetUsageCallback& callback) {
+  DCHECK(!callback.is_null());
 
   if (is_incognito_) {
     // We don't support FileSystem in incognito mode yet.
-    callback->Run(0);
+    callback.Run(0);
     return;
   }
 
@@ -206,7 +203,7 @@ void FileSystemQuotaClient::GetOriginUsage(
   DCHECK(type != kFileSystemTypeUnknown);
 
   if (pending_usage_callbacks_.Add(
-          std::make_pair(type, origin_url.spec()), callback.release())) {
+          std::make_pair(type, origin_url.spec()), callback)) {
     scoped_refptr<GetOriginUsageTask> task(
         new GetOriginUsageTask(this, file_message_loop_, origin_url, type));
     task->Start();
@@ -215,19 +212,20 @@ void FileSystemQuotaClient::GetOriginUsage(
 
 void FileSystemQuotaClient::GetOriginsForType(
     StorageType storage_type,
-    GetOriginsCallback* callback_ptr) {
+    const GetOriginsCallback& callback) {
+  DCHECK(!callback.is_null());
+
   std::set<GURL> origins;
-  scoped_ptr<GetOriginsCallback> callback(callback_ptr);
   if (is_incognito_) {
     // We don't support FileSystem in incognito mode yet.
-    callback->Run(origins);
+    callback.Run(origins, storage_type);
     return;
   }
 
   FileSystemType type = QuotaStorageTypeToFileSystemType(storage_type);
   DCHECK(type != kFileSystemTypeUnknown);
 
-  if (pending_origins_for_type_callbacks_.Add(type, callback.release())) {
+  if (pending_origins_for_type_callbacks_.Add(type, callback)) {
     scoped_refptr<GetOriginsForTypeTask> task(
         new GetOriginsForTypeTask(this, file_message_loop_, type));
     task->Start();
@@ -237,12 +235,13 @@ void FileSystemQuotaClient::GetOriginsForType(
 void FileSystemQuotaClient::GetOriginsForHost(
     StorageType storage_type,
     const std::string& host,
-    GetOriginsCallback* callback_ptr) {
+    const GetOriginsCallback& callback) {
+  DCHECK(!callback.is_null());
+
   std::set<GURL> origins;
-  scoped_ptr<GetOriginsCallback> callback(callback_ptr);
   if (is_incognito_) {
     // We don't support FileSystem in incognito mode yet.
-    callback->Run(origins);
+    callback.Run(origins, storage_type);
     return;
   }
 
@@ -250,7 +249,7 @@ void FileSystemQuotaClient::GetOriginsForHost(
   DCHECK(type != kFileSystemTypeUnknown);
 
   if (pending_origins_for_host_callbacks_.Add(
-          std::make_pair(type, host), callback.release())) {
+          std::make_pair(type, host), callback)) {
     scoped_refptr<GetOriginsForHostTask> task(
         new GetOriginsForHostTask(this, file_message_loop_,
                                   type, host));
@@ -260,7 +259,7 @@ void FileSystemQuotaClient::GetOriginsForHost(
 
 void FileSystemQuotaClient::DeleteOriginData(const GURL& origin,
                                              StorageType type,
-                                             DeletionCallback* callback) {
+                                             const DeletionCallback& callback) {
   FileSystemType fs_type = QuotaStorageTypeToFileSystemType(type);
   DCHECK(fs_type != kFileSystemTypeUnknown);
   scoped_refptr<DeleteOriginTask> task(
@@ -280,13 +279,15 @@ void FileSystemQuotaClient::DidGetOriginUsage(
 void FileSystemQuotaClient::DidGetOriginsForType(
     FileSystemType type, const std::set<GURL>& origins) {
   DCHECK(pending_origins_for_type_callbacks_.HasCallbacks(type));
-  pending_origins_for_type_callbacks_.Run(type, origins);
+  pending_origins_for_type_callbacks_.Run(type, origins,
+      FileSystemTypeToQuotaStorageType(type));
 }
 
 void FileSystemQuotaClient::DidGetOriginsForHost(
     const TypeAndHostOrOrigin& type_and_host, const std::set<GURL>& origins) {
   DCHECK(pending_origins_for_host_callbacks_.HasCallbacks(type_and_host));
-  pending_origins_for_host_callbacks_.Run(type_and_host, origins);
+  pending_origins_for_host_callbacks_.Run(type_and_host, origins,
+      FileSystemTypeToQuotaStorageType(type_and_host.first));
 }
 
 }  // namespace fileapi

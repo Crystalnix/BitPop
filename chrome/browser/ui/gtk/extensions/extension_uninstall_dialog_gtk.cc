@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -13,9 +13,9 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/gtk_util.h"
 
@@ -26,41 +26,61 @@ namespace {
 // Left or right margin.
 const int kPanelHorizMargin = 13;
 
-void OnResponse(GtkWidget* dialog, int response_id,
-                ExtensionUninstallDialog::Delegate* delegate) {
-  if (response_id == GTK_RESPONSE_ACCEPT)
-    delegate->ExtensionDialogAccepted();
-  else
-    delegate->ExtensionDialogCanceled();
+// GTK implementation of the uninstall dialog.
+class ExtensionUninstallDialogGtk : public ExtensionUninstallDialog {
+ public:
+  ExtensionUninstallDialogGtk(Profile* profile, Delegate* delegate);
+  virtual ~ExtensionUninstallDialogGtk() OVERRIDE;
 
-  gtk_widget_destroy(dialog);
-}
+ private:
+  virtual void Show() OVERRIDE;
 
-void ShowUninstallDialogGtk(GtkWindow* parent,
-                            SkBitmap* skia_icon,
-                            const Extension* extension,
-                            ExtensionUninstallDialog::Delegate *delegate) {
+  CHROMEGTK_CALLBACK_1(ExtensionUninstallDialogGtk, void, OnResponse, int);
+
+  GtkWidget* dialog_;
+};
+
+ExtensionUninstallDialogGtk::ExtensionUninstallDialogGtk(
+    Profile* profile, ExtensionUninstallDialog::Delegate* delegate)
+    : ExtensionUninstallDialog(profile, delegate),
+      dialog_(NULL) {}
+
+void ExtensionUninstallDialogGtk::Show() {
+  Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
+  if (!browser) {
+    delegate_->ExtensionUninstallCanceled();
+    return;
+  }
+
+  BrowserWindow* browser_window = browser->window();
+  if (!browser_window) {
+    delegate_->ExtensionUninstallCanceled();
+    return;
+  }
+
   // Build the dialog.
-  GtkWidget* dialog = gtk_dialog_new_with_buttons(
+  dialog_ = gtk_dialog_new_with_buttons(
       l10n_util::GetStringUTF8(IDS_EXTENSION_UNINSTALL_PROMPT_TITLE).c_str(),
-      parent,
+      browser_window->GetNativeHandle(),
       GTK_DIALOG_MODAL,
       GTK_STOCK_CANCEL,
       GTK_RESPONSE_CLOSE,
       l10n_util::GetStringUTF8(IDS_EXTENSION_PROMPT_UNINSTALL_BUTTON).c_str(),
       GTK_RESPONSE_ACCEPT,
       NULL);
-  gtk_dialog_set_has_separator(GTK_DIALOG(dialog), FALSE);
+#if !GTK_CHECK_VERSION(2, 22, 0)
+  gtk_dialog_set_has_separator(GTK_DIALOG(dialog_), FALSE);
+#endif
 
   // Create a two column layout.
-  GtkWidget* content_area = GTK_DIALOG(dialog)->vbox;
-  gtk_box_set_spacing(GTK_BOX(content_area), gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
 
-  GtkWidget* icon_hbox = gtk_hbox_new(FALSE, gtk_util::kContentAreaSpacing);
+  GtkWidget* icon_hbox = gtk_hbox_new(FALSE, ui::kContentAreaSpacing);
   gtk_box_pack_start(GTK_BOX(content_area), icon_hbox, TRUE, TRUE, 0);
 
   // Put Icon in the left column.
-  GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(skia_icon);
+  GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(&icon_);
   GtkWidget* icon = gtk_image_new_from_pixbuf(pixbuf);
   g_object_unref(pixbuf);
   gtk_box_pack_start(GTK_BOX(icon_hbox), icon, TRUE, TRUE, 0);
@@ -70,36 +90,44 @@ void ShowUninstallDialogGtk(GtkWindow* parent,
   gtk_box_pack_start(GTK_BOX(icon_hbox), right_column_area, TRUE, TRUE, 0);
 
   std::string heading_text = l10n_util::GetStringFUTF8(
-      IDS_EXTENSION_UNINSTALL_PROMPT_HEADING, UTF8ToUTF16(extension->name()));
+      IDS_EXTENSION_UNINSTALL_PROMPT_HEADING, UTF8ToUTF16(extension_->name()));
   GtkWidget* heading_label = gtk_label_new(heading_text.c_str());
   gtk_misc_set_alignment(GTK_MISC(heading_label), 0.0, 0.5);
   gtk_box_pack_start(GTK_BOX(right_column_area), heading_label, TRUE, TRUE, 0);
 
-  g_signal_connect(dialog, "response", G_CALLBACK(OnResponse), delegate);
-  gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
-  gtk_widget_show_all(dialog);
+  g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
+  gtk_window_set_resizable(GTK_WINDOW(dialog_), FALSE);
+  gtk_widget_show_all(dialog_);
+}
+
+ExtensionUninstallDialogGtk::~ExtensionUninstallDialogGtk() {
+  delegate_ = NULL;
+  if (dialog_) {
+    gtk_widget_destroy(dialog_);
+    dialog_ = NULL;
+  }
+}
+
+void ExtensionUninstallDialogGtk::OnResponse(
+    GtkWidget* dialog, int response_id) {
+  CHECK_EQ(dialog_, dialog);
+
+  gtk_widget_destroy(dialog_);
+  dialog_ = NULL;
+
+  if (delegate_) {
+    if (response_id == GTK_RESPONSE_ACCEPT)
+      delegate_->ExtensionUninstallAccepted();
+    else
+      delegate_->ExtensionUninstallCanceled();
+  }
 }
 
 }  // namespace
 
 // static
-void ExtensionUninstallDialog::Show(
-    Profile* profile,
-    ExtensionUninstallDialog::Delegate* delegate,
-    const Extension* extension,
-    SkBitmap* icon) {
-  Browser* browser = BrowserList::GetLastActiveWithProfile(profile);
-  if (!browser) {
-    delegate->ExtensionDialogCanceled();
-    return;
-  }
-
-  BrowserWindowGtk* browser_window = static_cast<BrowserWindowGtk*>(
-      browser->window());
-  if (!browser_window) {
-    delegate->ExtensionDialogCanceled();
-    return;
-  }
-
-  ShowUninstallDialogGtk(browser_window->window(), icon, extension, delegate);
+// Platform specific implementation of the uninstall dialog show method.
+ExtensionUninstallDialog* ExtensionUninstallDialog::Create(
+    Profile* profile, Delegate* delegate) {
+  return new ExtensionUninstallDialogGtk(profile, delegate);
 }

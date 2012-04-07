@@ -9,17 +9,15 @@
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
 #include "chrome/browser/ui/views/tab_icon_view.h"
-#include "views/controls/button/button.h"
-#include "views/window/non_client_view.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/window/non_client_view.h"
 
 class BrowserView;
-class TabContents;
 namespace gfx {
 class Font;
 }
 namespace views {
 class ImageButton;
-class ImageView;
 }
 // The frame view which is used for Application Panels.
 // TODO(rafaelw): Refactor. This shares much duplicated code with
@@ -46,7 +44,6 @@ class AppPanelBrowserFrameView : public BrowserNonClientFrameView,
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
   virtual void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask)
       OVERRIDE;
-  virtual void EnableClose(bool enable) OVERRIDE;
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
 
@@ -108,12 +105,6 @@ class AppPanelBrowserFrameView : public BrowserNonClientFrameView,
 
   // The Window icon.
   TabIconView* window_icon_;
-
-  // The frame that hosts this view.
-  BrowserFrame* frame_;
-
-  // The BrowserView hosted within this View.
-  BrowserView* browser_view_;
 
   // The bounds of the ClientView.
   gfx::Rect client_view_bounds_;

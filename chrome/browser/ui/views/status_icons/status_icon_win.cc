@@ -5,10 +5,13 @@
 #include "chrome/browser/ui/views/status_icons/status_icon_win.h"
 
 #include "base/sys_string_conversions.h"
+#include "base/win/windows_version.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/point.h"
-#include "views/controls/menu/menu_2.h"
+#if !defined(USE_AURA)
+#include "ui/views/controls/menu/menu_2.h"
+#endif
 
 StatusIconWin::StatusIconWin(UINT id, HWND window, UINT message)
     : icon_id_(id),
@@ -79,7 +82,8 @@ void StatusIconWin::SetToolTip(const string16& tool_tip) {
     LOG(WARNING) << "Unable to set tooltip for status tray icon";
 }
 
-void StatusIconWin::DisplayBalloon(const string16& title,
+void StatusIconWin::DisplayBalloon(const SkBitmap& icon,
+                                   const string16& title,
                                    const string16& contents) {
   NOTIFYICONDATA icon_data;
   InitIconData(&icon_data);
@@ -88,20 +92,38 @@ void StatusIconWin::DisplayBalloon(const string16& title,
   wcscpy_s(icon_data.szInfoTitle, title.c_str());
   wcscpy_s(icon_data.szInfo, contents.c_str());
   icon_data.uTimeout = 0;
+
+  base::win::Version win_version = base::win::OSInfo::GetInstance()->version();
+  if (!icon.empty() && win_version != base::win::VERSION_PRE_XP) {
+    balloon_icon_.Set(IconUtil::CreateHICONFromSkBitmap(icon));
+    if (win_version >= base::win::VERSION_VISTA) {
+      icon_data.hBalloonIcon = balloon_icon_.Get();
+      icon_data.dwInfoFlags = NIIF_USER | NIIF_LARGE_ICON;
+    } else {
+      icon_data.hIcon = balloon_icon_.Get();
+      icon_data.uFlags |= NIF_ICON;
+      icon_data.dwInfoFlags = NIIF_USER;
+    }
+  }
+
   BOOL result = Shell_NotifyIcon(NIM_MODIFY, &icon_data);
   if (!result)
     LOG(WARNING) << "Unable to create status tray balloon.";
 }
 
 void StatusIconWin::UpdatePlatformContextMenu(ui::MenuModel* menu) {
+#if defined(USE_AURA)
+  // crbug.com/99489.
+  NOTIMPLEMENTED();
+#else
   // If no items are passed, blow away our context menu.
   if (!menu) {
     context_menu_.reset();
     return;
   }
-
   // Create context menu with the new contents.
   context_menu_.reset(new views::Menu2(menu));
+#endif
 }
 
 void StatusIconWin::HandleClickEvent(int x, int y, bool left_mouse_click) {
@@ -110,7 +132,10 @@ void StatusIconWin::HandleClickEvent(int x, int y, bool left_mouse_click) {
     DispatchClickEvent();
     return;
   }
-
+#if defined(USE_AURA)
+  // crbug.com/99489.
+  NOTIMPLEMENTED();
+#else
   // Event not sent to the observer, so display the context menu if one exists.
   if (context_menu_.get()) {
     // Set our window as the foreground window, so the context menu closes when
@@ -118,10 +143,19 @@ void StatusIconWin::HandleClickEvent(int x, int y, bool left_mouse_click) {
     SetForegroundWindow(window_);
     context_menu_->RunContextMenuAt(gfx::Point(x, y));
   }
+#endif
 }
 
 void StatusIconWin::InitIconData(NOTIFYICONDATA* icon_data) {
-  icon_data->cbSize = sizeof(NOTIFYICONDATA);
+  if (base::win::OSInfo::GetInstance()->version() >=
+      base::win::VERSION_VISTA) {
+    memset(icon_data, 0, sizeof(NOTIFYICONDATA));
+    icon_data->cbSize = sizeof(NOTIFYICONDATA);
+  } else {
+    memset(icon_data, 0, NOTIFYICONDATA_V3_SIZE);
+    icon_data->cbSize = NOTIFYICONDATA_V3_SIZE;
+  }
+
   icon_data->hWnd = window_;
   icon_data->uID = icon_id_;
 }

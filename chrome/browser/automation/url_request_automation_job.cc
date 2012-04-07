@@ -4,26 +4,28 @@
 
 #include "chrome/browser/automation/url_request_automation_job.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
 #include "base/time.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
 #include "chrome/common/automation_messages.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/cookie_monster.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/http/http_response_headers.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
 #include "net/url_request/url_request_context.h"
 
 using base::Time;
 using base::TimeDelta;
+using content::BrowserThread;
 
 // The list of filtered headers that are removed from requests sent via
 // StartAsync(). These must be lower case.
@@ -33,6 +35,7 @@ static const char* const kFilteredHeaderStrings[] = {
   "expect",
   "max-forwards",
   "proxy-authorization",
+  "referer",
   "te",
   "upgrade",
   "via"
@@ -60,7 +63,7 @@ URLRequestAutomationJob::URLRequestAutomationJob(
       redirect_status_(0),
       request_id_(request_id),
       is_pending_(is_pending),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DVLOG(1) << "URLRequestAutomationJob create. Count: " << ++instance_count_;
   DCHECK(message_filter_ != NULL);
 
@@ -75,20 +78,18 @@ URLRequestAutomationJob::~URLRequestAutomationJob() {
   Cleanup();
 }
 
-bool URLRequestAutomationJob::EnsureProtocolFactoryRegistered() {
+void URLRequestAutomationJob::EnsureProtocolFactoryRegistered() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   if (!is_protocol_factory_registered_) {
     old_http_factory_ =
-        net::URLRequest::RegisterProtocolFactory(
+        net::URLRequest::Deprecated::RegisterProtocolFactory(
             "http", &URLRequestAutomationJob::Factory);
     old_https_factory_ =
-        net::URLRequest::RegisterProtocolFactory(
+        net::URLRequest::Deprecated::RegisterProtocolFactory(
             "https", &URLRequestAutomationJob::Factory);
     is_protocol_factory_registered_ = true;
   }
-
-  return true;
 }
 
 net::URLRequestJob* URLRequestAutomationJob::Factory(
@@ -99,9 +100,8 @@ net::URLRequestJob* URLRequestAutomationJob::Factory(
 
   // Returning null here just means that the built-in handler will be used.
   if (scheme_is_http || scheme_is_https) {
-    ResourceDispatcherHostRequestInfo* request_info = NULL;
-    if (request->GetUserData(NULL))
-      request_info = ResourceDispatcherHost::InfoForRequest(request);
+    ResourceDispatcherHostRequestInfo* request_info =
+        ResourceDispatcherHost::InfoForRequest(request);
     if (request_info) {
       int child_id = request_info->child_id();
       int route_id = request_info->route_id();
@@ -130,8 +130,8 @@ void URLRequestAutomationJob::Start() {
     // callbacks happen as they would for network requests.
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &URLRequestAutomationJob::StartAsync));
+        base::Bind(&URLRequestAutomationJob::StartAsync,
+                   weak_factory_.GetWeakPtr()));
   } else {
     // If this is a pending job, then register it immediately with the message
     // filter so it can be serviced later when we receive a request from the
@@ -169,8 +169,8 @@ bool URLRequestAutomationJob::ReadRawData(
   } else {
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &URLRequestAutomationJob::NotifyJobCompletionTask));
+        base::Bind(&URLRequestAutomationJob::NotifyJobCompletionTask,
+                   weak_factory_.GetWeakPtr()));
   }
   return false;
 }
@@ -271,11 +271,18 @@ void URLRequestAutomationJob::OnMessage(const IPC::Message& message) {
     return;
   }
 
-  IPC_BEGIN_MESSAGE_MAP(URLRequestAutomationJob, message)
+  bool deserialize_success = false;
+  IPC_BEGIN_MESSAGE_MAP_EX(URLRequestAutomationJob,
+                           message,
+                           deserialize_success)
     IPC_MESSAGE_HANDLER(AutomationMsg_RequestStarted, OnRequestStarted)
     IPC_MESSAGE_HANDLER(AutomationMsg_RequestData, OnDataAvailable)
     IPC_MESSAGE_HANDLER(AutomationMsg_RequestEnd, OnRequestEnd)
-  IPC_END_MESSAGE_MAP()
+  IPC_END_MESSAGE_MAP_EX()
+
+  if (!deserialize_success) {
+    LOG(ERROR) << "Failed to deserialize IPC message.";
+  }
 }
 
 void URLRequestAutomationJob::OnRequestStarted(
@@ -338,8 +345,8 @@ void URLRequestAutomationJob::OnRequestEnd(
   // so we don't.  We could possibly call OnSSLCertificateError with a NULL
   // certificate, but I'm not sure if all implementations expect it.
   // if (status.status() == net::URLRequestStatus::FAILED &&
-  //    net::IsCertificateError(status.os_error()) && request_->delegate()) {
-  //  request_->delegate()->OnSSLCertificateError(request_, status.os_error());
+  //    net::IsCertificateError(status.error()) && request_->delegate()) {
+  //  request_->delegate()->OnSSLCertificateError(request_, status.error());
   // }
 
   DisconnectFromMessageFilter();
@@ -447,14 +454,14 @@ void URLRequestAutomationJob::StartAsync() {
   }
 
   // Ask automation to start this request.
-  AutomationURLRequest automation_request(
-      request_->url().spec(),
-      request_->method(),
-      referrer.spec(),
-      new_request_headers.ToString(),
-      request_->get_upload(),
-      resource_type,
-      request_->load_flags());
+  AutomationURLRequest automation_request;
+  automation_request.url = request_->url().spec();
+  automation_request.method = request_->method();
+  automation_request.referrer = referrer.spec();
+  automation_request.extra_request_headers = new_request_headers.ToString();
+  automation_request.upload_data =request_->get_upload();
+  automation_request.resource_type = resource_type;
+  automation_request.load_flags = request_->load_flags();
 
   DCHECK(message_filter_);
   message_filter_->Send(new AutomationMsg_RequestStart(

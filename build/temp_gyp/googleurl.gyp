@@ -11,7 +11,6 @@
     {
       'target_name': 'googleurl',
       'type': '<(component)',
-      'msvs_guid': 'EF5E94AB-B646-4E5B-A058-52EF07B8351C',
       'dependencies': [
         '../../base/base.gyp:base',
         '../../third_party/icu/icu.gyp:icudata',
@@ -68,6 +67,7 @@
     },
     {
       'target_name': 'googleurl_unittests',
+      'type': 'executable',
       'dependencies': [
         'googleurl',
         '../../base/base.gyp:base_i18n',
@@ -95,22 +95,7 @@
             }],
           ],
         }],
-        # TODO(victorw): The unittest code uses inline functions that access
-        # global variables, it also uses internal functions that we may not want
-        # to export, so skip building unittests for component builds.
-        # The googleurl functions are tested by the static library build.
-        ['component=="shared_library"', {
-          'type': 'none',
-        }, {
-          'type': 'executable',
-        }],
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

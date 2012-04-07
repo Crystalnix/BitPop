@@ -35,6 +35,20 @@ class HistoryContentsProvider : public HistoryProvider {
   virtual void Stop() OVERRIDE;
 
  private:
+  // When processing the results from the history query, this structure points
+  // to a single result. It allows the results to be sorted and processed
+  // without modifying the larger and slower results structure.
+  struct MatchReference {
+    MatchReference(const history::URLResult* result,
+                   int relevance);
+
+    static bool CompareRelevance(const MatchReference& lhs,
+                                 const MatchReference& rhs);
+
+    const history::URLResult* result;
+    int relevance;  // Score of relevance computed by CalculateRelevance.
+  };
+
   virtual ~HistoryContentsProvider();
 
   void QueryComplete(HistoryService::Handle handle,
@@ -45,8 +59,7 @@ class HistoryContentsProvider : public HistoryProvider {
   void ConvertResults();
 
   // Creates and returns an AutocompleteMatch from a MatchingPageResult.
-  AutocompleteMatch ResultToMatch(const history::URLResult& result,
-                                  int score);
+  AutocompleteMatch ResultToMatch(const MatchReference& match_reference);
 
   // Adds ACMatchClassifications to match from the offset positions in
   // page_result.

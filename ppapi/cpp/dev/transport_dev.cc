@@ -23,22 +23,30 @@ template <> const char* interface_name<PPB_Transport_Dev>() {
 
 Transport_Dev::Transport_Dev(Instance* instance,
                              const char* name,
-                             const char* proto) {
+                             PP_TransportType type) {
   if (has_interface<PPB_Transport_Dev>())
     PassRefFromConstructor(get_interface<PPB_Transport_Dev>()->CreateTransport(
-        instance->pp_instance(), name, proto));
+        instance->pp_instance(), name, type));
 }
 
 bool Transport_Dev::IsWritable() {
   if (!has_interface<PPB_Transport_Dev>())
     return false;
-  return PPBoolToBool(
+  return PP_ToBool(
       get_interface<PPB_Transport_Dev>()->IsWritable(pp_resource()));
+}
+
+int32_t Transport_Dev::SetProperty(PP_TransportProperty property,
+                                   const Var& value) {
+  if (!has_interface<PPB_Transport_Dev>())
+    return PP_ERROR_NOINTERFACE;
+  return get_interface<PPB_Transport_Dev>()->SetProperty(
+      pp_resource(), property, value.pp_var());
 }
 
 int32_t Transport_Dev::Connect(const CompletionCallback& cc) {
   if (!has_interface<PPB_Transport_Dev>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Transport_Dev>()->Connect(
       pp_resource(), cc.pp_completion_callback());
 }
@@ -46,7 +54,7 @@ int32_t Transport_Dev::Connect(const CompletionCallback& cc) {
 int32_t Transport_Dev::GetNextAddress(Var* address,
                                       const CompletionCallback& cc) {
   if (!has_interface<PPB_Transport_Dev>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   PP_Var temp_address = PP_MakeUndefined();
   int32_t ret_val = get_interface<PPB_Transport_Dev>()->GetNextAddress(
       pp_resource(), &temp_address, cc.pp_completion_callback());
@@ -64,7 +72,7 @@ int32_t Transport_Dev::ReceiveRemoteAddress(const pp::Var& address) {
 int32_t Transport_Dev::Recv(void* data, uint32_t len,
                             const CompletionCallback& cc) {
   if (!has_interface<PPB_Transport_Dev>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Transport_Dev>()->Recv(
       pp_resource(), data, len, cc.pp_completion_callback());
 }
@@ -72,7 +80,7 @@ int32_t Transport_Dev::Recv(void* data, uint32_t len,
 int32_t Transport_Dev::Send(const void* data, uint32_t len,
                             const CompletionCallback& cc) {
   if (!has_interface<PPB_Transport_Dev>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Transport_Dev>()->Send(
       pp_resource(), data, len, cc.pp_completion_callback());
 }

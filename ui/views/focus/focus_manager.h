@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,14 @@
 
 #include <list>
 #include <map>
-#include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/singleton.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/views/events/accelerator.h"
-#include "ui/views/events/focus_event.h"
+#include "ui/views/events/event.h"
+#include "ui/views/views_export.h"
 
 // The FocusManager class is used to handle focus traversal, store/restore
 // focused views and handle keyboard accelerators.
@@ -55,23 +56,28 @@
 //   the focus traversal traverse down the focus hierarchy to enter the nested
 //   RootView. In the example mentioned above, the NativeControl overrides
 //   GetFocusTraversable() and returns hwnd_view_container_->GetRootView().
-// - call RootView::SetFocusTraversableParent() on the nested RootView and point
-//   it to the outter RootView. This is used when the focus goes out of the
+// - call Widget::SetFocusTraversableParent() on the nested RootView and point
+//   it to the outer RootView. This is used when the focus goes out of the
 //   nested RootView. In the example:
-//   hwnd_view_container_->GetRootView()->SetFocusTraversableParent(
+//   hwnd_view_container_->GetWidget()->SetFocusTraversableParent(
 //      native_control->GetRootView());
 // - call RootView::SetFocusTraversableParentView() on the nested RootView with
 //   the parent view that directly contains the native window. This is needed
 //   when traversing up from the nested RootView to know which view to start
 //   with when going to the next/previous view.
 //   In our example:
-//   hwnd_view_container_->GetRootView()->SetFocusTraversableParent(
+//   hwnd_view_container_->GetWidget()->SetFocusTraversableParent(
 //      native_control);
 //
 // Note that FocusTraversable do not have to be RootViews: AccessibleToolbarView
 // is FocusTraversable.
 
 namespace ui {
+class AcceleratorTarget;
+class AcceleratorManager;
+}
+
+namespace views {
 
 class FocusSearch;
 class RootView;
@@ -80,20 +86,20 @@ class Widget;
 
 // The FocusTraversable interface is used by components that want to process
 // focus traversal events (due to Tab/Shift-Tab key events).
-class FocusTraversable {
+class VIEWS_EXPORT FocusTraversable {
  public:
   // Return a FocusSearch object that implements the algorithm to find
   // the next or previous focusable view.
-  virtual const FocusSearch* GetFocusSearch() const = 0;
+  virtual FocusSearch* GetFocusSearch() = 0;
 
   // Should return the parent FocusTraversable.
   // The top RootView which is the top FocusTraversable returns NULL.
-  virtual FocusTraversable* GetFocusTraversableParent() const = 0;
+  virtual FocusTraversable* GetFocusTraversableParent() = 0;
 
   // This should return the View this FocusTraversable belongs to.
   // It is used when walking up the view hierarchy tree to find which view
   // should be used as the starting view for finding the next/previous view.
-  virtual View* GetFocusTraversableParentView() const = 0;
+  virtual View* GetFocusTraversableParentView() = 0;
 
  protected:
   virtual ~FocusTraversable() {}
@@ -101,73 +107,36 @@ class FocusTraversable {
 
 // This interface should be implemented by classes that want to be notified when
 // the focus is about to change.  See the Add/RemoveFocusChangeListener methods.
-class FocusChangeListener {
+class VIEWS_EXPORT FocusChangeListener {
  public:
-  virtual void FocusWillChange(View* focused_before, View* focused_now) = 0;
+  // No change to focus state has occurred yet when this function is called.
+  virtual void OnWillChangeFocus(View* focused_before, View* focused_now) = 0;
+
+  // Called after focus state has changed.
+  virtual void OnDidChangeFocus(View* focused_before, View* focused_now) = 0;
 
  protected:
   virtual ~FocusChangeListener() {}
 };
 
-// This interface should be implemented by classes that want to be notified when
-// the native focus is about to change.  Listeners implementing this interface
-// will be invoked for all native focus changes across the entire Chrome
-// application.  FocusChangeListeners are only called for changes within the
-// children of a single top-level native-view.
-class WidgetFocusChangeListener {
+class VIEWS_EXPORT FocusManager {
  public:
-  virtual void NativeFocusWillChange(gfx::NativeView focused_before,
-                                     gfx::NativeView focused_now) = 0;
+  // The reason why the focus changed.
+  enum FocusChangeReason {
+    // The focus changed because the user traversed focusable views using
+    // keys like Tab or Shift+Tab.
+    kReasonFocusTraversal,
 
- protected:
-  virtual ~WidgetFocusChangeListener() {}
-};
+    // The focus changed due to restoring the focus.
+    kReasonFocusRestore,
 
-class FocusManager {
- public:
-  class WidgetFocusManager {
-   public:
-    // Returns the singleton instance.
-    static WidgetFocusManager* GetInstance();
-
-    // Adds/removes a WidgetFocusChangeListener |listener| to the set of
-    // active listeners.
-    void AddFocusChangeListener(WidgetFocusChangeListener* listener);
-    void RemoveFocusChangeListener(WidgetFocusChangeListener* listener);
-
-    // To be called when native-focus shifts from |focused_before| to
-    // |focused_now|.
-    // TODO(port) : Invocations to this routine are only implemented for
-    // the Win32 platform.  Calls need to be placed appropriately for
-    // non-Windows environments.
-    void OnWidgetFocusEvent(gfx::NativeView focused_before,
-                            gfx::NativeView focused_now);
-
-    // Enable/Disable notification of registered listeners during calls
-    // to OnWidgetFocusEvent.  Used to prevent unwanted focus changes from
-    // propagating notifications.
-    void EnableNotifications() { enabled_ = true; }
-    void DisableNotifications() { enabled_ = false; }
-
-   private:
-    WidgetFocusManager();
-    ~WidgetFocusManager();
-
-    typedef std::vector<WidgetFocusChangeListener*>
-      WidgetFocusChangeListenerList;
-    WidgetFocusChangeListenerList focus_change_listeners_;
-
-    bool enabled_;
-
-    friend struct DefaultSingletonTraits<WidgetFocusManager>;
-    DISALLOW_COPY_AND_ASSIGN(WidgetFocusManager);
+    // The focus changed due to a click or a shortcut to jump directly to
+    // a particular view.
+    kReasonDirectFocusChange
   };
 
   explicit FocusManager(Widget* widget);
   virtual ~FocusManager();
-
-  // Returns the global WidgetFocusManager instance for the running application.
-  static WidgetFocusManager* GetWidgetFocusManager();
 
   // Processes the passed key event for accelerators and tab traversal.
   // Returns false if the event has been consumed and should not be processed
@@ -176,28 +145,26 @@ class FocusManager {
 
   // Returns true is the specified is part of the hierarchy of the window
   // associated with this FocusManager.
-  bool ContainsView(View* view) const;
-
-  // Stops tracking this View in the focus manager. If the View is focused,
-  // focus is cleared.
-  void RemoveView(View* view);
+  bool ContainsView(View* view);
 
   // Advances the focus (backward if reverse is true).
-  void AdvanceFocus(FocusEvent::TraversalDirection direction);
+  void AdvanceFocus(bool reverse);
 
   // The FocusManager keeps track of the focused view within a RootView.
-  View* focused_view() const { return focused_view_; }
+  View* GetFocusedView() { return focused_view_; }
+  const View* GetFocusedView() const { return focused_view_; }
 
-  // Low-level methods to force the focus to change. If the focus change should
-  // only happen if the view is currently focusable, enabled, and visible, call
-  // view->RequestFocus().
-  void SetFocusedViewWithReasonAndDirection(
-      View* view,
-      FocusEvent::Reason reason,
-      FocusEvent::TraversalDirection direction);
+  // Low-level methods to force the focus to change (and optionally provide
+  // a reason). If the focus change should only happen if the view is
+  // currenty focusable, enabled, and visible, call view->RequestFocus().
+  void SetFocusedViewWithReason(View* view, FocusChangeReason reason);
   void SetFocusedView(View* view) {
-    SetFocusedViewWithReasonAndDirection(view, FocusEvent::REASON_DIRECT,
-                                         FocusEvent::DIRECTION_NONE);
+    SetFocusedViewWithReason(view, kReasonDirectFocusChange);
+  }
+
+  // Get the reason why the focus most recently changed.
+  FocusChangeReason focus_change_reason() const {
+    return focus_change_reason_;
   }
 
   // Clears the focused view. The window associated with the top root view gets
@@ -208,6 +175,17 @@ class FocusManager {
   // attached to the window hierarchy anymore.
   void ValidateFocusedView();
 
+  // Stores and restores the focused view. Used when the window becomes
+  // active/inactive.
+  void StoreFocusedView();
+  void RestoreFocusedView();
+
+  // Clears the stored focused view.
+  void ClearStoredFocusedView();
+
+  // Returns true if in the process of changing the focused view.
+  bool is_changing_focus() const { return is_changing_focus_; }
+
   // Register a keyboard accelerator for the specified target. If multiple
   // targets are registered for an accelerator, a target registered later has
   // higher priority.
@@ -217,15 +195,15 @@ class FocusManager {
   // - the enter key
   // - any F key (F1, F2, F3 ...)
   // - any browser specific keys (as available on special keyboards)
-  void RegisterAccelerator(const Accelerator& accelerator,
-                           AcceleratorTarget* target);
+  void RegisterAccelerator(const ui::Accelerator& accelerator,
+                           ui::AcceleratorTarget* target);
 
   // Unregister the specified keyboard accelerator for the specified target.
-  void UnregisterAccelerator(const Accelerator& accelerator,
-                             AcceleratorTarget* target);
+  void UnregisterAccelerator(const ui::Accelerator& accelerator,
+                             ui::AcceleratorTarget* target);
 
   // Unregister all keyboard accelerator for the specified target.
-  void UnregisterAccelerators(AcceleratorTarget* target);
+  void UnregisterAccelerators(ui::AcceleratorTarget* target);
 
   // Activate the target associated with the specified accelerator.
   // First, AcceleratorPressed handler of the most recently registered target
@@ -233,7 +211,22 @@ class FocusManager {
   // this method immediately returns. If not, we do the same thing on the next
   // target, and so on.
   // Returns true if an accelerator was activated.
-  bool ProcessAccelerator(const Accelerator& accelerator);
+  bool ProcessAccelerator(const ui::Accelerator& accelerator);
+
+  // Resets menu key state if |event| is not menu key release.
+  // This is effective only on x11.
+  void MaybeResetMenuKeyState(const KeyEvent& key);
+
+#if defined(TOOLKIT_USES_GTK)
+  // Resets menu key state. TODO(oshima): Remove this when views/gtk is removed.
+  void ResetMenuKeyState();
+#endif
+
+  // Called by a RootView when a view within its hierarchy is removed
+  // from its parent. This will only be called by a RootView in a
+  // hierarchy of Widgets that this FocusManager is attached to the
+  // parent Widget of.
+  void ViewRemoved(View* removed);
 
   // Adds/removes a listener.  The FocusChangeListener is notified every time
   // the focused view is about to change.
@@ -243,27 +236,20 @@ class FocusManager {
   // Returns the AcceleratorTarget that should be activated for the specified
   // keyboard accelerator, or NULL if no view is registered for that keyboard
   // accelerator.
-  AcceleratorTarget* GetCurrentTargetForAccelerator(
-      const Accelerator& accelertor) const;
+  ui::AcceleratorTarget* GetCurrentTargetForAccelerator(
+      const ui::Accelerator& accelertor) const;
+
+  // Clears the native view having the focus.
+  virtual void ClearNativeFocus();
 
   // Convenience method that returns true if the passed |key_event| should
   // trigger tab traversal (if it is a TAB key press with or without SHIFT
   // pressed).
   static bool IsTabTraversalKeyEvent(const KeyEvent& key_event);
 
-  // Retrieves the FocusManager associated with the passed native view.
-  static FocusManager* GetFocusManagerForNativeView(
-      gfx::NativeView native_view);
-
-  // Retrieves the FocusManager associated with the passed native view.
-  static FocusManager* GetFocusManagerForNativeWindow(
-      gfx::NativeWindow native_window);
-
  private:
   // Returns the next focusable view.
-  View* GetNextFocusableView(View* starting_view,
-                             FocusEvent::TraversalDirection direction,
-                             bool dont_loop);
+  View* GetNextFocusableView(View* starting_view, bool reverse, bool dont_loop);
 
   // Returns the focusable view found in the FocusTraversable specified starting
   // at the specified view. This traverses down along the FocusTraversable
@@ -271,7 +257,7 @@ class FocusManager {
   // Returns NULL if no focusable view were found.
   View* FindFocusableView(FocusTraversable* focus_traversable,
                           View* starting_view,
-                          FocusEvent::TraversalDirection direction);
+                          bool reverse);
 
   // The top-level Widget this FocusManager is associated with.
   Widget* widget_;
@@ -279,33 +265,30 @@ class FocusManager {
   // The view that currently is focused.
   View* focused_view_;
 
-  // The accelerators and associated targets.
-  typedef std::list<AcceleratorTarget*> AcceleratorTargetList;
-  typedef std::map<Accelerator, AcceleratorTargetList> AcceleratorMap;
-  AcceleratorMap accelerators_;
+  // The AcceleratorManager this FocusManager is associated with.
+  scoped_ptr<ui::AcceleratorManager> accelerator_manager_;
+
+  // The storage id used in the ViewStorage to store/restore the view that last
+  // had focus.
+  int stored_focused_view_storage_id_;
+
+  // The reason why the focus most recently changed.
+  FocusChangeReason focus_change_reason_;
 
   // The list of registered FocusChange listeners.
-  typedef std::vector<FocusChangeListener*> FocusChangeListenerList;
-  FocusChangeListenerList focus_change_listeners_;
+  ObserverList<FocusChangeListener, true> focus_change_listeners_;
+
+#if defined(USE_X11)
+  // Indicates if we should handle the upcoming Alt key release event.
+  bool should_handle_menu_key_release_;
+#endif
+
+  // See description above getter.
+  bool is_changing_focus_;
 
   DISALLOW_COPY_AND_ASSIGN(FocusManager);
 };
 
-// A basic helper class that is used to disable native focus change
-// notifications within a scope.
-class AutoNativeNotificationDisabler {
- public:
-  AutoNativeNotificationDisabler() {
-    FocusManager::GetWidgetFocusManager()->DisableNotifications();
-  }
-
-  ~AutoNativeNotificationDisabler() {
-    FocusManager::GetWidgetFocusManager()->EnableNotifications();
-  }
- private:
-  DISALLOW_COPY_AND_ASSIGN(AutoNativeNotificationDisabler);
-};
-
-}  // namespace ui
+}  // namespace views
 
 #endif  // UI_VIEWS_FOCUS_FOCUS_MANAGER_H_

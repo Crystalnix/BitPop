@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,28 @@
 
 #if defined(ENABLE_GPU)
 
-#include <queue>
 #include <string>
 #include <vector>
 
+#include "base/id_map.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process.h"
-#include "base/task.h"
+#include "content/common/gpu/media/gpu_video_decode_accelerator.h"
+#include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
+#include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_message.h"
+#include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gfx/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/surface/transport_dib.h"
+
+#if defined(OS_MACOSX)
+#include "ui/gfx/surface/accelerated_surface_mac.h"
+#endif
 
 class GpuChannel;
 class GpuWatchdog;
@@ -32,66 +41,67 @@ class GpuCommandBufferStub
  public:
   GpuCommandBufferStub(
       GpuChannel* channel,
+      GpuCommandBufferStub* share_group,
       gfx::PluginWindowHandle handle,
-      GpuCommandBufferStub* parent,
       const gfx::Size& size,
-      const gpu::gles2::DisallowedExtensions& disallowed_extensions,
+      const gpu::gles2::DisallowedFeatures& disallowed_features,
       const std::string& allowed_extensions,
       const std::vector<int32>& attribs,
-      uint32 parent_texture_id,
+      gfx::GpuPreference gpu_preference,
       int32 route_id,
-      int32 renderer_id,
-      int32 render_view_id,
-      GpuWatchdog* watchdog);
+      int32 surface_id,
+      GpuWatchdog* watchdog,
+      bool software);
 
   virtual ~GpuCommandBufferStub();
 
   // IPC::Channel::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // IPC::Message::Sender implementation:
-  virtual bool Send(IPC::Message* msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
 
-  // Get the GLContext associated with this object.
+  // Whether this command buffer can currently handle IPC messages.
+  bool IsScheduled();
+
+  // Whether this command buffer needs to be polled again in the future.
+  bool HasMoreWork();
+
+  // Set the swap interval according to the command line.
+  void SetSwapInterval();
+
+  gpu::gles2::GLES2Decoder* decoder() const { return decoder_.get(); }
   gpu::GpuScheduler* scheduler() const { return scheduler_.get(); }
 
-  // Identifies the renderer process.
-  int32 renderer_id() const { return renderer_id_; }
-
-  // Identifies a particular renderer belonging to the same renderer process.
-  int32 render_view_id() const { return render_view_id_; }
+  // Identifies the target surface.
+  int32 surface_id() const { return surface_id_; }
 
   // Identifies the various GpuCommandBufferStubs in the GPU process belonging
   // to the same renderer process.
   int32 route_id() const { return route_id_; }
 
-#if defined(OS_WIN)
-  // Called only by the compositor window's window proc
-  void OnCompositorWindowPainted();
-#endif  // defined(OS_WIN)
+  gfx::GpuPreference gpu_preference() { return gpu_preference_; }
 
-  void ViewResized();
-
-#if defined(OS_MACOSX)
-  // Called only by the GpuChannel.
-  void AcceleratedSurfaceBuffersSwapped(uint64 swap_buffers_count);
-#endif  // defined(OS_MACOSX)
-
-  // Called when the command buffer was destroyed, and the stub should now
-  // unblock itself and handle pending messages.
-  void CommandBufferWasDestroyed();
+  // Sends a message to the console.
+  void SendConsoleMessage(int32 id, const std::string& message);
 
  private:
+  void Destroy();
+
+  // Cleans up and sends reply if OnInitialize failed.
+  void OnInitializeFailed(IPC::Message* reply_message);
+
   // Message handlers:
-  void OnInitialize(base::SharedMemoryHandle ring_buffer,
-                    int32 size,
-                    IPC::Message* reply_message);
+  void OnInitialize(IPC::Message* reply_message);
+  void OnSetGetBuffer(int32 shm_id, IPC::Message* reply_message);
+  void OnSetParent(int32 parent_route_id,
+                   uint32 parent_texture_id,
+                   IPC::Message* reply_message);
   void OnGetState(IPC::Message* reply_message);
-  void OnFlush(int32 put_offset,
-               int32 last_known_get,
-               uint32 flush_count,
-               IPC::Message* reply_message);
+  void OnGetStateFast(IPC::Message* reply_message);
   void OnAsyncFlush(int32 put_offset, uint32 flush_count);
+  void OnEcho(const IPC::Message& message);
+  void OnRescheduled();
   void OnCreateTransferBuffer(int32 size,
                               int32 id_request,
                               IPC::Message* reply_message);
@@ -101,20 +111,17 @@ class GpuCommandBufferStub
                                 IPC::Message* reply_message);
   void OnDestroyTransferBuffer(int32 id, IPC::Message* reply_message);
   void OnGetTransferBuffer(int32 id, IPC::Message* reply_message);
-  void OnResizeOffscreenFrameBuffer(const gfx::Size& size);
 
-  void OnSwapBuffers();
+  void OnCreateVideoDecoder(
+      media::VideoDecodeAccelerator::Profile profile,
+      IPC::Message* reply_message);
+  void OnDestroyVideoDecoder(int32 decoder_route_id);
+
+  void OnSetSurfaceVisible(bool visible);
+
   void OnCommandProcessed();
-  void HandleDeferredMessages();
-  void OnScheduled();
   void OnParseError();
 
-#if defined(OS_MACOSX)
-  void OnSetWindowSize(const gfx::Size& size);
-  void SwapBuffersCallback();
-#endif  // defined(OS_MACOSX)
-
-  void ResizeCallback(gfx::Size size);
   void ReportState();
 
   // The lifetime of objects of this class is managed by a GpuChannel. The
@@ -122,27 +129,38 @@ class GpuCommandBufferStub
   // are destroyed. So a raw pointer is safe.
   GpuChannel* channel_;
 
+  // The group of contexts that share namespaces with this context.
+  scoped_refptr<gpu::gles2::ContextGroup> context_group_;
+
   gfx::PluginWindowHandle handle_;
-  base::WeakPtr<GpuCommandBufferStub> parent_;
   gfx::Size initial_size_;
-  gpu::gles2::DisallowedExtensions disallowed_extensions_;
+  gpu::gles2::DisallowedFeatures disallowed_features_;
   std::string allowed_extensions_;
   std::vector<int32> requested_attribs_;
-  uint32 parent_texture_id_;
+  gfx::GpuPreference gpu_preference_;
   int32 route_id_;
+  bool software_;
   uint32 last_flush_count_;
 
-  // The following two fields are used on Mac OS X to identify the window
-  // for the rendering results on the browser side.
-  int32 renderer_id_;
-  int32 render_view_id_;
+  // Identifies the window for the rendering results on the browser side.
+  int32 surface_id_;
 
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
+  scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
   scoped_ptr<gpu::GpuScheduler> scheduler_;
-  std::queue<IPC::Message*> deferred_messages_;
+  scoped_refptr<gfx::GLContext> context_;
+  scoped_refptr<gfx::GLSurface> surface_;
+
+  // SetParent may be called before Initialize, in which case we need to keep
+  // around the parent stub, so that Initialize can set the parent correctly.
+  base::WeakPtr<GpuCommandBufferStub> parent_stub_for_initialization_;
+  uint32 parent_texture_for_initialization_;
 
   GpuWatchdog* watchdog_;
-  ScopedRunnableMethodFactory<GpuCommandBufferStub> task_factory_;
+
+  // Zero or more video decoders owned by this stub, keyed by their
+  // decoder_route_id.
+  IDMap<GpuVideoDecodeAccelerator, IDMapOwnPointer> video_decoders_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuCommandBufferStub);
 };

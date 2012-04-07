@@ -10,8 +10,12 @@
 #include <vector>
 
 #include "base/file_path.h"
-#include "base/scoped_ptr.h"
-#include "third_party/leveldb/include/leveldb/db.h"
+#include "base/memory/scoped_ptr.h"
+#include "third_party/leveldatabase/src/include/leveldb/db.h"
+
+namespace tracked_objects {
+class Location;
+}
 
 namespace fileapi {
 
@@ -30,7 +34,7 @@ class FileSystemOriginDatabase {
 
   // Only one instance of FileSystemOriginDatabase should exist for a given path
   // at a given time.
-  FileSystemOriginDatabase(const FilePath& path);
+  explicit FileSystemOriginDatabase(const FilePath& path);
   ~FileSystemOriginDatabase();
 
   bool HasOriginPath(const std::string& origin);
@@ -49,7 +53,8 @@ class FileSystemOriginDatabase {
 
  private:
   bool Init();
-  void HandleError(leveldb::Status status);
+  void HandleError(const tracked_objects::Location& from_here,
+                   leveldb::Status status);
   bool GetLastPathNumber(int* number);
 
   std::string path_;

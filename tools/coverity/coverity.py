@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -77,12 +77,14 @@ COVERITY_USER = 'admin'
 # Relative to CHROMIUM_SOURCE_DIR.  Contains the pid of this script.
 LOCK_FILE = 'coverity.lock'
 
+
 def _ReadPassword(pwfilename):
   """Reads the coverity password in from a file where it was stashed"""
   pwfile = open(pwfilename, 'r')
   password = pwfile.readline()
   pwfile.close()
   return password.rstrip()
+
 
 def _RunCommand(cmd, dry_run, shell=False, echo_cmd=True):
   """Runs the command if dry_run is false, otherwise just prints the command."""
@@ -93,12 +95,14 @@ def _RunCommand(cmd, dry_run, shell=False, echo_cmd=True):
   else:
     return 0
 
+
 def _ReleaseLock(lock_file, lock_filename):
   """Removes the lockfile. Function-ized so we can bail from anywhere"""
   os.close(lock_file)
   os.remove(lock_filename)
 
-def main(options, args):
+
+def run_coverity(options, args):
   """Runs all the selected tests for the given build type and target."""
   # Create the lock file to prevent another instance of this script from
   # running.
@@ -130,12 +134,12 @@ def main(options, args):
   if gclient_exit != 0:
     print 'gclient aborted with status %s' % gclient_exit
     _ReleaseLock(lock_file, lock_filename)
-    sys.exit(1)
+    return 1
 
   print 'Elapsed time: %ds' % (time.time() - start_time)
 
   # Do a clean build.  Remove the build output directory first.
-  if sys.platform == 'linux2':
+  if sys.platform.startswith('linux'):
     rm_path = os.path.join(options.source_dir,'src','out',options.target)
   elif sys.platform == 'win32':
     rm_path = os.path.join(options.source_dir,options.solution_dir,
@@ -145,7 +149,7 @@ def main(options, args):
   else:
     print 'Platform "%s" unrecognized, aborting' % sys.platform
     _ReleaseLock(lock_file, lock_filename)
-    sys.exit(1)
+    return 1
 
   if options.dry_run:
     print 'shutil.rmtree(%s)' % repr(rm_path)
@@ -165,7 +169,7 @@ def main(options, args):
   print 'Elapsed time: %ds' % (time.time() - start_time)
 
   use_shell_during_make = False
-  if sys.platform == 'linux2':
+  if sys.platform.startswith('linux'):
     use_shell_during_make = True
     os.chdir('src')
     _RunCommand('pwd', options.dry_run, shell=True)
@@ -229,7 +233,8 @@ def main(options, args):
 
   return 0
 
-if '__main__' == __name__:
+
+def main():
   option_parser = optparse.OptionParser()
   option_parser.add_option('', '--dry-run', action='store_true', default=False,
                            help='print but don\'t run the commands')
@@ -296,6 +301,8 @@ if '__main__' == __name__:
                            default=False)
 
   options, args = option_parser.parse_args()
+  return run_coverity(options, args)
 
-  result = main(options, args)
-  sys.exit(result)
+
+if '__main__' == __name__:
+  sys.exit(main())

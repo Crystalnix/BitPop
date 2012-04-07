@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,26 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
+#include "base/property_bag.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
+#include "chrome/browser/ui/dialog_style.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/webui/html_dialog_controller.h"
 #include "chrome/browser/ui/webui/html_dialog_tab_contents_delegate.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/native_web_keyboard_event.h"
+#include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/size.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 // Thin bridge that routes notifications to
 // HtmlDialogWindowController's member variables.
@@ -26,6 +35,7 @@ public:
   // All parameters must be non-NULL/non-nil.
   HtmlDialogWindowDelegateBridge(HtmlDialogWindowController* controller,
                                  Profile* profile,
+                                 Browser* browser,
                                  HtmlDialogUIDelegate* delegate);
 
   virtual ~HtmlDialogWindowDelegateBridge();
@@ -35,24 +45,36 @@ public:
   void WindowControllerClosed();
 
   // HtmlDialogUIDelegate declarations.
-  virtual bool IsDialogModal() const;
-  virtual std::wstring GetDialogTitle() const;
-  virtual GURL GetDialogContentURL() const;
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const;
-  virtual void GetDialogSize(gfx::Size* size) const;
-  virtual std::string GetDialogArgs() const;
-  virtual void OnDialogClosed(const std::string& json_retval);
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog) { }
-  virtual bool ShouldShowDialogTitle() const { return true; }
+      std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
+  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
+  virtual std::string GetDialogArgs() const OVERRIDE;
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnCloseContents(WebContents* source,
+                               bool* out_close_dialog) OVERRIDE;
+  virtual bool ShouldShowDialogTitle() const OVERRIDE { return true; }
 
   // HtmlDialogTabContentsDelegate declarations.
-  virtual void MoveContents(TabContents* source, const gfx::Rect& pos);
+  virtual void MoveContents(WebContents* source, const gfx::Rect& pos);
   virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+  virtual void CloseContents(WebContents* source) OVERRIDE;
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
 
 private:
   HtmlDialogWindowController* controller_;  // weak
   HtmlDialogUIDelegate* delegate_;  // weak, owned by controller_
+  HtmlDialogController* dialog_controller_;
 
   // Calls delegate_'s OnDialogClosed() exactly once, nulling it out
   // afterwards so that no other HtmlDialogUIDelegate calls are sent
@@ -74,19 +96,31 @@ private:
 
 namespace browser {
 
-gfx::NativeWindow ShowHtmlDialog(gfx::NativeWindow parent, Profile* profile,
-                                 HtmlDialogUIDelegate* delegate) {
-  // NOTE: Use the parent parameter once we implement modal dialogs.
-  return [HtmlDialogWindowController showHtmlDialog:delegate profile:profile];
+gfx::NativeWindow ShowHtmlDialog(gfx::NativeWindow parent,
+                                 Profile* profile,
+                                 Browser* browser,
+                                 HtmlDialogUIDelegate* delegate,
+                                 DialogStyle style) {
+  return [HtmlDialogWindowController showHtmlDialog:delegate
+      profile:profile
+      browser:browser];
+}
+
+void CloseHtmlDialog(gfx::NativeWindow window) {
+  [window performClose:nil];
 }
 
 }  // namespace html_dialog_window_controller
 
 HtmlDialogWindowDelegateBridge::HtmlDialogWindowDelegateBridge(
-    HtmlDialogWindowController* controller, Profile* profile,
+    HtmlDialogWindowController* controller,
+    Profile* profile,
+    Browser* browser,
     HtmlDialogUIDelegate* delegate)
     : HtmlDialogTabContentsDelegate(profile),
-      controller_(controller), delegate_(delegate) {
+      controller_(controller),
+      delegate_(delegate),
+      dialog_controller_(new HtmlDialogController(this, profile, browser)) {
   DCHECK(controller_);
   DCHECK(delegate_);
 }
@@ -95,6 +129,7 @@ HtmlDialogWindowDelegateBridge::~HtmlDialogWindowDelegateBridge() {}
 
 void HtmlDialogWindowDelegateBridge::WindowControllerClosed() {
   Detach();
+  delete dialog_controller_;
   controller_ = nil;
   DelegateOnDialogClosed("");
 }
@@ -115,16 +150,16 @@ bool HtmlDialogWindowDelegateBridge::DelegateOnDialogClosed(
 // All of these functions check for NULL first since delegate_ is set
 // to NULL when the window is closed.
 
-bool HtmlDialogWindowDelegateBridge::IsDialogModal() const {
+ui::ModalType HtmlDialogWindowDelegateBridge::GetDialogModalType() const {
   // TODO(akalin): Support modal dialog boxes.
-  if (delegate_ && delegate_->IsDialogModal()) {
+  if (delegate_ && delegate_->GetDialogModalType() != ui::MODAL_TYPE_NONE) {
     LOG(WARNING) << "Modal HTML dialogs are not supported yet";
   }
-  return false;
+  return ui::MODAL_TYPE_NONE;
 }
 
-std::wstring HtmlDialogWindowDelegateBridge::GetDialogTitle() const {
-  return delegate_ ? delegate_->GetDialogTitle() : L"";
+string16 HtmlDialogWindowDelegateBridge::GetDialogTitle() const {
+  return delegate_ ? delegate_->GetDialogTitle() : string16();
 }
 
 GURL HtmlDialogWindowDelegateBridge::GetDialogContentURL() const {
@@ -165,7 +200,51 @@ void HtmlDialogWindowDelegateBridge::OnDialogClosed(
   controller_ = nil;
 }
 
-void HtmlDialogWindowDelegateBridge::MoveContents(TabContents* source,
+void HtmlDialogWindowDelegateBridge::OnCloseContents(WebContents* source,
+                                                     bool* out_close_dialog) {
+  if (out_close_dialog)
+    *out_close_dialog = true;
+}
+
+void HtmlDialogWindowDelegateBridge::CloseContents(WebContents* source) {
+  bool close_dialog = false;
+  OnCloseContents(source, &close_dialog);
+  if (close_dialog)
+    OnDialogClosed(std::string());
+}
+
+content::WebContents* HtmlDialogWindowDelegateBridge::OpenURLFromTab(
+    content::WebContents* source,
+    const content::OpenURLParams& params) {
+  content::WebContents* new_contents = NULL;
+  if (delegate_ &&
+      delegate_->HandleOpenURLFromTab(source, params, &new_contents)) {
+    return new_contents;
+  }
+  return HtmlDialogTabContentsDelegate::OpenURLFromTab(source, params);
+}
+
+void HtmlDialogWindowDelegateBridge::AddNewContents(
+    content::WebContents* source,
+    content::WebContents* new_contents,
+    WindowOpenDisposition disposition,
+    const gfx::Rect& initial_pos,
+    bool user_gesture) {
+  if (delegate_ && delegate_->HandleAddNewContents(
+          source, new_contents, disposition, initial_pos, user_gesture)) {
+    return;
+  }
+  HtmlDialogTabContentsDelegate::AddNewContents(
+      source, new_contents, disposition, initial_pos, user_gesture);
+}
+
+void HtmlDialogWindowDelegateBridge::LoadingStateChanged(
+    content::WebContents* source) {
+  if (delegate_)
+    delegate_->OnLoadingStateChanged(source);
+}
+
+void HtmlDialogWindowDelegateBridge::MoveContents(WebContents* source,
                                                   const gfx::Rect& pos) {
   // TODO(akalin): Actually set the window bounds.
 }
@@ -217,28 +296,28 @@ void HtmlDialogWindowDelegateBridge::HandleKeyboardEvent(
 // in once we implement modal dialogs.
 
 + (NSWindow*)showHtmlDialog:(HtmlDialogUIDelegate*)delegate
-                    profile:(Profile*)profile {
+                    profile:(Profile*)profile
+                    browser:(Browser*)browser {
   HtmlDialogWindowController* htmlDialogWindowController =
     [[HtmlDialogWindowController alloc] initWithDelegate:delegate
-                                                 profile:profile];
+                                                 profile:profile
+                                                 browser:browser];
   [htmlDialogWindowController loadDialogContents];
   [htmlDialogWindowController showWindow:nil];
   return [htmlDialogWindowController window];
 }
 
 - (id)initWithDelegate:(HtmlDialogUIDelegate*)delegate
-               profile:(Profile*)profile {
+               profile:(Profile*)profile
+               browser:(Browser*)browser {
   DCHECK(delegate);
   DCHECK(profile);
 
   gfx::Size dialogSize;
   delegate->GetDialogSize(&dialogSize);
   NSRect dialogRect = NSMakeRect(0, 0, dialogSize.width(), dialogSize.height());
-  // TODO(akalin): Make the window resizable (but with the minimum size being
-  // dialog_size and always on top (but not modal) to match the Windows
-  // behavior.  On the other hand, the fact that HTML dialogs on Windows
-  // are resizable could just be an accident.  Investigate futher...
-  NSUInteger style = NSTitledWindowMask | NSClosableWindowMask;
+  NSUInteger style = NSTitledWindowMask | NSClosableWindowMask |
+      NSResizableWindowMask;
   scoped_nsobject<ChromeEventProcessingWindow> window(
       [[ChromeEventProcessingWindow alloc]
            initWithContentRect:dialogRect
@@ -254,25 +333,31 @@ void HtmlDialogWindowDelegateBridge::HandleKeyboardEvent(
   }
   [window setWindowController:self];
   [window setDelegate:self];
-  [window setTitle:base::SysWideToNSString(delegate->GetDialogTitle())];
+  [window setTitle:base::SysUTF16ToNSString(delegate->GetDialogTitle())];
+  [window setMinSize:dialogRect.size];
   [window center];
-  delegate_.reset(new HtmlDialogWindowDelegateBridge(self, profile, delegate));
+  delegate_.reset(
+      new HtmlDialogWindowDelegateBridge(self, profile, browser, delegate));
   return self;
 }
 
 - (void)loadDialogContents {
-  tabContents_.reset(new TabContents(
-      delegate_->profile(), NULL, MSG_ROUTING_NONE, NULL, NULL));
-  [[self window] setContentView:tabContents_->GetNativeView()];
-  tabContents_->set_delegate(delegate_.get());
+  contentsWrapper_.reset(new TabContentsWrapper(WebContents::Create(
+      delegate_->profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
+  [[self window]
+      setContentView:contentsWrapper_->web_contents()->GetNativeView()];
+  contentsWrapper_->web_contents()->SetDelegate(delegate_.get());
 
   // This must be done before loading the page; see the comments in
   // HtmlDialogUI.
-  HtmlDialogUI::GetPropertyAccessor().SetProperty(tabContents_->property_bag(),
-                                                  delegate_.get());
+  HtmlDialogUI::GetPropertyAccessor().SetProperty(
+      contentsWrapper_->web_contents()->GetPropertyBag(), delegate_.get());
 
-  tabContents_->controller().LoadURL(delegate_->GetDialogContentURL(),
-                                      GURL(), PageTransition::START_PAGE);
+  contentsWrapper_->web_contents()->GetController().LoadURL(
+      delegate_->GetDialogContentURL(),
+      content::Referrer(),
+      content::PAGE_TRANSITION_START_PAGE,
+      std::string());
 
   // TODO(akalin): add accelerator for ESC to close the dialog box.
   //

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,15 +8,15 @@
 
 #include "chrome/browser/history/text_database.h"
 
-#include "app/sql/statement.h"
-#include "app/sql/transaction.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
 #include "base/string_number_conversions.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
+#include "sql/statement.h"
+#include "sql/transaction.h"
 
 // There are two tables in each database, one full-text search (FTS) table which
 // indexes the contents and title of the pages. The other is a regular SQLITE
@@ -111,9 +111,14 @@ TextDatabase::DBIdent TextDatabase::FileNameToID(const FilePath& file_path) {
     return 0;
   }
 
+  // TODO: Once StringPiece supports a templated interface over the
+  // underlying string type, use it here instead of substr, since that
+  // will avoid needless string copies.  StringPiece cannot be used
+  // right now because FilePath::StringType could use either 8 or 16 bit
+  // characters, depending on the OS.
   int year, month;
-  base::StringToInt(suffix.begin(), suffix.begin() + 4, &year);
-  base::StringToInt(suffix.begin() + 5, suffix.begin() + 7, &month);
+  base::StringToInt(suffix.substr(0, 4), &year);
+  base::StringToInt(suffix.substr(5, 2), &month);
 
   return year * 100 + month;
 }
@@ -196,10 +201,8 @@ bool TextDatabase::CreateTables() {
       return false;
   }
 
-  // Create the index. This will fail when the index already exists, so we just
-  // ignore the error.
-  db_.Execute("CREATE INDEX info_time ON info(time)");
-  return true;
+  // Create the index.
+  return db_.Execute("CREATE INDEX IF NOT EXISTS info_time ON info(time)");
 }
 
 bool TextDatabase::AddPageData(base::Time time,
@@ -213,33 +216,22 @@ bool TextDatabase::AddPageData(base::Time time,
   // Add to the pages table.
   sql::Statement add_to_pages(db_.GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO pages (url, title, body) VALUES (?,?,?)"));
-  if (!add_to_pages) {
-    NOTREACHED() << db_.GetErrorMessage();
-    return false;
-  }
   add_to_pages.BindString(0, url);
   add_to_pages.BindString(1, title);
   add_to_pages.BindString(2, contents);
-  if (!add_to_pages.Run()) {
-    NOTREACHED() << db_.GetErrorMessage();
+  if (!add_to_pages.Run())
     return false;
-  }
 
   int64 rowid = db_.GetLastInsertRowId();
 
   // Add to the info table with the same rowid.
   sql::Statement add_to_info(db_.GetCachedStatement(SQL_FROM_HERE,
       "INSERT INTO info (rowid, time) VALUES (?,?)"));
-  if (!add_to_info) {
-    NOTREACHED() << db_.GetErrorMessage();
-    return false;
-  }
   add_to_info.BindInt64(0, rowid);
   add_to_info.BindInt64(1, time.ToInternalValue());
-  if (!add_to_info.Run()) {
-    NOTREACHED() << db_.GetErrorMessage();
+
+  if (!add_to_info.Run())
     return false;
-  }
 
   return committer.Commit();
 }
@@ -252,10 +244,9 @@ void TextDatabase::DeletePageData(base::Time time, const std::string& url) {
       "SELECT info.rowid "
       "FROM info JOIN pages ON info.rowid = pages.rowid "
       "WHERE info.time=? AND pages.url=?"));
-  if (!select_ids)
-    return;
   select_ids.BindInt64(0, time.ToInternalValue());
   select_ids.BindString(1, url);
+
   std::set<int64> rows_to_delete;
   while (select_ids.Step())
     rows_to_delete.insert(select_ids.ColumnInt64(0));
@@ -263,30 +254,24 @@ void TextDatabase::DeletePageData(base::Time time, const std::string& url) {
   // Delete from the pages table.
   sql::Statement delete_page(db_.GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM pages WHERE rowid=?"));
-  if (!delete_page)
-    return;
+
   for (std::set<int64>::const_iterator i = rows_to_delete.begin();
        i != rows_to_delete.end(); ++i) {
     delete_page.BindInt64(0, *i);
-    if (!delete_page.Run()) {
-      NOTREACHED();
+    if (!delete_page.Run())
       return;
-    }
     delete_page.Reset();
   }
 
   // Delete from the info table.
   sql::Statement delete_info(db_.GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM info WHERE rowid=?"));
-  if (!delete_info)
-    return;
+
   for (std::set<int64>::const_iterator i = rows_to_delete.begin();
        i != rows_to_delete.end(); ++i) {
     delete_info.BindInt64(0, *i);
-    if (!delete_info.Run()) {
-      NOTREACHED();
+    if (!delete_info.Run())
       return;
-    }
     delete_info.Reset();
   }
 }
@@ -294,8 +279,6 @@ void TextDatabase::DeletePageData(base::Time time, const std::string& url) {
 void TextDatabase::Optimize() {
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE,
       "SELECT OPTIMIZE(pages) FROM pages LIMIT 1"));
-  if (!statement)
-    return;
   statement.Run();
 }
 
@@ -313,8 +296,6 @@ void TextDatabase::GetTextMatches(const std::string& query,
   sql += options.body_only ? "body " : "pages ";
   sql += "MATCH ? AND time >= ? AND time < ? ORDER BY time DESC LIMIT ?";
   sql::Statement statement(db_.GetCachedStatement(SQL_FROM_HERE, sql.c_str()));
-  if (!statement)
-    return;
 
   // When their values indicate "unspecified", saturate the numbers to the max
   // or min to get the correct result.

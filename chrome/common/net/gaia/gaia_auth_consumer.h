@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,10 +42,21 @@ class GaiaAuthConsumer {
   virtual void OnIssueAuthTokenFailure(const std::string& service,
                                        const GoogleServiceAuthError& error) {}
 
+  virtual void OnOAuthLoginTokenSuccess(const std::string& refresh_token,
+                                        const std::string& access_token,
+                                        int expires_in_secs) {}
+  virtual void OnOAuthLoginTokenFailure(const GoogleServiceAuthError& error) {}
+
   virtual void OnGetUserInfoSuccess(const std::string& key,
                                     const std::string& value) {}
   virtual void OnGetUserInfoKeyNotFound(const std::string& key) {}
   virtual void OnGetUserInfoFailure(const GoogleServiceAuthError& error) {}
+
+  virtual void OnTokenAuthSuccess(const std::string& data) {}
+  virtual void OnTokenAuthFailure(const GoogleServiceAuthError& error) {}
+
+  virtual void OnMergeSessionSuccess(const std::string& data) {}
+  virtual void OnMergeSessionFailure(const GoogleServiceAuthError& error) {}
 };
 
 #endif  // CHROME_COMMON_NET_GAIA_GAIA_AUTH_CONSUMER_H_

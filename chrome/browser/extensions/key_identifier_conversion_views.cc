@@ -8,9 +8,11 @@
 
 #include "base/basictypes.h"
 #include "base/hash_tables.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "ui/base/keycodes/keyboard_codes.h"
-#include "views/events/event.h"
+#include "ui/views/events/event.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -42,7 +44,7 @@ static const KeyIdentifier kKeyIdentifiers[] = {
   { {"Attn", "", ""}, ui::VKEY_ATTN, 0 },
   { {"BrowserBack", "", ""}, ui::VKEY_BROWSER_BACK, 0 },
   { {"BrowserFavorites", "", ""}, ui::VKEY_BROWSER_FAVORITES, 0 },
-  { {"BrowserForward", "", ""}, ui::VKEY_BROWSER_FAVORITES, 0 },
+  { {"BrowserForward", "", ""}, ui::VKEY_BROWSER_FORWARD, 0 },
   { {"BrowserHome", "", ""}, ui::VKEY_BROWSER_HOME, 0 },
   { {"BrowserRefresh", "", ""}, ui::VKEY_BROWSER_REFRESH, 0 },
   { {"BrowserSearch", "", ""}, ui::VKEY_BROWSER_SEARCH, 0 },

@@ -4,68 +4,69 @@
 
 #include "chrome/browser/chromeos/login/ownership_status_checker.h"
 
-#include "content/browser/browser_thread.h"
+#include "base/bind.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
-OwnershipStatusChecker::OwnershipStatusChecker(Callback* callback)
-    : core_(new Core(callback)) {
-  core_->Check();
+OwnershipStatusChecker::OwnershipStatusChecker() {
 }
 
 OwnershipStatusChecker::~OwnershipStatusChecker() {
-  core_->Cancel();
+  if (core_.get())
+    core_->Cancel();
 }
 
-OwnershipStatusChecker::Core::Core(Callback* callback)
+void OwnershipStatusChecker::Check(const Callback& callback) {
+  // If already called once cancel the old callback.
+  if (core_.get())
+    core_->Cancel();
+  core_ = new Core(callback);
+  core_->Check();
+}
+
+OwnershipStatusChecker::Core::Core(const Callback& callback)
     : callback_(callback),
-      origin_loop_(base::MessageLoopProxy::CreateForCurrentThread()) {
+      origin_loop_(base::MessageLoopProxy::current()) {
 }
 
 OwnershipStatusChecker::Core::~Core() {}
 
 void OwnershipStatusChecker::Core::Check() {
   DCHECK(origin_loop_->BelongsToCurrentThread());
-  OwnershipService::Status status =
-      OwnershipService::GetSharedInstance()->GetStatus(false);
-  if (status != OwnershipService::OWNERSHIP_UNKNOWN) {
-    // Take a spin on the message loop in order to avoid reentrancy in callers.
-    origin_loop_->PostTask(
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &OwnershipStatusChecker::Core::ReportResult,
-                          status));
-  } else {
-    // Switch to the file thread to make the blocking call.
-    BrowserThread::PostTask(
-        BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(this,
-                          &OwnershipStatusChecker::Core::CheckOnFileThread));
-  }
+  // We can only report the status after executing code on the file thread
+  // because checking whether the current user is owner needs file access.
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&OwnershipStatusChecker::Core::CheckOnFileThread, this));
 }
 
 void OwnershipStatusChecker::Core::Cancel() {
   DCHECK(origin_loop_->BelongsToCurrentThread());
-  callback_.reset();
+  callback_.Reset();
 }
 
 void OwnershipStatusChecker::Core::CheckOnFileThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   OwnershipService::Status status =
-      OwnershipService::GetSharedInstance()->GetStatus(true);
+      OwnershipService::GetSharedInstance()->IsAlreadyOwned() ?
+          OwnershipService::OWNERSHIP_TAKEN : OwnershipService::OWNERSHIP_NONE;
+  bool current_user_is_owner =
+      OwnershipService::GetSharedInstance()->CurrentUserIsOwner();
   origin_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &OwnershipStatusChecker::Core::ReportResult,
-                        status));
+      base::Bind(&OwnershipStatusChecker::Core::ReportResult, this, status,
+                 current_user_is_owner));
 }
 
 void OwnershipStatusChecker::Core::ReportResult(
-    OwnershipService::Status status) {
+    OwnershipService::Status status, bool current_user_is_owner) {
   DCHECK(origin_loop_->BelongsToCurrentThread());
-  if (callback_.get()) {
-    callback_->Run(status);
-    callback_.reset();
+  if (!callback_.is_null()) {
+    callback_.Run(status, current_user_is_owner);
+    callback_.Reset();
   }
 }
 

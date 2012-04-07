@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,17 @@
 
 #include "build/build_config.h"
 
-#if defined(OS_WIN)
-#include <windows.h>
-#endif  // defined(OS_WIN)
-
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/task.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/process.h"
 #include "ipc/ipc_channel.h"
-#include "chrome/service/service_child_process_host.h"
+#include "content/public/common/child_process_host_delegate.h"
+#include "printing/pdf_render_settings.h"
 
 class CommandLine;
 class ScopedTempDir;
@@ -29,9 +27,9 @@ namespace base {
 class MessageLoopProxy;
 }  // namespace base
 
-namespace gfx {
-class Rect;
-}  // namespace gfx
+namespace content {
+class ChildProcessHost;
+}
 
 namespace printing {
 class Emf;
@@ -42,7 +40,7 @@ struct PrinterCapsAndDefaults;
 // Acts as the service-side host to a utility child process. A
 // utility process is a short-lived sandboxed process that is created to run
 // a specific task.
-class ServiceUtilityProcessHost : public ServiceChildProcessHost {
+class ServiceUtilityProcessHost : public content::ChildProcessHostDelegate {
  public:
   // Consumers of ServiceUtilityProcessHost must implement this interface to
   // get results back.  All functions are called on the thread passed along
@@ -58,7 +56,8 @@ class ServiceUtilityProcessHost : public ServiceChildProcessHost {
     // successfully into |metafile|.
     virtual void OnRenderPDFPagesToMetafileSucceeded(
         const printing::Emf& metafile,
-        int highest_rendered_page_number) {}
+        int highest_rendered_page_number,
+        double scale_factor) {}
     // Called when no page in the passed in PDF could be rendered.
     virtual void OnRenderPDFPagesToMetafileFailed() {}
 
@@ -80,10 +79,10 @@ class ServiceUtilityProcessHost : public ServiceChildProcessHost {
     friend class base::RefCountedThreadSafe<Client>;
     friend class ServiceUtilityProcessHost;
 
-    bool OnMessageReceived(const IPC::Message& message);
     // Invoked when a metafile file is ready.
     void MetafileAvailable(const FilePath& metafile_path,
-                           int highest_rendered_page_number);
+                           int highest_rendered_page_number,
+                           double scale_factor);
 
     DISALLOW_COPY_AND_ASSIGN(Client);
   };
@@ -97,8 +96,7 @@ class ServiceUtilityProcessHost : public ServiceChildProcessHost {
   // pages than the specified page ranges, it will render as many as available.
   bool StartRenderPDFPagesToMetafile(
       const FilePath& pdf_path,
-      const gfx::Rect& render_area,
-      int render_dpi,
+      const printing::PdfRenderSettings& render_settings,
       const std::vector<printing::PageRange>& page_ranges);
 
   // Starts a process to get capabilities and defaults for the specified
@@ -111,28 +109,37 @@ class ServiceUtilityProcessHost : public ServiceChildProcessHost {
   // Allows this method to be overridden for tests.
   virtual FilePath GetUtilityProcessCmd();
 
-  // Overriden from ChildProcessHost.
-  virtual bool CanShutdown();
-  virtual void OnChildDied();
+  // ChildProcessHostDelegate implementation:
+  virtual void OnChildDisconnected() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   // Starts a process.  Returns true iff it succeeded. |exposed_dir| is the
-  // path to tbe exposed to the sandbox. This is ignored if |no_sandbox| is
+  // path to the exposed to the sandbox. This is ignored if |no_sandbox| is
   // true.
   bool StartProcess(bool no_sandbox, const FilePath& exposed_dir);
 
-  // IPC messages:
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  // Called when at least one page in the specified PDF has been rendered
-  // successfully into metafile_path_;
-  void OnRenderPDFPagesToMetafileSucceeded(int highest_rendered_page_number);
-  // Any other messages to be handled by the client.
-  bool MessageForClient(const IPC::Message& message);
+  // Launch the child process synchronously.
+  // TODO(sanjeevr): Determine whether we need to make the launch asynchronous.
+  // |exposed_dir| is the path to tbe exposed to the sandbox. This is ignored
+  // if |no_sandbox| is true.
+  bool Launch(CommandLine* cmd_line,
+              bool no_sandbox,
+              const FilePath& exposed_dir);
 
-#if defined(OS_WIN)  // This hack is Windows-specific.
-  void OnPreCacheFont(const LOGFONT& font);
-#endif  // defined(OS_WIN)
+  base::ProcessHandle handle() const { return handle_; }
 
+  // Messages handlers:
+  void OnRenderPDFPagesToMetafileSucceeded(int highest_rendered_page_number,
+                                           double scale_factor);
+  void OnRenderPDFPagesToMetafileFailed();
+  void OnGetPrinterCapsAndDefaultsSucceeded(
+      const std::string& printer_name,
+      const printing::PrinterCapsAndDefaults& caps_and_defaults);
+  void OnGetPrinterCapsAndDefaultsFailed(const std::string& printer_name);
+
+  scoped_ptr<content::ChildProcessHost> child_process_host_;
+  base::ProcessHandle handle_;
   // A pointer to our client interface, who will be informed of progress.
   scoped_refptr<Client> client_;
   scoped_refptr<base::MessageLoopProxy> client_message_loop_proxy_;

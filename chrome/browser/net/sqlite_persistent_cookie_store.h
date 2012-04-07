@@ -11,10 +11,13 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/cookie_monster.h"
 
 class FilePath;
+class Task;
 
 // Implements the PersistentCookieStore interface in terms of a SQLite database.
 // For documentation about the actual member functions consult the documentation
@@ -22,19 +25,27 @@ class FilePath;
 class SQLitePersistentCookieStore
     : public net::CookieMonster::PersistentCookieStore {
  public:
-  explicit SQLitePersistentCookieStore(const FilePath& path);
+  SQLitePersistentCookieStore(const FilePath& path,
+                              bool restore_old_session_cookies);
   virtual ~SQLitePersistentCookieStore();
 
-  virtual bool Load(std::vector<net::CookieMonster::CanonicalCookie*>* cookies);
+  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE;
 
-  virtual void AddCookie(const net::CookieMonster::CanonicalCookie& cc);
+  virtual void LoadCookiesForKey(const std::string& key,
+      const LoadedCallback& callback) OVERRIDE;
+
+  virtual void AddCookie(
+      const net::CookieMonster::CanonicalCookie& cc) OVERRIDE;
+
   virtual void UpdateCookieAccessTime(
-      const net::CookieMonster::CanonicalCookie& cc);
-  virtual void DeleteCookie(const net::CookieMonster::CanonicalCookie& cc);
+      const net::CookieMonster::CanonicalCookie& cc) OVERRIDE;
 
-  virtual void SetClearLocalStateOnExit(bool clear_local_state);
+  virtual void DeleteCookie(
+      const net::CookieMonster::CanonicalCookie& cc) OVERRIDE;
 
-  virtual void Flush(Task* completion_task);
+  virtual void SetClearLocalStateOnExit(bool clear_local_state) OVERRIDE;
+
+  virtual void Flush(const base::Closure& callback) OVERRIDE;
 
  private:
   class Backend;

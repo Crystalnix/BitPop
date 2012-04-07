@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 
 #include "base/base64.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
@@ -31,9 +33,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputControllerMock.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/dom_operations.h"
 #include "webkit/glue/webkit_glue.h"
@@ -47,7 +49,6 @@
 #include "webkit/tools/test_shell/test_webview_delegate.h"
 
 using std::string;
-using std::wstring;
 
 using WebKit::WebBindings;
 using WebKit::WebConsoleMessage;
@@ -69,7 +70,7 @@ bool LayoutTestController::stop_provisional_frame_loads_ = false;
 LayoutTestController::WorkQueue LayoutTestController::work_queue_;
 
 LayoutTestController::LayoutTestController(TestShell* shell) :
-    ALLOW_THIS_IN_INITIALIZER_LIST(timeout_factory_(this)) {
+    ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   // Set static shell_ variable since we can't do it in an initializer list.
   // We also need to be careful not to assign shell_ to new windows which are
   // temporary.
@@ -80,11 +81,16 @@ LayoutTestController::LayoutTestController(TestShell* shell) :
   // they will use when called by JavaScript.  The actual binding of those
   // names to their methods will be done by calling BindToJavaScript() (defined
   // by CppBoundClass, the parent to LayoutTestController).
-  BindMethod("waitUntilDone", &LayoutTestController::waitUntilDone);
-  BindMethod("notifyDone", &LayoutTestController::notifyDone);
+  BindCallback("waitUntilDone",
+               base::Bind(&LayoutTestController::waitUntilDone,
+                          base::Unretained(this)));
+  BindCallback("notifyDone",
+               base::Bind(&LayoutTestController::notifyDone,
+                          base::Unretained(this)));
 
   // The fallback method is called when an unknown method is invoked.
-  BindFallbackMethod(&LayoutTestController::fallbackMethod);
+  BindFallbackCallback(base::Bind(&LayoutTestController::fallbackMethod,
+                                  base::Unretained(this)));
 }
 
 LayoutTestController::~LayoutTestController() {
@@ -103,7 +109,7 @@ void LayoutTestController::WorkQueue::ProcessWorkSoon() {
 
   if (!queue_.empty()) {
     // We delay processing queued work to avoid recursion problems.
-    timer_.Start(base::TimeDelta(), this, &WorkQueue::ProcessWork);
+    timer_.Start(FROM_HERE, base::TimeDelta(), this, &WorkQueue::ProcessWork);
   } else if (!wait_until_done_) {
     shell_->TestFinished();
   }
@@ -151,9 +157,10 @@ void LayoutTestController::waitUntilDone(
   if (!is_debugger_present) {
     // TODO(ojan): Use base::OneShotTimer. For some reason, using OneShotTimer
     // seems to cause layout test failures on the try bots.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        timeout_factory_.NewRunnableMethod(
-            &LayoutTestController::notifyDoneTimedOut),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&LayoutTestController::notifyDoneTimedOut,
+                   weak_factory_.GetWeakPtr()),
         shell_->GetLayoutTestTimeout());
   }
 
@@ -164,7 +171,7 @@ void LayoutTestController::waitUntilDone(
 void LayoutTestController::notifyDone(
     const CppArgumentList& args, CppVariant* result) {
   // Test didn't timeout. Kill the timeout timer.
-  timeout_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 
   completeNotifyDone(false);
   result->SetNull();
@@ -261,11 +268,12 @@ void LayoutTestController::PolicyDelegateDone() {
 
 void LayoutTestController::fallbackMethod(
     const CppArgumentList& args, CppVariant* result) {
-  std::wstring message(L"JavaScript ERROR: unknown method called on LayoutTestController");
+  std::string message(
+      "JavaScript ERROR: unknown method called on LayoutTestController");
   if (!shell_->layout_test_mode()) {
     logging::LogMessage("CONSOLE:", 0).stream() << message;
   } else {
-    printf("CONSOLE MESSAGE: %S\n", message.c_str());
+    printf("CONSOLE MESSAGE: %s\n", message.c_str());
   }
   result->SetNull();
 }

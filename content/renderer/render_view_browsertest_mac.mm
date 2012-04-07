@@ -1,15 +1,18 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/string_util.h"
 #include "base/string16.h"
-#include "chrome/test/render_view_test.h"
-#include "content/common/native_web_keyboard_event.h"
+#include "content/public/browser/native_web_keyboard_event.h"
+#include "content/renderer/render_view_impl.h"
+#include "content/test/render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #include <Cocoa/Cocoa.h>
 #include <Carbon/Carbon.h>  // for the kVK_* constants.
+
+using content::RenderViewTest;
 
 NSEvent* CmdDeadKeyEvent(NSEventType type, unsigned short code) {
   UniChar uniChar = 0;
@@ -80,6 +83,12 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
   );
   #undef HTML
 
+  WebPreferences prefs;
+  prefs.enable_scroll_animator = false;
+
+  RenderViewImpl* view = static_cast<RenderViewImpl*>(view_);
+  view->OnUpdateWebPreferences(prefs);
+
   const int kMaxOutputCharacters = 1024;
   string16 output;
   char htmlBuffer[2048];
@@ -89,13 +98,13 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
 
   // First test when javascript does not eat keypresses -- should scroll.
   sprintf(htmlBuffer, kRawHtml, "true");
-  view_->set_send_content_state_immediately(true);
+  view->set_send_content_state_immediately(true);
   LoadHTML(htmlBuffer);
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   const char* kArrowDownScrollDown =
-      "40,false,false,true,false\n1936\np1\n\np2";
-  view_->OnSetEditCommandsForNextKeyEvent(
+      "40,false,false,true,false\n10128\np1\n\np2";
+  view->OnSetEditCommandsForNextKeyEvent(
       EditCommands(1, EditCommand("moveToEndOfDocument", "")));
   SendNativeKeyEvent(NativeWebKeyboardEvent(arrowDownKeyDown));
   ProcessPendingMessages();
@@ -104,7 +113,7 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
 
   const char* kArrowUpScrollUp =
       "38,false,false,true,false\n0\np1\n\np2";
-  view_->OnSetEditCommandsForNextKeyEvent(
+  view->OnSetEditCommandsForNextKeyEvent(
       EditCommands(1, EditCommand("moveToBeginningOfDocument", "")));
   SendNativeKeyEvent(NativeWebKeyboardEvent(arrowUpKeyDown));
   ProcessPendingMessages();
@@ -114,13 +123,13 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
 
   // Now let javascript eat the key events -- no scrolling should happen
   sprintf(htmlBuffer, kRawHtml, "false");
-  view_->set_send_content_state_immediately(true);
+  view->set_send_content_state_immediately(true);
   LoadHTML(htmlBuffer);
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   const char* kArrowDownNoScroll =
       "40,false,false,true,false\np1\n\np2";
-  view_->OnSetEditCommandsForNextKeyEvent(
+  view->OnSetEditCommandsForNextKeyEvent(
       EditCommands(1, EditCommand("moveToEndOfDocument", "")));
   SendNativeKeyEvent(NativeWebKeyboardEvent(arrowDownKeyDown));
   ProcessPendingMessages();
@@ -129,7 +138,7 @@ TEST_F(RenderViewTest, MacTestCmdUp) {
 
   const char* kArrowUpNoScroll =
       "38,false,false,true,false\np1\n\np2";
-  view_->OnSetEditCommandsForNextKeyEvent(
+  view->OnSetEditCommandsForNextKeyEvent(
       EditCommands(1, EditCommand("moveToBeginningOfDocument", "")));
   SendNativeKeyEvent(NativeWebKeyboardEvent(arrowUpKeyDown));
   ProcessPendingMessages();

@@ -11,9 +11,11 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
 
+@class BrowserWindowController;
 @class InfoBarController;
+class InfoBar;
 class InfoBarDelegate;
 class InfoBarNotificationObserver;
 class TabContentsWrapper;
@@ -22,16 +24,19 @@ class TabStripModel;
 // Protocol for basic container methods, as needed by an InfoBarController.
 // This protocol exists to make mocking easier in unittests.
 @protocol InfoBarContainer
-- (void)removeDelegate:(InfoBarDelegate*)delegate;
 - (void)willRemoveController:(InfoBarController*)controller;
 - (void)removeController:(InfoBarController*)controller;
+- (BrowserWindowController*)browserWindowController;
 @end
 
 
 namespace infobars {
 
-// How tall the tip is on a normal infobar.
+// The height of an infobar without the tip.
 const CGFloat kBaseHeight = 36.0;
+
+// The height of the infobar tip.
+const CGFloat kTipHeight = 12.0;
 
 };  // namespace infobars
 
@@ -59,18 +64,11 @@ const CGFloat kBaseHeight = 36.0;
   // Lets us registers for INFOBAR_ADDED/INFOBAR_REMOVED
   // notifications.  The actual notifications are sent to the
   // InfoBarNotificationObserver object, which proxies them back to us.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   scoped_ptr<InfoBarNotificationObserver> infoBarObserver_;
 }
 
 - (id)initWithResizeDelegate:(id<ViewResizer>)resizeDelegate;
-
-// Informs the selected TabContents that the infobars for the given
-// |delegate| need to be removed.  Does not remove any infobar views
-// directly, as they will be removed when handling the subsequent
-// INFOBAR_REMOVED notification.  Does not notify |delegate| that the
-// infobar was closed.
-- (void)removeDelegate:(InfoBarDelegate*)delegate;
 
 // Informs the container that the |controller| is going to close. It adds the
 // controller to |closingInfoBars_|. Once the animation is complete, the
@@ -102,25 +100,20 @@ const CGFloat kBaseHeight = 36.0;
 // Returns the amount of additional height the container view needs to draw the
 // anti-spoofing tip. This will return 0 if |-infobarCount| is 0. This is the
 // total amount of overlap for all infobars.
-- (CGFloat)antiSpoofHeight;
+- (CGFloat)overlappingTipHeight;
 
 @end
 
 
 @interface InfoBarContainerController (ForTheObserverAndTesting)
 
-// Adds an infobar view for the given delegate.
-- (void)addInfoBar:(InfoBarDelegate*)delegate animate:(BOOL)animate;
+// Adds the given infobar.  Takes ownership of |infobar|.
+- (void)addInfoBar:(InfoBar*)infobar animate:(BOOL)animate;
 
 // Closes all the infobar views for a given delegate, either immediately or by
 // starting a close animation.
 - (void)closeInfoBarsForDelegate:(InfoBarDelegate*)delegate
                          animate:(BOOL)animate;
-
-// Replaces all info bars for the delegate with a new info bar.
-// This simply calls closeInfoBarsForDelegate: and then addInfoBar:.
-- (void)replaceInfoBarsForDelegate:(InfoBarDelegate*)old_delegate
-                              with:(InfoBarDelegate*)new_delegate;
 
 // Positions the infobar views in the container view and notifies
 // |browser_controller_| that it needs to resize the container view.

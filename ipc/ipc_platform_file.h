@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 #pragma once
 
 #include "base/basictypes.h"
-
 #include "base/platform_file.h"
+#include "base/process.h"
+#include "ipc/ipc_export.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
@@ -38,6 +39,12 @@ inline base::PlatformFile PlatformFileForTransitToPlatformFile(
   return transit.fd;
 #endif
 }
+
+// Returns a file handle equivalent to |file| that can be used in |process|.
+IPC_EXPORT PlatformFileForTransit GetFileHandleForProcess(
+    base::PlatformFile file,
+    base::ProcessHandle process,
+    bool close_source_handle);
 
 }  // namespace IPC
 

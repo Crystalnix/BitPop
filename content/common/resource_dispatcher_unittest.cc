@@ -9,9 +9,10 @@
 #include "base/message_loop.h"
 #include "base/process.h"
 #include "base/process_util.h"
+#include "content/common/request_extra_data.h"
 #include "content/common/resource_dispatcher.h"
 #include "content/common/resource_messages.h"
-#include "content/common/resource_response.h"
+#include "content/public/common/resource_response.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -66,7 +67,7 @@ class TestRequestCallback : public ResourceLoaderBridge::Peer {
 
   virtual void OnCompletedRequest(const net::URLRequestStatus& status,
                                   const std::string& security_info,
-                                  const base::Time& completion_time) {
+                                  const base::TimeTicks& completion_time) {
     EXPECT_FALSE(complete_);
     complete_ = true;
   }
@@ -113,7 +114,7 @@ class ResourceDispatcherTest : public testing::Test,
       EXPECT_EQ(test_page_url, request.url.spec());
 
       // received response message
-      ResourceResponseHead response;
+      content::ResourceResponseHead response;
       std::string raw_headers(test_page_headers);
       std::replace(raw_headers.begin(), raw_headers.end(), '\n', '\0');
       response.headers = new net::HttpResponseHeaders(raw_headers);
@@ -170,6 +171,10 @@ class ResourceDispatcherTest : public testing::Test,
     request_info.request_type = ResourceType::SUB_RESOURCE;
     request_info.appcache_host_id = appcache::kNoHostId;
     request_info.routing_id = 0;
+    RequestExtraData extra_data(WebKit::WebReferrerPolicyDefault,
+                                true, 0, false, -1,
+                                content::PAGE_TRANSITION_LINK, -1, -1);
+    request_info.extra_data = &extra_data;
 
     return dispatcher_->CreateBridge(request_info);
   }
@@ -237,7 +242,7 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
   void InitMessages() {
     set_defer_loading(true);
 
-    ResourceResponseHead response_head;
+    content::ResourceResponseHead response_head;
     response_head.status.set_status(net::URLRequestStatus::SUCCESS);
 
     IPC::Message* response_message =
@@ -293,7 +298,7 @@ class DeferredResourceLoadingTest : public ResourceDispatcherTest,
 
   virtual void OnCompletedRequest(const net::URLRequestStatus& status,
                                   const std::string& security_info,
-                                  const base::Time& completion_time) {
+                                  const base::TimeTicks& completion_time) {
   }
 
  protected:

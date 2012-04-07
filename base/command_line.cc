@@ -37,7 +37,7 @@ const CommandLine::CharType* const kSwitchPrefixes[] = {"--", "-"};
 size_t GetSwitchPrefixLength(const CommandLine::StringType& string) {
   for (size_t i = 0; i < arraysize(kSwitchPrefixes); ++i) {
     CommandLine::StringType prefix(kSwitchPrefixes[i]);
-    if (string.find(prefix) == 0)
+    if (string.compare(0, prefix.length(), prefix) == 0)
       return prefix.length();
   }
   return 0;
@@ -168,7 +168,13 @@ CommandLine::~CommandLine() {
 
 // static
 void CommandLine::Init(int argc, const char* const* argv) {
-  delete current_process_commandline_;
+  if (current_process_commandline_) {
+    // If this is intentional, Reset() must be called first. If we are using
+    // the shared build mode, we have to share a single object across multiple
+    // shared libraries.
+    return;
+  }
+
   current_process_commandline_ = new CommandLine(NO_PROGRAM);
 #if defined(OS_WIN)
   current_process_commandline_->ParseFromString(::GetCommandLineW());
@@ -214,7 +220,7 @@ void CommandLine::InitFromArgv(const StringVector& argv) {
   AppendSwitchesAndArguments(*this, argv);
 }
 
-CommandLine::StringType CommandLine::command_line_string() const {
+CommandLine::StringType CommandLine::GetCommandLineString() const {
   StringType string(argv_[0]);
 #if defined(OS_WIN)
   string = QuoteForCommandLineToArgvW(string);
@@ -262,8 +268,8 @@ std::string CommandLine::GetSwitchValueASCII(
     const std::string& switch_string) const {
   StringType value = GetSwitchValueNative(switch_string);
   if (!IsStringASCII(value)) {
-    LOG(WARNING) << "Value of switch (" << switch_string << ") must be ASCII.";
-    return "";
+    DLOG(WARNING) << "Value of switch (" << switch_string << ") must be ASCII.";
+    return std::string();
   }
 #if defined(OS_WIN)
   return WideToASCII(value);
@@ -282,10 +288,6 @@ CommandLine::StringType CommandLine::GetSwitchValueNative(
   SwitchMap::const_iterator result = switches_.end();
   result = switches_.find(LowerASCIIOnWindows(switch_string));
   return result == switches_.end() ? StringType() : result->second;
-}
-
-size_t CommandLine::GetSwitchCount() const {
-  return switches_.size();
 }
 
 void CommandLine::AppendSwitch(const std::string& switch_string) {
@@ -334,7 +336,7 @@ void CommandLine::CopySwitchesFrom(const CommandLine& source,
   }
 }
 
-CommandLine::StringVector CommandLine::args() const {
+CommandLine::StringVector CommandLine::GetArgs() const {
   // Gather all arguments after the last switch (may include kSwitchTerminator).
   StringVector args(argv_.begin() + begin_args_, argv_.end());
   // Erase only the first kSwitchTerminator (maybe "--" is a legitimate page?)
@@ -392,8 +394,8 @@ void CommandLine::ParseFromString(const std::wstring& command_line) {
   wchar_t** args = NULL;
   args = ::CommandLineToArgvW(command_line_string.c_str(), &num_args);
 
-  PLOG_IF(FATAL, !args) << "CommandLineToArgvW failed on command line: " <<
-                           command_line;
+  DPLOG_IF(FATAL, !args) << "CommandLineToArgvW failed on command line: "
+                         << command_line;
   InitFromArgv(num_args, args);
   LocalFree(args);
 }

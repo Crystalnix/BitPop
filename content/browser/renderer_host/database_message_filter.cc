@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,17 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/platform_file.h"
 #include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
-#include "content/browser/user_metrics.h"
 #include "content/common/database_messages.h"
-#include "content/common/result_codes.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/common/result_codes.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/sqlite/sqlite3.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
+#include "third_party/sqlite/sqlite3.h"
 #include "webkit/database/database_util.h"
 #include "webkit/database/vfs_backend.h"
 #include "webkit/quota/quota_manager.h"
@@ -23,6 +25,9 @@
 #include "base/file_descriptor_posix.h"
 #endif
 
+using content::BrowserMessageFilter;
+using content::BrowserThread;
+using content::UserMetricsAction;
 using quota::QuotaManager;
 using quota::QuotaManagerProxy;
 using quota::QuotaStatusCode;
@@ -32,32 +37,6 @@ using webkit_database::DatabaseUtil;
 using webkit_database::VfsBackend;
 
 namespace {
-
-class MyGetUsageAndQuotaCallback
-    : public QuotaManager::GetUsageAndQuotaCallback  {
- public:
-  MyGetUsageAndQuotaCallback(
-      DatabaseMessageFilter* sender, IPC::Message* reply_msg)
-      : sender_(sender), reply_msg_(reply_msg) {}
-
-  virtual void RunWithParams(
-        const Tuple3<QuotaStatusCode, int64, int64>& params) {
-    Run(params.a, params.b, params.c);
-  }
-
-  void Run(QuotaStatusCode status, int64 usage, int64 quota) {
-    int64 available = 0;
-    if ((status == quota::kQuotaStatusOk) && (usage < quota))
-      available = quota - usage;
-    DatabaseHostMsg_GetSpaceAvailable::WriteReplyParams(
-        reply_msg_.get(), available);
-    sender_->Send(reply_msg_.release());
-  }
-
- private:
-  scoped_refptr<DatabaseMessageFilter> sender_;
-  scoped_ptr<IPC::Message> reply_msg_;
-};
 
 const int kNumDeleteRetries = 2;
 const int kDelayDeleteRetryMs = 100;
@@ -77,7 +56,7 @@ void DatabaseMessageFilter::OnChannelClosing() {
     observer_added_ = false;
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(this, &DatabaseMessageFilter::RemoveObserver));
+        base::Bind(&DatabaseMessageFilter::RemoveObserver, this));
   }
 }
 
@@ -108,7 +87,7 @@ void DatabaseMessageFilter::OverrideThreadForMessage(
     observer_added_ = true;
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(this, &DatabaseMessageFilter::AddObserver));
+        base::Bind(&DatabaseMessageFilter::AddObserver, this));
   }
 }
 
@@ -143,12 +122,11 @@ void DatabaseMessageFilter::OnDatabaseOpenFile(const string16& vfs_file_name,
                                                IPC::Message* reply_msg) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::PlatformFile file_handle = base::kInvalidPlatformFileValue;
-  base::PlatformFile target_handle = base::kInvalidPlatformFileValue;
   string16 origin_identifier;
   string16 database_name;
 
   // When in incognito mode, we want to make sure that all DB files are
-  // removed when the incognito profile goes away, so we add the
+  // removed when the incognito browser context goes away, so we add the
   // SQLITE_OPEN_DELETEONCLOSE flag when opening all files, and keep
   // open handles to them in the database tracker to make sure they're
   // around for as long as needed.
@@ -168,8 +146,7 @@ void DatabaseMessageFilter::OnDatabaseOpenFile(const string16& vfs_file_name,
             VfsBackend::OpenFile(db_file,
                                  desired_flags | SQLITE_OPEN_DELETEONCLOSE,
                                  &file_handle);
-            if (VfsBackend::FileTypeIsMainDB(desired_flags) ||
-                VfsBackend::FileTypeIsJournal(desired_flags))
+            if (!(desired_flags & SQLITE_OPEN_DELETEONCLOSE))
               db_tracker_->SaveIncognitoFileHandle(vfs_file_name, file_handle);
           }
         } else {
@@ -182,17 +159,11 @@ void DatabaseMessageFilter::OnDatabaseOpenFile(const string16& vfs_file_name,
   // process. The original handle is closed, unless we saved it in the
   // database tracker.
   bool auto_close = !db_tracker_->HasSavedIncognitoFileHandle(vfs_file_name);
-  VfsBackend::GetFileHandleForProcess(peer_handle(), file_handle,
-                                      &target_handle, auto_close);
+  DCHECK_NE(base::kInvalidPlatformFileValue, file_handle);
+  IPC::PlatformFileForTransit target_handle =
+      IPC::GetFileHandleForProcess(file_handle, peer_handle(), auto_close);
 
-  DatabaseHostMsg_OpenFile::WriteReplyParams(
-      reply_msg,
-#if defined(OS_WIN)
-      target_handle
-#elif defined(OS_POSIX)
-      base::FileDescriptor(target_handle, auto_close)
-#endif
-      );
+  DatabaseHostMsg_OpenFile::WriteReplyParams(reply_msg, target_handle);
   Send(reply_msg);
 }
 
@@ -237,12 +208,8 @@ void DatabaseMessageFilter::DatabaseDeleteFile(const string16& vfs_file_name,
       // If the file could not be deleted, try again.
       BrowserThread::PostDelayedTask(
           BrowserThread::FILE, FROM_HERE,
-          NewRunnableMethod(this,
-                            &DatabaseMessageFilter::DatabaseDeleteFile,
-                            vfs_file_name,
-                            sync_dir,
-                            reply_msg,
-                            reschedule_count - 1),
+          base::Bind(&DatabaseMessageFilter::DatabaseDeleteFile, this,
+                     vfs_file_name, sync_dir, reply_msg, reschedule_count - 1),
           kDelayDeleteRetryMs);
       return;
     }
@@ -298,7 +265,20 @@ void DatabaseMessageFilter::OnDatabaseGetSpaceAvailable(
   quota_manager->GetUsageAndQuota(
       DatabaseUtil::GetOriginFromIdentifier(origin_identifier),
       quota::kStorageTypeTemporary,
-      new MyGetUsageAndQuotaCallback(this, reply_msg));
+      base::Bind(&DatabaseMessageFilter::OnDatabaseGetUsageAndQuota,
+                 this, reply_msg));
+}
+
+void DatabaseMessageFilter::OnDatabaseGetUsageAndQuota(
+    IPC::Message* reply_msg,
+    quota::QuotaStatusCode status,
+    int64 usage,
+    int64 quota) {
+  int64 available = 0;
+  if ((status == quota::kQuotaStatusOk) && (usage < quota))
+    available = quota - usage;
+  DatabaseHostMsg_GetSpaceAvailable::WriteReplyParams(reply_msg, available);
+  Send(reply_msg);
 }
 
 void DatabaseMessageFilter::OnDatabaseOpened(const string16& origin_identifier,
@@ -320,7 +300,7 @@ void DatabaseMessageFilter::OnDatabaseModified(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   if (!database_connections_.IsDatabaseOpened(
           origin_identifier, database_name)) {
-    UserMetrics::RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    content::RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }
@@ -333,7 +313,7 @@ void DatabaseMessageFilter::OnDatabaseClosed(const string16& origin_identifier,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   if (!database_connections_.IsDatabaseOpened(
           origin_identifier, database_name)) {
-    UserMetrics::RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
+    content::RecordAction(UserMetricsAction("BadMessageTerminate_DBMF"));
     BadMessageReceived();
     return;
   }

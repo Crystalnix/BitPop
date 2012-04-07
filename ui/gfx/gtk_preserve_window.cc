@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/gfx/gtk_preserve_window.h"
 
-#include <gdk/gdkwindow.h>
+#include <gdk/gdk.h>
 #include <gtk/gtk.h>
-#include <gtk/gtkwidget.h>
-#include <gtk/gtkfixed.h>
+
+#include "ui/base/gtk/gtk_compat.h"
 
 G_BEGIN_DECLS
 
@@ -52,7 +52,7 @@ static void gtk_preserve_window_init(GtkPreserveWindow* widget) {
   priv->preserve_window = FALSE;
 
   // These widgets always have their own window.
-  gtk_fixed_set_has_window(GTK_FIXED(widget), TRUE);
+  gtk_widget_set_has_window(GTK_WIDGET(widget), TRUE);
 }
 
 GtkWidget* gtk_preserve_window_new() {
@@ -63,12 +63,13 @@ static void gtk_preserve_window_destroy(GtkObject* object) {
   GtkWidget* widget = reinterpret_cast<GtkWidget*>(object);
   GtkPreserveWindowPrivate* priv = GTK_PRESERVE_WINDOW_GET_PRIVATE(widget);
 
-  if (widget->window) {
-    gdk_window_set_user_data(widget->window, NULL);
+  GdkWindow* gdk_window = gtk_widget_get_window(widget);
+  if (gdk_window) {
+    gdk_window_set_user_data(gdk_window, NULL);
     // If the window is preserved, someone else must destroy it.
     if (!priv->preserve_window)
-      gdk_window_destroy(widget->window);
-    widget->window = NULL;
+      gdk_window_destroy(gdk_window);
+    gtk_widget_set_window(widget, NULL);
   }
 
   GTK_OBJECT_CLASS(gtk_preserve_window_parent_class)->destroy(object);
@@ -77,28 +78,31 @@ static void gtk_preserve_window_destroy(GtkObject* object) {
 static void gtk_preserve_window_realize(GtkWidget* widget) {
   g_return_if_fail(GTK_IS_PRESERVE_WINDOW(widget));
 
-  if (widget->window) {
-    gdk_window_reparent(widget->window,
+  GdkWindow* gdk_window = gtk_widget_get_window(widget);
+  if (gdk_window) {
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(widget, &allocation);
+
+    gdk_window_reparent(gdk_window,
                         gtk_widget_get_parent_window(widget),
-                        widget->allocation.x,
-                        widget->allocation.y);
+                        allocation.x,
+                        allocation.y);
     GtkPreserveWindowPrivate* priv = GTK_PRESERVE_WINDOW_GET_PRIVATE(widget);
     if (!priv->delegate_resize) {
-      gdk_window_resize(widget->window,
-                        widget->allocation.width,
-                        widget->allocation.height);
+      gdk_window_resize(gdk_window,
+                        allocation.width,
+                        allocation.height);
     }
-    widget->style = gtk_style_attach(widget->style, widget->window);
-    gtk_style_set_background(widget->style, widget->window, GTK_STATE_NORMAL);
-
     gint event_mask = gtk_widget_get_events(widget);
     event_mask |= GDK_EXPOSURE_MASK | GDK_BUTTON_PRESS_MASK;
-    gdk_window_set_events(widget->window, (GdkEventMask) event_mask);
-    gdk_window_set_user_data(widget->window, widget);
+    gdk_window_set_events(gdk_window, (GdkEventMask) event_mask);
+    gdk_window_set_user_data(gdk_window, widget);
 
-    // Deprecated as of GTK 2.22. Used for compatibility.
-    // It should be: gtk_widget_set_realized(widget, TRUE)
-    GTK_WIDGET_SET_FLAGS(widget, GTK_REALIZED);
+    gtk_widget_set_realized(widget, TRUE);
+
+    gtk_widget_style_attach(widget);
+    gtk_style_set_background(gtk_widget_get_style(widget),
+                             gdk_window, GTK_STATE_NORMAL);
   } else {
     GTK_WIDGET_CLASS(gtk_preserve_window_parent_class)->realize(widget);
   }
@@ -114,14 +118,10 @@ static void gtk_preserve_window_unrealize(GtkWidget* widget) {
     GtkContainerClass* container_class =
         GTK_CONTAINER_CLASS(gtk_preserve_window_parent_class);
 
-    // Deprecated as of GTK 2.22. Used for compatibility.
-    // It should be: gtk_widget_get_mapped()
-    if (GTK_WIDGET_MAPPED(widget)) {
+    if (gtk_widget_get_mapped(widget)) {
       widget_class->unmap(widget);
 
-      // Deprecated as of GTK 2.22. Used for compatibility.
-      // It should be: gtk_widget_set_mapped(widget, FALSE)
-      GTK_WIDGET_UNSET_FLAGS(widget, GTK_MAPPED);
+      gtk_widget_set_mapped(widget, FALSE);
     }
 
     // This is the behavior from GtkWidget, inherited by GtkFixed.
@@ -131,14 +131,14 @@ static void gtk_preserve_window_unrealize(GtkWidget* widget) {
         GTK_CONTAINER(widget), FALSE,
         reinterpret_cast<GtkCallback>(gtk_widget_unrealize), NULL);
 
-    gtk_style_detach(widget->style);
-    gdk_window_reparent(widget->window, gdk_get_default_root_window(), 0, 0);
-    gtk_selection_remove_all(widget);
-    gdk_window_set_user_data(widget->window, NULL);
+    GdkWindow* gdk_window = gtk_widget_get_window(widget);
 
-    // Deprecated as of GTK 2.22. Used for compatibility.
-    // It should be: gtk_widget_set_realized(widget, FALSE)
-    GTK_WIDGET_UNSET_FLAGS(widget, GTK_REALIZED);
+    gtk_style_detach(widget->style);
+    gdk_window_reparent(gdk_window, gdk_get_default_root_window(), 0, 0);
+    gtk_selection_remove_all(widget);
+    gdk_window_set_user_data(gdk_window, NULL);
+
+    gtk_widget_set_realized(widget, FALSE);
   } else {
     GTK_WIDGET_CLASS(gtk_preserve_window_parent_class)->unrealize(widget);
   }
@@ -158,7 +158,8 @@ void gtk_preserve_window_set_preserve(GtkPreserveWindow* window,
   priv->preserve_window = value;
 
   GtkWidget* widget = GTK_WIDGET(window);
-  if (value && !widget->window) {
+  GdkWindow* gdk_window = gtk_widget_get_window(widget);
+  if (value && !gdk_window) {
     GdkWindowAttr attributes;
     gint attributes_mask;
 
@@ -178,11 +179,12 @@ void gtk_preserve_window_set_preserve(GtkPreserveWindow* window,
     attributes.event_mask |= GDK_EXPOSURE_MASK | GDK_BUTTON_PRESS_MASK;
 
     attributes_mask = GDK_WA_VISUAL | GDK_WA_COLORMAP | GDK_WA_NOREDIR;
-    widget->window = gdk_window_new(
+    gdk_window = gdk_window_new(
         gdk_get_default_root_window(), &attributes, attributes_mask);
-  } else if (!value && widget->window && !GTK_WIDGET_REALIZED(widget)) {
-    gdk_window_destroy(widget->window);
-    widget->window = NULL;
+    gtk_widget_set_window(widget, gdk_window);
+  } else if (!value && gdk_window && !gtk_widget_get_realized(widget)) {
+    gdk_window_destroy(gdk_window);
+    gtk_widget_set_window(widget, NULL);
   }
 }
 
@@ -190,15 +192,16 @@ void gtk_preserve_window_size_allocate(GtkWidget* widget,
                                        GtkAllocation* allocation) {
   g_return_if_fail(GTK_IS_PRESERVE_WINDOW(widget));
 
-  widget->allocation = *allocation;
+  gtk_widget_set_allocation(widget, allocation);
 
-  if (GTK_WIDGET_REALIZED(widget)) {
+  if (gtk_widget_get_realized(widget)) {
     GtkPreserveWindowPrivate* priv = GTK_PRESERVE_WINDOW_GET_PRIVATE(widget);
+    GdkWindow* gdk_window = gtk_widget_get_window(widget);
     if (priv->delegate_resize) {
-      gdk_window_move(widget->window, allocation->x, allocation->y);
+      gdk_window_move(gdk_window, allocation->x, allocation->y);
     } else {
       gdk_window_move_resize(
-          widget->window, allocation->x, allocation->y,
+          gdk_window, allocation->x, allocation->y,
           allocation->width, allocation->height);
     }
   }
@@ -208,7 +211,7 @@ void gtk_preserve_window_size_allocate(GtkWidget* widget,
   GList *children = GTK_FIXED(widget)->children;
   while (children) {
     GtkFixedChild *child = reinterpret_cast<GtkFixedChild*>(children->data);
-    if (GTK_WIDGET_VISIBLE(child->widget)) {
+    if (gtk_widget_get_visible(child->widget)) {
       GtkRequisition child_requisition;
       gtk_widget_get_child_requisition(child->widget, &child_requisition);
 

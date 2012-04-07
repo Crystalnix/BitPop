@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,15 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "content/common/content_export.h"
 
 class RenderViewHost;
-class RenderViewHostDelegate;
 class SessionStorageNamespace;
-class SiteInstance;
 
-namespace base {
-class WaitableEvent;
-}  // namespace base
+namespace content {
+class RenderViewHostDelegate;
+class SiteInstance;
+}
 
 // A factory for creating RenderViewHosts. There is a global factory function
 // that can be installed for the purposes of testing to provide a specialized
@@ -25,8 +25,8 @@ class RenderViewHostFactory {
   // Creates a RenderViewHost using the currently registered factory, or the
   // default one if no factory is registered. Ownership of the returned
   // pointer will be passed to the caller.
-  static RenderViewHost* Create(SiteInstance* instance,
-                                RenderViewHostDelegate* delegate,
+  static RenderViewHost* Create(content::SiteInstance* instance,
+                                content::RenderViewHostDelegate* delegate,
                                 int routing_id,
                                 SessionStorageNamespace* session_storage);
 
@@ -42,24 +42,24 @@ class RenderViewHostFactory {
   // You can derive from this class and specify an implementation for this
   // function to create a different kind of RenderViewHost for testing.
   virtual RenderViewHost* CreateRenderViewHost(
-      SiteInstance* instance,
-      RenderViewHostDelegate* delegate,
+      content::SiteInstance* instance,
+      content::RenderViewHostDelegate* delegate,
       int routing_id,
       SessionStorageNamespace* session_storage_namespace) = 0;
 
   // Registers your factory to be called when new RenderViewHosts are created.
   // We have only one global factory, so there must be no factory registered
   // before the call. This class does NOT take ownership of the pointer.
-  static void RegisterFactory(RenderViewHostFactory* factory);
+  CONTENT_EXPORT static void RegisterFactory(RenderViewHostFactory* factory);
 
   // Unregister the previously registered factory. With no factory registered,
   // the default RenderViewHosts will be created.
-  static void UnregisterFactory();
+  CONTENT_EXPORT static void UnregisterFactory();
 
  private:
   // The current globally registered factory. This is NULL when we should
   // create the default RenderViewHosts.
-  static RenderViewHostFactory* factory_;
+  CONTENT_EXPORT static RenderViewHostFactory* factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostFactory);
 };

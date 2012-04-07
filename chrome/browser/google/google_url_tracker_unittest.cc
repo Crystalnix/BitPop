@@ -9,30 +9,33 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_pref_service.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
-#include "content/common/test_url_fetcher_factory.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/common/url_fetcher.h"
+#include "content/test/test_browser_thread.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
+
 // TestNotificationObserver ---------------------------------------------------
 
 namespace {
 
-class TestNotificationObserver : public NotificationObserver {
+class TestNotificationObserver : public content::NotificationObserver {
  public:
   TestNotificationObserver();
   virtual ~TestNotificationObserver();
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
   bool notified() const { return notified_; }
   void clear_notified() { notified_ = false; }
 
@@ -46,9 +49,10 @@ TestNotificationObserver::TestNotificationObserver() : notified_(false) {
 TestNotificationObserver::~TestNotificationObserver() {
 }
 
-void TestNotificationObserver::Observe(NotificationType type,
-                                       const NotificationSource& source,
-                                       const NotificationDetails& details) {
+void TestNotificationObserver::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
   notified_ = true;
 }
 
@@ -67,7 +71,7 @@ class TestInfoBarDelegate : public InfoBarDelegate {
   virtual ~TestInfoBarDelegate();
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(TabContentsWrapper* owner);
+  virtual InfoBar* CreateInfoBar(InfoBarTabHelper* infobar_helper) OVERRIDE;
 
   GoogleURLTracker* google_url_tracker_;
   GURL new_google_url_;
@@ -83,12 +87,12 @@ TestInfoBarDelegate::TestInfoBarDelegate(GoogleURLTracker* google_url_tracker,
 TestInfoBarDelegate::~TestInfoBarDelegate() {
 }
 
-InfoBar* TestInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
+InfoBar* TestInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* infobar_helper) {
   return NULL;
 }
 
 InfoBarDelegate* CreateTestInfobar(
-    TabContents* tab_contents,
+    InfoBarTabHelper* infobar_helper,
     GoogleURLTracker* google_url_tracker,
     const GURL& new_google_url) {
   return new TestInfoBarDelegate(google_url_tracker, new_google_url);
@@ -99,7 +103,7 @@ InfoBarDelegate* CreateTestInfobar(
 
 // GoogleURLTrackerTest -------------------------------------------------------
 
-class GoogleURLTrackerTest : public TestingBrowserProcessTest {
+class GoogleURLTrackerTest : public testing::Test {
  protected:
   GoogleURLTrackerTest();
   virtual ~GoogleURLTrackerTest();
@@ -131,19 +135,19 @@ class GoogleURLTrackerTest : public TestingBrowserProcessTest {
 
  private:
   MessageLoop message_loop_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread io_thread_;
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   ScopedTestingLocalState local_state_;
 
   TestURLFetcherFactory fetcher_factory_;
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 GoogleURLTrackerTest::GoogleURLTrackerTest()
     : observer_(new TestNotificationObserver),
       message_loop_(MessageLoop::TYPE_IO),
       io_thread_(BrowserThread::IO, &message_loop_),
-      local_state_(testing_browser_process_.get()) {
+      local_state_(static_cast<TestingBrowserProcess*>(g_browser_process)) {
 }
 
 GoogleURLTrackerTest::~GoogleURLTrackerTest() {
@@ -154,16 +158,16 @@ void GoogleURLTrackerTest::SetUp() {
   GoogleURLTracker* tracker = new GoogleURLTracker;
   tracker->queue_wakeup_task_ = false;
   MessageLoop::current()->RunAllPending();
-  testing_browser_process_.get()->SetGoogleURLTracker(tracker);
+  static_cast<TestingBrowserProcess*>(g_browser_process)->SetGoogleURLTracker(
+      tracker);
 
-  URLFetcher::set_factory(&fetcher_factory_);
   g_browser_process->google_url_tracker()->infobar_creator_ =
       &CreateTestInfobar;
 }
 
 void GoogleURLTrackerTest::TearDown() {
-  URLFetcher::set_factory(NULL);
-  testing_browser_process_.get()->SetGoogleURLTracker(NULL);
+  static_cast<TestingBrowserProcess*>(g_browser_process)->SetGoogleURLTracker(
+      NULL);
   network_change_notifier_.reset();
 }
 
@@ -177,19 +181,20 @@ void GoogleURLTrackerTest::MockSearchDomainCheckResponse(
   TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(expected_id);
   if (!fetcher)
     return;
-  fetcher->delegate()->OnURLFetchComplete(fetcher,
-      GURL(GoogleURLTracker::kSearchDomainCheckURL), net::URLRequestStatus(),
-      200, net::ResponseCookies(), domain);
+  fetcher->set_url(GURL(GoogleURLTracker::kSearchDomainCheckURL));
+  fetcher->set_response_code(200);
+  fetcher->SetResponseString(domain);
+  fetcher->delegate()->OnURLFetchComplete(fetcher);
   // At this point, |fetcher| is deleted.
   MessageLoop::current()->RunAllPending();
 }
 
 void GoogleURLTrackerTest::RequestServerCheck() {
   if (!registrar_.IsRegistered(observer_.get(),
-                               NotificationType::GOOGLE_URL_UPDATED,
-                               NotificationService::AllSources())) {
-    registrar_.Add(observer_.get(), NotificationType::GOOGLE_URL_UPDATED,
-                   NotificationService::AllSources());
+                               chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
+                               content::NotificationService::AllSources())) {
+    registrar_.Add(observer_.get(), chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
+                   content::NotificationService::AllSources());
   }
   GoogleURLTracker::RequestServerCheck();
   MessageLoop::current()->RunAllPending();
@@ -228,8 +233,8 @@ void GoogleURLTrackerTest::SearchCommitted(const GURL& search_url) {
       g_browser_process->google_url_tracker();
   google_url_tracker->SearchCommitted();
   if (google_url_tracker->registrar_.IsRegistered(google_url_tracker,
-      NotificationType::NAV_ENTRY_PENDING,
-      NotificationService::AllSources()))
+      content::NOTIFICATION_NAV_ENTRY_PENDING,
+      content::NotificationService::AllSources()))
     google_url_tracker->search_url_ = search_url;
 }
 

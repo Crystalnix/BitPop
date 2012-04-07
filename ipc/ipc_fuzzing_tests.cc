@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,30 @@
 #include "base/threading/platform_thread.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
-#include "ipc/ipc_message_utils.h"
-#include "ipc/ipc_message_utils_impl.h"
 #include "ipc/ipc_tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/multiprocess_func_list.h"
+
+// IPC messages for testing ---------------------------------------------------
+
+#define IPC_MESSAGE_IMPL
+#include "ipc/ipc_message_macros.h"
+
+#define IPC_MESSAGE_START TestMsgStart
+
+// Generic message class that is an int followed by a wstring.
+IPC_MESSAGE_CONTROL2(MsgClassIS, int, std::wstring)
+
+// Generic message class that is a wstring followed by an int.
+IPC_MESSAGE_CONTROL2(MsgClassSI, std::wstring, int)
+
+// Message to create a mutex in the IPC server, using the received name.
+IPC_MESSAGE_CONTROL2(MsgDoMutex, std::wstring, int)
+
+// Used to generate an ID for a message that should not exist.
+IPC_MESSAGE_CONTROL0(MsgUnhandled)
+
+// ----------------------------------------------------------------------------
 
 TEST(IPCMessageIntegrity, ReadBeyondBufferStr) {
   //This was BUG 984408.
@@ -96,46 +115,6 @@ TEST(IPCMessageIntegrity, ReadVectorTooLarge2) {
   EXPECT_FALSE(ReadParam(&m, &iter, &vec));
 }
 
-// We don't actually use the messages defined in this file, but we do this
-// to get to the IPC macros.
-#include "ipc/ipc_sync_message_unittest.h"
-
-enum IPCMessageIds {
-  UNUSED_IPC_TYPE,
-  SERVER_FIRST_IPC_TYPE,    // 1st Test message tag.
-  SERVER_SECOND_IPC_TYPE,   // 2nd Test message tag.
-  SERVER_THIRD_IPC_TYPE,    // 3rd Test message tag.
-  CLIENT_MALFORMED_IPC,     // Sent to client if server detects bad message.
-  CLIENT_UNHANDLED_IPC      // Sent to client if server detects unhanded IPC.
-};
-
-// Generic message class that is an int followed by a wstring.
-class MsgClassIS : public IPC::MessageWithTuple< Tuple2<int, std::wstring> > {
- public:
-  enum { ID = SERVER_FIRST_IPC_TYPE };
-  MsgClassIS(const int& arg1, const std::wstring& arg2)
-      : IPC::MessageWithTuple< Tuple2<int, std::wstring> >(
-            MSG_ROUTING_CONTROL, ID, MakeRefTuple(arg1, arg2)) {}
-};
-
-// Generic message class that is a wstring followed by an int.
-class MsgClassSI : public IPC::MessageWithTuple< Tuple2<std::wstring, int> > {
- public:
-  enum { ID = SERVER_SECOND_IPC_TYPE };
-  MsgClassSI(const std::wstring& arg1, const int& arg2)
-      : IPC::MessageWithTuple< Tuple2<std::wstring, int> >(
-            MSG_ROUTING_CONTROL, ID, MakeRefTuple(arg1, arg2)) {}
-};
-
-// Message to create a mutex in the IPC server, using the received name.
-class MsgDoMutex : public IPC::MessageWithTuple< Tuple2<std::wstring, int> > {
- public:
-  enum { ID = SERVER_THIRD_IPC_TYPE };
-  MsgDoMutex(const std::wstring& mutex_name, const int& unused)
-      : IPC::MessageWithTuple< Tuple2<std::wstring, int> >(
-            MSG_ROUTING_CONTROL, ID, MakeRefTuple(mutex_name, unused)) {}
-};
-
 class SimpleListener : public IPC::Channel::Listener {
  public:
   SimpleListener() : other_(NULL) {
@@ -202,7 +181,7 @@ class FuzzerServerListener : public SimpleListener {
   }
 
   void ReplyMsgNotHandled(uint32 type_id) {
-    RoundtripAckReply(FUZZER_ROUTING_ID, CLIENT_UNHANDLED_IPC, type_id);
+    RoundtripAckReply(FUZZER_ROUTING_ID, MsgUnhandled::ID, type_id);
     Cleanup();
   }
 
@@ -249,7 +228,7 @@ class FuzzerClientListener : public SimpleListener {
   }
 
   bool ExpectMsgNotHandled(uint32 type_id) {
-    return ExpectMessage(type_id, CLIENT_UNHANDLED_IPC);
+    return ExpectMessage(type_id, MsgUnhandled::ID);
   }
 
  private:
@@ -288,7 +267,7 @@ TEST_F(IPCFuzzingTest, SanityTest) {
                     &listener);
   base::ProcessHandle server_process = SpawnChild(FUZZER_SERVER, &chan);
   ASSERT_TRUE(server_process);
-  base::PlatformThread::Sleep(1000);
+  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
   ASSERT_TRUE(chan.Connect());
   listener.Init(&chan);
 
@@ -311,14 +290,14 @@ TEST_F(IPCFuzzingTest, SanityTest) {
 // In debug this triggers an assertion and in release it is ignored(!!). Right
 // after we generate another valid IPC to make sure framing is working
 // properly.
-#ifdef NDEBUG
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
 TEST_F(IPCFuzzingTest, MsgBadPayloadShort) {
   FuzzerClientListener listener;
   IPC::Channel chan(kFuzzerChannel, IPC::Channel::MODE_SERVER,
                     &listener);
   base::ProcessHandle server_process = SpawnChild(FUZZER_SERVER, &chan);
   ASSERT_TRUE(server_process);
-  base::PlatformThread::Sleep(1000);
+  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
   ASSERT_TRUE(chan.Connect());
   listener.Init(&chan);
 
@@ -335,7 +314,7 @@ TEST_F(IPCFuzzingTest, MsgBadPayloadShort) {
   EXPECT_TRUE(base::WaitForSingleProcess(server_process, 5000));
   base::CloseProcessHandle(server_process);
 }
-#endif  // NDEBUG
+#endif
 
 // This test uses a payload that has too many arguments, but so the payload
 // size is big enough so the unpacking routine does not generate an error as
@@ -348,7 +327,7 @@ TEST_F(IPCFuzzingTest, MsgBadPayloadArgs) {
                     &listener);
   base::ProcessHandle server_process = SpawnChild(FUZZER_SERVER, &chan);
   ASSERT_TRUE(server_process);
-  base::PlatformThread::Sleep(1000);
+  base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
   ASSERT_TRUE(chan.Connect());
   listener.Init(&chan);
 
@@ -376,8 +355,10 @@ class ServerMacroExTest {
  public:
   ServerMacroExTest() : unhandled_msgs_(0) {
   }
+
   virtual ~ServerMacroExTest() {
   }
+
   virtual bool OnMessageReceived(const IPC::Message& msg) {
     bool msg_is_ok = false;
     IPC_BEGIN_MESSAGE_MAP_EX(ServerMacroExTest, msg, msg_is_ok)
@@ -399,6 +380,8 @@ class ServerMacroExTest {
   }
 
   int unhandled_msgs_;
+
+  DISALLOW_COPY_AND_ASSIGN(ServerMacroExTest);
 };
 
 TEST_F(IPCFuzzingTest, MsgMapExMacro) {
@@ -413,7 +396,7 @@ TEST_F(IPCFuzzingTest, MsgMapExMacro) {
   EXPECT_TRUE(server.OnMessageReceived(*msg));
   delete msg;
 
-#ifdef NDEBUG
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
   // Test a bad message.
   msg = new IPC::Message(MSG_ROUTING_CONTROL, MsgClassSI::ID,
                          IPC::Message::PRIORITY_NORMAL);

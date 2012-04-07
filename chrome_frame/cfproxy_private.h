@@ -80,7 +80,7 @@ class Interface2IPCMessage : public ChromeProxy {
   virtual void Tab_Paste(int tab);
   virtual void Tab_SelectAll(int tab);
   virtual void Tab_MenuCommand(int tab, int selected_command);
-  virtual void Tab_Zoom(int tab, PageZoom::Function zoom_level);
+  virtual void Tab_Zoom(int tab, content::PageZoom zoom_level);
   virtual void Tab_FontSize(int tab, enum AutomationPageFontSize font_size);
   virtual void Tab_SetInitialFocus(int tab, bool reverse,
                                    bool restore_focus_to_view);
@@ -155,10 +155,10 @@ class CFProxy : public Interface2IPCMessage,
   virtual void Tab_RunUnloadHandlers(int tab);
 
   //////////////////////////////////////////////////////////////////////////
-  // IPC::Channel::Listener
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OnChannelError();
+  // IPC::Channel::Listener implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
   bool CalledOnIpcThread() const {
     return base::PlatformThread::CurrentId() == ipc_thread_.thread_id();
@@ -171,8 +171,6 @@ class CFProxy : public Interface2IPCMessage,
   int delegate_count_;
   bool is_connected_;
 };
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(CFProxy);
 
 // Support functions.
 std::string GenerateChannelId();

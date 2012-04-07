@@ -11,8 +11,7 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
-#include "chrome/test/webdriver/session_manager.h"
+#include "chrome/test/webdriver/webdriver_session.h"
 
 namespace webdriver {
 
@@ -33,6 +32,8 @@ bool SessionWithID::DoesDelete() {
 void SessionWithID::ExecuteGet(Response* const response) {
   DictionaryValue *temp_value = new DictionaryValue();
 
+  // Standard capabilities defined at
+  // http://code.google.com/p/selenium/wiki/JsonWireProtocol#Capabilities_JSON_Object
   temp_value->SetString("browserName", "chrome");
   temp_value->SetString("version", session_->GetBrowserVersion());
 
@@ -49,16 +50,27 @@ void SessionWithID::ExecuteGet(Response* const response) {
 #endif
 
   temp_value->SetBoolean("javascriptEnabled", true);
+  temp_value->SetBoolean("takesScreenshot", true);
+  temp_value->SetBoolean("handlesAlerts", true);
+  temp_value->SetBoolean("databaseEnabled", false);
+  temp_value->SetBoolean("locationContextEnabled", false);
+  temp_value->SetBoolean("applicationCacheEnabled", false);
+  temp_value->SetBoolean("browserConnectionEnabled", false);
+  temp_value->SetBoolean("cssSelectorsEnabled", true);
+  temp_value->SetBoolean("webStorageEnabled", false);
+  temp_value->SetBoolean("rotatable", false);
+  temp_value->SetBoolean("acceptSslCerts", false);
+  // Even when ChromeDriver does not OS-events, the input simulation produces
+  // the same effect for most purposes (except IME).
+  temp_value->SetBoolean("nativeEvents", true);
 
   // Custom non-standard session info.
   temp_value->SetWithoutPathExpansion(
-      "chrome.chromedriverVersion", Value::CreateStringValue("1.0"));
-  temp_value->SetWithoutPathExpansion(
-      "chrome.automationVersion",
+      "chrome.chromedriverVersion",
       Value::CreateStringValue(chrome::kChromeVersion));
   temp_value->SetWithoutPathExpansion(
       "chrome.nativeEvents",
-      Value::CreateBooleanValue(session_->use_native_events()));
+      Value::CreateBooleanValue(session_->capabilities().native_events));
 
   response->SetValue(temp_value);
 }
@@ -66,6 +78,10 @@ void SessionWithID::ExecuteGet(Response* const response) {
 void SessionWithID::ExecuteDelete(Response* const response) {
   // Session manages its own lifetime, so do not call delete.
   session_->Terminate();
+}
+
+bool SessionWithID::ShouldRunPreAndPostCommandHandlers() {
+  return false;
 }
 
 }  // namespace webdriver

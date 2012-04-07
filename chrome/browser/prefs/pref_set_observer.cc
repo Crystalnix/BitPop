@@ -5,10 +5,10 @@
 #include "chrome/browser/prefs/pref_set_observer.h"
 
 #include "chrome/common/pref_names.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_types.h"
 
 PrefSetObserver::PrefSetObserver(PrefService* pref_service,
-                                 NotificationObserver* observer)
+                                 content::NotificationObserver* observer)
     : pref_service_(pref_service),
       observer_(observer) {
   registrar_.Init(pref_service);
@@ -45,7 +45,7 @@ bool PrefSetObserver::IsManaged() {
 // static
 PrefSetObserver* PrefSetObserver::CreateProxyPrefSetObserver(
     PrefService* pref_service,
-    NotificationObserver* observer) {
+    content::NotificationObserver* observer) {
   PrefSetObserver* pref_set = new PrefSetObserver(pref_service, observer);
   pref_set->AddPref(prefs::kProxy);
 
@@ -55,7 +55,7 @@ PrefSetObserver* PrefSetObserver::CreateProxyPrefSetObserver(
 // static
 PrefSetObserver* PrefSetObserver::CreateDefaultSearchPrefSetObserver(
     PrefService* pref_service,
-    NotificationObserver* observer) {
+    content::NotificationObserver* observer) {
   PrefSetObserver* pref_set = new PrefSetObserver(pref_service, observer);
   pref_set->AddPref(prefs::kDefaultSearchProviderEnabled);
   pref_set->AddPref(prefs::kDefaultSearchProviderName);
@@ -65,13 +65,14 @@ PrefSetObserver* PrefSetObserver::CreateDefaultSearchPrefSetObserver(
   pref_set->AddPref(prefs::kDefaultSearchProviderIconURL);
   pref_set->AddPref(prefs::kDefaultSearchProviderInstantURL);
   pref_set->AddPref(prefs::kDefaultSearchProviderEncodings);
+  pref_set->AddPref(prefs::kSyncedDefaultSearchProviderGUID);
 
   return pref_set;
 }
 
-void PrefSetObserver::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
+void PrefSetObserver::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
   if (observer_)
     observer_->Observe(type, source, details);
 }

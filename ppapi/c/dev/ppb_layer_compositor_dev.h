@@ -1,4 +1,4 @@
-/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -11,7 +11,9 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_size.h"
 
-#define PPB_LAYER_COMPOSITOR_DEV_INTERFACE "PPB_LayerCompositor(Dev);0.1"
+#define PPB_LAYER_COMPOSITOR_DEV_INTERFACE_0_2 "PPB_LayerCompositor(Dev);0.2"
+#define PPB_LAYER_COMPOSITOR_DEV_INTERFACE \
+    PPB_LAYER_COMPOSITOR_DEV_INTERFACE_0_2
 
 // PPB_LayerCompositor allows multiple layers of PPB_Surface3D and
 // PPB_VideoLayer be bound to a plugin instance.
@@ -21,7 +23,7 @@
 //
 // This also allows each layer to be updated seperately to avoid excessive
 // compositing.
-struct PPB_LayerCompositor_Dev {
+struct PPB_LayerCompositor_Dev_0_2 {
   // Creates a video layer.
   PP_Resource (*Create)(PP_Instance instance);
 
@@ -68,9 +70,11 @@ struct PPB_LayerCompositor_Dev {
   // Since this is an asynchronous operation, |callback| will be called when
   // this operation is done.
   //
-  // Returns PP_TRUE if the operation was successful. PP_FALSE otherwise.
-  PP_Bool (*SwapBuffers)(PP_Resource compositor,
+  // Returns an error code from pp_errors.h.
+  int32_t (*SwapBuffers)(PP_Resource compositor,
                          struct PP_CompletionCallback callback);
 };
+
+typedef struct PPB_LayerCompositor_Dev_0_2 PPB_LayerCompositor_Dev;
 
 #endif  /* PPAPI_C_DEV_PPB_LAYER_COMPOSITOR_DEV_H_ */

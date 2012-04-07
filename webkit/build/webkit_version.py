@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,7 +12,16 @@ import os
 import re
 import sys
 
-sys.path.insert(0, '../../build/util')
+# Get the full path of the current script which would be something like
+# src/webkit/build/webkit_version.py and navigate backwards twice to strip the
+# last two path components to get to the srcroot.
+# This is to ensure that the script can load the lastchange module by updating
+# the sys.path variable with the desired location.
+path = os.path.dirname(os.path.realpath(__file__))
+path = os.path.dirname(os.path.dirname(path))
+path = os.path.join(path, 'build', 'util')
+
+sys.path.insert(0, path)
 import lastchange
 
 def ReadVersionFile(fname):
@@ -40,6 +49,7 @@ def ReadVersionFile(fname):
   assert(major >= 0 and minor >= 0)
   return (major, minor)
 
+
 def GetWebKitRevision(webkit_dir, version_file):
   """Get the WebKit revision, in the form 'trunk@1234'."""
 
@@ -49,22 +59,17 @@ def GetWebKitRevision(webkit_dir, version_file):
   version_file_dir = os.path.dirname(version_file)
   version_info = lastchange.FetchVersionInfo(
       default_lastchange=None,
-      directory=os.path.join(webkit_dir, version_file_dir))
+      directory=os.path.join(webkit_dir, version_file_dir),
+      directory_regex_prior_to_src_url='webkit')
 
-  if (version_info.url.startswith(version_info.root) and
-      version_info.url.endswith(version_file_dir)):
-    # Now compute the real WebKit URL by stripping off the version file
-    # directory from the URL we get out of version_info.
-    # Further, we want to strip off the "http://svn..." from the left.
-    # This is the root URL from the repository.
-    webkit_url = version_info.url[len(version_info.root):-len(version_file_dir)]
-    webkit_url = webkit_url.strip('/')
-  else:
-    # The data isn't as we expect: perhaps they're using git without svn?
-    # Just dump the output directly.
-    webkit_url = version_info.url
+  if version_info.url == None:
+    version_info.url = 'Unknown URL'
+  version_info.url = version_info.url.strip('/')
 
-  return "%s@%s" % (webkit_url, version_info.revision)
+  if version_info.revision == None:
+    version_info.revision = '0'
+
+  return "%s@%s" % (version_info.url, version_info.revision)
 
 
 def EmitVersionHeader(webkit_dir, version_file, output_dir):
@@ -91,12 +96,12 @@ def EmitVersionHeader(webkit_dir, version_file, output_dir):
 """ % (version_file, major, minor, webkit_revision)
   f.write(template)
   f.close()
+  return 0
+
 
 def main():
-  EmitVersionHeader(*sys.argv[1:])
+  return EmitVersionHeader(*sys.argv[1:])
 
 
 if __name__ == "__main__":
-  main()
-
-
+  sys.exit(main())

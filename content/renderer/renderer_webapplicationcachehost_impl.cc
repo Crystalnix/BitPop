@@ -5,8 +5,8 @@
 #include "content/renderer/renderer_webapplicationcachehost_impl.h"
 
 #include "content/common/view_messages.h"
-#include "content/renderer/render_thread.h"
-#include "content/renderer/render_view.h"
+#include "content/renderer/render_thread_impl.h"
+#include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
@@ -15,7 +15,7 @@ using WebKit::WebApplicationCacheHostClient;
 using WebKit::WebConsoleMessage;
 
 RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
-    RenderView* render_view,
+    RenderViewImpl* render_view,
     WebApplicationCacheHostClient* client,
     AppCacheBackend* backend)
     : WebApplicationCacheHostImpl(client, backend),
@@ -25,7 +25,7 @@ RendererWebApplicationCacheHostImpl::RendererWebApplicationCacheHostImpl(
 
 void RendererWebApplicationCacheHostImpl::OnLogMessage(
     appcache::LogLevel log_level, const std::string& message) {
-  RenderView* render_view = GetRenderView();
+  RenderViewImpl* render_view = GetRenderView();
   if (!render_view || !render_view->webview() ||
       !render_view->webview()->mainFrame())
     return;
@@ -38,20 +38,20 @@ void RendererWebApplicationCacheHostImpl::OnLogMessage(
 
 void RendererWebApplicationCacheHostImpl::OnContentBlocked(
     const GURL& manifest_url) {
-  RenderThread::current()->Send(new ViewHostMsg_AppCacheAccessed(
+  RenderThreadImpl::current()->Send(new ViewHostMsg_AppCacheAccessed(
       routing_id_, manifest_url, true));
 }
 
 void RendererWebApplicationCacheHostImpl::OnCacheSelected(
     const appcache::AppCacheInfo& info) {
   if (!info.manifest_url.is_empty()) {
-    RenderThread::current()->Send(new ViewHostMsg_AppCacheAccessed(
+    RenderThreadImpl::current()->Send(new ViewHostMsg_AppCacheAccessed(
         routing_id_, info.manifest_url, false));
   }
   WebApplicationCacheHostImpl::OnCacheSelected(info);
 }
 
-RenderView* RendererWebApplicationCacheHostImpl::GetRenderView() {
-  return static_cast<RenderView*>
-      (RenderThread::current()->ResolveRoute(routing_id_));
+RenderViewImpl* RendererWebApplicationCacheHostImpl::GetRenderView() {
+  return static_cast<RenderViewImpl*>
+      (RenderThreadImpl::current()->ResolveRoute(routing_id_));
 }

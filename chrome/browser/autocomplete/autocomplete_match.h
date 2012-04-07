@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,10 @@
 #include <vector>
 #include <string>
 
-#include "content/common/page_transition_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
 
 class AutocompleteProvider;
-class PageTransition;
 class TemplateURL;
 
 // AutocompleteMatch ----------------------------------------------------------
@@ -82,6 +81,10 @@ struct AutocompleteMatch {
     NUM_TYPES,
   };
 
+  // Null-terminated array of characters that are not valid within |contents|
+  // and |description| strings.
+  static const char16 kInvalidChars[];
+
   AutocompleteMatch();
   AutocompleteMatch(AutocompleteProvider* provider,
                     int relevance,
@@ -89,7 +92,7 @@ struct AutocompleteMatch {
                     Type type);
   ~AutocompleteMatch();
 
-  // Converts |type| to a string representation.  Used in logging.
+  // Converts |type| to a string representation.  Used in logging and debugging.
   static std::string TypeToString(Type type);
 
   // Converts |type| to a resource identifier for the appropriate icon for this
@@ -124,6 +127,11 @@ struct AutocompleteMatch {
                                        size_t overall_length,
                                        int style,
                                        ACMatchClassifications* classifications);
+
+  // Removes invalid characters from |text|. Should be called on strings coming
+  // from external sources (such as extensions) before assigning to |contents|
+  // or |description|.
+  static string16 SanitizeString(const string16& text);
 
   // The provider of this match, used to remember which provider the user had
   // selected when the input changes. This may be NULL, in which case there is
@@ -168,7 +176,7 @@ struct AutocompleteMatch {
   // The transition type to use when the user opens this match.  By default
   // this is TYPED.  Providers whose matches do not look like URLs should set
   // it to GENERATED.
-  PageTransition::Type transition;
+  content::PageTransition transition;
 
   // True when this match is the "what you typed" match from the history
   // system.
@@ -177,8 +185,8 @@ struct AutocompleteMatch {
   // Type of this match.
   Type type;
 
-  // If this match corresponds to a keyword, this is the TemplateURL the
-  // keyword was obtained from.
+  // Indicates the TemplateURL the match originated from. This is set for
+  // keywords as well as matches for the default search provider.
   const TemplateURL* template_url;
 
   // True if the user has starred the destination URL.

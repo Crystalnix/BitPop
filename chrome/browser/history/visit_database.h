@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,6 +55,11 @@ class VisitDatabase {
   // may still be no matches).
   bool GetVisitsForURL(URLID url_id, VisitVector* visits);
 
+  // Fills in the given vector with all of the visits for the given page ID that
+  // have the |is_indexed| field set to true, in no particular order.
+  // Returns true on success (although there may still be no matches).
+  bool GetIndexedVisitsForURL(URLID url_id, VisitVector* visits);
+
   // Fills all visits in the time range [begin, end) to the given vector. Either
   // time can be is_null(), in which case the times in that direction are
   // unbounded.
@@ -64,7 +69,7 @@ class VisitDatabase {
   // is used for history expiration.)
   //
   // The results will be in increasing order of date.
-  void GetAllVisitsInRange(base::Time begin_time, base::Time end_time,
+  bool GetAllVisitsInRange(base::Time begin_time, base::Time end_time,
                            int max_results, VisitVector* visits);
 
   // Fills all visits with specified transition in the time range [begin, end)
@@ -76,10 +81,10 @@ class VisitDatabase {
   // is used for history expiration.)
   //
   // The results will be in increasing order of date.
-  void GetVisitsInRangeForTransition(base::Time begin_time,
+  bool GetVisitsInRangeForTransition(base::Time begin_time,
                                      base::Time end_time,
                                      int max_results,
-                                     PageTransition::Type transition,
+                                     content::PageTransition transition,
                                      VisitVector* visits);
 
   // Fills all visits in the given time range into the given vector that should
@@ -165,7 +170,7 @@ class VisitDatabase {
 
   // Convenience to fill a VisitVector. Assumes that statement.step()
   // hasn't happened yet.
-  static void FillVisitVector(sql::Statement& statement, VisitVector* visits);
+  static bool FillVisitVector(sql::Statement& statement, VisitVector* visits);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(VisitDatabase);

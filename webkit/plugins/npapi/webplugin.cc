@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,14 +26,11 @@ bool WebPluginGeometry::Equals(const WebPluginGeometry& rhs) const {
 }
 
 #if defined(OS_MACOSX)
-WebPluginAcceleratedSurface* WebPlugin::GetAcceleratedSurface() {
+WebPluginAcceleratedSurface* WebPlugin::GetAcceleratedSurface(
+    gfx::GpuPreference gpu_preference) {
   return NULL;
 }
 #endif
-
-WebPluginDelegate* WebPlugin::delegate() {
-  return NULL;
-}
 
 }  // namespace npapi
 }  // namespace webkit

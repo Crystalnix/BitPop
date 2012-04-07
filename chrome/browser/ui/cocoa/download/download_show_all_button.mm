@@ -7,9 +7,9 @@
 #include "base/logging.h"
 #import "chrome/browser/ui/cocoa/download/download_show_all_cell.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 @implementation DownloadShowAllButton
 

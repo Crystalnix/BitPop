@@ -1,12 +1,15 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
 #include "base/string_number_conversions.h"
+#include "remoting/base/constants.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/fake_session.h"
 #include "remoting/protocol/rtp_reader.h"
@@ -55,9 +58,19 @@ class RtpVideoWriterTest : public testing::Test {
     bool last;
   };
 
+  RtpVideoWriterTest()
+      : writer_(base::MessageLoopProxy::current()) {
+  }
+
   virtual void SetUp() {
-    session_ = new FakeSession();
-    writer_.Init(session_);
+    session_.reset(new FakeSession());
+    writer_.Init(session_.get(),
+                 base::Bind(&RtpVideoWriterTest::OnWriterInitialized,
+                            base::Unretained(this)));
+  }
+
+  void OnWriterInitialized(bool success) {
+    ASSERT_TRUE(success);
   }
 
   void InitData(int size) {
@@ -88,7 +101,7 @@ class RtpVideoWriterTest : public testing::Test {
   void VerifyResult(const ExpectedPacket expected[],
                     int count) {
     const vector<string>& rtp_packets =
-        session_->video_rtp_channel()->written_packets();
+        session_->GetDatagramChannel(kVideoRtpChannelName)->written_packets();
     ASSERT_EQ(count, static_cast<int>(rtp_packets.size()));
     int pos = 0;
     for (int i = 0; i < count; ++i) {
@@ -107,17 +120,19 @@ class RtpVideoWriterTest : public testing::Test {
     EXPECT_EQ(pos, static_cast<int>(data_.size()));
   }
 
-  scoped_refptr<FakeSession> session_;
+  MessageLoop message_loop_;
+
+  scoped_ptr<FakeSession> session_;
   RtpVideoWriter writer_;
 
-  MessageLoop message_loop_;
   vector<char> data_;
   VideoPacket* packet_;
 };
 
 TEST_F(RtpVideoWriterTest, NotFragmented_FirstPacket) {
   InitPacket(1024, true, false);
-  writer_.ProcessVideoPacket(packet_, new DeleteTask<VideoPacket>(packet_));
+  writer_.ProcessVideoPacket(
+      packet_, base::Bind(&base::DeletePointer<VideoPacket>, packet_));
   message_loop_.RunAllPending();
 
   ExpectedPacket expected[] = {
@@ -128,7 +143,8 @@ TEST_F(RtpVideoWriterTest, NotFragmented_FirstPacket) {
 
 TEST_F(RtpVideoWriterTest, NotFragmented_LastPackes) {
   InitPacket(1024, false, true);
-  writer_.ProcessVideoPacket(packet_, new DeleteTask<VideoPacket>(packet_));
+  writer_.ProcessVideoPacket(
+      packet_, base::Bind(&base::DeletePointer<VideoPacket>, packet_));
   message_loop_.RunAllPending();
 
   ExpectedPacket expected[] = {
@@ -139,7 +155,8 @@ TEST_F(RtpVideoWriterTest, NotFragmented_LastPackes) {
 
 TEST_F(RtpVideoWriterTest, TwoFragments_FirstPacket) {
   InitPacket(2000, true, false);
-  writer_.ProcessVideoPacket(packet_, new DeleteTask<VideoPacket>(packet_));
+  writer_.ProcessVideoPacket(
+      packet_, base::Bind(&base::DeletePointer<VideoPacket>, packet_));
   message_loop_.RunAllPending();
 
   ExpectedPacket expected[] = {
@@ -151,7 +168,8 @@ TEST_F(RtpVideoWriterTest, TwoFragments_FirstPacket) {
 
 TEST_F(RtpVideoWriterTest, TwoFragments_LastPacket) {
   InitPacket(2000, false, true);
-  writer_.ProcessVideoPacket(packet_, new DeleteTask<VideoPacket>(packet_));
+  writer_.ProcessVideoPacket(
+      packet_, base::Bind(&base::DeletePointer<VideoPacket>, packet_));
   message_loop_.RunAllPending();
 
   ExpectedPacket expected[] = {
@@ -163,7 +181,8 @@ TEST_F(RtpVideoWriterTest, TwoFragments_LastPacket) {
 
 TEST_F(RtpVideoWriterTest, ThreeFragments) {
   InitPacket(3000, true, true);
-  writer_.ProcessVideoPacket(packet_, new DeleteTask<VideoPacket>(packet_));
+  writer_.ProcessVideoPacket(
+      packet_, base::Bind(&base::DeletePointer<VideoPacket>, packet_));
   message_loop_.RunAllPending();
 
   ExpectedPacket expected[] = {

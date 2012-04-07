@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,49 +8,37 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
 #include "chrome/browser/chromeos/login/view_screen.h"
 #include "chrome/browser/chromeos/login/web_page_screen.h"
 #include "chrome/browser/chromeos/login/web_page_view.h"
+#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+
+class GURL;
+class Profile;
 
 namespace net {
 class URLRequest;
 class URLRequestJob;
 }  // namespace net
 
-class GURL;
-class Profile;
-class SiteContents;
-
 namespace chromeos {
 
 class ViewScreenDelegate;
 
-// Class that renders host registration page.
-class RegistrationDomView : public WebPageDomView {
- public:
-  RegistrationDomView() {}
-
- protected:
-  // Overriden from DOMView:
-  virtual TabContents* CreateTabContents(Profile* profile,
-                                         SiteInstance* instance);
-
-  DISALLOW_COPY_AND_ASSIGN(RegistrationDomView);
-};
-
 // Class that displays screen contents: page and throbber while waiting.
 class RegistrationView : public WebPageView {
  public:
-  RegistrationView() : dom_view_(new RegistrationDomView()) {}
+  RegistrationView() : dom_view_(new WebPageDomView()) {}
 
  protected:
-  virtual WebPageDomView* dom_view();
+  virtual WebPageDomView* dom_view() OVERRIDE;
 
  private:
   // View that renders page.
-  RegistrationDomView* dom_view_;
+  WebPageDomView* dom_view_;
 
   DISALLOW_COPY_AND_ASSIGN(RegistrationView);
 };
@@ -61,17 +49,10 @@ class RegistrationView : public WebPageView {
 // Partner registration page notifies host page on registration result.
 // Host page notifies that back to RegistrationScreen.
 class RegistrationScreen : public ViewScreen<RegistrationView>,
-                           public WebPageScreen,
-                           public WebPageDelegate {
+                           public WebPageScreen {
  public:
   explicit RegistrationScreen(ViewScreenDelegate* delegate);
-
-  // WebPageDelegate implementation:
-  virtual void OnPageLoaded();
-  virtual void OnPageLoadFailed(const std::string& url);
-
-  // Sets the url for registration host page. Used in tests.
-  static void set_registration_host_page_url(const GURL& url);
+  virtual ~RegistrationScreen();
 
   // Handler factory for net::URLRequestFilter::AddHostnameHandler.
   static net::URLRequestJob* Factory(net::URLRequest* request,
@@ -79,26 +60,22 @@ class RegistrationScreen : public ViewScreen<RegistrationView>,
 
  private:
   // ViewScreen implementation:
-  virtual void CreateView();
-  virtual void Refresh();
-  virtual RegistrationView* AllocateView();
+  virtual void CreateView() OVERRIDE;
+  virtual void Refresh() OVERRIDE;
+  virtual RegistrationView* AllocateView() OVERRIDE;
 
-  // TabContentsDelegate implementation:
-  virtual void LoadingStateChanged(TabContents* source) {}
-  virtual void NavigationStateChanged(const TabContents* source,
-                                      unsigned changed_flags) {}
-  virtual void OpenURLFromTab(TabContents* source,
-                              const GURL& url,
-                              const GURL& referrer,
-                              WindowOpenDisposition disposition,
-                              PageTransition::Type transition);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+  // content::WebContentsDelegate implementation:
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
+
+  virtual void HandleKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
 
   // WebPageScreen implementation:
-  virtual void CloseScreen(ScreenObserver::ExitCodes code);
+  virtual void CloseScreen(ScreenObserver::ExitCodes code) OVERRIDE;
 
-  // Url of account creation page. Overriden by tests.
-  static scoped_ptr<GURL> host_page_url_;
+  UnhandledKeyboardEventHandler unhandled_keyboard_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(RegistrationScreen);
 };

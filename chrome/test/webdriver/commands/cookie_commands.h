@@ -12,7 +12,9 @@
 #include "chrome/test/webdriver/commands/webdriver_command.h"
 #include "googleurl/src/gurl.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace webdriver {
 
@@ -25,23 +27,18 @@ class Response;
 class CookieCommand : public WebDriverCommand {
  public:
   CookieCommand(const std::vector<std::string>& path_segments,
-                const DictionaryValue* const parameters);
+                const base::DictionaryValue* const parameters);
   virtual ~CookieCommand();
 
-  virtual bool Init(Response* const response);
+  virtual bool DoesDelete() OVERRIDE;
+  virtual bool DoesGet() OVERRIDE;
+  virtual bool DoesPost() OVERRIDE;
 
-  virtual bool DoesDelete();
-  virtual bool DoesGet();
-  virtual bool DoesPost();
-
-  virtual void ExecuteDelete(Response* const response);
-  virtual void ExecuteGet(Response* const response);
-  virtual void ExecutePost(Response* const response);
+  virtual void ExecuteDelete(Response* const response) OVERRIDE;
+  virtual void ExecuteGet(Response* const response) OVERRIDE;
+  virtual void ExecutePost(Response* const response) OVERRIDE;
 
  private:
-  GURL current_url_;
-  bool uses_new_interface_;
-
   DISALLOW_COPY_AND_ASSIGN(CookieCommand);
 };
 
@@ -51,20 +48,17 @@ class CookieCommand : public WebDriverCommand {
 class NamedCookieCommand : public WebDriverCommand {
  public:
   NamedCookieCommand(const std::vector<std::string>& path_segments,
-                     const DictionaryValue* const parameters);
+                     const base::DictionaryValue* const parameters);
   virtual ~NamedCookieCommand();
 
-  virtual bool Init(Response* const response);
+  virtual bool Init(Response* const response) OVERRIDE;
 
- protected:
-  virtual bool DoesDelete();
+  virtual bool DoesDelete() OVERRIDE;
 
-  virtual void ExecuteDelete(Response* const response);
+  virtual void ExecuteDelete(Response* const response) OVERRIDE;
 
  private:
-  GURL current_url_;
   std::string cookie_name_;
-  bool uses_new_interface_;
 
   DISALLOW_COPY_AND_ASSIGN(NamedCookieCommand);
 };

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -97,9 +97,6 @@ class ChromeosFirmwareVersionChecker(pyauto.PyUITest):
       component: The component of which to return the version of.
     """
 
-    #TODO(krisr/rchenna) Once ZGB is ready remove this
-    if self.ChromeOSBoard() == 'x86-zgb':
-      return
     updater_commands = ['/usr/sbin/chromeos-firmwareupdate', '-V']
     content = subprocess.Popen(updater_commands,
                                stdout=subprocess.PIPE).stdout.read()

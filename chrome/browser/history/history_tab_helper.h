@@ -6,9 +6,10 @@
 #define CHROME_BROWSER_HISTORY_HISTORY_TAB_HELPER_H_
 #pragma once
 
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "base/memory/ref_counted.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class HistoryService;
 class SkBitmap;
@@ -18,10 +19,10 @@ namespace history {
 class HistoryAddPageArgs;
 }
 
-class HistoryTabHelper : public TabContentsObserver,
-                         public NotificationObserver {
+class HistoryTabHelper : public content::WebContentsObserver,
+                         public content::NotificationObserver {
  public:
-  explicit HistoryTabHelper(TabContents* tab_contents);
+  explicit HistoryTabHelper(content::WebContents* web_contents);
   virtual ~HistoryTabHelper();
 
   // Updates history with the specified navigation. This is called by
@@ -31,29 +32,29 @@ class HistoryTabHelper : public TabContentsObserver,
 
   // Sends the page title to the history service. This is called when we receive
   // the page title and we know we want to update history.
-  void UpdateHistoryPageTitle(const NavigationEntry& entry);
+  void UpdateHistoryPageTitle(const content::NavigationEntry& entry);
 
   // Returns the history::HistoryAddPageArgs to use for adding a page to
   // history.
   scoped_refptr<history::HistoryAddPageArgs> CreateHistoryAddPageArgs(
       const GURL& virtual_url,
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
+      const content::FrameNavigateParams& params);
 
  private:
-  // TabContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void DidNavigateMainFramePostCommit(
+  // content::WebContentsObserver implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
-  virtual void DidNavigateAnyFramePostCommit(
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
+      const content::FrameNavigateParams& params) OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   void OnPageContents(const GURL& url,
                       int32 page_id,
@@ -71,7 +72,7 @@ class HistoryTabHelper : public TabContentsObserver,
   // messages.
   bool received_page_title_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(HistoryTabHelper);
 };

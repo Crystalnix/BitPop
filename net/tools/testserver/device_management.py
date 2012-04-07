@@ -1,4 +1,3 @@
-#!/usr/bin/python2.5
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -15,31 +14,37 @@ The format of the file is JSON. The root dictionary contains a list under the
 key "managed_users". It contains auth tokens for which the server will claim
 that the user is managed. The token string "*" indicates that all users are
 claimed to be managed. Other keys in the root dictionary identify request
-scopes. Each request scope is described by a dictionary that holds two
+scopes. The user-request scope is described by a dictionary that holds two
 sub-dictionaries: "mandatory" and "recommended". Both these hold the policy
 definitions as key/value stores, their format is identical to what the Linux
 implementation reads from /etc.
+The device-scope holds the policy-definition directly as key/value stores in the
+protobuf-format.
 
 Example:
 
 {
-  "chromeos/device": {
-    "mandatory": {
-      "HomepageLocation" : "http://www.chromium.org"
-    },
-    "recommended": {
-      "JavascriptEnabled": false,
-    },
+  "google/chromeos/device" : {
+      "guest_mode_enabled" : false
   },
-  "managed_users": [
+  "google/chromeos/user" : {
+     "mandatory" : {
+      "HomepageLocation" : "http://www.chromium.org",
+      "IncognitoEnabled" : false
+    },
+     "recommended" : {
+      "JavascriptEnabled": false
+    }
+  },
+  "managed_users" : [
     "secret123456"
   ]
 }
 
-
 """
 
 import cgi
+import hashlib
 import logging
 import os
 import random
@@ -66,6 +71,13 @@ import chrome_device_policy_pb2 as dp
 
 # ASN.1 object identifier for PKCS#1/RSA.
 PKCS1_RSA_OID = '\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01'
+
+# SHA256 sum of "0".
+SHA256_0 = hashlib.sha256('0').digest()
+
+# List of bad machine identifiers that trigger the |valid_serial_number_missing|
+# flag to be set set in the policy fetch response.
+BAD_MACHINE_IDS = [ '123490EN400015' ];
 
 class RequestHandler(object):
   """Decodes and handles device management requests from clients.
@@ -119,8 +131,10 @@ class RequestHandler(object):
     rmsg = dm.DeviceManagementRequest()
     rmsg.ParseFromString(self._request)
 
-    logging.debug('auth -> ' + self._headers.getheader('Authorization', ''))
-    logging.debug('deviceid -> ' + self.GetUniqueParam('deviceid'))
+    logging.debug('gaia auth token -> ' +
+                  self._headers.getheader('Authorization', ''))
+    logging.debug('oauth token -> ' + str(self.GetUniqueParam('oauth_token')))
+    logging.debug('deviceid -> ' + str(self.GetUniqueParam('deviceid')))
     self.DumpMessage('Request', rmsg)
 
     request_type = self.GetUniqueParam('request')
@@ -138,18 +152,27 @@ class RequestHandler(object):
       return self.ProcessUnregister(rmsg.unregister_request)
     elif request_type == 'policy' or request_type == 'ping':
       return self.ProcessPolicy(rmsg.policy_request, request_type)
+    elif request_type == 'enterprise_check':
+      return self.ProcessAutoEnrollment(rmsg.auto_enrollment_request)
     else:
       return (400, 'Invalid request parameter')
 
   def CheckGoogleLogin(self):
-    """Extracts the GoogleLogin auth token from the HTTP request, and
-    returns it. Returns None if the token is not present.
+    """Extracts the auth token from the request and returns it. The token may
+    either be a GoogleLogin token from an Authorization header, or an OAuth V2
+    token from the oauth_token query parameter. Returns None if no token is
+    present.
     """
+    oauth_token = self.GetUniqueParam('oauth_token')
+    if oauth_token:
+      return oauth_token
+
     match = re.match('GoogleLogin auth=(\\w+)',
                      self._headers.getheader('Authorization', ''))
-    if not match:
-      return None
-    return match.group(1)
+    if match:
+      return match.group(1)
+
+    return None
 
   def ProcessRegister(self, msg):
     """Handles a register request.
@@ -164,8 +187,14 @@ class RequestHandler(object):
       A tuple of HTTP status code and response data to send to the client.
     """
     # Check the auth token and device ID.
-    if not self.CheckGoogleLogin():
+    auth = self.CheckGoogleLogin()
+    if not auth:
       return (403, 'No authorization')
+
+    policy = self._server.GetPolicies()
+    if ('*' not in policy['managed_users'] and
+        auth not in policy['managed_users']):
+      return (403, 'Unmanaged')
 
     device_id = self.GetUniqueParam('deviceid')
     if not device_id:
@@ -203,105 +232,11 @@ class RequestHandler(object):
       return response
 
     # Unregister the device.
-    self._server.UnregisterDevice(token);
+    self._server.UnregisterDevice(token['device_token']);
 
     # Prepare and send the response.
     response = dm.DeviceManagementResponse()
     response.unregister_response.CopyFrom(dm.DeviceUnregisterResponse())
-
-    self.DumpMessage('Response', response)
-
-    return (200, response.SerializeToString())
-
-  def ProcessInitialPolicy(self, msg):
-    """Handles a 'preregister policy' request.
-
-    Queries the list of managed users and responds the client if their user
-    is managed or not.
-
-    Args:
-      msg: The PolicyFetchRequest message received from the client.
-
-    Returns:
-      A tuple of HTTP status code and response data to send to the client.
-    """
-    # Check the GAIA token.
-    auth = self.CheckGoogleLogin()
-    if not auth:
-      return (403, 'No authorization')
-
-    chrome_initial_settings = dm.ChromeInitialSettingsProto()
-    if ('*' in self._server.policy['managed_users'] or
-        auth in self._server.policy['managed_users']):
-      chrome_initial_settings.enrollment_provision = (
-          dm.ChromeInitialSettingsProto.MANAGED);
-    else:
-      chrome_initial_settings.enrollment_provision = (
-          dm.ChromeInitialSettingsProto.UNMANAGED);
-
-    policy_data = dm.PolicyData()
-    policy_data.policy_type = msg.policy_type
-    policy_data.policy_value = chrome_initial_settings.SerializeToString()
-
-    # Prepare and send the response.
-    response = dm.DeviceManagementResponse()
-    fetch_response = response.policy_response.response.add()
-    fetch_response.policy_data = (
-        policy_data.SerializeToString())
-
-    self.DumpMessage('Response', response)
-
-    return (200, response.SerializeToString())
-
-  def ProcessDevicePolicy(self, msg):
-    """Handles a policy request that uses the deprecated protcol.
-    TODO(gfeher): Remove this when we certainly don't need it.
-
-    Checks for authorization, encodes the policy into protobuf representation
-    and constructs the response.
-
-    Args:
-      msg: The DevicePolicyRequest message received from the client.
-
-    Returns:
-      A tuple of HTTP status code and response data to send to the client.
-    """
-
-    # Check the management token.
-    token, response = self.CheckToken()
-    if not token:
-      return response
-
-    # Stuff the policy dictionary into a response message and send it back.
-    response = dm.DeviceManagementResponse()
-    response.policy_response.CopyFrom(dm.DevicePolicyResponse())
-
-    # Respond only if the client requested policy for the cros/device scope,
-    # since that's where chrome policy is supposed to live in.
-    if msg.policy_scope == 'chromeos/device':
-      policy = self._server.policy['google/chromeos/user']['mandatory']
-      setting = response.policy_response.setting.add()
-      setting.policy_key = 'chrome-policy'
-      policy_value = dm.GenericSetting()
-      for (key, value) in policy.iteritems():
-        entry = policy_value.named_value.add()
-        entry.name = key
-        entry_value = dm.GenericValue()
-        if isinstance(value, bool):
-          entry_value.value_type = dm.GenericValue.VALUE_TYPE_BOOL
-          entry_value.bool_value = value
-        elif isinstance(value, int):
-          entry_value.value_type = dm.GenericValue.VALUE_TYPE_INT64
-          entry_value.int64_value = value
-        elif isinstance(value, str) or isinstance(value, unicode):
-          entry_value.value_type = dm.GenericValue.VALUE_TYPE_STRING
-          entry_value.string_value = value
-        elif isinstance(value, list):
-          entry_value.value_type = dm.GenericValue.VALUE_TYPE_STRING_ARRAY
-          for list_entry in value:
-            entry_value.string_array.append(str(list_entry))
-        entry.value.CopyFrom(entry_value)
-      setting.policy_value.CopyFrom(policy_value)
 
     self.DumpMessage('Response', response)
 
@@ -319,29 +254,55 @@ class RequestHandler(object):
     Returns:
       A tuple of HTTP status code and response data to send to the client.
     """
-
-    if msg.request:
-      for request in msg.request:
-        if request.policy_type == 'google/chromeos/unregistered_user':
-          if request_type != 'ping':
-            return (400, 'Invalid request type')
-          return self.ProcessInitialPolicy(request)
-        elif (request.policy_type in
-              ('google/chromeos/user', 'google/chromeos/device')):
-          if request_type != 'policy':
-            return (400, 'Invalid request type')
-          return self.ProcessCloudPolicy(request)
+    for request in msg.request:
+      if (request.policy_type in
+             ('google/chromeos/user', 'google/chromeos/device')):
+        if request_type != 'policy':
+          return (400, 'Invalid request type')
         else:
-          return (400, 'Invalid policy_type')
-    else:
-      return self.ProcessDevicePolicy(msg)
+          return self.ProcessCloudPolicy(request)
+      else:
+        return (400, 'Invalid policy_type')
+
+  def ProcessAutoEnrollment(self, msg):
+    """Handles an auto-enrollment check request.
+
+    The reply depends on the value of the modulus:
+      1: replies with no new modulus and the sha256 hash of "0"
+      2: replies with a new modulus, 4.
+      4: replies with a new modulus, 2.
+      8: fails with error 400.
+      anything else: replies with no new modulus and an empty list of hashes
+
+    These allow the client to pick the testing scenario its wants to simulate.
+
+    Args:
+      msg: The DeviceAutoEnrollmentRequest message received from the client.
+
+    Returns:
+      A tuple of HTTP status code and response data to send to the client.
+    """
+    auto_enrollment_response = dm.DeviceAutoEnrollmentResponse()
+
+    if msg.modulus == 1:
+      auto_enrollment_response.hash.append(SHA256_0)
+    elif msg.modulus == 2:
+      auto_enrollment_response.expected_modulus = 4
+    elif msg.modulus == 4:
+      auto_enrollment_response.expected_modulus = 2
+    elif msg.modulus == 8:
+      return (400, 'Server error')
+
+    response = dm.DeviceManagementResponse()
+    response.auto_enrollment_response.CopyFrom(auto_enrollment_response)
+    return (200, response.SerializeToString())
 
   def SetProtobufMessageField(self, group_message, field, field_value):
     '''Sets a field in a protobuf message.
 
     Args:
       group_message: The protobuf message.
-      field: The field of the message to set, it shuold be a member of
+      field: The field of the message to set, it should be a member of
           group_message.DESCRIPTOR.fields.
       field_value: The value to set.
     '''
@@ -441,21 +402,25 @@ class RequestHandler(object):
     if not token_info:
       return error
 
+    if msg.machine_id:
+      self._server.UpdateMachineId(token_info['device_token'], msg.machine_id)
+
     # Response is only given if the scope is specified in the config file.
     # Normally 'google/chromeos/device' and 'google/chromeos/user' should be
     # accepted.
+    policy = self._server.GetPolicies()
     policy_value = ''
     if (msg.policy_type in token_info['allowed_policy_types'] and
-        msg.policy_type in self._server.policy):
+        msg.policy_type in policy):
       if msg.policy_type == 'google/chromeos/user':
         settings = cp.CloudPolicySettings()
         self.GatherUserPolicySettings(settings,
-                                      self._server.policy[msg.policy_type])
+                                      policy[msg.policy_type])
         policy_value = settings.SerializeToString()
       elif msg.policy_type == 'google/chromeos/device':
         settings = dp.ChromeDeviceSettingsProto()
         self.GatherDevicePolicySettings(settings,
-                                        self._server.policy[msg.policy_type])
+                                        policy[msg.policy_type])
         policy_value = settings.SerializeToString()
 
     # Figure out the key we want to use. If multiple keys are configured, the
@@ -475,9 +440,12 @@ class RequestHandler(object):
     policy_data = dm.PolicyData()
     policy_data.policy_type = msg.policy_type
     policy_data.timestamp = int(time.time() * 1000)
-    policy_data.request_token = token_info['device_token'];
+    policy_data.request_token = token_info['device_token']
     policy_data.policy_value = policy_value
     policy_data.machine_name = token_info['machine_name']
+    policy_data.valid_serial_number_missing = (
+        token_info['machine_id'] in BAD_MACHINE_IDS)
+
     if signing_key:
       policy_data.public_key_version = key_version
     policy_data.username = self._server.username
@@ -526,7 +494,7 @@ class RequestHandler(object):
       if (not token_info or
           not request_device_id or
           token_info['device_id'] != request_device_id):
-        error = 901
+        error = 410
       else:
         return (token_info, None)
 
@@ -549,21 +517,13 @@ class TestServer(object):
       private_key_paths: List of paths to read private keys from.
     """
     self._registered_tokens = {}
-    self.policy = {}
+    self.policy_path = policy_path
 
     # There is no way to for the testserver to know the user name belonging to
     # the GAIA auth token we received (short of actually talking to GAIA). To
     # address this, we have a command line parameter to set the username that
     # the server should report to the client.
     self.username = policy_user
-
-    if json is None:
-      print 'No JSON module, cannot parse policy information'
-    else :
-      try:
-        self.policy = json.loads(open(policy_path).read())
-      except IOError:
-        print 'Failed to load policy from %s' % policy_path
 
     self.keys = []
     if private_key_paths:
@@ -594,6 +554,20 @@ class TestServer(object):
                                       asn1der.Integer(key.e) ])
       pubkey = asn1der.Sequence([ algorithm, asn1der.Bitstring(rsa_pubkey) ])
       entry['public_key'] = pubkey;
+
+  def GetPolicies(self):
+    """Returns the policies to be used, reloaded form the backend file every
+       time this is called.
+    """
+    policy = {}
+    if json is None:
+      print 'No JSON module, cannot parse policy information'
+    else :
+      try:
+        policy = json.loads(open(self.policy_path).read())
+      except IOError:
+        print 'Failed to load policy from %s' % self.policy_path
+    return policy
 
   def HandleRequest(self, path, headers, request):
     """Handles a request.
@@ -631,8 +605,19 @@ class TestServer(object):
       'device_token': dmtoken,
       'allowed_policy_types': allowed_policy_types[type],
       'machine_name': 'chromeos-' + machine_id,
+      'machine_id': machine_id,
     }
     return self._registered_tokens[dmtoken]
+
+  def UpdateMachineId(self, dmtoken, machine_id):
+    """Updates the machine identifier for a registered device.
+
+    Args:
+      dmtoken: The device management token provided by the client.
+      machine_id: Updated hardware identifier value.
+    """
+    if dmtoken in self._registered_tokens:
+      self._registered_tokens[dmtoken]['machine_id'] = machine_id
 
   def LookupToken(self, dmtoken):
     """Looks up a device or a user by DM token.

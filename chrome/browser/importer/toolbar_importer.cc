@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <limits>
 
+#include "base/bind.h"
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
@@ -15,8 +16,12 @@
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/libxml_utils.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/common/url_fetcher.h"
 #include "grit/generated_resources.h"
+#include "net/base/load_flags.h"
+
+using content::BrowserThread;
 
 // Toolbar5Importer
 const char Toolbar5Importer::kXmlApiReplyXmlTag[] = "xml_api_reply";
@@ -69,6 +74,8 @@ void Toolbar5Importer::StartImport(
 
   bridge_ = bridge;
   items_to_import_ = items;
+  DCHECK(source_profile.request_context_getter);
+  request_context_getter_ = source_profile.request_context_getter;
   state_ = INITIALIZED;
 
   bridge_->NotifyStarted();
@@ -91,29 +98,25 @@ void Toolbar5Importer::Cancel() {
   } else {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &Toolbar5Importer::Cancel));
+        base::Bind(&Toolbar5Importer::Cancel, this));
   }
 }
 
-void Toolbar5Importer::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const net::ResponseCookies& cookies,
-    const std::string& data) {
+void Toolbar5Importer::OnURLFetchComplete(const content::URLFetcher* source) {
   if (cancelled()) {
     EndImport();
     return;
   }
 
-  if (200 != response_code) {  // HTTP/Ok
+  if (200 != source->GetResponseCode()) {  // HTTP/Ok
     // Cancelling here will update the UI and bypass the rest of bookmark
     // import.
     EndImportBookmarks();
     return;
   }
 
+  std::string data;
+  source->GetResponseAsString(&data);
   switch (state_) {
     case GET_AUTHORIZATION_TOKEN:
       GetBookmarkDataFromServer(data);
@@ -208,8 +211,10 @@ void Toolbar5Importer::GetAuthenticationFromServer() {
                      random_string);
   GURL url(url_string);
 
-  token_fetcher_ = new  URLFetcher(url, URLFetcher::GET, this);
-  token_fetcher_->set_request_context(Profile::GetDefaultRequestContext());
+  token_fetcher_ = content::URLFetcher::Create(
+      url, content::URLFetcher::GET, this);
+  token_fetcher_->SetRequestContext(request_context_getter_.get());
+  token_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   token_fetcher_->Start();
 }
 
@@ -241,8 +246,10 @@ void Toolbar5Importer::GetBookmarkDataFromServer(const std::string& response) {
                       token);
   GURL url(conn_string);
 
-  data_fetcher_ = new URLFetcher(url, URLFetcher::GET, this);
-  data_fetcher_->set_request_context(Profile::GetDefaultRequestContext());
+  data_fetcher_ = content::URLFetcher::Create(
+      url, content::URLFetcher::GET, this);
+  data_fetcher_->SetRequestContext(request_context_getter_.get());
+  data_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   data_fetcher_->Start();
 }
 
@@ -522,7 +529,7 @@ bool Toolbar5Importer::ExtractFoldersFromXmlReader(
   }
 
   if (0 == label_vector.size()) {
-    if (!FirstRun::IsChromeFirstRun()) {
+    if (!first_run::IsChromeFirstRun()) {
       bookmark_folders->resize(1);
       (*bookmark_folders)[0].push_back(bookmark_group_string);
     }
@@ -535,7 +542,7 @@ bool Toolbar5Importer::ExtractFoldersFromXmlReader(
   for (size_t index = 0; index < label_vector.size(); ++index) {
     // If this is the first run then we place favorites with no labels
     // in the title bar.  Else they are placed in the "Google Toolbar" folder.
-    if (!FirstRun::IsChromeFirstRun() || !label_vector[index].empty()) {
+    if (!first_run::IsChromeFirstRun() || !label_vector[index].empty()) {
       (*bookmark_folders)[index].push_back(bookmark_group_string);
     }
 

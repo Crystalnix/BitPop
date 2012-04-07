@@ -1,12 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/renderer/p2p/p2p_transport_impl.h"
+
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "base/test/test_timeouts.h"
-#include "content/renderer/p2p/p2p_transport_impl.h"
 #include "jingle/glue/fake_network_manager.h"
 #include "jingle/glue/fake_socket_factory.h"
 #include "jingle/glue/thread_wrapper.h"
@@ -21,7 +23,7 @@
 using testing::_;
 using testing::AtMost;
 using testing::Exactly;
-using testing::Invoke;
+using testing::InvokeWithoutArgs;
 
 using webkit_glue::P2PTransport;
 
@@ -31,8 +33,6 @@ const char kTestAddress2[] = "192.168.15.33";
 
 const char kTransportName1[] = "tr1";
 const char kTransportName2[] = "tr2";
-
-const char kTestConfig[] = "";
 
 // Send 10 packets 10 bytes each. Packets are sent with 10ms delay
 // between packets (about 100 ms for 10 messages).
@@ -51,10 +51,6 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
         write_socket_(write_socket),
         read_socket_(read_socket),
         done_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            write_cb_(this, &UdpChannelTester::OnWritten)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            read_cb_(this, &UdpChannelTester::OnRead)),
         write_errors_(0),
         read_errors_(0),
         packets_sent_(0),
@@ -66,7 +62,7 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
 
   void Start() {
     message_loop_->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &UdpChannelTester::DoStart));
+        FROM_HERE, base::Bind(&UdpChannelTester::DoStart, this));
   }
 
   void CheckResults() {
@@ -84,7 +80,7 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
  protected:
   void Done() {
     done_ = true;
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   void DoStart() {
@@ -104,7 +100,9 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
     // Put index of this packet in the beginning of the packet body.
     memcpy(packet->data(), &packets_sent_, sizeof(packets_sent_));
 
-    int result = write_socket_->Write(packet, kMessageSize, &write_cb_);
+    int result = write_socket_->Write(packet, kMessageSize,
+                                      base::Bind(&UdpChannelTester::OnWritten,
+                                                 base::Unretained(this)));
     HandleWriteResult(result);
   }
 
@@ -121,7 +119,7 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
       EXPECT_EQ(kMessageSize, result);
       packets_sent_++;
       message_loop_->PostDelayedTask(
-          FROM_HERE, NewRunnableMethod(this, &UdpChannelTester::DoWrite),
+          FROM_HERE, base::Bind(&UdpChannelTester::DoWrite, this),
           kUdpWriteDelayMs);
     }
   }
@@ -132,7 +130,9 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
       int kReadSize = kMessageSize * 2;
       read_buffer_ = new net::IOBuffer(kReadSize);
 
-      result = read_socket_->Read(read_buffer_, kReadSize, &read_cb_);
+      result = read_socket_->Read(read_buffer_, kReadSize,
+                                      base::Bind(&UdpChannelTester::OnRead,
+                                                 base::Unretained(this)));
       HandleReadResult(result);
     };
   }
@@ -179,8 +179,6 @@ class UdpChannelTester : public base::RefCountedThreadSafe<UdpChannelTester> {
   scoped_refptr<net::IOBuffer> sent_packets_[kMessages];
   scoped_refptr<net::IOBuffer> read_buffer_;
 
-  net::CompletionCallbackImpl<UdpChannelTester> write_cb_;
-  net::CompletionCallbackImpl<UdpChannelTester> read_cb_;
   int write_errors_;
   int read_errors_;
   int packets_sent_;
@@ -197,26 +195,29 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
         write_socket_(write_socket),
         read_socket_(read_socket),
         done_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            write_cb_(this, &TcpChannelTester::OnWritten)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            read_cb_(this, &TcpChannelTester::OnRead)),
         write_errors_(0),
         read_errors_(0) {
   }
 
   virtual ~TcpChannelTester() { }
 
-  void Start() {
+  void Init() {
     // Initialize |send_buffer_|.
     send_buffer_ = new net::DrainableIOBuffer(new net::IOBuffer(kTcpDataSize),
                                               kTcpDataSize);
     for (int i = 0; i < kTcpDataSize; ++i) {
       send_buffer_->data()[i] = rand() % 256;
     }
+  }
 
+  void StartRead() {
     message_loop_->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &TcpChannelTester::DoStart));
+        FROM_HERE, base::Bind(&TcpChannelTester::DoRead, this));
+  }
+
+  void StartWrite() {
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(&TcpChannelTester::DoWrite, this));
   }
 
   void CheckResults() {
@@ -234,12 +235,7 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
  protected:
   void Done() {
     done_ = true;
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
-  }
-
-  void DoStart() {
-    DoRead();
-    DoWrite();
+    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   void DoWrite() {
@@ -248,7 +244,8 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
     }
 
     int result = write_socket_->Write(
-        send_buffer_, send_buffer_->BytesRemaining(), &write_cb_);
+        send_buffer_, send_buffer_->BytesRemaining(),
+        base::Bind(&TcpChannelTester::OnWritten, base::Unretained(this)));
     HandleWriteResult(result);
   }
 
@@ -264,7 +261,7 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
     } else if (result > 0) {
       send_buffer_->DidConsume(result);
       message_loop_->PostDelayedTask(
-          FROM_HERE, NewRunnableMethod(this, &TcpChannelTester::DoWrite),
+          FROM_HERE, base::Bind(&TcpChannelTester::DoWrite, this),
           kTcpWriteDelayMs);
     }
   }
@@ -275,7 +272,9 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
       int kReadSize = kMessageSize * 2;
       read_buffer_ = new net::IOBuffer(kReadSize);
 
-      result = read_socket_->Read(read_buffer_, kReadSize, &read_cb_);
+      result = read_socket_->Read(
+          read_buffer_, kReadSize,
+          base::Bind(&TcpChannelTester::OnRead, base::Unretained(this)));
       HandleReadResult(result);
     };
   }
@@ -313,13 +312,13 @@ class TcpChannelTester : public base::RefCountedThreadSafe<TcpChannelTester> {
   std::vector<char> sent_data_;
   std::vector<char> received_data_;
 
-  net::CompletionCallbackImpl<TcpChannelTester> write_cb_;
-  net::CompletionCallbackImpl<TcpChannelTester> read_cb_;
   int write_errors_;
   int read_errors_;
 };
 
 }  // namespace
+
+namespace content {
 
 class MockP2PEventHandler : public P2PTransport::EventHandler {
  public:
@@ -330,6 +329,10 @@ class MockP2PEventHandler : public P2PTransport::EventHandler {
 
 class P2PTransportImplTest : public testing::Test {
  public:
+  void DestroyTransport() {
+    transport1_.reset();
+    transport2_.reset();
+  }
 
  protected:
   virtual void SetUp() OVERRIDE {
@@ -347,11 +350,17 @@ class P2PTransportImplTest : public testing::Test {
         new jingle_glue::FakeSocketFactory(socket_manager_, ip)));
   }
 
+  virtual void TearDown() OVERRIDE {
+    DestroyTransport();
+    message_loop_.RunAllPending();
+  }
+
   void Init(P2PTransport::Protocol protocol) {
+    P2PTransport::Config config;
     ASSERT_TRUE(transport1_->Init(
-        kTransportName1, protocol, kTestConfig, &event_handler1_));
+        NULL, kTransportName1, protocol, config, &event_handler1_));
     ASSERT_TRUE(transport2_->Init(
-        kTransportName2, protocol, kTestConfig, &event_handler2_));
+        NULL, kTransportName2, protocol, config, &event_handler2_));
   }
 
   MessageLoop message_loop_;
@@ -388,7 +397,7 @@ TEST_F(P2PTransportImplTest, ConnectUdp) {
 }
 
 TEST_F(P2PTransportImplTest, ConnectTcp) {
-  Init(P2PTransport::PROTOCOL_UDP);
+  Init(P2PTransport::PROTOCOL_TCP);
 
   EXPECT_CALL(event_handler1_, OnCandidateReady(_)).WillRepeatedly(
       AddRemoteCandidate(transport2_.get()));
@@ -429,7 +438,7 @@ TEST_F(P2PTransportImplTest, SendDataUdp) {
   scoped_refptr<UdpChannelTester> channel_tester = new UdpChannelTester(
       &message_loop_, transport1_->GetChannel(), transport2_->GetChannel());
 
-  message_loop_.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask(),
+  message_loop_.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
                                 TestTimeouts::action_max_timeout_ms());
 
   channel_tester->Start();
@@ -438,6 +447,51 @@ TEST_F(P2PTransportImplTest, SendDataUdp) {
 }
 
 TEST_F(P2PTransportImplTest, SendDataTcp) {
+  Init(P2PTransport::PROTOCOL_TCP);
+
+  EXPECT_CALL(event_handler1_, OnCandidateReady(_)).WillRepeatedly(
+      AddRemoteCandidate(transport2_.get()));
+  EXPECT_CALL(event_handler2_, OnCandidateReady(_)).WillRepeatedly(
+      AddRemoteCandidate(transport1_.get()));
+
+  scoped_refptr<TcpChannelTester> channel_tester = new TcpChannelTester(
+      &message_loop_, transport1_->GetChannel(), transport2_->GetChannel());
+
+  // Transport may first become ether readable or writable, but
+  // eventually it must be readable and writable.
+  EXPECT_CALL(event_handler1_, OnStateChange(P2PTransport::STATE_READABLE))
+      .Times(AtMost(1));
+  EXPECT_CALL(event_handler1_, OnStateChange(P2PTransport::STATE_WRITABLE))
+      .Times(AtMost(1));
+  EXPECT_CALL(event_handler1_, OnStateChange(
+      static_cast<P2PTransport::State>(P2PTransport::STATE_READABLE |
+                                       P2PTransport::STATE_WRITABLE)))
+      .Times(Exactly(1))
+      .WillOnce(InvokeWithoutArgs(channel_tester.get(),
+                                  &TcpChannelTester::StartWrite))
+      .RetiresOnSaturation();
+
+  EXPECT_CALL(event_handler2_, OnStateChange(P2PTransport::STATE_READABLE))
+      .Times(AtMost(1));
+  EXPECT_CALL(event_handler2_, OnStateChange(P2PTransport::STATE_WRITABLE))
+      .Times(AtMost(1));
+  EXPECT_CALL(event_handler2_, OnStateChange(
+      static_cast<P2PTransport::State>(P2PTransport::STATE_READABLE |
+                                       P2PTransport::STATE_WRITABLE)))
+      .Times(Exactly(1))
+      .WillOnce(InvokeWithoutArgs(channel_tester.get(),
+                                  &TcpChannelTester::StartRead))
+      .RetiresOnSaturation();
+
+  message_loop_.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
+                                TestTimeouts::action_max_timeout_ms());
+
+  channel_tester->Init();
+  message_loop_.Run();
+  channel_tester->CheckResults();
+}
+
+TEST_F(P2PTransportImplTest, DeleteFromCallback) {
   Init(P2PTransport::PROTOCOL_TCP);
 
   EXPECT_CALL(event_handler1_, OnCandidateReady(_)).WillRepeatedly(
@@ -454,7 +508,7 @@ TEST_F(P2PTransportImplTest, SendDataTcp) {
   EXPECT_CALL(event_handler1_, OnStateChange(
       static_cast<P2PTransport::State>(P2PTransport::STATE_READABLE |
                                        P2PTransport::STATE_WRITABLE)))
-      .Times(Exactly(1));
+      .Times(AtMost(1));
 
   EXPECT_CALL(event_handler2_, OnStateChange(P2PTransport::STATE_READABLE))
       .Times(AtMost(1));
@@ -463,15 +517,12 @@ TEST_F(P2PTransportImplTest, SendDataTcp) {
   EXPECT_CALL(event_handler2_, OnStateChange(
       static_cast<P2PTransport::State>(P2PTransport::STATE_READABLE |
                                        P2PTransport::STATE_WRITABLE)))
-      .Times(Exactly(1));
+      .Times(Exactly(1))
+      .WillOnce(DoAll(
+          InvokeWithoutArgs(this, &P2PTransportImplTest::DestroyTransport),
+          InvokeWithoutArgs(&message_loop_, &MessageLoop::Quit)));
 
-  scoped_refptr<TcpChannelTester> channel_tester = new TcpChannelTester(
-      &message_loop_, transport1_->GetChannel(), transport2_->GetChannel());
-
-  message_loop_.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask(),
-                                TestTimeouts::action_max_timeout_ms());
-
-  channel_tester->Start();
   message_loop_.Run();
-  channel_tester->CheckResults();
 }
+
+}  // namespace content

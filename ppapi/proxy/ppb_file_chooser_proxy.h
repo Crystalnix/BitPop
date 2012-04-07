@@ -10,62 +10,63 @@
 
 #include "base/basictypes.h"
 #include "ppapi/c/pp_instance.h"
-#include "ppapi/cpp/completion_callback.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/proxy_non_thread_safe_ref_count.h"
 #include "ppapi/thunk/ppb_file_chooser_api.h"
+#include "ppapi/utility/completion_callback_factory.h"
 
-struct PPB_FileChooser_Dev;
-
-namespace pp {
-namespace proxy {
+namespace ppapi {
 
 class HostResource;
-struct PPBFileRef_CreateInfo;
+struct PPB_FileRef_CreateInfo;
+
+namespace proxy {
 
 class PPB_FileChooser_Proxy : public InterfaceProxy {
  public:
-  PPB_FileChooser_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  explicit PPB_FileChooser_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_FileChooser_Proxy();
 
-  static const Info* GetInfo();
+  static const Info* GetTrustedInfo();
 
   static PP_Resource CreateProxyResource(
       PP_Instance instance,
-      const PP_FileChooserOptions_Dev* options);
-
-  const PPB_FileChooser_Dev* ppb_file_chooser_target() const {
-    return static_cast<const PPB_FileChooser_Dev*>(target_interface());
-  }
+      PP_FileChooserMode_Dev mode,
+      const char* accept_mime_types);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
+
+  static const ApiID kApiID = API_ID_PPB_FILE_CHOOSER;
 
  private:
   // Plugin -> host message handlers.
   void OnMsgCreate(PP_Instance instance,
                    int mode,
-                   const std::string& accept_mime_types,
-                   pp::proxy::HostResource* result);
-  void OnMsgShow(const pp::proxy::HostResource& chooser);
+                   std::string accept_mime_types,
+                   ppapi::HostResource* result);
+  void OnMsgShow(const ppapi::HostResource& chooser,
+                 bool save_as,
+                 std::string suggested_file_name,
+                 bool require_user_gesture);
 
   // Host -> plugin message handlers.
   void OnMsgChooseComplete(
-      const pp::proxy::HostResource& chooser,
+      const ppapi::HostResource& chooser,
       int32_t result_code,
-      const std::vector<PPBFileRef_CreateInfo>& chosen_files);
+      const std::vector<PPB_FileRef_CreateInfo>& chosen_files);
 
   // Called when the show is complete in the host. This will notify the plugin
   // via IPC and OnMsgChooseComplete will be called there.
-  void OnShowCallback(int32_t result, const HostResource& chooser);
+  void OnShowCallback(int32_t result, const ppapi::HostResource& chooser);
 
-  CompletionCallbackFactory<PPB_FileChooser_Proxy,
-                            ProxyNonThreadSafeRefCount> callback_factory_;
+  pp::CompletionCallbackFactory<PPB_FileChooser_Proxy,
+                                ProxyNonThreadSafeRefCount> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_FileChooser_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_FILE_CHOOSER_PROXY_H_

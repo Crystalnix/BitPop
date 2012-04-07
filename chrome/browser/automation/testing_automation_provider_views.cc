@@ -4,6 +4,9 @@
 
 #include "chrome/browser/automation/testing_automation_provider.h"
 
+#include "base/bind.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/automation/automation_browser_tracker.h"
 #include "chrome/browser/automation/automation_window_tracker.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -11,10 +14,9 @@
 #include "chrome/browser/ui/views/toolbar_view.h"
 #include "chrome/common/automation_messages.h"
 #include "ui/gfx/point.h"
-#include "views/controls/menu/menu_wrapper.h"
-#include "views/view.h"
-#include "views/widget/native_widget.h"
-#include "views/widget/widget.h"
+#include "ui/views/controls/menu/menu_listener.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -30,47 +32,39 @@ class ViewFocusChangeWaiter : public views::FocusChangeListener {
         previous_view_id_(previous_view_id),
         automation_(automation),
         reply_message_(reply_message),
-        ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
     focus_manager_->AddFocusChangeListener(this);
     // Call the focus change notification once in case the focus has
     // already changed.
-    FocusWillChange(NULL, focus_manager_->GetFocusedView());
+    OnWillChangeFocus(NULL, focus_manager_->GetFocusedView());
   }
 
-  ~ViewFocusChangeWaiter() {
+  virtual ~ViewFocusChangeWaiter() {
     focus_manager_->RemoveFocusChangeListener(this);
   }
 
   // Inherited from FocusChangeListener
-  virtual void FocusWillChange(views::View* focused_before,
-                               views::View* focused_now) {
-    // This listener is called before focus actually changes. Post a task
-    // that will get run after focus changes.
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &ViewFocusChangeWaiter::FocusChanged,
-            focused_before,
-            focused_now));
+  virtual void OnWillChangeFocus(views::View* focused_before,
+                                 views::View* focused_now) {
   }
 
- private:
-  void FocusChanged(views::View* focused_before,
-                    views::View* focused_now) {
-    if (focused_now && focused_now->GetID() != previous_view_id_) {
+  virtual void OnDidChangeFocus(views::View* focused_before,
+                                views::View* focused_now) {
+    if (focused_now && focused_now->id() != previous_view_id_) {
       AutomationMsg_WaitForFocusedViewIDToChange::WriteReplyParams(
-          reply_message_, true, focused_now->GetID());
+          reply_message_, true, focused_now->id());
 
       automation_->Send(reply_message_);
       delete this;
     }
   }
 
+ private:
   views::FocusManager* focus_manager_;
   int previous_view_id_;
   AutomationProvider* automation_;
   IPC::Message* reply_message_;
-  ScopedRunnableMethodFactory<ViewFocusChangeWaiter> method_factory_;
+  base::WeakPtrFactory<ViewFocusChangeWaiter> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewFocusChangeWaiter);
 };
@@ -87,8 +81,10 @@ class TestingAutomationProvider::PopupMenuWaiter : public views::MenuListener {
     toolbar_view_->AddMenuListener(this);
   }
 
-  // Implementation of views::MenuListener
-  virtual void OnMenuOpened() {
+  virtual ~PopupMenuWaiter() {}
+
+  // Overridden from views::MenuListener:
+  virtual void OnMenuOpened() OVERRIDE {
     toolbar_view_->RemoveMenuListener(this);
     automation_->popup_menu_opened_ = true;
     automation_->popup_menu_waiter_ = NULL;
@@ -121,10 +117,9 @@ void TestingAutomationProvider::WindowGetViewBounds(int handle,
 
   if (window_tracker_->ContainsHandle(handle)) {
     gfx::NativeWindow window = window_tracker_->GetResource(handle);
-    views::NativeWidget* native_widget =
-        views::NativeWidget::GetNativeWidgetForNativeWindow(window);
-    if (native_widget) {
-      views::View* root_view = native_widget->GetWidget()->GetRootView();
+    views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
+    if (widget) {
+      views::View* root_view = widget->GetRootView();
       views::View* view = root_view->GetViewByID(view_id);
       if (view) {
         *success = true;
@@ -144,12 +139,14 @@ void TestingAutomationProvider::GetFocusedViewID(int handle, int* view_id) {
   *view_id = -1;
   if (window_tracker_->ContainsHandle(handle)) {
     gfx::NativeWindow window = window_tracker_->GetResource(handle);
-    views::FocusManager* focus_manager =
-        views::FocusManager::GetFocusManagerForNativeWindow(window);
+    const views::Widget* widget =
+        views::Widget::GetWidgetForNativeWindow(window);
+    DCHECK(widget);
+    const views::FocusManager* focus_manager = widget->GetFocusManager();
     DCHECK(focus_manager);
-    views::View* focused_view = focus_manager->GetFocusedView();
+    const views::View* focused_view = focus_manager->GetFocusedView();
     if (focused_view)
-      *view_id = focused_view->GetID();
+      *view_id = focused_view->id();
   }
 }
 
@@ -158,8 +155,9 @@ void TestingAutomationProvider::WaitForFocusedViewIDToChange(
   if (!window_tracker_->ContainsHandle(handle))
     return;
   gfx::NativeWindow window = window_tracker_->GetResource(handle);
-  views::FocusManager* focus_manager =
-      views::FocusManager::GetFocusManagerForNativeWindow(window);
+  views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
+  DCHECK(widget);
+  views::FocusManager* focus_manager = widget->GetFocusManager();
 
   // The waiter will respond to the IPC and delete itself when done.
   new ViewFocusChangeWaiter(focus_manager,

@@ -12,8 +12,9 @@
 #include "base/synchronization/lock.h"
 #include "remoting/host/host_config.h"
 
+namespace base {
 class DictionaryValue;
-class Task;
+}
 
 namespace remoting {
 
@@ -24,18 +25,20 @@ class InMemoryHostConfig : public MutableHostConfig {
   virtual ~InMemoryHostConfig();
 
   // MutableHostConfig interface.
-  virtual bool GetString(const std::string& path, std::string* out_value);
-  virtual bool GetBoolean(const std::string& path, bool* out_value);
+  virtual bool GetString(const std::string& path,
+                         std::string* out_value) OVERRIDE;
+  virtual bool GetBoolean(const std::string& path, bool* out_value) OVERRIDE;
 
-  virtual void SetString(const std::string& path, const std::string& in_value);
-  virtual void SetBoolean(const std::string& path, bool in_value);
+  virtual void SetString(const std::string& path,
+                         const std::string& in_value) OVERRIDE;
+  virtual void SetBoolean(const std::string& path, bool in_value) OVERRIDE;
 
-  virtual void Save();
+  virtual void Save() OVERRIDE;
 
  protected:
   // |lock_| must be locked whenever |values_| is used.
   base::Lock lock_;
-  scoped_ptr<DictionaryValue> values_;
+  scoped_ptr<base::DictionaryValue> values_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InMemoryHostConfig);

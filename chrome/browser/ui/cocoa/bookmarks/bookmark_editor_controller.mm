@@ -6,7 +6,10 @@
 
 #include "base/string16.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
 #include "ui/base/l10n/l10n_util.h"
 
 @interface BookmarkEditorController (Private)
@@ -46,18 +49,36 @@
 }
 
 - (void)awakeFromNib {
+  // Check if NSTextFieldCell supports the method. This check is in place as
+  // only 10.6 and greater support the setUsesSingleLineMode method.
+  // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
+  NSTextFieldCell* nameFieldCell_ = [nameTextField_ cell];
+  if ([nameFieldCell_
+          respondsToSelector:@selector(setUsesSingleLineMode:)]) {
+    [nameFieldCell_ setUsesSingleLineMode:YES];
+  }
+
   // Set text fields to match our bookmark.  If the node is NULL we
   // arrived here from an "Add Page..." item in a context menu.
   if (node_) {
     [self setInitialName:base::SysUTF16ToNSString(node_->GetTitle())];
-    std::string url_string = node_->GetURL().possibly_invalid_spec();
+    std::string url_string = node_->url().possibly_invalid_spec();
     initialUrl_.reset([[NSString stringWithUTF8String:url_string.c_str()]
                         retain]);
   } else {
-    initialUrl_.reset([@"" retain]);
+    GURL url;
+    string16 title16;
+    bookmark_utils::GetURLAndTitleToBookmarkFromCurrentTab([self profile],
+        &url, &title16);
+    [self setInitialName:base::SysUTF16ToNSString(title16)];
+    if (url.is_valid())
+      initialUrl_.reset([[NSString stringWithUTF8String:url.spec().c_str()]
+                          retain]);
   }
   [self setDisplayURL:initialUrl_];
   [super awakeFromNib];
+  [self expandNodes:
+      [self bookmarkModel]->expanded_state_tracker()->GetExpandedNodes()];
 }
 
 - (void)nodeRemoved:(const BookmarkNode*)node
@@ -98,7 +119,7 @@
   return okEnabled;
 }
 
-// The the bookmark's URL is assumed to be valid (otherwise the OK button
+// The bookmark's URL is assumed to be valid (otherwise the OK button
 // should not be enabled). Previously existing bookmarks for which the
 // parent has not changed are updated in-place. Those for which the parent
 // has changed are removed with a new node created under the new parent.
@@ -132,6 +153,11 @@
     model->AddURL(newParentNode, newParentNode->child_count(), newTitle,
                   newURL);
   }
+
+  // Update the expanded state.
+  BookmarkExpandedStateTracker::Nodes expanded_nodes = [self getExpandedNodes];
+  [self bookmarkModel]->expanded_state_tracker()->
+      SetExpandedNodes(expanded_nodes);
   return [NSNumber numberWithBool:YES];
 }
 

@@ -1,10 +1,12 @@
 {
   "name": "Debugger",
   "version": "1.0",
-  "background_page": "background.html",
+  "manifest_version": 2,
+  "background": {
+    "scripts": ["background.js"]
+  },
   "permissions": [
     "tabs",
-    "experimental",
-    "http://*/*"
+    "debugger"
   ]
 }

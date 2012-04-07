@@ -7,15 +7,15 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 
 namespace {
 const CGFloat kOrderInSlideOffset = 10;
-const NSTimeInterval kOrderInAnimationDuration = 0.2;
+const NSTimeInterval kOrderInAnimationDuration = 0.075;
 const NSTimeInterval kOrderOutAnimationDuration = 0.15;
 // The minimum representable time interval.  This can be used as the value
 // passed to +[NSAnimationContext setDuration:] to stop an in-progress
@@ -30,19 +30,19 @@ const NSTimeInterval kMinimumTimeInterval =
 @end
 
 // A helper class to proxy app notifications to the window.
-class AppNotificationBridge : public NotificationObserver {
+class AppNotificationBridge : public content::NotificationObserver {
  public:
   explicit AppNotificationBridge(InfoBubbleWindow* owner) : owner_(owner) {
-    registrar_.Add(this, NotificationType::APP_TERMINATING,
-                   NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_APP_TERMINATING,
+                   content::NotificationService::AllSources());
   }
 
-  // Overridden from NotificationObserver.
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
-    switch (type.value) {
-      case NotificationType::APP_TERMINATING:
+  // Overridden from content::NotificationObserver.
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    switch (type) {
+      case content::NOTIFICATION_APP_TERMINATING:
         [owner_ appIsTerminating];
         break;
       default:
@@ -55,7 +55,7 @@ class AppNotificationBridge : public NotificationObserver {
   InfoBubbleWindow* owner_;
 
   // Used for registering to receive notifications and automatic clean up.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AppNotificationBridge);
 };
@@ -94,6 +94,7 @@ class AppNotificationBridge : public NotificationObserver {
 @implementation InfoBubbleWindow
 
 @synthesize delayOnClose = delayOnClose_;
+@synthesize canBecomeKeyWindow = canBecomeKeyWindow_;
 
 - (id)initWithContentRect:(NSRect)contentRect
                 styleMask:(NSUInteger)aStyle
@@ -108,6 +109,7 @@ class AppNotificationBridge : public NotificationObserver {
     [self setOpaque:NO];
     [self setHasShadow:YES];
     delayOnClose_ = YES;
+    canBecomeKeyWindow_ = YES;
     notificationBridge_.reset(new AppNotificationBridge(self));
 
     // Start invisible. Will be made visible when ordered front.
@@ -133,9 +135,15 @@ class AppNotificationBridge : public NotificationObserver {
 // According to
 // http://www.cocoabuilder.com/archive/message/cocoa/2006/6/19/165953,
 // NSBorderlessWindowMask windows cannot become key or main. In this
-// case, this is not a desired behavior. As an example, the bubble could have
-// buttons.
+// case, this is not necessarily a desired behavior. As an example, the
+// bubble could have buttons.
 - (BOOL)canBecomeKeyWindow {
+  return canBecomeKeyWindow_;
+}
+
+// Lets the traffic light buttons on the browser window keep their "active"
+// state while an info bubble is open. Only has an effect on 10.7.
+- (BOOL)_sharesParentKeyState {
   return YES;
 }
 

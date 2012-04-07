@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,26 +8,21 @@
 
 #include <string>
 
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/common/translate_errors.h"
-#include "content/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer.h"
 
 namespace WebKit {
 class WebDocument;
 class WebFrame;
 }
 
-namespace autofill {
-class AutofillAgent;
-}
-
 // This class deals with page translation.
 // There is one TranslateHelper per RenderView.
 
-class TranslateHelper : public RenderViewObserver {
+class TranslateHelper : public content::RenderViewObserver {
  public:
-  // autofill can be NULL.
-  TranslateHelper(RenderView* render_view, autofill::AutofillAgent* autofill);
+  explicit TranslateHelper(content::RenderView* render_view);
   virtual ~TranslateHelper();
 
   // Informs us that the page's text has been extracted.
@@ -88,7 +83,7 @@ class TranslateHelper : public RenderViewObserver {
   static std::string DetermineTextLanguage(const string16& text);
 
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Cancels any translation that is currently being performed.  This does not
   // revert existing translations.
@@ -135,10 +130,8 @@ class TranslateHelper : public RenderViewObserver {
   std::string source_lang_;
   std::string target_lang_;
 
-  autofill::AutofillAgent* autofill_;
-
   // Method factory used to make calls to TranslatePageImpl.
-  ScopedRunnableMethodFactory<TranslateHelper> method_factory_;
+  base::WeakPtrFactory<TranslateHelper> weak_method_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateHelper);
 };

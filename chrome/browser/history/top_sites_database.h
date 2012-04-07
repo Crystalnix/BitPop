@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,17 +9,15 @@
 #include <map>
 #include <string>
 
-#include "app/sql/meta_table.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/url_database.h"  // For DBCloseScoper.
+#include "sql/meta_table.h"
 
 class FilePath;
-class RefCountedMemory;
-class SkBitmap;
 
-namespace app {
+namespace sql {
 class Connection;
 }
 
@@ -86,7 +84,8 @@ class TopSitesDatabase {
   void UpdatePageRankNoTransaction(const MostVisitedURL& url, int new_rank);
 
   // Updates thumbnail of a URL that's already in the database.
-  void UpdatePageThumbnail(const MostVisitedURL& url,
+  // Returns true if the database query succeeds.
+  bool UpdatePageThumbnail(const MostVisitedURL& url,
                            const Images& thumbnail);
 
   // Returns the URL's current rank or -1 if it is not present.

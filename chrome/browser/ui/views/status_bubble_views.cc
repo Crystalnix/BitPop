@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
@@ -24,12 +25,11 @@
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/point.h"
-#include "views/controls/label.h"
-#include "views/controls/scrollbar/native_scroll_bar.h"
-#include "views/screen.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/gfx/screen.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/scrollbar/native_scroll_bar.h"
+#include "ui/views/widget/root_view.h"
+#include "ui/views/widget/widget.h"
 
 using views::Widget;
 
@@ -156,7 +156,7 @@ class StatusBubbleViews::StatusView : public views::Label,
   BubbleStage stage_;
   BubbleStyle style_;
 
-  ScopedRunnableMethodFactory<StatusBubbleViews::StatusView> timer_factory_;
+  base::WeakPtrFactory<StatusBubbleViews::StatusView> timer_factory_;
 
   // Manager, owns us.
   StatusBubble* status_bubble_;
@@ -210,11 +210,13 @@ void StatusBubbleViews::StatusView::Hide() {
 }
 
 void StatusBubbleViews::StatusView::StartTimer(int time) {
-  if (!timer_factory_.empty())
-    timer_factory_.RevokeAll();
+  if (timer_factory_.HasWeakPtrs())
+    timer_factory_.InvalidateWeakPtrs();
 
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      timer_factory_.NewRunnableMethod(&StatusBubbleViews::StatusView::OnTimer),
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&StatusBubbleViews::StatusView::OnTimer,
+                timer_factory_.GetWeakPtr()),
       time);
 }
 
@@ -229,8 +231,8 @@ void StatusBubbleViews::StatusView::OnTimer() {
 }
 
 void StatusBubbleViews::StatusView::CancelTimer() {
-  if (!timer_factory_.empty())
-    timer_factory_.RevokeAll();
+  if (timer_factory_.HasWeakPtrs())
+    timer_factory_.InvalidateWeakPtrs();
 }
 
 void StatusBubbleViews::StatusView::RestartTimer(int delay) {
@@ -263,6 +265,7 @@ void StatusBubbleViews::StatusView::StartHiding() {
     StartTimer(kHideDelay);
   } else if (stage_ == BUBBLE_SHOWING_TIMER) {
     stage_ = BUBBLE_HIDDEN;
+    popup_->Hide();
     CancelTimer();
   } else if (stage_ == BUBBLE_SHOWING_FADE) {
     stage_ = BUBBLE_HIDING_FADE;
@@ -413,7 +416,7 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
   SkPaint shadow_paint;
   shadow_paint.setFlags(SkPaint::kAntiAlias_Flag);
   shadow_paint.setColor(kShadowColor);
-  canvas->AsCanvasSkia()->drawPath(shadow_path, shadow_paint);
+  canvas->GetSkCanvas()->drawPath(shadow_path, shadow_paint);
 
   // Draw the bubble.
   rect.set(SkIntToScalar(kShadowThickness),
@@ -422,7 +425,7 @@ void StatusBubbleViews::StatusView::OnPaint(gfx::Canvas* canvas) {
            SkIntToScalar(height - kShadowThickness));
   SkPath path;
   path.addRoundRect(rect, rad, SkPath::kCW_Direction);
-  canvas->AsCanvasSkia()->drawPath(path, paint);
+  canvas->GetSkCanvas()->drawPath(path, paint);
 
   // Draw highlight text and then the text body. In order to make sure the text
   // is aligned to the right on RTL UIs, we mirror the text bounds if the
@@ -568,12 +571,11 @@ void StatusBubbleViews::Init() {
     params.transparent = true;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    params.parent = frame->GetNativeView();
+    params.parent_widget = frame;
     popup_->Init(params);
     popup_->SetOpacity(0x00);
     popup_->SetContentsView(view_);
     Reposition();
-    popup_->Show();
   }
 }
 
@@ -622,9 +624,9 @@ void StatusBubbleViews::SetStatus(const string16& status_text) {
   }
 }
 
-void StatusBubbleViews::SetURL(const GURL& url, const string16& languages) {
-  languages_ = languages;
+void StatusBubbleViews::SetURL(const GURL& url, const std::string& languages) {
   url_ = url;
+  languages_ = languages;
   if (size_.IsEmpty())
     return;  // We have no bounds, don't attempt to show the popup.
 
@@ -649,11 +651,10 @@ void StatusBubbleViews::SetURL(const GURL& url, const string16& languages) {
   gfx::Rect popup_bounds = popup_->GetWindowScreenBounds();
   int text_width = static_cast<int>(popup_bounds.width() -
       (kShadowThickness * 2) - kTextPositionX - kTextHorizPadding - 1);
-  url_text_ = ui::ElideUrl(url, view_->Label::font(),
-      text_width, UTF16ToUTF8(languages));
+  url_text_ = ui::ElideUrl(url, view_->Label::font(), text_width, languages);
 
   std::wstring original_url_text =
-      UTF16ToWideHack(net::FormatUrl(url, UTF16ToUTF8(languages)));
+      UTF16ToWideHack(net::FormatUrl(url, languages));
 
   // An URL is always treated as a left-to-right string. On right-to-left UIs
   // we need to explicitly mark the URL as LTR to make sure it is displayed
@@ -670,9 +671,11 @@ void StatusBubbleViews::SetURL(const GURL& url, const string16& languages) {
     if (is_expanded_ && !url.is_empty())
       ExpandBubble();
     else if (original_url_text.length() > url_text_.length())
-      MessageLoop::current()->PostDelayedTask(FROM_HERE,
-          expand_timer_factory_.NewRunnableMethod(
-          &StatusBubbleViews::ExpandBubble), kExpandHoverDelay);
+      MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&StatusBubbleViews::ExpandBubble,
+                     expand_timer_factory_.GetWeakPtr()),
+          kExpandHoverDelay);
   }
 }
 
@@ -756,7 +759,7 @@ void StatusBubbleViews::AvoidMouse(const gfx::Point& location) {
     // download shelf.
     gfx::NativeView widget = base_view_->GetWidget()->GetNativeView();
     gfx::Rect monitor_rect =
-        views::Screen::GetMonitorWorkAreaNearestWindow(widget);
+        gfx::Screen::GetMonitorWorkAreaNearestWindow(widget);
     const int bubble_bottom_y = top_left.y() + position_.y() + size_.height();
 
     if (bubble_bottom_y + offset > monitor_rect.height() ||
@@ -794,7 +797,7 @@ bool StatusBubbleViews::IsFrameVisible() {
   if (!frame->IsVisible())
     return false;
 
-  views::Window* window = frame->GetContainingWindow();
+  views::Widget* window = frame->GetTopLevelWidget();
   return !window || !window->IsMinimized();
 }
 
@@ -804,7 +807,7 @@ void StatusBubbleViews::ExpandBubble() {
   gfx::Rect popup_bounds = popup_->GetWindowScreenBounds();
   int max_status_bubble_width = GetMaxStatusBubbleWidth();
   url_text_ = ui::ElideUrl(url_, view_->Label::font(),
-      max_status_bubble_width, UTF16ToUTF8(languages_));
+      max_status_bubble_width, languages_);
   int expanded_bubble_width =std::max(GetStandardStatusBubbleWidth(),
       std::min(view_->Label::font().GetStringWidth(url_text_) +
                    (kShadowThickness * 2) + kTextPositionX +
@@ -832,6 +835,6 @@ void StatusBubbleViews::SetBubbleWidth(int width) {
 }
 
 void StatusBubbleViews::CancelExpandTimer() {
-  if (!expand_timer_factory_.empty())
-    expand_timer_factory_.RevokeAll();
+  if (expand_timer_factory_.HasWeakPtrs())
+    expand_timer_factory_.InvalidateWeakPtrs();
 }

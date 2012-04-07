@@ -3,14 +3,17 @@
 // found in the LICENSE file.
 
 #include "base/memory/ref_counted_memory.h"
+#include "base/message_loop.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 // A mock ThemeSource (so we can override SendResponse to get at its data).
 class MockThemeSource : public ThemeSource {
@@ -51,7 +54,7 @@ class WebUISourcesTest : public testing::Test {
   }
 
   MessageLoop loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 
   scoped_ptr<TestingProfile> profile_;
   scoped_refptr<MockThemeSource> theme_source_;
@@ -77,7 +80,8 @@ TEST_F(WebUISourcesTest, ThemeSourceImages) {
 }
 
 TEST_F(WebUISourcesTest, ThemeSourceCSS) {
-  BrowserThread io_thread(BrowserThread::IO, MessageLoop::current());
+  content::TestBrowserThread io_thread(BrowserThread::IO,
+                                       MessageLoop::current());
   // Generating the test data for the NTP CSS would just involve copying the
   // method, or being super brittle and hard-coding the result (requiring
   // an update to the unittest every time the CSS template changes), so we

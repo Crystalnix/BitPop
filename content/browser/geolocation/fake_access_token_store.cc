@@ -4,25 +4,52 @@
 
 #include "content/browser/geolocation/fake_access_token_store.h"
 
-FakeAccessTokenStore::FakeAccessTokenStore() {}
+#include "base/bind.h"
+#include "base/location.h"
+#include "base/logging.h"
+#include "base/message_loop_proxy.h"
+
+using base::MessageLoopProxy;
+using testing::_;
+using testing::Invoke;
+
+namespace content {
+
+FakeAccessTokenStore::FakeAccessTokenStore()
+    : originating_message_loop_(NULL) {
+  ON_CALL(*this, LoadAccessTokens(_))
+      .WillByDefault(Invoke(this,
+                            &FakeAccessTokenStore::DefaultLoadAccessTokens));
+  ON_CALL(*this, SaveAccessToken(_, _))
+      .WillByDefault(Invoke(this,
+                            &FakeAccessTokenStore::DefaultSaveAccessToken));
+}
 
 void FakeAccessTokenStore::NotifyDelegateTokensLoaded() {
-  CHECK(request_ != NULL);
-  request_->ForwardResult(MakeTuple(access_token_set_));
-  request_ = NULL;
+  DCHECK(originating_message_loop_);
+  if (!originating_message_loop_->BelongsToCurrentThread()) {
+    originating_message_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&FakeAccessTokenStore::NotifyDelegateTokensLoaded, this));
+    return;
+  }
+
+  net::URLRequestContextGetter* context_getter = NULL;
+  callback_.Run(access_token_set_, context_getter);
 }
 
-void FakeAccessTokenStore::DoLoadAccessTokens(
-    scoped_refptr<CancelableRequest<LoadAccessTokensCallbackType> > request) {
-  DCHECK(request_ == NULL)
-      << "Fake token store currently only allows one request at a time";
-  request_ = request;
+void FakeAccessTokenStore::DefaultLoadAccessTokens(
+    const LoadAccessTokensCallbackType& callback) {
+  originating_message_loop_ = MessageLoopProxy::current();
+  callback_ = callback;
 }
 
-void FakeAccessTokenStore::SaveAccessToken(
+void FakeAccessTokenStore::DefaultSaveAccessToken(
     const GURL& server_url, const string16& access_token) {
   DCHECK(server_url.is_valid());
   access_token_set_[server_url] = access_token;
 }
 
 FakeAccessTokenStore::~FakeAccessTokenStore() {}
+
+}  // namespace content

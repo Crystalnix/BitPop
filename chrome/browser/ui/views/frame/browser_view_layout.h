@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "ui/gfx/rect.h"
-#include "views/layout/layout_manager.h"
+#include "ui/views/layout/layout_manager.h"
 
 class AbstractTabStripView;
 class BookmarkBarView;
@@ -46,26 +47,24 @@ class BrowserViewLayout : public views::LayoutManager {
 
   // Tests to see if the specified |point| (in nonclient view's coordinates)
   // is within the views managed by the laymanager. Returns one of
-  // HitTestCompat enum defined in views/window/hit_test.h.
+  // HitTestCompat enum defined in ui/base/hit_test.h.
   // See also ClientView::NonClientHitTest.
   virtual int NonClientHitTest(const gfx::Point& point);
 
   // views::LayoutManager overrides:
-  virtual void Installed(views::View* host);
-  virtual void Uninstalled(views::View* host);
-  virtual void ViewAdded(views::View* host, views::View* view);
-  virtual void ViewRemoved(views::View* host, views::View* view);
-  virtual void Layout(views::View* host);
-  virtual gfx::Size GetPreferredSize(views::View* host);
+  virtual void Installed(views::View* host) OVERRIDE;
+  virtual void Uninstalled(views::View* host) OVERRIDE;
+  virtual void ViewAdded(views::View* host, views::View* view) OVERRIDE;
+  virtual void ViewRemoved(views::View* host, views::View* view) OVERRIDE;
+  virtual void Layout(views::View* host) OVERRIDE;
+  virtual gfx::Size GetPreferredSize(views::View* host) OVERRIDE;
 
  protected:
   Browser* browser();
   const Browser* browser() const;
 
   // Layout the tab strip region, returns the coordinate of the bottom of the
-  // TabStrip, for laying out subsequent controls. This also lays out the
-  // compact navigation and options bars if the browser is in compact navigation
-  // mode.
+  // TabStrip, for laying out subsequent controls.
   virtual int LayoutTabStripRegion();
 
   // Layout the following controls, starting at |top|, returns the coordinate
@@ -74,15 +73,6 @@ class BrowserViewLayout : public views::LayoutManager {
   virtual int LayoutBookmarkAndInfoBars(int top);
   int LayoutBookmarkBar(int top);
   int LayoutInfoBar(int top);
-
-  // Updates |source|'s reserved contents rect by mapping BrowserView's
-  // |browser_reserved_rect| into |future_source_bounds| taking into
-  // account |source|'s |future_parent_offset| (offset is relative to
-  // browser_view_).
-  void UpdateReservedContentsRect(const gfx::Rect& browser_reserved_rect,
-                                  TabContentsContainer* source,
-                                  const gfx::Rect& future_source_bounds,
-                                  const gfx::Point& future_parent_offset);
 
   // Layout the TabContents container, between the coordinates |top| and
   // |bottom|.
@@ -114,18 +104,14 @@ class BrowserViewLayout : public views::LayoutManager {
   views::SingleSplitView* contents_split_;
   ContentsContainer* contents_container_;
   views::View* infobar_container_;
-  views::View* compact_navigation_bar_;
-  views::View* compact_options_bar_;
-  views::View* compact_spacer_;
   DownloadShelfView* download_shelf_;
   BookmarkBarView* active_bookmark_bar_;
 
   BrowserView* browser_view_;
 
   // The bounds within which the vertically-stacked contents of the BrowserView
-  // should be laid out within. When the SideTabstrip is not visible, this is
-  // just the local bounds of the BrowserView, otherwise it's the local bounds
-  // of the BrowserView less the width of the SideTabstrip.
+  // should be laid out within. This is just the local bounds of the
+  // BrowserView.
   gfx::Rect vertical_layout_rect_;
 
   // The distance the FindBar is from the top of the window, in pixels.

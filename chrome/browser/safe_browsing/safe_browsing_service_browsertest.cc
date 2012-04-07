@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -6,27 +6,39 @@
 // and a test protocol manager. It is used to test logics in safebrowsing
 // service.
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
-#include "crypto/sha2.h"
+#include "base/scoped_temp_dir.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/safe_browsing/client_side_detection_service.h"
+#include "chrome/browser/safe_browsing/protocol_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-#include "chrome/browser/safe_browsing/protocol_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "content/test/test_browser_thread.h"
+#include "crypto/sha2.h"
+#include "testing/gmock/include/gmock/gmock.h"
 
 using base::Histogram;
 using base::StatisticsRecorder;
+using content::BrowserThread;
+using content::WebContents;
+using ::testing::_;
+using ::testing::Mock;
+using ::testing::StrictMock;
 
 // A SafeBrowingDatabase class that allows us to inject the malicious URLs.
 class TestSafeBrowsingDatabase :  public SafeBrowsingDatabase {
@@ -72,6 +84,12 @@ class TestSafeBrowsingDatabase :  public SafeBrowsingDatabase {
     return download_digest_prefix_.count(prefix) > 0;
   }
   virtual bool ContainsCsdWhitelistedUrl(const GURL& url) {
+    return true;
+  }
+  virtual bool ContainsDownloadWhitelistedString(const std::string& str) {
+    return true;
+  }
+  virtual bool ContainsDownloadWhitelistedUrl(const GURL& url) {
     return true;
   }
   virtual bool UpdateStarted(std::vector<SBListChunkRanges>* lists) {
@@ -157,7 +175,8 @@ class TestSafeBrowsingDatabaseFactory : public SafeBrowsingDatabaseFactory {
 
   virtual SafeBrowsingDatabase* CreateSafeBrowsingDatabase(
       bool enable_download_protection,
-      bool enable_client_side_whitelist) {
+      bool enable_client_side_whitelist,
+      bool enable_download_whitelist) {
     db_ = new TestSafeBrowsingDatabase();
     return db_;
   }
@@ -200,9 +219,8 @@ class TestProtocolManager :  public SafeBrowsingProtocolManager {
     bool cancache = true;
     BrowserThread::PostDelayedTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(
-            sb_service_, &SafeBrowsingService::HandleGetHashResults,
-            check, full_hashes_, cancache),
+        base::Bind(&SafeBrowsingService::HandleGetHashResults,
+                   sb_service_, check, full_hashes_, cancache),
         delay_ms_);
   }
 
@@ -251,6 +269,32 @@ class TestSBProtocolManagerFactory : public SBProtocolManagerFactory {
   TestProtocolManager* pm_;
 };
 
+class MockObserver : public SafeBrowsingService::Observer {
+ public:
+  MockObserver() {}
+  virtual ~MockObserver() {}
+  MOCK_METHOD1(OnSafeBrowsingHit,
+               void(const SafeBrowsingService::UnsafeResource&));
+};
+
+MATCHER_P(IsUnsafeResourceFor, url, "") {
+  return (arg.url.spec() == url.spec() &&
+          arg.threat_type != SafeBrowsingService::SAFE);
+}
+
+namespace {
+
+void QuitUIThread() {
+  MessageLoopForUI::current()->Quit();
+}
+
+void QuitFromIOThread() {
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE, base::Bind(&QuitUIThread));
+}
+
+}  // namespace
+
 // Tests the safe browsing blocking page in a browser.
 class SafeBrowsingServiceTest : public InProcessBrowserTest {
  public:
@@ -280,7 +324,7 @@ class SafeBrowsingServiceTest : public InProcessBrowserTest {
   }
 
   virtual void SetUp() {
-    // InProcessBrowserTest::SetUp() intantiates SafebrowsingService and
+    // InProcessBrowserTest::SetUp() instantiates SafebrowsingService and
     // RegisterFactory has to be called before SafeBrowsingService is created.
     SafeBrowsingDatabase::RegisterFactory(&db_factory_);
     SafeBrowsingProtocolManager::RegisterFactory(&pm_factory_);
@@ -337,8 +381,8 @@ class SafeBrowsingServiceTest : public InProcessBrowserTest {
   }
 
   bool ShowingInterstitialPage() {
-    TabContents* contents = browser()->GetSelectedTabContents();
-    InterstitialPage* interstitial_page = contents->interstitial_page();
+    WebContents* contents = browser()->GetSelectedWebContents();
+    InterstitialPage* interstitial_page = contents->GetInterstitialPage();
     return interstitial_page != NULL;
   }
 
@@ -362,6 +406,26 @@ class SafeBrowsingServiceTest : public InProcessBrowserTest {
     sb_service->download_hashcheck_timeout_ms_ = ms;
   }
 
+  void CreateCSDService() {
+    safe_browsing::ClientSideDetectionService* csd_service =
+        safe_browsing::ClientSideDetectionService::Create(NULL);
+    SafeBrowsingService* sb_service =
+        g_browser_process->safe_browsing_service();
+    sb_service->csd_service_.reset(csd_service);
+    sb_service->RefreshState();
+  }
+
+ protected:
+  StrictMock<MockObserver> observer_;
+
+  // Waits for pending tasks on the IO thread to complete. This is useful
+  // to wait for the SafeBrowsingService to finish loading/stopping.
+  void WaitForIOThread() {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE, base::Bind(&QuitFromIOThread));
+    ui_test_utils::RunMessageLoop();  // Will stop from |QuitUIThread|.
+  }
+
  private:
   TestSafeBrowsingDatabaseFactory db_factory_;
   TestSBProtocolManagerFactory pm_factory_;
@@ -379,6 +443,7 @@ const char kMalwarePage[] = "files/safe_browsing/malware.html";
 // This test goes through DownloadResourceHandler.
 IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Malware) {
   GURL url = test_server()->GetURL(kEmptyPage);
+  g_browser_process->safe_browsing_service()->AddObserver(&observer_);
 
   // After adding the url to safebrowsing database and getfullhash result,
   // we should see the interstitial page.
@@ -386,9 +451,11 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Malware) {
   int chunk_id = 0;
   GenUrlFullhashResult(url, safe_browsing_util::kMalwareList, chunk_id,
                        &malware_full_hash);
+  EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(url))).Times(1);
   SetupResponseForUrl(url, malware_full_hash);
   ui_test_utils::NavigateToURL(browser(), url);
   EXPECT_TRUE(ShowingInterstitialPage());
+  g_browser_process->safe_browsing_service()->RemoveObserver(&observer_);
 }
 
 const char kPrefetchMalwarePage[] = "files/safe_browsing/prefetch_malware.html";
@@ -398,6 +465,7 @@ const char kPrefetchMalwarePage[] = "files/safe_browsing/prefetch_malware.html";
 IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Prefetch) {
   GURL url = test_server()->GetURL(kPrefetchMalwarePage);
   GURL malware_url = test_server()->GetURL(kMalwarePage);
+  g_browser_process->safe_browsing_service()->AddObserver(&observer_);
 
   class SetPrefetchForTest {
    public:
@@ -428,11 +496,16 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, Prefetch) {
   SetupResponseForUrl(malware_url, malware_full_hash);
   ui_test_utils::NavigateToURL(browser(), url);
   EXPECT_FALSE(ShowingInterstitialPage());
+  Mock::VerifyAndClear(&observer_);
 
   // However, when we navigate to the malware page, we should still get
   // the interstitial.
+  EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(malware_url)))
+      .Times(1);
   ui_test_utils::NavigateToURL(browser(), malware_url);
   EXPECT_TRUE(ShowingInterstitialPage());
+  Mock::VerifyAndClear(&observer_);
+  g_browser_process->safe_browsing_service()->RemoveObserver(&observer_);
 }
 
 }  // namespace
@@ -443,7 +516,6 @@ class TestSBClient
  public:
   TestSBClient() : result_(SafeBrowsingService::SAFE),
                    safe_browsing_service_(g_browser_process->
-                                          resource_dispatcher_host()->
                                           safe_browsing_service()) {
   }
 
@@ -454,18 +526,16 @@ class TestSBClient
   void CheckDownloadUrl(const std::vector<GURL>& url_chain) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(this,
-                          &TestSBClient::CheckDownloadUrlOnIOThread,
-                          url_chain));
+        base::Bind(&TestSBClient::CheckDownloadUrlOnIOThread,
+                   this, url_chain));
     ui_test_utils::RunMessageLoop();  // Will stop in OnDownloadUrlCheckResult.
   }
 
   void CheckDownloadHash(const std::string& full_hash) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(this,
-                          &TestSBClient::CheckDownloadHashOnIOThread,
-                          full_hash));
+        base::Bind(&TestSBClient::CheckDownloadHashOnIOThread,
+                   this, full_hash));
     ui_test_utils::RunMessageLoop();  // Will stop in OnDownloadHashCheckResult.
   }
 
@@ -483,7 +553,7 @@ class TestSBClient
                                 SafeBrowsingService::UrlCheckResult result) {
     result_ = result;
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &TestSBClient::DownloadCheckDone));
+                            base::Bind(&TestSBClient::DownloadCheckDone, this));
   }
 
   // Called when the result of checking a download hash is known.
@@ -491,7 +561,7 @@ class TestSBClient
                                  SafeBrowsingService::UrlCheckResult result) {
     result_ = result;
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &TestSBClient::DownloadCheckDone));
+                            base::Bind(&TestSBClient::DownloadCheckDone, this));
   }
 
   void DownloadCheckDone() {
@@ -596,8 +666,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, CheckDownloadUrlTimedOut) {
   //
   // Now introducing delays and we should hit timeout.
   //
-  SafeBrowsingService* sb_service =
-      g_browser_process->resource_dispatcher_host()->safe_browsing_service();
+  SafeBrowsingService* sb_service = g_browser_process->safe_browsing_service();
   const int64 kOneSec = 1000;
   const int64 kOneMs = 1;
   int64 default_urlcheck_timeout = DownloadUrlCheckTimeout(sb_service);
@@ -629,8 +698,7 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, CheckDownloadHashTimedOut) {
   //
   // Now introducing delays and we should hit timeout.
   //
-  SafeBrowsingService* sb_service =
-      g_browser_process->resource_dispatcher_host()->safe_browsing_service();
+  SafeBrowsingService* sb_service = g_browser_process->safe_browsing_service();
   const int64 kOneSec = 1000;
   const int64 kOneMs = 1;
   int64 default_hashcheck_timeout = DownloadHashCheckTimeout(sb_service);
@@ -643,6 +711,62 @@ IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, CheckDownloadHashTimedOut) {
 
   // Need to set the timeout back to the default value.
   SetDownloadHashCheckTimeout(sb_service, default_hashcheck_timeout);
+}
+
+IN_PROC_BROWSER_TEST_F(SafeBrowsingServiceTest, StartAndStop) {
+  CreateCSDService();
+  SafeBrowsingService* sb_service = g_browser_process->safe_browsing_service();
+  safe_browsing::ClientSideDetectionService* csd_service =
+      sb_service->safe_browsing_detection_service();
+  PrefService* pref_service = browser()->profile()->GetPrefs();
+
+  ASSERT_TRUE(sb_service != NULL);
+  ASSERT_TRUE(csd_service != NULL);
+  ASSERT_TRUE(pref_service != NULL);
+
+  EXPECT_TRUE(pref_service->GetBoolean(prefs::kSafeBrowsingEnabled));
+
+  // SBS might still be starting, make sure this doesn't flake.
+  WaitForIOThread();
+  EXPECT_TRUE(sb_service->enabled());
+  EXPECT_TRUE(csd_service->enabled());
+
+  // Add a new Profile. SBS should keep running.
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  scoped_ptr<Profile> profile2(Profile::CreateProfile(temp_dir.path()));
+  ASSERT_TRUE(profile2.get() != NULL);
+  PrefService* pref_service2 = profile2->GetPrefs();
+  EXPECT_TRUE(pref_service2->GetBoolean(prefs::kSafeBrowsingEnabled));
+  // We don't expect the state to have changed, but if it did, wait for it.
+  WaitForIOThread();
+  EXPECT_TRUE(sb_service->enabled());
+  EXPECT_TRUE(csd_service->enabled());
+
+  // Change one of the prefs. SBS should keep running.
+  pref_service->SetBoolean(prefs::kSafeBrowsingEnabled, false);
+  WaitForIOThread();
+  EXPECT_TRUE(sb_service->enabled());
+  EXPECT_TRUE(csd_service->enabled());
+
+  // Change the other pref. SBS should stop now.
+  pref_service2->SetBoolean(prefs::kSafeBrowsingEnabled, false);
+  WaitForIOThread();
+  EXPECT_FALSE(sb_service->enabled());
+  EXPECT_FALSE(csd_service->enabled());
+
+  // Turn it back on. SBS comes back.
+  pref_service2->SetBoolean(prefs::kSafeBrowsingEnabled, true);
+  WaitForIOThread();
+  EXPECT_TRUE(sb_service->enabled());
+  EXPECT_TRUE(csd_service->enabled());
+
+  // Delete the Profile. SBS stops again.
+  pref_service2 = NULL;
+  profile2.reset();
+  WaitForIOThread();
+  EXPECT_FALSE(sb_service->enabled());
+  EXPECT_FALSE(csd_service->enabled());
 }
 
 }  // namespace

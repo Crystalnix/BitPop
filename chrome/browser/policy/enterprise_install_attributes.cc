@@ -7,8 +7,12 @@
 #include "base/logging.h"
 #include "chrome/browser/chromeos/cros/cryptohome_library.h"
 
-static const char kAttrEnterpriseOwned[] = "enterprise.owned";
-static const char kAttrEnterpriseUser[] = "enterprise.user";
+namespace {
+
+const char kAttrEnterpriseOwned[] = "enterprise.owned";
+const char kAttrEnterpriseUser[] = "enterprise.user";
+
+}  // namespace
 
 namespace policy {
 
@@ -25,7 +29,7 @@ EnterpriseInstallAttributes::LockResult EnterpriseInstallAttributes::LockDevice(
         LOCK_SUCCESS : LOCK_WRONG_USER;
   }
 
-  if (!cryptohome_->InstallAttributesIsReady())
+  if (!cryptohome_ || !cryptohome_->InstallAttributesIsReady())
     return LOCK_NOT_READY;
 
   // Clearing the TPM password seems to be always a good deal.

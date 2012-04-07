@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,20 +6,29 @@
 
 #include "base/utf_string_conversions.h"
 #include "content/common/speech_input_messages.h"
-#include "content/renderer/render_view.h"
+#include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputListener.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
+using WebKit::WebDocument;
+using WebKit::WebElement;
 using WebKit::WebFrame;
+using WebKit::WebInputElement;
+using WebKit::WebNode;
+using WebKit::WebView;
 
 SpeechInputDispatcher::SpeechInputDispatcher(
-    RenderView* render_view,
+    RenderViewImpl* render_view,
     WebKit::WebSpeechInputListener* listener)
-    : RenderViewObserver(render_view),
+    : content::RenderViewObserver(render_view),
       listener_(listener) {
 }
 
@@ -32,6 +41,8 @@ bool SpeechInputDispatcher::OnMessageReceived(const IPC::Message& message) {
                         OnSpeechRecordingComplete)
     IPC_MESSAGE_HANDLER(SpeechInputMsg_RecognitionComplete,
                         OnSpeechRecognitionComplete)
+    IPC_MESSAGE_HANDLER(SpeechInputMsg_ToggleSpeechInput,
+                        OnSpeechRecognitionToggleSpeechInput)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -51,7 +62,7 @@ bool SpeechInputDispatcher::startRecognition(
   params.origin_url = UTF16ToUTF8(origin.toString());
   params.render_view_id = routing_id();
   params.request_id = request_id;
-  gfx::Size scroll = render_view()->webview()->mainFrame()->scrollOffset();
+  gfx::Size scroll = render_view()->GetWebView()->mainFrame()->scrollOffset();
   params.element_rect = element_rect;
   params.element_rect.Offset(-scroll.width(), -scroll.height());
 
@@ -73,11 +84,14 @@ void SpeechInputDispatcher::stopRecording(int request_id) {
 }
 
 void SpeechInputDispatcher::OnSpeechRecognitionResult(
-    int request_id, const speech_input::SpeechInputResultArray& result) {
+    int request_id,
+    const content::SpeechInputResult& result) {
   VLOG(1) << "SpeechInputDispatcher::OnSpeechRecognitionResult enter";
-  WebKit::WebSpeechInputResultArray webkit_result(result.size());
-  for (size_t i = 0; i < result.size(); ++i)
-    webkit_result[i].set(result[i].utterance, result[i].confidence);
+  WebKit::WebSpeechInputResultArray webkit_result(result.hypotheses.size());
+  for (size_t i = 0; i < result.hypotheses.size(); ++i) {
+    webkit_result[i].set(result.hypotheses[i].utterance,
+        result.hypotheses[i].confidence);
+  }
   listener_->setRecognitionResult(request_id, webkit_result);
   VLOG(1) << "SpeechInputDispatcher::OnSpeechRecognitionResult exit";
 }
@@ -92,4 +106,35 @@ void SpeechInputDispatcher::OnSpeechRecognitionComplete(int request_id) {
   VLOG(1) << "SpeechInputDispatcher::OnSpeechRecognitionComplete enter";
   listener_->didCompleteRecognition(request_id);
   VLOG(1) << "SpeechInputDispatcher::OnSpeechRecognitionComplete exit";
+}
+
+void SpeechInputDispatcher::OnSpeechRecognitionToggleSpeechInput() {
+  VLOG(1) << "SpeechInputDispatcher::OnSpeechRecognitionToggleSpeechInput";
+
+  WebView* web_view = render_view()->GetWebView();
+
+  WebFrame* frame = web_view->mainFrame();
+  if (!frame)
+    return;
+
+  WebDocument document = frame->document();
+  if (document.isNull())
+    return;
+
+  WebNode focused_node = document.focusedNode();
+  if (focused_node.isNull() || !focused_node.isElementNode())
+    return;
+
+  WebKit::WebElement element = focused_node.to<WebKit::WebElement>();
+  WebKit::WebInputElement* input_element = WebKit::toWebInputElement(&element);
+  if (!input_element)
+    return;
+  if (!input_element->isSpeechInputEnabled())
+    return;
+
+  if (input_element->getSpeechInputState() == WebInputElement::Idle) {
+    input_element->startSpeechInput();
+  } else {
+    input_element->stopSpeechInput();
+  }
 }

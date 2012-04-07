@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "webkit/tools/test_shell/test_shell.h"
 #include "webkit/tools/test_shell/test_shell_x11.h"
 
@@ -76,7 +76,7 @@ class WebWidgetHostGtkWidget {
                                   GDK_BUTTON_RELEASE_MASK |
                                   GDK_KEY_PRESS_MASK |
                                   GDK_KEY_RELEASE_MASK);
-    GTK_WIDGET_SET_FLAGS(widget, GTK_CAN_FOCUS);
+    gtk_widget_set_can_focus(widget, TRUE);
     g_signal_connect(widget, "size-request",
                      G_CALLBACK(&HandleSizeRequest), host);
     g_signal_connect(widget, "size-allocate",
@@ -328,7 +328,7 @@ WebWidgetHost::WebWidgetHost()
       webwidget_(NULL),
       scroll_dx_(0),
       scroll_dy_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   set_painting(false);
 }
 
@@ -365,7 +365,7 @@ void WebWidgetHost::Paint() {
     }
   }
 
-  webwidget_->animate();
+  webwidget_->animate(0.0);
 
   // This may result in more invalidation
   webwidget_->layout();

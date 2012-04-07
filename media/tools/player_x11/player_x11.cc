@@ -1,63 +1,51 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <iostream>
-#include <signal.h>
 #include <X11/keysym.h>
 #include <X11/Xlib.h>
+#include <signal.h>
+
+#include <iostream>  // NOLINT
 
 #include "base/at_exit.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "media/base/callback.h"
+#include "media/audio/audio_manager.h"
 #include "media/base/filter_collection.h"
 #include "media/base/media.h"
+#include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/message_loop_factory_impl.h"
-#include "media/base/pipeline_impl.h"
-#include "media/filters/adaptive_demuxer.h"
-#include "media/filters/audio_renderer_impl.h"
+#include "media/base/pipeline.h"
+#include "media/base/video_frame.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_demuxer_factory.h"
 #include "media/filters/ffmpeg_video_decoder.h"
-#include "media/filters/file_data_source_factory.h"
+#include "media/filters/file_data_source.h"
 #include "media/filters/null_audio_renderer.h"
-#include "media/filters/omx_video_decoder.h"
-
-// TODO(jiesun): implement different video decode contexts according to
-// these flags. e.g.
-//     1.  system memory video decode context for x11
-//     2.  gl texture video decode context for OpenGL.
-//     3.  gles texture video decode context for OpenGLES.
-// TODO(jiesun): add an uniform video renderer which take the video
-//       decode context object and delegate renderer request to these
-//       objects. i.e. Seperate "painter" and "pts scheduler".
-#if defined(RENDERER_GL)
+#include "media/filters/reference_audio_renderer.h"
+#include "media/filters/video_renderer_base.h"
 #include "media/tools/player_x11/gl_video_renderer.h"
-typedef GlVideoRenderer Renderer;
-#elif defined(RENDERER_GLES)
-#include "media/tools/player_x11/gles_video_renderer.h"
-typedef GlesVideoRenderer Renderer;
-#elif defined(RENDERER_X11)
 #include "media/tools/player_x11/x11_video_renderer.h"
-typedef X11VideoRenderer Renderer;
-#else
-#error No video renderer defined.
-#endif
 
-Display* g_display = NULL;
-Window g_window = 0;
-bool g_running = false;
+static Display* g_display = NULL;
+static Window g_window = 0;
+static bool g_running = false;
+
+AudioManager* g_audio_manager = NULL;
+
+media::VideoRendererBase* g_video_renderer = NULL;
 
 class MessageLoopQuitter {
  public:
   explicit MessageLoopQuitter(MessageLoop* loop) : loop_(loop) {}
   void Quit(media::PipelineStatus status) {
-    loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     delete this;
   }
  private:
@@ -90,63 +78,80 @@ bool InitX11() {
   return true;
 }
 
-bool InitPipeline(MessageLoop* message_loop,
-                  const char* filename, bool enable_audio,
-                  scoped_refptr<media::PipelineImpl>* pipeline,
-                  MessageLoop* paint_message_loop,
-                  media::MessageLoopFactory* message_loop_factory) {
-  // Initialize OpenMAX.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOpenMax) &&
-      !media::InitializeOpenMaxLibrary(FilePath())) {
-    std::cout << "Unable to initialize OpenMAX library."<< std::endl;
-    return false;
+void SetOpaque(bool /*opaque*/) {
+}
+
+typedef base::Callback<void(media::VideoFrame*)> PaintCB;
+void Paint(MessageLoop* message_loop, const PaintCB& paint_cb) {
+  if (message_loop != MessageLoop::current()) {
+    message_loop->PostTask(FROM_HERE, base::Bind(
+        &Paint, message_loop, paint_cb));
+    return;
   }
 
+  scoped_refptr<media::VideoFrame> video_frame;
+  g_video_renderer->GetCurrentFrame(&video_frame);
+  if (video_frame)
+    paint_cb.Run(video_frame);
+  g_video_renderer->PutCurrentFrame(video_frame);
+}
+
+bool InitPipeline(MessageLoop* message_loop,
+                  const char* filename,
+                  const PaintCB& paint_cb,
+                  bool enable_audio,
+                  scoped_refptr<media::Pipeline>* pipeline,
+                  MessageLoop* paint_message_loop,
+                  media::MessageLoopFactory* message_loop_factory) {
   // Load media libraries.
   if (!media::InitializeMediaLibrary(FilePath())) {
     std::cout << "Unable to initialize the media library." << std::endl;
     return false;
   }
 
+  // Open the file.
+  scoped_refptr<media::FileDataSource> data_source =
+      new media::FileDataSource();
+  if (data_source->Initialize(filename) != media::PIPELINE_OK) {
+    return false;
+  }
+
   // Create our filter factories.
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
-  collection->SetDemuxerFactory(
-      new media::AdaptiveDemuxerFactory(
-          new media::FFmpegDemuxerFactory(
-              new media::FileDataSourceFactory(), message_loop)));
+  collection->SetDemuxerFactory(scoped_ptr<media::DemuxerFactory>(
+      new media::FFmpegDemuxerFactory(data_source, message_loop)));
   collection->AddAudioDecoder(new media::FFmpegAudioDecoder(
       message_loop_factory->GetMessageLoop("AudioDecoderThread")));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOpenMax)) {
-    collection->AddVideoDecoder(new media::OmxVideoDecoder(
-        message_loop_factory->GetMessageLoop("VideoDecoderThread"),
-        NULL));
-  } else {
-    collection->AddVideoDecoder(new media::FFmpegVideoDecoder(
-        message_loop_factory->GetMessageLoop("VideoDecoderThread"),
-        NULL));
-  }
-  collection->AddVideoRenderer(new Renderer(g_display,
-                                            g_window,
-                                            paint_message_loop));
+  collection->AddVideoDecoder(new media::FFmpegVideoDecoder(
+      message_loop_factory->GetMessageLoop("VideoDecoderThread")));
 
-  if (enable_audio)
-    collection->AddAudioRenderer(new media::AudioRendererImpl());
-  else
+  // Create our video renderer and save a reference to it for painting.
+  g_video_renderer = new media::VideoRendererBase(
+      base::Bind(&Paint, paint_message_loop, paint_cb),
+      base::Bind(&SetOpaque));
+  collection->AddVideoRenderer(g_video_renderer);
+
+  if (enable_audio) {
+    collection->AddAudioRenderer(
+        new media::ReferenceAudioRenderer(g_audio_manager));
+  } else {
     collection->AddAudioRenderer(new media::NullAudioRenderer());
+  }
 
   // Create the pipeline and start it.
-  *pipeline = new media::PipelineImpl(message_loop);
+  *pipeline = new media::Pipeline(message_loop, new media::MediaLog());
   media::PipelineStatusNotification note;
-  (*pipeline)->Start(collection.release(), filename, note.Callback());
+  (*pipeline)->Start(
+      collection.Pass(), filename, media::PipelineStatusCB(),
+      media::PipelineStatusCB(), media::NetworkEventCB(),
+      note.Callback());
 
   // Wait until the pipeline is fully initialized.
   note.Wait();
   if (note.status() != media::PIPELINE_OK) {
     std::cout << "InitPipeline: " << note.status() << std::endl;
-    (*pipeline)->Stop(NULL);
+    (*pipeline)->Stop(media::PipelineStatusCB());
     return false;
   }
 
@@ -160,14 +165,15 @@ void TerminateHandler(int signal) {
 }
 
 void PeriodicalUpdate(
-    media::PipelineImpl* pipeline,
+    media::Pipeline* pipeline,
     MessageLoop* message_loop,
     bool audio_only) {
   if (!g_running) {
     // interrupt signal was received during last time period.
     // Quit message_loop only when pipeline is fully stopped.
     MessageLoopQuitter* quitter = new MessageLoopQuitter(message_loop);
-    pipeline->Stop(NewCallback(quitter, &MessageLoopQuitter::Quit));
+    pipeline->Stop(base::Bind(&MessageLoopQuitter::Quit,
+                              base::Unretained(quitter)));
     return;
   }
 
@@ -176,13 +182,6 @@ void PeriodicalUpdate(
     XEvent e;
     XNextEvent(g_display, &e);
     switch (e.type) {
-      case Expose:
-        if (!audio_only) {
-          // Tell the renderer to paint.
-          DCHECK(Renderer::instance());
-          Renderer::instance()->Paint();
-        }
-        break;
       case ButtonPress:
         {
           Window window;
@@ -198,7 +197,7 @@ void PeriodicalUpdate(
                        &border_width,
                        &depth);
           base::TimeDelta time = pipeline->GetMediaDuration();
-          pipeline->Seek(time*e.xbutton.x/width, NULL);
+          pipeline->Seek(time*e.xbutton.x/width, media::PipelineStatusCB());
         }
         break;
       case KeyPress:
@@ -208,10 +207,11 @@ void PeriodicalUpdate(
             g_running = false;
             // Quit message_loop only when pipeline is fully stopped.
             MessageLoopQuitter* quitter = new MessageLoopQuitter(message_loop);
-            pipeline->Stop(NewCallback(quitter, &MessageLoopQuitter::Quit));
+            pipeline->Stop(base::Bind(&MessageLoopQuitter::Quit,
+                                      base::Unretained(quitter)));
             return;
           } else if (key == XK_space) {
-            if (pipeline->GetPlaybackRate() < 0.01f) // paused
+            if (pipeline->GetPlaybackRate() < 0.01f)  // paused
               pipeline->SetPlaybackRate(1.0f);
             else
               pipeline->SetPlaybackRate(0.0f);
@@ -223,20 +223,25 @@ void PeriodicalUpdate(
     }
   }
 
-  message_loop->PostDelayedTask(FROM_HERE,
-      NewRunnableFunction(PeriodicalUpdate, make_scoped_refptr(pipeline),
-                          message_loop, audio_only), 10);
+  message_loop->PostDelayedTask(FROM_HERE, base::Bind(
+      &PeriodicalUpdate, make_scoped_refptr(pipeline),
+      message_loop, audio_only), 10);
 }
 
 int main(int argc, char** argv) {
+  base::AtExitManager at_exit;
+
+  scoped_refptr<AudioManager> audio_manager(AudioManager::Create());
+  g_audio_manager = audio_manager;
+
   // Read arguments.
   if (argc == 1) {
     std::cout << "Usage: " << argv[0] << " --file=FILE" << std::endl
               << std::endl
               << "Optional arguments:" << std::endl
-              << "  [--enable-openmax]"
               << "  [--audio]"
-              << "  [--alsa-device=DEVICE]" << std::endl
+              << "  [--alsa-device=DEVICE]"
+              << "  [--use-gl]" << std::endl
               << " Press [ESC] to stop" << std::endl
               << " Press [SPACE] to toggle pause/play" << std::endl
               << " Press mouse left button to seek" << std::endl;
@@ -248,6 +253,7 @@ int main(int argc, char** argv) {
   std::string filename =
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII("file");
   bool enable_audio = CommandLine::ForCurrentProcess()->HasSwitch("audio");
+  bool use_gl = CommandLine::ForCurrentProcess()->HasSwitch("use-gl");
   bool audio_only = false;
 
   logging::InitLogging(
@@ -266,16 +272,25 @@ int main(int argc, char** argv) {
     return 1;
 
   // Initialize the pipeline thread and the pipeline.
-  base::AtExitManager at_exit;
   scoped_ptr<media::MessageLoopFactory> message_loop_factory(
       new media::MessageLoopFactoryImpl());
   scoped_ptr<base::Thread> thread;
-  scoped_refptr<media::PipelineImpl> pipeline;
+  scoped_refptr<media::Pipeline> pipeline;
   MessageLoop message_loop;
   thread.reset(new base::Thread("PipelineThread"));
   thread->Start();
+
+  PaintCB paint_cb;
+  if (use_gl) {
+    paint_cb = base::Bind(
+        &GlVideoRenderer::Paint, new GlVideoRenderer(g_display, g_window));
+  } else {
+    paint_cb = base::Bind(
+        &X11VideoRenderer::Paint, new X11VideoRenderer(g_display, g_window));
+  }
+
   if (InitPipeline(thread->message_loop(), filename.c_str(),
-                   enable_audio, &pipeline, &message_loop,
+                   paint_cb, enable_audio, &pipeline, &message_loop,
                    message_loop_factory.get())) {
     // Main loop of the application.
     g_running = true;
@@ -283,11 +298,10 @@ int main(int argc, char** argv) {
     // Check if video is present.
     audio_only = !pipeline->HasVideo();
 
-    message_loop.PostTask(FROM_HERE,
-        NewRunnableFunction(PeriodicalUpdate, pipeline,
-                            &message_loop, audio_only));
+    message_loop.PostTask(FROM_HERE, base::Bind(
+        &PeriodicalUpdate, pipeline, &message_loop, audio_only));
     message_loop.Run();
-  } else{
+  } else {
     std::cout << "Pipeline initialization failed..." << std::endl;
   }
 
@@ -295,7 +309,14 @@ int main(int argc, char** argv) {
   message_loop_factory.reset();
 
   thread->Stop();
+
+  // Release callback which releases video renderer. Do this before cleaning up
+  // X below since the video renderer has some X cleanup duties as well.
+  paint_cb.Reset();
+
   XDestroyWindow(g_display, g_window);
   XCloseDisplay(g_display);
+  g_audio_manager = NULL;
+
   return 0;
 }

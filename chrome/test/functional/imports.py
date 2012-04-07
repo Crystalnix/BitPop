@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -84,30 +83,17 @@ class ImportsTest(pyauto.PyUITest):
 
     Creates |dir| if it doesn't exist.
     """
+    if not os.path.isdir(dir):
+      os.makedirs(dir)
     zf = zipfile.ZipFile(profile_zip)
-    # Make base.
-    pushd = os.getcwd()
-    try:
-      if not os.path.isdir(dir):
-        os.mkdir(dir)
-      os.chdir(dir)
-      # Extract files.
-      for info in zf.infolist():
-        name = info.filename
-        if name.endswith('/'):  # It's a directory.
-          if not os.path.isdir(name):
-            os.makedirs(name)
-        else:  # It's a file.
-          dir = os.path.dirname(name)
-          if dir and not os.path.isdir(dir):
-            os.makedirs(dir)
-          out = open(name, 'wb')
-          out.write(zf.read(name))
-          out.close()
-        # Set permissions.
-        os.chmod(name, 0777)
-    finally:
-      os.chdir(pushd)
+    for name in zf.namelist():
+      full_path = os.path.join(dir, name)
+      if name.endswith('/'):
+        if not os.path.isdir(full_path):
+          os.makedirs(full_path)
+      else:
+        zf.extract(name, dir)
+      os.chmod(full_path, 0777)
 
   def _SwapFirefoxProfile(self):
     """Swaps the test Firefox profile with the original one."""
@@ -207,11 +193,24 @@ class ImportsTest(pyauto.PyUITest):
     # TODO(nirnimesh): Anything else to be done on other platforms?
     return True
 
+  def _ImportFromFirefox(self, bookmarks, history, passwords, home_page,
+                         search_engines):
+    """Verify importing individual Firefox data through preferences"""
+    if not self._CanRunFirefoxTests():
+      logging.warn('Not running firefox import tests.')
+      return
+    self._SwapFirefoxProfile()
+    self.ImportSettings('Mozilla Firefox', False, self._to_import)
+    self._CheckDefaults(bookmarks, history, passwords, home_page,
+                        search_engines)
+
   # Tests.
   def testFirefoxImportFromPrefs(self):
     """Verify importing Firefox data through preferences."""
     if not self._CanRunFirefoxTests():
       logging.warn('Not running firefox import tests.')
+      return
+    if self.IsWinVista():  # Broken on vista. crbug.com/89768
       return
     self._SwapFirefoxProfile()
     self.ImportSettings('Mozilla Firefox', False, self._to_import)
@@ -241,6 +240,8 @@ class ImportsTest(pyauto.PyUITest):
     if not self._CanRunFirefoxTests():
       logging.warn('Not running firefox import tests.')
       return
+    if self.IsWinVista():  # Broken on vista. crbug.com/89768
+      return
     self._SwapFirefoxProfile()
     self.ImportSettings('Mozilla Firefox', False, self._to_import)
     num_history_orig = len(self.GetHistoryInfo().History())
@@ -252,6 +253,28 @@ class ImportsTest(pyauto.PyUITest):
         self._bookmark_bar_items + self._bookmark_folder_items))
     self.assertEqual(num_history_orig, len(self.GetHistoryInfo().History()))
     self.assertEqual(num_passwords_orig, len(self.GetSavedPasswords()))
+
+  def testImportFirefoxBookmarksFromPrefs(self):
+    """Verify importing Firefox bookmarks through preferences."""
+    self._ImportFromFirefox(bookmarks=True, history=False, passwords=False,
+                            home_page=False, search_engines=False)
+
+  def testImportFirefoxHistoryFromPrefs(self):
+    """Verify importing Firefox history through preferences."""
+    self._ImportFromFirefox(bookmarks=False, history=True, passwords=False,
+                            home_page=False, search_engines=False)
+
+  def testImportFirefoxPasswordsFromPrefs(self):
+    """Verify importing Firefox passwords through preferences."""
+    if self.IsWinVista():  # Broken on vista. crbug.com/89768
+      return
+    self._ImportFromFirefox(bookmarks=False, history=False, passwords=True,
+                            home_page=False, search_engines=False)
+
+  def testImportFirefoxSearchEnginesFromPrefs(self):
+    """Verify importing Firefox search engines through preferences."""
+    self._ImportFromFirefox(bookmarks=False, history=False, passwords=False,
+                            home_page=False, search_engines=True)
 
   def testImportFromFirefoxAndSafari(self):
     """Verify importing from Firefox and then Safari."""

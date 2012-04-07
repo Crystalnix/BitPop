@@ -1,25 +1,30 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/glue/password_data_type_controller.h"
 
+#include "base/bind.h"
 #include "base/metrics/histogram.h"
-#include "base/task.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_factory.h"
+#include "chrome/browser/sync/api/sync_error.h"
+#include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace browser_sync {
 
 PasswordDataTypeController::PasswordDataTypeController(
-    ProfileSyncFactory* profile_sync_factory,
-    Profile* profile)
+    ProfileSyncComponentsFactory* profile_sync_factory,
+    Profile* profile,
+    ProfileSyncService* sync_service)
     : NonFrontendDataTypeController(profile_sync_factory,
-                                    profile) {
+                                    profile,
+                                    sync_service) {
 }
 
 PasswordDataTypeController::~PasswordDataTypeController() {
@@ -30,9 +35,11 @@ bool PasswordDataTypeController::StartModels() {
   DCHECK_EQ(state(), MODEL_STARTING);
   password_store_ = profile()->GetPasswordStore(Profile::EXPLICIT_ACCESS);
   if (!password_store_.get()) {
-    LOG(ERROR) << "PasswordStore not initialized, password datatype controller"
-               << " aborting.";
-    StartDoneImpl(ABORTED, NOT_RUNNING, FROM_HERE);
+    SyncError error(
+        FROM_HERE,
+        "PasswordStore not initialized, password datatype controller aborting.",
+        type());
+    StartDoneImpl(ABORTED, NOT_RUNNING, error);
     return false;
   }
   return true;
@@ -43,14 +50,14 @@ bool PasswordDataTypeController::StartAssociationAsync() {
   DCHECK_EQ(state(), ASSOCIATING);
   DCHECK(password_store_.get());
   password_store_->ScheduleTask(
-      NewRunnableMethod(this, &PasswordDataTypeController::StartAssociation));
+      base::Bind(&PasswordDataTypeController::StartAssociation, this));
   return true;
 }
 
 void PasswordDataTypeController::CreateSyncComponents() {
   DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), ASSOCIATING);
-  ProfileSyncFactory::SyncComponents sync_components =
+  ProfileSyncComponentsFactory::SyncComponents sync_components =
       profile_sync_factory()->CreatePasswordSyncComponents(
           profile_sync_service(),
           password_store_.get(),
@@ -64,7 +71,7 @@ bool PasswordDataTypeController::StopAssociationAsync() {
   DCHECK_EQ(state(), STOPPING);
   DCHECK(password_store_.get());
   password_store_->ScheduleTask(
-      NewRunnableMethod(this, &PasswordDataTypeController::StopAssociation));
+      base::Bind(&PasswordDataTypeController::StopAssociation, this));
   return true;
 }
 

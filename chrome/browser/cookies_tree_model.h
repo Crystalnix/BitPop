@@ -9,6 +9,7 @@
 // TODO(viettrungluu): This header file #includes far too much and has too much
 // inline code (which shouldn't be inline).
 
+#include <list>
 #include <string>
 #include <vector>
 
@@ -21,10 +22,13 @@
 #include "chrome/browser/browsing_data_file_system_helper.h"
 #include "chrome/browser/browsing_data_indexed_db_helper.h"
 #include "chrome/browser/browsing_data_local_storage_helper.h"
+#include "chrome/browser/browsing_data_quota_helper.h"
 #include "chrome/common/content_settings.h"
 #include "net/base/cookie_monster.h"
 #include "ui/base/models/tree_node_model.h"
 
+class BrowsingDataCookieHelper;
+class CookieSettings;
 class CookiesTreeModel;
 class CookieTreeAppCacheNode;
 class CookieTreeAppCachesNode;
@@ -36,12 +40,12 @@ class CookieTreeFileSystemsNode;
 class CookieTreeFileSystemNode;
 class CookieTreeLocalStorageNode;
 class CookieTreeLocalStoragesNode;
+class CookieTreeQuotaNode;
 class CookieTreeSessionStorageNode;
 class CookieTreeSessionStoragesNode;
 class CookieTreeIndexedDBNode;
 class CookieTreeIndexedDBsNode;
 class CookieTreeOriginNode;
-class HostContentSettingsMap;
 
 // CookieTreeNode -------------------------------------------------------------
 // The base node type in the Cookies, Databases, and Local Storage options
@@ -69,8 +73,9 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
       TYPE_APPCACHE,  // This is used for CookieTreeAppCacheNode.
       TYPE_INDEXED_DBS,  // This is used for CookieTreeIndexedDBsNode.
       TYPE_INDEXED_DB,  // This is used for CookieTreeIndexedDBNode.
-      TYPE_FILE_SYSTEMS, // This is used for CookieTreeFileSystemsNode.
-      TYPE_FILE_SYSTEM, // This is used for CookieTreeFileSystemNode.
+      TYPE_FILE_SYSTEMS,  // This is used for CookieTreeFileSystemsNode.
+      TYPE_FILE_SYSTEM,  // This is used for CookieTreeFileSystemNode.
+      TYPE_QUOTA,  // This is used for CookieTreeQuotaNode.
     };
 
     // TODO(viettrungluu): Figure out whether we want to store |origin| as a
@@ -85,7 +90,8 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
             session_storage_info,
         const appcache::AppCacheInfo* appcache_info,
         const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info,
-        const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info)
+        const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info,
+        const BrowsingDataQuotaHelper::QuotaInfo* quota_info)
         : origin(UTF16ToWideHack(origin)),
           node_type(node_type),
           cookie(cookie),
@@ -94,13 +100,15 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
           session_storage_info(session_storage_info),
           appcache_info(appcache_info),
           indexed_db_info(indexed_db_info),
-          file_system_info(file_system_info) {
+          file_system_info(file_system_info),
+          quota_info(quota_info) {
       DCHECK((node_type != TYPE_DATABASE) || database_info);
       DCHECK((node_type != TYPE_LOCAL_STORAGE) || local_storage_info);
       DCHECK((node_type != TYPE_SESSION_STORAGE) || session_storage_info);
       DCHECK((node_type != TYPE_APPCACHE) || appcache_info);
       DCHECK((node_type != TYPE_INDEXED_DB) || indexed_db_info);
       DCHECK((node_type != TYPE_FILE_SYSTEM) || file_system_info);
+      DCHECK((node_type != TYPE_QUOTA) || quota_info);
     }
 #if !defined(WCHAR_T_IS_UTF16)
     DetailedInfo(const std::wstring& origin, NodeType node_type,
@@ -112,7 +120,8 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
             session_storage_info,
         const appcache::AppCacheInfo* appcache_info,
         const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info,
-        const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info)
+        const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info,
+        const BrowsingDataQuotaHelper::QuotaInfo* quota_info)
         : origin(origin),
           node_type(node_type),
           cookie(cookie),
@@ -121,13 +130,15 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
           session_storage_info(session_storage_info),
           appcache_info(appcache_info),
           indexed_db_info(indexed_db_info),
-          file_system_info(file_system_info) {
+          file_system_info(file_system_info),
+          quota_info(quota_info) {
       DCHECK((node_type != TYPE_DATABASE) || database_info);
       DCHECK((node_type != TYPE_LOCAL_STORAGE) || local_storage_info);
       DCHECK((node_type != TYPE_SESSION_STORAGE) || session_storage_info);
       DCHECK((node_type != TYPE_APPCACHE) || appcache_info);
       DCHECK((node_type != TYPE_INDEXED_DB) || indexed_db_info);
       DCHECK((node_type != TYPE_FILE_SYSTEM) || file_system_info);
+      DCHECK((node_type != TYPE_QUOTA) || quota_info);
     }
 #endif
 
@@ -141,6 +152,7 @@ class CookieTreeNode : public ui::TreeNode<CookieTreeNode> {
     const appcache::AppCacheInfo* appcache_info;
     const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info;
     const BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info;
+    const BrowsingDataQuotaHelper::QuotaInfo* quota_info;
   };
 
   CookieTreeNode() {}
@@ -182,8 +194,8 @@ class CookieTreeRootNode : public CookieTreeNode {
   CookieTreeOriginNode* GetOrCreateOriginNode(const GURL& url);
 
   // CookieTreeNode methods:
-  virtual CookiesTreeModel* GetModel() const;
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual CookiesTreeModel* GetModel() const OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
   CookiesTreeModel* model_;
@@ -201,7 +213,7 @@ class CookieTreeOriginNode : public CookieTreeNode {
   virtual ~CookieTreeOriginNode();
 
   // CookieTreeNode methods:
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   // CookieTreeOriginNode methods:
   CookieTreeCookiesNode* GetOrCreateCookiesNode();
@@ -211,10 +223,12 @@ class CookieTreeOriginNode : public CookieTreeNode {
   CookieTreeAppCachesNode* GetOrCreateAppCachesNode();
   CookieTreeIndexedDBsNode* GetOrCreateIndexedDBsNode();
   CookieTreeFileSystemsNode* GetOrCreateFileSystemsNode();
+  CookieTreeQuotaNode* UpdateOrCreateQuotaNode(
+      std::list<BrowsingDataQuotaHelper::QuotaInfo>::iterator quota_info);
 
   // Creates an content exception for this origin of type
   // CONTENT_SETTINGS_TYPE_COOKIES.
-  void CreateContentException(HostContentSettingsMap* content_settings,
+  void CreateContentException(CookieSettings* cookie_settings,
                               ContentSetting setting) const;
 
   // True if a content exception can be created for this origin.
@@ -233,6 +247,7 @@ class CookieTreeOriginNode : public CookieTreeNode {
   CookieTreeAppCachesNode* appcaches_child_;
   CookieTreeIndexedDBsNode* indexed_dbs_child_;
   CookieTreeFileSystemsNode* file_systems_child_;
+  CookieTreeQuotaNode* quota_child_;
 
   // The URL for which this node was initially created.
   GURL url_;
@@ -245,19 +260,20 @@ class CookieTreeCookieNode : public CookieTreeNode {
  public:
   friend class CookieTreeCookiesNode;
 
-  // Does not take ownership of cookie, and cookie should remain valid at least
-  // as long as the CookieTreeCookieNode is valid.
-  explicit CookieTreeCookieNode(net::CookieMonster::CanonicalCookie* cookie);
+  // The cookie should remain valid at least as long as the
+  // CookieTreeCookieNode is valid.
+  explicit CookieTreeCookieNode(
+      std::list<net::CookieMonster::CanonicalCookie>::iterator cookie);
   virtual ~CookieTreeCookieNode();
 
   // CookieTreeNode methods:
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // Cookie_ is not owned by the node, and is expected to remain valid as long
-  // as the CookieTreeCookieNode is valid.
-  net::CookieMonster::CanonicalCookie* cookie_;
+  // cookie_ is expected to remain valid as long as the CookieTreeCookieNode is
+  // valid.
+  std::list<net::CookieMonster::CanonicalCookie>::iterator cookie_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeCookieNode);
 };
@@ -267,7 +283,7 @@ class CookieTreeCookiesNode : public CookieTreeNode {
   CookieTreeCookiesNode();
   virtual ~CookieTreeCookiesNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddCookieNode(CookieTreeCookieNode* child) {
     AddChildSortedByTitle(child);
@@ -282,17 +298,19 @@ class CookieTreeAppCacheNode : public CookieTreeNode {
  public:
   friend class CookieTreeAppCachesNode;
 
-  // Does not take ownership of appcache_info, and appcache_info should remain
-  // valid at least as long as the CookieTreeAppCacheNode is valid.
+  // appcache_info should remain valid at least as long as the
+  // CookieTreeAppCacheNode is valid.
   explicit CookieTreeAppCacheNode(
-      const appcache::AppCacheInfo* appcache_info);
-  virtual ~CookieTreeAppCacheNode() {}
+      const GURL& origin_url,
+      std::list<appcache::AppCacheInfo>::iterator appcache_info);
+  virtual ~CookieTreeAppCacheNode();
 
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  const appcache::AppCacheInfo* appcache_info_;
+  GURL origin_url_;
+  std::list<appcache::AppCacheInfo>::iterator appcache_info_;
   DISALLOW_COPY_AND_ASSIGN(CookieTreeAppCacheNode);
 };
 
@@ -301,7 +319,7 @@ class CookieTreeAppCachesNode : public CookieTreeNode {
   CookieTreeAppCachesNode();
   virtual ~CookieTreeAppCachesNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddAppCacheNode(CookieTreeAppCacheNode* child) {
     AddChildSortedByTitle(child);
@@ -316,19 +334,21 @@ class CookieTreeDatabaseNode : public CookieTreeNode {
  public:
   friend class CookieTreeDatabasesNode;
 
-  // Does not take ownership of database_info, and database_info should remain
-  // valid at least as long as the CookieTreeDatabaseNode is valid.
+  // database_info should remain valid at least as long as the
+  // CookieTreeDatabaseNode is valid.
   explicit CookieTreeDatabaseNode(
-      BrowsingDataDatabaseHelper::DatabaseInfo* database_info);
+      std::list<BrowsingDataDatabaseHelper::DatabaseInfo>::iterator
+          database_info);
   virtual ~CookieTreeDatabaseNode();
 
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // database_info_ is not owned by the node, and is expected to remain
-  // valid as long as the CookieTreeDatabaseNode is valid.
-  BrowsingDataDatabaseHelper::DatabaseInfo* database_info_;
+  // database_info_ is expected to remain valid as long as the
+  // CookieTreeDatabaseNode is valid.
+  std::list<BrowsingDataDatabaseHelper::DatabaseInfo>::iterator
+      database_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeDatabaseNode);
 };
@@ -338,7 +358,7 @@ class CookieTreeDatabasesNode : public CookieTreeNode {
   CookieTreeDatabasesNode();
   virtual ~CookieTreeDatabasesNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddDatabaseNode(CookieTreeDatabaseNode* child) {
     AddChildSortedByTitle(child);
@@ -353,19 +373,21 @@ class CookieTreeFileSystemNode : public CookieTreeNode {
  public:
   friend class CookieTreeFileSystemsNode;
 
-  // Does not take ownership of file_system_info, and file_system_info should
-  // remain valid at least as long as the CookieTreeFileSystemNode is valid.
+  // file_system_info should remain valid at least as long as the
+  // CookieTreeFileSystemNode is valid.
   explicit CookieTreeFileSystemNode(
-      BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info);
+      std::list<BrowsingDataFileSystemHelper::FileSystemInfo>::iterator
+          file_system_info);
   virtual ~CookieTreeFileSystemNode();
 
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // file_system_info_ is not owned by the node, and is expected to remain
-  // valid as long as the CookieTreeFileSystemNode is valid.
-  BrowsingDataFileSystemHelper::FileSystemInfo* file_system_info_;
+  // file_system_info_ expected to remain valid as long as the
+  // CookieTreeFileSystemNode is valid.
+  std::list<BrowsingDataFileSystemHelper::FileSystemInfo>::iterator
+      file_system_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeFileSystemNode);
 };
@@ -375,7 +397,7 @@ class CookieTreeFileSystemsNode : public CookieTreeNode {
   CookieTreeFileSystemsNode();
   virtual ~CookieTreeFileSystemsNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddFileSystemNode(CookieTreeFileSystemNode* child) {
     AddChildSortedByTitle(child);
@@ -388,21 +410,22 @@ class CookieTreeFileSystemsNode : public CookieTreeNode {
 // CookieTreeLocalStorageNode -------------------------------------------------
 class CookieTreeLocalStorageNode : public CookieTreeNode {
  public:
-  // Does not take ownership of local_storage_info, and local_storage_info
-  // should remain valid at least as long as the CookieTreeLocalStorageNode is
-  // valid.
+  // local_storage_info should remain valid at least as long as the
+  // CookieTreeLocalStorageNode is valid.
   explicit CookieTreeLocalStorageNode(
-      BrowsingDataLocalStorageHelper::LocalStorageInfo* local_storage_info);
+      std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
+          local_storage_info);
   virtual ~CookieTreeLocalStorageNode();
 
   // CookieTreeNode methods:
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // local_storage_info_ is not owned by the node, and is expected to remain
-  // valid as long as the CookieTreeLocalStorageNode is valid.
-  BrowsingDataLocalStorageHelper::LocalStorageInfo* local_storage_info_;
+  // local_storage_info_ is expected to remain valid as long as the
+  // CookieTreeLocalStorageNode is valid.
+  std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
+      local_storage_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeLocalStorageNode);
 };
@@ -412,7 +435,7 @@ class CookieTreeLocalStoragesNode : public CookieTreeNode {
   CookieTreeLocalStoragesNode();
   virtual ~CookieTreeLocalStoragesNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddLocalStorageNode(CookieTreeLocalStorageNode* child) {
     AddChildSortedByTitle(child);
@@ -427,20 +450,22 @@ class CookieTreeLocalStoragesNode : public CookieTreeNode {
 // CookieTreeSessionStorageNode -----------------------------------------------
 class CookieTreeSessionStorageNode : public CookieTreeNode {
  public:
-  // Does not take ownership of session_storage_info, and session_storage_info
-  // should remain valid at least as long as the CookieTreeSessionStorageNode
-  // is valid.
+  // session_storage_info should remain valid at least as long as the
+  // CookieTreeSessionStorageNode is valid.
   explicit CookieTreeSessionStorageNode(
-      BrowsingDataLocalStorageHelper::LocalStorageInfo* session_storage_info);
+      std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
+          session_storage_info);
   virtual ~CookieTreeSessionStorageNode();
 
   // CookieTreeNode methods:
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // session_storage_info_ is not owned by the node, and is expected to remain
-  // valid as long as the CookieTreeSessionStorageNode is valid.
-  BrowsingDataLocalStorageHelper::LocalStorageInfo* session_storage_info_;
+  // session_storage_info_ is expected to remain valid as long as the
+  // CookieTreeSessionStorageNode is valid.
+  std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
+      session_storage_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeSessionStorageNode);
 };
@@ -450,7 +475,7 @@ class CookieTreeSessionStoragesNode : public CookieTreeNode {
   CookieTreeSessionStoragesNode();
   virtual ~CookieTreeSessionStoragesNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddSessionStorageNode(CookieTreeSessionStorageNode* child) {
     AddChildSortedByTitle(child);
@@ -464,21 +489,22 @@ class CookieTreeSessionStoragesNode : public CookieTreeNode {
 // CookieTreeIndexedDBNode -----------------------------------------------
 class CookieTreeIndexedDBNode : public CookieTreeNode {
  public:
-  // Does not take ownership of session_storage_info, and session_storage_info
-  // should remain valid at least as long as the CookieTreeSessionStorageNode
-  // is valid.
+  // indexed_db_info should remain valid at least as long as the
+  // CookieTreeIndexedDBNode is valid.
   explicit CookieTreeIndexedDBNode(
-      BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info);
+      std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+          indexed_db_info);
   virtual ~CookieTreeIndexedDBNode();
 
   // CookieTreeNode methods:
-  virtual void DeleteStoredObjects();
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
  private:
-  // indexed_db_info_ is not owned by the node, and is expected to remain
-  // valid as long as the CookieTreeIndexedDBNode is valid.
-  BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info_;
+  // indexed_db_info_ is expected to remain valid as long as the
+  // CookieTreeIndexedDBNode is valid.
+  std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+      indexed_db_info_;
 
   DISALLOW_COPY_AND_ASSIGN(CookieTreeIndexedDBNode);
 };
@@ -488,7 +514,7 @@ class CookieTreeIndexedDBsNode : public CookieTreeNode {
   CookieTreeIndexedDBsNode();
   virtual ~CookieTreeIndexedDBsNode();
 
-  virtual DetailedInfo GetDetailedInfo() const;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
 
   void AddIndexedDBNode(CookieTreeIndexedDBNode* child) {
     AddChildSortedByTitle(child);
@@ -498,6 +524,25 @@ class CookieTreeIndexedDBsNode : public CookieTreeNode {
   DISALLOW_COPY_AND_ASSIGN(CookieTreeIndexedDBsNode);
 };
 
+// CookieTreeQuotaNode --------------------------------------------------
+class CookieTreeQuotaNode : public CookieTreeNode {
+ public:
+  // quota_info should remain valid at least as long as the CookieTreeQuotaNode
+  // is valid.
+  explicit CookieTreeQuotaNode(
+      std::list<BrowsingDataQuotaHelper::QuotaInfo>::iterator quota_info);
+  virtual ~CookieTreeQuotaNode();
+
+  virtual void DeleteStoredObjects() OVERRIDE;
+  virtual DetailedInfo GetDetailedInfo() const OVERRIDE;
+
+ private:
+  // quota_info_ is expected to remain valid as long as the CookieTreeQuotaNode
+  // is valid.
+  std::list<BrowsingDataQuotaHelper::QuotaInfo>::iterator quota_info_;
+
+  DISALLOW_COPY_AND_ASSIGN(CookieTreeQuotaNode);
+};
 
 // CookiesTreeModel -----------------------------------------------------------
 class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
@@ -514,25 +559,26 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
   };
 
   CookiesTreeModel(
-      net::CookieMonster* cookie_monster_,
+      BrowsingDataCookieHelper* cookie_helper,
       BrowsingDataDatabaseHelper* database_helper,
       BrowsingDataLocalStorageHelper* local_storage_helper,
       BrowsingDataLocalStorageHelper* session_storage_helper,
       BrowsingDataAppCacheHelper* appcache_helper,
       BrowsingDataIndexedDBHelper* indexed_db_helper,
       BrowsingDataFileSystemHelper* file_system_helper,
+      BrowsingDataQuotaHelper* quota_helper,
       bool use_cookie_source);
   virtual ~CookiesTreeModel();
 
   // ui::TreeModel methods:
   // Returns the set of icons for the nodes in the tree. You only need override
   // this if you don't want to use the default folder icons.
-  virtual void GetIcons(std::vector<SkBitmap>* icons);
+  virtual void GetIcons(std::vector<SkBitmap>* icons) OVERRIDE;
 
   // Returns the index of the icon to use for |node|. Return -1 to use the
   // default icon. The index is relative to the list of icons returned from
   // GetIcons.
-  virtual int GetIconIndex(ui::TreeModelNode* node);
+  virtual int GetIconIndex(ui::TreeModelNode* node) OVERRIDE;
 
   // CookiesTreeModel methods:
   void DeleteAllStoredObjects();
@@ -554,22 +600,21 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
     COOKIE = 1,
     DATABASE = 2
   };
-  typedef net::CookieList CookieList;
-  typedef std::vector<BrowsingDataDatabaseHelper::DatabaseInfo>
+  typedef std::list<net::CookieMonster::CanonicalCookie> CookieList;
+  typedef std::list<BrowsingDataDatabaseHelper::DatabaseInfo>
       DatabaseInfoList;
-  typedef std::vector<BrowsingDataLocalStorageHelper::LocalStorageInfo>
+  typedef std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>
       LocalStorageInfoList;
-  typedef std::vector<BrowsingDataLocalStorageHelper::LocalStorageInfo>
+  typedef std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>
       SessionStorageInfoList;
-  typedef std::vector<BrowsingDataIndexedDBHelper::IndexedDBInfo>
+  typedef std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>
       IndexedDBInfoList;
-  typedef std::vector<BrowsingDataFileSystemHelper::FileSystemInfo>
+  typedef std::list<BrowsingDataFileSystemHelper::FileSystemInfo>
       FileSystemInfoList;
-
-  void LoadCookies();
-  void LoadCookiesWithFilter(const std::wstring& filter);
+  typedef std::list<BrowsingDataQuotaHelper::QuotaInfo> QuotaInfoArray;
 
   void OnAppCacheModelInfoLoaded();
+  void OnCookiesModelInfoLoaded(const net::CookieList& cookie_list);
   void OnDatabaseModelInfoLoaded(const DatabaseInfoList& database_info);
   void OnLocalStorageModelInfoLoaded(
       const LocalStorageInfoList& local_storage_info);
@@ -579,33 +624,37 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
       const IndexedDBInfoList& indexed_db_info);
   void OnFileSystemModelInfoLoaded(
       const FileSystemInfoList& file_system_info);
+  void OnQuotaModelInfoLoaded(const QuotaInfoArray& quota_info);
 
   void PopulateAppCacheInfoWithFilter(const std::wstring& filter);
+  void PopulateCookieInfoWithFilter(const std::wstring& filter);
   void PopulateDatabaseInfoWithFilter(const std::wstring& filter);
   void PopulateLocalStorageInfoWithFilter(const std::wstring& filter);
   void PopulateSessionStorageInfoWithFilter(const std::wstring& filter);
   void PopulateIndexedDBInfoWithFilter(const std::wstring& filter);
   void PopulateFileSystemInfoWithFilter(const std::wstring& filter);
+  void PopulateQuotaInfoWithFilter(const std::wstring& filter);
 
   void NotifyObserverBeginBatch();
   void NotifyObserverEndBatch();
 
-  scoped_refptr<net::CookieMonster> cookie_monster_;
-  CookieList all_cookies_;
-
   scoped_refptr<BrowsingDataAppCacheHelper> appcache_helper_;
+  scoped_refptr<BrowsingDataCookieHelper> cookie_helper_;
   scoped_refptr<BrowsingDataDatabaseHelper> database_helper_;
-  scoped_refptr<appcache::AppCacheInfoCollection> appcache_info_;
-  DatabaseInfoList database_info_list_;
-
   scoped_refptr<BrowsingDataLocalStorageHelper> local_storage_helper_;
   scoped_refptr<BrowsingDataLocalStorageHelper> session_storage_helper_;
   scoped_refptr<BrowsingDataIndexedDBHelper> indexed_db_helper_;
   scoped_refptr<BrowsingDataFileSystemHelper> file_system_helper_;
+  scoped_refptr<BrowsingDataQuotaHelper> quota_helper_;
+
+  std::map<GURL, std::list<appcache::AppCacheInfo> > appcache_info_;
+  CookieList cookie_list_;
+  DatabaseInfoList database_info_list_;
   LocalStorageInfoList local_storage_info_list_;
   LocalStorageInfoList session_storage_info_list_;
   IndexedDBInfoList indexed_db_info_list_;
   FileSystemInfoList file_system_info_list_;
+  QuotaInfoArray quota_info_list_;
 
   // The CookiesTreeModel maintains a separate list of observers that are
   // specifically of the type CookiesTreeModel::Observer.
@@ -624,8 +673,10 @@ class CookiesTreeModel : public ui::TreeNodeModel<CookieTreeNode> {
   friend class CookieTreeCookieNode;
   friend class CookieTreeDatabaseNode;
   friend class CookieTreeLocalStorageNode;
+  friend class CookieTreeSessionStorageNode;
   friend class CookieTreeIndexedDBNode;
   friend class CookieTreeFileSystemNode;
+  friend class CookieTreeQuotaNode;
 
   DISALLOW_COPY_AND_ASSIGN(CookiesTreeModel);
 };

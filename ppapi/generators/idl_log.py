@@ -1,6 +1,4 @@
-#!/usr/bin/python
-#
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -27,6 +25,12 @@ class IDLLog(object):
     self.log = []
 
   def Log(self, msg):
+    line = "%s\n" % (msg)
+    if self.console: self.out.write(line)
+    if self.capture:
+      self.log.append(msg)
+
+  def LogTag(self, msg):
     line = "%s%s\n" % (self.name, msg)
     if self.console: self.out.write(line)
     if self.capture:
@@ -52,4 +56,3 @@ class IDLLog(object):
 ErrOut  = IDLLog('Error', sys.stderr)
 WarnOut = IDLLog('Warning', sys.stdout)
 InfoOut = IDLLog('', sys.stdout)
-

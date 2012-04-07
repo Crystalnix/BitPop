@@ -7,18 +7,28 @@
 #include "content/common/resource_dispatcher.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/message_loop.h"
 #include "base/shared_memory.h"
 #include "base/string_util.h"
+#include "content/common/inter_process_time_ticks_converter.h"
+#include "content/common/request_extra_data.h"
 #include "content/common/resource_messages.h"
-#include "content/common/resource_response.h"
+#include "content/public/common/resource_dispatcher_delegate.h"
+#include "content/public/common/resource_response.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_response_headers.h"
 #include "webkit/glue/resource_type.h"
+
+using content::InterProcessTimeTicksConverter;
+using content::LocalTimeDelta;
+using content::LocalTimeTicks;
+using content::RemoteTimeDelta;
+using content::RemoteTimeTicks;
 
 // Each resource request is assigned an ID scoped to this process.
 static int MakeRequestID() {
@@ -52,6 +62,7 @@ class IPCResourceLoaderBridge : public ResourceLoaderBridge {
   virtual void Cancel();
   virtual void SetDefersLoading(bool value);
   virtual void SyncLoad(SyncLoadResponse* response);
+  virtual void UpdateRoutingId(int new_routing_id);
 
  private:
   ResourceLoaderBridge::Peer* peer_;
@@ -69,6 +80,8 @@ class IPCResourceLoaderBridge : public ResourceLoaderBridge {
 
   // The routing id used when sending IPC messages.
   int routing_id_;
+
+  bool is_synchronous_request_;
 };
 
 IPCResourceLoaderBridge::IPCResourceLoaderBridge(
@@ -77,12 +90,14 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
     : peer_(NULL),
       dispatcher_(dispatcher),
       request_id_(-1),
-      routing_id_(request_info.routing_id) {
+      routing_id_(request_info.routing_id),
+      is_synchronous_request_(false) {
   DCHECK(dispatcher_) << "no resource dispatcher";
   request_.method = request_info.method;
   request_.url = request_info.url;
   request_.first_party_for_cookies = request_info.first_party_for_cookies;
   request_.referrer = request_info.referrer;
+  request_.referrer_policy = request_info.referrer_policy;
   request_.headers = request_info.headers;
   request_.load_flags = request_info.load_flags;
   request_.origin_pid = request_info.requestor_pid;
@@ -91,6 +106,27 @@ IPCResourceLoaderBridge::IPCResourceLoaderBridge(
   request_.appcache_host_id = request_info.appcache_host_id;
   request_.download_to_file = request_info.download_to_file;
   request_.has_user_gesture = request_info.has_user_gesture;
+  if (request_info.extra_data) {
+    RequestExtraData* extra_data =
+        static_cast<RequestExtraData*>(request_info.extra_data);
+    request_.is_main_frame = extra_data->is_main_frame();
+    request_.frame_id = extra_data->frame_id();
+    request_.parent_is_main_frame = extra_data->parent_is_main_frame();
+    request_.parent_frame_id = extra_data->parent_frame_id();
+    request_.transition_type = extra_data->transition_type();
+    request_.transferred_request_child_id =
+        extra_data->transferred_request_child_id();
+    request_.transferred_request_request_id =
+        extra_data->transferred_request_request_id();
+  } else {
+    request_.is_main_frame = false;
+    request_.frame_id = -1;
+    request_.parent_is_main_frame = false;
+    request_.parent_frame_id = -1;
+    request_.transition_type = content::PAGE_TRANSITION_LINK;
+    request_.transferred_request_child_id = -1;
+    request_.transferred_request_request_id = -1;
+  }
 }
 
 IPCResourceLoaderBridge::~IPCResourceLoaderBridge() {
@@ -171,7 +207,8 @@ void IPCResourceLoaderBridge::Cancel() {
     return;
   }
 
-  dispatcher_->CancelPendingRequest(routing_id_, request_id_);
+  if (!is_synchronous_request_)
+    dispatcher_->CancelPendingRequest(routing_id_, request_id_);
 
   // We can't remove the request ID from the resource dispatcher because more
   // data might be pending. Sending the cancel message may cause more data
@@ -195,8 +232,9 @@ void IPCResourceLoaderBridge::SyncLoad(SyncLoadResponse* response) {
   }
 
   request_id_ = MakeRequestID();
+  is_synchronous_request_ = true;
 
-  SyncLoadResult result;
+  content::SyncLoadResult result;
   IPC::SyncMessage* msg = new ResourceHostMsg_SyncLoad(routing_id_, request_id_,
                                                        request_, &result);
   // NOTE: This may pump events (see RenderThread::Send).
@@ -221,19 +259,26 @@ void IPCResourceLoaderBridge::SyncLoad(SyncLoadResponse* response) {
   response->download_file_path = result.download_file_path;
 }
 
+void IPCResourceLoaderBridge::UpdateRoutingId(int new_routing_id) {
+  if (request_id_ < 0) {
+    NOTREACHED() << "Trying to update an unstarted request";
+    return;
+  }
+
+  routing_id_ = new_routing_id;
+  dispatcher_->message_sender()->Send(
+      new ResourceHostMsg_TransferRequestToNewPage(new_routing_id,
+                                                   request_id_));
+}
+
 }  // namespace webkit_glue
 
 // ResourceDispatcher ---------------------------------------------------------
 
-ResourceDispatcher::Observer::Observer() {
-}
-
-ResourceDispatcher::Observer::~Observer() {
-}
-
 ResourceDispatcher::ResourceDispatcher(IPC::Message::Sender* sender)
     : message_sender_(sender),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      delegate_(NULL) {
 }
 
 ResourceDispatcher::~ResourceDispatcher() {
@@ -286,9 +331,7 @@ ResourceDispatcher::PendingRequestInfo*
 ResourceDispatcher::GetPendingRequestInfo(int request_id) {
   PendingRequestList::iterator it = pending_requests_.find(request_id);
   if (it == pending_requests_.end()) {
-    // This might happen for kill()ed requests on the webkit end, so perhaps it
-    // shouldn't be a warning...
-    DLOG(WARNING) << "Received message for a nonexistent or finished request";
+    // This might happen for kill()ed requests on the webkit end.
     return NULL;
   }
   return &(it->second);
@@ -308,20 +351,23 @@ void ResourceDispatcher::OnUploadProgress(
 }
 
 void ResourceDispatcher::OnReceivedResponse(
-    int request_id, const ResourceResponseHead& response_head) {
+    int request_id, const content::ResourceResponseHead& response_head) {
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
+  request_info->response_start = base::TimeTicks::Now();
 
-  if (observer_.get()) {
+  if (delegate_) {
     webkit_glue::ResourceLoaderBridge::Peer* new_peer =
-        observer_->OnReceivedResponse(
+        delegate_->OnReceivedResponse(
             request_info->peer, response_head.mime_type, request_info->url);
     if (new_peer)
       request_info->peer = new_peer;
   }
 
-  request_info->peer->OnReceivedResponse(response_head);
+  webkit_glue::ResourceResponseInfo renderer_response_info;
+  ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
+  request_info->peer->OnReceivedResponse(renderer_response_info);
 }
 
 void ResourceDispatcher::OnReceivedCachedMetadata(
@@ -375,17 +421,20 @@ void ResourceDispatcher::OnReceivedRedirect(
     const IPC::Message& message,
     int request_id,
     const GURL& new_url,
-    const webkit_glue::ResourceResponseInfo& info) {
+    const content::ResourceResponseHead& response_head) {
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
+  request_info->response_start = base::TimeTicks::Now();
 
   int32 routing_id = message.routing_id();
   bool has_new_first_party_for_cookies = false;
   GURL new_first_party_for_cookies;
-  if (request_info->peer->OnReceivedRedirect(new_url, info,
-                                            &has_new_first_party_for_cookies,
-                                            &new_first_party_for_cookies)) {
+  webkit_glue::ResourceResponseInfo renderer_response_info;
+  ToResourceResponseInfo(*request_info, response_head, &renderer_response_info);
+  if (request_info->peer->OnReceivedRedirect(new_url, renderer_response_info,
+                                             &has_new_first_party_for_cookies,
+                                             &new_first_party_for_cookies)) {
     // Double-check if the request is still around. The call above could
     // potentially remove it.
     request_info = GetPendingRequestInfo(request_id);
@@ -411,28 +460,32 @@ void ResourceDispatcher::FollowPendingRedirect(
     message_sender()->Send(msg);
 }
 
-void ResourceDispatcher::OnRequestComplete(int request_id,
-                                           const net::URLRequestStatus& status,
-                                           const std::string& security_info,
-                                           const base::Time& completion_time) {
+void ResourceDispatcher::OnRequestComplete(
+    int request_id,
+    const net::URLRequestStatus& status,
+    const std::string& security_info,
+    const base::TimeTicks& browser_completion_time) {
   PendingRequestInfo* request_info = GetPendingRequestInfo(request_id);
   if (!request_info)
     return;
+  request_info->completion_time = base::TimeTicks::Now();
 
   webkit_glue::ResourceLoaderBridge::Peer* peer = request_info->peer;
 
-  if (observer_.get()) {
+  if (delegate_) {
     webkit_glue::ResourceLoaderBridge::Peer* new_peer =
-        observer_->OnRequestComplete(
+        delegate_->OnRequestComplete(
             request_info->peer, request_info->resource_type, status);
     if (new_peer)
       request_info->peer = new_peer;
   }
 
+  base::TimeTicks renderer_completion_time = ToRendererCompletionTime(
+      *request_info, browser_completion_time);
   // The request ID will be removed from our pending list in the destructor.
   // Normally, dispatching this message causes the reference-counted request to
   // die immediately.
-  peer->OnCompletedRequest(status, security_info, completion_time);
+  peer->OnCompletedRequest(status, security_info, renderer_completion_time);
 }
 
 int ResourceDispatcher::AddPendingRequest(
@@ -489,8 +542,8 @@ void ResourceDispatcher::SetDefersLoading(int request_id, bool value) {
     FollowPendingRedirect(request_id, request_info);
 
     MessageLoop::current()->PostTask(FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &ResourceDispatcher::FlushDeferredMessages, request_id));
+        base::Bind(&ResourceDispatcher::FlushDeferredMessages,
+                   weak_factory_.GetWeakPtr(), request_id));
   }
 }
 
@@ -543,6 +596,65 @@ webkit_glue::ResourceLoaderBridge* ResourceDispatcher::CreateBridge(
   return new webkit_glue::IPCResourceLoaderBridge(this, request_info);
 }
 
+void ResourceDispatcher::ToResourceResponseInfo(
+    const PendingRequestInfo& request_info,
+    const content::ResourceResponseHead& browser_info,
+    webkit_glue::ResourceResponseInfo* renderer_info) const {
+  *renderer_info = browser_info;
+  if (request_info.request_start.is_null() ||
+      request_info.response_start.is_null() ||
+      browser_info.request_start.is_null() ||
+      browser_info.response_start.is_null()) {
+    return;
+  }
+  content::InterProcessTimeTicksConverter converter(
+      LocalTimeTicks::FromTimeTicks(request_info.request_start),
+      LocalTimeTicks::FromTimeTicks(request_info.response_start),
+      RemoteTimeTicks::FromTimeTicks(browser_info.request_start),
+      RemoteTimeTicks::FromTimeTicks(browser_info.response_start));
+
+  LocalTimeTicks renderer_base_ticks = converter.ToLocalTimeTicks(
+      RemoteTimeTicks::FromTimeTicks(browser_info.load_timing.base_ticks));
+  renderer_info->load_timing.base_ticks = renderer_base_ticks.ToTimeTicks();
+
+#define CONVERT(field) \
+  LocalTimeDelta renderer_##field = converter.ToLocalTimeDelta( \
+      RemoteTimeDelta::FromRawDelta(browser_info.load_timing.field)); \
+  renderer_info->load_timing.field = renderer_##field.ToInt32()
+
+  CONVERT(proxy_start);
+  CONVERT(dns_start);
+  CONVERT(dns_end);
+  CONVERT(connect_start);
+  CONVERT(connect_end);
+  CONVERT(ssl_start);
+  CONVERT(ssl_end);
+  CONVERT(send_start);
+  CONVERT(send_end);
+  CONVERT(receive_headers_start);
+  CONVERT(receive_headers_end);
+
+#undef CONVERT
+}
+
+base::TimeTicks ResourceDispatcher::ToRendererCompletionTime(
+    const PendingRequestInfo& request_info,
+    const base::TimeTicks& browser_completion_time) const {
+  if (request_info.completion_time.is_null()) {
+    return browser_completion_time;
+  }
+
+  // TODO(simonjam): The optimal lower bound should be the most recent value of
+  // TimeTicks::Now() returned to WebKit. Is it worth trying to cache that?
+  // Until then, |response_start| is used as it is the most recent value
+  // returned for this request.
+  int64 result = std::max(browser_completion_time.ToInternalValue(),
+                          request_info.response_start.ToInternalValue());
+  result = std::min(result, request_info.completion_time.ToInternalValue());
+  return base::TimeTicks::FromInternalValue(result);
+}
+
+// static
 bool ResourceDispatcher::IsResourceDispatcherMessage(
     const IPC::Message& message) {
   switch (message.type()) {

@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_SYNC_GLUE_CHANGE_PROCESSOR_H_
 #pragma once
 
-#include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+#include "chrome/browser/sync/internal_api/change_record.h"
 
 class Profile;
 
@@ -40,8 +40,7 @@ class ChangeProcessor {
   // how to interpret and process |changes|.
   virtual void ApplyChangesFromSyncModel(
       const sync_api::BaseTransaction* trans,
-      const sync_api::SyncManager::ChangeRecord* changes,
-      int change_count) = 0;
+      const sync_api::ImmutableChangeRecordList& changes) = 0;
 
   // The changes found in ApplyChangesFromSyncModel may be too slow to be
   // performed while holding a [Read/Write]Transaction lock or may interact
@@ -52,15 +51,33 @@ class ChangeProcessor {
   // datatypes need this, so we provide an empty default version.
   virtual void CommitChangesFromSyncModel();
 
+  // This ensures that startobserving gets called after stopobserving even
+  // if there is an early return in the function.
+  template <class T>
+  class ScopedStopObserving {
+   public:
+    explicit ScopedStopObserving(T* processor)
+        : processor_(processor) {
+      processor_->StopObserving();
+    }
+    ~ScopedStopObserving() {
+      processor_->StartObserving();
+    }
+
+   private:
+    ScopedStopObserving() {}
+    T* processor_;
+  };
+
  protected:
   // These methods are invoked by Start() and Stop() to do
   // implementation-specific work.
   virtual void StartImpl(Profile* profile) = 0;
   virtual void StopImpl() = 0;
 
-  bool running() { return running_; }
-  UnrecoverableErrorHandler* error_handler();
-  virtual sync_api::UserShare* share_handle();
+  bool running() const { return running_; }
+  UnrecoverableErrorHandler* error_handler() const;
+  virtual sync_api::UserShare* share_handle() const;
 
  private:
   bool running_;  // True if we have been told it is safe to process changes.

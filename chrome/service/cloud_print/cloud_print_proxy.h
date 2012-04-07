@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,18 +47,19 @@ class CloudPrintProxy : public CloudPrintProxyFrontend,
   // Returns the proxy info.
   void GetProxyInfo(cloud_print::CloudPrintProxyInfo* info);
 
+  // Launches a browser to see if the proxy policy has been set.
+  void CheckCloudPrintProxyPolicy();
+
   const std::string& user_email() const {
     return user_email_;
   }
 
   // CloudPrintProxyFrontend implementation. Called on UI thread.
-  virtual void OnPrinterListAvailable(
-      const printing::PrinterList& printer_list);
   virtual void OnAuthenticated(const std::string& robot_oauth_refresh_token,
                                const std::string& robot_email,
-                               const std::string& user_email);
-  virtual void OnAuthenticationFailed();
-  virtual void OnPrintSystemUnavailable();
+                               const std::string& user_email) OVERRIDE;
+  virtual void OnAuthenticationFailed() OVERRIDE;
+  virtual void OnPrintSystemUnavailable() OVERRIDE;
 
  protected:
   void Shutdown();

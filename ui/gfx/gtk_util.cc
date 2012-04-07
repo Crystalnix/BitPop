@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,34 +53,6 @@ class GdkCursorCache {
 
 void FreePixels(guchar* pixels, gpointer data) {
   free(data);
-}
-
-// Common implementation of ConvertAcceleratorsFromWindowsStyle() and
-// RemoveWindowsStyleAccelerators().
-// Replaces all ampersands (as used in our grd files to indicate mnemonics)
-// to |target|. Similarly any underscores get replaced with two underscores as
-// is needed by pango.
-std::string ConvertAmperstandsTo(const std::string& label,
-                                 const std::string& target) {
-  std::string ret;
-  ret.reserve(label.length() * 2);
-  for (size_t i = 0; i < label.length(); ++i) {
-    if ('_' == label[i]) {
-      ret.push_back('_');
-      ret.push_back('_');
-    } else if ('&' == label[i]) {
-      if (i + 1 < label.length() && '&' == label[i + 1]) {
-        ret.push_back('&');
-        ++i;
-      } else {
-        ret.append(target);
-      }
-    } else {
-      ret.push_back(label[i]);
-    }
-  }
-
-  return ret;
 }
 
 }  // namespace
@@ -164,49 +136,44 @@ void SubtractRectanglesFromRegion(GdkRegion* region,
   }
 }
 
-double GetPangoResolution() {
-  static double resolution;
-  static bool determined_resolution = false;
-  if (!determined_resolution) {
-    determined_resolution = true;
-    PangoContext* default_context = gdk_pango_context_get();
-    resolution = pango_cairo_context_get_resolution(default_context);
-    g_object_unref(default_context);
-  }
-  return resolution;
-}
-
 GdkCursor* GetCursor(int type) {
-  static GdkCursorCache impl;
+  CR_DEFINE_STATIC_LOCAL(GdkCursorCache, impl, ());
   return impl.GetCursorImpl(static_cast<GdkCursorType>(type));
 }
 
-std::string ConvertAcceleratorsFromWindowsStyle(const std::string& label) {
-  return ConvertAmperstandsTo(label, "_");
+#if !defined(USE_WAYLAND) && !defined(USE_AURA)
+PangoContext* GetPangoContext() {
+  return gdk_pango_context_get();
 }
+#endif
 
-std::string RemoveWindowsStyleAccelerators(const std::string& label) {
-  return ConvertAmperstandsTo(label, "");
-}
+void InitRCStyles() {
+  static const char kRCText[] =
+      // Make our dialogs styled like the GNOME HIG.
+      //
+      // TODO(evanm): content-area-spacing was introduced in a later
+      // version of GTK, so we need to set that manually on all dialogs.
+      // Perhaps it would make sense to have a shared FixupDialog() function.
+      "style \"gnome-dialog\" {\n"
+      "  xthickness = 12\n"
+      "  GtkDialog::action-area-border = 0\n"
+      "  GtkDialog::button-spacing = 6\n"
+      "  GtkDialog::content-area-spacing = 18\n"
+      "  GtkDialog::content-area-border = 12\n"
+      "}\n"
+      // Note we set it at the "application" priority, so users can override.
+      "widget \"GtkDialog\" style : application \"gnome-dialog\"\n"
 
-uint8_t* BGRAToRGBA(const uint8_t* pixels, int width, int height, int stride) {
-  if (stride == 0)
-    stride = width * 4;
+      // Make our about dialog special, so the image is flush with the edge.
+      "style \"about-dialog\" {\n"
+      "  GtkDialog::action-area-border = 12\n"
+      "  GtkDialog::button-spacing = 6\n"
+      "  GtkDialog::content-area-spacing = 18\n"
+      "  GtkDialog::content-area-border = 0\n"
+      "}\n"
+      "widget \"about-dialog\" style : application \"about-dialog\"\n";
 
-  uint8_t* new_pixels = static_cast<uint8_t*>(malloc(height * stride));
-
-  // We have to copy the pixels and swap from BGRA to RGBA.
-  for (int i = 0; i < height; ++i) {
-    for (int j = 0; j < width; ++j) {
-      int idx = i * stride + j * 4;
-      new_pixels[idx] = pixels[idx + 2];
-      new_pixels[idx + 1] = pixels[idx + 1];
-      new_pixels[idx + 2] = pixels[idx];
-      new_pixels[idx + 3] = pixels[idx + 3];
-    }
-  }
-
-  return new_pixels;
+  gtk_rc_parse_string(kRCText);
 }
 
 }  // namespace gfx

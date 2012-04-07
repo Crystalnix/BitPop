@@ -62,16 +62,11 @@
     {
       'target_name': 'chrome_launcher',
       'type': 'executable',
-      'msvs_guid': 'B7E540C1-49D9-4350-ACBC-FB8306316D16',
       'dependencies': [
         '../breakpad/breakpad.gyp:breakpad_handler',
         '../chrome/chrome.gyp:chrome_version_header',
         '../google_update/google_update.gyp:google_update',
         'chrome_frame.gyp:chrome_frame_utils',
-      ],
-      'resource_include_dirs': [
-        '<(INTERMEDIATE_DIR)',
-        '<(SHARED_INTERMEDIATE_DIR)',
       ],
       'sources': [
         'chrome_launcher_main.cc',
@@ -83,8 +78,6 @@
       ],
       'msvs_settings': {
         'VCLinkerTool': {
-          'OutputFile':
-              '$(OutDir)\\servers\\$(ProjectName).exe',
           # Set /SUBSYSTEM:WINDOWS since this is not a command-line program.
           'SubSystem': '2',
           'AdditionalDependencies': [
@@ -96,22 +89,12 @@
     {
       'target_name': 'chrome_frame_helper',
       'type': 'executable',
-      'msvs_guid': 'BF4FFA36-2F66-4B65-9A91-AB7EC08D1042',
       'dependencies': [
         '../breakpad/breakpad.gyp:breakpad_handler',
         '../chrome/chrome.gyp:chrome_version_header',
         'chrome_frame.gyp:chrome_frame_utils',
         'chrome_frame_helper_dll',
         'chrome_frame_helper_lib',
-      ],
-      'resource_include_dirs': [
-        '<(INTERMEDIATE_DIR)',
-        '<(SHARED_INTERMEDIATE_DIR)',
-      ],
-      'include_dirs': [
-        # To allow including "chrome_tab.h"
-        '<(INTERMEDIATE_DIR)',
-        '<(INTERMEDIATE_DIR)/../chrome_frame',
       ],
       'sources': [
         'chrome_frame_helper_main.cc',
@@ -129,19 +112,10 @@
     {
       'target_name': 'chrome_frame_helper_dll',
       'type': 'shared_library',
-      'msvs_guid': '5E80032F-7033-4661-9016-D98268244783',
       'dependencies': [
         '../chrome/chrome.gyp:chrome_version_header',
+        'chrome_frame.gyp:chrome_tab_idl',
         'chrome_frame_helper_lib',
-      ],
-      'resource_include_dirs': [
-        '<(INTERMEDIATE_DIR)',
-        '<(SHARED_INTERMEDIATE_DIR)',
-      ],
-      'include_dirs': [
-        # To allow including "chrome_tab.h"
-        '<(INTERMEDIATE_DIR)',
-        '<(INTERMEDIATE_DIR)/../chrome_frame',
       ],
       'sources': [
         'bho_loader.cc',
@@ -149,8 +123,7 @@
         'chrome_frame_helper_dll.cc',
         'chrome_frame_helper_dll.def',
         'chrome_frame_helper_version.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/chrome_tab.h',
-        'chrome_tab.idl',
+        '<(SHARED_INTERMEDIATE_DIR)/chrome_frame/chrome_tab.h',
         'event_hooker.cc',
         'event_hooker.h',
         'iids.cc',
@@ -167,26 +140,16 @@
     {
       'target_name': 'chrome_frame_helper_lib',
       'type': 'static_library',
-      'msvs_guid': '9984D820-1D28-48A7-957C-2AFA41B416C9',
       'dependencies': [
         '../chrome/chrome.gyp:chrome_version_header',
-      ],
-      'resource_include_dirs': [
-        '<(INTERMEDIATE_DIR)',
-        '<(SHARED_INTERMEDIATE_DIR)',
-      ],
-      'include_dirs': [
-        # To allow including "chrome_tab.h"
-        '<(INTERMEDIATE_DIR)',
-        '<(INTERMEDIATE_DIR)/../chrome_frame',
+        'chrome_frame.gyp:chrome_tab_idl',
       ],
       'sources': [
         'chrome_frame_helper_util.cc',
         'chrome_frame_helper_util.h',
         'registry_watcher.cc',
         'registry_watcher.h',
-        '<(SHARED_INTERMEDIATE_DIR)/chrome_tab.h',
-        'chrome_tab.idl',
+        '<(SHARED_INTERMEDIATE_DIR)/chrome_frame/chrome_tab.h',
         'iids.cc',
       ],
       'msvs_settings': {

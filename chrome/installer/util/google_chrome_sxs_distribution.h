@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,6 @@
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/util_constants.h"
 
-namespace installer {
-class MasterPreferences;
-}
-
 // GoogleChromeSxSDistribution encapsulates properties of Google Chrome Sxs
 // distribution which can co-exist with other Google Chrome distributions.
 // Google Chrome Sxs distribution is installed to a different path, runs
@@ -23,13 +19,14 @@ class MasterPreferences;
 // system level install and setting as default browser.
 class GoogleChromeSxSDistribution : public GoogleChromeDistribution {
  public:
-  virtual std::wstring GetAppShortCutName();
-  virtual std::wstring GetBrowserAppId();
-  virtual std::wstring GetInstallSubDir();
-  virtual std::wstring GetUninstallRegPath();
-  virtual bool CanSetAsDefault();
-  virtual int GetIconIndex();
-  virtual bool GetChromeChannel(std::wstring* channel);
+  virtual std::wstring GetApplicationName() OVERRIDE;
+  virtual std::wstring GetAppShortCutName() OVERRIDE;
+  virtual std::wstring GetBrowserAppId() OVERRIDE;
+  virtual std::wstring GetInstallSubDir() OVERRIDE;
+  virtual std::wstring GetUninstallRegPath() OVERRIDE;
+  virtual bool CanSetAsDefault() OVERRIDE;
+  virtual int GetIconIndex() OVERRIDE;
+  virtual bool GetChromeChannel(std::wstring* channel) OVERRIDE;
   // returns the channel name for GoogleChromeSxSDistribution
   static std::wstring ChannelName();
  private:

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,6 +41,70 @@ cr.define('options.internet', function() {
     },
 
     /**
+     * Initializes the controlled setting indicators for the page.
+     * @param {Object} data Dictionary with metadata about the settings.
+     */
+    initializeControlledSettingIndicators: function(data) {
+      indicators =
+          this.pageDiv.querySelectorAll('.controlled-setting-indicator');
+      for (var i = 0; i < indicators.length; i++) {
+        var dataProperty = indicators[i].getAttribute('data');
+        if (dataProperty && data[dataProperty]) {
+          this.initializeIndicator_(indicators[i],
+                                    data[dataProperty].controlledBy,
+                                    data[dataProperty].default);
+        }
+      }
+    },
+
+    /**
+     * Sets up a single controlled setting indicator, setting the controlledBy
+     * property and an event handler for resetting to the default value if
+     * appropriate.
+     * @param {Object} indicator The indicator element.
+     * @param {string} controlledBy The entity that controls the setting.
+     * @param {Object} defaultValue The default value to reset to, if
+     * applicable.
+     */
+    initializeIndicator_ : function(indicator, controlledBy, defaultValue) {
+      var forElement = $(indicator.getAttribute('for'));
+      var recommended = controlledBy == 'recommended';
+      if (!controlledBy || (recommended && !defaultValue))
+        controlledBy = null;
+
+      indicator.controlledBy = controlledBy;
+
+      if (forElement) {
+        forElement.disabled = (controlledBy != null) && !recommended;
+
+        // Special handling for radio buttons:
+        //  - If the setting is recommended, show the recommended indicator
+        //    next to the choice that is recommended.
+        //  - Else, show the indicator next to the selected choice.
+        if (forElement.type == 'radio') {
+          if (recommended)
+            indicator.hidden = (defaultValue != forElement.value);
+          else
+            indicator.hidden = !forElement.checked;
+        }
+
+        indicator.setAttribute('allow-reset');
+        indicator.addEventListener(
+            'reset',
+            function(element, e) {
+              if (forElement.type == 'radio' || forElement.type == 'checkbox') {
+                // The recommended setting indicator is always shown next to
+                // the recommended choice.
+                forElement.checked = true;
+              } else {
+                forElement.value = defaultValue;
+              }
+              e.preventDefault();
+            });
+      }
+    },
+
+    /**
      * Update details page controls.
      * @private
      */
@@ -63,7 +127,7 @@ cr.define('options.internet', function() {
           cr.doc.querySelectorAll('#detailsInternetPage .vpn-details'),
           !this.vpn);
 
-      // Cell plan related
+      // Cell plan related.
       $('planList').hidden = this.cellplanloading;
       updateHidden(
           cr.doc.querySelectorAll('#detailsInternetPage .no-plan-info'),
@@ -80,10 +144,23 @@ cr.define('options.internet', function() {
       updateHidden(
           cr.doc.querySelectorAll('#detailsInternetPage .cdma-only'),
           !this.cellular || this.gsm);
+      updateHidden(
+          cr.doc.querySelectorAll('#detailsInternetPage .apn-list-view'),
+          !this.cellular || !this.gsm);
+      updateHidden(
+          cr.doc.querySelectorAll('#detailsInternetPage .apn-details-view'),
+          true);
 
+      // Password and shared.
       updateHidden(
           cr.doc.querySelectorAll('#detailsInternetPage .password-details'),
           !this.wireless || !this.password);
+      updateHidden(
+          cr.doc.querySelectorAll('#detailsInternetPage .shared-network'),
+          !this.shared);
+      updateHidden(
+          cr.doc.querySelectorAll('#detailsInternetPage .prefer-network'),
+          !this.showPreferred);
     }
   };
 
@@ -100,6 +177,14 @@ cr.define('options.internet', function() {
    * @type {boolean}
    */
   cr.defineProperty(DetailsInternetPage, 'wireless',
+      cr.PropertyKind.JS,
+      DetailsInternetPage.prototype.updateControls_);
+
+  /**
+   * Whether the underlying network shared wifi. Only used for display purpose.
+   * @type {boolean}
+   */
+  cr.defineProperty(DetailsInternetPage, 'shared',
       cr.PropertyKind.JS,
       DetailsInternetPage.prototype.updateControls_);
 

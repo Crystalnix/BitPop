@@ -27,16 +27,35 @@
 
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/c/ppp_input_event.h"
 #include "ppapi/c/ppp_instance.h"
 #include "ppapi/c/ppp_messaging.h"
-#include "ppapi/cpp/common.h"
-#include "ppapi/cpp/url_loader.h"
+#include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/rect.h"
 #include "ppapi/cpp/resource.h"
+#include "ppapi/cpp/url_loader.h"
 #include "ppapi/cpp/var.h"
+#include "ppapi/cpp/view.h"
 
 namespace pp {
+
+// PPP_InputEvent implementation -----------------------------------------------
+
+PP_Bool InputEvent_HandleEvent(PP_Instance pp_instance, PP_Resource resource) {
+  Module* module_singleton = Module::Get();
+  if (!module_singleton)
+    return PP_FALSE;
+  Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
+  if (!instance)
+    return PP_FALSE;
+
+  return PP_FromBool(instance->HandleInputEvent(InputEvent(resource)));
+}
+
+const PPP_InputEvent input_event_interface = {
+  &InputEvent_HandleEvent
+};
 
 // PPP_Instance implementation -------------------------------------------------
 
@@ -52,7 +71,7 @@ PP_Bool Instance_DidCreate(PP_Instance pp_instance,
   if (!instance)
     return PP_FALSE;
   module_singleton->current_instances_[pp_instance] = instance;
-  return BoolToPPBool(instance->Init(argc, argn, argv));
+  return PP_FromBool(instance->Init(argc, argn, argv));
 }
 
 void Instance_DidDestroy(PP_Instance instance) {
@@ -71,15 +90,14 @@ void Instance_DidDestroy(PP_Instance instance) {
 }
 
 void Instance_DidChangeView(PP_Instance pp_instance,
-                            const PP_Rect* position,
-                            const PP_Rect* clip) {
+                            PP_Resource view_resource) {
   Module* module_singleton = Module::Get();
   if (!module_singleton)
     return;
   Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
   if (!instance)
     return;
-  instance->DidChangeView(*position, *clip);
+  instance->DidChangeView(View(view_resource));
 }
 
 void Instance_DidChangeFocus(PP_Instance pp_instance, PP_Bool has_focus) {
@@ -89,18 +107,7 @@ void Instance_DidChangeFocus(PP_Instance pp_instance, PP_Bool has_focus) {
   Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
   if (!instance)
     return;
-  instance->DidChangeFocus(PPBoolToBool(has_focus));
-}
-
-PP_Bool Instance_HandleInputEvent(PP_Instance pp_instance,
-                                  const PP_InputEvent* event) {
-  Module* module_singleton = Module::Get();
-  if (!module_singleton)
-    return PP_FALSE;
-  Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
-  if (!instance)
-    return PP_FALSE;
-  return BoolToPPBool(instance->HandleInputEvent(*event));
+  instance->DidChangeFocus(PP_ToBool(has_focus));
 }
 
 PP_Bool Instance_HandleDocumentLoad(PP_Instance pp_instance,
@@ -111,33 +118,18 @@ PP_Bool Instance_HandleDocumentLoad(PP_Instance pp_instance,
   Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
   if (!instance)
     return PP_FALSE;
-  return BoolToPPBool(
-      instance->HandleDocumentLoad(URLLoader(pp_url_loader)));
+  return PP_FromBool(instance->HandleDocumentLoad(URLLoader(pp_url_loader)));
 }
-
-#ifndef PPAPI_INSTANCE_REMOVE_SCRIPTING
-PP_Var Instance_GetInstanceObject(PP_Instance pp_instance) {
-  Module* module_singleton = Module::Get();
-  if (!module_singleton)
-    return Var().Detach();
-  Instance* instance = module_singleton->InstanceForPPInstance(pp_instance);
-  if (!instance)
-    return Var().Detach();
-  return instance->GetInstanceObject().Detach();
-}
-#endif
 
 static PPP_Instance instance_interface = {
   &Instance_DidCreate,
   &Instance_DidDestroy,
   &Instance_DidChangeView,
   &Instance_DidChangeFocus,
-  &Instance_HandleInputEvent,
-  &Instance_HandleDocumentLoad,
-#ifndef PPAPI_INSTANCE_REMOVE_SCRIPTING
-  &Instance_GetInstanceObject
-#endif
+  &Instance_HandleDocumentLoad
 };
+
+// PPP_Messaging implementation ------------------------------------------------
 
 void Messaging_HandleMessage(PP_Instance pp_instance, PP_Var var) {
   Module* module_singleton = Module::Get();
@@ -168,9 +160,10 @@ bool Module::Init() {
 }
 
 const void* Module::GetPluginInterface(const char* interface_name) {
+  if (strcmp(interface_name, PPP_INPUT_EVENT_INTERFACE) == 0)
+    return &input_event_interface;
   if (strcmp(interface_name, PPP_INSTANCE_INTERFACE) == 0)
     return &instance_interface;
-
   if (strcmp(interface_name, PPP_MESSAGING_INTERFACE) == 0)
     return &instance_messaging_interface;
 

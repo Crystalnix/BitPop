@@ -15,6 +15,8 @@ namespace base {
 class MessageLoopProxy;
 }  // namespace base
 
+namespace content {
+
 class P2PSocketDispatcher;
 
 // P2P socket that rountes all calls over IPC.
@@ -46,8 +48,7 @@ class P2PSocketClient : public base::RefCountedThreadSafe<P2PSocketClient> {
   void Init(P2PSocketType type,
             const net::IPEndPoint& local_address,
             const net::IPEndPoint& remote_address,
-            Delegate* delegate,
-            scoped_refptr<base::MessageLoopProxy> delegate_loop);
+            Delegate* delegate);
 
   // Send the |data| to the |address|.
   void Send(const net::IPEndPoint& address, const std::vector<char>& data);
@@ -107,5 +108,7 @@ class P2PSocketClient : public base::RefCountedThreadSafe<P2PSocketClient> {
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketClient);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_P2P_SOCKET_CLIENT_H_

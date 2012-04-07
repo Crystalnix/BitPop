@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,8 @@ cr.define('cr.ui', function() {
   function ArrayDataModel(array) {
     this.array_ = array;
     this.indexes_ = [];
+    this.compareFunctions_ = {};
+
     for (var i = 0; i < array.length; i++) {
       this.indexes_.push(i);
     }
@@ -64,7 +66,23 @@ cr.define('cr.ui', function() {
      * @param {function(*, *): number} Compare function to set for given field.
      */
     setCompareFunction: function(field, compareFunction) {
+      if (!this.compareFunctions_) {
+        this.compareFunctions_ = {};
+      }
       this.compareFunctions_[field] = compareFunction;
+    },
+
+    isSortable: function(field) {
+      return this.compareFunctions_ && field in this.compareFunctions_;
+    },
+
+    /**
+     * Returns true if the field has a compare function.
+     * @param {string} field The field to check.
+     * @return {boolean} True if the field is sortable.
+     */
+    isSortable: function(field) {
+      return this.compareFunctions_ && field in this.compareFunctions_;
     },
 
     /**
@@ -144,6 +162,7 @@ cr.define('cr.ui', function() {
 
       var rv = arr.splice.apply(arr, arguments);
 
+      var status = this.sortStatus;
       // if sortStatus.field is null, this restores original order.
       var sortPermutation = this.doSort_(this.sortStatus.field,
                                          this.sortStatus.direction);
@@ -157,6 +176,14 @@ cr.define('cr.ui', function() {
       }
 
       this.dispatchEvent(spliceEvent);
+
+      // If real sorting is needed, we should first call prepareSort (data may
+      // change), and then sort again.
+      // Still need to finish the sorting above (including events), so
+      // list will not go to inconsistent state.
+      if (status.field)
+        this.delayedSort_(status.field, status.direction);
+
       return rv;
     },
 
@@ -192,10 +219,15 @@ cr.define('cr.ui', function() {
       this.dispatchEvent(e);
 
       if (this.sortStatus.field) {
+        var status = this.sortStatus;
         var sortPermutation = this.doSort_(this.sortStatus.field,
                                            this.sortStatus.direction);
         if (sortPermutation)
           this.dispatchPermutedEvent_(sortPermutation);
+        // We should first call prepareSort (data may change), and then sort.
+        // Still need to finish the sorting above (including events), so
+        // list will not go to inconsistent state.
+        this.delayedSort_(status.field, status.direction);
       }
     },
 
@@ -226,6 +258,25 @@ cr.define('cr.ui', function() {
 
     /**
      * Sorts data model according to given field and direction and dispathes
+     * sorted event with delay. If no need to delay, use sort() instead.
+     * @param {string} field Sort field.
+     * @param {string} direction Sort direction.
+     * @private
+     */
+    delayedSort_: function(field, direction) {
+      var self = this;
+      setTimeout(function() {
+        // If the sort status has been changed, sorting has already done
+        // on the change event.
+        if (field == self.sortStatus.field &&
+            direction == self.sortStatus.direction) {
+          self.sort(field, direction);
+        }
+      }, 0);
+    },
+
+    /**
+     * Sorts data model according to given field and direction and dispathes
      * sorted event.
      * @param {string} field Sort field.
      * @param {string} direction Sort direction.
@@ -245,6 +296,7 @@ cr.define('cr.ui', function() {
      * Sorts data model according to given field and direction.
      * @param {string} field Sort field.
      * @param {string} direction Sort direction.
+     * @private
      */
     doSort_: function(field, direction) {
       var compareFunction = this.sortFunction_(field, direction);
@@ -284,6 +336,7 @@ cr.define('cr.ui', function() {
      * or default compare function
      * @param {string} field Sort field.
      * @param {function(*, *): number} Compare function.
+     * @private
      */
     createCompareFunction_: function(field) {
       var compareFunction =
@@ -304,6 +357,7 @@ cr.define('cr.ui', function() {
      * @param {string} field Sort field.
      * @param {string} direction Sort direction.
      * @param {function(*, *): number} Compare function.
+     * @private
      */
     sortFunction_: function(field, direction) {
       var compareFunction = null;

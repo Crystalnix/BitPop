@@ -6,7 +6,7 @@
 
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 
@@ -37,7 +37,7 @@ IconManager::Handle IconManager::LoadIcon(
     const FilePath& file_name,
     IconLoader::IconSize size,
     CancelableRequestConsumerBase* consumer,
-    IconRequestCallback* callback) {
+    const IconRequestCallback& callback) {
   IconGroupID group = GetGroupIDFromFilepath(file_name);
   IconRequest* request = new IconRequest(callback);
   AddRequest(request, consumer);
@@ -83,8 +83,7 @@ bool IconManager::OnImageLoaded(IconLoader* source, gfx::Image* result) {
 
   // Inform our client that the request has completed.
   IconRequest* icon_request = client_request.request;
-  icon_request->ForwardResult(IconRequest::TupleType(icon_request->handle(),
-                                                     result));
+  icon_request->ForwardResult(icon_request->handle(), result);
   requests_.erase(rit);
 
   return true;  // Indicates we took ownership of result.

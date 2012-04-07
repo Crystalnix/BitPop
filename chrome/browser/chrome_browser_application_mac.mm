@@ -5,18 +5,19 @@
 #import "chrome/browser/chrome_browser_application_mac.h"
 
 #import "base/logging.h"
+#include "base/mac/crash_logging.h"
 #import "base/mac/scoped_nsexception_enabler.h"
 #import "base/metrics/histogram.h"
 #import "base/memory/scoped_nsobject.h"
 #import "base/sys_string_conversions.h"
-#import "chrome/app/breakpad_mac.h"
-#include "chrome/browser/accessibility/browser_accessibility_state.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/ui/browser_list.h"
-#import "chrome/browser/ui/cocoa/objc_method_swizzle.h"
-#import "chrome/browser/ui/cocoa/objc_zombie.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#import "chrome/common/mac/objc_method_swizzle.h"
+#import "chrome/common/mac/objc_zombie.h"
+#include "content/browser/accessibility/browser_accessibility_state.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 
 // The implementation of NSExceptions break various assumptions in the
 // Chrome code.  This category defines a replacement for
@@ -24,18 +25,18 @@
 // the debugger when an exception is raised.  -raise sounds more
 // obvious to intercept, but it doesn't catch the original throw
 // because the objc runtime doesn't use it.
-@interface NSException (NSExceptionSwizzle)
-- (id)chromeInitWithName:(NSString*)aName
-                  reason:(NSString*)aReason
-                userInfo:(NSDictionary *)someUserInfo;
+@interface NSException (CrNSExceptionSwizzle)
+- (id)crInitWithName:(NSString*)aName
+              reason:(NSString*)aReason
+            userInfo:(NSDictionary*)someUserInfo;
 @end
 
 static IMP gOriginalInitIMP = NULL;
 
-@implementation NSException (NSExceptionSwizzle)
-- (id)chromeInitWithName:(NSString*)aName
-                  reason:(NSString*)aReason
-                userInfo:(NSDictionary *)someUserInfo {
+@implementation NSException (CrNSExceptionSwizzle)
+- (id)crInitWithName:(NSString*)aName
+              reason:(NSString*)aReason
+            userInfo:(NSDictionary*)someUserInfo {
   // Method only called when swizzled.
   DCHECK(_cmd == @selector(initWithName:reason:userInfo:));
 
@@ -63,7 +64,7 @@ static IMP gOriginalInitIMP = NULL;
     static NSString* const kNSExceptionKey = @"nsexception";
     NSString* value =
         [NSString stringWithFormat:@"%@ reason %@", aName, aReason];
-    SetCrashKeyValue(kNSExceptionKey, value);
+    base::mac::SetCrashKeyValue(kNSExceptionKey, value);
 
     // Force crash for selected exceptions to generate crash dumps.
     BOOL fatal = NO;
@@ -82,10 +83,19 @@ static IMP gOriginalInitIMP = NULL;
     }
 
     // Mostly "unrecognized selector sent to (instance|class)".  A
-    // very small number of things like nil being passed to an
-    // inappropriate receiver.
+    // very small number of things like inappropriate nil being passed.
     if (aName == NSInvalidArgumentException) {
       fatal = YES;
+
+      // TODO(shess): http://crbug.com/85463 throws this exception
+      // from ImageKit.  Our code is not on the stack, so it needs to
+      // be whitelisted for now.
+      NSString* const kNSURLInitNilCheck =
+          @"*** -[NSURL initFileURLWithPath:isDirectory:]: "
+          @"nil string parameter";
+      if ([aReason isEqualToString:kNSURLInitNilCheck]) {
+        fatal = NO;
+      }
     }
 
     // Dear reader: Something you just did provoked an NSException.
@@ -184,15 +194,14 @@ void CancelTerminate() {
 
 namespace {
 
-// Do-nothing wrapper so that we can arrange to only swizzle
-// -[NSException raise] when DCHECK() is turned on (as opposed to
-// replicating the preprocess logic which turns DCHECK() on).
-BOOL SwizzleNSExceptionInit() {
+void SwizzleInit() {
+  // Do-nothing wrapper so that we can arrange to only swizzle
+  // -[NSException raise] when DCHECK() is turned on (as opposed to
+  // replicating the preprocess logic which turns DCHECK() on).
   gOriginalInitIMP = ObjcEvilDoers::SwizzleImplementedInstanceMethods(
       [NSException class],
       @selector(initWithName:reason:userInfo:),
-      @selector(chromeInitWithName:reason:userInfo:));
-  return YES;
+      @selector(crInitWithName:reason:userInfo:));
 }
 
 }  // namespace
@@ -202,12 +211,39 @@ BOOL SwizzleNSExceptionInit() {
 + (void)initialize {
   // Turn all deallocated Objective-C objects into zombies, keeping
   // the most recent 10,000 of them on the treadmill.
-  ObjcEvilDoers::ZombieEnable(YES, 10000);
+  ObjcEvilDoers::ZombieEnable(true, 10000);
 }
 
-- init {
-  CHECK(SwizzleNSExceptionInit());
-  return [super init];
+- (id)init {
+  SwizzleInit();
+  if ((self = [super init])) {
+    eventHooks_.reset([[NSMutableArray alloc] init]);
+  }
+  return self;
+}
+
+// Initialize NSApplication using the custom subclass.  Check whether NSApp
+// was already initialized using another class, because that would break
+// some things.
++ (NSApplication*)sharedApplication {
+  NSApplication* app = [super sharedApplication];
+
+  // +sharedApplication initializes the global NSApp, so if a specific
+  // NSApplication subclass is requested, require that to be the one
+  // delivered.  The practical effect is to require a consistent NSApp
+  // across the executable.
+  CHECK([NSApp isKindOfClass:self])
+      << "NSApp must be of type " << [[self className] UTF8String]
+      << ", not " << [[NSApp className] UTF8String];
+
+  // If the message loop was initialized before NSApp is setup, the
+  // message pump will be setup incorrectly.  Failing this implies
+  // that RegisterBrowserCrApp() should be called earlier.
+  CHECK(base::MessagePumpMac::UsingCrApp())
+      << "MessagePumpMac::Create() is using the wrong pump implementation"
+      << " for " << [[self className] UTF8String];
+
+  return app;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -330,7 +366,7 @@ BOOL SwizzleNSExceptionInit() {
         [NSString stringWithFormat:@"%@ tag %d sending %@ to %p",
                   [sender className], tag, actionString, aTarget];
 
-  ScopedCrashKey key(kActionKey, value);
+  base::mac::ScopedCrashKey key(kActionKey, value);
 
   // Certain third-party code, such as print drivers, can still throw
   // exceptions and Chromium cannot fix them.  This provides a way to
@@ -347,6 +383,30 @@ BOOL SwizzleNSExceptionInit() {
   if (enableNSExceptions)
     enabler.reset(new base::mac::ScopedNSExceptionEnabler());
   return [super sendAction:anAction to:aTarget from:sender];
+}
+
+- (void)addEventHook:(id<CrApplicationEventHookProtocol>)handler {
+  [eventHooks_ addObject:handler];
+}
+
+- (void)removeEventHook:(id<CrApplicationEventHookProtocol>)handler {
+  [eventHooks_ removeObject:handler];
+}
+
+- (BOOL)isHandlingSendEvent {
+  return handlingSendEvent_;
+}
+
+- (void)setHandlingSendEvent:(BOOL)handlingSendEvent {
+  handlingSendEvent_ = handlingSendEvent;
+}
+
+- (void)sendEvent:(NSEvent*)event {
+  base::mac::ScopedSendingEvent sendingEventScoper;
+  for (id<CrApplicationEventHookProtocol> handler in eventHooks_.get()) {
+    [handler hookForEvent:event];
+  }
+  [super sendEvent:event];
 }
 
 // NSExceptions which are caught by the event loop are logged here.
@@ -369,7 +429,7 @@ BOOL SwizzleNSExceptionInit() {
     // sidestep scopers is setjmp/longjmp (see above).  The following
     // is to "fix" this while the more fundamental concern is
     // addressed elsewhere.
-    [self clearIsHandlingSendEvent];
+    [self setHandlingSendEvent:NO];
 
     // If |ScopedNSExceptionEnabler| is used to allow exceptions, and an
     // uncaught exception is thrown, it will throw past all of the scopers.
@@ -398,10 +458,10 @@ BOOL SwizzleNSExceptionInit() {
     NSString* value = [NSString stringWithFormat:@"%@ reason %@",
                                 [anException name], [anException reason]];
     if (!trackedFirstException) {
-      SetCrashKeyValue(kFirstExceptionKey, value);
+      base::mac::SetCrashKeyValue(kFirstExceptionKey, value);
       trackedFirstException = YES;
     } else {
-      SetCrashKeyValue(kLastExceptionKey, value);
+      base::mac::SetCrashKeyValue(kLastExceptionKey, value);
     }
 
     reportingException = NO;
@@ -418,7 +478,8 @@ BOOL SwizzleNSExceptionInit() {
          !it.done();
          ++it) {
       if (TabContentsWrapper* contents = *it) {
-        if (RenderViewHost* rvh = contents->render_view_host()) {
+        if (RenderViewHost* rvh =
+                contents->web_contents()->GetRenderViewHost()) {
           rvh->EnableRendererAccessibility();
         }
       }

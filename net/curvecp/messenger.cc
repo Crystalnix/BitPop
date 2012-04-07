@@ -4,6 +4,7 @@
 
 #include "net/curvecp/messenger.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "net/base/io_buffer.h"
@@ -58,21 +59,17 @@ static const size_t kReceiveBufferSize = (128 * 1024);
 Messenger::Messenger(Packetizer* packetizer)
     : packetizer_(packetizer),
       send_buffer_(kSendBufferSize),
-      send_complete_callback_(NULL),
-      receive_complete_callback_(NULL),
       pending_receive_length_(0),
-      send_message_in_progress_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          send_message_callback_(this, &Messenger::OnSendMessageComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
+      send_message_in_progress_(false) {
 }
 
 Messenger::~Messenger() {
 }
 
-int Messenger::Read(IOBuffer* buf, int buf_len, CompletionCallback* callback) {
+int Messenger::Read(IOBuffer* buf, int buf_len,
+                    const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
-  DCHECK(!receive_complete_callback_);
+  DCHECK(receive_complete_callback_.is_null());
 
   if (!received_list_.bytes_available()) {
     receive_complete_callback_ = callback;
@@ -86,15 +83,17 @@ int Messenger::Read(IOBuffer* buf, int buf_len, CompletionCallback* callback) {
   return bytes_read;
 }
 
-int Messenger::Write(IOBuffer* buf, int buf_len, CompletionCallback* callback) {
+int Messenger::Write(IOBuffer* buf, int buf_len,
+                     const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
   DCHECK(!pending_send_.get());   // Already a write pending!
-  DCHECK(!send_complete_callback_);
+  DCHECK(send_complete_callback_.is_null());
   DCHECK_LT(0, buf_len);
 
   int len = send_buffer_.write(buf->data(), buf_len);
   if (!send_timer_.IsRunning())
-    send_timer_.Start(base::TimeDelta(), this, &Messenger::OnSendTimer);
+    send_timer_.Start(FROM_HERE, base::TimeDelta(),
+                      this, &Messenger::OnSendTimer);
   if (len)
     return len;
 
@@ -149,15 +148,15 @@ IOBufferWithSize* Messenger::CreateBufferFromSendQueue() {
   DCHECK_EQ(bytes, length);
 
   // We consumed data, check to see if someone is waiting to write more data.
-  if (send_complete_callback_) {
+  if (!send_complete_callback_.is_null()) {
     DCHECK(pending_send_.get());
 
     int len = send_buffer_.write(pending_send_->data(), pending_send_length_);
     if (len) {
       pending_send_ = NULL;
-      CompletionCallback* callback = send_complete_callback_;
-      send_complete_callback_ = NULL;
-      callback->Run(len);
+      CompletionCallback callback = send_complete_callback_;
+      send_complete_callback_.Reset();
+      callback.Run(len);
     }
   }
 
@@ -183,7 +182,7 @@ void Messenger::OnSendMessageComplete(int result) {
     LOG(ERROR) << "RttTimeout is " << rtt_.rtt_timeout();
     base::TimeDelta delay =
         base::TimeDelta::FromMicroseconds(rtt_.rtt_timeout());
-    send_timeout_timer_.Start(delay, this, &Messenger::OnTimeout);
+    send_timeout_timer_.Start(FROM_HERE, delay, this, &Messenger::OnTimeout);
   }
 }
 
@@ -214,9 +213,9 @@ void Messenger::OnSendTimer() {
 
   // Set the next send timer.
   LOG(ERROR) << "SendRate is: " << rtt_.send_rate() << "us";
-  send_timer_.Start(base::TimeDelta::FromMicroseconds(rtt_.send_rate()),
-                    this,
-                    &Messenger::OnSendTimer);
+  send_timer_.Start(FROM_HERE,
+                    base::TimeDelta::FromMicroseconds(rtt_.send_rate()),
+                    this, &Messenger::OnSendTimer);
 
   // Create a block from the send_buffer.
   if (!sent_list_.is_full()) {
@@ -255,10 +254,9 @@ void Messenger::SendMessage(int64 position) {
 
   sent_list_.MarkBlockSent(position, id);
 
-  int rv = packetizer_->SendMessage(key_,
-                                    message->data(),
-                                    padded_size,
-                                    &send_message_callback_);
+  int rv = packetizer_->SendMessage(
+      key_, message->data(), padded_size,
+      base::Bind(&Messenger::OnSendMessageComplete, base::Unretained(this)));
   if (rv == ERR_IO_PENDING) {
     send_message_in_progress_ = true;
     return;
@@ -337,12 +335,13 @@ void Messenger::RecvMessage() {
   }
 
   // If we have data available, and a read is pending, notify the callback.
-  if (received_list_.bytes_available() && receive_complete_callback_) {
+  if (received_list_.bytes_available() &&
+      !receive_complete_callback_.is_null()) {
     // Pass the data up to the caller.
     int bytes_read = InternalRead(pending_receive_, pending_receive_length_);
-    CompletionCallback* callback = receive_complete_callback_;
-    receive_complete_callback_ = NULL;
-    callback->Run(bytes_read);
+    CompletionCallback callback = receive_complete_callback_;
+    receive_complete_callback_.Reset();
+    callback.Run(bytes_read);
   }
 }
 
@@ -359,10 +358,9 @@ void Messenger::SendAck(uint32 last_message_received) {
   //                in progress here...
   DCHECK(!send_message_in_progress_);
 
-  int rv = packetizer_->SendMessage(key_,
-                                    buffer->data(),
-                                    sizeof(Message),
-                                    &send_message_callback_);
+  int rv = packetizer_->SendMessage(
+      key_, buffer->data(), sizeof(Message),
+      base::Bind(&Messenger::OnSendMessageComplete, base::Unretained(this)));
   // TODO(mbelshe): Fix me!  Deal with the error cases
   DCHECK(rv == sizeof(Message));
 }

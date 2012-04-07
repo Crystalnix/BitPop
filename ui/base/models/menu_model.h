@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "ui/base/models/menu_model_delegate.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 class SkBitmap;
@@ -23,7 +24,7 @@ class Accelerator;
 class ButtonMenuItemModel;
 
 // An interface implemented by an object that provides the content of a menu.
-class MenuModel {
+class UI_EXPORT MenuModel {
  public:
   // The type of item.
   enum ItemType {
@@ -108,9 +109,10 @@ class MenuModel {
   // Called when the item at the specified index has been activated.
   virtual void ActivatedAt(int index) = 0;
 
-  // Called when the item has been activated with a given disposition (for the
-  // case where the activation involves a navigation).
-  virtual void ActivatedAtWithDisposition(int index, int disposition);
+  // Called when the item has been activated with given event flags.
+  // (for the case where the activation involves a navigation).
+  // |event_flags| is a bit mask of ui::EventFlags.
+  virtual void ActivatedAt(int index, int event_flags);
 
   // Called when the menu is about to be shown.
   virtual void MenuWillShow() {}

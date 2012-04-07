@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@ void PrintSettingsInitializerWin::InitPrintSettings(
 
   print_settings->set_printer_name(dev_mode.dmDeviceName);
   print_settings->set_device_name(new_device_name);
-  print_settings->ranges = new_ranges;
+  print_settings->ranges = const_cast<PageRanges&>(new_ranges);
   print_settings->set_landscape(dev_mode.dmOrientation == DMORIENT_LANDSCAPE);
   print_settings->selection_only = print_selection_only;
 
@@ -48,6 +48,14 @@ void PrintSettingsInitializerWin::InitPrintSettings(
                                         GetDeviceCaps(hdc, PHYSICALOFFSETY),
                                         GetDeviceCaps(hdc, HORZRES),
                                         GetDeviceCaps(hdc, VERTRES));
+
+  // Sanity check the printable_area: we've seen crashes caused by a printable
+  // area rect of 0, 0, 0, 0, so it seems some drivers don't set it.
+  if (printable_area_device_units.IsEmpty() ||
+      !gfx::Rect(physical_size_device_units).Contains(
+          printable_area_device_units)) {
+    printable_area_device_units = gfx::Rect(physical_size_device_units);
+  }
 
   print_settings->SetPrinterPrintableArea(physical_size_device_units,
                                           printable_area_device_units,

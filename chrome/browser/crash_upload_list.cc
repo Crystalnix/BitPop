@@ -6,16 +6,19 @@
 
 #include <iterator>
 
-#include "base/path_service.h"
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #if defined(OS_WIN)
 #include "chrome/browser/crash_upload_list_win.h"
 #endif
 #include "chrome/common/chrome_paths.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 CrashUploadList::CrashInfo::CrashInfo(const std::string& c, const base::Time& t)
     : crash_id(c), crash_time(t) {}
@@ -36,9 +39,10 @@ CrashUploadList::CrashUploadList(Delegate* delegate) : delegate_(delegate) {}
 CrashUploadList::~CrashUploadList() {}
 
 void CrashUploadList::LoadCrashListAsynchronously() {
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(this,
-        &CrashUploadList::LoadCrashListAndInformDelegateOfCompletion));
+  BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&CrashUploadList::LoadCrashListAndInformDelegateOfCompletion,
+                 this));
 }
 
 void CrashUploadList::ClearDelegate() {
@@ -48,12 +52,13 @@ void CrashUploadList::ClearDelegate() {
 
 void CrashUploadList::LoadCrashListAndInformDelegateOfCompletion() {
   LoadCrashList();
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &CrashUploadList::InformDelegateOfCompletion));
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&CrashUploadList::InformDelegateOfCompletion, this));
 }
 
 void CrashUploadList::LoadCrashList() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   FilePath crash_dir_path;
   PathService::Get(chrome::DIR_CRASH_DUMPS, &crash_dir_path);
   FilePath upload_log_path = crash_dir_path.AppendASCII("uploads.log");

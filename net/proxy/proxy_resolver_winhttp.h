@@ -6,6 +6,7 @@
 #define NET_PROXY_PROXY_RESOLVER_WINHTTP_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "googleurl/src/gurl.h"
 #include "net/proxy/proxy_resolver.h"
 
@@ -15,7 +16,7 @@ namespace net {
 
 // An implementation of ProxyResolver that uses WinHTTP and the system
 // proxy settings.
-class NET_TEST ProxyResolverWinHttp : public ProxyResolver {
+class NET_EXPORT_PRIVATE ProxyResolverWinHttp : public ProxyResolver {
  public:
   ProxyResolverWinHttp();
   virtual ~ProxyResolverWinHttp();
@@ -23,16 +24,21 @@ class NET_TEST ProxyResolverWinHttp : public ProxyResolver {
   // ProxyResolver implementation:
   virtual int GetProxyForURL(const GURL& url,
                              ProxyInfo* results,
-                             CompletionCallback* /*callback*/,
+                             const net::CompletionCallback& /*callback*/,
                              RequestHandle* /*request*/,
-                             const BoundNetLog& /*net_log*/);
-  virtual void CancelRequest(RequestHandle request);
+                             const BoundNetLog& /*net_log*/) OVERRIDE;
+  virtual void CancelRequest(RequestHandle request) OVERRIDE;
 
-  virtual void CancelSetPacScript();
+  virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE;
+
+  virtual LoadState GetLoadStateThreadSafe(
+      RequestHandle request) const OVERRIDE;
+
+  virtual void CancelSetPacScript() OVERRIDE;
 
   virtual int SetPacScript(
       const scoped_refptr<ProxyResolverScriptData>& script_data,
-      CompletionCallback* /*callback*/);
+      const net::CompletionCallback& /*callback*/) OVERRIDE;
 
  private:
   bool OpenWinHttpSession();

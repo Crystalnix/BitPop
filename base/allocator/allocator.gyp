@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,11 @@
     {
       'target_name': 'allocator',
       'type': 'static_library',
-      'msvs_guid': 'C564F145-9172-42C3-BFCB-60FDEA124321',
+      # Make sure the allocation library is optimized to
+      # the hilt in official builds.
+      'variables': {
+        'optimize': 'max',
+      },
       'include_dirs': [
         '.',
         '<(tcmalloc_dir)/src/base',
@@ -49,8 +53,12 @@
         # all tcmalloc native and forked files
         '<(tcmalloc_dir)/src/addressmap-inl.h',
         '<(tcmalloc_dir)/src/base/atomicops-internals-linuxppc.h',
+        '<(tcmalloc_dir)/src/base/arm_instruction_set_select.h',
+        '<(tcmalloc_dir)/src/base/atomicops-internals-arm-gcc.h',
+        '<(tcmalloc_dir)/src/base/atomicops-internals-arm-generic.h',
+        '<(tcmalloc_dir)/src/base/atomicops-internals-arm-v6plus.h',
         '<(tcmalloc_dir)/src/base/atomicops-internals-macosx.h',
-        '<(tcmalloc_dir)/src/base/atomicops-internals-x86-msvc.h',
+        '<(tcmalloc_dir)/src/base/atomicops-internals-windows.h',
         '<(tcmalloc_dir)/src/base/atomicops-internals-x86.cc',
         '<(tcmalloc_dir)/src/base/atomicops-internals-x86.h',
         '<(tcmalloc_dir)/src/base/atomicops.h',
@@ -72,10 +80,13 @@
         '<(tcmalloc_dir)/src/base/simple_mutex.h',
         '<(tcmalloc_dir)/src/base/spinlock.cc',
         '<(tcmalloc_dir)/src/base/spinlock.h',
+        '<(tcmalloc_dir)/src/base/spinlock_internal.cc',
+        '<(tcmalloc_dir)/src/base/spinlock_internal.h',
         '<(tcmalloc_dir)/src/base/spinlock_linux-inl.h',
         '<(tcmalloc_dir)/src/base/spinlock_posix-inl.h',
         '<(tcmalloc_dir)/src/base/spinlock_win32-inl.h',
         '<(tcmalloc_dir)/src/base/stl_allocator.h',
+        '<(tcmalloc_dir)/src/base/synchronization_profiling.h',
         '<(tcmalloc_dir)/src/base/sysinfo.cc',
         '<(tcmalloc_dir)/src/base/sysinfo.h',
         '<(tcmalloc_dir)/src/base/thread_annotations.h',
@@ -88,6 +99,8 @@
         '<(tcmalloc_dir)/src/common.cc',
         '<(tcmalloc_dir)/src/common.h',
         '<(tcmalloc_dir)/src/debugallocation.cc',
+        '<(tcmalloc_dir)/src/free_list.cc',
+        '<(tcmalloc_dir)/src/free_list.h',
         '<(tcmalloc_dir)/src/getpc.h',
         '<(tcmalloc_dir)/src/google/heap-checker.h',
         '<(tcmalloc_dir)/src/google/heap-profiler.h',
@@ -327,6 +340,13 @@
             '<(jemalloc_dir)/rb.h',
 
           ],
+          # We enable all warnings by default, but upstream disables a few.
+          # Keep "-Wno-*" flags in sync with upstream by comparing against:
+          # http://code.google.com/p/google-perftools/source/browse/trunk/Makefile.am
+          'cflags': [
+            '-Wno-sign-compare',
+            '-Wno-unused-result',
+          ],
           'cflags!': [
             '-fvisibility=hidden',
           ],
@@ -347,8 +367,8 @@
             # so only one of them should be used.
             '<(tcmalloc_dir)/src/tcmalloc.cc',
           ],
-          'cflags': [
-            '-DTCMALLOC_FOR_DEBUGALLOCATION',
+          'defines': [
+            'TCMALLOC_FOR_DEBUGALLOCATION',
           ],
         }, { # linux_use_debugallocation != 1
           'sources!': [
@@ -363,7 +383,9 @@
           ],
           'cflags': [
             '-finstrument-functions',
-            '-DKEEP_SHADOW_STACKS',
+          ],
+          'defines': [
+            'KEEP_SHADOW_STACKS',
           ],
         }],
         [ 'linux_use_heapchecker==0', {
@@ -373,8 +395,8 @@
             '<(tcmalloc_dir)/src/heap-checker.cc',
           ],
           # Disable the heap checker in tcmalloc.
-          'cflags': [
-            '-DNO_HEAP_CHECK',
+          'defines': [
+            'NO_HEAP_CHECK',
           ],
         }],
       ],
@@ -392,9 +414,7 @@
         '<(tcmalloc_dir)/src',
         '../..',
       ],
-      'msvs_guid': 'E99DA267-BE90-4F45-1294-6919DB2C9999',
       'sources': [
-        'unittest_utils.cc',
         'allocator_unittests.cc',
       ],
     },
@@ -426,9 +446,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -8,12 +8,29 @@
 #include <vector>
 
 #include "base/shared_memory.h"
-#include "content/common/common_param_traits.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
 #include "ui/base/clipboard/clipboard.h"
 
 #define IPC_MESSAGE_START ClipboardMsgStart
+
+#ifndef CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
+#define CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
+
+namespace IPC {
+
+template<>
+struct ParamTraits<ui::Clipboard::FormatType> {
+  typedef ui::Clipboard::FormatType param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, void** iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+}  // namespace IPC
+
+#endif  // CONTENT_COMMON_CLIPBOARD_MESSAGES_H_
 
 IPC_ENUM_TRAITS(ui::Clipboard::Buffer)
 
@@ -28,8 +45,11 @@ IPC_MESSAGE_CONTROL1(ClipboardHostMsg_WriteObjectsAsync,
 IPC_SYNC_MESSAGE_CONTROL2_0(ClipboardHostMsg_WriteObjectsSync,
                             ui::Clipboard::ObjectMap /* objects */,
                             base::SharedMemoryHandle /* bitmap handle */)
+IPC_SYNC_MESSAGE_CONTROL1_1(ClipboardHostMsg_GetSequenceNumber,
+                            ui::Clipboard::Buffer /* buffer */,
+                            uint64 /* result */)
 IPC_SYNC_MESSAGE_CONTROL2_1(ClipboardHostMsg_IsFormatAvailable,
-                            std::string /* format */,
+                            ui::Clipboard::FormatType /* format */,
                             ui::Clipboard::Buffer /* buffer */,
                             bool /* result */)
 IPC_SYNC_MESSAGE_CONTROL1_2(ClipboardHostMsg_ReadAvailableTypes,
@@ -42,25 +62,22 @@ IPC_SYNC_MESSAGE_CONTROL1_1(ClipboardHostMsg_ReadText,
 IPC_SYNC_MESSAGE_CONTROL1_1(ClipboardHostMsg_ReadAsciiText,
                             ui::Clipboard::Buffer  /* buffer */,
                             std::string /* result */)
-IPC_SYNC_MESSAGE_CONTROL1_2(ClipboardHostMsg_ReadHTML,
+IPC_SYNC_MESSAGE_CONTROL1_4(ClipboardHostMsg_ReadHTML,
                             ui::Clipboard::Buffer  /* buffer */,
                             string16 /* markup */,
-                            GURL /* url */)
+                            GURL /* url */,
+                            uint32 /* fragment start */,
+                            uint32 /* fragment end */)
 IPC_SYNC_MESSAGE_CONTROL1_2(ClipboardHostMsg_ReadImage,
                             ui::Clipboard::Buffer /* buffer */,
                             base::SharedMemoryHandle /* PNG-encoded image */,
                             uint32 /* image size */)
+IPC_SYNC_MESSAGE_CONTROL2_1(ClipboardHostMsg_ReadCustomData,
+                            ui::Clipboard::Buffer /* buffer */,
+                            string16 /* type */,
+                            string16 /* result */)
+
 #if defined(OS_MACOSX)
 IPC_MESSAGE_CONTROL1(ClipboardHostMsg_FindPboardWriteStringAsync,
                      string16 /* text */)
 #endif
-IPC_SYNC_MESSAGE_CONTROL2_3(ClipboardHostMsg_ReadData,
-                            ui::Clipboard::Buffer /* buffer */,
-                            string16 /* type */,
-                            bool /* succeeded */,
-                            string16 /* data */,
-                            string16 /* metadata */)
-IPC_SYNC_MESSAGE_CONTROL1_2(ClipboardHostMsg_ReadFilenames,
-                            ui::Clipboard::Buffer /* buffer */,
-                            bool /* result */,
-                            std::vector<string16> /* filenames */)

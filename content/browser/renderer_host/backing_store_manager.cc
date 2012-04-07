@@ -4,20 +4,19 @@
 
 #include "content/browser/renderer_host/backing_store_manager.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/mru_cache.h"
 #include "base/sys_info.h"
-#include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/render_widget_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/common/content_switches.h"
 
 namespace {
 
 // There are two separate caches, |large_cache| and |small_cache|.  large_cache
 // is meant for large items (tabs, popup windows), while small_cache is meant
-// for small items (extension toolstrips and buttons, etc.).  The idea is that
+// for small items (extension popups, HTML5 notifications). The idea is that
 // we'll almost always try to evict from large_cache first since small_cache
 // items will tend to be visible more of the time.
 typedef base::OwningMRUCache<RenderWidgetHost*, BackingStore*>
@@ -27,7 +26,11 @@ static BackingStoreCache* small_cache = NULL;
 
 // Threshold is based on a single large-monitor-width toolstrip.
 // (32bpp, 32 pixels high, 1920 pixels wide)
-// TODO(erikkay) 32bpp assumption isn't great.
+// TODO(aa): The extension system no longer supports toolstrips, but we think
+// this might be helping for other examples of small HTML views in Chrome.
+// Maybe this cache should be redesigned to simply prefer smaller objects to
+// larger ones, rather than having a fixed threshold.
+// For more background, see: crbug.com/100506.
 const size_t kSmallThreshold = 4 * 32 * 1920;
 
 // Pick a large monitor size to use as a multiplier.  This is multiplied by the
@@ -192,7 +195,9 @@ void BackingStoreManager::PrepareBackingStore(
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
     const std::vector<gfx::Rect>& copy_rects,
-    bool* needs_full_paint) {
+    const base::Closure& completion_callback,
+    bool* needs_full_paint,
+    bool* scheduled_completion_callback) {
   BackingStore* backing_store = GetBackingStore(host, backing_store_size);
   if (!backing_store) {
     // We need to get Webkit to generate a new paint here, as we
@@ -203,6 +208,7 @@ void BackingStoreManager::PrepareBackingStore(
         !(backing_store = CreateBackingStore(host, backing_store_size))) {
       DCHECK(needs_full_paint != NULL);
       *needs_full_paint = true;
+      *scheduled_completion_callback = false;
       // Makes no sense to paint the transport dib if we are going
       // to request a full paint.
       return;
@@ -210,7 +216,9 @@ void BackingStoreManager::PrepareBackingStore(
   }
 
   backing_store->PaintToBackingStore(host->process(), bitmap,
-                                     bitmap_rect, copy_rects);
+                                     bitmap_rect, copy_rects,
+                                     completion_callback,
+                                     scheduled_completion_callback);
 }
 
 // static

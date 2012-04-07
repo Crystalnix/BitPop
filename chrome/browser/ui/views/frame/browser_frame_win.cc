@@ -9,15 +9,18 @@
 
 #include <set>
 
-#include "chrome/browser/accessibility/browser_accessibility_state.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "content/browser/accessibility/browser_accessibility_state.h"
 #include "grit/theme_resources.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/font.h"
-#include "views/screen.h"
-#include "views/window/non_client_view.h"
-#include "views/window/window.h"
+#include "ui/views/views_delegate.h"
+#include "ui/views/widget/native_widget_win.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/window/non_client_view.h"
+
+#pragma comment(lib, "dwmapi.lib")
 
 // static
 static const int kClientEdgeThickness = 3;
@@ -33,11 +36,9 @@ static int explicit_show_state = -1;
 
 BrowserFrameWin::BrowserFrameWin(BrowserFrame* browser_frame,
                                  BrowserView* browser_view)
-    : views::NativeWindowWin(browser_frame),
+    : views::NativeWidgetWin(browser_frame),
       browser_view_(browser_view),
       browser_frame_(browser_frame) {
-  // Don't focus anything on creation, selecting a tab will set the focus.
-  set_focus_on_creation(false);
 }
 
 BrowserFrameWin::~BrowserFrameWin() {
@@ -49,7 +50,7 @@ void BrowserFrameWin::SetShowState(int state) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// BrowserFrameWin, views::NativeWindowWin overrides:
+// BrowserFrameWin, views::NativeWidgetWin overrides:
 
 int BrowserFrameWin::GetShowState() const {
   if (explicit_show_state != -1)
@@ -65,9 +66,9 @@ int BrowserFrameWin::GetShowState() const {
 gfx::Insets BrowserFrameWin::GetClientAreaInsets() const {
   // Use the default client insets for an opaque frame or a glass popup/app
   // frame.
-  if (!GetWindow()->ShouldUseNativeFrame() ||
+  if (!GetWidget()->ShouldUseNativeFrame() ||
       !browser_view_->IsBrowserTypeNormal()) {
-    return NativeWindowWin::GetClientAreaInsets();
+    return NativeWidgetWin::GetClientAreaInsets();
   }
 
   int border_thickness = GetSystemMetrics(SM_CXSIZEFRAME);
@@ -84,7 +85,7 @@ void BrowserFrameWin::UpdateFrameAfterFrameChange() {
   // We need to update the glass region on or off before the base class adjusts
   // the window region.
   UpdateDWMFrame();
-  NativeWindowWin::UpdateFrameAfterFrameChange();
+  NativeWidgetWin::UpdateFrameAfterFrameChange();
 }
 
 void BrowserFrameWin::OnEndSession(BOOL ending, UINT logoff) {
@@ -97,7 +98,7 @@ void BrowserFrameWin::OnInitMenuPopup(HMENU menu, UINT position,
 }
 
 void BrowserFrameWin::OnWindowPosChanged(WINDOWPOS* window_pos) {
-  NativeWindowWin::OnWindowPosChanged(window_pos);
+  NativeWidgetWin::OnWindowPosChanged(window_pos);
   UpdateDWMFrame();
 
   // Windows lies to us about the position of the minimize button before a
@@ -109,27 +110,29 @@ void BrowserFrameWin::OnWindowPosChanged(WINDOWPOS* window_pos) {
   // Note that we will call Layout every time SetWindowPos is called with
   // SWP_SHOWWINDOW, however callers typically are careful about not specifying
   // this flag unless necessary to avoid flicker.
-  if (window_pos->flags & SWP_SHOWWINDOW) {
-    GetWindow()->non_client_view()->Layout();
-    GetWindow()->non_client_view()->SchedulePaint();
+  // This may be invoked during creation on XP and before the non_client_view
+  // has been created.
+  if (window_pos->flags & SWP_SHOWWINDOW && GetWidget()->non_client_view()) {
+    GetWidget()->non_client_view()->Layout();
+    GetWidget()->non_client_view()->SchedulePaint();
   }
 }
 
 void BrowserFrameWin::OnScreenReaderDetected() {
   BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
-  NativeWindowWin::OnScreenReaderDetected();
+  NativeWidgetWin::OnScreenReaderDetected();
 }
 
 bool BrowserFrameWin::ShouldUseNativeFrame() const {
   // App panel windows draw their own frame.
-  if (browser_view_->IsBrowserTypePanel())
+  if (browser_view_->IsPanel())
     return false;
 
   // We don't theme popup or app windows, so regardless of whether or not a
   // theme is active for normal browser windows, we don't want to use the custom
   // frame for popups/apps.
   if (!browser_view_->IsBrowserTypeNormal() &&
-      NativeWindowWin::ShouldUseNativeFrame()) {
+      NativeWidgetWin::ShouldUseNativeFrame()) {
     return true;
   }
 
@@ -141,11 +144,11 @@ bool BrowserFrameWin::ShouldUseNativeFrame() const {
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserFrameWin, NativeBrowserFrame implementation:
 
-views::NativeWindow* BrowserFrameWin::AsNativeWindow() {
+views::NativeWidget* BrowserFrameWin::AsNativeWidget() {
   return this;
 }
 
-const views::NativeWindow* BrowserFrameWin::AsNativeWindow() const {
+const views::NativeWidget* BrowserFrameWin::AsNativeWidget() const {
   return this;
 }
 
@@ -170,7 +173,7 @@ void BrowserFrameWin::TabStripDisplayModeChanged() {
 
 void BrowserFrameWin::UpdateDWMFrame() {
   // Nothing to do yet, or we're not showing a DWM frame.
-  if (!GetWindow()->client_view() || !browser_frame_->ShouldUseNativeFrame())
+  if (!GetWidget()->client_view() || !browser_frame_->ShouldUseNativeFrame())
     return;
 
   MARGINS margins = { 0 };
@@ -189,8 +192,7 @@ void BrowserFrameWin::UpdateDWMFrame() {
     if (!browser_view_->IsFullscreen()) {
       gfx::Rect tabstrip_bounds(
           browser_frame_->GetBoundsForTabStrip(browser_view_->tabstrip()));
-      margins.cyTopHeight = (browser_view_->UseVerticalTabs() ?
-          tabstrip_bounds.y() : tabstrip_bounds.bottom()) + kDWMFrameTopOffset;
+      margins.cyTopHeight = tabstrip_bounds.bottom() + kDWMFrameTopOffset;
     }
   } else {
     // For popup and app windows we want to use the default margins.
@@ -204,7 +206,7 @@ void BrowserFrameWin::UpdateDWMFrame() {
 // static
 const gfx::Font& BrowserFrame::GetTitleFont() {
   static gfx::Font* title_font =
-      new gfx::Font(views::NativeWindowWin::GetWindowTitleFont());
+      new gfx::Font(views::NativeWidgetWin::GetWindowTitleFont());
   return *title_font;
 }
 
@@ -217,4 +219,3 @@ NativeBrowserFrame* NativeBrowserFrame::CreateNativeBrowserFrame(
     BrowserView* browser_view) {
   return new BrowserFrameWin(browser_frame, browser_view);
 }
-

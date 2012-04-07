@@ -1,50 +1,31 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
-  'target_defaults': {
-    'sources/': [
-      ['exclude', '/(cocoa|gtk|win)/'],
-      ['exclude', '_(cocoa|gtk|linux|mac|posix|win|x)\\.(cc|mm?)$'],
-      ['exclude', '/(gtk|win|x11)_[^/]*\\.cc$'],
-    ],
-    'conditions': [
-      ['toolkit_uses_gtk == 1', {'sources/': [
-        ['include', '/gtk/'],
-        ['include', '_(gtk|linux|posix|skia|x)\\.cc$'],
-        ['include', '/(gtk|x11)_[^/]*\\.cc$'],
-      ]}],
-      ['OS=="mac"', {'sources/': [
-        ['include', '/cocoa/'],
-        ['include', '_(cocoa|mac|posix)\\.(cc|mm?)$'],
-      ]}, { # else: OS != "mac"
-        'sources/': [
-          ['exclude', '\\.mm?$'],
-        ],
-      }],
-      ['OS=="win"',
-        {'sources/': [
-          ['include', '_(win)\\.cc$'],
-          ['include', '/win/'],
-          ['include', '/win_[^/]*\\.cc$'],
-      ]}],
-    ],
+  'variables': {
+    'chromium_code': 1,
   },
+
   'targets': [
     {
       'target_name': 'gl',
-      'type': 'static_library',
+      'type': '<(component)',
       'dependencies': [
-        '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(DEPTH)/ui/ui.gyp:ui_gfx',
+        '<(DEPTH)/ui/ui.gyp:ui',
       ],
       'variables': {
         'gl_binding_output_dir': '<(SHARED_INTERMEDIATE_DIR)/ui/gfx/gl',
       },
+      'defines': [
+        'GL_IMPLEMENTATION',
+      ],
       'include_dirs': [
+        '<(DEPTH)/third_party/swiftshader/include',
         '<(DEPTH)/third_party/mesa/MesaLib/include',
         '<(gl_binding_output_dir)',
       ],
@@ -60,22 +41,31 @@
         'gl_bindings_skia_in_process.h',
         'gl_context.cc',
         'gl_context.h',
+        'gl_context_android.cc',
         'gl_context_linux.cc',
-        'gl_context_mac.cc',
+        'gl_context_mac.mm',
         'gl_context_osmesa.cc',
         'gl_context_osmesa.h',
         'gl_context_stub.cc',
         'gl_context_stub.h',
         'gl_context_win.cc',
+        'gl_export.h',
+        'gl_fence.cc',
+        'gl_fence.h',
         'gl_implementation.cc',
         'gl_implementation.h',
+        'gl_implementation_android.cc',
         'gl_implementation_linux.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
         'gl_interface.cc',
         'gl_interface.h',
+        'gl_share_group.cc',
+        'gl_share_group.h',
         'gl_surface.cc',
         'gl_surface.h',
+        'gl_surface_android.cc',
+        'gl_surface_android.h',
         'gl_surface_linux.cc',
         'gl_surface_mac.cc',
         'gl_surface_stub.cc',
@@ -85,6 +75,9 @@
         'gl_surface_osmesa.h',
         'gl_switches.cc',
         'gl_switches.h',
+        'native_window_interface_android.h',
+        'scoped_make_current.cc',
+        'scoped_make_current.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.cc',
         '<(gl_binding_output_dir)/gl_bindings_autogen_gl.h',
         '<(gl_binding_output_dir)/gl_bindings_autogen_mock.cc',
@@ -101,6 +94,11 @@
           'action_name': 'generate_gl_bindings',
           'inputs': [
             'generate_bindings.py',
+            '<(DEPTH)/third_party/khronos/GLES2/gl2ext.h',
+            '<(DEPTH)/third_party/khronos/EGL/eglext.h',
+            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/glext.h',
+            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/glxext.h',
+            '<(DEPTH)/third_party/mesa/MesaLib/include/GL/wglext.h',
           ],
           'outputs': [
             '<(gl_binding_output_dir)/gl_bindings_autogen_egl.cc',
@@ -138,7 +136,7 @@
             '<(DEPTH)/third_party/angle/include',
           ],
         }],
-        ['use_x11 == 1', {
+        ['use_x11 == 1 and use_wayland != 1', {
           'sources': [
             'gl_context_glx.cc',
             'gl_context_glx.h',
@@ -175,6 +173,25 @@
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },
+        }],
+        ['OS=="mac" and use_aura == 1', {
+          'sources': [
+            'gl_context_nsview.mm',
+            'gl_context_nsview.h',
+            'gl_surface_nsview.mm',
+            'gl_surface_nsview.h',
+          ],
+        }],
+        ['OS=="android"', {
+          'sources!': [
+            '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.cc',
+            '<(gl_binding_output_dir)/gl_bindings_autogen_osmesa.h',
+            'system_monitor_posix.cc',
+          ],
+          'defines': [
+            'GL_GLEXT_PROTOTYPES',
+            'EGL_EGLEXT_PROTOTYPES',
+          ],
         }],
       ],
     },

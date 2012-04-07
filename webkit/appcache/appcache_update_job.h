@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,12 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/task.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/completion_callback.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "webkit/appcache/appcache.h"
+#include "webkit/appcache/appcache_export.h"
 #include "webkit/appcache/appcache_host.h"
 #include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/appcache/appcache_response.h"
@@ -29,8 +29,8 @@ namespace appcache {
 class HostNotifier;
 
 // Application cache Update algorithm and state.
-class AppCacheUpdateJob : public AppCacheStorage::Delegate,
-                          public AppCacheHost::Observer {
+class APPCACHE_EXPORT AppCacheUpdateJob : public AppCacheStorage::Delegate,
+                                          public AppCacheHost::Observer {
  public:
   AppCacheUpdateJob(AppCacheService* service, AppCacheGroup* group);
   virtual ~AppCacheUpdateJob();
@@ -40,7 +40,6 @@ class AppCacheUpdateJob : public AppCacheStorage::Delegate,
   void StartUpdate(AppCacheHost* host, const GURL& new_master_resource);
 
  private:
-  friend class ScopedRunnableMethodFactory<AppCacheUpdateJob>;
   friend class AppCacheUpdateJobTest;
   class URLFetcher;
 
@@ -121,9 +120,10 @@ class AppCacheUpdateJob : public AppCacheStorage::Delegate,
     // URLRequest::Delegate overrides
     virtual void OnReceivedRedirect(net::URLRequest* request,
                                     const GURL& new_url,
-                                    bool* defer_redirect);
-    virtual void OnResponseStarted(net::URLRequest* request);
-    virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
+                                    bool* defer_redirect) OVERRIDE;
+    virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+    virtual void OnReadCompleted(net::URLRequest* request,
+                                 int bytes_read) OVERRIDE;
 
     void AddConditionalHeaders(const net::HttpResponseHeaders* headers);
     void OnWriteComplete(int result);
@@ -142,26 +142,22 @@ class AppCacheUpdateJob : public AppCacheStorage::Delegate,
     scoped_refptr<net::HttpResponseHeaders> existing_response_headers_;
     std::string manifest_data_;
     scoped_ptr<AppCacheResponseWriter> response_writer_;
-    net::CompletionCallbackImpl<URLFetcher> write_callback_;
   };  // class URLFetcher
 
   AppCacheResponseWriter* CreateResponseWriter();
 
   // Methods for AppCacheStorage::Delegate.
   virtual void OnResponseInfoLoaded(AppCacheResponseInfo* response_info,
-                                    int64 response_id);
+                                    int64 response_id) OVERRIDE;
   virtual void OnGroupAndNewestCacheStored(AppCacheGroup* group,
                                            AppCache* newest_cache,
                                            bool success,
-                                           bool would_exceed_quota);
-  virtual void OnGroupMadeObsolete(AppCacheGroup* group, bool success);
+                                           bool would_exceed_quota) OVERRIDE;
+  virtual void OnGroupMadeObsolete(AppCacheGroup* group, bool success) OVERRIDE;
 
   // Methods for AppCacheHost::Observer.
-  virtual void OnCacheSelectionComplete(AppCacheHost* host) {}  // N/A
-  virtual void OnDestructionImminent(AppCacheHost* host);
-
-  void CheckPolicy();
-  void OnPolicyCheckComplete(int rv);
+  virtual void OnCacheSelectionComplete(AppCacheHost* host) OVERRIDE {}  // N/A
+  virtual void OnDestructionImminent(AppCacheHost* host) OVERRIDE;
 
   void HandleCacheFailure(const std::string& error_message);
 
@@ -239,9 +235,6 @@ class AppCacheUpdateJob : public AppCacheStorage::Delegate,
   bool IsTerminating() { return internal_state_ >= REFETCH_MANIFEST ||
                                 stored_state_ != UNSTORED; }
 
-  // This factory will be used to schedule invocations of various methods.
-  ScopedRunnableMethodFactory<AppCacheUpdateJob> method_factory_;
-
   GURL manifest_url_;  // here for easier access
   AppCacheService* service_;
 
@@ -305,13 +298,6 @@ class AppCacheUpdateJob : public AppCacheStorage::Delegate,
 
   // Whether we've stored the resulting group/cache yet.
   StoredState stored_state_;
-
-  net::CompletionCallbackImpl<AppCacheUpdateJob> manifest_info_write_callback_;
-  net::CompletionCallbackImpl<AppCacheUpdateJob> manifest_data_write_callback_;
-  net::CompletionCallbackImpl<AppCacheUpdateJob> manifest_data_read_callback_;
-
-  scoped_refptr<net::CancelableCompletionCallback<AppCacheUpdateJob> >
-      policy_callback_;
 
   FRIEND_TEST_ALL_PREFIXES(AppCacheGroupTest, QueueUpdate);
 

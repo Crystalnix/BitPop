@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -46,7 +47,7 @@ void ImportProgressDialogGtk::StartImport(
       importer_host,
       importer_observer,
       source_profile.importer_name,
-      source_profile.importer_type == importer::BOOKMARKS_HTML);
+      source_profile.importer_type == importer::TYPE_BOOKMARKS_FILE);
 
   // In headless mode it means that we don't show the progress window, but it
   // still need it to exist. No user interaction will be required.
@@ -81,10 +82,10 @@ ImportProgressDialogGtk::ImportProgressDialogGtk(
       NULL);
   importer_host_->set_parent_window(GTK_WINDOW(dialog_));
 
-  GtkWidget* content_area = GTK_DIALOG(dialog_)->vbox;
-  gtk_box_set_spacing(GTK_BOX(content_area), gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
 
-  GtkWidget* control_group = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* control_group = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
   GtkWidget* import_info = gtk_label_new(
       l10n_util::GetStringFUTF8(IDS_IMPORT_PROGRESS_INFO,
@@ -92,7 +93,7 @@ ImportProgressDialogGtk::ImportProgressDialogGtk(
   gtk_util::SetLabelWidth(import_info, 400);
   gtk_box_pack_start(GTK_BOX(control_group), import_info, FALSE, FALSE, 0);
 
-  GtkWidget* item_box = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* item_box = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
   if (items_ & importer::HISTORY) {
     history_ = gtk_label_new(

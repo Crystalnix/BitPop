@@ -4,13 +4,17 @@
 
 #include "content/browser/resolve_proxy_msg_helper.h"
 
-#include "content/common/child_process_messages.h"
+#include "content/browser/browser_thread_impl.h"
+#include "content/common/view_messages.h"
 #include "ipc/ipc_test_sink.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/mock_proxy_resolver.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
+using content::BrowserThreadImpl;
 
 // This ProxyConfigService always returns "http://pac" as the PAC url to use.
 class MockProxyConfigService : public net::ProxyConfigService {
@@ -27,12 +31,12 @@ class ResolveProxyMsgHelperTest : public testing::Test,
                                   public IPC::Channel::Listener {
  public:
   struct PendingResult {
-    PendingResult(int error_code,
+    PendingResult(bool result,
                   const std::string& proxy_list)
-        : error_code(error_code), proxy_list(proxy_list) {
+        : result(result), proxy_list(proxy_list) {
     }
 
-    int error_code;
+    bool result;
     std::string proxy_list;
   };
 
@@ -55,9 +59,9 @@ class ResolveProxyMsgHelperTest : public testing::Test,
   }
 
   IPC::Message* GenerateReply() {
-    int temp_int;
+    bool temp_bool;
     std::string temp_string;
-    ChildProcessHostMsg_ResolveProxy message(GURL(), &temp_int, &temp_string);
+    ViewHostMsg_ResolveProxy message(GURL(), &temp_bool, &temp_string);
     return IPC::SyncMessage::GenerateReply(&message);
   }
 
@@ -68,10 +72,8 @@ class ResolveProxyMsgHelperTest : public testing::Test,
 
  private:
   virtual bool OnMessageReceived(const IPC::Message& msg) {
-    TupleTypes<ChildProcessHostMsg_ResolveProxy::ReplyParam>::ValueTuple
-        reply_data;
-    EXPECT_TRUE(
-        ChildProcessHostMsg_ResolveProxy::ReadReplyParam(&msg, &reply_data));
+    TupleTypes<ViewHostMsg_ResolveProxy::ReplyParam>::ValueTuple reply_data;
+    EXPECT_TRUE(ViewHostMsg_ResolveProxy::ReadReplyParam(&msg, &reply_data));
     DCHECK(!pending_result_.get());
     pending_result_.reset(new PendingResult(reply_data.a, reply_data.b));
     test_sink_.ClearMessages();
@@ -79,7 +81,7 @@ class ResolveProxyMsgHelperTest : public testing::Test,
   }
 
   MessageLoop message_loop_;
-  BrowserThread io_thread_;
+  BrowserThreadImpl io_thread_;
   IPC::TestSink test_sink_;
 };
 
@@ -108,7 +110,7 @@ TEST_F(ResolveProxyMsgHelperTest, Sequential) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result1:80", pending_result()->proxy_list);
   clear_pending_result();
 
@@ -120,7 +122,7 @@ TEST_F(ResolveProxyMsgHelperTest, Sequential) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result2:80", pending_result()->proxy_list);
   clear_pending_result();
 
@@ -132,7 +134,7 @@ TEST_F(ResolveProxyMsgHelperTest, Sequential) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result3:80", pending_result()->proxy_list);
   clear_pending_result();
 }
@@ -167,7 +169,7 @@ TEST_F(ResolveProxyMsgHelperTest, QueueRequests) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result1:80", pending_result()->proxy_list);
   clear_pending_result();
 
@@ -178,7 +180,7 @@ TEST_F(ResolveProxyMsgHelperTest, QueueRequests) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result2:80", pending_result()->proxy_list);
   clear_pending_result();
 
@@ -189,7 +191,7 @@ TEST_F(ResolveProxyMsgHelperTest, QueueRequests) {
   resolver_->pending_requests()[0]->CompleteNow(net::OK);
 
   // Check result.
-  EXPECT_EQ(net::OK, pending_result()->error_code);
+  EXPECT_EQ(true, pending_result()->result);
   EXPECT_EQ("PROXY result3:80", pending_result()->proxy_list);
   clear_pending_result();
 }
@@ -232,5 +234,5 @@ TEST_F(ResolveProxyMsgHelperTest, CancelPendingRequests) {
   EXPECT_TRUE(pending_result() == NULL);
 
   // It should also be the case that msg1, msg2, msg3 were deleted by the
-  // cancellation. (Else will show up as a leak in Purify/Valgrind).
+  // cancellation. (Else will show up as a leak in Valgrind).
 }

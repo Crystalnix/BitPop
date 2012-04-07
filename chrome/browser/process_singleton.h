@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,9 +22,9 @@
 #include "base/file_path.h"
 #endif  // defined(OS_POSIX)
 
-#if defined(USE_X11)
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
 #include "base/scoped_temp_dir.h"
-#endif  // defined(USE_X11)
+#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 
 class CommandLine;
 class FilePath;
@@ -67,7 +67,7 @@ class ProcessSingleton : public base::NonThreadSafe {
   // instance.
   NotifyResult NotifyOtherProcessOrCreate();
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
   // Exposed for testing.  We use a timeout on Linux, and in tests we want
   // this timeout to be short.
   NotifyResult NotifyOtherProcessWithTimeout(const CommandLine& command_line,
@@ -76,9 +76,9 @@ class ProcessSingleton : public base::NonThreadSafe {
   NotifyResult NotifyOtherProcessWithTimeoutOrCreate(
       const CommandLine& command_line,
       int timeout_seconds);
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // Used in specific cases to let us know that there is an existing instance
   // of Chrome running with this profile. In general, you should not use this
   // function. Instead consider using NotifyOtherProcessOrCreate().
@@ -118,6 +118,10 @@ class ProcessSingleton : public base::NonThreadSafe {
     return locked_;
   }
 
+#if defined(OS_WIN)
+  LRESULT WndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+#endif
+
  private:
 #if !defined(OS_MACOSX)
   // Timeout for the current browser process to respond. 20 seconds should be
@@ -132,23 +136,12 @@ class ProcessSingleton : public base::NonThreadSafe {
   // This ugly behemoth handles startup commands sent from another process.
   LRESULT OnCopyData(HWND hwnd, const COPYDATASTRUCT* cds);
 
-  LRESULT CALLBACK WndProc(HWND hwnd,
-                           UINT message,
-                           WPARAM wparam,
-                           LPARAM lparam);
-
-  static LRESULT CALLBACK WndProcStatic(HWND hwnd,
-                                        UINT message,
-                                        WPARAM wparam,
-                                        LPARAM lparam) {
-    ProcessSingleton* msg_wnd = reinterpret_cast<ProcessSingleton*>(
-        GetWindowLongPtr(hwnd, GWLP_USERDATA));
-    return msg_wnd->WndProc(hwnd, message, wparam, lparam);
-  }
+  bool EscapeVirtualization(const FilePath& user_data_dir);
 
   HWND remote_window_;  // The HWND_MESSAGE of another browser.
   HWND window_;  // The HWND_MESSAGE window.
-#elif defined(USE_X11)
+  bool is_virtualized_;  // Stuck inside Microsoft Softricity VM environment.
+#elif defined(OS_LINUX) || defined(OS_OPENBSD)
   // Path in file system to the socket.
   FilePath socket_path_;
 

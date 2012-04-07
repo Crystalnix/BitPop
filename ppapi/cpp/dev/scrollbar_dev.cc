@@ -6,7 +6,6 @@
 
 #include "ppapi/cpp/dev/scrollbar_dev.h"
 
-#include "ppapi/cpp/common.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/module_impl.h"
@@ -29,7 +28,7 @@ Scrollbar_Dev::Scrollbar_Dev(const Instance& instance, bool vertical) {
   if (!has_interface<PPB_Scrollbar_Dev>())
     return;
   PassRefFromConstructor(get_interface<PPB_Scrollbar_Dev>()->Create(
-      instance.pp_instance(), BoolToPPBool(vertical)));
+      instance.pp_instance(), PP_FromBool(vertical)));
 }
 
 Scrollbar_Dev::Scrollbar_Dev(const Scrollbar_Dev& other)
@@ -39,7 +38,14 @@ Scrollbar_Dev::Scrollbar_Dev(const Scrollbar_Dev& other)
 uint32_t Scrollbar_Dev::GetThickness() {
   if (!has_interface<PPB_Scrollbar_Dev>())
     return 0;
-  return get_interface<PPB_Scrollbar_Dev>()->GetThickness();
+  return get_interface<PPB_Scrollbar_Dev>()->GetThickness(pp_resource());
+}
+
+bool Scrollbar_Dev::IsOverlay() {
+  if (!has_interface<PPB_Scrollbar_Dev>())
+    return false;
+  return
+      PP_ToBool(get_interface<PPB_Scrollbar_Dev>()->IsOverlay(pp_resource()));
 }
 
 uint32_t Scrollbar_Dev::GetValue() {

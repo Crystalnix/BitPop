@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 
 #include "chrome/tools/profiles/thumbnail-inl.h"
 
-#include "app/app_paths.h"
 #include "base/at_exit.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
@@ -23,15 +22,17 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/thumbnail_score.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/browser/browser_thread_impl.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 
 using base::Time;
+using content::BrowserThread;
 
 // Addition types data can be generated for. By default only urls/visits are
 // added.
@@ -138,17 +139,17 @@ void InsertURLBatch(Profile* profile,
 
   printf("Inserting %d URLs...\n", batch_size);
   GURL previous_url;
-  PageTransition::Type transition = PageTransition::TYPED;
+  content::PageTransition transition = content::PAGE_TRANSITION_TYPED;
   const int end_page_id = page_id + batch_size;
   history::TopSites* top_sites = profile->GetTopSites();
   for (; page_id < end_page_id; ++page_id) {
     // Randomly decide whether this new URL simulates following a link or
     // whether it's a jump to a new URL.
     if (!previous_url.is_empty() && RandomFloat() < kFollowLinkProbability) {
-      transition = PageTransition::LINK;
+      transition = content::PAGE_TRANSITION_LINK;
     } else {
       previous_url = GURL();
-      transition = PageTransition::TYPED;
+      transition = content::PAGE_TRANSITION_TYPED;
     }
 
     // Pick a URL, either newly at random or from our list of previously
@@ -179,13 +180,11 @@ void InsertURLBatch(Profile* profile,
     history_service->SetPageTitle(url, ConstructRandomTitle());
     if (types & FULL_TEXT)
       history_service->SetPageContents(url, ConstructRandomPage());
-    if (types & TOP_SITES) {
+    if (types & TOP_SITES && top_sites) {
       SkBitmap* bitmap = (RandomInt(0, 2) == 0) ? google_bitmap.get() :
                                                   weewar_bitmap.get();
-      if (top_sites)
-        top_sites->SetPageThumbnail(url, *bitmap, score);
-      else
-        history_service->SetPageThumbnail(url, *bitmap, score);
+      gfx::Image image(new SkBitmap(*bitmap));
+      top_sites->SetPageThumbnail(url, &image, score);
     }
 
     previous_url = url;
@@ -208,7 +207,8 @@ int main(int argc, const char* argv[]) {
     types |= FULL_TEXT;
 
   // We require two arguments: urlcount and profiledir.
-  if (cl->args().size() < 2) {
+  const CommandLine::StringVector& args = cl->GetArgs();
+  if (args.size() < 2) {
     printf("usage: %s [--top-sites] [--full-text] <urlcount> "
            "<profiledir>\n", argv[0]);
     printf("\n  --top-sites Generate thumbnails\n");
@@ -217,8 +217,8 @@ int main(int argc, const char* argv[]) {
   }
 
   int url_count = 0;
-  base::StringToInt(WideToUTF8(cl->args()[0]), &url_count);
-  FilePath dst_dir(cl->args()[1]);
+  base::StringToInt(WideToUTF8(args[0]), &url_count);
+  FilePath dst_dir(args[1]);
   if (!dst_dir.IsAbsolute()) {
     FilePath current_dir;
     file_util::GetCurrentDirectory(&current_dir);
@@ -233,13 +233,13 @@ int main(int argc, const char* argv[]) {
   icu_util::Initialize();
 
   chrome::RegisterPathProvider();
-  app::RegisterPathProvider();
   ui::RegisterPathProvider();
-  ResourceBundle::InitSharedInstance("en-US");
-  NotificationService notification_service;
+  ResourceBundle::InitSharedInstanceWithLocale("en-US");
+  scoped_ptr<content::NotificationService> notification_service(
+      content::NotificationService::Create());
   MessageLoopForUI message_loop;
-  BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-  BrowserThread db_thread(BrowserThread::DB, &message_loop);
+  content::BrowserThreadImpl ui_thread(BrowserThread::UI, &message_loop);
+  content::BrowserThreadImpl db_thread(BrowserThread::DB, &message_loop);
   TestingProfile profile;
   profile.CreateHistoryService(false, false);
   if (types & TOP_SITES) {
@@ -269,7 +269,7 @@ int main(int argc, const char* argv[]) {
 
   file_util::FileEnumerator file_iterator(
       profile.GetPath(), false,
-      static_cast<file_util::FileEnumerator::FILE_TYPE>(
+      static_cast<file_util::FileEnumerator::FileType>(
           file_util::FileEnumerator::FILES));
   FilePath path = file_iterator.Next();
   while (!path.empty()) {

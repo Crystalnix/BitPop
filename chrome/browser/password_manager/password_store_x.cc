@@ -8,14 +8,19 @@
 #include <map>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_store_change.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 
+using content::BrowserThread;
 using std::vector;
-using webkit_glue::PasswordForm;
+using webkit::forms::PasswordForm;
 
 PasswordStoreX::PasswordStoreX(LoginDatabase* login_db,
                                Profile* profile,
@@ -33,10 +38,10 @@ void PasswordStoreX::AddLoginImpl(const PasswordForm& form) {
   if (use_native_backend() && backend_->AddLogin(form)) {
     PasswordStoreChangeList changes;
     changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
-    NotificationService::current()->Notify(
-        NotificationType::LOGINS_CHANGED,
-        Source<PasswordStore>(this),
-        Details<PasswordStoreChangeList>(&changes));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_LOGINS_CHANGED,
+        content::Source<PasswordStore>(this),
+        content::Details<PasswordStoreChangeList>(&changes));
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::AddLoginImpl(form);
@@ -48,10 +53,10 @@ void PasswordStoreX::UpdateLoginImpl(const PasswordForm& form) {
   if (use_native_backend() && backend_->UpdateLogin(form)) {
     PasswordStoreChangeList changes;
     changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE, form));
-    NotificationService::current()->Notify(
-        NotificationType::LOGINS_CHANGED,
-        Source<PasswordStore>(this),
-        Details<PasswordStoreChangeList>(&changes));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_LOGINS_CHANGED,
+        content::Source<PasswordStore>(this),
+        content::Details<PasswordStoreChangeList>(&changes));
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::UpdateLoginImpl(form);
@@ -63,10 +68,10 @@ void PasswordStoreX::RemoveLoginImpl(const PasswordForm& form) {
   if (use_native_backend() && backend_->RemoveLogin(form)) {
     PasswordStoreChangeList changes;
     changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE, form));
-    NotificationService::current()->Notify(
-        NotificationType::LOGINS_CHANGED,
-        Source<PasswordStore>(this),
-        Details<PasswordStoreChangeList>(&changes));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_LOGINS_CHANGED,
+        content::Source<PasswordStore>(this),
+        content::Details<PasswordStoreChangeList>(&changes));
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::RemoveLoginImpl(form);
@@ -87,10 +92,10 @@ void PasswordStoreX::RemoveLoginsCreatedBetweenImpl(
       changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
                                             **it));
     }
-    NotificationService::current()->Notify(
-        NotificationType::LOGINS_CHANGED,
-        Source<PasswordStore>(this),
-        Details<PasswordStoreChangeList>(&changes));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_LOGINS_CHANGED,
+        content::Source<PasswordStore>(this),
+        content::Details<PasswordStoreChangeList>(&changes));
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(delete_begin,
@@ -118,7 +123,11 @@ void PasswordStoreX::GetLoginsImpl(GetLoginsRequest* request,
   if (use_native_backend() && backend_->GetLogins(form, &request->value)) {
     SortLoginsByOrigin(&request->value);
     ForwardLoginsResult(request);
-    allow_fallback_ = false;
+    // The native backend may succeed and return no data even while locked, if
+    // the query did not match anything stored. So we continue to allow fallback
+    // until we perform a write operation, or until a read returns actual data.
+    if (request->value.size() > 0)
+      allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::GetLoginsImpl(request, form);
   } else {
@@ -133,7 +142,9 @@ void PasswordStoreX::GetAutofillableLoginsImpl(GetLoginsRequest* request) {
       backend_->GetAutofillableLogins(&request->value)) {
     SortLoginsByOrigin(&request->value);
     ForwardLoginsResult(request);
-    allow_fallback_ = false;
+    // See GetLoginsImpl() for why we disallow fallback conditionally here.
+    if (request->value.size() > 0)
+      allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::GetAutofillableLoginsImpl(request);
   } else {
@@ -148,7 +159,9 @@ void PasswordStoreX::GetBlacklistLoginsImpl(GetLoginsRequest* request) {
       backend_->GetBlacklistLogins(&request->value)) {
     SortLoginsByOrigin(&request->value);
     ForwardLoginsResult(request);
-    allow_fallback_ = false;
+    // See GetLoginsImpl() for why we disallow fallback conditionally here.
+    if (request->value.size() > 0)
+      allow_fallback_ = false;
   } else if (allow_default_store()) {
     PasswordStoreDefault::GetBlacklistLoginsImpl(request);
   } else {
@@ -160,7 +173,9 @@ void PasswordStoreX::GetBlacklistLoginsImpl(GetLoginsRequest* request) {
 bool PasswordStoreX::FillAutofillableLogins(vector<PasswordForm*>* forms) {
   CheckMigration();
   if (use_native_backend() && backend_->GetAutofillableLogins(forms)) {
-    allow_fallback_ = false;
+    // See GetLoginsImpl() for why we disallow fallback conditionally here.
+    if (forms->size() > 0)
+      allow_fallback_ = false;
     return true;
   }
   if (allow_default_store())
@@ -171,7 +186,9 @@ bool PasswordStoreX::FillAutofillableLogins(vector<PasswordForm*>* forms) {
 bool PasswordStoreX::FillBlacklistLogins(vector<PasswordForm*>* forms) {
   CheckMigration();
   if (use_native_backend() && backend_->GetBlacklistLogins(forms)) {
-    allow_fallback_ = false;
+    // See GetLoginsImpl() for why we disallow fallback conditionally here.
+    if (forms->size() > 0)
+      allow_fallback_ = false;
     return true;
   }
   if (allow_default_store())
@@ -192,7 +209,7 @@ void PasswordStoreX::CheckMigration() {
     // store is working. But if there is nothing to migrate, the "migration"
     // can succeed even when the native store would fail. In this case we
     // allow a later fallback to the default store. Once any later operation
-    // succeeds on the native store, we will no longer allow it.
+    // succeeds on the native store, we will no longer allow fallback.
     allow_fallback_ = true;
   } else {
     LOG(WARNING) << "Native password store migration failed! " <<
@@ -228,22 +245,6 @@ ssize_t PasswordStoreX::MigrateLogins() {
         break;
       }
     }
-    if (forms.empty()) {
-      // If there's nothing to migrate, then we try to insert a dummy login form
-      // just to force the native store to unlock if it was locked. We delete it
-      // right away if we are successful. If the first operation we try to do is
-      // a read, then in some cases this is just an error rather than an action
-      // that causes the native store to prompt the user to unlock.
-      // TODO(mdm): this means we no longer need the allow_fallback mechanism.
-      // Remove it once this preemptive unlock by write is baked for a while.
-      PasswordForm dummy;
-      dummy.origin = GURL("http://www.example.com/force-keyring-unlock");
-      dummy.signon_realm = "www.example.com";
-      if (backend_->AddLogin(dummy))
-        backend_->RemoveLogin(dummy);
-      else
-        ok = false;
-    }
     if (ok) {
       for (size_t i = 0; i < forms.size(); ++i) {
         // If even one of these calls to RemoveLoginImpl() succeeds, then we
@@ -265,3 +266,39 @@ ssize_t PasswordStoreX::MigrateLogins() {
   STLDeleteElements(&forms);
   return result;
 }
+
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
+// static
+void PasswordStoreX::RegisterUserPrefs(PrefService* prefs) {
+  // Normally we should be on the UI thread here, but in tests we might not.
+  prefs->RegisterBooleanPref(prefs::kPasswordsUseLocalProfileId,
+                             false,  // default: passwords don't use local ids
+                             PrefService::UNSYNCABLE_PREF);
+}
+
+// static
+bool PasswordStoreX::PasswordsUseLocalProfileId(PrefService* prefs) {
+  // Normally we should be on the UI thread here, but in tests we might not.
+  return prefs->GetBoolean(prefs::kPasswordsUseLocalProfileId);
+}
+
+namespace {
+// This function is a hack to do something not entirely thread safe: the pref
+// service comes from the UI thread, but it's not ref counted. We keep a pointer
+// to it on the DB thread, and need to invoke a method on the UI thread. This
+// function does that for us without requiring ref counting the pref service.
+// TODO(mdm): Fix this if it becomes a problem. Given that this function will
+// be called once ever per profile, it probably will not cause a problem...
+void UISetPasswordsUseLocalProfileId(PrefService* prefs) {
+  prefs->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
+}
+}  // anonymous namespace
+
+// static
+void PasswordStoreX::SetPasswordsUseLocalProfileId(PrefService* prefs) {
+  // This method should work on any thread, but we expect the DB thread.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
+  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                          base::Bind(&UISetPasswordsUseLocalProfileId, prefs));
+}
+#endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)

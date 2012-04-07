@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,26 +10,22 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/tab_contents/render_view_host_delegate_helper.h"
-#include "content/browser/renderer_host/render_view_host_delegate.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_view_host_delegate.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class Balloon;
 class Browser;
-class Profile;
+
+namespace content {
 class SiteInstance;
-struct RendererPreferences;
-struct WebPreferences;
+};
 
-namespace IPC {
-class Message;
-}
-
-class BalloonHost : public RenderViewHostDelegate,
-                    public RenderViewHostDelegate::View,
+class BalloonHost : public content::WebContentsDelegate,
+                    public content::WebContentsObserver,
                     public ExtensionFunctionDispatcher::Delegate {
  public:
   explicit BalloonHost(Balloon* balloon);
@@ -41,96 +37,40 @@ class BalloonHost : public RenderViewHostDelegate,
   void Shutdown();
 
   // ExtensionFunctionDispatcher::Delegate overrides.
-  virtual Browser* GetBrowser();
-  virtual gfx::NativeView GetNativeViewOfHost();
-  virtual TabContents* GetAssociatedTabContents() const;
-
-  RenderViewHost* render_view_host() const { return render_view_host_; }
+  virtual Browser* GetBrowser() OVERRIDE;
+  virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
 
   const string16& GetSource() const;
 
-  // RenderViewHostDelegate overrides.
-  virtual WebPreferences GetWebkitPrefs();
-  virtual SiteInstance* GetSiteInstance() const;
-  virtual Profile* GetProfile() const;
-  virtual const GURL& GetURL() const;
-  virtual void Close(RenderViewHost* render_view_host);
-  virtual void RenderViewCreated(RenderViewHost* render_view_host);
-  virtual void RenderViewReady(RenderViewHost* render_view_host);
-  virtual void RenderViewGone(RenderViewHost* render_view_host,
-                              base::TerminationStatus status,
-                              int error_code);
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
-                           int32 page_id, const std::wstring& title) {}
-  virtual int GetBrowserWindowID() const;
-  virtual ViewType::Type GetRenderViewType() const;
-  virtual RenderViewHostDelegate::View* GetViewDelegate();
-
-  // RenderViewHostDelegate::View methods. Only the ones for opening new
-  // windows are currently implemented.
-  virtual void CreateNewWindow(
-      int route_id,
-      const ViewHostMsg_CreateWindow_Params& params);
-  virtual void CreateNewWidget(int route_id, WebKit::WebPopupType popup_type) {}
-  virtual void CreateNewFullscreenWidget(int route_id) {}
-  virtual void ShowCreatedWindow(int route_id,
-                                 WindowOpenDisposition disposition,
-                                 const gfx::Rect& initial_pos,
-                                 bool user_gesture);
-  virtual void ShowCreatedWidget(int route_id,
-                                 const gfx::Rect& initial_pos) {}
-  virtual void ShowCreatedFullscreenWidget(int route_id) {}
-  virtual void ShowContextMenu(const ContextMenuParams& params) {}
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<WebMenuItem>& items,
-                             bool right_aligned) {}
-  virtual void StartDragging(const WebDropData& drop_data,
-                             WebKit::WebDragOperationsMask allowed_ops) {}
-  virtual void StartDragging(const WebDropData&,
-                             WebKit::WebDragOperationsMask,
-                             const SkBitmap&,
-                             const gfx::Point&) {}
-  virtual void UpdateDragCursor(WebKit::WebDragOperation operation) {}
-  virtual void GotFocus() {}
-  virtual void TakeFocus(bool reverse) {}
-  virtual void LostCapture() {}
-  virtual void Activate() {}
-  virtual void Deactivate() {}
-  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {}
-  virtual void HandleMouseMove() {}
-  virtual void HandleMouseDown();
-  virtual void HandleMouseLeave() {}
-  virtual void HandleMouseUp() {}
-  virtual void HandleMouseActivate() {}
-  virtual void UpdatePreferredSize(const gfx::Size& pref_size);
-  virtual RendererPreferences GetRendererPrefs(Profile* profile) const;
+  content::WebContents* web_contents() const { return web_contents_.get(); }
 
   // Enable Web UI. This has to be called before renderer is created.
   void EnableWebUI();
-
-  virtual void UpdateInspectorSetting(const std::string& key,
-                                      const std::string& value);
-  virtual void ClearInspectorSettings();
 
   // Returns whether the associated render view is ready. Used only for testing.
   bool IsRenderViewReady() const;
 
  protected:
   virtual ~BalloonHost();
-  // Must override in platform specific implementations.
-  virtual void InitRenderWidgetHostView() = 0;
-  virtual RenderWidgetHostView* render_widget_host_view() const = 0;
 
-  // Owned pointer to the host for the renderer process.
-  RenderViewHost* render_view_host_;
+  scoped_ptr<content::WebContents> web_contents_;
 
  private:
-  // RenderViewHostDelegate
+  // content::WebContentsDelegate implementation:
+  virtual void CloseContents(content::WebContents* source) OVERRIDE;
+  virtual void HandleMouseDown() OVERRIDE;
+  virtual void UpdatePreferredSize(content::WebContents* source,
+                                   const gfx::Size& pref_size) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture) OVERRIDE;
+
+  // content::WebContentsObserver implementation:
+  virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
+  virtual void RenderViewReady() OVERRIDE;
+  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers
@@ -152,10 +92,7 @@ class BalloonHost : public RenderViewHostDelegate,
   bool should_notify_on_disconnect_;
 
   // Site instance for the balloon/profile, to be used for opening new links.
-  scoped_refptr<SiteInstance> site_instance_;
-
-  // Common implementations of some RenderViewHostDelegate::View methods.
-  RenderViewHostDelegateViewHelper delegate_view_helper_;
+  scoped_refptr<content::SiteInstance> site_instance_;
 
   // A flag to enable Web UI.
   bool enable_web_ui_;

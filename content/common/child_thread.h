@@ -8,12 +8,13 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/shared_memory.h"
+#include "content/common/content_export.h"
 #include "content/common/message_router.h"
 #include "webkit/glue/resource_loader_bridge.h"
 
 class FileSystemDispatcher;
 class MessageLoop;
-class NotificationService;
 class QuotaDispatcher;
 class ResourceDispatcher;
 class SocketStreamDispatcher;
@@ -24,8 +25,8 @@ class SyncMessageFilter;
 }
 
 // The main thread of a child process derives from this class.
-class ChildThread : public IPC::Channel::Listener,
-                    public IPC::Message::Sender {
+class CONTENT_EXPORT ChildThread : public IPC::Channel::Listener,
+                                   public IPC::Message::Sender {
  public:
   // Creates the thread.
   ChildThread();
@@ -34,7 +35,7 @@ class ChildThread : public IPC::Channel::Listener,
   virtual ~ChildThread();
 
   // IPC::Message::Sender implementation:
-  virtual bool Send(IPC::Message* msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // See documentation on MessageRouter for AddRoute and RemoveRoute
   void AddRoute(int32 routing_id, IPC::Channel::Listener* listener);
@@ -48,6 +49,12 @@ class ChildThread : public IPC::Channel::Listener,
   // Tests can override this method if they want a custom loading behavior.
   virtual webkit_glue::ResourceLoaderBridge* CreateBridge(
       const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info);
+
+  // Allocates a block of shared memory of the given size and
+  // maps in into the address space. Returns NULL of failure.
+  // Note: On posix, this requires a sync IPC to the browser process,
+  // but on windows the child process directly allocates the block.
+  base::SharedMemory* AllocateSharedMemory(size_t buf_size);
 
   ResourceDispatcher* resource_dispatcher();
 
@@ -79,12 +86,17 @@ class ChildThread : public IPC::Channel::Listener,
   void OnProcessFinalRelease();
 
   virtual bool OnControlMessageReceived(const IPC::Message& msg);
-  virtual void OnAskBeforeShutdown();
   virtual void OnShutdown();
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   virtual void OnSetIPCLoggingEnabled(bool enable);
 #endif
+
+  virtual void OnSetProfilerStatus(bool enable);
+  virtual void OnGetChildProfilerData(int sequence_number,
+                                      const std::string& process_type);
+
+  virtual void OnDumpHandles();
 
   void set_on_channel_error_called(bool on_channel_error_called) {
     on_channel_error_called_ = on_channel_error_called;
@@ -94,8 +106,8 @@ class ChildThread : public IPC::Channel::Listener,
   void Init();
 
   // IPC::Channel::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg);
-  virtual void OnChannelError();
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
   std::string channel_name_;
   scoped_ptr<IPC::SyncChannel> channel_;
@@ -112,18 +124,11 @@ class ChildThread : public IPC::Channel::Listener,
   // Handles SocketStream for this process.
   scoped_ptr<SocketStreamDispatcher> socket_stream_dispatcher_;
 
-  // If true, checks with the browser process before shutdown.  This avoids race
-  // conditions if the process refcount is 0 but there's an IPC message inflight
-  // that would addref it.
-  bool check_with_browser_before_shutdown_;
-
   // The OnChannelError() callback was invoked - the channel is dead, don't
   // attempt to communicate.
   bool on_channel_error_called_;
 
   MessageLoop* message_loop_;
-
-  scoped_ptr<NotificationService> notification_service_;
 
   scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
 

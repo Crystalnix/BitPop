@@ -5,15 +5,13 @@
 #ifndef WEBKIT_BLOB_BLOB_URL_REQUEST_JOB_H_
 #define WEBKIT_BLOB_BLOB_URL_REQUEST_JOB_H_
 
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/platform_file.h"
-#include "base/task.h"
-#include "net/base/completion_callback.h"
 #include "net/http/http_byte_range.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/blob/blob_data.h"
+#include "webkit/blob/blob_export.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -27,7 +25,7 @@ class FileStream;
 namespace webkit_blob {
 
 // A request job that handles reading blob URLs.
-class BlobURLRequestJob : public net::URLRequestJob {
+class BLOB_EXPORT BlobURLRequestJob : public net::URLRequestJob {
  public:
   BlobURLRequestJob(net::URLRequest* request,
                     BlobData* blob_data,
@@ -35,13 +33,16 @@ class BlobURLRequestJob : public net::URLRequestJob {
   virtual ~BlobURLRequestJob();
 
   // net::URLRequestJob methods.
-  virtual void Start();
-  virtual void Kill();
-  virtual bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read);
-  virtual bool GetMimeType(std::string* mime_type) const;
-  virtual void GetResponseInfo(net::HttpResponseInfo* info);
-  virtual int GetResponseCode() const;
-  virtual void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers);
+  virtual void Start() OVERRIDE;
+  virtual void Kill() OVERRIDE;
+  virtual bool ReadRawData(net::IOBuffer* buf,
+                           int buf_size,
+                           int* bytes_read) OVERRIDE;
+  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
+  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
+  virtual int GetResponseCode() const OVERRIDE;
+  virtual void SetExtraRequestHeaders(
+      const net::HttpRequestHeaders& headers) OVERRIDE;
 
  private:
   void CloseStream();
@@ -69,10 +70,9 @@ class BlobURLRequestJob : public net::URLRequestJob {
                bool created);
   void DidRead(int result);
 
-  base::ScopedCallbackFactory<BlobURLRequestJob> callback_factory_;
+  base::WeakPtrFactory<BlobURLRequestJob> weak_factory_;
   scoped_refptr<BlobData> blob_data_;
   scoped_refptr<base::MessageLoopProxy> file_thread_proxy_;
-  net::CompletionCallbackImpl<BlobURLRequestJob> io_callback_;
   std::vector<int64> item_length_list_;
   scoped_ptr<net::FileStream> stream_;
   size_t item_index_;
@@ -89,7 +89,6 @@ class BlobURLRequestJob : public net::URLRequestJob {
   bool byte_range_set_;
   net::HttpByteRange byte_range_;
   scoped_ptr<net::HttpResponseInfo> response_info_;
-  ScopedRunnableMethodFactory<BlobURLRequestJob> method_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BlobURLRequestJob);
 };

@@ -8,10 +8,11 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 
 class AccessibilityControlInfo;
 class AccessibilityTextBoxInfo;
@@ -35,22 +36,19 @@ enum EarconType {
 
 // Class that handles the accessibility notifications and generates
 // appropriate spoken/audio feedback.
-class WizardAccessibilityHandler : public NotificationObserver {
+class WizardAccessibilityHandler : public content::NotificationObserver {
  public:
   WizardAccessibilityHandler() { }
 
-  // Speaks the specified string.
-  void Speak(const char* speak_str, bool queue, bool interruptible);
-
  private:
-  // Override from NotificationObserver.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Override from content::NotificationObserver.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Get text to speak and an earcon identifier (which may be NONE) for any
   // accessibility event.
-  void DescribeAccessibilityEvent(NotificationType event_type,
+  void DescribeAccessibilityEvent(int event_type,
                                   const AccessibilityControlInfo* control_info,
                                   std::string* out_spoken_description,
                                   EarconType* out_earcon);

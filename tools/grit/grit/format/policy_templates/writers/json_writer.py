@@ -2,9 +2,21 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-
+from textwrap import TextWrapper
 from xml.dom import minidom
 from grit.format.policy_templates.writers import template_writer
+
+
+TEMPLATE_HEADER="""\
+// Policy template for Linux.
+// Uncomment the policies you wish to activate and change their values to
+// something useful for your case. The provided values are for reference only
+// and do not provide meaningful defaults!
+{"""
+
+
+HEADER_DELIMETER="""\
+  //-------------------------------------------------------------------------"""
 
 
 def GetWriter(config):
@@ -48,17 +60,24 @@ class JsonWriter(template_writer.TemplateWriter):
     else:
       raise Exception('unknown policy type %s:' % policy['type'])
 
-    # Add comme to the end of the previous line.
+    # Add comma to the end of the previous line.
     if not self._first_written:
-      self._out[-1] += ','
+      self._out[-2] += ','
 
-    line = '  "%s": %s' % (policy['name'], example_value_str)
+    line = '  // %s' % policy['caption']
     self._out.append(line)
+    self._out.append(HEADER_DELIMETER)
+    description = self._text_wrapper.wrap(policy['desc'])
+    self._out += description;
+    line = '  //"%s": %s' % (policy['name'], example_value_str)
+    self._out.append('')
+    self._out.append(line)
+    self._out.append('')
 
     self._first_written = False
 
   def BeginTemplate(self):
-    self._out.append('{')
+    self._out.append(TEMPLATE_HEADER)
 
   def EndTemplate(self):
     self._out.append('}')
@@ -67,6 +86,12 @@ class JsonWriter(template_writer.TemplateWriter):
     self._out = []
     # The following boolean member is true until the first policy is written.
     self._first_written = True
+    # Create the TextWrapper object once.
+    self._text_wrapper = TextWrapper(
+        initial_indent = '  // ', 
+        subsequent_indent = '  // ', 
+        break_long_words = False,
+        width = 80)
 
   def GetTemplateText(self):
     return '\n'.join(self._out)

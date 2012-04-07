@@ -7,8 +7,9 @@
 #pragma once
 
 class BaseTab;
-class BaseTabStrip;
 class GURL;
+class TabStrip;
+class TabStripSelectionModel;
 
 namespace gfx {
 class Point;
@@ -19,6 +20,9 @@ class Point;
 class TabStripController {
  public:
   virtual ~TabStripController() {}
+
+  // Returns the selection model of the tabstrip.
+  virtual const TabStripSelectionModel& GetSelectionModel() = 0;
 
   // Returns the number of tabs in the model.
   virtual int GetCount() const = 0;
@@ -77,7 +81,7 @@ class TabStripController {
 
   // Return true if this tab strip is compatible with the provided tab strip.
   // Compatible tab strips can transfer tabs during drag and drop.
-  virtual bool IsCompatibleWith(BaseTabStrip* other) const = 0;
+  virtual bool IsCompatibleWith(TabStrip* other) const = 0;
 
   // Creates the new tab.
   virtual void CreateNewTab() = 0;
@@ -85,6 +89,9 @@ class TabStripController {
   // Informs that an active tab is selected when already active (ie - clicked
   // when already active/foreground).
   virtual void ClickActiveTab(int index) = 0;
+
+  // Returns true if the tab strip is in an incognito window.
+  virtual bool IsIncognito() = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_STRIP_CONTROLLER_H_

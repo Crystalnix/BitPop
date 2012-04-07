@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,21 +11,31 @@ class GLSurface;
 // Encapsulates a CGL OpenGL context.
 class GLContextCGL : public GLContext {
  public:
-  GLContextCGL();
+  explicit GLContextCGL(GLShareGroup* share_group);
   virtual ~GLContextCGL();
 
   // Implement GLContext.
-  virtual bool Initialize(GLContext* shared_context,
-                          GLSurface* compatible_surface);
-  virtual void Destroy();
-  virtual bool MakeCurrent(GLSurface* surface);
-  virtual void ReleaseCurrent(GLSurface* surface);
-  virtual bool IsCurrent(GLSurface* surface);
-  virtual void* GetHandle();
-  virtual void SetSwapInterval(int interval);
+  virtual bool Initialize(
+      GLSurface* compatible_surface, GpuPreference gpu_preference) OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
+  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
+  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual void SetSwapInterval(int interval) OVERRIDE;
+
+  // Expose ForceUseOfDiscreteGPU only to GLContext implementation.
+  friend class GLContext;
 
  private:
   void* context_;
+  GpuPreference gpu_preference_;
+
+  GpuPreference GetGpuPreference();
+
+  // Helper for dual-GPU support on systems where this is necessary
+  // for stability reasons.
+  static void ForceUseOfDiscreteGPU();
 
   DISALLOW_COPY_AND_ASSIGN(GLContextCGL);
 };

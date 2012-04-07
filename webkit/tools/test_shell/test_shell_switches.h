@@ -25,7 +25,6 @@ extern const char kPlaybackMode[];
 extern const char kNoEvents[];
 extern const char kDumpStatsTable[];
 extern const char kCacheDir[];
-extern const char kDebugMemoryInUse[];
 extern const char kEnableFileCookies[];
 extern const char kAllowScriptsToCloseWindows[];
 extern const char kCheckLayoutTestSystemDeps[];
@@ -35,6 +34,7 @@ extern const char kHeapProfiler[];
 extern const char kAllowExternalPages[];
 extern const char kEnableAccel2DCanvas[];
 extern const char kEnableAccelCompositing[];
+extern const char kDartFlags[];
 
 }  // namespace test_shell
 

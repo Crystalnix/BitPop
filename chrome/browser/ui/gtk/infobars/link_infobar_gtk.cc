@@ -9,14 +9,15 @@
 
 // LinkInfoBarDelegate ---------------------------------------------------------
 
-InfoBar* LinkInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
-  return new LinkInfoBarGtk(this);
+InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
+  return new LinkInfoBarGtk(owner, this);
 }
 
 // LinkInfoBarGtk --------------------------------------------------------------
 
-LinkInfoBarGtk::LinkInfoBarGtk(LinkInfoBarDelegate* delegate)
-    : InfoBar(delegate) {
+LinkInfoBarGtk::LinkInfoBarGtk(InfoBarTabHelper* owner,
+                               LinkInfoBarDelegate* delegate)
+    : InfoBarGtk(owner, delegate) {
   size_t link_offset;
   string16 display_text = delegate->GetMessageTextWithOffset(&link_offset);
   string16 link_text = delegate->GetLinkText();
@@ -29,11 +30,10 @@ LinkInfoBarGtk::~LinkInfoBarGtk() {
 
 void LinkInfoBarGtk::OnLinkClicked(GtkWidget* button) {
   if (GetDelegate()->LinkClicked(
-        gtk_util::DispositionForCurrentButtonPressEvent())) {
-    RemoveInfoBar();
-  }
+        gtk_util::DispositionForCurrentButtonPressEvent()))
+    RemoveSelf();
 }
 
 LinkInfoBarDelegate* LinkInfoBarGtk::GetDelegate() {
-  return delegate_->AsLinkInfoBarDelegate();
+  return delegate()->AsLinkInfoBarDelegate();
 }

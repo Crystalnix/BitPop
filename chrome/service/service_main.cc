@@ -7,28 +7,29 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/service_process_util.h"
 #include "chrome/service/service_process.h"
-#include "content/common/main_function_params.h"
+#include "content/public/common/main_function_params.h"
 
 #if defined(OS_WIN)
 #include "content/common/sandbox_policy.h"
+#include "sandbox/src/sandbox_types.h"
 #elif defined(OS_MACOSX)
-#include "content/common/chrome_application_mac.h"
+#include "chrome/service/chrome_service_application_mac.h"
 #endif  // defined(OS_WIN)
 
 // Mainline routine for running as the service process.
-int ServiceProcessMain(const MainFunctionParams& parameters) {
+int ServiceProcessMain(const content::MainFunctionParams& parameters) {
+#if defined(OS_MACOSX)
+  chrome_service_application_mac::RegisterServiceApp();
+#endif
+
   MessageLoopForUI main_message_loop;
   main_message_loop.set_thread_name("MainThread");
-  if (parameters.command_line_.HasSwitch(switches::kWaitForDebugger)) {
+  if (parameters.command_line.HasSwitch(switches::kWaitForDebugger)) {
     base::debug::WaitForDebugger(60, true);
   }
 
   VLOG(1) << "Service process launched: "
-          << parameters.command_line_.command_line_string();
-
-#if defined(OS_MACOSX)
-  chrome_application_mac::RegisterCrApp();
-#endif
+          << parameters.command_line.GetCommandLineString();
 
   base::PlatformThread::SetName("CrServiceMain");
 
@@ -39,14 +40,14 @@ int ServiceProcessMain(const MainFunctionParams& parameters) {
 
 #if defined(OS_WIN)
   sandbox::BrokerServices* broker_services =
-      parameters.sandbox_info_.BrokerServices();
+      parameters.sandbox_info->broker_services;
   if (broker_services)
     sandbox::InitBrokerServices(broker_services);
 #endif  // defined(OS_WIN)
 
   ServiceProcess service_process;
   if (service_process.Initialize(&main_message_loop,
-                                 parameters.command_line_,
+                                 parameters.command_line,
                                  state.release())) {
     MessageLoop::current()->Run();
   } else {

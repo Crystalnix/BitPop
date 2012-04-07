@@ -4,12 +4,11 @@
 
 #include "chrome/browser/ui/views/tabs/native_view_photobooth_win.h"
 
-#include "content/browser/tab_contents/tab_contents.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
-#include "views/widget/widget.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -110,7 +109,7 @@ void NativeViewPhotoboothWin::PaintScreenshotIntoCanvas(
          SRCCOPY);
   // Windows screws up the alpha channel on all text it draws, and so we need
   // to call makeOpaque _after_ the blit to correct for this.
-  skia::MakeOpaque(canvas->AsCanvasSkia(), target_bounds.x(),
+  skia::MakeOpaque(canvas->GetSkCanvas(), target_bounds.x(),
                    target_bounds.y(), target_bounds.width(),
                    target_bounds.height());
   ReleaseDC(current_hwnd_, source_dc);

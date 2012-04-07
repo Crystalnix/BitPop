@@ -5,15 +5,20 @@
 #include "chrome/browser/sync/syncable/model_type.h"
 
 #include "base/metrics/histogram.h"
+#include "base/string_split.h"
 #include "base/values.h"
 #include "chrome/browser/sync/engine/syncproto.h"
+#include "chrome/browser/sync/protocol/app_notification_specifics.pb.h"
+#include "chrome/browser/sync/protocol/app_setting_specifics.pb.h"
 #include "chrome/browser/sync/protocol/app_specifics.pb.h"
 #include "chrome/browser/sync/protocol/autofill_specifics.pb.h"
 #include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
+#include "chrome/browser/sync/protocol/extension_setting_specifics.pb.h"
 #include "chrome/browser/sync/protocol/extension_specifics.pb.h"
 #include "chrome/browser/sync/protocol/nigori_specifics.pb.h"
 #include "chrome/browser/sync/protocol/password_specifics.pb.h"
 #include "chrome/browser/sync/protocol/preference_specifics.pb.h"
+#include "chrome/browser/sync/protocol/search_engine_specifics.pb.h"
 #include "chrome/browser/sync/protocol/session_specifics.pb.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/protocol/theme_specifics.pb.h"
@@ -51,11 +56,23 @@ void AddDefaultExtensionValue(syncable::ModelType datatype,
     case NIGORI:
       specifics->MutableExtension(sync_pb::nigori);
       break;
+    case SEARCH_ENGINES:
+      specifics->MutableExtension(sync_pb::search_engine);
+      break;
     case SESSIONS:
       specifics->MutableExtension(sync_pb::session);
       break;
     case APPS:
       specifics->MutableExtension(sync_pb::app);
+      break;
+    case APP_SETTINGS:
+      specifics->MutableExtension(sync_pb::app_setting);
+      break;
+    case EXTENSION_SETTINGS:
+      specifics->MutableExtension(sync_pb::extension_setting);
+      break;
+    case APP_NOTIFICATIONS:
+      specifics->MutableExtension(sync_pb::app_notification);
       break;
     default:
       NOTREACHED() << "No known extension for model type.";
@@ -101,11 +118,23 @@ int GetExtensionFieldNumberFromModelType(ModelType model_type) {
     case NIGORI:
       return sync_pb::kNigoriFieldNumber;
       break;
+    case SEARCH_ENGINES:
+      return sync_pb::kSearchEngineFieldNumber;
+      break;
     case SESSIONS:
       return sync_pb::kSessionFieldNumber;
       break;
     case APPS:
       return sync_pb::kAppFieldNumber;
+      break;
+    case APP_SETTINGS:
+      return sync_pb::kAppSettingFieldNumber;
+      break;
+    case EXTENSION_SETTINGS:
+      return sync_pb::kExtensionSettingFieldNumber;
+      break;
+    case APP_NOTIFICATIONS:
+      return sync_pb::kAppNotificationFieldNumber;
       break;
     default:
       NOTREACHED() << "No known extension for model type.";
@@ -178,14 +207,37 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
   if (specifics.HasExtension(sync_pb::app))
     return APPS;
 
+  if (specifics.HasExtension(sync_pb::search_engine))
+    return SEARCH_ENGINES;
+
   if (specifics.HasExtension(sync_pb::session))
     return SESSIONS;
+
+  if (specifics.HasExtension(sync_pb::app_setting))
+    return APP_SETTINGS;
+
+  if (specifics.HasExtension(sync_pb::extension_setting))
+    return EXTENSION_SETTINGS;
+
+  if (specifics.HasExtension(sync_pb::app_notification))
+    return APP_NOTIFICATIONS;
 
   return UNSPECIFIED;
 }
 
-std::string ModelTypeToString(ModelType model_type) {
+bool ShouldMaintainPosition(ModelType model_type) {
+  return model_type == BOOKMARKS;
+}
+
+const char* ModelTypeToString(ModelType model_type) {
+  // This is used in serialization routines as well as for displaying debug
+  // information.  Do not attempt to change these string values unless you know
+  // what you're doing.
   switch (model_type) {
+    case TOP_LEVEL_FOLDER:
+      return "Top Level Folder";
+    case UNSPECIFIED:
+      return "Unspecified";
     case BOOKMARKS:
       return "Bookmarks";
     case PREFERENCES:
@@ -202,12 +254,20 @@ std::string ModelTypeToString(ModelType model_type) {
       return "Extensions";
     case NIGORI:
       return "Encryption keys";
+    case SEARCH_ENGINES:
+      return "Search Engines";
     case SESSIONS:
       return "Sessions";
     case APPS:
       return "Apps";
     case AUTOFILL_PROFILE:
       return "Autofill Profiles";
+    case APP_SETTINGS:
+      return "App settings";
+    case EXTENSION_SETTINGS:
+      return "Extension settings";
+    case APP_NOTIFICATIONS:
+      return "App Notifications";
     default:
       break;
   }
@@ -227,15 +287,19 @@ StringValue* ModelTypeToValue(ModelType model_type) {
   return Value::CreateStringValue("");
 }
 
-std::string ModelTypeSetToString(const ModelTypeSet& model_types) {
-  std::string result;
-  for (ModelTypeSet::const_iterator iter = model_types.begin();
-       iter != model_types.end();) {
-    result += ModelTypeToString(*iter);
-    if (++iter != model_types.end())
-      result += ", ";
+ModelType ModelTypeFromValue(const Value& value) {
+  if (value.IsType(Value::TYPE_STRING)) {
+    std::string result;
+    CHECK(value.GetAsString(&result));
+    return ModelTypeFromString(result);
+  } else if (value.IsType(Value::TYPE_INTEGER)) {
+    int result;
+    CHECK(value.GetAsInteger(&result));
+    return ModelTypeFromInt(result);
+  } else {
+    NOTREACHED() << "Unsupported value type: " << value.GetType();
+    return UNSPECIFIED;
   }
-  return result;
 }
 
 ModelType ModelTypeFromString(const std::string& model_type_string) {
@@ -257,55 +321,50 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
     return EXTENSIONS;
   else if (model_type_string == "Encryption keys")
     return NIGORI;
+  else if (model_type_string == "Search Engines")
+    return SEARCH_ENGINES;
   else if (model_type_string == "Sessions")
     return SESSIONS;
   else if (model_type_string == "Apps")
     return APPS;
+  else if (model_type_string == "App settings")
+    return APP_SETTINGS;
+  else if (model_type_string == "Extension settings")
+    return EXTENSION_SETTINGS;
+  else if (model_type_string == "App Notifications")
+    return APP_NOTIFICATIONS;
   else
     NOTREACHED() << "No known model type corresponding to "
                  << model_type_string << ".";
   return UNSPECIFIED;
 }
 
-bool ModelTypeBitSetFromString(
-    const std::string& model_type_bitset_string,
-    ModelTypeBitSet* model_types) {
-  DCHECK(model_types);
-  if (model_type_bitset_string.length() != MODEL_TYPE_COUNT)
-    return false;
-  if (model_type_bitset_string.find_first_not_of("01") != std::string::npos)
-    return false;
-  *model_types = ModelTypeBitSet(model_type_bitset_string);
-  return true;
-}
-
-ModelTypeBitSet ModelTypeBitSetFromSet(const ModelTypeSet& set) {
-  ModelTypeBitSet bitset;
-  for (ModelTypeSet::const_iterator iter = set.begin(); iter != set.end();
-       ++iter) {
-    bitset.set(*iter);
-  }
-  return bitset;
-}
-
-ListValue* ModelTypeBitSetToValue(const ModelTypeBitSet& model_types) {
-  ListValue* value = new ListValue();
-  for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
-    if (model_types[i]) {
-      value->Append(
-          Value::CreateStringValue(ModelTypeToString(ModelTypeFromInt(i))));
+std::string ModelTypeSetToString(ModelTypeSet model_types) {
+  std::string result;
+  for (ModelTypeSet::Iterator it = model_types.First(); it.Good(); it.Inc()) {
+    if (!result.empty()) {
+      result += ", ";
     }
+    result += ModelTypeToString(it.Get());
+  }
+  return result;
+}
+
+base::ListValue* ModelTypeSetToValue(ModelTypeSet model_types) {
+  ListValue* value = new ListValue();
+  for (ModelTypeSet::Iterator it = model_types.First(); it.Good(); it.Inc()) {
+    value->Append(
+        Value::CreateStringValue(ModelTypeToString(it.Get())));
   }
   return value;
 }
 
-ListValue* ModelTypeSetToValue(const ModelTypeSet& model_types) {
-  ListValue* value = new ListValue();
-  for (ModelTypeSet::const_iterator i = model_types.begin();
-       i != model_types.end(); ++i) {
-    value->Append(Value::CreateStringValue(ModelTypeToString(*i)));
+ModelTypeSet ModelTypeSetFromValue(const base::ListValue& value) {
+  ModelTypeSet result;
+  for (ListValue::const_iterator i = value.begin(); i != value.end(); ++i) {
+    result.Put(ModelTypeFromValue(**i));
   }
-  return value;
+  return result;
 }
 
 // TODO(zea): remove all hardcoded tags in model associators and have them use
@@ -328,12 +387,20 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_extensions";
     case NIGORI:
       return "google_chrome_nigori";
+    case SEARCH_ENGINES:
+      return "google_chrome_search_engines";
     case SESSIONS:
       return "google_chrome_sessions";
     case APPS:
       return "google_chrome_apps";
     case AUTOFILL_PROFILE:
       return "google_chrome_autofill_profiles";
+    case APP_SETTINGS:
+      return "google_chrome_app_settings";
+    case EXTENSION_SETTINGS:
+      return "google_chrome_extension_settings";
+    case APP_NOTIFICATIONS:
+      return "google_chrome_app_notifications";
     default:
       break;
   }
@@ -385,12 +452,28 @@ void PostTimeToTypeHistogram(ModelType model_type, base::TimeDelta time) {
         SYNC_FREQ_HISTOGRAM("Sync.FreqNigori", time);
         return;
     }
+    case SEARCH_ENGINES: {
+        SYNC_FREQ_HISTOGRAM("Sync.FreqSearchEngines", time);
+        return;
+    }
     case SESSIONS: {
         SYNC_FREQ_HISTOGRAM("Sync.FreqSessions", time);
         return;
     }
     case APPS: {
         SYNC_FREQ_HISTOGRAM("Sync.FreqApps", time);
+        return;
+    }
+    case APP_SETTINGS: {
+        SYNC_FREQ_HISTOGRAM("Sync.FreqAppSettings", time);
+        return;
+    }
+    case EXTENSION_SETTINGS: {
+        SYNC_FREQ_HISTOGRAM("Sync.FreqExtensionSettings", time);
+        return;
+    }
+    case APP_NOTIFICATIONS: {
+        SYNC_FREQ_HISTOGRAM("Sync.FreqAppNotifications", time);
         return;
     }
     default:
@@ -410,10 +493,14 @@ const char kAutofillNotificationType[] = "AUTOFILL";
 const char kThemeNotificationType[] = "THEME";
 const char kTypedUrlNotificationType[] = "TYPED_URL";
 const char kExtensionNotificationType[] = "EXTENSION";
+const char kExtensionSettingNotificationType[] = "EXTENSION_SETTING";
 const char kNigoriNotificationType[] = "NIGORI";
+const char kAppSettingNotificationType[] = "APP_SETTING";
 const char kAppNotificationType[] = "APP";
+const char kSearchEngineNotificationType[] = "SEARCH_ENGINE";
 const char kSessionNotificationType[] = "SESSION";
 const char kAutofillProfileNotificationType[] = "AUTOFILL_PROFILE";
+const char kAppNotificationNotificationType[] = "APP_NOTIFICATION";
 }  // namespace
 
 bool RealModelTypeToNotificationType(ModelType model_type,
@@ -443,14 +530,26 @@ bool RealModelTypeToNotificationType(ModelType model_type,
     case NIGORI:
       *notification_type = kNigoriNotificationType;
       return true;
+    case APP_SETTINGS:
+      *notification_type = kAppNotificationType;
+      return true;
     case APPS:
       *notification_type = kAppNotificationType;
+      return true;
+    case SEARCH_ENGINES:
+      *notification_type = kSearchEngineNotificationType;
       return true;
     case SESSIONS:
       *notification_type = kSessionNotificationType;
       return true;
     case AUTOFILL_PROFILE:
       *notification_type = kAutofillProfileNotificationType;
+      return true;
+    case EXTENSION_SETTINGS:
+      *notification_type = kExtensionSettingNotificationType;
+      return true;
+    case APP_NOTIFICATIONS:
+      *notification_type = kAppNotificationNotificationType;
       return true;
     default:
       break;
@@ -488,15 +587,32 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
   } else if (notification_type == kAppNotificationType) {
     *model_type = APPS;
     return true;
+  } else if (notification_type == kSearchEngineNotificationType) {
+    *model_type = SEARCH_ENGINES;
+    return true;
   } else if (notification_type == kSessionNotificationType) {
     *model_type = SESSIONS;
     return true;
   } else if (notification_type == kAutofillProfileNotificationType) {
     *model_type = AUTOFILL_PROFILE;
     return true;
+  } else if (notification_type == kAppSettingNotificationType) {
+    *model_type = APP_SETTINGS;
+    return true;
+  } else if (notification_type == kExtensionSettingNotificationType) {
+    *model_type = EXTENSION_SETTINGS;
+    return true;
+  } else if (notification_type == kAppNotificationNotificationType) {
+    *model_type = APP_NOTIFICATIONS;
+    return true;
+  } else {
+    *model_type = UNSPECIFIED;
+    return false;
   }
-  *model_type = UNSPECIFIED;
-  return false;
+}
+
+bool IsRealDataType(ModelType model_type) {
+  return model_type >= FIRST_REAL_MODEL_TYPE && model_type < MODEL_TYPE_COUNT;
 }
 
 }  // namespace syncable

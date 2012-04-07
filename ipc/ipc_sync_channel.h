@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef IPC_IPC_SYNC_SENDER_H__
-#define IPC_IPC_SYNC_SENDER_H__
+#ifndef IPC_IPC_SYNC_CHANNEL_H_
+#define IPC_IPC_SYNC_CHANNEL_H_
 #pragma once
 
 #include <string>
@@ -24,7 +24,6 @@ class WaitableEvent;
 namespace IPC {
 
 class SyncMessage;
-class MessageReplyDeserializer;
 
 // This is similar to ChannelProxy, with the added feature of supporting sending
 // synchronous messages.
@@ -60,18 +59,28 @@ class MessageReplyDeserializer;
 // is more than this object.  If the message loop goes away while this object
 // is running and it's used to send a message, then it will use the invalid
 // message loop pointer to proxy it to the ipc thread.
-class SyncChannel : public ChannelProxy,
-                    public base::WaitableEventWatcher::Delegate {
+class IPC_EXPORT SyncChannel : public ChannelProxy,
+                               public base::WaitableEventWatcher::Delegate {
  public:
+  // Creates and initializes a sync channel. If create_pipe_now is specified,
+  // the channel will be initialized synchronously.
   SyncChannel(const IPC::ChannelHandle& channel_handle,
               Channel::Mode mode,
               Channel::Listener* listener,
               base::MessageLoopProxy* ipc_message_loop,
               bool create_pipe_now,
               base::WaitableEvent* shutdown_event);
+
+  // Creates an uninitialized sync channel. Call ChannelProxy::Init to
+  // initialize the channel. This two-step setup allows message filters to be
+  // added before any messages are sent or received.
+  SyncChannel(Channel::Listener* listener,
+              base::MessageLoopProxy* ipc_message_loop,
+              base::WaitableEvent* shutdown_event);
+
   virtual ~SyncChannel();
 
-  virtual bool Send(Message* message);
+  virtual bool Send(Message* message) OVERRIDE;
   virtual bool SendWithTimeout(Message* message, int timeout_ms);
 
   // Whether we allow sending messages with no time-out.
@@ -145,19 +154,19 @@ class SyncChannel : public ChannelProxy,
     // ChannelProxy methods that we override.
 
     // Called on the listener thread.
-    virtual void Clear();
+    virtual void Clear() OVERRIDE;
 
     // Called on the IPC thread.
-    virtual bool OnMessageReceived(const Message& msg);
-    virtual void OnChannelError();
-    virtual void OnChannelOpened();
-    virtual void OnChannelClosed();
+    virtual bool OnMessageReceived(const Message& msg) OVERRIDE;
+    virtual void OnChannelError() OVERRIDE;
+    virtual void OnChannelOpened() OVERRIDE;
+    virtual void OnChannelClosed() OVERRIDE;
 
     // Cancels all pending Send calls.
     void CancelPendingSends();
 
     // WaitableEventWatcher::Delegate implementation.
-    virtual void OnWaitableEventSignaled(base::WaitableEvent* arg);
+    virtual void OnWaitableEventSignaled(base::WaitableEvent* arg) OVERRIDE;
 
     typedef std::deque<PendingSyncMsg> PendingSyncMessageQueue;
     PendingSyncMessageQueue deserializers_;
@@ -172,7 +181,7 @@ class SyncChannel : public ChannelProxy,
 
  private:
   // WaitableEventWatcher::Delegate implementation.
-  virtual void OnWaitableEventSignaled(base::WaitableEvent* arg);
+  virtual void OnWaitableEventSignaled(base::WaitableEvent* arg) OVERRIDE;
 
   SyncContext* sync_context() {
     return reinterpret_cast<SyncContext*>(context());
@@ -187,6 +196,9 @@ class SyncChannel : public ChannelProxy,
   // shuts down.
   static void WaitForReplyWithNestedMessageLoop(SyncContext* context);
 
+  // Starts the dispatch watcher.
+  void StartWatching();
+
   bool sync_messages_with_no_timeout_allowed_;
 
   // Used to signal events between the IPC and listener threads.
@@ -197,4 +209,4 @@ class SyncChannel : public ChannelProxy,
 
 }  // namespace IPC
 
-#endif  // IPC_IPC_SYNC_SENDER_H__
+#endif  // IPC_IPC_SYNC_CHANNEL_H_

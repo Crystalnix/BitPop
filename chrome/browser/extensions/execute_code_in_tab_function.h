@@ -10,20 +10,20 @@
 
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
+#include "content/public/browser/web_contents_observer.h"
 
 // Implement API call tabs.executeScript and tabs.insertCSS.
 class ExecuteCodeInTabFunction : public AsyncExtensionFunction,
-                                 public TabContentsObserver {
+                                 public content::WebContentsObserver {
  public:
   ExecuteCodeInTabFunction();
   virtual ~ExecuteCodeInTabFunction();
 
  private:
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
 
-  // TabContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  // content::WebContentsObserver overrides.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handler.
   void OnExecuteCodeFinished(int request_id, bool success,
@@ -33,11 +33,20 @@ class ExecuteCodeInTabFunction : public AsyncExtensionFunction,
   // arguments has been loaded.
   void DidLoadFile(bool success, const std::string& data);
 
+  // Runs on FILE thread. Loads message bundles for the extension and
+  // localizes the CSS data. Calls back DidLoadAndLocalizeFile on the UI thread.
+  void LocalizeCSS(
+      const std::string& data,
+      const std::string& extension_id,
+      const FilePath& extension_path,
+      const std::string& extension_default_locale);
+
+  // Called when contents from the loaded file have been localized.
+  void DidLoadAndLocalizeFile(bool success, const std::string& data);
+
   // Run in UI thread.  Code string contains the code to be executed. Returns
   // true on success. If true is returned, this does an AddRef.
   bool Execute(const std::string& code_string);
-
-  TabContentsObserver::Registrar registrar_;
 
   // Id of tab which executes code.
   int execute_tab_id_;

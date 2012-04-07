@@ -49,9 +49,7 @@
     for (var i = 0; i < source_files.length; i++) {
       sample.source_files.push({
           'file': source_files[i],
-          'url': 'http://src.chromium.org/viewvc/chrome/trunk' +
-                 '/src/chrome/common/extensions/docs/' + sample.path +
-                 source_files[i] + '?content-type=text/plain'
+          'url': sample.path + source_files[i]
       });
     }
   });
@@ -59,7 +57,7 @@
   // The search data should be injected as executable JavaScript, so assign
   // a template value which will store the data as a page global.
   pageData.search_data = "var search_data = " +
-                         JSON.stringify(search_data); + ";";
+                         JSON.stringify(search_data, null, 2) + ";\n";
 </script>
 
 <div id="controls">
@@ -84,6 +82,7 @@
   <img jsdisplay="icon == null" class="icon" src="images/sample-default-icon.png" />
   <h2 class="name">
     <a jscontent="name" jsvalues="href:'#'+$this.id"></a>
+    <span jsdisplay="packaged_app">(packaged app)</span>
   </h2>
   <p jsdisplay="features.length > 0" class="metadata features" jseval="$total=features.length">Uses
     <span jsselect="features">
@@ -107,8 +106,11 @@
     </ul>
   </div>
   <div>
-    <a jsvalues="href:'http://src.chromium.org/viewvc/chrome/trunk/src/chrome/common/extensions/docs/' + path" target="_blank">Browse source</a>
-    - <a jsvalues="href:$this.zip_path">Download source</a>
+    <a jsvalues="href:$this.zip_path">Download source</a>
+    <!-- Only show the Install CRX link if a CRX file is provided -->
+    <span jsdisplay="$this.crx_path != null">
+    - <a jsvalues="href:$this.crx_path">Install extension</a>
+    </span>
   </div>
 </div>
 

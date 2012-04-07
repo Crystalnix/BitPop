@@ -12,45 +12,15 @@
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
+
+using ppapi::thunk::PPB_Flash_Menu_API;
+using ppapi::TrackedCallback;
 
 namespace webkit {
 namespace ppapi {
 
 namespace {
-
-PP_Resource Create(PP_Instance instance_id, const PP_Flash_Menu* menu_data) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(instance_id);
-  if (!instance)
-    return 0;
-
-  scoped_refptr<PPB_Flash_Menu_Impl> menu(new PPB_Flash_Menu_Impl(instance));
-  if (!menu->Init(menu_data))
-    return 0;
-
-  return menu->GetReference();
-}
-
-PP_Bool IsFlashMenu(PP_Resource resource) {
-  return BoolToPPBool(!!Resource::GetAs<PPB_Flash_Menu_Impl>(resource));
-}
-
-int32_t Show(PP_Resource menu_id,
-             const PP_Point* location,
-             int32_t* selected_id,
-             PP_CompletionCallback callback) {
-  scoped_refptr<PPB_Flash_Menu_Impl> menu(
-      Resource::GetAs<PPB_Flash_Menu_Impl>(menu_id));
-  if (!menu.get())
-    return PP_ERROR_BADRESOURCE;
-
-  return menu->Show(location, selected_id, callback);
-}
-
-const PPB_Flash_Menu ppb_flash_menu = {
-  &Create,
-  &IsFlashMenu,
-  &Show,
-};
 
 // Maximum depth of submenus allowed (e.g., 1 indicates that submenus are
 // allowed, but not sub-submenus).
@@ -126,8 +96,21 @@ bool ConvertMenuData(const PP_Flash_Menu* in_menu,
 
 }  // namespace
 
-PPB_Flash_Menu_Impl::PPB_Flash_Menu_Impl(PluginInstance* instance)
-    : Resource(instance) {
+PPB_Flash_Menu_Impl::PPB_Flash_Menu_Impl(PP_Instance instance)
+    : Resource(instance),
+      selected_id_out_(NULL) {
+}
+
+PPB_Flash_Menu_Impl::~PPB_Flash_Menu_Impl() {
+}
+
+// static
+PP_Resource PPB_Flash_Menu_Impl::Create(PP_Instance instance,
+                                        const PP_Flash_Menu* menu_data) {
+  scoped_refptr<PPB_Flash_Menu_Impl> menu(new PPB_Flash_Menu_Impl(instance));
+  if (!menu->Init(menu_data))
+    return 0;
+  return menu->GetReference();
 }
 
 bool PPB_Flash_Menu_Impl::Init(const PP_Flash_Menu* menu_data) {
@@ -141,15 +124,7 @@ bool PPB_Flash_Menu_Impl::Init(const PP_Flash_Menu* menu_data) {
   return true;
 }
 
-PPB_Flash_Menu_Impl::~PPB_Flash_Menu_Impl() {
-}
-
-// static
-const PPB_Flash_Menu* PPB_Flash_Menu_Impl::GetInterface() {
-  return &ppb_flash_menu;
-}
-
-PPB_Flash_Menu_Impl* PPB_Flash_Menu_Impl::AsPPB_Flash_Menu_Impl() {
+PPB_Flash_Menu_API* PPB_Flash_Menu_Impl::AsPPB_Flash_Menu_API() {
   return this;
 }
 
@@ -161,26 +136,21 @@ int32_t PPB_Flash_Menu_Impl::Show(const PP_Point* location,
   if (!location)
     return PP_ERROR_BADARGUMENT;
 
-  if (!callback.func) {
-    NOTIMPLEMENTED();
-    return PP_ERROR_BADARGUMENT;
-  }
+  if (!callback.func)
+    return PP_ERROR_BLOCKS_MAIN_THREAD;
 
-  if (callback_.get() && !callback_->completed())
+  if (TrackedCallback::IsPending(callback_))
     return PP_ERROR_INPROGRESS;
 
-  PP_Resource resource_id = GetReferenceNoAddRef();
-  if (!resource_id) {
-    NOTREACHED();
-    return PP_ERROR_FAILED;
-  }
+  PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
+  if (!plugin_instance)
+    return false;
 
-  int32_t rv = instance()->delegate()->ShowContextMenu(
-      instance(), this, gfx::Point(location->x, location->y));
+  int32_t rv = plugin_instance->delegate()->ShowContextMenu(
+      plugin_instance, this, gfx::Point(location->x, location->y));
   if (rv == PP_OK_COMPLETIONPENDING) {
     // Record callback and output buffers.
-    callback_ = new TrackedCompletionCallback(
-        instance()->module()->GetCallbackTracker(), resource_id, callback);
+    callback_ = new TrackedCallback(this, callback);
     selected_id_out_ = selected_id_out;
   } else {
     // This should never be completed synchronously successfully.
@@ -211,11 +181,8 @@ void PPB_Flash_Menu_Impl::CompleteShow(int32_t result,
     }
   }
 
-  scoped_refptr<TrackedCompletionCallback> callback;
-  callback.swap(callback_);
   selected_id_out_ = NULL;
-
-  callback->Run(rv);  // Will complete abortively if necessary.
+  TrackedCallback::ClearAndRun(&callback_, rv);
 }
 
 }  // namespace ppapi

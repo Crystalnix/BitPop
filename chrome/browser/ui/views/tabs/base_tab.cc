@@ -8,16 +8,16 @@
 
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/tabs/tab_strip_selection_model.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/tabs/tab_controller.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/animation/animation_container.h"
 #include "ui/base/animation/slide_animation.h"
@@ -29,7 +29,7 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/font.h"
-#include "views/controls/button/image_button.h"
+#include "ui/views/controls/button/image_button.h"
 
 // How long the pulse throb takes.
 static const int kPulseDurationMs = 200;
@@ -88,7 +88,7 @@ void DrawIconCenter(gfx::Canvas* canvas,
   int dst_y = bounds.y() - (icon_height - bounds.height()) / 2;
   // NOTE: the clipping is a work around for 69528, it shouldn't be necessary.
   canvas->Save();
-  canvas->ClipRectInt(dst_x, dst_y, icon_width, icon_height);
+  canvas->ClipRect(gfx::Rect(dst_x, dst_y, icon_width, icon_height));
   canvas->DrawBitmapInt(image,
                         image_offset, 0, icon_width, icon_height,
                         dst_x, dst_y, icon_width, icon_height,
@@ -150,10 +150,11 @@ BaseTab::BaseTab(TabController* controller)
       loading_animation_frame_(0),
       should_display_crashed_favicon_(false),
       throbber_disabled_(false),
-      theme_provider_(NULL) {
+      theme_provider_(NULL),
+      ALLOW_THIS_IN_INITIALIZER_LIST(hover_controller_(this)) {
   BaseTab::InitResources();
 
-  SetID(VIEW_ID_TAB);
+  set_id(VIEW_ID_TAB);
 
   // Add the Close Button.
   close_button_ = new TabCloseButton(this);
@@ -165,7 +166,7 @@ BaseTab::BaseTab(TabController* controller)
   close_button_->SetImage(views::CustomButton::BS_PUSHED,
                           rb.GetBitmapNamed(IDR_TAB_CLOSE_P));
   close_button_->SetTooltipText(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB)));
+      l10n_util::GetStringUTF16(IDS_TOOLTIP_CLOSE_TAB));
   close_button_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
   // Disable animation so that the red danger sign shows up immediately
@@ -173,7 +174,7 @@ BaseTab::BaseTab(TabController* controller)
   close_button_->SetAnimationDuration(0);
   AddChildView(close_button_);
 
-  SetContextMenuController(this);
+  set_context_menu_controller(this);
 }
 
 BaseTab::~BaseTab() {
@@ -264,6 +265,7 @@ void BaseTab::StopPulse() {
 
 void BaseTab::set_animation_container(ui::AnimationContainer* container) {
   animation_container_ = container;
+  hover_controller_.SetAnimationContainer(container);
 }
 
 bool BaseTab::IsCloseable() const {
@@ -288,6 +290,8 @@ bool BaseTab::OnMousePressed(const views::MouseEvent& event) {
     return false;
 
   if (event.IsOnlyLeftMouseButton()) {
+    TabStripSelectionModel original_selection;
+    original_selection.Copy(controller()->GetSelectionModel());
     if (event.IsShiftDown() && event.IsControlDown()) {
       controller()->AddSelectionFromAnchorTo(this);
     } else if (event.IsShiftDown()) {
@@ -303,7 +307,7 @@ bool BaseTab::OnMousePressed(const views::MouseEvent& event) {
     } else if (IsActive()) {
       controller()->ClickActiveTab(this);
     }
-    controller()->MaybeStartDrag(this, event);
+    controller()->MaybeStartDrag(this, event, original_selection);
   }
   return true;
 }
@@ -356,27 +360,20 @@ void BaseTab::OnMouseCaptureLost() {
 }
 
 void BaseTab::OnMouseEntered(const views::MouseEvent& event) {
-  if (!hover_animation_.get()) {
-    hover_animation_.reset(new ui::SlideAnimation(this));
-    hover_animation_->SetContainer(animation_container_.get());
-    hover_animation_->SetSlideDuration(kHoverDurationMs);
-  }
-  hover_animation_->SetTweenType(ui::Tween::EASE_OUT);
-  hover_animation_->Show();
+  hover_controller_.Show();
 }
 
 void BaseTab::OnMouseExited(const views::MouseEvent& event) {
-  hover_animation_->SetTweenType(ui::Tween::EASE_IN);
-  hover_animation_->Hide();
+  hover_controller_.Hide();
 }
 
-bool BaseTab::GetTooltipText(const gfx::Point& p, std::wstring* tooltip) {
+bool BaseTab::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
   if (data_.title.empty())
     return false;
 
   // Only show the tooltip if the title is truncated.
   if (font_->GetStringWidth(data_.title) > GetTitleBounds().width()) {
-    *tooltip = UTF16ToWide(data_.title);
+    *tooltip = data_.title;
     return true;
   }
   return false;
@@ -430,10 +427,6 @@ void BaseTab::PaintIcon(gfx::Canvas* canvas) {
   if (bounds.IsEmpty())
     return;
 
-  // The size of bounds has to be kFaviconSize x kFaviconSize.
-  DCHECK_EQ(kFaviconSize, bounds.width());
-  DCHECK_EQ(kFaviconSize, bounds.height());
-
   bounds.set_x(GetMirroredXForRect(bounds));
 
   if (data().network_state != TabRendererData::NETWORK_STATE_NONE) {
@@ -448,7 +441,7 @@ void BaseTab::PaintIcon(gfx::Canvas* canvas) {
                    icon_size, icon_size, bounds, false);
   } else {
     canvas->Save();
-    canvas->ClipRectInt(0, 0, width(), height());
+    canvas->ClipRect(GetLocalBounds());
     if (should_display_crashed_favicon_) {
       ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       SkBitmap crashed_favicon(*rb.GetBitmapNamed(IDR_SAD_FAVICON));
@@ -478,7 +471,7 @@ void BaseTab::PaintTitle(gfx::Canvas* canvas, SkColor title_color) {
   if (title.empty()) {
     title = data().loading ?
         l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :
-        TabContentsWrapper::GetDefaultTitle();
+        CoreTabHelper::GetDefaultTitle();
   } else {
     Browser::FormatTitleForDisplay(&title);
   }
@@ -513,7 +506,7 @@ void BaseTab::ButtonPressed(views::Button* sender, const views::Event& event) {
 void BaseTab::ShowContextMenuForView(views::View* source,
                                      const gfx::Point& p,
                                      bool is_mouse_gesture) {
-  if (controller())
+  if (controller() && !closing())
     controller()->ShowContextMenuForTab(this, p);
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,15 +10,14 @@
 #include "base/base64.h"
 #include "base/lazy_instance.h"
 #include "base/rand_util.h"
-#include "base/synchronization/lock.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/time.h"
-#include "base/timer.h"
 #include "base/values.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "crypto/hmac.h"
 
 namespace {
@@ -251,8 +250,11 @@ class InternalAuthVerificationService {
 
     if (key.size() != kKeySizeInBytes)
       return;
-    engine_.reset(new crypto::HMAC(crypto::HMAC::SHA256));
-    engine_->Init(key);
+    scoped_ptr<crypto::HMAC> new_engine(
+        new crypto::HMAC(crypto::HMAC::SHA256));
+    if (!new_engine->Init(key))
+      return;
+    engine_.swap(new_engine);
     key_ = key;
     key_change_tick_ = GetCurrentTick();
   }
@@ -323,9 +325,9 @@ class InternalAuthVerificationService {
 namespace {
 
 static base::LazyInstance<browser::InternalAuthVerificationService>
-    g_verification_service(base::LINKER_INITIALIZED);
-static base::LazyInstance<base::Lock> g_verification_service_lock(
-    base::LINKER_INITIALIZED);
+    g_verification_service = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<base::Lock>::Leaky
+    g_verification_service_lock = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -339,17 +341,11 @@ class InternalAuthGenerationService : public base::ThreadChecker {
 
   void GenerateNewKey() {
     DCHECK(CalledOnValidThread());
-    if (!timer_.IsRunning()) {
-      timer_.Start(
-          base::TimeDelta::FromMicroseconds(
-              kKeyRegenerationSoftTicks * kTickUs),
-          this,
-          &InternalAuthGenerationService::GenerateNewKey);
-    }
-
-    engine_.reset(new crypto::HMAC(crypto::HMAC::SHA256));
+    scoped_ptr<crypto::HMAC> new_engine(new crypto::HMAC(crypto::HMAC::SHA256));
     std::string key = base::RandBytesAsString(kKeySizeInBytes);
-    engine_->Init(key);
+    if (!new_engine->Init(key))
+      return;
+    engine_.swap(new_engine);
     key_regeneration_tick_ = GetCurrentTick();
     g_verification_service.Get().ChangeKey(key);
     std::fill(key.begin(), key.end(), 0);
@@ -368,8 +364,13 @@ class InternalAuthGenerationService : public base::ThreadChecker {
     int64 current_tick = GetCurrentTick();
     if (!used_ticks_.empty() && used_ticks_.back() > current_tick)
       current_tick = used_ticks_.back();
-    if (current_tick > key_regeneration_tick_ + kKeyRegenerationHardTicks)
-      return 0;
+    for (bool first_iteration = true;; first_iteration = false) {
+      if (current_tick < key_regeneration_tick_ + kKeyRegenerationHardTicks)
+        break;
+      if (!first_iteration)
+        return 0;
+      GenerateNewKey();
+    }
 
     // Forget outdated ticks if any.
     used_ticks_.erase(
@@ -420,7 +421,6 @@ class InternalAuthGenerationService : public base::ThreadChecker {
   }
 
   scoped_ptr<crypto::HMAC> engine_;
-  base::RepeatingTimer<InternalAuthGenerationService> timer_;
   int64 key_regeneration_tick_;
   std::deque<int64> used_ticks_;
 
@@ -432,7 +432,7 @@ class InternalAuthGenerationService : public base::ThreadChecker {
 namespace {
 
 static base::LazyInstance<browser::InternalAuthGenerationService>
-    g_generation_service(base::LINKER_INITIALIZED);
+    g_generation_service = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -477,4 +477,3 @@ void InternalAuthGeneration::GenerateNewKey() {
 }
 
 }  // namespace browser
-

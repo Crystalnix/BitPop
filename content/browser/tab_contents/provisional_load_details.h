@@ -9,8 +9,9 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/cert_status_flags.h"
 
 // This class captures some of the information associated to the provisional
 // load of a frame.  It is provided as Details with the
@@ -33,10 +34,10 @@ class ProvisionalLoadDetails {
   void set_error_code(int error_code) { error_code_ = error_code; }
   int error_code() const { return error_code_; }
 
-  void set_transition_type(PageTransition::Type transition_type) {
+  void set_transition_type(content::PageTransition transition_type) {
     transition_type_ = transition_type;
   }
-  PageTransition::Type transition_type() const {
+  content::PageTransition transition_type() const {
     return transition_type_;
   }
 
@@ -48,7 +49,7 @@ class ProvisionalLoadDetails {
 
   int ssl_cert_id() const { return ssl_cert_id_; }
 
-  int ssl_cert_status() const { return ssl_cert_status_; }
+  net::CertStatus ssl_cert_status() const { return ssl_cert_status_; }
 
   int ssl_security_bits() const { return ssl_security_bits_; }
 
@@ -60,12 +61,12 @@ class ProvisionalLoadDetails {
 
  private:
   int error_code_;
-  PageTransition::Type transition_type_;
+  content::PageTransition transition_type_;
   GURL url_;
   bool is_main_frame_;
   bool is_in_page_navigation_;
   int ssl_cert_id_;
-  int ssl_cert_status_;
+  net::CertStatus ssl_cert_status_;
   int ssl_security_bits_;
   int ssl_connection_status_;
   bool is_error_page_;

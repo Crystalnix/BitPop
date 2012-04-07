@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -19,22 +19,20 @@ class ThemesTest(pyauto.PyUITest):
 
     This method will not run automatically.
     """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
     while True:
       raw_input('Hit <enter> to dump info.. ')
-      pp.pprint(self.GetThemeInfo())
+      self.pprint(self.GetThemeInfo())
 
   def testSetTheme(self):
     """Verify theme install."""
     self.assertFalse(self.GetThemeInfo())  # Verify there's no theme at startup
     crx_file = os.path.abspath(
         os.path.join(self.DataDir(), 'extensions', 'theme.crx'))
-    self.assertTrue(self.SetTheme(pyauto.FilePath(crx_file)))
-    theme = self.GetThemeInfo()
-    self.assertEqual('camo theme', theme['name'])
+    self.SetTheme(crx_file)
     # Verify "theme installed" infobar shows up
     self.assertTrue(self.WaitForInfobarCount(1))
+    theme = self.GetThemeInfo()
+    self.assertEqual('camo theme', theme['name'])
     self.assertTrue(self.GetBrowserInfo()['windows'][0]['tabs'][0]['infobars'])
 
   def testThemeInFullScreen(self):
@@ -43,7 +41,9 @@ class ThemesTest(pyauto.PyUITest):
     self.assertFalse(self.GetThemeInfo())  # Verify there's no theme at startup
     crx_file = os.path.abspath(
         os.path.join(self.DataDir(), 'extensions', 'theme.crx'))
-    self.assertTrue(self.SetTheme(pyauto.FilePath(crx_file)))
+    self.SetTheme(crx_file)
+    # Verify "theme installed" infobar shows up
+    self.assertTrue(self.WaitForInfobarCount(1))
     theme = self.GetThemeInfo()
     self.assertEqual('camo theme', theme['name'])
 
@@ -51,7 +51,7 @@ class ThemesTest(pyauto.PyUITest):
     """Verify theme reset."""
     crx_file = os.path.abspath(
         os.path.join(self.DataDir(), 'extensions', 'theme.crx'))
-    self.assertTrue(self.SetTheme(pyauto.FilePath(crx_file)))
+    self.SetTheme(crx_file)
     self.assertTrue(self.ResetToDefaultTheme())
     self.assertFalse(self.GetThemeInfo())
 
@@ -78,8 +78,7 @@ class ThemesTest(pyauto.PyUITest):
       # Apply each theme in this group.
       for theme in this_group:
         logging.debug('Applying theme: %s' % theme)
-        self.assertTrue(self.SetTheme(pyauto.FilePath(theme)),
-                        'Theme %s not installed.' % theme)
+        self.SetTheme(theme)
 
       for url in urls:
         self.NavigateToURL(url)
@@ -136,4 +135,3 @@ class ThemesTest(pyauto.PyUITest):
 
 if __name__ == '__main__':
   pyauto_functional.Main()
-

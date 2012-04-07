@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller_target.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
@@ -18,21 +17,15 @@
 
 @class CrTrackingArea;
 @class NewTabButton;
-@class ProfileMenuButton;
 @class TabContentsController;
 @class TabView;
+@class TabStripDragController;
 @class TabStripView;
 
 class Browser;
 class ConstrainedWindowMac;
 class TabStripModelObserverBridge;
 class TabStripModel;
-class TabContents;
-class ToolbarModel;
-
-namespace TabStripControllerInternal {
-class NotificationBridge;
-} // namespace TabStripControllerInternal
 
 // The interface for the tab strip controller's delegate.
 // Delegating TabStripModelObserverBridge's events (in lieu of directly
@@ -42,17 +35,17 @@ class NotificationBridge;
 @protocol TabStripControllerDelegate
 
 // Stripped down version of TabStripModelObserverBridge:selectTabWithContents.
-- (void)onActivateTabWithContents:(TabContents*)contents;
+- (void)onActivateTabWithContents:(content::WebContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabReplacedWithContents.
-- (void)onReplaceTabWithContents:(TabContents*)contents;
+- (void)onReplaceTabWithContents:(content::WebContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabChangedWithContents.
 - (void)onTabChanged:(TabStripModelObserver::TabChangeType)change
-        withContents:(TabContents*)contents;
+        withContents:(content::WebContents*)contents;
 
 // Stripped down version of TabStripModelObserverBridge:tabDetachedWithContents.
-- (void)onTabDetachedWithContents:(TabContents*)contents;
+- (void)onTabDetachedWithContents:(content::WebContents*)contents;
 
 @end
 
@@ -66,19 +59,15 @@ class NotificationBridge;
 @interface TabStripController :
   NSObject<TabControllerTarget,
            URLDropTargetController,
-           GTMWindowSheetControllerDelegate,
-           TabContentsControllerDelegate> {
- @protected
-  // YES if tabs are to be laid out vertically instead of horizontally.
-  BOOL verticalLayout_;
-
+           GTMWindowSheetControllerDelegate> {
  @private
   scoped_nsobject<TabStripView> tabStripView_;
   NSView* switchView_;  // weak
   scoped_nsobject<NSView> dragBlockingView_;  // avoid bad window server drags
   NewTabButton* newTabButton_;  // weak, obtained from the nib.
-  ProfileMenuButton* profileMenuButton_;  // weak, obtained from the nib.
-  BOOL hasUpdatedProfileMenuButtonXOffset_;
+
+  // The controller that manages all the interactions of dragging tabs.
+  scoped_nsobject<TabStripDragController> dragController_;
 
   // Tracks the newTabButton_ for rollovers.
   scoped_nsobject<CrTrackingArea> newTabTrackingArea_;
@@ -112,7 +101,6 @@ class NotificationBridge;
   // These values are only used during a drag, and override tab positioning.
   TabView* placeholderTab_;  // weak. Tab being dragged
   NSRect placeholderFrame_;  // Frame to use
-  CGFloat placeholderStretchiness_; // Vertical force shown by streching tab.
   NSRect droppedTabFrame_;  // Initial frame of a dropped tab, for animation.
   // Frame targets for all the current views.
   // target frames are used because repeated requests to [NSView animator].
@@ -143,9 +131,10 @@ class NotificationBridge;
   // The default favicon, so we can use one copy for all buttons.
   scoped_nsobject<NSImage> defaultFavicon_;
 
-  // The amount by which to indent the tabs on the left (to make room for the
-  // red/yellow/green buttons).
-  CGFloat indentForControls_;
+  // The amount by which to indent the tabs on the sides (to make room for the
+  // red/yellow/green and incognito/fullscreen buttons).
+  CGFloat leftIndentForControls_;
+  CGFloat rightIndentForControls_;
 
   // Manages per-tab sheets.
   scoped_nsobject<GTMWindowSheetController> sheetController_;
@@ -153,15 +142,12 @@ class NotificationBridge;
   // Is the mouse currently inside the strip;
   BOOL mouseInside_;
 
-  // Used for monitoring the profile name pref.
-  scoped_ptr<TabStripControllerInternal::NotificationBridge>
-      notificationBridge_;
-
   // Helper for performing tab selection as a result of dragging over a tab.
   scoped_ptr<HoverTabSelector> hoverTabSelector_;
 }
 
-@property(nonatomic) CGFloat indentForControls;
+@property(nonatomic) CGFloat leftIndentForControls;
+@property(nonatomic) CGFloat rightIndentForControls;
 
 // Initialize the controller with a view and browser that contains
 // everything else we'll need. |switchView| is the view whose contents get
@@ -212,11 +198,9 @@ class NotificationBridge;
 // count, but no longer in the model.
 - (NSUInteger)viewsCount;
 
-// Set the placeholder for a dragged tab, allowing the |frame| and |strechiness|
-// to be specified. This causes this tab to be rendered in an arbitrary position
-- (void)insertPlaceholderForTab:(TabView*)tab
-                          frame:(NSRect)frame
-                  yStretchiness:(CGFloat)yStretchiness;
+// Set the placeholder for a dragged tab, allowing the |frame| to be specified.
+// This causes this tab to be rendered in an arbitrary position.
+- (void)insertPlaceholderForTab:(TabView*)tab frame:(NSRect)frame;
 
 // Returns whether a tab is being dragged within the tab strip.
 - (BOOL)isDragSessionActive;
@@ -233,6 +217,7 @@ class NotificationBridge;
 
 // Force the tabs to rearrange themselves to reflect the current model.
 - (void)layoutTabs;
+- (void)layoutTabsWithoutAnimation;
 
 // Are we in rapid (tab) closure mode? I.e., is a full layout deferred (while
 // the user closes tabs)? Needed to overcome missing clicks during rapid tab
@@ -246,8 +231,8 @@ class NotificationBridge;
 // Default height for tabs.
 + (CGFloat)defaultTabHeight;
 
-// Default indentation for tabs (see |indentForControls_|).
-+ (CGFloat)defaultIndentForControls;
+// Default indentation for tabs (see |leftIndentForControls_|).
++ (CGFloat)defaultLeftIndentForControls;
 
 // Returns the (lazily created) window sheet controller of this window. Used
 // for the per-tab sheets.

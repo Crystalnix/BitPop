@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,17 +50,6 @@ function __ontimeout() {
     window.gc();
   }
 
-  var ts = (new Date()).getTime();
-  var tlag = (ts - __te) - __TIMEOUT;
-  if (tlag > 0)
-    __tf = __tf + tlag;
-  if (__cycle == (__pages().length * __iterations)) {
-    document.cookie = "__pc_done=1; path=/";
-    doc = "../../common/report.html";
-  } else {
-    doc = "../" + __pages()[__page] + "/index.html"
-  }
-
   var timings = __tl;
   var oldTimings = __get_timings();
   if (oldTimings != "") {
@@ -68,13 +57,28 @@ function __ontimeout() {
   }
   __set_timings(timings);
 
+  var ts = (new Date()).getTime();
+  var tlag = (ts - __te) - __TIMEOUT;
+  if (tlag > 0)
+    __tf = __tf + tlag;
+  if (__cycle == (__pages().length * __iterations)) {
+    document.cookie = "__pc_done=1; path=/";
+    doc = "../../common/report.html";
+    if (window.console) console.log("times: [" + __get_timings() + "]");
+  } else {
+    doc = "../" + __pages()[__page] + "/index.html";
+  }
+
   var url = doc + "?n=" + __iterations + "&i=" + __cycle + "&p=" + __page +
             "&ts=" + ts + "&td=" + __td + "&tf=" + __tf;
   document.location.href = url;
 }
 function __onload() {
-  if (__results)
+  if (__results) {
+    // Set a variable to indicate that the result report page is loaded.
+    document.cookie = "__navigated_to_report=1; path=/";
     return;
+  }
   var unused = document.body.offsetHeight;  // force layout
 
   var ts = 0, td = 0, te = (new Date()).getTime(), tf = 0;

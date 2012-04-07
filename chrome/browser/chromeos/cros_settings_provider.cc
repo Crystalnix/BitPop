@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,21 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/string_util.h"
+#include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 
 namespace chromeos {
 
-void CrosSettingsProvider::Set(const std::string& path, Value* value) {
+CrosSettingsProvider::CrosSettingsProvider(
+    const NotifyObserversCallback& notify_cb)
+  : notify_cb_(notify_cb) {
+}
+
+CrosSettingsProvider::~CrosSettingsProvider() {
+}
+
+void CrosSettingsProvider::Set(const std::string& path,
+                               const base::Value& value) {
   // We don't allow changing any of the cros settings without prefix
   // "cros.session." in the guest mode.
   // It should not reach here from UI in the guest mode, but just in case.
@@ -21,6 +31,16 @@ void CrosSettingsProvider::Set(const std::string& path, Value* value) {
     return;
   }
   DoSet(path, value);
+}
+
+void CrosSettingsProvider::NotifyObservers(const std::string& path) {
+  if (!notify_cb_.is_null())
+    notify_cb_.Run(path);
+}
+
+void CrosSettingsProvider::SetNotifyObserversCallback(
+    const NotifyObserversCallback& notify_cb) {
+  notify_cb_ = notify_cb;
 }
 
 };  // namespace chromeos

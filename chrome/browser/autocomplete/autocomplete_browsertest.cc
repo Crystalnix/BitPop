@@ -3,23 +3,29 @@
 // found in the LICENSE file.
 
 #include "base/format_macros.h"
+#include "base/path_service.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
+#include "chrome/browser/extensions/extension_browsertest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/history/history.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // Autocomplete test is flaky on ChromeOS.
@@ -47,7 +53,7 @@ string16 AutocompleteResultAsString(const AutocompleteResult& result) {
 
 }  // namespace
 
-class AutocompleteBrowserTest : public InProcessBrowserTest {
+class AutocompleteBrowserTest : public ExtensionBrowserTest {
  protected:
   LocationBar* GetLocationBar() const {
     return browser()->window()->GetLocationBar();
@@ -144,10 +150,12 @@ IN_PROC_BROWSER_TEST_F(AutocompleteBrowserTest, TabAwayRevertSelect) {
   EXPECT_EQ(UTF8ToUTF16(chrome::kAboutBlankURL),
             location_bar->location_entry()->GetText());
   location_bar->location_entry()->SetUserText(string16());
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::NotificationService::AllSources());
   browser()->AddSelectedTabWithURL(GURL(chrome::kAboutBlankURL),
-                                   PageTransition::START_PAGE);
-  ui_test_utils::WaitForNavigation(
-      &browser()->GetSelectedTabContents()->controller());
+                                   content::PAGE_TRANSITION_START_PAGE);
+  observer.Wait();
   EXPECT_EQ(UTF8ToUTF16(chrome::kAboutBlankURL),
             location_bar->location_entry()->GetText());
   browser()->CloseTab();
@@ -246,5 +254,70 @@ IN_PROC_BROWSER_TEST_F(AutocompleteBrowserTest, FocusSearch) {
                                                        &selection_end);
     EXPECT_EQ(4U, std::min(selection_start, selection_end));
     EXPECT_EQ(7U, std::max(selection_start, selection_end));
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(AutocompleteBrowserTest, ExtensionAppProvider) {
+  ExtensionService* service = browser()->profile()->GetExtensionService();
+  size_t extension_count = service->extensions()->size();
+
+  FilePath test_dir;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
+  // Load a packaged app.
+  extensions::UnpackedInstaller::Create(service)->Load(
+      test_dir.AppendASCII("extensions").AppendASCII("packaged_app"));
+  WaitForExtensionLoad();
+  // Load a hosted app.
+  extensions::UnpackedInstaller::Create(service)->Load(
+      test_dir.AppendASCII("extensions").AppendASCII("app"));
+  WaitForExtensionLoad();
+  ASSERT_EQ(extension_count + 2U, service->extensions()->size());
+
+  // The results depend on the history backend being loaded. Make sure it is
+  // loaded so that the autocomplete results are consistent.
+  ui_test_utils::WaitForHistoryToLoad(browser());
+
+  LocationBar* location_bar = GetLocationBar();
+  AutocompleteController* autocomplete_controller = GetAutocompleteController();
+
+  // Try out the packaged app.
+  {
+    autocomplete_controller->Start(
+        ASCIIToUTF16("Packaged App Test"), string16(), true, false, true,
+        AutocompleteInput::SYNCHRONOUS_MATCHES);
+
+    EXPECT_TRUE(autocomplete_controller->done());
+    EXPECT_TRUE(location_bar->GetInputString().empty());
+    EXPECT_TRUE(location_bar->location_entry()->GetText().empty());
+    EXPECT_TRUE(location_bar->location_entry()->IsSelectAll());
+    const AutocompleteResult& result = autocomplete_controller->result();
+    EXPECT_GT(result.size(), 1U) << AutocompleteResultAsString(result);
+    AutocompleteMatch match = result.match_at(0);
+    EXPECT_EQ(ASCIIToUTF16("Packaged App Test"), match.contents);
+    EXPECT_EQ(AutocompleteMatch::EXTENSION_APP, match.type);
+    EXPECT_FALSE(match.deletable);
+    location_bar->AcceptInput();
+  }
+
+  browser()->NewTab();
+
+  // Try out the hosted app.
+  {
+    autocomplete_controller->Start(
+        ASCIIToUTF16("App Test"), string16(), true, false, true,
+        AutocompleteInput::SYNCHRONOUS_MATCHES);
+
+    EXPECT_TRUE(autocomplete_controller->done());
+    EXPECT_TRUE(location_bar->GetInputString().empty());
+    EXPECT_TRUE(location_bar->location_entry()->GetText().empty());
+    EXPECT_TRUE(location_bar->location_entry()->IsSelectAll());
+    const AutocompleteResult& result = autocomplete_controller->result();
+    // 'App test' is also a substring of extension 'Packaged App Test'.
+    EXPECT_GT(result.size(), 2U) << AutocompleteResultAsString(result);
+    AutocompleteMatch match = result.match_at(0);
+    EXPECT_EQ(ASCIIToUTF16("App Test"), match.contents);
+    EXPECT_EQ(AutocompleteMatch::EXTENSION_APP, match.type);
+    EXPECT_FALSE(match.deletable);
+    location_bar->AcceptInput();
   }
 }

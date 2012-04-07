@@ -12,33 +12,30 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
 #include "content/browser/appcache/appcache_frontend_proxy.h"
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "webkit/appcache/appcache_backend_impl.h"
 
 class ChromeAppCacheService;
-namespace content {
-class ResourceContext;
-}  // namespace content
 
 // Handles appcache related messages sent to the main browser process from
 // its child processes. There is a distinct host for each child process.
 // Messages are handled on the IO thread. The BrowserRenderProcessHost and
 // WorkerProcessHost create an instance and delegates calls to it.
-class AppCacheDispatcherHost : public BrowserMessageFilter {
+class AppCacheDispatcherHost : public content::BrowserMessageFilter {
  public:
-  AppCacheDispatcherHost(const content::ResourceContext* resource_context,
+  AppCacheDispatcherHost(ChromeAppCacheService* appcache_service,
                          int process_id);
   virtual ~AppCacheDispatcherHost();
 
   // BrowserIOMessageFilter implementation
-  virtual void OnChannelConnected(int32 peer_pid);
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
  private:
-  // BrowserMessageFilter override.
-  virtual void BadMessageReceived();
+  // content::BrowserMessageFilter override.
+  virtual void BadMessageReceived() OVERRIDE;
 
   // IPC message handlers
   void OnRegisterHost(int host_id);
@@ -62,21 +59,14 @@ class AppCacheDispatcherHost : public BrowserMessageFilter {
   void StartUpdateCallback(bool result, void* param);
   void SwapCacheCallback(bool result, void* param);
 
-  // This is only valid once Initialize() has been called.  This MUST be defined
-  // before backend_impl_ since the latter maintains a (non-refcounted) pointer
-  // to it.
-  scoped_refptr<ChromeAppCacheService> appcache_service_;
 
+  scoped_refptr<ChromeAppCacheService> appcache_service_;
   AppCacheFrontendProxy frontend_proxy_;
   appcache::AppCacheBackendImpl backend_impl_;
 
-  // Temporary until OnChannelConnected() can be called from the IO thread,
-  // which will extract the AppCacheService from the net::URLRequestContext.
-  const content::ResourceContext* resource_context_;
-
-  scoped_ptr<appcache::GetStatusCallback> get_status_callback_;
-  scoped_ptr<appcache::StartUpdateCallback> start_update_callback_;
-  scoped_ptr<appcache::SwapCacheCallback> swap_cache_callback_;
+  appcache::GetStatusCallback get_status_callback_;
+  appcache::StartUpdateCallback start_update_callback_;
+  appcache::SwapCacheCallback swap_cache_callback_;
   scoped_ptr<IPC::Message> pending_reply_msg_;
 
   // The corresponding ChildProcessHost object's id().

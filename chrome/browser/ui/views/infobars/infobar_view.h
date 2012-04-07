@@ -6,15 +6,18 @@
 #define CHROME_BROWSER_UI_VIEWS_INFOBARS_INFOBAR_VIEW_H_
 #pragma once
 
-#include "base/task.h"
-#include "chrome/browser/tab_contents/infobar.h"
-#include "chrome/browser/tab_contents/infobar_container.h"
-#include "chrome/browser/ui/views/infobars/infobar_background.h"
-#include "views/controls/button/button.h"
-#include "views/focus/focus_manager.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_container.h"
+#include "third_party/skia/include/core/SkPath.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/focus/focus_manager.h"
 
-class SkPath;
-
+namespace ui {
+class MenuModel;
+}
 namespace views {
 class ExternalFocusTracker;
 class ImageButton;
@@ -23,6 +26,7 @@ class Label;
 class Link;
 class LinkListener;
 class MenuButton;
+class MenuRunner;
 class TextButton;
 class ViewMenuDelegate;
 }
@@ -32,10 +36,10 @@ class InfoBarView : public InfoBar,
                     public views::ButtonListener,
                     public views::FocusChangeListener {
  public:
-  InfoBarView(TabContentsWrapper* owner, InfoBarDelegate* delegate);
+  InfoBarView(InfoBarTabHelper* owner, InfoBarDelegate* delegate);
 
-  SkPath* fill_path() const { return fill_path_.get(); }
-  SkPath* stroke_path() const { return stroke_path_.get(); }
+  const SkPath& fill_path() const { return fill_path_; }
+  const SkPath& stroke_path() const { return stroke_path_; }
 
  protected:
   static const int kButtonButtonSpacing;
@@ -44,20 +48,21 @@ class InfoBarView : public InfoBar,
   virtual ~InfoBarView();
 
   // Creates a label with the appropriate font and color for an infobar.
-  static views::Label* CreateLabel(const string16& text);
+  views::Label* CreateLabel(const string16& text) const;
 
   // Creates a link with the appropriate font and color for an infobar.
-  static views::Link* CreateLink(const string16& text,
-                                 views::LinkListener* listener,
-                                 const SkColor& background_color);
+  // NOTE: Subclasses must ignore link clicks if we're unowned.
+  views::Link* CreateLink(const string16& text,
+                          views::LinkListener* listener) const;
 
   // Creates a menu button with an infobar-specific appearance.
+  // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::MenuButton* CreateMenuButton(
       const string16& text,
-      bool normal_has_border,
       views::ViewMenuDelegate* menu_delegate);
 
   // Creates a text button with an infobar-specific appearance.
+  // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::TextButton* CreateTextButton(views::ButtonListener* listener,
                                              const string16& text,
                                              bool needs_elevation);
@@ -69,6 +74,8 @@ class InfoBarView : public InfoBar,
                                     View* child) OVERRIDE;
 
   // views::ButtonListener:
+  // NOTE: This must not be called if we're unowned.  (Subclasses should ignore
+  // calls to ButtonPressed() in this case.)
   virtual void ButtonPressed(views::Button* sender,
                              const views::Event& event) OVERRIDE;
 
@@ -85,10 +92,18 @@ class InfoBarView : public InfoBar,
   // Convenience getter.
   const InfoBarContainer::Delegate* container_delegate() const;
 
+  // Shows a menu at the specified position.
+  // NOTE: This must not be called if we're unowned.  (Subclasses should ignore
+  // calls to RunMenu() in this case.)
+  void RunMenuAt(ui::MenuModel* menu_model,
+                 views::MenuButton* button,
+                 views::MenuItemView::AnchorPosition anchor);
+
  private:
   static const int kHorizontalPadding;
 
   // InfoBar:
+  virtual void PlatformSpecificShow(bool animate) OVERRIDE;
   virtual void PlatformSpecificHide(bool animate) OVERRIDE;
   virtual void PlatformSpecificOnHeightsRecalculated() OVERRIDE;
 
@@ -98,17 +113,10 @@ class InfoBarView : public InfoBar,
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
 
   // views::FocusChangeListener:
-  virtual void FocusWillChange(View* focused_before,
-                               View* focused_now) OVERRIDE;
-
-  // Destroys the external focus tracker, if present. If |restore_focus| is
-  // true, restores focus to the view tracked by the focus tracker before doing
-  // so.
-  void DestroyFocusTracker(bool restore_focus);
-
-  // Deletes this object (called after a return to the message loop to allow
-  // the stack in ViewHierarchyChanged to unwind).
-  void DeleteSelf();
+  virtual void OnWillChangeFocus(View* focused_before,
+                                 View* focused_now) OVERRIDE;
+  virtual void OnDidChangeFocus(View* focused_before,
+                                View* focused_now) OVERRIDE;
 
   // The optional icon at the left edge of the InfoBar.
   views::ImageView* icon_;
@@ -120,13 +128,13 @@ class InfoBarView : public InfoBar,
   // its children. Used to restore focus once the InfoBar is closed.
   scoped_ptr<views::ExternalFocusTracker> focus_tracker_;
 
-  // Used to delete this object after a return to the message loop.
-  ScopedRunnableMethodFactory<InfoBarView> delete_factory_;
-
   // The paths for the InfoBarBackground to draw, sized according to the heights
   // above.
-  scoped_ptr<SkPath> fill_path_;
-  scoped_ptr<SkPath> stroke_path_;
+  SkPath fill_path_;
+  SkPath stroke_path_;
+
+  // Used to run the menu.
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(InfoBarView);
 };

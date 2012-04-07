@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -16,22 +16,22 @@
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
 
-class FakeAudioInputStream :
-    public AudioInputStream,
-    public base::RefCountedThreadSafe<FakeAudioInputStream> {
+class FakeAudioInputStream
+    : public AudioInputStream,
+      public base::RefCountedThreadSafe<FakeAudioInputStream> {
  public:
-  static AudioInputStream* MakeFakeStream(AudioParameters params);
+  static AudioInputStream* MakeFakeStream(const AudioParameters& params);
 
-  virtual bool Open();
-  virtual void Start(AudioInputCallback* callback);
-  virtual void Stop();
-  virtual void Close();
+  virtual bool Open() OVERRIDE;
+  virtual void Start(AudioInputCallback* callback) OVERRIDE;
+  virtual void Stop() OVERRIDE;
+  virtual void Close() OVERRIDE;
 
  private:
   // Give RefCountedThreadSafe access our destructor.
   friend class base::RefCountedThreadSafe<FakeAudioInputStream>;
 
-  FakeAudioInputStream(AudioParameters params);
+  FakeAudioInputStream(const AudioParameters& params);
   virtual ~FakeAudioInputStream();
 
   void DoCallback();
@@ -41,7 +41,7 @@ class FakeAudioInputStream :
   int buffer_size_;
   base::Thread thread_;
   base::Time last_callback_time_;
-  int callback_interval_ms_;
+  base::TimeDelta callback_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeAudioInputStream);
 };

@@ -20,14 +20,14 @@ bool TestURLUtil::Init() {
   return !!util_;
 }
 
-void TestURLUtil::RunTest() {
-  RUN_TEST(Canonicalize);
-  RUN_TEST(ResolveRelative);
-  RUN_TEST(IsSameSecurityOrigin);
-  RUN_TEST(DocumentCanRequest);
-  RUN_TEST(DocumentCanAccessDocument);
-  RUN_TEST(GetDocumentURL);
-  RUN_TEST(GetPluginInstanceURL);
+void TestURLUtil::RunTests(const std::string& filter) {
+  RUN_TEST(Canonicalize, filter);
+  RUN_TEST(ResolveRelative, filter);
+  RUN_TEST(IsSameSecurityOrigin, filter);
+  RUN_TEST(DocumentCanRequest, filter);
+  RUN_TEST(DocumentCanAccessDocument, filter);
+  RUN_TEST(GetDocumentURL, filter);
+  RUN_TEST(GetPluginInstanceURL, filter);
 }
 
 std::string TestURLUtil::TestCanonicalize() {
@@ -121,7 +121,7 @@ std::string TestURLUtil::TestDocumentCanAccessDocument() {
 std::string TestURLUtil::TestGetDocumentURL() {
   pp::Var url = util_->GetDocumentURL(*instance_);
   ASSERT_TRUE(url.is_string());
-  pp::Var window = instance_->GetWindowObject();
+  pp::VarPrivate window = instance_->GetWindowObject();
   pp::Var href = window.GetProperty("location").GetProperty("href");
   ASSERT_TRUE(href.is_string());
   // In the test framework, they should be the same.

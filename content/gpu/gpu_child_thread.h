@@ -18,13 +18,9 @@
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_config.h"
-#include "content/common/gpu/gpu_info.h"
 #include "content/common/gpu/x_util.h"
+#include "content/public/common/gpu_info.h"
 #include "ui/gfx/native_widget_types.h"
-
-namespace IPC {
-struct ChannelHandle;
-}
 
 namespace sandbox {
 class TargetServices;
@@ -38,11 +34,7 @@ class GpuWatchdogThread;
 // commands to the GPU.
 class GpuChildThread : public ChildThread {
  public:
-#if defined(OS_WIN)
-  explicit GpuChildThread(sandbox::TargetServices* target_services);
-#else
-  GpuChildThread();
-#endif
+  explicit GpuChildThread(bool dead_on_arrival);
 
   // For single-process mode.
   explicit GpuChildThread(const std::string& channel_id);
@@ -53,8 +45,8 @@ class GpuChildThread : public ChildThread {
   void StopWatchdog();
 
   // ChildThread overrides.
-  virtual bool Send(IPC::Message* msg);
-  virtual bool OnControlMessageReceived(const IPC::Message& msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
 
  private:
   // Message handlers.
@@ -66,9 +58,13 @@ class GpuChildThread : public ChildThread {
 
 #if defined(OS_WIN)
   static void CollectDxDiagnostics(GpuChildThread* thread);
-  static void SetDxDiagnostics(GpuChildThread* thread, const DxDiagNode& node);
+  static void SetDxDiagnostics(GpuChildThread* thread,
+                               const content::DxDiagNode& node);
 #endif
 
+  // Set this flag to true if a fatal error occurred before we receive the
+  // OnInitialize message, in which case we just declare ourselves DOA.
+  bool dead_on_arrival_;
   base::Time process_start_time_;
   scoped_refptr<GpuWatchdogThread> watchdog_thread_;
 
@@ -83,7 +79,7 @@ class GpuChildThread : public ChildThread {
   scoped_ptr<GpuChannelManager> gpu_channel_manager_;
 
   // Information about the GPU, such as device and vendor ID.
-  GPUInfo gpu_info_;
+  content::GPUInfo gpu_info_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChildThread);
 };

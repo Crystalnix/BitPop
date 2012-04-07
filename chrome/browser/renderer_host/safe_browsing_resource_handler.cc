@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,16 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prerender/prerender_final_status.h"
 #include "chrome/browser/prerender/prerender_tracker.h"
-#include "content/browser/renderer_host/global_request_id.h"
+#include "chrome/browser/renderer_host/chrome_url_request_user_data.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/renderer_host/resource_message_filter.h"
-#include "content/common/resource_response.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
+
+using content::GlobalRequestID;
 
 // Maximum time in milliseconds to wait for the safe browsing service to
 // verify a URL. After this amount of time the outstanding check will be
@@ -30,19 +32,19 @@ SafeBrowsingResourceHandler* SafeBrowsingResourceHandler::Create(
     ResourceHandler* handler,
     int render_process_host_id,
     int render_view_id,
-    ResourceType::Type resource_type,
+    bool is_subresource,
     SafeBrowsingService* safe_browsing,
     ResourceDispatcherHost* resource_dispatcher_host) {
   return new SafeBrowsingResourceHandler(
       handler, render_process_host_id, render_view_id,
-      resource_type, safe_browsing, resource_dispatcher_host);
+      is_subresource, safe_browsing, resource_dispatcher_host);
 }
 
 SafeBrowsingResourceHandler::SafeBrowsingResourceHandler(
     ResourceHandler* handler,
     int render_process_host_id,
     int render_view_id,
-    ResourceType::Type resource_type,
+    bool is_subresource,
     SafeBrowsingService* safe_browsing,
     ResourceDispatcherHost* resource_dispatcher_host)
     : state_(STATE_NONE),
@@ -54,7 +56,7 @@ SafeBrowsingResourceHandler::SafeBrowsingResourceHandler(
       render_view_id_(render_view_id),
       safe_browsing_(safe_browsing),
       rdh_(resource_dispatcher_host),
-      resource_type_(resource_type) {
+      is_subresource_(is_subresource) {
 }
 
 SafeBrowsingResourceHandler::~SafeBrowsingResourceHandler() {
@@ -69,7 +71,7 @@ bool SafeBrowsingResourceHandler::OnUploadProgress(int request_id,
 bool SafeBrowsingResourceHandler::OnRequestRedirected(
     int request_id,
     const GURL& new_url,
-    ResourceResponse* response,
+    content::ResourceResponse* response,
     bool* defer) {
   CHECK(state_ == STATE_NONE);
   CHECK(defer_state_ == DEFERRED_NONE);
@@ -97,7 +99,7 @@ bool SafeBrowsingResourceHandler::OnRequestRedirected(
 }
 
 bool SafeBrowsingResourceHandler::OnResponseStarted(
-    int request_id, ResourceResponse* response) {
+    int request_id, content::ResourceResponse* response) {
   CHECK(state_ == STATE_NONE);
   CHECK(defer_state_ == DEFERRED_NONE);
   return next_handler_->OnResponseStarted(request_id, response);
@@ -184,15 +186,20 @@ void SafeBrowsingResourceHandler::OnBrowseUrlCheckResult(
       // them.
       rdh_->CancelRequest(render_process_host_id_, deferred_request_id_, false);
       should_show_blocking_page = false;
-    } else if (request->load_flags() & net::LOAD_PRERENDERING) {
-      prerender::PrerenderTracker* prerender_tracker = g_browser_process->
-          prerender_tracker();
-      if (prerender_tracker->TryCancelOnIOThread(render_process_host_id_,
-                    render_view_id_,
-                    prerender::FINAL_STATUS_SAFE_BROWSING)) {
-        rdh_->CancelRequest(render_process_host_id_, deferred_request_id_,
-                            false);
-        should_show_blocking_page = false;
+    } else {
+      ChromeURLRequestUserData* user_data =
+          ChromeURLRequestUserData::Get(request);
+      if (user_data && user_data->is_prerender()) {
+        prerender::PrerenderTracker* prerender_tracker = g_browser_process->
+            prerender_tracker();
+        if (prerender_tracker->TryCancelOnIOThread(
+                render_process_host_id_,
+                render_view_id_,
+                prerender::FINAL_STATUS_SAFE_BROWSING)) {
+          rdh_->CancelRequest(render_process_host_id_, deferred_request_id_,
+                              false);
+          should_show_blocking_page = false;
+        }
       }
     }
     if (should_show_blocking_page) {
@@ -211,7 +218,6 @@ void SafeBrowsingResourceHandler::StartDisplayingBlockingPage(
   CHECK(deferred_request_id_ != -1);
 
   state_ = STATE_DISPLAYING_BLOCKING_PAGE;
-  AddRef();  // Balanced in OnBlockingPageComplete().
 
   // Grab the original url of this request as well.
   GURL original_url;
@@ -223,8 +229,14 @@ void SafeBrowsingResourceHandler::StartDisplayingBlockingPage(
     original_url = url;
 
   safe_browsing_->DisplayBlockingPage(
-      url, original_url, redirect_urls_, resource_type_,
-      result, this, render_process_host_id_, render_view_id_);
+      url,
+      original_url,
+      redirect_urls_,
+      is_subresource_,
+      result,
+      base::Bind(&SafeBrowsingResourceHandler::OnBlockingPageComplete, this),
+      render_process_host_id_,
+      render_view_id_);
 }
 
 // SafeBrowsingService::Client implementation, called on the IO thread when
@@ -245,8 +257,6 @@ void SafeBrowsingResourceHandler::OnBlockingPageComplete(bool proceed) {
   } else {
     rdh_->CancelRequest(render_process_host_id_, deferred_request_id_, false);
   }
-
-  Release();  // Balances the AddRef() in StartDisplayingBlockingPage().
 }
 
 void SafeBrowsingResourceHandler::Shutdown() {
@@ -276,7 +286,8 @@ bool SafeBrowsingResourceHandler::CheckUrl(const GURL& url) {
   url_check_start_time_ = base::TimeTicks::Now();
 
   // Start a timer to abort the check if it takes too long.
-  timer_.Start(base::TimeDelta::FromMilliseconds(kCheckUrlTimeoutMs),
+  timer_.Start(FROM_HERE,
+               base::TimeDelta::FromMilliseconds(kCheckUrlTimeoutMs),
                this, &SafeBrowsingResourceHandler::OnCheckUrlTimeout);
 
   return false;
@@ -327,7 +338,7 @@ void SafeBrowsingResourceHandler::ResumeRedirect() {
   // Retrieve the details for the paused OnReceivedRedirect().
   int request_id = deferred_request_id_;
   GURL redirect_url = deferred_url_;
-  scoped_refptr<ResourceResponse> redirect_response =
+  scoped_refptr<content::ResourceResponse> redirect_response =
       deferred_redirect_response_;
 
   ClearDeferredRequestInfo();

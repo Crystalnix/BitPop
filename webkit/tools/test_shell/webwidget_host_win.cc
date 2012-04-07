@@ -9,7 +9,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebScreenInfoFactory.h"
 #include "ui/base/win/hwnd_util.h"
@@ -201,7 +201,7 @@ WebWidgetHost::WebWidgetHost()
       track_mouse_leave_(false),
       scroll_dx_(0),
       scroll_dy_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   set_painting(false);
 }
 
@@ -243,7 +243,7 @@ void WebWidgetHost::Paint() {
         paint_rect_.width(), paint_rect_.height(), true));
   }
 
-  webwidget_->animate();
+  webwidget_->animate(0.0);
 
   // This may result in more invalidation
   webwidget_->layout();

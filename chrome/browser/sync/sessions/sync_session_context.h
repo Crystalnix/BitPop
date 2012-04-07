@@ -19,11 +19,15 @@
 #define CHROME_BROWSER_SYNC_SESSIONS_SYNC_SESSION_CONTEXT_H_
 #pragma once
 
+#include <map>
 #include <string>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/engine/syncer_types.h"
+#include "chrome/browser/sync/sessions/debug_info_getter.h"
 
 namespace syncable {
 class DirectoryManager;
@@ -49,8 +53,12 @@ class SyncSessionContext {
   SyncSessionContext(ServerConnectionManager* connection_manager,
                      syncable::DirectoryManager* directory_manager,
                      ModelSafeWorkerRegistrar* model_safe_worker_registrar,
-                     const std::vector<SyncEngineEventListener*>& listeners);
-  ~SyncSessionContext();
+                     const std::vector<SyncEngineEventListener*>& listeners,
+                     DebugInfoGetter* debug_info_getter);
+
+  // Empty constructor for unit tests.
+  SyncSessionContext();
+  virtual ~SyncSessionContext();
 
   ConflictResolver* resolver() { return resolver_; }
   ServerConnectionManager* connection_manager() {
@@ -66,6 +74,10 @@ class SyncSessionContext {
     return extensions_activity_monitor_;
   }
 
+  DebugInfoGetter* debug_info_getter() {
+    return debug_info_getter_;
+  }
+
   // Talk notification status.
   void set_notifications_enabled(bool enabled) {
     notifications_enabled_ = enabled;
@@ -77,7 +89,7 @@ class SyncSessionContext {
     DCHECK(account_name_.empty());
     account_name_ = name;
   }
-  const std::string& account_name() { return account_name_; }
+  const std::string& account_name() const { return account_name_; }
 
   void set_max_commit_batch_size(int batch_size) {
     max_commit_batch_size_ = batch_size;
@@ -97,7 +109,25 @@ class SyncSessionContext {
                       OnSyncEngineEvent(event));
   }
 
+  // This is virtual for unit tests.
+  virtual void SetUnthrottleTime(syncable::ModelTypeSet types,
+                                 const base::TimeTicks& time);
+
+  // This prunes the |unthrottle_time_| map based on the |time| passed in. This
+  // is called by syncer at the SYNCER_BEGIN stage.
+  void PruneUnthrottledTypes(const base::TimeTicks& time);
+
+  // This returns the list of currently throttled types. Unless server returns
+  // new throttled types this will remain constant through out the sync cycle.
+  syncable::ModelTypeSet GetThrottledTypes() const;
+
  private:
+  typedef std::map<syncable::ModelType, base::TimeTicks> UnthrottleTimes;
+
+  FRIEND_TEST_ALL_PREFIXES(SyncSessionContextTest, AddUnthrottleTimeTest);
+  FRIEND_TEST_ALL_PREFIXES(SyncSessionContextTest,
+                           GetCurrentlyThrottledTypesTest);
+
   // Rather than force clients to set and null-out various context members, we
   // extend our encapsulation boundary to scoped helpers that take care of this
   // once they are allocated. See definitions of these below.
@@ -136,6 +166,14 @@ class SyncSessionContext {
 
   // Cache of last session snapshot information.
   scoped_ptr<sessions::SyncSessionSnapshot> previous_session_snapshot_;
+
+  // We use this to get debug info to send to the server for debugging
+  // client behavior on server side.
+  DebugInfoGetter* const debug_info_getter_;
+
+  // This is a map from throttled data types to the time at which they can be
+  // unthrottled.
+  UnthrottleTimes unthrottle_times_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSessionContext);
 };

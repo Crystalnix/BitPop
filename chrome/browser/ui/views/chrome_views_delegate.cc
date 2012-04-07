@@ -13,16 +13,19 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/accessibility_event_router_views.h"
 #include "chrome/browser/ui/views/event_utils.h"
-#include "chrome/browser/ui/window_sizer.h"
 #include "chrome/common/pref_names.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/gfx/rect.h"
-#include "views/widget/native_widget.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/gfx/screen.h"
+#include "ui/views/widget/native_widget.h"
+#include "ui/views/widget/widget.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/app_icon_win.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ash/shell.h"
 #endif
 
 namespace {
@@ -33,10 +36,9 @@ namespace {
 // been initialized.
 // TODO(mirandac): This function will also separate windows by profile in a
 // multi-profile environment.
-PrefService* GetPrefsForWindow(views::Window* window) {
+PrefService* GetPrefsForWindow(const views::Widget* window) {
   Profile* profile = reinterpret_cast<Profile*>(
-      window->AsWidget()->native_widget()->GetNativeWindowProperty(
-          Profile::kProfileKey));
+      window->GetNativeWindowProperty(Profile::kProfileKey));
   if (!profile) {
     // Use local state for windows that have no explicit profile.
     return g_browser_process->local_state();
@@ -53,43 +55,41 @@ ui::Clipboard* ChromeViewsDelegate::GetClipboard() const {
   return g_browser_process->clipboard();
 }
 
-void ChromeViewsDelegate::SaveWindowPlacement(views::Window* window,
-                                              const std::wstring& window_name,
+void ChromeViewsDelegate::SaveWindowPlacement(const views::Widget* window,
+                                              const std::string& window_name,
                                               const gfx::Rect& bounds,
-                                              bool maximized) {
+                                              ui::WindowShowState show_state) {
   PrefService* prefs = GetPrefsForWindow(window);
   if (!prefs)
     return;
 
-  DCHECK(prefs->FindPreference(WideToUTF8(window_name).c_str()));
-  DictionaryPrefUpdate update(prefs, WideToUTF8(window_name).c_str());
+  DCHECK(prefs->FindPreference(window_name.c_str()));
+  DictionaryPrefUpdate update(prefs, window_name.c_str());
   DictionaryValue* window_preferences = update.Get();
   window_preferences->SetInteger("left", bounds.x());
   window_preferences->SetInteger("top", bounds.y());
   window_preferences->SetInteger("right", bounds.right());
   window_preferences->SetInteger("bottom", bounds.bottom());
-  window_preferences->SetBoolean("maximized", maximized);
+  window_preferences->SetBoolean("maximized",
+                                 show_state == ui::SHOW_STATE_MAXIMIZED);
 
-  scoped_ptr<WindowSizer::MonitorInfoProvider> monitor_info_provider(
-      WindowSizer::CreateDefaultMonitorInfoProvider());
-  gfx::Rect work_area(
-      monitor_info_provider->GetMonitorWorkAreaMatching(bounds));
+  gfx::Rect work_area(gfx::Screen::GetMonitorWorkAreaMatching(bounds));
   window_preferences->SetInteger("work_area_left", work_area.x());
   window_preferences->SetInteger("work_area_top", work_area.y());
   window_preferences->SetInteger("work_area_right", work_area.right());
   window_preferences->SetInteger("work_area_bottom", work_area.bottom());
 }
 
-bool ChromeViewsDelegate::GetSavedWindowBounds(views::Window* window,
-                                               const std::wstring& window_name,
-                                               gfx::Rect* bounds) const {
-  PrefService* prefs = GetPrefsForWindow(window);
+bool ChromeViewsDelegate::GetSavedWindowPlacement(
+    const std::string& window_name,
+    gfx::Rect* bounds,
+    ui::WindowShowState* show_state) const {
+  PrefService* prefs = g_browser_process->local_state();
   if (!prefs)
     return false;
 
-  DCHECK(prefs->FindPreference(WideToUTF8(window_name).c_str()));
-  const DictionaryValue* dictionary =
-      prefs->GetDictionary(WideToUTF8(window_name).c_str());
+  DCHECK(prefs->FindPreference(window_name.c_str()));
+  const DictionaryValue* dictionary = prefs->GetDictionary(window_name.c_str());
   int left, top, right, bottom;
   if (!dictionary || !dictionary->GetInteger("left", &left) ||
       !dictionary->GetInteger("top", &top) ||
@@ -98,23 +98,13 @@ bool ChromeViewsDelegate::GetSavedWindowBounds(views::Window* window,
     return false;
 
   bounds->SetRect(left, top, right - left, bottom - top);
+
+  bool maximized = false;
+  if (dictionary)
+    dictionary->GetBoolean("maximized", &maximized);
+  *show_state = maximized ? ui::SHOW_STATE_MAXIMIZED : ui::SHOW_STATE_NORMAL;
+
   return true;
-}
-
-bool ChromeViewsDelegate::GetSavedMaximizedState(
-    views::Window* window,
-    const std::wstring& window_name,
-    bool* maximized) const {
-  PrefService* prefs = GetPrefsForWindow(window);
-  if (!prefs)
-    return false;
-
-  DCHECK(prefs->FindPreference(WideToUTF8(window_name).c_str()));
-  const DictionaryValue* dictionary =
-      prefs->GetDictionary(WideToUTF8(window_name).c_str());
-
-  return dictionary && dictionary->GetBoolean("maximized", maximized) &&
-      maximized;
 }
 
 void ChromeViewsDelegate::NotifyAccessibilityEvent(
@@ -123,12 +113,11 @@ void ChromeViewsDelegate::NotifyAccessibilityEvent(
       view, event_type);
 }
 
-void ChromeViewsDelegate::NotifyMenuItemFocused(
-      const std::wstring& menu_name,
-      const std::wstring& menu_item_name,
-      int item_index,
-      int item_count,
-      bool has_submenu) {
+void ChromeViewsDelegate::NotifyMenuItemFocused(const string16& menu_name,
+                                                const string16& menu_item_name,
+                                                int item_index,
+                                                int item_count,
+                                                bool has_submenu) {
   AccessibilityEventRouterViews::GetInstance()->HandleMenuItemFocused(
       menu_name, menu_item_name, item_index, item_count, has_submenu);
 }
@@ -138,6 +127,15 @@ HICON ChromeViewsDelegate::GetDefaultWindowIcon() const {
   return GetAppIcon();
 }
 #endif
+
+views::NonClientFrameView* ChromeViewsDelegate::CreateDefaultNonClientFrameView(
+    views::Widget* widget) {
+#if defined(USE_AURA)
+  return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
+#else
+  return NULL;
+#endif
+}
 
 void ChromeViewsDelegate::AddRef() {
   g_browser_process->AddRefModule();

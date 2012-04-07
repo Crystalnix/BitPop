@@ -13,25 +13,20 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/notification_service.h"
 
 #if defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
-#endif
-
-// Basic test is flaky on ChromeOS.
-// http://crbug.com/52929
-#if defined(OS_CHROMEOS)
-#define MAYBE_Basic FLAKY_Basic
-#else
-#define MAYBE_Basic Basic
 #endif
 
 namespace {
@@ -52,34 +47,38 @@ string16 AutocompleteResultAsString(const AutocompleteResult& result) {
 
 class OmniboxApiTest : public ExtensionApiTest {
  protected:
-  LocationBar* GetLocationBar() const {
-    return browser()->window()->GetLocationBar();
+  LocationBar* GetLocationBar(Browser* browser) const {
+    return browser->window()->GetLocationBar();
   }
 
-  AutocompleteController* GetAutocompleteController() const {
-    return GetLocationBar()->location_entry()->model()->popup_model()->
+  AutocompleteController* GetAutocompleteController(Browser* browser) const {
+    return GetLocationBar(browser)->location_entry()->model()->popup_model()->
         autocomplete_controller();
   }
 
-  void WaitForTemplateURLModelToLoad() {
-    TemplateURLModel* model =
-        browser()->profile()->GetTemplateURLModel();
+  void WaitForTemplateURLServiceToLoad() {
+    ui_test_utils::WindowedNotificationObserver loaded_observer(
+        chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
+        content::NotificationService::AllSources());
+    TemplateURLService* model =
+        TemplateURLServiceFactory::GetForProfile(browser()->profile());
     model->Load();
-    if (!model->loaded()) {
-      ui_test_utils::WaitForNotification(
-          NotificationType::TEMPLATE_URL_MODEL_LOADED);
-    }
+    if (!model->loaded())
+      loaded_observer.Wait();
   }
 
+  // TODO(phajdan.jr): Get rid of this wait-in-a-loop pattern.
   void WaitForAutocompleteDone(AutocompleteController* controller) {
     while (!controller->done()) {
-      ui_test_utils::WaitForNotification(
-          NotificationType::AUTOCOMPLETE_CONTROLLER_RESULT_READY);
+      ui_test_utils::WindowedNotificationObserver ready_observer(
+          chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
+          content::Source<AutocompleteController>(controller));
+      ready_observer.Wait();
     }
   }
 };
 
-IN_PROC_BROWSER_TEST_F(OmniboxApiTest, MAYBE_Basic) {
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
 #if defined(TOOLKIT_GTK)
   // Disable the timer because, on Lucid at least, it triggers resize/move
   // behavior in the browser window, which dismisses the autocomplete popup
@@ -88,15 +87,15 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, MAYBE_Basic) {
       browser()->window())->DisableDebounceTimerForTests(true);
 #endif
 
-  ASSERT_TRUE(test_server()->Start());
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
 
-  // The results depend on the TemplateURLModel being loaded. Make sure it is
+  // The results depend on the TemplateURLService being loaded. Make sure it is
   // loaded so that the autocomplete results are consistent.
-  WaitForTemplateURLModelToLoad();
+  WaitForTemplateURLServiceToLoad();
 
-  LocationBar* location_bar = GetLocationBar();
-  AutocompleteController* autocomplete_controller = GetAutocompleteController();
+  LocationBar* location_bar = GetLocationBar(browser());
+  AutocompleteController* autocomplete_controller =
+      GetAutocompleteController(browser());
 
   // Test that our extension's keyword is suggested to us when we partially type
   // it.
@@ -107,7 +106,7 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, MAYBE_Basic) {
 
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
-    EXPECT_EQ(std::wstring(), location_bar->GetInputString());
+    EXPECT_EQ(string16(), location_bar->GetInputString());
     EXPECT_EQ(string16(), location_bar->location_entry()->GetText());
     EXPECT_TRUE(location_bar->location_entry()->IsSelectAll());
 
@@ -195,6 +194,116 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, MAYBE_Basic) {
     autocomplete_controller->Start(
         ASCIIToUTF16("keyword command"), string16(), true, false, true,
         AutocompleteInput::ALL_MATCHES);
+    location_bar->AcceptInput();
+    EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+  }
+}
+
+// Tests that the autocomplete popup doesn't reopen after accepting input for
+// a given query.
+// http://crbug.com/88552
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, PopupStaysClosed) {
+#if defined(TOOLKIT_GTK)
+  // Disable the timer because, on Lucid at least, it triggers resize/move
+  // behavior in the browser window, which dismisses the autocomplete popup
+  // before the results can be read.
+  static_cast<BrowserWindowGtk*>(
+    browser()->window())->DisableDebounceTimerForTests(true);
+#endif
+
+  ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
+
+  // The results depend on the TemplateURLService being loaded. Make sure it is
+  // loaded so that the autocomplete results are consistent.
+  WaitForTemplateURLServiceToLoad();
+
+  LocationBar* location_bar = GetLocationBar(browser());
+  AutocompleteController* autocomplete_controller =
+      GetAutocompleteController(browser());
+  AutocompletePopupModel* popup_model =
+      GetLocationBar(browser())->location_entry()->model()->popup_model();
+
+  // Input a keyword query and wait for suggestions from the extension.
+  autocomplete_controller->Start(
+      ASCIIToUTF16("keyword comman"), string16(), true, false, true,
+      AutocompleteInput::ALL_MATCHES);
+  WaitForAutocompleteDone(autocomplete_controller);
+  EXPECT_TRUE(autocomplete_controller->done());
+  EXPECT_TRUE(popup_model->IsOpen());
+
+  // Quickly type another query and accept it before getting suggestions back
+  // for the query. The popup will close after accepting input - ensure that it
+  // does not reopen when the extension returns its suggestions.
+  ResultCatcher catcher;
+  autocomplete_controller->Start(
+      ASCIIToUTF16("keyword command"), string16(), true, false, true,
+      AutocompleteInput::ALL_MATCHES);
+  location_bar->AcceptInput();
+  WaitForAutocompleteDone(autocomplete_controller);
+  EXPECT_TRUE(autocomplete_controller->done());
+  EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
+  EXPECT_FALSE(popup_model->IsOpen());
+}
+
+// Tests that we get suggestions from and send input to the incognito context
+// of an incognito split mode extension.
+// http://crbug.com/100927
+// Test flaky on linux: http://crbug.com/101219
+IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
+#if defined(TOOLKIT_GTK)
+  // Disable the timer because, on Lucid at least, it triggers resize/move
+  // behavior in the browser window, which dismisses the autocomplete popup
+  // before the results can be read.
+  static_cast<BrowserWindowGtk*>(
+    browser()->window())->DisableDebounceTimerForTests(true);
+#endif
+
+  ResultCatcher catcher_incognito;
+  catcher_incognito.RestrictToProfile(
+      browser()->profile()->GetOffTheRecordProfile());
+
+  ASSERT_TRUE(RunExtensionTestIncognito("omnibox")) << message_;
+
+  // Open an incognito window and wait for the incognito extension process to
+  // respond.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(catcher_incognito.GetNextResult()) << catcher_incognito.message();
+
+  // The results depend on the TemplateURLService being loaded. Make sure it is
+  // loaded so that the autocomplete results are consistent.
+  WaitForTemplateURLServiceToLoad();
+
+  LocationBar* location_bar = GetLocationBar(incognito_browser);
+  AutocompleteController* autocomplete_controller =
+      GetAutocompleteController(incognito_browser);
+
+  // Test that we get the incognito-specific suggestions.
+  {
+    autocomplete_controller->Start(
+        ASCIIToUTF16("keyword suggestio"), string16(), true, false, true,
+        AutocompleteInput::ALL_MATCHES);
+
+    WaitForAutocompleteDone(autocomplete_controller);
+    EXPECT_TRUE(autocomplete_controller->done());
+
+    // First result should be to invoke the keyword with what we typed, 2-4
+    // should be to invoke with suggestions from the extension, and the last
+    // should be to search for what we typed.
+    const AutocompleteResult& result = autocomplete_controller->result();
+    ASSERT_EQ(5U, result.size()) << AutocompleteResultAsString(result);
+    ASSERT_TRUE(result.match_at(0).template_url);
+    EXPECT_EQ(ASCIIToUTF16("keyword suggestion3 incognito"),
+              result.match_at(3).fill_into_edit);
+  }
+
+  // Test that our input is sent to the incognito context. The test will do a
+  // text comparison and succeed only if "command incognito" is sent to the
+  // incognito context.
+  {
+    ResultCatcher catcher;
+    autocomplete_controller->Start(
+        ASCIIToUTF16("keyword command incognito"), string16(),
+        true, false, true, AutocompleteInput::ALL_MATCHES);
     location_bar->AcceptInput();
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   }

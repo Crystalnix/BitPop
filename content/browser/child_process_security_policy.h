@@ -15,6 +15,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
+#include "content/common/content_export.h"
 
 class FilePath;
 class GURL;
@@ -26,7 +27,7 @@ class GURL;
 //
 // ChildProcessSecurityPolicy is a singleton that may be used on any thread.
 //
-class ChildProcessSecurityPolicy {
+class CONTENT_EXPORT ChildProcessSecurityPolicy {
  public:
   // Object can only be created through GetInstance() so the constructor is
   // private.
@@ -106,9 +107,6 @@ class ChildProcessSecurityPolicy {
   // Grant the child process the ability to use Web UI Bindings.
   void GrantWebUIBindings(int child_id);
 
-  // Grant the child process the ability to use extension Bindings.
-  void GrantExtensionBindings(int child_id);
-
   // Grant the child process the ability to read raw cookies.
   void GrantReadRawCookies(int child_id);
 
@@ -140,13 +138,19 @@ class ChildProcessSecurityPolicy {
   // allowed to use WebUIBindings.
   bool HasWebUIBindings(int child_id);
 
-  // Returns true if the specified child_id has been granted WebUIBindings.
-  // The browser should check this property before assuming the child process is
-  // allowed to use extension bindings.
-  bool HasExtensionBindings(int child_id);
-
   // Returns true if the specified child_id has been granted ReadRawCookies.
   bool CanReadRawCookies(int child_id);
+
+  // Returns true if the process is permitted to see and use the cookies for
+  // the given origin.
+  // Only might return false if the very experimental
+  // --enable-strict-site-isolation is used.
+  bool CanUseCookiesForOrigin(int child_id, const GURL& gurl);
+
+  // Sets the process as only permitted to use and see the cookies for the
+  // given origin.
+  // Only used if the very experimental --enable-strict-site-isolation is used.
+  void LockToOrigin(int child_id, const GURL& gurl);
 
  private:
   friend class ChildProcessSecurityPolicyInProcessBrowserTest;
@@ -172,7 +176,7 @@ class ChildProcessSecurityPolicy {
                                          const FilePath& file,
                                          int permissions);
 
-    // You must acquire this lock before reading or writing any members of this
+  // You must acquire this lock before reading or writing any members of this
   // class.  You must not block while holding this lock.
   base::Lock lock_;
 

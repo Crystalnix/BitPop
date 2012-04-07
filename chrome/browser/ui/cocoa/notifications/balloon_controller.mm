@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/notifications/balloon_controller.h"
 
-#include "app/mac/nsimage_cache.h"
+#include "base/mac/bundle_locations.h"
 #import "base/mac/cocoa_protocols.h"
 #include "base/mac/mac_util.h"
 #import "base/memory/scoped_nsobject.h"
@@ -20,10 +20,12 @@
 #import "chrome/browser/ui/cocoa/notifications/balloon_view.h"
 #include "chrome/browser/ui/cocoa/notifications/balloon_view_host_mac.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/mac/nsimage_cache.h"
 
 namespace {
 
@@ -44,8 +46,8 @@ const int kRightMargin = 2;
 
 - (id)initWithBalloon:(Balloon*)balloon {
   NSString* nibpath =
-      [base::mac::MainAppBundle() pathForResource:@"Notification"
-                                          ofType:@"nib"];
+      [base::mac::FrameworkBundle() pathForResource:@"Notification"
+                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibpath owner:self])) {
     balloon_ = balloon;
     [self initializeHost];
@@ -60,7 +62,7 @@ const int kRightMargin = 2;
   DCHECK([self window]);
   DCHECK_EQ(self, [[self window] delegate]);
 
-  NSImage* image = app::mac::GetCachedImageWithName(@"balloon_wrench.pdf");
+  NSImage* image = gfx::GetCachedImageWithName(@"balloon_wrench.pdf");
   [optionsButton_ setDefaultImage:image];
   [optionsButton_ setDefaultOpacity:0.6];
   [optionsButton_ setHoverImage:image];
@@ -174,9 +176,11 @@ const int kRightMargin = 2;
 
 - (void)updateContents {
   DCHECK(htmlContents_.get()) << "BalloonView::Update called before Show";
-  if (htmlContents_->render_view_host())
-    htmlContents_->render_view_host()->NavigateToURL(
-        balloon_->notification().content_url());
+  if (htmlContents_->web_contents()) {
+    htmlContents_->web_contents()->GetController().LoadURL(
+        balloon_->notification().content_url(), content::Referrer(),
+        content::PAGE_TRANSITION_LINK, std::string());
+  }
 }
 
 - (void)repositionToBalloon {
@@ -186,11 +190,10 @@ const int kRightMargin = 2;
   int w = [self desiredTotalWidth];
   int h = [self desiredTotalHeight];
 
+  [[self window] setFrame:NSMakeRect(x, y, w, h)
+                  display:YES];
   if (htmlContents_.get())
     htmlContents_->UpdateActualSize(balloon_->content_size());
-
-  [[[self window] animator] setFrame:NSMakeRect(x, y, w, h)
-                             display:YES];
 }
 
 // Returns the total width the view should be to accommodate the balloon.

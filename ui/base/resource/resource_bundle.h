@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,14 +22,17 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
+#include "base/string_piece.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 class SkBitmap;
-typedef uint32 SkColor;
+// Don't use uint32 or uint32_t here because Eclipse's indexer gets confused.
+// This can be removed when the static colors are moved to ThemeProvider.
+typedef unsigned int SkColor;
 
 namespace base {
 class Lock;
-class StringPiece;
 }
 
 namespace gfx {
@@ -56,7 +59,7 @@ class DataPack;
 // ResourceBundle is a central facility to load images and other resources,
 // such as theme graphics.
 // Every resource is loaded only once.
-class ResourceBundle {
+class UI_EXPORT ResourceBundle {
  public:
   // An enumeration of the various font styles used throughout Chrome.
   // The following holds true for the font sizes:
@@ -69,24 +72,23 @@ class ResourceBundle {
     // NOTE: depending upon the locale, this may *not* result in a bold font.
     MediumBoldFont,
     LargeFont,
+    // NOTE: depending upon the locale, this may *not* result in a bold font.
+    LargeBoldFont,
   };
 
   // Initialize the ResourceBundle for this process.  Returns the language
   // selected.
   // NOTE: Mac ignores this and always loads up resources for the language
   // defined by the Cocoa UI (ie-NSBundle does the langange work).
-  static std::string InitSharedInstance(const std::string& pref_locale);
+  static std::string InitSharedInstanceWithLocale(
+      const std::string& pref_locale);
 
   // Initialize the ResourceBundle using given data pack path for testing.
-  static void InitSharedInstanceForTest(const FilePath& path);
+  static void InitSharedInstanceWithPakFile(const FilePath& path);
 
-  // Changes the locale for an already-initialized ResourceBundle.  Future
-  // calls to get strings will return the strings for this new locale.  This
-  // has no effect on existing or future image resources.  This has no effect
-  // on existing or future image resources, and thus does not use the lock to
-  // guarantee thread-safety, since all string access is expected to happen on
-  // the UI thread.
-  static std::string ReloadSharedInstance(const std::string& pref_locale);
+  // Load a .pak file.  Returns NULL if we fail to load |path|.  The caller
+  // is responsible for deleting up this pointer.
+  static DataPack* LoadResourcesDataPak(const FilePath& path);
 
   // Registers additional data pack files with the global ResourceBundle.  When
   // looking for a DataResource, we will search these files after searching the
@@ -97,8 +99,22 @@ class ResourceBundle {
   // Delete the ResourceBundle for this process if it exists.
   static void CleanupSharedInstance();
 
+  // Returns true after the global resource loader instance has been created.
+  static bool HasSharedInstance();
+
   // Return the global resource loader instance.
   static ResourceBundle& GetSharedInstance();
+
+  // Check if the .pak for the given locale exists.
+  static bool LocaleDataPakExists(const std::string& locale);
+
+  // Changes the locale for an already-initialized ResourceBundle, returning the
+  // name of the newly-loaded locale.  Future calls to get strings will return
+  // the strings for this new locale.  This has no effect on existing or future
+  // image resources.  |locale_resources_data_| is protected by a lock for the
+  // duration of the swap, as GetLocalizedString() may be concurrently invoked
+  // on another thread.
+  std::string ReloadLocaleResources(const std::string& pref_locale);
 
   // Gets the bitmap with the specified resource_id from the current module
   // data. Returns a pointer to a shared instance of the SkBitmap. This shared
@@ -139,13 +155,21 @@ class ResourceBundle {
   // system have changed, for example, when the locale has changed.
   void ReloadFonts();
 
+  // Overrides the path to the pak file from which the locale resources will be
+  // loaded. Pass an empty path to undo.
+  void OverrideLocalePakForTest(const FilePath& pak_path);
+
 #if defined(OS_WIN)
+  // NOTE: This needs to be called before initializing the shared instance if
+  // your resources are not stored in the executable.
+  static void SetResourcesDataDLL(HINSTANCE handle);
+
   // Loads and returns an icon from the app module.
   HICON LoadThemeIcon(int icon_id);
 
   // Loads and returns a cursor from the app module.
   HCURSOR LoadCursor(int cursor_id);
-#elif defined(USE_X11)
+#elif defined(TOOLKIT_USES_GTK)
   // Gets the GdkPixbuf with the specified resource_id from the main data pak
   // file. Returns a pointer to a shared instance of the GdkPixbuf.  This
   // shared GdkPixbuf is owned by the resource bundle and should not be freed.
@@ -157,6 +181,9 @@ class ResourceBundle {
   // This function flips it in RTL locales.
   GdkPixbuf* GetRTLEnabledPixbufNamed(int resource_id);
 
+  // Same as above, but returns a gfx::Image wrapping the GdkPixbuf.
+  gfx::Image& GetRTLEnabledImageNamed(int resource_id);
+
  private:
   // Shared implementation for the above two functions.
   gfx::Image* GetPixbufImpl(int resource_id, bool rtl_enabled);
@@ -164,14 +191,7 @@ class ResourceBundle {
  public:
 #endif
 
-  // TODO(glen): Move these into theme provider (dialogs still depend on
-  //    ResourceBundle).
-  static const SkColor frame_color;
-  static const SkColor frame_color_inactive;
-  static const SkColor frame_color_app_panel;
-  static const SkColor frame_color_app_panel_inactive;
-  static const SkColor frame_color_incognito;
-  static const SkColor frame_color_incognito_inactive;
+  // TODO(beng): These browser-specific concepts should move to ThemeProvider.
   static const SkColor toolbar_color;
   static const SkColor toolbar_separator_color;
 
@@ -200,8 +220,8 @@ class ResourceBundle {
 #if defined(OS_WIN)
   // Windows stores resources in DLLs, which are managed by HINSTANCE.
   typedef HINSTANCE DataHandle;
-#elif defined(USE_BASE_DATA_PACK)
-  // Linux uses base::DataPack.
+#elif defined(OS_POSIX)
+  // Everyone else uses base::DataPack.
   typedef DataPack* DataHandle;
 #endif
 
@@ -223,13 +243,13 @@ class ResourceBundle {
   void LoadTestResources(const FilePath& path);
 
   // Unload the locale specific strings and prepares to load new ones. See
-  // comments for ReloadSharedInstance().
+  // comments for ReloadLocaleResources().
   void UnloadLocaleResources();
 
   // Initialize all the gfx::Font members if they haven't yet been initialized.
   void LoadFontsIfNecessary();
 
-#if defined(USE_BASE_DATA_PACK)
+#if defined(OS_POSIX)
   // Returns the full pathname of the main resources file to load.  May return
   // an empty string if no main resources data files are found.
   static FilePath GetResourcesFilePath();
@@ -257,14 +277,18 @@ class ResourceBundle {
   // bright red bitmap.
   gfx::Image* GetEmptyImage();
 
-  // Class level lock.  Used to protect internal data structures that may be
-  // accessed from other threads (e.g., images_).
-  scoped_ptr<base::Lock> lock_;
+  const FilePath& GetOverriddenPakPath();
+
+  // Protects |images_| and font-related members.
+  scoped_ptr<base::Lock> images_and_fonts_lock_;
+
+  // Protects |locale_resources_data_|.
+  scoped_ptr<base::Lock> locale_resources_data_lock_;
 
   // Handles for data sources.
   DataHandle resources_data_;
   DataHandle large_icon_resources_data_;
-  DataHandle locale_resources_data_;
+  scoped_ptr<DataPack> locale_resources_data_;
 
   // References to extra data packs loaded via AddDataPackToSharedInstance.
   std::vector<LoadedDataPack*> data_packs_;
@@ -281,9 +305,12 @@ class ResourceBundle {
   scoped_ptr<gfx::Font> medium_font_;
   scoped_ptr<gfx::Font> medium_bold_font_;
   scoped_ptr<gfx::Font> large_font_;
+  scoped_ptr<gfx::Font> large_bold_font_;
   scoped_ptr<gfx::Font> web_font_;
 
   static ResourceBundle* g_shared_instance_;
+
+  FilePath overridden_pak_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceBundle);
 };

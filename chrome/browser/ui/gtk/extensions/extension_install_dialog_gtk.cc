@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,71 +11,154 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/browser_window_gtk.h"
+#include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/image_operations.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+
+using content::OpenURLParams;
 
 namespace {
 
-const int kRightColumnMinWidth = 290;
+const int kLeftColumnMinWidth = 250;
 const int kImageSize = 69;
 
-// Padding on all sides of each permission in the permissions list.
-const int kPermissionsPadding = 8;
+// Additional padding (beyond on ui::kControlSpacing) all sides of each
+// permission in the permissions list.
+const int kPermissionsPadding = 2;
 
-// Make a GtkLabel with |str| as its text, using the formatting in |format|.
-GtkWidget* MakeMarkupLabel(const char* format, const std::string& str) {
-  GtkWidget* label = gtk_label_new(NULL);
-  char* markup = g_markup_printf_escaped(format, str.c_str());
-  gtk_label_set_markup(GTK_LABEL(label), markup);
-  g_free(markup);
+const double kRatingTextSize = 12.1;  // 12.1px = 9pt @ 96dpi
 
-  // Left align it.
-  gtk_misc_set_alignment(GTK_MISC(label), 0.0, 0.5);
-
-  return label;
+// Adds a Skia image as an icon control to the given container.
+void AddResourceIcon(const SkBitmap* icon, void* data) {
+  GtkWidget* container = static_cast<GtkWidget*>(data);
+  GdkPixbuf* icon_pixbuf = gfx::GdkPixbufFromSkBitmap(icon);
+  GtkWidget* icon_widget = gtk_image_new_from_pixbuf(icon_pixbuf);
+  g_object_unref(icon_pixbuf);
+  gtk_box_pack_start(GTK_BOX(container), icon_widget, FALSE, FALSE, 0);
 }
 
-void OnResponse(GtkWidget* dialog, int response_id,
-                ExtensionInstallUI::Delegate* delegate) {
-  if (response_id == GTK_RESPONSE_ACCEPT) {
-    delegate->InstallUIProceed();
-  } else {
-    delegate->InstallUIAbort();
-  }
+// Displays the dialog when constructed, deletes itself when dialog is
+// dismissed. Success/failure is passed back through the ExtensionInstallUI::
+// Delegate instance.
+class ExtensionInstallDialog {
+ public:
+  ExtensionInstallDialog(GtkWindow* parent,
+                         ExtensionInstallUI::Delegate *delegate,
+                         const Extension* extension,
+                         SkBitmap* skia_icon,
+                         const ExtensionInstallUI::Prompt& prompt);
+ private:
+  ~ExtensionInstallDialog();
 
-  gtk_widget_destroy(dialog);
-}
+  CHROMEGTK_CALLBACK_1(ExtensionInstallDialog, void, OnResponse, int);
+  CHROMEGTK_CALLBACK_0(ExtensionInstallDialog, void, OnStoreLinkClick);
 
-void ShowInstallDialog(GtkWindow* parent,
-                       SkBitmap* skia_icon,
-                       const Extension* extension,
-                       ExtensionInstallUI::Delegate *delegate,
-                       const std::vector<string16>& permissions,
-                       ExtensionInstallUI::PromptType type) {
+  ExtensionInstallUI::Delegate* delegate_;
+  const Extension* extension_;
+  GtkWidget* dialog_;
+};
+
+ExtensionInstallDialog::ExtensionInstallDialog(
+    GtkWindow* parent,
+    ExtensionInstallUI::Delegate *delegate,
+    const Extension* extension,
+    SkBitmap* skia_icon,
+    const ExtensionInstallUI::Prompt& prompt)
+    : delegate_(delegate),
+      extension_(extension) {
+  bool show_permissions = prompt.GetPermissionCount() > 0;
+  bool is_inline_install =
+      prompt.type() == ExtensionInstallUI::INLINE_INSTALL_PROMPT;
+
   // Build the dialog.
-  GtkWidget* dialog = gtk_dialog_new_with_buttons(
-      l10n_util::GetStringUTF8(ExtensionInstallUI::kTitleIds[type]).c_str(),
+  dialog_ = gtk_dialog_new_with_buttons(
+      UTF16ToUTF8(prompt.GetDialogTitle(extension)).c_str(),
       parent,
       GTK_DIALOG_MODAL,
       NULL);
-  GtkWidget* close_button = gtk_dialog_add_button(GTK_DIALOG(dialog),
-      GTK_STOCK_CANCEL, GTK_RESPONSE_CLOSE);
+  GtkWidget* close_button = gtk_dialog_add_button(
+      GTK_DIALOG(dialog_),
+      prompt.HasAbortButtonLabel() ?
+          UTF16ToUTF8(prompt.GetAbortButtonLabel()).c_str() : GTK_STOCK_CANCEL,
+      GTK_RESPONSE_CLOSE);
   gtk_dialog_add_button(
-      GTK_DIALOG(dialog),
-      l10n_util::GetStringUTF8(ExtensionInstallUI::kButtonIds[type]).c_str(),
+      GTK_DIALOG(dialog_),
+      UTF16ToUTF8(prompt.GetAcceptButtonLabel()).c_str(),
       GTK_RESPONSE_ACCEPT);
-  gtk_dialog_set_has_separator(GTK_DIALOG(dialog), FALSE);
+#if !GTK_CHECK_VERSION(2, 22, 0)
+  gtk_dialog_set_has_separator(GTK_DIALOG(dialog_), FALSE);
+#endif
 
-  // Create a two column layout.
-  GtkWidget* content_area = GTK_DIALOG(dialog)->vbox;
-  gtk_box_set_spacing(GTK_BOX(content_area), gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
 
-  GtkWidget* icon_hbox = gtk_hbox_new(FALSE, gtk_util::kContentAreaSpacing);
-  gtk_box_pack_start(GTK_BOX(content_area), icon_hbox, TRUE, TRUE, 0);
+  // Divide the dialog vertically (item data and icon on the top, permissions
+  // on the bottom).
+  GtkWidget* content_vbox = gtk_vbox_new(FALSE, ui::kControlSpacing);
+  gtk_box_pack_start(GTK_BOX(content_area), content_vbox, TRUE, TRUE, 0);
+
+  // Create a two column layout for the top (item data on the left, icon on
+  // the right).
+  GtkWidget* top_content_hbox = gtk_hbox_new(FALSE, ui::kContentAreaSpacing);
+  gtk_box_pack_start(GTK_BOX(content_vbox), top_content_hbox, TRUE, TRUE, 0);
+
+  // Create a new vbox for the left column.
+  GtkWidget* left_column_area = gtk_vbox_new(FALSE, ui::kControlSpacing);
+  gtk_box_pack_start(GTK_BOX(top_content_hbox), left_column_area,
+                     TRUE, TRUE, 0);
+
+  GtkWidget* heading_vbox = gtk_vbox_new(FALSE, 0);
+  // If we are not going to show anything else, vertically center the title.
+  bool center_heading = !show_permissions && !is_inline_install;
+  gtk_box_pack_start(GTK_BOX(left_column_area), heading_vbox, center_heading,
+                     center_heading, 0);
+
+  // Heading
+  GtkWidget* heading_label = gtk_util::CreateBoldLabel(
+      UTF16ToUTF8(prompt.GetHeading(extension_->name())).c_str());
+  gtk_label_set_line_wrap(GTK_LABEL(heading_label), true);
+  gtk_misc_set_alignment(GTK_MISC(heading_label), 0.0, 0.5);
+  gtk_box_pack_start(GTK_BOX(heading_vbox), heading_label, center_heading,
+                     center_heading, 0);
+
+  if (is_inline_install) {
+    // Average rating (as stars) and number of ratings
+    GtkWidget* stars_hbox = gtk_hbox_new(FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(heading_vbox), stars_hbox, FALSE, FALSE, 0);
+    prompt.AppendRatingStars(AddResourceIcon, stars_hbox);
+    GtkWidget* rating_label = gtk_label_new(UTF16ToUTF8(
+        prompt.GetRatingCount()).c_str());
+    gtk_util::ForceFontSizePixels(rating_label, kRatingTextSize);
+    gtk_box_pack_start(GTK_BOX(stars_hbox), rating_label,
+                       FALSE, FALSE, 3);
+
+    // User count
+    GtkWidget* users_label = gtk_label_new(UTF16ToUTF8(
+        prompt.GetUserCount()).c_str());
+    gtk_util::SetLabelWidth(users_label, kLeftColumnMinWidth);
+    GdkColor gray = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
+    gtk_util::SetLabelColor(users_label, &gray);
+    gtk_util::ForceFontSizePixels(rating_label, kRatingTextSize);
+    gtk_box_pack_start(GTK_BOX(heading_vbox), users_label,
+                       FALSE, FALSE, 0);
+
+    // Store link
+    GtkWidget* store_link = gtk_chrome_link_button_new(
+        l10n_util::GetStringUTF8(IDS_EXTENSION_PROMPT_STORE_LINK).c_str());
+    gtk_util::ForceFontSizePixels(store_link, kRatingTextSize);
+    GtkWidget* store_link_hbox = gtk_hbox_new(FALSE, 0);
+    // Stick it in an hbox so it doesn't expand to the whole width.
+    gtk_box_pack_start(GTK_BOX(store_link_hbox), store_link, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(heading_vbox), store_link_hbox, FALSE, FALSE, 0);
+    g_signal_connect(store_link, "clicked",
+                     G_CALLBACK(OnStoreLinkClickThunk), this);
+  }
 
   // Resize the icon if necessary.
   SkBitmap scaled_icon = *skia_icon;
@@ -85,110 +168,98 @@ void ShowInstallDialog(GtkWindow* parent,
         kImageSize, kImageSize);
   }
 
-  // Put Icon in the left column.
+  // Put icon in the right column.
   GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(&scaled_icon);
   GtkWidget* icon = gtk_image_new_from_pixbuf(pixbuf);
   g_object_unref(pixbuf);
-  gtk_box_pack_start(GTK_BOX(icon_hbox), icon, FALSE, FALSE, 0);
+  gtk_box_pack_start(GTK_BOX(top_content_hbox), icon, FALSE, FALSE, 0);
   // Top justify the image.
   gtk_misc_set_alignment(GTK_MISC(icon), 0.5, 0.0);
 
-  // Create a new vbox for the right column.
-  GtkWidget* right_column_area = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
-  gtk_box_pack_start(GTK_BOX(icon_hbox), right_column_area, TRUE, TRUE, 0);
-
-  std::string heading_text = l10n_util::GetStringFUTF8(
-      ExtensionInstallUI::kHeadingIds[type], UTF8ToUTF16(extension->name()));
-  GtkWidget* heading_label = MakeMarkupLabel("<span weight=\"bold\">%s</span>",
-                                             heading_text);
-  gtk_label_set_line_wrap(GTK_LABEL(heading_label), true);
-  gtk_misc_set_alignment(GTK_MISC(heading_label), 0.0, 0.5);
-  bool show_permissions = !permissions.empty();
-  // If we are not going to show the permissions, vertically center the title.
-  gtk_box_pack_start(GTK_BOX(right_column_area), heading_label,
-                     !show_permissions, !show_permissions, 0);
-
+  // Permissions are shown separated by a divider for inline installs, or
+  // directly under the heading for regular installs (where we don't have
+  // the store data)
   if (show_permissions) {
-    GtkWidget* warning_label = gtk_label_new(l10n_util::GetStringUTF8(
-        ExtensionInstallUI::kWarningIds[type]).c_str());
-    gtk_util::SetLabelWidth(warning_label, kRightColumnMinWidth);
+    GtkWidget* permissions_container;
+    if (is_inline_install) {
+      permissions_container = content_vbox;
+      gtk_box_pack_start(GTK_BOX(content_vbox), gtk_hseparator_new(),
+                         FALSE, FALSE, ui::kControlSpacing);
+    } else {
+      permissions_container = left_column_area;
+    }
 
-    gtk_box_pack_start(GTK_BOX(right_column_area), warning_label,
+    GtkWidget* permissions_header = gtk_util::CreateBoldLabel(
+        UTF16ToUTF8(prompt.GetPermissionsHeader()).c_str());
+    gtk_util::SetLabelWidth(permissions_header, kLeftColumnMinWidth);
+    gtk_box_pack_start(GTK_BOX(permissions_container), permissions_header,
                        FALSE, FALSE, 0);
 
-    GtkWidget* frame = gtk_frame_new(NULL);
-    gtk_box_pack_start(GTK_BOX(right_column_area), frame, FALSE, FALSE, 0);
-
-    GtkWidget* text_view = gtk_text_view_new();
-    gtk_container_add(GTK_CONTAINER(frame), text_view);
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(text_view), FALSE);
-    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(text_view),
-                                  kPermissionsPadding);
-    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(text_view),
-                                   kPermissionsPadding);
-    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(text_view), GTK_WRAP_WORD);
-    GtkTextBuffer* buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(text_view));
-    GtkTextTagTable* tag_table = gtk_text_buffer_get_tag_table(buffer);
-
-    GtkTextTag* padding_below_tag = gtk_text_tag_new(NULL);
-    g_object_set(G_OBJECT(padding_below_tag), "pixels-below-lines",
-                 kPermissionsPadding, NULL);
-    g_object_set(G_OBJECT(padding_below_tag), "pixels-below-lines-set",
-                 TRUE, NULL);
-    gtk_text_tag_table_add(tag_table, padding_below_tag);
-    g_object_unref(padding_below_tag);
-    GtkTextTag* padding_above_tag = gtk_text_tag_new(NULL);
-    g_object_set(G_OBJECT(padding_above_tag), "pixels-above-lines",
-                 kPermissionsPadding, NULL);
-    g_object_set(G_OBJECT(padding_above_tag), "pixels-above-lines-set",
-                 TRUE, NULL);
-    gtk_text_tag_table_add(tag_table, padding_above_tag);
-    g_object_unref(padding_above_tag);
-
-    GtkTextIter end_iter;
-    gtk_text_buffer_get_end_iter(buffer, &end_iter);
-    for (std::vector<string16>::const_iterator iter = permissions.begin();
-         iter != permissions.end(); ++iter) {
-      if (iter != permissions.begin())
-        gtk_text_buffer_insert(buffer, &end_iter, "\n", -1);
-      gtk_text_buffer_insert_with_tags(
-          buffer, &end_iter, UTF16ToUTF8(*iter).c_str(), -1,
-          padding_below_tag,
-          iter == permissions.begin() ? padding_above_tag : NULL,
-          NULL);
+    for (size_t i = 0; i < prompt.GetPermissionCount(); ++i) {
+      GtkWidget* permission_label = gtk_label_new(UTF16ToUTF8(
+          prompt.GetPermission(i)).c_str());
+      gtk_util::SetLabelWidth(permission_label, kLeftColumnMinWidth);
+      gtk_box_pack_start(GTK_BOX(permissions_container), permission_label,
+                         FALSE, FALSE, kPermissionsPadding);
     }
   }
 
-  g_signal_connect(dialog, "response", G_CALLBACK(OnResponse), delegate);
-  gtk_window_set_resizable(GTK_WINDOW(dialog), FALSE);
+  g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
+  gtk_window_set_resizable(GTK_WINDOW(dialog_), FALSE);
 
-  gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_CLOSE);
-  gtk_widget_show_all(dialog);
+  gtk_dialog_set_default_response(GTK_DIALOG(dialog_), GTK_RESPONSE_CLOSE);
+  gtk_widget_show_all(dialog_);
   gtk_widget_grab_focus(close_button);
+}
+
+ExtensionInstallDialog::~ExtensionInstallDialog() {
+}
+
+void ExtensionInstallDialog::OnResponse(GtkWidget* dialog, int response_id) {
+  if (response_id == GTK_RESPONSE_ACCEPT) {
+    delegate_->InstallUIProceed();
+  } else {
+    delegate_->InstallUIAbort(true);
+  }
+
+  gtk_widget_destroy(dialog_);
+  delete this;
+}
+
+void ExtensionInstallDialog::OnStoreLinkClick(GtkWidget* sender) {
+  GURL store_url(
+      extension_urls::GetWebstoreItemDetailURLPrefix() + extension_->id());
+  BrowserList::GetLastActive()->OpenURL(OpenURLParams(
+      store_url, content::Referrer(), NEW_FOREGROUND_TAB,
+      content::PAGE_TRANSITION_LINK, false));
+
+  OnResponse(dialog_, GTK_RESPONSE_CLOSE);
 }
 
 }  // namespace
 
-void ShowExtensionInstallDialog(
+void ShowExtensionInstallDialogImpl(
     Profile* profile,
     ExtensionInstallUI::Delegate* delegate,
     const Extension* extension,
     SkBitmap* icon,
-    const std::vector<string16>& permissions,
-    ExtensionInstallUI::PromptType type) {
+    const ExtensionInstallUI::Prompt& prompt) {
   Browser* browser = BrowserList::GetLastActiveWithProfile(profile);
   if (!browser) {
-    delegate->InstallUIAbort();
+    delegate->InstallUIAbort(false);
     return;
   }
 
   BrowserWindowGtk* browser_window = static_cast<BrowserWindowGtk*>(
       browser->window());
   if (!browser_window) {
-    delegate->InstallUIAbort();
+    delegate->InstallUIAbort(false);
     return;
   }
 
-  ShowInstallDialog(
-      browser_window->window(), icon, extension, delegate, permissions, type);
+  new ExtensionInstallDialog(browser_window->window(),
+                             delegate,
+                             extension,
+                             icon,
+                             prompt);
 }

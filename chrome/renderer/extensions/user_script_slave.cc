@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,12 +19,16 @@
 #include "chrome/renderer/chrome_render_process_observer.h"
 #include "chrome/renderer/extensions/extension_dispatcher.h"
 #include "chrome/renderer/extensions/extension_groups.h"
+#include "content/public/renderer/render_thread.h"
 #include "googleurl/src/gurl.h"
 #include "grit/renderer_resources.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -34,22 +38,14 @@ using WebKit::WebSecurityPolicy;
 using WebKit::WebString;
 using WebKit::WebVector;
 using WebKit::WebView;
+using content::RenderThread;
 
 // These two strings are injected before and after the Greasemonkey API and
 // user script to wrap it in an anonymous scope.
 static const char kUserScriptHead[] = "(function (unsafeWindow) {\n";
 static const char kUserScriptTail[] = "\n})(window);";
 
-// Sets up the chrome.extension module. This may be run multiple times per
-// context, but the init method deletes itself after the first time.
-static const char kInitExtension[] =
-  "if (chrome.initExtension) chrome.initExtension('%s', true, %s);";
-
-// static
-UserScriptSlave::IsolatedWorldMap UserScriptSlave::isolated_world_ids_;
-
-// static
-int UserScriptSlave::GetIsolatedWorldId(
+int UserScriptSlave::GetIsolatedWorldIdForExtension(
     const Extension* extension, WebFrame* frame) {
   static int g_next_isolated_world_id = 1;
 
@@ -77,13 +73,24 @@ int UserScriptSlave::GetIsolatedWorldId(
   return new_id;
 }
 
+std::string UserScriptSlave::GetExtensionIdForIsolatedWorld(
+    int isolated_world_id) {
+  for (IsolatedWorldMap::iterator iter = isolated_world_ids_.begin();
+       iter != isolated_world_ids_.end(); ++iter) {
+    if (iter->second == isolated_world_id)
+      return iter->first;
+  }
+  return "";
+}
+
 // static
 void UserScriptSlave::InitializeIsolatedWorld(
     int isolated_world_id,
     const Extension* extension) {
-  const URLPatternList& permissions =
-      extension->GetEffectiveHostPermissions().patterns();
-  for (size_t i = 0; i < permissions.size(); ++i) {
+  const URLPatternSet& permissions =
+      extension->GetEffectiveHostPermissions();
+  for (URLPatternSet::const_iterator i = permissions.begin();
+       i != permissions.end(); ++i) {
     const char* schemes[] = {
       chrome::kHttpScheme,
       chrome::kHttpsScheme,
@@ -91,18 +98,17 @@ void UserScriptSlave::InitializeIsolatedWorld(
       chrome::kChromeUIScheme,
     };
     for (size_t j = 0; j < arraysize(schemes); ++j) {
-      if (permissions[i].MatchesScheme(schemes[j])) {
+      if (i->MatchesScheme(schemes[j])) {
         WebSecurityPolicy::addOriginAccessWhitelistEntry(
             extension->url(),
             WebString::fromUTF8(schemes[j]),
-            WebString::fromUTF8(permissions[i].host()),
-            permissions[i].match_subdomains());
+            WebString::fromUTF8(i->host()),
+            i->match_subdomains());
       }
     }
   }
 }
 
-// static
 void UserScriptSlave::RemoveIsolatedWorld(const std::string& extension_id) {
   isolated_world_ids_.erase(extension_id);
 }
@@ -187,6 +193,7 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
   }
 
   // Push user styles down into WebCore
+  RenderThread::Get()->EnsureWebKitInitialized();
   WebView::removeAllUserContent();
   for (size_t i = 0; i < scripts_.size(); ++i) {
     UserScript* script = scripts_[i];
@@ -195,9 +202,10 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
 
     WebVector<WebString> patterns;
     std::vector<WebString> temp_patterns;
-    for (size_t k = 0; k < script->url_patterns().size(); ++k) {
-      URLPatternList explicit_patterns =
-          script->url_patterns()[k].ConvertToExplicitSchemes();
+    const URLPatternSet& url_patterns = script->url_patterns();
+    for (URLPatternSet::const_iterator k = url_patterns.begin();
+         k != url_patterns.end(); ++k) {
+      URLPatternList explicit_patterns = k->ConvertToExplicitSchemes();
       for (size_t m = 0; m < explicit_patterns.size(); ++m) {
         temp_patterns.push_back(WebString::fromUTF8(
             explicit_patterns[m].GetAsString()));
@@ -209,34 +217,43 @@ bool UserScriptSlave::UpdateScripts(base::SharedMemoryHandle shared_memory) {
       const UserScript::File& file = scripts_[i]->css_scripts()[j];
       std::string content = file.GetContent().as_string();
 
-       WebView::addUserStyleSheet(
+      WebView::addUserStyleSheet(
           WebString::fromUTF8(content),
           patterns,
            script->match_all_frames() ?
               WebView::UserContentInjectInAllFrames :
-              WebView::UserContentInjectInTopFrameOnly);
+              WebView::UserContentInjectInTopFrameOnly,
+          WebView::UserStyleInjectInExistingDocuments);
     }
   }
 
   return true;
 }
 
-// static
-void UserScriptSlave::InsertInitExtensionCode(
-    std::vector<WebScriptSource>* sources, const std::string& extension_id) {
-  DCHECK(sources);
-  bool incognito = ChromeRenderProcessObserver::is_incognito_process();
-  sources->insert(sources->begin(), WebScriptSource(WebString::fromUTF8(
-      base::StringPrintf(kInitExtension,
-                         extension_id.c_str(),
-                         incognito ? "true" : "false"))));
+GURL UserScriptSlave::GetDataSourceURLForFrame(WebFrame* frame) {
+  // Normally we would use frame->document().url() to determine the document's
+  // URL, but to decide whether to inject a content script, we use the URL from
+  // the data source. This "quirk" helps prevents content scripts from
+  // inadvertently adding DOM elements to the compose iframe in Gmail because
+  // the compose iframe's dataSource URL is about:blank, but the document URL
+  // changes to match the parent document after Gmail document.writes into
+  // it to create the editor.
+  // http://code.google.com/p/chromium/issues/detail?id=86742
+  WebKit::WebDataSource* data_source = frame->provisionalDataSource() ?
+      frame->provisionalDataSource() : frame->dataSource();
+  CHECK(data_source);
+  return GURL(data_source->request().url());
 }
 
 void UserScriptSlave::InjectScripts(WebFrame* frame,
                                     UserScript::RunLocation location) {
-  GURL frame_url = GURL(frame->url());
-  if (frame_url.is_empty())
+  GURL data_source_url = GetDataSourceURLForFrame(frame);
+  if (data_source_url.is_empty())
     return;
+
+  if (frame->isViewSourceModeEnabled())
+    data_source_url = GURL(chrome::kViewSourceScheme + std::string(":") +
+                           data_source_url.spec());
 
   PerfTimer timer;
   int num_css = 0;
@@ -256,7 +273,7 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
     if (!extension)
       continue;
 
-    if (!extension->CanExecuteScriptOnPage(frame_url, script, NULL))
+    if (!extension->CanExecuteScriptOnPage(data_source_url, script, NULL))
       continue;
 
     // We rely on WebCore for CSS injection, but it's still useful to know how
@@ -272,6 +289,8 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
 
         // We add this dumb function wrapper for standalone user script to
         // emulate what Greasemonkey does.
+        // TODO(aa): I think that maybe "is_standalone" scripts don't exist
+        // anymore. Investigate.
         if (script->is_standalone() || script->emulate_greasemonkey()) {
           content.insert(0, kUserScriptHead);
           content += kUserScriptTail;
@@ -291,12 +310,9 @@ void UserScriptSlave::InjectScripts(WebFrame* frame,
             WebScriptSource(WebString::fromUTF8(api_js_.as_string())));
       }
 
-      // Setup chrome.self to contain an Extension object with the correct
-      // ID.
-      if (!script->extension_id().empty()) {
-        InsertInitExtensionCode(&sources, script->extension_id());
-        isolated_world_id = GetIsolatedWorldId(extension, frame);
-      }
+      // TODO(aa): Can extension_id() ever be empty anymore?
+      if (!script->extension_id().empty())
+        isolated_world_id = GetIsolatedWorldIdForExtension(extension, frame);
 
       PerfTimer exec_timer;
       frame->executeScriptInIsolatedWorld(

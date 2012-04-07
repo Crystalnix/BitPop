@@ -7,7 +7,7 @@
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/view.h"
 
-namespace ui {
+namespace views {
 
 FocusSearch::FocusSearch(View* root, bool cycle, bool accessibility_mode)
     : root_(root),
@@ -20,11 +20,11 @@ View* FocusSearch::FindNextFocusableView(View* starting_view,
                                          Direction direction,
                                          bool check_starting_view,
                                          FocusTraversable** focus_traversable,
-                                         View** focus_traversable_view) const {
+                                         View** focus_traversable_view) {
   *focus_traversable = NULL;
   *focus_traversable_view = NULL;
 
-  if (root_->children_empty()) {
+  if (!root_->has_children()) {
     NOTREACHED();
     // Nothing to focus on here.
     return NULL;
@@ -33,20 +33,18 @@ View* FocusSearch::FindNextFocusableView(View* starting_view,
   View* initial_starting_view = starting_view;
   int starting_view_group = -1;
   if (starting_view)
-    starting_view_group = starting_view->group();
+    starting_view_group = starting_view->GetGroup();
 
   if (!starting_view) {
     // Default to the first/last child
-    starting_view =
-        reverse ?
-        root_->child_at(root_->children_size() - 1) :
+    starting_view = reverse ? root_->child_at(root_->child_count() - 1) :
         root_->child_at(0);
     // If there was no starting view, then the one we select is a potential
     // focus candidate.
     check_starting_view = true;
   } else {
     // The starting view should be a direct or indirect child of the root.
-    DCHECK(root_->Contains(*starting_view));
+    DCHECK(root_->Contains(starting_view));
   }
 
   View* v = NULL;
@@ -70,7 +68,7 @@ View* FocusSearch::FindNextFocusableView(View* starting_view,
   }
 
   // Don't set the focus to something outside of this view hierarchy.
-  if (v && v != root_ && !root_->Contains(*v))
+  if (v && v != root_ && !root_->Contains(v))
     v = NULL;
 
   // If |cycle_| is true, prefer to keep cycling rather than returning NULL.
@@ -94,25 +92,24 @@ View* FocusSearch::FindNextFocusableView(View* starting_view,
   return NULL;
 }
 
-bool FocusSearch::IsViewFocusableCandidate(View* v, int skip_group_id) const {
+bool FocusSearch::IsViewFocusableCandidate(View* v, int skip_group_id) {
   return IsFocusable(v) &&
       (v->IsGroupFocusTraversable() || skip_group_id == -1 ||
-       v->group() != skip_group_id);
+       v->GetGroup() != skip_group_id);
 }
 
-bool FocusSearch::IsFocusable(View* v) const {
+bool FocusSearch::IsFocusable(View* v) {
   if (accessibility_mode_)
-    return v && v->IsAccessibilityFocusableInRootView();
-
-  return v && v->IsFocusableInRootView();
+    return v && v->IsAccessibilityFocusable();
+  return v && v->IsFocusable();
 }
 
-View* FocusSearch::FindSelectedViewForGroup(View* view) const {
-  // No group for that view.
-  if (view->IsGroupFocusTraversable() || view->group() == -1)
+View* FocusSearch::FindSelectedViewForGroup(View* view) {
+  if (view->IsGroupFocusTraversable() ||
+      view->GetGroup() == -1)  // No group for that view.
     return view;
 
-  View* selected_view = view->GetSelectedViewForGroup(view->group());
+  View* selected_view = view->GetSelectedViewForGroup(view->GetGroup());
   if (selected_view)
     return selected_view;
 
@@ -120,8 +117,8 @@ View* FocusSearch::FindSelectedViewForGroup(View* view) const {
   return view;
 }
 
-View* FocusSearch::GetParent(View* v) const {
-  return root_->Contains(*v) ? v->parent() : NULL;
+View* FocusSearch::GetParent(View* v) {
+  return root_->Contains(v) ? v->parent() : NULL;
 }
 
 // Strategy for finding the next focusable view:
@@ -139,7 +136,7 @@ View* FocusSearch::FindNextFocusableViewImpl(
     bool can_go_down,
     int skip_group_id,
     FocusTraversable** focus_traversable,
-    View** focus_traversable_view) const {
+    View** focus_traversable_view) {
   if (check_starting_view) {
     if (IsViewFocusableCandidate(starting_view, skip_group_id)) {
       View* v = FindSelectedViewForGroup(starting_view);
@@ -158,7 +155,7 @@ View* FocusSearch::FindNextFocusableViewImpl(
 
   // First let's try the left child.
   if (can_go_down) {
-    if (!starting_view->children_empty()) {
+    if (starting_view->has_children()) {
       View* v = FindNextFocusableViewImpl(starting_view->child_at(0),
                                           true, false, true, skip_group_id,
                                           focus_traversable,
@@ -212,7 +209,7 @@ View* FocusSearch::FindPreviousFocusableViewImpl(
     bool can_go_down,
     int skip_group_id,
     FocusTraversable** focus_traversable,
-    View** focus_traversable_view) const {
+    View** focus_traversable_view) {
   // Let's go down and right as much as we can.
   if (can_go_down) {
     // Before we go into the direct children, we have to check if this view has
@@ -223,8 +220,9 @@ View* FocusSearch::FindPreviousFocusableViewImpl(
       return NULL;
     }
 
-    if (!starting_view->children_empty()) {
-      View* view = starting_view->child_at(starting_view->children_size() - 1);
+    if (starting_view->has_children()) {
+      View* view =
+          starting_view->child_at(starting_view->child_count() - 1);
       View* v = FindPreviousFocusableViewImpl(view, true, false, true,
                                               skip_group_id,
                                               focus_traversable,
@@ -270,4 +268,4 @@ View* FocusSearch::FindPreviousFocusableViewImpl(
   return NULL;
 }
 
-}  // namespace ui
+}  // namespace views

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,26 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "remoting/host/host_key_pair.h"
-#include "remoting/host/host_status_observer.h"
-#include "remoting/jingle_glue/iq_request.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
+#include "remoting/jingle_glue/signal_strategy.h"
+
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
+
+namespace buzz {
+class XmlElement;
+}  // namespace buzz
 
 namespace remoting {
 
-class IqRequest;
 class HostKeyPair;
-class MutableHostConfig;
+class IqRequest;
+class IqSender;
 
 // HeartbeatSender periodically sends heartbeat stanzas to the Chromoting Bot.
 // Each heartbeat stanza looks as follows:
@@ -54,35 +61,24 @@ class MutableHostConfig;
 // optional. Host uses default heartbeat interval if it doesn't find
 // set-interval tag in the result Iq stanza it receives from the
 // server.
-//
-// TODO(sergeyu): Is it enough to sign JID and nothing else?
-class HeartbeatSender : public HostStatusObserver {
+class HeartbeatSender : public SignalStrategy::Listener {
  public:
-  HeartbeatSender(MessageLoop* main_loop,
-                  MutableHostConfig* config);
+  // Doesn't take ownership of |signal_strategy| or |key_pair|. Both
+  // parameters must outlive this object. Heartbeats will start when
+  // the supplied SignalStrategy enters the CONNECTED state.
+  HeartbeatSender(const std::string& host_id,
+                  SignalStrategy* signal_strategy,
+                  HostKeyPair* key_pair);
   virtual ~HeartbeatSender();
 
-  // Initializes heart-beating for |jingle_client_| with |config_|. Returns
-  // false if the config is invalid (e.g. private key cannot be parsed).
-  bool Init();
-
-  // HostStatusObserver implementation.
-  virtual void OnSignallingConnected(SignalStrategy* signal_strategy,
-                                     const std::string& full_jid) OVERRIDE;
-  virtual void OnSignallingDisconnected() OVERRIDE;
-  virtual void OnShutdown() OVERRIDE;
+  // SignalStrategy::Listener interface.
+  virtual void OnSignalStrategyStateChange(
+      SignalStrategy::State state) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HeartbeatSenderTest, DoSendStanza);
   FRIEND_TEST_ALL_PREFIXES(HeartbeatSenderTest, CreateHeartbeatMessage);
   FRIEND_TEST_ALL_PREFIXES(HeartbeatSenderTest, ProcessResponse);
-
-  enum State {
-    CREATED,
-    INITIALIZED,
-    STARTED,
-    STOPPED,
-  };
 
   void DoSendStanza();
   void ProcessResponse(const buzz::XmlElement* response);
@@ -93,12 +89,10 @@ class HeartbeatSender : public HostStatusObserver {
   buzz::XmlElement* CreateHeartbeatMessage();
   buzz::XmlElement* CreateSignature();
 
-  State state_;
-  MessageLoop* message_loop_;
-  scoped_refptr<MutableHostConfig> config_;
   std::string host_id_;
-  HostKeyPair key_pair_;
-  std::string full_jid_;
+  SignalStrategy* signal_strategy_;
+  HostKeyPair* key_pair_;
+  scoped_ptr<IqSender> iq_sender_;
   scoped_ptr<IqRequest> request_;
   int interval_ms_;
   base::RepeatingTimer<HeartbeatSender> timer_;

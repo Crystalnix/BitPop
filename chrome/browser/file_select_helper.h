@@ -10,31 +10,32 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/shell_dialogs.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "chrome/browser/ui/select_file_dialog.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "net/base/directory_lister.h"
 
 class Profile;
 class RenderViewHost;
-struct ViewHostMsg_RunFileChooser_Params;
 
+namespace content {
+struct FileChooserParams;
+}
 
 // This class handles file-selection requests coming from WebUI elements
 // (via the ExtensionHost class). It implements both the initialisation
 // and listener functions for file-selection dialogs.
 class FileSelectHelper
-    : public SelectFileDialog::Listener,
-      public NotificationObserver {
+    : public base::RefCountedThreadSafe<FileSelectHelper>,
+      public SelectFileDialog::Listener,
+      public content::NotificationObserver {
  public:
   explicit FileSelectHelper(Profile* profile);
-  virtual ~FileSelectHelper();
 
   // Show the file chooser dialog.
   void RunFileChooser(RenderViewHost* render_view_host,
-                      TabContents* tab_contents,
-                      const ViewHostMsg_RunFileChooser_Params& params);
+                      content::WebContents* tab_contents,
+                      const content::FileChooserParams& params);
 
   // Enumerates all the files in directory.
   void EnumerateDirectory(int request_id,
@@ -42,6 +43,9 @@ class FileSelectHelper
                           const FilePath& path);
 
  private:
+  friend class base::RefCountedThreadSafe<FileSelectHelper>;
+  virtual ~FileSelectHelper();
+
   // Utility class which can listen for directory lister events and relay
   // them to the main object with the correct tracking id.
   class DirectoryListerDispatchDelegate
@@ -52,10 +56,10 @@ class FileSelectHelper
           id_(id) {}
     virtual ~DirectoryListerDispatchDelegate() {}
     virtual void OnListFile(
-        const net::DirectoryLister::DirectoryListerData& data) {
+        const net::DirectoryLister::DirectoryListerData& data) OVERRIDE {
       parent_->OnListFile(id_, data);
     }
-    virtual void OnListDone(int error) {
+    virtual void OnListDone(int error) OVERRIDE {
       parent_->OnListDone(id_, error);
     }
    private:
@@ -66,6 +70,15 @@ class FileSelectHelper
     DISALLOW_COPY_AND_ASSIGN(DirectoryListerDispatchDelegate);
   };
 
+  void RunFileChooserOnFileThread(
+      const content::FileChooserParams& params);
+  void RunFileChooserOnUIThread(
+      const content::FileChooserParams& params);
+
+  // Cleans up and releases this instance. This must be called after the last
+  // callback is received from the file chooser dialog.
+  void RunFileChooserEnd();
+
   // SelectFileDialog::Listener overrides.
   virtual void FileSelected(
       const FilePath& path, int index, void* params) OVERRIDE;
@@ -73,10 +86,10 @@ class FileSelectHelper
                                   void* params) OVERRIDE;
   virtual void FileSelectionCanceled(void* params) OVERRIDE;
 
-  // NotificationObserver overrides.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver overrides.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Kicks off a new directory enumeration.
   void StartNewEnumeration(const FilePath& path,
@@ -89,21 +102,28 @@ class FileSelectHelper
       const net::DirectoryLister::DirectoryListerData& data);
   virtual void OnListDone(int id, int error);
 
+  // Cleans up and releases this instance. This must be called after the last
+  // callback is received from the enumeration code.
+  void EnumerateDirectoryEnd();
+
   // Helper method to get allowed extensions for select file dialog from
   // the specified accept types as defined in the spec:
   //   http://whatwg.org/html/number-state.html#attr-input-accept
+  // |accept_types| contains only valid lowercased MIME types.
   SelectFileDialog::FileTypeInfo* GetFileTypesFromAcceptType(
-      const string16& accept_types);
+      const std::vector<string16>& accept_types);
 
   // Profile used to set/retrieve the last used directory.
   Profile* profile_;
 
-  // The RenderViewHost for the page showing a file dialog (may only be one
-  // such dialog).
+  // The RenderViewHost and WebContents for the page showing a file dialog
+  // (may only be one such dialog).
   RenderViewHost* render_view_host_;
+  content::WebContents* web_contents_;
 
   // Dialog box used for choosing files to upload from file form fields.
   scoped_refptr<SelectFileDialog> select_file_dialog_;
+  scoped_ptr<SelectFileDialog::FileTypeInfo> select_file_types_;
 
   // The type of file dialog last shown.
   SelectFileDialog::Type dialog_type_;
@@ -115,30 +135,9 @@ class FileSelectHelper
   std::map<int, ActiveDirectoryEnumeration*> directory_enumerations_;
 
   // Registrar for notifications regarding our RenderViewHost.
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSelectHelper);
-};
-
-class FileSelectObserver : public TabContentsObserver {
- public:
-  explicit FileSelectObserver(TabContents* tab_contents);
-  virtual ~FileSelectObserver();
-
- private:
-  // TabContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
-  // Called when a file selection is to be done.
-  void OnRunFileChooser(const ViewHostMsg_RunFileChooser_Params& params);
-
-  // Called when a direction enumeration is to be done.
-  void OnEnumerateDirectory(int request_id, const FilePath& path);
-
-  // FileSelectHelper, lazily created.
-  scoped_ptr<FileSelectHelper> file_select_helper_;
-
-  DISALLOW_COPY_AND_ASSIGN(FileSelectObserver);
 };
 
 #endif  // CHROME_BROWSER_FILE_SELECT_HELPER_H_

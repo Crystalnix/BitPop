@@ -6,22 +6,38 @@
 
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 #include <vector>
 
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/var.h"
+#include "ppapi/cpp/view.h"
 #include "ppapi/tests/test_case.h"
 
 TestCaseFactory* TestCaseFactory::head_ = NULL;
 
+// Cookie value we use to signal "we're still working." See the comment above
+// the class declaration for how this works.
+static const char kProgressSignal[] = "...";
+
 // Returns a new heap-allocated test case for the given test, or NULL on
 // failure.
 TestingInstance::TestingInstance(PP_Instance instance)
+#if (defined __native_client__)
     : pp::Instance(instance),
+#else
+    : pp::InstancePrivate(instance),
+#endif
       current_case_(NULL),
+      progress_cookie_number_(0),
       executed_tests_(false),
       nacl_mode_(false) {
   callback_factory_.Initialize(this);
+}
+
+TestingInstance::~TestingInstance() {
+  if (current_case_)
+    delete current_case_;
 }
 
 bool TestingInstance::Init(uint32_t argc,
@@ -31,8 +47,9 @@ bool TestingInstance::Init(uint32_t argc,
     if (std::strcmp(argn[i], "mode") == 0) {
       if (std::strcmp(argv[i], "nacl") == 0)
         nacl_mode_ = true;
-      break;
     }
+    else if (std::strcmp(argn[i], "protocol") == 0)
+      protocol_ = argv[i];
   }
   // Create the proper test case from the argument.
   for (uint32_t i = 0; i < argc; i++) {
@@ -40,6 +57,7 @@ bool TestingInstance::Init(uint32_t argc,
       if (argv[i][0] == '\0')
         break;
       current_case_ = CaseForTestName(argv[i]);
+      test_filter_ = FilterForTestName(argv[i]);
       if (!current_case_)
         errors_.append(std::string("Unknown test case ") + argv[i]);
       else if (!current_case_->Init())
@@ -52,29 +70,57 @@ bool TestingInstance::Init(uint32_t argc,
   return true;
 }
 
+#if !(defined __native_client__)
 pp::Var TestingInstance::GetInstanceObject() {
   if (current_case_)
     return current_case_->GetTestObject();
 
-  return pp::Var(this, NULL);
+  return pp::VarPrivate();
 }
+#endif
 
 void TestingInstance::HandleMessage(const pp::Var& message_data) {
-  current_case_->HandleMessage(message_data);
+  if (current_case_)
+    current_case_->HandleMessage(message_data);
 }
 
-void TestingInstance::DidChangeView(const pp::Rect& position,
-                                    const pp::Rect& clip) {
+void TestingInstance::DidChangeView(const pp::View& view) {
   if (!executed_tests_) {
     executed_tests_ = true;
     pp::Module::Get()->core()->CallOnMainThread(
         0,
         callback_factory_.NewCallback(&TestingInstance::ExecuteTests));
   }
+  if (current_case_)
+    current_case_->DidChangeView(view);
+}
+
+bool TestingInstance::HandleInputEvent(const pp::InputEvent& event) {
+  if (current_case_)
+    return current_case_->HandleInputEvent(event);
+  return false;
+}
+
+void TestingInstance::EvalScript(const std::string& script) {
+  std::string message("TESTING_MESSAGE:EvalScript:");
+  message.append(script);
+  PostMessage(pp::Var(message));
+}
+
+void TestingInstance::SetCookie(const std::string& name,
+                                const std::string& value) {
+  std::string message("TESTING_MESSAGE:SetCookie:");
+  message.append(name);
+  message.append("=");
+  message.append(value);
+  PostMessage(pp::Var(message));
 }
 
 void TestingInstance::LogTest(const std::string& test_name,
                               const std::string& error_message) {
+  // Tell the browser we're still working.
+  ReportProgress(kProgressSignal);
+
   std::string html;
   html.append("<div class=\"test_line\"><span class=\"test_name\">");
   html.append(test_name);
@@ -101,13 +147,10 @@ void TestingInstance::AppendError(const std::string& message) {
 }
 
 void TestingInstance::ExecuteTests(int32_t unused) {
-  SetCookie("STARTUP_COOKIE", "STARTED");
+  ReportProgress(kProgressSignal);
 
   // Clear the console.
-  // This does: window.document.getElementById("console").innerHTML = "";
-  pp::Var window = GetWindowObject();
-  window.GetProperty("document").
-      Call("getElementById", "console").SetProperty("innerHTML", "");
+  PostMessage(pp::Var("TESTING_MESSAGE:ClearConsole"));
 
   if (!errors_.empty()) {
     // Catch initialization errors and output the current error string to
@@ -117,7 +160,7 @@ void TestingInstance::ExecuteTests(int32_t unused) {
     LogAvailableTests();
     errors_.append("FAIL: Only listed tests");
   } else {
-    current_case_->RunTest();
+    current_case_->RunTests(test_filter_);
     // Automated PyAuto tests rely on finding the exact strings below.
     LogHTML(errors_.empty() ?
             "<span class=\"pass\">[SHUTDOWN]</span> All tests passed." :
@@ -125,19 +168,26 @@ void TestingInstance::ExecuteTests(int32_t unused) {
   }
 
   // Declare we're done by setting a cookie to either "PASS" or the errors.
-  SetCookie("COMPLETION_COOKIE", errors_.empty() ? "PASS" : errors_);
-
-  window.Call("DidExecuteTests");
+  ReportProgress(errors_.empty() ? "PASS" : errors_);
+  PostMessage(pp::Var("TESTING_MESSAGE:DidExecuteTests"));
 }
 
-TestCase* TestingInstance::CaseForTestName(const char* name) {
+TestCase* TestingInstance::CaseForTestName(const std::string& name) {
+  std::string case_name = name.substr(0, name.find_first_of('_'));
   TestCaseFactory* iter = TestCaseFactory::head_;
   while (iter != NULL) {
-    if (std::strcmp(name, iter->name_) == 0)
+    if (case_name == iter->name_)
       return iter->method_(this);
     iter = iter->next_;
   }
   return NULL;
+}
+
+std::string TestingInstance::FilterForTestName(const std::string& name) {
+  size_t delim = name.find_first_of('_');
+  if (delim != std::string::npos)
+    return name.substr(delim+1);
+  return "";
 }
 
 void TestingInstance::LogAvailableTests() {
@@ -163,6 +213,7 @@ void TestingInstance::LogAvailableTests() {
   }
   html.append("</dl>");
   html.append("<button onclick='RunAll()'>Run All Tests</button>");
+
   LogHTML(html);
 }
 
@@ -175,19 +226,17 @@ void TestingInstance::LogError(const std::string& text) {
 }
 
 void TestingInstance::LogHTML(const std::string& html) {
-  // This does: window.document.getElementById("console").innerHTML += html
-  pp::Var console = GetWindowObject().GetProperty("document").
-      Call("getElementById", "console");
-  pp::Var inner_html = console.GetProperty("innerHTML");
-  console.SetProperty("innerHTML", inner_html.AsString() + html);
+  std::string message("TESTING_MESSAGE:LogHTML:");
+  message.append(html);
+  PostMessage(pp::Var(message));
 }
 
-void TestingInstance::SetCookie(const std::string& name,
-                                const std::string& value) {
-  // window.document.cookie = "<name>=<value>; path=/"
-  std::string cookie_string = name + "=" + value + "; path=/";
-  pp::Var document = GetWindowObject().GetProperty("document");
-  document.SetProperty("cookie", cookie_string);
+void TestingInstance::ReportProgress(const std::string& progress_value) {
+  // Use streams since nacl doesn't compile base yet (for StringPrintf).
+  std::ostringstream cookie_name;
+  cookie_name << "PPAPI_PROGRESS_" << progress_cookie_number_;
+  SetCookie(cookie_name.str(), progress_value);
+  progress_cookie_number_++;
 }
 
 class Module : public pp::Module {

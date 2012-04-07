@@ -5,13 +5,16 @@
 #include "chrome/browser/translate/translate_tab_helper.h"
 
 #include "chrome/browser/translate/page_translated_details.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
 
-TranslateTabHelper::TranslateTabHelper(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
-      language_state_(&tab_contents->controller()) {
+using content::WebContents;
+
+TranslateTabHelper::TranslateTabHelper(WebContents* web_contents)
+    : content::WebContentsObserver(web_contents),
+      language_state_(&web_contents->GetController()) {
 }
 
 TranslateTabHelper::~TranslateTabHelper() {
@@ -20,18 +23,18 @@ TranslateTabHelper::~TranslateTabHelper() {
 bool TranslateTabHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TranslateTabHelper, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_TranslateLanguageDetermined,
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_TranslateLanguageDetermined,
                         OnLanguageDetermined)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_PageTranslated, OnPageTranslated)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PageTranslated, OnPageTranslated)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
 }
 
-void TranslateTabHelper::DidNavigateAnyFramePostCommit(
+void TranslateTabHelper::DidNavigateAnyFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   // Let the LanguageState clear its state.
   language_state_.DidNavigate(details);
 }
@@ -41,10 +44,10 @@ void TranslateTabHelper::OnLanguageDetermined(const std::string& language,
   language_state_.LanguageDetermined(language, page_translatable);
 
   std::string lang = language;
-  NotificationService::current()->Notify(
-      NotificationType::TAB_LANGUAGE_DETERMINED,
-      Source<TabContents>(tab_contents()),
-      Details<std::string>(&lang));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_TAB_LANGUAGE_DETERMINED,
+      content::Source<WebContents>(web_contents()),
+      content::Details<std::string>(&lang));
 }
 
 void TranslateTabHelper::OnPageTranslated(int32 page_id,
@@ -54,8 +57,8 @@ void TranslateTabHelper::OnPageTranslated(int32 page_id,
   language_state_.set_current_language(translated_lang);
   language_state_.set_translation_pending(false);
   PageTranslatedDetails details(original_lang, translated_lang, error_type);
-  NotificationService::current()->Notify(
-      NotificationType::PAGE_TRANSLATED,
-      Source<TabContents>(tab_contents()),
-      Details<PageTranslatedDetails>(&details));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_PAGE_TRANSLATED,
+      content::Source<WebContents>(web_contents()),
+      content::Details<PageTranslatedDetails>(&details));
 }

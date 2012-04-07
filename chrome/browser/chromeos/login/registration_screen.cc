@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,21 @@
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/views/handle_web_keyboard_event_gtk.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/child_process_security_policy.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/site_instance.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_about_job.h"
 #include "net/url_request/url_request_filter.h"
+
+using content::OpenURLParams;
+using content::SiteInstance;
+using content::WebContents;
 
 namespace chromeos {
 
@@ -35,16 +39,6 @@ const char kRegistrationSkippedUrl[] = "cros://register/skipped";
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
-// RegistrationDomView, protected:
-
-TabContents* RegistrationDomView::CreateTabContents(
-    Profile* profile, SiteInstance* instance) {
-  return new WizardWebPageViewTabContents(profile,
-                                          instance,
-                                          page_delegate_);
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // RegistrationView, protected:
 
 WebPageDomView* RegistrationView::dom_view() {
@@ -55,9 +49,6 @@ WebPageDomView* RegistrationView::dom_view() {
 // RegistrationScreen, public:
 RegistrationScreen::RegistrationScreen(ViewScreenDelegate* delegate)
     : ViewScreen<RegistrationView>(delegate) {
-  if (!host_page_url_.get())
-    set_registration_host_page_url(GURL(kRegistrationHostPageUrl));
-
   ChildProcessSecurityPolicy::GetInstance()->RegisterWebSafeScheme(
       chrome::kCrosScheme);
   net::URLRequestFilter::GetInstance()->AddHostnameHandler(
@@ -66,28 +57,21 @@ RegistrationScreen::RegistrationScreen(ViewScreenDelegate* delegate)
       &RegistrationScreen::Factory);
 }
 
-// static
-void RegistrationScreen::set_registration_host_page_url(const GURL& url) {
-  host_page_url_.reset(new GURL(url));
+RegistrationScreen::~RegistrationScreen() {
 }
-
-// static
-scoped_ptr<GURL> RegistrationScreen::host_page_url_;
 
 ///////////////////////////////////////////////////////////////////////////////
 // RegistrationScreen, ViewScreen implementation:
 void RegistrationScreen::CreateView() {
   ViewScreen<RegistrationView>::CreateView();
-  view()->SetWebPageDelegate(this);
 }
 
 void RegistrationScreen::Refresh() {
   StartTimeoutTimer();
-  GURL url(*host_page_url_);
+  GURL url(kRegistrationHostPageUrl);
   Profile* profile = ProfileManager::GetDefaultProfile();
-  view()->InitDOM(profile,
-                  SiteInstance::CreateSiteInstanceForURL(profile, url));
-  view()->SetTabContentsDelegate(this);
+  view()->InitDOM(profile, SiteInstance::CreateForURL(profile, url));
+  view()->SetWebContentsDelegate(this);
   view()->LoadURL(url);
 }
 
@@ -96,36 +80,15 @@ RegistrationView* RegistrationScreen::AllocateView() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// RegistrationScreen, WebPageDelegate implementation:
-void RegistrationScreen::OnPageLoaded() {
-  StopTimeoutTimer();
-  // Enable input methods (e.g. Chinese, Japanese) so that users could input
-  // their first and last names.
-  if (g_browser_process) {
-    const std::string locale = g_browser_process->GetApplicationLocale();
-    input_method::EnableInputMethods(
-        locale, input_method::kAllInputMethods, "");
-  }
-  view()->ShowPageContent();
-}
+// RegistrationScreen, content::WebContentsDelegate implementation:
 
-void RegistrationScreen::OnPageLoadFailed(const std::string& url) {
-  LOG(ERROR) << "Error loading registration page: " << url;
-  CloseScreen(ScreenObserver::REGISTRATION_SKIPPED);
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// RegistrationScreen, TabContentsDelegate implementation:
- void RegistrationScreen::OpenURLFromTab(TabContents* source,
-                                         const GURL& url,
-                                         const GURL& referrer,
-                                         WindowOpenDisposition disposition,
-                                         PageTransition::Type transition) {
-  if (url.spec() == kRegistrationSuccessUrl) {
+WebContents* RegistrationScreen::OpenURLFromTab(WebContents* source,
+                                                const OpenURLParams& params) {
+  if (params.url.spec() == kRegistrationSuccessUrl) {
     source->Stop();
     VLOG(1) << "Registration form completed.";
     CloseScreen(ScreenObserver::REGISTRATION_SUCCESS);
-  } else if (url.spec() == kRegistrationSkippedUrl) {
+  } else if (params.url.spec() == kRegistrationSkippedUrl) {
     source->Stop();
     VLOG(1) << "Registration form skipped.";
     CloseScreen(ScreenObserver::REGISTRATION_SKIPPED);
@@ -133,13 +96,15 @@ void RegistrationScreen::OnPageLoadFailed(const std::string& url) {
     source->Stop();
     // Host registration page and actual registration page hosted by
     // OEM partner doesn't contain links to external URLs.
-    LOG(WARNING) << "Navigate to unsupported url: " << url.spec();
+    LOG(WARNING) << "Navigate to unsupported url: " << params.url.spec();
   }
+  return NULL;
 }
 
 void RegistrationScreen::HandleKeyboardEvent(
     const NativeWebKeyboardEvent& event) {
-  HandleWebKeyboardEvent(view()->GetWidget(), event);
+  unhandled_keyboard_handler_.HandleKeyboardEvent(event,
+                                                  view()->GetFocusManager());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,8 +115,9 @@ void RegistrationScreen::CloseScreen(ScreenObserver::ExitCodes code) {
   // password.
   if (g_browser_process) {
     const std::string locale = g_browser_process->GetApplicationLocale();
-    input_method::EnableInputMethods(
-        locale, input_method::kKeyboardLayoutsOnly, "");
+    input_method::InputMethodManager* manager =
+        input_method::InputMethodManager::GetInstance();
+    manager->EnableInputMethods(locale, input_method::kKeyboardLayoutsOnly, "");
   }
   delegate()->GetObserver()->OnExit(code);
 }

@@ -134,15 +134,14 @@ TEST_P(FullTabUITest, CtrlN) {
   // reliably delivered immediately upon receipt of the window open event.
   EXPECT_CALL(win_observer_mock, OnWindowOpen(_))
       .Times(testing::AtMost(2))
-      .WillOnce(DelayDoCloseWindow(500))
-      .WillOnce(testing::Return());
-
-  EXPECT_CALL(win_observer_mock, OnWindowClose(_))
-      .Times(testing::AtMost(2))
       .WillOnce(CloseBrowserMock(&ie_mock_))
       .WillOnce(testing::Return());
 
-  LaunchIEAndNavigate(GetSimplePageUrl());
+  EXPECT_CALL(win_observer_mock, OnWindowClose(_))
+      .Times(testing::AtMost(2));
+
+  LaunchIENavigateAndLoop(GetSimplePageUrl(),
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Test that Ctrl+F opens the Find dialog.
@@ -168,20 +167,15 @@ TEST_P(FullTabUITest, CtrlF) {
           SetFocusToRenderer(&ie_mock_),
           DelaySendChar(&loop_, 1500, 'f', simulate_input::CONTROL)));
 
-  // Watch for find dialog. It appears that the window close message cannot be
-  // reliably delivered immediately upon receipt of the window open event.
   EXPECT_CALL(win_observer_mock, OnWindowOpen(_))
-      .WillOnce(DelayDoCloseWindow(500));
-
-  EXPECT_CALL(win_observer_mock, OnWindowClose(_))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
-  LaunchIEAndNavigate(GetSimplePageUrl());
+  LaunchIENavigateAndLoop(GetSimplePageUrl(),
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Test that ctrl+r does cause a refresh.
-// http://code.google.com/p/chromium/issues/detail?id=84297
-TEST_P(FullTabUITest, FLAKY_CtrlR) {
+TEST_P(FullTabUITest, CtrlR) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -200,7 +194,8 @@ TEST_P(FullTabUITest, FLAKY_CtrlR) {
           DelayCloseBrowserMock(&loop_, 4000, &ie_mock_)))
       .WillRepeatedly(testing::Return());
 
-  LaunchIEAndNavigate(GetSimplePageUrl());
+  LaunchIENavigateAndLoop(GetSimplePageUrl(),
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Test window close with ctrl+w.
@@ -216,12 +211,12 @@ TEST_P(FullTabUITest, CtrlW) {
           SetFocusToRenderer(&ie_mock_),
           DelaySendChar(&loop_, 1000, 'w', simulate_input::CONTROL)));
 
-  LaunchIEAndNavigate(GetSimplePageUrl());
+  LaunchIENavigateAndLoop(GetSimplePageUrl(),
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Test address bar navigation with Alt+d and URL.
-// http://code.google.com/p/chromium/issues/detail?id=84297
-TEST_P(FullTabUITest, FLAKY_AltD) {
+TEST_P(FullTabUITest, AltD) {
   if (IsWorkstationLocked()) {
     LOG(ERROR) << "This test cannot be run in a locked workstation.";
     return;
@@ -237,11 +232,13 @@ TEST_P(FullTabUITest, FLAKY_AltD) {
                                StrEq(GetLinkPageUrl())))
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
-  LaunchIEAndNavigate(GetSimplePageUrl());
+  LaunchIENavigateAndLoop(GetSimplePageUrl(),
+                          kChromeFrameVeryLongNavigationTimeoutInSeconds);
 }
 
 // Tests that the renderer has focus after navigation.
-TEST_P(FullTabUITest, RendererHasFocus) {
+// Flaky, see http://crbug.com/90791 .
+TEST_P(FullTabUITest, FLAKY_RendererHasFocus) {
   EXPECT_CALL(ie_mock_, OnLoad(GetParam().invokes_cf(),
                                StrEq(GetSimplePageUrl())))
       .WillOnce(testing::DoAll(
@@ -349,7 +346,9 @@ TEST_P(FullTabUITest, TabCrashReload) {
 }
 
 // Tests if Chrome gets restarted after a crash by just refreshing the document.
-TEST_P(FullTabUITest, TabCrashRefresh) {
+// DISABLED as per bug http://crbug.com/99317 (one of the failures is a
+// timeout, which marking as FLAKY or FAILS won't mask).
+TEST_P(FullTabUITest, DISABLED_TabCrashRefresh) {
   using testing::DoAll;
 
   if (!GetParam().invokes_cf()) {
@@ -379,6 +378,32 @@ TEST_P(FullTabUITest, TabCrashRefresh) {
       .WillOnce(CloseBrowserMock(&ie_mock_));
 
   LaunchIEAndNavigate(GetSimplePageUrl());
+}
+
+// Test that window.print() on a page results in the native Windows print dialog
+// appearing rather than Chrome's in-page print preview.
+TEST_P(FullTabUITest, WindowPrintOpensNativePrintDialog) {
+  std::wstring window_print_url(GetTestUrl(L"window_print.html"));
+  std::wstring window_print_title(L"window.print");
+
+  const bool is_cf = GetParam().invokes_cf();
+  MockWindowObserver win_observer_mock;
+
+  // When the page is loaded, start watching for the Print dialog to appear.
+  EXPECT_CALL(ie_mock_, OnLoad(is_cf, StrEq(window_print_url)))
+      .WillOnce(WatchWindow(&win_observer_mock, "Print", ""));
+
+  // When the print dialog opens, close it.
+  EXPECT_CALL(win_observer_mock, OnWindowOpen(_))
+      .WillOnce(DoCloseWindow());
+
+  // When the print dialog closes, close the browser.
+  EXPECT_CALL(win_observer_mock, OnWindowClose(_))
+      .WillOnce(CloseBrowserMock(&ie_mock_));
+
+  // Launch IE and navigate to the window_print.html page, which will
+  // window.print() immediately after loading.
+  LaunchIEAndNavigate(window_print_url);
 }
 
 // Test fixture for tests related to the context menu UI. Since the context
@@ -698,12 +723,8 @@ TEST_F(ContextMenuTest, IEBackForward) {
 }
 
 // Test CF link context menu - Open link in new window.
-TEST_F(ContextMenuTest, CFOpenLinkInNewWindow) {
-  // See crbug.com/64794.
-  if (GetInstalledIEVersion() == IE_7) {
-    LOG(INFO) << "Not running test with IE7";
-    return;
-  }
+// Failing intermittently on IE6/7. See crbug.com/64794.
+TEST_F(ContextMenuTest, FLAKY_CFOpenLinkInNewWindow) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   MockIEEventSink new_window_mock;
   new_window_mock.ExpectAnyNavigations();
@@ -789,7 +810,7 @@ TEST_F(ContextMenuTest, CFTxtFieldCopy) {
 }
 
 // Test CF text field context menu - paste.
-TEST_F(ContextMenuTest, CFTxtFieldPaste) {
+TEST_F(ContextMenuTest, DISABLED_CFTxtFieldPaste) {
   server_mock_.ExpectAndServeAnyRequests(CFInvocation::MetaTag());
   AccObjectMatcher txtfield_matcher(L"", L"editable text");
 

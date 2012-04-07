@@ -9,8 +9,9 @@
 #include "base/test/test_timeouts.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/ui/npapi_test_helper.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
@@ -69,9 +70,6 @@ TEST_F(LayoutPluginTester, FLAKY_SelfDeletePluginInvoke) {
 }
 
 TEST_F(LayoutPluginTester, NPObjectReleasedOnDestruction) {
-  if (ProxyLauncher::in_process_renderer())
-    return;
-
   const FilePath test_case(
       FILE_PATH_LITERAL("npobject_released_on_destruction.html"));
   GURL url = ui_test_utils::GetTestUrl(FilePath(kTestDir), test_case);

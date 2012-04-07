@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,26 +7,28 @@
 #include <algorithm>
 #include <vector>
 
+#include "base/debug/alias.h"
 #include "base/hash_tables.h"
 #include "base/logging.h"
 #include "base/shared_memory.h"
-#include "chrome/browser/debugger/devtools_netlog_observer.h"
-#include "chrome/browser/net/load_timing_observer.h"
-#include "content/browser/host_zoom_map.h"
-#include "content/browser/renderer_host/global_request_id.h"
+#include "content/browser/debugger/devtools_netlog_observer.h"
+#include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
-#include "content/common/resource_response.h"
+#include "content/browser/resource_context.h"
 #include "content/common/resource_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/browser/resource_dispatcher_host_delegate.h"
+#include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_log.h"
 #include "webkit/glue/resource_loader_bridge.h"
 
-using base::Time;
 using base::TimeTicks;
+using content::GlobalRequestID;
 
 namespace {
 
@@ -79,13 +81,12 @@ AsyncResourceHandler::AsyncResourceHandler(
     ResourceMessageFilter* filter,
     int routing_id,
     const GURL& url,
-    HostZoomMap* host_zoom_map,
     ResourceDispatcherHost* resource_dispatcher_host)
     : filter_(filter),
       routing_id_(routing_id),
-      host_zoom_map_(host_zoom_map),
       rdh_(resource_dispatcher_host),
-      next_buffer_size_(kInitialReadBufSize) {
+      next_buffer_size_(kInitialReadBufSize),
+      url_(url) {
 }
 
 AsyncResourceHandler::~AsyncResourceHandler() {
@@ -98,21 +99,27 @@ bool AsyncResourceHandler::OnUploadProgress(int request_id,
                                                       position, size));
 }
 
-bool AsyncResourceHandler::OnRequestRedirected(int request_id,
-                                               const GURL& new_url,
-                                               ResourceResponse* response,
-                                               bool* defer) {
+bool AsyncResourceHandler::OnRequestRedirected(
+    int request_id,
+    const GURL& new_url,
+    content::ResourceResponse* response,
+    bool* defer) {
   *defer = true;
   net::URLRequest* request = rdh_->GetURLRequest(
       GlobalRequestID(filter_->child_id(), request_id));
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  if (rdh_->delegate())
+    rdh_->delegate()->OnRequestRedirected(request, response);
+
   DevToolsNetLogObserver::PopulateResponseInfo(request, response);
+  response->request_start = request->creation_time();
+  response->response_start = TimeTicks::Now();
   return filter_->Send(new ResourceMsg_ReceivedRedirect(
-      routing_id_, request_id, new_url, response->response_head));
+      routing_id_, request_id, new_url, *response));
 }
 
-bool AsyncResourceHandler::OnResponseStarted(int request_id,
-                                             ResourceResponse* response) {
+bool AsyncResourceHandler::OnResponseStarted(
+    int request_id,
+    content::ResourceResponse* response) {
   // For changes to the main frame, inform the renderer of the new URL's
   // per-host settings before the request actually commits.  This way the
   // renderer will be able to set these precisely at the time the
@@ -121,20 +128,28 @@ bool AsyncResourceHandler::OnResponseStarted(int request_id,
   net::URLRequest* request = rdh_->GetURLRequest(
       GlobalRequestID(filter_->child_id(), request_id));
 
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  if (rdh_->delegate())
+    rdh_->delegate()->OnResponseStarted(request, response, filter_);
+
   DevToolsNetLogObserver::PopulateResponseInfo(request, response);
 
+  const content::ResourceContext& resource_context =
+      filter_->resource_context();
+  content::HostZoomMap* host_zoom_map = resource_context.host_zoom_map();
+
   ResourceDispatcherHostRequestInfo* info = rdh_->InfoForRequest(request);
-  if (info->resource_type() == ResourceType::MAIN_FRAME && host_zoom_map_) {
+  if (info->resource_type() == ResourceType::MAIN_FRAME && host_zoom_map) {
     GURL request_url(request->url());
     filter_->Send(new ViewMsg_SetZoomLevelForLoadingURL(
         info->route_id(),
-        request_url, host_zoom_map_->GetZoomLevel(net::GetHostOrSpecFromURL(
+        request_url, host_zoom_map->GetZoomLevel(net::GetHostOrSpecFromURL(
             request_url))));
   }
 
+  response->request_start = request->creation_time();
+  response->response_start = TimeTicks::Now();
   filter_->Send(new ResourceMsg_ReceivedResponse(
-      routing_id_, request_id, response->response_head));
+      routing_id_, request_id, *response));
 
   if (request->response_info().metadata) {
     std::vector<char> copy(request->response_info().metadata->data(),
@@ -231,7 +246,13 @@ bool AsyncResourceHandler::OnResponseCompleted(
     int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info) {
-  Time completion_time = Time::Now();
+  // If we crash here, figure out what URL the renderer was requesting.
+  // http://crbug.com/107692
+  char url_buf[128];
+  base::strlcpy(url_buf, url_.spec().c_str(), arraysize(url_buf));
+  base::debug::Alias(url_buf);
+
+  TimeTicks completion_time = TimeTicks::Now();
   filter_->Send(new ResourceMsg_RequestComplete(routing_id_,
                                                 request_id,
                                                 status,

@@ -31,14 +31,14 @@ class PseudoTcpAdapter : public net::StreamSocket, base::NonThreadSafe {
 
   // net::Socket implementation.
   virtual int Read(net::IOBuffer* buffer, int buffer_size,
-                   net::CompletionCallback* callback) OVERRIDE;
+                   const net::CompletionCallback& callback) OVERRIDE;
   virtual int Write(net::IOBuffer* buffer, int buffer_size,
-                    net::CompletionCallback* callback) OVERRIDE;
+                    const net::CompletionCallback& callback) OVERRIDE;
   virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
   virtual bool SetSendBufferSize(int32 size) OVERRIDE;
 
   // net::StreamSocket implementation.
-  virtual int Connect(net::CompletionCallback* callback) OVERRIDE;
+  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectedAndIdle() const OVERRIDE;
@@ -49,6 +49,14 @@ class PseudoTcpAdapter : public net::StreamSocket, base::NonThreadSafe {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
+  virtual int64 NumBytesRead() const OVERRIDE;
+  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
+
+  // Set the delay for sending ACK.
+  void SetAckDelay(int delay_ms);
+
+  // Set whether Nagle's algorithm is enabled.
+  void SetNoDelay(bool no_delay);
 
  private:
   class Core;

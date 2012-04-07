@@ -1,22 +1,30 @@
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome/browser/sync/glue/bookmark_change_processor.h"
 
 #include <stack>
 #include <vector>
 
+#include "base/location.h"
 #include "base/string16.h"
 #include "base/string_util.h"
-
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/internal_api/change_record.h"
+#include "chrome/browser/sync/internal_api/read_node.h"
+#include "chrome/browser/sync/internal_api/write_node.h"
+#include "chrome/browser/sync/internal_api/write_transaction.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
+
+using content::BrowserThread;
 
 namespace browser_sync {
 
@@ -53,7 +61,7 @@ void BookmarkChangeProcessor::UpdateSyncNodeProperties(
   dst->SetIsFolder(src->is_folder());
   dst->SetTitle(UTF16ToWideHack(src->GetTitle()));
   if (!src->is_folder())
-    dst->SetURL(src->GetURL());
+    dst->SetURL(src->url());
   SetSyncNodeFavicon(src, model, dst);
 }
 
@@ -84,7 +92,7 @@ void BookmarkChangeProcessor::RemoveOneSyncNode(
     return;
   }
   // This node should have no children.
-  DCHECK(sync_node.GetFirstChildId() == sync_api::kInvalidId);
+  DCHECK(!sync_node.HasChildren());
   // Remove association and delete the sync node.
   model_associator_->Disassociate(sync_node.GetId());
   sync_node.Remove();
@@ -92,7 +100,7 @@ void BookmarkChangeProcessor::RemoveOneSyncNode(
 
 void BookmarkChangeProcessor::RemoveSyncNodeHierarchy(
     const BookmarkNode* topmost) {
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
 
   // Later logic assumes that |topmost| has been unlinked.
   DCHECK(topmost->is_root());
@@ -128,7 +136,8 @@ void BookmarkChangeProcessor::RemoveSyncNodeHierarchy(
   DCHECK(index_stack.empty());  // Nothing should be left on the stack.
 }
 
-void BookmarkChangeProcessor::Loaded(BookmarkModel* model) {
+void BookmarkChangeProcessor::Loaded(BookmarkModel* model,
+                                     bool ids_reassigned) {
   NOTREACHED();
 }
 
@@ -145,7 +154,7 @@ void BookmarkChangeProcessor::BookmarkNodeAdded(BookmarkModel* model,
   DCHECK(share_handle());
 
   // Acquire a scoped write lock via a transaction.
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
 
   CreateSyncNode(parent, model, index, &trans, model_associator_,
                  error_handler());
@@ -197,7 +206,7 @@ void BookmarkChangeProcessor::BookmarkNodeChanged(BookmarkModel* model,
   }
 
   // Acquire a scoped write lock via a transaction.
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
 
   // Lookup the sync node that's associated with |node|.
   sync_api::WriteNode sync_node(&trans);
@@ -231,7 +240,7 @@ void BookmarkChangeProcessor::BookmarkNodeMoved(BookmarkModel* model,
   }
 
   // Acquire a scoped write lock via a transaction.
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
 
   // Lookup the sync node that's associated with |child|.
   sync_api::WriteNode sync_node(&trans);
@@ -258,7 +267,7 @@ void BookmarkChangeProcessor::BookmarkNodeChildrenReordered(
     BookmarkModel* model, const BookmarkNode* node) {
 
   // Acquire a scoped write lock via a transaction.
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
 
   // The given node's children got reordered. We need to reorder all the
   // children of the corresponding sync node.
@@ -349,8 +358,7 @@ int BookmarkChangeProcessor::CalculateBookmarkModelInsertionIndex(
 // model.
 void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
     const sync_api::BaseTransaction* trans,
-    const sync_api::SyncManager::ChangeRecord* changes,
-    int change_count) {
+    const sync_api::ImmutableChangeRecordList& changes) {
   if (!running())
     return;
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -380,23 +388,28 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
   // A parent to hold nodes temporarily orphaned by parent deletion.  It is
   // lazily created inside the loop.
   const BookmarkNode* foster_parent = NULL;
-  for (int i = 0; i < change_count; ++i) {
+
+  // Whether we have passed all the deletes (which should be at the
+  // front of the list).
+  bool passed_deletes = false;
+  for (sync_api::ChangeRecordList::const_iterator it =
+           changes.Get().begin(); it != changes.Get().end(); ++it) {
     const BookmarkNode* dst =
-        model_associator_->GetChromeNodeFromSyncId(changes[i].id);
+        model_associator_->GetChromeNodeFromSyncId(it->id);
     // Ignore changes to the permanent top-level nodes.  We only care about
     // their children.
     if (model->is_permanent_node(dst))
       continue;
-    if (changes[i].action ==
-        sync_api::SyncManager::ChangeRecord::ACTION_DELETE) {
+    if (it->action ==
+        sync_api::ChangeRecord::ACTION_DELETE) {
       // Deletions should always be at the front of the list.
-      DCHECK(i == 0 || changes[i-1].action == changes[i].action);
+      DCHECK(!passed_deletes);
       // Children of a deleted node should not be deleted; they may be
       // reparented by a later change record.  Move them to a temporary place.
       if (!dst) // Can't do anything if we can't find the chrome node.
         continue;
       const BookmarkNode* parent = dst->parent();
-      if (dst->child_count()) {
+      if (!dst->empty()) {
         if (!foster_parent) {
           foster_parent = model->AddFolder(model->other_node(),
                                            model->other_node()->child_count(),
@@ -408,18 +421,19 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
         }
       }
       DCHECK_EQ(dst->child_count(), 0) << "Node being deleted has children";
-      model_associator_->Disassociate(changes[i].id);
+      model_associator_->Disassociate(it->id);
       int index = parent->GetIndexOf(dst);
       if (index > -1)
         model->Remove(parent, index);
       dst = NULL;
     } else {
-      DCHECK_EQ((changes[i].action ==
-          sync_api::SyncManager::ChangeRecord::ACTION_ADD), (dst == NULL))
+      DCHECK_EQ((it->action ==
+          sync_api::ChangeRecord::ACTION_ADD), (dst == NULL))
           << "ACTION_ADD should be seen if and only if the node is unknown.";
+      passed_deletes = true;
 
       sync_api::ReadNode src(trans);
-      if (!src.InitByIdLookup(changes[i].id)) {
+      if (!src.InitByIdLookup(it->id)) {
         error_handler()->OnUnrecoverableError(FROM_HERE,
             "ApplyModelChanges was passed a bad ID");
         return;
@@ -436,6 +450,9 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
                   foster_parent->parent()->GetIndexOf(foster_parent));
     foster_parent = NULL;
   }
+
+  // The visibility of the mobile node may need to change.
+  model_associator_->UpdatePermanentNodeVisibility();
 
   // We are now ready to hear about bookmarks changes again.
   model->AddObserver(this);
@@ -471,7 +488,7 @@ const BookmarkNode* BookmarkChangeProcessor::CreateOrUpdateBookmarkNode(
 
     if (!src->GetIsFolder())
       model->SetURL(dst, src->GetURL());
-    model->SetTitle(dst, WideToUTF16Hack(src->GetTitle()));
+    model->SetTitle(dst, UTF8ToUTF16(src->GetTitle()));
 
     SetBookmarkFavicon(src, dst, model);
   }
@@ -493,10 +510,10 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
   const BookmarkNode* node;
   if (sync_node->GetIsFolder()) {
     node = model->AddFolder(parent, index,
-                            WideToUTF16Hack(sync_node->GetTitle()));
+                            UTF8ToUTF16(sync_node->GetTitle()));
   } else {
     node = model->AddURL(parent, index,
-                         WideToUTF16Hack(sync_node->GetTitle()),
+                         UTF8ToUTF16(sync_node->GetTitle()),
                          sync_node->GetURL());
     SetBookmarkFavicon(sync_node, node, model);
   }
@@ -531,15 +548,15 @@ void BookmarkChangeProcessor::ApplyBookmarkFavicon(
   // destination URL, which is not correct, but since the favicon URL
   // is used as a key in the history's thumbnail DB, this gives us a value
   // which does not collide with others.
-  GURL fake_icon_url = bookmark_node->GetURL();
+  GURL fake_icon_url = bookmark_node->url();
 
   HistoryService* history =
       profile->GetHistoryService(Profile::EXPLICIT_ACCESS);
   FaviconService* favicon_service =
       profile->GetFaviconService(Profile::EXPLICIT_ACCESS);
 
-  history->AddPageNoVisitForBookmark(bookmark_node->GetURL());
-  favicon_service->SetFavicon(bookmark_node->GetURL(),
+  history->AddPageNoVisitForBookmark(bookmark_node->url());
+  favicon_service->SetFavicon(bookmark_node->url(),
                               fake_icon_url,
                               icon_bytes_vector,
                               history::FAVICON);

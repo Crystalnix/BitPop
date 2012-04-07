@@ -6,14 +6,13 @@
 #define CHROME_BROWSER_UI_VIEWS_DETACHABLE_TOOLBAR_VIEW_H_
 #pragma once
 
-#include "chrome/browser/ui/views/accessible_pane_view.h"
+#include "ui/views/accessible_pane_view.h"
 
-class SkBitmap;
 struct SkRect;
 
 // DetachableToolbarView contains functionality common to views that can detach
 // from the Chrome frame, such as the BookmarkBarView and the Extension shelf.
-class DetachableToolbarView : public AccessiblePaneView {
+class DetachableToolbarView : public views::AccessiblePaneView {
  public:
   // The color gradient start value close to the edge of the divider.
   static const SkColor kEdgeDividerColor;
@@ -57,8 +56,8 @@ class DetachableToolbarView : public AccessiblePaneView {
                                     DetachableToolbarView* view);
 
   // Paint the background of the content area (the surface behind the
-  // bookmarks or extension toolstrips). |rect| is the rectangle to paint
-  // the background within. |roundness| describes the roundness of the corners.
+  // bookmarks). |rect| is the rectangle to paint the background within.
+  // |roundness| describes the roundness of the corners.
   static void PaintContentAreaBackground(gfx::Canvas* canvas,
                                          ui::ThemeProvider* theme_provider,
                                          const SkRect& rect,

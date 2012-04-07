@@ -11,7 +11,7 @@
 #include "ppapi/proxy/ppapi_param_traits.h"
 #include "ppapi/proxy/var_serialization_rules.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 // SerializedVar::Inner --------------------------------------------------------
@@ -96,6 +96,14 @@ std::string* SerializedVar::Inner::GetStringPtr() {
   return &string_value_;
 }
 
+void SerializedVar::Inner::ForceSetVarValueForTest(PP_Var value) {
+  var_ = value;
+}
+
+void SerializedVar::Inner::ForceSetStringValueForTest(const std::string& str) {
+  string_value_ = str;
+}
+
 void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
   // When writing to the IPC messages, a serization rules handler should
   // always have been set.
@@ -128,7 +136,7 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
       // just serialized.
       break;
     case PP_VARTYPE_BOOL:
-      m->WriteBool(PPBoolToBool(var_.value.as_bool));
+      m->WriteBool(PP_ToBool(var_.value.as_bool));
       break;
     case PP_VARTYPE_INT32:
       m->WriteInt(var_.value.as_int);
@@ -143,6 +151,10 @@ void SerializedVar::Inner::WriteToMessage(IPC::Message* m) const {
       // handle the invalid string as if it was in process rather than seeing
       // what looks like a valid empty string.
       m->WriteString(string_value_);
+      break;
+    case PP_VARTYPE_ARRAY_BUFFER:
+      // TODO(dmichael): Proxy ArrayBuffer.
+      NOTIMPLEMENTED();
       break;
     case PP_VARTYPE_OBJECT:
       m->WriteInt64(var_.value.as_id);
@@ -185,7 +197,7 @@ bool SerializedVar::Inner::ReadFromMessage(const IPC::Message* m, void** iter) {
     case PP_VARTYPE_BOOL: {
       bool bool_value;
       success = m->ReadBool(iter, &bool_value);
-      var_.value.as_bool = BoolToPPBool(bool_value);
+      var_.value.as_bool = PP_FromBool(bool_value);
       break;
     }
     case PP_VARTYPE_INT32:
@@ -399,7 +411,7 @@ PP_Var* SerializedVarVectorReceiveInput::Get(Dispatcher* dispatcher,
                                              uint32_t* array_size) {
   deserialized_.resize(serialized_.size());
   for (size_t i = 0; i < serialized_.size(); i++) {
-    // The vector must be able to clean themselves up after this call is
+    // The vectors must be able to clean themselves up after this call is
     // torn down.
     serialized_[i].inner_->set_serialization_rules(
         dispatcher->serialization_rules());
@@ -515,7 +527,7 @@ PP_Var** SerializedVarVectorOutParam::ArrayOutParam(Dispatcher* dispatcher) {
 SerializedVarTestConstructor::SerializedVarTestConstructor(
     const PP_Var& pod_var) {
   DCHECK(pod_var.type != PP_VARTYPE_STRING);
-  inner_->SetVar(pod_var);
+  inner_->ForceSetVarValueForTest(pod_var);
 }
 
 SerializedVarTestConstructor::SerializedVarTestConstructor(
@@ -523,8 +535,8 @@ SerializedVarTestConstructor::SerializedVarTestConstructor(
   PP_Var string_var = {};
   string_var.type = PP_VARTYPE_STRING;
   string_var.value.as_id = 0;
-  inner_->SetVar(string_var);
-  *inner_->GetStringPtr() = str;
+  inner_->ForceSetVarValueForTest(string_var);
+  inner_->ForceSetStringValueForTest(str);
 }
 
 SerializedVarTestReader::SerializedVarTestReader(const SerializedVar& var)
@@ -532,5 +544,5 @@ SerializedVarTestReader::SerializedVarTestReader(const SerializedVar& var)
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 

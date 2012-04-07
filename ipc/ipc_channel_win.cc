@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/threading/non_thread_safe.h"
@@ -35,7 +36,7 @@ Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle &channel_handle,
       listener_(listener),
       waiting_connect_(mode & MODE_SERVER_FLAG),
       processing_incoming_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   CreatePipe(channel_handle, mode);
 }
 
@@ -93,8 +94,19 @@ bool Channel::ChannelImpl::Send(Message* message) {
   return true;
 }
 
+// static
+bool Channel::ChannelImpl::IsNamedServerInitialized(
+    const std::string& channel_id) {
+  if (WaitNamedPipe(PipeName(channel_id).c_str(), 1))
+    return true;
+  // If ERROR_SEM_TIMEOUT occurred, the pipe exists but is handling another
+  // connection.
+  return GetLastError() == ERROR_SEM_TIMEOUT;
+}
+
+// static
 const std::wstring Channel::ChannelImpl::PipeName(
-    const std::string& channel_id) const {
+    const std::string& channel_id) {
   std::string name("\\\\.\\pipe\\chrome.");
   return ASCIIToWide(name.append(channel_id));
 }
@@ -102,11 +114,39 @@ const std::wstring Channel::ChannelImpl::PipeName(
 bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
                                       Mode mode) {
   DCHECK_EQ(INVALID_HANDLE_VALUE, pipe_);
-  const std::wstring pipe_name = PipeName(channel_handle.name);
-  if (mode & MODE_SERVER_FLAG) {
+  string16 pipe_name;
+  // If we already have a valid pipe for channel just copy it.
+  if (channel_handle.pipe.handle) {
+    DCHECK(channel_handle.name.empty());
+    pipe_name = L"Not Available";  // Just used for LOG
+    // Check that the given pipe confirms to the specified mode.  We can
+    // only check for PIPE_TYPE_MESSAGE & PIPE_SERVER_END flags since the
+    // other flags (PIPE_TYPE_BYTE, and PIPE_CLIENT_END) are defined as 0.
+    DWORD flags = 0;
+    GetNamedPipeInfo(channel_handle.pipe.handle, &flags, NULL, NULL, NULL);
+    DCHECK(!(flags & PIPE_TYPE_MESSAGE));
+    if (((mode & MODE_SERVER_FLAG) && !(flags & PIPE_SERVER_END)) ||
+        ((mode & MODE_CLIENT_FLAG) && (flags & PIPE_SERVER_END))) {
+      LOG(WARNING) << "Inconsistent open mode. Mode :" << mode;
+      return false;
+    }
+    if (!DuplicateHandle(GetCurrentProcess(),
+                         channel_handle.pipe.handle,
+                         GetCurrentProcess(),
+                         &pipe_,
+                         0,
+                         FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+      LOG(WARNING) << "DuplicateHandle failed. Error :" << GetLastError();
+      return false;
+    }
+  } else if (mode & MODE_SERVER_FLAG) {
+    DCHECK(!channel_handle.pipe.handle);
+    const DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
+                            FILE_FLAG_FIRST_PIPE_INSTANCE;
+    pipe_name = PipeName(channel_handle.name);
     pipe_ = CreateNamedPipeW(pipe_name.c_str(),
-                             PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
-                              FILE_FLAG_FIRST_PIPE_INSTANCE,
+                             open_mode,
                              PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
                              1,
                              Channel::kReadBufferSize,
@@ -114,6 +154,8 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
                              5000,
                              NULL);
   } else if (mode & MODE_CLIENT_FLAG) {
+    DCHECK(!channel_handle.pipe.handle);
+    pipe_name = PipeName(channel_handle.name);
     pipe_ = CreateFileW(pipe_name.c_str(),
                         GENERIC_READ | GENERIC_WRITE,
                         0,
@@ -125,6 +167,7 @@ bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
   } else {
     NOTREACHED();
   }
+
   if (pipe_ == INVALID_HANDLE_VALUE) {
     // If this process is being closed, the pipe may be gone already.
     LOG(WARNING) << "Unable to create pipe \"" << pipe_name <<
@@ -166,8 +209,10 @@ bool Channel::ChannelImpl::Connect() {
     // Complete setup asynchronously. By not setting input_state_.is_pending
     // to true, we indicate to OnIOCompleted that this is the special
     // initialization signal.
-    MessageLoopForIO::current()->PostTask(FROM_HERE, factory_.NewRunnableMethod(
-        &Channel::ChannelImpl::OnIOCompleted, &input_state_.context, 0, 0));
+    MessageLoopForIO::current()->PostTask(
+        FROM_HERE, base::Bind(&Channel::ChannelImpl::OnIOCompleted,
+                              weak_factory_.GetWeakPtr(), &input_state_.context,
+                              0, 0));
   }
 
   if (!waiting_connect_)
@@ -409,6 +454,11 @@ void Channel::set_listener(Listener* listener) {
 
 bool Channel::Send(Message* message) {
   return channel_impl_->Send(message);
+}
+
+// static
+bool Channel::IsNamedServerInitialized(const std::string& channel_id) {
+  return ChannelImpl::IsNamedServerInitialized(channel_id);
 }
 
 }  // namespace IPC

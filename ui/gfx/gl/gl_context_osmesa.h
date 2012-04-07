@@ -12,23 +12,24 @@ typedef struct osmesa_context *OSMesaContext;
 
 namespace gfx {
 
+class GLShareGroup;
 class GLSurface;
 
 // Encapsulates an OSMesa OpenGL context that uses software rendering.
 class GLContextOSMesa : public GLContext {
  public:
-  GLContextOSMesa();
+  explicit GLContextOSMesa(GLShareGroup* share_group);
   virtual ~GLContextOSMesa();
 
   // Implement GLContext.
-  virtual bool Initialize(GLContext* shared_context,
-                          GLSurface* compatible_surface);
-  virtual void Destroy();
-  virtual bool MakeCurrent(GLSurface* surface);
-  virtual void ReleaseCurrent(GLSurface* surface);
-  virtual bool IsCurrent(GLSurface* surface);
-  virtual void* GetHandle();
-  virtual void SetSwapInterval(int interval);
+  virtual bool Initialize(
+      GLSurface* compatible_surface, GpuPreference gpu_preference) OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
+  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
+  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual void SetSwapInterval(int interval) OVERRIDE;
 
  private:
   OSMesaContext context_;

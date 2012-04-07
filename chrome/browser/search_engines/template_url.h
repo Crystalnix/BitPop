@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,10 @@
 #include "googleurl/src/gurl.h"
 
 class PrefService;
+class Profile;
 class SearchTermsData;
 class TemplateURL;
 class WebDataService;
-struct WDKeywordsResult;
 
 // TemplateURL represents the relevant portions of the Open Search Description
 // Document (http://www.opensearch.org/Specifications/OpenSearch).
@@ -71,6 +71,16 @@ class TemplateURLRef {
   //
   // The TemplateURL is used to determine the input encoding for the term.
   std::string ReplaceSearchTerms(
+      const TemplateURL& host,
+      const string16& terms,
+      int accepted_suggestion,
+      const string16& original_query_for_suggestion) const;
+
+  // Just like ReplaceSearchTerms except that it takes a Profile that's used to
+  // retrieve Instant field trial params. Most callers don't care about those
+  // params, and so can use ReplaceSearchTerms instead.
+  std::string ReplaceSearchTermsUsingProfile(
+      Profile* profile,
       const TemplateURL& host,
       const string16& terms,
       int accepted_suggestion,
@@ -135,11 +145,15 @@ class TemplateURLRef {
   // Collects metrics whether searches through Google are sent with RLZ string.
   void CollectRLZMetrics() const;
 
+  // Sets whether this URL is pre-populated or not.
+  void set_prepopulated(bool prepopulated) { prepopulated_ = prepopulated; }
+
  private:
   friend class SearchHostToURLsMapTest;
   friend class TemplateURL;
-  friend class TemplateURLModelTestUtil;
+  friend class TemplateURLServiceTestUtil;
   friend class TemplateURLTest;
+  FRIEND_TEST_ALL_PREFIXES(TemplateURLTest, SetPrepopulatedAndParse);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLTest, ParseParameterKnown);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLTest, ParseParameterUnknown);
   FRIEND_TEST_ALL_PREFIXES(TemplateURLTest, ParseURLEmpty);
@@ -154,8 +168,11 @@ class TemplateURLRef {
     GOOGLE_ACCEPTED_SUGGESTION,
     GOOGLE_BASE_URL,
     GOOGLE_BASE_SUGGEST_URL,
+    GOOGLE_INSTANT_ENABLED,
+    GOOGLE_INSTANT_FIELD_TRIAL_GROUP,
     GOOGLE_ORIGINAL_QUERY_FOR_SUGGESTION,
     GOOGLE_RLZ,
+    GOOGLE_SEARCH_FIELDTRIAL_GROUP,
     GOOGLE_UNESCAPED_SEARCH_TERMS,
     LANGUAGE,
     SEARCH_TERMS,
@@ -186,8 +203,8 @@ class TemplateURLRef {
   // replacements indicating the type and range of the element. The original
   // parameter is erased from the url.
   //
-  // If the parameter is not a known parameter, it's not erased and false is
-  // returned.
+  // If the parameter is not a known parameter, false is returned. If this is a
+  // prepopulated URL, the parameter is erased, otherwise it is left alone.
   bool ParseParameter(size_t start,
                       size_t end,
                       std::string* url,
@@ -251,6 +268,9 @@ class TemplateURLRef {
   mutable std::string host_;
   mutable std::string path_;
   mutable std::string search_term_key_;
+
+  // Whether the contained URL is a pre-populated URL.
+  bool prepopulated_;
 };
 
 // Describes the relevant portions of a single OSD document.
@@ -425,6 +445,12 @@ class TemplateURL {
   void set_date_created(base::Time time) { date_created_ = time; }
   base::Time date_created() const { return date_created_; }
 
+  // The last time this keyword was modified by a user, since creation.
+  //
+  // NOTE: Like date_created above, this may be 0.
+  void set_last_modified(base::Time time) { last_modified_ = time; }
+  base::Time last_modified() const { return last_modified_; }
+
   // True if this TemplateURL was automatically created by the administrator via
   // group policy.
   void set_created_by_policy(bool created_by_policy) {
@@ -463,15 +489,20 @@ class TemplateURL {
   int logo_id() const { return logo_id_; }
 
   // Returns the unique identifier of this TemplateURL. The unique ID is set
-  // by the TemplateURLModel when the TemplateURL is added to it.
+  // by the TemplateURLService when the TemplateURL is added to it.
   TemplateURLID id() const { return id_; }
 
   // If this TemplateURL comes from prepopulated data the prepopulate_id is > 0.
-  void set_prepopulate_id(int id) { prepopulate_id_ = id; }
+  // SetPrepopulateId also sets any TemplateURLRef's prepopulated flag to true
+  // if |id| > 0 and false otherwise.
+  void SetPrepopulateId(int id);
   int prepopulate_id() const { return prepopulate_id_; }
 
   std::string GetExtensionId() const;
   bool IsExtensionKeyword() const;
+
+  std::string sync_guid() const { return sync_guid_; }
+  void set_sync_guid(const std::string& guid) { sync_guid_ = guid; }
 
  private:
   friend void MergeEnginesFromPrepopulateData(
@@ -482,10 +513,15 @@ class TemplateURL {
   friend class KeywordTable;
   friend class KeywordTableTest;
   friend class SearchHostToURLsMap;
-  friend class TemplateURLModel;
+  friend class TemplateURLService;
+  FRIEND_TEST_ALL_PREFIXES(TemplateURLServiceSyncTest,
+                           ResolveSyncKeywordConflict);
 
   // Invalidates cached values on this object and its child TemplateURLRefs.
   void InvalidateCachedValues() const;
+
+  // Sets all TemplateURLRefs prepopulated flags.
+  void SetTemplateURLRefsPrepopulated(bool prepopulated);
 
   // Unique identifier, used when archived to the database.
   void set_id(TemplateURLID id) { id_ = id; }
@@ -510,11 +546,15 @@ class TemplateURL {
   std::vector<std::string> input_encodings_;
   TemplateURLID id_;
   base::Time date_created_;
+  base::Time last_modified_;
   bool created_by_policy_;
   int usage_count_;
   SearchEngineType search_engine_type_;
   int logo_id_;
   int prepopulate_id_;
+  // The primary unique identifier for Sync. This is only set on TemplateURLs
+  // that have been associated with Sync.
+  std::string sync_guid_;
 
   // TODO(sky): Add date last parsed OSD file.
 };

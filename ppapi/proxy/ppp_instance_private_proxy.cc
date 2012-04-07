@@ -13,7 +13,7 @@
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 namespace {
@@ -22,7 +22,7 @@ PP_Var GetInstanceObject(PP_Instance instance) {
   Dispatcher* dispatcher = HostDispatcher::GetForInstance(instance);
   ReceiveSerializedVarReturnValue result;
   dispatcher->Send(new PpapiMsg_PPPInstancePrivate_GetInstanceObject(
-      INTERFACE_ID_PPP_INSTANCE_PRIVATE, instance, &result));
+      API_ID_PPP_INSTANCE_PRIVATE, instance, &result));
   return result.Return(dispatcher);
 }
 
@@ -30,16 +30,19 @@ static const PPP_Instance_Private instance_private_interface = {
   &GetInstanceObject
 };
 
-InterfaceProxy* CreateInstancePrivateProxy(Dispatcher* dispatcher,
-                                           const void* target_interface) {
-  return new PPP_Instance_Private_Proxy(dispatcher, target_interface);
+InterfaceProxy* CreateInstancePrivateProxy(Dispatcher* dispatcher) {
+  return new PPP_Instance_Private_Proxy(dispatcher);
 }
 
 }  // namespace
 
-PPP_Instance_Private_Proxy::PPP_Instance_Private_Proxy(
-    Dispatcher* dispatcher, const void* target_interface)
-    : InterfaceProxy(dispatcher, target_interface) {
+PPP_Instance_Private_Proxy::PPP_Instance_Private_Proxy(Dispatcher* dispatcher)
+    : InterfaceProxy(dispatcher),
+      ppp_instance_private_impl_(NULL) {
+  if (dispatcher->IsPlugin()) {
+    ppp_instance_private_impl_ = static_cast<const PPP_Instance_Private*>(
+        dispatcher->local_get_interface()(PPP_INSTANCE_PRIVATE_INTERFACE));
+  }
 }
 
 PPP_Instance_Private_Proxy::~PPP_Instance_Private_Proxy() {
@@ -50,7 +53,7 @@ const InterfaceProxy::Info* PPP_Instance_Private_Proxy::GetInfo() {
   static const Info info = {
     &instance_private_interface,
     PPP_INSTANCE_PRIVATE_INTERFACE,
-    INTERFACE_ID_PPP_INSTANCE_PRIVATE,
+    API_ID_PPP_INSTANCE_PRIVATE,
     false,
     &CreateInstancePrivateProxy,
   };
@@ -71,8 +74,8 @@ void PPP_Instance_Private_Proxy::OnMsgGetInstanceObject(
     PP_Instance instance,
     SerializedVarReturnValue result) {
   result.Return(dispatcher(),
-                ppp_instance_private_target()->GetInstanceObject(instance));
+                ppp_instance_private_impl_->GetInstanceObject(instance));
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
+#include "base/time.h"
 #include "chrome/browser/autocomplete/autocomplete_controller_delegate.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/common/instant_types.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
@@ -47,7 +48,7 @@ class AutocompleteEditController {
   // AutocompleteResult::GetAlternateNavURL().
   virtual void OnAutocompleteAccept(const GURL& url,
                                     WindowOpenDisposition disposition,
-                                    PageTransition::Type transition,
+                                    content::PageTransition transition,
                                     const GURL& alternate_nav_url) = 0;
 
   // Called when anything has changed that might affect the layout or contents
@@ -117,8 +118,7 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   // making this accessor unnecessary.
   AutocompletePopupModel* popup_model() const { return popup_; }
 
-  // Invoked when the profile has changed.
-  void SetProfile(Profile* profile);
+  AutocompleteEditController* controller() const { return controller_; }
 
   Profile* profile() const { return profile_; }
 
@@ -233,7 +233,7 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   // Returns true if this is a paste-and-search rather than paste-and-go (or
   // nothing).
   bool is_paste_and_search() const {
-    return (paste_and_go_match_.transition != PageTransition::TYPED);
+    return (paste_and_go_match_.transition != content::PAGE_TRANSITION_TYPED);
   }
 
   // Asks the browser to load the popup's currently selected item, using the
@@ -291,6 +291,9 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
 
   // Called when the user pastes in text.
   void on_paste() { paste_state_ = PASTING; }
+
+  // Returns true if pasting is in progress.
+  bool is_pasting() const { return paste_state_ == PASTING; }
 
   // Called when the user presses up or down.  |count| is a repeat count,
   // negative for moving up, positive for moving down.
@@ -364,7 +367,7 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   };
 
   // AutocompleteControllerDelegate:
-  virtual void OnResultChanged(bool default_match_changed);
+  virtual void OnResultChanged(bool default_match_changed) OVERRIDE;
 
   // Returns true if a query to an autocomplete provider is currently
   // in progress.  This logic should in the future live in
@@ -402,14 +405,6 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   void GetInfoForCurrentText(AutocompleteMatch* match,
                              GURL* alternate_nav_url) const;
 
-  // Returns true if |text| (which is display text in the current context)
-  // parses as a URL, and in that case sets |url| to the calculated URL.
-  // Subtle note: This ignores the desired_tld_ (unlike GetDataForURLExport()
-  // and CurrentTextIsURL()).  The view needs this because it calls this
-  // function during copy handling, when the control key is down to trigger the
-  // copy.
-  bool GetURLForText(const string16& text, GURL* url) const;
-
   // Reverts the edit box from a temporary text back to the original user text.
   // If |revert_popup| is true then the popup will be reverted as well.
   void RevertTemporaryText(bool revert_popup);
@@ -428,6 +423,16 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   bool ShouldAllowExactKeywordMatch(const string16& old_user_text,
                                     const string16& new_user_text,
                                     size_t caret_position);
+
+  // Tries to start an instant preview for |match|. Returns true if instant
+  // processed the match.
+  bool DoInstant(const AutocompleteMatch& match, string16* suggested_text);
+
+  // Starts a prerender for the given |match|.
+  void DoPrerender(const AutocompleteMatch& match);
+
+  // Starts a DNS prefetch for the given |match|.
+  void DoPreconnect(const AutocompleteMatch& match);
 
   // Checks if a given character is a valid space character for accepting
   // keyword.
@@ -457,6 +462,10 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
   // The text that the user has entered.  This does not include inline
   // autocomplete text that has not yet been accepted.
   string16 user_text_;
+
+  // We keep track of when the user began modifying the omnibox text.
+  // This should be valid whenever user_input_in_progress_ is true.
+  base::TimeTicks time_user_first_modified_omnibox_;
 
   // When the user closes the popup, we need to remember the URL for their
   // desired choice, so that if they hit enter without reopening the popup we
@@ -529,11 +538,10 @@ class AutocompleteEditModel : public AutocompleteControllerDelegate {
 
   Profile* profile_;
 
-  // Should instant be updated? This is needed as prior to accepting the current
-  // text the model is reverted, which triggers resetting instant. We don't want
-  // to update instant in this case, so we use the flag to determine if this is
-  // happening.
-  bool update_instant_;
+  // This is needed as prior to accepting the current text the model is
+  // reverted, which triggers resetting instant. We don't want to update instant
+  // in this case, so we use the flag to determine if this is happening.
+  bool in_revert_;
 
   // Indicates if the upcoming autocomplete search is allowed to be treated as
   // an exact keyword match. If it's true then keyword mode will be triggered

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,10 @@
 #include <deque>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Extension;
 
@@ -35,7 +36,7 @@ class ExtensionApiTest : public ExtensionBrowserTest {
   // GetNextResult() and message() if GetNextResult() return false. If there
   // are no results, this method will pump the UI message loop until one is
   // received.
-  class ResultCatcher : public NotificationObserver {
+  class ResultCatcher : public content::NotificationObserver {
    public:
     ResultCatcher();
     virtual ~ResultCatcher();
@@ -49,11 +50,11 @@ class ExtensionApiTest : public ExtensionBrowserTest {
     const std::string& message() { return message_; }
 
    private:
-    virtual void Observe(NotificationType type,
-                         const NotificationSource& source,
-                         const NotificationDetails& details);
+    virtual void Observe(int type,
+                         const content::NotificationSource& source,
+                         const content::NotificationDetails& details) OVERRIDE;
 
-    NotificationRegistrar registrar_;
+    content::NotificationRegistrar registrar_;
 
     // A sequential list of pass/fail notifications from the test extension(s).
     std::deque<bool> results_;
@@ -70,8 +71,8 @@ class ExtensionApiTest : public ExtensionBrowserTest {
     bool waiting_;
   };
 
-  virtual void SetUpInProcessBrowserTestFixture();
-  virtual void TearDownInProcessBrowserTestFixture();
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
+  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE;
 
   // Load |extension_name| and wait for pass / fail notification.
   // |extension_name| is a directory in "test/data/extensions/api_test".
@@ -97,9 +98,25 @@ class ExtensionApiTest : public ExtensionBrowserTest {
   bool RunExtensionSubtest(const char* extension_name,
                            const std::string& page_url);
 
+  // Same as RunExtensionSubtest, but disables file access.
+  bool RunExtensionSubtestNoFileAccess(const char* extension_name,
+                                       const std::string& page_url);
+
+  // Same as RunExtensionSubtest, but enables the extension for incognito mode.
+  bool RunExtensionSubtestIncognito(const char* extension_name,
+                                    const std::string& page_url);
+
+  // Same as RunExtensionSubtestIncognito, but disables file access.
+  bool RunExtensionSubtestIncognitoNoFileAccess(const char* extension_name,
+                                                const std::string& page_url);
+
   // Load |page_url| and wait for pass / fail notification from the extension
   // API on the page.
   bool RunPageTest(const std::string& page_url);
+
+  // Similar to RunExtensionTest, except used for running tests in platform app
+  // shell windows.
+  bool RunPlatformAppTest(const char* extension_name);
 
   // Start the test server, and store details of its state.  Those details
   // will be available to javascript tests using chrome.test.getConfig().
@@ -110,17 +127,22 @@ class ExtensionApiTest : public ExtensionBrowserTest {
   const Extension* GetSingleLoadedExtension();
 
   // All extensions tested by ExtensionApiTest are in the "api_test" dir.
-  virtual void SetUpCommandLine(CommandLine* command_line);
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
 
   // If it failed, what was the error message?
   std::string message_;
 
  private:
+  enum Flags {
+    kFlagNone = 0,
+    kFlagEnableIncognito = 1 << 0,
+    kFlagEnableFileAccess = 1 << 1,
+    kFlagLoadAsComponent = 1 << 2,
+    kFlagLaunchAppShell = 1 << 3
+  };
   bool RunExtensionTestImpl(const char* extension_name,
                             const std::string& test_page,
-                            bool enable_incognito,
-                            bool enable_fileaccess,
-                            bool load_as_component);
+                            int flags);
 
   // Hold details of the test, set in C++, which can be accessed by
   // javascript using chrome.test.getConfig().

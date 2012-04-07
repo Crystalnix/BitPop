@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,12 +10,10 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/task.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/prefs/pref_member.h"
-#include "chrome/browser/search_engines/template_url_model_observer.h"
+#include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/views/dropdown_bar_host.h"
@@ -23,9 +21,12 @@
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
-#include "views/controls/native/native_view_host.h"
+#include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/drag_controller.h"
 
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+#include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
+#elif defined(OS_WIN)
 #include "chrome/browser/ui/views/omnibox/omnibox_view_win.h"
 #elif defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/omnibox/omnibox_view_gtk.h"
@@ -40,19 +41,12 @@ class InstantController;
 class KeywordHintView;
 class LocationIconView;
 class PageActionWithBadgeView;
-class Profile;
 class SelectedKeywordView;
 class StarView;
-class TabContents;
 class TabContentsWrapper;
-class TemplateURLModel;
+class TemplateURLService;
 
-namespace views {
-class HorizontalPainter;
-class Label;
-}  // namespace views
-
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(USE_AURA)
 class SuggestedTextView;
 #endif
 
@@ -70,8 +64,8 @@ class LocationBarView : public LocationBar,
                         public views::DragController,
                         public AutocompleteEditController,
                         public DropdownBarHostDelegate,
-                        public TemplateURLModelObserver,
-                        public NotificationObserver {
+                        public TemplateURLServiceObserver,
+                        public content::NotificationObserver {
  public:
   // The location bar view's class name.
   static const char kViewClassName[];
@@ -117,8 +111,7 @@ class LocationBarView : public LocationBar,
     APP_LAUNCHER
   };
 
-  LocationBarView(Profile* profile,
-                  Browser* browser,
+  LocationBarView(Browser* browser,
                   ToolbarModel* model,
                   Delegate* delegate,
                   Mode mode);
@@ -138,10 +131,8 @@ class LocationBarView : public LocationBar,
   // Updates the location bar.  We also reset the bar's permanent text and
   // security style, and, if |tab_for_state_restoring| is non-NULL, also restore
   // saved state that the tab holds.
-  void Update(const TabContents* tab_for_state_restoring);
+  void Update(const content::WebContents* tab_for_state_restoring);
 
-  void SetProfile(Profile* profile);
-  Profile* profile() const { return profile_; }
   Browser* browser() const { return browser_; }
 
   // Sets |preview_enabled| for the PageAction View associated with this
@@ -165,7 +156,7 @@ class LocationBarView : public LocationBar,
   // appears, not where the icons are shown).
   gfx::Point GetLocationEntryOrigin() const;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(USE_AURA)
   // Invoked from OmniboxViewWin to show the instant suggestion.
   void SetInstantSuggestion(const string16& text,
                             bool animate_to_complete);
@@ -173,6 +164,13 @@ class LocationBarView : public LocationBar,
   // Returns the current instant suggestion text.
   string16 GetInstantSuggestion() const;
 #endif
+
+  // Sets whether the location entry can accept focus.
+  void SetLocationEntryFocusable(bool focusable);
+
+  // Returns true if the location entry is focusable and visible in
+  // the root view.
+  bool IsLocationEntryFocusableInRootView() const;
 
   // Sizing functions
   virtual gfx::Size GetPreferredSize() OVERRIDE;
@@ -193,7 +191,9 @@ class LocationBarView : public LocationBar,
   // in the toolbar in full keyboard accessibility mode.
   virtual void SelectAll();
 
-#if defined(OS_WIN)
+  const gfx::Font& font() const { return font_; }
+
+#if defined(OS_WIN) && !defined(USE_AURA)
   // Event Handlers
   virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const views::MouseEvent& event) OVERRIDE;
@@ -201,14 +201,17 @@ class LocationBarView : public LocationBar,
   virtual void OnMouseCaptureLost() OVERRIDE;
 #endif
 
+  LocationIconView* location_icon_view() { return location_icon_view_; }
   const LocationIconView* location_icon_view() const {
     return location_icon_view_;
   }
 
+  views::View* location_entry_view() const { return location_entry_view_; }
+
   // AutocompleteEditController
   virtual void OnAutocompleteAccept(const GURL& url,
                                     WindowOpenDisposition disposition,
-                                    PageTransition::Type transition,
+                                    content::PageTransition transition,
                                     const GURL& alternate_nav_url) OVERRIDE;
   virtual void OnChanged() OVERRIDE;
   virtual void OnSelectionBoundsChanged() OVERRIDE;
@@ -237,19 +240,19 @@ class LocationBarView : public LocationBar,
                                    const gfx::Point& p) OVERRIDE;
 
   // Overridden from LocationBar:
-  virtual void ShowFirstRunBubble(FirstRun::BubbleType bubble_type) OVERRIDE;
+  virtual void ShowFirstRunBubble() OVERRIDE;
   virtual void SetSuggestedText(const string16& text,
                                 InstantCompleteBehavior behavior) OVERRIDE;
-  virtual std::wstring GetInputString() const OVERRIDE;
+  virtual string16 GetInputString() const OVERRIDE;
   virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
-  virtual PageTransition::Type GetPageTransition() const OVERRIDE;
+  virtual content::PageTransition GetPageTransition() const OVERRIDE;
   virtual void AcceptInput() OVERRIDE;
   virtual void FocusLocation(bool select_all) OVERRIDE;
   virtual void FocusSearch() OVERRIDE;
   virtual void UpdateContentSettingsIcons() OVERRIDE;
   virtual void UpdatePageActions() OVERRIDE;
   virtual void InvalidatePageActions() OVERRIDE;
-  virtual void SaveStateToContents(TabContents* contents) OVERRIDE;
+  virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
   virtual void Revert() OVERRIDE;
   virtual const OmniboxView* location_entry() const OVERRIDE;
   virtual OmniboxView* location_entry() OVERRIDE;
@@ -262,13 +265,13 @@ class LocationBarView : public LocationBar,
   virtual ExtensionAction* GetVisiblePageAction(size_t index) OVERRIDE;
   virtual void TestPageActionPressed(size_t index) OVERRIDE;
 
-  // Overridden from TemplateURLModelObserver
-  virtual void OnTemplateURLModelChanged() OVERRIDE;
+  // Overridden from TemplateURLServiceObserver
+  virtual void OnTemplateURLServiceChanged() OVERRIDE;
 
-  // Overridden from NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Overridden from content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Thickness of the left and right edges of the omnibox, in normal mode.
   static const int kNormalHorizontalEdgeThickness;
@@ -323,26 +326,27 @@ class LocationBarView : public LocationBar,
   // Sets the visibility of view to new_vis.
   void ToggleVisibility(bool new_vis, views::View* view);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(USE_AURA)
+#if !defined(USE_AURA)
   // Helper for the Mouse event handlers that does all the real work.
   void OnMouseEvent(const views::MouseEvent& event, UINT msg);
+#endif
 
   // Returns true if the suggest text is valid.
   bool HasValidSuggestText() const;
+
+#if !defined(USE_AURA)
+  // Returns |location_entry_| cast to OmniboxViewWin, or NULL if
+  // |location_entry_| is of a different type.
+  OmniboxViewWin* GetOmniboxViewWin();
+#endif
 #endif
 
   // Helper to show the first run info bubble.
-  void ShowFirstRunBubbleInternal(FirstRun::BubbleType bubble_type);
-
-  // Current profile. Not owned by us.
-  Profile* profile_;
+  void ShowFirstRunBubbleInternal();
 
   // The Autocomplete Edit field.
-#if defined(OS_WIN)
-  scoped_ptr<OmniboxViewWin> location_entry_;
-#else
   scoped_ptr<OmniboxView> location_entry_;
-#endif
 
   // The Browser object that corresponds to this View.
   Browser* browser_;
@@ -355,19 +359,19 @@ class LocationBarView : public LocationBar,
 
   // This is the string of text from the autocompletion session that the user
   // entered or selected.
-  std::wstring location_input_;
+  string16 location_input_;
 
   // The user's desired disposition for how their input should be opened
   WindowOpenDisposition disposition_;
 
   // The transition type to use for the navigation
-  PageTransition::Type transition_;
+  content::PageTransition transition_;
 
   // Font used by edit and some of the hints.
   gfx::Font font_;
 
   // An object used to paint the normal-mode background.
-  scoped_ptr<views::HorizontalPainter> painter_;
+  scoped_ptr<views::Painter> painter_;
 
   // An icon to the left of the edit field.
   LocationIconView* location_icon_view_;
@@ -387,7 +391,7 @@ class LocationBarView : public LocationBar,
   // Shown if the user has selected a keyword.
   SelectedKeywordView* selected_keyword_view_;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(USE_AURA)
   // View responsible for showing suggested text. This is NULL when there is no
   // suggested text.
   SuggestedTextView* suggested_text_view_;
@@ -412,13 +416,9 @@ class LocationBarView : public LocationBar,
   // focused. Used when the toolbar is in full keyboard accessibility mode.
   bool show_focus_rect_;
 
-  // Whether bubble text is short or long.
-  FirstRun::BubbleType bubble_type_;
-
-  // This is in case we're destroyed before the model loads. We store the model
-  // because calling profile_->GetTemplateURLModel() in the destructor causes a
-  // crash.
-  TemplateURLModel* template_url_model_;
+  // This is in case we're destroyed before the model loads. We need to make
+  // Add/RemoveObserver calls.
+  TemplateURLService* template_url_service_;
 
   // Tracks this preference to determine whether bookmark editing is allowed.
   BooleanPrefMember edit_bookmarks_enabled_;

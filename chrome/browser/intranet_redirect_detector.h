@@ -10,9 +10,10 @@
 #include <string>
 #include <vector>
 
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/url_fetcher.h"
+#include "base/memory/weak_ptr.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_resolver_proc.h"
 #include "net/base/network_change_notifier.h"
@@ -36,7 +37,7 @@ class PrefService;
 // return a value at all times (even during startup or in unittest mode).  If no
 // redirection is in place, the returned GURL will be empty.
 class IntranetRedirectDetector
-    : public URLFetcher::Delegate,
+    : public content::URLFetcherDelegate,
       public net::NetworkChangeNotifier::IPAddressObserver {
  public:
   // Only the main browser process loop should call this, when setting up
@@ -59,25 +60,20 @@ class IntranetRedirectDetector
   static const size_t kNumCharsInHostnames;
 
  private:
-  typedef std::set<URLFetcher*> Fetchers;
+  typedef std::set<content::URLFetcher*> Fetchers;
 
   // Called when the seven second startup sleep or the one second network
   // switch sleep has finished.  Runs any pending fetch.
   void FinishSleep();
 
-  // URLFetcher::Delegate
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // content::URLFetcherDelegate
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
   // NetworkChangeNotifier::IPAddressObserver
-  virtual void OnIPAddressChanged();
+  virtual void OnIPAddressChanged() OVERRIDE;
 
   GURL redirect_origin_;
-  ScopedRunnableMethodFactory<IntranetRedirectDetector> fetcher_factory_;
+  base::WeakPtrFactory<IntranetRedirectDetector> weak_factory_;
   Fetchers fetchers_;
   std::vector<GURL> resulting_origins_;
   bool in_sleep_;  // True if we're in the seven-second "no fetching" period
@@ -97,7 +93,7 @@ class IntranetRedirectHostResolverProc : public net::HostResolverProc {
                       net::AddressFamily address_family,
                       net::HostResolverFlags host_resolver_flags,
                       net::AddressList* addrlist,
-                      int* os_error);
+                      int* os_error) OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_INTRANET_REDIRECT_DETECTOR_H_

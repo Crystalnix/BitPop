@@ -4,13 +4,14 @@
 
 #import "chrome/browser/ui/cocoa/download/download_item_controller.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/metrics/histogram.h"
 #include "base/string16.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/download/download_item.h"
+#include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_shelf_context_menu.h"
 #include "chrome/browser/download/download_util.h"
@@ -21,13 +22,16 @@
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/ui_localizer.h"
+#include "content/public/browser/download_item.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/text_elider.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::DownloadItem;
 
 namespace {
 
@@ -99,7 +103,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
 - (id)initWithModel:(BaseDownloadItemModel*)downloadModel
               shelf:(DownloadShelfController*)shelf {
   if ((self = [super initWithNibName:@"DownloadItem"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     // Must be called before [self view], so that bridge_ is set in awakeFromNib
     bridge_.reset(new DownloadItemMac(downloadModel, self));
     menuBridge_.reset(new DownloadShelfContextMenuMac(downloadModel));
@@ -161,7 +165,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
   DCHECK_EQ(bridge_->download_model(), downloadModel);
 
   // Handle dangerous downloads.
-  if (downloadModel->download()->safety_state() == DownloadItem::DANGEROUS) {
+  if (downloadModel->download()->GetSafetyState() == DownloadItem::DANGEROUS) {
     [self setState:kDangerous];
 
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
@@ -172,18 +176,21 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
     // The dangerous download label, button text and icon are different under
     // different cases.
     if (downloadModel->download()->GetDangerType() ==
-        DownloadItem::DANGEROUS_URL) {
+        content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL) {
+      // TODO(noelutz): add support for malicious content.
       // Safebrowsing shows the download URL leads to malicious file.
       alertIcon = rb.GetNativeImageNamed(IDR_SAFEBROWSING_WARNING);
       dangerousWarning = l10n_util::GetNSStringWithFixup(
-          IDS_PROMPT_UNSAFE_DOWNLOAD_URL);
-      confirmButtonTitle = l10n_util::GetNSStringWithFixup(IDS_SAVE_DOWNLOAD);
+          IDS_PROMPT_MALICIOUS_DOWNLOAD_URL);
+      confirmButtonTitle = l10n_util::GetNSStringWithFixup(
+          IDS_CONFIRM_DOWNLOAD);
     } else {
       // It's a dangerous file type (e.g.: an executable).
       DCHECK_EQ(downloadModel->download()->GetDangerType(),
-                DownloadItem::DANGEROUS_FILE);
+                content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE);
       alertIcon = rb.GetNativeImageNamed(IDR_WARNING);
-      if (downloadModel->download()->is_extension_install()) {
+      if (ChromeDownloadManagerDelegate::IsExtensionDownload(
+              downloadModel->download())) {
         dangerousWarning = l10n_util::GetNSStringWithFixup(
             IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION);
         confirmButtonTitle = l10n_util::GetNSStringWithFixup(
@@ -192,7 +199,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
         // This basic fixup copies Windows DownloadItemView::DownloadItemView().
 
         // Extract the file extension (if any).
-        FilePath filename(downloadModel->download()->target_name());
+        FilePath filename(downloadModel->download()->GetTargetName());
         FilePath::StringType extension = filename.Extension();
 
         // Remove leading '.' from the extension
@@ -218,7 +225,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
          dangerousWarning = l10n_util::GetNSStringFWithFixup(
              IDS_PROMPT_DANGEROUS_DOWNLOAD, UTF8ToUTF16(new_filename));
          confirmButtonTitle =
-             l10n_util::GetNSStringWithFixup(IDS_SAVE_DOWNLOAD);
+             l10n_util::GetNSStringWithFixup(IDS_CONFIRM_DOWNLOAD);
       }
     }
     DCHECK(alertIcon);
@@ -233,7 +240,7 @@ class DownloadShelfContextMenuMac : public DownloadShelfContextMenu {
   // Set correct popup menu. Also, set draggable download on completion.
   if (downloadModel->download()->IsComplete()) {
     [progressView_ setMenu:completeDownloadMenu_];
-    [progressView_ setDownload:downloadModel->download()->full_path()];
+    [progressView_ setDownload:downloadModel->download()->GetFullPath()];
   } else {
     [progressView_ setMenu:activeDownloadMenu_];
   }

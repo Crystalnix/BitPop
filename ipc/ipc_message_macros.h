@@ -20,7 +20,7 @@
 //
 // The XXXMsgStart value is an enumeration that ensures uniqueness for
 // each different message file.  Later, you will use this inside your
-// XXX_messages.h file before invoking message declatation macros:
+// XXX_messages.h file before invoking message declaration macros:
 //     #define IPC_MESSAGE_START XXXMsgStart
 //       ( ... your macro invocations go here ... )
 //
@@ -150,10 +150,10 @@
 //
 // Once the types have been declared / registered, message definitions follow.
 // "Sync" messages are just synchronous calls, the Send() call doesn't return
-// until a reply comes back.  Input parameters are first (const TYPE&), and
-// To declare a sync message, use the IPC_SYNC_ macros.  The numbers at the
-// end show how many input/output parameters there are (i.e. 1_2 is 1 in, 2
-// out). The caller does a Send([route id, ], in1, &out1, &out2).
+// until a reply comes back.  To declare a sync message, use the IPC_SYNC_
+// macros.  The numbers at the end show how many input/output parameters there
+// are (i.e. 1_2 is 1 in, 2 out).  Input parameters are first, followed by
+// output parameters.  The caller uses Send([route id, ], in1, &out1, &out2).
 // The receiver's handler function will be
 //     void OnSyncMessageName(const type1& in1, type2* out1, type3* out2)
 //
@@ -176,6 +176,7 @@
 #ifndef IPC_IPC_MESSAGE_MACROS_H_
 #define IPC_IPC_MESSAGE_MACROS_H_
 
+#include "base/profiler/scoped_profile.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/param_traits_macros.h"
 
@@ -183,12 +184,19 @@
 #include "ipc/ipc_message_utils_impl.h"
 #endif
 
+// Override this to force message classes to be exported.
+#ifndef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT
+#endif
+
 // Macros for defining structs.  May be subsequently redefined.
 #define IPC_STRUCT_BEGIN(struct_name) \
+  IPC_STRUCT_BEGIN_WITH_PARENT(struct_name, IPC::NoParams)
+#define IPC_STRUCT_BEGIN_WITH_PARENT(struct_name, parent) \
   struct struct_name; \
   IPC_STRUCT_TRAITS_BEGIN(struct_name) \
   IPC_STRUCT_TRAITS_END() \
-  struct struct_name : IPC::NoParams { \
+  struct IPC_MESSAGE_EXPORT struct_name : parent { \
     struct_name(); \
     ~struct_name();
 #define IPC_STRUCT_MEMBER(type, name) type name;
@@ -412,6 +420,174 @@
 #define IPC_SYNC_MESSAGE_ROUTED5_4(msg_class, type1_in, type2_in, type3_in, type4_in, type5_in, type1_out, type2_out, type3_out, type4_out) \
   IPC_MESSAGE_DECL(SYNC, ROUTED, msg_class, 5, 4, (type1_in, type2_in, type3_in, type4_in, type5_in), (type1_out, type2_out, type3_out, type4_out))
 
+// The following macros define the common set of methods provided by ASYNC
+// message classes.
+#define IPC_ASYNC_MESSAGE_METHODS_GENERIC                                     \
+  template<class T, class S, class Method>                                    \
+  static bool Dispatch(const Message* msg, T* obj, S* sender, Method func) {  \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      DispatchToMethod(obj, func, p);                                         \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }
+#define IPC_ASYNC_MESSAGE_METHODS_1                                           \
+  IPC_ASYNC_MESSAGE_METHODS_GENERIC                                           \
+  template<class T, class S, typename TA>                                     \
+  static bool Dispatch(const Message* msg, T* obj, S* sender,                 \
+                       void (T::*func)(const Message&, TA)) {                 \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      (obj->*func)(*msg, p.a);                                                \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }
+#define IPC_ASYNC_MESSAGE_METHODS_2                                           \
+  IPC_ASYNC_MESSAGE_METHODS_GENERIC                                           \
+  template<class T, class S, typename TA, typename TB>                        \
+  static bool Dispatch(const Message* msg, T* obj, S* sender,                 \
+                       void (T::*func)(const Message&, TA, TB)) {             \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      (obj->*func)(*msg, p.a, p.b);                                           \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }                                                                           \
+  template<typename TA, typename TB>                                          \
+  static bool Read(const IPC::Message* msg, TA* a, TB* b) {                   \
+    Schema::Param p;                                                          \
+    if (!Read(msg, &p))                                                       \
+      return false;                                                           \
+    *a = p.a;                                                                 \
+    *b = p.b;                                                                 \
+    return true;                                                              \
+  }
+#define IPC_ASYNC_MESSAGE_METHODS_3                                           \
+  IPC_ASYNC_MESSAGE_METHODS_GENERIC                                           \
+  template<class T, class S, typename TA, typename TB, typename TC>           \
+  static bool Dispatch(const Message* msg, T* obj, S* sender,                 \
+                       void (T::*func)(const Message&, TA, TB, TC)) {         \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      (obj->*func)(*msg, p.a, p.b, p.c);                                      \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }                                                                           \
+  template<typename TA, typename TB, typename TC>                             \
+  static bool Read(const IPC::Message* msg, TA* a, TB* b, TC* c) {            \
+    Schema::Param p;                                                          \
+    if (!Read(msg, &p))                                                       \
+      return false;                                                           \
+    *a = p.a;                                                                 \
+    *b = p.b;                                                                 \
+    *c = p.c;                                                                 \
+    return true;                                                              \
+  }
+#define IPC_ASYNC_MESSAGE_METHODS_4                                           \
+  IPC_ASYNC_MESSAGE_METHODS_GENERIC                                           \
+  template<class T, class S, typename TA, typename TB, typename TC,           \
+           typename TD>                                                       \
+  static bool Dispatch(const Message* msg, T* obj, S* sender,                 \
+                       void (T::*func)(const Message&, TA, TB, TC, TD)) {     \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      (obj->*func)(*msg, p.a, p.b, p.c, p.d);                                 \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }                                                                           \
+  template<typename TA, typename TB, typename TC, typename TD>                \
+  static bool Read(const IPC::Message* msg, TA* a, TB* b, TC* c, TD* d) {     \
+    Schema::Param p;                                                          \
+    if (!Read(msg, &p))                                                       \
+      return false;                                                           \
+    *a = p.a;                                                                 \
+    *b = p.b;                                                                 \
+    *c = p.c;                                                                 \
+    *d = p.d;                                                                 \
+    return true;                                                              \
+  }
+#define IPC_ASYNC_MESSAGE_METHODS_5                                           \
+  IPC_ASYNC_MESSAGE_METHODS_GENERIC                                           \
+  template<class T, class S, typename TA, typename TB, typename TC,           \
+           typename TD, typename TE>                                          \
+  static bool Dispatch(const Message* msg, T* obj, S* sender,                 \
+                       void (T::*func)(const Message&, TA, TB, TC, TD, TE)) { \
+    Schema::Param p;                                                          \
+    if (Read(msg, &p)) {                                                      \
+      (obj->*func)(*msg, p.a, p.b, p.c, p.d, p.e);                            \
+      return true;                                                            \
+    }                                                                         \
+    return false;                                                             \
+  }                                                                           \
+  template<typename TA, typename TB, typename TC, typename TD, typename TE>   \
+  static bool Read(const IPC::Message* msg, TA* a, TB* b, TC* c, TD* d,       \
+                   TE* e) {                                                   \
+    Schema::Param p;                                                          \
+    if (!Read(msg, &p))                                                       \
+      return false;                                                           \
+    *a = p.a;                                                                 \
+    *b = p.b;                                                                 \
+    *c = p.c;                                                                 \
+    *d = p.d;                                                                 \
+    *e = p.e;                                                                 \
+    return true;                                                              \
+  }
+
+// The following macros define the common set of methods provided by SYNC
+// message classes.
+#define IPC_SYNC_MESSAGE_METHODS_GENERIC                                      \
+  template<class T, class S, class Method>                                    \
+  static bool Dispatch(const Message* msg, T* obj, S* sender, Method func) {  \
+    Schema::SendParam send_params;                                            \
+    bool ok = ReadSendParam(msg, &send_params);                               \
+    return Schema::DispatchWithSendParams(ok, send_params, msg, obj, sender,  \
+                                          func);                              \
+  }                                                                           \
+  template<class T, class Method>                                             \
+  static bool DispatchDelayReply(const Message* msg, T* obj, Method func) {   \
+    Schema::SendParam send_params;                                            \
+    bool ok = ReadSendParam(msg, &send_params);                               \
+    return Schema::DispatchDelayReplyWithSendParams(ok, send_params, msg,     \
+                                                    obj, func);               \
+  }
+#define IPC_SYNC_MESSAGE_METHODS_0 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC
+#define IPC_SYNC_MESSAGE_METHODS_1 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC \
+  template<typename TA> \
+  static void WriteReplyParams(Message* reply, TA a) { \
+    Schema::WriteReplyParams(reply, a); \
+  }
+#define IPC_SYNC_MESSAGE_METHODS_2 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC \
+  template<typename TA, typename TB> \
+  static void WriteReplyParams(Message* reply, TA a, TB b) { \
+    Schema::WriteReplyParams(reply, a, b); \
+  }
+#define IPC_SYNC_MESSAGE_METHODS_3 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC \
+  template<typename TA, typename TB, typename TC> \
+  static void WriteReplyParams(Message* reply, TA a, TB b, TC c) { \
+    Schema::WriteReplyParams(reply, a, b, c); \
+  }
+#define IPC_SYNC_MESSAGE_METHODS_4 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC \
+  template<typename TA, typename TB, typename TC, typename TD> \
+  static void WriteReplyParams(Message* reply, TA a, TB b, TC c, TD d) { \
+    Schema::WriteReplyParams(reply, a, b, c, d); \
+  }
+#define IPC_SYNC_MESSAGE_METHODS_5 \
+  IPC_SYNC_MESSAGE_METHODS_GENERIC \
+  template<typename TA, typename TB, typename TC, typename TD, typename TE> \
+  static void WriteReplyParams(Message* reply, TA a, TB b, TC c, TD d, TE e) { \
+    Schema::WriteReplyParams(reply, a, b, c, d, e); \
+  }
+
 // Common message macro which dispatches into one of the 6 (sync x kind)
 // routines.  There is a way that these 6 cases can be lumped together,
 // but the  macros get very complicated in that case.
@@ -422,59 +598,78 @@
   IPC_MESSAGE_EXTRA(sync, kind, msg_class, in_cnt, out_cnt, in_list, out_list)
 
 #define IPC_EMPTY_CONTROL_DECL(msg_class, in_cnt, out_cnt, in_list, out_list) \
-  class msg_class : public IPC::Message {                                     \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::Message {                  \
    public:                                                                    \
+    typedef IPC::Message Schema;                                              \
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class() : IPC::Message(MSG_ROUTING_CONTROL, ID, PRIORITY_NORMAL) {}   \
-  };
-
-#define IPC_EMPTY_ROUTED_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
-  class msg_class : public IPC::Message {                                     \
-   public:                                                                    \
-    enum { ID = IPC_MESSAGE_ID() };                                           \
-    msg_class(int32 routing_id)                                               \
-        : IPC::Message(routing_id, ID, PRIORITY_NORMAL) {}                    \
-  };
-
-#define IPC_ASYNC_CONTROL_DECL(msg_class, in_cnt, out_cnt, in_list, out_list) \
-  class msg_class :                                                           \
-      public IPC::MessageWithTuple<IPC_TUPLE_IN_##in_cnt in_list> {           \
-   public:                                                                    \
-    enum { ID = IPC_MESSAGE_ID() };                                           \
-    msg_class(IPC_TYPE_IN_##in_cnt in_list);                                  \
-    virtual ~msg_class();                                                     \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
   };
 
-#define IPC_ASYNC_ROUTED_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
-  class msg_class :                                                           \
-      public IPC::MessageWithTuple<IPC_TUPLE_IN_##in_cnt in_list> {           \
+#define IPC_EMPTY_ROUTED_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::Message {                  \
    public:                                                                    \
+    typedef IPC::Message Schema;                                              \
+    enum { ID = IPC_MESSAGE_ID() };                                           \
+    msg_class(int32 routing_id)                                               \
+        : IPC::Message(routing_id, ID, PRIORITY_NORMAL) {}                    \
+    static void Log(std::string* name, const Message* msg, std::string* l);   \
+  };
+
+#define IPC_ASYNC_CONTROL_DECL(msg_class, in_cnt, out_cnt, in_list, out_list) \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::Message {                  \
+   public:                                                                    \
+    typedef IPC::MessageSchema<IPC_TUPLE_IN_##in_cnt in_list> Schema;         \
+    typedef Schema::Param Param;                                              \
+    enum { ID = IPC_MESSAGE_ID() };                                           \
+    msg_class(IPC_TYPE_IN_##in_cnt in_list);                                  \
+    virtual ~msg_class();                                                     \
+    static bool Read(const Message* msg, Schema::Param* p);                   \
+    static void Log(std::string* name, const Message* msg, std::string* l);   \
+    IPC_ASYNC_MESSAGE_METHODS_##in_cnt                                        \
+  };
+
+#define IPC_ASYNC_ROUTED_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::Message {                  \
+   public:                                                                    \
+    typedef IPC::MessageSchema<IPC_TUPLE_IN_##in_cnt in_list> Schema;         \
+    typedef Schema::Param Param;                                              \
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class(int32 routing_id IPC_COMMA_##in_cnt                             \
               IPC_TYPE_IN_##in_cnt in_list);                                  \
     virtual ~msg_class();                                                     \
+    static bool Read(const Message* msg, Schema::Param* p);                   \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
+    IPC_ASYNC_MESSAGE_METHODS_##in_cnt                                        \
   };
 
 #define IPC_SYNC_CONTROL_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
-  class msg_class :                                                           \
-      public IPC::MessageWithReply<IPC_TUPLE_IN_##in_cnt in_list,             \
-                                   IPC_TUPLE_OUT_##out_cnt out_list> {        \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::SyncMessage {              \
    public:                                                                    \
+    typedef IPC::SyncMessageSchema<IPC_TUPLE_IN_##in_cnt in_list,             \
+                                   IPC_TUPLE_OUT_##out_cnt out_list> Schema;  \
+    typedef Schema::ReplyParam ReplyParam;                                    \
+    typedef Schema::SendParam SendParam;                                      \
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class(IPC_TYPE_IN_##in_cnt in_list                                    \
               IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)                     \
               IPC_TYPE_OUT_##out_cnt out_list);                               \
     virtual ~msg_class();                                                     \
+    static bool ReadSendParam(const Message* msg, Schema::SendParam* p);      \
+    static bool ReadReplyParam(                                               \
+        const Message* msg,                                                   \
+        TupleTypes<ReplyParam>::ValueTuple* p);                               \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
+    IPC_SYNC_MESSAGE_METHODS_##out_cnt                                        \
   };
 
 #define IPC_SYNC_ROUTED_DECL(msg_class, in_cnt, out_cnt, in_list, out_list)   \
-  class msg_class :                                                           \
-      public IPC::MessageWithReply<IPC_TUPLE_IN_##in_cnt in_list,             \
-                                   IPC_TUPLE_OUT_##out_cnt out_list> {        \
+  class IPC_MESSAGE_EXPORT msg_class : public IPC::SyncMessage {              \
    public:                                                                    \
+    typedef IPC::SyncMessageSchema<IPC_TUPLE_IN_##in_cnt in_list,             \
+                                   IPC_TUPLE_OUT_##out_cnt out_list> Schema;  \
+    typedef Schema::ReplyParam ReplyParam;                                    \
+    typedef Schema::SendParam SendParam;                                      \
     enum { ID = IPC_MESSAGE_ID() };                                           \
     msg_class(int32 routing_id                                                \
               IPC_COMMA_OR_##in_cnt(IPC_COMMA_##out_cnt)                      \
@@ -482,7 +677,12 @@
               IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)                     \
               IPC_TYPE_OUT_##out_cnt out_list);                               \
     virtual ~msg_class();                                                     \
+    static bool ReadSendParam(const Message* msg, Schema::SendParam* p);      \
+    static bool ReadReplyParam(                                               \
+        const Message* msg,                                                   \
+        TupleTypes<ReplyParam>::ValueTuple* p);                               \
     static void Log(std::string* name, const Message* msg, std::string* l);   \
+    IPC_SYNC_MESSAGE_METHODS_##out_cnt                                        \
   };
 
 #if defined(IPC_MESSAGE_IMPL)
@@ -501,30 +701,42 @@
 
 #define IPC_ASYNC_CONTROL_IMPL(msg_class, in_cnt, out_cnt, in_list, out_list) \
   msg_class::msg_class(IPC_TYPE_IN_##in_cnt in_list) :                        \
-      IPC::MessageWithTuple<IPC_TUPLE_IN_##in_cnt in_list>                    \
-      (MSG_ROUTING_CONTROL, ID, IPC_NAME_IN_##in_cnt in_list)                 \
-      {}                                                                      \
-  msg_class::~msg_class() {}
+      IPC::Message(MSG_ROUTING_CONTROL, ID, PRIORITY_NORMAL) {                \
+        Schema::Write(this, IPC_NAME_IN_##in_cnt in_list);                    \
+      }                                                                       \
+  msg_class::~msg_class() {}                                                  \
+  bool msg_class::Read(const Message* msg, Schema::Param* p) {                \
+    return Schema::Read(msg, p);                                              \
+  }
 
 #define IPC_ASYNC_ROUTED_IMPL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
   msg_class::msg_class(int32 routing_id IPC_COMMA_##in_cnt                    \
                        IPC_TYPE_IN_##in_cnt in_list) :                        \
-      IPC::MessageWithTuple<IPC_TUPLE_IN_##in_cnt in_list>                    \
-      (routing_id, ID, IPC_NAME_IN_##in_cnt in_list)                          \
-      {}                                                                      \
-  msg_class::~msg_class() {}
+      IPC::Message(routing_id, ID, PRIORITY_NORMAL) {                         \
+        Schema::Write(this, IPC_NAME_IN_##in_cnt in_list);                    \
+      }                                                                       \
+  msg_class::~msg_class() {}                                                  \
+  bool msg_class::Read(const Message* msg, Schema::Param* p) {                \
+    return Schema::Read(msg, p);                                              \
+  }
 
 #define IPC_SYNC_CONTROL_IMPL(msg_class, in_cnt, out_cnt, in_list, out_list)  \
   msg_class::msg_class(IPC_TYPE_IN_##in_cnt in_list                           \
                        IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)            \
                        IPC_TYPE_OUT_##out_cnt out_list) :                     \
-      IPC::MessageWithReply<IPC_TUPLE_IN_##in_cnt in_list,                    \
-                            IPC_TUPLE_OUT_##out_cnt out_list>                 \
-      (MSG_ROUTING_CONTROL, ID,                                               \
-       IPC_NAME_IN_##in_cnt in_list,                                          \
-       IPC_NAME_OUT_##out_cnt out_list)                                       \
-      {}                                                                      \
-  msg_class::~msg_class() {}
+      IPC::SyncMessage(MSG_ROUTING_CONTROL, ID, PRIORITY_NORMAL,              \
+                       new IPC::ParamDeserializer<Schema::ReplyParam>(        \
+                           IPC_NAME_OUT_##out_cnt out_list)) {                \
+        Schema::Write(this, IPC_NAME_IN_##in_cnt in_list);                    \
+      }                                                                       \
+  msg_class::~msg_class() {}                                                  \
+  bool msg_class::ReadSendParam(const Message* msg, Schema::SendParam* p) {   \
+    return Schema::ReadSendParam(msg, p);                                     \
+  }                                                                           \
+  bool msg_class::ReadReplyParam(const Message* msg,                          \
+                                 TupleTypes<ReplyParam>::ValueTuple* p) {     \
+    return Schema::ReadReplyParam(msg, p);                                    \
+  }
 
 #define IPC_SYNC_ROUTED_IMPL(msg_class, in_cnt, out_cnt, in_list, out_list)   \
   msg_class::msg_class(int32 routing_id                                       \
@@ -532,15 +744,27 @@
                        IPC_TYPE_IN_##in_cnt in_list                           \
                        IPC_COMMA_AND_##in_cnt(IPC_COMMA_##out_cnt)            \
                        IPC_TYPE_OUT_##out_cnt out_list) :                     \
-      IPC::MessageWithReply<IPC_TUPLE_IN_##in_cnt in_list,                    \
-                            IPC_TUPLE_OUT_##out_cnt out_list>                 \
-      (routing_id, ID,                                                        \
-       IPC_NAME_IN_##in_cnt in_list,                                          \
-       IPC_NAME_OUT_##out_cnt out_list)                                       \
-      {}                                                                      \
-  msg_class::~msg_class() {}
+      IPC::SyncMessage(routing_id, ID, PRIORITY_NORMAL,                       \
+                       new IPC::ParamDeserializer<Schema::ReplyParam>(        \
+                           IPC_NAME_OUT_##out_cnt out_list)) {                \
+        Schema::Write(this, IPC_NAME_IN_##in_cnt in_list);                    \
+      }                                                                       \
+  msg_class::~msg_class() {}                                                  \
+  bool msg_class::ReadSendParam(const Message* msg, Schema::SendParam* p) {   \
+    return Schema::ReadSendParam(msg, p);                                     \
+  }                                                                           \
+  bool msg_class::ReadReplyParam(const Message* msg,                          \
+                                 TupleTypes<ReplyParam>::ValueTuple* p) {     \
+    return Schema::ReadReplyParam(msg, p);                                    \
+  }
 
-#define IPC_EMPTY_MESSAGE_LOG(msg_class)
+#define IPC_EMPTY_MESSAGE_LOG(msg_class)                                \
+  void msg_class::Log(std::string* name,                                \
+                      const Message* msg,                               \
+                      std::string* l) {                                 \
+    if (name)                                                           \
+      *name = #msg_class;                                               \
+  }
 
 #define IPC_ASYNC_MESSAGE_LOG(msg_class)                                \
   void msg_class::Log(std::string* name,                                \
@@ -550,8 +774,8 @@
       *name = #msg_class;                                               \
     if (!msg || !l)                                                     \
       return;                                                           \
-    Param p;                                                            \
-    if (Read(msg, &p))                                                  \
+    Schema::Param p;                                                    \
+    if (Schema::Read(msg, &p))                                          \
       IPC::LogParam(p, l);                                              \
   }
 
@@ -564,13 +788,13 @@
     if (!msg || !l)                                                     \
       return;                                                           \
     if (msg->is_sync()) {                                               \
-      TupleTypes<SendParam>::ValueTuple p;                              \
-      if (ReadSendParam(msg, &p))                                       \
+      TupleTypes<Schema::SendParam>::ValueTuple p;                      \
+      if (Schema::ReadSendParam(msg, &p))                               \
         IPC::LogParam(p, l);                                            \
       AddOutputParamsToLog(msg, l);                                     \
     } else {                                                            \
-      TupleTypes<ReplyParam>::ValueTuple p;                             \
-      if (ReadReplyParam(msg, &p))                                      \
+      TupleTypes<Schema::ReplyParam>::ValueTuple p;                     \
+      if (Schema::ReadReplyParam(msg, &p))                              \
         IPC::LogParam(p, l);                                            \
     }                                                                   \
   }
@@ -597,7 +821,8 @@ LogFunctionMap g_log_function_mapping;
   class LoggerRegisterHelper##msg_class {                               \
  public:                                                                \
     LoggerRegisterHelper##msg_class() {                                 \
-      g_log_function_mapping[msg_class::ID] = msg_class::Log;           \
+      const uint32 msg_id = static_cast<uint32>(msg_class::ID);         \
+      g_log_function_mapping[msg_id] = msg_class::Log;                  \
     }                                                                   \
   };                                                                    \
   LoggerRegisterHelper##msg_class g_LoggerRegisterHelper##msg_class;
@@ -679,9 +904,7 @@ LogFunctionMap g_log_function_mapping;
 // Message IDs
 // Note: we currently use __LINE__ to give unique IDs to messages within
 // a file.  They're globally unique since each file defines its own
-// IPC_MESSAGE_START.  Ideally, we wouldn't use line numbers (a possibility
-// is to instead use the __COUNTER__ macro, but it needs gcc 4.3 and xcode
-// doesn't use it yet).
+// IPC_MESSAGE_START.
 #define IPC_MESSAGE_ID() ((IPC_MESSAGE_START << 16) + __LINE__)
 #define IPC_MESSAGE_ID_CLASS(id) ((id) >> 16)
 #define IPC_MESSAGE_ID_LINE(id) ((id) & 0xffff)
@@ -720,38 +943,50 @@ LogFunctionMap g_log_function_mapping;
     bool msg_is_ok__ = true; \
     switch (ipc_message__.type()) { \
 
-#define IPC_MESSAGE_FORWARD(msg_class, obj, member_func) \
-  case msg_class::ID: \
-    msg_is_ok__ = msg_class::Dispatch(&ipc_message__, obj, this, &member_func); \
-    break;
+#define IPC_MESSAGE_FORWARD(msg_class, obj, member_func)                       \
+    case msg_class::ID: {                                                      \
+        TRACK_RUN_IN_IPC_HANDLER(member_func);                                 \
+        msg_is_ok__ = msg_class::Dispatch(&ipc_message__, obj, this,           \
+                                      &member_func);                           \
+      }                                                                        \
+      break;
 
 #define IPC_MESSAGE_HANDLER(msg_class, member_func) \
   IPC_MESSAGE_FORWARD(msg_class, this, _IpcMessageHandlerClass::member_func)
 
-#define IPC_MESSAGE_FORWARD_DELAY_REPLY(msg_class, obj, member_func) \
-    case msg_class::ID: \
-    msg_is_ok__ = msg_class::DispatchDelayReply(&ipc_message__, obj, &member_func); \
-    break;
+#define IPC_MESSAGE_FORWARD_DELAY_REPLY(msg_class, obj, member_func)           \
+    case msg_class::ID: {                                                      \
+        TRACK_RUN_IN_IPC_HANDLER(member_func);                                 \
+        msg_is_ok__ = msg_class::DispatchDelayReply(&ipc_message__, obj,       \
+                                                  &member_func);               \
+      }                                                                        \
+      break;
 
-#define IPC_MESSAGE_HANDLER_DELAY_REPLY(msg_class, member_func) \
-  IPC_MESSAGE_FORWARD_DELAY_REPLY(msg_class, this, \
-                                  _IpcMessageHandlerClass::member_func)
+#define IPC_MESSAGE_HANDLER_DELAY_REPLY(msg_class, member_func)                \
+    IPC_MESSAGE_FORWARD_DELAY_REPLY(msg_class, this,                           \
+                                    _IpcMessageHandlerClass::member_func)
 
-#define IPC_MESSAGE_HANDLER_GENERIC(msg_class, code) \
-  case msg_class::ID: \
-    code; \
-    break;
+// TODO(jar): fix chrome frame to always supply |code| argument.
+#define IPC_MESSAGE_HANDLER_GENERIC(msg_class, code)                           \
+    case msg_class::ID: {                                                      \
+        /* TRACK_RUN_IN_IPC_HANDLER(code);  TODO(jar) */                       \
+        code;                                                                  \
+      }                                                                        \
+      break;
 
-#define IPC_REPLY_HANDLER(func) \
-   case IPC_REPLY_ID: \
-     func(ipc_message__); \
-     break;
+#define IPC_REPLY_HANDLER(func)                                                \
+    case IPC_REPLY_ID: {                                                       \
+        TRACK_RUN_IN_IPC_HANDLER(func);                                        \
+        func(ipc_message__);                                                   \
+      }                                                                        \
+      break;
 
 
-#define IPC_MESSAGE_UNHANDLED(code) \
-  default: \
-    code; \
-    break;
+#define IPC_MESSAGE_UNHANDLED(code)                                            \
+    default: {                                                                 \
+        code;                                                                  \
+      }                                                                        \
+      break;
 
 #define IPC_MESSAGE_UNHANDLED_ERROR() \
   IPC_MESSAGE_UNHANDLED(NOTREACHED() << \

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -28,8 +28,6 @@
 // --memoryusage: prints out memory usage when visiting each page.
 // --endurl=url: visits the specified url in the end.
 // --logfile=filepath: saves the visit log to the specified path.
-// --timeout=millisecond: time out as specified in millisecond during each
-//                        page load.
 // --nopagedown: won't simulate page down key presses after page load.
 // --noclearprofile: do not clear profile dir before firing up each time.
 // --savedebuglog: save Chrome, V8, and test debug log for each page loaded.
@@ -65,7 +63,6 @@
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
-#include "chrome/test/reliability/page_load_test.h"
 #include "chrome/test/ui/ui_test.h"
 #include "net/base/net_util.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -85,7 +82,6 @@ const char kContinuousLoadSwitch[] = "continuousload";
 const char kMemoryUsageSwitch[] = "memoryusage";
 const char kEndURLSwitch[] = "endurl";
 const char kLogFileSwitch[] = "logfile";
-const char kTimeoutSwitch[] = "timeout";
 const char kNoPageDownSwitch[] = "nopagedown";
 const char kNoClearProfileSwitch[] = "noclearprofile";
 const char kSaveDebugLogSwitch[] = "savedebuglog";
@@ -118,7 +114,6 @@ bool g_page_down = true;
 bool g_clear_profile = true;
 std::string g_end_url;
 FilePath g_log_file_path;
-int g_timeout_ms = -1;
 bool g_save_debug_log = false;
 FilePath g_chrome_log_path;
 FilePath g_v8_log_path;
@@ -126,6 +121,114 @@ FilePath g_test_log_path;
 bool g_stand_alone = false;
 bool g_stress_opt = false;
 bool g_stress_deopt = false;
+
+void ReportHandler(const std::string& str) {
+  // Ignore report events.
+}
+
+void SetPageRange(const CommandLine& parsed_command_line) {
+  // If calling into this function, we are running as a standalone program.
+  g_stand_alone = true;
+
+  // Since we use --enable-dcheck for reliability tests, suppress the error
+  // dialog in the test process.
+  logging::SetLogReportHandler(ReportHandler);
+
+  if (parsed_command_line.HasSwitch(kStartPageSwitch)) {
+    ASSERT_TRUE(parsed_command_line.HasSwitch(kEndPageSwitch));
+    ASSERT_TRUE(
+        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
+                              kStartPageSwitch),
+                          &g_start_page));
+    ASSERT_TRUE(
+        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
+                              kEndPageSwitch),
+                          &g_end_page));
+    ASSERT_TRUE(g_start_page > 0 && g_end_page > 0);
+    ASSERT_TRUE(g_start_page < g_end_page);
+    g_append_page_id = true;
+  } else {
+    ASSERT_FALSE(parsed_command_line.HasSwitch(kEndPageSwitch));
+  }
+
+  if (parsed_command_line.HasSwitch(kSiteSwitch)) {
+    g_server_url = parsed_command_line.GetSwitchValueASCII(kSiteSwitch);
+  }
+
+  if (parsed_command_line.HasSwitch(kStartIndexSwitch)) {
+    ASSERT_TRUE(
+        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
+                              kStartIndexSwitch),
+                          &g_start_index));
+    ASSERT_GT(g_start_index, 0);
+  }
+
+  if (parsed_command_line.HasSwitch(kEndIndexSwitch)) {
+    ASSERT_TRUE(
+        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
+                              kEndIndexSwitch),
+                          &g_end_index));
+    ASSERT_GT(g_end_index, 0);
+  }
+
+  ASSERT_TRUE(g_end_index >= g_start_index);
+
+  if (parsed_command_line.HasSwitch(kListSwitch))
+    g_url_file_path = parsed_command_line.GetSwitchValuePath(kListSwitch);
+
+  if (parsed_command_line.HasSwitch(kIterationSwitch)) {
+    ASSERT_TRUE(
+        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
+                              kIterationSwitch),
+                          &g_iterations));
+    ASSERT_GT(g_iterations, 0);
+  }
+
+  if (parsed_command_line.HasSwitch(kMemoryUsageSwitch))
+    g_memory_usage = true;
+
+  if (parsed_command_line.HasSwitch(kContinuousLoadSwitch))
+    g_continuous_load = true;
+
+  if (parsed_command_line.HasSwitch(kEndURLSwitch))
+    g_end_url = parsed_command_line.GetSwitchValueASCII(kEndURLSwitch);
+
+  if (parsed_command_line.HasSwitch(kLogFileSwitch))
+    g_log_file_path = parsed_command_line.GetSwitchValuePath(kLogFileSwitch);
+
+  if (parsed_command_line.HasSwitch(kNoPageDownSwitch))
+    g_page_down = false;
+
+  if (parsed_command_line.HasSwitch(kNoClearProfileSwitch))
+    g_clear_profile = false;
+
+  if (parsed_command_line.HasSwitch(kSaveDebugLogSwitch)) {
+    g_save_debug_log = true;
+    g_chrome_log_path = logging::GetLogFileName();
+    // We won't get v8 log unless --no-sandbox is specified.
+    if (parsed_command_line.HasSwitch(switches::kNoSandbox)) {
+      PathService::Get(base::DIR_CURRENT, &g_v8_log_path);
+      g_v8_log_path = g_v8_log_path.AppendASCII(kV8LogFileDefaultName);
+      // The command line switch may override the default v8 log path.
+      if (parsed_command_line.HasSwitch(switches::kJavaScriptFlags)) {
+        CommandLine v8_command_line(
+            parsed_command_line.GetSwitchValuePath(switches::kJavaScriptFlags));
+        if (v8_command_line.HasSwitch(kV8LogFileSwitch)) {
+          g_v8_log_path = v8_command_line.GetSwitchValuePath(kV8LogFileSwitch);
+          if (!file_util::AbsolutePath(&g_v8_log_path))
+            g_v8_log_path = FilePath();
+        }
+      }
+    }
+  }
+
+  if (parsed_command_line.HasSwitch(kStressOptSwitch)) {
+    g_stress_opt = true;
+  }
+  if (parsed_command_line.HasSwitch(kStressDeoptSwitch)) {
+    g_stress_deopt = true;
+  }
+}
 
 class PageLoadTest : public UITest {
  public:
@@ -151,6 +254,7 @@ class PageLoadTest : public UITest {
 
   PageLoadTest() {
     show_window_ = true;
+    SetPageRange(*CommandLine::ForCurrentProcess());
   }
 
   void EnsureBrowserAndServer() {
@@ -193,7 +297,7 @@ class PageLoadTest : public UITest {
     file_info.reset(
         FileVersionInfo::CreateFileVersionInfo(FilePath(kChromeDll)));
     last_change = WideToASCII(file_info->last_change());
-#elif defined(OS_LINUX) || defined(OS_MACOSX)
+#elif defined(OS_POSIX)
     // TODO(fmeawad): On Mac, the version retrieved here belongs to the test
     // module and not the chrome binary, need to be changed to chrome binary
     // instead.
@@ -237,11 +341,11 @@ class PageLoadTest : public UITest {
               if (browser->BringToFront()) {
                 // Sleep for 2 seconds between commands.
                 // This used to be settable but the flag went away.
-                int sleep_time_ms = 2000;
+                base::TimeDelta sleep_time = base::TimeDelta::FromSeconds(2);
                 window->SimulateOSKeyPress(ui::VKEY_NEXT, 0);
-                base::PlatformThread::Sleep(sleep_time_ms);
+                base::PlatformThread::Sleep(sleep_time);
                 window->SimulateOSKeyPress(ui::VKEY_NEXT, 0);
-                base::PlatformThread::Sleep(sleep_time_ms);
+                base::PlatformThread::Sleep(sleep_time);
               }
             }
           }
@@ -363,17 +467,12 @@ class PageLoadTest : public UITest {
             test_page_url, log_file, NULL, g_continuous_load, false);
       }
     } else {
-      // Don't run if single process mode.
-      // Also don't run if running as a standalone program which is for
-      // distributed testing, to avoid mistakenly hitting web sites with many
-      // instances.
-      if (ProxyLauncher::in_process_renderer() || g_stand_alone)
+      // Don't run if running as a standalone program which is for distributed
+      // testing, to avoid mistakenly hitting web sites with many instances.
+      if (g_stand_alone)
         return;
       // For usage 1
       NavigationMetrics metrics;
-      if (g_timeout_ms == -1)
-        g_timeout_ms = 2000;
-
       // Though it would be nice to test the page down code path in usage 1,
       // enabling page down adds several seconds to the test and does not seem
       // worth the tradeoff. It is also potentially disruptive when running the
@@ -710,120 +809,3 @@ TEST_F(PageLoadTest, Reliability) {
 
 }  // namespace
 
-namespace {
-  void ReportHandler(const std::string& str) {
-    // Ignore report events.
-  }
-}
-
-void SetPageRange(const CommandLine& parsed_command_line) {
-  // If calling into this function, we are running as a standalone program.
-  g_stand_alone = true;
-
-  // Since we use --enable-dcheck for reliability tests, suppress the error
-  // dialog in the test process.
-  logging::SetLogReportHandler(ReportHandler);
-
-  if (parsed_command_line.HasSwitch(kStartPageSwitch)) {
-    ASSERT_TRUE(parsed_command_line.HasSwitch(kEndPageSwitch));
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                              kStartPageSwitch),
-                          &g_start_page));
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                              kEndPageSwitch),
-                          &g_end_page));
-    ASSERT_TRUE(g_start_page > 0 && g_end_page > 0);
-    ASSERT_TRUE(g_start_page < g_end_page);
-    g_append_page_id = true;
-  } else {
-    ASSERT_FALSE(parsed_command_line.HasSwitch(kEndPageSwitch));
-  }
-
-  if (parsed_command_line.HasSwitch(kSiteSwitch)) {
-    g_server_url = parsed_command_line.GetSwitchValueASCII(kSiteSwitch);
-  }
-
-  if (parsed_command_line.HasSwitch(kStartIndexSwitch)) {
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                              kStartIndexSwitch),
-                          &g_start_index));
-    ASSERT_GT(g_start_index, 0);
-  }
-
-  if (parsed_command_line.HasSwitch(kEndIndexSwitch)) {
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                              kEndIndexSwitch),
-                          &g_end_index));
-    ASSERT_GT(g_end_index, 0);
-  }
-
-  ASSERT_TRUE(g_end_index >= g_start_index);
-
-  if (parsed_command_line.HasSwitch(kListSwitch))
-    g_url_file_path = parsed_command_line.GetSwitchValuePath(kListSwitch);
-
-  if (parsed_command_line.HasSwitch(kIterationSwitch)) {
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                              kIterationSwitch),
-                          &g_iterations));
-    ASSERT_GT(g_iterations, 0);
-  }
-
-  if (parsed_command_line.HasSwitch(kMemoryUsageSwitch))
-    g_memory_usage = true;
-
-  if (parsed_command_line.HasSwitch(kContinuousLoadSwitch))
-    g_continuous_load = true;
-
-  if (parsed_command_line.HasSwitch(kEndURLSwitch))
-    g_end_url = parsed_command_line.GetSwitchValueASCII(kEndURLSwitch);
-
-  if (parsed_command_line.HasSwitch(kLogFileSwitch))
-    g_log_file_path = parsed_command_line.GetSwitchValuePath(kLogFileSwitch);
-
-  if (parsed_command_line.HasSwitch(kTimeoutSwitch)) {
-    ASSERT_TRUE(
-        base::StringToInt(parsed_command_line.GetSwitchValueASCII(
-                          kTimeoutSwitch),
-                          &g_timeout_ms));
-    ASSERT_GT(g_timeout_ms, 0);
-  }
-
-  if (parsed_command_line.HasSwitch(kNoPageDownSwitch))
-    g_page_down = false;
-
-  if (parsed_command_line.HasSwitch(kNoClearProfileSwitch))
-    g_clear_profile = false;
-
-  if (parsed_command_line.HasSwitch(kSaveDebugLogSwitch)) {
-    g_save_debug_log = true;
-    g_chrome_log_path = logging::GetLogFileName();
-    // We won't get v8 log unless --no-sandbox is specified.
-    if (parsed_command_line.HasSwitch(switches::kNoSandbox)) {
-      PathService::Get(base::DIR_CURRENT, &g_v8_log_path);
-      g_v8_log_path = g_v8_log_path.AppendASCII(kV8LogFileDefaultName);
-      // The command line switch may override the default v8 log path.
-      if (parsed_command_line.HasSwitch(switches::kJavaScriptFlags)) {
-        CommandLine v8_command_line(
-            parsed_command_line.GetSwitchValuePath(switches::kJavaScriptFlags));
-        if (v8_command_line.HasSwitch(kV8LogFileSwitch)) {
-          g_v8_log_path = v8_command_line.GetSwitchValuePath(kV8LogFileSwitch);
-          if (!file_util::AbsolutePath(&g_v8_log_path))
-            g_v8_log_path = FilePath();
-        }
-      }
-    }
-  }
-
-  if (parsed_command_line.HasSwitch(kStressOptSwitch)) {
-    g_stress_opt = true;
-  }
-  if (parsed_command_line.HasSwitch(kStressDeoptSwitch)) {
-    g_stress_deopt = true;
-  }
-}

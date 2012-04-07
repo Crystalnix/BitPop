@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -20,7 +20,7 @@
       'target_name': 'libxml',
       'conditions': [
         ['os_posix == 1 and OS != "mac" and use_system_libxml', {
-          'type': 'settings',
+          'type': 'none',
           'direct_dependent_settings': {
             'cflags': [
               '<!@(pkg-config --cflags libxml-2.0)',
@@ -39,7 +39,6 @@
           },
         }, { # else: os_posix != 1 or OS == "mac" or ! use_system_libxml
           'type': 'static_library',
-          'msvs_guid': 'F9810DE8-CBC3-4605-A7B1-ECA2D5292FD7',
           'sources': [
             'linux/config.h',
             'linux/include/libxml/xmlversion.h',
@@ -187,11 +186,25 @@
                 ],
               },
             }],
-            ['OS=="mac"', {'defines': ['_REENTRANT']}],
+            ['OS=="mac" or OS=="android"', {'defines': ['_REENTRANT']}],
             ['OS=="win"', {
               'product_name': 'libxml2',
             }, {  # else: OS!="win"
               'product_name': 'xml2',
+            }],
+            ['clang == 1', {
+              'xcode_settings': {
+                'WARNING_CFLAGS': [
+                  # libxml passes `const unsigned char*` through `const char*`.
+                  '-Wno-pointer-sign',
+                  # libxml converts xmlSchemaValType to xmlSchemaTypeType.
+                  '-Wno-conversion',
+                ],
+              },
+              'cflags': [
+                '-Wno-pointer-sign',
+                '-Wno-conversion',
+              ],
             }],
           ],
         }],
@@ -199,9 +212,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

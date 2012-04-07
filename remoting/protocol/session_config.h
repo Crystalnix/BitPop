@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 
 namespace remoting {
 namespace protocol {
@@ -47,47 +48,29 @@ struct ChannelConfig {
   Codec codec;
 };
 
-struct ScreenResolution {
-  ScreenResolution();
-  ScreenResolution(int width, int height);
-
-  bool IsValid() const;
-
-  int width;
-  int height;
-};
-
 // SessionConfig is used by the chromoting Session to store negotiated
 // chromotocol configuration.
 class SessionConfig {
  public:
-  ~SessionConfig();
-
-  const ChannelConfig& control_config() const { return control_config_; }
-  const ChannelConfig& event_config() const { return event_config_; }
-  const ChannelConfig& video_config() const { return video_config_; }
-  const ScreenResolution& initial_resolution() const {
-    return initial_resolution_;
+  void set_control_config(const ChannelConfig& control_config) {
+    control_config_ = control_config;
   }
+  const ChannelConfig& control_config() const { return control_config_; }
+  void set_event_config(const ChannelConfig& event_config) {
+    event_config_ = event_config;
+  }
+  const ChannelConfig& event_config() const { return event_config_; }
+  void set_video_config(const ChannelConfig& video_config) {
+    video_config_ = video_config;
+  }
+  const ChannelConfig& video_config() const { return video_config_; }
 
-  void SetControlConfig(const ChannelConfig& control_config);
-  void SetEventConfig(const ChannelConfig& event_config);
-  void SetVideoConfig(const ChannelConfig& video_config);
-  void SetInitialResolution(const ScreenResolution& initial_resolution);
-
-  SessionConfig* Clone() const;
-
-  static SessionConfig* CreateDefault();
+  static SessionConfig GetDefault();
 
  private:
-  SessionConfig();
-  explicit SessionConfig(const SessionConfig& config);
-  SessionConfig& operator=(const SessionConfig& b);
-
   ChannelConfig control_config_;
   ChannelConfig event_config_;
   ChannelConfig video_config_;
-  ScreenResolution initial_resolution_;
 };
 
 // Defines session description that is sent from client to the host in the
@@ -121,35 +104,28 @@ class CandidateSessionConfig {
     return &video_configs_;
   }
 
-  const ScreenResolution& initial_resolution() const {
-    return initial_resolution_;
-  }
-
-  ScreenResolution* mutable_initial_resolution() {
-    return &initial_resolution_;
-  }
-
   // Selects session configuration that is supported by both participants.
   // NULL is returned if such configuration doesn't exist. When selecting
   // channel configuration priority is given to the configs listed first
   // in |client_config|.
-  SessionConfig* Select(const CandidateSessionConfig* client_config,
-                        bool force_host_resolution);
+  bool Select(const CandidateSessionConfig* client_config,
+              SessionConfig* result);
 
   // Returns true if |config| is supported.
-  bool IsSupported(const SessionConfig* config) const;
+  bool IsSupported(const SessionConfig& config) const;
 
   // Extracts final protocol configuration. Must be used for the description
   // received in the session-accept stanza. If the selection is ambiguous
   // (e.g. there is more than one configuration for one of the channel)
   // or undefined (e.g. no configurations for a channel) then NULL is returned.
-  SessionConfig* GetFinalConfig() const;
+  bool GetFinalConfig(SessionConfig* result) const;
 
-  CandidateSessionConfig* Clone() const;
+  scoped_ptr<CandidateSessionConfig> Clone() const;
 
-  static CandidateSessionConfig* CreateEmpty();
-  static CandidateSessionConfig* CreateFrom(const SessionConfig* config);
-  static CandidateSessionConfig* CreateDefault();
+  static scoped_ptr<CandidateSessionConfig> CreateEmpty();
+  static scoped_ptr<CandidateSessionConfig> CreateFrom(
+      const SessionConfig& config);
+  static scoped_ptr<CandidateSessionConfig> CreateDefault();
 
  private:
   CandidateSessionConfig();
@@ -166,8 +142,6 @@ class CandidateSessionConfig {
   std::vector<ChannelConfig> control_configs_;
   std::vector<ChannelConfig> event_configs_;
   std::vector<ChannelConfig> video_configs_;
-
-  ScreenResolution initial_resolution_;
 };
 
 }  // namespace protocol

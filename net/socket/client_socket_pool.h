@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,12 @@
 #include "net/base/completion_callback.h"
 #include "net/base/host_resolver.h"
 #include "net/base/load_states.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace net {
 
@@ -30,7 +32,7 @@ class StreamSocket;
 // A ClientSocketPool is used to restrict the number of sockets open at a time.
 // It also maintains a list of idle persistent sockets.
 //
-class NET_API ClientSocketPool {
+class NET_EXPORT ClientSocketPool {
  public:
   // Requests a connected socket for a group_name.
   //
@@ -65,7 +67,7 @@ class NET_API ClientSocketPool {
                             const void* params,
                             RequestPriority priority,
                             ClientSocketHandle* handle,
-                            CompletionCallback* callback,
+                            const CompletionCallback& callback,
                             const BoundNetLog& net_log) = 0;
 
   // RequestSockets is used to request that |num_sockets| be connected in the
@@ -125,9 +127,10 @@ class NET_API ClientSocketPool {
   // DictionaryValue.  Caller takes possession of the returned value.
   // If |include_nested_pools| is true, the states of any nested
   // ClientSocketPools will be included.
-  virtual DictionaryValue* GetInfoAsValue(const std::string& name,
-                                          const std::string& type,
-                                          bool include_nested_pools) const = 0;
+  virtual base::DictionaryValue* GetInfoAsValue(
+      const std::string& name,
+      const std::string& type,
+      bool include_nested_pools) const = 0;
 
   // Returns the maximum amount of time to wait before retrying a connect.
   static const int kMaxConnectRetryIntervalMs = 250;
@@ -136,8 +139,11 @@ class NET_API ClientSocketPool {
   // UMA_HISTOGRAM_* macros because they are callsite static.
   virtual ClientSocketPoolHistograms* histograms() const = 0;
 
-  static int unused_idle_socket_timeout();
-  static void set_unused_idle_socket_timeout(int timeout);
+  static base::TimeDelta unused_idle_socket_timeout();
+  static void set_unused_idle_socket_timeout(base::TimeDelta timeout);
+
+  static base::TimeDelta used_idle_socket_timeout();
+  static void set_used_idle_socket_timeout(base::TimeDelta timeout);
 
  protected:
   ClientSocketPool();

@@ -14,7 +14,6 @@
 class CommandLine;
 class FilePath;
 class PrefService;
-class Profile;
 
 namespace policy {
 class ConfigurationPolicyProvider;
@@ -36,6 +35,7 @@ class PrefServiceMockBuilder {
   PrefServiceMockBuilder& WithRecommendedPlatformPrefs(PrefStore* store);
   PrefServiceMockBuilder& WithRecommendedCloudPrefs(PrefStore* store);
 
+#if defined(ENABLE_CONFIGURATION_POLICY)
   // Set up policy pref stores using the given policy provider.
   PrefServiceMockBuilder& WithManagedPlatformProvider(
       policy::ConfigurationPolicyProvider* provider);
@@ -45,6 +45,7 @@ class PrefServiceMockBuilder {
       policy::ConfigurationPolicyProvider* provider);
   PrefServiceMockBuilder& WithRecommendedCloudProvider(
       policy::ConfigurationPolicyProvider* provider);
+#endif
 
   // Specifies to use an actual command-line backed command-line pref store.
   PrefServiceMockBuilder& WithCommandLine(CommandLine* command_line);

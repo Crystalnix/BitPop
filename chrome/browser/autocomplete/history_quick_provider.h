@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,6 @@
 
 class Profile;
 class TermMatches;
-
-namespace history {
-class HistoryBackend;
-}  // namespace history
 
 // This class is an autocomplete provider (a pseudo-internal component of
 // the history system) which quickly (and synchronously) provides matching
@@ -37,13 +33,20 @@ class HistoryQuickProvider : public HistoryProvider {
 
   virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
 
-  // Performs the autocomplete matching and scoring.
-  void DoAutocomplete();
+  // Disable this provider. For unit testing purposes only. This is required
+  // because this provider is closely associated with the HistoryURLProvider
+  // and in order to properly test the latter the HistoryQuickProvider must
+  // be disabled.
+  // TODO(mrossetti): Eliminate this once the HUP has been refactored.
+  static void set_disabled(bool disabled) { disabled_ = disabled; }
 
  private:
   friend class HistoryQuickProviderTest;
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Spans);
   FRIEND_TEST_ALL_PREFIXES(HistoryQuickProviderTest, Relevance);
+
+  // Performs the autocomplete matching and scoring.
+  void DoAutocomplete();
 
   // Creates an AutocompleteMatch from |history_match|. |max_match_score| gives
   // the maximum possible score for the match.
@@ -72,12 +75,18 @@ class HistoryQuickProvider : public HistoryProvider {
       bool is_url);
 
   // Only for use in unittests.  Takes ownership of |index|.
-  void SetIndexForTesting(history::InMemoryURLIndex* index);
+  void set_index(history::InMemoryURLIndex* index) {
+    index_for_testing_.reset(index);
+  }
+
   AutocompleteInput autocomplete_input_;
   std::string languages_;
 
   // Only used for testing.
   scoped_ptr<history::InMemoryURLIndex> index_for_testing_;
+
+  // This provider is disabled when true.
+  static bool disabled_;
 };
 
 #endif  // CHROME_BROWSER_AUTOCOMPLETE_HISTORY_QUICK_PROVIDER_H_

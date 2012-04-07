@@ -9,9 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/language_preferences.h"
 #include "chrome/browser/prefs/pref_member.h"
-#include "content/common/notification_observer.h"
+#include "content/public/browser/notification_observer.h"
 
 class PrefService;
 
@@ -21,7 +22,7 @@ namespace chromeos {
 // is first initialized, it will initialize the OS settings to what's stored in
 // the preferences. These include touchpad settings, etc.
 // When the preferences change, we change the settings to reflect the new value.
-class Preferences : public NotificationObserver {
+class Preferences : public content::NotificationObserver {
  public:
   Preferences();
   virtual ~Preferences();
@@ -29,13 +30,17 @@ class Preferences : public NotificationObserver {
   // This method will register the prefs associated with Chrome OS settings.
   static void RegisterUserPrefs(PrefService* prefs);
 
+  // This method is called when kLanguagePreferredVirtualKeyboard is updated to
+  // change the virtual keyboard settings to reflect the new value.
+  static void UpdateVirturalKeyboardPreference(PrefService* prefs);
+
   // This method will initialize Chrome OS settings to values in user prefs.
   void Init(PrefService* prefs);
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // This will set the OS settings when the preference changes.
@@ -88,6 +93,7 @@ class Preferences : public NotificationObserver {
   IntegerPrefMember speed_factor_;
   IntegerPrefMember sensitivity_;
   BooleanPrefMember use_24hour_clock_;
+  BooleanPrefMember primary_mouse_button_right_;
 
   // Input method preferences.
   StringPrefMember language_hotkey_next_engine_in_menu_;
@@ -102,6 +108,7 @@ class Preferences : public NotificationObserver {
   IntegerPrefMember language_chewing_integer_prefs_[
       language_prefs::kNumChewingIntegerPrefs];
   StringPrefMember language_hangul_keyboard_;
+  StringPrefMember language_hangul_hanja_binding_keys_;
   StringPrefMember language_hangul_hanja_keys_;
   BooleanPrefMember language_pinyin_boolean_prefs_[
       language_prefs::kNumPinyinBooleanPrefs];

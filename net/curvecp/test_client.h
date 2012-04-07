@@ -6,11 +6,10 @@
 #define NET_CURVECP_TEST_CLIENT_H_
 #pragma once
 
-#include "base/task.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
-#include "net/curvecp/test_data_stream.h"
+#include "net/base/test_data_stream.h"
 
 namespace net {
 
@@ -35,7 +34,7 @@ class TestClient {
   // Returns true if successful in starting the client.
   bool Start(const HostPortPair& server,
              int bytes_to_send,
-             CompletionCallback* callback);
+             const CompletionCallback& callback);
 
   // Returns the number of errors this server encountered.
   int error_count() { return errors_; }
@@ -59,10 +58,7 @@ class TestClient {
   int bytes_to_send_;
   TestDataStream sent_stream_;
   TestDataStream received_stream_;
-  CompletionCallbackImpl<TestClient> connect_callback_;
-  CompletionCallbackImpl<TestClient> read_callback_;
-  CompletionCallbackImpl<TestClient> write_callback_;
-  CompletionCallback* finished_callback_;
+  CompletionCallback finished_callback_;
 };
 
 }  // namespace net

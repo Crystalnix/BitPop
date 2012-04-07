@@ -8,12 +8,14 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/string16.h"
 #include "printing/print_settings.h"
 #include "ui/gfx/native_widget_types.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace printing {
 
@@ -21,7 +23,7 @@ namespace printing {
 // user selected printing context. This includes the OS-dependent UI to ask the
 // user about the print settings. Concrete implementations directly talk to the
 // printer and manage the document and page breaks.
-class PrintingContext {
+class PRINTING_EXPORT PrintingContext {
  public:
   // Tri-state result for user behavior-dependent functions.
   enum Result {
@@ -34,7 +36,7 @@ class PrintingContext {
 
   // Callback of AskUserForSettings, used to notify the PrintJobWorker when
   // print settings are available.
-  typedef Callback1<Result>::Type PrintSettingsCallback;
+  typedef base::Callback<void(Result)> PrintSettingsCallback;
 
   // Asks the user what printer and format should be used to print. Updates the
   // context with the select device settings. The result of the call is returned
@@ -43,16 +45,22 @@ class PrintingContext {
   virtual void AskUserForSettings(gfx::NativeView parent_view,
                                   int max_pages,
                                   bool has_selection,
-                                  PrintSettingsCallback* callback) = 0;
+                                  const PrintSettingsCallback& callback) = 0;
 
   // Selects the user's default printer and format. Updates the context with the
   // default device settings.
   virtual Result UseDefaultSettings() = 0;
 
-  // Updates print settings. |job_settings| contains all print job settings
-  // information. |ranges| has the new page range settings.
-  virtual Result UpdatePrintSettings(const DictionaryValue& job_settings,
-                                     const PageRanges& ranges) = 0;
+  // Updates printer related settings. |job_settings| contains all print job
+  // settings information. |ranges| has the new page range settings.
+  virtual Result UpdatePrinterSettings(
+      const base::DictionaryValue& job_settings,
+      const PageRanges& ranges) = 0;
+
+  // Updates Print Settings. |job_settings| contains all print job
+  // settings information. |ranges| has the new page range settings.
+  Result UpdatePrintSettings(const base::DictionaryValue& job_settings,
+                             const PageRanges& ranges);
 
   // Initializes with predefined settings.
   virtual Result InitWithSettings(const PrintSettings& settings) = 0;
@@ -90,9 +98,7 @@ class PrintingContext {
   // caller owns the returned object.
   static PrintingContext* Create(const std::string& app_locale);
 
-  void set_use_overlays(bool use_overlays) {
-    settings_.use_overlays = use_overlays;
-  }
+  void set_margin_type(MarginType type);
 
   const PrintSettings& settings() const {
     return settings_;

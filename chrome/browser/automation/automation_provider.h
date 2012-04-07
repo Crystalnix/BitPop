@@ -12,6 +12,7 @@
 #define CHROME_BROWSER_AUTOMATION_AUTOMATION_PROVIDER_H_
 #pragma once
 
+#include <list>
 #include <map>
 #include <string>
 #include <vector>
@@ -20,23 +21,39 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/message_loop_helpers.h"
 #include "base/observer_list.h"
 #include "base/string16.h"
 #include "chrome/browser/autofill/field_types.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/content_settings.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/cancelable_request.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/common/notification_observer.h"
+#include "content/browser/trace_controller.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
 #include "ipc/ipc_channel.h"
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 #include "ui/gfx/native_widget_types.h"
-#include "views/events/event.h"
-#endif  // defined(OS_WIN)
+#include "ui/views/events/event.h"
+#endif  // defined(OS_WIN) && !defined(USE_AURA)
 
-class PopupMenuWaiter;
+class AutomationBrowserTracker;
+class AutomationExtensionTracker;
+class AutomationResourceMessageFilter;
+class AutomationTabTracker;
+class AutomationWindowTracker;
+class Browser;
+class Extension;
+class ExtensionTestResultNotificationObserver;
+class ExternalTabContainer;
+class FilePath;
+class InitialLoadObserver;
+class LoginHandler;
+class MetricEventDurationObserver;
+class NavigationControllerRestoredObserver;
+class Profile;
+class RenderViewHost;
 class TabContents;
 struct AutomationMsg_Find_Params;
 struct Reposition_Params;
@@ -46,32 +63,18 @@ namespace IPC {
 class ChannelProxy;
 }
 
-class AutofillProfile;
-class AutomationBrowserTracker;
-class AutomationExtensionTracker;
-class AutomationOmniboxTracker;
-class AutomationResourceMessageFilter;
-class AutomationTabTracker;
-class AutomationWindowTracker;
-class Browser;
-class CreditCard;
-class DictionaryValue;
-class DownloadItem;
-class Extension;
-class ExtensionPortContainer;
-class ExtensionTestResultNotificationObserver;
-class ExternalTabContainer;
-class FilePath;
-class InitialLoadObserver;
-class ListValue;
-class LoginHandler;
-class MetricEventDurationObserver;
+namespace content {
 class NavigationController;
-class NavigationControllerRestoredObserver;
-class Profile;
-class RenderViewHost;
-class TabContents;
-struct AutocompleteMatchData;
+}
+
+namespace base {
+class DictionaryValue;
+}
+
+namespace content {
+class DownloadItem;
+class WebContents;
+}
 
 namespace gfx {
 class Point;
@@ -81,8 +84,9 @@ class AutomationProvider
     : public IPC::Channel::Listener,
       public IPC::Message::Sender,
       public base::SupportsWeakPtr<AutomationProvider>,
-      public base::RefCountedThreadSafe<AutomationProvider,
-                                        BrowserThread::DeleteOnUIThread> {
+      public base::RefCountedThreadSafe<
+          AutomationProvider, content::BrowserThread::DeleteOnUIThread>,
+      public TraceSubscriber {
  public:
   explicit AutomationProvider(Profile* profile);
 
@@ -110,11 +114,15 @@ class AutomationProvider
   // Called when the ChromeOS network library has finished its first update.
   void OnNetworkLibraryInit();
 
+  // Called when the chromeos WebUI login is ready.
+  void OnLoginWebuiReady();
+
   // Get the index of a particular NavigationController object
   // in the given parent window.  This method uses
   // TabStrip::GetIndexForNavigationController to get the index.
-  int GetIndexForNavigationController(const NavigationController* controller,
-                                      const Browser* parent) const;
+  int GetIndexForNavigationController(
+      const content::NavigationController* controller,
+      const Browser* parent) const;
 
   // Add or remove a non-owning reference to a tab's LoginHandler.  This is for
   // when a login prompt is shown for HTTP/FTP authentication.
@@ -122,14 +130,17 @@ class AutomationProvider
   // Eventually we'll probably want ways to interact with the ChromeView of the
   // login window in a generic manner, such that it can be used for anything,
   // not just logins.
-  void AddLoginHandler(NavigationController* tab, LoginHandler* handler);
-  void RemoveLoginHandler(NavigationController* tab);
+  void AddLoginHandler(content::NavigationController* tab,
+                       LoginHandler* handler);
+  void RemoveLoginHandler(content::NavigationController* tab);
 
-  // IPC implementations
-  virtual bool Send(IPC::Message* msg);
-  virtual void OnChannelConnected(int pid);
-  virtual bool OnMessageReceived(const IPC::Message& msg);
-  virtual void OnChannelError();
+  // IPC::Channel::Sender implementation.
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+
+  // IPC::Channel::Listener implementation.
+  virtual void OnChannelConnected(int pid) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
   IPC::Message* reply_message_release() {
     IPC::Message* reply_message = reply_message_;
@@ -142,29 +153,32 @@ class AutomationProvider
   // the handle is simply returned.
   int AddExtension(const Extension* extension);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // Adds the external tab passed in to the tab tracker.
   bool AddExternalTab(ExternalTabContainer* external_tab);
 #endif
 
   // Get the DictionaryValue equivalent for a download item. Caller owns the
   // DictionaryValue.
-  DictionaryValue* GetDictionaryFromDownloadItem(const DownloadItem* download);
+  base::DictionaryValue* GetDictionaryFromDownloadItem(
+      const content::DownloadItem* download);
 
  protected:
-  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
-  friend class DeleteTask<AutomationProvider>;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<AutomationProvider>;
   virtual ~AutomationProvider();
 
   // Helper function to find the browser window that contains a given
   // NavigationController and activate that tab.
   // Returns the Browser if found.
-  Browser* FindAndActivateTab(NavigationController* contents);
+  Browser* FindAndActivateTab(content::NavigationController* contents);
 
-  // Convert a tab handle into a TabContents. If |tab| is non-NULL a pointer
+  // Convert a tab handle into a WebContents. If |tab| is non-NULL a pointer
   // to the tab is also returned. Returns NULL in case of failure or if the tab
-  // is not of the TabContents type.
-  TabContents* GetTabContentsForHandle(int handle, NavigationController** tab);
+  // is not of the WebContents type.
+  content::WebContents* GetWebContentsForHandle(
+      int handle, content::NavigationController** tab);
 
   // Returns the protocol version which typically is the module version.
   virtual std::string GetProtocolVersion();
@@ -177,7 +191,6 @@ class AutomationProvider
   // and closes the IPC channel.
   void OnMessageDeserializationFailure();
 
-  scoped_ptr<AutomationOmniboxTracker> automation_omnibox_tracker_;
   scoped_ptr<AutomationBrowserTracker> browser_tracker_;
   scoped_ptr<InitialLoadObserver> initial_load_observer_;
   scoped_ptr<MetricEventDurationObserver> metric_event_duration_observer_;
@@ -185,7 +198,8 @@ class AutomationProvider
   scoped_ptr<AutomationTabTracker> tab_tracker_;
   scoped_ptr<AutomationWindowTracker> window_tracker_;
 
-  typedef std::map<NavigationController*, LoginHandler*> LoginHandlerMap;
+  typedef std::map<content::NavigationController*, LoginHandler*>
+      LoginHandlerMap;
   LoginHandlerMap login_handler_map_;
 
   Profile* profile_;
@@ -200,7 +214,7 @@ class AutomationProvider
 
   // Sends a find request for a given query.
   void SendFindRequest(
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       bool with_json,
       const string16& search_string,
       bool forward,
@@ -215,7 +229,17 @@ class AutomationProvider
   bool reinitialize_on_channel_error_;
 
  private:
-  void OnUnhandledMessage();
+  // Storage for EndTracing() to resume operations after a callback.
+  struct TracingData {
+    std::list<std::string> trace_output;
+    scoped_ptr<IPC::Message> reply_message;
+  };
+
+  // TraceSubscriber:
+  virtual void OnEndTracingComplete() OVERRIDE;
+  virtual void OnTraceDataCollected(const std::string& trace_fragment) OVERRIDE;
+
+  void OnUnhandledMessage(const IPC::Message& message);
 
   // Clear and reinitialize the automation IPC channel.
   bool ReinitializeChannel();
@@ -248,14 +272,15 @@ class AutomationProvider
   // for information on the arguments.
   void JavaScriptStressTestControl(int handle, int cmd, int param);
 
-  void InstallExtension(const FilePath& crx_path,
-                        IPC::Message* reply_message);
+  void BeginTracing(const std::string& categories, bool* success);
+  void EndTracing(IPC::Message* reply_message);
+  void GetTracingOutput(std::string* chunk, bool* success);
 
   void WaitForExtensionTestResult(IPC::Message* reply_message);
 
-  void InstallExtensionAndGetHandle(const FilePath& crx_path,
-                                    bool with_ui,
-                                    IPC::Message* reply_message);
+  void InstallExtension(const FilePath& extension_path,
+                        bool with_ui,
+                        IPC::Message* reply_message);
 
   void UninstallExtension(int extension_handle,
                           bool* success);
@@ -317,7 +342,7 @@ class AutomationProvider
   // Method called by the popup menu tracker when a popup menu is opened.
   void NotifyPopupMenuOpened();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // The functions in this block are for use with external tabs, so they are
   // Windows only.
 
@@ -367,11 +392,11 @@ class AutomationProvider
   void OnSetZoomLevel(int handle, int zoom_level);
 
   ExternalTabContainer* GetExternalTabForHandle(int handle);
-#endif  // defined(OS_WIN)
+#endif  // defined(OS_WIN) && !defined(USE_AURA)
 
   scoped_ptr<IPC::ChannelProxy> channel_;
-  scoped_ptr<NotificationObserver> new_tab_ui_load_observer_;
-  scoped_ptr<NotificationObserver> find_in_page_observer_;
+  scoped_ptr<content::NotificationObserver> new_tab_ui_load_observer_;
+  scoped_ptr<content::NotificationObserver> find_in_page_observer_;
   scoped_ptr<ExtensionTestResultNotificationObserver>
       extension_test_result_observer_;
   scoped_ptr<AutomationExtensionTracker> extension_tracker_;
@@ -385,8 +410,15 @@ class AutomationProvider
   // True iff the Chrome OS network library finished initialization.
   bool network_library_initialized_;
 
+  // True iff ChromeOS webui login ui is ready.
+  bool login_webui_ready_;
+
   // ID of automation channel.
   std::string channel_id_;
+
+  // Trace data that has been collected but not flushed to the automation
+  // client.
+  TracingData tracing_data_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationProvider);
 };

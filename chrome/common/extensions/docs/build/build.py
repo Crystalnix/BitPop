@@ -1,10 +1,11 @@
 #!/usr/bin/python
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """Docbuilder for extension docs."""
 
+import glob
 import os
 import os.path
 import shutil
@@ -24,8 +25,7 @@ _template_dir = _base_dir + "/template"
 _samples_dir = _base_dir + "/examples"
 _extension_api_dir = os.path.normpath(_base_dir + "/../api")
 
-_extension_api_json = _extension_api_dir + "/extension_api.json"
-_devtools_api_json = _extension_api_dir + "/devtools_api.json"
+_extension_api_json_schemas = glob.glob(_extension_api_dir + '/*.json')
 _api_template_html = _template_dir + "/api_template.html"
 _page_shell_html = _template_dir + "/page_shell.html"
 _generator_html = _build_dir + "/generator.html"
@@ -124,12 +124,12 @@ def FindDumpRenderTree():
 
   if (sys.platform in ('cygwin', 'win32')):
     home_dir = os.path.normpath(os.getenv("HOMEDRIVE") + os.getenv("HOMEPATH"))
-    search_locations.append(chrome_dir + "/Release/DumpRenderTree.exe")
-    search_locations.append(chrome_dir + "/Debug/DumpRenderTree.exe")
+    search_locations.append(src_dir + "/build/Release/DumpRenderTree.exe")
+    search_locations.append(src_dir + "/build/Debug/DumpRenderTree.exe")
     search_locations.append(home_dir + "/bin/DumpRenderTree/"
                             "DumpRenderTree.exe")
 
-  if (sys.platform in ('linux', 'linux2')):
+  if (sys.platform.startswith('linux')):
     search_locations.append(src_dir + "/sconsbuild/Release/DumpRenderTree")
     search_locations.append(src_dir + "/out/Release/DumpRenderTree")
     search_locations.append(src_dir + "/sconsbuild/Debug/DumpRenderTree")
@@ -142,6 +142,10 @@ def FindDumpRenderTree():
         "/xcodebuild/Release/DumpRenderTree.app/Contents/MacOS/DumpRenderTree")
     search_locations.append(src_dir +
         "/xcodebuild/Debug/DumpRenderTree.app/Contents/MacOS/DumpRenderTree")
+    search_locations.append(src_dir +
+        "/out/Release/DumpRenderTree.app/Contents/MacOS/DumpRenderTree")
+    search_locations.append(src_dir +
+        "/out/Debug/DumpRenderTree.app/Contents/MacOS/DumpRenderTree")
     search_locations.append(os.getenv("HOME") + "/bin/DumpRenderTree/" +
                             "DumpRenderTree.app/Contents/MacOS/DumpRenderTree")
 
@@ -185,7 +189,7 @@ def main():
     dump_render_tree = FindDumpRenderTree()
 
   # Load the manifest of existing API Methods
-  api_manifest = ApiManifest([_extension_api_json, _devtools_api_json])
+  api_manifest = ApiManifest(_extension_api_json_schemas)
 
   # Read static file names
   static_names = GetStaticFileNames()

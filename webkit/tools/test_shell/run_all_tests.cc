@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #endif
 
 #include "base/command_line.h"
-#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
 #include "base/test/test_suite.h"
@@ -27,7 +26,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_MACOSX)
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/path_service.h"
 #endif
 
@@ -44,8 +45,8 @@ class TestShellTestSuite : public base::TestSuite {
  public:
   TestShellTestSuite(int argc, char** argv)
       : base::TestSuite(argc, argv),
-        test_shell_webkit_init_(true),
-        platform_delegate_(*CommandLine::ForCurrentProcess()) {
+        platform_delegate_(*CommandLine::ForCurrentProcess()),
+        test_shell_webkit_init_(true) {
   }
 
   virtual void Initialize() {
@@ -54,7 +55,7 @@ class TestShellTestSuite : public base::TestSuite {
     FilePath path;
     PathService::Get(base::DIR_EXE, &path);
     path = path.AppendASCII("TestShell.app");
-    base::mac::SetOverrideAppBundlePath(path);
+    base::mac::SetOverrideFrameworkBundlePath(path);
 #endif
 
     base::TestSuite::Initialize();
@@ -74,7 +75,7 @@ class TestShellTestSuite : public base::TestSuite {
     // Some of the individual tests wind up calling TestShell::WaitTestFinished
     // which has a timeout in it.  For these tests, we don't care about
     // a timeout so just set it to be really large.  This is necessary because
-    // we hit those timeouts under Purify and Valgrind.
+    // we hit those timeouts under Valgrind.
     TestShell::SetFileTestTimeout(10 * 60 * 60 * 1000);  // Ten hours.
 
     // Initialize test shell in layout test mode, which will let us load one
@@ -93,6 +94,8 @@ class TestShellTestSuite : public base::TestSuite {
   }
 
  private:
+  TestShellPlatformDelegate platform_delegate_;
+
   // Allocate a message loop for this thread.  Although it is not used
   // directly, its constructor sets up some necessary state.
   MessageLoopForUI main_message_loop_;
@@ -100,13 +103,13 @@ class TestShellTestSuite : public base::TestSuite {
   // Initialize WebKit for this scope.
   TestShellWebKitInit test_shell_webkit_init_;
 
-  TestShellPlatformDelegate platform_delegate_;
-
   DISALLOW_COPY_AND_ASSIGN(TestShellTestSuite);
 };
 
 int main(int argc, char** argv) {
+#if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool scoped_pool;
+#endif
 
   TestShellPlatformDelegate::PreflightArgs(&argc, &argv);
   return TestShellTestSuite(argc, argv).Run();

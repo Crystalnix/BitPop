@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/common/logging_chrome.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/ui/ui_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -74,25 +75,23 @@ TEST_F(ChromeLoggingTest, EnvironmentLogFileName) {
 #define EXPECTED_ASSERT_CRASHES 1
 #endif
 
-// Touch build will start an extra renderer process (the extension process)
-// for the virtual keyboard.
-#if defined(TOUCH_UI)
+// Virtual keyboard build will start an extra renderer process (the extension
+// process) for the virtual keyboard.
+#if defined(USE_VIRTUAL_KEYBOARD)
 #define EXPECTED_ASSERT_ERRORS 2
 #else
 #define EXPECTED_ASSERT_ERRORS 1
 #endif
 
 #if !defined(NDEBUG)  // We don't have assertions in release builds.
-// Tests whether we correctly fail on browser assertions during tests.
+// Tests whether we correctly fail on renderer assertions during tests.
 class AssertionTest : public UITest {
  protected:
-  AssertionTest() : UITest() {
-    // Initial loads will never complete due to assertion.
+  AssertionTest() {
+#if defined(OS_WIN)
+    // TODO(phajdan.jr): Make crash notifications on launch work on Win.
     wait_for_initial_loads_ = false;
-
-    // We're testing the renderer rather than the browser assertion here,
-    // because the browser assertion would flunk the test during SetUp()
-    // (since TAU wouldn't be able to find the browser window).
+#endif
     launch_arguments_.AppendSwitch(switches::kRendererAssertTest);
   }
 };
@@ -106,14 +105,8 @@ class AssertionTest : public UITest {
 #define Assertion DISABLED_Assertion
 #endif
 TEST_F(AssertionTest, Assertion) {
-  if (ProxyLauncher::in_process_renderer()) {
-    // in process mode doesn't do the crashing.
-    expected_errors_ = 0;
-    expected_crashes_ = 0;
-  } else {
-    expected_errors_ = EXPECTED_ASSERT_ERRORS;
-    expected_crashes_ = EXPECTED_ASSERT_CRASHES;
-  }
+  expected_errors_ = EXPECTED_ASSERT_ERRORS;
+  expected_crashes_ = EXPECTED_ASSERT_CRASHES;
 }
 #endif  // !defined(NDEBUG)
 
@@ -121,13 +114,11 @@ TEST_F(AssertionTest, Assertion) {
 // Only works on Linux in Release mode with CHROME_HEADLESS=1
 class CheckFalseTest : public UITest {
  protected:
-  CheckFalseTest() : UITest() {
-    // Initial loads will never complete due to assertion.
+  CheckFalseTest() {
+#if defined(OS_WIN)
+    // TODO(phajdan.jr): Make crash notifications on launch work on Win.
     wait_for_initial_loads_ = false;
-
-    // We're testing the renderer rather than the browser assertion here,
-    // because the browser assertion would flunk the test during SetUp()
-    // (since TAU wouldn't be able to find the browser window).
+#endif
     launch_arguments_.AppendSwitch(switches::kRendererCheckFalseTest);
   }
 };
@@ -141,24 +132,19 @@ class CheckFalseTest : public UITest {
 #endif
 // Launch the app in assertion test mode, then close the app.
 TEST_F(CheckFalseTest, CheckFails) {
-  if (ProxyLauncher::in_process_renderer()) {
-    // in process mode doesn't do the crashing.
-    expected_errors_ = 0;
-    expected_crashes_ = 0;
-  } else {
-    expected_errors_ = EXPECTED_ASSERT_ERRORS;
-    expected_crashes_ = EXPECTED_ASSERT_CRASHES;
-  }
+  expected_errors_ = EXPECTED_ASSERT_ERRORS;
+  expected_crashes_ = EXPECTED_ASSERT_CRASHES;
 }
 #endif  // !defined(OFFICIAL_BUILD)
 
 // Tests whether we correctly fail on browser crashes during UI Tests.
 class RendererCrashTest : public UITest {
  protected:
-  RendererCrashTest() : UITest() {
-    // Initial loads will never complete due to crash.
+  RendererCrashTest() {
+#if defined(OS_WIN)
+    // TODO(phajdan.jr): Make crash notifications on launch work on Win.
     wait_for_initial_loads_ = false;
-
+#endif
     launch_arguments_.AppendSwitch(switches::kRendererCrashTest);
   }
 };
@@ -170,22 +156,18 @@ class RendererCrashTest : public UITest {
 #define EXPECTED_CRASH_CRASHES 1
 #endif
 
-#if defined(OS_CHROMEOS)
-// http://crbug.com/43115
-#define Crash DISABLED_Crash
-#elif defined(OS_MACOSX)
+#if defined(OS_MACOSX)
 // Crash service doesn't exist for the Mac yet: http://crbug.com/45243
-#define Crash DISABLED_Crash
+#define MAYBE_Crash DISABLED_Crash
+#elif defined(OS_CHROME)
+#define MAYBE_Crash FLAKY_Crash
+#else
+#define MAYBE_Crash Crash
 #endif
 // Launch the app in renderer crash test mode, then close the app.
-TEST_F(RendererCrashTest, Crash) {
-  if (ProxyLauncher::in_process_renderer()) {
-    // in process mode doesn't do the crashing.
-    expected_crashes_ = 0;
-  } else {
-    scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
-    ASSERT_TRUE(browser.get());
-    ASSERT_TRUE(browser->WaitForTabCountToBecome(1));
-    expected_crashes_ = EXPECTED_CRASH_CRASHES;
-  }
+TEST_F(RendererCrashTest, MAYBE_Crash) {
+  scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
+  ASSERT_TRUE(browser.get());
+  ASSERT_TRUE(browser->WaitForTabCountToBecome(1));
+  expected_crashes_ = EXPECTED_CRASH_CRASHES;
 }

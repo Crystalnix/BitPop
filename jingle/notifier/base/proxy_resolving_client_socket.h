@@ -10,7 +10,9 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -21,6 +23,7 @@
 #include "net/socket/stream_socket.h"
 
 namespace net {
+class ClientSocketFactory;
 class ClientSocketHandle;
 class HttpNetworkSession;
 class URLRequestContextGetter;
@@ -31,21 +34,25 @@ namespace notifier {
 
 class ProxyResolvingClientSocket : public net::StreamSocket {
  public:
+  // Constructs a new ProxyResolvingClientSocket. |socket_factory| is the
+  // ClientSocketFactory that will be used by the underlying HttpNetworkSession.
+  // If |socket_factory| is NULL, the default socket factory
+  // (net::ClientSocketFactory::GetDefaultFactory()) will be used.
   ProxyResolvingClientSocket(
-    const scoped_refptr<net::URLRequestContextGetter>&
-        request_context_getter,
-    const net::SSLConfig& ssl_config,
-    const net::HostPortPair& dest_host_port_pair);
+      net::ClientSocketFactory* socket_factory,
+      const scoped_refptr<net::URLRequestContextGetter>& request_context_getter,
+      const net::SSLConfig& ssl_config,
+      const net::HostPortPair& dest_host_port_pair);
   virtual ~ProxyResolvingClientSocket();
 
   // net::StreamSocket implementation.
   virtual int Read(net::IOBuffer* buf, int buf_len,
-                   net::CompletionCallback* callback) OVERRIDE;
+                   const net::CompletionCallback& callback) OVERRIDE;
   virtual int Write(net::IOBuffer* buf, int buf_len,
-                    net::CompletionCallback* callback) OVERRIDE;
+                    const net::CompletionCallback& callback) OVERRIDE;
   virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
   virtual bool SetSendBufferSize(int32 size) OVERRIDE;
-  virtual int Connect(net::CompletionCallback* callback) OVERRIDE;
+  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
   virtual bool IsConnectedAndIdle() const OVERRIDE;
@@ -56,6 +63,8 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
+  virtual int64 NumBytesRead() const OVERRIDE;
+  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
 
  private:
   // Proxy resolution and connection functions.
@@ -65,11 +74,11 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
   void CloseTransportSocket();
   void RunUserConnectCallback(int status);
   int ReconsiderProxyAfterError(int error);
+  void ReportSuccessfulProxyConnection();
 
   // Callbacks passed to net APIs.
-  net::CompletionCallbackImpl<ProxyResolvingClientSocket>
-      proxy_resolve_callback_;
-  net::CompletionCallbackImpl<ProxyResolvingClientSocket> connect_callback_;
+  net::CompletionCallback proxy_resolve_callback_;
+  net::CompletionCallback connect_callback_;
 
   scoped_refptr<net::HttpNetworkSession> network_session_;
 
@@ -82,11 +91,10 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
   net::HostPortPair dest_host_port_pair_;
   bool tried_direct_connect_fallback_;
   net::BoundNetLog bound_net_log_;
-  ScopedRunnableMethodFactory<ProxyResolvingClientSocket>
-      scoped_runnable_method_factory_;
+  base::WeakPtrFactory<ProxyResolvingClientSocket> weak_factory_;
 
   // The callback passed to Connect().
-  net::CompletionCallback* user_connect_callback_;
+  net::CompletionCallback user_connect_callback_;
 };
 
 }  // namespace notifier

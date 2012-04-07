@@ -4,18 +4,18 @@
 
 #include "chrome/browser/net/connection_tester.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/importer/firefox_proxy_settings.h"
 #include "chrome/common/chrome_switches.h"
 #include "net/base/cert_verifier.h"
 #include "net/base/cookie_monster.h"
-#include "net/base/dnsrr_resolver.h"
 #include "net/base/host_resolver.h"
 #include "net/base/host_resolver_impl.h"
 #include "net/base/io_buffer.h"
@@ -26,6 +26,7 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_server_properties_impl.h"
 #include "net/proxy/dhcp_proxy_script_fetcher_factory.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #include "net/proxy/proxy_script_fetcher_impl.h"
@@ -70,19 +71,19 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
     // The rest of the dependencies are standard, and don't depend on the
     // experiment being run.
     storage_.set_cert_verifier(new net::CertVerifier);
-    storage_.set_dnsrr_resolver(new net::DnsRRResolver);
     storage_.set_ftp_transaction_factory(
         new net::FtpNetworkLayer(host_resolver()));
     storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
     storage_.set_http_auth_handler_factory(
         net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
+    storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
 
     net::HttpNetworkSession::Params session_params;
     session_params.host_resolver = host_resolver();
-    session_params.dnsrr_resolver = dnsrr_resolver();
     session_params.cert_verifier = cert_verifier();
     session_params.proxy_service = proxy_service();
     session_params.http_auth_handler_factory = http_auth_handler_factory();
+    session_params.http_server_properties = http_server_properties();
     session_params.ssl_config_service = ssl_config_service();
     scoped_refptr<net::HttpNetworkSession> network_session(
         new net::HttpNetworkSession(session_params));
@@ -187,8 +188,8 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
 
     net::DhcpProxyScriptFetcherFactory dhcp_factory;
     if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableDhcpWpad)) {
-      dhcp_factory.set_enabled(true);
+        switches::kDisableDhcpWpad)) {
+      dhcp_factory.set_enabled(false);
     }
 
     proxy_service->reset(net::ProxyService::CreateUsingV8ProxyResolver(
@@ -208,7 +209,7 @@ class ExperimentURLRequestContext : public net::URLRequestContext {
   // Otherwise returns a network error code.
   int CreateSystemProxyConfigService(
       scoped_ptr<net::ProxyConfigService>* config_service) {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
     // TODO(eroman): This is not supported on Linux yet, because of how
     // construction needs ot happen on the UI thread.
     return net::ERR_NOT_IMPLEMENTED;
@@ -259,7 +260,7 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
   // |tester| will be notified of completion.
   explicit TestRunner(ConnectionTester* tester)
       : tester_(tester),
-        ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {}
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
 
   // Starts running |experiment|. Notifies tester->OnExperimentCompleted() when
   // it is done.
@@ -285,7 +286,7 @@ class ConnectionTester::TestRunner : public net::URLRequest::Delegate {
   ConnectionTester* tester_;
   scoped_ptr<net::URLRequest> request_;
 
-  ScopedRunnableMethodFactory<TestRunner> method_factory_;
+  base::WeakPtrFactory<TestRunner> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(TestRunner);
 };
@@ -328,8 +329,8 @@ void ConnectionTester::TestRunner::OnResponseCompleted(
     net::URLRequest* request) {
   int result = net::OK;
   if (!request->status().is_success()) {
-    DCHECK_NE(net::ERR_IO_PENDING, request->status().os_error());
-    result = request->status().os_error();
+    DCHECK_NE(net::ERR_IO_PENDING, request->status().error());
+    result = request->status().error();
   }
 
   // Post a task to notify the parent rather than handling it right away,
@@ -337,8 +338,8 @@ void ConnectionTester::TestRunner::OnResponseCompleted(
   // to end up deleting the URLRequest while in the middle of processing).
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      method_factory_.NewRunnableMethod(
-          &TestRunner::OnExperimentCompletedWithResult, result));
+      base::Bind(&TestRunner::OnExperimentCompletedWithResult,
+                 weak_factory_.GetWeakPtr(), result));
 }
 
 void ConnectionTester::TestRunner::OnExperimentCompletedWithResult(int result) {

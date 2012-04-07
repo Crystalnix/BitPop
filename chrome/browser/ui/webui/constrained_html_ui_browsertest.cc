@@ -1,55 +1,42 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/ui/ui_test.h"
 
-#include "base/file_path.h"
-#include "base/message_loop.h"
+#include "base/utf_string_conversions.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/constrained_window_tab_helper.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/webui/constrained_html_ui.h"
-#include "chrome/browser/ui/webui/html_dialog_ui.h"
+#include "chrome/browser/ui/webui/test_html_dialog_ui_delegate.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 
-using testing::Eq;
+using content::WebContents;
 
 namespace {
 
-class TestHtmlDialogUIDelegate : public HtmlDialogUIDelegate {
+class ConstrainedHtmlDialogBrowserTestObserver
+    : public content::WebContentsObserver {
  public:
-  TestHtmlDialogUIDelegate() {}
-  virtual ~TestHtmlDialogUIDelegate() {}
+  explicit ConstrainedHtmlDialogBrowserTestObserver(WebContents* contents)
+      : content::WebContentsObserver(contents),
+        tab_destroyed_(false) {
+  }
+  virtual ~ConstrainedHtmlDialogBrowserTestObserver() {}
 
-  // HTMLDialogUIDelegate implementation:
-  virtual bool IsDialogModal() const {
-    return true;
+  bool tab_destroyed() { return tab_destroyed_; }
+
+ private:
+  virtual void WebContentsDestroyed(WebContents* tab) OVERRIDE {
+    tab_destroyed_ = true;
   }
-  virtual std::wstring GetDialogTitle() const {
-    return std::wstring(L"Test");
-  }
-  virtual GURL GetDialogContentURL() const {
-    return GURL(chrome::kChromeUIConstrainedHTMLTestURL);
-  }
-  virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const {}
-  virtual void GetDialogSize(gfx::Size* size) const {
-    size->set_width(400);
-    size->set_height(400);
-  }
-  virtual std::string GetDialogArgs() const {
-    return std::string();
-  }
-  virtual void OnDialogClosed(const std::string& json_retval) { }
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog) {
-    if (out_close_dialog)
-      *out_close_dialog = true;
-  }
-  virtual bool ShouldShowDialogTitle() const { return true; }
+
+  bool tab_destroyed_;
 };
 
 }  // namespace
@@ -57,18 +44,56 @@ class TestHtmlDialogUIDelegate : public HtmlDialogUIDelegate {
 class ConstrainedHtmlDialogBrowserTest : public InProcessBrowserTest {
  public:
   ConstrainedHtmlDialogBrowserTest() {}
+
+ protected:
+  size_t GetConstrainedWindowCount(TabContentsWrapper* wrapper) const {
+    return wrapper->constrained_window_tab_helper()->constrained_window_count();
+  }
 };
 
 // Tests that opening/closing the constrained window won't crash it.
 IN_PROC_BROWSER_TEST_F(ConstrainedHtmlDialogBrowserTest, BasicTest) {
   // The delegate deletes itself.
-  HtmlDialogUIDelegate* delegate = new TestHtmlDialogUIDelegate();
-  TabContents* tab_contents = browser()->GetSelectedTabContents();
-  ASSERT_TRUE(tab_contents != NULL);
+  HtmlDialogUIDelegate* delegate = new test::TestHtmlDialogUIDelegate(
+      GURL(chrome::kChromeUIConstrainedHTMLTestURL));
+  TabContentsWrapper* wrapper = browser()->GetSelectedTabContentsWrapper();
+  ASSERT_TRUE(wrapper);
 
-  ConstrainedHtmlUI::CreateConstrainedHtmlDialog(browser()->profile(),
-                                                 delegate,
-                                                 tab_contents);
+  ConstrainedHtmlUIDelegate* html_ui_delegate =
+      ConstrainedHtmlUI::CreateConstrainedHtmlDialog(browser()->profile(),
+                                                     delegate,
+                                                     NULL,
+                                                     wrapper);
+  ASSERT_TRUE(html_ui_delegate);
+  EXPECT_TRUE(html_ui_delegate->window());
+  EXPECT_EQ(1U, GetConstrainedWindowCount(wrapper));
+}
 
-  ASSERT_EQ(1U, tab_contents->constrained_window_count());
+// Tests that ReleaseTabContentsOnDialogClose() works.
+IN_PROC_BROWSER_TEST_F(ConstrainedHtmlDialogBrowserTest,
+                       ReleaseTabContentsOnDialogClose) {
+  // The delegate deletes itself.
+  HtmlDialogUIDelegate* delegate = new test::TestHtmlDialogUIDelegate(
+      GURL(chrome::kChromeUIConstrainedHTMLTestURL));
+  TabContentsWrapper* wrapper = browser()->GetSelectedTabContentsWrapper();
+  ASSERT_TRUE(wrapper);
+
+  ConstrainedHtmlUIDelegate* html_ui_delegate =
+      ConstrainedHtmlUI::CreateConstrainedHtmlDialog(browser()->profile(),
+                                                     delegate,
+                                                     NULL,
+                                                     wrapper);
+  ASSERT_TRUE(html_ui_delegate);
+  scoped_ptr<TabContentsWrapper> new_tab(html_ui_delegate->tab());
+  ASSERT_TRUE(new_tab.get());
+  ASSERT_EQ(1U, GetConstrainedWindowCount(wrapper));
+
+  ConstrainedHtmlDialogBrowserTestObserver observer(new_tab->web_contents());
+  html_ui_delegate->ReleaseTabContentsOnDialogClose();
+  html_ui_delegate->OnDialogCloseFromWebUI();
+
+  ASSERT_FALSE(observer.tab_destroyed());
+  EXPECT_EQ(0U, GetConstrainedWindowCount(wrapper));
+  new_tab.reset();
+  EXPECT_TRUE(observer.tab_destroyed());
 }

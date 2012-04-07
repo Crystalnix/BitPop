@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Unit tests for master preferences related methods.
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/stringprintf.h"
@@ -12,7 +13,6 @@
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/util_constants.h"
-#include "content/common/json_value_serializer.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -60,10 +60,8 @@ TEST_F(MasterPreferencesTest, ParseDistroParams) {
     "     \"verbose_logging\": true,\n"
     "     \"require_eula\": true,\n"
     "     \"alternate_shortcut_text\": true,\n"
-    "     \"oem_bubble\": true,\n"
     "     \"chrome_shortcut_icon_index\": 1,\n"
-    "     \"ping_delay\": 40,\n"
-    "     \"search_engine_experiment\": true\n"
+    "     \"ping_delay\": 40\n"
     "  },\n"
     "  \"blah\": {\n"
     "     \"import_history\": false\n"
@@ -88,8 +86,6 @@ TEST_F(MasterPreferencesTest, ParseDistroParams) {
     installer::master_preferences::kVerboseLogging,
     installer::master_preferences::kRequireEula,
     installer::master_preferences::kAltShortcutText,
-    installer::master_preferences::kAltFirstRunBubble,
-    installer::master_preferences::kSearchEngineExperimentPref,
   };
 
   for (int i = 0; i < arraysize(expected_true); ++i) {
@@ -303,87 +299,54 @@ TEST_F(MasterPreferencesTest, GetInstallPreferencesTest) {
 }
 
 TEST_F(MasterPreferencesTest, TestDefaultInstallConfig) {
-  std::wstringstream chrome_cmd, cf_cmd, ceee_cmd;
+  std::wstringstream chrome_cmd, cf_cmd;
   chrome_cmd << "setup.exe";
   cf_cmd << "setup.exe --" << installer::switches::kChromeFrame;
-  ceee_cmd << "setup.exe --" << installer::switches::kCeee;
 
   CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
   CommandLine cf_install(CommandLine::FromString(cf_cmd.str()));
-  CommandLine ceee_install(CommandLine::FromString(ceee_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
   installer::MasterPreferences pref_cf(cf_install);
-  installer::MasterPreferences pref_ceee(ceee_install);
 
   EXPECT_FALSE(pref_chrome.is_multi_install());
   EXPECT_TRUE(pref_chrome.install_chrome());
-  EXPECT_FALSE(pref_chrome.install_ceee());
   EXPECT_FALSE(pref_chrome.install_chrome_frame());
 
   EXPECT_FALSE(pref_cf.is_multi_install());
   EXPECT_FALSE(pref_cf.install_chrome());
-  EXPECT_FALSE(pref_cf.install_ceee());
   EXPECT_TRUE(pref_cf.install_chrome_frame());
-
-  EXPECT_FALSE(pref_ceee.is_multi_install());
-  EXPECT_FALSE(pref_ceee.install_chrome());
-  EXPECT_TRUE(pref_ceee.install_ceee());
-  EXPECT_TRUE(pref_ceee.install_chrome_frame());
 }
 
 TEST_F(MasterPreferencesTest, TestMultiInstallConfig) {
   using installer::switches::kMultiInstall;
   using installer::switches::kChrome;
   using installer::switches::kChromeFrame;
-  using installer::switches::kCeee;
 
-  std::wstringstream chrome_cmd, cf_cmd, ceee_cmd, chrome_cf_cmd,
-      chrome_ceee_cf_cmd;
+  std::wstringstream chrome_cmd, cf_cmd, chrome_cf_cmd;
   chrome_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome;
   cf_cmd << "setup.exe --" << kMultiInstall << " --" << kChromeFrame;
-  ceee_cmd << "setup.exe --" << kMultiInstall << " --" << kCeee;
   chrome_cf_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome <<
       " --" << kChromeFrame;
-  chrome_ceee_cf_cmd << "setup.exe --" << kMultiInstall << " --" << kChrome <<
-      " --" << kChromeFrame << " --" << kCeee;
 
   CommandLine chrome_install(CommandLine::FromString(chrome_cmd.str()));
   CommandLine cf_install(CommandLine::FromString(cf_cmd.str()));
-  CommandLine ceee_install(CommandLine::FromString(ceee_cmd.str()));
   CommandLine chrome_cf_install(CommandLine::FromString(chrome_cf_cmd.str()));
-  CommandLine chrome_cf_ceee_install(
-      CommandLine::FromString(chrome_ceee_cf_cmd.str()));
 
   installer::MasterPreferences pref_chrome(chrome_install);
   installer::MasterPreferences pref_cf(cf_install);
-  installer::MasterPreferences pref_ceee(ceee_install);
   installer::MasterPreferences pref_chrome_cf(chrome_cf_install);
-  installer::MasterPreferences pref_all(chrome_cf_ceee_install);
 
   EXPECT_TRUE(pref_chrome.is_multi_install());
   EXPECT_TRUE(pref_chrome.install_chrome());
-  EXPECT_FALSE(pref_chrome.install_ceee());
   EXPECT_FALSE(pref_chrome.install_chrome_frame());
 
   EXPECT_TRUE(pref_cf.is_multi_install());
   EXPECT_FALSE(pref_cf.install_chrome());
-  EXPECT_FALSE(pref_cf.install_ceee());
   EXPECT_TRUE(pref_cf.install_chrome_frame());
-
-  EXPECT_TRUE(pref_ceee.is_multi_install());
-  EXPECT_FALSE(pref_ceee.install_chrome());
-  EXPECT_TRUE(pref_ceee.install_ceee());
-  EXPECT_TRUE(pref_ceee.install_chrome_frame());
 
   EXPECT_TRUE(pref_chrome_cf.is_multi_install());
   EXPECT_TRUE(pref_chrome_cf.install_chrome());
-  EXPECT_FALSE(pref_chrome_cf.install_ceee());
   EXPECT_TRUE(pref_chrome_cf.install_chrome_frame());
-
-  EXPECT_TRUE(pref_all.is_multi_install());
-  EXPECT_TRUE(pref_all.install_chrome());
-  EXPECT_TRUE(pref_all.install_ceee());
-  EXPECT_TRUE(pref_all.install_chrome_frame());
 }
 

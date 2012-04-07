@@ -4,68 +4,51 @@
 
 #include "chrome/browser/icon_loader.h"
 
-#include <gdk-pixbuf/gdk-pixbuf.h>
-#include <gio/gio.h>
-#include <gtk/gtk.h>
+#include <string>
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/mime_util.h"
-#include "base/threading/thread.h"
-#include "base/string_util.h"
+#include "base/nix/mime_util_xdg.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "webkit/glue/image_decoder.h"
 
-static int SizeToInt(IconLoader::IconSize size) {
-  int pixels = 0;
-  switch (size) {
+using std::string;
+
+void IconLoader::ReadIcon() {
+  int size_pixels = 0;
+  switch (icon_size_) {
     case IconLoader::SMALL:
-      pixels = 16;
+      size_pixels = 16;
       break;
     case IconLoader::NORMAL:
-      pixels = 32;
+      size_pixels = 32;
       break;
     case IconLoader::LARGE:
-      pixels = 48;
+      size_pixels = 48;
       break;
     default:
       NOTREACHED();
   }
-  return pixels;
-}
 
-void IconLoader::ReadIcon() {
-  filename_ = mime_util::GetMimeIcon(group_, SizeToInt(icon_size_));
-  file_util::ReadFileToString(filename_, &icon_data_);
-  target_message_loop_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &IconLoader::ParseIcon));
-}
+  FilePath filename = base::nix::GetMimeIcon(group_, size_pixels);
+  string icon_data;
+  file_util::ReadFileToString(filename, &icon_data);
 
-void IconLoader::ParseIcon() {
-  int size = SizeToInt(icon_size_);
-
-  // It would be more convenient to use gdk_pixbuf_new_from_stream_at_scale
-  // but that is only available after 2.14.
-  GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
-  gdk_pixbuf_loader_set_size(loader, size, size);
-  gdk_pixbuf_loader_write(loader,
-                          reinterpret_cast<const guchar*>(icon_data_.data()),
-                          icon_data_.length(), NULL);
-  gdk_pixbuf_loader_close(loader, NULL);
-  // At this point, the pixbuf is owned by the loader.
-  GdkPixbuf* pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
-
-  if (pixbuf) {
-    DCHECK_EQ(size, gdk_pixbuf_get_width(pixbuf));
-    DCHECK_EQ(size, gdk_pixbuf_get_height(pixbuf));
-    // Takes ownership of |pixbuf|.
-    g_object_ref(pixbuf);
-    image_.reset(new gfx::Image(pixbuf));
+  webkit_glue::ImageDecoder decoder;
+  scoped_ptr<SkBitmap> bitmap(new SkBitmap());
+  *bitmap = decoder.Decode(
+      reinterpret_cast<const unsigned char*>(icon_data.data()),
+      icon_data.length());
+  if (!bitmap->empty()) {
+    DCHECK_EQ(size_pixels, bitmap->width());
+    DCHECK_EQ(size_pixels, bitmap->height());
+    image_.reset(new gfx::Image(bitmap.release()));
   } else {
-    LOG(WARNING) << "Unsupported file type or load error: " <<
-                    filename_.value();
+    LOG(WARNING) << "Unsupported file type or load error: " << filename.value();
   }
 
-  g_object_unref(loader);
-
-  NotifyDelegate();
+  target_message_loop_->PostTask(
+      FROM_HERE, base::Bind(&IconLoader::NotifyDelegate, this));
 }

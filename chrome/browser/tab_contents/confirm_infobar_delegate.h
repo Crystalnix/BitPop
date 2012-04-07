@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/string16.h"
-#include "chrome/browser/tab_contents/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 
 // An interface derived from InfoBarDelegate implemented by objects wishing to
 // control a ConfirmInfoBar.
@@ -34,34 +34,37 @@ class ConfirmInfoBarDelegate : public InfoBarDelegate {
   // Return whether or not the specified button needs elevation.
   virtual bool NeedElevation(InfoBarButton button) const;
 
-  // Called when the OK button is pressed. If the function returns true, the
-  // InfoBarDelegate should be removed from the associated TabContentsWrapper.
+  // Called when the OK button is pressed. If this function returns true, the
+  // infobar is then immediately closed. Subclasses MUST NOT return true if in
+  // handling this call something triggers the infobar to begin closing.
   virtual bool Accept();
 
-  // Called when the Cancel button is pressed.  If the function returns true,
-  // the InfoBarDelegate should be removed from the associated
-  // TabContentsWrapper.
+  // Called when the Cancel button is pressed. If this function returns true,
+  // the infobar is then immediately closed. Subclasses MUST NOT return true if
+  // in handling this call something triggers the infobar to begin closing.
   virtual bool Cancel();
 
   // Returns the text of the link to be displayed, if any. Otherwise returns
   // and empty string.
-  virtual string16 GetLinkText();
+  virtual string16 GetLinkText() const;
 
-  // Called when the Link is clicked. The |disposition| specifies how the
-  // resulting document should be loaded (based on the event flags present when
-  // the link was clicked). This function returns true if the InfoBar should be
-  // closed now or false if it should remain until the user explicitly closes
-  // it.
-  // Will only be called if GetLinkText() returns non-empty string.
+  // Called when the Link (if any) is clicked. The |disposition| specifies how
+  // the resulting document should be loaded (based on the event flags present
+  // when the link was clicked). If this function returns true, the infobar is
+  // then immediately closed. Subclasses MUST NOT return true if in handling
+  // this call something triggers the infobar to begin closing.
   virtual bool LinkClicked(WindowOpenDisposition disposition);
 
  protected:
-  explicit ConfirmInfoBarDelegate(TabContents* contents);
+  explicit ConfirmInfoBarDelegate(InfoBarTabHelper* infobar_helper);
   virtual ~ConfirmInfoBarDelegate();
+
+  virtual bool ShouldExpire(
+      const content::LoadCommittedDetails& details) const OVERRIDE;
 
  private:
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(TabContentsWrapper* owner) OVERRIDE;
+  virtual InfoBar* CreateInfoBar(InfoBarTabHelper* owner) OVERRIDE;
   virtual bool EqualsDelegate(InfoBarDelegate* delegate) const OVERRIDE;
   virtual ConfirmInfoBarDelegate* AsConfirmInfoBarDelegate() OVERRIDE;
 

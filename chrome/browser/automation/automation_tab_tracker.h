@@ -11,27 +11,28 @@
 #include "base/time.h"
 #include "chrome/browser/automation/automation_resource_tracker.h"
 
+namespace content {
 class NavigationController;
-class NotificationType;
+}
 
 class AutomationTabTracker
-  : public AutomationResourceTracker<NavigationController*> {
+  : public AutomationResourceTracker<content::NavigationController*> {
  public:
   explicit AutomationTabTracker(IPC::Message::Sender* automation);
   virtual ~AutomationTabTracker();
 
-  virtual void AddObserver(NavigationController* resource);
-  virtual void RemoveObserver(NavigationController* resource);
+  virtual void AddObserver(content::NavigationController* resource);
+  virtual void RemoveObserver(content::NavigationController* resource);
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
 
   base::Time GetLastNavigationTime(int handle);
 
  private:
   // Last time a navigation occurred.
-  std::map<NavigationController*, base::Time> last_navigation_times_;
+  std::map<content::NavigationController*, base::Time> last_navigation_times_;
 
   DISALLOW_COPY_AND_ASSIGN(AutomationTabTracker);
 };

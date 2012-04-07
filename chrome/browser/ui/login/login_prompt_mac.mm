@@ -1,11 +1,13 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/login/login_prompt.h"
 #import "chrome/browser/ui/login/login_prompt_mac.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
@@ -13,16 +15,18 @@
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/cocoa/constrained_window_mac.h"
 #include "chrome/browser/ui/login/login_model.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "net/url_request/url_request.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using webkit_glue::PasswordForm;
+using content::BrowserThread;
+using content::WebContents;
+using webkit::forms::PasswordForm;
 
 // ----------------------------------------------------------------------------
 // LoginHandlerMac
@@ -43,12 +47,12 @@ class LoginHandlerMac : public LoginHandler,
   }
 
   // LoginModelObserver implementation.
-  virtual void OnAutofillDataAvailable(const std::wstring& username,
-                                       const std::wstring& password) {
+  virtual void OnAutofillDataAvailable(const string16& username,
+                                       const string16& password) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-    [sheet_controller_ autofillLogin:base::SysWideToNSString(username)
-                            password:base::SysWideToNSString(password)];
+    [sheet_controller_ autofillLogin:base::SysUTF16ToNSString(username)
+                            password:base::SysUTF16ToNSString(password)];
   }
 
   // LoginHandler:
@@ -71,7 +75,12 @@ class LoginHandlerMac : public LoginHandler,
     // control).  However, that's OK since any UI interaction in those functions
     // will occur via an InvokeLater on the UI thread, which is guaranteed
     // to happen after this is called (since this was InvokeLater'd first).
-    SetDialog(GetTabContentsForLogin()->CreateConstrainedDialog(this));
+    WebContents* requesting_contents = GetWebContentsForLogin();
+    DCHECK(requesting_contents);
+
+    TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(requesting_contents);
+    SetDialog(new ConstrainedWindowMac(wrapper, this));
 
     NotifyAuthNeeded();
   }
@@ -127,8 +136,8 @@ LoginHandler* LoginHandler::Create(net::AuthChallengeInfo* auth_info,
 
 - (id)initWithLoginHandler:(LoginHandlerMac*)handler {
   NSString* nibPath =
-      [base::mac::MainAppBundle() pathForResource:@"HttpAuthLoginSheet"
-                                          ofType:@"nib"];
+      [base::mac::FrameworkBundle() pathForResource:@"HttpAuthLoginSheet"
+                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibPath
                                      owner:self])) {
     handler_ = handler;

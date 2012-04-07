@@ -15,14 +15,19 @@
 #include "ppapi/c/dev/ppp_class_deprecated.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/resource_tracker.h"
+#include "ppapi/shared_impl/var.h"
+#include "ppapi/shared_impl/var_tracker.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "webkit/plugins/ppapi/npapi_glue.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/resource.h"
 #include "webkit/plugins/ppapi/string.h"
-#include "webkit/plugins/ppapi/var.h"
 
+using ppapi::PpapiGlobals;
+using ppapi::StringVar;
+using ppapi::Var;
 using WebKit::WebBindings;
 
 namespace webkit {
@@ -75,6 +80,13 @@ bool WrapperClass_Invoke(NPObject* object, NPIdentifier method_name,
   PPVarArrayFromNPVariantArray args(accessor.object()->instance(),
                                     argc, argv);
 
+  // For the OOP plugin case we need to grab a reference on the plugin module
+  // object to ensure that it is not destroyed courtsey an incoming
+  // ExecuteScript call which destroys the plugin module and in turn the
+  // dispatcher.
+  scoped_refptr<webkit::ppapi::PluginModule> ref(
+      accessor.object()->instance()->module());
+
   return result_converter.SetResult(accessor.object()->ppp_class()->Call(
       accessor.object()->ppp_class_data(), accessor.identifier(),
       argc, args.array(), result_converter.exception()));
@@ -88,6 +100,13 @@ bool WrapperClass_InvokeDefault(NPObject* np_object, const NPVariant* argv,
 
   PPVarArrayFromNPVariantArray args(obj->instance(), argc, argv);
   PPResultAndExceptionToNPResult result_converter(obj->GetNPObject(), result);
+
+  // For the OOP plugin case we need to grab a reference on the plugin module
+  // object to ensure that it is not destroyed courtsey an incoming
+  // ExecuteScript call which destroys the plugin module and in turn the
+  // dispatcher.
+  scoped_refptr<webkit::ppapi::PluginModule> ref(
+      obj->instance()->module());
 
   result_converter.SetResult(obj->ppp_class()->Call(
       obj->ppp_class_data(), PP_MakeUndefined(), argc, args.array(),
@@ -130,12 +149,11 @@ bool WrapperClass_SetProperty(NPObject* object, NPIdentifier property_name,
 
   PPResultAndExceptionToNPResult result_converter(
       accessor.object()->GetNPObject(), NULL);
-  PP_Var value_var = Var::NPVariantToPPVar(accessor.object()->instance(),
-                                           value);
+  PP_Var value_var = NPVariantToPPVar(accessor.object()->instance(), value);
   accessor.object()->ppp_class()->SetProperty(
       accessor.object()->ppp_class_data(), accessor.identifier(), value_var,
       result_converter.exception());
-  Var::PluginReleasePPVar(value_var);
+  PpapiGlobals::Get()->GetVarTracker()->ReleaseVar(value_var);
   return result_converter.CheckExceptionForNoResult();
 }
 
@@ -175,10 +193,10 @@ bool WrapperClass_Enumerate(NPObject* object, NPIdentifier** values,
           malloc(sizeof(NPIdentifier) * property_count));
       *count = 0;  // Will be the number of items successfully converted.
       for (uint32_t i = 0; i < property_count; ++i) {
-        if (!((*values)[i] = Var::PPVarToNPIdentifier(properties[i]))) {
+        if (!((*values)[i] = PPVarToNPIdentifier(properties[i]))) {
           // Throw an exception for the failed convertion.
-          *result_converter.exception() = StringVar::StringToPPVar(
-              obj->instance()->module(), kInvalidValueException);
+          *result_converter.exception() =
+              StringVar::StringToPPVar(kInvalidValueException);
           break;
         }
         (*count)++;
@@ -200,8 +218,9 @@ bool WrapperClass_Enumerate(NPObject* object, NPIdentifier** values,
 
   // Release the PP_Var that the plugin allocated. On success, they will all
   // be converted to NPVariants, and on failure, we want them to just go away.
+  ::ppapi::VarTracker* var_tracker = PpapiGlobals::Get()->GetVarTracker();
   for (uint32_t i = 0; i < property_count; ++i)
-    Var::PluginReleasePPVar(properties[i]);
+    var_tracker->ReleaseVar(properties[i]);
   free(properties);
   return result_converter.success();
 }
@@ -290,7 +309,7 @@ PP_Var PluginObject::Create(PluginInstance* instance,
   // We can just use a normal ObjectVar to refer to this object from the
   // plugin. It will hold a ref to the underlying NPObject which will in turn
   // hold our pluginObject.
-  PP_Var obj_var(ObjectVar::NPObjectToPPVar(instance, wrapper));
+  PP_Var obj_var(NPObjectToPPVar(instance, wrapper));
 
   // Note that the ObjectVar constructor incremented the reference count, and so
   // did WebBindings::createObject above. Now that the PP_Var has taken

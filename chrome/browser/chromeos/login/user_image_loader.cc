@@ -1,47 +1,54 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/user_image_loader.h"
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
-#include "chrome/browser/chromeos/login/image_decoder.h"
 #include "chrome/browser/chromeos/login/helper.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/skbitmap_operations.h"
 
+using content::BrowserThread;
+
 namespace chromeos {
 
-UserImageLoader::UserImageLoader(Delegate* delegate)
-    : target_message_loop_(NULL),
-      delegate_(delegate) {
+UserImageLoader::ImageInfo::ImageInfo(int size, const LoadedCallback& loaded_cb)
+    : size(size),
+      loaded_cb(loaded_cb) {
+}
+
+UserImageLoader::ImageInfo::~ImageInfo() {
+}
+
+UserImageLoader::UserImageLoader()
+    : target_message_loop_(NULL) {
 }
 
 UserImageLoader::~UserImageLoader() {
 }
 
-void UserImageLoader::Start(const std::string& username,
-                            const std::string& filename,
-                            bool should_save_image) {
+void UserImageLoader::Start(const std::string& filepath,
+                            int size,
+                            const LoadedCallback& loaded_cb) {
   target_message_loop_ = MessageLoop::current();
 
-  ImageInfo image_info(username, should_save_image);
-  BrowserThread::PostTask(BrowserThread::FILE,
-                          FROM_HERE,
-                          NewRunnableMethod(this,
-                                            &UserImageLoader::LoadImage,
-                                            filename,
-                                            image_info));
+  ImageInfo image_info(size, loaded_cb);
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&UserImageLoader::LoadImage, this, filepath, image_info));
 }
 
 void UserImageLoader::LoadImage(const std::string& filepath,
                                 const ImageInfo& image_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
   std::string image_data;
   file_util::ReadFileToString(FilePath(filepath), &image_data);
 
@@ -54,14 +61,17 @@ void UserImageLoader::LoadImage(const std::string& filepath,
 void UserImageLoader::OnImageDecoded(const ImageDecoder* decoder,
                                      const SkBitmap& decoded_image) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
   ImageInfoMap::iterator info_it = image_info_map_.find(decoder);
   if (info_it == image_info_map_.end()) {
     NOTREACHED();
     return;
   }
-  ImageInfo image_info = info_it->second;
+
+  const ImageInfo& image_info = info_it->second;
   SkBitmap final_image = decoded_image;
-  if (image_info.should_save_image) {
+
+  if (image_info.size > 0) {
     // Auto crop the image, taking the largest square in the center.
     // Also make the image smaller to save space and memory.
     int size = std::min(decoded_image.width(), decoded_image.height());
@@ -72,29 +82,20 @@ void UserImageLoader::OnImageDecoded(const ImageDecoder* decoder,
     final_image =
         skia::ImageOperations::Resize(cropped_image,
                                       skia::ImageOperations::RESIZE_LANCZOS3,
-                                      login::kUserImageSize,
-                                      login::kUserImageSize);
+                                      image_info.size,
+                                      image_info.size);
   }
-  target_message_loop_->PostTask(FROM_HERE,
-      NewRunnableMethod(this,
-                        &UserImageLoader::NotifyDelegate,
-                        final_image,
-                        image_info));
+
+  target_message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(image_info.loaded_cb, final_image));
+
   image_info_map_.erase(info_it);
 }
 
 void UserImageLoader::OnDecodeImageFailed(const ImageDecoder* decoder) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   image_info_map_.erase(decoder);
-}
-
-void UserImageLoader::NotifyDelegate(const SkBitmap& image,
-                                     const ImageInfo& image_info) {
-  if (delegate_) {
-    delegate_->OnImageLoaded(image_info.username,
-                             image,
-                             image_info.should_save_image);
-  }
 }
 
 }  // namespace chromeos

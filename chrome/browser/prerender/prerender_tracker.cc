@@ -4,36 +4,33 @@
 
 #include "chrome/browser/prerender/prerender_tracker.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prerender/prerender_manager.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/resource_context.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/common/resource_messages.h"
+#include "content/browser/resource_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
+
+using content::BrowserThread;
 
 namespace prerender {
 
 namespace {
 
-void CancelDeferredRequestOnIOThread(
-    ResourceDispatcherHost* resource_dispatcher_host,
-    int child_id, int request_id) {
+void CancelDeferredRequestOnIOThread(int child_id, int request_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  resource_dispatcher_host->CancelRequest(child_id, request_id, false);
+  ResourceDispatcherHost::Get()->CancelRequest(child_id, request_id, false);
 }
 
-void StartDeferredRequestOnIOThread(
-    ResourceDispatcherHost* resource_dispatcher_host,
-    int child_id, int request_id) {
+void StartDeferredRequestOnIOThread(int child_id, int request_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  resource_dispatcher_host->StartDeferredRequest(child_id, request_id);
+  ResourceDispatcherHost::Get()->StartDeferredRequest(child_id, request_id);
 }
 
 bool ShouldCancelRequest(
-    const base::WeakPtr<PrerenderManager>& prerender_manager_ptr,
     int child_id,
     int route_id) {
   // Check if the RenderViewHost associated with (child_id, route_id) no
@@ -47,32 +44,42 @@ bool ShouldCancelRequest(
       RenderViewHost::FromID(child_id, route_id);
   if (!render_view_host)
     return true;
-  PrerenderManager* prerender_manager = prerender_manager_ptr.get();
+  PrerenderManager* prerender_manager =
+      FindPrerenderManagerUsingRenderProcessId(child_id);
   return (prerender_manager &&
           prerender_manager->IsOldRenderViewHost(render_view_host));
 }
 
 void HandleDelayedRequestOnUIThread(
-    const base::WeakPtr<PrerenderManager>& prerender_manager,
     int child_id,
     int route_id,
     int request_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ResourceDispatcherHost* resource_dispatcher_host =
-      g_browser_process->resource_dispatcher_host();
-  CHECK(resource_dispatcher_host);
-  if (ShouldCancelRequest(prerender_manager, child_id, route_id)) {
+  if (ShouldCancelRequest(child_id, route_id)) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&CancelDeferredRequestOnIOThread,
-                            resource_dispatcher_host, child_id, request_id));
+        base::Bind(&CancelDeferredRequestOnIOThread, child_id, request_id));
   } else {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableFunction(&StartDeferredRequestOnIOThread,
-                            resource_dispatcher_host, child_id, request_id));
+        base::Bind(&StartDeferredRequestOnIOThread, child_id, request_id));
   }
 }
+
+void DestroyPrerenderForRenderViewOnUI(
+    const base::WeakPtr<PrerenderManager>& prerender_manager_weak_ptr,
+    int render_process_id,
+    int render_view_id,
+    FinalStatus final_status) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  PrerenderManager* prerender_manager = prerender_manager_weak_ptr.get();
+  if (!prerender_manager)
+    return;
+
+  prerender_manager->DestroyPrerenderForRenderView(
+      render_process_id, render_view_id, final_status);
+}
+
 
 void AddURL(const GURL& url, URLCounter* counter) {
   DCHECK(counter);
@@ -180,7 +187,6 @@ bool PrerenderTracker::TryCancelOnIOThread(
 
 bool PrerenderTracker::PotentiallyDelayRequestOnIOThread(
     const GURL& gurl,
-    const base::WeakPtr<PrerenderManager>& prerender_manager,
     int process_id,
     int route_id,
     int request_id) {
@@ -190,27 +196,21 @@ bool PrerenderTracker::PotentiallyDelayRequestOnIOThread(
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
-      NewRunnableFunction(&HandleDelayedRequestOnUIThread,
-                          prerender_manager,
-                          process_id,
-                          route_id,
-                          request_id));
+      base::Bind(&HandleDelayedRequestOnUIThread, process_id, route_id,
+                 request_id));
   return true;
 }
 
 void PrerenderTracker::AddPrerenderURLOnUIThread(const GURL& url) {
   BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      NewRunnableFunction(&AddURL, url, &url_counter_));
+      BrowserThread::IO, FROM_HERE, base::Bind(&AddURL, url, &url_counter_));
 }
 
 void PrerenderTracker::RemovePrerenderURLsOnUIThread(
     const std::vector<GURL>& urls) {
   BrowserThread::PostTask(
-      BrowserThread::IO,
-      FROM_HERE,
-      NewRunnableFunction(&RemoveURLs, urls, &url_counter_));
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&RemoveURLs, urls, &url_counter_));
 }
 
 bool PrerenderTracker::GetFinalStatus(int child_id, int route_id,
@@ -240,7 +240,7 @@ void PrerenderTracker::OnPrerenderingStarted(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(&AddPrerenderOnIOThreadTask, child_route_id_pair));
+      base::Bind(&AddPrerenderOnIOThreadTask, child_route_id_pair));
 
   base::AutoLock lock(final_status_map_lock_);
 
@@ -257,7 +257,7 @@ void PrerenderTracker::OnPrerenderingFinished(int child_id, int route_id) {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(&RemovePrerenderOnIOThreadTask, child_route_id_pair));
+      base::Bind(&RemovePrerenderOnIOThreadTask, child_route_id_pair));
 
   base::AutoLock lock(final_status_map_lock_);
   size_t num_erased = final_status_map_.erase(child_route_id_pair);
@@ -287,11 +287,9 @@ bool PrerenderTracker::SetFinalStatus(int child_id, int route_id,
     if (desired_final_status != FINAL_STATUS_USED) {
       BrowserThread::PostTask(
           BrowserThread::UI, FROM_HERE,
-          NewRunnableFunction(&DestroyPreloadForRenderView,
-                              final_status_it->second.prerender_manager,
-                              child_id,
-                              route_id,
-                              desired_final_status));
+          base::Bind(&DestroyPrerenderForRenderViewOnUI,
+                     final_status_it->second.prerender_manager, child_id,
+                     route_id, desired_final_status));
     }
 
     if (actual_final_status)

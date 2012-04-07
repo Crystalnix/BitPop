@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/video_frame.h"
-#include "remoting/base/types.h"
+#include "third_party/skia/include/core/SkRegion.h"
 
 namespace remoting {
 
@@ -27,24 +27,23 @@ struct DataPlanes {
 class CaptureData : public base::RefCountedThreadSafe<CaptureData> {
  public:
   CaptureData(const DataPlanes &data_planes,
-              const gfx::Size& size,
+              const SkISize& size,
               media::VideoFrame::Format format);
 
-  // Get the data_planes data of the last capture.
+  // Get the data_planes data of the previous capture.
   const DataPlanes& data_planes() const { return data_planes_; }
 
-  // Get the list of updated rectangles in the last capture. The result is
-  // written into |rects|.
-  const InvalidRects& dirty_rects() const { return dirty_rects_; }
+  // Get the dirty region from the previous capture.
+  const SkRegion& dirty_region() const { return dirty_region_; }
 
   // Return the size of the image captured.
-  gfx::Size size() const { return size_; }
+  SkISize size() const { return size_; }
 
   // Get the pixel format of the image captured.
   media::VideoFrame::Format pixel_format() const { return pixel_format_; }
 
   // Mutating methods.
-  InvalidRects& mutable_dirty_rects() { return dirty_rects_; }
+  SkRegion& mutable_dirty_region() { return dirty_region_; }
 
   // Return the time spent on capturing.
   int capture_time_ms() const { return capture_time_ms_; }
@@ -62,8 +61,8 @@ class CaptureData : public base::RefCountedThreadSafe<CaptureData> {
 
  private:
   const DataPlanes data_planes_;
-  InvalidRects dirty_rects_;
-  gfx::Size size_;
+  SkRegion dirty_region_;
+  SkISize size_;
   media::VideoFrame::Format pixel_format_;
 
   // Time spent in capture. Unit is in milliseconds.

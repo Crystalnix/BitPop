@@ -11,11 +11,10 @@
 #include "base/logging.h"
 
 #include "courgette/crc.h"
-#include "courgette/image_info.h"
 #include "courgette/region.h"
 #include "courgette/streams.h"
 #include "courgette/simple_delta.h"
-#include "courgette/win32_x86_patcher.h"
+#include "courgette/patcher_x86_32.h"
 
 namespace courgette {
 
@@ -136,13 +135,22 @@ Status EnsemblePatchApplication::ReadInitialParameters(
     if (!transformation_parameters->ReadVarint32(&kind))
       return C_BAD_ENSEMBLE_HEADER;
 
-    if (kind == CourgettePatchFile::T_COURGETTE_WIN32_X86) {
-      TransformationPatcher* patcher =
-          new CourgetteWin32X86Patcher(base_region_);
-      patchers_.push_back(patcher);
-    } else {
-      return C_BAD_ENSEMBLE_HEADER;
+    TransformationPatcher* patcher = NULL;
+
+    switch (kind)
+    {
+      case EXE_WIN_32_X86:
+        patcher = new PatcherX86_32(base_region_);
+        break;
+      case EXE_ELF_32_X86:
+        patcher = new PatcherX86_32(base_region_);
+        break;
     }
+
+    if (patcher)
+      patchers_.push_back(patcher);
+    else
+      return C_BAD_ENSEMBLE_HEADER;
   }
 
   for (size_t i = 0;  i < patchers_.size();  ++i) {

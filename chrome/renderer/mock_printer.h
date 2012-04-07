@@ -12,7 +12,9 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string16.h"
 #include "printing/image.h"
+#include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 struct PrintMsg_Print_Params;
@@ -68,6 +70,7 @@ class MockPrinter {
   // Functions that changes settings of a pseudo printer.
   void ResetPrinter();
   void SetDefaultPrintSettings(const PrintMsg_Print_Params& params);
+  void UseInvalidSettings();
 
   // Functions that handles IPC events.
   void GetDefaultPrintSettings(PrintMsg_Print_Params* params);
@@ -75,7 +78,9 @@ class MockPrinter {
                      int expected_pages_count,
                      bool has_selection,
                      PrintMsg_PrintPages_Params* settings);
-  void UpdateSettings(int cookie, PrintMsg_PrintPages_Params* params);
+  void UpdateSettings(int cookie, PrintMsg_PrintPages_Params* params,
+                      const std::vector<int>& page_range_array,
+                      int margins_type);
   void SetPrintedPagesCount(int cookie, int number_pages);
   void PrintPage(const PrintHostMsg_DidPrintPage_Params& params);
 
@@ -104,9 +109,10 @@ class MockPrinter {
 
   // In pixels according to dpi_x and dpi_y.
   gfx::Size page_size_;
-  gfx::Size printable_size_;
+  gfx::Size content_size_;
   int margin_left_;
   int margin_top_;
+  gfx::Rect printable_area_;
 
   // Specifies dots per inch.
   double dpi_;
@@ -129,6 +135,21 @@ class MockPrinter {
   // The output of a printing job.
   int number_pages_;
   int page_number_;
+
+  // Used only in the preview sequence.
+  bool is_first_request_;
+  bool print_to_pdf_;
+  int preview_request_id_;
+
+  // Used for displaying headers and footers.
+  bool display_header_footer_;
+  string16 date_;
+  string16 title_;
+  string16 url_;
+
+  // Used for generating invalid settings.
+  bool use_invalid_settings_;
+
   std::vector<scoped_refptr<MockPrinterPage> > pages_;
 
   DISALLOW_COPY_AND_ASSIGN(MockPrinter);

@@ -8,9 +8,12 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "ui/gfx/gl/gl_context.h"
 
 typedef void* EGLContext;
+typedef void* EGLDisplay;
+typedef void* EGLConfig;
 
 namespace gfx {
 
@@ -19,22 +22,24 @@ class GLSurface;
 // Encapsulates an EGL OpenGL ES context.
 class GLContextEGL : public GLContext {
  public:
-  GLContextEGL();
+  explicit GLContextEGL(GLShareGroup* share_group);
   virtual ~GLContextEGL();
 
   // Implement GLContext.
-  virtual bool Initialize(GLContext* shared_context,
-                          GLSurface* compatible_surface);
-  virtual void Destroy();
-  virtual bool MakeCurrent(GLSurface* surface);
-  virtual void ReleaseCurrent(GLSurface* surface);
-  virtual bool IsCurrent(GLSurface* surface);
-  virtual void* GetHandle();
-  virtual void SetSwapInterval(int interval);
-  virtual std::string GetExtensions();
+  virtual bool Initialize(
+      GLSurface* compatible_surface, GpuPreference gpu_preference) OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
+  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
+  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual void SetSwapInterval(int interval) OVERRIDE;
+  virtual std::string GetExtensions() OVERRIDE;
 
  private:
   EGLContext context_;
+  EGLDisplay display_;
+  EGLConfig config_;
 
   DISALLOW_COPY_AND_ASSIGN(GLContextEGL);
 };

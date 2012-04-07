@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -20,9 +21,9 @@
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
+#include "chrome/common/extensions/extension_message_bundle.h"
+#include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "chrome/common/extensions/extension_sidebar_defaults.h"
-#include "content/common/json_value_serializer.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/file_stream.h"
@@ -55,6 +56,35 @@ FilePath InstallExtension(const FilePath& unpacked_source_dir,
       return FilePath();
   }
 
+  FilePath profile_temp_dir = GetUserDataTempDir();
+  // Move the extracted extension to a temp folder under the profile which will
+  // then be moved to the final destination to ensure integrity of the installed
+  // extension. The first move is actually a copy+delete to ensure proper
+  // behavor in case we are moving a folder inside another folder on the same
+  // level because Move will attempt rename in this case instead of proper move.
+  // PLEASE NOTE: This issue has been observed in extension unit tests that try
+  // to install user exnteions (not crx files but unpacked ones) from subfolder
+  // of the temp folder. In that case a move will only rename the folder insted
+  // of miving it into the destination folder as expected. That is the reason we
+  // do copy+delete instead of a plain delete here! It can happen in the wild
+  // with say autounpacked archive going to the temp folder and the user tries
+  // to install it from there.
+  ScopedTempDir extension_temp_dir;
+  if (profile_temp_dir.empty() ||
+      !extension_temp_dir.CreateUniqueTempDirUnderPath(profile_temp_dir)) {
+    LOG(ERROR) << "Creating of temp dir under in the profile failed.";
+    return FilePath();
+  }
+  if (!file_util::CopyDirectory(unpacked_source_dir,
+                                extension_temp_dir.path(), true)) {
+    LOG(ERROR) << "Moving extension from : " << unpacked_source_dir.value()
+               << " to : " << extension_temp_dir.path().value() << " failed.";
+    return FilePath();
+  }
+  file_util::Delete(unpacked_source_dir, true);
+  FilePath crx_temp_source =
+      extension_temp_dir.path().Append(unpacked_source_dir.BaseName());
+
   // Try to find a free directory. There can be legitimate conflicts in the case
   // of overinstallation of the same version.
   const int kMaxAttempts = 100;
@@ -73,8 +103,11 @@ FilePath InstallExtension(const FilePath& unpacked_source_dir,
     return FilePath();
   }
 
-  if (!file_util::Move(unpacked_source_dir, version_dir))
+  if (!file_util::Move(crx_temp_source, version_dir)) {
+    LOG(ERROR) << "Installing extension from : " << crx_temp_source.value()
+               << " into : " << version_dir.value() << " failed.";
     return FilePath();
+  }
 
   return version_dir;
 }
@@ -91,6 +124,40 @@ scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
                                        Extension::Location location,
                                        int flags,
                                        std::string* error) {
+  return LoadExtension(
+      extension_path, std::string(), location, flags, error);
+}
+
+scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
+                                       std::string extension_id,
+                                       Extension::Location location,
+                                       int flags,
+                                       std::string* error) {
+  scoped_ptr<DictionaryValue> manifest(LoadManifest(extension_path, error));
+  if (!manifest.get())
+    return NULL;
+  if (!extension_l10n_util::LocalizeExtension(extension_path, manifest.get(),
+                                              error))
+    return NULL;
+
+  scoped_refptr<Extension> extension(Extension::Create(
+      extension_path,
+      location,
+      *manifest,
+      flags,
+      extension_id,
+      error));
+  if (!extension.get())
+    return NULL;
+
+  if (!ValidateExtension(extension.get(), error))
+    return NULL;
+
+  return extension;
+}
+
+DictionaryValue* LoadManifest(const FilePath& extension_path,
+                              std::string* error) {
   FilePath manifest_path =
       extension_path.Append(Extension::kManifestFilename);
   if (!file_util::PathExists(manifest_path)) {
@@ -120,26 +187,10 @@ scoped_refptr<Extension> LoadExtension(const FilePath& extension_path,
     return NULL;
   }
 
-  DictionaryValue* manifest = static_cast<DictionaryValue*>(root.get());
-  if (!extension_l10n_util::LocalizeExtension(extension_path, manifest, error))
-    return NULL;
-
-  scoped_refptr<Extension> extension(Extension::Create(
-      extension_path,
-      location,
-      *manifest,
-      flags,
-      error));
-  if (!extension.get())
-    return NULL;
-
-  if (!ValidateExtension(extension.get(), error))
-    return NULL;
-
-  return extension;
+  return static_cast<DictionaryValue*>(root.release());
 }
 
-bool ValidateExtension(Extension* extension, std::string* error) {
+bool ValidateExtension(const Extension* extension, std::string* error) {
   // Validate icons exist.
   for (ExtensionIconSet::IconMap::const_iterator iter =
            extension->icons().map().begin();
@@ -162,7 +213,8 @@ bool ValidateExtension(Extension* extension, std::string* error) {
            iter != images_value->end_keys(); ++iter) {
         std::string val;
         if (images_value->GetStringWithoutPathExpansion(*iter, &val)) {
-          FilePath image_path = extension->path().AppendASCII(val);
+          FilePath image_path = extension->path().Append(
+              FilePath::FromUTF8Unsafe(val));
           if (!file_util::PathExists(image_path)) {
             *error =
                 l10n_util::GetStringFUTF8(IDS_EXTENSION_INVALID_IMAGE_PATH,
@@ -246,12 +298,26 @@ bool ValidateExtension(Extension* extension, std::string* error) {
     }
   }
 
+  // Validate that background scripts exist.
+  for (size_t i = 0; i < extension->background_scripts().size(); ++i) {
+    if (!file_util::PathExists(
+            extension->GetResource(
+                extension->background_scripts()[i]).GetFilePath())) {
+      *error = l10n_util::GetStringFUTF8(
+          IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+          UTF8ToUTF16(extension->background_scripts()[i]));
+      return false;
+    }
+  }
+
   // Validate background page location, except for hosted apps, which should use
   // an external URL. Background page for hosted apps are verified when the
   // extension is created (in Extension::InitFromValue)
-  if (!extension->background_url().is_empty() && !extension->is_hosted_app()) {
+  if (extension->has_background_page() &&
+      !extension->is_hosted_app() &&
+      extension->background_scripts().empty()) {
     FilePath page_path = ExtensionURLToRelativeFilePath(
-        extension->background_url());
+        extension->GetBackgroundURL());
     const FilePath path = extension->GetResource(page_path).GetFilePath();
     if (path.empty() || !file_util::PathExists(path)) {
       *error =
@@ -277,21 +343,6 @@ bool ValidateExtension(Extension* extension, std::string* error) {
     }
   }
 
-  // Validate sidebar default page location.
-  ExtensionSidebarDefaults* sidebar_defaults = extension->sidebar_defaults();
-  if (sidebar_defaults && sidebar_defaults->default_page().is_valid()) {
-    FilePath page_path = ExtensionURLToRelativeFilePath(
-        sidebar_defaults->default_page());
-    const FilePath path = extension->GetResource(page_path).GetFilePath();
-    if (path.empty() || !file_util::PathExists(path)) {
-      *error =
-          l10n_util::GetStringFUTF8(
-              IDS_EXTENSION_LOAD_SIDEBAR_PAGE_FAILED,
-              page_path.LossyDisplayName());
-      return false;
-    }
-  }
-
   // Validate locale info.
   if (!ValidateLocaleInfo(*extension, error))
     return false;
@@ -312,7 +363,7 @@ void GarbageCollectExtensions(
   if (!file_util::DirectoryExists(install_directory))
     return;
 
-  VLOG(1) << "Garbage collecting extensions...";
+  DVLOG(1) << "Garbage collecting extensions...";
   file_util::FileEnumerator enumerator(install_directory,
                                        false,  // Not recursive.
                                        file_util::FileEnumerator::DIRECTORIES);
@@ -330,10 +381,10 @@ void GarbageCollectExtensions(
 
     // Delete directories that aren't valid IDs.
     if (extension_id.empty()) {
-      LOG(WARNING) << "Invalid extension ID encountered in extensions "
-                      "directory: " << basename.value();
-      VLOG(1) << "Deleting invalid extension directory "
-              << extension_path.value() << ".";
+      DLOG(WARNING) << "Invalid extension ID encountered in extensions "
+                       "directory: " << basename.value();
+      DVLOG(1) << "Deleting invalid extension directory "
+               << extension_path.value() << ".";
       file_util::Delete(extension_path, true);  // Recursive.
       continue;
     }
@@ -345,8 +396,8 @@ void GarbageCollectExtensions(
     // move on. This can legitimately happen when an uninstall does not
     // complete, for example, when a plugin is in use at uninstall time.
     if (iter == extension_paths.end()) {
-      VLOG(1) << "Deleting unreferenced install for directory "
-              << extension_path.LossyDisplayName() << ".";
+      DVLOG(1) << "Deleting unreferenced install for directory "
+               << extension_path.LossyDisplayName() << ".";
       file_util::Delete(extension_path, true);  // Recursive.
       continue;
     }
@@ -360,8 +411,8 @@ void GarbageCollectExtensions(
          !version_dir.value().empty();
          version_dir = versions_enumerator.Next()) {
       if (version_dir.BaseName() != iter->second.BaseName()) {
-        VLOG(1) << "Deleting old version for directory "
-                << version_dir.LossyDisplayName() << ".";
+        DVLOG(1) << "Deleting old version for directory "
+                 << version_dir.LossyDisplayName() << ".";
         file_util::Delete(version_dir, true);  // Recursive.
       }
     }
@@ -398,6 +449,29 @@ ExtensionMessageBundle* LoadExtensionMessageBundle(
           error);
 
   return message_bundle;
+}
+
+SubstitutionMap* LoadExtensionMessageBundleSubstitutionMap(
+    const FilePath& extension_path,
+    const std::string& extension_id,
+    const std::string& default_locale) {
+  SubstitutionMap* returnValue = new SubstitutionMap();
+  if (!default_locale.empty()) {
+    // Touch disk only if extension is localized.
+    std::string error;
+    scoped_ptr<ExtensionMessageBundle> bundle(
+        LoadExtensionMessageBundle(extension_path, default_locale, &error));
+
+    if (bundle.get())
+      *returnValue = *bundle->dictionary();
+  }
+
+  // Add @@extension_id reserved message here, so it's available to
+  // non-localized extensions too.
+  returnValue->insert(
+      std::make_pair(ExtensionMessageBundle::kExtensionIdKey, extension_id));
+
+  return returnValue;
 }
 
 static bool ValidateLocaleInfo(const Extension& extension, std::string* error) {
@@ -488,8 +562,9 @@ bool CheckForIllegalFilenames(const FilePath& extension_path,
     Extension::kLocaleFolder,
     FILE_PATH_LITERAL("__MACOSX"),
   };
-  static std::set<FilePath::StringType> reserved_underscore_names(
-      reserved_names, reserved_names + arraysize(reserved_names));
+  CR_DEFINE_STATIC_LOCAL(
+      std::set<FilePath::StringType>, reserved_underscore_names,
+      (reserved_names, reserved_names + arraysize(reserved_names)));
 
   // Enumerate all files and directories in the extension root.
   // There is a problem when using pattern "_*" with FileEnumerator, so we have
@@ -497,7 +572,7 @@ bool CheckForIllegalFilenames(const FilePath& extension_path,
   file_util::FileEnumerator all_files(
     extension_path,
     false,
-    static_cast<file_util::FileEnumerator::FILE_TYPE>(
+    static_cast<file_util::FileEnumerator::FileType>(
         file_util::FileEnumerator::DIRECTORIES |
           file_util::FileEnumerator::FILES));
 
@@ -525,8 +600,8 @@ FilePath ExtensionURLToRelativeFilePath(const GURL& url) {
     return FilePath();
 
   // Drop the leading slashes and convert %-encoded UTF8 to regular UTF8.
-  std::string file_path = UnescapeURLComponent(url_path,
-      UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
+  std::string file_path = net::UnescapeURLComponent(url_path,
+      net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS);
   size_t skip = file_path.find_first_not_of("/\\");
   if (skip != file_path.npos)
     file_path = file_path.substr(skip);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,10 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+
+using content::OpenURLParams;
+using content::WebContents;
 
 // Incognito profiles are not long-lived, so we always want to store a
 // non-incognito profile.
@@ -18,7 +21,7 @@
 // profile that's long-lived?  Of course, we'd still have to clear it out
 // when all incognito browsers close.
 HtmlDialogTabContentsDelegate::HtmlDialogTabContentsDelegate(Profile* profile)
-    : profile_(profile->GetOriginalProfile()) {}
+    : profile_(profile) {}
 
 HtmlDialogTabContentsDelegate::~HtmlDialogTabContentsDelegate() {}
 
@@ -28,87 +31,87 @@ void HtmlDialogTabContentsDelegate::Detach() {
   profile_ = NULL;
 }
 
-void HtmlDialogTabContentsDelegate::OpenURLFromTab(
-    TabContents* source, const GURL& url, const GURL& referrer,
-    WindowOpenDisposition disposition, PageTransition::Type transition) {
-  if (profile_) {
-    // Specify a NULL browser for navigation. This will cause Navigate()
-    // to find a browser matching params.profile or create a new one.
-    Browser* browser = NULL;
-    browser::NavigateParams params(browser, url, transition);
-    params.profile = profile_;
-    params.referrer = referrer;
-    if (source && source->is_crashed() && disposition == CURRENT_TAB &&
-        transition == PageTransition::LINK)
-      params.disposition = NEW_FOREGROUND_TAB;
-    else
-      params.disposition = disposition;
-    params.window_action = browser::NavigateParams::SHOW_WINDOW;
-    params.user_gesture = true;
-    browser::Navigate(&params);
-  }
+WebContents* HtmlDialogTabContentsDelegate::OpenURLFromTab(
+    WebContents* source, const OpenURLParams& params) {
+  WebContents* new_contents = NULL;
+  StaticOpenURLFromTab(profile_, source, params, &new_contents);
+  return new_contents;
 }
 
-void HtmlDialogTabContentsDelegate::NavigationStateChanged(
-    const TabContents* source, unsigned changed_flags) {
-  // We shouldn't receive any NavigationStateChanged except the first
-  // one, which we ignore because we're a dialog box.
+// static
+Browser* HtmlDialogTabContentsDelegate::StaticOpenURLFromTab(
+    Profile* profile, WebContents* source, const OpenURLParams& params,
+    WebContents** out_new_contents) {
+  if (!profile)
+    return NULL;
+
+  // Specify a NULL browser for navigation. This will cause Navigate()
+  // to find a browser matching params.profile or create a new one.
+  Browser* browser = NULL;
+  browser::NavigateParams nav_params(browser, params.url, params.transition);
+  nav_params.profile = profile;
+  nav_params.referrer = params.referrer;
+  if (source && source->IsCrashed() &&
+      params.disposition == CURRENT_TAB &&
+      params.transition == content::PAGE_TRANSITION_LINK) {
+    nav_params.disposition = NEW_FOREGROUND_TAB;
+  } else {
+    nav_params.disposition = params.disposition;
+  }
+  nav_params.window_action = browser::NavigateParams::SHOW_WINDOW;
+  nav_params.user_gesture = true;
+  browser::Navigate(&nav_params);
+  *out_new_contents = nav_params.target_contents ?
+      nav_params.target_contents->web_contents() : NULL;
+  return nav_params.browser;
 }
 
 void HtmlDialogTabContentsDelegate::AddNewContents(
-    TabContents* source, TabContents* new_contents,
+    WebContents* source, WebContents* new_contents,
     WindowOpenDisposition disposition, const gfx::Rect& initial_pos,
     bool user_gesture) {
-  if (profile_) {
-    // Specify a NULL browser for navigation. This will cause Navigate()
-    // to find a browser matching params.profile or create a new one.
-    Browser* browser = NULL;
-
-    TabContentsWrapper* wrapper = new TabContentsWrapper(new_contents);
-    browser::NavigateParams params(browser, wrapper);
-    params.profile = profile_;
-    // TODO(pinkerton): no way to get a wrapper for this.
-    // params.source_contents = source;
-    params.disposition = disposition;
-    params.window_bounds = initial_pos;
-    params.window_action = browser::NavigateParams::SHOW_WINDOW;
-    params.user_gesture = true;
-    browser::Navigate(&params);
-  }
+  StaticAddNewContents(profile_, source, new_contents, disposition,
+                       initial_pos, user_gesture);
 }
 
-void HtmlDialogTabContentsDelegate::ActivateContents(TabContents* contents) {
-  // We don't do anything here because there's only one TabContents in
-  // this frame and we don't have a TabStripModel.
+// static
+Browser* HtmlDialogTabContentsDelegate::StaticAddNewContents(
+    Profile* profile,
+    WebContents* source,
+    WebContents* new_contents,
+    WindowOpenDisposition disposition,
+    const gfx::Rect& initial_pos,
+    bool user_gesture) {
+  if (!profile)
+    return NULL;
+
+  // Specify a NULL browser for navigation. This will cause Navigate()
+  // to find a browser matching params.profile or create a new one.
+  Browser* browser = NULL;
+
+  TabContentsWrapper* wrapper = new TabContentsWrapper(new_contents);
+  browser::NavigateParams params(browser, wrapper);
+  params.profile = profile;
+  // TODO(pinkerton): no way to get a wrapper for this.
+  // params.source_contents = source;
+  params.disposition = disposition;
+  params.window_bounds = initial_pos;
+  params.window_action = browser::NavigateParams::SHOW_WINDOW;
+  params.user_gesture = true;
+  browser::Navigate(&params);
+
+  return params.browser;
 }
 
-void HtmlDialogTabContentsDelegate::DeactivateContents(TabContents* contents) {
-  // We don't care about this notification (called when a user gesture triggers
-  // a call to window.blur()).
-}
-
-void HtmlDialogTabContentsDelegate::LoadingStateChanged(TabContents* source) {
-  // We don't care about this notification.
-}
-
-void HtmlDialogTabContentsDelegate::CloseContents(TabContents* source) {
-  // We receive this message but don't handle it because we really do the
-  // cleanup somewhere else (namely, HtmlDialogUIDelegate::OnDialogClosed()).
-}
-
-bool HtmlDialogTabContentsDelegate::IsPopup(const TabContents* source) const {
+bool HtmlDialogTabContentsDelegate::IsPopupOrPanel(
+    const WebContents* source) const {
   // This needs to return true so that we are allowed to be resized by our
   // contents.
   return true;
 }
 
-void HtmlDialogTabContentsDelegate::UpdateTargetURL(TabContents* source,
-                                                    const GURL& url) {
-  // Ignored.
-}
-
 bool HtmlDialogTabContentsDelegate::ShouldAddNavigationToHistory(
     const history::HistoryAddPageArgs& add_page_args,
-    NavigationType::Type navigation_type) {
+    content::NavigationType navigation_type) {
   return false;
 }

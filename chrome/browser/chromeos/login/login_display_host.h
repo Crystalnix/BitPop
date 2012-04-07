@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,14 @@
 
 #include <string>
 
-#include "chrome/browser/chromeos/login/background_view.h"
+#include "base/values.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/login_display.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/native_widget_types.h"
+
+namespace views {
+class Widget;
+}  // namespace views
 
 namespace chromeos {
 
@@ -24,20 +27,25 @@ class LoginDisplayHost {
   virtual ~LoginDisplayHost() {}
 
   // Creates UI implementation specific login display instance (views/WebUI).
+  // The caller takes ownership of the returned value.
   virtual LoginDisplay* CreateLoginDisplay(
-      LoginDisplay::Delegate* delegate) const = 0;
+      LoginDisplay::Delegate* delegate) = 0;
 
   // Returns corresponding native window.
-  // TODO(nkostylev): Might be refactored, move to views-specific code.
   virtual gfx::NativeWindow GetNativeWindow() const = 0;
+
+  // Returns corresponding widget.
+  virtual views::Widget* GetWidget() const = 0;
 
   // Called when browsing session starts so
   // LoginDisplayHost instance may delete itself.
   virtual void OnSessionStart() = 0;
 
-  // TODO(nkostylev): Refactor enum.
-  // Sets current step on OOBE progress bar.
-  virtual void SetOobeProgress(BackgroundView::LoginStep step) = 0;
+  // Called when a login has completed successfully.
+  virtual void OnCompleteLogin() = 0;
+
+  // Open proxy settings dialog.
+  virtual void OpenProxySettings() = 0;
 
   // Toggles OOBE progress bar visibility, the bar is hidden by default.
   virtual void SetOobeProgressBarVisible(bool visible) = 0;
@@ -51,18 +59,29 @@ class LoginDisplayHost {
   // Toggles status area visibility.
   virtual void SetStatusAreaVisible(bool visible) = 0;
 
-  // Creates and shows a background window.
-  virtual void ShowBackground() = 0;
+  // Signals the LoginDisplayHost that it can proceed with the Enterprise
+  // Auto-Enrollment checks now.
+  virtual void CheckForAutoEnrollment() = 0;
 
   // Starts out-of-box-experience flow or shows other screen handled by
   // Wizard controller i.e. camera, recovery.
   // One could specify start screen with |first_screen_name|.
+  // Takes ownership of |screen_parameters|, which can also be NULL.
   virtual void StartWizard(
       const std::string& first_screen_name,
-      const GURL& start_url) = 0;
+      DictionaryValue* screen_parameters) = 0;
 
   // Starts sign in screen.
   virtual void StartSignInScreen() = 0;
+
+  // Resumes a previously started sign in screen.
+  virtual void ResumeSignInScreen() = 0;
+
+  // Closes the login window.
+  virtual void CloseWindow() = 0;
+
+  // Invoked when system preferences that affect the signin screen have changed.
+  virtual void OnPreferencesChanged() = 0;
 };
 
 }  // namespace chromeos

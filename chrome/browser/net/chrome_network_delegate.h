@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,26 +9,33 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/profiles/profile.h"
 #include "net/base/network_delegate.h"
 
 class ExtensionEventRouterForwarder;
+class ExtensionInfoMap;
+class PrefService;
 template<class T> class PrefMember;
 
 typedef PrefMember<bool> BooleanPrefMember;
+
+namespace policy {
+class URLBlacklistManager;
+}
 
 // ChromeNetworkDelegate is the central point from within the chrome code to
 // add hooks into the network stack.
 class ChromeNetworkDelegate : public net::NetworkDelegate {
  public:
-  // If |profile_id| is the invalid profile, events will be broadcasted to all
-  // profiles, otherwise, they will only be sent to the specified profile.
+  // If |profile| is NULL, events will be broadcasted to all profiles, otherwise
+  // they will only be sent to the specified profile.
   // |enable_referrers| should be initialized on the UI thread (see below)
   // beforehand. This object's owner is responsible for cleaning it up
   // at shutdown.
   ChromeNetworkDelegate(
       ExtensionEventRouterForwarder* event_router,
-      ProfileId profile_id,
+      ExtensionInfoMap* extension_info_map,
+      const policy::URLBlacklistManager* url_blacklist_manager,
+      void* profile,
       BooleanPrefMember* enable_referrers);
   virtual ~ChromeNetworkDelegate();
 
@@ -38,30 +45,46 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
                                          PrefService* pref_service);
 
  private:
-  // NetworkDelegate methods:
+  // NetworkDelegate implementation.
   virtual int OnBeforeURLRequest(net::URLRequest* request,
-                                 net::CompletionCallback* callback,
+                                 const net::CompletionCallback& callback,
                                  GURL* new_url) OVERRIDE;
-  virtual int OnBeforeSendHeaders(uint64 request_id,
-                                  net::CompletionCallback* callback,
+  virtual int OnBeforeSendHeaders(net::URLRequest* request,
+                                  const net::CompletionCallback& callback,
                                   net::HttpRequestHeaders* headers) OVERRIDE;
-  virtual void OnRequestSent(uint64 request_id,
-                             const net::HostPortPair& socket_address,
-                             const net::HttpRequestHeaders& headers);
+  virtual void OnSendHeaders(net::URLRequest* request,
+                             const net::HttpRequestHeaders& headers) OVERRIDE;
+  virtual int OnHeadersReceived(
+      net::URLRequest* request,
+      const net::CompletionCallback& callback,
+      net::HttpResponseHeaders* original_response_headers,
+      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
+      OVERRIDE;
   virtual void OnBeforeRedirect(net::URLRequest* request,
-                                const GURL& new_location);
-  virtual void OnResponseStarted(net::URLRequest* request);
-  virtual void OnRawBytesRead(const net::URLRequest& request, int bytes_read);
-  virtual void OnCompleted(net::URLRequest* request);
-  virtual void OnURLRequestDestroyed(net::URLRequest* request);
-  virtual void OnHttpTransactionDestroyed(uint64 request_id);
-  virtual void OnPACScriptError(int line_number, const string16& error);
+                                const GURL& new_location) OVERRIDE;
+  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+  virtual void OnRawBytesRead(const net::URLRequest& request,
+                              int bytes_read) OVERRIDE;
+  virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
+  virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
+  virtual void OnPACScriptError(int line_number,
+                                const string16& error) OVERRIDE;
+  virtual net::NetworkDelegate::AuthRequiredResponse OnAuthRequired(
+      net::URLRequest* request,
+      const net::AuthChallengeInfo& auth_info,
+      const AuthCallback& callback,
+      net::AuthCredentials* credentials) OVERRIDE;
 
   scoped_refptr<ExtensionEventRouterForwarder> event_router_;
-  const ProfileId profile_id_;
+  void* profile_;
+
+  scoped_refptr<ExtensionInfoMap> extension_info_map_;
 
   // Weak, owned by our owner.
   BooleanPrefMember* enable_referrers_;
+
+  // Weak, owned by our owner.
+  const policy::URLBlacklistManager* url_blacklist_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNetworkDelegate);
 };

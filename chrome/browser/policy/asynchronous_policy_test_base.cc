@@ -4,7 +4,7 @@
 
 #include "chrome/browser/policy/asynchronous_policy_test_base.h"
 
-#include "chrome/browser/policy/mock_configuration_policy_store.h"
+using content::BrowserThread;
 
 namespace policy {
 
@@ -18,11 +18,6 @@ AsynchronousPolicyTestBase::AsynchronousPolicyTestBase()
       file_thread_(BrowserThread::FILE, &loop_) {}
 
 AsynchronousPolicyTestBase::~AsynchronousPolicyTestBase() {}
-
-void AsynchronousPolicyTestBase::SetUp() {
-  delegate_.reset(new ProviderDelegateMock());
-  store_.reset(new MockConfigurationPolicyStore);
-}
 
 void AsynchronousPolicyTestBase::TearDown() {
   loop_.RunAllPending();

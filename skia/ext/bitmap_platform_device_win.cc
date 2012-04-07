@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,20 +15,12 @@
 
 namespace skia {
 
-SkDevice* BitmapPlatformDeviceFactory::newDevice(SkCanvas* ignored,
-                                                 SkBitmap::Config config,
-                                                 int width, int height,
-                                                 bool isOpaque,
-                                                 bool isForLayer) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::create(width, height, isOpaque, NULL);
-}
-
 BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
     HBITMAP hbitmap)
     : bitmap_context_(hbitmap),
       hdc_(NULL),
-      config_dirty_(true) {  // Want to load the config next time.
+      config_dirty_(true),  // Want to load the config next time.
+      transform_(SkMatrix::I()) {
   // Initialize the clip region to the entire bitmap.
   BITMAP bitmap_data;
   if (GetObject(bitmap_context_, sizeof(BITMAP), &bitmap_data)) {
@@ -36,8 +28,6 @@ BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
     rect.set(0, 0, bitmap_data.bmWidth, bitmap_data.bmHeight);
     clip_region_ = SkRegion(rect);
   }
-
-  transform_.reset();
 }
 
 BitmapPlatformDevice::BitmapPlatformDeviceData::~BitmapPlatformDeviceData() {
@@ -174,34 +164,16 @@ BitmapPlatformDevice* BitmapPlatformDevice::create(int width,
 BitmapPlatformDevice::BitmapPlatformDevice(
     BitmapPlatformDeviceData* data,
     const SkBitmap& bitmap)
-    : PlatformDevice(bitmap),
+    : SkDevice(bitmap),
       data_(data) {
   // The data object is already ref'ed for us by create().
   SkDEBUGCODE(begin_paint_count_ = 0);
-}
-
-// The copy constructor just adds another reference to the underlying data.
-// We use a const cast since the default Skia definitions don't define the
-// proper constedness that we expect (accessBitmap should really be const).
-BitmapPlatformDevice::BitmapPlatformDevice(
-    const BitmapPlatformDevice& other)
-    : PlatformDevice(
-          const_cast<BitmapPlatformDevice&>(other).accessBitmap(true)),
-      data_(other.data_) {
-  data_->ref();
-  SkDEBUGCODE(begin_paint_count_ = 0);
+  SetPlatformDevice(this, this);
 }
 
 BitmapPlatformDevice::~BitmapPlatformDevice() {
   SkASSERT(begin_paint_count_ == 0);
   data_->unref();
-}
-
-BitmapPlatformDevice& BitmapPlatformDevice::operator=(
-    const BitmapPlatformDevice& other) {
-  data_ = other.data_;
-  data_->ref();
-  return *this;
 }
 
 HDC BitmapPlatformDevice::BeginPlatformPaint() {
@@ -282,9 +254,11 @@ void BitmapPlatformDevice::onAccessBitmap(SkBitmap* bitmap) {
     GdiFlush();
 }
 
-SkDeviceFactory* BitmapPlatformDevice::onNewDeviceFactory() {
-  return SkNEW(BitmapPlatformDeviceFactory);
+SkDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
+    SkBitmap::Config config, int width, int height, bool isOpaque,
+    Usage /*usage*/) {
+  SkASSERT(config == SkBitmap::kARGB_8888_Config);
+  return BitmapPlatformDevice::create(width, height, isOpaque, NULL);
 }
 
 }  // namespace skia
-

@@ -10,6 +10,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/eintr_wrapper.h"
 #include "base/file_path.h"
 #include "base/format_macros.h"
@@ -20,7 +22,7 @@
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/string_util.h"
-#include "base/task.h"
+#include "base/stringprintf.h"
 #include "base/threading/thread.h"
 #include "breakpad/src/client/linux/handler/exception_handler.h"
 #include "breakpad/src/client/linux/minidump_writer/linux_dumper.h"
@@ -28,8 +30,9 @@
 #include "chrome/app/breakpad_linux.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/env_vars.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 
+using content::BrowserThread;
 using google_breakpad::ExceptionHandler;
 
 namespace {
@@ -58,8 +61,8 @@ void CrashDumpTask(CrashHandlerHostLinux* handler, BreakpadInfo* info) {
 
 // Since classes derived from CrashHandlerHostLinux are singletons, it's only
 // destroyed at the end of the processes lifetime, which is greater in span than
-// the lifetime of the IO message loop.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(CrashHandlerHostLinux);
+// the lifetime of the IO message loop. Thus, all calls to base::Bind() use
+// non-refcounted pointers.
 
 CrashHandlerHostLinux::CrashHandlerHostLinux()
     : shutting_down_(false) {
@@ -81,7 +84,7 @@ CrashHandlerHostLinux::CrashHandlerHostLinux()
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &CrashHandlerHostLinux::Init));
+      base::Bind(&CrashHandlerHostLinux::Init, base::Unretained(this)));
 }
 
 CrashHandlerHostLinux::~CrashHandlerHostLinux() {
@@ -273,13 +276,15 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
       base::FindThreadIDWithSyscall(crashing_pid,
                                     expected_syscall_data,
                                     &syscall_supported);
-  if (crashing_tid == -1 && syscall_supported) {
+  if (crashing_tid == -1) {
     // We didn't find the thread we want. Maybe it didn't reach
     // sys_read() yet or the thread went away.  We'll just take a
     // guess here and assume the crashing thread is the thread group
     // leader.  If procfs syscall is not supported by the kernel, then
     // we assume the kernel also does not support TID namespacing and
     // trust the TID passed by the crashing process.
+    LOG(WARNING) << "Could not translate tid - assuming crashing thread is "
+        "thread group leader; syscall_supported=" << syscall_supported;
     crashing_tid = crashing_pid;
   }
 
@@ -313,12 +318,12 @@ void CrashHandlerHostLinux::OnFileCanReadWithoutBlocking(int fd) {
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(this,
-                        &CrashHandlerHostLinux::WriteDumpFile,
-                        info,
-                        crashing_pid,
-                        crash_context,
-                        signal_fd));
+      base::Bind(&CrashHandlerHostLinux::WriteDumpFile,
+                 base::Unretained(this),
+                 info,
+                 crashing_pid,
+                 crash_context,
+                 signal_fd));
 }
 
 void CrashHandlerHostLinux::WriteDumpFile(BreakpadInfo* info,
@@ -333,8 +338,10 @@ void CrashHandlerHostLinux::WriteDumpFile(BreakpadInfo* info,
     PathService::Get(chrome::DIR_CRASH_DUMPS, &dumps_path);
   const uint64 rand = base::RandUint64();
   const std::string minidump_filename =
-      StringPrintf("%s/chromium-%s-minidump-%016" PRIx64 ".dmp",
-                   dumps_path.value().c_str(), process_type_.c_str(), rand);
+      base::StringPrintf("%s/chromium-%s-minidump-%016" PRIx64 ".dmp",
+                         dumps_path.value().c_str(),
+                         process_type_.c_str(),
+                         rand);
   if (!google_breakpad::WriteMinidump(minidump_filename.c_str(),
                                       crashing_pid, crash_context,
                                       kCrashContextSize)) {
@@ -350,10 +357,10 @@ void CrashHandlerHostLinux::WriteDumpFile(BreakpadInfo* info,
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this,
-                        &CrashHandlerHostLinux::QueueCrashDumpTask,
-                        info,
-                        signal_fd));
+      base::Bind(&CrashHandlerHostLinux::QueueCrashDumpTask,
+                 base::Unretained(this),
+                 info,
+                 signal_fd));
 }
 
 void CrashHandlerHostLinux::QueueCrashDumpTask(BreakpadInfo* info,
@@ -373,7 +380,7 @@ void CrashHandlerHostLinux::QueueCrashDumpTask(BreakpadInfo* info,
 
   uploader_thread_->message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&CrashDumpTask, this, info));
+      base::Bind(&CrashDumpTask, base::Unretained(this), info));
 }
 
 void CrashHandlerHostLinux::WillDestroyCurrentMessageLoop() {
@@ -387,6 +394,22 @@ void CrashHandlerHostLinux::WillDestroyCurrentMessageLoop() {
 
 bool CrashHandlerHostLinux::IsShuttingDown() const {
   return shutting_down_;
+}
+
+ExtensionCrashHandlerHostLinux::ExtensionCrashHandlerHostLinux() {
+  InitCrashUploaderThread();
+}
+
+ExtensionCrashHandlerHostLinux::~ExtensionCrashHandlerHostLinux() {
+}
+
+void ExtensionCrashHandlerHostLinux::SetProcessType() {
+  process_type_ = "extension";
+}
+
+// static
+ExtensionCrashHandlerHostLinux* ExtensionCrashHandlerHostLinux::GetInstance() {
+  return Singleton<ExtensionCrashHandlerHostLinux>::get();
 }
 
 GpuCrashHandlerHostLinux::GpuCrashHandlerHostLinux() {
@@ -421,22 +444,6 @@ PluginCrashHandlerHostLinux* PluginCrashHandlerHostLinux::GetInstance() {
   return Singleton<PluginCrashHandlerHostLinux>::get();
 }
 
-RendererCrashHandlerHostLinux::RendererCrashHandlerHostLinux() {
-  InitCrashUploaderThread();
-}
-
-RendererCrashHandlerHostLinux::~RendererCrashHandlerHostLinux() {
-}
-
-void RendererCrashHandlerHostLinux::SetProcessType() {
-  process_type_ = "renderer";
-}
-
-// static
-RendererCrashHandlerHostLinux* RendererCrashHandlerHostLinux::GetInstance() {
-  return Singleton<RendererCrashHandlerHostLinux>::get();
-}
-
 PpapiCrashHandlerHostLinux::PpapiCrashHandlerHostLinux() {
   InitCrashUploaderThread();
 }
@@ -451,4 +458,20 @@ void PpapiCrashHandlerHostLinux::SetProcessType() {
 // static
 PpapiCrashHandlerHostLinux* PpapiCrashHandlerHostLinux::GetInstance() {
   return Singleton<PpapiCrashHandlerHostLinux>::get();
+}
+
+RendererCrashHandlerHostLinux::RendererCrashHandlerHostLinux() {
+  InitCrashUploaderThread();
+}
+
+RendererCrashHandlerHostLinux::~RendererCrashHandlerHostLinux() {
+}
+
+void RendererCrashHandlerHostLinux::SetProcessType() {
+  process_type_ = "renderer";
+}
+
+// static
+RendererCrashHandlerHostLinux* RendererCrashHandlerHostLinux::GetInstance() {
+  return Singleton<RendererCrashHandlerHostLinux>::get();
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,25 @@
 #include <windows.h>
 #elif defined(OS_MACOSX)
 #include <CoreGraphics/CGGeometry.h>
-#elif defined(OS_POSIX)
+#elif defined(TOOLKIT_USES_GTK)
 #include <gdk/gdk.h>
 #endif
+#if defined(USE_WAYLAND)
+#include <cairo.h>
+#endif
 
-#include <ostream>
-
+#include "base/logging.h"
+#include "base/stringprintf.h"
 #include "ui/gfx/insets.h"
 
 namespace {
 
 void AdjustAlongAxis(int dst_origin, int dst_size, int* origin, int* size) {
-  if (*origin < dst_origin) {
+  *size = std::min(dst_size, *size);
+  if (*origin < dst_origin)
     *origin = dst_origin;
-    *size = std::min(dst_size, *size);
-  } else {
-    *size = std::min(dst_size, *size);
+  else
     *origin = std::min(dst_origin + dst_size, *origin + *size) - *size;
-  }
 }
 
 } // namespace
@@ -50,6 +51,8 @@ Rect::Rect(const gfx::Size& size)
 Rect::Rect(const gfx::Point& origin, const gfx::Size& size)
     : origin_(origin), size_(size) {
 }
+
+Rect::~Rect() {}
 
 #if defined(OS_WIN)
 Rect::Rect(const RECT& r)
@@ -77,7 +80,7 @@ Rect& Rect::operator=(const CGRect& r) {
   set_height(r.size.height);
   return *this;
 }
-#elif defined(OS_POSIX)
+#elif defined(TOOLKIT_USES_GTK)
 Rect::Rect(const GdkRectangle& r)
     : origin_(r.x, r.y) {
   set_width(r.width);
@@ -85,6 +88,20 @@ Rect::Rect(const GdkRectangle& r)
 }
 
 Rect& Rect::operator=(const GdkRectangle& r) {
+  origin_.SetPoint(r.x, r.y);
+  set_width(r.width);
+  set_height(r.height);
+  return *this;
+}
+#endif
+#if defined(USE_WAYLAND)
+Rect::Rect(const cairo_rectangle_int_t& r)
+    : origin_(r.x, r.y) {
+  set_width(r.width);
+  set_height(r.height);
+}
+
+Rect& Rect::operator=(const cairo_rectangle_int_t& r) {
   origin_.SetPoint(r.x, r.y);
   set_width(r.width);
   set_height(r.height);
@@ -141,9 +158,15 @@ RECT Rect::ToRECT() const {
 CGRect Rect::ToCGRect() const {
   return CGRectMake(x(), y(), width(), height());
 }
-#elif defined(OS_POSIX)
+#elif defined(TOOLKIT_USES_GTK)
 GdkRectangle Rect::ToGdkRectangle() const {
   GdkRectangle r = {x(), y(), width(), height()};
+  return r;
+}
+#endif
+#if defined(USE_WAYLAND)
+cairo_rectangle_int_t Rect::ToCairoRectangle() const {
+  cairo_rectangle_int_t r = {x(), y(), width(), height()};
   return r;
 }
 #endif
@@ -242,6 +265,17 @@ Rect Rect::Center(const gfx::Size& size) const {
   return Rect(new_x, new_y, new_width, new_height);
 }
 
+void Rect::SplitVertically(gfx::Rect* left_half, gfx::Rect* right_half) const {
+  DCHECK(left_half);
+  DCHECK(right_half);
+
+  left_half->SetRect(this->x(), this->y(), this->width() / 2, this->height());
+  right_half->SetRect(left_half->right(),
+                      this->y(),
+                      this->width() - left_half->width(),
+                      this->height());
+}
+
 bool Rect::SharesEdgeWith(const gfx::Rect& rect) const {
   return (y() == rect.y() && height() == rect.height() &&
              (x() == rect.right() || right() == rect.x())) ||
@@ -249,8 +283,10 @@ bool Rect::SharesEdgeWith(const gfx::Rect& rect) const {
              (y() == rect.bottom() || bottom() == rect.y()));
 }
 
-std::ostream& operator<<(std::ostream& out, const gfx::Rect& r) {
-  return out << r.origin() << " " << r.size();
+std::string Rect::ToString() const {
+  return base::StringPrintf("%s %s",
+                            origin_.ToString().c_str(),
+                            size_.ToString().c_str());
 }
 
 }  // namespace gfx

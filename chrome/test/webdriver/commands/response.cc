@@ -9,22 +9,18 @@
 #include "base/logging.h"
 #include "base/values.h"
 
+using base::DictionaryValue;
+using base::Value;
+
 namespace webdriver {
 
 namespace {
 
 // Error message taken from:
 // http://code.google.com/p/selenium/wiki/JsonWireProtocol#Response_Status_Codes
-const char* const kStatusKey = "status";
-const char* const kValueKey = "value";
-const char* const kMessageKey = "message";
-const char* const kScreenKey = "screen";
-const char* const kClassKey = "class";
-const char* const kStackTraceKey = "stackTrace";
-const char* const kStackTraceFileNameKey = "fileName";
-const char* const kStackTraceClassNameKey = "className";
-const char* const kStackTraceMethodNameKey = "methodName";
-const char* const kStackTraceLineNumberKey = "lineNumber";
+const char kStatusKey[] = "status";
+const char kValueKey[] = "value";
+const char kMessageKey[] = "message";
 
 }  // namespace
 
@@ -48,8 +44,7 @@ void Response::SetStatus(ErrorCode status) {
 
 const Value* Response::GetValue() const {
   Value* out = NULL;
-  LOG_IF(WARNING, !data_.Get(kValueKey, &out))
-      << "Accessing unset response value.";  // Should never happen.
+  data_.Get(kValueKey, &out);
   return out;
 }
 
@@ -59,7 +54,7 @@ void Response::SetValue(Value* value) {
 
 void Response::SetError(Error* error) {
   DictionaryValue* error_dict = new DictionaryValue();
-  error_dict->SetString(kMessageKey, error->ToString());
+  error_dict->SetString(kMessageKey, error->details());
 
   SetStatus(error->code());
   SetValue(error_dict);
@@ -68,6 +63,10 @@ void Response::SetError(Error* error) {
 
 void Response::SetField(const std::string& key, Value* value) {
   data_.Set(key, value);
+}
+
+const Value* Response::GetDictionary() const {
+  return &data_;
 }
 
 std::string Response::ToJSON() const {

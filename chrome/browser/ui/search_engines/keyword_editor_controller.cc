@@ -8,14 +8,18 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
+
+using content::UserMetricsAction;
 
 KeywordEditorController::KeywordEditorController(Profile* profile)
     : profile_(profile) {
-  table_model_.reset(new TemplateURLTableModel(profile->GetTemplateURLModel()));
+  table_model_.reset(new TemplateURLTableModel(
+      TemplateURLServiceFactory::GetForProfile(profile)));
 }
 
 KeywordEditorController::~KeywordEditorController() {
@@ -33,7 +37,7 @@ int KeywordEditorController::AddTemplateURL(const string16& title,
                                             const std::string& url) {
   DCHECK(!url.empty());
 
-  UserMetrics::RecordAction(UserMetricsAction("KeywordEditor_AddKeyword"));
+  content::RecordAction(UserMetricsAction("KeywordEditor_AddKeyword"));
 
   TemplateURL* template_url = new TemplateURL();
   template_url->set_short_name(title);
@@ -73,7 +77,7 @@ void KeywordEditorController::ModifyTemplateURL(const TemplateURL* template_url,
 
   table_model_->ModifyTemplateURL(index, title, keyword, url);
 
-  UserMetrics::RecordAction(UserMetricsAction("KeywordEditor_ModifiedKeyword"));
+  content::RecordAction(UserMetricsAction("KeywordEditor_ModifiedKeyword"));
 }
 
 bool KeywordEditorController::CanEdit(const TemplateURL* url) const {
@@ -91,7 +95,7 @@ bool KeywordEditorController::CanRemove(const TemplateURL* url) const {
 
 void KeywordEditorController::RemoveTemplateURL(int index) {
   table_model_->Remove(index);
-  UserMetrics::RecordAction(UserMetricsAction("KeywordEditor_RemoveKeyword"));
+  content::RecordAction(UserMetricsAction("KeywordEditor_RemoveKeyword"));
 }
 
 int KeywordEditorController::MakeDefaultTemplateURL(int index) {
@@ -106,6 +110,6 @@ const TemplateURL* KeywordEditorController::GetTemplateURL(int index) const {
   return &table_model_->GetTemplateURL(index);
 }
 
-TemplateURLModel* KeywordEditorController::url_model() const {
-  return table_model_->template_url_model();
+TemplateURLService* KeywordEditorController::url_model() const {
+  return table_model_->template_url_service();
 }

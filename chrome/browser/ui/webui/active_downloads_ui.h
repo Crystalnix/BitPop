@@ -7,23 +7,37 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
 #include "net/base/directory_lister.h"
 
+class ActiveDownloadsHandler;
 class Browser;
 class Profile;
 
+namespace content {
+class DownloadItem;
+}
+
 class ActiveDownloadsUI : public HtmlDialogUI {
  public:
-  explicit ActiveDownloadsUI(TabContents* contents);
+  explicit ActiveDownloadsUI(content::WebUI* web_ui);
 
+  static bool ShouldShowPopup(Profile* profile,
+                              content::DownloadItem* download);
   static Browser* OpenPopup(Profile* profile);
-  static Browser* GetPopup(Profile* profile);
+  static Browser* GetPopup();
+
+  // For testing.
+  typedef std::vector<content::DownloadItem*> DownloadList;
+  const DownloadList& GetDownloads() const;
 
  private:
+  ActiveDownloadsHandler* handler_;
+
   DISALLOW_COPY_AND_ASSIGN(ActiveDownloadsUI);
 };
 

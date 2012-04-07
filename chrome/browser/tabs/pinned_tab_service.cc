@@ -8,8 +8,8 @@
 #include "chrome/browser/tabs/pinned_tab_codec.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
 
 static bool IsLastNormalBrowser(Browser* browser) {
   for (BrowserList::const_iterator i = BrowserList::begin();
@@ -26,23 +26,23 @@ PinnedTabService::PinnedTabService(Profile* profile)
     : profile_(profile),
       got_exiting_(false),
       has_normal_browser_(false) {
-  registrar_.Add(this, NotificationType::BROWSER_OPENED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::BROWSER_CLOSING,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::APP_EXITING,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_OPENED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSING,
+                 content::NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_APP_EXITING,
+                 content::NotificationService::AllSources());
 }
 
-void PinnedTabService::Observe(NotificationType type,
-                               const NotificationSource& source,
-                               const NotificationDetails& details) {
+void PinnedTabService::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
   if (got_exiting_)
     return;
 
-  switch (type.value) {
-    case NotificationType::BROWSER_OPENED: {
-      Browser* browser = Source<Browser>(source).ptr();
+  switch (type) {
+    case chrome::NOTIFICATION_BROWSER_OPENED: {
+      Browser* browser = content::Source<Browser>(source).ptr();
       if (!has_normal_browser_ && browser->is_type_tabbed() &&
           browser->profile() == profile_) {
         has_normal_browser_ = true;
@@ -50,10 +50,10 @@ void PinnedTabService::Observe(NotificationType type,
       break;
     }
 
-    case NotificationType::BROWSER_CLOSING: {
-      Browser* browser = Source<Browser>(source).ptr();
+    case chrome::NOTIFICATION_BROWSER_CLOSING: {
+      Browser* browser = content::Source<Browser>(source).ptr();
       if (has_normal_browser_ && browser->profile() == profile_) {
-        if (*(Details<bool>(details)).ptr()) {
+        if (*(content::Details<bool>(details)).ptr()) {
           GotExit();
         } else if (IsLastNormalBrowser(browser)) {
           has_normal_browser_ = false;
@@ -63,7 +63,7 @@ void PinnedTabService::Observe(NotificationType type,
       break;
     }
 
-    case NotificationType::APP_EXITING: {
+    case content::NOTIFICATION_APP_EXITING: {
       if (has_normal_browser_)
         GotExit();
       break;

@@ -5,15 +5,54 @@ found in the LICENSE file.
 */
 
 body {
-  background: -webkit-linear-gradient(#131925, #04070B);
+  background: -webkit-linear-gradient(#bababa, #868686) no-repeat;
   color: white;
   margin: 0;
+  overflow: hidden;
   padding: 0;
   -webkit-user-select: none;
 }
 
+div.main {
+  margin: 0 auto;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+div.keyboard {
+  margin: 0 auto;
+  display: -webkit-box;
+  text-align: center;
+  -webkit-box-flex: 1;
+}
+
+div.rows {
+  display: -webkit-box;
+  margin-bottom: 5px;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-box-flex: 1;
+}
+
 div.row {
+  display: -webkit-box;
   margin-top: 5px;
+  margin-right: 5px;
+  -webkit-box-flex: 1;
+}
+
+div.row > div {
+  display: -webkit-box;
+  -webkit-box-flex: 1;
+}
+
+.handwritingcanvas {
+  border-radius: 4px;
+  border: 1px solid gray;
+  color: #dbdbdb;
+  font-family: sans-serif;
+  margin: 5px 0 0 5px;
+  text-align: center;
 }
 
 .ime {
@@ -23,6 +62,7 @@ div.row {
   font-family: sans-serif;
   margin: 0;
   text-align: center;
+  white-space: nowrap;
 }
 
 .panel {
@@ -30,6 +70,15 @@ div.row {
   clear: both;
   margin-left: 5px;
   text-align: left;
+}
+
+.popup {
+  background: rgba(50, 50, 50, 0.95);
+  border: 1px solid rgba(50, 50, 50, 0.8);
+  padding-right: 5px;
+  position: absolute;
+  -webkit-border-radius: 4px;
+  -webkit-box-shadow: 5px 5px 3px rgba(50, 50, 50, 0.3);
 }
 
 .button {
@@ -44,52 +93,57 @@ div.row {
 }
 
 .key {
-  border: 1px solid gray;
-  color: #dbdbdb;
-  float: left;
+  background: -webkit-linear-gradient(#fff, #cacaca);
+  border-radius: 6px;
+  /* Reserving equivalent space to .key:active so
+     keys don't shift when selected. */
+  border: 1px solid transparent;
+  /* Do not use box shadow until performance improves
+   * http://code.google.com/p/chromium/issues/detail?id=99045
+  box-shadow: 0 1px 1px #000;
+  */
+  color: #535353;
+  display: -webkit-box;
   font-family: sans-serif;
-  text-align: center;
-  -webkit-border-radius: 4px;
+  font-weight: 100;
+  margin-left: 5px;
+  position: relative;
+  -webkit-box-flex: 1;
 }
 
-.r0 {
-  background: -webkit-linear-gradient(#5a616f, #505662);
-}
-.r0:active {
-  background: -webkit-linear-gradient(#505662, #5a616f);
-}
-
-.r1 {
-  background: -webkit-linear-gradient(#505662, #41464f);
-}
-.r1:active {
-  background: -webkit-linear-gradient(#41464f, #505662);
+.key > div {
+  bottom: 0;
+  left: 0;
+  margin: auto;
+  position: absolute;
+  right: 0;
+  top: 0;
 }
 
-.r2 {
-  background: -webkit-linear-gradient(#41464f, #32373d);
+.key.popupkey {
+  background: rgba(0, 0, 0, 0);
+  border: 1px solid rgba(0, 0, 0, 0);
+  box-shadow: 0 0 0 #fff;
+  color: #fff;
 }
-.r2:active {
-  background: -webkit-linear-gradient(#32373d, #41464f);
+
+.key.popupkey.highlighted {
+  background: rgba(20, 20, 200, 0.2);
+  color: #fff;
+}
+
+.key:active {
+  background: -webkit-linear-gradient(#d6d6d6, #acacac);
+  border: 1px solid rgba(125,125,125,0.5);
+  /* Do not use box shadow until performance improves
+   * http://code.google.com/p/chromium/issues/detail?id=99045
+  box-shadow: 0 0 15px #fff;
+  */
 }
 
 div.moddown {
-  background: -webkit-linear-gradient(#0d0d0d, #1e2026);
+  background: -webkit-linear-gradient(#d6d6d6, #acacac);
   border-color: #304a9b;
-}
-
-.ncr0,
-.ncr1,
-.ncr2,
-.ncr3 {
-  background: -webkit-linear-gradient(#1f2127, #1b1e22);
-}
-
-.ncr0:active,
-.ncr1:active,
-.ncr2:active,
-.ncr3:active {
-  background: -webkit-linear-gradient(#0d0d0d, #1e2026);
 }
 
 .image-key {
@@ -100,27 +154,69 @@ div.moddown {
   width: 100%;
 }
 
-.backspace {
+.text-key {
+  height: 1.2em;
+}
+
+.backspace > div, .handwriting-backspace > div {
   background-image: url("del.svg");
 }
 
-.tab {
+.tab > div {
   background-image: url("tab.svg");
 }
 
-.return {
+.return > div, .handwriting-return > div {
   background-image: url("ret.svg");
 }
 
-.mic {
+.mic > div, .handwriting-mic > div {
   background-image: url("mic.svg");
 }
 
-.shift {
+.shift > div.image-key {
   background-image: url("shift.svg");
 }
 
-.hide {
+.moddown.shift > div.image-key {
+  background-image: url("shift-down.svg");
+}
+
+.hide > div {
   background-image: url("keyboard.svg");
 }
 
+.at,
+.com,
+.comma,
+.handwriting-backspace,
+.hide,
+.mic,
+.period,
+.return,
+.symbol {
+  -webkit-box-flex: 1.3;
+}
+
+.backspace,
+.left_shift {
+  -webkit-box-flex: 1.6;
+}
+
+.space {
+  -webkit-box-flex: 4.8;
+}
+
+.handwriting-mic,
+.handwriting-space {
+  -webkit-box-flex: 3.7;
+}
+
+.handwriting-clear,
+.handwriting-return {
+  -webkit-box-flex: 5;
+}
+
+.nodisplay {
+  display: none;
+}

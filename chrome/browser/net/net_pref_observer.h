@@ -10,9 +10,11 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/prefs/pref_member.h"
-#include "content/common/notification_observer.h"
+#include "content/public/browser/notification_observer.h"
 
-class Profile;
+namespace chrome_browser_net {
+class Predictor;
+}
 
 namespace prerender {
 class PrerenderManager;
@@ -21,19 +23,20 @@ class PrerenderManager;
 // Monitors network-related preferences for changes and applies them.
 // The supplied PrefService must outlive this NetPrefObserver.
 // Must be used only on the UI thread.
-class NetPrefObserver : public NotificationObserver {
+class NetPrefObserver : public content::NotificationObserver {
  public:
   // |prefs| must be non-NULL and |*prefs| must outlive this.
   // |prerender_manager| may be NULL. If not, |*prerender_manager| must
   // outlive this.
   NetPrefObserver(PrefService* prefs,
-                  prerender::PrerenderManager* prerender_manager);
+                  prerender::PrerenderManager* prerender_manager,
+                  chrome_browser_net::Predictor* predictor);
   virtual ~NetPrefObserver();
 
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   static void RegisterPrefs(PrefService* prefs);
 
@@ -45,6 +48,7 @@ class NetPrefObserver : public NotificationObserver {
   BooleanPrefMember spdy_disabled_;
   BooleanPrefMember http_throttling_enabled_;
   prerender::PrerenderManager* prerender_manager_;
+  chrome_browser_net::Predictor* predictor_;
 
   DISALLOW_COPY_AND_ASSIGN(NetPrefObserver);
 };

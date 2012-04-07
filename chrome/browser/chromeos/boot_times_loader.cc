@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
@@ -21,18 +22,58 @@
 #include "base/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/authentication_notification_details.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/network_state_notifier.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_list.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+
+using content::BrowserThread;
+using content::NavigationController;
+using content::WebContents;
+
+namespace {
+
+RenderWidgetHost* GetRenderWidgetHost(NavigationController* tab) {
+  WebContents* web_contents = tab->GetWebContents();
+  if (web_contents) {
+    RenderWidgetHostView* render_widget_host_view =
+        web_contents->GetRenderWidgetHostView();
+    if (render_widget_host_view)
+      return render_widget_host_view->GetRenderWidgetHost();
+  }
+  return NULL;
+}
+
+const std::string GetTabUrl(RenderWidgetHost* rwh) {
+  RenderWidgetHostView* rwhv = rwh->view();
+  for (BrowserList::const_iterator it = BrowserList::begin();
+       it != BrowserList::end();
+       ++it) {
+    Browser* browser = *it;
+    for (int i = 0, tab_count = browser->tab_count(); i < tab_count; ++i) {
+      WebContents* tab = browser->GetWebContentsAt(i);
+      if (tab->GetRenderWidgetHostView() == rwhv) {
+        return tab->GetURL().spec();
+      }
+    }
+  }
+  return std::string();
+}
+}
 
 namespace chromeos {
 
 #define FPL(value) FILE_PATH_LITERAL(value)
 
-// File uptime logs are located in.
+// Dir uptime & disk logs are located in.
 static const FilePath::CharType kLogPath[] = FPL("/tmp");
+// Dir log{in,out} logs are located in.
+static const FilePath::CharType kLoginLogPath[] = FPL("/home/chronos/user");
 // Prefix for the time measurement files.
 static const FilePath::CharType kUptimePrefix[] = FPL("uptime-");
 // Prefix for the disk usage files.
@@ -57,13 +98,13 @@ static const char kUmaLogout[] = "ShutdownTime.Logout";
 static const char kUmaLogoutPrefix[] = "ShutdownTime.";
 
 // Name of file collecting login times.
-static const FilePath::CharType kLoginTimes[] = FPL("login-times-sent");
+static const FilePath::CharType kLoginTimes[] = FPL("login-times");
 
 // Name of file collecting logout times.
-static const char kLogoutTimes[] = "logout-times-sent";
+static const char kLogoutTimes[] = "logout-times";
 
-static base::LazyInstance<BootTimesLoader> g_boot_times_loader(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<BootTimesLoader> g_boot_times_loader =
+    LAZY_INSTANCE_INITIALIZER;
 
 BootTimesLoader::BootTimesLoader()
     : backend_(new Backend()),
@@ -81,8 +122,8 @@ BootTimesLoader* BootTimesLoader::Get() {
 
 BootTimesLoader::Handle BootTimesLoader::GetBootTimes(
     CancelableRequestConsumerBase* consumer,
-    BootTimesLoader::GetBootTimesCallback* callback) {
-  if (!g_browser_process->file_thread()) {
+    const GetBootTimesCallback& callback) {
+  if (!BrowserThread::IsMessageLoopValid(BrowserThread::FILE)) {
     // This should only happen if Chrome is shutting down, so we don't do
     // anything.
     return 0;
@@ -102,7 +143,7 @@ BootTimesLoader::Handle BootTimesLoader::GetBootTimes(
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      NewRunnableMethod(backend_.get(), &Backend::GetBootTimes, request));
+      base::Bind(&Backend::GetBootTimes, backend_, request));
   return request->handle();
 }
 
@@ -172,7 +213,7 @@ static void SendBootTimesToUMA(const BootTimesLoader::BootTimes& boot_times) {
 }
 
 void BootTimesLoader::Backend::GetBootTimes(
-    scoped_refptr<GetBootTimesRequest> request) {
+    const scoped_refptr<GetBootTimesRequest>& request) {
   const FilePath::CharType kFirmwareBootTime[] = FPL("firmware-boot-time");
   const FilePath::CharType kPreStartup[] = FPL("pre-startup");
   const FilePath::CharType kChromeExec[] = FPL("chrome-exec");
@@ -191,7 +232,7 @@ void BootTimesLoader::Backend::GetBootTimes(
     BrowserThread::PostDelayedTask(
         BrowserThread::FILE,
         FROM_HERE,
-        NewRunnableMethod(this, &Backend::GetBootTimes, request),
+        base::Bind(&Backend::GetBootTimes, this, request),
         kReadAttemptDelayMs);
     return;
   }
@@ -215,8 +256,7 @@ void BootTimesLoader::Backend::GetBootTimes(
 
   SendBootTimesToUMA(boot_times);
 
-  request->ForwardResult(
-      GetBootTimesCallback::TupleType(request->handle(), boot_times));
+  request->ForwardResult(request->handle(), boot_times);
 }
 
 // Appends the given buffer into the file. Returns the number of bytes
@@ -256,7 +296,7 @@ void BootTimesLoader::WriteTimes(
   const int kMinTimeMillis = 1;
   const int kMaxTimeMillis = 30000;
   const int kNumBuckets = 100;
-  const FilePath log_path(kLogPath);
+  const FilePath log_path(kLoginLogPath);
 
   base::Time first = login_times.front().time();
   base::Time last = login_times.back().time();
@@ -291,14 +331,35 @@ void BootTimesLoader::WriteTimes(
     }
     output +=
         StringPrintf(
-            "\n%.2f +%.2f %s",
+            "\n%.2f +%.4f %s",
             since_first.InSecondsF(),
             since_prev.InSecondsF(),
             name.data());
     prev = tm.time();
   }
+  output += '\n';
+
   file_util::WriteFile(
       log_path.Append(base_name), output.data(), output.size());
+}
+
+void BootTimesLoader::LoginDone() {
+  AddLoginTimeMarker("LoginDone", true);
+  RecordCurrentStats(kChromeFirstRender);
+  registrar_.Remove(this, content::NOTIFICATION_LOAD_START,
+                    content::NotificationService::AllSources());
+  registrar_.Remove(this, content::NOTIFICATION_LOAD_STOP,
+                    content::NotificationService::AllSources());
+  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                    content::NotificationService::AllSources());
+  registrar_.Remove(this, content::NOTIFICATION_RENDER_WIDGET_HOST_DID_PAINT,
+                    content::NotificationService::AllSources());
+  // Don't swamp the FILE thread right away.
+  BrowserThread::PostDelayedTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&WriteTimes, kLoginTimes, kUmaLogin, kUmaLoginPrefix,
+                 login_time_markers_),
+      kLoginTimeWriteDelayMs);
 }
 
 void BootTimesLoader::WriteLogoutTimes() {
@@ -311,8 +372,7 @@ void BootTimesLoader::WriteLogoutTimes() {
 void BootTimesLoader::RecordStats(const std::string& name, const Stats& stats) {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(
-          RecordStatsDelayed, name, stats.uptime, stats.disk));
+      base::Bind(&RecordStatsDelayed, name, stats.uptime, stats.disk));
 }
 
 BootTimesLoader::Stats BootTimesLoader::GetCurrentStats() {
@@ -342,10 +402,16 @@ void BootTimesLoader::RecordLoginAttempted() {
   AddLoginTimeMarker("LoginStarted", false);
   if (!have_registered_) {
     have_registered_ = true;
-    registrar_.Add(this, NotificationType::LOAD_START,
-                   NotificationService::AllSources());
-    registrar_.Add(this, NotificationType::LOGIN_AUTHENTICATION,
-                   NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_LOGIN_AUTHENTICATION,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_LOAD_START,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_HOST_DID_PAINT,
+                   content::NotificationService::AllSources());
   }
 }
 
@@ -360,46 +426,57 @@ void BootTimesLoader::AddLogoutTimeMarker(
 }
 
 void BootTimesLoader::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  if (type == NotificationType::LOGIN_AUTHENTICATION) {
-    Details<AuthenticationNotificationDetails> auth_details(details);
-    if (auth_details->success()) {
-      AddLoginTimeMarker("Authenticate", true);
-      RecordCurrentStats(kLoginSuccess);
-      registrar_.Remove(this, NotificationType::LOGIN_AUTHENTICATION,
-                        NotificationService::AllSources());
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_LOGIN_AUTHENTICATION: {
+      content::Details<AuthenticationNotificationDetails> auth_details(details);
+      if (auth_details->success()) {
+        AddLoginTimeMarker("Authenticate", true);
+        RecordCurrentStats(kLoginSuccess);
+        registrar_.Remove(this, chrome::NOTIFICATION_LOGIN_AUTHENTICATION,
+                          content::NotificationService::AllSources());
+      }
+      break;
     }
-  } else if (type == NotificationType::LOAD_START) {
-    // Make sure it's not some page load initiated by OOBE/login screen.
-    if (!UserManager::Get()->user_is_logged_in())
-      return;
-    // Only log for first tab to render.  Make sure this is only done once.
-    // If the network isn't connected we'll get a second LOAD_START once it is
-    // and the page is reloaded.
-    if (NetworkStateNotifier::GetInstance()->is_connected()) {
-      // Post difference between first tab and login success time.
-      AddLoginTimeMarker("LoginDone", true);
-      RecordCurrentStats(kChromeFirstRender);
-      // Post chrome first render stat.
-      registrar_.Remove(this, NotificationType::LOAD_START,
-                        NotificationService::AllSources());
-      // Don't swamp the FILE thread right away.
-      BrowserThread::PostDelayedTask(
-          BrowserThread::FILE, FROM_HERE,
-          // This doesn't compile without std::string(...), as
-          // NewRunnableFunction doesn't accept arrays.
-          NewRunnableFunction(WriteTimes,
-                              std::string(kLoginTimes),
-                              std::string(kUmaLogin),
-                              std::string(kUmaLoginPrefix),
-                              login_time_markers_),
-          kLoginTimeWriteDelayMs);
-      have_registered_ = false;
-    } else {
-      AddLoginTimeMarker("LoginRenderNoNetwork", false);
+    case content::NOTIFICATION_LOAD_START: {
+      NavigationController* tab =
+          content::Source<NavigationController>(source).ptr();
+      RenderWidgetHost* rwh = GetRenderWidgetHost(tab);
+      DCHECK(rwh);
+      AddLoginTimeMarker("TabLoad-Start: " + GetTabUrl(rwh), false);
+      render_widget_hosts_loading_.insert(rwh);
+      break;
     }
+    case content::NOTIFICATION_LOAD_STOP: {
+      NavigationController* tab =
+          content::Source<NavigationController>(source).ptr();
+      RenderWidgetHost* rwh = GetRenderWidgetHost(tab);
+      if (render_widget_hosts_loading_.find(rwh) !=
+          render_widget_hosts_loading_.end()) {
+        AddLoginTimeMarker("TabLoad-End: " + GetTabUrl(rwh), false);
+      }
+      break;
+    }
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_DID_PAINT: {
+      RenderWidgetHost* rwh = content::Source<RenderWidgetHost>(source).ptr();
+      if (render_widget_hosts_loading_.find(rwh) !=
+          render_widget_hosts_loading_.end()) {
+        AddLoginTimeMarker("TabPaint: " + GetTabUrl(rwh), false);
+        LoginDone();
+      }
+      break;
+    }
+    case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
+      RenderWidgetHost* render_widget_host =
+          GetRenderWidgetHost(&web_contents->GetController());
+      render_widget_hosts_loading_.erase(render_widget_host);
+      break;
+    }
+    default:
+      break;
   }
 }
 

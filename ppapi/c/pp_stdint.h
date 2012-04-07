@@ -1,9 +1,14 @@
-/* Copyright (c) 2010 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From pp_stdint.idl modified Mon Jul 18 17:53:53 2011. */
+
 #ifndef PPAPI_C_PP_STDINT_H_
 #define PPAPI_C_PP_STDINT_H_
+
+#include "ppapi/c/pp_macros.h"
 
 /**
  * @file
@@ -11,6 +16,8 @@
  * for Microsoft compilers. These definitions only apply
  * for trusted modules.
  */
+
+
 
 /**
  *
@@ -42,12 +49,13 @@ typedef __int64 int64_t;
 
 /** This value represents a guaranteed unsigned 64 bit integer. */
 typedef unsigned __int64 uint64_t;
-/**
- * @}
- */
+
 #else
 #include <stdint.h>
 #endif
+/**
+ * @}
+ */
 
 #endif  /* PPAPI_C_PP_STDINT_H_ */
 

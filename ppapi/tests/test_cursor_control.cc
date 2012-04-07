@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,13 +16,13 @@ TestCursorControl::TestCursorControl(TestingInstance* instance)
 }
 
 bool TestCursorControl::Init() {
-  cursor_control_interface_ = static_cast<PPB_CursorControl_Dev const*>(
+  cursor_control_interface_ = static_cast<const PPB_CursorControl_Dev*>(
       pp::Module::Get()->GetBrowserInterface(PPB_CURSOR_CONTROL_DEV_INTERFACE));
   return !!cursor_control_interface_;
 }
 
-void TestCursorControl::RunTest() {
-  RUN_TEST(SetCursor);
+void TestCursorControl::RunTests(const std::string& filter) {
+  RUN_TEST(SetCursor, filter);
 }
 
 std::string TestCursorControl::TestSetCursor() {

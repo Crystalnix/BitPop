@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,27 +10,58 @@
 
 namespace gpu {
 
+namespace {
+const int kCommandsPerFlushCheck = 100;
+const double kFlushDelay = 1.0 / (5.0 * 60.0);
+}
+
 CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
     : command_buffer_(command_buffer),
+      ring_buffer_id_(-1),
+      ring_buffer_size_(0),
       entries_(NULL),
       total_entry_count_(0),
       usable_entry_count_(0),
       token_(0),
-      last_token_read_(-1),
-      get_(0),
       put_(0),
-      last_put_sent_(0) {
+      last_put_sent_(0),
+      commands_issued_(0),
+      usable_(true),
+      last_flush_time_(0) {
 }
 
-bool CommandBufferHelper::Initialize(int32 ring_buffer_size) {
-  ring_buffer_ = command_buffer_->GetRingBuffer();
-  if (!ring_buffer_.ptr)
+bool CommandBufferHelper::AllocateRingBuffer() {
+  if (!usable()) {
     return false;
+  }
 
+  if (HaveRingBuffer()) {
+    return true;
+  }
+
+  int32 id = command_buffer_->CreateTransferBuffer(ring_buffer_size_, -1);
+  if (id < 0) {
+    ClearUsable();
+    return false;
+  }
+
+  ring_buffer_ = command_buffer_->GetTransferBuffer(id);
+  if (!ring_buffer_.ptr) {
+    ClearUsable();
+    return false;
+  }
+
+  ring_buffer_id_ = id;
+  command_buffer_->SetGetBuffer(id);
+
+  // TODO(gman): Do we really need to call GetState here? We know get & put = 0
+  // Also do we need to check state.num_entries?
   CommandBuffer::State state = command_buffer_->GetState();
   entries_ = static_cast<CommandBufferEntry*>(ring_buffer_.ptr);
-  int32 num_ring_buffer_entries = ring_buffer_size / sizeof(CommandBufferEntry);
+  int32 num_ring_buffer_entries =
+      ring_buffer_size_ / sizeof(CommandBufferEntry);
   if (num_ring_buffer_entries > state.num_entries) {
+    ClearUsable();
     return false;
   }
 
@@ -40,35 +71,61 @@ bool CommandBufferHelper::Initialize(int32 ring_buffer_size) {
   total_entry_count_ = num_ring_buffer_entries;
   usable_entry_count_ = total_entry_count_ - kJumpEntries;
   put_ = state.put_offset;
-  SynchronizeState(state);
   return true;
+}
+
+void CommandBufferHelper::FreeRingBuffer() {
+  GPU_CHECK_EQ(put_, get_offset());
+  if (HaveRingBuffer()) {
+    command_buffer_->DestroyTransferBuffer(ring_buffer_id_);
+    ring_buffer_id_ = -1;
+  }
+}
+
+bool CommandBufferHelper::Initialize(int32 ring_buffer_size) {
+  ring_buffer_size_ = ring_buffer_size;
+  return AllocateRingBuffer();
 }
 
 CommandBufferHelper::~CommandBufferHelper() {
 }
 
 bool CommandBufferHelper::FlushSync() {
+  if (!usable()) {
+    return false;
+  }
+  last_flush_time_ = clock();
   last_put_sent_ = put_;
-  CommandBuffer::State state = command_buffer_->FlushSync(put_, get_);
-  SynchronizeState(state);
+  CommandBuffer::State state = command_buffer_->FlushSync(put_, get_offset());
   return state.error == error::kNoError;
 }
 
 void CommandBufferHelper::Flush() {
-  last_put_sent_ = put_;
-  command_buffer_->Flush(put_);
+  if (usable()) {
+    last_flush_time_ = clock();
+    last_put_sent_ = put_;
+    command_buffer_->Flush(put_);
+  }
 }
 
 // Calls Flush() and then waits until the buffer is empty. Break early if the
 // error is set.
 bool CommandBufferHelper::Finish() {
   TRACE_EVENT0("gpu", "CommandBufferHelper::Finish");
+  if (!usable()) {
+    return false;
+  }
+  // If there is no work just exit.
+  if (put_ == get_offset()) {
+    return true;
+  }
+  GPU_DCHECK(HaveRingBuffer());
   do {
     // Do not loop forever if the flush fails, meaning the command buffer reader
     // has shutdown.
     if (!FlushSync())
       return false;
-  } while (put_ != get_);
+  } while (put_ != get_offset());
 
   return true;
 }
@@ -78,16 +135,23 @@ bool CommandBufferHelper::Finish() {
 // value is higher than that token). Calls Finish() if the token value wraps,
 // which will be rare.
 int32 CommandBufferHelper::InsertToken() {
+  AllocateRingBuffer();
+  if (!usable()) {
+    return token_;
+  }
+  GPU_DCHECK(HaveRingBuffer());
   // Increment token as 31-bit integer. Negative values are used to signal an
   // error.
   token_ = (token_ + 1) & 0x7FFFFFFF;
-  cmd::SetToken& cmd = GetCmdSpace<cmd::SetToken>();
-  cmd.Init(token_);
-  if (token_ == 0) {
-    TRACE_EVENT0("gpu", "CommandBufferHelper::InsertToken(wrapped)");
-    // we wrapped
-    Finish();
-    GPU_DCHECK_EQ(token_, last_token_read_);
+  cmd::SetToken* cmd = GetCmdSpace<cmd::SetToken>();
+  if (cmd) {
+    cmd->Init(token_);
+    if (token_ == 0) {
+      TRACE_EVENT0("gpu", "CommandBufferHelper::InsertToken(wrapped)");
+      // we wrapped
+      Finish();
+      GPU_DCHECK_EQ(token_, last_token_read());
+    }
   }
   return token_;
 }
@@ -96,12 +160,16 @@ int32 CommandBufferHelper::InsertToken() {
 // in argument.
 void CommandBufferHelper::WaitForToken(int32 token) {
   TRACE_EVENT_IF_LONGER_THAN0(50, "gpu", "CommandBufferHelper::WaitForToken");
+  if (!usable()) {
+    return;
+  }
+  GPU_DCHECK(HaveRingBuffer());
   // Return immediately if corresponding InsertToken failed.
   if (token < 0)
     return;
   if (token > token_) return;  // we wrapped
-  while (last_token_read_ < token) {
-    if (get_ == put_) {
+  while (last_token_read() < token) {
+    if (get_offset() == put_) {
       GPU_LOG(FATAL) << "Empty command buffer while waiting on a token.";
       return;
     }
@@ -112,17 +180,17 @@ void CommandBufferHelper::WaitForToken(int32 token) {
   }
 }
 
-void CommandBufferHelper::YieldScheduler() {
-  cmd::YieldScheduler& cmd = GetCmdSpace<cmd::YieldScheduler>();
-  cmd.Init();
-}
-
 // Waits for available entries, basically waiting until get >= put + count + 1.
 // It actually waits for contiguous entries, so it may need to wrap the buffer
 // around, adding a jump. Thus this function may change the value of put_. The
 // function will return early if an error occurs, in which case the available
 // space may not be available.
 void CommandBufferHelper::WaitForAvailableEntries(int32 count) {
+  AllocateRingBuffer();
+  if (!usable()) {
+    return;
+  }
+  GPU_DCHECK(HaveRingBuffer());
   GPU_DCHECK(count < usable_entry_count_);
   if (put_ + count > usable_entry_count_) {
     // There's not enough room between the current put and the end of the
@@ -130,9 +198,9 @@ void CommandBufferHelper::WaitForAvailableEntries(int32 count) {
     // need to make sure get wraps first, actually that get is 1 or more (since
     // put will wrap to 0 after we add the jump).
     GPU_DCHECK_LE(1, put_);
-    if (get_ > put_ || get_ == 0) {
+    if (get_offset() > put_ || get_offset() == 0) {
       TRACE_EVENT0("gpu", "CommandBufferHelper::WaitForAvailableEntries");
-      while (get_ > put_ || get_ == 0) {
+      while (get_offset() > put_ || get_offset() == 0) {
         // Do not loop forever if the flush fails, meaning the command buffer
         // reader has shutdown.
         if (!FlushSync())
@@ -156,13 +224,30 @@ void CommandBufferHelper::WaitForAvailableEntries(int32 count) {
   // reader is known to be idle.
   int32 pending =
       (put_ + usable_entry_count_ - last_put_sent_) % usable_entry_count_;
-  int32 limit = usable_entry_count_ / ((get_ == last_put_sent_) ? 16 : 2);
+  int32 limit = usable_entry_count_ /
+      ((get_offset() == last_put_sent_) ? 16 : 2);
   if (pending > limit) {
     Flush();
+  } else if (commands_issued_ % kCommandsPerFlushCheck == 0) {
+#if !defined(OS_ANDROID)
+    // Allow this command buffer to be pre-empted by another if a "reasonable"
+    // amount of work has been done. On highend machines, this reduces the
+    // latency of GPU commands. However, on Android, this can cause the
+    // kernel to thrash between generating GPU commands and executing them.
+    clock_t current_time = clock();
+    if (current_time - last_flush_time_ > kFlushDelay * CLOCKS_PER_SEC)
+      Flush();
+#endif
   }
 }
 
 CommandBufferEntry* CommandBufferHelper::GetSpace(uint32 entries) {
+  AllocateRingBuffer();
+  if (!usable()) {
+    return NULL;
+  }
+  GPU_DCHECK(HaveRingBuffer());
+  ++commands_issued_;
   WaitForAvailableEntries(entries);
   CommandBufferEntry* space = &entries_[put_];
   put_ += entries;
@@ -176,13 +261,7 @@ CommandBufferEntry* CommandBufferHelper::GetSpace(uint32 entries) {
 
 error::Error CommandBufferHelper::GetError() {
   CommandBuffer::State state = command_buffer_->GetState();
-  SynchronizeState(state);
   return static_cast<error::Error>(state.error);
-}
-
-void CommandBufferHelper::SynchronizeState(CommandBuffer::State state) {
-  get_ = state.get_offset;
-  last_token_read_ = state.token;
 }
 
 }  // namespace gpu

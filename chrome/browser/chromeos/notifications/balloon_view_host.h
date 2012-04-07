@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,15 +15,18 @@
 #include "base/compiler_specific.h"
 #include "ui/gfx/native_widget_types.h"
 
-class ListValue;
 class GURL;
+
+namespace base {
+class ListValue;
+}
 
 namespace chromeos {
 
-typedef Callback1<const ListValue*>::Type MessageCallback;
-
 class BalloonViewHost : public ::BalloonViewHost {
  public:
+  typedef base::Callback<void(const base::ListValue*)> MessageCallback;
+
   explicit BalloonViewHost(Balloon* balloon);
   virtual ~BalloonViewHost();
 
@@ -32,20 +35,18 @@ class BalloonViewHost : public ::BalloonViewHost {
   // a callback for given message already exists. The callback object
   // is owned and deleted by callee.
   bool AddWebUIMessageCallback(const std::string& message,
-                               MessageCallback* callback);
+                               const MessageCallback& callback);
 
  private:
-  // RenderViewHostDelegate
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  // WebContentsDelegate
+  virtual void WebUISend(content::WebContents* tab,
+                         const GURL& source_url,
+                         const std::string& name,
+                         const base::ListValue& args) OVERRIDE;
 
   // A map of message name -> message handling callback.
-  typedef std::map<std::string, MessageCallback*> MessageCallbackMap;
+  typedef std::map<std::string, MessageCallback> MessageCallbackMap;
   MessageCallbackMap message_callbacks_;
-
-  // Message handlers.
-  virtual void OnWebUISend(const GURL& source_url,
-                           const std::string& name,
-                           const ListValue& args);
 
   DISALLOW_COPY_AND_ASSIGN(BalloonViewHost);
 };

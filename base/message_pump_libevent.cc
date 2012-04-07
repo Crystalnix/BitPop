@@ -8,9 +8,12 @@
 #include <fcntl.h>
 
 #include "base/auto_reset.h"
+#include "base/compiler_specific.h"
 #include "base/eintr_wrapper.h"
 #include "base/logging.h"
+#if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
+#endif
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/time.h"
@@ -18,6 +21,10 @@
 #include <event.h>
 #else
 #include "third_party/libevent/event.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
 // Lifecycle of struct event
@@ -53,7 +60,8 @@ MessagePumpLibevent::FileDescriptorWatcher::FileDescriptorWatcher()
     : is_persistent_(false),
       event_(NULL),
       pump_(NULL),
-      watcher_(NULL) {
+      watcher_(NULL),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 MessagePumpLibevent::FileDescriptorWatcher::~FileDescriptorWatcher() {
@@ -92,6 +100,10 @@ event *MessagePumpLibevent::FileDescriptorWatcher::ReleaseEvent() {
 
 void MessagePumpLibevent::FileDescriptorWatcher::OnFileCanReadWithoutBlocking(
     int fd, MessagePumpLibevent* pump) {
+  // Since OnFileCanWriteWithoutBlocking() gets called first, it can stop
+  // watching the file descriptor.
+  if (!watcher_)
+    return;
   pump->WillProcessIOEvent();
   watcher_->OnFileCanReadWithoutBlocking(fd);
   pump->DidProcessIOEvent();
@@ -99,6 +111,7 @@ void MessagePumpLibevent::FileDescriptorWatcher::OnFileCanReadWithoutBlocking(
 
 void MessagePumpLibevent::FileDescriptorWatcher::OnFileCanWriteWithoutBlocking(
     int fd, MessagePumpLibevent* pump) {
+  DCHECK(watcher_);
   pump->WillProcessIOEvent();
   watcher_->OnFileCanWriteWithoutBlocking(fd);
   pump->DidProcessIOEvent();
@@ -107,6 +120,7 @@ void MessagePumpLibevent::FileDescriptorWatcher::OnFileCanWriteWithoutBlocking(
 MessagePumpLibevent::MessagePumpLibevent()
     : keep_running_(true),
       in_run_(false),
+      processed_io_events_(false),
       event_base_(event_base_new()),
       wakeup_pipe_in_(-1),
       wakeup_pipe_out_(-1) {
@@ -121,11 +135,11 @@ MessagePumpLibevent::~MessagePumpLibevent() {
   delete wakeup_event_;
   if (wakeup_pipe_in_ >= 0) {
     if (HANDLE_EINTR(close(wakeup_pipe_in_)) < 0)
-      PLOG(ERROR) << "close";
+      DPLOG(ERROR) << "close";
   }
   if (wakeup_pipe_out_ >= 0) {
     if (HANDLE_EINTR(close(wakeup_pipe_out_)) < 0)
-      PLOG(ERROR) << "close";
+      DPLOG(ERROR) << "close";
   }
   event_base_free(event_base_);
 }
@@ -220,9 +234,17 @@ void MessagePumpLibevent::Run(Delegate* delegate) {
   scoped_ptr<event> timer_event(new event);
 
   for (;;) {
+#if defined(OS_MACOSX)
     mac::ScopedNSAutoreleasePool autorelease_pool;
+#endif
 
     bool did_work = delegate->DoWork();
+    if (!keep_running_)
+      break;
+
+    event_base_loop(event_base_, EVLOOP_NONBLOCK);
+    did_work |= processed_io_events_;
+    processed_io_events_ = false;
     if (!keep_running_)
       break;
 
@@ -327,15 +349,19 @@ bool MessagePumpLibevent::Init() {
 // static
 void MessagePumpLibevent::OnLibeventNotification(int fd, short flags,
                                                  void* context) {
-  FileDescriptorWatcher* controller =
-      static_cast<FileDescriptorWatcher*>(context);
+  base::WeakPtr<FileDescriptorWatcher> controller =
+      static_cast<FileDescriptorWatcher*>(context)->weak_factory_.GetWeakPtr();
+  DCHECK(controller.get());
 
   MessagePumpLibevent* pump = controller->pump();
+  pump->processed_io_events_ = true;
 
   if (flags & EV_WRITE) {
     controller->OnFileCanWriteWithoutBlocking(fd, pump);
   }
-  if (flags & EV_READ) {
+  // Check |controller| in case it's been deleted in
+  // controller->OnFileCanWriteWithoutBlocking().
+  if (controller.get() && flags & EV_READ) {
     controller->OnFileCanReadWithoutBlocking(fd, pump);
   }
 }
@@ -351,6 +377,7 @@ void MessagePumpLibevent::OnWakeup(int socket, short flags, void* context) {
   char buf;
   int nread = HANDLE_EINTR(read(socket, &buf, 1));
   DCHECK_EQ(nread, 1);
+  that->processed_io_events_ = true;
   // Tell libevent to break out of inner loop.
   event_base_loopbreak(that->event_base_);
 }

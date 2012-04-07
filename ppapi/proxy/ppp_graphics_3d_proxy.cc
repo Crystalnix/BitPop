@@ -4,36 +4,38 @@
 
 #include "ppapi/proxy/ppp_graphics_3d_proxy.h"
 
-#include "ppapi/c/dev/ppp_graphics_3d_dev.h"
+#include "ppapi/c/ppp_graphics_3d.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 namespace {
 
 void ContextLost(PP_Instance instance) {
   HostDispatcher::GetForInstance(instance)->Send(
-      new PpapiMsg_PPPGraphics3D_ContextLost(INTERFACE_ID_PPP_GRAPHICS_3D_DEV,
-                                             instance));
+      new PpapiMsg_PPPGraphics3D_ContextLost(API_ID_PPP_GRAPHICS_3D, instance));
 }
 
-static const PPP_Graphics3D_Dev graphics_3d_interface = {
+static const PPP_Graphics3D graphics_3d_interface = {
   &ContextLost
 };
 
-InterfaceProxy* CreateGraphics3DProxy(Dispatcher* dispatcher,
-                                      const void* target_interface) {
-  return new PPP_Graphics3D_Proxy(dispatcher, target_interface);
+InterfaceProxy* CreateGraphics3DProxy(Dispatcher* dispatcher) {
+  return new PPP_Graphics3D_Proxy(dispatcher);
 }
 
 }  // namespace
 
-PPP_Graphics3D_Proxy::PPP_Graphics3D_Proxy(Dispatcher* dispatcher,
-                                           const void* target_interface)
-    : InterfaceProxy(dispatcher, target_interface) {
+PPP_Graphics3D_Proxy::PPP_Graphics3D_Proxy(Dispatcher* dispatcher)
+    : InterfaceProxy(dispatcher),
+      ppp_graphics_3d_impl_(NULL) {
+  if (dispatcher->IsPlugin()) {
+    ppp_graphics_3d_impl_ = static_cast<const PPP_Graphics3D*>(
+        dispatcher->local_get_interface()(PPP_GRAPHICS_3D_INTERFACE));
+  }
 }
 
 PPP_Graphics3D_Proxy::~PPP_Graphics3D_Proxy() {
@@ -43,8 +45,8 @@ PPP_Graphics3D_Proxy::~PPP_Graphics3D_Proxy() {
 const InterfaceProxy::Info* PPP_Graphics3D_Proxy::GetInfo() {
   static const Info info = {
     &graphics_3d_interface,
-    PPP_GRAPHICS_3D_DEV_INTERFACE,
-    INTERFACE_ID_PPP_GRAPHICS_3D_DEV,
+    PPP_GRAPHICS_3D_INTERFACE,
+    API_ID_PPP_GRAPHICS_3D,
     false,
     &CreateGraphics3DProxy,
   };
@@ -62,9 +64,9 @@ bool PPP_Graphics3D_Proxy::OnMessageReceived(const IPC::Message& msg) {
 }
 
 void PPP_Graphics3D_Proxy::OnMsgContextLost(PP_Instance instance) {
-  if (ppp_graphics_3d_target())
-    ppp_graphics_3d_target()->Graphics3DContextLost(instance);
+  if (ppp_graphics_3d_impl_)
+    ppp_graphics_3d_impl_->Graphics3DContextLost(instance);
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

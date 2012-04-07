@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/allocator/allocator_shim.h"
 
 #include <config.h>
+#include "base/sysinfo.h"
 
 // When defined, different heap allocators can be used via an environment
 // variable set before running the program.  This may reduce the amount
@@ -293,10 +294,10 @@ void SetupSubprocessAllocator() {
   buffer[sizeof(buffer) - 1] = '\0';
 
   if (secondary_length || !primary_length) {
-    char* secondary_value = secondary_length ? buffer : "TCMALLOC";
+    const char* secondary_value = secondary_length ? buffer : "TCMALLOC";
     // Force renderer (or other subprocesses) to use secondary_value.
     int ret_val = _putenv_s(primary_name, secondary_value);
-    CHECK_EQ(0, ret_val);
+    DCHECK_EQ(0, ret_val);
   }
 #endif  // ENABLE_DYNAMIC_ALLOCATOR_SWITCHING
 }

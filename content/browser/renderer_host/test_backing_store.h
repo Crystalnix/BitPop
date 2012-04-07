@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "content/browser/renderer_host/backing_store.h"
 
 class TestBackingStore : public BackingStore {
@@ -15,15 +16,18 @@ class TestBackingStore : public BackingStore {
   virtual ~TestBackingStore();
 
   // BackingStore implementation.
-  virtual void PaintToBackingStore(RenderProcessHost* process,
-                                   TransportDIB::Id bitmap,
-                                   const gfx::Rect& bitmap_rect,
-                                   const std::vector<gfx::Rect>& copy_rects);
+  virtual void PaintToBackingStore(
+      content::RenderProcessHost* process,
+      TransportDIB::Id bitmap,
+      const gfx::Rect& bitmap_rect,
+      const std::vector<gfx::Rect>& copy_rects,
+      const base::Closure& completion_callback,
+      bool* scheduled_completion_callback) OVERRIDE;
   virtual bool CopyFromBackingStore(const gfx::Rect& rect,
-                                    skia::PlatformCanvas* output);
+                                    skia::PlatformCanvas* output) OVERRIDE;
   virtual void ScrollBackingStore(int dx, int dy,
                                   const gfx::Rect& clip_rect,
-                                  const gfx::Size& view_size);
+                                  const gfx::Size& view_size) OVERRIDE;
  private:
   DISALLOW_COPY_AND_ASSIGN(TestBackingStore);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,35 +7,16 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/threading/platform_thread.h"
 #include "chrome/common/auto_start_linux.h"
 #include "chrome/common/multi_process_lock.h"
 
 namespace {
-
-// Attempts to take a lock named |name|. If |waiting| is true then this will
-// make multiple attempts to acquire the lock.
-// Caller is responsible for ownership of the MultiProcessLock.
-MultiProcessLock* TakeNamedLock(const std::string& name, bool waiting) {
-  scoped_ptr<MultiProcessLock> lock(MultiProcessLock::Create(name));
-  if (lock == NULL) return NULL;
-  bool got_lock = false;
-  for (int i = 0; i < 10; ++i) {
-    if (lock->TryLock()) {
-      got_lock = true;
-      break;
-    }
-    if (!waiting) break;
-    base::PlatformThread::Sleep(100 * i);
-  }
-  if (!got_lock) {
-    lock.reset();
-  }
-  return lock.release();
-}
 
 MultiProcessLock* TakeServiceInitializingLock(bool waiting) {
   std::string lock_name =
@@ -61,11 +42,23 @@ MultiProcessLock* TakeServiceRunningLock(bool waiting) {
 bool ForceServiceProcessShutdown(const std::string& version,
                                  base::ProcessId process_id) {
   if (kill(process_id, SIGTERM) < 0) {
-    PLOG(ERROR) << "kill";
+    DPLOG(ERROR) << "kill";
     return false;
   }
   return true;
 }
+
+// Gets the name of the service process IPC channel.
+// Returns an absolute path as required.
+IPC::ChannelHandle GetServiceProcessChannel() {
+  FilePath temp_dir;
+  PathService::Get(base::DIR_TEMP, &temp_dir);
+  std::string pipe_name = GetServiceProcessScopedVersionedName("_service_ipc");
+  std::string pipe_path = temp_dir.Append(pipe_name).value();
+  return pipe_path;
+}
+
+
 
 bool CheckServiceProcessReady() {
   scoped_ptr<MultiProcessLock> running_lock(TakeServiceRunningLock(false));
@@ -87,7 +80,7 @@ bool ServiceProcessState::AddToAutoRun() {
   return AutoStart::AddApplication(
       GetServiceProcessScopedName(GetBaseDesktopName()),
       app_name,
-      autorun_command_line_->command_line_string(),
+      autorun_command_line_->GetCommandLineString(),
       false);
 }
 

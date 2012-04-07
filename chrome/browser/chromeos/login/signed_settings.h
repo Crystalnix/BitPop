@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,23 +6,15 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_SIGNED_SETTINGS_H_
 #pragma once
 
-#include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/chromeos/login/owner_manager.h"
 
-// There are two categories of operations that can be performed on the
-// Chrome OS owner-signed settings store:
-// 1) doing stuff to the whitelist (adding/removing/checking)
-// 2) Storing/Retrieving arbitrary name=value pairs
+// There are two operations that can be performed on the Chrome OS owner-signed
+// settings store: Storing and Retrieving the policy blob.
 //
-// Unfortunately, it is currently a limitation that only one of each
-// category can be in-flight at a time.  You can be doing exactly one thing
-// to the whitelist, and exactly one thing to the property store at a time.
-// I've filed an issue on me to remove that restriction.
-// http://code.google.com/p/chromium-os/issues/detail?id=6415
-
 // The pattern of use here is that the caller instantiates some
 // subclass of SignedSettings by calling one of the create
 // methods. Then, call Execute() on this object from the UI
@@ -31,13 +23,14 @@
 // -- again, on the UI thread.
 
 namespace enterprise_management {
-class PolicyFetchResponse;
 class PolicyData;
+class PolicyFetchResponse;
 }  // namespace enterprise_management
-namespace em = enterprise_management;
 
 namespace chromeos {
 class OwnershipService;
+
+extern const char kDevicePolicyType[];
 
 class SignedSettings : public base::RefCountedThreadSafe<SignedSettings>,
                        public OwnerManager::Delegate {
@@ -60,37 +53,15 @@ class SignedSettings : public base::RefCountedThreadSafe<SignedSettings>,
   SignedSettings();
   virtual ~SignedSettings();
 
-  // These are both "whitelist" operations, and only one instance of
-  // one type can be in flight at a time.
-  static SignedSettings* CreateCheckWhitelistOp(
-      const std::string& email,
-      SignedSettings::Delegate<bool>* d);
-
-  static SignedSettings* CreateWhitelistOp(const std::string& email,
-                                           bool add_to_whitelist,
-                                           SignedSettings::Delegate<bool>* d);
-
-  // These are both "property" operations, and only one instance of
-  // one type can be in flight at a time.
-  static SignedSettings* CreateStorePropertyOp(
-      const std::string& name,
-      const std::string& value,
-      SignedSettings::Delegate<bool>* d);
-
-  static SignedSettings* CreateRetrievePropertyOp(
-      const std::string& name,
-      SignedSettings::Delegate<std::string>* d);
-
   // These are both "policy" operations, and only one instance of
   // one type can be in flight at a time.
   static SignedSettings* CreateStorePolicyOp(
-      em::PolicyFetchResponse* policy,
+      enterprise_management::PolicyFetchResponse* policy,
       SignedSettings::Delegate<bool>* d);
 
   static SignedSettings* CreateRetrievePolicyOp(
-      SignedSettings::Delegate<const em::PolicyFetchResponse&>* d);
-
-  static bool EnumerateWhitelist(std::vector<std::string>* whitelisted);
+      SignedSettings::Delegate<
+          const enterprise_management::PolicyFetchResponse&>* d);
 
   static ReturnCode MapKeyOpCode(OwnerManager::KeyOpCode code);
 
@@ -103,12 +74,11 @@ class SignedSettings : public base::RefCountedThreadSafe<SignedSettings>,
                                const std::vector<uint8>& payload) = 0;
 
  protected:
-  static bool PolicyIsSane(const em::PolicyFetchResponse& value,
-                           em::PolicyData* poldata);
+  static bool PolicyIsSane(
+      const enterprise_management::PolicyFetchResponse& value,
+      enterprise_management::PolicyData* poldata);
 
   void set_service(OwnershipService* service) { service_ = service; }
-
-  void TryToFetchPolicyAndCallBack();
 
   OwnershipService* service_;
 
@@ -116,25 +86,6 @@ class SignedSettings : public base::RefCountedThreadSafe<SignedSettings>,
   friend class SignedSettingsTest;
   friend class SignedSettingsHelperTest;
 
-  class Relay
-      : public SignedSettings::Delegate<const em::PolicyFetchResponse&> {
-   public:
-    // |s| must outlive your Relay instance.
-    explicit Relay(SignedSettings* s);
-    virtual ~Relay();
-    // Implementation of SignedSettings::Delegate
-    virtual void OnSettingsOpCompleted(SignedSettings::ReturnCode code,
-                                       const em::PolicyFetchResponse& value);
-   private:
-    SignedSettings* settings_;
-    DISALLOW_COPY_AND_ASSIGN(Relay);
-  };
-
-  // Format of this string is documented in device_management_backend.proto.
-  static const char kDevicePolicyType[];
-
-  scoped_ptr<Relay> relay_;
-  scoped_refptr<SignedSettings> polfetcher_;
   DISALLOW_COPY_AND_ASSIGN(SignedSettings);
 };
 

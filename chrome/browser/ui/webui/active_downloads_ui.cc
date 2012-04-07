@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
@@ -22,33 +23,43 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/media/media_player.h"
-#include "chrome/browser/download/download_item.h"
-#include "chrome/browser/download/download_manager.h"
+#include "chrome/browser/download/chrome_download_manager_delegate.h"
+#include "chrome/browser/download/download_prefs.h"
+#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_util.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/file_manager_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "chrome/browser/ui/webui/favicon_source.h"
+#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
+#include "chrome/browser/ui/webui/fileicon_source_chromeos.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/url_fetcher.h"
+#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/render_view_host_delegate.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request_file_job.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
@@ -56,7 +67,7 @@ static const int kPopupLeft = 0;
 static const int kPopupTop = 0;
 static const int kPopupWidth = 250;
 // Minimum height of window must be 100, so kPopupHeight has space for
-// 2 download rows of 36 px and 'Show All Downloads' which is 29px.
+// 2 download rows of 36 px and 'Show all files' link which is 29px.
 static const int kPopupHeight = 36 * 2 + 29;
 
 static const char kPropertyPath[] = "path";
@@ -64,24 +75,50 @@ static const char kPropertyTitle[] = "title";
 static const char kPropertyDirectory[] = "isDirectory";
 static const char kActiveDownloadAppName[] = "active-downloads";
 
-class ActiveDownloadsUIHTMLSource : public ChromeURLDataManager::DataSource {
- public:
-  ActiveDownloadsUIHTMLSource();
+ChromeWebUIDataSource* CreateActiveDownloadsUIHTMLSource() {
+  ChromeWebUIDataSource* source =
+      new ChromeWebUIDataSource(chrome::kChromeUIActiveDownloadsHost);
 
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string&) const {
-    return "text/html";
+  source->AddLocalizedString("dangerousfile", IDS_PROMPT_DANGEROUS_DOWNLOAD);
+  source->AddLocalizedString("dangerousextension",
+                             IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION);
+  source->AddLocalizedString("dangerousurl", IDS_PROMPT_MALICIOUS_DOWNLOAD_URL);
+  source->AddLocalizedString("dangerouscontent",
+                             IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT);
+  source->AddLocalizedString("cancel", IDS_DOWNLOAD_LINK_CANCEL);
+  source->AddLocalizedString("discard", IDS_DISCARD_DOWNLOAD);
+  source->AddLocalizedString("continue", IDS_CONTINUE_EXTENSION_DOWNLOAD);
+  source->AddLocalizedString("pause", IDS_DOWNLOAD_LINK_PAUSE);
+  source->AddLocalizedString("resume", IDS_DOWNLOAD_LINK_RESUME);
+  source->AddLocalizedString("showallfiles",
+                             IDS_FILE_BROWSER_MORE_FILES);
+  source->AddLocalizedString("error_unknown_file_type",
+                             IDS_FILE_BROWSER_ERROR_UNKNOWN_FILE_TYPE);
+
+  FilePath default_download_path;
+  if (!PathService::Get(chrome::DIR_DEFAULT_DOWNLOADS,
+                        &default_download_path)) {
+    NOTREACHED();
   }
+  // TODO(viettrungluu): this is wrong -- FilePath's need not be Unicode.
+  source->AddString("downloadpath", UTF8ToUTF16(default_download_path.value()));
 
- private:
-  ~ActiveDownloadsUIHTMLSource() {}
+  source->set_json_path("strings.js");
+  source->add_resource_path("active_downloads.js", IDR_ACTIVE_DOWNLOADS_JS);
+  source->set_default_resource(IDR_ACTIVE_DOWNLOADS_HTML);
+  return source;
+}
 
-  DISALLOW_COPY_AND_ASSIGN(ActiveDownloadsUIHTMLSource);
-};
+}  // namespace
+
+using content::DownloadItem;
+using content::DownloadManager;
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// ActiveDownloadsHandler
+//
+////////////////////////////////////////////////////////////////////////////////
 
 // The handler for Javascript messages related to the "active_downloads" view.
 class ActiveDownloadsHandler
@@ -92,27 +129,27 @@ class ActiveDownloadsHandler
   ActiveDownloadsHandler();
   virtual ~ActiveDownloadsHandler();
 
-  // Initialization after Attach.
-  void Init();
-
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // DownloadItem::Observer interface.
-  virtual void OnDownloadUpdated(DownloadItem* item);
-  virtual void OnDownloadOpened(DownloadItem* item) { }
+  virtual void OnDownloadUpdated(DownloadItem* item) OVERRIDE;
+  virtual void OnDownloadOpened(DownloadItem* item) OVERRIDE { }
 
   // DownloadManager::Observer interface.
-  virtual void ModelChanged();
+  virtual void ModelChanged() OVERRIDE;
 
   // WebUI Callbacks.
   void HandleGetDownloads(const ListValue* args);
   void HandlePauseToggleDownload(const ListValue* args);
-  void HandleCancelDownload(const ListValue* args);
   void HandleAllowDownload(const ListValue* args);
-  void OpenNewFullWindow(const ListValue* args);
-  void PlayMediaFile(const ListValue* args);
+  void HandleCancelDownload(const ListValue* args);
+  void HandleShowAllFiles(const ListValue* args);
+  void ViewFile(const ListValue* args);
+
+  // For testing.
+  typedef std::vector<DownloadItem*> DownloadList;
+  const DownloadList& downloads() const { return downloads_; }
 
  private:
   // Downloads helpers.
@@ -120,80 +157,18 @@ class ActiveDownloadsHandler
   void UpdateDownloadList();
   void SendDownloads();
   void AddDownload(DownloadItem* item);
-  bool SelectTab(const GURL& url);
 
   Profile* profile_;
-  TabContents* tab_contents_;
   DownloadManager* download_manager_;
 
-  typedef std::vector<DownloadItem*> DownloadList;
   DownloadList active_downloads_;
   DownloadList downloads_;
 
   DISALLOW_COPY_AND_ASSIGN(ActiveDownloadsHandler);
 };
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// ActiveDownloadsUIHTMLSource
-//
-////////////////////////////////////////////////////////////////////////////////
-
-ActiveDownloadsUIHTMLSource::ActiveDownloadsUIHTMLSource()
-    : DataSource(chrome::kChromeUIActiveDownloadsHost, MessageLoop::current()) {
-}
-
-void ActiveDownloadsUIHTMLSource::StartDataRequest(const std::string& path,
-                                              bool is_incognito,
-                                              int request_id) {
-  DictionaryValue localized_strings;
-  localized_strings.SetString("allowdownload",
-      l10n_util::GetStringUTF16(IDS_PROMPT_DANGEROUS_DOWNLOAD_EXTENSION));
-  localized_strings.SetString("cancel",
-      l10n_util::GetStringUTF16(IDS_DOWNLOAD_LINK_CANCEL));
-  localized_strings.SetString("discard",
-      l10n_util::GetStringUTF16(IDS_DISCARD_DOWNLOAD));
-  localized_strings.SetString("continue",
-      l10n_util::GetStringUTF16(IDS_CONTINUE_EXTENSION_DOWNLOAD));
-  localized_strings.SetString("pause",
-      l10n_util::GetStringUTF16(IDS_DOWNLOAD_LINK_PAUSE));
-  localized_strings.SetString("resume",
-      l10n_util::GetStringUTF16(IDS_DOWNLOAD_LINK_RESUME));
-  localized_strings.SetString("showalldownloads",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_SHOW_ALL_DOWNLOADS));
-  FilePath default_download_path;
-  if (!PathService::Get(chrome::DIR_DEFAULT_DOWNLOADS,
-                        &default_download_path)) {
-    NOTREACHED();
-  }
-  // TODO(viettrungluu): this is wrong -- FilePath's need not be Unicode.
-  localized_strings.SetString("downloadpath", default_download_path.value());
-  localized_strings.SetString("error_unknown_file_type",
-      l10n_util::GetStringUTF16(IDS_FILEBROWSER_ERROR_UNKNOWN_FILE_TYPE));
-  SetFontAndTextDirection(&localized_strings);
-
-  static const base::StringPiece active_downloads_html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_ACTIVE_DOWNLOADS_HTML));
-  const std::string full_html = jstemplate_builder::GetI18nTemplateHtml(
-      active_downloads_html, &localized_strings);
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// ActiveDownloadsHandler
-//
-////////////////////////////////////////////////////////////////////////////////
-
 ActiveDownloadsHandler::ActiveDownloadsHandler()
     : profile_(NULL),
-      tab_contents_(NULL),
       download_manager_(NULL) {
 }
 
@@ -204,42 +179,32 @@ ActiveDownloadsHandler::~ActiveDownloadsHandler() {
   download_manager_->RemoveObserver(this);
 }
 
-WebUIMessageHandler* ActiveDownloadsHandler::Attach(WebUI* web_ui) {
-  // Create our favicon data source.
-  profile_ = web_ui->GetProfile();
-  profile_->GetChromeURLDataManager()->AddDataSource(
-      new FaviconSource(profile_, FaviconSource::FAVICON));
-  tab_contents_ = web_ui->tab_contents();
-  return WebUIMessageHandler::Attach(web_ui);
-}
-
-void ActiveDownloadsHandler::Init() {
-  download_manager_ = profile_->GetDownloadManager();
-  download_manager_->AddObserver(this);
-}
-
 void ActiveDownloadsHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("getDownloads",
-      NewCallback(this, &ActiveDownloadsHandler::HandleGetDownloads));
-  web_ui_->RegisterMessageCallback("pauseToggleDownload",
-      NewCallback(this, &ActiveDownloadsHandler::HandlePauseToggleDownload));
-  web_ui_->RegisterMessageCallback("cancelDownload",
-      NewCallback(this, &ActiveDownloadsHandler::HandleCancelDownload));
-  web_ui_->RegisterMessageCallback("allowDownload",
-      NewCallback(this, &ActiveDownloadsHandler::HandleAllowDownload));
-  web_ui_->RegisterMessageCallback("openNewFullWindow",
-      NewCallback(this, &ActiveDownloadsHandler::OpenNewFullWindow));
-  web_ui_->RegisterMessageCallback("playMediaFile",
-      NewCallback(this, &ActiveDownloadsHandler::PlayMediaFile));
-}
+  profile_ = Profile::FromWebUI(web_ui());
+  profile_->GetChromeURLDataManager()->AddDataSource(new FileIconSourceCros());
 
-void ActiveDownloadsHandler::PlayMediaFile(const ListValue* args) {
-  FilePath file_path(UTF16ToUTF8(ExtractStringValue(args)));
+  web_ui()->RegisterMessageCallback("getDownloads",
+      base::Bind(&ActiveDownloadsHandler::HandleGetDownloads,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("pauseToggleDownload",
+      base::Bind(&ActiveDownloadsHandler::HandlePauseToggleDownload,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("allowDownload",
+      base::Bind(&ActiveDownloadsHandler::HandleAllowDownload,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("cancelDownload",
+      base::Bind(&ActiveDownloadsHandler::HandleCancelDownload,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("showAllFiles",
+      base::Bind(&ActiveDownloadsHandler::HandleShowAllFiles,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("viewFile",
+      base::Bind(&ActiveDownloadsHandler::ViewFile,
+                 base::Unretained(this)));
 
-  Browser* browser = Browser::GetBrowserForController(
-      &tab_contents_->controller(), NULL);
-  MediaPlayer* mediaplayer = MediaPlayer::GetInstance();
-  mediaplayer->ForcePlayMediaFile(profile_, file_path, browser);
+  download_manager_ =
+      DownloadServiceFactory::GetForProfile(profile_)->GetDownloadManager();
+  download_manager_->AddObserver(this);
 }
 
 DownloadItem* ActiveDownloadsHandler::GetDownloadById(
@@ -272,28 +237,14 @@ void ActiveDownloadsHandler::HandleCancelDownload(const ListValue* args) {
   }
 }
 
-bool ActiveDownloadsHandler::SelectTab(const GURL& url) {
-  for (TabContentsIterator it; !it.done(); ++it) {
-    TabContents* tab_contents = it->tab_contents();
-    if (tab_contents->GetURL() == url) {
-      tab_contents->Activate();
-      return true;
-    }
-  }
-  return false;
+void ActiveDownloadsHandler::HandleShowAllFiles(const ListValue* args) {
+  file_manager_util::ViewFolder(
+      DownloadPrefs::FromDownloadManager(download_manager_)->download_path());
 }
 
-void ActiveDownloadsHandler::OpenNewFullWindow(const ListValue* args) {
-  std::string url = UTF16ToUTF8(ExtractStringValue(args));
-
-  if (SelectTab(GURL(url)))
-    return;
-
-  Browser* browser = BrowserList::GetLastActive();
-  browser::NavigateParams params(browser, GURL(url), PageTransition::LINK);
-  params.disposition = NEW_FOREGROUND_TAB;
-  browser::Navigate(&params);
-  browser->window()->Show();
+void ActiveDownloadsHandler::ViewFile(const ListValue* args) {
+  file_manager_util::ViewFile(FilePath(UTF16ToUTF8(ExtractStringValue(args))),
+                              false);
 }
 
 void ActiveDownloadsHandler::ModelChanged() {
@@ -316,8 +267,8 @@ void ActiveDownloadsHandler::UpdateDownloadList() {
 
 void ActiveDownloadsHandler::AddDownload(DownloadItem* item) {
   // Observe in progress and dangerous downloads.
-  if (item->state() == DownloadItem::IN_PROGRESS ||
-      item->safety_state() == DownloadItem::DANGEROUS) {
+  if (item->GetState() == DownloadItem::IN_PROGRESS ||
+      item->GetSafetyState() == DownloadItem::DANGEROUS) {
     active_downloads_.push_back(item);
 
     DownloadList::const_iterator it =
@@ -335,7 +286,7 @@ void ActiveDownloadsHandler::SendDownloads() {
     results.Append(download_util::CreateDownloadItemValue(downloads_[i], i));
   }
 
-  web_ui_->CallJavascriptFunction("downloadsList", results);
+  web_ui()->CallJavascriptFunction("downloadsList", results);
 }
 
 void ActiveDownloadsHandler::OnDownloadUpdated(DownloadItem* item) {
@@ -343,11 +294,12 @@ void ActiveDownloadsHandler::OnDownloadUpdated(DownloadItem* item) {
       find(downloads_.begin(), downloads_.end(), item);
 
   if (it == downloads_.end()) {
-    NOTREACHED() << "Updated item " << item->full_path().value()
+    NOTREACHED() << "Updated item " << item->GetFullPath().value()
       << " not found";
   }
 
-  if (item->state() == DownloadItem::REMOVING) {
+  if (item->GetState() == DownloadItem::REMOVING || item->GetAutoOpened()) {
+    // Item is going away, or item is an extension that has auto opened.
     item->RemoveObserver(this);
     downloads_.erase(it);
     DownloadList::iterator ita =
@@ -359,11 +311,9 @@ void ActiveDownloadsHandler::OnDownloadUpdated(DownloadItem* item) {
     const size_t id = it - downloads_.begin();
     scoped_ptr<DictionaryValue> result(
         download_util::CreateDownloadItemValue(item, id));
-    web_ui_->CallJavascriptFunction("downloadUpdated", *result);
+    web_ui()->CallJavascriptFunction("downloadUpdated", *result);
   }
 }
-
-}  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -372,20 +322,33 @@ void ActiveDownloadsHandler::OnDownloadUpdated(DownloadItem* item) {
 ////////////////////////////////////////////////////////////////////////////////
 
 
-ActiveDownloadsUI::ActiveDownloadsUI(TabContents* contents)
-    : HtmlDialogUI(contents) {
-  ActiveDownloadsHandler* handler = new ActiveDownloadsHandler();
-  AddMessageHandler(handler->Attach(this));
-  handler->Init();
-  ActiveDownloadsUIHTMLSource* html_source = new ActiveDownloadsUIHTMLSource();
+ActiveDownloadsUI::ActiveDownloadsUI(content::WebUI* web_ui)
+    : HtmlDialogUI(web_ui),
+      handler_(new ActiveDownloadsHandler()) {
+  web_ui->AddMessageHandler(handler_);
 
   // Set up the chrome://active-downloads/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(
+      CreateActiveDownloadsUIHTMLSource());
+}
+
+// static
+bool ActiveDownloadsUI::ShouldShowPopup(Profile* profile,
+                                        DownloadItem* download) {
+  // Don't show downloads panel for extension/theme downloads from gallery,
+  // or temporary downloads.
+  ExtensionService* service = profile->GetExtensionService();
+  return !download->IsTemporary() &&
+         (!ChromeDownloadManagerDelegate::IsExtensionDownload(download) ||
+          service == NULL ||
+          !service->IsDownloadFromGallery(download->GetURL(),
+                                         download->GetReferrerUrl()));
 }
 
 // static
 Browser* ActiveDownloadsUI::OpenPopup(Profile* profile) {
-  Browser* browser = GetPopup(profile);
+  Browser* browser = GetPopup();
 
   // Create new browser if no matching pop up is found.
   if (browser == NULL) {
@@ -395,7 +358,7 @@ Browser* ActiveDownloadsUI::OpenPopup(Profile* profile) {
     browser::NavigateParams params(
         browser,
         GURL(chrome::kChromeUIActiveDownloadsURL),
-        PageTransition::LINK);
+        content::PAGE_TRANSITION_LINK);
     params.disposition = NEW_FOREGROUND_TAB;
     browser::Navigate(&params);
 
@@ -411,16 +374,17 @@ Browser* ActiveDownloadsUI::OpenPopup(Profile* profile) {
   return browser;
 }
 
-Browser* ActiveDownloadsUI::GetPopup(Profile* profile) {
+// static
+Browser* ActiveDownloadsUI::GetPopup() {
   for (BrowserList::const_iterator it = BrowserList::begin();
        it != BrowserList::end();
        ++it) {
     if ((*it)->is_type_panel() && (*it)->is_app()) {
-      TabContents* tab_contents = (*it)->GetSelectedTabContents();
-      DCHECK(tab_contents);
-      if (!tab_contents)
+      WebContents* web_contents = (*it)->GetSelectedWebContents();
+      DCHECK(web_contents);
+      if (!web_contents)
         continue;
-      const GURL& url = tab_contents->GetURL();
+      const GURL& url = web_contents->GetURL();
 
       if (url.SchemeIs(chrome::kChromeUIScheme) &&
           url.host() == chrome::kChromeUIActiveDownloadsHost) {
@@ -431,3 +395,6 @@ Browser* ActiveDownloadsUI::GetPopup(Profile* profile) {
   return NULL;
 }
 
+const ActiveDownloadsUI::DownloadList& ActiveDownloadsUI::GetDownloads() const {
+  return handler_->downloads();
+}

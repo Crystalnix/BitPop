@@ -16,6 +16,20 @@ import unittest
 from grit.format.policy_templates.writers import writer_unittest_common
 
 
+TEMPLATE_HEADER="""\
+// Policy template for Linux.
+// Uncomment the policies you wish to activate and change their values to
+// something useful for your case. The provided values are for reference only
+// and do not provide meaningful defaults!
+{
+"""
+
+
+HEADER_DELIMETER="""\
+  //-------------------------------------------------------------------------
+"""
+
+
 class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
   '''Unit tests for JsonWriter.'''
 
@@ -42,7 +56,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '  "messages": {},'
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium': '1',}, 'json', 'en')
-    expected_output = '{\n}'
+    expected_output = TEMPLATE_HEADER + '}'
     self.CompareOutputs(output, expected_output)
 
   def testMainPolicy(self):
@@ -53,8 +67,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "MainPolicy",'
         '      "type": "main",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example Main Policy",'
+        '      "desc": "Example Main Policy",'
         '      "supported_on": ["chrome.linux:8-"],'
         '      "example_value": True'
         '    },'
@@ -64,8 +78,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_google_chrome' : '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "MainPolicy": true\n'
+        TEMPLATE_HEADER +
+        '  // Example Main Policy\n' +
+        HEADER_DELIMETER +
+        '  // Example Main Policy\n\n'
+        '  //"MainPolicy": true\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -77,8 +94,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "StringPolicy",'
         '      "type": "string",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example String Policy",'
+        '      "desc": "Example String Policy",'
         '      "supported_on": ["chrome.linux:8-"],'
         '      "example_value": "hello, world!"'
         '    },'
@@ -88,8 +105,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "StringPolicy": "hello, world!"\n'
+        TEMPLATE_HEADER +
+        '  // Example String Policy\n' +
+        HEADER_DELIMETER + 
+        '  // Example String Policy\n\n'
+        '  //"StringPolicy": "hello, world!"\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -101,8 +121,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "IntPolicy",'
         '      "type": "int",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example Int Policy",'
+        '      "desc": "Example Int Policy",'
         '      "supported_on": ["chrome.linux:8-"],'
         '      "example_value": 15'
         '    },'
@@ -112,8 +132,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "IntPolicy": 15\n'
+        TEMPLATE_HEADER +
+        '  // Example Int Policy\n' +
+        HEADER_DELIMETER + 
+        '  // Example Int Policy\n\n'
+        '  //"IntPolicy": 15\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -125,8 +148,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "EnumPolicy",'
         '      "type": "int-enum",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example Int Enum",'
+        '      "desc": "Example Int Enum",'
         '      "items": ['
         '        {"name": "ProxyServerDisabled", "value": 0, "caption": ""},'
         '        {"name": "ProxyServerAutoDetect", "value": 1, "caption": ""},'
@@ -140,8 +163,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_google_chrome': '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "EnumPolicy": 1\n'
+        TEMPLATE_HEADER +
+        '  // Example Int Enum\n' +
+        HEADER_DELIMETER + 
+        '  // Example Int Enum\n\n'
+        '  //"EnumPolicy": 1\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -153,8 +179,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "EnumPolicy",'
         '      "type": "string-enum",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example String Enum",'
+        '      "desc": "Example String Enum",'
         '      "items": ['
         '        {"name": "ProxyServerDisabled", "value": "one",'
         '         "caption": ""},'
@@ -170,8 +196,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_google_chrome': '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "EnumPolicy": "one"\n'
+        TEMPLATE_HEADER +
+        '  // Example String Enum\n' +
+        HEADER_DELIMETER + 
+        '  // Example String Enum\n\n'
+        '  //"EnumPolicy": "one"\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -183,8 +212,8 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "ListPolicy",'
         '      "type": "list",'
-        '      "caption": "",'
-        '      "desc": "",'
+        '      "caption": "Example List",'
+        '      "desc": "Example List",'
         '      "supported_on": ["chrome.linux:8-"],'
         '      "example_value": ["foo", "bar"]'
         '    },'
@@ -194,8 +223,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "ListPolicy": ["foo", "bar"]\n'
+        TEMPLATE_HEADER +
+        '  // Example List\n' +
+        HEADER_DELIMETER + 
+        '  // Example List\n\n'
+        '  //"ListPolicy": ["foo", "bar"]\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 
@@ -218,7 +250,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '  "messages": {},'
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
-    expected_output = '{\n}'
+    expected_output = TEMPLATE_HEADER + '}'
     self.CompareOutputs(output, expected_output)
 
   def testPolicyGroup(self):
@@ -234,15 +266,15 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '      "policies": [{'
         '        "name": "Policy1",'
         '        "type": "list",'
-        '        "caption": "",'
-        '        "desc": "",'
+        '        "caption": "Policy One",'
+        '        "desc": "Policy One",'
         '        "supported_on": ["chrome.linux:8-"],'
         '        "example_value": ["a", "b"]'
         '      },{'
         '        "name": "Policy2",'
         '        "type": "string",'
-        '        "caption": "",'
-        '        "desc": "",'
+        '        "caption": "Policy Two",'
+        '        "desc": "Policy Two",'
         '        "supported_on": ["chrome.linux:8-"],'
         '        "example_value": "c"'
         '      }],'
@@ -253,9 +285,15 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '}')
     output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'json', 'en')
     expected_output = (
-        '{\n'
-        '  "Policy1": ["a", "b"],\n'
-        '  "Policy2": "c"\n'
+        TEMPLATE_HEADER +
+        '  // Policy One\n' +
+        HEADER_DELIMETER + 
+        '  // Policy One\n\n'
+        '  //"Policy1": ["a", "b"],\n\n'
+        '  // Policy Two\n' +
+        HEADER_DELIMETER + 
+        '  // Policy Two\n\n'
+        '  //"Policy2": "c"\n\n'
         '}')
     self.CompareOutputs(output, expected_output)
 

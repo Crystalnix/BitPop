@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -14,16 +14,20 @@
 
 #include "base/command_line.h"
 #include "base/file_path.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/process_util.h"
 #include "base/rand_util.h"
-#include "base/string_split.h"
 #include "base/string_number_conversions.h"
+#include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/attrition_experiments.h"
+#include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/channel_info.h"
@@ -35,8 +39,6 @@
 #include "chrome/installer/util/helper.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/wmi.h"
-#include "content/common/json_value_serializer.h"
-#include "content/common/result_codes.h"
 
 #include "installer_util_strings.h"  // NOLINT
 
@@ -98,8 +100,12 @@ int GetDirectoryWriteTimeInHours(const wchar_t* path) {
   if (INVALID_HANDLE_VALUE == file)
     return -1;
   FILETIME time;
-  if (!::GetFileTime(file, NULL, NULL, &time))
+  if (!::GetFileTime(file, NULL, NULL, &time)) {
+    ::CloseHandle(file);
     return -1;
+  }
+
+  ::CloseHandle(file);
   return FileTimeToHours(time);
 }
 
@@ -139,13 +145,13 @@ bool LaunchSetup(CommandLine cmd_line, bool system_level_toast) {
 
       // Use handle inheritance to make sure the duplicated toast results key
       // gets inherited by the child process.
-      return base::LaunchAppWithHandleInheritance(
-          cmd_line.command_line_string(), false, false, NULL);
+      base::LaunchOptions options;
+      options.inherit_handles = true;
+      return base::LaunchProcess(cmd_line, options, NULL);
     }
   }
 
-  return base::LaunchApp(cmd_line.command_line_string(),
-                         false, false, NULL);
+  return base::LaunchProcess(cmd_line, base::LaunchOptions(), NULL);
 }
 
 // For System level installs, setup.exe lives in the system temp, which
@@ -231,13 +237,48 @@ bool LaunchSetupAsConsoleUser(const FilePath& setup_path,
     return false;
   // Note: Handle inheritance must be true in order for the child process to be
   // able to use the duplicated handle above (Google Update results).
-  bool launched = base::LaunchAppAsUser(user_token,
-                                        cmd_line.command_line_string(),
-                                        false, NULL, true, true);
+  base::LaunchOptions options;
+  options.as_user = user_token;
+  options.inherit_handles = true;
+  bool launched = base::LaunchProcess(cmd_line, options, NULL);
   ::CloseHandle(user_token);
   return launched;
 }
 
+// The plugin infobar experiment is just setting the client registry value
+// to one of four possible values from 10% of the elegible population, which
+// is defined as active users that have opted-in for sending stats.
+// Chrome reads this value and modifies the plugin blocking and infobar
+// behavior accordingly.
+bool DoInfobarPluginsExperiment(int dir_age_hours) {
+  std::wstring client;
+  if (!GoogleUpdateSettings::GetClient(&client))
+    return false;
+  // Make sure the user is not already in this experiment.
+  if ((client.size() > 3) && (client[0] == L'P') && (client[1] == L'I'))
+    return false;
+  if (!GoogleUpdateSettings::GetCollectStatsConsent())
+    return false;
+  if (dir_age_hours > (24 * 14))
+    return false;
+  if (base::RandInt(0, 9)) {
+    GoogleUpdateSettings::SetClient(
+        attrition_experiments::kNotInPluginExperiment);
+    return false;
+  }
+
+  const wchar_t* buckets[] = {
+    attrition_experiments::kPluginNoBlockNoOOD,
+    attrition_experiments::kPluginNoBlockDoOOD,
+    attrition_experiments::kPluginDoBlockNoOOD,
+    attrition_experiments::kPluginDoBlockDoOOD
+  };
+
+  size_t group = base::RandInt(0, arraysize(buckets)-1);
+  GoogleUpdateSettings::SetClient(buckets[group]);
+  VLOG(1) << "Plugin infobar experiment group: " << group;
+  return true;
+}
 }  // namespace
 
 GoogleChromeDistribution::GoogleChromeDistribution()
@@ -328,8 +369,8 @@ void GoogleChromeDistribution::DoPostUninstallOperations(
   const std::wstring kOSParam = L"os";
   base::win::OSInfo::VersionNumber version_number =
       base::win::OSInfo::GetInstance()->version_number();
-  std::wstring os_version = StringPrintf(L"%d.%d.%d", version_number.major,
-      version_number.minor, version_number.build);
+  std::wstring os_version = base::StringPrintf(L"%d.%d.%d",
+      version_number.major, version_number.minor, version_number.build);
 
   FilePath iexplore;
   if (!PathService::Get(base::DIR_PROGRAM_FILES, &iexplore))
@@ -366,9 +407,10 @@ std::wstring GoogleChromeDistribution::GetAppGuid() {
 }
 
 std::wstring GoogleChromeDistribution::GetApplicationName() {
-  const std::wstring& product_name =
-      installer::GetLocalizedString(IDS_PRODUCT_NAME_BASE);
-  return product_name;
+  // I'd really like to return L ## PRODUCT_FULLNAME_STRING; but that's no good
+  // since it'd be "Chromium" in a non-Chrome build, which isn't at all what I
+  // want.  Sigh.
+  return L"Google Chrome";
 }
 
 std::wstring GoogleChromeDistribution::GetAlternateApplicationName() {
@@ -420,6 +462,10 @@ std::wstring GoogleChromeDistribution::GetStateMediumKey() {
 
 std::wstring GoogleChromeDistribution::GetStatsServerURL() {
   return L"https://clients4.google.com/firefox/metrics/collect";
+}
+
+std::string GoogleChromeDistribution::GetNetworkStatsServer() const {
+  return "chrome.googleechotest.com";
 }
 
 std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {
@@ -540,6 +586,7 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   // The big experiment in Apr 2010 used TMxx and TNxx.
   // The big experiment in Oct 2010 used TVxx TWxx TXxx TYxx.
   // The big experiment in Feb 2011 used SJxx SKxx SLxx SMxx.
+  // Note: the plugin infobar experiment uses PIxx codes.
   using namespace attrition_experiments;
   static const struct UserExperimentDetails {
     const wchar_t* locale;  // Locale to show this experiment for (* for all).
@@ -554,24 +601,30 @@ bool GoogleChromeDistribution::GetExperimentDetails(
                             // of headings (below).
     int headings[kMax];     // A list of IDs per experiment. 0 == no heading.
   } kExperimentFlavors[] = {
-    // First in this order are the brand specific ones.
-    {L"en-US", kSkype, 1, L'Z', L'A', 1, { kSkype1, 0, 0, 0 } },
-    // And then we have catch-alls, like en-US (all brands).
-    {L"en-US", kAll,   1, L'T', L'V', 4, { kEnUs1, kEnUs2, kEnUs3, kEnUs4} },
-    // Japan has two experiments, same IDs as en-US but translated differently.
-    {L"jp",    kAll,   1, L'T', L'V', 2, { kEnUs1, kEnUs2, 0, 0} },
+    // This list should be ordered most-specific rule first (catch-all, like all
+    // brands or all locales should be last).
+
+    // The experiment with the more compact bubble. This one is a bit special
+    // because it is split into two: CAxx is regular style bubble and CBxx is
+    // compact style bubble. See |compact_bubble| below.
+    {L"en-US", kBrief, 1, L'C', L'A', 2, { kEnUs3, kEnUs3, 0, 0 } },
+
+    // Catch-all rules.
+    {kAll, kAll, 1, L'B', L'A', 1, {kEnUs3, 0, 0, 0} },
   };
 
   std::wstring locale;
   std::wstring brand;
 
   if (!GoogleUpdateSettings::GetLanguage(&locale))
-    locale = L"en-US";
+    locale = ASCIIToWide("en-US");
   if (!GoogleUpdateSettings::GetBrand(&brand))
+    brand = ASCIIToWide("");  // Could still be viable for catch-all rules.
+  if (brand == kEnterprise)
     return false;
 
   for (int i = 0; i < arraysize(kExperimentFlavors); ++i) {
-    // A maximum of four flavors is supported at the moment.
+    // A maximum of four flavors are supported at the moment.
     DCHECK_LE(kExperimentFlavors[i].flavors, kMax);
     DCHECK_GT(kExperimentFlavors[i].flavors, 0);
     // Make sure each experiment has valid headings.
@@ -587,7 +640,7 @@ bool GoogleChromeDistribution::GetExperimentDetails(
            kExperimentFlavors[i].flavors - 1 <= 'Z');
 
     if (kExperimentFlavors[i].locale != locale &&
-        kExperimentFlavors[i].locale != L"*")
+        kExperimentFlavors[i].locale != ASCIIToWide("*"))
       continue;
 
     std::vector<std::wstring> brand_codes;
@@ -608,6 +661,7 @@ bool GoogleChromeDistribution::GetExperimentDetails(
       experiment->prefix.resize(2);
       experiment->prefix[0] = kExperimentFlavors[i].prefix1;
       experiment->prefix[1] = kExperimentFlavors[i].prefix2 + flavor;
+      experiment->compact_bubble = (brand == kBrief) && (flavor == 1);
       return true;
     }
   }
@@ -615,8 +669,9 @@ bool GoogleChromeDistribution::GetExperimentDetails(
   return false;
 }
 
-// Currently we only have one experiment: the inactive user toast. Which only
-// applies for users doing upgrades.
+// Currently we have two experiments: 1) The inactive user toast. Which only
+// applies to users doing upgrades, and 2) The plugin infobar experiment
+// which only applies for active users.
 //
 // There are three scenarios when this function is called:
 // 1- Is a per-user-install and it updated: perform the experiment
@@ -661,13 +716,16 @@ void GoogleChromeDistribution::LaunchUserExperiment(
     // chrome user data directory.
     FilePath user_data_dir(installation.GetUserDataPath());
 
-    const bool experiment_enabled = false;
+    const bool toast_experiment_enabled = false;
     const int kThirtyDays = 30 * 24;
 
     int dir_age_hours = GetDirectoryWriteAgeInHours(
         user_data_dir.value().c_str());
-    if (!experiment_enabled) {
-      VLOG(1) << "Toast experiment is disabled.";
+    if (!toast_experiment_enabled) {
+      // Ok, no toast, but what about the plugin infobar experiment?
+      if (!DoInfobarPluginsExperiment(dir_age_hours)) {
+        VLOG(1) << "No infobar experiment";
+      }
       return;
     } else if (dir_age_hours < 0) {
       // This means that we failed to find the user data dir. The most likely
@@ -676,7 +734,6 @@ void GoogleChromeDistribution::LaunchUserExperiment(
       SetClient(base_group + kToastUDDirFailure, true);
       return;
     } else if (dir_age_hours < kThirtyDays) {
-      // An active user, so it does not qualify.
       VLOG(1) << "Chrome used in last " << dir_age_hours << " hours";
       SetClient(base_group + kToastActiveGroup, true);
       return;
@@ -723,7 +780,7 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
     // The command line should now have the url added as:
     // "chrome.exe -- <url>"
     DCHECK_NE(std::wstring::npos,
-        options.command_line_string().find(L" -- " + url));
+        options.GetCommandLineString().find(L" -- " + url));
   }
   // Launch chrome now. It will show the toast UI.
   int32 exit_code = 0;
@@ -733,13 +790,13 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
   // The chrome process has exited, figure out what happened.
   const wchar_t* outcome = NULL;
   switch (exit_code) {
-    case ResultCodes::NORMAL_EXIT:
+    case content::RESULT_CODE_NORMAL_EXIT:
       outcome = kToastExpTriesOkGroup;
       break;
-    case ResultCodes::NORMAL_EXIT_CANCEL:
+    case chrome::RESULT_CODE_NORMAL_EXIT_CANCEL:
       outcome = kToastExpCancelGroup;
       break;
-    case ResultCodes::NORMAL_EXIT_EXP2:
+    case chrome::RESULT_CODE_NORMAL_EXIT_EXP2:
       outcome = kToastExpUninstallGroup;
       break;
     default:
@@ -760,6 +817,6 @@ void GoogleChromeDistribution::InactiveUserToastExperiment(int flavor,
 
   CommandLine cmd(InstallUtil::GetChromeUninstallCmd(system_level_toast,
                                                      GetType()));
-  base::LaunchApp(cmd, false, false, NULL);
+  base::LaunchProcess(cmd, base::LaunchOptions(), NULL);
 }
 #endif

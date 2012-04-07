@@ -1,8 +1,10 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/plugins/npapi/plugin_list.h"
+
+#include <algorithm>
 
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -162,9 +164,8 @@ void PluginList::GetPluginDirectories(std::vector<FilePath>* plugin_dirs) {
 #endif  // !defined(OS_CHROMEOS)
 }
 
-void PluginList::LoadPluginsFromDir(const FilePath& dir_path,
-                                    ScopedVector<PluginGroup>* plugin_groups,
-                                    std::set<FilePath>* visited_plugins) {
+void PluginList::GetPluginsInDir(
+    const FilePath& dir_path, std::vector<FilePath>* plugins) {
   // See ScanPluginsDirectory near
   // http://mxr.mozilla.org/firefox/source/modules/plugin/base/src/nsPluginHostImpl.cpp#5052
 
@@ -189,12 +190,11 @@ void PluginList::LoadPluginsFromDir(const FilePath& dir_path,
     LOG_IF(ERROR, PluginList::DebugPluginLoading())
         << "Resolved " << orig_path.value() << " -> " << path.value();
 
-    if (visited_plugins->find(path) != visited_plugins->end()) {
+    if (std::find(plugins->begin(), plugins->end(), path) != plugins->end()) {
       LOG_IF(ERROR, PluginList::DebugPluginLoading())
           << "Skipping duplicate instance of " << path.value();
       continue;
     }
-    visited_plugins->insert(path);
 
     if (IsBlacklistedPlugin(path)) {
       LOG_IF(ERROR, PluginList::DebugPluginLoading())
@@ -232,7 +232,7 @@ void PluginList::LoadPluginsFromDir(const FilePath& dir_path,
 
   // Load the files in order.
   for (FileTimeList::const_iterator i = files.begin(); i != files.end(); ++i) {
-    LoadPlugin(i->first, plugin_groups);
+    plugins->push_back(i->first);
   }
 }
 
@@ -248,7 +248,7 @@ bool PluginList::ShouldLoadPlugin(const WebPluginInfo& info,
     // See if we have a better version of this plugin.
     for (size_t i = 0; i < plugin_groups->size(); ++i) {
       const std::vector<WebPluginInfo>& plugins =
-          (*plugin_groups)[i]->web_plugins_info();
+          (*plugin_groups)[i]->web_plugin_infos();
       for (size_t j = 0; j < plugins.size(); ++j) {
         if (plugins[j].name == info.name &&
             !IsUndesirablePlugin(plugins[j])) {

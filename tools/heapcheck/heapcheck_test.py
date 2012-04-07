@@ -1,9 +1,6 @@
-#!/usr/bin/python
-# Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
-# heapcheck_test.py
 
 """Wrapper for running the test under heapchecker and analyzing the output."""
 
@@ -20,6 +17,10 @@ import suppressions
 class HeapcheckWrapper(object):
   TMP_FILE = 'heapcheck.log'
   SANITY_TEST_SUPPRESSION = "Heapcheck sanity test"
+  LEAK_REPORT_RE = re.compile(
+     'Leak of ([0-9]*) bytes in ([0-9]*) objects allocated from:')
+  STACK_LINE_RE = re.compile('\s*@\s*(?:0x)?[0-9a-fA-F]+\s*([^\n]*)')
+  BORING_CALLERS = common.BoringCallers(mangled=False, use_re_wildcards=True)
 
   def __init__(self, supp_files):
     self._mode = 'strict'
@@ -44,6 +45,7 @@ class HeapcheckWrapper(object):
     proc += self._args
     self.PutEnvAndLog('G_SLICE', 'always-malloc')
     self.PutEnvAndLog('NSS_DISABLE_ARENA_FREE_LIST', '1')
+    self.PutEnvAndLog('NSS_DISABLE_UNLOAD', '1')
     self.PutEnvAndLog('GTEST_DEATH_TEST_USE_FORK', '1')
     self.PutEnvAndLog('HEAPCHECK', self._mode)
     self.PutEnvAndLog('HEAP_CHECK_MAX_LEAKS', '-1')
@@ -51,13 +53,13 @@ class HeapcheckWrapper(object):
     self.PutEnvAndLog('PPROF_PATH',
         path_utils.ScriptDir() +
         '/../../third_party/tcmalloc/chromium/src/pprof')
-    self.PutEnvAndLog('LD_PRELOAD', '/usr/lib/debug/libstdc++.so')
+    self.PutEnvAndLog('LD_LIBRARY_PATH',
+                      '/usr/lib/debug/:/usr/lib32/debug/')
 
     common.RunSubprocess(proc, self._timeout)
 
     # Always return true, even if running the subprocess failed. We depend on
-    # Analyze to determine if the run was valid. (This behaviour copied from
-    # the purify_test.py script.)
+    # Analyze to determine if the run was valid.
     return True
 
   def Analyze(self, log_lines, check_sanity=False):
@@ -81,9 +83,6 @@ class HeapcheckWrapper(object):
       passes,
       0, if all the errors are suppressed and the sanity check passes.
     """
-    leak_report = re.compile(
-        'Leak of ([0-9]*) bytes in ([0-9]*) objects allocated from:')
-    stack_line = re.compile('\s*@\s*(?:0x)?[0-9a-fA-F]+\s*([^\n]*)')
     return_code = 0
     # leak signature: [number of bytes, number of objects]
     cur_leak_signature = None
@@ -95,7 +94,7 @@ class HeapcheckWrapper(object):
     used_suppressions = {}
     for line in log_lines:
       line = line.rstrip()  # remove the trailing \n
-      match = stack_line.match(line)
+      match = self.STACK_LINE_RE.match(line)
       if match:
         cur_stack.append(match.groups()[0])
         cur_report.append(line)
@@ -116,6 +115,20 @@ class HeapcheckWrapper(object):
                 print '   ' + frame
               print 'Aborting...'
               return 3
+
+            # Drop boring callers from the stack to get less redundant info
+            # and fewer unique reports.
+            found_boring = False
+            for i in range(1, len(cur_stack)):
+              for j in self.BORING_CALLERS:
+                if re.match(j, cur_stack[i]):
+                  cur_stack = cur_stack[:i]
+                  cur_report = cur_report[:i]
+                  found_boring = True
+                  break
+              if found_boring:
+                break
+
             error_hash = hash("".join(cur_stack)) & 0xffffffffffffffff
             if error_hash not in reported_hashes:
               reported_hashes[error_hash] = 1
@@ -126,16 +139,16 @@ class HeapcheckWrapper(object):
               return_code = 1
               # Generate the suppression iff the stack contains more than one
               # frame (otherwise it's likely to be broken)
-              if len(cur_stack) > 1:
+              if len(cur_stack) > 1 or found_boring:
                 print '\nSuppression (error hash=#%016X#):\n{'  % (error_hash)
                 print '   <insert_a_suppression_name_here>'
                 print '   Heapcheck:Leak'
                 for frame in cur_stack:
                   print '   fun:' + frame
-                print '}\n\n\n'
+                print '}\n\n'
               else:
                 print ('This stack may be broken due to omitted frame pointers.'
-                       ' It is not recommended to suppress it.')
+                       ' It is not recommended to suppress it.\n')
           else:
             # Update the suppressions histogram.
             if description in used_suppressions:
@@ -149,7 +162,7 @@ class HeapcheckWrapper(object):
         cur_stack = []
         cur_report = []
         cur_leak_signature = None
-        match = leak_report.match(line)
+        match = self.LEAK_REPORT_RE.match(line)
         if match:
           cur_leak_signature = map(int, match.groups())
         else:

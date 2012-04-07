@@ -9,8 +9,8 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/menu_controller.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
+#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -40,7 +40,7 @@ class Delegate : public ui::SimpleMenuModel::Delegate {
       ui::Accelerator* accelerator) { return false; }
   virtual void ExecuteCommand(int command_id) { ++execute_count_; }
 
-  virtual void MenuWillShow() {
+  virtual void MenuWillShow(ui::SimpleMenuModel* /*source*/) {
     EXPECT_FALSE(did_show_);
     EXPECT_FALSE(did_close_);
     did_show_ = true;
@@ -53,7 +53,7 @@ class Delegate : public ui::SimpleMenuModel::Delegate {
                             inModes:modes];
   }
 
-  virtual void MenuClosed() {
+  virtual void MenuClosed(ui::SimpleMenuModel* /*source*/) {
     EXPECT_TRUE(did_show_);
     EXPECT_FALSE(did_close_);
     did_close_ = true;

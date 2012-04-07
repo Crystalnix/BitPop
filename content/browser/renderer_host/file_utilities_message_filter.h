@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
-#include "content/browser/browser_message_filter.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "ipc/ipc_platform_file.h"
 
 namespace base {
@@ -18,15 +18,16 @@ namespace IPC {
 class Message;
 }
 
-class FileUtilitiesMessageFilter : public BrowserMessageFilter {
+class FileUtilitiesMessageFilter : public content::BrowserMessageFilter {
  public:
   explicit FileUtilitiesMessageFilter(int process_id);
 
-  // BrowserMessageFilter implementation.
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+  // content::BrowserMessageFilter implementation.
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
  private:
   virtual ~FileUtilitiesMessageFilter();
 

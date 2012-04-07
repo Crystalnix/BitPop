@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,14 +13,13 @@
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/file_util.h"
-#include "base/memory/memory_debug.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
-#include "base/resource_util.h"
 #include "base/stack_container.h"
 #include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "base/win/resource_util.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
 #include "grit/webkit_resources.h"
 #include "grit/webkit_chromium_resources.h"
@@ -32,11 +31,12 @@
 #include "ui/base/win/hwnd_util.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
-#include "webkit/glue/plugins/plugin_list.h"
+#include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/tools/test_shell/resource.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
 #include "webkit/tools/test_shell/test_shell_devtools_agent.h"
 #include "webkit/tools/test_shell/test_shell_switches.h"
+#include "webkit/tools/test_shell/test_shell_webkit_init.h"
 #include "webkit/tools/test_shell/test_webview_delegate.h"
 
 using WebKit::WebWidget;
@@ -132,8 +132,8 @@ FilePath GetResourcesFilePath() {
 static base::StringPiece GetRawDataResource(HMODULE module, int resource_id) {
   void* data_ptr;
   size_t data_size;
-  return base::GetDataResourceFromModule(module, resource_id, &data_ptr,
-                                         &data_size)
+  return base::win::GetDataResourceFromModule(module, resource_id, &data_ptr,
+                                              &data_size)
       ? base::StringPiece(static_cast<char*>(data_ptr), data_size)
       : base::StringPiece();
 }
@@ -170,15 +170,15 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   DWORD num_fonts = 1;
   void* font_ptr;
   size_t font_size;
-  if (base::GetDataResourceFromModule(::GetModuleHandle(NULL), IDR_AHEM_FONT,
-                                      &font_ptr, &font_size)) {
+  if (base::win::GetDataResourceFromModule(::GetModuleHandle(NULL),
+      IDR_AHEM_FONT, &font_ptr, &font_size)) {
     HANDLE rc = AddFontMemResourceEx(font_ptr, font_size, 0, &num_fonts);
     DCHECK(rc != 0);
   }
 
   const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
   if (parsed_command_line.HasSwitch(test_shell::kCrashDumps)) {
-    std::wstring dir(
+    string16 dir(
         parsed_command_line.GetSwitchValueNative(test_shell::kCrashDumps));
     if (parsed_command_line.HasSwitch(test_shell::kCrashDumpsFulldump)) {
         new google_breakpad::ExceptionHandler(
@@ -247,10 +247,10 @@ std::string TestShell::RewriteLocalUrl(const std::string& url) {
     replace_url = replace_url.AppendASCII("third_party");
     replace_url = replace_url.AppendASCII("WebKit");
     replace_url = replace_url.AppendASCII("LayoutTests");
-    std::wstring replace_url_str = replace_url.value();
+    string16 replace_url_str = replace_url.value();
     replace_url_str.push_back(L'/');
     new_url = std::string("file:///") +
-              WideToUTF8(replace_url_str).append(url.substr(kPrefixLen));
+              UTF16ToUTF8(replace_url_str).append(url.substr(kPrefixLen));
   }
   return new_url;
 }
@@ -475,7 +475,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const std::wstring& frame_name) {
+                                const string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -490,7 +490,7 @@ void TestShell::LoadURLForFrame(const GURL& url,
   }
 
   navigation_controller_->LoadEntry(
-      new TestNavigationEntry(-1, url, std::wstring(), frame_name));
+      new TestNavigationEntry(-1, url, frame_name));
 }
 
 LRESULT CALLBACK TestShell::WndProc(HWND hwnd, UINT message, WPARAM wParam,
@@ -567,12 +567,8 @@ LRESULT CALLBACK TestShell::WndProc(HWND hwnd, UINT message, WPARAM wParam,
       RemoveWindowFromList(hwnd);
 
       if (TestShell::windowList()->empty() || shell->is_modal()) {
-        // Dump all in use memory just before shutdown if in use memory
-        // debugging has been enabled.
-        base::MemoryDebug::DumpAllMemoryInUse();
-
         MessageLoop::current()->PostTask(FROM_HERE,
-                                         new MessageLoop::QuitTask());
+                                         MessageLoop::QuitClosure());
       }
       delete shell;
     }
@@ -662,12 +658,7 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 }
 
 
-/////////////////////////////////////////////////////////////////////////////
-// WebKit glue functions
-
-namespace webkit_glue {
-
-string16 GetLocalizedString(int message_id) {
+string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   wchar_t localized[MAX_LOADSTRING];
   int length = LoadString(GetModuleHandle(NULL), message_id,
                           localized, MAX_LOADSTRING);
@@ -679,7 +670,7 @@ string16 GetLocalizedString(int message_id) {
 }
 
 // TODO(tc): Convert this to using resources from test_shell.rc.
-base::StringPiece GetDataResource(int resource_id) {
+base::StringPiece TestShellWebKitInit::GetDataResource(int resource_id) {
   switch (resource_id) {
   case IDR_BROKENIMAGE: {
     // Use webkit's broken image icon (16x16)
@@ -732,9 +723,10 @@ base::StringPiece GetDataResource(int resource_id) {
   return base::StringPiece();
 }
 
-HCURSOR LoadCursor(int cursor_id) {
-  return NULL;
-}
+/////////////////////////////////////////////////////////////////////////////
+// WebKit glue functions
+
+namespace webkit_glue {
 
 bool EnsureFontLoaded(HFONT font) {
   return true;

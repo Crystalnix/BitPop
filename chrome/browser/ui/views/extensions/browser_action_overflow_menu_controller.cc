@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/extensions/browser_action_overflow_menu_controller.h"
 
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
@@ -13,8 +14,11 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "ui/gfx/canvas_skia.h"
-#include "views/controls/menu/menu_2.h"
-#include "views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/widget/widget.h"
 
 BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     BrowserActionsContainer* owner,
@@ -24,10 +28,12 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     : owner_(owner),
       observer_(NULL),
       menu_button_(menu_button),
+      menu_(NULL),
       views_(&views),
       start_index_(start_index),
       for_drop_(false) {
-  menu_.reset(new views::MenuItemView(this));
+  menu_ = new views::MenuItemView(this);
+  menu_runner_.reset(new views::MenuRunner(menu_));
   menu_->set_has_icons(true);
 
   size_t command_id = 1;  // Menu id 0 is reserved, start with 1.
@@ -36,11 +42,11 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     scoped_ptr<gfx::Canvas> canvas(view->GetIconWithBadge());
     menu_->AppendMenuItemWithIcon(
         command_id,
-        UTF8ToWide(view->button()->extension()->name()),
+        UTF8ToUTF16(view->button()->extension()->name()),
         canvas->AsCanvasSkia()->ExtractBitmap());
 
     // Set the tooltip for this item.
-    std::wstring tooltip = UTF8ToWide(
+    string16 tooltip = UTF8ToUTF16(
         view->button()->extension()->browser_action()->GetTitle(
             owner_->GetCurrentTabId()));
     menu_->SetTooltip(tooltip, command_id);
@@ -54,7 +60,7 @@ BrowserActionOverflowMenuController::~BrowserActionOverflowMenuController() {
     observer_->NotifyMenuDeleted(this);
 }
 
-bool BrowserActionOverflowMenuController::RunMenu(gfx::NativeWindow window,
+bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
                                                   bool for_drop) {
   for_drop_ = for_drop;
 
@@ -64,12 +70,11 @@ bool BrowserActionOverflowMenuController::RunMenu(gfx::NativeWindow window,
   bounds.set_x(screen_loc.x());
   bounds.set_y(screen_loc.y());
 
-  views::MenuItemView::AnchorPosition anchor = base::i18n::IsRTL() ?
-      views::MenuItemView::TOPLEFT : views::MenuItemView::TOPRIGHT;
-  if (for_drop) {
-    menu_->RunMenuForDropAt(window, bounds, anchor);
-  } else {
-    menu_->RunMenuAt(window, menu_button_, bounds, anchor, false);
+  views::MenuItemView::AnchorPosition anchor = views::MenuItemView::TOPRIGHT;
+  // As we maintain our own lifetime we can safely ignore the result.
+  ignore_result(menu_runner_->RunMenuAt(window, menu_button_, bounds, anchor,
+      for_drop_ ? views::MenuRunner::FOR_DROP : 0));
+  if (!for_drop_) {
     // Give the context menu (if any) a chance to execute the user-selected
     // command.
     MessageLoop::current()->DeleteSoon(FROM_HERE, this);
@@ -97,13 +102,18 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
   if (!extension->ShowConfigureContextMenus())
     return false;
 
-  context_menu_contents_ = new ExtensionContextMenuModel(
-      extension,
-      owner_->browser(),
-      owner_);
-  context_menu_menu_.reset(new views::Menu2(context_menu_contents_.get()));
+  scoped_refptr<ExtensionContextMenuModel> context_menu_contents =
+      new ExtensionContextMenuModel(extension, owner_->browser(), owner_);
+  views::MenuModelAdapter context_menu_model_adapter(
+      context_menu_contents.get());
+  views::MenuRunner context_menu_runner(
+      context_menu_model_adapter.CreateMenu());
+
+  // We can ignore the result as we delete ourself.
   // This blocks until the user choses something or dismisses the menu.
-  context_menu_menu_->RunContextMenuAt(p);
+  ignore_result(context_menu_runner.RunMenuAt(menu_button_->GetWidget(),
+      NULL, gfx::Rect(p, gfx::Size()), views::MenuItemView::TOPLEFT,
+      views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED));
 
   // The user is done with the context menu, so we can close the underlying
   // menu.

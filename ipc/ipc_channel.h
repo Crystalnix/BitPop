@@ -29,13 +29,13 @@ namespace IPC {
 // the channel with the mode set to one of the NAMED modes. NAMED modes are
 // currently used by automation and service processes.
 
-class Channel : public Message::Sender {
+class IPC_EXPORT Channel : public Message::Sender {
   // Security tests need access to the pipe handle.
   friend class ChannelTest;
 
  public:
   // Implemented by consumers of a Channel to receive messages.
-  class Listener {
+  class IPC_EXPORT Listener {
    public:
     virtual ~Listener() {}
 
@@ -94,14 +94,12 @@ class Channel : public Message::Sender {
 #endif
   };
 
-  enum {
-    // The maximum message size in bytes. Attempting to receive a
-    // message of this size or bigger results in a channel error.
-    kMaximumMessageSize = 128 * 1024 * 1024,
+  // The maximum message size in bytes. Attempting to receive a message of this
+  // size or bigger results in a channel error.
+  static const size_t kMaximumMessageSize = 128 * 1024 * 1024;
 
-    // Ammount of data to read at once from the pipe.
-    kReadBufferSize = 4 * 1024
-  };
+  // Ammount of data to read at once from the pipe.
+  static const size_t kReadBufferSize = 4 * 1024;
 
   // Initialize a Channel.
   //
@@ -142,13 +140,19 @@ class Channel : public Message::Sender {
   //
   // |message| must be allocated using operator new.  This object will be
   // deleted once the contents of the Message have been sent.
-  virtual bool Send(Message* message);
+  virtual bool Send(Message* message) OVERRIDE;
 
 #if defined(OS_POSIX) && !defined(OS_NACL)
   // On POSIX an IPC::Channel wraps a socketpair(), this method returns the
   // FD # for the client end of the socket.
   // This method may only be called on the server side of a channel.
+  // This method can be called on any thread.
   int GetClientFileDescriptor() const;
+
+  // Same as GetClientFileDescriptor, but transfers the ownership of the
+  // file descriptor to the caller.
+  // This method can be called on any thread.
+  int TakeClientFileDescriptor();
 
   // On POSIX an IPC::Channel can either wrap an established socket, or it
   // can wrap a socket that is listening for connections. Currently an
@@ -170,6 +174,17 @@ class Channel : public Message::Sender {
   // for more connections.
   void ResetToAcceptingConnectionState();
 #endif  // defined(OS_POSIX) && !defined(OS_NACL)
+
+  // Returns true if a named server channel is initialized on the given channel
+  // ID. Even if true, the server may have already accepted a connection.
+  static bool IsNamedServerInitialized(const std::string& channel_id);
+
+#if defined(OS_LINUX)
+  // Sandboxed processes live in a PID namespace, so when sending the IPC hello
+  // message from client to server we need to send the PID from the global
+  // PID namespace.
+  static void SetGlobalPid(int pid);
+#endif
 
  protected:
   // Used in Chrome by the TestSink to provide a dummy channel implementation

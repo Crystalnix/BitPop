@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,11 @@
 
 #include <string>
 
-#include "views/controls/button/button.h"
-#include "views/controls/textfield/textfield_controller.h"
-#include "views/view.h"
-#include "views/window/dialog_delegate.h"
+#include "base/compiler_specific.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/textfield/textfield_controller.h"
+#include "ui/views/view.h"
+#include "ui/views/window/dialog_delegate.h"
 
 namespace views {
 class Button;
@@ -25,8 +26,7 @@ namespace chromeos {
 // A dialog box that is shown when password change was detected.
 // User is presented with an option to sync all settings or
 // enter old password and sync only delta.
-class PasswordChangedView : public views::View,
-                            public views::DialogDelegate,
+class PasswordChangedView : public views::DialogDelegateView,
                             public views::ButtonListener,
                             public views::TextfieldController {
  public:
@@ -46,33 +46,33 @@ class PasswordChangedView : public views::View,
   virtual ~PasswordChangedView() {}
 
   // views::DialogDelegate:
-  virtual bool Accept();
-  virtual int GetDialogButtons() const;
+  virtual bool Accept() OVERRIDE;
+  virtual int GetDialogButtons() const OVERRIDE;
 
-  // views::WindowDelegate:
-  virtual View* GetInitiallyFocusedView();
-  virtual bool IsModal() const;
-  virtual views::View* GetContentsView();
+  // views::WidgetDelegate:
+  virtual View* GetInitiallyFocusedView() OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
+  virtual views::View* GetContentsView() OVERRIDE;
 
   // views::View:
-  virtual std::wstring GetWindowTitle() const;
+  virtual string16 GetWindowTitle() const OVERRIDE;
 
   // views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event);
+                             const views::Event& event) OVERRIDE;
 
   // views::TextfieldController:
   virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const views::KeyEvent& keystroke);
+                              const views::KeyEvent& keystroke) OVERRIDE;
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) {}
+                               const string16& new_contents) OVERRIDE {}
 
  protected:
   // views::View:
-  virtual gfx::Size GetPreferredSize();
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add,
                                     views::View* parent,
-                                    views::View* child);
+                                    views::View* child) OVERRIDE;
 
  private:
   // Called when dialog is accepted.

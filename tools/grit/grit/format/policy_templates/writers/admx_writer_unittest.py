@@ -32,8 +32,10 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
     config = {
       'win_group_policy_class': 'TestClass',
       'win_supported_os': 'SUPPORTED_TESTOS',
-      'win_reg_key_name': 'Software\\Policies\\Test',
-      'win_category_path': ['test_category'],
+      'win_reg_mandatory_key_name': 'Software\\Policies\\Test',
+      'win_reg_recommended_key_name': 'Software\\Policies\\Test\\Recommended',
+      'win_mandatory_category_path': ['test_category'],
+      'win_recommended_category_path': ['test_recommended_category'],
       'admx_namespace': 'ADMXWriter.Test.Namespace',
       'admx_prefix': 'test_prefix'
     }
@@ -73,6 +75,8 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
         '  <categories>\n'
         '    <category displayName="$(string.test_category)"'
         ' name="test_category"/>\n'
+        '    <category displayName="$(string.test_recommended_category)"'
+        ' name="test_recommended_category"/>\n'
         '  </categories>\n'
         '  <policies/>\n'
         '</policyDefinitions>')
@@ -98,6 +102,8 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
     expected_output = (
         '<category displayName="$(string.test_category)"'
         ' name="test_category"/>\n'
+        '<category displayName="$(string.test_recommended_category)"'
+        ' name="test_recommended_category"/>\n'
         '<category displayName="$(string.PolicyGroup_group)"'
         ' name="PolicyGroup">\n'
         '  <parentCategory ref="test_category"/>\n'
@@ -130,6 +136,8 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
     expected_output = (
         '<category displayName="$(string.test_category)"'
         ' name="test_category"/>\n'
+        '<category displayName="$(string.test_recommended_category)"'
+        ' name="test_recommended_category"/>\n'
         '<category displayName="$(string.PolicyGroup_group)"'
         ' name="PolicyGroup">\n'
         '  <parentCategory ref="test_category"/>\n'
@@ -165,6 +173,41 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
         ' presentation="$(presentation.DummyMainPolicy)"'
         ' valueName="DummyMainPolicy">\n'
         '  <parentCategory ref="PolicyGroup"/>\n'
+        '  <supportedOn ref="SUPPORTED_TESTOS"/>\n'
+        '  <enabledValue>\n'
+        '    <decimal value="1"/>\n'
+        '  </enabledValue>\n'
+        '  <disabledValue>\n'
+        '    <decimal value="0"/>\n'
+        '  </disabledValue>\n'
+        '</policy>')
+
+    self.AssertXMLEquals(output, expected_output)
+
+  def testRecommendedPolicy(self):
+    main_policy = {
+      'name': 'DummyMainPolicy',
+      'type': 'main',
+    }
+
+    policy_group = {
+      'name': 'PolicyGroup',
+      'policies': [main_policy],
+    }
+    self.writer.BeginTemplate()
+    self.writer.BeginRecommendedPolicyGroup(policy_group)
+
+    self.writer.WriteRecommendedPolicy(main_policy)
+
+    output = self.GetXMLOfChildren(self._GetPoliciesElement(self.writer._doc))
+    expected_output = (
+        '<policy class="TestClass" displayName="$(string.DummyMainPolicy)"'
+        ' explainText="$(string.DummyMainPolicy_Explain)"'
+        ' key="Software\\Policies\\Test\\Recommended"'
+        ' name="DummyMainPolicy_recommended"'
+        ' presentation="$(presentation.DummyMainPolicy)"'
+        ' valueName="DummyMainPolicy">\n'
+        '  <parentCategory ref="PolicyGroup_recommended"/>\n'
         '  <supportedOn ref="SUPPORTED_TESTOS"/>\n'
         '  <enabledValue>\n'
         '    <decimal value="1"/>\n'
@@ -272,7 +315,7 @@ class AdmxWriterTest(xml_writer_base_unittest.XmlWriterBaseTest):
     dom_impl = minidom.getDOMImplementation('')
     self.writer._doc = dom_impl.createDocument(None, 'policyDefinitions', None)
     self.writer._active_policies_elem = self.writer._doc.documentElement
-    self.writer._active_policy_group_name = 'PolicyGroup'
+    self.writer._active_mandatory_policy_group_name = 'PolicyGroup'
     self.writer.WritePolicy(enum_policy)
     output = self.writer.GetTemplateText()
     expected_output = (

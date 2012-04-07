@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,74 +6,60 @@
 #define CHROME_BROWSER_PLUGIN_DOWNLOAD_HELPER_H_
 #pragma once
 
-#include <string>
-#include "build/build_config.h"
-
-#if defined(OS_WIN)
+#include "base/callback.h"
 #include "base/file_path.h"
-#include "net/base/file_stream.h"
-#include "net/url_request/url_request.h"
-#include "ui/gfx/native_widget_types.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "googleurl/src/gurl.h"
+
+namespace base {
+class MessageLoopProxy;
+}
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 // The PluginDownloadUrlHelper is used to handle one download URL request
 // from the plugin. Each download request is handled by a new instance
 // of this class.
-class PluginDownloadUrlHelper : public net::URLRequest::Delegate {
-  static const int kDownloadFileBufferSize = 32768;
+class PluginDownloadUrlHelper : public content::URLFetcherDelegate {
  public:
-  // The delegate receives notification about the status of downloads
-  // initiated.
-  class DownloadDelegate {
-   public:
-    virtual ~DownloadDelegate() {}
+  typedef base::Callback<void(const FilePath&)> DownloadFinishedCallback;
+  typedef base::Callback<void(const std::string&)> ErrorCallback;
 
-    virtual void OnDownloadCompleted(const FilePath& download_path,
-                                     bool success) {}
-  };
+  PluginDownloadUrlHelper();
+  virtual ~PluginDownloadUrlHelper();
 
-  PluginDownloadUrlHelper(const std::string& download_url,
-                          gfx::NativeWindow caller_window,
-                          PluginDownloadUrlHelper::DownloadDelegate* delegate);
-  ~PluginDownloadUrlHelper();
+  void InitiateDownload(const GURL& download_url,
+                        net::URLRequestContextGetter* request_context,
+                        const DownloadFinishedCallback& callback,
+                        const ErrorCallback& error_callback);
 
-  void InitiateDownload(net::URLRequestContext* request_context);
+  // content::URLFetcherDelegate
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
-  // net::URLRequest::Delegate
-  virtual void OnAuthRequired(net::URLRequest* request,
-                              net::AuthChallengeInfo* auth_info);
-  virtual void OnSSLCertificateError(net::URLRequest* request,
-                                     int cert_error,
-                                     net::X509Certificate* cert);
-  virtual void OnResponseStarted(net::URLRequest* request);
-  virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
+ private:
+  // Renames the file (which was downloaded to a temporary file) to the filename
+  // of the download URL.
+  void RenameDownloadedFile();
 
-  void OnDownloadCompleted(net::URLRequest* request);
+  // Runs the success callback and deletes itself.
+  void RunFinishedCallback();
 
- protected:
-  void DownloadCompletedHelper(bool success);
+  // Runs the error callback and deletes itself.
+  void RunErrorCallback(const std::string& error);
 
   // The download file request initiated by the plugin.
-  net::URLRequest* download_file_request_;
-  // Handle to the downloaded file.
-  scoped_ptr<net::FileStream> download_file_;
-  // The full path of the downloaded file.
-  FilePath download_file_path_;
-  // The buffer passed off to net::URLRequest::Read.
-  scoped_refptr<net::IOBuffer> download_file_buffer_;
-  // TODO(port): this comment doesn't describe the situation on Posix.
-  // The window handle for sending the WM_COPYDATA notification,
-  // indicating that the download completed.
-  gfx::NativeWindow download_file_caller_window_;
+  scoped_ptr<content::URLFetcher> download_file_fetcher_;
 
-  std::string download_url_;
+  GURL download_url_;
+  FilePath downloaded_file_;
 
-  PluginDownloadUrlHelper::DownloadDelegate* delegate_;
+  DownloadFinishedCallback download_finished_callback_;
+  ErrorCallback error_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginDownloadUrlHelper);
 };
 
-#endif  // OS_WIN
-
 #endif  // CHROME_BROWSER_PLUGIN_DOWNLOAD_HELPER_H_
-
-

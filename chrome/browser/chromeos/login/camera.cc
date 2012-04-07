@@ -1,35 +1,38 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/camera.h"
 
-#include <stdlib.h>
-#include <fcntl.h>  // low-level i/o
-#include <unistd.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/mman.h>
-#include <sys/ioctl.h>
 #include <asm/types.h>  // for videodev2.h
+#include <errno.h>
+#include <fcntl.h>  // low-level i/o
 #include <linux/videodev2.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "ui/gfx/size.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
@@ -151,22 +154,16 @@ void Camera::ReportFailure() {
   DCHECK(IsOnCameraThread());
   if (device_descriptor_ == -1) {
     BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &Camera::OnInitializeFailure));
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&Camera::OnInitializeFailure, this));
   } else if (!is_capturing_) {
     BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &Camera::OnStartCapturingFailure));
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&Camera::OnStartCapturingFailure, this));
   } else {
     BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &Camera::OnCaptureFailure));
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&Camera::OnCaptureFailure, this));
   }
 }
 
@@ -177,10 +174,7 @@ void Camera::Initialize(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   PostCameraTaskWithDelay(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &Camera::DoInitialize,
-                        desired_width,
-                        desired_height),
+      base::Bind(&Camera::DoInitialize, this, desired_width, desired_height),
       delay_in_ms);
 }
 
@@ -253,14 +247,13 @@ void Camera::DoInitialize(int desired_width, int desired_height) {
   desired_width_ = desired_width;
   desired_height_ = desired_height;
   BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      NewRunnableMethod(this, &Camera::OnInitializeSuccess));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&Camera::OnInitializeSuccess, this));
 }
 
 void Camera::Uninitialize() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PostCameraTask(FROM_HERE, NewRunnableMethod(this, &Camera::DoUninitialize));
+  PostCameraTask(FROM_HERE, base::Bind(&Camera::DoUninitialize, this));
 }
 
 void Camera::DoUninitialize() {
@@ -278,8 +271,7 @@ void Camera::DoUninitialize() {
 
 void Camera::StartCapturing() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PostCameraTask(FROM_HERE,
-                 NewRunnableMethod(this, &Camera::DoStartCapturing));
+  PostCameraTask(FROM_HERE, base::Bind(&Camera::DoStartCapturing, this));
 }
 
 void Camera::DoStartCapturing() {
@@ -309,19 +301,15 @@ void Camera::DoStartCapturing() {
   // No need to post DidProcessCameraThreadMethod() as this method is
   // being posted instead.
   BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      NewRunnableMethod(this,
-                        &Camera::OnStartCapturingSuccess));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&Camera::OnStartCapturingSuccess, this));
   is_capturing_ = true;
-  PostCameraTask(FROM_HERE,
-                 NewRunnableMethod(this, &Camera::OnCapture));
+  PostCameraTask(FROM_HERE, base::Bind(&Camera::OnCapture, this));
 }
 
 void Camera::StopCapturing() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  PostCameraTask(FROM_HERE,
-                 NewRunnableMethod(this, &Camera::DoStopCapturing));
+  PostCameraTask(FROM_HERE, base::Bind(&Camera::DoStopCapturing, this));
 }
 
 void Camera::DoStopCapturing() {
@@ -447,8 +435,7 @@ void Camera::OnCapture() {
     // EAGAIN - continue select loop.
   } while (!ReadFrame());
 
-  PostCameraTask(FROM_HERE,
-                 NewRunnableMethod(this, &Camera::OnCapture));
+  PostCameraTask(FROM_HERE, base::Bind(&Camera::OnCapture, this));
 }
 
 bool Camera::ReadFrame() {
@@ -545,9 +532,8 @@ void Camera::ProcessImage(void* data) {
     frame_image_.swap(image);
   }
   BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      NewRunnableMethod(this, &Camera::OnCaptureSuccess));
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&Camera::OnCaptureSuccess, this));
 }
 
 void Camera::OnInitializeSuccess() {
@@ -592,13 +578,13 @@ bool Camera::IsOnCameraThread() const {
 }
 
 void Camera::PostCameraTask(const tracked_objects::Location& from_here,
-                            Task* task) {
+                            const base::Closure& task) {
   PostCameraTaskWithDelay(from_here, task, 0);
 }
 
 void Camera::PostCameraTaskWithDelay(
     const tracked_objects::Location& from_here,
-    Task* task,
+    const base::Closure& task,
     int64 delay_in_ms) {
   base::AutoLock lock(thread_lock_);
   if (!thread_)

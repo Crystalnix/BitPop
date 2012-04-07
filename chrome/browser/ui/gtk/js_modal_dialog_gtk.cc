@@ -13,7 +13,7 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/message_box_flags.h"
+#include "ui/base/ui_base_types.h"
 
 namespace {
 
@@ -24,12 +24,12 @@ const char kSuppressCheckboxId[] = "chrome_suppress_checkbox";
 
 // If there's a text entry in the dialog, get the text from the first one and
 // return it.
-std::wstring GetPromptText(GtkDialog* dialog) {
+string16 GetPromptText(GtkDialog* dialog) {
   GtkWidget* widget = static_cast<GtkWidget*>(
       g_object_get_data(G_OBJECT(dialog), kPromptTextId));
   if (widget)
-    return UTF8ToWide(gtk_entry_get_text(GTK_ENTRY(widget)));
-  return std::wstring();
+    return UTF8ToUTF16(gtk_entry_get_text(GTK_ENTRY(widget)));
+  return string16();
 }
 
 // If there's a toggle button in the dialog, return the toggled state.
@@ -55,13 +55,13 @@ JSModalDialogGtk::JSModalDialogGtk(JavaScriptAppModalDialog* dialog,
 
   // We add in the OK button manually later because we want to focus it
   // explicitly.
-  switch (dialog_->dialog_flags()) {
-    case ui::MessageBoxFlags::kIsJavascriptAlert:
+  switch (dialog_->javascript_message_type()) {
+    case ui::JAVASCRIPT_MESSAGE_TYPE_ALERT:
       buttons = GTK_BUTTONS_NONE;
       message_type = GTK_MESSAGE_WARNING;
       break;
 
-    case ui::MessageBoxFlags::kIsJavascriptConfirm:
+    case ui::JAVASCRIPT_MESSAGE_TYPE_CONFIRM:
       if (dialog_->is_before_unload_dialog()) {
         // onbeforeunload also uses a confirm prompt, it just has custom
         // buttons.  We add the buttons using gtk_dialog_add_button below.
@@ -72,7 +72,7 @@ JSModalDialogGtk::JSModalDialogGtk(JavaScriptAppModalDialog* dialog,
       message_type = GTK_MESSAGE_QUESTION;
       break;
 
-    case ui::MessageBoxFlags::kIsJavascriptPrompt:
+    case ui::JAVASCRIPT_MESSAGE_TYPE_PROMPT:
       buttons = GTK_BUTTONS_CANCEL;
       message_type = GTK_MESSAGE_QUESTION;
       break;
@@ -87,32 +87,34 @@ JSModalDialogGtk::JSModalDialogGtk(JavaScriptAppModalDialog* dialog,
 
   gtk_dialog_ = gtk_message_dialog_new(parent_window,
       GTK_DIALOG_MODAL, message_type, buttons, "%s",
-      WideToUTF8(dialog_->message_text()).c_str());
+      UTF16ToUTF8(dialog_->message_text()).c_str());
   g_signal_connect(gtk_dialog_, "delete-event",
                    G_CALLBACK(gtk_widget_hide_on_delete), NULL);
   gtk_util::ApplyMessageDialogQuirks(gtk_dialog_);
   gtk_window_set_title(GTK_WINDOW(gtk_dialog_),
-                       WideToUTF8(dialog_->title()).c_str());
+                       UTF16ToUTF8(dialog_->title()).c_str());
 
   // Adjust content area as needed.  Set up the prompt text entry or
   // suppression check box.
-  if (ui::MessageBoxFlags::kIsJavascriptPrompt == dialog_->dialog_flags()) {
-    // TODO(tc): Replace with gtk_dialog_get_content_area() when using GTK 2.14+
-    GtkWidget* contents_vbox = GTK_DIALOG(gtk_dialog_)->vbox;
+  if (dialog_->javascript_message_type() ==
+          ui::JAVASCRIPT_MESSAGE_TYPE_PROMPT) {
+    GtkWidget* content_area =
+        gtk_dialog_get_content_area(GTK_DIALOG(gtk_dialog_));
     GtkWidget* text_box = gtk_entry_new();
     gtk_entry_set_text(GTK_ENTRY(text_box),
-        WideToUTF8(dialog_->default_prompt_text()).c_str());
-    gtk_box_pack_start(GTK_BOX(contents_vbox), text_box, TRUE, TRUE, 0);
+        UTF16ToUTF8(dialog_->default_prompt_text()).c_str());
+    gtk_box_pack_start(GTK_BOX(content_area), text_box, TRUE, TRUE, 0);
     g_object_set_data(G_OBJECT(gtk_dialog_), kPromptTextId, text_box);
     gtk_entry_set_activates_default(GTK_ENTRY(text_box), TRUE);
   }
 
   if (dialog_->display_suppress_checkbox()) {
-    GtkWidget* contents_vbox = GTK_DIALOG(gtk_dialog_)->vbox;
+    GtkWidget* content_area =
+        gtk_dialog_get_content_area(GTK_DIALOG(gtk_dialog_));
     GtkWidget* check_box = gtk_check_button_new_with_label(
         l10n_util::GetStringUTF8(
         IDS_JAVASCRIPT_MESSAGEBOX_SUPPRESS_OPTION).c_str());
-    gtk_box_pack_start(GTK_BOX(contents_vbox), check_box, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(content_area), check_box, TRUE, TRUE, 0);
     g_object_set_data(G_OBJECT(gtk_dialog_), kSuppressCheckboxId, check_box);
   }
 
@@ -131,7 +133,8 @@ JSModalDialogGtk::JSModalDialogGtk(JavaScriptAppModalDialog* dialog,
     // Add the OK button and focus it.
     GtkWidget* ok_button = gtk_dialog_add_button(GTK_DIALOG(gtk_dialog_),
         GTK_STOCK_OK, GTK_RESPONSE_OK);
-    if (ui::MessageBoxFlags::kIsJavascriptPrompt != dialog_->dialog_flags())
+    if (dialog_->javascript_message_type() !=
+            ui::JAVASCRIPT_MESSAGE_TYPE_PROMPT)
       gtk_widget_grab_focus(ok_button);
   }
 
@@ -146,16 +149,15 @@ JSModalDialogGtk::~JSModalDialogGtk() {
 // JSModalDialogGtk, NativeAppModalDialog implementation:
 
 int JSModalDialogGtk::GetAppModalDialogButtons() const {
-  switch (dialog_->dialog_flags()) {
-    case ui::MessageBoxFlags::kIsJavascriptAlert:
-      return ui::MessageBoxFlags::DIALOGBUTTON_OK;
+  switch (dialog_->javascript_message_type()) {
+    case ui::JAVASCRIPT_MESSAGE_TYPE_ALERT:
+      return ui::DIALOG_BUTTON_OK;
 
-    case ui::MessageBoxFlags::kIsJavascriptConfirm:
-      return ui::MessageBoxFlags::DIALOGBUTTON_OK |
-        ui::MessageBoxFlags::DIALOGBUTTON_CANCEL;
+    case ui::JAVASCRIPT_MESSAGE_TYPE_CONFIRM:
+      return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
 
-    case ui::MessageBoxFlags::kIsJavascriptPrompt:
-      return ui::MessageBoxFlags::DIALOGBUTTON_OK;
+    case ui::JAVASCRIPT_MESSAGE_TYPE_PROMPT:
+      return ui::DIALOG_BUTTON_OK;
 
     default:
       NOTREACHED();

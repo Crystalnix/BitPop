@@ -4,7 +4,8 @@
 
 #include "chrome/browser/autocomplete/history_contents_provider.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -17,6 +18,7 @@
 #include "net/base/net_util.h"
 
 using base::TimeTicks;
+using history::HistoryDatabase;
 
 namespace {
 
@@ -24,31 +26,23 @@ namespace {
 // time it will take.
 const int kDaysToSearch = 30;
 
-// When processing the results from the history query, this structure points to
-// a single result. It allows the results to be sorted and processed without
-// modifying the larger and slower results structure.
-struct MatchReference {
-  MatchReference(const history::URLResult* result, int relevance)
-      : result(result),
-        relevance(relevance) {
-  }
+}  // end namespace
 
-  const history::URLResult* result;
-  int relevance;  // Score of relevance computed by CalculateRelevance.
-};
-
-// This is a > operator for MatchReference.
-bool CompareMatchRelevance(const MatchReference& a, const MatchReference& b) {
-  if (a.relevance != b.relevance)
-    return a.relevance > b.relevance;
-
-  // Want results in reverse-chronological order all else being equal.
-  return a.result->last_visit() > b.result->last_visit();
+HistoryContentsProvider::MatchReference::MatchReference(
+    const history::URLResult* result,
+    int relevance)
+    : result(result),
+      relevance(relevance) {
 }
 
-}  // namespace
-
-using history::HistoryDatabase;
+// static
+bool HistoryContentsProvider::MatchReference::CompareRelevance(
+    const HistoryContentsProvider::MatchReference& lhs,
+    const HistoryContentsProvider::MatchReference& rhs) {
+  if (lhs.relevance != rhs.relevance)
+    return lhs.relevance > rhs.relevance;
+  return lhs.result->last_visit() > rhs.result->last_visit();
+}
 
 HistoryContentsProvider::HistoryContentsProvider(ACProviderListener* listener,
                                                  Profile* profile,
@@ -144,7 +138,8 @@ void HistoryContentsProvider::Start(const AutocompleteInput& input,
       options.max_count = kMaxMatches;
       history->QueryHistory(input.text(), options,
           &request_consumer_,
-          NewCallback(this, &HistoryContentsProvider::QueryComplete));
+          base::Bind(&HistoryContentsProvider::QueryComplete,
+                     base::Unretained(this)));
     }
   }
 }
@@ -194,11 +189,11 @@ void HistoryContentsProvider::ConvertResults() {
   // Get the top matches and add them.
   size_t max_for_provider = std::min(kMaxMatches, result_refs.size());
   std::partial_sort(result_refs.begin(), result_refs.begin() + max_for_provider,
-                    result_refs.end(), &CompareMatchRelevance);
+                    result_refs.end(), &MatchReference::CompareRelevance);
   matches_.clear();
   for (size_t i = 0; i < max_for_provider; i++) {
-    matches_.push_back(ResultToMatch(*result_refs[i].result,
-                                     result_refs[i].relevance));
+    AutocompleteMatch match(ResultToMatch(result_refs[i]));
+    matches_.push_back(match);
   }
 }
 
@@ -208,10 +203,11 @@ bool HistoryContentsProvider::MatchInTitle(const history::URLResult& result) {
 }
 
 AutocompleteMatch HistoryContentsProvider::ResultToMatch(
-    const history::URLResult& result,
-    int score) {
-  AutocompleteMatch match(this, score, true, MatchInTitle(result) ?
-      AutocompleteMatch::HISTORY_TITLE : AutocompleteMatch::HISTORY_BODY);
+    const MatchReference& match_reference) {
+  const history::URLResult& result = *match_reference.result;
+  AutocompleteMatch match(this, match_reference.relevance, true,
+      MatchInTitle(result) ?
+          AutocompleteMatch::HISTORY_TITLE : AutocompleteMatch::HISTORY_BODY);
   match.contents = StringForURLDisplay(result.url(), true, trim_http_);
   match.fill_into_edit =
       AutocompleteInput::FormattedStringWithEquivalentMeaning(result.url(),
@@ -282,7 +278,7 @@ void HistoryContentsProvider::QueryBookmarks(const AutocompleteInput& input) {
 
 void HistoryContentsProvider::AddBookmarkTitleMatchToResults(
     const bookmark_utils::TitleMatch& match) {
-  history::URLResult url_result(match.node->GetURL(), match.match_positions);
+  history::URLResult url_result(match.node->url(), match.match_positions);
   url_result.set_title(match.node->GetTitle());
   results_.AppendURLBySwapping(&url_result);
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "jingle/notifier/listener/notification_defines.h"
 #include "talk/xmllite/xmlelement.h"
@@ -25,15 +26,15 @@ class PushNotificationsSubscribeTask : public buzz::XmppTask {
      virtual void OnSubscriptionError() = 0;
   };
 
-  PushNotificationsSubscribeTask(TaskParent* parent,
-      const SubscriptionList& subscriptions,
-      Delegate* delegate);
+  PushNotificationsSubscribeTask(buzz::XmppTaskParentInterface* parent,
+                                 const SubscriptionList& subscriptions,
+                                 Delegate* delegate);
   virtual ~PushNotificationsSubscribeTask();
 
   // Overridden from XmppTask.
-  virtual int ProcessStart();
-  virtual int ProcessResponse();
-  virtual bool HandleStanza(const buzz::XmlElement* stanza);
+  virtual int ProcessStart() OVERRIDE;
+  virtual int ProcessResponse() OVERRIDE;
+  virtual bool HandleStanza(const buzz::XmlElement* stanza) OVERRIDE;
 
  private:
   // Assembles an Xmpp stanza which can be sent to subscribe to notifications.
@@ -57,4 +58,3 @@ typedef PushNotificationsSubscribeTask::Delegate
 }  // namespace notifier
 
 #endif  // JINGLE_NOTIFIER_LISTENER_PUSH_NOTIFICATIONS_SUBSCRIBE_TASK_H_
-

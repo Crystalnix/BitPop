@@ -6,14 +6,17 @@
 
 #include <pk11pub.h>
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/crypto_module.h"
 #include "net/base/x509_certificate.h"
 
 #if defined(OS_CHROMEOS)
 #include "crypto/nss_util.h"
 #endif
+
+using content::BrowserThread;
 
 namespace {
 
@@ -31,7 +34,7 @@ class SlotUnlocker {
   SlotUnlocker(const net::CryptoModuleList& modules,
                browser::CryptoModulePasswordReason reason,
                const std::string& host,
-               Callback0::Type* callback);
+               const base::Closure& callback);
 
   void Start();
 
@@ -43,14 +46,14 @@ class SlotUnlocker {
   net::CryptoModuleList modules_;
   browser::CryptoModulePasswordReason reason_;
   std::string host_;
-  Callback0::Type* callback_;
+  base::Closure callback_;
   PRBool retry_;
 };
 
 SlotUnlocker::SlotUnlocker(const net::CryptoModuleList& modules,
                            browser::CryptoModulePasswordReason reason,
                            const std::string& host,
-                           Callback0::Type* callback)
+                           const base::Closure& callback)
     : current_(0),
       modules_(modules),
       reason_(reason),
@@ -84,7 +87,7 @@ void SlotUnlocker::Start() {
           retry_,
           reason_,
           host_,
-          NewCallback(this, &SlotUnlocker::GotPassword));
+          base::Bind(&SlotUnlocker::GotPassword, base::Unretained(this)));
       return;
     }
   }
@@ -124,7 +127,7 @@ void SlotUnlocker::GotPassword(const char* password) {
 
 void SlotUnlocker::Done() {
   DCHECK_EQ(current_, modules_.size());
-  callback_->Run();
+  callback_.Run();
   delete this;
 }
 
@@ -135,7 +138,7 @@ namespace browser {
 void UnlockSlotsIfNecessary(const net::CryptoModuleList& modules,
                             browser::CryptoModulePasswordReason reason,
                             const std::string& host,
-                            Callback0::Type* callback) {
+                            const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   for (size_t i = 0; i < modules.size(); ++i) {
     if (ShouldShowDialog(modules[i].get())) {
@@ -143,13 +146,13 @@ void UnlockSlotsIfNecessary(const net::CryptoModuleList& modules,
       return;
     }
   }
-  callback->Run();
+  callback.Run();
 }
 
 void UnlockCertSlotIfNecessary(net::X509Certificate* cert,
                                browser::CryptoModulePasswordReason reason,
                                const std::string& host,
-                               Callback0::Type* callback) {
+                               const base::Closure& callback) {
   net::CryptoModuleList modules;
   modules.push_back(net::CryptoModule::CreateFromHandle(
       cert->os_cert_handle()->slot));

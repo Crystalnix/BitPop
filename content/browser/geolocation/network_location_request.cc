@@ -4,39 +4,39 @@
 
 #include "content/browser/geolocation/network_location_request.h"
 
+#include <set>
+
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/common/geoposition.h"
+#include "content/common/net/url_fetcher_impl.h"
+#include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
 
 namespace {
-const char kMimeApplicationJson[] = "application/json";
 
-// See http://code.google.com/apis/gears/geolocation_network_protocol.html
-const char kGeoLocationNetworkProtocolVersion[] = "1.1.0";
+const size_t kMaxRequestLength = 2048;
 
 const char kAccessTokenString[] = "access_token";
 const char kLocationString[] = "location";
-const char kLatitudeString[] = "latitude";
-const char kLongitudeString[] = "longitude";
-const char kAltitudeString[] = "altitude";
+const char kLatitudeString[] = "lat";
+const char kLongitudeString[] = "lng";
 const char kAccuracyString[] = "accuracy";
-const char kAltitudeAccuracyString[] = "altitude_accuracy";
+const char kStatusString[] = "status";
+const char kStatusOKString[] = "OK";
 
 // Local functions
-// Creates the request payload to send to the server.
-void FormRequestBody(const std::string& host_name,
-                     const string16& access_token,
-                     const GatewayData& gateway_data,
-                     const RadioData& radio_data,
-                     const WifiData& wifi_data,
-                     const base::Time& timestamp,
-                     std::string* data);
+// Creates the request url to send to the server.
+GURL FormRequestURL(const std::string& url,
+                    const string16& access_token,
+                    const WifiData& wifi_data,
+                    const base::Time& timestamp);
+
 // Parsers the server response.
 void GetLocationFromResponse(bool http_post_result,
                              int status_code,
@@ -46,15 +46,6 @@ void GetLocationFromResponse(bool http_post_result,
                              Geoposition* position,
                              string16* access_token);
 
-const char* RadioTypeToString(RadioType type);
-// Adds a string if it's valid to the JSON object.
-void AddString(const std::string& property_name,
-               const string16& value,
-               DictionaryValue* object);
-// Adds an integer if it's valid to the JSON object.
-void AddInteger(const std::string& property_name,
-                int value,
-                DictionaryValue* object);
 // Parses the server response body. Returns true if parsing was successful.
 // Sets |*position| to the parsed location if a valid fix was received,
 // otherwise leaves it unchanged (i.e. IsInitialized() == false).
@@ -62,15 +53,9 @@ bool ParseServerResponse(const std::string& response_body,
                          const base::Time& timestamp,
                          Geoposition* position,
                          string16* access_token);
-void AddGatewayData(const GatewayData& gateway_data,
-                  int age_milliseconds,
-                  DictionaryValue* body_object);
-void AddRadioData(const RadioData& radio_data,
-                  int age_milliseconds,
-                  DictionaryValue* body_object);
 void AddWifiData(const WifiData& wifi_data,
                  int age_milliseconds,
-                 DictionaryValue* body_object);
+                 std::vector<std::string>* params);
 }  // namespace
 
 int NetworkLocationRequest::url_fetcher_id_for_tests = 0;
@@ -89,7 +74,6 @@ NetworkLocationRequest::~NetworkLocationRequest() {
 
 bool NetworkLocationRequest::MakeRequest(const std::string& host_name,
                                          const string16& access_token,
-                                         const GatewayData& gateway_data,
                                          const RadioData& radio_data,
                                          const WifiData& wifi_data,
                                          const base::Time& timestamp) {
@@ -97,40 +81,42 @@ bool NetworkLocationRequest::MakeRequest(const std::string& host_name,
     DVLOG(1) << "NetworkLocationRequest : Cancelling pending request";
     url_fetcher_.reset();
   }
-  gateway_data_ = gateway_data;
   radio_data_ = radio_data;
   wifi_data_ = wifi_data;
   timestamp_ = timestamp;
-  std::string post_body;
-  FormRequestBody(host_name, access_token, gateway_data, radio_data_,
-                  wifi_data_, timestamp_, &post_body);
 
-  url_fetcher_.reset(URLFetcher::Create(
-      url_fetcher_id_for_tests, url_, URLFetcher::POST, this));
-  url_fetcher_->set_upload_data(kMimeApplicationJson, post_body);
-  url_fetcher_->set_request_context(url_context_);
-  url_fetcher_->set_load_flags(
+  GURL request_url = FormRequestURL(url_.spec(), access_token,
+                                    wifi_data, timestamp_);
+  url_fetcher_.reset(URLFetcherImpl::Create(
+      url_fetcher_id_for_tests, request_url, URLFetcherImpl::GET, this));
+  url_fetcher_->SetRequestContext(url_context_);
+  url_fetcher_->SetLoadFlags(
       net::LOAD_BYPASS_CACHE | net::LOAD_DISABLE_CACHE |
       net::LOAD_DO_NOT_SAVE_COOKIES | net::LOAD_DO_NOT_SEND_COOKIES |
       net::LOAD_DO_NOT_SEND_AUTH_DATA);
+
   url_fetcher_->Start();
   return true;
 }
 
 void NetworkLocationRequest::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const net::ResponseCookies& cookies,
-    const std::string& data) {
+    const content::URLFetcher* source) {
   DCHECK_EQ(url_fetcher_.get(), source);
-  DCHECK(url_.possibly_invalid_spec() == url.possibly_invalid_spec());
+
+  net::URLRequestStatus status = source->GetStatus();
+  int response_code = source->GetResponseCode();
 
   Geoposition position;
   string16 access_token;
-  GetLocationFromResponse(status.is_success(), response_code, data,
-                          timestamp_, url, &position, &access_token);
+  std::string data;
+  source->GetResponseAsString(&data);
+  GetLocationFromResponse(status.is_success(),
+                          response_code,
+                          data,
+                          timestamp_,
+                          source->GetURL(),
+                          &position,
+                          &access_token);
   const bool server_error =
       !status.is_success() || (response_code >= 500 && response_code < 600);
   url_fetcher_.reset();
@@ -138,33 +124,23 @@ void NetworkLocationRequest::OnURLFetchComplete(
   DCHECK(listener_);
   DVLOG(1) << "NetworkLocationRequest::Run() : Calling listener with position.";
   listener_->LocationResponseAvailable(position, server_error, access_token,
-                                       gateway_data_, radio_data_, wifi_data_);
+                                       radio_data_, wifi_data_);
 }
 
 // Local functions.
 namespace {
 
-void FormRequestBody(const std::string& host_name,
-                     const string16& access_token,
-                     const GatewayData& gateway_data,
-                     const RadioData& radio_data,
-                     const WifiData& wifi_data,
-                     const base::Time& timestamp,
-                     std::string* data) {
-  DCHECK(data);
+struct AccessPointLess {
+  bool operator()(const AccessPointData* ap1,
+                  const AccessPointData* ap2) const {
+    return ap2->radio_signal_strength < ap1->radio_signal_strength;
+  }
+};
 
-  DictionaryValue body_object;
-  // Version and host are required.
-  COMPILE_ASSERT(sizeof(kGeoLocationNetworkProtocolVersion) > 1,
-                 must_include_valid_version);
-  DCHECK(!host_name.empty());
-  body_object.SetString("version", kGeoLocationNetworkProtocolVersion);
-  body_object.SetString("host", host_name);
-
-  AddString("access_token", access_token, &body_object);
-
-  body_object.SetBoolean("request_address", false);
-
+GURL FormRequestURL(const std::string& url,
+                    const string16& access_token,
+                    const WifiData& wifi_data,
+                    const base::Time& timestamp) {
   int age = kint32min;  // Invalid so AddInteger() will ignore.
   if (!timestamp.is_null()) {
     // Convert absolute timestamps into a relative age.
@@ -172,13 +148,86 @@ void FormRequestBody(const std::string& host_name,
     if (delta_ms >= 0 && delta_ms < kint32max)
       age = static_cast<int>(delta_ms);
   }
-  AddRadioData(radio_data, age, &body_object);
-  AddWifiData(wifi_data, age, &body_object);
-  AddGatewayData(gateway_data, age, &body_object);
 
-  base::JSONWriter::Write(&body_object, false, data);
-  DVLOG(1) << "NetworkLocationRequest::FormRequestBody(): Formed body " << *data
-           << ".";
+  std::vector<std::string> params;
+  params.push_back("browser=chromium");
+  params.push_back("sensor=true");
+  if (!access_token.empty())
+    params.push_back("token=" + UTF16ToUTF8(access_token));
+  AddWifiData(wifi_data, age, &params);
+
+  std::string request_string = url + '?' + JoinString(params, '&');
+  if (request_string.length() > kMaxRequestLength) {
+    size_t last_param_pos =
+        request_string.find_last_of('&', kMaxRequestLength);
+    CHECK_NE(std::string::npos, last_param_pos);
+    request_string.erase(last_param_pos);
+  }
+
+  return GURL(request_string);
+}
+
+void AddString(const std::string& property_name, const std::string& value,
+               std::string* wifi_params) {
+  DCHECK(wifi_params);
+  if (!value.empty()) {
+    if (!wifi_params->empty())
+      *wifi_params += '|';
+    *wifi_params += property_name;
+    *wifi_params += value;
+  }
+}
+
+void AddInteger(const std::string& property_name, int value,
+                std::string* wifi_params) {
+  DCHECK(wifi_params);
+  if (value != kint32min) {
+    if (!wifi_params->empty())
+        *wifi_params += '|';
+      *wifi_params += property_name;
+      *wifi_params += base::IntToString(value);
+  }
+}
+
+void AddWifiData(const WifiData& wifi_data,
+                 int age_milliseconds,
+                 std::vector<std::string>* params) {
+  DCHECK(params);
+
+  if (wifi_data.access_point_data.empty())
+    return;
+
+  typedef std::multiset<const AccessPointData*, AccessPointLess> AccessPointSet;
+  AccessPointSet access_points_by_signal_strength;
+
+  for (WifiData::AccessPointDataSet::const_iterator iter =
+       wifi_data.access_point_data.begin();
+       iter != wifi_data.access_point_data.end();
+       ++iter) {
+    access_points_by_signal_strength.insert(&(*iter));
+  }
+
+  for (AccessPointSet::iterator iter =
+      access_points_by_signal_strength.begin();
+      iter != access_points_by_signal_strength.end();
+      ++iter) {
+    std::string wifi_params;
+    AddString("mac:", UTF16ToUTF8((*iter)->mac_address), &wifi_params);
+    AddInteger("ss:", (*iter)->radio_signal_strength, &wifi_params);
+    AddInteger("age:", age_milliseconds, &wifi_params);
+    AddInteger("chan:", (*iter)->channel, &wifi_params);
+    AddInteger("snr:", (*iter)->signal_to_noise, &wifi_params);
+    std::string ssid = UTF16ToUTF8((*iter)->ssid);
+    // Backslash characters in the ssid need backslash-escaping to avoid
+    // escaping a following wifi parameter separator.
+    ReplaceSubstringsAfterOffset(&ssid, 0, "\\", "\\\\");
+    // Pipe characters in the ssid need backslash-escaping to avoid being
+    // interpreted as the wifi parameter separator.
+    ReplaceSubstringsAfterOffset(&ssid, 0, "|", "\\|");
+    AddString("ssid:", ssid, &wifi_params);
+    params->push_back(
+        "wifi=" + net::EscapeQueryParamValue(wifi_params, false));
+  }
 }
 
 void FormatPositionError(const GURL& server_url,
@@ -232,40 +281,6 @@ void GetLocationFromResponse(bool http_post_result,
   }
 }
 
-const char* RadioTypeToString(RadioType type) {
-  switch (type) {
-    case RADIO_TYPE_UNKNOWN:
-      break;
-    case RADIO_TYPE_GSM:
-      return "gsm";
-    case RADIO_TYPE_CDMA:
-      return "cdma";
-    case RADIO_TYPE_WCDMA:
-      return "wcdma";
-    default:
-      LOG(DFATAL) << "Bad RadioType";
-  }
-  return "unknown";
-}
-
-void AddString(const std::string& property_name,
-               const string16& value,
-               DictionaryValue* object) {
-  DCHECK(object);
-  if (!value.empty()) {
-    object->SetString(property_name, value);
-  }
-}
-
-void AddInteger(const std::string& property_name,
-                int value,
-                DictionaryValue* object) {
-  DCHECK(object);
-  if (kint32min != value) {
-    object->SetInteger(property_name, value);
-  }
-}
-
 // Numeric values without a decimal point have type integer and IsDouble() will
 // return false. This is convenience function for detecting integer or floating
 // point numeric values. Note that isIntegral() includes boolean values, which
@@ -312,12 +327,41 @@ bool ParseServerResponse(const std::string& response_body,
   }
 
   if (!response_value->IsType(Value::TYPE_DICTIONARY)) {
-    VLOG(1) << "ParseServerResponse() : Unexpected resopnse type "
+    VLOG(1) << "ParseServerResponse() : Unexpected response type "
             << response_value->GetType();
     return false;
   }
   const DictionaryValue* response_object =
       static_cast<DictionaryValue*>(response_value.get());
+
+  // Check the status code.
+  Value* status_value = NULL;
+  if (!response_object->Get(kStatusString, &status_value)) {
+    VLOG(1) << "ParseServerResponse() : Missing status attribute.";
+    // The status attribute is required.
+    return false;
+  }
+  DCHECK(status_value);
+
+  if (!status_value->IsType(Value::TYPE_STRING)) {
+    VLOG(1) << "ParseServerResponse() : Unexpected status type "
+            << status_value->GetType();
+    // The status attribute is required to be a string.
+    return false;
+  }
+  StringValue* status_object = static_cast<StringValue*>(status_value);
+
+  std::string status;
+  if (!status_object->GetAsString(&status)) {
+    VLOG(1) << "ParseServerResponse() : Error parsing the status value.";
+    return false;
+  }
+
+  if (status != kStatusOKString) {
+    VLOG(1) << "ParseServerResponse() : Request failed with status "
+            << status;
+    return false;
+  }
 
   // Get the access token, if any.
   response_object->GetString(kAccessTokenString, access_token);
@@ -358,96 +402,9 @@ bool ParseServerResponse(const std::string& response_body,
   position->timestamp = timestamp;
 
   // Other fields are optional.
-  GetAsDouble(*location_object, kAccuracyString, &position->accuracy);
-  GetAsDouble(*location_object, kAltitudeString, &position->altitude);
-  GetAsDouble(*location_object, kAltitudeAccuracyString,
-              &position->altitude_accuracy);
+  GetAsDouble(*response_object, kAccuracyString, &position->accuracy);
 
   return true;
 }
 
-void AddRadioData(const RadioData& radio_data,
-                  int age_milliseconds,
-                  DictionaryValue* body_object) {
-  DCHECK(body_object);
-
-  AddInteger("home_mobile_country_code", radio_data.home_mobile_country_code,
-             body_object);
-  AddInteger("home_mobile_network_code", radio_data.home_mobile_network_code,
-             body_object);
-  AddString("radio_type",
-            ASCIIToUTF16(RadioTypeToString(radio_data.radio_type)),
-            body_object);
-  AddString("carrier", radio_data.carrier, body_object);
-
-  const int num_cell_towers = static_cast<int>(radio_data.cell_data.size());
-  if (num_cell_towers == 0) {
-    return;
-  }
-  ListValue* cell_towers = new ListValue;
-  for (int i = 0; i < num_cell_towers; ++i) {
-    DictionaryValue* cell_tower = new DictionaryValue;
-    AddInteger("cell_id", radio_data.cell_data[i].cell_id, cell_tower);
-    AddInteger("location_area_code",
-               radio_data.cell_data[i].location_area_code, cell_tower);
-    AddInteger("mobile_country_code",
-               radio_data.cell_data[i].mobile_country_code, cell_tower);
-    AddInteger("mobile_network_code",
-               radio_data.cell_data[i].mobile_network_code, cell_tower);
-    AddInteger("age", age_milliseconds, cell_tower);
-    AddInteger("signal_strength",
-               radio_data.cell_data[i].radio_signal_strength, cell_tower);
-    AddInteger("timing_advance", radio_data.cell_data[i].timing_advance,
-               cell_tower);
-    cell_towers->Append(cell_tower);
-  }
-  body_object->Set("cell_towers", cell_towers);
-}
-
-void AddWifiData(const WifiData& wifi_data,
-                 int age_milliseconds,
-                 DictionaryValue* body_object) {
-  DCHECK(body_object);
-
-  if (wifi_data.access_point_data.empty()) {
-    return;
-  }
-
-  ListValue* wifi_towers = new ListValue;
-  for (WifiData::AccessPointDataSet::const_iterator iter =
-       wifi_data.access_point_data.begin();
-       iter != wifi_data.access_point_data.end();
-       iter++) {
-    DictionaryValue* wifi_tower = new DictionaryValue;
-    AddString("mac_address", iter->mac_address, wifi_tower);
-    AddInteger("signal_strength", iter->radio_signal_strength, wifi_tower);
-    AddInteger("age", age_milliseconds, wifi_tower);
-    AddInteger("channel", iter->channel, wifi_tower);
-    AddInteger("signal_to_noise", iter->signal_to_noise, wifi_tower);
-    AddString("ssid", iter->ssid, wifi_tower);
-    wifi_towers->Append(wifi_tower);
-  }
-  body_object->Set("wifi_towers", wifi_towers);
-}
-
-void AddGatewayData(const GatewayData& gateway_data,
-                    int age_milliseconds,
-                    DictionaryValue* body_object) {
-  DCHECK(body_object);
-
-  if (gateway_data.router_data.empty()) {
-    return;
-  }
-
-  ListValue* gateways = new ListValue;
-  for (GatewayData::RouterDataSet::const_iterator iter =
-       gateway_data.router_data.begin();
-       iter != gateway_data.router_data.end();
-       iter++) {
-    DictionaryValue* gateway = new DictionaryValue;
-    AddString("mac_address", iter->mac_address, gateway);
-    gateways->Append(gateway);
-  }
-  body_object->Set("gateways", gateways);
-}
 }  // namespace

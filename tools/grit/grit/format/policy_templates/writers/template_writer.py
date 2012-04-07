@@ -85,6 +85,10 @@ class TemplateWriter(object):
           return True
     return False
 
+  def CanBeRecommended(self, policy):
+    '''Checks if the given policy can be recommended.'''
+    return policy.get('features', {}).get('can_be_recommended', False)
+
   def _GetPoliciesForWriter(self, group):
     '''Filters the list of policies in the passed group that are supported by
     the writer.
@@ -127,6 +131,8 @@ class TemplateWriter(object):
     for policy in template['policy_definitions']:
       if policy['type'] == 'group':
         child_policies = self._GetPoliciesForWriter(policy)
+        child_recommended_policies = filter(self.CanBeRecommended,
+                                            child_policies)
         if child_policies:
           # Only write nonempty groups.
           self.BeginPolicyGroup(policy)
@@ -134,9 +140,17 @@ class TemplateWriter(object):
             # Nesting of groups is currently not supported.
             self.WritePolicy(child_policy)
           self.EndPolicyGroup()
+        if child_recommended_policies:
+          self.BeginRecommendedPolicyGroup(policy)
+          for child_policy in child_recommended_policies:
+            self.WriteRecommendedPolicy(child_policy)
+          self.EndRecommendedPolicyGroup()
       elif self.IsPolicySupported(policy):
         self.WritePolicy(policy)
+        if self.CanBeRecommended(policy):
+          self.WriteRecommendedPolicy(policy)
     self.EndTemplate()
+
     return self.GetTemplateText()
 
   def PreprocessPolicies(self, policy_list):
@@ -164,6 +178,17 @@ class TemplateWriter(object):
     '''
     raise NotImplementedError()
 
+  def WriteRecommendedPolicy(self, policy):
+    '''Appends the template text corresponding to a recommended policy into the
+    internal buffer.
+
+    Args:
+      policy: The recommended policy as it is found in the JSON file.
+    '''
+    # TODO
+    #raise NotImplementedError()
+    pass
+
   def BeginPolicyGroup(self, group):
     '''Appends the template text corresponding to the beginning of a
     policy group into the internal buffer.
@@ -175,6 +200,21 @@ class TemplateWriter(object):
 
   def EndPolicyGroup(self):
     '''Appends the template text corresponding to the end of a
+    policy group into the internal buffer.
+    '''
+    pass
+
+  def BeginRecommendedPolicyGroup(self, group):
+    '''Appends the template text corresponding to the beginning of a recommended
+    policy group into the internal buffer.
+
+    Args:
+      group: The recommended policy group as it is found in the JSON file.
+    '''
+    pass
+
+  def EndRecommendedPolicyGroup(self):
+    '''Appends the template text corresponding to the end of a recommended
     policy group into the internal buffer.
     '''
     pass

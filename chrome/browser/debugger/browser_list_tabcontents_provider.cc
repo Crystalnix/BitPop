@@ -4,17 +4,46 @@
 
 #include "chrome/browser/debugger/browser_list_tabcontents_provider.h"
 
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "grit/devtools_discovery_page_resources.h"
+#include "net/url_request/url_request_context_getter.h"
+#include "ui/base/resource/resource_bundle.h"
 
-DevToolsHttpProtocolHandler::InspectableTabs
+using content::DevToolsHttpHandlerDelegate;
+
+DevToolsHttpHandlerDelegate::InspectableTabs
 BrowserListTabContentsProvider::GetInspectableTabs() {
-  DevToolsHttpProtocolHandler::InspectableTabs tabs;
+  DevToolsHttpHandlerDelegate::InspectableTabs tabs;
   for (BrowserList::const_iterator it = BrowserList::begin(),
        end = BrowserList::end(); it != end; ++it) {
     TabStripModel* model = (*it)->tabstrip_model();
     for (int i = 0, size = model->count(); i < size; ++i)
-      tabs.push_back(model->GetTabContentsAt(i));
+      tabs.push_back(model->GetTabContentsAt(i)->web_contents());
   }
   return tabs;
+}
+
+std::string BrowserListTabContentsProvider::GetDiscoveryPageHTML() {
+  return ResourceBundle::GetSharedInstance().GetRawDataResource(
+      IDR_DEVTOOLS_DISCOVERY_PAGE_HTML).as_string();
+}
+
+net::URLRequestContext*
+BrowserListTabContentsProvider::GetURLRequestContext() {
+  net::URLRequestContextGetter* getter =
+      Profile::Deprecated::GetDefaultRequestContext();
+  return getter ? getter->GetURLRequestContext() : NULL;
+}
+
+bool BrowserListTabContentsProvider::BundlesFrontendResources() {
+  // We'd like front-end to be served from the WebUI via proxy, hence
+  // pretend we don't have it bundled.
+  return false;
+}
+
+std::string BrowserListTabContentsProvider::GetFrontendResourcesBaseURL() {
+  return "chrome-devtools://devtools/";
 }

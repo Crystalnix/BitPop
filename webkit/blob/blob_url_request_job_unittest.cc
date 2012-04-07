@@ -5,6 +5,8 @@
 #include <stack>
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
@@ -12,7 +14,6 @@
 #include "base/message_loop_proxy.h"
 #include "base/scoped_temp_dir.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "net/base/file_stream.h"
@@ -69,7 +70,7 @@ class BlobURLRequestJobTest : public testing::Test {
 
    private:
     void ReadSome(net::URLRequest* request) {
-      if (request->job()->is_done()) {
+      if (!request->is_pending()) {
         RequestComplete();
         return;
       }
@@ -107,21 +108,10 @@ class BlobURLRequestJobTest : public testing::Test {
   // Helper class run a test on our io_thread. The io_thread
   // is spun up once and reused for all tests.
   template <class Method>
-  class WrapperTask : public Task {
-   public:
-    WrapperTask(BlobURLRequestJobTest* test, Method method)
-        : test_(test), method_(method) {
-    }
-
-    virtual void Run() {
-      test_->SetUpTest();
-      (test_->*method_)();
-    }
-
-   private:
-    BlobURLRequestJobTest* test_;
-    Method method_;
-  };
+  void MethodWrapper(Method method) {
+    SetUpTest();
+    (this->*method)();
+  }
 
   void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -167,14 +157,16 @@ class BlobURLRequestJobTest : public testing::Test {
   void RunTestOnIOThread(Method method) {
     test_finished_event_ .reset(new base::WaitableEvent(false, false));
     io_thread_->message_loop()->PostTask(
-        FROM_HERE, new WrapperTask<Method>(this, method));
+        FROM_HERE, base::Bind(&BlobURLRequestJobTest::MethodWrapper<Method>,
+                              base::Unretained(this), method));
     test_finished_event_->Wait();
   }
 
   void SetUpTest() {
     DCHECK(MessageLoop::current() == io_thread_->message_loop());
 
-    net::URLRequest::RegisterProtocolFactory("blob", &BlobURLRequestJobFactory);
+    net::URLRequest::Deprecated::RegisterProtocolFactory(
+        "blob", &BlobURLRequestJobFactory);
     url_request_delegate_.reset(new MockURLRequestDelegate(this));
   }
 
@@ -185,16 +177,17 @@ class BlobURLRequestJobTest : public testing::Test {
     url_request_delegate_.reset();
 
     DCHECK(!blob_url_request_job_);
-    net::URLRequest::RegisterProtocolFactory("blob", NULL);
+    net::URLRequest::Deprecated::RegisterProtocolFactory("blob", NULL);
   }
 
   void TestFinished() {
     // We unwind the stack prior to finishing up to let stack
     // based objects get deleted.
     DCHECK(MessageLoop::current() == io_thread_->message_loop());
-    MessageLoop::current()->PostTask(FROM_HERE,
-        NewRunnableMethod(
-            this, &BlobURLRequestJobTest::TestFinishedUnwound));
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&BlobURLRequestJobTest::TestFinishedUnwound,
+                   base::Unretained(this)));
   }
 
   void TestFinishedUnwound() {
@@ -202,12 +195,12 @@ class BlobURLRequestJobTest : public testing::Test {
     test_finished_event_->Signal();
   }
 
-  void PushNextTask(Task* task) {
-    task_stack_.push(std::pair<Task*, bool>(task, false));
+  void PushNextTask(const base::Closure& task) {
+    task_stack_.push(std::pair<base::Closure, bool>(task, false));
   }
 
-  void PushNextTaskAsImmediate(Task* task) {
-    task_stack_.push(std::pair<Task*, bool>(task, true));
+  void PushNextTaskAsImmediate(const base::Closure& task) {
+    task_stack_.push(std::pair<base::Closure, bool>(task, true));
   }
 
   void ScheduleNextTask() {
@@ -216,19 +209,20 @@ class BlobURLRequestJobTest : public testing::Test {
       TestFinished();
       return;
     }
-    scoped_ptr<Task> task(task_stack_.top().first);
+
+    base::Closure task = task_stack_.top().first;
     bool immediate = task_stack_.top().second;
     task_stack_.pop();
     if (immediate)
-      task->Run();
+      task.Run();
     else
-      MessageLoop::current()->PostTask(FROM_HERE, task.release());
+      MessageLoop::current()->PostTask(FROM_HERE, task);
   }
 
   void TestSuccessRequest(BlobData* blob_data,
                           const std::string& expected_response) {
-    PushNextTask(NewRunnableMethod(
-        this, &BlobURLRequestJobTest::VerifyResponse));
+    PushNextTask(base::Bind(&BlobURLRequestJobTest::VerifyResponse,
+                            base::Unretained(this)));
     expected_status_code_ = 200;
     expected_response_ = expected_response;
     return TestRequest("GET", net::HttpRequestHeaders(), blob_data);
@@ -236,8 +230,8 @@ class BlobURLRequestJobTest : public testing::Test {
 
   void TestErrorRequest(BlobData* blob_data,
                         int expected_status_code) {
-    PushNextTask(NewRunnableMethod(
-        this, &BlobURLRequestJobTest::VerifyResponse));
+    PushNextTask(base::Bind(&BlobURLRequestJobTest::VerifyResponse,
+                            base::Unretained(this)));
     expected_status_code_ = expected_status_code;
     expected_response_ = "";
     return TestRequest("GET", net::HttpRequestHeaders(), blob_data);
@@ -253,7 +247,7 @@ class BlobURLRequestJobTest : public testing::Test {
     blob_url_request_job_ = new BlobURLRequestJob(
         request_.get(),
         blob_data,
-        base::MessageLoopProxy::CreateForCurrentThread());
+        base::MessageLoopProxy::current());
 
     // Start the request.
     if (!extra_headers.IsEmpty())
@@ -316,13 +310,6 @@ class BlobURLRequestJobTest : public testing::Test {
     TestErrorRequest(blob_data, 404);
   }
 
-  void TestGetSlicedDataRequest() {
-    scoped_refptr<BlobData> blob_data(new BlobData());
-    blob_data->AppendData(kTestData2, 2, 4);
-    std::string result(kTestData2 + 2, 4);
-    TestSuccessRequest(blob_data, result);
-  }
-
   void TestGetSlicedFileRequest() {
     scoped_refptr<BlobData> blob_data(new BlobData());
     blob_data->AppendFile(temp_file1_, 2, 4, temp_file_modification_time1_);
@@ -332,9 +319,9 @@ class BlobURLRequestJobTest : public testing::Test {
 
   scoped_refptr<BlobData> BuildComplicatedData(std::string* expected_result) {
     scoped_refptr<BlobData> blob_data(new BlobData());
-    blob_data->AppendData(kTestData1, 1, 2);
+    blob_data->AppendData(kTestData1 + 1, 2);
     blob_data->AppendFile(temp_file1_, 2, 3, temp_file_modification_time1_);
-    blob_data->AppendData(kTestData2, 3, 4);
+    blob_data->AppendData(kTestData2 + 3, 4);
     blob_data->AppendFile(temp_file2_, 4, 5, temp_file_modification_time2_);
     *expected_result = std::string(kTestData1 + 1, 2);
     *expected_result += std::string(kTestFileData1 + 2, 3);
@@ -354,8 +341,8 @@ class BlobURLRequestJobTest : public testing::Test {
     scoped_refptr<BlobData> blob_data = BuildComplicatedData(&result);
     net::HttpRequestHeaders extra_headers;
     extra_headers.SetHeader(net::HttpRequestHeaders::kRange, "bytes=5-10");
-    PushNextTask(NewRunnableMethod(
-        this, &BlobURLRequestJobTest::VerifyResponse));
+    PushNextTask(base::Bind(&BlobURLRequestJobTest::VerifyResponse,
+                            base::Unretained(this)));
     expected_status_code_ = 206;
     expected_response_ = result.substr(5, 10 - 5 + 1);
     return TestRequest("GET", extra_headers, blob_data);
@@ -366,8 +353,8 @@ class BlobURLRequestJobTest : public testing::Test {
     scoped_refptr<BlobData> blob_data = BuildComplicatedData(&result);
     net::HttpRequestHeaders extra_headers;
     extra_headers.SetHeader(net::HttpRequestHeaders::kRange, "bytes=-10");
-    PushNextTask(NewRunnableMethod(
-        this, &BlobURLRequestJobTest::VerifyResponse));
+    PushNextTask(base::Bind(&BlobURLRequestJobTest::VerifyResponse,
+                            base::Unretained(this)));
     expected_status_code_ = 206;
     expected_response_ = result.substr(result.length() - 10);
     return TestRequest("GET", extra_headers, blob_data);
@@ -378,8 +365,9 @@ class BlobURLRequestJobTest : public testing::Test {
     blob_data->set_content_type(kTestContentType);
     blob_data->set_content_disposition(kTestContentDisposition);
     blob_data->AppendData(kTestData1);
-    PushNextTask(NewRunnableMethod(
-        this, &BlobURLRequestJobTest::VerifyResponseForTestExtraHeaders));
+    PushNextTask(
+        base::Bind(&BlobURLRequestJobTest::VerifyResponseForTestExtraHeaders,
+                   base::Unretained(this)));
     TestRequest("GET", net::HttpRequestHeaders(), blob_data);
   }
 
@@ -408,7 +396,7 @@ class BlobURLRequestJobTest : public testing::Test {
   static BlobURLRequestJob* blob_url_request_job_;
 
   scoped_ptr<base::WaitableEvent> test_finished_event_;
-  std::stack<std::pair<Task*, bool> > task_stack_;
+  std::stack<std::pair<base::Closure, bool> > task_stack_;
   scoped_ptr<net::URLRequest> request_;
   scoped_ptr<MockURLRequestDelegate> url_request_delegate_;
   int expected_status_code_;
@@ -428,10 +416,6 @@ TEST_F(BlobURLRequestJobTest, TestGetSimpleFileRequest) {
 
 TEST_F(BlobURLRequestJobTest, TestGetLargeFileRequest) {
   RunTestOnIOThread(&BlobURLRequestJobTest::TestGetLargeFileRequest);
-}
-
-TEST_F(BlobURLRequestJobTest, TestGetSlicedDataRequest) {
-  RunTestOnIOThread(&BlobURLRequestJobTest::TestGetSlicedDataRequest);
 }
 
 TEST_F(BlobURLRequestJobTest, TestGetSlicedFileRequest) {
@@ -464,7 +448,3 @@ TEST_F(BlobURLRequestJobTest, TestExtraHeaders) {
 }
 
 }  // namespace webkit_blob
-
-// BlobURLRequestJobTest is expected to always live longer than the
-// runnable methods.  This lets us call NewRunnableMethod on its instances.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(webkit_blob::BlobURLRequestJobTest);

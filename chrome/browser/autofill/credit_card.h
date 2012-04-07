@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_AUTOFILL_CREDIT_CARD_H_
 #pragma once
 
-#include <ostream>
+#include <iosfwd>
 #include <string>
 #include <vector>
 
@@ -25,13 +25,16 @@ class CreditCard : public FormGroup {
   virtual ~CreditCard();
 
   // FormGroup implementation:
+  virtual string16 GetInfo(AutofillFieldType type) const OVERRIDE;
+  virtual void SetInfo(AutofillFieldType type, const string16& value) OVERRIDE;
+  virtual string16 GetCanonicalizedInfo(AutofillFieldType type) const OVERRIDE;
+  virtual bool SetCanonicalizedInfo(AutofillFieldType type,
+                                    const string16& value) OVERRIDE;
   virtual void GetMatchingTypes(const string16& text,
-                                FieldTypeSet* matching_types) const;
-  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
-  virtual string16 GetInfo(AutofillFieldType type) const;
-  virtual void SetInfo(AutofillFieldType type, const string16& value);
+                                FieldTypeSet* matching_types) const OVERRIDE;
+
   // Credit card preview summary, for example: ******1234, Exp: 01/2020
-  virtual const string16 Label() const;
+  const string16 Label() const;
 
   // Special method to set value for HTML5 month input type.
   void SetInfoForMonthInputType(const string16& value);
@@ -50,6 +53,12 @@ class CreditCard : public FormGroup {
   // For use in STL containers.
   void operator=(const CreditCard& credit_card);
 
+  // If the card numbers for |this| and |imported_card| match, overwrites |this|
+  // card's data with the data in |credit_card| and returns true.  Otherwise,
+  // returns false.
+  bool UpdateFromImportedCard(const CreditCard& imported_card)
+      WARN_UNUSED_RESULT;
+
   // Comparison for Sync.  Returns 0 if the credit card is the same as |this|,
   // or < 0, or > 0 if it is different.  The implied ordering can be used for
   // culling duplicates.  The ordering is based on collation order of the
@@ -58,16 +67,9 @@ class CreditCard : public FormGroup {
   // credit cards themselves.
   int Compare(const CreditCard& credit_card) const;
 
-  // This is same as |Compare| for credit cards as they are single-valued.
-  // This is here to unify templated code that deals with |FormGroup|s.
-  int CompareMulti(const CreditCard& credit_card) const;
-
   // Used by tests.
   bool operator==(const CreditCard& credit_card) const;
   bool operator!=(const CreditCard& credit_card) const;
-
-  // Return a version of |number| that has any separator characters removed.
-  static const string16 StripSeparators(const string16& number);
 
   // Returns true if |text| looks like a valid credit card number.
   // Uses the Luhn formula to validate the number.
@@ -76,10 +78,16 @@ class CreditCard : public FormGroup {
   // Returns true if there are no values (field types) set.
   bool IsEmpty() const;
 
+  // Returns true if all field types have valid values set.
+  bool IsComplete() const;
+
   // Returns the credit card number.
   const string16& number() const { return number_; }
 
  private:
+  // FormGroup:
+  virtual void GetSupportedTypes(FieldTypeSet* supported_types) const OVERRIDE;
+
   // The month and year are zero if not present.
   int Expiration4DigitYear() const { return expiration_year_; }
   int Expiration2DigitYear() const { return expiration_year_ % 100; }
@@ -93,31 +101,13 @@ class CreditCard : public FormGroup {
   // Sets |expiration_year_| to the integer conversion of |text|.
   void SetExpirationYearFromString(const string16& text);
 
-  // Sets |number_| to the stripped version of |number|, containing only digits.
+  // Sets |number_| to |number| and computes the appropriate card |type_|.
   void SetNumber(const string16& number);
 
   // These setters verify that the month and year are within appropriate
   // ranges.
   void SetExpirationMonth(int expiration_month);
   void SetExpirationYear(int expiration_year);
-
-  // Returns true if |text| matches the name on the card.  The comparison is
-  // case-insensitive.
-  bool IsNameOnCard(const string16& text) const;
-
-  // Returns true if |text| matches the card number.
-  bool IsNumber(const string16& text) const;
-
-  // Returns true if |text| matches the expiration month of the card.
-  bool IsExpirationMonth(const string16& text) const;
-
-  // Returns true if the integer value of |text| matches the 2-digit expiration
-  // year.
-  bool Is2DigitExpirationYear(const string16& text) const;
-
-  // Returns true if the integer value of |text| matches the 4-digit expiration
-  // year.
-  bool Is4DigitExpirationYear(const string16& text) const;
 
   string16 number_;  // The credit card number.
   string16 name_on_card_;  // The cardholder's name.

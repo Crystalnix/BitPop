@@ -9,6 +9,7 @@
 #include <limits>
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -16,7 +17,6 @@
 #include "base/values.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/json_schema_validator.h"
-#include "content/common/json_value_serializer.h"
 
 namespace {
 
@@ -36,7 +36,7 @@ Value* LoadValue(const std::string& filename) {
   return result;
 }
 
-Value* LoadValue(const std::string& filename, Value::ValueType type) {
+Value* LoadValue(const std::string& filename, base::Value::Type type) {
   scoped_ptr<Value> result(LoadValue(filename));
   if (!result.get())
     return NULL;

@@ -2,22 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef PPAPI_PPB_VAR_PROXY_H_
-#define PPAPI_PPB_VAR_PROXY_H_
+#ifndef PPAPI_PROXY_PPB_VAR_DEPRECATED_PROXY_H_
+#define PPAPI_PROXY_PPB_VAR_DEPRECATED_PROXY_H_
 
 #include <vector>
 
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/interface_proxy.h"
 
 struct PPB_Var_Deprecated;
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class SerializedVar;
-class SerializedVarArray;
 class SerializedVarReceiveInput;
 class SerializedVarVectorOutParam;
 class SerializedVarVectorReceiveInput;
@@ -26,15 +25,10 @@ class SerializedVarReturnValue;
 
 class PPB_Var_Deprecated_Proxy : public InterfaceProxy {
  public:
-  PPB_Var_Deprecated_Proxy(Dispatcher* dispatcher,
-                           const void* target_interface);
+  explicit PPB_Var_Deprecated_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Var_Deprecated_Proxy();
 
   static const Info* GetInfo();
-
-  const PPB_Var_Deprecated* ppb_var_target() const {
-    return reinterpret_cast<const PPB_Var_Deprecated*>(target_interface());
-  }
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -82,7 +76,7 @@ class PPB_Var_Deprecated_Proxy : public InterfaceProxy {
                       SerializedVarVectorReceiveInput arg_vector,
                       SerializedVarOutParam exception,
                       SerializedVarReturnValue result);
-  void OnMsgIsInstanceOfDeprecated(pp::proxy::SerializedVarReceiveInput var,
+  void OnMsgIsInstanceOfDeprecated(SerializedVarReceiveInput var,
                                    int64 ppp_class,
                                    int64* ppp_class_data,
                                    PP_Bool* result);
@@ -95,10 +89,14 @@ class PPB_Var_Deprecated_Proxy : public InterfaceProxy {
   void SetAllowPluginReentrancy();
 
   void DoReleaseObject(int64 object_id);
-  ScopedRunnableMethodFactory<PPB_Var_Deprecated_Proxy> task_factory_;
+  base::WeakPtrFactory<PPB_Var_Deprecated_Proxy> task_factory_;
+
+  const PPB_Var_Deprecated* ppb_var_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(PPB_Var_Deprecated_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
-#endif  // PPAPI_PPB_VAR_PROXY_H_
+#endif  // PPAPI_PROXY_PPB_VAR_DEPRECATED_PROXY_H_

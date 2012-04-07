@@ -8,7 +8,7 @@
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 namespace {
 
@@ -138,8 +138,23 @@ const CGFloat kImageNoFocusAlpha = 0.65;
 - (void)setIsMouseInside:(BOOL)isMouseInside {
   if (isMouseInside_ != isMouseInside) {
     isMouseInside_ = isMouseInside;
-    [[self controlView] setNeedsDisplay:YES];
+    NSView<ImageButton>* control =
+        static_cast<NSView<ImageButton>*>([self controlView]);
+    if ([control respondsToSelector:@selector(mouseInsideStateDidChange:)]) {
+      [control mouseInsideStateDidChange:isMouseInside];
+    }
+    [control setNeedsDisplay:YES];
   }
+}
+
+- (void)setShowsBorderOnlyWhileMouseInside:(BOOL)show {
+  VLOG_IF(1, !show) << "setShowsBorderOnlyWhileMouseInside:NO ignored";
+}
+
+- (BOOL)showsBorderOnlyWhileMouseInside {
+  // Always returns YES so that buttons always get mouse tracking even when
+  // disabled. The reload button (and possibly others) depend on this.
+  return YES;
 }
 
 - (void)mouseEntered:(NSEvent*)theEvent {

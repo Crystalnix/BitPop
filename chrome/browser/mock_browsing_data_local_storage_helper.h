@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,26 +6,27 @@
 #define CHROME_BROWSER_MOCK_BROWSING_DATA_LOCAL_STORAGE_HELPER_H_
 #pragma once
 
+#include <list>
 #include <map>
-#include <vector>
 
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/browsing_data_local_storage_helper.h"
 
 // Mock for BrowsingDataLocalStorageHelper.
-// Use AddLocalStorageSamples() or add directly to response_ vector, then
+// Use AddLocalStorageSamples() or add directly to response_ list, then
 // call Notify().
 class MockBrowsingDataLocalStorageHelper
     : public BrowsingDataLocalStorageHelper {
  public:
   explicit MockBrowsingDataLocalStorageHelper(Profile* profile);
 
+  // BrowsingDataLocalStorageHelper implementation.
   virtual void StartFetching(
-      Callback1<const std::vector<LocalStorageInfo>& >::Type* callback);
-
-  virtual void CancelNotification();
-
-  virtual void DeleteLocalStorageFile(const FilePath& file_path);
+      const base::Callback<void(const std::list<LocalStorageInfo>&)>& callback)
+          OVERRIDE;
+  virtual void CancelNotification() OVERRIDE;
+  virtual void DeleteLocalStorageFile(const FilePath& file_path) OVERRIDE;
 
   // Adds some LocalStorageInfo samples.
   void AddLocalStorageSamples();
@@ -36,8 +37,8 @@ class MockBrowsingDataLocalStorageHelper
   // Marks all local storage files as existing.
   void Reset();
 
-  // Returns true if all local storage files were deleted since the last
-  // Reset() invokation.
+  // Returns true if all local storage files were deleted since the last Reset()
+  // invocation.
   bool AllDeleted();
 
   FilePath last_deleted_file_;
@@ -47,12 +48,11 @@ class MockBrowsingDataLocalStorageHelper
 
   Profile* profile_;
 
-  scoped_ptr<Callback1<const std::vector<LocalStorageInfo>& >::Type >
-      callback_;
+  base::Callback<void(const std::list<LocalStorageInfo>&)> callback_;
 
   std::map<const FilePath::StringType, bool> files_;
 
-  std::vector<LocalStorageInfo> response_;
+  std::list<LocalStorageInfo> response_;
 };
 
 #endif  // CHROME_BROWSER_MOCK_BROWSING_DATA_LOCAL_STORAGE_HELPER_H_

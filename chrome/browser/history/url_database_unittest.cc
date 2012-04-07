@@ -1,8 +1,7 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "app/sql/connection.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -10,6 +9,7 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/url_database.h"
+#include "sql/connection.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -193,12 +193,12 @@ TEST_F(URLDatabaseTest, EnumeratorForSignificant) {
   std::string url_string2("http://www.url_match_visit_count.com/");
   good_urls.insert("http://www.url_match_visit_count.com/");
   URLRow url_match_visit_count(GURL("http://www.url_match_visit_count.com/"));
-  url_match_visit_count.set_visit_count(kLowQualityMatchVisitLimit + 1);
+  url_match_visit_count.set_visit_count(kLowQualityMatchVisitLimit);
   EXPECT_TRUE(AddURL(url_match_visit_count));
 
   good_urls.insert("http://www.url_match_typed_count.com/");
   URLRow url_match_typed_count(GURL("http://www.url_match_typed_count.com/"));
-  url_match_typed_count.set_typed_count(kLowQualityMatchTypedLimit + 1);
+  url_match_typed_count.set_typed_count(kLowQualityMatchTypedLimit);
   EXPECT_TRUE(AddURL(url_match_typed_count));
 
   good_urls.insert("http://www.url_match_last_visit.com/");
@@ -239,7 +239,7 @@ TEST_F(URLDatabaseTest, IconMappingEnumerator) {
       SQL_FROM_HERE,
       "UPDATE urls SET favicon_id =? WHERE id=?"));
 
-  ASSERT_TRUE(statement);
+  ASSERT_TRUE(statement.is_valid());
 
   statement.BindInt64(0, icon_id);
   statement.BindInt64(1, url_id1);

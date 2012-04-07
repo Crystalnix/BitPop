@@ -1,44 +1,67 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/common/service_process_util_posix.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/eintr_wrapper.h"
 #include "base/message_loop_proxy.h"
 #include "base/synchronization/waitable_event.h"
+#include "chrome/common/multi_process_lock.h"
 
 namespace {
 int g_signal_socket = -1;
 }
 
-ServiceProcessShutdownMonitor::ServiceProcessShutdownMonitor(
-    Task* shutdown_task)
-    : shutdown_task_(shutdown_task) {
+// Attempts to take a lock named |name|. If |waiting| is true then this will
+// make multiple attempts to acquire the lock.
+// Caller is responsible for ownership of the MultiProcessLock.
+MultiProcessLock* TakeNamedLock(const std::string& name, bool waiting) {
+  scoped_ptr<MultiProcessLock> lock(MultiProcessLock::Create(name));
+  if (lock == NULL) return NULL;
+  bool got_lock = false;
+  for (int i = 0; i < 10; ++i) {
+    if (lock->TryLock()) {
+      got_lock = true;
+      break;
+    }
+    if (!waiting) break;
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100 * i));
+  }
+  if (!got_lock) {
+    lock.reset();
+  }
+  return lock.release();
 }
 
-ServiceProcessShutdownMonitor::~ServiceProcessShutdownMonitor() {
+ServiceProcessTerminateMonitor::ServiceProcessTerminateMonitor(
+    const base::Closure& terminate_task)
+    : terminate_task_(terminate_task) {
 }
 
-void ServiceProcessShutdownMonitor::OnFileCanReadWithoutBlocking(int fd) {
-  if (shutdown_task_.get()) {
+ServiceProcessTerminateMonitor::~ServiceProcessTerminateMonitor() {
+}
+
+void ServiceProcessTerminateMonitor::OnFileCanReadWithoutBlocking(int fd) {
+  if (!terminate_task_.is_null()) {
     int buffer;
     int length = read(fd, &buffer, sizeof(buffer));
-    if ((length == sizeof(buffer)) && (buffer == kShutDownMessage)) {
-      shutdown_task_->Run();
-      shutdown_task_.reset();
+    if ((length == sizeof(buffer)) && (buffer == kTerminateMessage)) {
+      terminate_task_.Run();
+      terminate_task_.Reset();
     } else if (length > 0) {
-      LOG(ERROR) << "Unexpected read: " << buffer;
+      DLOG(ERROR) << "Unexpected read: " << buffer;
     } else if (length == 0) {
-      LOG(ERROR) << "Unexpected fd close";
+      DLOG(ERROR) << "Unexpected fd close";
     } else if (length < 0) {
-      PLOG(ERROR) << "read";
+      DPLOG(ERROR) << "read";
     }
   }
 }
 
-void ServiceProcessShutdownMonitor::OnFileCanWriteWithoutBlocking(int fd) {
+void ServiceProcessTerminateMonitor::OnFileCanWriteWithoutBlocking(int fd) {
   NOTIMPLEMENTED();
 }
 
@@ -48,9 +71,9 @@ void ServiceProcessShutdownMonitor::OnFileCanWriteWithoutBlocking(int fd) {
 static void SigTermHandler(int sig, siginfo_t* info, void* uap) {
   // TODO(dmaclach): add security here to make sure that we are being shut
   //                 down by an appropriate process.
-  int message = ServiceProcessShutdownMonitor::kShutDownMessage;
+  int message = ServiceProcessTerminateMonitor::kTerminateMessage;
   if (write(g_signal_socket, &message, sizeof(message)) < 0) {
-    PLOG(ERROR) << "write";
+    DPLOG(ERROR) << "write";
   }
 }
 
@@ -61,13 +84,13 @@ ServiceProcessState::StateData::StateData() : set_action_(false) {
 
 void ServiceProcessState::StateData::SignalReady(base::WaitableEvent* signal,
                                                  bool* success) {
-  CHECK_EQ(g_signal_socket, -1);
-  CHECK(!signal->IsSignaled());
+  DCHECK_EQ(g_signal_socket, -1);
+  DCHECK(!signal->IsSignaled());
    *success = MessageLoopForIO::current()->WatchFileDescriptor(
       sockets_[0], true, MessageLoopForIO::WATCH_READ,
-      &watcher_, shut_down_monitor_.get());
+      &watcher_, terminate_monitor_.get());
   if (!*success) {
-    LOG(ERROR) << "WatchFileDescriptor";
+    DLOG(ERROR) << "WatchFileDescriptor";
     signal->Signal();
     return;
   }
@@ -75,12 +98,13 @@ void ServiceProcessState::StateData::SignalReady(base::WaitableEvent* signal,
 
   // Set up signal handler for SIGTERM.
   struct sigaction action;
+  memset(&action, 0, sizeof(action));
   action.sa_sigaction = SigTermHandler;
   sigemptyset(&action.sa_mask);
   action.sa_flags = SA_SIGINFO;
   *success = sigaction(SIGTERM, &action, &old_action_) == 0;
   if (!*success) {
-    PLOG(ERROR) << "sigaction";
+    DPLOG(ERROR) << "sigaction";
     signal->Signal();
     return;
   }
@@ -94,7 +118,7 @@ void ServiceProcessState::StateData::SignalReady(base::WaitableEvent* signal,
 #if defined(OS_MACOSX)
   *success = WatchExecutable();
   if (!*success) {
-    LOG(ERROR) << "WatchExecutable";
+    DLOG(ERROR) << "WatchExecutable";
     signal->Signal();
     return;
   }
@@ -107,24 +131,24 @@ void ServiceProcessState::StateData::SignalReady(base::WaitableEvent* signal,
 ServiceProcessState::StateData::~StateData() {
   if (sockets_[0] != -1) {
     if (HANDLE_EINTR(close(sockets_[0]))) {
-      PLOG(ERROR) << "close";
+      DPLOG(ERROR) << "close";
     }
   }
   if (sockets_[1] != -1) {
     if (HANDLE_EINTR(close(sockets_[1]))) {
-      PLOG(ERROR) << "close";
+      DPLOG(ERROR) << "close";
     }
   }
   if (set_action_) {
     if (sigaction(SIGTERM, &old_action_, NULL) < 0) {
-      PLOG(ERROR) << "sigaction";
+      DPLOG(ERROR) << "sigaction";
     }
   }
   g_signal_socket = -1;
 }
 
 void ServiceProcessState::CreateState() {
-  CHECK(!state_);
+  DCHECK(!state_);
   state_ = new StateData;
 
   // Explicitly adding a reference here (and removing it in TearDownState)
@@ -135,29 +159,30 @@ void ServiceProcessState::CreateState() {
 }
 
 bool ServiceProcessState::SignalReady(
-    base::MessageLoopProxy* message_loop_proxy, Task* shutdown_task) {
-  CHECK(state_);
+    base::MessageLoopProxy* message_loop_proxy,
+    const base::Closure& terminate_task) {
+  DCHECK(state_);
 
-  scoped_ptr<Task> scoped_shutdown_task(shutdown_task);
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   state_->running_lock_.reset(TakeServiceRunningLock(true));
   if (state_->running_lock_.get() == NULL) {
     return false;
   }
 #endif
-  state_->shut_down_monitor_.reset(
-      new ServiceProcessShutdownMonitor(scoped_shutdown_task.release()));
+  state_->terminate_monitor_.reset(
+      new ServiceProcessTerminateMonitor(terminate_task));
   if (pipe(state_->sockets_) < 0) {
-    PLOG(ERROR) << "pipe";
+    DPLOG(ERROR) << "pipe";
     return false;
   }
   base::WaitableEvent signal_ready(true, false);
   bool success = false;
 
   message_loop_proxy->PostTask(FROM_HERE,
-      NewRunnableMethod(state_, &ServiceProcessState::StateData::SignalReady,
-                        &signal_ready,
-                        &success));
+      base::Bind(&ServiceProcessState::StateData::SignalReady,
+                 state_,
+                 &signal_ready,
+                 &success));
   signal_ready.Wait();
   return success;
 }

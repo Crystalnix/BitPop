@@ -8,13 +8,12 @@
 
 #include <vector>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/task.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/common/ref_counted_util.h"
-#include "content/browser/cancelable_request.h"
 
 class GURL;
 class Profile;
@@ -24,10 +23,11 @@ class Profile;
 //
 // This service is thread safe. Each request callback is invoked in the
 // thread that made the request.
-class FaviconService : public CancelableRequestProvider,
-                       public base::RefCountedThreadSafe<FaviconService> {
+class FaviconService : public CancelableRequestProvider {
  public:
   explicit FaviconService(Profile* profile);
+
+  virtual ~FaviconService();
 
   // Callback for GetFavicon. If we have previously inquired about the favicon
   // for this URL, |know_favicon| will be true, and the rest of the fields will
@@ -39,18 +39,20 @@ class FaviconService : public CancelableRequestProvider,
   // opposed to not knowing anything). |expired| will be set to true if we
   // refreshed the favicon "too long" ago and should be updated if the page
   // is visited again.
-  typedef Callback2<Handle,                             // handle
-                    history::FaviconData>::Type  // the type of favicon
-                    FaviconDataCallback;
+  typedef base::Callback<
+      void(Handle,  // handle
+           history::FaviconData)>  // the type of favicon
+      FaviconDataCallback;
 
   typedef CancelableRequest<FaviconDataCallback> GetFaviconRequest;
 
   // Requests the |icon_type| of favicon. |consumer| is notified when the bits
-  // have been fetched.
+  // have been fetched. |icon_url| is the URL of the icon itself, e.g.
+  // <http://www.google.com/favicon.ico>.
   Handle GetFavicon(const GURL& icon_url,
                     history::IconType icon_type,
                     CancelableRequestConsumerBase* consumer,
-                    FaviconDataCallback* callback);
+                    const FaviconDataCallback& callback);
 
   // Fetches the |icon_type| of favicon at |icon_url|, sending the results to
   // the given |callback|. If the favicon has previously been set via
@@ -61,7 +63,7 @@ class FaviconService : public CancelableRequestProvider,
                                       const GURL& icon_url,
                                       history::IconType icon_type,
                                       CancelableRequestConsumerBase* consumer,
-                                      FaviconDataCallback* callback);
+                                      const FaviconDataCallback& callback);
 
   // Requests any |icon_types| of favicon for a web page URL. |consumer| is
   // notified when the bits have been fetched. |icon_types| can be any
@@ -74,10 +76,17 @@ class FaviconService : public CancelableRequestProvider,
   Handle GetFaviconForURL(const GURL& page_url,
                           int icon_types,
                           CancelableRequestConsumerBase* consumer,
-                          FaviconDataCallback* callback);
+                          const FaviconDataCallback& callback);
 
   // Marks all types of favicon for the page as being out of date.
   void SetFaviconOutOfDateForPage(const GURL& page_url);
+
+  // Clones all icons from an existing page. This associates the icons from
+  // |old_page_url| with |new_page_url|, provided |new_page_url| has no
+  // recorded associations to any other icons.
+  // Needed if you want to declare favicons (tentatively) in advance, before a
+  // page is ever visited.
+  void CloneFavicon(const GURL& old_page_url, const GURL& new_page_url);
 
   // Allows the importer to set many favicons for many pages at once. The pages
   // must exist, any favicon sets for unknown pages will be discarded. Existing
@@ -92,9 +101,7 @@ class FaviconService : public CancelableRequestProvider,
                   history::IconType icon_type);
 
  private:
-  friend class base::RefCountedThreadSafe<FaviconService>;
 
-  virtual ~FaviconService();
 
   Profile* profile_;
 

@@ -15,6 +15,7 @@
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/archived_database.h"
 #include "chrome/browser/history/expire_history_backend.h"
 #include "chrome/browser/history/history_database.h"
@@ -22,10 +23,11 @@
 #include "chrome/browser/history/text_database_manager.h"
 #include "chrome/browser/history/thumbnail_database.h"
 #include "chrome/browser/history/top_sites.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/thumbnail_score.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/jpeg_codec.h"
@@ -33,6 +35,7 @@
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
+using content::BrowserThread;
 
 // Filename constants.
 static const FilePath::CharType kHistoryFile[] = FILE_PATH_LITERAL("History");
@@ -87,7 +90,7 @@ class ExpireHistoryTest : public testing::Test,
 
   void StarURL(const GURL& url) {
     bookmark_model_.AddURL(
-        bookmark_model_.GetBookmarkBarNode(), 0, string16(), url);
+        bookmark_model_.bookmark_bar_node(), 0, string16(), url);
   }
 
   static bool IsStringInFile(const FilePath& filename, const char* str);
@@ -101,8 +104,8 @@ class ExpireHistoryTest : public testing::Test,
   BookmarkModel bookmark_model_;
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread db_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread db_thread_;
 
   ExpireHistoryBackend expirer_;
 
@@ -119,7 +122,7 @@ class ExpireHistoryTest : public testing::Test,
   // Notifications intended to be broadcast, we can check these values to make
   // sure that the deletor is doing the correct broadcasts. We own the details
   // pointers.
-  typedef std::vector< std::pair<NotificationType, HistoryDetails*> >
+  typedef std::vector< std::pair<int, HistoryDetails*> >
       NotificationList;
   NotificationList notifications_;
 
@@ -168,7 +171,7 @@ class ExpireHistoryTest : public testing::Test,
   }
 
   // BroadcastNotificationDelegate implementation.
-  void BroadcastNotifications(NotificationType type,
+  void BroadcastNotifications(int type,
                               HistoryDetails* details_deleted) {
     // This gets called when there are notifications to broadcast. Instead, we
     // store them so we can tell that the correct notifications were sent.
@@ -225,16 +228,16 @@ void ExpireHistoryTest::AddExampleData(URLID url_ids[3], Time visit_times[4]) {
   url_ids[2] = main_db_->AddURL(url_row3);
   thumb_db_->AddIconMapping(url_row3.url(), favicon2);
 
-  // Thumbnails for each URL.
-  scoped_ptr<SkBitmap> thumbnail(
+  // Thumbnails for each URL. |thumbnail| takes ownership of decoded SkBitmap.
+  gfx::Image thumbnail(
       gfx::JPEGCodec::Decode(kGoogleThumbnail, sizeof(kGoogleThumbnail)));
   ThumbnailScore score(0.25, true, true, Time::Now());
 
   Time time;
   GURL gurl;
-  top_sites_->SetPageThumbnail(url_row1.url(), *thumbnail, score);
-  top_sites_->SetPageThumbnail(url_row2.url(), *thumbnail, score);
-  top_sites_->SetPageThumbnail(url_row3.url(), *thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row1.url(), &thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row2.url(), &thumbnail, score);
+  top_sites_->SetPageThumbnail(url_row3.url(), &thumbnail, score);
 
   // Four visits.
   VisitRow visit_row1;
@@ -253,7 +256,7 @@ void ExpireHistoryTest::AddExampleData(URLID url_ids[3], Time visit_times[4]) {
   visit_row3.url_id = url_ids[1];
   visit_row3.visit_time = visit_times[2];
   visit_row3.is_indexed = true;
-  visit_row3.transition = PageTransition::TYPED;
+  visit_row3.transition = content::PAGE_TRANSITION_TYPED;
   main_db_->AddVisit(&visit_row3, SOURCE_BROWSED);
 
   VisitRow visit_row4;
@@ -295,18 +298,19 @@ void ExpireHistoryTest::AddExampleSourceData(const GURL& url, URLID* id) {
 
   // Four times for each visit.
   VisitRow visit_row1(url_id, last_visit_time - TimeDelta::FromDays(4), 0,
-                      PageTransition::TYPED, 0);
+                      content::PAGE_TRANSITION_TYPED, 0);
   main_db_->AddVisit(&visit_row1, SOURCE_SYNCED);
 
   VisitRow visit_row2(url_id, last_visit_time - TimeDelta::FromDays(3), 0,
-                      PageTransition::TYPED, 0);
+                      content::PAGE_TRANSITION_TYPED, 0);
   main_db_->AddVisit(&visit_row2, SOURCE_BROWSED);
 
   VisitRow visit_row3(url_id, last_visit_time - TimeDelta::FromDays(2), 0,
-                      PageTransition::TYPED, 0);
+                      content::PAGE_TRANSITION_TYPED, 0);
   main_db_->AddVisit(&visit_row3, SOURCE_EXTENSION);
 
-  VisitRow visit_row4(url_id, last_visit_time, 0, PageTransition::TYPED, 0);
+  VisitRow visit_row4(
+      url_id, last_visit_time, 0, content::PAGE_TRANSITION_TYPED, 0);
   main_db_->AddVisit(&visit_row4, SOURCE_FIREFOX_IMPORTED);
 }
 
@@ -334,7 +338,7 @@ bool ExpireHistoryTest::HasThumbnail(URLID url_id) {
   if (!main_db_->GetURLRow(url_id, &info))
     return false;
   GURL url = info.url();
-  scoped_refptr<RefCountedBytes> data;
+  scoped_refptr<RefCountedMemory> data;
   return top_sites_->GetPageThumbnail(url, &data);
 }
 
@@ -376,7 +380,7 @@ void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
 
   bool found_delete_notification = false;
   for (size_t i = 0; i < notifications_.size(); i++) {
-    if (notifications_[i].first == NotificationType::HISTORY_URLS_DELETED) {
+    if (notifications_[i].first == chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
       const URLsDeletedDetails* deleted_details =
           reinterpret_cast<URLsDeletedDetails*>(notifications_[i].second);
       if (deleted_details->urls.find(row.url()) !=
@@ -384,9 +388,10 @@ void ExpireHistoryTest::EnsureURLInfoGone(const URLRow& row) {
         found_delete_notification = true;
       }
     } else {
-      EXPECT_NE(notifications_[i].first, NotificationType::HISTORY_URL_VISITED);
       EXPECT_NE(notifications_[i].first,
-                NotificationType::HISTORY_TYPED_URLS_MODIFIED);
+                chrome::NOTIFICATION_HISTORY_URL_VISITED);
+      EXPECT_NE(notifications_[i].first,
+                chrome::NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED);
     }
   }
   EXPECT_TRUE(found_delete_notification);
@@ -519,7 +524,7 @@ TEST_F(ExpireHistoryTest, DeleteURLWithoutFavicon) {
   // Delete the URL and its dependencies.
   expirer_.DeleteURL(last_row.url());
 
-  // All the normal data + the favicon should be gone.
+  // All the normal data except the favicon should be gone.
   EnsureURLInfoGone(last_row);
   EXPECT_TRUE(HasFavicon(favicon_id));
 }
@@ -560,11 +565,48 @@ TEST_F(ExpireHistoryTest, DontDeleteStarredURL) {
   // ASSERT_TRUE(HasThumbnail(url_row.id()));
 
   // Unstar the URL and delete again.
-  bookmark_model_.SetURLStarred(url, string16(), false);
+  bookmark_utils::RemoveAllBookmarks(&bookmark_model_, url);
   expirer_.DeleteURL(url);
 
   // Now it should be completely deleted.
   EnsureURLInfoGone(url_row);
+}
+
+// Deletes multiple URLs at once.  The favicon for the third one but
+// not the first two should be deleted.
+TEST_F(ExpireHistoryTest, DeleteURLs) {
+  URLID url_ids[3];
+  Time visit_times[4];
+  AddExampleData(url_ids, visit_times);
+
+  // Verify things are the way we expect with URL rows, favicons,
+  // thumbnails.
+  URLRow rows[3];
+  FaviconID favicon_ids[3];
+  std::vector<GURL> urls;
+  // Push back a bogus URL (which shouldn't change anything).
+  urls.push_back(GURL());
+  for (size_t i = 0; i < arraysize(rows); ++i) {
+    ASSERT_TRUE(main_db_->GetURLRow(url_ids[i], &rows[i]));
+    favicon_ids[i] = GetFavicon(rows[i].url(), FAVICON);
+    EXPECT_TRUE(HasFavicon(favicon_ids[i]));
+    // TODO(sky): fix this, see comment in HasThumbnail.
+    // EXPECT_TRUE(HasThumbnail(url_ids[i]));
+    urls.push_back(rows[i].url());
+  }
+
+  StarURL(rows[0].url());
+
+  // Delete the URLs and their dependencies.
+  expirer_.DeleteURLs(urls);
+
+  // First one should still be around (since it was starred).
+  ASSERT_TRUE(main_db_->GetRowForURL(rows[0].url(), &rows[0]));
+  EnsureURLInfoGone(rows[1]);
+  EnsureURLInfoGone(rows[2]);
+  EXPECT_TRUE(HasFavicon(favicon_ids[0]));
+  EXPECT_TRUE(HasFavicon(favicon_ids[1]));
+  EXPECT_FALSE(HasFavicon(favicon_ids[2]));
 }
 
 // Expires all URLs more recent than a given time, with no starred items.

@@ -13,11 +13,10 @@
 #include "base/memory/ref_counted.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/nphostapi.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 namespace webkit {
 namespace npapi {
-
-class PluginInstance;
 
 // The Plugin Host implements the NPN_xxx functions for NPAPI plugins.
 // These are the functions exposed from the Plugin Host for use
@@ -30,10 +29,10 @@ class PluginHost : public base::RefCounted<PluginHost> {
  public:
   // Access the single PluginHost instance.  Callers
   // must call deref() when finished with the object.
-  static PluginHost *Singleton();
+  WEBKIT_PLUGINS_EXPORT static PluginHost* Singleton();
 
   // The table of functions provided to the plugin.
-  NPNetscapeFuncs *host_functions() { return &host_funcs_; }
+  NPNetscapeFuncs* host_functions() { return &host_funcs_; }
 
   // Helper function for parsing post headers, and applying attributes
   // to the stream.  NPAPI post data include headers + data combined.
@@ -45,7 +44,7 @@ class PluginHost : public base::RefCounted<PluginHost> {
                           std::vector<std::string>* values,
                           std::vector<char>* body);
 
-  void PatchNPNetscapeFuncs(NPNetscapeFuncs* overrides);
+  WEBKIT_PLUGINS_EXPORT void PatchNPNetscapeFuncs(NPNetscapeFuncs* overrides);
 
  private:
   friend class base::RefCounted<PluginHost>;
@@ -54,7 +53,6 @@ class PluginHost : public base::RefCounted<PluginHost> {
 
   PluginHost();
   void InitializeHostFuncs();
-  static scoped_refptr<PluginHost> singleton_;
   NPNetscapeFuncs host_funcs_;
   DISALLOW_COPY_AND_ASSIGN(PluginHost);
 };

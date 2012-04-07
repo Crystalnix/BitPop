@@ -8,15 +8,14 @@
 #include "base/lazy_instance.h"
 #include "base/threading/thread_local.h"
 #include "content/common/appcache/appcache_dispatcher.h"
-#include "content/common/content_switches.h"
 #include "content/common/db_message_filter.h"
 #include "content/common/web_database_observer_impl.h"
 #include "content/common/worker_messages.h"
-#include "content/worker/webworker_stub.h"
+#include "content/public/common/content_switches.h"
 #include "content/worker/websharedworker_stub.h"
-#include "content/worker/worker_webkitclient_impl.h"
+#include "content/worker/worker_webkitplatformsupport_impl.h"
 #include "ipc/ipc_sync_channel.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBlobRegistry.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobRegistry.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
@@ -24,14 +23,14 @@
 
 using WebKit::WebRuntimeFeatures;
 
-static base::LazyInstance<base::ThreadLocalPointer<WorkerThread> > lazy_tls(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<base::ThreadLocalPointer<WorkerThread> > lazy_tls =
+    LAZY_INSTANCE_INITIALIZER;
 
 
 WorkerThread::WorkerThread() {
   lazy_tls.Pointer()->Set(this);
-  webkit_client_.reset(new WorkerWebKitClientImpl);
-  WebKit::initialize(webkit_client_.get());
+  webkit_platform_support_.reset(new WorkerWebKitPlatformSupportImpl);
+  WebKit::initialize(webkit_platform_support_.get());
 
   appcache_dispatcher_.reset(new AppCacheDispatcher(this));
 
@@ -93,15 +92,11 @@ bool WorkerThread::OnControlMessageReceived(const IPC::Message& msg) {
 void WorkerThread::OnCreateWorker(
     const WorkerProcessMsg_CreateWorker_Params& params) {
   WorkerAppCacheInitInfo appcache_init_info(
-      params.is_shared, params.creator_process_id,
-      params.creator_appcache_host_id,
+      params.creator_process_id,
       params.shared_worker_appcache_id);
 
-  // WebWorkerStub and WebSharedWorkerStub own themselves.
-  if (params.is_shared)
-    new WebSharedWorkerStub(params.name, params.route_id, appcache_init_info);
-  else
-    new WebWorkerStub(params.url, params.route_id, appcache_init_info);
+  // WebSharedWorkerStub own themselves.
+  new WebSharedWorkerStub(params.name, params.route_id, appcache_init_info);
 }
 
 // The browser process is likely dead. Terminate all workers.
@@ -114,10 +109,10 @@ void WorkerThread::OnChannelError() {
   }
 }
 
-void WorkerThread::RemoveWorkerStub(WebWorkerStubBase* stub) {
+void WorkerThread::RemoveWorkerStub(WebSharedWorkerStub* stub) {
   worker_stubs_.erase(stub);
 }
 
-void WorkerThread::AddWorkerStub(WebWorkerStubBase* stub) {
+void WorkerThread::AddWorkerStub(WebSharedWorkerStub* stub) {
   worker_stubs_.insert(stub);
 }

@@ -16,7 +16,8 @@ const size_t kMaxMRUFolders = 5;
 }  // namespace
 
 RecentlyUsedFoldersComboModel::RecentlyUsedFoldersComboModel(
-    BookmarkModel* model, const BookmarkNode* node)
+    BookmarkModel* model,
+    const BookmarkNode* node)
     // Use + 2 to account for bookmark bar and other node.
     : nodes_(bookmark_utils::GetMostRecentlyModifiedFolders(
           model, kMaxMRUFolders + 2)),
@@ -25,26 +26,25 @@ RecentlyUsedFoldersComboModel::RecentlyUsedFoldersComboModel(
 
   // We special case the placement of these, so remove them from the list, then
   // fix up the order.
-  RemoveNode(model->GetBookmarkBarNode());
-  RemoveNode(model->synced_node());
+  RemoveNode(model->bookmark_bar_node());
+  RemoveNode(model->mobile_node());
   RemoveNode(model->other_node());
   RemoveNode(node->parent());
 
-  // Make the parent the first item, unless it's the bookmark bar or other node.
-  if (!model->is_permanent_node(node)) {
+  // Make the parent the first item, unless it's a permanent node, which is
+  // added below.
+  if (!model->is_permanent_node(node->parent()))
     nodes_.insert(nodes_.begin(), node->parent());
-  }
 
   // Make sure we only have kMaxMRUFolders in the first chunk.
   if (nodes_.size() > kMaxMRUFolders)
     nodes_.erase(nodes_.begin() + kMaxMRUFolders, nodes_.end());
 
   // And put the bookmark bar and other nodes at the end of the list.
-  nodes_.push_back(model->GetBookmarkBarNode());
+  nodes_.push_back(model->bookmark_bar_node());
   nodes_.push_back(model->other_node());
-  if (model->synced_node()->IsVisible()) {
-    nodes_.push_back(model->synced_node());
-  }
+  if (model->mobile_node()->IsVisible())
+    nodes_.push_back(model->mobile_node());
 
   std::vector<const BookmarkNode*>::iterator it = std::find(nodes_.begin(),
                                                             nodes_.end(),
@@ -60,7 +60,8 @@ int RecentlyUsedFoldersComboModel::GetItemCount() {
 
 string16 RecentlyUsedFoldersComboModel::GetItemAt(int index) {
   if (index == static_cast<int>(nodes_.size()))
-    return l10n_util::GetStringUTF16(IDS_BOOMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER);
+    return
+       l10n_util::GetStringUTF16(IDS_BOOKMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER);
   return nodes_[index]->GetTitle();
 }
 

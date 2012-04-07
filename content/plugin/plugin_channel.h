@@ -11,7 +11,7 @@
 #include "base/memory/scoped_handle.h"
 #include "base/process.h"
 #include "build/build_config.h"
-#include "content/plugin/plugin_channel_base.h"
+#include "content/common/np_channel_base.h"
 #include "content/plugin/webplugin_delegate_stub.h"
 
 namespace base {
@@ -20,7 +20,7 @@ class WaitableEvent;
 
 // Encapsulates an IPC channel between the plugin process and one renderer
 // process.  On the renderer side there's a corresponding PluginChannelHost.
-class PluginChannel : public PluginChannelBase {
+class PluginChannel : public NPChannelBase {
  public:
   // Get a new PluginChannel object for the current process to talk to the
   // given renderer process. The renderer ID is an opaque unique ID generated
@@ -33,17 +33,18 @@ class PluginChannel : public PluginChannelBase {
 
   virtual ~PluginChannel();
 
-  virtual bool Send(IPC::Message* msg);
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   base::ProcessHandle renderer_handle() const { return renderer_handle_; }
   int renderer_id() { return renderer_id_; }
 
-  virtual int GenerateRouteID();
+  virtual int GenerateRouteID() OVERRIDE;
 
   // Returns the event that's set when a call to the renderer causes a modal
   // dialog to come up.
-  base::WaitableEvent* GetModalDialogEvent(gfx::NativeViewId containing_window);
+  virtual base::WaitableEvent* GetModalDialogEvent(
+      gfx::NativeViewId containing_window) OVERRIDE;
 
   bool in_send() { return in_send_ != 0; }
 
@@ -51,19 +52,22 @@ class PluginChannel : public PluginChannelBase {
   void set_incognito(bool value) { incognito_ = value; }
 
 #if defined(OS_POSIX)
-  int renderer_fd() const { return channel_->GetClientFileDescriptor(); }
+  int TakeRendererFileDescriptor() {
+    return channel_->TakeClientFileDescriptor();
+  }
 #endif
 
  protected:
   // IPC::Channel::Listener implementation:
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OnChannelError();
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
-  virtual void CleanUp();
+  virtual void CleanUp() OVERRIDE;
 
-  // Overrides PluginChannelBase::Init.
+  // Overrides NPChannelBase::Init.
   virtual bool Init(base::MessageLoopProxy* ipc_message_loop,
-                   bool create_pipe_now);
+                    bool create_pipe_now,
+                    base::WaitableEvent* shutdown_event) OVERRIDE;
 
  private:
   class MessageFilter;
@@ -71,9 +75,9 @@ class PluginChannel : public PluginChannelBase {
   // Called on the plugin thread
   PluginChannel();
 
-  virtual bool OnControlMessageReceived(const IPC::Message& msg);
+  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
 
-  static PluginChannelBase* ClassFactory() { return new PluginChannel(); }
+  static NPChannelBase* ClassFactory() { return new PluginChannel(); }
 
   void OnCreateInstance(const std::string& mime_type, int* instance_id);
   void OnDestroyInstance(int instance_id, IPC::Message* reply_msg);

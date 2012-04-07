@@ -14,13 +14,14 @@ class StopSyncingHandler : public OptionsPageUIHandler {
   virtual ~StopSyncingHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
-  void StopSyncing(const ListValue* args);
+  void StopSyncing(const base::ListValue* args);
 
   DISALLOW_COPY_AND_ASSIGN(StopSyncingHandler);
 };

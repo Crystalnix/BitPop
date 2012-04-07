@@ -8,13 +8,15 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/gl/gl_context.h"
 #include "ui/gfx/gl/gl_surface.h"
+#include "ui/gfx/gl/gpu_preference.h"
+#include "ui/gfx/rect.h"
+#include "ui/gfx/size.h"
+#include "ui/gfx/surface/surface_export.h"
 #include "ui/gfx/surface/transport_dib.h"
 
 // Should not include GL headers in a header file. Forward declare these types
@@ -32,7 +34,7 @@ class Rect;
 // uses a regular dib. There will either be an IOSurface or a TransportDIB,
 // never both.
 
-class AcceleratedSurface {
+class SURFACE_EXPORT AcceleratedSurface {
  public:
   AcceleratedSurface();
   virtual ~AcceleratedSurface();
@@ -45,9 +47,14 @@ class AcceleratedSurface {
   // an FBO internally does NOT work properly with client code which uses
   // OpenGL (i.e., via GLES2 command buffers), because the GLES2
   // implementation does not know to bind the accelerated surface's
-  // internal FBO when the default FBO is bound. Returns false upon
+  // internal FBO when the default FBO is bound. |gpu_preference| indicates
+  // the GPU preference for the internally allocated GLContext. If
+  // |share_context| is non-NULL, then on platforms supporting dual GPUs,
+  // its GPU preference must match the passed one. Returns false upon
   // failure.
-  bool Initialize(gfx::GLContext* share_context, bool allocate_fbo);
+  bool Initialize(gfx::GLContext* share_context,
+                  bool allocate_fbo,
+                  gfx::GpuPreference gpu_preference);
   // Tear down. Must be called before destructor to prevent leaks.
   void Destroy();
 
@@ -57,11 +64,11 @@ class AcceleratedSurface {
   // the height or width changes. Returns a unique id of the IOSurface to
   // which the surface is bound, or 0 if no changes were made or an error
   // occurred. MakeCurrent() will have been called on the new surface.
-  uint64 SetSurfaceSize(const gfx::Size& size);
+  uint32 SetSurfaceSize(const gfx::Size& size);
 
-  // Returns the id of this surface's IOSruface, or 0 for
+  // Returns the id of this surface's IOSurface, or 0 for
   // transport DIB surfaces.
-  uint64 GetSurfaceId();
+  uint32 GetSurfaceId();
 
   // Sets the GL context to be the current one for drawing. Returns true if
   // it succeeded.
@@ -105,16 +112,16 @@ class AcceleratedSurface {
   // Sets the methods to use for allocating and freeing memory for the
   // transport DIB.
   void SetTransportDIBAllocAndFree(
-      Callback2<size_t, TransportDIB::Handle*>::Type* allocator,
-      Callback1<TransportDIB::Id>::Type* deallocator);
+      const base::Callback<void(size_t, TransportDIB::Handle*)>& allocator,
+      const base::Callback<void(TransportDIB::Id)>& deallocator);
 
   // Get the accelerated surface size.
   gfx::Size GetSize() const { return surface_size_; }
 
  private:
-  // Helper function to generate names for the backing texture, render buffers
-  // and FBO.  On return, the resulting buffer names can be attached to |fbo_|.
-  // |target| is the target type for the color buffer.
+  // Helper function to generate names for the backing texture and FBO.  On
+  // return, the resulting names can be attached to |fbo_|.  |target| is
+  // the target type for the color buffer.
   void AllocateRenderBuffers(GLenum target, const gfx::Size& size);
 
   // Helper function to attach the buffers previously allocated by a call to
@@ -123,6 +130,8 @@ class AcceleratedSurface {
   // AllocateRenderBuffers().  Returns |true| if the resulting framebuffer
   // object is valid.
   bool SetupFrameBufferObject(GLenum target);
+
+  gfx::Size ClampToValidDimensions(const gfx::Size& size);
 
   // The OpenGL context, and pbuffer drawable, used to transfer data
   // to the shared region (IOSurface or TransportDIB). Strictly
@@ -139,7 +148,7 @@ class AcceleratedSurface {
   base::mac::ScopedCFTypeRef<CFTypeRef> io_surface_;
 
   // The id of |io_surface_| or 0 if that's NULL.
-  uint64 io_surface_id_;
+  uint32 io_surface_id_;
 
   // TODO(dspringer): If we end up keeping this TransportDIB mechanism, this
   // should really be a scoped_ptr_malloc<>, with a deallocate functor that
@@ -147,6 +156,11 @@ class AcceleratedSurface {
   // make this work (or even compile).
   scoped_ptr<TransportDIB> transport_dib_;
   gfx::Size surface_size_;
+  // It's important to avoid allocating zero-width or zero-height
+  // IOSurfaces and textures on the Mac, so we clamp each to a minimum
+  // of 1. This is the real size of the surface; surface_size_ is what
+  // the user requested.
+  gfx::Size real_surface_size_;
   // TODO(kbr): the FBO management should not be in this class at all.
   // However, if it is factored out, care needs to be taken to not
   // introduce another copy of the color data on the GPU; the direct
@@ -159,11 +173,9 @@ class AcceleratedSurface {
   // The FBO and renderbuffer are only allocated if allocate_fbo_ is
   // true.
   GLuint fbo_;
-  GLuint depth_stencil_renderbuffer_;
   // Allocate a TransportDIB in the renderer.
-  scoped_ptr<Callback2<size_t, TransportDIB::Handle*>::Type>
-      dib_alloc_callback_;
-  scoped_ptr<Callback1<TransportDIB::Id>::Type> dib_free_callback_;
+  base::Callback<void(size_t, TransportDIB::Handle*)> dib_alloc_callback_;
+  base::Callback<void(TransportDIB::Id)> dib_free_callback_;
 };
 
 #endif  // UI_GFX_SURFACE_ACCELERATED_SURFACE_MAC_H_

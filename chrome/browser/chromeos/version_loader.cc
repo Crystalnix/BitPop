@@ -6,24 +6,24 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "chrome/browser/browser_process.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
 // File to look for version number in.
 static const char kPathVersion[] = "/etc/lsb-release";
-
-// TODO(rkc): Remove once we change over the Chrome OS version format.
-// Done for http://code.google.com/p/chromium-os/issues/detail?id=15789
-static const size_t kTrimVersion = 2;
 
 // File to look for firmware number in.
 static const char kPathFirmware[] = "/var/log/bios_info.txt";
@@ -47,9 +47,9 @@ const char VersionLoader::kFirmwarePrefix[] = "version";
 
 VersionLoader::Handle VersionLoader::GetVersion(
     CancelableRequestConsumerBase* consumer,
-    VersionLoader::GetVersionCallback* callback,
+    const VersionLoader::GetVersionCallback& callback,
     VersionFormat format) {
-  if (!g_browser_process->file_thread()) {
+  if (!BrowserThread::IsMessageLoopValid(BrowserThread::FILE)) {
     // This should only happen if Chrome is shutting down, so we don't do
     // anything.
     return 0;
@@ -58,16 +58,16 @@ VersionLoader::Handle VersionLoader::GetVersion(
   scoped_refptr<GetVersionRequest> request(new GetVersionRequest(callback));
   AddRequest(request, consumer);
 
-  g_browser_process->file_thread()->message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(backend_.get(), &Backend::GetVersion, request, format));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&Backend::GetVersion, backend_.get(), request, format));
   return request->handle();
 }
 
 VersionLoader::Handle VersionLoader::GetFirmware(
     CancelableRequestConsumerBase* consumer,
-    VersionLoader::GetFirmwareCallback* callback) {
-  if (!g_browser_process->file_thread()) {
+    const VersionLoader::GetFirmwareCallback& callback) {
+  if (!BrowserThread::IsMessageLoopValid(BrowserThread::FILE)) {
     // This should only happen if Chrome is shutting down, so we don't do
     // anything.
     return 0;
@@ -76,14 +76,10 @@ VersionLoader::Handle VersionLoader::GetFirmware(
   scoped_refptr<GetFirmwareRequest> request(new GetFirmwareRequest(callback));
   AddRequest(request, consumer);
 
-  g_browser_process->file_thread()->message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(backend_.get(), &Backend::GetFirmware, request));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&Backend::GetFirmware, backend_.get(), request));
   return request->handle();
-}
-
-void VersionLoader::EnablePlatformVersions(bool enable) {
-  backend_.get()->set_parse_as_platform(enable);
 }
 
 // static
@@ -147,20 +143,6 @@ void VersionLoader::Backend::GetVersion(
     version = ParseVersion(
         contents,
         (format == VERSION_FULL) ? kFullVersionPrefix : kVersionPrefix);
-
-    // TODO(rkc): Fix this once we move to xx.yyy version numbers for Chrome OS
-    // instead of 0.xx.yyy
-    // Done for http://code.google.com/p/chromium-os/issues/detail?id=15789
-    if (parse_as_platform_) {
-      if (version.size() > kTrimVersion) {
-        version = version.substr(kTrimVersion);
-        // Strip the major version.
-        size_t first_dot = version.find(".");
-        if (first_dot != std::string::npos) {
-          version = version.substr(first_dot + 1);
-        }
-      }
-    }
   }
 
   if (format == VERSION_SHORT_WITH_DATE) {
@@ -168,15 +150,14 @@ void VersionLoader::Backend::GetVersion(
     if (file_util::GetFileInfo(file_path, &fileinfo)) {
       base::Time::Exploded ctime;
       fileinfo.creation_time.UTCExplode(&ctime);
-      version += StringPrintf("-%02u.%02u.%02u",
-                              ctime.year % 100,
-                              ctime.month,
-                              ctime.day_of_month);
+      version += base::StringPrintf("-%02u.%02u.%02u",
+                                    ctime.year % 100,
+                                    ctime.month,
+                                    ctime.day_of_month);
     }
   }
 
-  request->ForwardResult(GetVersionCallback::TupleType(request->handle(),
-                                                       version));
+  request->ForwardResult(request->handle(), version);
 }
 
 void VersionLoader::Backend::GetFirmware(
@@ -192,8 +173,7 @@ void VersionLoader::Backend::GetFirmware(
     firmware = ParseFirmware(contents);
   }
 
-  request->ForwardResult(GetFirmwareCallback::TupleType(request->handle(),
-                                                        firmware));
+  request->ForwardResult(request->handle(), firmware);
 }
 
 }  // namespace chromeos

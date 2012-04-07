@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,16 @@
 
 #include <string>
 
+#include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
+#include "content/public/browser/notification_service.h"
 
 namespace {
 
@@ -22,15 +25,29 @@ namespace {
 // in test set up.
 const char kNoTestConfigDataError[] = "Test configuration was not set.";
 
+const char kNotTestProcessError[] =
+    "The chrome.test namespace is only available in tests.";
+
 }  // namespace
+
+TestExtensionFunction::~TestExtensionFunction() {}
+
+void TestExtensionFunction::Run() {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kTestType)) {
+    error_ = kNotTestProcessError;
+    SendResponse(false);
+    return;
+  }
+  SendResponse(RunImpl());
+}
 
 ExtensionTestPassFunction::~ExtensionTestPassFunction() {}
 
 bool ExtensionTestPassFunction::RunImpl() {
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_TEST_PASSED,
-      Source<Profile>(dispatcher()->profile()),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_TEST_PASSED,
+      content::Source<Profile>(dispatcher()->profile()),
+      content::NotificationService::NoDetails());
   return true;
 }
 
@@ -39,10 +56,10 @@ ExtensionTestFailFunction::~ExtensionTestFailFunction() {}
 bool ExtensionTestFailFunction::RunImpl() {
   std::string message;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &message));
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_TEST_FAILED,
-      Source<Profile>(dispatcher()->profile()),
-      Details<std::string>(&message));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_TEST_FAILED,
+      content::Source<Profile>(dispatcher()->profile()),
+      content::Details<std::string>(&message));
   return true;
 }
 
@@ -79,10 +96,10 @@ bool ExtensionTestSendMessageFunction::RunImpl() {
   std::string message;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &message));
   AddRef();  // balanced in Reply
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_TEST_MESSAGE,
-      Source<ExtensionTestSendMessageFunction>(this),
-      Details<std::string>(&message));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_TEST_MESSAGE,
+      content::Source<ExtensionTestSendMessageFunction>(this),
+      content::Details<std::string>(&message));
   return true;
 }
 ExtensionTestSendMessageFunction::~ExtensionTestSendMessageFunction() {}

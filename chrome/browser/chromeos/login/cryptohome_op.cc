@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,15 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/cryptohome_library.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
@@ -18,17 +22,16 @@ CryptohomeOp::CryptohomeOp(AuthAttemptState* current_attempt,
                            AuthAttemptStateResolver* callback)
     : attempt_(current_attempt),
       resolver_(callback) {
-  CHECK(chromeos::CrosLibrary::Get()->EnsureLoaded());
 }
 
 CryptohomeOp::~CryptohomeOp() {}
 
 void CryptohomeOp::OnComplete(bool success, int return_code) {
+  chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+      "CryptohomeMount-End", false);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this,
-                        &CryptohomeOp::TriggerResolve,
-                        success, return_code));
+      base::Bind(&CryptohomeOp::TriggerResolve, this, success, return_code));
 }
 
 void CryptohomeOp::TriggerResolve(bool success, int return_code) {
@@ -48,13 +51,13 @@ class MountAttempt : public CryptohomeOp {
 
   virtual ~MountAttempt() {}
 
-  bool Initiate() {
+  void Initiate() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "CryptohomeMount-Start", false);
     CryptohomeLibrary* lib = CrosLibrary::Get()->GetCryptohomeLibrary();
-    return lib->AsyncMount(attempt_->username,
-                           attempt_->ascii_hash,
-                           create_if_missing_,
-                           this);
+    lib->AsyncMount(attempt_->username, attempt_->ascii_hash,
+                    create_if_missing_, this);
   }
 
  private:
@@ -71,10 +74,10 @@ class MountGuestAttempt : public CryptohomeOp {
 
   virtual ~MountGuestAttempt() {}
 
-  bool Initiate() {
+  void Initiate() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     CryptohomeLibrary* lib = CrosLibrary::Get()->GetCryptohomeLibrary();
-    return lib->AsyncMountForBwsi(this);
+    lib->AsyncMountForBwsi(this);
   }
 
  private:
@@ -95,19 +98,15 @@ class MigrateAttempt : public CryptohomeOp {
 
   virtual ~MigrateAttempt() {}
 
-  bool Initiate() {
+  void Initiate() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     CryptohomeLibrary* lib = CrosLibrary::Get()->GetCryptohomeLibrary();
     if (is_old_hash_) {
-      return lib->AsyncMigrateKey(attempt_->username,
-                                  hash_,
-                                  attempt_->ascii_hash,
-                                  this);
+      lib->AsyncMigrateKey(attempt_->username, hash_, attempt_->ascii_hash,
+                           this);
     } else {
-      return lib->AsyncMigrateKey(attempt_->username,
-                                  attempt_->ascii_hash,
-                                  hash_,
-                                  this);
+      lib->AsyncMigrateKey(attempt_->username, attempt_->ascii_hash, hash_,
+                           this);
     }
   }
 
@@ -127,10 +126,10 @@ class RemoveAttempt : public CryptohomeOp {
 
   virtual ~RemoveAttempt() {}
 
-  bool Initiate() {
+  void Initiate() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     CryptohomeLibrary* lib = CrosLibrary::Get()->GetCryptohomeLibrary();
-    return lib->AsyncRemove(attempt_->username, this);
+    lib->AsyncRemove(attempt_->username, this);
   }
 
  private:
@@ -146,10 +145,10 @@ class CheckKeyAttempt : public CryptohomeOp {
 
   virtual ~CheckKeyAttempt() {}
 
-  bool Initiate() {
+  void Initiate() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     CryptohomeLibrary* lib = CrosLibrary::Get()->GetCryptohomeLibrary();
-    return lib->AsyncCheckKey(attempt_->username, attempt_->ascii_hash, this);
+    lib->AsyncCheckKey(attempt_->username, attempt_->ascii_hash, this);
   }
 
  private:

@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,6 @@
 
 class CommandLine;
 class FilePath;
-
-namespace base {
-class Time;
-}
 
 namespace logging {
 
@@ -66,6 +62,9 @@ typedef std::vector<std::wstring> AssertionList;
 // the program writing the log has terminated.
 size_t GetFatalAssertions(AssertionList* assertions);
 
-} // namespace logging
+// Handler to silently dump the current process without crashing.
+void DumpWithoutCrashing();
+
+}  // namespace logging
 
 #endif  // CHROME_COMMON_LOGGING_CHROME_H_

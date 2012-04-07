@@ -8,13 +8,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_ecml.h"
+#include "chrome/browser/autofill/autofill_regex_constants.h"
 #include "chrome/browser/autofill/autofill_scanner.h"
 #include "chrome/browser/autofill/autofill_type.h"
-#include "grit/autofill_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-using autofill::GetEcmlPattern;
 
 namespace {
 
@@ -40,8 +37,7 @@ class FirstLastNameField : public NameField {
  public:
   static FirstLastNameField* ParseSpecificName(AutofillScanner* scanner);
   static FirstLastNameField* ParseComponentNames(AutofillScanner* scanner);
-  static FirstLastNameField* ParseEcmlName(AutofillScanner* scanner);
-  static FirstLastNameField* Parse(AutofillScanner* scanner, bool is_ecml);
+  static FirstLastNameField* Parse(AutofillScanner* scanner);
 
  protected:
   // FormField:
@@ -60,13 +56,13 @@ class FirstLastNameField : public NameField {
 
 }  // namespace
 
-FormField* NameField::Parse(AutofillScanner* scanner, bool is_ecml) {
+FormField* NameField::Parse(AutofillScanner* scanner) {
   if (scanner->IsEnd())
     return NULL;
 
   // Try FirstLastNameField first since it's more specific.
-  NameField* field = FirstLastNameField::Parse(scanner, is_ecml);
-  if (!field && !is_ecml)
+  NameField* field = FirstLastNameField::Parse(scanner);
+  if (!field)
     field = FullNameField::Parse(scanner);
   return field;
 }
@@ -77,21 +73,19 @@ bool NameField::ClassifyField(FieldTypeMap* map) const {
 }
 
 FullNameField* FullNameField::Parse(AutofillScanner* scanner) {
-  // Exclude labels containing the string "username", which typically
-  // denotes a login ID rather than the user's actual name.
+  // Exclude e.g. "username" or "nickname" fields.
   scanner->SaveCursor();
-  bool is_username = ParseField(
-      scanner, l10n_util::GetStringUTF16(IDS_AUTOFILL_USERNAME_RE), NULL);
+  bool should_ignore = ParseField(scanner,
+                                  UTF8ToUTF16(autofill::kNameIgnoredRe), NULL);
   scanner->Rewind();
-  if (is_username)
+  if (should_ignore)
     return NULL;
 
   // Searching for any label containing the word "name" is too general;
   // for example, Travelocity_Edit travel profile.html contains a field
   // "Travel Profile Name".
   const AutofillField* field = NULL;
-  if (ParseField(scanner, l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_RE),
-                 &field))
+  if (ParseField(scanner, UTF8ToUTF16(autofill::kNameRe), &field))
     return new FullNameField(field);
 
   return NULL;
@@ -114,8 +108,7 @@ FirstLastNameField* FirstLastNameField::ParseSpecificName(
 
   const AutofillField* next;
   if (ParseField(scanner,
-                 l10n_util::GetStringUTF16(IDS_AUTOFILL_NAME_SPECIFIC_RE),
-                 &v->first_name_) &&
+                 UTF8ToUTF16(autofill::kNameSpecificRe), &v->first_name_) &&
       ParseEmptyLabel(scanner, &next)) {
     if (ParseEmptyLabel(scanner, &v->last_name_)) {
       // There are three name fields; assume that the middle one is a
@@ -150,17 +143,15 @@ FirstLastNameField* FirstLastNameField::ParseComponentNames(
 
   // Allow name fields to appear in any order.
   while (!scanner->IsEnd()) {
-    if (!v->first_name_ &&
-        ParseField(scanner,
-                   l10n_util::GetStringUTF16(IDS_AUTOFILL_FIRST_NAME_RE),
-                   &v->first_name_)) {
-      continue;
+    // Skip over any unrelated fields, e.g. "username" or "nickname".
+    if (ParseFieldSpecifics(scanner, UTF8ToUTF16(autofill::kNameIgnoredRe),
+                            MATCH_DEFAULT | MATCH_SELECT, NULL)) {
+          continue;
     }
 
-    if (!v->last_name_ &&
-        ParseField(scanner,
-                   l10n_util::GetStringUTF16(IDS_AUTOFILL_LAST_NAME_RE),
-                   &v->last_name_)) {
+    if (!v->first_name_ &&
+        ParseField(scanner, UTF8ToUTF16(autofill::kFirstNameRe),
+                   &v->first_name_)) {
       continue;
     }
 
@@ -170,17 +161,21 @@ FirstLastNameField* FirstLastNameField::ParseComponentNames(
     // "txtmiddlename"); such a field probably actually represents a
     // middle initial.
     if (!v->middle_name_ &&
-        ParseField(scanner,
-                   l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_INITIAL_RE),
+        ParseField(scanner, UTF8ToUTF16(autofill::kMiddleInitialRe),
                    &v->middle_name_)) {
       v->middle_initial_ = true;
       continue;
     }
 
     if (!v->middle_name_ &&
-        ParseField(scanner,
-                   l10n_util::GetStringUTF16(IDS_AUTOFILL_MIDDLE_NAME_RE),
+        ParseField(scanner, UTF8ToUTF16(autofill::kMiddleNameRe),
                    &v->middle_name_)) {
+      continue;
+    }
+
+    if (!v->last_name_ &&
+        ParseField(scanner, UTF8ToUTF16(autofill::kLastNameRe),
+                   &v->last_name_)) {
       continue;
     }
 
@@ -196,32 +191,7 @@ FirstLastNameField* FirstLastNameField::ParseComponentNames(
   return NULL;
 }
 
-FirstLastNameField* FirstLastNameField::ParseEcmlName(
-    AutofillScanner* scanner) {
-  scoped_ptr<FirstLastNameField> field(new FirstLastNameField);
-  scanner->SaveCursor();
-
-  string16 pattern = GetEcmlPattern(kEcmlShipToFirstName,
-                                    kEcmlBillToFirstName, '|');
-  if (!ParseField(scanner, pattern, &field->first_name_))
-    return NULL;
-
-  pattern = GetEcmlPattern(kEcmlShipToMiddleName, kEcmlBillToMiddleName, '|');
-  ParseField(scanner, pattern, &field->middle_name_);
-
-  pattern = GetEcmlPattern(kEcmlShipToLastName, kEcmlBillToLastName, '|');
-  if (ParseField(scanner, pattern, &field->last_name_))
-    return field.release();
-
-  scanner->Rewind();
-  return NULL;
-}
-
-FirstLastNameField* FirstLastNameField::Parse(AutofillScanner* scanner,
-                                              bool is_ecml) {
-  if (is_ecml)
-    return ParseEcmlName(scanner);
-
+FirstLastNameField* FirstLastNameField::Parse(AutofillScanner* scanner) {
   FirstLastNameField* field = ParseSpecificName(scanner);
   if (!field)
     field = ParseComponentNames(scanner);

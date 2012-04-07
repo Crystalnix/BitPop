@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,7 +38,7 @@ enum SearchEngineType {
   SEARCH_ENGINE_NETI,
   SEARCH_ENGINE_OK,
   SEARCH_ENGINE_POGODAK,
-  SEARCH_ENGINE_POGODOK_MK,
+  SEARCH_ENGINE_POGODOK_MK,  // Defunct. Deletion would corrupt UMA stats.
   SEARCH_ENGINE_RAMBLER,
   SEARCH_ENGINE_SANOOK,
   SEARCH_ENGINE_SAPO,
@@ -46,6 +46,8 @@ enum SearchEngineType {
   SEARCH_ENGINE_WALLA,
   SEARCH_ENGINE_ZOZNAM,
   SEARCH_ENGINE_YAHOOQC,
+  SEARCH_ENGINE_NONE,  // Used by Protector. Putting it at the beginning would
+                       // corrupt UMA stats. Add new search engines below.
   SEARCH_ENGINE_MAX  // Bounding max value needed for UMA histogram macro.
 };
 

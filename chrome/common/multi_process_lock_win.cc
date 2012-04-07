@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,9 +24,9 @@ class MultiProcessLockWin : public MultiProcessLock {
       return true;
     }
 
-    if (name_.length() > MULTI_PROCESS_LOCK_NAME_MAX_LEN) {
+    if (name_.length() >= MAX_PATH) {
       LOG(ERROR) << "Socket name too long (" << name_.length()
-                 << " > " << MULTI_PROCESS_LOCK_NAME_MAX_LEN << ") - " << name_;
+                 << " >= " << MAX_PATH << ") - " << name_;
       return false;
     }
 

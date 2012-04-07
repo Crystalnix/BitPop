@@ -28,6 +28,7 @@ class CommandBuffer {
           put_offset(0),
           token(-1),
           error(error::kNoError),
+          context_lost_reason(error::kUnknown),
           generation(0) {
     }
 
@@ -50,10 +51,20 @@ class CommandBuffer {
     // Error status.
     error::Error error;
 
+    // Lost context detail information.
+    error::ContextLostReason context_lost_reason;
+
     // Generation index of this state. The generation index is incremented every
     // time a new state is retrieved from the command processor, so that
     // consistency can be kept even if IPC messages are processed out-of-order.
     uint32 generation;
+  };
+
+  struct ConsoleMessage {
+    // An user supplied id.
+    int32 id;
+    // The message.
+    std::string message;
   };
 
   CommandBuffer() {
@@ -63,29 +74,28 @@ class CommandBuffer {
   }
 
   // Initialize the command buffer with the given size.
-  virtual bool Initialize(int32 size) = 0;
-
-  // Initialize the command buffer using the given preallocated buffer.
-  virtual bool Initialize(base::SharedMemory* buffer, int32 size) = 0;
-
-  // Gets the ring buffer for the command buffer.
-  virtual Buffer GetRingBuffer() = 0;
+  virtual bool Initialize() = 0;
 
   // Returns the current status.
   virtual State GetState() = 0;
 
+  // Returns the last state without synchronizing with the service.
+  virtual State GetLastState() = 0;
+
   // The writer calls this to update its put offset. This ensures the reader
-  // sees the latest added commands, and will eventually process them.
+  // sees the latest added commands, and will eventually process them. On the
+  // service side, commands are processed up to the given put_offset before
+  // subsequent Flushes on the same GpuChannel.
   virtual void Flush(int32 put_offset) = 0;
 
   // The writer calls this to update its put offset. This function returns the
-  // reader's most recent get offset. Does not return until after the put offset
-  // change callback has been invoked. Returns -1 if the put offset is invalid.
-  // If last_known_get is different from the reader's current get pointer, this
-  // function will return immediately, otherwise it guarantees that the reader
-  // has processed some commands before returning (assuming the command buffer
-  // isn't empty and there is no error).
+  // reader's most recent get offset. Does not return until all pending commands
+  // have been executed.
   virtual State FlushSync(int32 put_offset, int32 last_known_get) = 0;
+
+  // Sets the buffer commands are read from.
+  // Also resets the get and put offsets to 0.
+  virtual void SetGetBuffer(int32 transfer_buffer_id) = 0;
 
   // Sets the current get offset. This can be called from any thread.
   virtual void SetGetOffset(int32 get_offset) = 0;
@@ -118,6 +128,11 @@ class CommandBuffer {
 
   // Allows the reader to set the current parse error.
   virtual void SetParseError(error::Error) = 0;
+
+  // Allows the reader to set the current context lost reason.
+  // NOTE: if calling this in conjunction with SetParseError,
+  // call this first.
+  virtual void SetContextLostReason(error::ContextLostReason) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CommandBuffer);

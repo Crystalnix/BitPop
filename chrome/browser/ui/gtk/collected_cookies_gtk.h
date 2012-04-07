@@ -10,31 +10,33 @@
 
 #include <gtk/gtk.h>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/gtk/constrained_window_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_tree.h"
 #include "chrome/common/content_settings.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
 
 class CookiesTreeModel;
+class TabContentsWrapper;
 
 // CollectedCookiesGtk is a dialog that displays the allowed and blocked
 // cookies of the current tab contents.  To display the dialog, invoke
 // ShowCollectedCookiesDialog() on the delegate of the tab contents wrapper's
 // content settings tab helper.
 
-class CollectedCookiesGtk : public ConstrainedDialogDelegate,
-                                   gtk_tree::TreeAdapter::Delegate,
-                                   NotificationObserver {
+class CollectedCookiesGtk : public ConstrainedWindowGtkDelegate,
+                            public gtk_tree::TreeAdapter::Delegate,
+                            public content::NotificationObserver {
  public:
-  CollectedCookiesGtk(GtkWindow* parent, TabContents* tab_contents);
+  CollectedCookiesGtk(GtkWindow* parent, TabContentsWrapper* wrapper);
 
-  // ConstrainedDialogDelegate methods.
-  virtual GtkWidget* GetWidgetRoot();
-  virtual GtkWidget* GetFocusWidget();
-  virtual void DeleteDelegate();
+  // ConstrainedWindowGtkDelegate methods.
+  virtual GtkWidget* GetWidgetRoot() OVERRIDE;
+  virtual GtkWidget* GetFocusWidget() OVERRIDE;
+  virtual void DeleteDelegate() OVERRIDE;
 
  private:
   virtual ~CollectedCookiesGtk();
@@ -55,9 +57,9 @@ class CollectedCookiesGtk : public ConstrainedDialogDelegate,
                      ContentSetting setting);
 
   // Notification Observer implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Create the information panes for the allowed and blocked cookies.
   GtkWidget* CreateAllowedPane();
@@ -81,7 +83,7 @@ class CollectedCookiesGtk : public ConstrainedDialogDelegate,
   CHROMEGTK_CALLBACK_2(CollectedCookiesGtk, void, OnSwitchPage,
                        gpointer, guint);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   ConstrainedWindow* window_;
 
@@ -112,8 +114,8 @@ class CollectedCookiesGtk : public ConstrainedDialogDelegate,
   // Displays information about selected cookie.
   GtkWidget* cookie_info_view_;
 
-  // The tab contents.
-  TabContents* tab_contents_;
+  // The tab contents wrapper.
+  TabContentsWrapper* wrapper_;
 
   bool status_changed_;
 

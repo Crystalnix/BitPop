@@ -6,16 +6,19 @@
 #define CHROME_BROWSER_UI_WEBUI_DEVTOOLS_UI_H_
 #pragma once
 
-#include "content/browser/webui/web_ui.h"
+#include "base/compiler_specific.h"
+#include "content/public/browser/web_ui_controller.h"
 
-class DevToolsUI : public WebUI {
+class Profile;
+
+class DevToolsUI : public content::WebUIController {
  public:
-  static void RegisterDevToolsDataSource();
+  static void RegisterDevToolsDataSource(Profile* profile);
 
-  explicit DevToolsUI(TabContents* contents);
+  explicit DevToolsUI(content::WebUI* web_ui);
 
-  // WebUI
-  virtual void RenderViewCreated(RenderViewHost* render_view_host);
+  // WebUIController
+  virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DevToolsUI);

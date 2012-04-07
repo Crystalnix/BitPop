@@ -20,7 +20,9 @@ Encryptor::Encryptor()
 Encryptor::~Encryptor() {
 }
 
-bool Encryptor::Init(SymmetricKey* key, Mode mode, const std::string& iv) {
+bool Encryptor::Init(SymmetricKey* key,
+                     Mode mode,
+                     const base::StringPiece& iv) {
   DCHECK(key);
   DCHECK_EQ(CBC, mode) << "Unsupported mode of operation";
   CSSM_DATA raw_key = key->cssm_data();
@@ -33,12 +35,12 @@ bool Encryptor::Init(SymmetricKey* key, Mode mode, const std::string& iv) {
 
   key_ = key;
   mode_ = mode;
-  iv_ = iv;
+  iv.CopyToString(&iv_);
   return true;
 }
 
 bool Encryptor::Crypt(int /*CCOperation*/ op,
-                      const std::string& input,
+                      const base::StringPiece& input,
                       std::string* output) {
   DCHECK(key_);
   CSSM_DATA raw_key = key_->cssm_data();
@@ -47,17 +49,19 @@ bool Encryptor::Crypt(int /*CCOperation*/ op,
   // length is never larger than the input length plus the block size."
 
   size_t output_size = input.size() + iv_.size();
+  CHECK_GT(output_size, 0u);
+  CHECK_GT(output_size + 1, input.size());
   CCCryptorStatus err = CCCrypt(op,
                                 kCCAlgorithmAES128,
                                 kCCOptionPKCS7Padding,
                                 raw_key.Data, raw_key.Length,
                                 iv_.data(),
                                 input.data(), input.size(),
-                                WriteInto(output, output_size+1),
+                                WriteInto(output, output_size + 1),
                                 output_size,
                                 &output_size);
   if (err) {
-    output->resize(0);
+    output->clear();
     LOG(ERROR) << "CCCrypt returned " << err;
     return false;
   }
@@ -65,11 +69,15 @@ bool Encryptor::Crypt(int /*CCOperation*/ op,
   return true;
 }
 
-bool Encryptor::Encrypt(const std::string& plaintext, std::string* ciphertext) {
+bool Encryptor::Encrypt(const base::StringPiece& plaintext,
+                        std::string* ciphertext) {
+  CHECK(!plaintext.empty() || (mode_ == CBC));
   return Crypt(kCCEncrypt, plaintext, ciphertext);
 }
 
-bool Encryptor::Decrypt(const std::string& ciphertext, std::string* plaintext) {
+bool Encryptor::Decrypt(const base::StringPiece& ciphertext,
+                        std::string* plaintext) {
+  CHECK(!ciphertext.empty());
   return Crypt(kCCDecrypt, ciphertext, plaintext);
 }
 

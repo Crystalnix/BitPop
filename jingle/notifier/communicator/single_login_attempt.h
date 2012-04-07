@@ -7,14 +7,15 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "jingle/notifier/base/xmpp_connection.h"
 #include "jingle/notifier/communicator/xmpp_connection_generator.h"
 #include "talk/xmpp/xmppengine.h"
 
-namespace talk_base {
-class Task;
-}
+namespace buzz {
+class XmppTaskParentInterface;
+}  // namespace buzz
 
 namespace notifier {
 
@@ -32,7 +33,8 @@ class SingleLoginAttempt : public XmppConnection::Delegate,
    public:
     virtual ~Delegate() {}
 
-    virtual void OnConnect(base::WeakPtr<talk_base::Task> base_task) = 0;
+    virtual void OnConnect(
+        base::WeakPtr<buzz::XmppTaskParentInterface> base_task) = 0;
     virtual void OnNeedReconnect() = 0;
     virtual void OnRedirect(const std::string& redirect_server,
                             int redirect_port) = 0;
@@ -45,15 +47,16 @@ class SingleLoginAttempt : public XmppConnection::Delegate,
   virtual ~SingleLoginAttempt();
 
   // XmppConnection::Delegate implementation.
-  virtual void OnConnect(base::WeakPtr<talk_base::Task> parent);
+  virtual void OnConnect(
+      base::WeakPtr<buzz::XmppTaskParentInterface> parent) OVERRIDE;
   virtual void OnError(buzz::XmppEngine::Error error,
                        int error_subcode,
-                       const buzz::XmlElement* stream_error);
+                       const buzz::XmlElement* stream_error) OVERRIDE;
 
   // XmppConnectionGenerator::Delegate implementation.
-  virtual void OnNewSettings(const ConnectionSettings& new_settings);
+  virtual void OnNewSettings(const ConnectionSettings& new_settings) OVERRIDE;
   virtual void OnExhaustedSettings(bool successfully_resolved_dns,
-                                   int first_dns_error);
+                                   int first_dns_error) OVERRIDE;
 
  private:
   LoginSettings* login_settings_;

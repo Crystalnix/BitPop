@@ -12,6 +12,7 @@
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/values.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_log.h"
 #include "net/url_request/url_request_throttler_header_interface.h"
 #include "net/url_request/url_request_throttler_manager.h"
@@ -178,9 +179,10 @@ void URLRequestThrottlerEntry::DetachManager() {
   manager_ = NULL;
 }
 
-bool URLRequestThrottlerEntry::IsDuringExponentialBackoff() const {
+bool URLRequestThrottlerEntry::ShouldRejectRequest(int load_flags) const {
   bool reject_request = false;
-  if (!is_backoff_disabled_ && GetBackoffEntry()->ShouldRejectRequest()) {
+  if (!is_backoff_disabled_ && !ExplicitUserRequest(load_flags) &&
+      GetBackoffEntry()->ShouldRejectRequest()) {
     int num_failures = GetBackoffEntry()->failure_count();
     int release_after_ms =
         (GetBackoffEntry()->GetReleaseTime() - base::TimeTicks::Now())
@@ -199,10 +201,6 @@ bool URLRequestThrottlerEntry::IsDuringExponentialBackoff() const {
   int reject_count = reject_request ? 1 : 0;
   UMA_HISTOGRAM_ENUMERATION(
       "Throttling.RequestThrottled", reject_count, 2);
-  if (base::FieldTrialList::TrialExists("ThrottlingEnabled")) {
-    UMA_HISTOGRAM_ENUMERATION(base::FieldTrial::MakeName(
-        "Throttling.RequestThrottled", "ThrottlingEnabled"), reject_count, 2);
-  }
 
   return reject_request;
 }
@@ -367,12 +365,6 @@ void URLRequestThrottlerEntry::HandleCustomRetryAfter(
   UMA_HISTOGRAM_CUSTOM_TIMES(
       "Throttling.CustomRetryAfterMs", value,
       base::TimeDelta::FromSeconds(1), base::TimeDelta::FromHours(12), 50);
-  if (base::FieldTrialList::TrialExists("ThrottlingEnabled")) {
-    UMA_HISTOGRAM_CUSTOM_TIMES(
-        base::FieldTrial::MakeName("Throttling.CustomRetryAfterMs",
-                                   "ThrottlingEnabled"), value,
-        base::TimeDelta::FromSeconds(1), base::TimeDelta::FromHours(12), 50);
-  }
 }
 
 void URLRequestThrottlerEntry::HandleThrottlingHeader(
@@ -393,12 +385,6 @@ void URLRequestThrottlerEntry::HandleMetricsTracking(int response_code) {
   // to make sure we count only the responses seen by throttling.
   // TODO(joi): Remove after experiment.
   UMA_HISTOGRAM_ENUMERATION("Throttling.HttpResponseCode", response_code, 600);
-  if (base::FieldTrialList::TrialExists("ThrottlingEnabled")) {
-    UMA_HISTOGRAM_ENUMERATION(
-        base::FieldTrial::MakeName("Throttling.HttpResponseCode",
-                                   "ThrottlingEnabled"),
-        response_code, 600);
-  }
 
   // Note that we are not interested in whether the code is considered
   // an error for the backoff logic, but whether it is a 5xx error in
@@ -418,16 +404,6 @@ void URLRequestThrottlerEntry::HandleMetricsTracking(int response_code) {
           "Throttling.PerceivedDowntime", down_time,
           base::TimeDelta::FromMilliseconds(10),
           base::TimeDelta::FromHours(6), 50);
-
-      if (base::FieldTrialList::TrialExists("ThrottlingEnabled")) {
-        UMA_HISTOGRAM_COUNTS(base::FieldTrial::MakeName(
-            "Throttling.FailureCountAtSuccess", "ThrottlingEnabled"),
-            failure_count);
-        UMA_HISTOGRAM_CUSTOM_TIMES(base::FieldTrial::MakeName(
-            "Throttling.PerceivedDowntime", "ThrottlingEnabled"), down_time,
-            base::TimeDelta::FromMilliseconds(10),
-            base::TimeDelta::FromHours(6), 50);
-      }
     }
 
     last_successful_response_time_ = now;
@@ -441,6 +417,11 @@ const BackoffEntry* URLRequestThrottlerEntry::GetBackoffEntry() const {
 
 BackoffEntry* URLRequestThrottlerEntry::GetBackoffEntry() {
   return &backoff_entry_;
+}
+
+// static
+bool URLRequestThrottlerEntry::ExplicitUserRequest(const int load_flags) {
+  return (load_flags & LOAD_MAYBE_USER_GESTURE) != 0;
 }
 
 }  // namespace net

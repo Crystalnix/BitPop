@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "webkit/support/weburl_loader_mock.h"
 
 using WebKit::WebData;
@@ -71,8 +71,18 @@ void WebURLLoaderMockFactory::ServeAsynchronousRequests() {
     WebURLError error;
     WebData data;
     LoadRequest(request, &response, &error, &data);
-    loader->ServeAsynchronousRequest(response, data, error);
-    pending_loaders_.erase(iter);
+    // Follow any redirect chain.
+    while (response.httpStatusCode() >= 300 &&
+           response.httpStatusCode() < 400) {
+      WebURLRequest newRequest = loader->ServeRedirect(response);
+      if (loader->isDeferred())
+        break;
+      LoadRequest(newRequest, &response, &error, &data);
+    }
+    if (!loader->isDeferred())
+      loader->ServeAsynchronousRequest(response, data, error);
+    // If the load has been canceled, the loader may not be in the map.
+    pending_loaders_.erase(loader);
   }
 }
 

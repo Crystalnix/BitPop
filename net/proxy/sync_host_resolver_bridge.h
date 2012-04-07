@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #pragma once
 
 #include "base/memory/scoped_ptr.h"
-#include "net/base/host_resolver.h"
+#include "net/proxy/sync_host_resolver.h"
 
 class MessageLoop;
 
@@ -15,33 +15,29 @@ namespace net {
 
 // Wrapper around HostResolver to give a sync API while running the resolver
 // in async mode on |host_resolver_loop|.
-class NET_TEST SyncHostResolverBridge : public HostResolver {
+class NET_EXPORT_PRIVATE SyncHostResolverBridge : public SyncHostResolver {
  public:
   SyncHostResolverBridge(HostResolver* host_resolver,
                          MessageLoop* host_resolver_loop);
 
   virtual ~SyncHostResolverBridge();
 
-  // HostResolver methods:
-  virtual int Resolve(const RequestInfo& info,
+  // SyncHostResolver methods:
+  virtual int Resolve(const HostResolver::RequestInfo& info,
                       AddressList* addresses,
-                      CompletionCallback* callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& net_log);
-  virtual void CancelRequest(RequestHandle req);
-  virtual void AddObserver(Observer* observer);
-  virtual void RemoveObserver(Observer* observer);
+                      const BoundNetLog& net_log) OVERRIDE;
 
   // The Shutdown() method should be called prior to destruction, from
   // |host_resolver_loop_|. It aborts any in progress synchronous resolves, to
   // prevent deadlocks from happening.
-  virtual void Shutdown();
+  virtual void Shutdown() OVERRIDE;
 
  private:
   class Core;
 
   MessageLoop* const host_resolver_loop_;
   scoped_refptr<Core> core_;
+  DISALLOW_COPY_AND_ASSIGN(SyncHostResolverBridge);
 };
 
 }  // namespace net

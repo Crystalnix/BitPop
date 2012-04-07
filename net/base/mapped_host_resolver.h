@@ -11,7 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/host_resolver.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
@@ -19,7 +19,7 @@ namespace net {
 // request before passing it off to |impl|. This is different from
 // MockHostResolver which does the remapping at the HostResolverProc
 // layer, so it is able to preserve the effectiveness of the cache.
-class NET_API MappedHostResolver : public HostResolver {
+class NET_EXPORT MappedHostResolver : public HostResolver {
  public:
   // Creates a MappedHostResolver that forwards all of its requests through
   // |impl|.  It takes ownership of |impl|.
@@ -46,13 +46,15 @@ class NET_API MappedHostResolver : public HostResolver {
   // HostResolver methods:
   virtual int Resolve(const RequestInfo& info,
                       AddressList* addresses,
-                      CompletionCallback* callback,
+                      const CompletionCallback& callback,
                       RequestHandle* out_req,
-                      const BoundNetLog& net_log);
-  virtual void CancelRequest(RequestHandle req);
-  virtual void AddObserver(Observer* observer);
-  virtual void RemoveObserver(Observer* observer);
-  virtual HostResolverImpl* GetAsHostResolverImpl();
+                      const BoundNetLog& net_log) OVERRIDE;
+  virtual int ResolveFromCache(const RequestInfo& info,
+                               AddressList* addresses,
+                               const BoundNetLog& net_log) OVERRIDE;
+  virtual void CancelRequest(RequestHandle req) OVERRIDE;
+  virtual void ProbeIPv6Support() OVERRIDE;
+  virtual HostCache* GetHostCache() OVERRIDE;
 
  private:
   scoped_ptr<HostResolver> impl_;

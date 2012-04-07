@@ -223,7 +223,7 @@
 					<bool key="EncodedWithXMLCoder">YES</bool>
 					<object class="NSMenuItem" id="875931014">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_IN_NEW_TAB</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_IN_NEW_TAB</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<object class="NSCustomResource" key="NSOnImage" id="259139760">
@@ -237,7 +237,7 @@
 					</object>
 					<object class="NSMenuItem" id="1056378252">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_IN_NEW_WINDOW</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_IN_NEW_WINDOW</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -245,7 +245,7 @@
 					</object>
 					<object class="NSMenuItem" id="425700157">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_INCOGNITO</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_INCOGNITO</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -333,7 +333,7 @@
 					</object>
 					<object class="NSMenuItem" id="684143027">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_ADD_NEW_BOOKMARK</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_ADD_NEW_BOOKMARK</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -341,7 +341,7 @@
 					</object>
 					<object class="NSMenuItem" id="941759083">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_NEW_FOLDER</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_NEW_FOLDER</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -368,7 +368,7 @@
 					</object>
 					<object class="NSMenuItem" id="96803390">
 						<reference key="NSMenu" ref="447628937"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_ALWAYS_SHOW</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_ALWAYS_SHOW_MAC</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -383,7 +383,7 @@
 					<bool key="EncodedWithXMLCoder">YES</bool>
 					<object class="NSMenuItem" id="727065194">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_ALL</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_ALL</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -391,7 +391,7 @@
 					</object>
 					<object class="NSMenuItem" id="236903630">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_ALL_NEW_WINDOW</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -399,7 +399,7 @@
 					</object>
 					<object class="NSMenuItem" id="233735276">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_OPEN_ALL_INCOGNITO</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_OPEN_ALL_INCOGNITO</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -487,7 +487,7 @@
 					</object>
 					<object class="NSMenuItem" id="92546710">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_ADD_NEW_BOOKMARK</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_ADD_NEW_BOOKMARK</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -495,7 +495,7 @@
 					</object>
 					<object class="NSMenuItem" id="682893323">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_NEW_FOLDER</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_NEW_FOLDER</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>
@@ -522,7 +522,7 @@
 					</object>
 					<object class="NSMenuItem" id="636966313">
 						<reference key="NSMenu" ref="243908609"/>
-						<string key="NSTitle">^IDS_BOOMARK_BAR_ALWAYS_SHOW</string>
+						<string key="NSTitle">^IDS_BOOKMARK_BAR_ALWAYS_SHOW_MAC</string>
 						<string key="NSKeyEquiv"/>
 						<int key="NSMnemonicLoc">2147483647</int>
 						<reference key="NSOnImage" ref="259139760"/>

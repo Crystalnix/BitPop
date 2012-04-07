@@ -6,6 +6,7 @@
 
 #include <psapi.h>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_version_info.h"
 #include "base/string_util.h"
@@ -14,13 +15,13 @@
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_child_process_host.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
-#include "content/browser/renderer_host/render_process_host.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/common/process_type.h"
 #include "grit/chromium_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::BrowserThread;
 
 // Known browsers which we collect details for.
 enum {
@@ -107,9 +108,9 @@ void MemoryDetails::CollectProcessData(
       ProcessMemoryInformation info;
       info.pid = pid;
       if (info.pid == GetCurrentProcessId())
-        info.type = ChildProcessInfo::BROWSER_PROCESS;
+        info.type = content::PROCESS_TYPE_BROWSER;
       else
-        info.type = ChildProcessInfo::UNKNOWN_PROCESS;
+        info.type = content::PROCESS_TYPE_UNKNOWN;
 
       scoped_ptr<base::ProcessMetrics> metrics;
       metrics.reset(base::ProcessMetrics::CreateProcessMetrics(process_handle));
@@ -156,5 +157,5 @@ void MemoryDetails::CollectProcessData(
   // Finally return to the browser thread.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &MemoryDetails::CollectChildInfoOnUIThread));
+      base::Bind(&MemoryDetails::CollectChildInfoOnUIThread, this));
 }

@@ -12,10 +12,10 @@ namespace extension_webnavigation_api_constants {
 
 // Keys.
 extern const char kErrorKey[];
+extern const char kErrorOccurredKey[];
 extern const char kFrameIdKey[];
-extern const char kRequestIdKey[];
 extern const char kSourceTabIdKey[];
-extern const char kSourceUrlKey[];
+extern const char kSourceFrameIdKey[];
 extern const char kTabIdKey[];
 extern const char kTimeStampKey[];
 extern const char kTransitionTypeKey[];
@@ -24,11 +24,12 @@ extern const char kUrlKey[];
 
 // Events.
 extern const char kOnBeforeNavigate[];
-extern const char kOnBeforeRetarget[];
 extern const char kOnCommitted[];
 extern const char kOnCompleted[];
+extern const char kOnCreatedNavigationTarget[];
 extern const char kOnDOMContentLoaded[];
 extern const char kOnErrorOccurred[];
+extern const char kOnReferenceFragmentUpdated[];
 
 }  // namespace extension_webnavigation_api_constants
 

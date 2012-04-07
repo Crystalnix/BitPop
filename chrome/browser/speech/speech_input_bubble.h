@@ -9,16 +9,20 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
-#include "base/task.h"
+
+class SkBitmap;
+class SkCanvas;
+
+namespace content {
+class WebContents;
+}
 
 namespace gfx {
 class Canvas;
 class Rect;
 }
-class SkBitmap;
-class SkCanvas;
-class TabContents;
 
 // SpeechInputBubble displays a popup info bubble during speech recognition,
 // points to the html element which requested speech input and shows recognition
@@ -52,22 +56,23 @@ class SpeechInputBubble {
 
   // Factory method to create new instances.
   // Creates the bubble, call |Show| to display it on screen.
-  // |tab_contents| is the TabContents hosting the page.
+  // |web_contents| is the WebContents hosting the page.
   // |element_rect| is the display bounds of the html element requesting speech
   // input (in page coordinates).
-  static SpeechInputBubble* Create(TabContents* tab_contents,
+  static SpeechInputBubble* Create(content::WebContents* web_contents,
                                    Delegate* delegate,
                                    const gfx::Rect& element_rect);
 
   // This is implemented by platform specific code to create the underlying
   // bubble window. Not to be called directly by users of this class.
-  static SpeechInputBubble* CreateNativeBubble(TabContents* tab_contents,
-                                               Delegate* delegate,
-                                               const gfx::Rect& element_rect);
+  static SpeechInputBubble* CreateNativeBubble(
+      content::WebContents* web_contents,
+      Delegate* delegate,
+      const gfx::Rect& element_rect);
 
   // |Create| uses the currently registered FactoryMethod to create the
   // SpeechInputBubble instances. FactoryMethod is intended for testing.
-  typedef SpeechInputBubble* (*FactoryMethod)(TabContents*,
+  typedef SpeechInputBubble* (*FactoryMethod)(content::WebContents*,
                                               Delegate*,
                                               const gfx::Rect&);
   // Sets the factory used by the static method Create. SpeechInputBubble does
@@ -105,8 +110,8 @@ class SpeechInputBubble {
   // Updates and draws the current captured audio volume displayed on screen.
   virtual void SetInputVolume(float volume, float noise_volume) = 0;
 
-  // Returns the TabContents for which this bubble gets displayed.
-  virtual TabContents* tab_contents() = 0;
+  // Returns the WebContents for which this bubble gets displayed.
+  virtual content::WebContents* web_contents() = 0;
 
   // The horizontal distance between the start of the html widget and the speech
   // bubble's arrow.
@@ -129,16 +134,16 @@ class SpeechInputBubbleBase : public SpeechInputBubble {
     DISPLAY_MODE_MESSAGE
   };
 
-  explicit SpeechInputBubbleBase(TabContents* tab_contents);
+  explicit SpeechInputBubbleBase(content::WebContents* web_contents);
   virtual ~SpeechInputBubbleBase();
 
   // SpeechInputBubble methods
-  virtual void SetWarmUpMode();
-  virtual void SetRecordingMode();
-  virtual void SetRecognizingMode();
-  virtual void SetMessage(const string16& text);
-  virtual void SetInputVolume(float volume, float noise_volume);
-  virtual TabContents* tab_contents();
+  virtual void SetWarmUpMode() OVERRIDE;
+  virtual void SetRecordingMode() OVERRIDE;
+  virtual void SetRecognizingMode() OVERRIDE;
+  virtual void SetMessage(const string16& text) OVERRIDE;
+  virtual void SetInputVolume(float volume, float noise_volume) OVERRIDE;
+  virtual content::WebContents* web_contents() OVERRIDE;
 
  protected:
   // Updates the platform specific UI layout for the current display mode.
@@ -167,7 +172,7 @@ class SpeechInputBubbleBase : public SpeechInputBubble {
                          float volume);
 
   // Task factory used for animation timer.
-  ScopedRunnableMethodFactory<SpeechInputBubbleBase> task_factory_;
+  base::WeakPtrFactory<SpeechInputBubbleBase> weak_factory_;
   int animation_step_;  // Current index/step of the animation.
   std::vector<SkBitmap> animation_frames_;
   std::vector<SkBitmap> warming_up_frames_;
@@ -178,8 +183,8 @@ class SpeechInputBubbleBase : public SpeechInputBubble {
   scoped_ptr<SkBitmap> mic_image_;
   // A temporary buffer image used in creating the above mic image.
   scoped_ptr<SkBitmap> buffer_image_;
-  // TabContents in which this this bubble gets displayed.
-  TabContents* tab_contents_;
+  // WebContents in which this this bubble gets displayed.
+  content::WebContents* web_contents_;
   // The current image displayed in the bubble's icon widget.
   scoped_ptr<SkBitmap> icon_image_;
 };

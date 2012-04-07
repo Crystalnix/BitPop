@@ -71,7 +71,7 @@ bool AudioFileReader::Open() {
   codec_context_ = NULL;
   for (size_t i = 0; i < format_context_->nb_streams; ++i) {
     AVCodecContext* c = format_context_->streams[i]->codec;
-    if (c->codec_type == CODEC_TYPE_AUDIO) {
+    if (c->codec_type == AVMEDIA_TYPE_AUDIO) {
       codec_context_ = c;
       break;
     }
@@ -90,7 +90,15 @@ bool AudioFileReader::Open() {
       return false;
     }
 
-    result = av_seek_frame(format_context_, 0, 0, 0);
+    if ((result = av_seek_frame(format_context_, 0, 0, 0)) < 0) {
+      DLOG(WARNING) << "AudioFileReader::Open() : could not seek frame -"
+          << " result: " << result;
+      return false;
+    }
+  } else {
+    DLOG(WARNING) << "AudioFileReader::Open() : could not find codec -"
+        << " result: " << result;
+    return false;
   }
 
   return true;
@@ -116,8 +124,8 @@ bool AudioFileReader::Read(const std::vector<float*>& audio_data,
   if (audio_data.size() != channels)
     return false;
 
-  DCHECK(format_context_ && codec_context_);
-  if (!format_context_ || !codec_context_) {
+  DCHECK(format_context_ && codec_context_ && codec_);
+  if (!format_context_ || !codec_context_ || !codec_) {
     DLOG(WARNING) << "AudioFileReader::Read() : reader is not opened!";
     return false;
   }
@@ -178,48 +186,6 @@ bool AudioFileReader::Read(const std::vector<float*>& audio_data,
   }
 
   return true;
-}
-
-InMemoryDataReader::InMemoryDataReader(const char* data, int64 size)
-    : data_(data),
-      size_(size),
-      position_(0) {
-}
-
-int InMemoryDataReader::Read(int size, uint8* data) {
-  if (size < 0)
-    return -1;
-
-  int available_bytes = static_cast<int>(size_ - position_);
-  if (size > available_bytes)
-    size = available_bytes;
-
-  memcpy(data, data_ + position_, size);
-  position_ += size;
-  return size;
-}
-
-bool InMemoryDataReader::GetPosition(int64* position_out) {
-  if (position_out)
-    *position_out = position_;
-  return true;
-}
-
-bool InMemoryDataReader::SetPosition(int64 position) {
-  if (position >= size_)
-    return false;
-  position_ = position;
-  return true;
-}
-
-bool InMemoryDataReader::GetSize(int64* size_out) {
-  if (size_out)
-    *size_out = size_;
-  return true;
-}
-
-bool InMemoryDataReader::IsStreaming() {
-  return false;
 }
 
 }  // namespace media

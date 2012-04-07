@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -34,6 +34,10 @@ std::wstring ChromeFrameDistribution::GetAppGuid() {
 }
 
 std::wstring ChromeFrameDistribution::GetApplicationName() {
+  return L"Google Chrome Frame";
+}
+
+std::wstring ChromeFrameDistribution::GetAppShortCutName() {
   const std::wstring& product_name =
       installer::GetLocalizedString(IDS_PRODUCT_FRAME_NAME_BASE);
   return product_name;
@@ -85,6 +89,10 @@ std::wstring ChromeFrameDistribution::GetStatsServerURL() {
   return L"https://clients4.google.com/firefox/metrics/collect";
 }
 
+std::string ChromeFrameDistribution::GetNetworkStatsServer() const {
+  return "chrome.googleechotest.com";
+}
+
 std::wstring ChromeFrameDistribution::GetUninstallLinkName() {
   return L"Uninstall Chrome Frame";
 }
@@ -102,6 +110,10 @@ std::wstring ChromeFrameDistribution::GetVersionKey() {
 }
 
 bool ChromeFrameDistribution::CanSetAsDefault() {
+  return false;
+}
+
+bool ChromeFrameDistribution::CanCreateDesktopShortcuts() {
   return false;
 }
 

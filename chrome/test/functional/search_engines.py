@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -36,11 +35,9 @@ class SearchEnginesTest(pyauto.PyUITest):
 
     This method will not run automatically.
     """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
     while True:
       raw_input('Interact with the browser and hit <enter>')
-      pp.pprint(self.GetSearchEngineInfo())
+      self.pprint(self.GetSearchEngineInfo())
 
   def testDiscoverSearchEngine(self):
     """Test that chrome discovers youtube search engine after searching."""

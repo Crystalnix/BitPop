@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
   constructor, any methods and properties to be exposed, and optionally a
   destructor.  An embedding client can then bind the class to a JavaScript
   object in a frame's window using the CppBoundClass::BindToJavascript() method,
-  generally called from the WebView delegate's WindowObjectCleared().
+  generally called from the WebFrameClient's DidClearWindowObject().
 
   Once this class has been bound, say to the name "example", it might be called
   from JavaScript in the following way:
@@ -34,12 +34,13 @@
 #define CPP_BINDING_EXAMPLE_H__
 
 #include "webkit/glue/cpp_bound_class.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 class CppBindingExample : public CppBoundClass {
  public:
   // The default constructor initializes the property and method lists needed
   // to bind this class to a JS object.
-  CppBindingExample();
+  WEBKIT_GLUE_EXPORT CppBindingExample();
 
   //
   // These public member variables and methods implement the methods and

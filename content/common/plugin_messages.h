@@ -1,12 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
 // Multiply-included message file, hence no include guard.
 
 #include "build/build_config.h"
-#include "content/common/common_param_traits.h"
-#include "content/common/webkit_param_traits.h"
+#include "content/common/content_export.h"
+#include "content/public/common/common_param_traits.h"
+#include "content/public/common/webkit_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/native_widget_types.h"
@@ -16,6 +17,9 @@
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
+
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 #define IPC_MESSAGE_START PluginMsgStart
 
@@ -52,16 +56,10 @@ IPC_STRUCT_BEGIN(PluginMsg_UpdateGeometry_Param)
   IPC_STRUCT_MEMBER(gfx::Rect, window_rect)
   IPC_STRUCT_MEMBER(gfx::Rect, clip_rect)
   IPC_STRUCT_MEMBER(bool, transparent)
-  IPC_STRUCT_MEMBER(TransportDIB::Handle, windowless_buffer)
+  IPC_STRUCT_MEMBER(TransportDIB::Handle, windowless_buffer0)
+  IPC_STRUCT_MEMBER(TransportDIB::Handle, windowless_buffer1)
+  IPC_STRUCT_MEMBER(int, windowless_buffer_index)
   IPC_STRUCT_MEMBER(TransportDIB::Handle, background_buffer)
-
-#if defined(OS_MACOSX)
-  // This field contains a key that the plug-in process is expected to return
-  // to the renderer in its ACK message, unless the value is -1, in which case
-  // no ACK message is required.  Other than the special -1 value, the values
-  // used in ack_key are opaque to the plug-in process.
-  IPC_STRUCT_MEMBER(int, ack_key)
-#endif
 IPC_STRUCT_END()
 
 //-----------------------------------------------------------------------------
@@ -89,22 +87,18 @@ IPC_MESSAGE_CONTROL0(PluginProcessMsg_NotifyRenderersOfPendingShutdown)
 IPC_MESSAGE_CONTROL1(PluginProcessHostMsg_ChannelCreated,
                      IPC::ChannelHandle /* channel_handle */)
 
-IPC_SYNC_MESSAGE_CONTROL0_1(PluginProcessHostMsg_GetPluginFinderUrl,
-                            std::string /* plugin finder URL */)
-
 #if defined(OS_WIN)
 // Destroys the given window's parent on the UI thread.
 IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_PluginWindowDestroyed,
                      HWND /* window */,
                      HWND /* parent */)
 
-IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_DownloadUrl,
-                     std::string /* URL */,
-                     HWND /* caller window */)
-
 IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_ReparentPluginWindow,
                      HWND /* window */,
                      HWND /* parent */)
+
+IPC_MESSAGE_CONTROL1(PluginProcessHostMsg_ReportExecutableMemory,
+                     uint32_t /* size */)
 #endif
 
 #if defined(USE_X11)
@@ -183,6 +177,11 @@ IPC_MESSAGE_ROUTED0(PluginMsg_DidPaint)
 IPC_SYNC_MESSAGE_ROUTED0_1(PluginMsg_GetPluginScriptableObject,
                            int /* route_id */)
 
+// Gets the form value of the plugin instance synchronously.
+IPC_SYNC_MESSAGE_ROUTED0_2(PluginMsg_GetFormValue,
+                           string16 /* value */,
+                           bool /* success */)
+
 IPC_MESSAGE_ROUTED3(PluginMsg_DidFinishLoadWithReason,
                     GURL /* url */,
                     int /* reason */,
@@ -206,6 +205,17 @@ IPC_SYNC_MESSAGE_ROUTED1_2(PluginMsg_HandleInputEvent,
 
 IPC_MESSAGE_ROUTED1(PluginMsg_SetContentAreaFocus,
                     bool /* has_focus */)
+
+#if defined(OS_WIN)
+IPC_MESSAGE_ROUTED4(PluginMsg_ImeCompositionUpdated,
+                    string16 /* text */,
+                    std::vector<int> /* clauses */,
+                    std::vector<int>, /* target */
+                    int /* cursor_position */)
+
+IPC_MESSAGE_ROUTED1(PluginMsg_ImeCompositionCompleted,
+                    string16 /* text */)
+#endif
 
 #if defined(OS_MACOSX)
 IPC_MESSAGE_ROUTED1(PluginMsg_SetWindowFocus,
@@ -262,8 +272,6 @@ IPC_MESSAGE_ROUTED0(PluginMsg_DidFinishManualLoading)
 
 IPC_MESSAGE_ROUTED0(PluginMsg_DidManualLoadFail)
 
-IPC_MESSAGE_ROUTED0(PluginMsg_InstallMissingPlugin)
-
 IPC_MESSAGE_ROUTED3(PluginMsg_HandleURLRequestReply,
                     unsigned long /* resource_id */,
                     GURL /* url */,
@@ -310,6 +318,16 @@ IPC_SYNC_MESSAGE_ROUTED1_0(PluginHostMsg_SetWindow,
 // in HandleEvent calls.
 IPC_SYNC_MESSAGE_ROUTED1_0(PluginHostMsg_SetWindowlessPumpEvent,
                            HANDLE /* modal_loop_pump_messages_event */)
+
+// Send the IME status retrieved from a windowless plug-in. A windowless plug-in
+// uses the IME attached to a browser process as a renderer does. A plug-in
+// sends this message to control the IME status of a browser process. I would
+// note that a plug-in sends this message to a renderer process that hosts this
+// plug-in (not directly to a browser process) so the renderer process can
+// update its IME status.
+IPC_MESSAGE_ROUTED2(PluginHostMsg_NotifyIMEStatus,
+                    int /* input_type */,
+                    gfx::Rect /* caret_rect */)
 #endif
 
 IPC_MESSAGE_ROUTED1(PluginHostMsg_URLRequest,
@@ -318,8 +336,9 @@ IPC_MESSAGE_ROUTED1(PluginHostMsg_URLRequest,
 IPC_MESSAGE_ROUTED1(PluginHostMsg_CancelResource,
                     int /* id */)
 
-IPC_MESSAGE_ROUTED1(PluginHostMsg_InvalidateRect,
-                    gfx::Rect /* rect */)
+IPC_MESSAGE_ROUTED2(PluginHostMsg_InvalidateRect,
+                    gfx::Rect /* rect */,
+                    bool /* allow_buffer_flipping */)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(PluginHostMsg_GetWindowScriptNPObject,
                            int /* route id */,
@@ -328,6 +347,11 @@ IPC_SYNC_MESSAGE_ROUTED1_1(PluginHostMsg_GetWindowScriptNPObject,
 IPC_SYNC_MESSAGE_ROUTED1_1(PluginHostMsg_GetPluginElement,
                            int /* route id */,
                            bool /* success */)
+
+IPC_SYNC_MESSAGE_ROUTED1_2(PluginHostMsg_ResolveProxy,
+                           GURL /* url */,
+                           bool /* result */,
+                           std::string /* proxy list */)
 
 IPC_MESSAGE_ROUTED3(PluginHostMsg_SetCookie,
                     GURL /* url */,
@@ -338,9 +362,6 @@ IPC_SYNC_MESSAGE_ROUTED2_1(PluginHostMsg_GetCookies,
                            GURL /* url */,
                            GURL /* first_party_for_cookies */,
                            std::string /* cookies */)
-
-IPC_MESSAGE_ROUTED1(PluginHostMsg_MissingPluginStatus,
-                    int /* status */)
 
 IPC_MESSAGE_ROUTED0(PluginHostMsg_CancelDocumentLoad)
 
@@ -359,13 +380,13 @@ IPC_SYNC_MESSAGE_CONTROL1_0(PluginHostMsg_SetException,
 IPC_MESSAGE_CONTROL0(PluginHostMsg_PluginShuttingDown)
 
 #if defined(OS_MACOSX)
-IPC_MESSAGE_ROUTED1(PluginHostMsg_UpdateGeometry_ACK,
-                    int /* ack_key */)
-
 IPC_MESSAGE_ROUTED1(PluginHostMsg_FocusChanged,
                     bool /* focused */)
 
 IPC_MESSAGE_ROUTED0(PluginHostMsg_StartIme)
+
+//----------------------------------------------------------------------
+// Legacy Core Animation plugin implementation rendering directly to screen.
 
 // This message, used in Mac OS X 10.5 and earlier, is sent from the plug-in
 // process to the renderer process to indicate that the plug-in allocated a
@@ -419,7 +440,30 @@ IPC_MESSAGE_ROUTED1(PluginHostMsg_FreeTransportDIB,
 // the various plug-ins' contents.
 IPC_MESSAGE_ROUTED2(PluginHostMsg_AcceleratedSurfaceBuffersSwapped,
                     gfx::PluginWindowHandle /* window */,
-                    uint64 /* surface_id */)
+                    uint64 /* surface_handle */)
+
+//----------------------------------------------------------------------
+// New Core Animation plugin implementation rendering via compositor.
+
+// Notifies the renderer process that this plugin will be using the
+// accelerated rendering path.
+IPC_MESSAGE_ROUTED0(PluginHostMsg_AcceleratedPluginEnabledRendering)
+
+// Notifies the renderer process that the plugin allocated a new
+// IOSurface into which it is rendering. The renderer process forwards
+// this IOSurface to the GPU process, causing it to be bound to a
+// texture from which the compositor can render. Any previous
+// IOSurface allocated by this plugin must be implicitly released by
+// the receipt of this message.
+IPC_MESSAGE_ROUTED3(PluginHostMsg_AcceleratedPluginAllocatedIOSurface,
+                    int32 /* width */,
+                    int32 /* height */,
+                    uint32 /* surface_id */)
+
+// Notifies the renderer process that the plugin produced a new frame
+// of content into its IOSurface, and therefore that the compositor
+// needs to redraw.
+IPC_MESSAGE_ROUTED0(PluginHostMsg_AcceleratedPluginSwappedIOSurface)
 #endif
 
 IPC_MESSAGE_CONTROL1(PluginHostMsg_ClearSiteDataResult,

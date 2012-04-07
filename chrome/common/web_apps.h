@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,9 @@ class WebDocument;
 class WebFrame;
 }
 
+namespace base {
 class Value;
+}
 
 // Structure used when installing a web page as an app.
 struct WebApplicationInfo {
@@ -43,6 +45,13 @@ struct WebApplicationInfo {
   // attributes are derived from this manifest, and the manifest is the unique
   // ID of the application.
   GURL manifest_url;
+
+  // Setting indicating this application is artificially constructed. If set,
+  // the application was created from bookmark-style data (title, url, possibly
+  // icon), and not from an official manifest file. In that case, the app_url
+  // can be checked for the later creation of an official manifest instead of
+  // reloading the manifest_url.
+  bool is_bookmark_app;
 
   // Title of the application.
   string16 title;
@@ -100,7 +109,7 @@ bool ParseWebAppFromWebDocument(WebKit::WebFrame* frame,
 // Parses |web_app| information out of |definition|. Returns true on success, or
 // false and |error| on failure. This function assumes that |web_app| has a
 // valid manifest_url.
-bool ParseWebAppFromDefinitionFile(Value* definition,
+bool ParseWebAppFromDefinitionFile(base::Value* definition,
                                    WebApplicationInfo* web_app,
                                    string16* error);
 

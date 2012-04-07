@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,14 @@
 #define WEBKIT_PLUGINS_PPAPI_PPB_DIRECTORY_READER_IMPL_H_
 
 #include <queue>
+#include <vector>
 
 #include "base/file_util_proxy.h"
+#include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_directory_reader_api.h"
-#include "webkit/plugins/ppapi/resource.h"
 
 struct PP_CompletionCallback;
 struct PP_DirectoryEntry_Dev;
-struct PPB_DirectoryReader_Dev;
 
 namespace webkit {
 namespace ppapi {
@@ -21,7 +21,7 @@ namespace ppapi {
 class PPB_FileRef_Impl;
 
 class PPB_DirectoryReader_Impl
-    : public Resource,
+    : public ::ppapi::Resource,
       public ::ppapi::thunk::PPB_DirectoryReader_API {
  public:
   explicit PPB_DirectoryReader_Impl(PPB_FileRef_Impl* directory_ref);
@@ -30,9 +30,6 @@ class PPB_DirectoryReader_Impl
   static PP_Resource Create(PP_Resource directory_ref);
 
   // Resource overrides.
-  virtual PPB_DirectoryReader_Impl* AsPPB_DirectoryReader_Impl() OVERRIDE;
-
-  // ResourceObjectBase overrides.
   virtual ::ppapi::thunk::PPB_DirectoryReader_API* AsPPB_DirectoryReader_API()
       OVERRIDE;
 

@@ -4,18 +4,19 @@
 
 #include "chrome/browser/importer/safari_importer.h"
 
-#include "app/sql/connection.h"
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/common/chrome_paths.h"
+#include "sql/connection.h"
 #include "testing/platform_test.h"
 
 // In order to test the Safari import functionality effectively, we store a
@@ -108,19 +109,19 @@ TEST_F(SafariImporterTest, BookmarkImport) {
     {
       false,
       GURL("http://www.reddit.com/"),
-      ASCIIToUTF16(""),
+      string16(),
       ASCIIToUTF16("reddit.com: what's new online!")
     },
     {
       false,
       GURL(),
-      ASCIIToUTF16(""),
+      string16(),
       ASCIIToUTF16("Empty Folder")
     },
     {
       false,
       GURL("http://www.webkit.org/blog/"),
-      ASCIIToUTF16(""),
+      string16(),
       ASCIIToUTF16("Surfin' Safari - The WebKit Blog")
     },
   };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,31 +6,50 @@
 
 #include <vector>
 
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_helpers.h"
 #include "base/metrics/histogram.h"
-#include "base/task.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/safe_browsing/browser_feature_extractor.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/common/safe_browsing/safebrowsing_messages.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
-#include "content/common/view_messages.h"
+#include "content/browser/renderer_host/resource_request_details.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_view_host_delegate.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "googleurl/src/gurl.h"
 
+using content::BrowserThread;
+using content::NavigationEntry;
+using content::WebContents;
+
 namespace safe_browsing {
+
+namespace {
+
+void EmptyUrlCheckCallback(bool processed) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+}
+
+}  // namespace
 
 // This class is instantiated each time a new toplevel URL loads, and
 // asynchronously checks whether the phishing classifier should run for this
@@ -43,19 +62,19 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     : public base::RefCountedThreadSafe<
           ClientSideDetectionHost::ShouldClassifyUrlRequest> {
  public:
-  ShouldClassifyUrlRequest(const ViewHostMsg_FrameNavigate_Params& params,
-                           TabContents* tab_contents,
+  ShouldClassifyUrlRequest(const content::FrameNavigateParams& params,
+                           WebContents* web_contents,
                            ClientSideDetectionService* csd_service,
                            SafeBrowsingService* sb_service,
                            ClientSideDetectionHost* host)
       : canceled_(false),
         params_(params),
-        tab_contents_(tab_contents),
+        web_contents_(web_contents),
         csd_service_(csd_service),
         sb_service_(sb_service),
         host_(host) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    DCHECK(tab_contents_);
+    DCHECK(web_contents_);
     DCHECK(csd_service_);
     DCHECK(sb_service_);
     DCHECK(host_);
@@ -79,18 +98,6 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
       return;
     }
 
-    // Don't run the phishing classifier if the URL came from a private
-    // network, since we don't want to ping back in this case.  We also need
-    // to check whether the connection was proxied -- if so, we won't have the
-    // correct remote IP address, and will skip phishing classification.
-    if (params_.was_fetched_via_proxy) {
-      VLOG(1) << "Skipping phishing classification for URL: " << params_.url
-              << " because it was fetched via a proxy.";
-      UMA_HISTOGRAM_ENUMERATION("SBClientPhishing.PreClassificationCheckFail",
-                                NO_CLASSIFY_PROXY_FETCH,
-                                NO_CLASSIFY_MAX);
-      return;
-    }
     if (csd_service_->IsPrivateIPAddress(params_.socket_address.host())) {
       VLOG(1) << "Skipping phishing classification for URL: " << params_.url
               << " because of hosting on private IP: "
@@ -102,7 +109,7 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     }
 
     // Don't run the phishing classifier if the tab is incognito.
-    if (tab_contents_->profile()->IsOffTheRecord()) {
+    if (web_contents_->GetBrowserContext()->IsOffTheRecord()) {
       VLOG(1) << "Skipping phishing classification for URL: " << params_.url
               << " because we're browsing incognito.";
       UMA_HISTOGRAM_ENUMERATION("SBClientPhishing.PreClassificationCheckFail",
@@ -120,9 +127,8 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
-        NewRunnableMethod(this,
-                          &ShouldClassifyUrlRequest::CheckCsdWhitelist,
-                          params_.url));
+        base::Bind(&ShouldClassifyUrlRequest::CheckCsdWhitelist,
+                   this, params_.url));
   }
 
   void Cancel() {
@@ -130,7 +136,7 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     // Just to make sure we don't do anything stupid we reset all these
     // pointers except for the safebrowsing service class which may be
     // accessed by CheckCsdWhitelist().
-    tab_contents_ = NULL;
+    web_contents_ = NULL;
     csd_service_ = NULL;
     host_ = NULL;
   }
@@ -141,7 +147,7 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
 
   // Enum used to keep stats about why the pre-classification check failed.
   enum PreClassificationCheckFailures {
-    NO_CLASSIFY_PROXY_FETCH,
+    OBSOLETE_NO_CLASSIFY_PROXY_FETCH,
     NO_CLASSIFY_PRIVATE_IP,
     NO_CLASSIFY_OFF_THE_RECORD,
     NO_CLASSIFY_MATCH_CSD_WHITELIST,
@@ -158,6 +164,8 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     if (!sb_service_ || sb_service_->MatchCsdWhitelistUrl(url)) {
       // We're done.  There is no point in going back to the UI thread.
+      VLOG(1) << "Skipping phishing classification for URL: " << url
+              << " because it matches the csd whitelist";
       UMA_HISTOGRAM_ENUMERATION("SBClientPhishing.PreClassificationCheckFail",
                                 NO_CLASSIFY_MATCH_CSD_WHITELIST,
                                 NO_CLASSIFY_MAX);
@@ -167,8 +175,7 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
-        NewRunnableMethod(this,
-                          &ShouldClassifyUrlRequest::CheckCache));
+        base::Bind(&ShouldClassifyUrlRequest::CheckCache, this));
   }
 
   void CheckCache() {
@@ -205,9 +212,11 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
     }
 
     // Everything checks out, so start classification.
-    // |tab_contents_| is safe to call as we will be destructed
+    // |web_contents_| is safe to call as we will be destructed
     // before it is.
-    RenderViewHost* rvh = tab_contents_->render_view_host();
+    VLOG(1) << "Instruct renderer to start phishing detection for URL: "
+            << params_.url;
+    RenderViewHost* rvh = web_contents_->GetRenderViewHost();
     rvh->Send(new SafeBrowsingMsg_StartPhishingDetection(
         rvh->routing_id(), params_.url));
   }
@@ -215,8 +224,8 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
   // No need to protect |canceled_| with a lock because it is only read and
   // written by the UI thread.
   bool canceled_;
-  ViewHostMsg_FrameNavigate_Params params_;
-  TabContents* tab_contents_;
+  content::FrameNavigateParams params_;
+  WebContents* web_contents_;
   ClientSideDetectionService* csd_service_;
   // We keep a ref pointer here just to make sure the service class stays alive
   // long enough.
@@ -226,159 +235,233 @@ class ClientSideDetectionHost::ShouldClassifyUrlRequest
   DISALLOW_COPY_AND_ASSIGN(ShouldClassifyUrlRequest);
 };
 
-// This class is used to display the phishing interstitial.
-class CsdClient : public SafeBrowsingService::Client {
- public:
-  CsdClient() {}
-
-  // Method from SafeBrowsingService::Client.  This method is called on the
-  // IO thread once the interstitial is going away.  This method simply deletes
-  // the CsdClient object.
-  virtual void OnBlockingPageComplete(bool proceed) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    // Delete this on the UI thread since it was created there.
-    BrowserThread::PostTask(BrowserThread::UI,
-                            FROM_HERE,
-                            new DeleteTask<CsdClient>(this));
-  }
-
- private:
-  friend class DeleteTask<CsdClient>;  // Calls the private destructor.
-
-  // We're taking care of deleting this object.  No-one else should delete
-  // this object.
-  virtual ~CsdClient() {}
-
-  DISALLOW_COPY_AND_ASSIGN(CsdClient);
-};
-
 // static
 ClientSideDetectionHost* ClientSideDetectionHost::Create(
-    TabContents* tab) {
+    WebContents* tab) {
   return new ClientSideDetectionHost(tab);
 }
 
-ClientSideDetectionHost::ClientSideDetectionHost(TabContents* tab)
-    : TabContentsObserver(tab),
-      csd_service_(g_browser_process->safe_browsing_detection_service()),
-      cb_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+ClientSideDetectionHost::ClientSideDetectionHost(WebContents* tab)
+    : content::WebContentsObserver(tab),
+      csd_service_(NULL),
+      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      unsafe_unique_page_id_(-1) {
   DCHECK(tab);
-  // Note: csd_service_ and sb_service_ might be NULL.
-  ResourceDispatcherHost* resource =
-      g_browser_process->resource_dispatcher_host();
-  if (resource) {
-    sb_service_ = resource->safe_browsing_service();
+  csd_service_ = g_browser_process->safe_browsing_detection_service();
+  feature_extractor_.reset(new BrowserFeatureExtractor(tab, csd_service_));
+  sb_service_ = g_browser_process->safe_browsing_service();
+  // Note: csd_service_ and sb_service_ will be NULL here in testing.
+  registrar_.Add(this, content::NOTIFICATION_RESOURCE_RESPONSE_STARTED,
+                 content::Source<WebContents>(tab));
+  if (sb_service_) {
+    sb_service_->AddObserver(this);
   }
 }
 
 ClientSideDetectionHost::~ClientSideDetectionHost() {
-  // Tell any pending classification request that it is being canceled.
-  if (classification_request_.get()) {
-    classification_request_->Cancel();
+  if (sb_service_) {
+    sb_service_->RemoveObserver(this);
   }
 }
 
 bool ClientSideDetectionHost::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ClientSideDetectionHost, message)
-    IPC_MESSAGE_HANDLER(SafeBrowsingHostMsg_DetectedPhishingSite,
-                        OnDetectedPhishingSite)
+    IPC_MESSAGE_HANDLER(SafeBrowsingHostMsg_PhishingDetectionDone,
+                        OnPhishingDetectionDone)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
-void ClientSideDetectionHost::DidNavigateMainFramePostCommit(
+void ClientSideDetectionHost::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
-  // TODO(noelutz): move this DCHECK to TabContents and fix all the unit tests
+    const content::FrameNavigateParams& params) {
+  // TODO(noelutz): move this DCHECK to WebContents and fix all the unit tests
   // that don't call this method on the UI thread.
   // DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
   if (details.is_in_page) {
     // If the navigation is within the same page, the user isn't really
     // navigating away.  We don't need to cancel a pending callback or
     // begin a new classification.
     return;
   }
-
   // If we navigate away and there currently is a pending phishing
   // report request we have to cancel it to make sure we don't display
   // an interstitial for the wrong page.  Note that this won't cancel
   // the server ping back but only cancel the showing of the
   // interstial.
-  cb_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 
-  if (csd_service_) {
-    // Cancel any pending classification request.
-    if (classification_request_.get()) {
-      classification_request_->Cancel();
-    }
+  if (!csd_service_) {
+    return;
+  }
 
-    // Notify the renderer if it should classify this URL.
-    classification_request_ = new ShouldClassifyUrlRequest(params,
-                                                           tab_contents(),
-                                                           csd_service_,
-                                                           sb_service_,
-                                                           this);
-    classification_request_->Start();
+  // Cancel any pending classification request.
+  if (classification_request_.get()) {
+    classification_request_->Cancel();
+  }
+  browse_info_.reset(new BrowseInfo);
+
+  // Store redirect chain information.
+  if (params.url.host() != cur_host_) {
+    cur_host_ = params.url.host();
+    cur_host_redirects_ = params.redirects;
+  }
+  browse_info_->host_redirects = cur_host_redirects_;
+  browse_info_->url_redirects = params.redirects;
+  browse_info_->http_status_code = details.http_status_code;
+
+  // Notify the renderer if it should classify this URL.
+  classification_request_ = new ShouldClassifyUrlRequest(params,
+                                                         web_contents(),
+                                                         csd_service_,
+                                                         sb_service_,
+                                                         this);
+  classification_request_->Start();
+}
+
+void ClientSideDetectionHost::OnSafeBrowsingHit(
+    const SafeBrowsingService::UnsafeResource& resource) {
+  // Check that this notification is really for us and that it corresponds to
+  // either a malware or phishing hit.  In this case we store the unique page
+  // ID for later.
+  if (web_contents() &&
+      web_contents()->GetRenderProcessHost()->GetID() ==
+          resource.render_process_host_id &&
+      web_contents()->GetRenderViewHost()->routing_id() ==
+          resource.render_view_id &&
+      (resource.threat_type == SafeBrowsingService::URL_PHISHING ||
+       resource.threat_type == SafeBrowsingService::URL_MALWARE) &&
+      web_contents()->GetController().GetActiveEntry()) {
+    unsafe_unique_page_id_ =
+        web_contents()->GetController().GetActiveEntry()->GetUniqueID();
+    // We also keep the resource around in order to be able to send the
+    // malicious URL to the server.
+    unsafe_resource_.reset(new SafeBrowsingService::UnsafeResource(resource));
+    unsafe_resource_->callback.Reset();  // Don't do anything stupid.
   }
 }
 
-void ClientSideDetectionHost::OnDetectedPhishingSite(
+void ClientSideDetectionHost::WebContentsDestroyed(WebContents* tab) {
+  DCHECK(tab);
+  // Tell any pending classification request that it is being canceled.
+  if (classification_request_.get()) {
+    classification_request_->Cancel();
+  }
+  // Cancel all pending feature extractions.
+  feature_extractor_.reset();
+}
+
+void ClientSideDetectionHost::OnPhishingDetectionDone(
     const std::string& verdict_str) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // There is something seriously wrong if there is no service class but
   // this method is called.  The renderer should not start phishing detection
   // if there isn't any service class in the browser.
   DCHECK(csd_service_);
+  // There shouldn't be any pending requests because we revoke them everytime
+  // we navigate away.
+  DCHECK(!weak_factory_.HasWeakPtrs());
+  DCHECK(browse_info_.get());
+
   // We parse the protocol buffer here.  If we're unable to parse it we won't
   // send the verdict further.
   scoped_ptr<ClientPhishingRequest> verdict(new ClientPhishingRequest);
   if (csd_service_ &&
+      !weak_factory_.HasWeakPtrs() &&
+      browse_info_.get() &&
       verdict->ParseFromString(verdict_str) &&
-      verdict->IsInitialized()) {
-    // There shouldn't be any pending requests because we revoke them everytime
-    // we navigate away.
-    DCHECK(!cb_factory_.HasPendingCallbacks());
-    csd_service_->SendClientReportPhishingRequest(
-        verdict.release(),  // The service takes ownership of the verdict.
-        cb_factory_.NewCallback(
-            &ClientSideDetectionHost::MaybeShowPhishingWarning));
+      verdict->IsInitialized() &&
+      // We only send the verdict to the server if the verdict is phishing or if
+      // a SafeBrowsing interstitial was already shown for this site.  E.g., a
+      // malware or phishing interstitial was shown but the user clicked
+      // through.
+      (verdict->is_phishing() || DidShowSBInterstitial())) {
+    if (DidShowSBInterstitial()) {
+      browse_info_->unsafe_resource.reset(unsafe_resource_.release());
+    }
+    // Start browser-side feature extraction.  Once we're done it will send
+    // the client verdict request.
+    feature_extractor_->ExtractFeatures(
+        browse_info_.get(),
+        verdict.release(),
+        base::Bind(&ClientSideDetectionHost::FeatureExtractionDone,
+                   weak_factory_.GetWeakPtr()));
   }
+  browse_info_.reset();
 }
 
 void ClientSideDetectionHost::MaybeShowPhishingWarning(GURL phishing_url,
                                                        bool is_phishing) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (is_phishing &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableClientSidePhishingInterstitial)) {
-    DCHECK(tab_contents());
-    // TODO(noelutz): this is not perfect.  It's still possible that the
-    // user browses away before the interstitial is shown.  Maybe we should
-    // stop all pending navigations?
+  VLOG(2) << "Received server phishing verdict for URL:" << phishing_url
+          << " is_phishing:" << is_phishing;
+  if (is_phishing) {
+    DCHECK(web_contents());
     if (sb_service_) {
-      // TODO(noelutz): refactor the SafeBrowsing service class and the
-      // SafeBrowsing blocking page class so that we don't need to depend
-      // on the SafeBrowsingService here and so that we don't need to go
-      // through the IO message loop.
-      std::vector<GURL> redirect_urls;
-      BrowserThread::PostTask(
-          BrowserThread::IO,
-          FROM_HERE,
-          NewRunnableMethod(sb_service_.get(),
-                            &SafeBrowsingService::DisplayBlockingPage,
-                            phishing_url, phishing_url,
-                            redirect_urls,
-                            // We only classify the main frame URL.
-                            ResourceType::MAIN_FRAME,
-                            SafeBrowsingService::CLIENT_SIDE_PHISHING_URL,
-                            new CsdClient() /* will delete itself */,
-                            tab_contents()->GetRenderProcessHost()->id(),
-                            tab_contents()->render_view_host()->routing_id()));
+      SafeBrowsingService::UnsafeResource resource;
+      resource.url = phishing_url;
+      resource.original_url = phishing_url;
+      resource.is_subresource = false;
+      resource.threat_type = SafeBrowsingService::CLIENT_SIDE_PHISHING_URL;
+      resource.render_process_host_id =
+          web_contents()->GetRenderProcessHost()->GetID();
+      resource.render_view_id =
+          web_contents()->GetRenderViewHost()->routing_id();
+      if (!sb_service_->IsWhitelisted(resource)) {
+        // We need to stop any pending navigations, otherwise the interstital
+        // might not get created properly.
+        web_contents()->GetController().DiscardNonCommittedEntries();
+        resource.callback = base::Bind(&EmptyUrlCheckCallback);
+        sb_service_->DoDisplayBlockingPage(resource);
+      }
     }
   }
+}
+
+void ClientSideDetectionHost::FeatureExtractionDone(
+    bool success,
+    ClientPhishingRequest* request) {
+  if (!request) {
+    DLOG(FATAL) << "Invalid request object in FeatureExtractionDone";
+    return;
+  }
+  VLOG(2) << "Feature extraction done (success:" << success << ") for URL: "
+          << request->url() << ". Start sending client phishing request.";
+  ClientSideDetectionService::ClientReportPhishingRequestCallback callback;
+  // If the client-side verdict isn't phishing we don't care about the server
+  // response because we aren't going to display a warning.
+  if (request->is_phishing()) {
+    callback = base::Bind(&ClientSideDetectionHost::MaybeShowPhishingWarning,
+                          weak_factory_.GetWeakPtr());
+  }
+  // Send ping even if the browser feature extraction failed.
+  csd_service_->SendClientReportPhishingRequest(
+      request,  // The service takes ownership of the request object.
+      callback);
+}
+
+void ClientSideDetectionHost::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(type, content::NOTIFICATION_RESOURCE_RESPONSE_STARTED);
+  const ResourceRequestDetails* req = content::Details<ResourceRequestDetails>(
+      details).ptr();
+  if (req && browse_info_.get()) {
+    browse_info_->ips.insert(req->socket_address().host());
+  }
+}
+
+bool ClientSideDetectionHost::DidShowSBInterstitial() {
+  if (unsafe_unique_page_id_ <= 0 || !web_contents()) {
+    return false;
+  }
+  const NavigationEntry* nav_entry =
+      web_contents()->GetController().GetActiveEntry();
+  return (nav_entry && nav_entry->GetUniqueID() == unsafe_unique_page_id_);
 }
 
 void ClientSideDetectionHost::set_client_side_detection_service(
@@ -388,7 +471,13 @@ void ClientSideDetectionHost::set_client_side_detection_service(
 
 void ClientSideDetectionHost::set_safe_browsing_service(
     SafeBrowsingService* service) {
+  if (sb_service_) {
+    sb_service_->RemoveObserver(this);
+  }
   sb_service_ = service;
+  if (sb_service_) {
+    sb_service_->AddObserver(this);
+  }
 }
 
 }  // namespace safe_browsing

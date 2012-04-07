@@ -8,20 +8,25 @@
 #include <set>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/input_method/input_method_manager.h"
+#include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/input_method_library.h"
+using content::UserMetricsAction;
 
 namespace chromeos {
 
@@ -35,6 +40,8 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
     DictionaryValue* localized_strings) {
   LanguageOptionsHandlerCommon::GetLocalizedValues(localized_strings);
 
+  RegisterTitle(localized_strings, "languagePage",
+                IDS_OPTIONS_SETTINGS_LANGUAGES_AND_INPUT_DIALOG_TITLE);
   localized_strings->SetString("ok_button", l10n_util::GetStringUTF16(IDS_OK));
   localized_strings->SetString("configure",
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_LANGUAGES_CONFIGURE));
@@ -55,12 +62,15 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
   localized_strings->SetString("restart_button",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_SETTINGS_LANGUAGES_SIGN_OUT_BUTTON));
+  localized_strings->SetString("virtual_keyboard_button",
+      l10n_util::GetStringUTF16(
+          IDS_OPTIONS_SETTINGS_LANGUAGES_VIRTUAL_KEYBOARD_BUTTON));
 
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::GetInstance();
   // GetSupportedInputMethods() never return NULL.
-  InputMethodLibrary *im_library =
-      CrosLibrary::Get()->GetInputMethodLibrary();
-  scoped_ptr<chromeos::InputMethodDescriptors> descriptors(
-      im_library->GetSupportedInputMethods());
+  scoped_ptr<input_method::InputMethodDescriptors> descriptors(
+      manager->GetSupportedInputMethods());
   localized_strings->Set("languageList", GetLanguageList(*descriptors));
   localized_strings->Set("inputMethodList", GetInputMethodList(*descriptors));
 }
@@ -68,32 +78,39 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
 void CrosLanguageOptionsHandler::RegisterMessages() {
   LanguageOptionsHandlerCommon::RegisterMessages();
 
-  web_ui_->RegisterMessageCallback("inputMethodDisable",
-      NewCallback(this,
-                  &CrosLanguageOptionsHandler::InputMethodDisableCallback));
-  web_ui_->RegisterMessageCallback("inputMethodEnable",
-      NewCallback(this,
-                  &CrosLanguageOptionsHandler::InputMethodEnableCallback));
-  web_ui_->RegisterMessageCallback("inputMethodOptionsOpen",
-      NewCallback(this,
-                  &CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback));
-  web_ui_->RegisterMessageCallback("uiLanguageRestart",
-      NewCallback(this, &CrosLanguageOptionsHandler::RestartCallback));
+  web_ui()->RegisterMessageCallback("inputMethodDisable",
+      base::Bind(&CrosLanguageOptionsHandler::InputMethodDisableCallback,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("inputMethodEnable",
+      base::Bind(&CrosLanguageOptionsHandler::InputMethodEnableCallback,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("inputMethodOptionsOpen",
+      base::Bind(&CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("uiLanguageRestart",
+      base::Bind(&CrosLanguageOptionsHandler::RestartCallback,
+                 base::Unretained(this)));
 }
 
 ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
-    const chromeos::InputMethodDescriptors& descriptors) {
+    const input_method::InputMethodDescriptors& descriptors) {
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::GetInstance();
+
   ListValue* input_method_list = new ListValue();
 
   for (size_t i = 0; i < descriptors.size(); ++i) {
-    const chromeos::InputMethodDescriptor& descriptor = descriptors[i];
+    const input_method::InputMethodDescriptor& descriptor =
+        descriptors[i];
     const std::string language_code =
-        chromeos::input_method::GetLanguageCodeFromDescriptor(descriptor);
+        manager->GetInputMethodUtil()->GetLanguageCodeFromDescriptor(
+            descriptor);
     const std::string display_name =
-        chromeos::input_method::GetInputMethodDisplayNameFromId(descriptor.id);
+        manager->GetInputMethodUtil()->GetInputMethodDisplayNameFromId(
+            descriptor.id());
 
     DictionaryValue* dictionary = new DictionaryValue();
-    dictionary->SetString("id", descriptor.id);
+    dictionary->SetString("id", descriptor.id());
     dictionary->SetString("displayName", display_name);
 
     // One input method can be associated with multiple languages, hence
@@ -102,13 +119,12 @@ ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     language_codes->SetBoolean(language_code, true);
     // Check kExtraLanguages to see if there are languages associated with
     // this input method. If these are present, add these.
-    for (size_t j = 0; j < arraysize(chromeos::input_method::kExtraLanguages);
-         ++j) {
+    for (size_t j = 0; j < input_method::kExtraLanguagesLength; ++j) {
       const std::string extra_input_method_id =
-          chromeos::input_method::kExtraLanguages[j].input_method_id;
+          input_method::kExtraLanguages[j].input_method_id;
       const std::string extra_language_code =
-          chromeos::input_method::kExtraLanguages[j].language_code;
-      if (extra_input_method_id == descriptor.id) {
+          input_method::kExtraLanguages[j].language_code;
+      if (extra_input_method_id == descriptor.id()) {
         language_codes->SetBoolean(extra_language_code, true);
       }
     }
@@ -121,20 +137,23 @@ ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
 }
 
 ListValue* CrosLanguageOptionsHandler::GetLanguageList(
-    const chromeos::InputMethodDescriptors& descriptors) {
+    const input_method::InputMethodDescriptors& descriptors) {
+  input_method::InputMethodManager* manager =
+      input_method::InputMethodManager::GetInstance();
+
   std::set<std::string> language_codes;
   // Collect the language codes from the supported input methods.
   for (size_t i = 0; i < descriptors.size(); ++i) {
-    const chromeos::InputMethodDescriptor& descriptor = descriptors[i];
+    const input_method::InputMethodDescriptor& descriptor = descriptors[i];
     const std::string language_code =
-        chromeos::input_method::GetLanguageCodeFromDescriptor(descriptor);
+        manager->GetInputMethodUtil()->GetLanguageCodeFromDescriptor(
+            descriptor);
     language_codes.insert(language_code);
   }
   // Collect the language codes from kExtraLanguages.
-  for (size_t i = 0; i < arraysize(chromeos::input_method::kExtraLanguages);
-       ++i) {
+  for (size_t i = 0; i < input_method::kExtraLanguagesLength; ++i) {
     const char* language_code =
-        chromeos::input_method::kExtraLanguages[i].language_code;
+        input_method::kExtraLanguages[i].language_code;
     language_codes.insert(language_code);
   }
 
@@ -152,9 +171,10 @@ ListValue* CrosLanguageOptionsHandler::GetLanguageList(
   for (std::set<std::string>::const_iterator iter = language_codes.begin();
        iter != language_codes.end(); ++iter) {
     const string16 display_name =
-        chromeos::input_method::GetLanguageDisplayNameFromCode(*iter);
+        input_method::InputMethodUtil::GetLanguageDisplayNameFromCode(*iter);
     const string16 native_display_name =
-        chromeos::input_method::GetLanguageNativeDisplayNameFromCode(*iter);
+        input_method::InputMethodUtil::GetLanguageNativeDisplayNameFromCode(
+            *iter);
     display_names.push_back(display_name);
     language_map[display_name] =
         std::make_pair(*iter, native_display_name);
@@ -185,15 +205,15 @@ string16 CrosLanguageOptionsHandler::GetProductName() {
 
 void CrosLanguageOptionsHandler::SetApplicationLocale(
     const std::string& language_code) {
-  web_ui_->GetProfile()->ChangeAppLocale(
+  Profile::FromWebUI(web_ui())->ChangeAppLocale(
       language_code, Profile::APP_LOCALE_CHANGED_VIA_SETTINGS);
 }
 
 void CrosLanguageOptionsHandler::RestartCallback(const ListValue* args) {
-  UserMetrics::RecordAction(UserMetricsAction("LanguageOptions_SignOut"));
+  content::RecordAction(UserMetricsAction("LanguageOptions_SignOut"));
 
   Browser* browser = Browser::GetBrowserForController(
-      &web_ui_->tab_contents()->controller(), NULL);
+      &web_ui()->GetWebContents()->GetController(), NULL);
   if (browser)
     browser->ExecuteCommand(IDC_EXIT);
 }
@@ -201,25 +221,25 @@ void CrosLanguageOptionsHandler::RestartCallback(const ListValue* args) {
 void CrosLanguageOptionsHandler::InputMethodDisableCallback(
     const ListValue* args) {
   const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
-  const std::string action = StringPrintf(
+  const std::string action = base::StringPrintf(
       "LanguageOptions_DisableInputMethod_%s", input_method_id.c_str());
-  UserMetrics::RecordComputedAction(action);
+  content::RecordComputedAction(action);
 }
 
 void CrosLanguageOptionsHandler::InputMethodEnableCallback(
     const ListValue* args) {
   const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
-  const std::string action = StringPrintf(
+  const std::string action = base::StringPrintf(
       "LanguageOptions_EnableInputMethod_%s", input_method_id.c_str());
-  UserMetrics::RecordComputedAction(action);
+  content::RecordComputedAction(action);
 }
 
 void CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback(
     const ListValue* args) {
   const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
-  const std::string action = StringPrintf(
+  const std::string action = base::StringPrintf(
       "InputMethodOptions_Open_%s", input_method_id.c_str());
-  UserMetrics::RecordComputedAction(action);
+  content::RecordComputedAction(action);
 }
 
 } // namespace chromeos

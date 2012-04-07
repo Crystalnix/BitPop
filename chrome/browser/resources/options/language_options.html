@@ -44,6 +44,12 @@
            class="language-options-contents">
       </div>
 </if>
+<if expr="pp_ifdef('chromeos') and pp_ifdef('use_virtual_keyboard')">
+      <div class="language-options-contents">
+        <button id="language-options-virtual-keyboard"
+                i18n-content="virtual_keyboard_button"></button>
+      </div>
+</if>
     </div>
   </div>
   <div class="language-options-footer">
@@ -51,7 +57,7 @@
     <div i18n-content="switch_input_methods_hint"></div>
     <div i18n-content="select_previous_input_method_hint"></div>
 </if>
-<if expr="not pp_ifdef('chromeos')">
+<if expr="not pp_ifdef('chromeos') and not is_macosx">
     <div id="spell-check-option" class="checkbox">
       <label>
         <input id="enable-spell-check" pref="browser.enable_spellchecking"

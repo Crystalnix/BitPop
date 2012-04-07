@@ -19,26 +19,27 @@
 #include "chrome/common/automation_constants.h"
 #include "chrome_frame/cfproxy.h"
 #include "chrome_frame/task_marshaller.h"
-#include "content/common/page_zoom.h"
+#include "content/public/common/page_zoom.h"
 #include "googleurl/src/gurl.h"
 
+struct AttachExternalTabParams;
+struct AutomationURLRequest;
+struct ContextMenuModel;
+struct MiniContextMenuParams;
+struct NavigationInfo;
 class Task;
-class CancelableTask;
 
 namespace base {
-class TimeDelta;
 class WaitableEvent;
-}
-
-namespace IPC {
-struct NavigationInfo;
-struct MiniContextMenuParams;
 }
 
 namespace gfx {
 class Rect;
 }
 
+namespace net {
+class URLRequestStatus;
+}
 
 // This is the delegate/callback interface that has to be implemented
 // by the customers of ExternalTabProxy class.
@@ -54,7 +55,7 @@ class UIDelegate {
       const std::string& message, const std::string& origin,
       const std::string& target) = 0;
   virtual void OnHandleContextMenu(
-      HANDLE menu_handle, int align_flags,
+      const ContextMenuModel& context_menu_model, int align_flags,
       const MiniContextMenuParams& params) = 0;
   virtual void OnHandleAccelerator(const MSG& accel_message) = 0;
   virtual void OnTabbedOut(bool reverse) = 0;
@@ -76,9 +77,8 @@ struct CreateTabParams {
 class NavigationConstraints;
 
 /////////////////////////////////////////////////////////////////////////
-//  ExternalTabProxy is a mediator between ChromeProxy (which runs mostly in
-//  background IPC-channel thread and the UI object (ActiveX, NPAPI,
-//  ActiveDocument).
+//  ExternalTabProxy is a mediator between ChromeProxy (which runs mostly in the
+//  background IPC-channel thread) and the UI object (ActiveX, ActiveDocument).
 //  The lifetime of ExternalTabProxy is determined by the UI object.
 //
 //  When ExternalTabProxy dies:
@@ -118,7 +118,7 @@ class ExternalTabProxy : public CWindowImpl<ExternalTabProxy>,
   virtual void ConnectToExternalTab(uint64 external_tab_cookie);
   virtual void BlockExternalTab(uint64 cookie);
 
-  void SetZoomLevel(PageZoom::Function zoom_level);
+  void SetZoomLevel(content::PageZoom zoom_level);
 
  private:
   BEGIN_MSG_MAP(ExternalTabProxy)
@@ -169,7 +169,8 @@ class ExternalTabProxy : public CWindowImpl<ExternalTabProxy>,
 
   // Misc. UI.
   virtual void OnHandleAccelerator(const MSG& accel_message);
-  virtual void OnHandleContextMenu(HANDLE menu_handle, int align_flags,
+  virtual void OnHandleContextMenu(const ContextMenuModel& context_menu_model,
+                                   int align_flags,
                                    const MiniContextMenuParams& params);
   virtual void OnTabbedOut(bool reverse);
 

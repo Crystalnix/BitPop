@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,9 +89,16 @@ int main(int argc, const char** argv) {
   base::AtExitManager exit_manager;
 
   CommandLine::Init(argc, argv);
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 
-  const std::vector<CommandLine::StringType>& filenames = cmd_line->args();
+  logging::InitLogging(
+      NULL,
+      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
+      logging::LOCK_LOG_FILE,  // Ignored.
+      logging::DELETE_OLD_LOG_FILE,  // Ignored.
+      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+
+  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const CommandLine::StringVector& filenames = cmd_line->GetArgs();
   if (filenames.empty()) {
     std::cerr << "Usage: " << argv[0] << " [OPTIONS] FILE [DUMPFILE]\n"
               << "  --stream=[audio|video]          "
@@ -122,8 +129,8 @@ int main(int argc, const char** argv) {
   // Initialize our media library (try loading DLLs, etc.) before continuing.
   // We use an empty file path as the parameter to force searching of the
   // default locations for necessary DLLs and DSOs.
-  if (media::InitializeMediaLibrary(FilePath()) == false) {
-    std::cerr << "Unable to initialize the media library.";
+  if (!media::InitializeMediaLibrary(FilePath())) {
+    std::cerr << "Unable to initialize the media library." << std::endl;
     return 1;
   }
 
@@ -132,15 +139,15 @@ int main(int argc, const char** argv) {
   FilePath out_path;
   if (filenames.size() > 1)
     out_path = FilePath(filenames[1]);
-  CodecType target_codec = CODEC_TYPE_UNKNOWN;
+  AVMediaType target_codec = AVMEDIA_TYPE_UNKNOWN;
 
   // Determine whether to benchmark audio or video decoding.
   std::string stream(cmd_line->GetSwitchValueASCII(switches::kStream));
   if (!stream.empty()) {
     if (stream.compare("audio") == 0) {
-      target_codec = CODEC_TYPE_AUDIO;
+      target_codec = AVMEDIA_TYPE_AUDIO;
     } else if (stream.compare("video") == 0) {
-      target_codec = CODEC_TYPE_VIDEO;
+      target_codec = AVMEDIA_TYPE_VIDEO;
     } else {
       std::cerr << "Unknown --stream option " << stream << std::endl;
       return 1;
@@ -200,12 +207,11 @@ int main(int argc, const char** argv) {
     hash_djb2 = true;
   }
 
-  MD5Context ctx;  // Intermediate MD5 data: do not use
-  MD5Init(&ctx);
+  base::MD5Context ctx;  // Intermediate MD5 data: do not use
+  base::MD5Init(&ctx);
   bool hash_md5 = false;
-  if (cmd_line->HasSwitch(switches::kMd5)) {
+  if (cmd_line->HasSwitch(switches::kMd5))
     hash_md5 = true;
-  }
 
   int skip = 0;
   if (cmd_line->HasSwitch(switches::kSkip)) {
@@ -239,7 +245,7 @@ int main(int argc, const char** argv) {
                                   NULL, 0, NULL);
   if (result < 0) {
     switch (result) {
-      case AVERROR_NOFMT:
+      case AVERROR(EINVAL):
         std::cerr << "Error: File format not supported "
                   << in_path.value() << std::endl;
         break;
@@ -293,7 +299,7 @@ int main(int argc, const char** argv) {
       *log_out << "  ";
     }
 
-    if (!codec || (codec_context->codec_type == CODEC_TYPE_UNKNOWN)) {
+    if (!codec || (codec_context->codec_type == AVMEDIA_TYPE_UNKNOWN)) {
       *log_out << "Stream #" << i << ": Unknown" << std::endl;
     } else {
       // Print out stream information
@@ -339,11 +345,8 @@ int main(int argc, const char** argv) {
   }
 
   // Initialize threaded decode.
-  if (target_codec == CODEC_TYPE_VIDEO && video_threads > 0) {
-    if (avcodec_thread_init(codec_context, video_threads) < 0) {
-      std::cerr << "Warning: Could not initialize threading!\n"
-                << "Did you build with pthread/w32thread support?" << std::endl;
-    }
+  if (target_codec == AVMEDIA_TYPE_VIDEO && video_threads > 0) {
+    codec_context->thread_count = video_threads;
   }
 
   // Initialize our codec.
@@ -402,7 +405,7 @@ int main(int argc, const char** argv) {
     // Only decode packets from our target stream.
     if (packet.stream_index == target_stream) {
       int result = -1;
-      if (target_codec == CODEC_TYPE_AUDIO) {
+      if (target_codec == AVMEDIA_TYPE_AUDIO) {
         int size_out = AVCODEC_MAX_AUDIO_FRAME_SIZE;
 
         base::TimeTicks decode_start = base::TimeTicks::HighResNow();
@@ -431,10 +434,13 @@ int main(int argc, const char** argv) {
             hash_value = DJB2Hash(u8_samples, size_out, hash_value);
           }
           if (hash_md5) {
-            MD5Update(&ctx, u8_samples, size_out);
+            base::MD5Update(
+                &ctx,
+                base::StringPiece(reinterpret_cast<const char*>(u8_samples),
+                                                                size_out));
           }
         }
-      } else if (target_codec == CODEC_TYPE_VIDEO) {
+      } else if (target_codec == AVMEDIA_TYPE_VIDEO) {
         int got_picture = 0;
 
         base::TimeTicks decode_start = base::TimeTicks::HighResNow();
@@ -492,8 +498,10 @@ int main(int argc, const char** argv) {
             }
             if (hash_md5) {
               for (size_t i = 0; i < copy_lines; ++i) {
-                MD5Update(&ctx, reinterpret_cast<const uint8*>(source),
-                          bytes_per_line);
+                base::MD5Update(
+                    &ctx,
+                    base::StringPiece(reinterpret_cast<const char*>(source),
+                                      bytes_per_line));
                 source += source_stride;
               }
             }
@@ -578,9 +586,9 @@ int main(int argc, const char** argv) {
              << "  " << in_path.value() << std::endl;
   }
   if (hash_md5) {
-    MD5Digest digest;  // The result of the computation.
-    MD5Final(&digest, &ctx);
-    *log_out << "   MD5 Hash: " << MD5DigestToBase16(digest)
+    base::MD5Digest digest;  // The result of the computation.
+    base::MD5Final(&digest, &ctx);
+    *log_out << "   MD5 Hash: " << base::MD5DigestToBase16(digest)
              << " " << in_path.value() << std::endl;
   }
 #if defined(ENABLE_WINDOWS_EXCEPTIONS)

@@ -5,14 +5,15 @@
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
 
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/string_util.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -24,23 +25,23 @@ namespace BaseBubbleControllerInternal {
 
 // This bridge listens for notifications so that the bubble closes when a user
 // switches tabs (including by opening a new one).
-class Bridge : public NotificationObserver {
+class Bridge : public content::NotificationObserver {
  public:
   explicit Bridge(BaseBubbleController* controller) : controller_(controller) {
-    registrar_.Add(this, NotificationType::TAB_CONTENTS_HIDDEN,
-        NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_HIDDEN,
+        content::NotificationService::AllSources());
   }
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
     [controller_ close];
   }
 
  private:
   BaseBubbleController* controller_;  // Weak, owns this.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 }  // namespace BaseBubbleControllerInternal
@@ -54,8 +55,8 @@ class Bridge : public NotificationObserver {
 - (id)initWithWindowNibPath:(NSString*)nibPath
                parentWindow:(NSWindow*)parentWindow
                  anchoredAt:(NSPoint)anchoredAt {
-  nibPath = [base::mac::MainAppBundle() pathForResource:nibPath
-                                                ofType:@"nib"];
+  nibPath = [base::mac::FrameworkBundle() pathForResource:nibPath
+                                                   ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
     parentWindow_ = parentWindow;
     anchor_ = anchoredAt;
@@ -133,7 +134,17 @@ class Bridge : public NotificationObserver {
   [self updateOriginFromAnchor];
 }
 
+- (NSBox*)separatorWithFrame:(NSRect)frame {
+  frame.size.height = 1.0;
+  scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
+  [spacer setBoxType:NSBoxSeparator];
+  [spacer setBorderType:NSLineBorder];
+  [spacer setAlphaValue:0.2];
+  return [spacer.release() autorelease];
+}
+
 - (void)parentWindowWillClose:(NSNotification*)notification {
+  parentWindow_ = nil;
   [self close];
 }
 
@@ -157,7 +168,7 @@ class Bridge : public NotificationObserver {
 }
 
 - (void)close {
-  [parentWindow_ removeChildWindow:[self window]];
+  [[[self window] parentWindow] removeChildWindow:[self window]];
   [super close];
 }
 
@@ -185,14 +196,34 @@ class Bridge : public NotificationObserver {
 - (void)updateOriginFromAnchor {
   NSWindow* window = [self window];
   NSPoint origin = anchor_;
-  NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
-                              info_bubble::kBubbleArrowWidth / 2.0, 0);
-  offsets = [[parentWindow_ contentView] convertSize:offsets toView:nil];
-  if ([bubble_ arrowLocation] == info_bubble::kTopRight) {
-    origin.x -= NSWidth([window frame]) - offsets.width;
-  } else {
-    origin.x -= offsets.width;
+
+  switch ([bubble_ alignment]) {
+    case info_bubble::kAlignArrowToAnchor: {
+      NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
+                                  info_bubble::kBubbleArrowWidth / 2.0, 0);
+      offsets = [[parentWindow_ contentView] convertSize:offsets toView:nil];
+      if ([bubble_ arrowLocation] == info_bubble::kTopRight) {
+        origin.x -= NSWidth([window frame]) - offsets.width;
+      } else {
+        origin.x -= offsets.width;
+      }
+      break;
+    }
+
+    case info_bubble::kAlignEdgeToAnchorEdge:
+      // If the arrow is to the right then move the origin so that the right
+      // edge aligns with the anchor. If the arrow is to the left then there's
+      // nothing to do becaues the left edge is already aligned with the left
+      // edge of the anchor.
+      if ([bubble_ arrowLocation] == info_bubble::kTopRight) {
+        origin.x -= NSWidth([window frame]);
+      }
+      break;
+
+    default:
+      NOTREACHED();
   }
+
   origin.y -= NSHeight([window frame]);
   [window setFrameOrigin:origin];
 }

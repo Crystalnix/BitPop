@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,15 +18,12 @@
 #include "base/message_loop.h"
 #include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
-#include "content/common/content_switches.h"
+#include "content/common/child_thread.h"
 #include "content/common/view_messages.h"
-#include "content/renderer/content_renderer_client.h"
-#include "content/renderer/render_thread.h"
-#include "content/renderer/render_view.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_message_utils.h"
-#include "media/base/media.h"
-#include "media/base/media_switches.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/gfx/surface/transport_dib.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
@@ -39,7 +36,7 @@
 
 RenderProcessImpl::RenderProcessImpl()
     : ALLOW_THIS_IN_INITIALIZER_LIST(shared_mem_cache_cleaner_(
-          base::TimeDelta::FromSeconds(5),
+          FROM_HERE, base::TimeDelta::FromSeconds(5),
           this, &RenderProcessImpl::ClearTransportDIBCache)),
       transport_dib_next_sequence_number_(0) {
   in_process_plugins_ = InProcessPlugins();
@@ -66,8 +63,8 @@ RenderProcessImpl::RenderProcessImpl()
   // Out of process dev tools rely upon auto break behavior.
   webkit_glue::SetJavaScriptFlags(
       "--debugger-auto-break"
-      // Enable lazy in-memory profiling.
-      " --prof --prof-lazy --logfile=*");
+      // Enable on-demand profiling.
+      " --prof --prof-lazy");
 
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kJavaScriptFlags)) {
@@ -75,21 +72,10 @@ RenderProcessImpl::RenderProcessImpl()
         command_line.GetSwitchValueASCII(switches::kJavaScriptFlags));
   }
 
-  // Note that under Linux, the media library will normally already have
-  // been initialized by the Zygote before this instance became a Renderer.
-  FilePath media_path =
-      content::GetContentClient()->renderer()->GetMediaLibraryPath();
-  if (!media_path.empty())
-    media::InitializeMediaLibrary(media_path);
-
-#if !defined(OS_MACOSX)
-  // TODO(hclam): Add more checks here. Currently this is not used.
-  if (media::IsMediaLibraryInitialized() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableOpenMax)) {
-    media::InitializeOpenMaxLibrary(media_path);
+  if (command_line.HasSwitch(switches::kDartFlags)) {
+    webkit_glue::SetDartFlags(
+        command_line.GetSwitchValueASCII(switches::kDartFlags));
   }
-#endif
 }
 
 RenderProcessImpl::~RenderProcessImpl() {
@@ -105,7 +91,7 @@ RenderProcessImpl::~RenderProcessImpl() {
 
 bool RenderProcessImpl::InProcessPlugins() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
   // Plugin processes require a UI message loop, and the Linux message loop
   // implementation only allows one UI loop per process.
   if (command_line.HasSwitch(switches::kInProcessPlugins))
@@ -121,10 +107,11 @@ bool RenderProcessImpl::InProcessPlugins() {
 // Platform specific code for dealing with bitmap transport...
 
 TransportDIB* RenderProcessImpl::CreateTransportDIB(size_t size) {
-#if defined(OS_WIN) || defined(OS_LINUX)
+#if defined(OS_WIN) || defined(OS_LINUX) || \
+    defined(OS_OPENBSD) || defined(OS_ANDROID)
   // Windows and Linux create transport DIBs inside the renderer
   return TransportDIB::Create(size, transport_dib_next_sequence_number_++);
-#elif defined(OS_MACOSX)  // defined(OS_WIN) || defined(OS_LINUX)
+#elif defined(OS_MACOSX)
   // Mac creates transport DIBs in the browser, so we need to do a sync IPC to
   // get one.  The TransportDIB is cached in the browser.
   TransportDIB::Handle handle;
@@ -159,7 +146,7 @@ skia::PlatformCanvas* RenderProcessImpl::GetDrawingCanvas(
   int width = rect.width();
   int height = rect.height();
   const size_t stride = skia::PlatformCanvas::StrideForWidth(rect.width());
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_OPENBSD)
   const size_t max_size = base::SysInfo::MaxSharedMemorySize();
 #else
   const size_t max_size = 0;
@@ -193,10 +180,6 @@ void RenderProcessImpl::ReleaseTransportDIB(TransportDIB* mem) {
 
 bool RenderProcessImpl::UseInProcessPlugins() const {
   return in_process_plugins_;
-}
-
-bool RenderProcessImpl::HasInitializedMediaLibrary() const {
-  return media::IsMediaLibraryInitialized();
 }
 
 bool RenderProcessImpl::GetTransportDIBFromCache(TransportDIB** mem,

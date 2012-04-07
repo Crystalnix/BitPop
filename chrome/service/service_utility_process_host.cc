@@ -1,42 +1,54 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/service/service_utility_process_host.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
+#include "base/process_util.h"
 #include "base/scoped_temp_dir.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/utility_messages.h"
+#include "chrome/common/chrome_utility_messages.h"
+#include "content/public/common/child_process_host.h"
+#include "content/public/common/result_codes.h"
 #include "ipc/ipc_switches.h"
 #include "printing/page_range.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/gfx/rect.h"
 
 #if defined(OS_WIN)
+#include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_handle.h"
+#include "content/common/sandbox_policy.h"
 #include "printing/emf_win.h"
 #endif
 
+using content::ChildProcessHost;
+
 ServiceUtilityProcessHost::ServiceUtilityProcessHost(
     Client* client, base::MessageLoopProxy* client_message_loop_proxy)
-        : ServiceChildProcessHost(ChildProcessInfo::UTILITY_PROCESS),
+        : handle_(base::kNullProcessHandle),
           client_(client),
           client_message_loop_proxy_(client_message_loop_proxy),
           waiting_for_reply_(false) {
+  child_process_host_.reset(ChildProcessHost::Create(this));
 }
 
 ServiceUtilityProcessHost::~ServiceUtilityProcessHost() {
+  // We need to kill the child process when the host dies.
+  base::KillProcess(handle_, content::RESULT_CODE_NORMAL_EXIT, false);
 }
 
 bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
     const FilePath& pdf_path,
-    const gfx::Rect& render_area,
-    int render_dpi,
+    const printing::PdfRenderSettings& render_settings,
     const std::vector<printing::PageRange>& page_ranges) {
 #if !defined(OS_WIN)
   // This is only implemented on Windows (because currently it is only needed
@@ -72,12 +84,12 @@ bool ServiceUtilityProcessHost::StartRenderPDFPagesToMetafile(
   if (!pdf_file_in_utility_process)
     return false;
   waiting_for_reply_ = true;
-  return Send(
-      new UtilityMsg_RenderPDFPagesToMetafile(pdf_file_in_utility_process,
-                                              metafile_path_,
-                                              render_area,
-                                              render_dpi,
-                                              page_ranges));
+  return child_process_host_->Send(
+      new ChromeUtilityMsg_RenderPDFPagesToMetafile(
+          pdf_file_in_utility_process,
+          metafile_path_,
+          render_settings,
+          page_ranges));
 #endif  // !defined(OS_WIN)
 }
 
@@ -87,16 +99,14 @@ bool ServiceUtilityProcessHost::StartGetPrinterCapsAndDefaults(
   if (!StartProcess(true, exposed_path))
     return false;
   waiting_for_reply_ = true;
-  return Send(new UtilityMsg_GetPrinterCapsAndDefaults(printer_name));
+  return child_process_host_->Send(
+      new ChromeUtilityMsg_GetPrinterCapsAndDefaults(printer_name));
 }
 
 bool ServiceUtilityProcessHost::StartProcess(bool no_sandbox,
                                              const FilePath& exposed_dir) {
-  // Name must be set or metrics_service will crash in any test which
-  // launches a UtilityProcessHost.
-  set_name(L"utility process");
-
-  if (!CreateChannel())
+  std::string channel_id = child_process_host_->CreateChannel();
+  if (channel_id.empty())
     return false;
 
   FilePath exe_path = GetUtilityProcessCmd();
@@ -107,95 +117,117 @@ bool ServiceUtilityProcessHost::StartProcess(bool no_sandbox,
 
   CommandLine cmd_line(exe_path);
   cmd_line.AppendSwitchASCII(switches::kProcessType, switches::kUtilityProcess);
-  cmd_line.AppendSwitchASCII(switches::kProcessChannelID, channel_id());
+  cmd_line.AppendSwitchASCII(switches::kProcessChannelID, channel_id);
   cmd_line.AppendSwitch(switches::kLang);
 
   return Launch(&cmd_line, no_sandbox, exposed_dir);
 }
 
+bool ServiceUtilityProcessHost::Launch(CommandLine* cmd_line,
+                                       bool no_sandbox,
+                                       const FilePath& exposed_dir) {
+#if !defined(OS_WIN)
+  // TODO(sanjeevr): Implement for non-Windows OSes.
+  NOTIMPLEMENTED();
+  return false;
+#else  // !defined(OS_WIN)
+
+  if (no_sandbox) {
+    base::ProcessHandle process = base::kNullProcessHandle;
+    cmd_line->AppendSwitch(switches::kNoSandbox);
+    base::LaunchProcess(*cmd_line, base::LaunchOptions(), &handle_);
+  } else {
+    handle_ = sandbox::StartProcessWithAccess(cmd_line, exposed_dir);
+  }
+  return (handle_ != base::kNullProcessHandle);
+#endif  // !defined(OS_WIN)
+}
+
 FilePath ServiceUtilityProcessHost::GetUtilityProcessCmd() {
-  return GetChildPath(true);
+#if defined(OS_LINUX)
+  int flags = ChildProcessHost::CHILD_ALLOW_SELF;
+#else
+  int flags = ChildProcessHost::CHILD_NORMAL;
+#endif
+  return ChildProcessHost::GetChildPath(flags);
 }
 
-bool ServiceUtilityProcessHost::CanShutdown() {
-  return true;
-}
-
-void ServiceUtilityProcessHost::OnChildDied() {
+void ServiceUtilityProcessHost::OnChildDisconnected() {
   if (waiting_for_reply_) {
     // If we are yet to receive a reply then notify the client that the
     // child died.
     client_message_loop_proxy_->PostTask(
-        FROM_HERE,
-        NewRunnableMethod(client_.get(), &Client::OnChildDied));
+        FROM_HERE, base::Bind(&Client::OnChildDied, client_.get()));
   }
-  // The base class implementation will delete |this|.
-  ServiceChildProcessHost::OnChildDied();
+  delete this;
 }
 
 bool ServiceUtilityProcessHost::OnMessageReceived(const IPC::Message& message) {
-  bool msg_is_ok = false;
-  IPC_BEGIN_MESSAGE_MAP_EX(ServiceUtilityProcessHost, message, msg_is_ok)
-#if defined(OS_WIN)  // This hack is Windows-specific.
-    IPC_MESSAGE_HANDLER(UtilityHostMsg_PreCacheFont, OnPreCacheFont)
-#endif
-    IPC_MESSAGE_HANDLER(UtilityHostMsg_RenderPDFPagesToMetafile_Succeeded,
-                        OnRenderPDFPagesToMetafileSucceeded)
-    IPC_MESSAGE_UNHANDLED(msg_is_ok__ = MessageForClient(message))
-  IPC_END_MESSAGE_MAP_EX()
-  return true;
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(ServiceUtilityProcessHost, message)
+    IPC_MESSAGE_HANDLER(
+        ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Succeeded,
+        OnRenderPDFPagesToMetafileSucceeded)
+    IPC_MESSAGE_HANDLER(ChromeUtilityHostMsg_RenderPDFPagesToMetafile_Failed,
+                        OnRenderPDFPagesToMetafileFailed)
+    IPC_MESSAGE_HANDLER(
+        ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Succeeded,
+        OnGetPrinterCapsAndDefaultsSucceeded)
+    IPC_MESSAGE_HANDLER(ChromeUtilityHostMsg_GetPrinterCapsAndDefaults_Failed,
+                        OnGetPrinterCapsAndDefaultsFailed)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
 }
-
-bool ServiceUtilityProcessHost::MessageForClient(const IPC::Message& message) {
-  DCHECK(waiting_for_reply_);
-  bool ret = client_message_loop_proxy_->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(client_.get(), &Client::OnMessageReceived,
-                        message));
-  waiting_for_reply_ = false;
-  return ret;
-}
-
-#if defined(OS_WIN)  // This hack is Windows-specific.
-void ServiceUtilityProcessHost::OnPreCacheFont(const LOGFONT& font) {
-  PreCacheFont(font);
-}
-#endif  // OS_WIN
 
 void ServiceUtilityProcessHost::OnRenderPDFPagesToMetafileSucceeded(
-    int highest_rendered_page_number) {
+    int highest_rendered_page_number,
+    double scale_factor) {
   DCHECK(waiting_for_reply_);
+  waiting_for_reply_ = false;
   // If the metafile was successfully created, we need to take our hands off the
   // scratch metafile directory. The client will delete it when it is done with
   // metafile.
   scratch_metafile_dir_->Take();
   client_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(client_.get(),
-                        &Client::MetafileAvailable,
-                        metafile_path_,
-                        highest_rendered_page_number));
-  waiting_for_reply_ = false;
+      base::Bind(&Client::MetafileAvailable, client_.get(), metafile_path_,
+                 highest_rendered_page_number, scale_factor));
 }
 
-bool ServiceUtilityProcessHost::Client::OnMessageReceived(
-    const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(ServiceUtilityProcessHost, message)
-    IPC_MESSAGE_HANDLER(UtilityHostMsg_RenderPDFPagesToMetafile_Failed,
-                        Client::OnRenderPDFPagesToMetafileFailed)
-    IPC_MESSAGE_HANDLER(UtilityHostMsg_GetPrinterCapsAndDefaults_Succeeded,
-                        Client::OnGetPrinterCapsAndDefaultsSucceeded)
-    IPC_MESSAGE_HANDLER(UtilityHostMsg_GetPrinterCapsAndDefaults_Failed,
-                        Client::OnGetPrinterCapsAndDefaultsFailed)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
-  return handled;
+void ServiceUtilityProcessHost::OnRenderPDFPagesToMetafileFailed() {
+  DCHECK(waiting_for_reply_);
+  waiting_for_reply_ = false;
+  client_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&Client::OnRenderPDFPagesToMetafileFailed, client_.get()));
+}
+
+void ServiceUtilityProcessHost::OnGetPrinterCapsAndDefaultsSucceeded(
+    const std::string& printer_name,
+    const printing::PrinterCapsAndDefaults& caps_and_defaults) {
+  DCHECK(waiting_for_reply_);
+  waiting_for_reply_ = false;
+  client_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&Client::OnGetPrinterCapsAndDefaultsSucceeded, client_.get(),
+                 printer_name, caps_and_defaults));
+}
+
+void ServiceUtilityProcessHost::OnGetPrinterCapsAndDefaultsFailed(
+    const std::string& printer_name) {
+  DCHECK(waiting_for_reply_);
+  waiting_for_reply_ = false;
+  client_message_loop_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&Client::OnGetPrinterCapsAndDefaultsFailed, client_.get(),
+                 printer_name));
 }
 
 void ServiceUtilityProcessHost::Client::MetafileAvailable(
     const FilePath& metafile_path,
-    int highest_rendered_page_number) {
+    int highest_rendered_page_number,
+    double scale_factor) {
   // The metafile was created in a temp folder which needs to get deleted after
   // we have processed it.
   ScopedTempDir scratch_metafile_dir;
@@ -210,7 +242,8 @@ void ServiceUtilityProcessHost::Client::MetafileAvailable(
     OnRenderPDFPagesToMetafileFailed();
   } else {
     OnRenderPDFPagesToMetafileSucceeded(metafile,
-                                        highest_rendered_page_number);
+                                        highest_rendered_page_number,
+                                        scale_factor);
   }
 #endif  // defined(OS_WIN)
 }

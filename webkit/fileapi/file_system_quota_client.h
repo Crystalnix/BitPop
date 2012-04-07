@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/quota/quota_client.h"
@@ -43,15 +42,18 @@ class FileSystemQuotaClient : public quota::QuotaClient,
   virtual void OnQuotaManagerDestroyed() OVERRIDE;
   virtual void GetOriginUsage(const GURL& origin_url,
                               quota::StorageType type,
-                              GetUsageCallback* callback) OVERRIDE;
-  virtual void GetOriginsForType(quota::StorageType type,
-                                 GetOriginsCallback* callback) OVERRIDE;
-  virtual void GetOriginsForHost(quota::StorageType type,
-                                 const std::string& host,
-                                 GetOriginsCallback* callback) OVERRIDE;
-  virtual void DeleteOriginData(const GURL& origin,
-                                quota::StorageType type,
-                                DeletionCallback* callback) OVERRIDE;
+                              const GetUsageCallback& callback) OVERRIDE;
+  virtual void GetOriginsForType(
+      quota::StorageType type,
+      const GetOriginsCallback& callback) OVERRIDE;
+  virtual void GetOriginsForHost(
+      quota::StorageType type,
+      const std::string& host,
+      const GetOriginsCallback& callback) OVERRIDE;
+  virtual void DeleteOriginData(
+      const GURL& origin,
+      quota::StorageType type,
+      const DeletionCallback& callback) OVERRIDE;
 
  private:
   class GetOriginUsageTask;
@@ -61,17 +63,19 @@ class FileSystemQuotaClient : public quota::QuotaClient,
   class DeleteOriginTask;
 
   typedef std::pair<fileapi::FileSystemType, std::string> TypeAndHostOrOrigin;
-  typedef quota::CallbackQueueMap1<GetUsageCallback*,
+  typedef quota::CallbackQueueMap1<GetUsageCallback,
                                    TypeAndHostOrOrigin,
                                    int64
                                    > UsageCallbackMap;
-  typedef quota::CallbackQueueMap1<GetOriginsCallback*,
+  typedef quota::CallbackQueueMap2<GetOriginsCallback,
                                    fileapi::FileSystemType,
-                                   const std::set<GURL>&
+                                   const std::set<GURL>&,
+                                   quota::StorageType
                                    > OriginsForTypeCallbackMap;
-  typedef quota::CallbackQueueMap1<GetOriginsCallback*,
+  typedef quota::CallbackQueueMap2<GetOriginsCallback,
                                    TypeAndHostOrOrigin,
-                                   const std::set<GURL>&
+                                   const std::set<GURL>&,
+                                   quota::StorageType
                                    > OriginsForHostCallbackMap;
 
   void DidGetOriginUsage(fileapi::FileSystemType type,

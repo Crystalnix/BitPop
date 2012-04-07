@@ -1,6 +1,7 @@
-// Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "base/synchronization/waitable_event.h"
 #include "chrome_frame/crash_reporting/crash_metrics.h"
 #include "chrome_frame/test/proxy_factory_mock.h"
@@ -10,8 +11,6 @@
 
 using testing::CreateFunctor;
 using testing::_;
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(MockProxyFactory);
 
 TEST(ProxyFactoryTest, CreateDestroy) {
   CrashMetricsReporter::GetInstance()->set_active(true);
@@ -24,7 +23,7 @@ TEST(ProxyFactoryTest, CreateDestroy) {
   FilePath profile_path;
   scoped_refptr<ChromeFrameLaunchParams> params(
       new ChromeFrameLaunchParams(empty, empty, profile_path,
-          L"Adam.N.Epilinter", L"", L"", false, false, false));
+          L"Adam.N.Epilinter", L"", false, false, false));
   params->set_launch_timeout(0);
   params->set_version_check(false);
 
@@ -45,7 +44,7 @@ TEST(ProxyFactoryTest, CreateSameProfile) {
   FilePath profile_path;
   scoped_refptr<ChromeFrameLaunchParams> params(
       new ChromeFrameLaunchParams(empty, empty, profile_path,
-          L"Dr. Gratiano Forbeson", L"", L"", false, false, false));
+          L"Dr. Gratiano Forbeson", L"", false, false, false));
   params->set_launch_timeout(0);
   params->set_version_check(false);
 
@@ -70,13 +69,13 @@ TEST(ProxyFactoryTest, CreateDifferentProfiles) {
   FilePath profile_path;
   scoped_refptr<ChromeFrameLaunchParams> params1(
       new ChromeFrameLaunchParams(empty, empty, profile_path,
-          L"Adam.N.Epilinter", L"", L"", false, false, false));
+          L"Adam.N.Epilinter", L"", false, false, false));
   params1->set_launch_timeout(0);
   params1->set_version_check(false);
 
   scoped_refptr<ChromeFrameLaunchParams> params2(
       new ChromeFrameLaunchParams(empty, empty, profile_path,
-          L"Dr. Gratiano Forbeson", L"", L"", false, false, false));
+          L"Dr. Gratiano Forbeson", L"", false, false, false));
   params2->set_launch_timeout(0);
   params2->set_version_check(false);
 
@@ -103,7 +102,7 @@ TEST(ProxyFactoryTest, DISABLED_FastCreateDestroy) {
   FilePath profile_path;
   scoped_refptr<ChromeFrameLaunchParams> params(
       new ChromeFrameLaunchParams(empty, empty, profile_path,
-          L"Dr. Gratiano Forbeson", L"", L"", false, false, false));
+          L"Dr. Gratiano Forbeson", L"", false, false, false));
   params->set_launch_timeout(10000);
   params->set_version_check(false);
 

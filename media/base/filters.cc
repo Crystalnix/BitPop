@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,27 @@
 namespace media {
 
 void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status) {
-  DCHECK(cb);
+  DCHECK(!cb->is_null());
   FilterStatusCB tmp_cb(*cb);
   cb->Reset();
   tmp_cb.Run(status);
 }
 
+void ResetAndRunCB(base::Closure* cb) {
+  DCHECK(!cb->is_null());
+  base::Closure tmp_cb(*cb);
+  cb->Reset();
+  tmp_cb.Run();
+}
+
 Filter::Filter() : host_(NULL) {}
 
 Filter::~Filter() {}
+
+void Filter::clear_host() {
+  DCHECK(host_);
+  host_ = NULL;
+}
 
 void Filter::set_host(FilterHost* host) {
   DCHECK(host);
@@ -29,28 +41,24 @@ FilterHost* Filter::host() {
   return host_;
 }
 
-void Filter::Play(FilterCallback* callback) {
-  DCHECK(callback);
-  callback->Run();
-  delete callback;
+void Filter::Play(const base::Closure& callback) {
+  DCHECK(!callback.is_null());
+  callback.Run();
 }
 
-void Filter::Pause(FilterCallback* callback) {
-  DCHECK(callback);
-  callback->Run();
-  delete callback;
+void Filter::Pause(const base::Closure& callback) {
+  DCHECK(!callback.is_null());
+  callback.Run();
 }
 
-void Filter::Flush(FilterCallback* callback) {
-  DCHECK(callback);
-  callback->Run();
-  delete callback;
+void Filter::Flush(const base::Closure& callback) {
+  DCHECK(!callback.is_null());
+  callback.Run();
 }
 
-void Filter::Stop(FilterCallback* callback) {
-  DCHECK(callback);
-  callback->Run();
-  delete callback;
+void Filter::Stop(const base::Closure& callback) {
+  DCHECK(!callback.is_null());
+  callback.Run();
 }
 
 void Filter::SetPlaybackRate(float playback_rate) {}
@@ -63,22 +71,18 @@ void Filter::Seek(base::TimeDelta time, const FilterStatusCB& callback) {
 void Filter::OnAudioRendererDisabled() {
 }
 
-AVStream* DemuxerStream::GetAVStream() {
-  return NULL;
-}
-
-DemuxerStream::~DemuxerStream() {}
-
 VideoDecoder::VideoDecoder() {}
 
 VideoDecoder::~VideoDecoder() {}
 
+bool VideoDecoder::HasAlpha() const {
+  return false;
+}
+
+void VideoDecoder::PrepareForShutdownHack() {}
+
 AudioDecoder::AudioDecoder() {}
 
 AudioDecoder::~AudioDecoder() {}
-
-void AudioDecoder::ConsumeAudioSamples(scoped_refptr<Buffer> buffer) {
-  consume_audio_samples_callback_.Run(buffer);
-}
 
 }  // namespace media

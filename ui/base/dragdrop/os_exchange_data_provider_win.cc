@@ -1,19 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
+
+#include <algorithm>
+#include <vector>
 
 #include "base/file_path.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/logging.h"
 #include "base/memory/scoped_handle.h"
 #include "base/pickle.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
 #include "googleurl/src/gurl.h"
-#include "grit/app_strings.h"
+#include "grit/ui_strings.h"
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -124,7 +127,7 @@ STDMETHODIMP FormatEtcEnumerator::Next(
     ULONG count, FORMATETC* elements_array, ULONG* elements_fetched) {
   // MSDN says |elements_fetched| is allowed to be NULL if count is 1.
   if (!elements_fetched)
-    DCHECK(count == 1);
+    DCHECK_EQ(count, 1ul);
 
   // This method copies count elements into |elements_array|.
   ULONG index = 0;
@@ -326,9 +329,8 @@ void OSExchangeDataProviderWin::SetFilename(const FilePath& path) {
 
 void OSExchangeDataProviderWin::SetPickledData(CLIPFORMAT format,
                                                const Pickle& data) {
-  STGMEDIUM* storage = GetStorageForString(
-      std::string(static_cast<const char *>(data.data()),
-      static_cast<size_t>(data.size())));
+  STGMEDIUM* storage = GetStorageForBytes(static_cast<const char*>(data.data()),
+                                          data.size());
   data_->contents_.push_back(
       new DataObjectImpl::StoredDataInfo(format, storage));
 }
@@ -403,9 +405,8 @@ bool OSExchangeDataProviderWin::GetPickledData(CLIPFORMAT format,
   if (SUCCEEDED(source_object_->GetData(&format_etc, &medium))) {
     if (medium.tymed & TYMED_HGLOBAL) {
       base::win::ScopedHGlobal<char> c_data(medium.hGlobal);
-      DCHECK(c_data.Size() > 0);
-      // Need to subtract 1 as SetPickledData adds an extra byte to the end.
-      *data = Pickle(c_data.get(), static_cast<int>(c_data.Size() - 1));
+      DCHECK_GT(c_data.Size(), 0u);
+      *data = Pickle(c_data.get(), static_cast<int>(c_data.Size()));
       success = true;
     }
     ReleaseStgMedium(&medium);
@@ -574,6 +575,23 @@ void DataObjectImpl::StopDownloads() {
   }
 }
 
+void DataObjectImpl::RemoveData(const FORMATETC& format) {
+  if (format.ptd)
+    return;  // Don't attempt to compare target devices.
+
+  for (StoredData::iterator i = contents_.begin(); i != contents_.end(); ++i) {
+    if (!(*i)->format_etc.ptd &&
+        format.cfFormat == (*i)->format_etc.cfFormat &&
+        format.dwAspect == (*i)->format_etc.dwAspect &&
+        format.lindex == (*i)->format_etc.lindex &&
+        format.tymed == (*i)->format_etc.tymed) {
+      delete *i;
+      contents_.erase(i);
+      return;
+    }
+  }
+}
+
 void DataObjectImpl::OnDownloadCompleted(const FilePath& file_path) {
   CLIPFORMAT hdrop_format = ClipboardUtil::GetCFHDropFormat()->cfFormat;
   DataObjectImpl::StoredData::iterator iter = contents_.begin();
@@ -691,6 +709,8 @@ HRESULT DataObjectImpl::GetCanonicalFormatEtc(
 
 HRESULT DataObjectImpl::SetData(
     FORMATETC* format_etc, STGMEDIUM* medium, BOOL should_release) {
+  RemoveData(*format_etc);
+
   STGMEDIUM* local_medium = new STGMEDIUM;
   if (should_release) {
     *local_medium = *medium;
@@ -702,7 +722,8 @@ HRESULT DataObjectImpl::SetData(
       new DataObjectImpl::StoredDataInfo(format_etc->cfFormat, local_medium);
   info->medium->tymed = format_etc->tymed;
   info->owns_medium = !!should_release;
-  contents_.push_back(info);
+  // Make newly added data appear first.
+  contents_.insert(contents_.begin(), info);
 
   return S_OK;
 }
@@ -848,7 +869,8 @@ static void CreateValidFileNameFromTitle(const GURL& url,
                                          string16* validated) {
   if (title.empty()) {
     if (url.is_valid()) {
-      *validated = net::GetSuggestedFilename(url, "", "", "", string16());
+      *validated = net::GetSuggestedFilename(url, "", "", "", "",
+                                             std::string());
     } else {
       // Nothing else can be done, just use a default.
       *validated =
@@ -883,34 +905,32 @@ static STGMEDIUM* GetStorageForFileName(const FilePath& path) {
 
   STGMEDIUM* storage = new STGMEDIUM;
   storage->tymed = TYMED_HGLOBAL;
-  storage->hGlobal = drop_files;
+  storage->hGlobal = hdata;
   storage->pUnkForRelease = NULL;
   return storage;
 }
 
 static STGMEDIUM* GetStorageForFileDescriptor(
     const FilePath& path) {
-  string16 valid_file_name = path.value();
-  DCHECK(!valid_file_name.empty() && valid_file_name.size() + 1 <= MAX_PATH);
-  HANDLE handle = GlobalAlloc(GPTR, sizeof(FILEGROUPDESCRIPTOR));
-  FILEGROUPDESCRIPTOR* descriptor =
-      reinterpret_cast<FILEGROUPDESCRIPTOR*>(GlobalLock(handle));
+  string16 file_name = path.value();
+  DCHECK(!file_name.empty());
+  HANDLE hdata = GlobalAlloc(GPTR, sizeof(FILEGROUPDESCRIPTOR));
+  base::win::ScopedHGlobal<FILEGROUPDESCRIPTOR> locked_mem(hdata);
 
+  FILEGROUPDESCRIPTOR* descriptor = locked_mem.get();
   descriptor->cItems = 1;
-  wcscpy_s(descriptor->fgd[0].cFileName,
-           valid_file_name.size() + 1,
-           valid_file_name.c_str());
   descriptor->fgd[0].dwFlags = FD_LINKUI;
-
-  GlobalUnlock(handle);
+  wcsncpy_s(descriptor->fgd[0].cFileName,
+            MAX_PATH,
+            file_name.c_str(),
+            std::min(file_name.size(), MAX_PATH - 1u));
 
   STGMEDIUM* storage = new STGMEDIUM;
-  storage->hGlobal = handle;
   storage->tymed = TYMED_HGLOBAL;
+  storage->hGlobal = hdata;
   storage->pUnkForRelease = NULL;
   return storage;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // OSExchangeData, public:

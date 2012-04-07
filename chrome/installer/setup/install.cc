@@ -18,6 +18,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/installer/setup/setup_constants.h"
 #include "chrome/installer/setup/install_worker.h"
+#include "chrome/installer/util/auto_launch_util.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/create_reg_key_work_item.h"
 #include "chrome/installer/util/delete_after_reboot_helper.h"
@@ -131,12 +132,14 @@ bool CreateOrUpdateChromeShortcuts(const InstallerState& installer_state,
     VLOG(1) << "Creating shortcut to " << chrome_exe.value() << " at "
             << chrome_link.value();
     ret = ShellUtil::UpdateChromeShortcut(browser_dist, chrome_exe.value(),
-        chrome_link.value(), product_desc, true);
+        chrome_link.value(), L"", product_desc, chrome_exe.value(),
+        browser_dist->GetIconIndex(), true);
   } else if (file_util::PathExists(chrome_link)) {
     VLOG(1) << "Updating shortcut at " << chrome_link.value()
             << " to point to " << chrome_exe.value();
     ret = ShellUtil::UpdateChromeShortcut(browser_dist, chrome_exe.value(),
-        chrome_link.value(), product_desc, false);
+        chrome_link.value(), L"", product_desc, chrome_exe.value(),
+        browser_dist->GetIconIndex(), false);
   } else {
     VLOG(1)
         << "not first or repaired install, link file doesn't exist. status: "
@@ -167,7 +170,7 @@ bool CreateOrUpdateChromeShortcuts(const InstallerState& installer_state,
       ret = file_util::CreateShortcutLink(setup_exe.value().c_str(),
           uninstall_link.value().c_str(),
           NULL,
-          arguments.command_line_string().c_str(),
+          arguments.GetCommandLineString().c_str(),
           NULL,
           setup_exe.value().c_str(),
           0,
@@ -179,25 +182,20 @@ bool CreateOrUpdateChromeShortcuts(const InstallerState& installer_state,
   // is specified we want to create them, otherwise we update them only if
   // they exist.
   if (ret) {
+    ShellUtil::ShellChange desktop_level = ShellUtil::CURRENT_USER;
+    int quick_launch_levels = ShellUtil::CURRENT_USER;
     if (installer_state.system_install()) {
-      ret = ShellUtil::CreateChromeDesktopShortcut(product.distribution(),
-          chrome_exe.value(), product_desc, ShellUtil::SYSTEM_LEVEL,
-          alt_shortcut, create_all_shortcut);
-      if (ret) {
-        ret = ShellUtil::CreateChromeQuickLaunchShortcut(
-            product.distribution(), chrome_exe.value(),
-            ShellUtil::CURRENT_USER | ShellUtil::SYSTEM_LEVEL,
-            create_all_shortcut);
-      }
-    } else {
-      ret = ShellUtil::CreateChromeDesktopShortcut(product.distribution(),
-          chrome_exe.value(), product_desc, ShellUtil::CURRENT_USER,
-          alt_shortcut, create_all_shortcut);
-      if (ret) {
-        ret = ShellUtil::CreateChromeQuickLaunchShortcut(
-            product.distribution(), chrome_exe.value(), ShellUtil::CURRENT_USER,
-            create_all_shortcut);
-      }
+      desktop_level = ShellUtil::SYSTEM_LEVEL;
+      quick_launch_levels |= ShellUtil::SYSTEM_LEVEL;
+    }
+    ret = ShellUtil::CreateChromeDesktopShortcut(browser_dist,
+        chrome_exe.value(), product_desc, L"", L"", chrome_exe.value(),
+        browser_dist->GetIconIndex(), desktop_level, alt_shortcut,
+        create_all_shortcut);
+    if (ret) {
+      ret = ShellUtil::CreateChromeQuickLaunchShortcut(
+          browser_dist, chrome_exe.value(), quick_launch_levels,
+          create_all_shortcut);
     }
   }
 
@@ -277,9 +275,6 @@ installer::InstallStatus InstallNewVersion(
                       current_version,
                       install_list.get());
 
-  AddElevationPolicyWorkItems(original_state, installer_state, new_version,
-                              install_list.get());
-
   FilePath new_chrome_exe(
       installer_state.target_path().Append(installer::kChromeNewExe));
 
@@ -298,7 +293,7 @@ installer::InstallStatus InstallNewVersion(
     return result;
   }
 
-  installer_state.UpdateStage(installer::FINISHING);
+  installer_state.UpdateStage(installer::REFRESHING_POLICY);
 
   installer::RefreshElevationPolicy();
 
@@ -365,9 +360,13 @@ InstallStatus InstallOrUpdateProduct(
   // TODO(robertshield): Everything below this line should instead be captured
   // by WorkItems.
   if (!InstallUtil::GetInstallReturnCode(result)) {
+    installer_state.UpdateStage(installer::UPDATING_CHANNELS);
+
     // Update the modifiers on the channel values for the product(s) being
     // installed and for the binaries in case of multi-install.
     installer_state.UpdateChannels();
+
+    installer_state.UpdateStage(installer::COPYING_PREFERENCES_FILE);
 
     if (result == FIRST_INSTALL_SUCCESS && !prefs_path.empty())
       CopyPreferenceFileForFirstRun(installer_state, prefs_path);
@@ -381,6 +380,8 @@ InstallStatus InstallOrUpdateProduct(
     const Product* chrome_install =
         installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER);
     if (chrome_install && !do_not_create_shortcuts) {
+      installer_state.UpdateStage(installer::CREATING_SHORTCUTS);
+
       bool create_all_shortcut = false;
       prefs.GetBool(master_preferences::kCreateAllShortcuts,
                     &create_all_shortcut);
@@ -407,9 +408,27 @@ InstallStatus InstallOrUpdateProduct(
                       &force_chrome_default_for_user);
       }
 
+      installer_state.UpdateStage(installer::REGISTERING_CHROME);
+
       RegisterChromeOnMachine(installer_state, *chrome_install,
           make_chrome_default || force_chrome_default_for_user);
+
+      if (result == FIRST_INSTALL_SUCCESS) {
+        installer_state.UpdateStage(installer::CONFIGURE_AUTO_LAUNCH);
+
+        // Add auto-launch key if specified in master preferences.
+        bool auto_launch_chrome = false;
+        prefs.GetBool(
+            installer::master_preferences::kAutoLaunchChrome,
+            &auto_launch_chrome);
+        if (auto_launch_chrome) {
+          auto_launch_util::SetWillLaunchAtLogin(
+              true, installer_state.target_path());
+        }
+      }
     }
+
+    installer_state.UpdateStage(installer::REMOVING_OLD_VERSIONS);
 
     installer_state.RemoveOldVersionDirectories(
         new_version,

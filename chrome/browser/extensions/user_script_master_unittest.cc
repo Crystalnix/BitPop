@@ -12,17 +12,29 @@
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
+
+namespace {
+
+static void AddPattern(URLPatternSet* extent, const std::string& pattern) {
+  int schemes = URLPattern::SCHEME_ALL;
+  extent->AddPattern(URLPattern(schemes, pattern));
+}
+
+}
 
 // Test bringing up a master on a specific directory, putting a script
 // in there, etc.
 
 class UserScriptMasterTest : public testing::Test,
-                             public NotificationObserver {
+                             public content::NotificationObserver {
  public:
   UserScriptMasterTest()
       : message_loop_(MessageLoop::TYPE_UI),
@@ -33,14 +45,14 @@ class UserScriptMasterTest : public testing::Test,
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     // Register for all user script notifications.
-    registrar_.Add(this, NotificationType::USER_SCRIPTS_UPDATED,
-                   NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+                   content::NotificationService::AllSources());
 
     // UserScriptMaster posts tasks to the file thread so make the current
     // thread look like one.
-    file_thread_.reset(new BrowserThread(
+    file_thread_.reset(new content::TestBrowserThread(
         BrowserThread::FILE, MessageLoop::current()));
-    ui_thread_.reset(new BrowserThread(
+    ui_thread_.reset(new content::TestBrowserThread(
         BrowserThread::UI, MessageLoop::current()));
   }
 
@@ -49,12 +61,12 @@ class UserScriptMasterTest : public testing::Test,
     ui_thread_.reset();
   }
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    DCHECK(type == NotificationType::USER_SCRIPTS_UPDATED);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    DCHECK(type == chrome::NOTIFICATION_USER_SCRIPTS_UPDATED);
 
-    shared_memory_ = Details<base::SharedMemory>(details).ptr();
+    shared_memory_ = content::Details<base::SharedMemory>(details).ptr();
     if (MessageLoop::current() == &message_loop_)
       MessageLoop::current()->Quit();
   }
@@ -62,13 +74,13 @@ class UserScriptMasterTest : public testing::Test,
   // Directory containing user scripts.
   ScopedTempDir temp_dir_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // MessageLoop used in tests.
   MessageLoop message_loop_;
 
-  scoped_ptr<BrowserThread> file_thread_;
-  scoped_ptr<BrowserThread> ui_thread_;
+  scoped_ptr<content::TestBrowserThread> file_thread_;
+  scoped_ptr<content::TestBrowserThread> ui_thread_;
 
   // Updated to the script shared memory when we get notified.
   base::SharedMemory* shared_memory_;
@@ -77,29 +89,9 @@ class UserScriptMasterTest : public testing::Test,
 // Test that we get notified even when there are no scripts.
 TEST_F(UserScriptMasterTest, NoScripts) {
   TestingProfile profile;
-  scoped_refptr<UserScriptMaster> master(new UserScriptMaster(temp_dir_.path(),
-                                                              &profile));
-  master->StartScan();
-  message_loop_.PostTask(FROM_HERE, new MessageLoop::QuitTask);
-  message_loop_.Run();
-
-  ASSERT_TRUE(shared_memory_ != NULL);
-}
-
-// Test that we get notified about scripts if they're already in the test dir.
-TEST_F(UserScriptMasterTest, ExistingScripts) {
-  TestingProfile profile;
-  FilePath path = temp_dir_.path().AppendASCII("script.user.js");
-
-  const char content[] = "some content";
-  size_t written = file_util::WriteFile(path, content, sizeof(content));
-  ASSERT_EQ(written, sizeof(content));
-
-  scoped_refptr<UserScriptMaster> master(new UserScriptMaster(temp_dir_.path(),
-                                                              &profile));
-  master->StartScan();
-
-  message_loop_.PostTask(FROM_HERE, new MessageLoop::QuitTask);
+  scoped_refptr<UserScriptMaster> master(new UserScriptMaster(&profile));
+  master->StartLoad();
+  message_loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
   message_loop_.Run();
 
   ASSERT_TRUE(shared_memory_ != NULL);
@@ -161,15 +153,15 @@ TEST_F(UserScriptMasterTest, Parse4) {
     "// @match  \t http://mail.yahoo.com/*\n"
     "// ==/UserScript==\n");
 
+  URLPatternSet expected_patterns;
+  AddPattern(&expected_patterns, "http://*.mail.google.com/*");
+  AddPattern(&expected_patterns, "http://mail.yahoo.com/*");
+
   UserScript script;
   EXPECT_TRUE(UserScriptMaster::ScriptReloader::ParseMetadataHeader(
       text, &script));
   EXPECT_EQ(0U, script.globs().size());
-  ASSERT_EQ(2U, script.url_patterns().size());
-  EXPECT_EQ("http://*.mail.google.com/*",
-            script.url_patterns()[0].GetAsString());
-  EXPECT_EQ("http://mail.yahoo.com/*",
-            script.url_patterns()[1].GetAsString());
+  EXPECT_EQ(expected_patterns, script.url_patterns());
 }
 
 TEST_F(UserScriptMasterTest, Parse5) {
@@ -211,49 +203,72 @@ TEST_F(UserScriptMasterTest, Parse7) {
       text, &script));
   ASSERT_EQ("hello", script.name());
   ASSERT_EQ("wiggity woo", script.description());
-  ASSERT_EQ(1U, script.url_patterns().size());
+  ASSERT_EQ(1U, script.url_patterns().patterns().size());
   EXPECT_EQ("http://mail.yahoo.com/*",
-            script.url_patterns()[0].GetAsString());
+            script.url_patterns().begin()->GetAsString());
+}
+
+TEST_F(UserScriptMasterTest, Parse8) {
+  const std::string text(
+    "// ==UserScript==\n"
+    "// @name myscript\n"
+    "// @match http://www.google.com/*\n"
+    "// @exclude_match http://www.google.com/foo*\n"
+    "// ==/UserScript==\n");
+
+  UserScript script;
+  EXPECT_TRUE(UserScriptMaster::ScriptReloader::ParseMetadataHeader(
+      text, &script));
+  ASSERT_EQ("myscript", script.name());
+  ASSERT_EQ(1U, script.url_patterns().patterns().size());
+  EXPECT_EQ("http://www.google.com/*",
+            script.url_patterns().begin()->GetAsString());
+  ASSERT_EQ(1U, script.exclude_url_patterns().patterns().size());
+  EXPECT_EQ("http://www.google.com/foo*",
+            script.exclude_url_patterns().begin()->GetAsString());
 }
 
 TEST_F(UserScriptMasterTest, SkipBOMAtTheBeginning) {
   FilePath path = temp_dir_.path().AppendASCII("script.user.js");
-
-  const std::string content(
-    "\xEF\xBB\xBF// ==UserScript==\n"
-    "// @match http://*.mail.google.com/*\n"
-    "// ==/UserScript==\n");
+  const std::string content("\xEF\xBB\xBF alert('hello');");
   size_t written = file_util::WriteFile(path, content.c_str(), content.size());
   ASSERT_EQ(written, content.size());
 
-  UserScriptList script_list;
-  UserScriptMaster::ScriptReloader::LoadScriptsFromDirectory(
-      temp_dir_.path(), &script_list);
-  ASSERT_EQ(1U, script_list.size());
+  UserScript user_script;
+  user_script.js_scripts().push_back(UserScript::File(
+      temp_dir_.path(), path.BaseName(), GURL()));
+
+  UserScriptList user_scripts;
+  user_scripts.push_back(user_script);
+
+  UserScriptMaster::ScriptReloader* script_reloader =
+      new UserScriptMaster::ScriptReloader(NULL);
+  script_reloader->AddRef();
+  script_reloader->LoadUserScripts(&user_scripts);
+  script_reloader->Release();
 
   EXPECT_EQ(content.substr(3),
-            script_list[0].js_scripts()[0].GetContent().as_string());
-  EXPECT_EQ("http://*.mail.google.com/*",
-            script_list[0].url_patterns()[0].GetAsString());
+            user_scripts[0].js_scripts()[0].GetContent().as_string());
 }
 
 TEST_F(UserScriptMasterTest, LeaveBOMNotAtTheBeginning) {
   FilePath path = temp_dir_.path().AppendASCII("script.user.js");
-
-  const std::string content(
-    "// ==UserScript==\n"
-    "// @match http://*.mail.google.com/*\n"
-    "// ==/UserScript==\n"
-    "// @bom \xEF\xBB\xBF");
+  const std::string content("alert('here's a BOOM: \xEF\xBB\xBF');");
   size_t written = file_util::WriteFile(path, content.c_str(), content.size());
   ASSERT_EQ(written, content.size());
 
-  UserScriptList script_list;
-  UserScriptMaster::ScriptReloader::LoadScriptsFromDirectory(
-      temp_dir_.path(), &script_list);
-  ASSERT_EQ(1U, script_list.size());
+  UserScript user_script;
+  user_script.js_scripts().push_back(UserScript::File(
+      temp_dir_.path(), path.BaseName(), GURL()));
 
-  EXPECT_EQ(content, script_list[0].js_scripts()[0].GetContent().as_string());
-  EXPECT_EQ("http://*.mail.google.com/*",
-            script_list[0].url_patterns()[0].GetAsString());
+  UserScriptList user_scripts;
+  user_scripts.push_back(user_script);
+
+  UserScriptMaster::ScriptReloader* script_reloader =
+      new UserScriptMaster::ScriptReloader(NULL);
+  script_reloader->AddRef();
+  script_reloader->LoadUserScripts(&user_scripts);
+  script_reloader->Release();
+
+  EXPECT_EQ(content, user_scripts[0].js_scripts()[0].GetContent().as_string());
 }

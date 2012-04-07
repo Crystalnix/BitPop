@@ -13,11 +13,58 @@
 
 namespace net {
 
+namespace {
+
+// Parameters for logging data transferred events. Includes bytes transferred
+// and, if |bytes| is not NULL, the bytes themselves.
+class NetLogBytesTransferredParameter : public NetLog::EventParameters {
+ public:
+  NetLogBytesTransferredParameter(int byte_count, const char* bytes);
+
+  virtual Value* ToValue() const;
+
+ private:
+  const int byte_count_;
+  std::string hex_encoded_bytes_;
+  bool has_bytes_;
+};
+
+NetLogBytesTransferredParameter::NetLogBytesTransferredParameter(
+    int byte_count, const char* transferred_bytes)
+    : byte_count_(byte_count),
+      has_bytes_(false) {
+  if (transferred_bytes) {
+    hex_encoded_bytes_ = base::HexEncode(transferred_bytes, byte_count);
+    has_bytes_ = true;
+  }
+}
+
+Value* NetLogBytesTransferredParameter::ToValue() const {
+  DictionaryValue* dict = new DictionaryValue();
+  dict->SetInteger("byte_count", byte_count_);
+  if (has_bytes_ && byte_count_ > 0)
+    dict->SetString("hex_encoded_bytes", hex_encoded_bytes_);
+  return dict;
+}
+
+}  // namespace
+
 Value* NetLog::Source::ToValue() const {
   DictionaryValue* dict = new DictionaryValue();
   dict->SetInteger("type", static_cast<int>(type));
   dict->SetInteger("id", static_cast<int>(id));
   return dict;
+}
+
+NetLog::ThreadSafeObserver::ThreadSafeObserver(LogLevel log_level)
+    : log_level_(log_level) {
+}
+
+NetLog::ThreadSafeObserver::~ThreadSafeObserver() {
+}
+
+NetLog::LogLevel NetLog::ThreadSafeObserver::log_level() const {
+  return log_level_;
 }
 
 // static
@@ -145,9 +192,18 @@ void BoundNetLog::EndEvent(
   AddEntry(event_type, NetLog::PHASE_END, params);
 }
 
+void BoundNetLog::AddEventWithNetErrorCode(NetLog::EventType event_type,
+                                           int net_error) const {
+  DCHECK_GT(0, net_error);
+  DCHECK_NE(ERR_IO_PENDING, net_error);
+  AddEvent(
+      event_type,
+      make_scoped_refptr(new NetLogIntegerParameter("net_error", net_error)));
+}
+
 void BoundNetLog::EndEventWithNetErrorCode(NetLog::EventType event_type,
                                            int net_error) const {
-  DCHECK_NE(net_error, ERR_IO_PENDING);
+  DCHECK_NE(ERR_IO_PENDING, net_error);
   if (net_error >= 0) {
     EndEvent(event_type, NULL);
   } else {
@@ -155,6 +211,18 @@ void BoundNetLog::EndEventWithNetErrorCode(NetLog::EventType event_type,
         event_type,
         make_scoped_refptr(new NetLogIntegerParameter("net_error", net_error)));
   }
+}
+
+void BoundNetLog::AddByteTransferEvent(NetLog::EventType event_type,
+                                       int byte_count,
+                                       const char* bytes) const {
+  scoped_refptr<NetLog::EventParameters> params;
+  if (IsLoggingBytes()) {
+    params = new NetLogBytesTransferredParameter(byte_count, bytes);
+  } else {
+    params = new NetLogBytesTransferredParameter(byte_count, NULL);
+  }
+  AddEvent(event_type, params);
 }
 
 NetLog::LogLevel BoundNetLog::GetLogLevel() const {
@@ -203,8 +271,8 @@ Value* NetLogStringParameter::ToValue() const {
 
 Value* NetLogSourceParameter::ToValue() const {
   DictionaryValue* dict = new DictionaryValue();
-
-  dict->Set(name_, value_.ToValue());
+  if (value_.is_valid())
+    dict->Set(name_, value_.ToValue());
   return dict;
 }
 

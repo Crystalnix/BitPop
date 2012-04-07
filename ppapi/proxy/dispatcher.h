@@ -9,22 +9,19 @@
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/tracked_objects.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
-#include "ppapi/proxy/callback_tracker.h"
 #include "ppapi/proxy/proxy_channel.h"
-#include "ppapi/proxy/interface_id.h"
+#include "ppapi/proxy/interface_list.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
+#include "ppapi/shared_impl/api_id.h"
 
 namespace ppapi {
-class WebKitForwarding;
-}
 
-namespace pp {
 namespace proxy {
 
 class VarSerializationRules;
@@ -43,7 +40,7 @@ class VarSerializationRules;
 //    "Target"                          |    "Source"
 //    InterfaceProxy <---------------------- InterfaceProxy
 //                                      |
-class Dispatcher : public ProxyChannel {
+class PPAPI_PROXY_EXPORT Dispatcher : public ProxyChannel {
  public:
   typedef const void* (*GetInterfaceFunc)(const char*);
   typedef int32_t (*InitModuleFunc)(PP_Module, GetInterfaceFunc);
@@ -58,8 +55,10 @@ class Dispatcher : public ProxyChannel {
     return serialization_rules_.get();
   }
 
-  // Wrapper for calling the local GetInterface function.
-  const void* GetLocalInterface(const char* interface_name);
+  // Returns a non-owning pointer to the interface proxy for the given ID, or
+  // NULL if the ID isn't found. This will create the proxy if it hasn't been
+  // created so far.
+  InterfaceProxy* GetInterfaceProxy(ApiID id);
 
   // Returns the pointer to the IO thread for processing IPC messages.
   // TODO(brettw) remove this. It's a hack to support the Flash
@@ -81,20 +80,7 @@ class Dispatcher : public ProxyChannel {
   // IPC::Channel::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
-  CallbackTracker& callback_tracker() {
-    return callback_tracker_;
-  }
-
-  // Retrieves the information associated with the given interface, identified
-  // either by name or ID. Each function searches either PPP or PPB interfaces.
-  static const InterfaceProxy::Info* GetPPBInterfaceInfo(
-      const std::string& name);
-  static const InterfaceProxy::Info* GetPPBInterfaceInfo(
-      InterfaceID id);
-  static const InterfaceProxy::Info* GetPPPInterfaceInfo(
-      const std::string& name);
-  static const InterfaceProxy::Info* GetPPPInterfaceInfo(
-      InterfaceID id);
+  GetInterfaceFunc local_get_interface() const { return local_get_interface_; }
 
  protected:
   Dispatcher(base::ProcessHandle remote_process_handle,
@@ -104,16 +90,24 @@ class Dispatcher : public ProxyChannel {
   // Takes ownership of the given pointer, which must be on the heap.
   void SetSerializationRules(VarSerializationRules* var_serialization_rules);
 
+  // Called when an invalid message is received from the remote site. The
+  // default implementation does nothing, derived classes can override.
+  virtual void OnInvalidMessageReceived();
+
   bool disallow_trusted_interfaces() const {
     return disallow_trusted_interfaces_;
   }
 
  private:
+  friend class HostDispatcherTest;
+  friend class PluginDispatcherTest;
+
+  // Lists all lazily-created interface proxies.
+  scoped_ptr<InterfaceProxy> proxies_[API_ID_COUNT];
+
   bool disallow_trusted_interfaces_;
 
   GetInterfaceFunc local_get_interface_;
-
-  CallbackTracker callback_tracker_;
 
   scoped_ptr<VarSerializationRules> serialization_rules_;
 
@@ -121,6 +115,6 @@ class Dispatcher : public ProxyChannel {
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_DISPATCHER_H_

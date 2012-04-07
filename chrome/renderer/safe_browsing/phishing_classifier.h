@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,12 +19,14 @@
 #define CHROME_RENDERER_SAFE_BROWSING_PHISHING_CLASSIFIER_H_
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
-#include "base/task.h"
 
+namespace content {
 class RenderView;
+}
 
 namespace safe_browsing {
 class ClientPhishingRequest;
@@ -43,7 +45,7 @@ class PhishingClassifier {
   // is true, the page is considered phishy by the client-side model,
   // and the browser should ping back to get a final verdict.  The
   // verdict.client_score() is set to kInvalidScore if classification failed.
-  typedef Callback1<const ClientPhishingRequest& /* verdict */>::Type
+  typedef base::Callback<void(const ClientPhishingRequest& /* verdict */)>
       DoneCallback;
 
   static const float kInvalidScore;
@@ -52,11 +54,14 @@ class PhishingClassifier {
   // |render_view|.  |clock| is used to time feature extractor operations, and
   // the PhishingClassifier takes ownership of this object.  Note that the
   // classifier will not be 'ready' until set_phishing_scorer() is called.
-  PhishingClassifier(RenderView* render_view, FeatureExtractorClock* clock);
+  PhishingClassifier(content::RenderView* render_view,
+                     FeatureExtractorClock* clock);
   virtual ~PhishingClassifier();
 
   // Sets a scorer for the classifier to use in computing the phishiness score.
-  // This must live at least as long as the PhishingClassifier.
+  // This must live at least as long as the PhishingClassifier.  The caller is
+  // expected to cancel any pending classification before setting a phishing
+  // scorer.
   void set_phishing_scorer(const Scorer* scorer);
 
   // Returns true if the classifier is ready to classify pages, i.e. it
@@ -79,7 +84,7 @@ class PhishingClassifier {
   // It is an error to call BeginClassification if the classifier is not yet
   // ready.
   virtual void BeginClassification(const string16* page_text,
-                                   DoneCallback* callback);
+                                   const DoneCallback& callback);
 
   // Called by the RenderView (on the render thread) when a page is unloading
   // or the RenderView is being destroyed.  This cancels any extraction that
@@ -121,7 +126,7 @@ class PhishingClassifier {
   // Clears the current state of the PhishingClassifier.
   void Clear();
 
-  RenderView* render_view_;  // owns us
+  content::RenderView* render_view_;  // owns us
   const Scorer* scorer_;  // owned by the caller
   scoped_ptr<FeatureExtractorClock> clock_;
   scoped_ptr<PhishingUrlFeatureExtractor> url_extractor_;
@@ -131,11 +136,11 @@ class PhishingClassifier {
   // State for any in-progress extraction.
   scoped_ptr<FeatureMap> features_;
   const string16* page_text_;  // owned by the caller
-  scoped_ptr<DoneCallback> done_callback_;
+  DoneCallback done_callback_;
 
-  // Used to create BeginFeatureExtraction tasks.
-  // These tasks are revoked if classification is cancelled.
-  ScopedRunnableMethodFactory<PhishingClassifier> method_factory_;
+  // Used in scheduling BeginFeatureExtraction tasks.
+  // These pointers are invalidated if classification is cancelled.
+  base::WeakPtrFactory<PhishingClassifier> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PhishingClassifier);
 };

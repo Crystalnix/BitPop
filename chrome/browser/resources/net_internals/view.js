@@ -1,114 +1,158 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * Base class to represent a "view". A view is an absolutely positioned box on
  * the page.
- *
- * @constructor
  */
-function View() {
-  this.isVisible_ = true;
-}
+var View = (function() {
+  'use strict';
 
-/**
- * Called to reposition the view on the page. Measurements are in pixels.
- */
-View.prototype.setGeometry = function(left, top, width, height) {
-  this.left_ = left;
-  this.top_ = top;
-  this.width_ = width;
-  this.height_ = height;
-};
+  /**
+   * @constructor
+   */
+  function View() {
+    this.isVisible_ = true;
+  }
 
-/**
- * Called to show/hide the view.
- */
-View.prototype.show = function(isVisible) {
-  this.isVisible_ = isVisible;
-};
+  View.prototype = {
+    /**
+     * Called to reposition the view on the page. Measurements are in pixels.
+     */
+    setGeometry: function(left, top, width, height) {
+      this.left_ = left;
+      this.top_ = top;
+      this.width_ = width;
+      this.height_ = height;
+    },
 
-View.prototype.isVisible = function() {
-  return this.isVisible_;
-};
+    /**
+     * Called to show/hide the view.
+     */
+    show: function(isVisible) {
+      this.isVisible_ = isVisible;
+    },
 
-/**
- * Method of the observer class.
- *
- * Called to check if an observer needs the data it is
- * observing to be actively updated.
- */
-View.prototype.isActive = function() {
-  return this.isVisible();
-};
+    isVisible: function() {
+      return this.isVisible_;
+    },
 
-View.prototype.getLeft = function() {
-  return this.left_;
-};
+    /**
+     * Method of the observer class.
+     *
+     * Called to check if an observer needs the data it is
+     * observing to be actively updated.
+     */
+    isActive: function() {
+      return this.isVisible();
+    },
 
-View.prototype.getTop = function() {
-  return this.top_;
-};
+    getLeft: function() {
+      return this.left_;
+    },
 
-View.prototype.getWidth = function() {
-  return this.width_;
-};
+    getTop: function() {
+      return this.top_;
+    },
 
-View.prototype.getHeight = function() {
-  return this.height_;
-};
+    getWidth: function() {
+      return this.width_;
+    },
 
-View.prototype.getRight = function() {
-  return this.getLeft() + this.getWidth();
-};
+    getHeight: function() {
+      return this.height_;
+    },
 
-View.prototype.getBottom = function() {
-  return this.getTop() + this.getHeight();
-};
+    getRight: function() {
+      return this.getLeft() + this.getWidth();
+    },
 
-View.prototype.setParameters = function(params) {};
+    getBottom: function() {
+      return this.getTop() + this.getHeight();
+    },
+
+    setParameters: function(params) {},
+
+    /**
+     * Called when loading a log file, after clearing all events, but before
+     * loading the new ones.  |polledData| contains the data from all
+     * PollableData helpers.  |tabData| contains the data for the particular
+     * tab.  |logDump| is the entire log dump, which includes the other two
+     * values.  It's included separately so most views don't have to depend on
+     * its specifics.
+     */
+    onLoadLogStart: function(polledData, tabData, logDump) {
+    },
+
+    /**
+     * Called as the final step of loading a log file.  Arguments are the same
+     * as onLoadLogStart.  Returns true to indicate the tab should be shown,
+     * false otherwise.
+     */
+    onLoadLogFinish: function(polledData, tabData, logDump) {
+      return false;
+    }
+  };
+
+  return View;
+})();
 
 //-----------------------------------------------------------------------------
 
 /**
  * DivView is an implementation of View that wraps a DIV.
- *
- * @constructor
  */
-function DivView(divId) {
-  View.call(this);
+var DivView = (function() {
+  'use strict';
 
-  this.node_ = document.getElementById(divId);
-  if (!this.node_)
-    throw new Error('Element ' + divId + ' not found');
+  // We inherit from View.
+  var superClass = View;
 
-  // Initialize the default values to those of the DIV.
-  this.width_ = this.node_.offsetWidth;
-  this.height_ = this.node_.offsetHeight;
-  this.isVisible_ = this.node_.style.display != 'none';
-}
+  /**
+   * @constructor
+   */
+  function DivView(divId) {
+    // Call superclass's constructor.
+    superClass.call(this);
 
-inherits(DivView, View);
+    this.node_ = $(divId);
+    if (!this.node_)
+      throw new Error('Element ' + divId + ' not found');
 
-DivView.prototype.setGeometry = function(left, top, width, height) {
-  DivView.superClass_.setGeometry.call(this, left, top, width, height);
+    // Initialize the default values to those of the DIV.
+    this.width_ = this.node_.offsetWidth;
+    this.height_ = this.node_.offsetHeight;
+    this.isVisible_ = this.node_.style.display != 'none';
+  }
 
-  this.node_.style.position = 'absolute';
-  setNodePosition(this.node_, left, top, width, height);
-};
+  DivView.prototype = {
+    // Inherit the superclass's methods.
+    __proto__: superClass.prototype,
 
-DivView.prototype.show = function(isVisible) {
-  DivView.superClass_.show.call(this, isVisible);
-  setNodeDisplay(this.node_, isVisible);
-};
+    setGeometry: function(left, top, width, height) {
+      superClass.prototype.setGeometry.call(this, left, top, width, height);
 
-/**
- * Returns the wrapped DIV
- */
-DivView.prototype.getNode = function() {
-  return this.node_;
-};
+      this.node_.style.position = 'absolute';
+      setNodePosition(this.node_, left, top, width, height);
+    },
+
+    show: function(isVisible) {
+      superClass.prototype.show.call(this, isVisible);
+      setNodeDisplay(this.node_, isVisible);
+    },
+
+    /**
+     * Returns the wrapped DIV
+     */
+    getNode: function() {
+      return this.node_;
+    }
+  };
+
+  return DivView;
+})();
+
 
 //-----------------------------------------------------------------------------
 
@@ -116,28 +160,103 @@ DivView.prototype.getNode = function() {
  * Implementation of View that sizes its child to fit the entire window.
  *
  * @param {!View} childView
- *
- * @constructor
  */
-function WindowView(childView) {
-  View.call(this);
-  this.childView_ = childView;
-  window.addEventListener('resize', this.resetGeometry.bind(this), true);
-}
+var WindowView = (function() {
+  'use strict';
 
-inherits(WindowView, View);
+  // We inherit from View.
+  var superClass = View;
 
-WindowView.prototype.setGeometry = function(left, top, width, height) {
-  WindowView.superClass_.setGeometry.call(this, left, top, width, height);
-  this.childView_.setGeometry(left, top, width, height);
-};
+  /**
+   * @constructor
+   */
+  function WindowView(childView) {
+    // Call superclass's constructor.
+    superClass.call(this);
 
-WindowView.prototype.show = function() {
-  WindowView.superClass_.show.call(this, isVisible);
-  this.childView_.show(isVisible);
-};
+    this.childView_ = childView;
+    window.addEventListener('resize', this.resetGeometry.bind(this), true);
+  }
 
-WindowView.prototype.resetGeometry = function() {
-  this.setGeometry(0, 0, window.innerWidth, window.innerHeight);
-};
+  WindowView.prototype = {
+    // Inherit the superclass's methods.
+    __proto__: superClass.prototype,
 
+    setGeometry: function(left, top, width, height) {
+      superClass.prototype.setGeometry.call(this, left, top, width, height);
+      this.childView_.setGeometry(left, top, width, height);
+    },
+
+    show: function() {
+      superClass.prototype.show.call(this, isVisible);
+      this.childView_.show(isVisible);
+    },
+
+    resetGeometry: function() {
+      this.setGeometry(0, 0, window.innerWidth, window.innerHeight);
+    }
+  };
+
+  return WindowView;
+})();
+
+/**
+ * View that positions two views vertically. The top view should be
+ * fixed-height, and the bottom view will fill the remainder of the space.
+ *
+ *  +-----------------------------------+
+ *  |            top_view               |
+ *  +-----------------------------------+
+ *  |                                   |
+ *  |                                   |
+ *  |                                   |
+ *  |          bottom_view              |
+ *  |                                   |
+ *  |                                   |
+ *  |                                   |
+ *  |                                   |
+ *  +-----------------------------------+
+ */
+var VerticalSplitView = (function() {
+  'use strict';
+
+  // We inherit from View.
+  var superClass = View;
+
+  /**
+   * @param {!View} topView
+   * @param {!View} bottomView
+   * @constructor
+   */
+  function VerticalSplitView(topView, bottomView) {
+    // Call superclass's constructor.
+    superClass.call(this);
+
+    this.topView_ = topView;
+    this.bottomView_ = bottomView;
+  }
+
+  VerticalSplitView.prototype = {
+    // Inherit the superclass's methods.
+    __proto__: superClass.prototype,
+
+    setGeometry: function(left, top, width, height) {
+      superClass.prototype.setGeometry.call(this, left, top, width, height);
+
+      var fixedHeight = this.topView_.getHeight();
+      this.topView_.setGeometry(left, top, width, fixedHeight);
+
+      this.bottomView_.setGeometry(
+          left, top + fixedHeight, width, height - fixedHeight);
+    },
+
+    show: function(isVisible) {
+      superClass.prototype.show.call(this, isVisible);
+
+      this.topView_.show(isVisible);
+      this.bottomView_.show(isVisible);
+    }
+  };
+
+  return VerticalSplitView;
+})();

@@ -11,10 +11,10 @@
 #include "base/string_split.h"
 #include "base/stringprintf.h"
 #include "chrome/renderer/searchbox.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebFrame;
@@ -132,7 +132,7 @@ class SearchBoxExtensionWrapper : public v8::Extension {
       v8::Handle<v8::String> name);
 
   // Helper function to find the RenderView. May return NULL.
-  static RenderView* GetRenderView();
+  static content::RenderView* GetRenderView();
 
   // Gets the value of the user's search query.
   static v8::Handle<v8::Value> GetValue(const v8::Arguments& args);
@@ -197,7 +197,7 @@ v8::Handle<v8::FunctionTemplate> SearchBoxExtensionWrapper::GetNativeFunction(
 }
 
 // static
-RenderView* SearchBoxExtensionWrapper::GetRenderView() {
+content::RenderView* SearchBoxExtensionWrapper::GetRenderView() {
   WebFrame* webframe = WebFrame::frameForEnteredContext();
   DCHECK(webframe) << "There should be an active frame since we just got "
       "a native function called.";
@@ -206,13 +206,13 @@ RenderView* SearchBoxExtensionWrapper::GetRenderView() {
   WebView* webview = webframe->view();
   if (!webview) return NULL;  // can happen during closing
 
-  return RenderView::FromWebView(webview);
+  return content::RenderView::FromWebView(webview);
 }
 
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetValue(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
   return v8::String::New(
       reinterpret_cast<const uint16_t*>(
@@ -223,7 +223,7 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetValue(
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetVerbatim(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
   return v8::Boolean::New(SearchBox::Get(render_view)->verbatim());
 }
@@ -231,7 +231,7 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetVerbatim(
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionStart(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
   return v8::Int32::New(SearchBox::Get(render_view)->selection_start());
 }
@@ -239,7 +239,7 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionStart(
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionEnd(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
   return v8::Int32::New(SearchBox::Get(render_view)->selection_end());
 }
@@ -247,33 +247,33 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetSelectionEnd(
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetX(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->rect().x());
+  return v8::Int32::New(SearchBox::Get(render_view)->GetRect().x());
 }
 
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetY(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->rect().y());
+  return v8::Int32::New(SearchBox::Get(render_view)->GetRect().y());
 }
 
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetWidth(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->rect().width());
+  return v8::Int32::New(SearchBox::Get(render_view)->GetRect().width());
 }
 
 // static
 v8::Handle<v8::Value> SearchBoxExtensionWrapper::GetHeight(
     const v8::Arguments& args) {
-  RenderView* render_view = GetRenderView();
+  content::RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
-  return v8::Int32::New(SearchBox::Get(render_view)->rect().height());
+  return v8::Int32::New(SearchBox::Get(render_view)->GetRect().height());
 }
 
 // Accepts a single argument in form:
@@ -293,7 +293,8 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetSuggestions(
   if (args.Length() && args[0]->IsArray()) {
     // For backwards compatibility, also accept an array of strings.
     // TODO(tonyg): Remove this when it is confirmed to be unused.
-    v8::Array* suggestions_array = static_cast<v8::Array*>(*args[0]);
+    v8::Local<v8::Array> suggestions_array =
+        v8::Local<v8::Array>::Cast(args[0]);
     uint32_t length = suggestions_array->Length();
     for (uint32_t i = 0; i < length; i++) {
       std::string suggestion = *v8::String::Utf8Value(
@@ -303,7 +304,8 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetSuggestions(
     }
   } else if (args.Length() && args[0]->IsObject()) {
     // Standard version, object argument.
-    v8::Object* suggestion_json = static_cast<v8::Object*>(*args[0]);
+    v8::Local<v8::Object> suggestion_json =
+        v8::Local<v8::Object>::Cast(args[0]);
     v8::Local<v8::Value> suggestions_field =
         suggestion_json->Get(v8::String::New("suggestions"));
 
@@ -341,7 +343,7 @@ v8::Handle<v8::Value> SearchBoxExtensionWrapper::SetSuggestions(
     }
   }
 
-  if (RenderView* render_view = GetRenderView())
+  if (content::RenderView* render_view = GetRenderView())
     SearchBox::Get(render_view)->SetSuggestions(suggestions, behavior);
   return v8::Undefined();
 }
@@ -418,8 +420,8 @@ bool SearchBoxExtension::PageSupportsInstant(WebFrame* frame) {
   // The deprecated API needs to notify the page of events it may have missed.
   // This isn't necessary in the SearchBox API, since the page can query the
   // API at any time.
-  static std::string init_script(
-      StringPrintf(kInitScript, kSetOmniboxBoundsScript, kUserInputScript));
+  CR_DEFINE_STATIC_LOCAL(std::string, init_script,
+      (StringPrintf(kInitScript, kSetOmniboxBoundsScript, kUserInputScript)));
   if (supports_deprecated_api) {
     frame->executeScript(WebScriptSource(WebString::fromUTF8(init_script)));
   }

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,18 @@
 
 #include "base/command_line.h"
 
-class ListValue;
 class PrefService;
+
+namespace base {
+class ListValue;
+}
 
 namespace about_flags {
 
 // Enumeration of OSs.
 // This is exposed only for testing.
-enum { kOsMac = 1 << 0, kOsWin = 1 << 1, kOsLinux = 1 << 2 , kOsCrOS = 1 << 3 };
+enum { kOsMac = 1 << 0, kOsWin = 1 << 1, kOsLinux = 1 << 2 , kOsCrOS = 1 << 3,
+       kOsAndroid = 1 << 4 };
 
 // Experiment is used internally by about_flags to describe an experiment (and
 // for testing).
@@ -87,7 +91,7 @@ struct Experiment {
 void ConvertFlagsToSwitches(PrefService* prefs, CommandLine* command_line);
 
 // Get a list of all available experiments. The caller owns the result.
-ListValue* GetFlagsExperimentsData(PrefService* prefs);
+base::ListValue* GetFlagsExperimentsData(PrefService* prefs);
 
 // Returns true if one of the experiment flags has been flipped since startup.
 bool IsRestartNeededToCommitChanges();

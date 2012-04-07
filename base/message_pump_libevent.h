@@ -7,6 +7,8 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_pump.h"
 #include "base/observer_list.h"
 #include "base/threading/thread_checker.h"
@@ -20,7 +22,7 @@ namespace base {
 
 // Class to monitor sockets and issue callbacks when sockets are ready for I/O
 // TODO(dkegel): add support for background file IO somehow
-class BASE_API MessagePumpLibevent : public MessagePump {
+class BASE_EXPORT MessagePumpLibevent : public MessagePump {
  public:
   class IOObserver {
    public:
@@ -37,8 +39,10 @@ class BASE_API MessagePumpLibevent : public MessagePump {
     virtual ~IOObserver() {}
   };
 
-  // Used with WatchFileDescptor to asynchronously monitor the I/O readiness of
-  // a File Descriptor.
+  class FileDescriptorWatcher;
+
+  // Used with WatchFileDescriptor to asynchronously monitor the I/O readiness
+  // of a file descriptor.
   class Watcher {
    public:
     virtual ~Watcher() {}
@@ -63,6 +67,7 @@ class BASE_API MessagePumpLibevent : public MessagePump {
 
    private:
     friend class MessagePumpLibevent;
+    friend class MessagePumpLibeventTest;
 
     // Called by MessagePumpLibevent, ownership of |e| is transferred to this
     // object.
@@ -83,6 +88,7 @@ class BASE_API MessagePumpLibevent : public MessagePump {
     event* event_;
     MessagePumpLibevent* pump_;
     Watcher* watcher_;
+    base::WeakPtrFactory<FileDescriptorWatcher> weak_factory_;
 
     DISALLOW_COPY_AND_ASSIGN(FileDescriptorWatcher);
   };
@@ -118,12 +124,14 @@ class BASE_API MessagePumpLibevent : public MessagePump {
   void RemoveIOObserver(IOObserver* obs);
 
   // MessagePump methods:
-  virtual void Run(Delegate* delegate);
-  virtual void Quit();
-  virtual void ScheduleWork();
-  virtual void ScheduleDelayedWork(const TimeTicks& delayed_work_time);
+  virtual void Run(Delegate* delegate) OVERRIDE;
+  virtual void Quit() OVERRIDE;
+  virtual void ScheduleWork() OVERRIDE;
+  virtual void ScheduleDelayedWork(const TimeTicks& delayed_work_time) OVERRIDE;
 
  private:
+  friend class MessagePumpLibeventTest;
+
   void WillProcessIOEvent();
   void DidProcessIOEvent();
 
@@ -143,6 +151,9 @@ class BASE_API MessagePumpLibevent : public MessagePump {
 
   // This flag is set when inside Run.
   bool in_run_;
+
+  // This flag is set if libevent has processed I/O events.
+  bool processed_io_events_;
 
   // The time at which we should call DoDelayedWork.
   TimeTicks delayed_work_time_;

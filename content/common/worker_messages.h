@@ -13,9 +13,11 @@
 
 #include "base/basictypes.h"
 #include "base/string16.h"
+#include "content/common/content_export.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebSharedWorker.h"
 
 // Singly-included section, not converted.
 #ifndef CONTENT_COMMON_WORKER_MESSAGES_H_
@@ -25,6 +27,8 @@ typedef std::pair<string16, std::vector<int> > QueuedMessage;
 
 #endif  // CONTENT_COMMON_WORKER_MESSAGES_H_
 
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 #define IPC_MESSAGE_START WorkerMsgStart
 
 // Parameters structure for WorkerHostMsg_PostConsoleMessageToWorkerObject,
@@ -43,15 +47,13 @@ IPC_STRUCT_END()
 // Parameter structure for WorkerProcessMsg_CreateWorker.
 IPC_STRUCT_BEGIN(WorkerProcessMsg_CreateWorker_Params)
   IPC_STRUCT_MEMBER(GURL, url)
-  IPC_STRUCT_MEMBER(bool, is_shared)
   IPC_STRUCT_MEMBER(string16, name)
   IPC_STRUCT_MEMBER(int, route_id)
   IPC_STRUCT_MEMBER(int, creator_process_id)
-  // Only valid for dedicated workers.
-  IPC_STRUCT_MEMBER(int, creator_appcache_host_id)
-  // Only valid for shared workers.
   IPC_STRUCT_MEMBER(int64, shared_worker_appcache_id)
 IPC_STRUCT_END()
+
+IPC_ENUM_TRAITS(WebKit::WebContentSecurityPolicyType)
 
 //-----------------------------------------------------------------------------
 // WorkerProcess messages
@@ -136,10 +138,12 @@ IPC_SYNC_MESSAGE_CONTROL2_1(WorkerProcessHostMsg_AllowFileSystem,
 //-----------------------------------------------------------------------------
 // Worker messages
 // These are messages sent from the renderer process to the worker process.
-IPC_MESSAGE_ROUTED3(WorkerMsg_StartWorkerContext,
+IPC_MESSAGE_ROUTED5(WorkerMsg_StartWorkerContext,
                     GURL /* url */,
                     string16  /* user_agent */,
-                    string16  /* source_code */)
+                    string16  /* source_code */,
+                    string16  /* content_security_policy */,
+                    WebKit::WebContentSecurityPolicyType)
 
 IPC_MESSAGE_ROUTED0(WorkerMsg_TerminateWorkerContext)
 
@@ -176,4 +180,3 @@ IPC_MESSAGE_ROUTED1(WorkerHostMsg_ReportPendingActivity,
 IPC_MESSAGE_CONTROL1(WorkerHostMsg_WorkerContextClosed,
                      int /* worker_route_id */)
 IPC_MESSAGE_ROUTED0(WorkerHostMsg_WorkerContextDestroyed)
-

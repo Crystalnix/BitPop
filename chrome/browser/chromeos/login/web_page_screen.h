@@ -6,16 +6,16 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_WEB_PAGE_SCREEN_H_
 #pragma once
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/timer.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
-
-class GURL;
+#include "content/public/browser/web_contents_delegate.h"
 
 namespace chromeos {
 
 // Base class for wizard screen that holds web page.
-class WebPageScreen : public TabContentsDelegate {
+class WebPageScreen : public content::WebContentsDelegate {
  public:
   explicit WebPageScreen();
   virtual ~WebPageScreen();
@@ -24,29 +24,11 @@ class WebPageScreen : public TabContentsDelegate {
   virtual void CloseScreen(ScreenObserver::ExitCodes code) = 0;
 
  protected:
-  // TabContentsDelegate implementation:
-  virtual void OpenURLFromTab(TabContents* source,
-                              const GURL& url, const GURL& referrer,
-                              WindowOpenDisposition disposition,
-                              PageTransition::Type transition) {}
-  virtual void NavigationStateChanged(const TabContents* source,
-                                      unsigned changed_flags) = 0;
-  virtual void AddNewContents(TabContents* source,
-                              TabContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture) {}
-  virtual void ActivateContents(TabContents* contents) {}
-  virtual void DeactivateContents(TabContents* contents) {}
-  virtual void LoadingStateChanged(TabContents* source) = 0;
-  virtual void CloseContents(TabContents* source) {}
-  virtual bool IsPopup(TabContents* source);
-  virtual void UpdateTargetURL(TabContents* source, const GURL& url) {}
+  // content::WebContentsDelegate implementation:
   virtual bool ShouldAddNavigationToHistory(
       const history::HistoryAddPageArgs& add_page_args,
-      NavigationType::Type navigation_type);
-  virtual void MoveContents(TabContents* source, const gfx::Rect& pos) {}
-  virtual bool HandleContextMenu(const ContextMenuParams& params);
+      content::NavigationType navigation_type) OVERRIDE;
+  virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
 
   // Called by |timeout_timer_|. Stops page fetching and closes screen.
   virtual void OnNetworkTimeout();

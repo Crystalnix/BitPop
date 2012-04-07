@@ -10,23 +10,24 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "chrome/browser/download/download_item.h"
+#include "base/timer.h"
 #include "chrome/browser/icon_manager.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
 class BaseDownloadItemModel;
 class DownloadShelfContextMenuGtk;
 class DownloadShelfGtk;
 class GtkThemeService;
 class NineBox;
-class SkBitmap;
 
 namespace gfx {
 class Image;
@@ -36,9 +37,9 @@ namespace ui {
 class SlideAnimation;
 }
 
-class DownloadItemGtk : public DownloadItem::Observer,
+class DownloadItemGtk : public content::DownloadItem::Observer,
                         public ui::AnimationDelegate,
-                        public NotificationObserver {
+                        public content::NotificationObserver {
  public:
   // DownloadItemGtk takes ownership of |download_item_model|.
   DownloadItemGtk(DownloadShelfGtk* parent_shelf,
@@ -48,16 +49,16 @@ class DownloadItemGtk : public DownloadItem::Observer,
   virtual ~DownloadItemGtk();
 
   // DownloadItem::Observer implementation.
-  virtual void OnDownloadUpdated(DownloadItem* download);
-  virtual void OnDownloadOpened(DownloadItem* download) { }
+  virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
+  virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE { }
 
   // ui::AnimationDelegate implementation.
-  virtual void AnimationProgressed(const ui::Animation* animation);
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Called when the icon manager has finished loading the icon. We take
   // ownership of |icon_bitmap|.
@@ -67,7 +68,7 @@ class DownloadItemGtk : public DownloadItem::Observer,
                                gfx::Image* image);
 
   // Returns the DownloadItem model object belonging to this item.
-  DownloadItem* get_download();
+  content::DownloadItem* get_download();
 
  private:
   friend class DownloadShelfContextMenuGtk;
@@ -154,11 +155,14 @@ class DownloadItemGtk : public DownloadItem::Observer,
   DownloadShelfGtk* parent_shelf_;
 
   // The widget that contains the body and menu dropdown.
-  OwnedWidgetGtk hbox_;
+  ui::OwnedWidgetGtk hbox_;
 
   // The widget that contains the name of the download and the progress
   // animation.
-  OwnedWidgetGtk body_;
+  ui::OwnedWidgetGtk body_;
+
+  // The widget that contains the texts of |name_label_| and |status_label_|.
+  GtkWidget* text_stack_;
 
   // The GtkLabel that holds the download title text.
   GtkWidget* name_label_;
@@ -185,7 +189,7 @@ class DownloadItemGtk : public DownloadItem::Observer,
 
   // The widget that contains the animation progress and the file's icon
   // (as well as the complete animation).
-  OwnedWidgetGtk progress_area_;
+  ui::OwnedWidgetGtk progress_area_;
 
   // In degrees. Only used for downloads with no known total size.
   int progress_angle_;
@@ -203,7 +207,7 @@ class DownloadItemGtk : public DownloadItem::Observer,
   GtkWidget* dangerous_label_;
 
   // An hbox for holding components of the dangerous download dialog.
-  OwnedWidgetGtk dangerous_hbox_;
+  ui::OwnedWidgetGtk dangerous_hbox_;
   int dangerous_hbox_start_width_;
   int dangerous_hbox_full_width_;
 
@@ -225,7 +229,7 @@ class DownloadItemGtk : public DownloadItem::Observer,
   // The last download file path for which we requested an icon.
   FilePath icon_filepath_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // The time at which we were insantiated.
   base::Time creation_time_;

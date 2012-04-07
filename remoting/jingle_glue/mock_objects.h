@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "remoting/jingle_glue/iq_request.h"
-#include "remoting/jingle_glue/jingle_client.h"
+#include "base/memory/scoped_ptr.h"
+#include "remoting/jingle_glue/iq_sender.h"
+#include "remoting/jingle_glue/signal_strategy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace remoting {
@@ -13,40 +14,14 @@ class MockSignalStrategy : public SignalStrategy {
   MockSignalStrategy();
   virtual ~MockSignalStrategy();
 
-  MOCK_METHOD1(Init, void(StatusObserver*));
-  MOCK_METHOD0(port_allocator, cricket::BasicPortAllocator*());
-  MOCK_METHOD2(ConfigureAllocator, void(cricket::HttpPortAllocator*, Task*));
-  MOCK_METHOD1(StartSession, void(cricket::SessionManager*));
-  MOCK_METHOD0(EndSession, void());
-  MOCK_METHOD0(CreateIqRequest, IqRequest*());
-};
-
-class MockIqRequest : public IqRequest {
- public:
-  MockIqRequest();
-  virtual ~MockIqRequest();
-
-  MOCK_METHOD3(SendIq, void(const std::string& type,
-                            const std::string& addressee,
-                            buzz::XmlElement* iq_body));
-  MOCK_METHOD1(set_callback, void(IqRequest::ReplyCallback*));
-
-  // Ensure this takes ownership of the pointer, as the real IqRequest object
-  // would, to avoid memory-leak.
-  void set_callback_hook(IqRequest::ReplyCallback* callback) {
-    callback_.reset(callback);
-  }
-
-  void Init() {
-    ON_CALL(*this, set_callback(testing::_))
-        .WillByDefault(testing::Invoke(
-            this, &MockIqRequest::set_callback_hook));
-  }
-
-  IqRequest::ReplyCallback* callback() { return callback_.get(); }
-
- private:
-  scoped_ptr<IqRequest::ReplyCallback> callback_;
+  MOCK_METHOD0(Connect, void());
+  MOCK_METHOD0(Disconnect, void());
+  MOCK_CONST_METHOD0(GetState, State());
+  MOCK_CONST_METHOD0(GetLocalJid, std::string());
+  MOCK_METHOD1(AddListener, void(Listener* listener));
+  MOCK_METHOD1(RemoveListener, void(Listener* listener));
+  MOCK_METHOD1(SendStanza, bool(buzz::XmlElement* stanza));
+  MOCK_METHOD0(GetNextId, std::string());
 };
 
 }  // namespace remoting

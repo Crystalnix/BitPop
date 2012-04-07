@@ -5,18 +5,24 @@
 #include "chrome/browser/tab_contents/chrome_interstitial_page.h"
 
 #include "chrome/browser/dom_operation_notification_details.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/render_messages.h"
+#include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 
-ChromeInterstitialPage::ChromeInterstitialPage(TabContents* tab,
+using content::WebContents;
+
+ChromeInterstitialPage::ChromeInterstitialPage(WebContents* tab,
                                                bool new_navigation,
                                                const GURL& url)
     : InterstitialPage(tab, new_navigation, url) {
-  RendererPreferences prefs;
-  renderer_preferences_util::UpdateFromSystemSettings(
-      &prefs, tab->profile());
+  Profile* profile = Profile::FromBrowserContext(tab->GetBrowserContext());
+  content::RendererPreferences prefs;
+  renderer_preferences_util::UpdateFromSystemSettings(&prefs, profile);
   set_renderer_preferences(prefs);
 }
 
@@ -26,16 +32,20 @@ ChromeInterstitialPage::~ChromeInterstitialPage() {
 void ChromeInterstitialPage::Show() {
   InterstitialPage::Show();
 
-  notification_registrar_.Add(this, NotificationType::DOM_OPERATION_RESPONSE,
-      Source<RenderViewHost>(render_view_host()));
+  notification_registrar_.Add(
+      this, chrome::NOTIFICATION_DOM_OPERATION_RESPONSE,
+      content::Source<RenderViewHost>(render_view_host()));
+  render_view_host()->Send(
+      new ChromeViewMsg_SetAsInterstitial(render_view_host()->routing_id()));
 }
 
-void ChromeInterstitialPage::Observe(NotificationType type,
-                                     const NotificationSource& source,
-                                     const NotificationDetails& details) {
-  if (NotificationType::DOM_OPERATION_RESPONSE == type.value) {
+void ChromeInterstitialPage::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (chrome::NOTIFICATION_DOM_OPERATION_RESPONSE == type) {
     if (enabled()) {
-      Details<DomOperationNotificationDetails> dom_op_details(details);
+      content::Details<DomOperationNotificationDetails> dom_op_details(details);
       CommandReceived(dom_op_details->json());
     }
     return;

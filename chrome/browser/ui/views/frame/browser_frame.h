@@ -10,15 +10,14 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/views/frame/native_browser_frame_delegate.h"
-#include "views/window/window.h"
+#include "ui/views/widget/widget.h"
 
-class AeroGlassNonClientView;
+class AvatarMenuButton;
 class BrowserNonClientFrameView;
 class BrowserRootView;
 class BrowserView;
 class NativeBrowserFrame;
 class NonClientFrameView;
-class Profile;
 
 namespace gfx {
 class Font;
@@ -31,11 +30,10 @@ class ThemeProvider;
 
 namespace views {
 class View;
-class Window;
 }
 
 // This is a virtual interface that allows system specific browser frames.
-class BrowserFrame : public views::Window {
+class BrowserFrame : public views::Widget {
  public:
   explicit BrowserFrame(BrowserView* browser_view);
   virtual ~BrowserFrame();
@@ -68,14 +66,21 @@ class BrowserFrame : public views::Window {
   // its frame treatment if necessary.
   void TabStripDisplayModeChanged();
 
-  // Overridden from views::Window:
+  // Returns true for single window mode.  ChromeOS and Aura laptop mode use a
+  // single window filling the work area, which does not have a close, maximize,
+  // minimize or restore button and does not draw frame edges.
+  bool IsSingleWindowMode() const;
+
+  // Overridden from views::Widget:
   virtual bool IsMaximized() const OVERRIDE;
   virtual views::internal::RootView* CreateRootView() OVERRIDE;
-  virtual views::NonClientFrameView* CreateFrameViewForWindow() OVERRIDE;
+  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual bool GetAccelerator(int command_id,
                               ui::Accelerator* accelerator) OVERRIDE;
   virtual ui::ThemeProvider* GetThemeProvider() const OVERRIDE;
-  virtual void OnNativeWindowActivationChanged(bool active) OVERRIDE;
+  virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
+
+  AvatarMenuButton* GetAvatarMenuButton();
 
  private:
   NativeBrowserFrame* native_browser_frame_;

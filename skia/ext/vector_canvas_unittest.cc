@@ -12,6 +12,7 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "skia/ext/vector_canvas.h"
 #include "skia/ext/vector_platform_device_emf_win.h"
@@ -389,7 +390,7 @@ class VectorCanvasTest : public ImageTest {
     size_ = size;
     context_ = new Context();
     bitmap_ = new Bitmap(*context_, size_, size_);
-    vcanvas_ = new VectorCanvas(VectorPlatformDeviceEmfFactory::CreateDevice(
+    vcanvas_ = new VectorCanvas(VectorPlatformDeviceEmf::CreateDevice(
         size_, size_, true, context_->context()));
     pcanvas_ = new PlatformCanvas(size_, size_, false);
 
@@ -401,7 +402,7 @@ class VectorCanvasTest : public ImageTest {
   // Compares both canvas and returns the pixel difference in percentage between
   // both images. 0 on success and ]0, 100] on failure.
   double ProcessImage(const FilePath::StringType& filename) {
-    std::wstring number(StringPrintf(L"%02d_", number_++));
+    std::wstring number(base::StringPrintf(L"%02d_", number_++));
     double diff1 = parent::ProcessCanvas(*vcanvas_, number + L"vc_" + filename);
     double diff2 = parent::ProcessCanvas(*pcanvas_, number + L"pc_" + filename);
     if (!compare_canvas_)
@@ -456,7 +457,7 @@ TEST_F(VectorCanvasTest, Uninitialized) {
 
   context_ = new Context();
   bitmap_ = new Bitmap(*context_, size_, size_);
-  vcanvas_ = new VectorCanvas(VectorPlatformDeviceEmfFactory::CreateDevice(
+  vcanvas_ = new VectorCanvas(VectorPlatformDeviceEmf::CreateDevice(
       size_, size_, true, context_->context()));
   pcanvas_ = new PlatformCanvas(size_, size_, false);
 

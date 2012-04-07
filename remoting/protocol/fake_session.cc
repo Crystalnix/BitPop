@@ -1,12 +1,16 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/protocol/fake_session.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
+#include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_util.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace remoting {
 namespace protocol {
@@ -15,14 +19,19 @@ const char kTestJid[] = "host1@gmail.com/chromoting123";
 
 FakeSocket::FakeSocket()
     : read_pending_(false),
-      input_pos_(0) {
+      read_buffer_size_(0),
+      input_pos_(0),
+      message_loop_(MessageLoop::current()),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 FakeSocket::~FakeSocket() {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
 }
 
-void FakeSocket::AppendInputData(const char* data, int data_size) {
-  input_data_.insert(input_data_.end(), data, data + data_size);
+void FakeSocket::AppendInputData(const std::vector<char>& data) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
+  input_data_.insert(input_data_.end(), data.begin(), data.end());
   // Complete pending read if any.
   if (read_pending_) {
     read_pending_ = false;
@@ -32,13 +41,20 @@ void FakeSocket::AppendInputData(const char* data, int data_size) {
     memcpy(read_buffer_->data(),
            &(*input_data_.begin()) + input_pos_, result);
     input_pos_ += result;
-    read_callback_->Run(result);
     read_buffer_ = NULL;
+    read_callback_.Run(result);
   }
 }
 
+void FakeSocket::PairWith(FakeSocket* peer_socket) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
+  peer_socket_ = peer_socket->weak_factory_.GetWeakPtr();
+  peer_socket->peer_socket_ = weak_factory_.GetWeakPtr();
+}
+
 int FakeSocket::Read(net::IOBuffer* buf, int buf_len,
-                     net::CompletionCallback* callback) {
+                     const net::CompletionCallback& callback) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
   if (input_pos_ < static_cast<int>(input_data_.size())) {
     int result = std::min(buf_len,
                           static_cast<int>(input_data_.size()) - input_pos_);
@@ -55,9 +71,17 @@ int FakeSocket::Read(net::IOBuffer* buf, int buf_len,
 }
 
 int FakeSocket::Write(net::IOBuffer* buf, int buf_len,
-                      net::CompletionCallback* callback) {
+                      const net::CompletionCallback& callback) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
   written_data_.insert(written_data_.end(),
                        buf->data(), buf->data() + buf_len);
+
+  if (peer_socket_) {
+    message_loop_->PostTask(FROM_HERE, base::Bind(
+        &FakeSocket::AppendInputData, peer_socket_,
+        std::vector<char>(buf->data(), buf->data() + buf_len)));
+  }
+
   return buf_len;
 }
 
@@ -70,15 +94,83 @@ bool FakeSocket::SetSendBufferSize(int32 size) {
   return false;
 }
 
+int FakeSocket::Connect(const net::CompletionCallback& callback) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
+  return net::OK;
+}
+
+void FakeSocket::Disconnect() {
+  peer_socket_.reset();
+}
+
+bool FakeSocket::IsConnected() const {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
+  return true;
+}
+
+bool FakeSocket::IsConnectedAndIdle() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+int FakeSocket::GetPeerAddress(net::AddressList* address) const {
+  net::IPAddressNumber ip;
+  ip.resize(net::kIPv4AddressSize);
+  *address = net::AddressList::CreateFromIPAddress(ip, 0);
+  return net::OK;
+}
+
+int FakeSocket::GetLocalAddress(
+    net::IPEndPoint* address) const {
+  NOTIMPLEMENTED();
+  return net::ERR_FAILED;
+}
+
+const net::BoundNetLog& FakeSocket::NetLog() const {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
+  return net_log_;
+}
+
+void FakeSocket::SetSubresourceSpeculation() {
+  NOTIMPLEMENTED();
+}
+
+void FakeSocket::SetOmniboxSpeculation() {
+  NOTIMPLEMENTED();
+}
+
+bool FakeSocket::WasEverUsed() const {
+  NOTIMPLEMENTED();
+  return true;
+}
+
+bool FakeSocket::UsingTCPFastOpen() const {
+  NOTIMPLEMENTED();
+  return true;
+}
+
+int64 FakeSocket::NumBytesRead() const {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+base::TimeDelta FakeSocket::GetConnectTimeMicros() const {
+  NOTIMPLEMENTED();
+  return base::TimeDelta();
+}
+
 FakeUdpSocket::FakeUdpSocket()
     : read_pending_(false),
-      input_pos_(0) {
+      input_pos_(0),
+      message_loop_(MessageLoop::current()) {
 }
 
 FakeUdpSocket::~FakeUdpSocket() {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
 }
 
 void FakeUdpSocket::AppendInputPacket(const char* data, int data_size) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
   input_packets_.push_back(std::string());
   input_packets_.back().assign(data, data + data_size);
 
@@ -88,13 +180,14 @@ void FakeUdpSocket::AppendInputPacket(const char* data, int data_size) {
     int result = std::min(data_size, read_buffer_size_);
     memcpy(read_buffer_->data(), data, result);
     input_pos_ = input_packets_.size();
-    read_callback_->Run(result);
+    read_callback_.Run(result);
     read_buffer_ = NULL;
   }
 }
 
 int FakeUdpSocket::Read(net::IOBuffer* buf, int buf_len,
-                        net::CompletionCallback* callback) {
+                        const net::CompletionCallback& callback) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
   if (input_pos_ < static_cast<int>(input_packets_.size())) {
     int result = std::min(
         buf_len, static_cast<int>(input_packets_[input_pos_].size()));
@@ -111,7 +204,8 @@ int FakeUdpSocket::Read(net::IOBuffer* buf, int buf_len,
 }
 
 int FakeUdpSocket::Write(net::IOBuffer* buf, int buf_len,
-                         net::CompletionCallback* callback) {
+                         const net::CompletionCallback& callback) {
+  EXPECT_EQ(message_loop_, MessageLoop::current());
   written_packets_.push_back(std::string());
   written_packets_.back().assign(buf->data(), buf->data() + buf_len);
   return buf_len;
@@ -128,79 +222,70 @@ bool FakeUdpSocket::SetSendBufferSize(int32 size) {
 
 FakeSession::FakeSession()
     : candidate_config_(CandidateSessionConfig::CreateDefault()),
-      config_(SessionConfig::CreateDefault()),
+      config_(SessionConfig::GetDefault()),
       message_loop_(NULL),
-      jid_(kTestJid) {
+      jid_(kTestJid),
+      error_(OK),
+      closed_(false) {
 }
 
 FakeSession::~FakeSession() { }
 
-void FakeSession::SetStateChangeCallback(
-    StateChangeCallback* callback) {
-  callback_.reset(callback);
+FakeSocket* FakeSession::GetStreamChannel(const std::string& name) {
+  return stream_channels_[name];
 }
 
-FakeSocket* FakeSession::control_channel() {
-  return &control_channel_;
+FakeUdpSocket* FakeSession::GetDatagramChannel(const std::string& name) {
+  return datagram_channels_[name];
 }
 
-FakeSocket* FakeSession::event_channel() {
-  return &event_channel_;
+void FakeSession::SetStateChangeCallback(const StateChangeCallback& callback) {
+  callback_ = callback;
 }
 
-FakeSocket* FakeSession::video_channel() {
-  return &video_channel_;
+void FakeSession::SetRouteChangeCallback(const RouteChangeCallback& callback) {
+  NOTIMPLEMENTED();
 }
 
-FakeUdpSocket* FakeSession::video_rtp_channel() {
-  return &video_rtp_channel_;
+Session::Error FakeSession::error() {
+  return error_;
 }
 
-FakeUdpSocket* FakeSession::video_rtcp_channel() {
-  return &video_rtcp_channel_;
+void FakeSession::CreateStreamChannel(
+    const std::string& name, const StreamChannelCallback& callback) {
+  FakeSocket* channel = new FakeSocket();
+  stream_channels_[name] = channel;
+  callback.Run(channel);
+}
+
+void FakeSession::CreateDatagramChannel(
+    const std::string& name, const DatagramChannelCallback& callback) {
+  FakeUdpSocket* channel = new FakeUdpSocket();
+  datagram_channels_[name] = channel;
+  callback.Run(channel);
+}
+
+void FakeSession::CancelChannelCreation(const std::string& name) {
 }
 
 const std::string& FakeSession::jid() {
   return jid_;
 }
 
-MessageLoop* FakeSession::message_loop() {
-  return message_loop_;
-}
-
 const CandidateSessionConfig* FakeSession::candidate_config() {
   return candidate_config_.get();
 }
 
-const SessionConfig* FakeSession::config() {
-  CHECK(config_.get());
-  return config_.get();
+const SessionConfig& FakeSession::config() {
+  return config_;
 }
 
-void FakeSession::set_config(const SessionConfig* config) {
-  config_.reset(config);
+void FakeSession::set_config(const SessionConfig& config) {
+  config_ = config;
 }
 
-const std::string& FakeSession::initiator_token() {
-  return initiator_token_;
-}
-
-void FakeSession::set_initiator_token(const std::string& initiator_token) {
-  initiator_token_ = initiator_token;
-}
-
-const std::string& FakeSession::receiver_token() {
-  return receiver_token_;
-}
-
-void FakeSession::set_receiver_token(const std::string& receiver_token) {
-  receiver_token_ = receiver_token;
-}
-
-void FakeSession::Close(Task* closed_task) {
+void FakeSession::Close() {
   closed_ = true;
-  closed_task->Run();
-  delete closed_task;
 }
 
 }  // namespace protocol

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,6 @@
 #include "net/base/io_buffer.h"
 #include "third_party/protobuf/src/google/protobuf/message_lite.h"
 
-class Task;
-
 namespace remoting {
 namespace protocol {
 
@@ -22,9 +20,6 @@ namespace protocol {
 // decode the message.
 scoped_refptr<net::IOBufferWithSize> SerializeAndFrameMessage(
     const google::protobuf::MessageLite& msg);
-
-// Create a runnable task that deletes a message.
-Task* NewDeleteMessageTask(google::protobuf::MessageLite* message);
 
 }  // namespace protocol
 }  // namespace remoting

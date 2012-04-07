@@ -10,17 +10,17 @@
 
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
-#include "content/browser/webui/web_ui.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_ui_message_handler.h"
 
 namespace browser_sync {
 
-class ForeignSessionHandler : public WebUIMessageHandler,
-                              public NotificationObserver {
+class ForeignSessionHandler : public content::WebUIMessageHandler,
+                              public content::NotificationObserver {
  public:
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   ForeignSessionHandler();
   virtual ~ForeignSessionHandler() {}
@@ -30,9 +30,9 @@ class ForeignSessionHandler : public WebUIMessageHandler,
   void Init();
 
   // Determines how ForeignSessionHandler will interact with the new tab page.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Returns a pointer to the current session model associator or NULL.
   SessionModelAssociator* GetModelAssociator();
@@ -53,7 +53,7 @@ class ForeignSessionHandler : public WebUIMessageHandler,
                             DictionaryValue* dictionary);
 
   // The Registrar used to register ForeignSessionHandler for notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ForeignSessionHandler);
 };

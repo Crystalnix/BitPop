@@ -16,8 +16,9 @@ namespace {
 const uint8 kRtpPayloadTypePrivate = 96;
 }  // namespace
 
-RtpWriter::RtpWriter()
-    : last_packet_number_(0) {
+RtpWriter::RtpWriter(base::MessageLoopProxy* message_loop)
+    : last_packet_number_(0),
+      buffered_rtp_writer_(new BufferedDatagramWriter(message_loop)) {
 }
 
 RtpWriter::~RtpWriter() { }
@@ -25,8 +26,12 @@ RtpWriter::~RtpWriter() { }
 // Initializes the writer. Must be called on the thread the sockets belong
 // to.
 void RtpWriter::Init(net::Socket* rtp_socket) {
-  buffered_rtp_writer_ = new BufferedDatagramWriter();
-  buffered_rtp_writer_->Init(rtp_socket, NULL);
+  buffered_rtp_writer_->Init(
+      rtp_socket, BufferedSocketWriter::WriteFailedCallback());
+}
+
+void RtpWriter::Close() {
+  buffered_rtp_writer_->Close();
 }
 
 void RtpWriter::SendPacket(uint32 timestamp, bool marker,
@@ -69,7 +74,7 @@ void RtpWriter::SendPacket(uint32 timestamp, bool marker,
                  payload_size);
 
   // And write the packet.
-  buffered_rtp_writer_->Write(buffer, NULL);
+  buffered_rtp_writer_->Write(buffer, base::Closure());
 }
 
 int RtpWriter::GetPendingPackets() {

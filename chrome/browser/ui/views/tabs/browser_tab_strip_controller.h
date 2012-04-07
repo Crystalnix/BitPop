@@ -6,44 +6,48 @@
 #define CHROME_BROWSER_UI_VIEWS_TABS_BROWSER_TAB_STRIP_CONTROLLER_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class BaseTab;
-class BaseTabStrip;
 class Browser;
-
+class TabStrip;
+class TabStripSelectionModel;
 struct TabRendererData;
+
+namespace content {
+class WebContents;
+}
 
 // An implementation of TabStripController that sources data from the
 // TabContentsWrappers in a TabStripModel.
 class BrowserTabStripController : public TabStripController,
                                   public TabStripModelObserver,
-                                  public NotificationObserver {
+                                  public content::NotificationObserver {
  public:
   BrowserTabStripController(Browser* browser, TabStripModel* model);
   virtual ~BrowserTabStripController();
 
-  void InitFromModel(BaseTabStrip* tabstrip);
+  void InitFromModel(TabStrip* tabstrip);
 
   TabStripModel* model() const { return model_; }
 
   bool IsCommandEnabledForTab(TabStripModel::ContextMenuCommand command_id,
-                              BaseTab* tab) const;
-  bool IsCommandCheckedForTab(TabStripModel::ContextMenuCommand command_id,
                               BaseTab* tab) const;
   void ExecuteCommandForTab(TabStripModel::ContextMenuCommand command_id,
                             BaseTab* tab);
   bool IsTabPinned(BaseTab* tab) const;
 
   // TabStripController implementation:
+  virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE;
   virtual int GetCount() const OVERRIDE;
   virtual bool IsValidIndex(int model_index) const OVERRIDE;
-  virtual bool IsActiveTab(int model_index) const;
+  virtual bool IsActiveTab(int model_index) const OVERRIDE;
   virtual bool IsTabSelected(int model_index) const OVERRIDE;
   virtual bool IsTabPinned(int model_index) const OVERRIDE;
   virtual bool IsTabCloseable(int model_index) const OVERRIDE;
@@ -61,9 +65,10 @@ class BrowserTabStripController : public TabStripController,
   virtual void PerformDrop(bool drop_before,
                            int index,
                            const GURL& url) OVERRIDE;
-  virtual bool IsCompatibleWith(BaseTabStrip* other) const OVERRIDE;
+  virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
   virtual void ClickActiveTab(int index) OVERRIDE;
+  virtual bool IsIncognito() OVERRIDE;
 
   // TabStripModelObserver implementation:
   virtual void TabInsertedAt(TabContentsWrapper* contents,
@@ -71,10 +76,9 @@ class BrowserTabStripController : public TabStripController,
                              bool active) OVERRIDE;
   virtual void TabDetachedAt(TabContentsWrapper* contents,
                              int model_index) OVERRIDE;
-  virtual void ActiveTabChanged(TabContentsWrapper* old_contents,
-                                TabContentsWrapper* contents,
-                                int model_index,
-                                bool user_gesture) OVERRIDE;
+  virtual void TabSelectionChanged(
+      TabStripModel* tab_strip_model,
+      const TabStripSelectionModel& old_model) OVERRIDE;
   virtual void TabMoved(TabContentsWrapper* contents,
                         int from_model_index,
                         int to_model_index) OVERRIDE;
@@ -92,21 +96,35 @@ class BrowserTabStripController : public TabStripController,
   virtual void TabBlockedStateChanged(TabContentsWrapper* contents,
                                       int model_index) OVERRIDE;
 
-  // NotificationObserver implementation:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver implementation:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+ protected:
+  // The context in which SetTabRendererDataFromModel is being called.
+  enum TabStatus {
+    NEW_TAB,
+    EXISTING_TAB
+  };
+
+  // Sets the TabRendererData from the TabStripModel.
+  virtual void SetTabRendererDataFromModel(content::WebContents* contents,
+                                           int model_index,
+                                           TabRendererData* data,
+                                           TabStatus tab_status);
+
+  Profile* profile() const { return model_->profile(); }
+
+  const TabStrip* tabstrip() const { return tabstrip_; }
+
+  const Browser* browser() const { return browser_; }
 
  private:
   class TabContextMenuContents;
 
   // Invokes tabstrip_->SetTabData.
   void SetTabDataAt(TabContentsWrapper* contents, int model_index);
-
-  // Sets the TabRendererData from the TabStripModel.
-  void SetTabRendererDataFromModel(TabContents* contents,
-                                   int model_index,
-                                   TabRendererData* data);
 
   void StartHighlightTabsForCommand(
       TabStripModel::ContextMenuCommand command_id,
@@ -115,11 +133,9 @@ class BrowserTabStripController : public TabStripController,
       TabStripModel::ContextMenuCommand command_id,
       BaseTab* tab);
 
-  Profile* profile() const { return model_->profile(); }
-
   TabStripModel* model_;
 
-  BaseTabStrip* tabstrip_;
+  TabStrip* tabstrip_;
 
   // Non-owning pointer to the browser which is using this controller.
   Browser* browser_;
@@ -127,7 +143,7 @@ class BrowserTabStripController : public TabStripController,
   // If non-NULL it means we're showing a menu for the tab.
   scoped_ptr<TabContextMenuContents> context_menu_contents_;
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
 
   // Helper for performing tab selection as a result of dragging over a tab.
   HoverTabSelector hover_tab_selector_;

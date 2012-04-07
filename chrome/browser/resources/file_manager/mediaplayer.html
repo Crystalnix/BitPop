@@ -38,7 +38,7 @@ body {
 }
 
 .progress {
-  -webkit-appearance: sliderthumb-horizontal;
+  -webkit-appearance: none;
   position: absolute;
   background: transparent;
   left: 93px;
@@ -59,6 +59,7 @@ body {
 
 .videocontrols {
   top: 0;
+  -webkit-transition: top 500ms ease-out;
   left: 0;
   z-index: 999;
   height: 100%;
@@ -304,6 +305,8 @@ var hideVolumeTimerId = 0;
 var localStrings;
 var fullScreen = false;
 
+var userChangingProgressStatus = null;
+
 ///////////////////////////////////////////////////////////////////////////////
 // Document Functions:
 /**
@@ -338,11 +341,15 @@ function onMediaProgress() {
   var current = element.currentTime;
   var duration = element.duration;
   var progress = $('progress');
-  progress.value = (current*100)/duration;
   var played = $('sliderplayed');
-  played.style.width = '' + progress.value + '%';
-  if (progress.value == 100) {
-    onMediaComplete();
+  var value = (current * 100) / duration;
+  played.style.width = '' + value + '%';
+
+  if (!userChangingProgressStatus) {
+    progress.value = value;
+    if (value == 100) {
+      onMediaComplete();
+    }
   }
 }
 
@@ -394,6 +401,8 @@ function onMediaComplete() {
 }
 
 function onMediaPlay() {
+  if (userChangingProgressStatus)
+    return;
   var pausebutton = $('pausebutton');
   var playbutton = $('playbutton');
   pausebutton.style.display = 'block';
@@ -401,6 +410,8 @@ function onMediaPlay() {
 }
 
 function onMediaPause() {
+  if (userChangingProgressStatus)
+    return;
   var pausebutton = $('pausebutton');
   var playbutton = $('playbutton');
   playbutton.style.display = 'block';
@@ -431,6 +442,8 @@ function getMediaElement() {
 }
 
 function playPauseButtonClick() {
+  if (userChangingProgressStatus)
+    return;
   var mediaElement = getMediaElement();
   if (mediaElement.paused || mediaElement.ended) {
     mediaElement.play();
@@ -468,8 +481,31 @@ function userChangedProgress() {
   var val = $('progress').value;
   var element = getMediaElement();
   if (element.seekable && element.duration) {
-    var current = (progress.value * element.duration)/100;
+    var current = (val * element.duration) / 100;
     element.currentTime = current;
+  }
+}
+
+function userChangingProgressStarted() {
+  var mediaElement = getMediaElement();
+  userChangingProgressStatus = {
+    paused: mediaElement.paused
+  };
+
+  mediaElement.pause();
+}
+
+function userChangingProgressFinished() {
+  var mediaElement = getMediaElement();
+  var status = userChangingProgressStatus;
+  userChangingProgressStatus = null;
+  if ('pendingPlay' in status) {
+    playMediaFile(status.pendingPlay);
+  } else if (!status.paused) {
+    if (mediaElement.currentTime == mediaElement.duration)
+      onMediaComplete();
+    else
+      mediaElement.play();
   }
 }
 
@@ -527,10 +563,8 @@ function getPathAndFilenameForPath(path) {
 
 var hidingControlsAnimation = null;
 
-const INACTIVITY_TIMEOUT = 5000;
+const INACTIVITY_TIMEOUT = 3000;
 const INACTIVITY_CHECK_INTERVAL = 1000;
-const ANIMATION_DURATION = 1500;
-const ANIMATION_STEP = 50;
 
 function HidingControlsAnimation() {
   this.offsetPercent = 0;
@@ -548,7 +582,6 @@ function HidingControlsAnimation() {
 HidingControlsAnimation.prototype = {
 
     cleanup: function () {
-      this.stopAnimation();
       clearInterval(this.inactivityInterval);
       document.body.removeEventListener('mousemove', this.onActivityClosure);
       document.body.removeEventListener('mousedown', this.onActivityClosure);
@@ -557,57 +590,20 @@ HidingControlsAnimation.prototype = {
 
     onActivity: function() {
       this.recentActivity = Date.now();
-      // If not fully visible, start sliding up (or reverse sliding down).
-      if (this.offsetPercent != 0)
-        this.startAnimation(-1);
+      $('playercontrols').style.top = '0%';
     },
 
     checkInactivity: function() {
-      if ((Date.now() - this.recentActivity) > INACTIVITY_TIMEOUT) {
-      // If fully visible start sliding down.
-      if (this.offsetPercent == 0)
-          this.startAnimation(1);
-      }
-    },
-
-    startAnimation: function (direction) {
-      this.direction = direction;
-      this.startOffset = this.offsetPercent;
-      this.startTime = Date.now();
-      if (!this.animationInterval)
-        this.animationInterval = setInterval(this.doAnimation.bind(this),
-                                             ANIMATION_STEP);
-    },
-
-    doAnimation: function () {
-      var phase = (Date.now() - this.startTime) / ANIMATION_DURATION;
-
-      var newOffsetPercent = this.startOffset + this.direction * phase * 100;
-
-      if (newOffsetPercent <= 0) {
-        this.offsetPercent = 0;
-        this.stopAnimation();
-      } else if (newOffsetPercent >= 100){
-        this.offsetPercent = 100;
-        this.stopAnimation();
-      } else {
-        this.offsetPercent = Math.round(newOffsetPercent);
-      }
-
-      $('playercontrols').style.top = this.offsetPercent + '%';
-    },
-
-    stopAnimation: function () {
-      if (this.animationInterval) {
-        clearInterval(this.animationInterval);
-        this.animationInterval = null;
+      if ((Date.now() - this.recentActivity) > INACTIVITY_TIMEOUT &&
+          !userChangingProgressStatus) {
+        $('playercontrols').style.top = '100%';
       }
     }
 };
 
 function setupPlaybackControls() {
   var element = $('playercontrols');
-  playercontrols.innerHTML = ''; // clear out other
+  element.textContent = '';
   var controlsclass = '';
   if (hidingControlsAnimation) {
     hidingControlsAnimation.cleanup();
@@ -673,6 +669,8 @@ function setupPlaybackControls() {
   slider.id = 'progress';
   slider.className = controlsclass + ' progress';
   slider.onchange = userChangedProgress;
+  slider.onmousedown = userChangingProgressStarted;
+  slider.onmouseup = userChangingProgressFinished;
   element.appendChild(slider);
 
   var sliderback = document.createElement('div');
@@ -848,6 +846,11 @@ function togglePlaylist() {
 }
 
 function playMediaFile(url) {
+  if (userChangingProgressStatus) {
+    userChangingProgressStatus.pendingPlay = uri;
+    return;
+  }
+
   $('error').textContent = '';
   $('title').textContent = '';
   if (pathIsVideoFile(url) ) {

@@ -9,13 +9,16 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/browser_thread_impl.h"
+#include "content/common/content_export.h"
 
-class BrowserWebKitClientImpl;
+class BrowserWebKitPlatformSupportImpl;
+
+namespace content {
 
 // This creates a WebKit main thread on instantiation (if not in
 // --single-process mode) on construction and kills it on deletion.
-class WebKitThread {
+class CONTENT_EXPORT WebKitThread {
  public:
   // Called from the UI thread.
   WebKitThread();
@@ -24,18 +27,18 @@ class WebKitThread {
 
  private:
   // Must be private so that we can carefully control its lifetime.
-  class InternalWebKitThread : public BrowserThread {
+  class InternalWebKitThread : public content::BrowserThreadImpl {
    public:
     InternalWebKitThread();
     virtual ~InternalWebKitThread();
     // Does the actual initialization and shutdown of WebKit.  Called at the
     // beginning and end of the thread's lifetime.
-    virtual void Init();
-    virtual void CleanUp();
+    virtual void Init() OVERRIDE;
+    virtual void CleanUp() OVERRIDE;
 
    private:
-    // The WebKitClient implementation.  Only access on WebKit thread.
-    scoped_ptr<BrowserWebKitClientImpl> webkit_client_;
+    // The WebKitPlatformSupport implementation.  Only access on WebKit thread.
+    scoped_ptr<BrowserWebKitPlatformSupportImpl> webkit_platform_support_;
   };
 
   // Pointer to the actual WebKitThread.
@@ -43,5 +46,7 @@ class WebKitThread {
 
   DISALLOW_COPY_AND_ASSIGN(WebKitThread);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_IN_PROCESS_WEBKIT_WEBKIT_THREAD_H_

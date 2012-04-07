@@ -49,14 +49,16 @@ ResourceResponseInfo::~ResourceResponseInfo() {
 }
 
 ResourceLoaderBridge::RequestInfo::RequestInfo()
-    : load_flags(0),
+    : referrer_policy(WebKit::WebReferrerPolicyDefault),
+      load_flags(0),
       requestor_pid(0),
       request_type(ResourceType::MAIN_FRAME),
       request_context(0),
       appcache_host_id(0),
       routing_id(0),
       download_to_file(false),
-      has_user_gesture(false) {
+      has_user_gesture(false),
+      extra_data(NULL) {
 }
 
 ResourceLoaderBridge::RequestInfo::~RequestInfo() {

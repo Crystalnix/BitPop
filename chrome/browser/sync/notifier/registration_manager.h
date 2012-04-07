@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -16,10 +16,12 @@
 #include "base/timer.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/sync/syncable/model_type.h"
-// For invalidation::RegistrationState.
-#include "google/cacheinvalidation/invalidation-client.h"
+// For invalidation::InvalidationListener::RegistrationState.
+#include "google/cacheinvalidation/v2/invalidation-listener.h"
 
 namespace sync_notifier {
+
+using ::invalidation::InvalidationListener;
 
 // Manages the details of registering types for invalidation.
 // Implements exponential backoff for repeated registration attempts
@@ -63,16 +65,21 @@ class RegistrationManager {
 
   virtual ~RegistrationManager();
 
-  // Registers all types included in the given set and sets all other
-  // types to be unregistered.
-  void SetRegisteredTypes(const syncable::ModelTypeSet& types);
+  // Registers all types included in the given set (that are not
+  // already disabled) and sets all other types to be unregistered.
+  void SetRegisteredTypes(syncable::ModelTypeSet types);
 
   // Marks the registration for the |model_type| lost and re-registers
-  // it.
+  // it (unless it's disabled).
   void MarkRegistrationLost(syncable::ModelType model_type);
 
-  // Marks all registrations lost and re-registers them.
+  // Marks registrations lost for all enabled types and re-registers
+  // them.
   void MarkAllRegistrationsLost();
+
+  // Marks the registration for the |model_type| permanently lost and
+  // blocks any future registration attempts.
+  void DisableType(syncable::ModelType model_type);
 
   // The functions below should only be used in tests.
 
@@ -105,16 +112,23 @@ class RegistrationManager {
     ~RegistrationStatus();
 
     // Calls registration_manager->DoRegister(model_type). (needed by
-    // |registration_timer|).
+    // |registration_timer|).  Should only be called if |enabled| is
+    // true.
     void DoRegister();
+
+    // Sets |enabled| to false and resets other variables.
+    void Disable();
 
     // The model type for which this is the status.
     syncable::ModelType model_type;
     // The parent registration manager.
     RegistrationManager* registration_manager;
 
+    // Whether this data type should be registered.  Set to false if
+    // we get a non-transient registration failure.
+    bool enabled;
     // The current registration state.
-    invalidation::RegistrationState state;
+    InvalidationListener::RegistrationState state;
     // When we last sent a registration request.
     base::Time last_registration_request;
     // When we last tried to register.
@@ -129,10 +143,11 @@ class RegistrationManager {
     base::OneShotTimer<RegistrationStatus> registration_timer;
   };
 
-  // If |is_retry| is not set, registers the given type immediately
-  // and resets all backoff parameters.  If |is_retry| is set,
-  // registers the given type at some point in the future and
-  // increases the delay until the next retry.
+  // Does nothing if the given type is disabled.  Otherwise, if
+  // |is_retry| is not set, registers the given type immediately and
+  // resets all backoff parameters.  If |is_retry| is set, registers
+  // the given type at some point in the future and increases the
+  // delay until the next retry.
   void TryRegisterType(syncable::ModelType model_type,
                        bool is_retry);
 

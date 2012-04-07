@@ -14,19 +14,24 @@ var ContentSettings = options.ContentSettings;
 var ContentSettingsExceptionsArea =
     options.contentSettings.ContentSettingsExceptionsArea;
 var CookiesView = options.CookiesView;
+var ExtensionSettings = options.ExtensionSettings;
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var ImportDataOverlay = options.ImportDataOverlay;
+var IntentsView = options.IntentsView;
 var InstantConfirmOverlay = options.InstantConfirmOverlay;
 var LanguageOptions = options.LanguageOptions;
 var OptionsPage = options.OptionsPage;
+var PackExtensionOverlay = options.PackExtensionOverlay;
 var PasswordManager = options.PasswordManager;
 var PersonalOptions = options.PersonalOptions;
 var Preferences = options.Preferences;
+var ManageProfileOverlay = options.ManageProfileOverlay;
 var ProxyOptions = options.ProxyOptions;
 var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var SyncSetupOverlay = options.SyncSetupOverlay;
+var VirtualKeyboardManager = options.VirtualKeyboardManager;
 
 /**
  * DOMContentLoaded handler, sets up the page.
@@ -40,10 +45,13 @@ function load() {
   cr.ui.decorate('select[pref]', options.PrefSelect);
   cr.ui.decorate('input[pref][type=text]', options.PrefTextField);
   cr.ui.decorate('input[pref][type=url]', options.PrefTextField);
+  cr.ui.decorate('button[pref]', options.PrefButton);
   cr.ui.decorate('#content-settings-page input[type=radio]:not(.handler-radio)',
       options.ContentSettingsRadio);
   cr.ui.decorate('#content-settings-page input[type=radio].handler-radio',
       options.HandlersEnabledRadio);
+  cr.ui.decorate('span.controlled-setting-indicator',
+      options.ControlledSettingIndicator);
 
   var menuOffPattern = /(^\?|&)menu=off($|&)/;
   var menuDisabled = menuOffPattern.test(window.location.search);
@@ -95,6 +103,13 @@ function load() {
                         templateData.languagePinyinPageTabTitle,
                         'languagePinyinPage'),
         LanguageOptions.getInstance());
+    // Only use the VirtualKeyboardManager if the keyboard DOM elements (which
+    // it will assume exists) are present (i.e. if we were built with
+    // USE_VIRTUAL_KEYBOARD).
+    if ($('language-options-virtual-keyboard')) {
+      OptionsPage.registerSubPage(VirtualKeyboardManager.getInstance(),
+                                  LanguageOptions.getInstance());
+    }
     OptionsPage.register(InternetOptions.getInstance());
   }
   OptionsPage.register(AdvancedOptions.getInstance());
@@ -113,6 +128,11 @@ function load() {
                                 ContentSettings.getInstance(),
                                 [$('manage-handlers-button')]);
   }
+  if (IntentsView && $('manage-intents-button')) {
+    OptionsPage.registerSubPage(IntentsView.getInstance(),
+                                ContentSettings.getInstance(),
+                                [$('manage-intents-button')]);
+  }
   OptionsPage.registerSubPage(FontSettings.getInstance(),
                               AdvancedOptions.getInstance(),
                               [$('fontSettingsCustomizeFontsButton')]);
@@ -124,7 +144,7 @@ function load() {
   if (!cr.isWindows && !cr.isMac) {
     OptionsPage.registerSubPage(CertificateManager.getInstance(),
                                 AdvancedOptions.getInstance(),
-                                [$('show-cookies-button')]);
+                                [$('certificatesManageButton')]);
     OptionsPage.registerOverlay(CertificateRestoreOverlay.getInstance(),
                                 CertificateManager.getInstance());
     OptionsPage.registerOverlay(CertificateBackupOverlay.getInstance(),
@@ -150,12 +170,16 @@ function load() {
                               BrowserOptions.getInstance());
   OptionsPage.registerOverlay(SyncSetupOverlay.getInstance(),
                               PersonalOptions.getInstance());
+  OptionsPage.registerOverlay(ManageProfileOverlay.getInstance(),
+                              PersonalOptions.getInstance());
+  OptionsPage.register(ExtensionSettings.getInstance());
+  OptionsPage.registerOverlay(PackExtensionOverlay.getInstance(),
+                              ExtensionSettings.getInstance());
 
   if (cr.isChromeOS) {
     OptionsPage.register(AccountsOptions.getInstance());
     OptionsPage.registerSubPage(ProxyOptions.getInstance(),
-                                AdvancedOptions.getInstance(),
-                                [$('proxiesConfigureButton')]);
+                                InternetOptions.getInstance());
     OptionsPage.registerSubPage(ChangePictureOptions.getInstance(),
                                 PersonalOptions.getInstance(),
                                 [$('change-picture-button')]);
@@ -173,6 +197,11 @@ function load() {
     OptionsPage.registerOverlay(languageModifierKeysOverlay,
                                 SystemOptions.getInstance(),
                                 [$('modifier-keys-button')]);
+    OptionsPage.registerOverlay(BluetoothOptions.getInstance(),
+                                SystemOptions.getInstance(),
+                                [$('bluetooth-add-device')]);
+    OptionsPage.registerOverlay(BluetoothPairing.getInstance(),
+                                SystemOptions.getInstance());
   }
 
   Preferences.getInstance().initialize();
@@ -183,8 +212,11 @@ function load() {
   if (path.length > 1) {
     // Skip starting slash and remove trailing slash (if any).
     var pageName = path.slice(1).replace(/\/$/, '');
-    // Show page, but don't update history (there's already an entry for it).
-    OptionsPage.showPageByName(pageName, false);
+    // Proxy page is now per network and only reachable from internet details.
+    if (pageName != 'proxy') {
+      // Show page, but don't update history (there's already an entry for it).
+      OptionsPage.showPageByName(pageName, false);
+    }
   } else {
     OptionsPage.showDefaultPage();
   }
@@ -197,23 +229,13 @@ function load() {
   }
 
   // Allow platform specific CSS rules.
-  if (cr.isMac)
-    document.documentElement.setAttribute('os', 'mac');
-  if (cr.isWindows)
-    document.documentElement.setAttribute('os', 'windows');
-  if (cr.isChromeOS)
-    document.documentElement.setAttribute('os', 'chromeos');
-  if (cr.isLinux) {
-    document.documentElement.setAttribute('os', 'linux');
-    document.documentElement.setAttribute('toolkit', 'gtk');
-  }
-  if (cr.isViews)
-    document.documentElement.setAttribute('toolkit', 'views');
+  cr.enablePlatformSpecificCSSRules();
+
   if (navigator.plugins['Shockwave Flash'])
     document.documentElement.setAttribute('hasFlashPlugin', '');
 
   // Clicking on the Settings title brings up the 'Basics' page.
-  $('settings-title').onclick = function() {
+  $('navbar-content-title').onclick = function() {
     OptionsPage.navigateToPage(BrowserOptions.getInstance().name);
   };
 }

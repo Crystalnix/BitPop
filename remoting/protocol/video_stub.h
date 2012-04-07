@@ -1,11 +1,11 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef REMOTING_PROTOCOL_VIDEO_STUB_H_
 #define REMOTING_PROTOCOL_VIDEO_STUB_H_
 
-class Task;
+#include "base/callback_forward.h"
 
 namespace remoting {
 
@@ -21,7 +21,7 @@ class VideoStub {
   // video packets in protobuf stream. It should not be used here. Add another
   // struct and use it to represent video packets internally.
   virtual void ProcessVideoPacket(const VideoPacket* video_packet,
-                                  Task* done) = 0;
+                                  const base::Closure& done) = 0;
 
   // Returns number of packets currently pending in the buffer.
   virtual int GetPendingPackets() = 0;

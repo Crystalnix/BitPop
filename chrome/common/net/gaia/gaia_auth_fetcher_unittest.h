@@ -13,39 +13,48 @@
 
 #include "chrome/common/net/gaia/gaia_auth_fetcher.h"
 #include "chrome/common/net/http_return.h"
-#include "content/common/url_fetcher.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 
 // Responds as though ClientLogin returned from the server.
-class MockFetcher : public URLFetcher {
+class MockFetcher : public TestURLFetcher {
  public:
   MockFetcher(bool success,
               const GURL& url,
               const std::string& results,
-              URLFetcher::RequestType request_type,
-              URLFetcher::Delegate* d);
+              content::URLFetcher::RequestType request_type,
+              content::URLFetcherDelegate* d);
+
+  MockFetcher(const GURL& url,
+              const net::URLRequestStatus& status,
+              int response_code,
+              const net::ResponseCookies& cookies,
+              const std::string& results,
+              content::URLFetcher::RequestType request_type,
+              content::URLFetcherDelegate* d);
 
   virtual ~MockFetcher();
 
-  virtual void Start();
+  virtual void Start() OVERRIDE;
 
  private:
-  bool success_;
-  GURL url_;
-  std::string results_;
   DISALLOW_COPY_AND_ASSIGN(MockFetcher);
 };
 
 template<typename T>
-class MockFactory : public URLFetcher::Factory {
+class MockFactory : public content::URLFetcherFactory,
+                    public ScopedURLFetcherFactory {
  public:
   MockFactory()
-      : success_(true) {}
+      : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        success_(true) {
+  }
   ~MockFactory() {}
-  URLFetcher* CreateURLFetcher(int id,
-                               const GURL& url,
-                               URLFetcher::RequestType request_type,
-                               URLFetcher::Delegate* d) {
+  content::URLFetcher* CreateURLFetcher(
+      int id,
+      const GURL& url,
+      content::URLFetcher::RequestType request_type,
+      content::URLFetcherDelegate* d) OVERRIDE {
     return new T(success_, url, results_, request_type, d);
   }
   void set_success(bool success) {

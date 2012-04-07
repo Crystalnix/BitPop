@@ -7,9 +7,12 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
+#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "grit/theme_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/resource/resource_bundle.h"
 
 namespace chromeos {
 
@@ -48,8 +51,8 @@ bool IsDefaultImageString(const std::string& s,
     return false;
 
   int image_index = -1;
-  if (base::StringToInt(s.begin() + prefix.length(),
-                        s.end(),
+  if (base::StringToInt(base::StringPiece(s.begin() + prefix.length(),
+                                          s.end()),
                         &image_index)) {
     if (image_index < 0 || image_index >= kDefaultImagesCount)
       return false;
@@ -93,6 +96,12 @@ bool IsDefaultImageUrl(const std::string url, int* image_id) {
   return IsDefaultImageString(url, kDefaultUrlPrefix, image_id);
 }
 
+const SkBitmap& GetDefaultImage(int index) {
+  DCHECK(index >= 0 && index < kDefaultImagesCount);
+  return *ResourceBundle::GetSharedInstance().
+      GetBitmapNamed(kDefaultImageResources[index]);
+}
+
 // Resource IDs of default user images.
 const int kDefaultImageResources[] = {
   IDR_LOGIN_DEFAULT_USER,
@@ -118,5 +127,12 @@ const int kDefaultImageResources[] = {
 
 const int kDefaultImagesCount = arraysize(kDefaultImageResources);
 
-}  // namespace chromeos
+// The order and the values of these constants are important for histograms
+// of different Chrome OS versions to be merged smoothly.
+const int kHistogramImageFromCamera = kDefaultImagesCount;
+const int kHistogramImageFromFile = kDefaultImagesCount + 1;
+const int kHistogramImageOld = kDefaultImagesCount + 2;
+const int kHistogramImageFromProfile = kDefaultImagesCount + 3;
+const int kHistogramImagesCount = kDefaultImagesCount + 4;
 
+}  // namespace chromeos

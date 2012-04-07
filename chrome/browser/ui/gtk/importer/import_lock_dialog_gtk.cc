@@ -6,21 +6,25 @@
 
 #include <gtk/gtk.h>
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_lock_dialog.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::UserMetricsAction;
 
 namespace importer {
 
 void ShowImportLockDialog(gfx::NativeWindow parent,
                           ImporterHost* importer_host) {
   ImportLockDialogGtk::Show(parent, importer_host);
-  UserMetrics::RecordAction(UserMetricsAction("ImportLockDialogGtk_Shown"));
+  content::RecordAction(UserMetricsAction("ImportLockDialogGtk_Shown"));
 }
 
 }  // namespace importer
@@ -47,8 +51,8 @@ ImportLockDialogGtk::ImportLockDialogGtk(GtkWindow* parent,
       l10n_util::GetStringUTF8(IDS_IMPORTER_LOCK_OK).c_str(),
       GTK_STOCK_OK, GTK_RESPONSE_ACCEPT);
 
-  GtkWidget* content_area = GTK_DIALOG(dialog_)->vbox;
-  gtk_box_set_spacing(GTK_BOX(content_area), gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
   GtkWidget* label = gtk_label_new(
       l10n_util::GetStringUTF8(IDS_IMPORTER_LOCK_TEXT).c_str());
   gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
@@ -62,13 +66,12 @@ ImportLockDialogGtk::ImportLockDialogGtk(GtkWindow* parent,
 ImportLockDialogGtk::~ImportLockDialogGtk() {}
 
 void ImportLockDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
-  if (response_id == GTK_RESPONSE_ACCEPT) {
-    MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-        importer_host_.get(), &ImporterHost::OnImportLockDialogEnd, true));
-  } else {
-    MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-        importer_host_.get(), &ImporterHost::OnImportLockDialogEnd, false));
-  }
+  bool is_continue = response_id == GTK_RESPONSE_ACCEPT;
+  MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&ImporterHost::OnImportLockDialogEnd,
+                 importer_host_.get(),
+                 is_continue));
+
   gtk_widget_destroy(dialog_);
   delete this;
 }

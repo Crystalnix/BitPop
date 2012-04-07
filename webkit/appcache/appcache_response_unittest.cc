@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,9 @@
 #include <string>
 #include <utility>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/pickle.h"
 #include "base/threading/thread.h"
@@ -50,24 +53,13 @@ class AppCacheResponseTest : public testing::Test {
     AppCacheResponseTest* test_;
   };
 
-  // Helper class run a test on our io_thread. The io_thread
-  // is spun up once and reused for all tests.
+  // Helper callback to run a test on our io_thread. The io_thread is spun up
+  // once and reused for all tests.
   template <class Method>
-  class WrapperTask : public Task {
-   public:
-    WrapperTask(AppCacheResponseTest* test, Method method)
-        : test_(test), method_(method) {
-    }
-
-    virtual void Run() {
-      test_->SetUpTest();
-      (test_->*method_)();
-    }
-
-   private:
-    AppCacheResponseTest* test_;
-    Method method_;
-  };
+  void MethodWrapper(Method method) {
+    SetUpTest();
+    (this->*method)();
+  }
 
   static void SetUpTestCase() {
     io_thread_.reset(new base::Thread("AppCacheResponseTest Thread"));
@@ -79,22 +71,14 @@ class AppCacheResponseTest : public testing::Test {
     io_thread_.reset(NULL);
   }
 
-  AppCacheResponseTest()
-      : ALLOW_THIS_IN_INITIALIZER_LIST(read_callback_(
-            this, &AppCacheResponseTest::OnReadComplete)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(read_info_callback_(
-            this, &AppCacheResponseTest::OnReadInfoComplete)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(write_callback_(
-            this, &AppCacheResponseTest::OnWriteComplete)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(write_info_callback_(
-            this, &AppCacheResponseTest::OnWriteInfoComplete)) {
-  }
+  AppCacheResponseTest() {}
 
   template <class Method>
   void RunTestOnIOThread(Method method) {
     test_finished_event_ .reset(new base::WaitableEvent(false, false));
     io_thread_->message_loop()->PostTask(
-        FROM_HERE, new WrapperTask<Method>(this, method));
+        FROM_HERE, base::Bind(&AppCacheResponseTest::MethodWrapper<Method>,
+                              base::Unretained(this), method));
     test_finished_event_->Wait();
   }
 
@@ -116,10 +100,9 @@ class AppCacheResponseTest : public testing::Test {
 
   void TearDownTest() {
     DCHECK(MessageLoop::current() == io_thread_->message_loop());
-    while (!task_stack_.empty()) {
-      delete task_stack_.top().first;
+    while (!task_stack_.empty())
       task_stack_.pop();
-    }
+
     reader_.reset();
     read_buffer_ = NULL;
     read_info_buffer_ = NULL;
@@ -134,8 +117,9 @@ class AppCacheResponseTest : public testing::Test {
     // We unwind the stack prior to finishing up to let stack
     // based objects get deleted.
     DCHECK(MessageLoop::current() == io_thread_->message_loop());
-    MessageLoop::current()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &AppCacheResponseTest::TestFinishedUnwound));
+    MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&AppCacheResponseTest::TestFinishedUnwound,
+                              base::Unretained(this)));
   }
 
   void TestFinishedUnwound() {
@@ -143,12 +127,12 @@ class AppCacheResponseTest : public testing::Test {
     test_finished_event_->Signal();
   }
 
-  void PushNextTask(Task* task) {
-    task_stack_.push(std::pair<Task*, bool>(task, false));
+  void PushNextTask(const base::Closure& task) {
+    task_stack_.push(std::pair<base::Closure, bool>(task, false));
   }
 
-  void PushNextTaskAsImmediate(Task* task) {
-    task_stack_.push(std::pair<Task*, bool>(task, true));
+  void PushNextTaskAsImmediate(const base::Closure& task) {
+    task_stack_.push(std::pair<base::Closure, bool>(task, true));
   }
 
   void ScheduleNextTask() {
@@ -157,13 +141,13 @@ class AppCacheResponseTest : public testing::Test {
       TestFinished();
       return;
     }
-    scoped_ptr<Task> task(task_stack_.top().first);
+    base::Closure task = task_stack_.top().first;
     bool immediate = task_stack_.top().second;
     task_stack_.pop();
     if (immediate)
-      task->Run();
+      task.Run();
     else
-      MessageLoop::current()->PostTask(FROM_HERE, task.release());
+      MessageLoop::current()->PostTask(FROM_HERE, task);
   }
 
   // Wrappers to call AppCacheResponseReader/Writer Read and Write methods
@@ -183,9 +167,8 @@ class AppCacheResponseTest : public testing::Test {
                      IOBuffer* body, int body_len) {
     DCHECK(body);
     scoped_refptr<IOBuffer> body_ref(body);
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::WriteResponseBody,
-        body_ref, body_len));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteResponseBody,
+                            base::Unretained(this), body_ref, body_len));
     WriteResponseHead(head);
   }
 
@@ -193,7 +176,10 @@ class AppCacheResponseTest : public testing::Test {
     EXPECT_FALSE(writer_->IsWritePending());
     expected_write_result_ = GetHttpResponseInfoSize(head);
     write_info_buffer_ = new HttpResponseInfoIOBuffer(head);
-    writer_->WriteInfo(write_info_buffer_, &write_info_callback_);
+    writer_->WriteInfo(
+        write_info_buffer_,
+        base::Bind(&AppCacheResponseTest::OnWriteInfoComplete,
+                   base::Unretained(this)));
   }
 
   void WriteResponseBody(scoped_refptr<IOBuffer> io_buffer, int buf_len) {
@@ -201,7 +187,9 @@ class AppCacheResponseTest : public testing::Test {
     write_buffer_ = io_buffer;
     expected_write_result_ = buf_len;
     writer_->WriteData(
-        write_buffer_, buf_len, &write_callback_);
+        write_buffer_, buf_len,
+        base::Bind(&AppCacheResponseTest::OnWriteComplete,
+                   base::Unretained(this)));
   }
 
   void ReadResponseBody(scoped_refptr<IOBuffer> io_buffer, int buf_len) {
@@ -209,7 +197,9 @@ class AppCacheResponseTest : public testing::Test {
     read_buffer_ = io_buffer;
     expected_read_result_ = buf_len;
     reader_->ReadData(
-        read_buffer_, buf_len, &read_callback_);
+        read_buffer_, buf_len,
+        base::Bind(&AppCacheResponseTest::OnReadComplete,
+                   base::Unretained(this)));
   }
 
   // AppCacheResponseReader / Writer completion callbacks
@@ -306,20 +296,23 @@ class AppCacheResponseTest : public testing::Test {
     // 2. Attempt to ReadData
 
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), kNoSuchResponseId));
+        GURL(), 0, kNoSuchResponseId));
 
     // Push tasks in reverse order
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadNonExistentData));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadNonExistentInfo));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadNonExistentData,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadNonExistentInfo,
+                            base::Unretained(this)));
     ScheduleNextTask();
   }
 
   void ReadNonExistentInfo() {
     EXPECT_FALSE(reader_->IsReadPending());
     read_info_buffer_ = new HttpResponseInfoIOBuffer();
-    reader_->ReadInfo(read_info_buffer_, &read_info_callback_);
+    reader_->ReadInfo(
+        read_info_buffer_,
+        base::Bind(&AppCacheResponseTest::OnReadInfoComplete,
+                   base::Unretained(this)));
     EXPECT_TRUE(reader_->IsReadPending());
     expected_read_result_ = net::ERR_CACHE_MISS;
   }
@@ -327,16 +320,19 @@ class AppCacheResponseTest : public testing::Test {
   void ReadNonExistentData() {
     EXPECT_FALSE(reader_->IsReadPending());
     read_buffer_ = new IOBuffer(kBlockSize);
-    reader_->ReadData(read_buffer_, kBlockSize, &read_callback_);
+    reader_->ReadData(
+        read_buffer_, kBlockSize,
+        base::Bind(&AppCacheResponseTest::OnReadComplete,
+                   base::Unretained(this)));
     EXPECT_TRUE(reader_->IsReadPending());
     expected_read_result_ = net::ERR_CACHE_MISS;
   }
 
   // LoadResponseInfo_Miss ----------------------------------------------------
   void LoadResponseInfo_Miss() {
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::LoadResponseInfo_Miss_Verify));
-    service_->storage()->LoadResponseInfo(GURL(), kNoSuchResponseId,
+    PushNextTask(base::Bind(&AppCacheResponseTest::LoadResponseInfo_Miss_Verify,
+                            base::Unretained(this)));
+    service_->storage()->LoadResponseInfo(GURL(), 0, kNoSuchResponseId,
                                           storage_delegate_.get());
   }
 
@@ -353,18 +349,18 @@ class AppCacheResponseTest : public testing::Test {
     //   a. headers
     //   b. body
     // 2. Use LoadResponseInfo to read the response headers back out
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::LoadResponseInfo_Hit_Step2));
-    writer_.reset(service_->storage()->CreateResponseWriter(GURL()));
+    PushNextTask(base::Bind(&AppCacheResponseTest::LoadResponseInfo_Hit_Step2,
+                            base::Unretained(this)));
+    writer_.reset(service_->storage()->CreateResponseWriter(GURL(), 0));
     written_response_id_ = writer_->response_id();
     WriteBasicResponse();
   }
 
   void LoadResponseInfo_Hit_Step2() {
     writer_.reset();
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::LoadResponseInfo_Hit_Verify));
-    service_->storage()->LoadResponseInfo(GURL(), written_response_id_,
+    PushNextTask(base::Bind(&AppCacheResponseTest::LoadResponseInfo_Hit_Verify,
+                            base::Unretained(this)));
+    service_->storage()->LoadResponseInfo(GURL(), 0, written_response_id_,
                                           storage_delegate_.get());
   }
 
@@ -390,17 +386,16 @@ class AppCacheResponseTest : public testing::Test {
         GetHttpResponseInfoSize(head) + kNumBlocks * kBlockSize;
 
     // Push tasks in reverse order.
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::Verify_AmountWritten,
-        expected_amount_written));
+    PushNextTask(base::Bind(&AppCacheResponseTest::Verify_AmountWritten,
+                            base::Unretained(this), expected_amount_written));
     for (int i = 0; i < kNumBlocks; ++i) {
-      PushNextTask(NewRunnableMethod(
-          this, &AppCacheResponseTest::WriteOneBlock, kNumBlocks - i));
+      PushNextTask(base::Bind(&AppCacheResponseTest::WriteOneBlock,
+                              base::Unretained(this), kNumBlocks - i));
     }
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::WriteResponseHead, head));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteResponseHead,
+                            base::Unretained(this), head));
 
-    writer_.reset(service_->storage()->CreateResponseWriter(GURL()));
+    writer_.reset(service_->storage()->CreateResponseWriter(GURL(), 0));
     written_response_id_ = writer_->response_id();
     ScheduleNextTask();
   }
@@ -424,33 +419,33 @@ class AppCacheResponseTest : public testing::Test {
     // 6. Attempt to read beyond EOF of a range.
 
     // Push tasks in reverse order
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadRangeFullyBeyondEOF));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadRangePartiallyBeyondEOF));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadPastEOF));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadRange));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadPastEOF));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadAllAtOnce));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadInBlocks));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::WriteOutBlocks));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadRangeFullyBeyondEOF,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadRangePartiallyBeyondEOF,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadPastEOF,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadRange,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadPastEOF,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadAllAtOnce,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadInBlocks,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteOutBlocks,
+                            base::Unretained(this)));
 
     // Get them going.
     ScheduleNextTask();
   }
 
   void WriteOutBlocks() {
-    writer_.reset(service_->storage()->CreateResponseWriter(GURL()));
+    writer_.reset(service_->storage()->CreateResponseWriter(GURL(), 0));
     written_response_id_ = writer_->response_id();
     for (int i = 0; i < kNumBlocks; ++i) {
-      PushNextTask(NewRunnableMethod(
-          this, &AppCacheResponseTest::WriteOneBlock, kNumBlocks - i));
+      PushNextTask(base::Bind(&AppCacheResponseTest::WriteOneBlock,
+                              base::Unretained(this), kNumBlocks - i));
     }
     ScheduleNextTask();
   }
@@ -465,17 +460,17 @@ class AppCacheResponseTest : public testing::Test {
   void ReadInBlocks() {
     writer_.reset();
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     for (int i = 0; i < kNumBlocks; ++i) {
-      PushNextTask(NewRunnableMethod(
-          this, &AppCacheResponseTest::ReadOneBlock, kNumBlocks - i));
+      PushNextTask(base::Bind(&AppCacheResponseTest::ReadOneBlock,
+                              base::Unretained(this), kNumBlocks - i));
     }
     ScheduleNextTask();
   }
 
   void ReadOneBlock(int block_number) {
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::VerifyOneBlock, block_number));
+    PushNextTask(base::Bind(&AppCacheResponseTest::VerifyOneBlock,
+                            base::Unretained(this), block_number));
     ReadResponseBody(new IOBuffer(kBlockSize), kBlockSize);
   }
 
@@ -485,10 +480,10 @@ class AppCacheResponseTest : public testing::Test {
   }
 
   void ReadAllAtOnce() {
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::VerifyAllAtOnce));
+    PushNextTask(base::Bind(&AppCacheResponseTest::VerifyAllAtOnce,
+                            base::Unretained(this)));
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     int big_size = kNumBlocks * kBlockSize;
     ReadResponseBody(new IOBuffer(big_size), big_size);
   }
@@ -505,14 +500,16 @@ class AppCacheResponseTest : public testing::Test {
     read_buffer_ = new IOBuffer(kBlockSize);
     expected_read_result_ = 0;
     reader_->ReadData(
-        read_buffer_, kBlockSize, &read_callback_);
+        read_buffer_, kBlockSize,
+        base::Bind(&AppCacheResponseTest::OnReadComplete,
+                   base::Unretained(this)));
   }
 
   void ReadRange() {
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::VerifyRange));
+    PushNextTask(base::Bind(&AppCacheResponseTest::VerifyRange,
+                            base::Unretained(this)));
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     reader_->SetReadRange(kBlockSize, kBlockSize);
     ReadResponseBody(new IOBuffer(kBlockSize), kBlockSize);
   }
@@ -523,10 +520,10 @@ class AppCacheResponseTest : public testing::Test {
   }
 
   void ReadRangePartiallyBeyondEOF() {
-    PushNextTask(NewRunnableMethod(
-        this, &AppCacheResponseTest::VerifyRangeBeyondEOF));
+    PushNextTask(base::Bind(&AppCacheResponseTest::VerifyRangeBeyondEOF,
+                            base::Unretained(this)));
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     reader_->SetReadRange(kBlockSize, kNumBlocks * kBlockSize);
     ReadResponseBody(new IOBuffer(kNumBlocks * kBlockSize),
                      kNumBlocks * kBlockSize);
@@ -540,7 +537,7 @@ class AppCacheResponseTest : public testing::Test {
 
   void ReadRangeFullyBeyondEOF() {
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     reader_->SetReadRange((kNumBlocks * kBlockSize) + 1, kBlockSize);
     ReadResponseBody(new IOBuffer(kBlockSize), kBlockSize);
     expected_read_result_ = 0;
@@ -553,21 +550,24 @@ class AppCacheResponseTest : public testing::Test {
     // 2. Read and verify several blocks in similarly chaining reads.
 
     // Push tasks in reverse order
-    PushNextTaskAsImmediate(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadInBlocksImmediately));
-    PushNextTaskAsImmediate(NewRunnableMethod(
-       this, &AppCacheResponseTest::WriteOutBlocksImmediately));
+    PushNextTaskAsImmediate(
+        base::Bind(&AppCacheResponseTest::ReadInBlocksImmediately,
+                   base::Unretained(this)));
+    PushNextTaskAsImmediate(
+        base::Bind(&AppCacheResponseTest::WriteOutBlocksImmediately,
+                   base::Unretained(this)));
 
     // Get them going.
     ScheduleNextTask();
   }
 
   void WriteOutBlocksImmediately() {
-    writer_.reset(service_->storage()->CreateResponseWriter(GURL()));
+    writer_.reset(service_->storage()->CreateResponseWriter(GURL(), 0));
     written_response_id_ = writer_->response_id();
     for (int i = 0; i < kNumBlocks; ++i) {
-      PushNextTaskAsImmediate(NewRunnableMethod(
-          this, &AppCacheResponseTest::WriteOneBlock, kNumBlocks - i));
+      PushNextTaskAsImmediate(
+          base::Bind(&AppCacheResponseTest::WriteOneBlock,
+                     base::Unretained(this), kNumBlocks - i));
     }
     ScheduleNextTask();
   }
@@ -575,18 +575,19 @@ class AppCacheResponseTest : public testing::Test {
   void ReadInBlocksImmediately() {
     writer_.reset();
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     for (int i = 0; i < kNumBlocks; ++i) {
-      PushNextTaskAsImmediate(NewRunnableMethod(
-          this, &AppCacheResponseTest::ReadOneBlockImmediately,
+      PushNextTaskAsImmediate(
+          base::Bind(&AppCacheResponseTest::ReadOneBlockImmediately,
+                     base::Unretained(this),
           kNumBlocks - i));
     }
     ScheduleNextTask();
   }
 
   void ReadOneBlockImmediately(int block_number) {
-    PushNextTaskAsImmediate(NewRunnableMethod(
-        this, &AppCacheResponseTest::VerifyOneBlock, block_number));
+    PushNextTaskAsImmediate(base::Bind(&AppCacheResponseTest::VerifyOneBlock,
+                                       base::Unretained(this), block_number));
     ReadResponseBody(new IOBuffer(kBlockSize), kBlockSize);
   }
 
@@ -602,10 +603,10 @@ class AppCacheResponseTest : public testing::Test {
     should_delete_writer_in_completion_callback_ = true;
     writer_deletion_count_down_ = kNumBlocks;
 
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadInBlocks));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::WriteOutBlocks));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadInBlocks,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteOutBlocks,
+                            base::Unretained(this)));
     ScheduleNextTask();
   }
 
@@ -614,12 +615,12 @@ class AppCacheResponseTest : public testing::Test {
     // 1. Write a few blocks normally.
     // 2. Start a write, delete with it pending.
     // 3. Start a read, delete with it pending.
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::ReadThenDelete));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::WriteThenDelete));
-    PushNextTask(NewRunnableMethod(
-       this, &AppCacheResponseTest::WriteOutBlocks));
+    PushNextTask(base::Bind(&AppCacheResponseTest::ReadThenDelete,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteThenDelete,
+                            base::Unretained(this)));
+    PushNextTask(base::Bind(&AppCacheResponseTest::WriteOutBlocks,
+                            base::Unretained(this)));
     ScheduleNextTask();
   }
 
@@ -634,14 +635,15 @@ class AppCacheResponseTest : public testing::Test {
   void ReadThenDelete() {
     read_callback_was_called_ = false;
     reader_.reset(service_->storage()->CreateResponseReader(
-        GURL(), written_response_id_));
+        GURL(), 0, written_response_id_));
     ReadResponseBody(new IOBuffer(kBlockSize), kBlockSize);
     EXPECT_TRUE(reader_->IsReadPending());
     reader_.reset();
 
     // Wait a moment to verify no callbacks.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &AppCacheResponseTest::VerifyNoCallbacks),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, base::Bind(&AppCacheResponseTest::VerifyNoCallbacks,
+                              base::Unretained(this)),
         10);
   }
 
@@ -656,14 +658,12 @@ class AppCacheResponseTest : public testing::Test {
   scoped_ptr<base::WaitableEvent> test_finished_event_;
   scoped_ptr<MockStorageDelegate> storage_delegate_;
   scoped_ptr<MockAppCacheService> service_;
-  std::stack<std::pair<Task*, bool> > task_stack_;
+  std::stack<std::pair<base::Closure, bool> > task_stack_;
 
   scoped_ptr<AppCacheResponseReader> reader_;
   scoped_refptr<HttpResponseInfoIOBuffer> read_info_buffer_;
   scoped_refptr<IOBuffer> read_buffer_;
   int expected_read_result_;
-  net::CompletionCallbackImpl<AppCacheResponseTest> read_callback_;
-  net::CompletionCallbackImpl<AppCacheResponseTest> read_info_callback_;
   bool should_delete_reader_in_completion_callback_;
   int reader_deletion_count_down_;
   bool read_callback_was_called_;
@@ -673,8 +673,6 @@ class AppCacheResponseTest : public testing::Test {
   scoped_refptr<HttpResponseInfoIOBuffer> write_info_buffer_;
   scoped_refptr<IOBuffer> write_buffer_;
   int expected_write_result_;
-  net::CompletionCallbackImpl<AppCacheResponseTest> write_callback_;
-  net::CompletionCallbackImpl<AppCacheResponseTest> write_info_callback_;
   bool should_delete_writer_in_completion_callback_;
   int writer_deletion_count_down_;
   bool write_callback_was_called_;
@@ -718,7 +716,3 @@ TEST_F(AppCacheResponseTest, DeleteWithIOPending) {
 }
 
 }  // namespace appcache
-
-// AppCacheResponseTest is expected to always live longer than the
-// runnable methods.  This lets us call NewRunnableMethod on its instances.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(appcache::AppCacheResponseTest);

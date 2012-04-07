@@ -6,16 +6,17 @@
 #define CHROME_BROWSER_TABS_PINNED_TAB_SERVICE_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Profile;
 
 // PinnedTabService is responsible for updating preferences with the set of
 // pinned tabs to restore at startup. PinnedTabService listens for the
 // appropriate set of notifications to know it should update preferences.
-class PinnedTabService : public NotificationObserver,
+class PinnedTabService : public content::NotificationObserver,
                          public ProfileKeyedService {
  public:
   explicit PinnedTabService(Profile* profile);
@@ -24,10 +25,10 @@ class PinnedTabService : public NotificationObserver,
   // Invoked when we're about to exit.
   void GotExit();
 
-  // NotificationObserver.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   Profile* profile_;
 
@@ -38,7 +39,7 @@ class PinnedTabService : public NotificationObserver,
   // True if there is at least one normal browser for our profile.
   bool has_normal_browser_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PinnedTabService);
 };

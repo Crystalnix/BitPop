@@ -4,18 +4,22 @@
 
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
 
+#include <vector>
+
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "views/controls/label.h"
+#include "ui/views/controls/label.h"
 
 // Amount of space to offset the tab image from the top of the view by.
 static const int kTabImageYOffset = 4;
@@ -24,10 +28,8 @@ static const int kTabImageYOffset = 4;
 static const SkBitmap* kTabButtonBitmap = NULL;
 
 KeywordHintView::KeywordHintView(Profile* profile) : profile_(profile) {
-  leading_label_ = new views::Label();
-  trailing_label_ = new views::Label();
-  AddChildView(leading_label_);
-  AddChildView(trailing_label_);
+  leading_label_ = CreateLabel();
+  trailing_label_ = CreateLabel();
 
   if (!kTabButtonBitmap) {
     kTabButtonBitmap = ResourceBundle::GetSharedInstance().
@@ -43,31 +45,27 @@ void KeywordHintView::SetFont(const gfx::Font& font) {
   trailing_label_->SetFont(font);
 }
 
-void KeywordHintView::SetColor(const SkColor& color) {
-  leading_label_->SetColor(color);
-  trailing_label_->SetColor(color);
-}
-
 void KeywordHintView::SetKeyword(const string16& keyword) {
   keyword_ = keyword;
   if (keyword_.empty())
     return;
   DCHECK(profile_);
-  if (!profile_->GetTemplateURLModel())
+  TemplateURLService* url_service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!url_service)
     return;
 
   std::vector<size_t> content_param_offsets;
   bool is_extension_keyword;
-  string16 short_name = profile_->GetTemplateURLModel()->
-      GetKeywordShortName(keyword, &is_extension_keyword);
+  string16 short_name = url_service->GetKeywordShortName(keyword,
+                                                         &is_extension_keyword);
   int message_id = is_extension_keyword ?
       IDS_OMNIBOX_EXTENSION_KEYWORD_HINT : IDS_OMNIBOX_KEYWORD_HINT;
-  const std::wstring keyword_hint =
-      UTF16ToWide(l10n_util::GetStringFUTF16(
-          message_id,
-          string16(),
-          short_name,
-          &content_param_offsets));
+  const string16 keyword_hint = l10n_util::GetStringFUTF16(
+      message_id,
+      string16(),
+      short_name,
+      &content_param_offsets);
   if (content_param_offsets.size() == 2) {
     leading_label_->SetText(
         keyword_hint.substr(0, content_param_offsets.front()));
@@ -80,7 +78,7 @@ void KeywordHintView::SetKeyword(const string16& keyword) {
 }
 
 void KeywordHintView::OnPaint(gfx::Canvas* canvas) {
-  int image_x = leading_label_->IsVisible() ? leading_label_->width() : 0;
+  int image_x = leading_label_->visible() ? leading_label_->width() : 0;
 
   // Since we paint the button image directly on the canvas (instead of using a
   // child view), we must mirror the button's position manually if the locale
@@ -129,4 +127,14 @@ void KeywordHintView::Layout() {
     pref = trailing_label_->GetPreferredSize();
     trailing_label_->SetBounds(x, 0, pref.width(), height());
   }
+}
+
+views::Label* KeywordHintView::CreateLabel() {
+  views::Label* label = new views::Label();
+  label->SetBackgroundColor(LocationBarView::GetColor(ToolbarModel::NONE,
+      LocationBarView::BACKGROUND));
+  label->SetEnabledColor(LocationBarView::GetColor(ToolbarModel::NONE,
+      LocationBarView::DEEMPHASIZED_TEXT));
+  AddChildView(label);
+  return label;
 }

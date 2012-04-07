@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -83,6 +82,7 @@ class ChromeTests(object):
       "browser": self.TestBrowser,      "browser_tests": self.TestBrowser,
       "crypto": self.TestCrypto,        "crypto_unittests": self.TestCrypto,
       "googleurl": self.TestGURL,       "googleurl_unittests": self.TestGURL,
+      "content": self.TestContent,      "content_unittests": self.TestContent,
       "courgette": self.TestCourgette,
       "courgette_unittests": self.TestCourgette,
       "ipc": self.TestIpc,              "ipc_tests": self.TestIpc,
@@ -96,7 +96,8 @@ class ChromeTests(object):
       "test_shell": self.TestTestShell, "test_shell_tests": self.TestTestShell,
       "ui": self.TestUI,                "ui_tests": self.TestUI,
       "unit": self.TestUnit,            "unit_tests": self.TestUnit,
-      "app": self.TestApp,              "app_unittests": self.TestApp,
+      "views": self.TestViews,          "views_unittests": self.TestViews,
+      "sql": self.TestSql,              "sql_unittests": self.TestSql,
       "ui_unit": self.TestUIUnit,       "ui_unittests": self.TestUIUnit,
       "gfx": self.TestGfx,              "gfx_unittests": self.TestGfx,
     }
@@ -133,20 +134,6 @@ class ChromeTests(object):
     Returns:
       A string with the command to run the test.
     '''
-    module_dir = os.path.join(self._source_dir, module)
-
-    # We need multiple data dirs, the current script directory and a module
-    # specific one. The global suppression file lives in our directory, and the
-    # module specific suppression file lives with the module.
-    self._data_dirs = [path_utils.ScriptDir()]
-
-    if module == "chrome":
-      # Unfortunately, not all modules have the same directory structure.
-      self._data_dirs.append(os.path.join(module_dir, "test", "data",
-                                          "heapcheck"))
-    else:
-      self._data_dirs.append(os.path.join(module_dir, "data", "heapcheck"))
-
     if not self._options.build_dir:
       dirs = [
         os.path.join(self._source_dir, "xcodebuild", "Debug"),
@@ -174,13 +161,13 @@ class ChromeTests(object):
   def Suppressions(self):
     '''Builds the list of available suppressions files.'''
     ret = []
-    for directory in self._data_dirs:
-      suppression_file = os.path.join(directory, "suppressions.txt")
-      if os.path.exists(suppression_file):
-        ret.append(suppression_file)
-      suppression_file = os.path.join(directory, "suppressions_linux.txt")
-      if os.path.exists(suppression_file):
-        ret.append(suppression_file)
+    directory = path_utils.ScriptDir()
+    suppression_file = os.path.join(directory, "suppressions.txt")
+    if os.path.exists(suppression_file):
+      ret.append(suppression_file)
+    suppression_file = os.path.join(directory, "suppressions_linux.txt")
+    if os.path.exists(suppression_file):
+      ret.append(suppression_file)
     return ret
 
   def Run(self):
@@ -197,20 +184,26 @@ class ChromeTests(object):
       cmd: the test running command line to be modified.
     '''
     filters = []
-    for directory in self._data_dirs:
-      gtest_filter_files = [
-          os.path.join(directory, name + ".gtest.txt"),
-          os.path.join(directory, name + ".gtest-heapcheck.txt"),
-          os.path.join(directory, name + ".gtest_linux.txt")]
-      for filename in gtest_filter_files:
-        if os.path.exists(filename):
-          logging.info("reading gtest filters from %s" % filename)
-          f = open(filename, 'r')
-          for line in f.readlines():
-            if line.startswith("#") or line.startswith("//") or line.isspace():
-              continue
-            line = line.rstrip()
-            filters.append(line)
+    directory = path_utils.ScriptDir()
+    gtest_filter_files = [
+        os.path.join(directory, name + ".gtest-heapcheck.txt"),
+        # TODO(glider): Linux vs. CrOS?
+    ]
+    logging.info("Reading gtest exclude filter files:")
+    for filename in gtest_filter_files:
+      # strip the leading absolute path (may be very long on the bot)
+      # and the following / or \.
+      readable_filename = filename.replace(self._source_dir, "")[1:]
+      if not os.path.exists(filename):
+        logging.info("  \"%s\" - not found" % readable_filename)
+        continue
+      logging.info("  \"%s\" - OK" % readable_filename)
+      f = open(filename, 'r')
+      for line in f.readlines():
+        if line.startswith("#") or line.startswith("//") or line.isspace():
+          continue
+        line = line.rstrip()
+        filters.append(line)
     gtest_filter = self._options.gtest_filter
     if len(filters):
       if gtest_filter:
@@ -261,6 +254,9 @@ class ChromeTests(object):
   def TestGURL(self):
     return self.SimpleTest("chrome", "googleurl_unittests")
 
+  def TestContent(self):
+    return self.SimpleTest("content", "content_unittests")
+
   def TestCourgette(self):
     return self.SimpleTest("courgette", "courgette_unittests")
 
@@ -295,8 +291,11 @@ class ChromeTests(object):
   def TestUnit(self):
     return self.SimpleTest("chrome", "unit_tests")
 
-  def TestApp(self):
-    return self.SimpleTest("chrome", "app_unittests")
+  def TestViews(self):
+    return self.SimpleTest("views", "views_unittests")
+
+  def TestSql(self):
+    return self.SimpleTest("chrome", "sql_unittests")
 
   def TestUIUnit(self):
     return self.SimpleTest("chrome", "ui_unittests")
@@ -417,7 +416,11 @@ class ChromeTests(object):
     # summary list for long, but will be useful for someone reviewing this bot.
     return ret
 
-def _main(_):
+
+def main():
+  if not sys.platform.startswith('linux'):
+    logging.error("Heap checking works only on Linux at the moment.")
+    return 1
   parser = optparse.OptionParser("usage: %prog -b <dir> -t <test> "
                                  "[-t <test> ...]")
   parser.disable_interspersed_args()
@@ -457,9 +460,4 @@ def _main(_):
 
 
 if __name__ == "__main__":
-  if sys.platform == 'linux2':
-    ret = _main(sys.argv)
-  else:
-    logging.error("Heap checking works only on Linux at the moment.")
-    ret = 1
-  sys.exit(ret)
+  sys.exit(main())

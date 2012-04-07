@@ -170,7 +170,7 @@ uint16 DNSSECKeySet::DNSKEYToKeyID(const base::StringPiece& dnskey) {
   const unsigned char* data =
       reinterpret_cast<const unsigned char*>(dnskey.data());
 
-  // RFC 4043: App B
+  // RFC 4034: App B
   uint32 ac = 0;
   for (unsigned i = 0; i < dnskey.size(); i++) {
     if (i & 1) {
@@ -226,7 +226,8 @@ bool DNSSECKeySet::VerifySignature(
   sig_alg_der.len = signature_algorithm.size();
   SECAlgorithmID sig_alg_id;
   SECStatus rv;
-  rv = SEC_QuickDERDecodeItem(arena, &sig_alg_id, SECOID_AlgorithmIDTemplate,
+  rv = SEC_QuickDERDecodeItem(arena, &sig_alg_id,
+                              SEC_ASN1_GET(SECOID_AlgorithmIDTemplate),
                               &sig_alg_der);
   if (rv != SECSuccess) {
     SECKEY_DestroyPublicKey(pub_key);

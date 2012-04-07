@@ -4,6 +4,7 @@
 
 #include "webkit/plugins/ppapi/ppb_file_io_impl.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/file_util_proxy.h"
@@ -11,207 +12,201 @@
 #include "base/platform_file.h"
 #include "base/logging.h"
 #include "base/time.h"
-#include "ppapi/c/dev/ppb_file_io_dev.h"
-#include "ppapi/c/dev/ppb_file_io_trusted_dev.h"
+#include "ppapi/c/ppb_file_io.h"
+#include "ppapi/c/trusted/ppb_file_io_trusted.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
+#include "ppapi/shared_impl/file_type_conversion.h"
+#include "ppapi/shared_impl/time_conversion.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
 #include "webkit/plugins/ppapi/common.h"
-#include "webkit/plugins/ppapi/file_type_conversions.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_file_ref_impl.h"
-#include "webkit/plugins/ppapi/resource_tracker.h"
+#include "webkit/plugins/ppapi/quota_file_io.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
 
-using ppapi::thunk::EnterResourceNoLock;
-using ppapi::thunk::PPB_FileIO_API;
+using ppapi::PPTimeToTime;
+using ppapi::TimeToPPTime;
 using ppapi::thunk::PPB_FileRef_API;
 
 namespace webkit {
 namespace ppapi {
 
-PPB_FileIO_Impl::PPB_FileIO_Impl(PluginInstance* instance)
-    : Resource(instance),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)),
+PPB_FileIO_Impl::PPB_FileIO_Impl(PP_Instance instance)
+    : ::ppapi::PPB_FileIO_Shared(instance),
       file_(base::kInvalidPlatformFileValue),
-      callback_(),
-      info_(NULL),
-      read_buffer_(NULL) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 PPB_FileIO_Impl::~PPB_FileIO_Impl() {
   Close();
 }
 
-// static
-PP_Resource PPB_FileIO_Impl::Create(PP_Instance pp_instance) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(pp_instance);
-  if (!instance)
-    return 0;
-  PPB_FileIO_Impl* file_io = new PPB_FileIO_Impl(instance);
-  return file_io->GetReference();
-}
-
-PPB_FileIO_API* PPB_FileIO_Impl::AsPPB_FileIO_API() {
-  return this;
-}
-
-int32_t PPB_FileIO_Impl::Open(PP_Resource pp_file_ref,
-                              int32_t open_flags,
-                              PP_CompletionCallback callback) {
-  EnterResourceNoLock<PPB_FileRef_API> enter(pp_file_ref, true);
-  if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  PPB_FileRef_Impl* file_ref = static_cast<PPB_FileRef_Impl*>(enter.object());
-
-  int32_t rv = CommonCallValidation(false, callback);
-  if (rv != PP_OK)
-    return rv;
+int32_t PPB_FileIO_Impl::OpenValidated(PP_Resource file_ref_resource,
+                                       PPB_FileRef_API* file_ref_api,
+                                       int32_t open_flags,
+                                       PP_CompletionCallback callback) {
+  PPB_FileRef_Impl* file_ref = static_cast<PPB_FileRef_Impl*>(file_ref_api);
 
   int flags = 0;
-  if (!PepperFileOpenFlagsToPlatformFileFlags(open_flags, &flags))
+  if (!::ppapi::PepperFileOpenFlagsToPlatformFileFlags(open_flags, &flags))
     return PP_ERROR_BADARGUMENT;
 
-  file_system_type_ = file_ref->GetFileSystemType();
-  switch (file_system_type_) {
-    case PP_FILESYSTEMTYPE_EXTERNAL:
-      if (!instance()->delegate()->AsyncOpenFile(
-              file_ref->GetSystemPath(), flags,
-              callback_factory_.NewCallback(
-                  &PPB_FileIO_Impl::AsyncOpenFileCallback)))
-        return PP_ERROR_FAILED;
-      break;
-    case PP_FILESYSTEMTYPE_LOCALPERSISTENT:
-    case PP_FILESYSTEMTYPE_LOCALTEMPORARY:
-      if (!instance()->delegate()->AsyncOpenFileSystemURL(
-              file_ref->GetFileSystemURL(), flags,
-              callback_factory_.NewCallback(
-                  &PPB_FileIO_Impl::AsyncOpenFileCallback)))
-        return PP_ERROR_FAILED;
-      break;
-    default:
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
+    return PP_ERROR_BADARGUMENT;
+
+  if (file_ref->HasValidFileSystem()) {
+    file_system_url_ = file_ref->GetFileSystemURL();
+    if (!plugin_delegate->AsyncOpenFileSystemURL(
+            file_system_url_, flags,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformOpenFileCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  } else {
+    if (file_system_type_ != PP_FILESYSTEMTYPE_EXTERNAL)
+      return PP_ERROR_FAILED;
+    if (!plugin_delegate->AsyncOpenFile(
+            file_ref->GetSystemPath(), flags,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformOpenFileCallback,
+                       weak_factory_.GetWeakPtr())))
       return PP_ERROR_FAILED;
   }
 
-  RegisterCallback(callback);
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::Query(PP_FileInfo_Dev* info,
-                               PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
-
-  if (!info)
-    return PP_ERROR_BADARGUMENT;
-
-  DCHECK(!info_);  // If |info_|, a callback should be pending (caught above).
-  info_ = info;
+int32_t PPB_FileIO_Impl::QueryValidated(PP_FileInfo* info,
+                                        PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
+    return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::GetFileInfoFromPlatformFile(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(), file_,
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::QueryInfoCallback)))
+          plugin_delegate->GetFileThreadMessageLoopProxy(), file_,
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformQueryCallback,
+                     weak_factory_.GetWeakPtr())))
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, info);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::Touch(PP_Time last_access_time,
-                      PP_Time last_modified_time,
-                      PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
+int32_t PPB_FileIO_Impl::TouchValidated(PP_Time last_access_time,
+                                        PP_Time last_modified_time,
+                                        PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
+    return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Touch(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(),
-          file_, base::Time::FromDoubleT(last_access_time),
-          base::Time::FromDoubleT(last_modified_time),
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::StatusCallback)))
+          plugin_delegate->GetFileThreadMessageLoopProxy(),
+          file_, PPTimeToTime(last_access_time),
+          PPTimeToTime(last_modified_time),
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                     weak_factory_.GetWeakPtr())))
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::Read(int64_t offset,
-                              char* buffer,
-                              int32_t bytes_to_read,
-                              PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
-
-  // If |read_buffer__|, a callback should be pending (caught above).
-  DCHECK(!read_buffer_);
-  read_buffer_ = buffer;
+int32_t PPB_FileIO_Impl::ReadValidated(int64_t offset,
+                                       char* buffer,
+                                       int32_t bytes_to_read,
+                                       PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
+    return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Read(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(),
-          file_, offset, bytes_to_read,
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::ReadCallback)))
+          plugin_delegate->GetFileThreadMessageLoopProxy(), file_, offset,
+          bytes_to_read,
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformReadCallback,
+                     weak_factory_.GetWeakPtr())))
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  RegisterCallback(OPERATION_READ, callback, buffer, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::Write(int64_t offset,
-                               const char* buffer,
-                               int32_t bytes_to_write,
-                               PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
-
-  if (!base::FileUtilProxy::Write(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(),
-          file_, offset, buffer, bytes_to_write,
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::WriteCallback)))
+int32_t PPB_FileIO_Impl::WriteValidated(int64_t offset,
+                                        const char* buffer,
+                                        int32_t bytes_to_write,
+                                        PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  if (quota_file_io_.get()) {
+    if (!quota_file_io_->Write(
+            offset, buffer, bytes_to_write,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformWriteCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  } else {
+    if (!base::FileUtilProxy::Write(
+            plugin_delegate->GetFileThreadMessageLoopProxy(), file_, offset,
+            buffer, bytes_to_write,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformWriteCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  }
+
+  RegisterCallback(OPERATION_WRITE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::SetLength(int64_t length,
-                          PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
-
-  if (!base::FileUtilProxy::Truncate(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(),
-          file_, length,
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::StatusCallback)))
+int32_t PPB_FileIO_Impl::SetLengthValidated(int64_t length,
+                                            PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  if (quota_file_io_.get()) {
+    if (!quota_file_io_->SetLength(
+            length,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  } else {
+    if (!base::FileUtilProxy::Truncate(
+            plugin_delegate->GetFileThreadMessageLoopProxy(), file_, length,
+            base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                       weak_factory_.GetWeakPtr())))
+      return PP_ERROR_FAILED;
+  }
+
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::Flush(PP_CompletionCallback callback) {
-  int32_t rv = CommonCallValidation(true, callback);
-  if (rv != PP_OK)
-    return rv;
+int32_t PPB_FileIO_Impl::FlushValidated(PP_CompletionCallback callback) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (!plugin_delegate)
+    return PP_ERROR_FAILED;
 
   if (!base::FileUtilProxy::Flush(
-          instance()->delegate()->GetFileThreadMessageLoopProxy(), file_,
-          callback_factory_.NewCallback(&PPB_FileIO_Impl::StatusCallback)))
+          plugin_delegate->GetFileThreadMessageLoopProxy(), file_,
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                     weak_factory_.GetWeakPtr())))
     return PP_ERROR_FAILED;
 
-  RegisterCallback(callback);
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
   return PP_OK_COMPLETIONPENDING;
 }
 
 void PPB_FileIO_Impl::Close() {
-  if (file_ != base::kInvalidPlatformFileValue) {
+  PluginDelegate* plugin_delegate = GetPluginDelegate();
+  if (file_ != base::kInvalidPlatformFileValue && plugin_delegate) {
     base::FileUtilProxy::Close(
-        instance()->delegate()->GetFileThreadMessageLoopProxy(), file_, NULL);
+        plugin_delegate->GetFileThreadMessageLoopProxy(), file_,
+        base::FileUtilProxy::StatusCallback());
     file_ = base::kInvalidPlatformFileValue;
+    quota_file_io_.reset();
   }
 }
 
@@ -228,108 +223,116 @@ int32_t PPB_FileIO_Impl::GetOSFileDescriptor() {
 int32_t PPB_FileIO_Impl::WillWrite(int64_t offset,
                                    int32_t bytes_to_write,
                                    PP_CompletionCallback callback) {
-  // TODO(dumi): implement me
-  return PP_OK;
+  int32_t rv = CommonCallValidation(true, OPERATION_EXCLUSIVE, callback);
+  if (rv != PP_OK)
+    return rv;
+
+  if (!quota_file_io_.get())
+    return PP_OK;
+
+  if (!quota_file_io_->WillWrite(
+          offset, bytes_to_write,
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformWillWriteCallback,
+                     weak_factory_.GetWeakPtr())))
+    return PP_ERROR_FAILED;
+
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
+  return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t PPB_FileIO_Impl::WillSetLength(int64_t length,
                                        PP_CompletionCallback callback) {
-  // TODO(dumi): implement me
-  return PP_OK;
+  int32_t rv = CommonCallValidation(true, OPERATION_EXCLUSIVE, callback);
+  if (rv != PP_OK)
+    return rv;
+
+  if (!quota_file_io_.get())
+    return PP_OK;
+
+  if (!quota_file_io_->WillSetLength(
+          length,
+          base::Bind(&PPB_FileIO_Impl::ExecutePlatformGeneralCallback,
+                     weak_factory_.GetWeakPtr())))
+    return PP_ERROR_FAILED;
+
+  RegisterCallback(OPERATION_EXCLUSIVE, callback, NULL, NULL);
+  return PP_OK_COMPLETIONPENDING;
 }
 
-int32_t PPB_FileIO_Impl::CommonCallValidation(bool should_be_open,
-                                              PP_CompletionCallback callback) {
-  // Only asynchronous operation is supported.
-  if (!callback.func) {
-    NOTIMPLEMENTED();
-    return PP_ERROR_BADARGUMENT;
-  }
-
-  if (should_be_open) {
-    if (file_ == base::kInvalidPlatformFileValue)
-      return PP_ERROR_FAILED;
-  } else {
-    if (file_ != base::kInvalidPlatformFileValue)
-      return PP_ERROR_FAILED;
-  }
-
-  if (callback_.get() && !callback_->completed())
-    return PP_ERROR_INPROGRESS;
-
-  return PP_OK;
+PluginDelegate* PPB_FileIO_Impl::GetPluginDelegate() {
+  return ResourceHelper::GetPluginDelegate(this);
 }
 
-void PPB_FileIO_Impl::RegisterCallback(PP_CompletionCallback callback) {
-  DCHECK(callback.func);
-  DCHECK(!callback_.get() || callback_->completed());
-
-  PP_Resource resource_id = GetReferenceNoAddRef();
-  CHECK(resource_id);
-  callback_ = new TrackedCompletionCallback(
-      instance()->module()->GetCallbackTracker(), resource_id, callback);
+void PPB_FileIO_Impl::ExecutePlatformGeneralCallback(
+    base::PlatformFileError error_code) {
+  ExecuteGeneralCallback(::ppapi::PlatformFileErrorToPepperError(error_code));
 }
 
-void PPB_FileIO_Impl::RunPendingCallback(int32_t result) {
-  scoped_refptr<TrackedCompletionCallback> callback;
-  callback.swap(callback_);
-  callback->Run(result);  // Will complete abortively if necessary.
-}
-
-void PPB_FileIO_Impl::StatusCallback(base::PlatformFileError error_code) {
-  RunPendingCallback(PlatformFileErrorToPepperError(error_code));
-}
-
-void PPB_FileIO_Impl::AsyncOpenFileCallback(
+void PPB_FileIO_Impl::ExecutePlatformOpenFileCallback(
     base::PlatformFileError error_code,
-    base::PlatformFile file) {
+    base::PassPlatformFile file) {
   DCHECK(file_ == base::kInvalidPlatformFileValue);
-  file_ = file;
-  RunPendingCallback(PlatformFileErrorToPepperError(error_code));
+  file_ = file.ReleaseValue();
+
+  DCHECK(!quota_file_io_.get());
+  if (file_ != base::kInvalidPlatformFileValue &&
+      (file_system_type_ == PP_FILESYSTEMTYPE_LOCALTEMPORARY ||
+       file_system_type_ == PP_FILESYSTEMTYPE_LOCALPERSISTENT)) {
+    quota_file_io_.reset(new QuotaFileIO(
+        pp_instance(), file_, file_system_url_, file_system_type_));
+  }
+
+  ExecuteOpenFileCallback(::ppapi::PlatformFileErrorToPepperError(error_code));
 }
 
-void PPB_FileIO_Impl::QueryInfoCallback(
+void PPB_FileIO_Impl::ExecutePlatformQueryCallback(
     base::PlatformFileError error_code,
     const base::PlatformFileInfo& file_info) {
-  DCHECK(info_);
-  if (error_code == base::PLATFORM_FILE_OK) {
-    info_->size = file_info.size;
-    info_->creation_time = file_info.creation_time.ToDoubleT();
-    info_->last_access_time = file_info.last_accessed.ToDoubleT();
-    info_->last_modified_time = file_info.last_modified.ToDoubleT();
-    info_->system_type = file_system_type_;
-    if (file_info.is_directory)
-      info_->type = PP_FILETYPE_DIRECTORY;
-    else
-      info_->type = PP_FILETYPE_REGULAR;
-  }
-  info_ = NULL;
-  RunPendingCallback(PlatformFileErrorToPepperError(error_code));
-}
-
-void PPB_FileIO_Impl::ReadCallback(base::PlatformFileError error_code,
-                                   const char* data, int bytes_read) {
-  DCHECK(data);
-  DCHECK(read_buffer_);
-
-  int rv;
-  if (error_code == base::PLATFORM_FILE_OK) {
-    rv = bytes_read;
-    if (file_ != base::kInvalidPlatformFileValue)
-      memcpy(read_buffer_, data, bytes_read);
-  } else
-    rv = PlatformFileErrorToPepperError(error_code);
-
-  read_buffer_ = NULL;
-  RunPendingCallback(rv);
-}
-
-void PPB_FileIO_Impl::WriteCallback(base::PlatformFileError error_code,
-                                    int bytes_written) {
-  if (error_code != base::PLATFORM_FILE_OK)
-    RunPendingCallback(PlatformFileErrorToPepperError(error_code));
+  PP_FileInfo pp_info;
+  pp_info.size = file_info.size;
+  pp_info.creation_time = TimeToPPTime(file_info.creation_time);
+  pp_info.last_access_time = TimeToPPTime(file_info.last_accessed);
+  pp_info.last_modified_time = TimeToPPTime(file_info.last_modified);
+  pp_info.system_type = file_system_type_;
+  if (file_info.is_directory)
+    pp_info.type = PP_FILETYPE_DIRECTORY;
   else
-    RunPendingCallback(bytes_written);
+    pp_info.type = PP_FILETYPE_REGULAR;
+
+  ExecuteQueryCallback(::ppapi::PlatformFileErrorToPepperError(error_code),
+                       pp_info);
+}
+
+void PPB_FileIO_Impl::ExecutePlatformReadCallback(
+    base::PlatformFileError error_code,
+    const char* data, int bytes_read) {
+  // Map the error code, OK getting mapped to the # of bytes read.
+  int32_t pp_result = ::ppapi::PlatformFileErrorToPepperError(error_code);
+  pp_result = pp_result == PP_OK ? bytes_read : pp_result;
+  ExecuteReadCallback(pp_result, data);
+}
+
+void PPB_FileIO_Impl::ExecutePlatformWriteCallback(
+    base::PlatformFileError error_code,
+    int bytes_written) {
+  int32_t pp_result = ::ppapi::PlatformFileErrorToPepperError(error_code);
+  ExecuteGeneralCallback(pp_result == PP_OK ? bytes_written : pp_result);
+}
+
+void PPB_FileIO_Impl::ExecutePlatformWillWriteCallback(
+    base::PlatformFileError error_code,
+    int bytes_written) {
+  if (pending_op_ != OPERATION_EXCLUSIVE || callbacks_.empty()) {
+    NOTREACHED();
+    return;
+  }
+
+  if (error_code != base::PLATFORM_FILE_OK) {
+    RunAndRemoveFirstPendingCallback(
+        ::ppapi::PlatformFileErrorToPepperError(error_code));
+  } else {
+    RunAndRemoveFirstPendingCallback(bytes_written);
+  }
 }
 
 }  // namespace ppapi

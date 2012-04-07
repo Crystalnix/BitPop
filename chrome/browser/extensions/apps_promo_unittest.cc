@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/apps_promo.h"
 #include "chrome/browser/prefs/browser_prefs.h"
-#include "chrome/browser/ui/webui/ntp/shown_sections_handler.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_pref_service.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_pref_service.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -24,23 +24,9 @@ const char kPromoExpire[] = "No thanks.";
 const int kPromoUserGroup =
     AppsPromo::USERS_NEW | AppsPromo::USERS_EXISTING;
 
-void ExpectAppsSectionMaximized(PrefService* prefs, bool maximized) {
-  EXPECT_EQ(maximized,
-            (ShownSectionsHandler::GetShownSections(prefs) & APPS) != 0);
-  EXPECT_EQ(!maximized,
-            (ShownSectionsHandler::GetShownSections(prefs) & THUMB) != 0);
-}
-
-void ExpectAppsPromoHidden(PrefService* prefs) {
-  // Hiding the promo places the apps section in menu mode and maximizes the
-  // most visited section.
-  EXPECT_TRUE((ShownSectionsHandler::GetShownSections(prefs) &
-               (MENU_APPS | THUMB)) != 0);
-}
-
 } // namespace
 
-class ExtensionAppsPromo : public TestingBrowserProcessTest {
+class ExtensionAppsPromo : public testing::Test {
  public:
   TestingPrefService* prefs() { return &prefs_; }
   AppsPromo* apps_promo() { return &apps_promo_; }
@@ -58,7 +44,7 @@ class ExtensionAppsPromo : public TestingBrowserProcessTest {
 };
 
 ExtensionAppsPromo::ExtensionAppsPromo()
-    : local_state_(testing_browser_process_.get()),
+    : local_state_(static_cast<TestingBrowserProcess*>(g_browser_process)),
       apps_promo_(&prefs_) {
 }
 
@@ -69,6 +55,7 @@ void ExtensionAppsPromo::SetUp() {
 // TODO(dpolukhin): On Chrome OS all apps are installed via external extensions,
 // and the web store promo is never shown.
 #if !defined(OS_CHROMEOS)
+
 TEST_F(ExtensionAppsPromo, HappyPath) {
   const ExtensionIdSet& default_app_ids = apps_promo()->old_default_apps();
 
@@ -104,9 +91,10 @@ TEST_F(ExtensionAppsPromo, HappyPath) {
                                              &promo_just_expired));
 
   // Once the promo is set, we show both the promo and app launcher.
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      kPromoUserGroup);
+  AppsPromo::PromoData promo_data(kPromoId, kPromoHeader, kPromoButton,
+                                  GURL(kPromoLink), kPromoExpire, GURL(""),
+                                  kPromoUserGroup);
+  AppsPromo::SetPromo(promo_data);
   AppsPromo::SetWebStoreSupportedForLocale(true);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
   EXPECT_TRUE(apps_promo()->ShouldShowAppLauncher(installed_ids));
@@ -144,60 +132,56 @@ TEST_F(ExtensionAppsPromo, HappyPath) {
 // Tests get and set of promo content.
 TEST_F(ExtensionAppsPromo, PromoPrefs) {
   // Store a promo....
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      kPromoUserGroup);
+  AppsPromo::PromoData promo_data(kPromoId, kPromoHeader, kPromoButton,
+                                  GURL(kPromoLink), kPromoExpire, GURL(""),
+                                  kPromoUserGroup);
+  AppsPromo::SetPromo(promo_data);
 
   // ... then make sure AppsPromo can access it.
-  EXPECT_EQ(kPromoId, AppsPromo::GetPromoId());
-  EXPECT_EQ(kPromoHeader, AppsPromo::GetPromoHeaderText());
-  EXPECT_EQ(kPromoButton, AppsPromo::GetPromoButtonText());
-  EXPECT_EQ(GURL(kPromoLink), AppsPromo::GetPromoLink());
-  EXPECT_EQ(kPromoExpire, AppsPromo::GetPromoExpireText());
-  EXPECT_EQ(kPromoUserGroup, AppsPromo::GetPromoUserGroup());
+  AppsPromo::PromoData actual_data = AppsPromo::GetPromo();
+  EXPECT_EQ(kPromoId, actual_data.id);
+  EXPECT_EQ(kPromoHeader, actual_data.header);
+  EXPECT_EQ(kPromoButton, actual_data.button);
+  EXPECT_EQ(GURL(kPromoLink), actual_data.link);
+  EXPECT_EQ(kPromoExpire, actual_data.expire);
+  EXPECT_EQ(kPromoUserGroup, actual_data.user_group);
   // The promo logo should be the default value.
-  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromoLogo());
+  EXPECT_EQ(GURL(kPromoLogo), actual_data.logo);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
 
   AppsPromo::ClearPromo();
-  EXPECT_EQ("", AppsPromo::GetPromoId());
-  EXPECT_EQ("", AppsPromo::GetPromoHeaderText());
-  EXPECT_EQ("", AppsPromo::GetPromoButtonText());
-  EXPECT_EQ(GURL(""), AppsPromo::GetPromoLink());
-  EXPECT_EQ("", AppsPromo::GetPromoExpireText());
-  EXPECT_EQ(AppsPromo::USERS_NONE, AppsPromo::GetPromoUserGroup());
-  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromoLogo());
+  actual_data = AppsPromo::GetPromo();
+  EXPECT_EQ("", actual_data.id);
+  EXPECT_EQ("", actual_data.header);
+  EXPECT_EQ("", actual_data.button);
+  EXPECT_EQ(GURL(""), actual_data.link);
+  EXPECT_EQ("", actual_data.expire);
+  EXPECT_EQ(AppsPromo::USERS_NONE, actual_data.user_group);
+  EXPECT_EQ(GURL(kPromoLogo), actual_data.logo);
   EXPECT_FALSE(AppsPromo::IsPromoSupportedForLocale());
 
   // Make sure we can set the logo to something other than the default.
   std::string promo_logo = "data:image/png;base64,iVBORw0kGgoAAAN";
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(promo_logo),
-                      kPromoUserGroup);
-  EXPECT_EQ(GURL(promo_logo), AppsPromo::GetPromoLogo());
+  promo_data.logo = GURL(promo_logo);
+  AppsPromo::SetPromo(promo_data);
+  EXPECT_EQ(GURL(promo_logo), AppsPromo::GetPromo().logo);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
 
-  // Verify that the default is returned instead of http or https URLs.
-  promo_logo = "http://google.com/logo.png";
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(promo_logo),
-                      kPromoUserGroup);
-  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromoLogo());
+  // Verify that the default is returned instead of HTTP or HTTPS URLs.
+  promo_data.logo = GURL("http://google.com/logo.png");
+  AppsPromo::SetPromo(promo_data);
+  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromo().logo);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
 
-  promo_logo = "https://google.com/logo.png";
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(promo_logo),
-                      kPromoUserGroup);
-  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromoLogo());
+  promo_data.logo = GURL("https://google.com/logo.png");
+  AppsPromo::SetPromo(promo_data);
+  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromo().logo);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
 
   // Try an invalid URL.
-  promo_logo = "sldkfjlsdn";
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(promo_logo),
-                      kPromoUserGroup);
-  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromoLogo());
+  promo_data.logo = GURL("sldkfjlsdn");
+  AppsPromo::SetPromo(promo_data);
+  EXPECT_EQ(GURL(kPromoLogo), AppsPromo::GetPromo().logo);
   EXPECT_TRUE(AppsPromo::IsPromoSupportedForLocale());
 
   // Try the web store supported flag.
@@ -206,108 +190,33 @@ TEST_F(ExtensionAppsPromo, PromoPrefs) {
   EXPECT_TRUE(AppsPromo::IsWebStoreSupportedForLocale());
   AppsPromo::SetWebStoreSupportedForLocale(false);
   EXPECT_FALSE(AppsPromo::IsWebStoreSupportedForLocale());
+
+  // Try setting and getting the source logo URL.
+  GURL expected_source("https://www.google.com/images/test.png");
+  AppsPromo::SetSourcePromoLogoURL(expected_source);
+  EXPECT_EQ(expected_source, AppsPromo::GetSourcePromoLogoURL());
 }
 
-// Tests maximizing the promo for USERS_NONE.
-TEST_F(ExtensionAppsPromo, UpdatePromoFocus_UsersNone) {
-  // Verify that the apps section is not already maximized.
-  ExpectAppsSectionMaximized(prefs(), false);
+TEST_F(ExtensionAppsPromo, PromoHiddenByPref) {
+  prefs()->SetInteger(prefs::kAppsPromoCounter, 0);
+  prefs()->SetBoolean(prefs::kDefaultAppsInstalled, true);
 
-  // The promo shouldn't maximize for anyone.
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NONE);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
+  // When the "hide" pref is false, the promo should still appear.
+  prefs()->SetBoolean(prefs::kNTPHideWebStorePromo, false);
+  AppsPromo::PromoData promo_data(
+      kPromoId, kPromoHeader, kPromoButton, GURL(kPromoLink), kPromoExpire,
+      GURL(""), AppsPromo::USERS_NEW | AppsPromo::USERS_EXISTING);
+  AppsPromo::SetPromo(promo_data);
+  bool just_expired;
+  bool show_promo = apps_promo()->ShouldShowPromo(
+      apps_promo()->old_default_apps(), &just_expired);
+  EXPECT_TRUE(show_promo);
 
-  // The promo still shouldn't maximize if we change it's ID.
-  AppsPromo::SetPromo("lkksdf", kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NONE);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
+  // When the "hide" pref is true, the promo should NOT appear.
+  prefs()->SetBoolean(prefs::kNTPHideWebStorePromo, true);
+  show_promo = apps_promo()->ShouldShowPromo(
+      apps_promo()->old_default_apps(), &just_expired);
+  EXPECT_FALSE(show_promo);
 }
 
-// Tests maximizing the promo for USERS_EXISTING.
-TEST_F(ExtensionAppsPromo, UpdatePromoFocus_UsersExisting) {
-  // Verify that the apps section is not already maximized.
-  ExpectAppsSectionMaximized(prefs(), false);
-
-  // Set the promo content.
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_EXISTING);
-
-  // This is a new user so the apps section shouldn't maximize.
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
-
-
-  // Set a new promo and now it should maximize.
-  AppsPromo::SetPromo("lksdf", kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_EXISTING);
-
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), true);
-
-  apps_promo()->HidePromo();
-  ExpectAppsPromoHidden(prefs());
-}
-
-// Tests maximizing the promo for USERS_NEW.
-TEST_F(ExtensionAppsPromo, UpdatePromoFocus_UsersNew) {
-  // Verify that the apps section is not already maximized.
-  ExpectAppsSectionMaximized(prefs(), false);
-
-  // The promo should maximize for new users.
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NEW);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), true);
-
-  // Try hiding the promo.
-  apps_promo()->HidePromo();
-  ExpectAppsPromoHidden(prefs());
-
-  // The same promo should not maximize twice.
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
-
-  // Another promo targetting new users should not maximize.
-  AppsPromo::SetPromo("lksdf", kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NEW);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
-}
-
-// Tests maximizing the promo for USERS_NEW | USERS_EXISTING.
-TEST_F(ExtensionAppsPromo, UpdatePromoFocus_UsersAll) {
-  // Verify that the apps section is not already maximized.
-  ExpectAppsSectionMaximized(prefs(), false);
-
-  // The apps section should maximize for all users.
-  AppsPromo::SetPromo(kPromoId, kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NEW | AppsPromo::USERS_EXISTING);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), true);
-
-  apps_promo()->HidePromo();
-  ExpectAppsPromoHidden(prefs());
-
-  // The same promo should not maximize twice.
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), false);
-
-  // A promo with a new ID should maximize though.
-  AppsPromo::SetPromo("lkksdf", kPromoHeader, kPromoButton,
-                      GURL(kPromoLink), kPromoExpire, GURL(""),
-                      AppsPromo::USERS_NEW | AppsPromo::USERS_EXISTING);
-  apps_promo()->MaximizeAppsIfNecessary();
-  ExpectAppsSectionMaximized(prefs(), true);
-}
-
-#endif  // OS_CHROMEOS
+#endif // OS_CHROMEOS

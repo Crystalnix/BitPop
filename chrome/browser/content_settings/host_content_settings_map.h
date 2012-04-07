@@ -11,107 +11,97 @@
 
 #include <map>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/content_settings/content_settings_pattern.h"
+#include "base/tuple.h"
+#include "chrome/browser/content_settings/content_settings_observer.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/common/content_settings.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "chrome/common/content_settings_types.h"
+#include "chrome/common/content_settings_pattern.h"
+
+namespace base {
+class Value;
+}  // namespace base
 
 namespace content_settings {
-class DefaultProviderInterface;
 class ProviderInterface;
 }  // namespace content_settings
 
-class ContentSettingsDetails;
-class DictionaryValue;
+class ExtensionService;
 class GURL;
 class PrefService;
-class Profile;
 
 class HostContentSettingsMap
-    : public NotificationObserver,
-      public base::RefCountedThreadSafe<HostContentSettingsMap,
-                                        BrowserThread::DeleteOnUIThread> {
+    : public content_settings::Observer,
+      public base::RefCountedThreadSafe<HostContentSettingsMap> {
  public:
-  typedef std::pair<ContentSettingsPattern, ContentSetting> PatternSettingPair;
-  typedef std::vector<PatternSettingPair> SettingsForOneType;
+  enum ProviderType {
+    POLICY_PROVIDER = 0,
+    EXTENSION_PROVIDER = 1,
+    PREF_PROVIDER,
+    DEFAULT_PROVIDER,
+    NUM_PROVIDER_TYPES,
+  };
 
-  explicit HostContentSettingsMap(Profile* profile);
+  HostContentSettingsMap(PrefService* prefs,
+                         ExtensionService* extension_service,
+                         bool incognito);
 
   static void RegisterUserPrefs(PrefService* prefs);
 
-  // Returns the default setting for a particular content type.
+  // Returns the default setting for a particular content type. If |provider_id|
+  // is not NULL, the id of the provider which provided the default setting is
+  // assigned to it.
   //
   // This may be called on any thread.
-  ContentSetting GetDefaultContentSetting(
-      ContentSettingsType content_type) const;
+  ContentSetting GetDefaultContentSetting(ContentSettingsType content_type,
+                                          std::string* provider_id) const;
 
-  // Returns a single ContentSetting which applies to a given URL. Note that
-  // certain internal schemes are whitelisted. For ContentSettingsTypes that
-  // require an resource identifier to be specified, the |resource_identifier|
-  // must be non-empty.
+  // Returns a single |ContentSetting| which applies to the given URLs.  Note
+  // that certain internal schemes are whitelisted. For |CONTENT_TYPE_COOKIES|,
+  // |CookieSettings| should be used instead. For content types that can't be
+  // converted to a |ContentSetting|, |GetContentSettingValue| should be called.
+  // If there is no content setting, returns CONTENT_SETTING_DEFAULT.
   //
-  // This may be called on any thread.
+  // May be called on any thread.
   ContentSetting GetContentSetting(
-      const GURL& url,
+      const GURL& primary_url,
+      const GURL& secondary_url,
       ContentSettingsType content_type,
       const std::string& resource_identifier) const;
 
-  // Gets the content setting for cookies. This takes the third party cookie
-  // flag into account, and therefore needs to know whether we read or write a
-  // cookie.
-  //
-  // This may be called on any thread.
-  ContentSetting GetCookieContentSetting(
-      const GURL& url,
-      const GURL& first_party_url,
-      bool setting_cookie) const;
-
-  // Returns a single ContentSetting which applies to a given URL or
-  // CONTENT_SETTING_DEFAULT, if no exception applies. Note that certain
-  // internal schemes are whitelisted. For ContentSettingsTypes that require an
-  // resource identifier to be specified, the |resource_identifier| must be
-  // non-empty.
-  //
-  // This may be called on any thread.
-  ContentSetting GetNonDefaultContentSetting(
-      const GURL& url,
+  // Returns a single content setting |Value| which applies to the given URLs.
+  // If |info| is not NULL, then the |source| field of |info| is set to the
+  // source of the returned |Value| (POLICY, EXTENSION, USER, ...) and the
+  // |primary_pattern| and the |secondary_pattern| fields of |info| are set to
+  // the patterns of the applying rule.  Note that certain internal schemes are
+  // whitelisted. For whitelisted schemes the |source| field of |info| is set
+  // the |SETTING_SOURCE_WHITELIST| and the |primary_pattern| and
+  // |secondary_pattern| are set to a wildcard pattern.  If there is no content
+  // setting, NULL is returned and the |source| field of |info| is set to
+  // |SETTING_SOURCE_NONE|. The pattern fiels of |info| are set to empty
+  // patterns.
+  // The ownership of the resulting |Value| is transfered to the caller.
+  // May be called on any thread.
+  base::Value* GetWebsiteSetting(
+      const GURL& primary_url,
+      const GURL& secondary_url,
       ContentSettingsType content_type,
-      const std::string& resource_identifier) const;
-
-  // Returns all ContentSettings which apply to a given URL. For content
-  // setting types that require an additional resource identifier, the default
-  // content setting is returned.
-  //
-  // This may be called on any thread.
-  ContentSettings GetContentSettings(const GURL& url) const;
-
-  // Returns all non-default ContentSettings which apply to a given URL. For
-  // content setting types that require an additional resource identifier,
-  // CONTENT_SETTING_DEFAULT is returned.
-  //
-  // This may be called on any thread.
-  ContentSettings GetNonDefaultContentSettings(const GURL& url) const;
+      const std::string& resource_identifier,
+      content_settings::SettingInfo* info) const;
 
   // For a given content type, returns all patterns with a non-default setting,
-  // mapped to their actual settings, in lexicographical order.  |settings|
-  // must be a non-NULL outparam. If this map was created for the
-  // incognito profile, it will only return those settings differing from
-  // the main map. For ContentSettingsTypes that require an resource identifier
-  // to be specified, the |resource_identifier| must be non-empty.
+  // mapped to their actual settings, in the precedence order of the rules.
+  // |settings| must be a non-NULL outparam.
   //
   // This may be called on any thread.
   void GetSettingsForOneType(ContentSettingsType content_type,
                              const std::string& resource_identifier,
-                             SettingsForOneType* settings) const;
+                             ContentSettingsForOneType* settings) const;
 
   // Sets the default setting for a particular content type. This method must
   // not be invoked on an incognito map.
@@ -120,25 +110,40 @@ class HostContentSettingsMap
   void SetDefaultContentSetting(ContentSettingsType content_type,
                                 ContentSetting setting);
 
-  // Sets the blocking setting for a particular pattern and content type.
-  // Setting the value to CONTENT_SETTING_DEFAULT causes the default setting
-  // for that type to be used when loading pages matching this pattern. For
-  // ContentSettingsTypes that require an resource identifier to be specified,
-  // the |resource_identifier| must be non-empty.
+  // Sets the content |setting| for the given patterns, |content_type| and
+  // |resource_identifier|. Setting the value to CONTENT_SETTING_DEFAULT causes
+  // the default setting for that type to be used when loading pages matching
+  // this pattern.
+  // NOTICE: This is just a convenience method for content types that use
+  // |CONTENT_SETTING| as their data type. For content types that use other
+  // data types please use the method SetWebsiteSetting.
   //
   // This should only be called on the UI thread.
-  void SetContentSetting(const ContentSettingsPattern& pattern,
+  void SetContentSetting(const ContentSettingsPattern& primary_pattern,
+                         const ContentSettingsPattern& secondary_pattern,
                          ContentSettingsType content_type,
                          const std::string& resource_identifier,
                          ContentSetting setting);
 
-  // Convenience method to add a content setting for a given URL, making sure
+  // Sets the |value| for the given patterns, |content_type| and
+  // |resource_identifier|. Setting the value to NULL causes the default value
+  // for that type to be used when loading pages matching this pattern.
+  //
+  // Takes ownership of the passed value.
+  void SetWebsiteSetting(const ContentSettingsPattern& primary_pattern,
+                         const ContentSettingsPattern& secondary_pattern,
+                         ContentSettingsType content_type,
+                         const std::string& resource_identifier,
+                         base::Value* value);
+
+  // Convenience method to add a content setting for the given URLs, making sure
   // that there is no setting overriding it. For ContentSettingsTypes that
   // require an resource identifier to be specified, the |resource_identifier|
   // must be non-empty.
   //
   // This should only be called on the UI thread.
-  void AddExceptionForURL(const GURL& url,
+  void AddExceptionForURL(const GURL& primary_url,
+                          const GURL& secondary_url,
                           ContentSettingsType content_type,
                           const std::string& resource_identifier,
                           ContentSetting setting);
@@ -148,53 +153,65 @@ class HostContentSettingsMap
   // This should only be called on the UI thread.
   void ClearSettingsForOneType(ContentSettingsType content_type);
 
-  // This setting trumps any host-specific settings.
-  bool BlockThirdPartyCookies() const { return block_third_party_cookies_; }
-  bool IsBlockThirdPartyCookiesManaged() const {
-    return is_block_third_party_cookies_managed_;
-  }
+  static bool IsValueAllowedForType(const base::Value* value,
+                                    ContentSettingsType content_type);
+  static bool IsSettingAllowedForType(ContentSetting setting,
+                                      ContentSettingsType content_type);
 
-  // Sets whether we block all third-party cookies. This method must not be
-  // invoked on an incognito map.
-  //
-  // This should only be called on the UI thread.
-  void SetBlockThirdPartyCookies(bool block);
+  // Detaches the HostContentSettingsMap from all Profile-related objects like
+  // PrefService. This methods needs to be called before destroying the Profile.
+  // Afterwards, none of the methods above that should only be called on the UI
+  // thread should be called anymore.
+  void ShutdownOnUIThread();
 
-  // Resets all settings levels.
-  //
-  // This should only be called on the UI thread.
-  void ResetToDefaults();
+  // content_settings::Observer implementation.
+  virtual void OnContentSettingChanged(
+      ContentSettingsPattern primary_pattern,
+      ContentSettingsPattern secondary_pattern,
+      ContentSettingsType content_type,
+      std::string resource_identifier) OVERRIDE;
 
-  // Returns true if the default setting for the |content_type| is managed.
-  bool IsDefaultContentSettingManaged(ContentSettingsType content_type) const;
-
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Returns true if we should allow all content types for this URL.  This is
+  // true for various internal objects like chrome:// URLs, so UI and other
+  // things users think of as "not webpages" don't break.
+  static bool ShouldAllowAllContent(const GURL& primary_url,
+                                    const GURL& secondary_url,
+                                    ContentSettingsType content_type);
 
  private:
-  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
-  friend class DeleteTask<HostContentSettingsMap>;
+  friend class base::RefCountedThreadSafe<HostContentSettingsMap>;
+  friend class HostContentSettingsMapTest_NonDefaultSettings_Test;
+
+  typedef std::map<ProviderType, content_settings::ProviderInterface*>
+      ProviderMap;
+  typedef ProviderMap::iterator ProviderIterator;
+  typedef ProviderMap::const_iterator ConstProviderIterator;
 
   virtual ~HostContentSettingsMap();
 
-  ContentSetting GetContentSettingInternal(
-      const GURL& url,
+  ContentSetting GetDefaultContentSettingFromProvider(
       ContentSettingsType content_type,
-      const std::string& resource_identifier) const;
-
-  void UnregisterObservers();
+      content_settings::ProviderInterface* provider) const;
 
   // Various migration methods (old cookie, popup and per-host data gets
   // migrated to the new format).
-  void MigrateObsoleteCookiePref(PrefService* prefs);
+  void MigrateObsoleteCookiePref();
 
-  // The profile we're associated with.
-  Profile* profile_;
+  // Adds content settings for |content_type| and |resource_identifier|,
+  // provided by |provider|, into |settings|. If |incognito| is true, adds only
+  // the content settings which are applicable to the incognito mode and differ
+  // from the normal mode. Otherwise, adds the content settings for the normal
+  // mode.
+  void AddSettingsForOneType(
+      const content_settings::ProviderInterface* provider,
+      ProviderType provider_type,
+      ContentSettingsType content_type,
+      const std::string& resource_identifier,
+      ContentSettingsForOneType* settings,
+      bool incognito) const;
 
-  NotificationRegistrar notification_registrar_;
-  PrefChangeRegistrar pref_change_registrar_;
+  // Weak; owned by the Profile.
+  PrefService* prefs_;
 
   // Whether this settings map is for an OTR session.
   bool is_off_the_record_;
@@ -203,20 +220,11 @@ class HostContentSettingsMap
   // notifications from the preferences service that we triggered ourself.
   bool updating_preferences_;
 
-  // Default content setting providers.
-  std::vector<linked_ptr<content_settings::DefaultProviderInterface> >
-      default_content_settings_providers_;
-
   // Content setting providers.
-  std::vector<linked_ptr<content_settings::ProviderInterface> >
-      content_settings_providers_;
+  ProviderMap content_settings_providers_;
 
   // Used around accesses to the following objects to guarantee thread safety.
   mutable base::Lock lock_;
-
-  // Misc global settings.
-  bool block_third_party_cookies_;
-  bool is_block_third_party_cookies_managed_;
 
   DISALLOW_COPY_AND_ASSIGN(HostContentSettingsMap);
 };

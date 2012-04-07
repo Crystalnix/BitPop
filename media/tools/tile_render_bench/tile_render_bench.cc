@@ -14,9 +14,9 @@
 
 #include "base/at_exit.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "ui/gfx/gl/gl_bindings.h"
 #include "ui/gfx/gl/gl_implementation.h"
 
@@ -207,8 +207,7 @@ void RunTest() {
                       0, 0, kStartSize, kStartSize, 0 };
   XSendEvent(g_display, g_window, False, ExposureMask, (XEvent*)&ev);
 
-  MessageLoop::current()->PostTask(FROM_HERE,
-                                   NewRunnableFunction(&RunTest));
+  MessageLoop::current()->PostTask(FROM_HERE, base::Bind(&RunTest));
 }
 
 void ProcessEvents() {
@@ -232,7 +231,7 @@ int main() {
   InitGLContext();
   InitTest();
 
-  loop.PostTask(FROM_HERE, NewRunnableFunction(&ProcessEvents));
+  loop.PostTask(FROM_HERE, base::Bind(&ProcessEvents));
   loop.Run();
 
   // Cleanup GL.

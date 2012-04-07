@@ -9,8 +9,6 @@
 #import <Cocoa/Cocoa.h>
 #include <ApplicationServices/ApplicationServices.h>
 
-#include <map>
-
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/background_gradient_view.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
@@ -50,9 +48,6 @@ enum AlertState {
 
   BOOL closing_;
 
-  // Tracking area for close button mouseover images.
-  scoped_nsobject<NSTrackingArea> closeTrackingArea_;
-
   BOOL isMouseInside_;  // Is the mouse hovering over?
   tabs::AlertState alertState_;
 
@@ -66,35 +61,13 @@ enum AlertState {
 
   NSPoint hoverPoint_;  // Current location of hover in view coords.
 
-  // All following variables are valid for the duration of a drag.
-  // These are released on mouseUp:
-  BOOL moveWindowOnDrag_;  // Set if the only tab of a window is dragged.
-  BOOL tabWasDragged_;  // Has the tab been dragged?
-  BOOL draggingWithinTabStrip_;  // Did drag stay in the current tab strip?
-  BOOL chromeIsVisible_;
+  // The location of the current mouseDown event in window coordinates.
+  NSPoint mouseDownPoint_;
 
-  NSTimeInterval tearTime_;  // Time since tear happened
-  NSPoint tearOrigin_;  // Origin of the tear rect
-  NSPoint dragOrigin_;  // Origin point of the drag
-  // TODO(alcor): these references may need to be strong to avoid crashes
-  // due to JS closing windows
-  TabWindowController* sourceController_;  // weak. controller starting the drag
-  NSWindow* sourceWindow_;  // weak. The window starting the drag
-  NSRect sourceWindowFrame_;
-  NSRect sourceTabFrame_;
-
-  TabWindowController* draggedController_;  // weak. Controller being dragged.
-  NSWindow* dragWindow_;  // weak. The window being dragged
-  NSWindow* dragOverlay_;  // weak. The overlay being dragged
-  // Cache workspace IDs per-drag because computing them on 10.5 with
-  // CGWindowListCreateDescriptionFromArray is expensive.
-  // resetDragControllers clears this cache.
-  //
-  // TODO(davidben): When 10.5 becomes unsupported, remove this.
-  std::map<CGWindowID, int> workspaceIDCache_;
-
-  TabWindowController* targetController_;  // weak. Controller being targeted
   NSCellStateValue state_;
+
+  // The tool tip text for this tab view.
+  scoped_nsobject<NSString> toolTipText_;
 }
 
 @property(assign, nonatomic) NSCellStateValue state;
@@ -107,6 +80,10 @@ enum AlertState {
 // clicks inside it from sending messages.
 @property(assign, nonatomic, getter=isClosing) BOOL closing;
 
+
+// Returns the inset multiplier used to compute the inset of the top of the tab.
++ (CGFloat)insetMultiplier;
+
 // Enables/Disables tracking regions for the tab.
 - (void)setTrackingEnabled:(BOOL)enabled;
 
@@ -117,6 +94,9 @@ enum AlertState {
 // Stop showing the "alert" glow; this won't immediately wipe out any glow, but
 // will make it fade away.
 - (void)cancelAlert;
+
+// Returns the tool tip text for this tab view.
+- (NSString*)toolTipText;
 
 @end
 

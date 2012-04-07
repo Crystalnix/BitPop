@@ -31,9 +31,12 @@
 // Author: Sanjay Ghemawat <opensource@google.com>
 
 #include "config.h"
-#include "system-alloc.h"
-#include "config.h"
 #include "common.h"
+#include "system-alloc.h"
+
+#if defined(HAVE_UNISTD_H) && defined(HAVE_GETPAGESIZE)
+#include <unistd.h>                     // for getpagesize
+#endif
 
 namespace tcmalloc {
 
@@ -51,6 +54,24 @@ static inline int LgFloor(size_t n) {
   }
   ASSERT(n == 1);
   return log;
+}
+
+int AlignmentForSize(size_t size) {
+  int alignment = kAlignment;
+  if (size >= 2048) {
+    // Cap alignment at 256 for large sizes.
+    alignment = 256;
+  } else if (size >= 128) {
+    // Space wasted due to alignment is at most 1/8, i.e., 12.5%.
+    alignment = (1 << LgFloor(size)) / 8;
+  } else if (size >= 16) {
+    // We need an alignment of at least 16 bytes to satisfy
+    // requirements for some SSE types.
+    alignment = 16;
+  }
+  CHECK_CONDITION(size < 16 || alignment >= 16);
+  CHECK_CONDITION((alignment & (alignment - 1)) == 0);
+  return alignment;
 }
 
 int SizeMap::NumMoveSize(size_t size) {
@@ -89,23 +110,11 @@ void SizeMap::Init() {
   int alignment = kAlignment;
   CHECK_CONDITION(kAlignment <= 16);
   int last_lg = -1;
-  for (size_t size = kAlignment; size <= kMaxSize; size += alignment) {
+  for (size_t size = kMinClassSize; size <= kMaxSize; size += alignment) {
     int lg = LgFloor(size);
     if (lg > last_lg) {
       // Increase alignment every so often to reduce number of size classes.
-      if (size >= 2048) {
-        // Cap alignment at 256 for large sizes
-        alignment = 256;
-      } else if (size >= 128) {
-        // Space wasted due to alignment is at most 1/8, i.e., 12.5%.
-        alignment = size / 8;
-      } else if (size >= 16) {
-        // We need an alignment of at least 16 bytes to satisfy
-        // requirements for some SSE types.
-        alignment = 16;
-      }
-      CHECK_CONDITION(size < 16 || alignment >= 16);
-      CHECK_CONDITION((alignment & (alignment - 1)) == 0);
+      alignment = AlignmentForSize(size);
       last_lg = lg;
     }
     CHECK_CONDITION((size % alignment) == 0);
@@ -196,7 +205,13 @@ void SizeMap::Dump(TCMalloc_Printer* out) {
 // Metadata allocator -- keeps stats about how many bytes allocated.
 static uint64_t metadata_system_bytes_ = 0;
 void* MetaDataAlloc(size_t bytes) {
-  void* result = TCMalloc_SystemAlloc(bytes, NULL);
+  static size_t pagesize;
+#ifdef HAVE_GETPAGESIZE
+  if (pagesize == 0)
+    pagesize = getpagesize();
+#endif
+
+  void* result = TCMalloc_SystemAlloc(bytes, NULL, pagesize);
   if (result != NULL) {
     metadata_system_bytes_ += bytes;
   }

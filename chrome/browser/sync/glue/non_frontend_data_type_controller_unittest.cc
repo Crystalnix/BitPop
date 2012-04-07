@@ -1,25 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/task.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "base/tracked_objects.h"
-#include "base/synchronization/waitable_event.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/glue/change_processor_mock.h"
+#include "chrome/browser/sync/glue/data_type_controller_mock.h"
+#include "chrome/browser/sync/glue/model_associator_mock.h"
 #include "chrome/browser/sync/glue/non_frontend_data_type_controller.h"
 #include "chrome/browser/sync/glue/non_frontend_data_type_controller_mock.h"
-#include "chrome/browser/sync/glue/model_associator_mock.h"
-#include "chrome/browser/sync/profile_sync_factory_mock.h"
+#include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
-#include "chrome/test/profile_mock.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/profile_mock.h"
+#include "content/test/test_browser_thread.h"
 
 using base::WaitableEvent;
 using browser_sync::ChangeProcessorMock;
@@ -28,18 +30,14 @@ using browser_sync::GROUP_DB;
 using browser_sync::NonFrontendDataTypeController;
 using browser_sync::NonFrontendDataTypeControllerMock;
 using browser_sync::ModelAssociatorMock;
+using browser_sync::StartCallbackMock;
+using content::BrowserThread;
 using testing::_;
 using testing::DoAll;
 using testing::InvokeWithoutArgs;
 using testing::Return;
 using testing::SetArgumentPointee;
 using testing::StrictMock;
-
-class StartCallback {
- public:
-  MOCK_METHOD2(Run, void(DataTypeController::StartResult result,
-                         const tracked_objects::Location& from_here));
-};
 
 ACTION_P(WaitOnEvent, event) {
   event->Wait();
@@ -52,11 +50,13 @@ ACTION_P(SignalEvent, event) {
 class NonFrontendDataTypeControllerFake : public NonFrontendDataTypeController {
  public:
   NonFrontendDataTypeControllerFake(
-      ProfileSyncFactory* profile_sync_factory,
+      ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
+      ProfileSyncService* sync_service,
       NonFrontendDataTypeControllerMock* mock)
       : NonFrontendDataTypeController(profile_sync_factory,
-                                      profile),
+                                      profile,
+                                      sync_service),
         mock_(mock) {}
 
   virtual syncable::ModelType type() const { return syncable::BOOKMARKS; }
@@ -66,7 +66,7 @@ class NonFrontendDataTypeControllerFake : public NonFrontendDataTypeController {
 
  private:
   virtual void CreateSyncComponents() {
-    ProfileSyncFactory::SyncComponents sync_components =
+    ProfileSyncComponentsFactory::SyncComponents sync_components =
         profile_sync_factory()->
             CreateBookmarkSyncComponents(profile_sync_service(), this);
     set_model_associator(sync_components.model_associator);
@@ -75,16 +75,12 @@ class NonFrontendDataTypeControllerFake : public NonFrontendDataTypeController {
   virtual bool StartAssociationAsync() {
     mock_->StartAssociationAsync();
     return BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-        NewRunnableMethod(
-            this,
-            &NonFrontendDataTypeControllerFake::StartAssociation));
+        base::Bind(&NonFrontendDataTypeControllerFake::StartAssociation, this));
   }
   virtual bool StopAssociationAsync() {
     mock_->StopAssociationAsync();
     return BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-        NewRunnableMethod(
-            this,
-            &NonFrontendDataTypeControllerFake::StopAssociation));
+        base::Bind(&NonFrontendDataTypeControllerFake::StopAssociation, this));
   }
 
   // We mock the following methods because their default implementations do
@@ -122,14 +118,16 @@ class NonFrontendDataTypeControllerTest : public testing::Test {
     EXPECT_CALL(profile_, GetProfileSyncService()).WillRepeatedly(
         Return(&service_));
     db_thread_.Start();
-    profile_sync_factory_.reset(new ProfileSyncFactoryMock());
+    profile_sync_factory_.reset(
+        new StrictMock<ProfileSyncComponentsFactoryMock>());
 
-    // Both of these are refcounted, so don't need to be released.
+    // All of these are refcounted, so don't need to be released.
     dtc_mock_ = new StrictMock<NonFrontendDataTypeControllerMock>();
     non_frontend_dtc_ =
         new NonFrontendDataTypeControllerFake(profile_sync_factory_.get(),
-                                           &profile_,
-                                           dtc_mock_.get());
+                                              &profile_,
+                                              &service_,
+                                              dtc_mock_.get());
   }
 
   virtual void TearDown() {
@@ -142,8 +140,8 @@ class NonFrontendDataTypeControllerTest : public testing::Test {
     model_associator_ = new ModelAssociatorMock();
     change_processor_ = new ChangeProcessorMock();
     EXPECT_CALL(*profile_sync_factory_, CreateBookmarkSyncComponents(_, _)).
-        WillOnce(Return(ProfileSyncFactory::SyncComponents(model_associator_,
-                                                           change_processor_)));
+        WillOnce(Return(ProfileSyncComponentsFactory::SyncComponents(
+            model_associator_, change_processor_)));
   }
 
   void SetAssociateExpectations() {
@@ -152,21 +150,21 @@ class NonFrontendDataTypeControllerTest : public testing::Test {
         WillOnce(Return(true));
     EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
         WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-    EXPECT_CALL(*model_associator_, AssociateModels()).
+    EXPECT_CALL(*model_associator_, AssociateModels(_)).
         WillOnce(Return(true));
     EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   }
 
   void SetActivateExpectations(DataTypeController::StartResult result) {
-    EXPECT_CALL(service_, ActivateDataType(_, _));
+    EXPECT_CALL(service_, ActivateDataType(_, _, _));
     EXPECT_CALL(start_callback_, Run(result,_));
   }
 
   void SetStopExpectations() {
     EXPECT_CALL(*dtc_mock_, StopAssociationAsync());
     EXPECT_CALL(*dtc_mock_, StopModels());
-    EXPECT_CALL(service_, DeactivateDataType(_, _));
-    EXPECT_CALL(*model_associator_, DisassociateModels());
+    EXPECT_CALL(service_, DeactivateDataType(_));
+    EXPECT_CALL(*model_associator_, DisassociateModels(_));
   }
 
   void SetStartFailExpectations(DataTypeController::StartResult result) {
@@ -182,8 +180,7 @@ class NonFrontendDataTypeControllerTest : public testing::Test {
   void WaitForDTC() {
     WaitableEvent done(true, false);
     BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-       NewRunnableFunction(&NonFrontendDataTypeControllerTest::SignalDone,
-                           &done));
+        base::Bind(&NonFrontendDataTypeControllerTest::SignalDone, &done));
     done.TimedWait(base::TimeDelta::FromMilliseconds(
         TestTimeouts::action_timeout_ms()));
     if (!done.IsSignaled()) {
@@ -193,16 +190,16 @@ class NonFrontendDataTypeControllerTest : public testing::Test {
   }
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread db_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread db_thread_;
   scoped_refptr<NonFrontendDataTypeControllerFake> non_frontend_dtc_;
-  scoped_ptr<ProfileSyncFactoryMock> profile_sync_factory_;
+  scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;
   scoped_refptr<NonFrontendDataTypeControllerMock> dtc_mock_;
   ProfileMock profile_;
   ProfileSyncServiceMock service_;
   ModelAssociatorMock* model_associator_;
   ChangeProcessorMock* change_processor_;
-  StartCallback start_callback_;
+  StartCallbackMock start_callback_;
 };
 
 TEST_F(NonFrontendDataTypeControllerTest, StartOk) {
@@ -210,7 +207,8 @@ TEST_F(NonFrontendDataTypeControllerTest, StartOk) {
   SetAssociateExpectations();
   SetActivateExpectations(DataTypeController::OK);
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::RUNNING, non_frontend_dtc_->state());
 }
@@ -222,12 +220,13 @@ TEST_F(NonFrontendDataTypeControllerTest, StartFirstRun) {
       WillOnce(Return(true));
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillOnce(DoAll(SetArgumentPointee<0>(false), Return(true)));
-  EXPECT_CALL(*model_associator_, AssociateModels()).
+  EXPECT_CALL(*model_associator_, AssociateModels(_)).
       WillOnce(Return(true));
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   SetActivateExpectations(DataTypeController::OK_FIRST_RUN);
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::RUNNING, non_frontend_dtc_->state());
 }
@@ -236,7 +235,8 @@ TEST_F(NonFrontendDataTypeControllerTest, AbortDuringStartModels) {
   EXPECT_CALL(*dtc_mock_, StartModels()).WillOnce(Return(false));
   SetStartFailExpectations(DataTypeController::ABORTED);
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::MODEL_STARTING, non_frontend_dtc_->state());
   non_frontend_dtc_->Stop();
@@ -250,15 +250,17 @@ TEST_F(NonFrontendDataTypeControllerTest, StartAssociationFailed) {
       WillOnce(Return(true));
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillOnce(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(*model_associator_, AssociateModels()).
-      WillOnce(Return(false));
+  EXPECT_CALL(*model_associator_, AssociateModels(_)).
+      WillOnce(DoAll(browser_sync::SetSyncError(syncable::AUTOFILL),
+                     Return(false)));
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
   SetStartFailExpectations(DataTypeController::ASSOCIATION_FAILED);
   // Set up association to fail with an association failed error.
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
+  EXPECT_EQ(DataTypeController::DISABLED, non_frontend_dtc_->state());
 }
 
 TEST_F(NonFrontendDataTypeControllerTest,
@@ -272,7 +274,8 @@ TEST_F(NonFrontendDataTypeControllerTest,
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillRepeatedly(DoAll(SetArgumentPointee<0>(false), Return(false)));
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
 }
@@ -285,7 +288,8 @@ TEST_F(NonFrontendDataTypeControllerTest, StartAssociationCryptoNotReady) {
   EXPECT_CALL(*model_associator_, CryptoReadyIfNecessary()).
       WillRepeatedly(Return(false));
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
 }
@@ -308,14 +312,15 @@ TEST_F(NonFrontendDataTypeControllerTest, AbortDuringAssociationInactive) {
           Return(true)));
   EXPECT_CALL(*model_associator_, AbortAssociation()).WillOnce(
       SignalEvent(&pause_db_thread));
-  EXPECT_CALL(*model_associator_, AssociateModels()).WillOnce(Return(true));
+  EXPECT_CALL(*model_associator_, AssociateModels(_)).WillOnce(Return(true));
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
-  EXPECT_CALL(service_, ActivateDataType(_, _));
+  EXPECT_CALL(service_, ActivateDataType(_, _, _));
   EXPECT_CALL(start_callback_, Run(DataTypeController::ABORTED,_));
   EXPECT_CALL(*dtc_mock_, RecordStartFailure(DataTypeController::ABORTED));
   SetStopExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   wait_for_db_thread_pause.Wait();
   non_frontend_dtc_->Stop();
   WaitForDTC();
@@ -337,17 +342,18 @@ TEST_F(NonFrontendDataTypeControllerTest, AbortDuringAssociationActivated) {
           Return(true)));
   EXPECT_CALL(*model_associator_, AbortAssociation()).WillOnce(
       SignalEvent(&pause_db_thread));
-  EXPECT_CALL(*model_associator_, AssociateModels()).
+  EXPECT_CALL(*model_associator_, AssociateModels(_)).
       WillOnce(Return(true));
   EXPECT_CALL(*dtc_mock_, RecordAssociationTime(_));
-  EXPECT_CALL(service_, ActivateDataType(_, _)).WillOnce(DoAll(
+  EXPECT_CALL(service_, ActivateDataType(_, _, _)).WillOnce(DoAll(
       SignalEvent(&wait_for_db_thread_pause),
       WaitOnEvent(&pause_db_thread)));
   EXPECT_CALL(start_callback_, Run(DataTypeController::ABORTED,_));
   EXPECT_CALL(*dtc_mock_, RecordStartFailure(DataTypeController::ABORTED));
   SetStopExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   wait_for_db_thread_pause.Wait();
   non_frontend_dtc_->Stop();
   WaitForDTC();
@@ -360,7 +366,8 @@ TEST_F(NonFrontendDataTypeControllerTest, Stop) {
   SetActivateExpectations(DataTypeController::OK);
   SetStopExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::RUNNING, non_frontend_dtc_->state());
   non_frontend_dtc_->Stop();
@@ -377,14 +384,15 @@ TEST_F(NonFrontendDataTypeControllerTest, OnUnrecoverableError) {
           &NonFrontendDataTypeController::Stop));
   SetStopExpectations();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, non_frontend_dtc_->state());
-  non_frontend_dtc_->Start(NewCallback(&start_callback_, &StartCallback::Run));
+  non_frontend_dtc_->Start(
+      base::Bind(&StartCallbackMock::Run, base::Unretained(&start_callback_)));
   WaitForDTC();
   EXPECT_EQ(DataTypeController::RUNNING, non_frontend_dtc_->state());
   // This should cause non_frontend_dtc_->Stop() to be called.
   BrowserThread::PostTask(BrowserThread::DB, FROM_HERE,
-      NewRunnableMethod(
-          non_frontend_dtc_.get(),
+      base::Bind(
           &NonFrontendDataTypeControllerFake::OnUnrecoverableError,
+          non_frontend_dtc_.get(),
           FROM_HERE,
           std::string("Test")));
   WaitForDTC();

@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -47,6 +45,11 @@ class WifiPowerStrip(PowerStrip):
     for router_info in self._router_dict.values():
       router_info['WifiPowerStrip_UsableTime'] = time.time()
 
+    # _routers_used keeps track of which routers were used during the lifetime
+    # of the WifiPowerStrip instance.  Adding used routers occurs when
+    # a wifi router has been turned on.  Otherwise, it get clears upon
+    # the TurnOffUsedRouters call.
+    self._routers_used = set()
     PowerStrip.__init__(self, host)
 
   def GetRouterConfig(self, router_name):
@@ -79,11 +82,17 @@ class WifiPowerStrip(PowerStrip):
     router = self.GetRouterConfig(router_name)
     if not router: raise Exception('Invalid router name \'%s\'.' % router_name)
 
+    # Hidden routers will always be on.  Don't allow controlling of the power
+    # for these networks.
+    if router.get('hidden'):
+      return
+
     sleep_time = router['WifiPowerStrip_UsableTime'] - time.time()
     if sleep_time > 0:
-      sleep(sleep_time)
+      time.sleep(sleep_time)
 
     if power_state:
+      self._routers_used |= set([router_name])
       logging.debug('Turning on router %s:%s.' %
                     (router['strip_id'], router_name))
       self.PowerOn(router['strip_id'])
@@ -100,6 +109,13 @@ class WifiPowerStrip(PowerStrip):
     """Turns off all the routers."""
     for router in self._router_dict:
       self.RouterPower(router, False, pause_after=0)
+
+  def TurnOffUsedRouters(self):
+    """Turns off the routers that were once turned on."""
+    for router in self._routers_used:
+      self.RouterPower(router, False, pause_after=0)
+
+    self._routers_used = set()
 
 
 class PyNetworkUITest(pyauto.PyUITest):
@@ -122,17 +138,36 @@ class PyNetworkUITest(pyauto.PyUITest):
     # effectively hiding any ssh connections that the
     # test harness might be using and putting wifi ahead.
     self._PushServiceOrder('vpn,bluetooth,wifi,wimax,cellular,ethernet')
+    self._ParseDefaultRoutingTable()
     pyauto.PyUITest.setUp(self)
+    self.ForgetAllRememberedNetworks()
     self._wifi_power_strip = None
 
   def tearDown(self):
+    self.ForgetAllRememberedNetworks()
     pyauto.PyUITest.tearDown(self)
     self._PopServiceOrder()
-
-    # If the test case used the WifiPowerStrip, make sure
-    # everything is clean by turning all the routers off.
     if self._wifi_power_strip:
-      self._wifi_power_strip.TurnOffAllRouters()
+      self._wifi_power_strip.TurnOffUsedRouters()
+    # Remove the route entry for the power strip.
+    if hasattr(self, 'ps_route_entry'):
+      os.system('route del -net %(ipaddress)s gateway %(gateway)s netmask '
+                '%(netmask)s dev %(iface)s' % self.ps_route_entry)
+
+  def _ParseDefaultRoutingTable(self):
+    """Creates and stores a dictionary of the default routing paths."""
+    route_table_headers = ['destination', 'gateway', 'genmask', 'flags',
+                           'metric', 'ref', 'use', 'iface']
+    routes = os.popen('route -n | egrep "^0.0.0.0"').read()
+    routes = [interface.split() for interface in routes.split('\n')][:-1]
+    self.default_routes = {}
+    for iface in routes:
+      self.default_routes[iface[-1]] = dict(zip(route_table_headers, iface))
+
+  def ForgetAllRememberedNetworks(self):
+    """Forgets all networks that the device has marked as remembered."""
+    for service in self.GetNetworkInfo()['remembered_wifi']:
+      self.ForgetWifiNetwork(service)
 
   def _SetServiceOrder(self, service_order):
     self._manager.SetServiceOrder(service_order)
@@ -148,15 +183,60 @@ class PyNetworkUITest(pyauto.PyUITest):
   def _PushServiceOrder(self, service_order):
     self._old_service_order = self._manager.GetServiceOrder()
     self._SetServiceOrder(service_order)
-    assert service_order == self._manager.GetServiceOrder(), \
+    service_order = service_order.split(',')
+
+    # Verify services that are present in both the service_order
+    # we set and the one retrieved from device are in the correct order.
+    set_service_order = self._manager.GetServiceOrder().split(',')
+    common_service = set(service_order) & set(set_service_order)
+
+    service_order = [s for s in service_order if s in common_service]
+    set_service_order = [s for s in set_service_order if s in common_service]
+
+    assert service_order == set_service_order, \
         'Flimflam service order not set properly. %s != %s' % \
-        (self._old_service_order, self._manager.GetServiceOrder())
+        (service_order, set_service_order)
 
   def _PopServiceOrder(self):
     self._SetServiceOrder(self._old_service_order)
-    assert self._old_service_order == self._manager.GetServiceOrder(), \
-        'Flimflam service order not reset properly. %s != %s' % \
-        (self._old_service_order, self._manager.GetServiceOrder())
+
+    # Verify services that are present in both the service_order
+    # we set and the one retrieved from device are in the correct order.
+    old_service_order = self._old_service_order.split(',')
+    set_service_order = self._manager.GetServiceOrder().split(',')
+    common_service = set(old_service_order) & set(set_service_order)
+
+    old_service_order = [s for s in old_service_order if s in common_service]
+    set_service_order = [s for s in set_service_order if s in common_service]
+
+    assert old_service_order == set_service_order, \
+        'Flimflam service order not set properly. %s != %s' % \
+        (old_service_order, set_service_order)
+
+  def _SetupRouteForPowerStrip(self, ipaddress, iface='eth'):
+    """Create a route table entry for the power strip."""
+
+    # Assume device has only one interface that is prepended with
+    # $iface and use that one.
+    try:
+      iface = [ key for key in self.default_routes.keys() if iface in key ][0]
+    except:
+      assert 'Unable to find interface of type %s.' % iface
+
+    self.ps_route_entry = {
+      'iface' : iface,
+      'gateway' : self.default_routes[iface]['gateway'],
+      'netmask' : '255.255.255.255',
+      'ipaddress' : ipaddress
+    }
+
+    os.system('route add -net %(ipaddress)s gateway %(gateway)s netmask '
+              '%(netmask)s dev %(iface)s' % self.ps_route_entry)
+
+    # Verify the route was added.
+    assert os.system('route -n | egrep "^%(ipaddress)s[[:space:]]+%(gateway)s'
+                     '[[:space:]]+%(netmask)s"' % self.ps_route_entry) == 0, \
+                     'Failed to create default route for powerstrip.'
 
   def InitWifiPowerStrip(self):
     """Initializes the router controller using the specified config file."""
@@ -167,13 +247,14 @@ class PyNetworkUITest(pyauto.PyUITest):
     config = pyauto.PyUITest.EvalDataFrom(self._ROUTER_CONFIG_FILE)
     strip_ip, routers = config['strip_ip'], config['routers']
 
+    self._SetupRouteForPowerStrip(strip_ip)
     self._wifi_power_strip = WifiPowerStrip(strip_ip, routers)
 
     self.RouterPower = self._wifi_power_strip.RouterPower
     self.TurnOffAllRouters = self._wifi_power_strip.TurnOffAllRouters
     self.GetRouterConfig = self._wifi_power_strip.GetRouterConfig
 
-  def WaitUntilWifiNetworkAvailable(self, ssid, timeout=60):
+  def WaitUntilWifiNetworkAvailable(self, ssid, timeout=60, is_hidden=False):
     """Waits until the given network is available.
 
     Routers that are just turned on may take up to 1 minute upon turning them
@@ -202,6 +283,11 @@ class PyNetworkUITest(pyauto.PyUITest):
         # thrown by it are not critical to the results of wifi tests that use
         # this method.
         return False
+
+    # The hidden AP's will always be on, thus we will assume it is ready to
+    # connect to.
+    if is_hidden:
+      return bool(_GotWifiNetwork())
 
     return self.WaitUntil(_GotWifiNetwork, timeout=timeout, retry_sleep=1)
 
@@ -233,7 +319,7 @@ class PyNetworkUITest(pyauto.PyUITest):
         return service_path
     return None
 
-  def ConnectToWifiRouter(self, router_name):
+  def ConnectToWifiRouter(self, router_name, shared=True):
     """Connects to a router by name.
 
     Args:
@@ -243,22 +329,22 @@ class PyNetworkUITest(pyauto.PyUITest):
     router = self._wifi_power_strip.GetRouterConfig(router_name)
     assert router, 'Router with name %s is not defined ' \
                    'in the router configuration.' % router_name
-
-    service_path = self.GetServicePath(router['ssid'])
-    assert service_path, 'Service with SSID %s is not present.' % router['ssid']
-
+    security = router.get('security', 'SECURITY_NONE')
     passphrase = router.get('passphrase', '')
 
-    logging.debug('Connecting to router %s.' % router_name)
-    return self.ConnectToWifiNetwork(service_path, passphrase)
+    # Branch off the connect calls depending on if the wifi network is hidden
+    # or not.
+    error_string = None
+    if router.get('hidden'):
+      error_string = self.ConnectToHiddenWifiNetwork(router['ssid'], security,
+                                                     passphrase)
+    else:
+      service_path = self.GetServicePath(router['ssid'])
+      assert service_path, 'Service with SSID %s is not present.' % \
+             router['ssid']
 
-  def PowerDownAllRouters(self):
-    """Turns off all of the routers.
-
-    Convenience method that allows all subclasses to turn everything off and
-    start fresh.
-
-    """
-    if self._wifi_power_strip:
-      self._wifi_power_strip.TurnOffAllRouters()
-
+      logging.debug('Connecting to router %s.' % router_name)
+      error_string = self.ConnectToWifiNetwork(service_path,
+                                               password=passphrase,
+                                               shared=shared)
+    return error_string

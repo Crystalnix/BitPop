@@ -8,12 +8,13 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync/glue/data_type_manager_impl.h"
-#include "chrome/browser/sync/js_backend.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/test/profile_mock.h"
-#include "chrome/test/sync/engine/test_id_factory.h"
+#include "chrome/browser/sync/test/engine/test_id_factory.h"
+#include "chrome/test/base/profile_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 class Profile;
@@ -26,87 +27,71 @@ ACTION(ReturnNewDataTypeManager) {
 
 namespace browser_sync {
 
-// Mocks out the SyncerThread operations (Pause/Resume) since no thread is
-// running in these tests, and allows tests to provide a task on construction
-// to set up initial nodes to mock out an actual server initial sync
-// download.
-class SyncBackendHostForProfileSyncTest
-    : public SyncBackendHost, public JsBackend {
+class SyncBackendHostForProfileSyncTest : public SyncBackendHost {
  public:
   // |synchronous_init| causes initialization to block until the syncapi has
   //     completed setting itself up and called us back.
   SyncBackendHostForProfileSyncTest(
       Profile* profile,
+      const base::WeakPtr<SyncPrefs>& sync_prefs,
       bool set_initial_sync_ended_on_init,
-      bool synchronous_init);
+      bool synchronous_init,
+      bool fail_initial_download);
   virtual ~SyncBackendHostForProfileSyncTest();
 
   MOCK_METHOD1(RequestNudge, void(const tracked_objects::Location&));
-
-  virtual void ConfigureDataTypes(
-      const DataTypeController::TypeMap& data_type_controllers,
-      const syncable::ModelTypeSet& types,
-      sync_api::ConfigureReason reason,
-      CancelableTask* ready_task,
-      bool nigori_enabled);
 
   // Called when a nudge comes in.
   void SimulateSyncCycleCompletedInitialSyncEnded(
       const tracked_objects::Location&);
 
-  virtual sync_api::HttpPostProviderFactory* MakeHttpBridgeFactory(
-      net::URLRequestContextGetter* getter);
-
-  virtual void InitCore(const Core::DoInitializeOptions& options);
-
-  virtual JsBackend* GetJsBackend();
-
-  // JsBackend implementation.
-  virtual void SetParentJsEventRouter(JsEventRouter* router) OVERRIDE;
-  virtual void RemoveParentJsEventRouter() OVERRIDE;
-  virtual const JsEventRouter* GetParentJsEventRouter() const OVERRIDE;
-  // Fires an event identical to the message unless the message has
-  // "delay" as a prefix, in which case a task to fire the identical
-  // event is posted instead.
-  virtual void ProcessMessage(const std::string& name, const JsArgList& args,
-                              const JsEventHandler* sender) OVERRIDE;
-
-  virtual void StartConfiguration(Callback0::Type* callback);
+  virtual void StartConfiguration(const base::Closure& callback) OVERRIDE;
 
   static void SetDefaultExpectationsForWorkerCreation(ProfileMock* profile);
 
   static void SetHistoryServiceExpectations(ProfileMock* profile);
 
+ protected:
+  virtual void InitCore(const DoInitializeOptions& options) OVERRIDE;
+
  private:
   bool synchronous_init_;
+  bool fail_initial_download_;
 };
 
 }  // namespace browser_sync
 
 class TestProfileSyncService : public ProfileSyncService {
  public:
-  // |initial_condition_setup_task| can be used to populate nodes
-  // before the OnBackendInitialized callback fires.
-  TestProfileSyncService(ProfileSyncFactory* factory,
+  // |callback| can be used to populate nodes before the OnBackendInitialized
+  // callback fires.
+  // TODO(tim): Remove |synchronous_backend_initialization|, and add ability to
+  // inject TokenService alongside SigninManager.
+  TestProfileSyncService(ProfileSyncComponentsFactory* factory,
                          Profile* profile,
-                         const std::string& test_user,
+                         SigninManager* signin,
+                         ProfileSyncService::StartBehavior behavior,
                          bool synchronous_backend_initialization,
-                         Task* initial_condition_setup_task);
+                         const base::Closure& callback);
 
   virtual ~TestProfileSyncService();
 
-  void SetInitialSyncEndedForEnabledTypes();
+  void SetInitialSyncEndedForAllTypes();
 
-  virtual void OnBackendInitialized();
+  virtual void OnBackendInitialized(
+      const browser_sync::WeakHandle<browser_sync::JsBackend>& backend,
+      bool success) OVERRIDE;
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // If this is called, configuring data types will require a syncer
   // nudge.
   void dont_set_initial_sync_ended_on_init();
   void set_synchronous_sync_configuration();
+
+  void fail_initial_download();
 
   browser_sync::TestIdFactory* id_factory();
 
@@ -114,16 +99,12 @@ class TestProfileSyncService : public ProfileSyncService {
   // specific return type (since C++ supports covariant return types)
   // that is made public.
   virtual browser_sync::SyncBackendHostForProfileSyncTest*
-      GetBackendForTest();
+      GetBackendForTest() OVERRIDE;
 
  protected:
-  virtual void CreateBackend();
+  virtual void CreateBackend() OVERRIDE;
 
  private:
-  // When testing under ChromiumOS, this method must not return an empty
-  // value value in order for the profile sync service to start.
-  virtual std::string GetLsidForAuthBootstraping();
-
   browser_sync::TestIdFactory id_factory_;
 
   bool synchronous_backend_initialization_;
@@ -133,8 +114,10 @@ class TestProfileSyncService : public ProfileSyncService {
   bool synchronous_sync_configuration_;
   bool set_expect_resume_expectations_;
 
-  Task* initial_condition_setup_task_;
+  base::Closure callback_;
   bool set_initial_sync_ended_on_init_;
+
+  bool fail_initial_download_;
 };
 
 

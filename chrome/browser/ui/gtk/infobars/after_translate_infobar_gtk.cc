@@ -4,17 +4,21 @@
 
 #include "chrome/browser/ui/gtk/infobars/after_translate_infobar_gtk.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
+#include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/base/l10n/l10n_util.h"
 
 AfterTranslateInfoBar::AfterTranslateInfoBar(
+    InfoBarTabHelper* owner,
     TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(delegate),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+    : TranslateInfoBarBase(owner, delegate),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 AfterTranslateInfoBar::~AfterTranslateInfoBar() {
@@ -29,19 +33,19 @@ void AfterTranslateInfoBar::Init() {
       &strings, &swapped_language_combos);
   DCHECK(strings.size() == 3U);
 
-  GtkWidget* hbox = gtk_hbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* hbox = gtk_hbox_new(FALSE, ui::kControlSpacing);
   gtk_util::CenterWidgetInHBox(hbox_, hbox, false, 0);
 
   GtkWidget* original_lang_combo =
       CreateLanguageCombobox(GetDelegate()->original_language_index(),
                              GetDelegate()->target_language_index());
-  g_signal_connect(original_lang_combo, "changed",
-                   G_CALLBACK(&OnOriginalLanguageModifiedThunk), this);
+  Signals()->Connect(original_lang_combo, "changed",
+                     G_CALLBACK(&OnOriginalLanguageModifiedThunk), this);
   GtkWidget* target_lang_combo =
       CreateLanguageCombobox(GetDelegate()->target_language_index(),
                              GetDelegate()->original_language_index());
-  g_signal_connect(target_lang_combo, "changed",
-                   G_CALLBACK(&OnTargetLanguageModifiedThunk), this);
+  Signals()->Connect(target_lang_combo, "changed",
+                     G_CALLBACK(&OnTargetLanguageModifiedThunk), this);
 
   gtk_box_pack_start(GTK_BOX(hbox), CreateLabel(UTF16ToUTF8(strings[0])),
                      FALSE, FALSE, 0);
@@ -60,7 +64,8 @@ void AfterTranslateInfoBar::Init() {
 
   GtkWidget* button = gtk_button_new_with_label(
       l10n_util::GetStringUTF8(IDS_TRANSLATE_INFOBAR_REVERT).c_str());
-  g_signal_connect(button, "clicked",G_CALLBACK(&OnRevertPressedThunk), this);
+  Signals()->Connect(button, "clicked",
+                     G_CALLBACK(&OnRevertPressedThunk), this);
   gtk_box_pack_start(GTK_BOX(hbox), button, FALSE, FALSE, 0);
 }
 
@@ -76,8 +81,11 @@ void AfterTranslateInfoBar::OnOriginalLanguageModified(GtkWidget* sender) {
   // Setting the language will lead to a new translation that is going to close
   // the infobar.  This is not OK to do this from the signal handler, so we'll
   // defer it.
-  MessageLoop::current()->PostTask(FROM_HERE, method_factory_.NewRunnableMethod(
-      &AfterTranslateInfoBar::SetOriginalLanguage, index));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&AfterTranslateInfoBar::SetOriginalLanguage,
+                 weak_factory_.GetWeakPtr(),
+                 index));
 }
 
 void AfterTranslateInfoBar::OnTargetLanguageModified(GtkWidget* sender) {
@@ -86,8 +94,11 @@ void AfterTranslateInfoBar::OnTargetLanguageModified(GtkWidget* sender) {
     return;
 
   // See comment in OnOriginalLanguageModified on why we use a task.
-  MessageLoop::current()->PostTask(FROM_HERE, method_factory_.NewRunnableMethod(
-      &AfterTranslateInfoBar::SetTargetLanguage, index));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&AfterTranslateInfoBar::SetTargetLanguage,
+                 weak_factory_.GetWeakPtr(),
+                 index));
 }
 
 void AfterTranslateInfoBar::OnRevertPressed(GtkWidget* sender) {

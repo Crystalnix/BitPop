@@ -3,648 +3,147 @@
 // found in the LICENSE file.
 
 /**
- * @fileoverview A simple, English virtual keyboard implementation.
+ * @fileoverview A simple virtual keyboard implementation.
  */
 
-var KEY_MODE = 'key';
-var SHIFT_MODE = 'shift';
-var NUMBER_MODE = 'number';
-var SYMBOL_MODE = 'symbol';
-var MODES = [ KEY_MODE, SHIFT_MODE, NUMBER_MODE, SYMBOL_MODE ];
-var currentMode = KEY_MODE;
-var MODE_TRANSITIONS = {};
-
-MODE_TRANSITIONS[KEY_MODE + SHIFT_MODE] = SHIFT_MODE;
-MODE_TRANSITIONS[KEY_MODE + NUMBER_MODE] = NUMBER_MODE;
-MODE_TRANSITIONS[SHIFT_MODE + SHIFT_MODE] = KEY_MODE;
-MODE_TRANSITIONS[SHIFT_MODE + NUMBER_MODE] = NUMBER_MODE;
-MODE_TRANSITIONS[NUMBER_MODE + SHIFT_MODE] = SYMBOL_MODE;
-MODE_TRANSITIONS[NUMBER_MODE + NUMBER_MODE] = KEY_MODE;
-MODE_TRANSITIONS[SYMBOL_MODE + SHIFT_MODE] = NUMBER_MODE;
-MODE_TRANSITIONS[SYMBOL_MODE + NUMBER_MODE] = KEY_MODE;
-
 /**
- * Transition the mode according to the given transition.
- * @param {string} transition The transition to take.
- * @return {void}
- */
-function transitionMode(transition) {
-  currentMode = MODE_TRANSITIONS[currentMode + transition];
-  setMode(currentMode);
-}
-
-/**
- * Plain-old-data class to represent a character.
- * @param {string} display The HTML to be displayed.
- * @param {string} id The key identifier for this Character.
- * @constructor
- */
-function Character(display, id) {
-  this.display = display;
-  this.keyIdentifier = id;
-}
-
-/**
- * Convenience function to make the keyboard data more readable.
- * @param {string} display Both the display and id for the created Character.
- */
-function C(display) {
-  return new Character(display, display);
-}
-
-/**
- * An abstract base-class for all keys on the keyboard.
- * @constructor
- */
-function BaseKey() {}
-
-BaseKey.prototype = {
-  /**
-   * The aspect ratio of this key.
-   * @type {number}
-   */
-  aspect_: 1,
-
-  /**
-   * The cell type of this key.  Determines the background colour.
-   * @type {string}
-   */
-  cellType_: '',
-
-  /**
-   * @return {number} The aspect ratio of this key.
-   */
-  get aspect() {
-    return this.aspect_;
-  },
-
-  /**
-   * Set the position, a.k.a. row, of this key.
-   * @param {string} position The position.
-   * @return {void}
-   */
-  set position(position) {
-    for (var i in this.modeElements_) {
-      this.modeElements_[i].classList.add(this.cellType_ + 'r' + position);
-    }
-  },
-
-  /**
-   * Returns the amount of padding for the top of the key.
-   * @param {string} mode The mode for the key.
-   * @param {number} height The height of the key.
-   * @return {number} Padding in pixels.
-   */
-  getPadding: function(mode, height) {
-    return Math.floor(height / 3.5);
-  },
-
-  /**
-   * Size the DOM elements of this key.
-   * @param {string} mode The mode to be sized.
-   * @param {number} height The height of the key.
-   * @return {void}
-   */
-  sizeElement: function(mode, height) {
-    var padding = this.getPadding(mode, height);
-    var border = 1;
-    var margin = 5;
-    var width = Math.floor(height * this.aspect_);
-
-    var extraHeight = margin + padding + 2 * border;
-    var extraWidth = margin + 2 * border;
-
-    this.modeElements_[mode].style.width = (width - extraWidth) + 'px';
-    this.modeElements_[mode].style.height = (height - extraHeight) + 'px';
-    this.modeElements_[mode].style.marginLeft = margin + 'px';
-    this.modeElements_[mode].style.fontSize = (height / 3.5) + 'px';
-    this.modeElements_[mode].style.paddingTop = padding + 'px';
-  },
-
-  /**
-   * Resize all modes of this key based on the given height.
-   * @param {number} height The height of the key.
-   * @return {void}
-   */
-  resize: function(height) {
-    for (var i in this.modeElements_) {
-      this.sizeElement(i, height);
-    }
-  },
-
-  /**
-   * Create the DOM elements for the given keyboard mode.  Must be overridden.
-   * @param {string} mode The keyboard mode to create elements for.
-   * @param {number} height The height of the key.
-   * @return {Element} The top-level DOM Element for the key.
-   */
-  makeDOM: function(mode, height) {
-    throw new Error('makeDOM not implemented in BaseKey');
-  },
-};
-
-/**
- * A simple key which displays Characters.
- * @param {Character} key The Character for KEY_MODE.
- * @param {Character} shift The Character for SHIFT_MODE.
- * @param {Character} num The Character for NUMBER_MODE.
- * @param {Character} symbol The Character for SYMBOL_MODE.
- * @constructor
- * @extends {BaseKey}
- */
-function Key(key, shift, num, symbol) {
-  this.modeElements_ = {};
-  this.aspect_ = 1;  // ratio width:height
-  this.cellType_ = '';
-
-  this.modes_ = {};
-  this.modes_[KEY_MODE] = key;
-  this.modes_[SHIFT_MODE] = shift;
-  this.modes_[NUMBER_MODE] = num;
-  this.modes_[SYMBOL_MODE] = symbol;
-}
-
-Key.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-    this.modeElements_[mode].textContent = this.modes_[mode].display;
-    this.modeElements_[mode].className = 'key';
-
-    this.sizeElement(mode, height);
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          sendKeyFunction(this.modes_[mode].keyIdentifier));
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * A key which displays an SVG image.
- * @param {number} aspect The aspect ratio of the key.
- * @param {string} className The class that provides the image.
- * @param {string} keyId The key identifier for the key.
- * @constructor
- * @extends {BaseKey}
- */
-function SvgKey(aspect, className, keyId) {
-  this.modeElements_ = {};
-  this.aspect_ = aspect;
-  this.cellType_ = 'nc';
-  this.className_ = className;
-  this.keyId_ = keyId;
-}
-
-SvgKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  getPadding: function(mode, height) { return 0; },
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-    this.modeElements_[mode].className = 'key';
-
-    var img = document.createElement('div');
-    img.className = 'image-key ' + this.className_;
-    this.modeElements_[mode].appendChild(img);
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          sendKeyFunction(this.keyId_));
-
-    this.sizeElement(mode, height);
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * A Key that remains the same through all modes.
- * @param {number} aspect The aspect ratio of the key.
- * @param {string} content The display text for the key.
- * @param {string} keyId The key identifier for the key.
- * @constructor
- * @extends {BaseKey}
- */
-function SpecialKey(aspect, content, keyId) {
-  this.modeElements_ = {};
-  this.aspect_ = aspect;
-  this.cellType_ = 'nc';
-  this.content_ = content;
-  this.keyId_ = keyId;
-}
-
-SpecialKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-    this.modeElements_[mode].textContent = this.content_;
-    this.modeElements_[mode].className = 'key';
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          sendKeyFunction(this.keyId_));
-
-    this.sizeElement(mode, height);
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * A shift key.
- * @param {number} aspect The aspect ratio of the key.
- * @constructor
- * @extends {BaseKey}
- */
-function ShiftKey(aspect) {
-  this.modeElements_ = {};
-  this.aspect_ = aspect;
-  this.cellType_ = 'nc';
-}
-
-ShiftKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  getPadding: function(mode, height) {
-    if (mode == NUMBER_MODE || mode == SYMBOL_MODE) {
-      return BaseKey.prototype.getPadding.call(this, mode, height);
-    }
-    return 0;
-  },
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-
-    if (mode == KEY_MODE || mode == SHIFT_MODE) {
-      var shift = document.createElement('div');
-      shift.className = 'image-key shift';
-      this.modeElements_[mode].appendChild(shift);
-    } else if (mode == NUMBER_MODE) {
-      this.modeElements_[mode].textContent = 'more';
-    } else if (mode == SYMBOL_MODE) {
-      this.modeElements_[mode].textContent = '#123';
-    }
-
-    if (mode == SHIFT_MODE || mode == SYMBOL_MODE) {
-      this.modeElements_[mode].className = 'moddown key';
-    } else {
-      this.modeElements_[mode].className = 'key';
-    }
-
-    this.sizeElement(mode, height);
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          function() {
-                            transitionMode(SHIFT_MODE);
-                          });
-    return this.modeElements_[mode];
-  },
-};
-
-/**
- * The symbol key: switches the keyboard into symbol mode.
- * @constructor
- * @extends {BaseKey}
- */
-function SymbolKey() {
-  this.modeElements_ = {}
-  this.aspect_ = 1.3;
-  this.cellType_ = 'nc';
-}
-
-SymbolKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-
-    if (mode == KEY_MODE || mode == SHIFT_MODE) {
-      this.modeElements_[mode].textContent = '#123';
-    } else if (mode == NUMBER_MODE || mode == SYMBOL_MODE) {
-      this.modeElements_[mode].textContent = 'abc';
-    }
-
-    if (mode == NUMBER_MODE || mode == SYMBOL_MODE) {
-      this.modeElements_[mode].className = 'moddown key';
-    } else {
-      this.modeElements_[mode].className = 'key';
-    }
-
-    this.sizeElement(mode, height);
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          function() {
-                            transitionMode(NUMBER_MODE);
-                          });
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * The ".com" key.
- * @constructor
- * @extends {BaseKey}
- */
-function DotComKey() {
-  this.modeElements_ = {}
-  this.aspect_ = 1.3;
-  this.cellType_ = 'nc';
-}
-
-DotComKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-    this.modeElements_[mode].textContent = '.com';
-    this.modeElements_[mode].className = 'key';
-
-    this.sizeElement(mode, height);
-
-    setupKeyEventHandlers(this.modeElements_[mode],
-                          function() {
-                            sendKey('.');
-                            sendKey('c');
-                            sendKey('o');
-                            sendKey('m');
-                          });
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * The key that hides the keyboard.
- * @constructor
- * @extends {BaseKey}
- */
-function HideKeyboardKey() {
-  this.modeElements_ = {}
-  this.aspect_ = 1.3;
-  this.cellType_ = 'nc';
-}
-
-HideKeyboardKey.prototype = {
-  __proto__: BaseKey.prototype,
-
-  /** @inheritDoc */
-  getPadding: function(mode, height) { return 0; },
-
-  /** @inheritDoc */
-  makeDOM: function(mode, height) {
-    this.modeElements_[mode] = document.createElement('div');
-    this.modeElements_[mode].className = 'key';
-
-    var hide = document.createElement('div');
-    hide.className = 'image-key hide';
-    this.modeElements_[mode].appendChild(hide);
-
-    this.sizeElement(mode, height);
-
-    this.modeElements_[mode].onclick = function() {
-      chrome.experimental.input.hideKeyboard();
-    };
-
-    return this.modeElements_[mode];
-  }
-};
-
-/**
- * A container for keys.
- * @param {number} position The position of the row (0-3).
- * @param {Array.<BaseKey>} keys The keys in the row.
- * @constructor
- */
-function Row(position, keys) {
-  this.position_ = position;
-  this.keys_ = keys;
-  this.element_ = null;
-  this.modeElements_ = {};
-}
-
-Row.prototype = {
-  /**
-   * Get the total aspect ratio of the row.
-   * @return {number} The aspect ratio relative to a height of 1 unit.
-   */
-  get aspect() {
-    var total = 0;
-    for (var i = 0; i < this.keys_.length; ++i) {
-      total += this.keys_[i].aspect;
-    }
-    return total;
-  },
-
-  /**
-   * Create the DOM elements for the row.
-   * @return {Element} The top-level DOM Element for the row.
-   */
-  makeDOM: function(height) {
-    this.element_ = document.createElement('div');
-    this.element_.className = 'row';
-    for (var i = 0; i < MODES.length; ++i) {
-      var mode = MODES[i];
-      this.modeElements_[mode] = document.createElement('div');
-      this.modeElements_[mode].style.display = 'none';
-      this.element_.appendChild(this.modeElements_[mode]);
-    }
-
-    for (var j = 0; j < this.keys_.length; ++j) {
-      var key = this.keys_[j];
-      for (var i = 0; i < MODES.length; ++i) {
-        this.modeElements_[MODES[i]].appendChild(key.makeDOM(MODES[i]), height);
-      }
-    }
-
-    for (var i = 0; i < MODES.length; ++i) {
-      var clearingDiv = document.createElement('div');
-      clearingDiv.style.clear = 'both';
-      this.modeElements_[MODES[i]].appendChild(clearingDiv);
-    }
-
-    for (var i = 0; i < this.keys_.length; ++i) {
-      this.keys_[i].position = this.position_;
-    }
-
-    return this.element_;
-  },
-
-  /**
-   * Shows the given mode.
-   * @param {string} mode The mode to show.
-   * @return {void}
-   */
-  showMode: function(mode) {
-    for (var i = 0; i < MODES.length; ++i) {
-      this.modeElements_[MODES[i]].style.display = 'none';
-    }
-    this.modeElements_[mode].style.display = 'block';
-  },
-
-  /**
-   * Resizes all keys in the row according to the global size.
-   * @param {number} height The height of the key.
-   * @return {void}
-   */
-  resize: function(height) {
-    for (var i = 0; i < this.keys_.length; ++i) {
-      this.keys_[i].resize(height);
-    }
-  },
-};
-
-/**
- * All keys for the rows of the keyboard.
- * NOTE: every row below should have an aspect of 12.6.
- * @type {Array.<Array.<BaseKey>>}
- */
-var KEYS = [
-  [
-    new SvgKey(1, 'tab', 'Tab'),
-    new Key(C('q'), C('Q'), C('1'), C('`')),
-    new Key(C('w'), C('W'), C('2'), C('~')),
-    new Key(C('e'), C('E'), C('3'), new Character('<', 'LessThan')),
-    new Key(C('r'), C('R'), C('4'), new Character('>', 'GreaterThan')),
-    new Key(C('t'), C('T'), C('5'), C('[')),
-    new Key(C('y'), C('Y'), C('6'), C(']')),
-    new Key(C('u'), C('U'), C('7'), C('{')),
-    new Key(C('i'), C('I'), C('8'), C('}')),
-    new Key(C('o'), C('O'), C('9'), C('\'')),
-    new Key(C('p'), C('P'), C('0'), C('|')),
-    new SvgKey(1.6, 'backspace', 'Backspace')
-  ],
-  [
-    new SymbolKey(),
-    new Key(C('a'), C('A'), C('!'), C('+')),
-    new Key(C('s'), C('S'), C('@'), C('=')),
-    new Key(C('d'), C('D'), C('#'), C(' ')),
-    new Key(C('f'), C('F'), C('$'), C(' ')),
-    new Key(C('g'), C('G'), C('%'), C(' ')),
-    new Key(C('h'), C('H'), C('^'), C(' ')),
-    new Key(C('j'), C('J'), new Character('&', 'Ampersand'), C(' ')),
-    new Key(C('k'), C('K'), C('*'), C('#')),
-    new Key(C('l'), C('L'), C('('), C(' ')),
-    new Key(C('\''), C('\''), C(')'), C(' ')),
-    new SvgKey(1.3, 'return', 'Enter')
-  ],
-  [
-    new ShiftKey(1.6),
-    new Key(C('z'), C('Z'), C('/'), C(' ')),
-    new Key(C('x'), C('X'), C('-'), C(' ')),
-    new Key(C('c'), C('C'), C('\''), C(' ')),
-    new Key(C('v'), C('V'), C('"'), C(' ')),
-    new Key(C('b'), C('B'), C(':'), C('.')),
-    new Key(C('n'), C('N'), C(';'), C(' ')),
-    new Key(C('m'), C('M'), C('_'), C(' ')),
-    new Key(C('!'), C('!'), C('{'), C(' ')),
-    new Key(C('?'), C('?'), C('}'), C(' ')),
-    new Key(C('/'), C('/'), C('\\'), C(' ')),
-    new ShiftKey(1)
-  ],
-  [
-    new SvgKey(1.3, 'mic', ''),
-    new DotComKey(),
-    new SpecialKey(1.3, '@', '@'),
-    // TODO(bryeung): the spacebar needs to be a little bit more stretchy,
-    // since this row has only 7 keys (as opposed to 12), the truncation
-    // can cause it to not be wide enough.
-    new SpecialKey(4.8, ' ', 'Spacebar'),
-    new SpecialKey(1.3, ',', ','),
-    new SpecialKey(1.3, '.', '.'),
-    new HideKeyboardKey()
-  ]
-];
-
-/**
- * All of the rows in the keyboard.
- * @type {Array.<Row>}
- */
-var allRows = [];  // Populated during start()
-
-/**
- * Calculate the height of the row based on the size of the page.
- * @return {number} The height of each row, in pixels.
- */
-function getRowHeight() {
-  var x = window.innerWidth;
-  var y = window.innerHeight - (imeui ? IME_HEIGHT - 2 : 0);
-  return (x > kKeyboardAspect * y) ?
-      (height = Math.floor(y / 4)) :
-      (height = Math.floor(x / (kKeyboardAspect * 4)));
-}
-
-/**
- * Set the keyboard mode.
- * @param {string} mode The new mode.
- * @return {void}
- */
-function setMode(mode) {
-  for (var i = 0; i < allRows.length; ++i) {
-    allRows[i].showMode(mode);
-  }
-}
-
-/**
- * The keyboard's aspect ratio.
+ * The ratio of the row height to the font size.
  * @type {number}
  */
-var kKeyboardAspect = 3.3;
+const kFontSizeRatio = 3.5;
 
 /**
- * Send the given key to chrome, via the experimental extension API.
- * @param {string} key The key to send.
+ * Return the id attribute of the keyboard element for the given layout.
+ * @param {string} layout The keyboard layout.
+ * @return {string} The id attribute of the keyboard element.
+ */
+function getKeyboardId(layout) {
+  return 'keyboard_' + layout;
+}
+
+/**
+ * Return the aspect ratio of the current keyboard.
+ * @param {string} layout The keyboard layout.
+ * @return {number} The aspect ratio of the current keyboard.
+ */
+function getKeyboardAspect() {
+  return KEYBOARDS[currentKeyboardLayout]['aspect'];
+}
+
+/**
+ * Calculate the height of the keyboard based on the size of the page.
+ * @return {number} The height of the keyboard in pixels.
+ */
+function getKeyboardHeight() {
+  var x = window.innerWidth;
+  var y = window.innerHeight - ((imeui && imeui.visible) ? IME_HEIGHT : 0);
+  return (x > getKeyboardAspect() * y) ?
+      y : Math.floor(x / getKeyboardAspect());
+}
+
+/**
+ * Create a DOM of the keyboard rows for the given keyboard layout.
+ * Do nothing if the DOM is already created.
+ * @param {string} layout The keyboard layout for which rows are created.
+ * @param {Element} element The DOM Element to which rows are appended.
+ * @param {boolean} autoPadding True if padding needs to be added to both side
+ *     of the rows that have less keys.
  * @return {void}
  */
-function sendKey(key) {
-  if (!chrome.experimental) {
-    console.log(key);
+function initRows(layout, element, autoPadding) {
+  var keyboard = KEYBOARDS[layout];
+  if ('rows' in keyboard) {
     return;
   }
-
-  var keyEvent = {'type': 'keydown', 'keyIdentifier': key};
-  chrome.experimental.input.sendKeyboardEvent(keyEvent);
-  keyEvent['type'] = 'keyup';
-  chrome.experimental.input.sendKeyboardEvent(keyEvent);
-
-  if (currentMode == SHIFT_MODE) {
-    transitionMode(SHIFT_MODE);
+  var def = keyboard['definition'];
+  var rows = [];
+  for (var i = 0; i < def.length; ++i) {
+    rows.push(new Row(i, def[i]));
   }
+  keyboard['rows'] = rows;
+
+  var maxRowLength = -1;
+  for (var i = 0; i < rows.length; ++i) {
+    if (rows[i].length > maxRowLength) {
+      maxRowLength = rows[i].length;
+    }
+  }
+
+  // A div element which holds rows for the layout.
+  var rowsDiv = document.createElement('div');
+  rowsDiv.className = 'rows';
+  for (var i = 0; i < rows.length; ++i) {
+    var rowDiv = rows[i].makeDOM();
+    if (autoPadding && rows[i].length < maxRowLength) {
+      var padding = 50 * (maxRowLength - rows[i].length) / maxRowLength;
+      rowDiv.style.paddingLeft = padding + '%';
+      rowDiv.style.paddingRight = padding + '%';
+    }
+    rowsDiv.appendChild(rowDiv);
+    rows[i].showMode(currentMode);
+  }
+  keyboard['rowsDiv'] = rowsDiv;
+  element.appendChild(rowsDiv);
 }
 
 /**
- * Setup event handlers for the keys.
- * @param {BaseKey} key The key to setup event handlers for.
- * @param {fn} handler The event handler to use for the key.
+ * Create a DOM of the handwriting canvas for the given keyboard layout.
+ * Do nothing if the DOM is already created or the layout doesn't have canvas.
+ * @param {string} layout The keyboard layout for which canvas is created.
+ * @param {Element} The DOM Element to which canvas is appended.
  * @return {void}
  */
-function setupKeyEventHandlers(key, handler) {
-  key.onclick = function(evt) {
-    handler();
-    evt.preventDefault()
-  };
-  key.ontouchstart = key.onclick;
+function initHandwritingCanvas(layout, element) {
+  var keyboard = KEYBOARDS[layout];
+  if (!('canvas' in keyboard) || keyboard['canvas']) {
+    return;
+  }
+  var canvas = new HandwritingCanvas();
+  canvas.className = 'handwritingcanvas';
+  var border = 1;
+  var marginTop = 5;
+  var canvasHeight = getKeyboardHeight() - 2 * border - marginTop;
+  canvas.resize(canvasHeight);
+  keyboard['canvas'] = canvas;
+  element.appendChild(canvas);
 }
 
 /**
- * Create a closure for the sendKey function.
- * @param {string} key The parameter to sendKey.
+ * Create a DOM of the keyboard for the given keyboard layout.
+ * Do nothing if the DOM is already created.
+ * @param {string} layout The keyboard layout for which keyboard is created.
+ * @param {Element} The DOM Element to which keyboard is appended.
  * @return {void}
  */
-function sendKeyFunction(key) {
-  return function() {
-    sendKey(key);
+function initKeyboard(layout, element) {
+  var keyboard = KEYBOARDS[layout];
+  if (!keyboard || keyboard['keyboardDiv']) {
+    return;
   }
+  var keyboardDiv = document.createElement('div');
+  keyboardDiv.id = getKeyboardId(layout);
+  keyboardDiv.className = 'keyboard';
+  initRows(layout, keyboardDiv);
+  initHandwritingCanvas(layout, keyboardDiv);
+  keyboard['keyboardDiv'] = keyboardDiv;
+  window.onresize();
+  element.appendChild(keyboardDiv);
+}
+
+/**
+ * Create a DOM of the popup keyboard.
+ * @param {Element} The DOM Element to which the popup keyboard is appended.
+ * @return {void}
+ */
+function initPopupKeyboard(element) {
+  var popupDiv = document.createElement('div');
+  popupDiv.id = 'popup';
+  popupDiv.className = 'keyboard popup';
+  popupDiv.style.visibility = 'hidden';
+  element.appendChild(popupDiv);
+  element.addEventListener('mouseup', function(evt) {
+      hidePopupKeyboard(evt);
+    });
 }
 
 /**
@@ -652,18 +151,13 @@ function sendKeyFunction(key) {
  * @return {void}
  */
 window.onresize = function() {
-  var height = getRowHeight();
-  var newX = document.documentElement.clientWidth;
-
-  // All rows should have the same aspect, so just use the first one
-  var totalWidth = Math.floor(height * allRows[0].aspect);
-  var leftPadding = Math.floor((newX - totalWidth) / 2);
-  document.getElementById('b').style.paddingLeft = leftPadding + 'px';
-
-  for (var i = 0; i < allRows.length; ++i) {
-    allRows[i].resize(height);
-  }
-
+  var keyboardDiv = KEYBOARDS[currentKeyboardLayout]['keyboardDiv'];
+  var height = getKeyboardHeight();
+  keyboardDiv.style.height = height + 'px';
+  var mainDiv = document.getElementById('main');
+  mainDiv.style.width = Math.floor(getKeyboardAspect() * height) + 'px';
+  var rowsLength = KEYBOARDS[currentKeyboardLayout]['rows'].length;
+  keyboardDiv.style.fontSize = (height / kFontSizeRatio / rowsLength) + 'px';
   updateIme();
 }
 
@@ -674,18 +168,85 @@ window.onresize = function() {
 window.onload = function() {
   var body = document.getElementById('b');
 
-  initIme(body);
-
-  for (var i = 0; i < KEYS.length; ++i) {
-    allRows.push(new Row(i, KEYS[i]));
+  // Catch all unhandled touch events and prevent default, to prevent the
+  // keyboard from responding to gestures like double tap.
+  function disableGestures(evt) {
+    evt.preventDefault();
   }
+  body.addEventListener('touchstart', disableGestures);
+  body.addEventListener('touchmove', disableGestures);
+  body.addEventListener('touchend', disableGestures);
 
-  for (var i = 0; i < allRows.length; ++i) {
-    body.appendChild(allRows[i].makeDOM(getRowHeight()));
-    allRows[i].showMode(KEY_MODE);
-  }
+  var mainDiv = document.createElement('div');
+  mainDiv.className = 'main';
+  mainDiv.id = 'main';
+  body.appendChild(mainDiv);
 
-  window.onresize();
+  initIme(mainDiv);
+  initKeyboard(currentKeyboardLayout, mainDiv);
+  initPopupKeyboard(body);
+
+  window.onhashchange();
+
+  chrome.experimental.input.virtualKeyboard.onTextInputTypeChanged.addListener(
+      function(type) {
+    var newMode = SHIFT_MODE;
+    switch(type) {
+      case "text":
+        newMode = SHIFT_MODE;
+        break;
+      case "email":
+      case "password":
+      case "search":
+      case "url":
+        newMode = KEY_MODE;
+        break;
+      case "number":
+      case "tel":
+        newMode = NUMBER_MODE;
+        break;
+      default:
+        newMode = KEY_MODE;
+        break;
+    }
+    setMode(newMode);
+  });
 }
 // TODO(bryeung): would be nice to leave less gutter (without causing
 // rendering issues with floated divs wrapping at some sizes).
+
+/**
+ * Switch the keyboard layout based on the current URL hash.
+ * @return {void}
+ */
+window.onhashchange = function() {
+  var old_layout = currentKeyboardLayout;
+  var new_layout = location.hash.replace(/^#/, "");
+  if (old_layout == new_layout) {
+    return;
+  }
+
+  if (KEYBOARDS[new_layout] === undefined) {
+    // Unsupported layout.
+    new_layout = "us";
+  }
+  currentKeyboardLayout = new_layout;
+
+  var mainDiv = document.getElementById('main');
+  initKeyboard(currentKeyboardLayout, mainDiv);
+
+  [new_layout, old_layout].forEach(function(layout) {
+      var visible = (layout == new_layout);
+      var keyboardDiv = KEYBOARDS[layout]['keyboardDiv'];
+      keyboardDiv.className = visible ? 'keyboard' : 'nodisplay';
+      var canvas = KEYBOARDS[layout]['canvas'];
+      if (canvas !== undefined) {
+        if (!visible) {
+          canvas.clear();
+        }
+      }
+      if (visible) {
+        window.onresize();
+      }
+    });
+}

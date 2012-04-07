@@ -11,21 +11,25 @@
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
-#include "ppapi/proxy/interface_id.h"
+#include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/function_group_base.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class Dispatcher;
 
 class InterfaceProxy : public IPC::Channel::Listener,
-                       public IPC::Message::Sender {
+                       public IPC::Message::Sender,
+                       public FunctionGroupBase {
  public:
   // Factory function type for interfaces. Ownership of the returned pointer
   // is transferred to the caller.
-  typedef InterfaceProxy* (*Factory)(Dispatcher* dispatcher,
-                                     const void* target_interface);
+  typedef InterfaceProxy* (*Factory)(Dispatcher* dispatcher);
 
+  // DEPRECATED: New classes should be registered directly in the interface
+  // list. This is kept around until we convert all the existing code.
+  //
   // Information about the interface. Each interface has a static function to
   // return its info, which allows either construction on the target side, and
   // getting the proxied interface on the source side (see dispatcher.h for
@@ -34,7 +38,7 @@ class InterfaceProxy : public IPC::Channel::Listener,
     const void* interface_ptr;
 
     const char* name;
-    InterfaceID id;
+    ApiID id;
 
     bool is_trusted;
 
@@ -42,9 +46,6 @@ class InterfaceProxy : public IPC::Channel::Listener,
   };
 
   virtual ~InterfaceProxy();
-
-  // The actual implementation of the given interface in the current process.
-  const void* target_interface() const { return target_interface_; }
 
   Dispatcher* dispatcher() const { return dispatcher_; }
 
@@ -57,31 +58,14 @@ class InterfaceProxy : public IPC::Channel::Listener,
  protected:
   // Creates the given interface associated with the given dispatcher. The
   // dispatcher manages our lifetime.
-  //
-  // The target interface pointer, when non-NULL, indicates that this is a
-  // target proxy (see dispatcher.h for a definition).  In this case, the proxy
-  // will interpret this pointer to the actual implementation of the interface
-  // in the local process.
-  InterfaceProxy(Dispatcher* dispatcher, const void* target_interface);
-
-  uint32 SendCallback(PP_CompletionCallback callback);
-  PP_CompletionCallback ReceiveCallback(uint32 serialized_callback);
+  InterfaceProxy(Dispatcher* dispatcher);
 
  private:
   Dispatcher* dispatcher_;
-  const void* target_interface_;
 };
 
-inline PP_Bool BoolToPPBool(bool value) {
-  return value ? PP_TRUE : PP_FALSE;
-}
-
-inline bool PPBoolToBool(PP_Bool value) {
-  return (PP_TRUE == value);
-}
-
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_INTERFACE_PROXY_H_
 

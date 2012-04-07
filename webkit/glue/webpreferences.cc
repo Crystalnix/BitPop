@@ -1,19 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/glue/webpreferences.h"
 
+#include <unicode/uchar.h>
+
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebNetworkStateNotifier.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRuntimeFeatures.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSettings.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "webkit/glue/webkit_glue.h"
 
+using WebKit::WebNetworkStateNotifier;
 using WebKit::WebRuntimeFeatures;
 using WebKit::WebSettings;
 using WebKit::WebString;
@@ -36,6 +41,7 @@ WebPreferences::WebPreferences()
       web_security_enabled(true),
       javascript_can_open_windows_automatically(true),
       loads_images_automatically(true),
+      images_enabled(true),
       plugins_enabled(true),
       dom_paste_enabled(false),  // enables execCommand("paste")
       developer_extras_enabled(false),  // Requires extra work by embedder
@@ -56,6 +62,7 @@ WebPreferences::WebPreferences()
       tabs_to_links(true),
       caret_browsing_enabled(false),
       hyperlink_auditing_enabled(true),
+      is_online(true),
       user_style_sheet_enabled(false),
       author_and_user_styles_enabled(true),
       frame_flattening_enabled(false),
@@ -64,27 +71,94 @@ WebPreferences::WebPreferences()
       webaudio_enabled(false),
       experimental_webgl_enabled(false),
       gl_multisampling_enabled(true),
+      privileged_webgl_extensions_enabled(false),
       show_composited_layer_borders(false),
       show_composited_layer_tree(false),
       show_fps_counter(false),
       asynchronous_spell_checking_enabled(true),
+      unified_textchecker_enabled(false),
       accelerated_compositing_enabled(false),
+      threaded_compositing_enabled(false),
       force_compositing_mode(false),
+      allow_webui_compositing(false),
       composite_to_texture_enabled(false),
+      fixed_position_compositing_enabled(false),
       accelerated_layers_enabled(false),
+      accelerated_animation_enabled(false),
       accelerated_video_enabled(false),
       accelerated_2d_canvas_enabled(false),
-      accelerated_drawing_enabled(false),
+      accelerated_painting_enabled(false),
+      accelerated_filters_enabled(false),
       accelerated_plugins_enabled(false),
+      partial_swap_enabled(false),
       memory_info_enabled(false),
       interactive_form_validation_enabled(true),
       fullscreen_enabled(false),
       allow_displaying_insecure_content(true),
-      allow_running_insecure_content(false) {
+      allow_running_insecure_content(false),
+      should_print_backgrounds(false),
+      enable_scroll_animator(false),
+      hixie76_websocket_protocol_enabled(false),
+      visual_word_movement_enabled(false),
+      per_tile_painting_enabled(false) {
 }
 
 WebPreferences::~WebPreferences() {
 }
+
+namespace {
+
+void setStandardFontFamilyWrapper(WebSettings* settings,
+                                  const string16& font,
+                                  UScriptCode script) {
+  settings->setStandardFontFamily(font, script);
+}
+
+void setFixedFontFamilyWrapper(WebSettings* settings,
+                               const string16& font,
+                               UScriptCode script) {
+  settings->setFixedFontFamily(font, script);
+}
+
+void setSerifFontFamilyWrapper(WebSettings* settings,
+                               const string16& font,
+                               UScriptCode script) {
+  settings->setSerifFontFamily(font, script);
+}
+
+void setSansSerifFontFamilyWrapper(WebSettings* settings,
+                                   const string16& font,
+                                   UScriptCode script) {
+  settings->setSansSerifFontFamily(font, script);
+}
+
+void setCursiveFontFamilyWrapper(WebSettings* settings,
+                                 const string16& font,
+                                 UScriptCode script) {
+  settings->setCursiveFontFamily(font, script);
+}
+
+void setFantasyFontFamilyWrapper(WebSettings* settings,
+                                 const string16& font,
+                                 UScriptCode script) {
+  settings->setFantasyFontFamily(font, script);
+}
+
+typedef void (*SetFontFamilyWrapper)(
+    WebKit::WebSettings*, const string16&, UScriptCode);
+
+void ApplyFontsFromMap(const WebPreferences::ScriptFontFamilyMap& map,
+                       SetFontFamilyWrapper setter,
+                       WebSettings* settings) {
+  for (WebPreferences::ScriptFontFamilyMap::const_iterator it = map.begin();
+       it != map.end(); ++it) {
+    int32 script = u_getPropertyValueEnum(UCHAR_SCRIPT, (it->first).c_str());
+    if (script >= 0 && script < USCRIPT_CODE_LIMIT)
+      (*setter)(settings, it->second, (UScriptCode) script);
+  }
+}
+
+}  // namespace
 
 void WebPreferences::Apply(WebView* web_view) const {
   WebSettings* settings = web_view->settings();
@@ -94,6 +168,16 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setSansSerifFontFamily(sans_serif_font_family);
   settings->setCursiveFontFamily(cursive_font_family);
   settings->setFantasyFontFamily(fantasy_font_family);
+  ApplyFontsFromMap(standard_font_family_map, setStandardFontFamilyWrapper,
+                    settings);
+  ApplyFontsFromMap(fixed_font_family_map, setFixedFontFamilyWrapper, settings);
+  ApplyFontsFromMap(serif_font_family_map, setSerifFontFamilyWrapper, settings);
+  ApplyFontsFromMap(sans_serif_font_family_map, setSansSerifFontFamilyWrapper,
+                    settings);
+  ApplyFontsFromMap(cursive_font_family_map, setCursiveFontFamilyWrapper,
+                    settings);
+  ApplyFontsFromMap(fantasy_font_family_map, setFantasyFontFamilyWrapper,
+                    settings);
   settings->setDefaultFontSize(default_font_size);
   settings->setDefaultFixedFontSize(default_fixed_font_size);
   settings->setMinimumFontSize(minimum_font_size);
@@ -104,6 +188,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setJavaScriptCanOpenWindowsAutomatically(
       javascript_can_open_windows_automatically);
   settings->setLoadsImagesAutomatically(loads_images_automatically);
+  settings->setImagesEnabled(images_enabled);
   settings->setPluginsEnabled(plugins_enabled);
   settings->setDOMPasteAllowed(dom_paste_enabled);
   settings->setDeveloperExtrasEnabled(developer_extras_enabled);
@@ -123,8 +208,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setXSSAuditorEnabled(xss_auditor_enabled);
   settings->setDNSPrefetchingEnabled(dns_prefetching_enabled);
   settings->setLocalStorageEnabled(local_storage_enabled);
-  WebRuntimeFeatures::enableDatabase(
-      WebRuntimeFeatures::isDatabaseEnabled() || databases_enabled);
+  WebRuntimeFeatures::enableDatabase(databases_enabled);
   settings->setOfflineWebApplicationCacheEnabled(application_cache_enabled);
   settings->setCaretBrowsingEnabled(caret_browsing_enabled);
   settings->setHyperlinkAuditingEnabled(hyperlink_auditing_enabled);
@@ -139,9 +223,6 @@ void WebPreferences::Apply(WebView* web_view) const {
 
   settings->setFontRenderingModeNormal();
   settings->setJavaEnabled(java_enabled);
-
-  // Turn this on to cause WebCore to paint the resize corner for us.
-  settings->setShouldPaintCustomScrollbars(true);
 
   // By default, allow_universal_access_from_file_urls is set to false and thus
   // we mitigate attacks from local HTML files by not granting file:// URLs
@@ -165,6 +246,11 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Disable GL multisampling if requested on command line.
   settings->setOpenGLMultisamplingEnabled(gl_multisampling_enabled);
 
+  // Enable privileged WebGL extensions for Chrome extensions or if requested
+  // on command line.
+  settings->setPrivilegedWebGLExtensionsEnabled(
+      privileged_webgl_extensions_enabled);
+
   // Display colored borders around composited render layers if requested
   // on command line.
   settings->setShowDebugBorders(show_composited_layer_borders);
@@ -179,17 +265,29 @@ void WebPreferences::Apply(WebView* web_view) const {
   // Enable gpu-accelerated compositing if requested on the command line.
   settings->setAcceleratedCompositingEnabled(accelerated_compositing_enabled);
 
+#ifndef WEBCOMPOSITOR_HAS_INITIALIZE
+  settings->setUseThreadedCompositor(threaded_compositing_enabled);
+#endif
+
   // Always enter compositing if requested on the command line.
   settings->setForceCompositingMode(force_compositing_mode);
 
   // Enable composite to offscreen texture if requested on the command line.
   settings->setCompositeToTextureEnabled(composite_to_texture_enabled);
 
+  // Enable compositing for fixed position elements if requested
+  // on the command line.
+  settings->setAcceleratedCompositingForFixedPositionEnabled(
+      fixed_position_compositing_enabled);
+
   // Enable gpu-accelerated 2d canvas if requested on the command line.
   settings->setAccelerated2dCanvasEnabled(accelerated_2d_canvas_enabled);
 
-  // Enable gpu-accelerated drawing if requested on the command line.
-  settings->setAcceleratedDrawingEnabled(accelerated_drawing_enabled);
+  // Enable gpu-accelerated painting if requested on the command line.
+  settings->setAcceleratedPaintingEnabled(accelerated_painting_enabled);
+
+  // Enable gpu-accelerated filters if requested on the command line.
+  settings->setAcceleratedFiltersEnabled(accelerated_filters_enabled);
 
   // Enabling accelerated layers from the command line enabled accelerated
   // 3D CSS, Video, and Animations.
@@ -198,7 +296,7 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setAcceleratedCompositingForVideoEnabled(
       accelerated_video_enabled);
   settings->setAcceleratedCompositingForAnimationEnabled(
-      accelerated_layers_enabled);
+      accelerated_animation_enabled);
 
   // Enabling accelerated plugins if specified from the command line.
   settings->setAcceleratedCompositingForPluginsEnabled(
@@ -208,11 +306,15 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setAcceleratedCompositingForCanvasEnabled(
       experimental_webgl_enabled || accelerated_2d_canvas_enabled);
 
+  // Enable partial swaps if specified form the command line.
+  settings->setPartialSwapEnabled(partial_swap_enabled);
+
   // Enable memory info reporting to page if requested on the command line.
   settings->setMemoryInfoEnabled(memory_info_enabled);
 
   settings->setAsynchronousSpellCheckingEnabled(
       asynchronous_spell_checking_enabled);
+  settings->setUnifiedTextCheckerEnabled(unified_textchecker_enabled);
 
   for (WebInspectorPreferences::const_iterator it = inspector_settings.begin();
        it != inspector_settings.end(); ++it)
@@ -229,4 +331,14 @@ void WebPreferences::Apply(WebView* web_view) const {
   settings->setFullScreenEnabled(fullscreen_enabled);
   settings->setAllowDisplayOfInsecureContent(allow_displaying_insecure_content);
   settings->setAllowRunningOfInsecureContent(allow_running_insecure_content);
+  settings->setShouldPrintBackgrounds(should_print_backgrounds);
+  settings->setEnableScrollAnimator(enable_scroll_animator);
+  settings->setHixie76WebSocketProtocolEnabled(
+      hixie76_websocket_protocol_enabled);
+  settings->setVisualWordMovementEnabled(visual_word_movement_enabled);
+
+  // Enable per-tile painting if requested on the command line.
+  settings->setPerTilePaintingEnabled(per_tile_painting_enabled);
+
+  WebNetworkStateNotifier::setOnLine(is_online);
 }

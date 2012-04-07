@@ -3,24 +3,19 @@
 // found in the LICENSE file.
 
 #include "chrome_frame/external_tab.h"
-#include "base/task.h"
-#include "base/threading/thread.h"
-#include "base/tracked.h"
 
 // #include "base/synchronization/waitable_event.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/location.h"
+#include "base/threading/thread.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome_frame/navigation_constraints.h"
 #include "chrome_frame/test/chrome_frame_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gmock_mutant.h"
-
-
-
-// DISABLE_RUNNABLE_METHOD_REFCOUNT(ExternalTabProxy);
-// DISABLE_RUNNABLE_METHOD_REFCOUNT(UIDelegate);
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ChromeProxyDelegate);
 
 using testing::StrictMock;
 using testing::_;
@@ -40,8 +35,8 @@ struct MockUIDelegate : public UIDelegate {
   MOCK_METHOD1(OnMoveWindow, void(const gfx::Rect& pos));
   MOCK_METHOD3(OnMessageFromChromeFrame, void(const std::string& message,
       const std::string& origin, const std::string& target));
-  MOCK_METHOD3(OnHandleContextMenu, void(HANDLE menu_handle, int align_flags,
-      const MiniContextMenuParams& params));
+  MOCK_METHOD3(OnHandleContextMenu, void(const ContextMenuModel& menu_model,
+      int align_flags, const MiniContextMenuParams& params));
   MOCK_METHOD1(OnHandleAccelerator, void(const MSG& accel_message));
   MOCK_METHOD1(OnTabbedOut, void(bool reverse));
   MOCK_METHOD1(OnGoToHistoryOffset, void(int offset));
@@ -73,7 +68,7 @@ struct MockProxy : public ChromeProxy {
       FindInPageDirection forward, FindInPageCase match_case, bool find_next));
   MOCK_METHOD2(Tab_MenuCommand, void(int tab, int selected_command));
 
-  MOCK_METHOD2(Tab_Zoom, void(int tab, PageZoom::Function zoom_level));
+  MOCK_METHOD2(Tab_Zoom, void(int tab, content::PageZoom zoom_level));
   MOCK_METHOD2(Tab_FontSize, void(int tab, AutomationPageFontSize font_size));
   MOCK_METHOD3(Tab_SetInitialFocus, void(int tab, bool reverse,
       bool restore_focus_to_view));
@@ -109,27 +104,39 @@ struct AsyncEventCreator {
   }
 
   void Fire_Connected(ChromeProxy* proxy, base::TimeDelta delay) {
-    ipc_loop_->PostDelayedTask(FROM_HERE, NewRunnableMethod(delegate_,
-        &ChromeProxyDelegate::Connected, proxy), delay.InMilliseconds());
+    ipc_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ChromeProxyDelegate::Connected, base::Unretained(delegate_),
+                   proxy),
+        delay.InMilliseconds());
   }
 
   void Fire_PeerLost(ChromeProxy* proxy,
       ChromeProxyDelegate::DisconnectReason reason, base::TimeDelta delay) {
-    ipc_loop_->PostDelayedTask(FROM_HERE, NewRunnableMethod(delegate_,
-        &ChromeProxyDelegate::PeerLost, proxy, reason), delay.InMilliseconds());
+    ipc_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ChromeProxyDelegate::PeerLost, base::Unretained(delegate_),
+                   proxy, reason),
+        delay.InMilliseconds());
   }
 
   void Fire_Disconnected(base::TimeDelta delay) {
-    ipc_loop_->PostDelayedTask(FROM_HERE, NewRunnableMethod(delegate_,
-        &ChromeProxyDelegate::Disconnected), delay.InMilliseconds());
+    ipc_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ChromeProxyDelegate::Disconnected,
+                   base::Unretained(delegate_)),
+        delay.InMilliseconds());
   }
 
   void Fire_CompletedCreateTab(bool success, HWND chrome_wnd, HWND tab_window,
                                int tab_handle, int session_id,
                                base::TimeDelta delay) {
-    ipc_loop_->PostDelayedTask(FROM_HERE, NewRunnableMethod(delegate_,
-        &ChromeProxyDelegate::Completed_CreateTab, success, chrome_wnd,
-        tab_window, tab_handle, session_id), delay.InMilliseconds());
+    ipc_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&ChromeProxyDelegate::Completed_CreateTab,
+                   base::Unretained(delegate_), success, chrome_wnd, tab_window,
+                   tab_handle, session_id),
+        delay.InMilliseconds());
   }
 
  private:

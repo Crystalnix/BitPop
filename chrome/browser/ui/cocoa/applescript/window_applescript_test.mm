@@ -13,7 +13,7 @@
 #import "chrome/browser/ui/cocoa/applescript/error_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/tab_applescript.h"
 #import "chrome/browser/ui/cocoa/applescript/window_applescript.h"
-#include "chrome/test/in_process_browser_test.h"
+#include "chrome/test/base/in_process_browser_test.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -39,9 +39,9 @@ IN_PROC_BROWSER_TEST_F(WindowAppleScriptTest, CreationWithNoProfile) {
 
 // Create a window with a particular profile.
 IN_PROC_BROWSER_TEST_F(WindowAppleScriptTest, CreationWithProfile) {
-  Profile* defaultProfile = [[NSApp delegate] defaultProfile];
+  Profile* lastProfile = [[NSApp delegate] lastProfile];
   scoped_nsobject<WindowAppleScript> aWindow(
-      [[WindowAppleScript alloc] initWithProfile:defaultProfile]);
+      [[WindowAppleScript alloc] initWithProfile:lastProfile]);
   EXPECT_TRUE(aWindow.get());
   EXPECT_TRUE([aWindow.get() uniqueID]);
 }

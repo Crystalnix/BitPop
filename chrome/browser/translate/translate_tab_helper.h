@@ -8,21 +8,21 @@
 
 #include "chrome/browser/tab_contents/language_state.h"
 #include "chrome/common/translate_errors.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
+#include "content/public/browser/web_contents_observer.h"
 
-class TranslateTabHelper : public TabContentsObserver {
+class TranslateTabHelper : public content::WebContentsObserver {
  public:
-  explicit TranslateTabHelper(TabContents* tab_contents);
+  explicit TranslateTabHelper(content::WebContents* web_contents);
   virtual ~TranslateTabHelper();
 
   LanguageState& language_state() { return language_state_; }
 
  private:
-  // TabContentsObserver implementation.
+  // content::WebContentsObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidNavigateAnyFramePostCommit(
+  virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
+      const content::FrameNavigateParams& params) OVERRIDE;
 
   void OnLanguageDetermined(const std::string& language,
                             bool page_translatable);

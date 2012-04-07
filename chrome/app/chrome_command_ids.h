@@ -1,6 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#ifndef CHROME_APP_CHROME_COMMAND_IDS_H_
+#define CHROME_APP_CHROME_COMMAND_IDS_H_
+#pragma once
 
 // This file lists all the command IDs understood by e.g. the browser.
 // It is used by Windows RC files, Mac NIB files, and other platforms too.
@@ -50,11 +54,10 @@
 #define IDC_EXIT                        34031
 #define IDC_MOVE_TAB_NEXT               34032
 #define IDC_MOVE_TAB_PREVIOUS           34033
-#define IDC_TOGGLE_VERTICAL_TABS        34034
 #define IDC_SEARCH                      34035
 #define IDC_TABPOSE                     34036
-#define IDC_COMPACT_NAVBAR              34037
 #define IDC_DEBUG_FRAME_TOGGLE          34038
+#define IDC_PRESENTATION_MODE           34039
 
 // Page-related commands
 #define IDC_BOOKMARK_PAGE               35000
@@ -64,6 +67,7 @@
 #define IDC_SAVE_PAGE                   35004
 #define IDC_ENCODING_MENU               35005
 #define IDC_EMAIL_PAGE_LOCATION         35006
+#define IDC_ADVANCED_PRINT              35007
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -156,16 +160,20 @@
 #define IDC_ABOUT                       40018
 #define IDC_HELP_PAGE                   40019
 #define IDC_SHOW_APP_MENU               40020
-#define IDC_MANAGE_EXTENSIONS           40022
-#define IDC_AUTOFILL_DEFAULT            40023
-#define IDC_DEV_TOOLS_INSPECT           40025
-#define IDC_UPGRADE_DIALOG              40026
-#define IDC_VIEW_INCOMPATIBILITIES      40027
-#define IDC_VIEW_BACKGROUND_PAGES       40028
-#define IDC_SHOW_KEYBOARD_OVERLAY       40029
-#define IDC_PROFILING_ENABLED           40030
-#define IDC_FILE_MANAGER                40031
-#define IDC_BOOKMARKS_MENU              40032
+#define IDC_MANAGE_EXTENSIONS           40021
+#define IDC_DEV_TOOLS_INSPECT           40022
+#define IDC_UPGRADE_DIALOG              40023
+#define IDC_VIEW_INCOMPATIBILITIES      40024
+#define IDC_VIEW_BACKGROUND_PAGES       40025
+#define IDC_SHOW_KEYBOARD_OVERLAY       40026
+#define IDC_PROFILING_ENABLED           40027
+#define IDC_FILE_MANAGER                40028
+#define IDC_BOOKMARKS_MENU              40029
+#define IDC_SHOW_SYNC_SETUP             40030
+#define IDC_EXTENSION_ERRORS            40031
+#define IDC_SHOW_SYNC_ERROR             40032
+#define IDC_SHOW_SETTINGS_CHANGES       40033
+#define IDC_SHOW_AVATAR_MENU            40034
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -200,13 +208,19 @@
 #define IDC_TRANSLATE_ORIGINAL_LANGUAGE_BASE        42100
 #define IDC_TRANSLATE_TARGET_LANGUAGE_BASE          42400
 
+// Speech input
+#define IDC_TOGGLE_SPEECH_INPUT         42500
+
 // Identifiers for platform-specific items.
 // Placed in a common file to help insure they never collide.
 #define IDC_VIEW_MENU                   44000     // OSX only
 #define IDC_SYSTEM_OPTIONS              45000     // ChromeOS only
 #define IDC_INTERNET_OPTIONS            45100     // ChromeOS only
 #define IDC_LANGUAGE_OPTIONS            45200     // ChromeOS only
+#define IDC_LOCK_SCREEN                 45300     // ChromeOS only
+#define IDC_SHUTDOWN                    45400     // ChromeOS only
 #define IDC_HISTORY_MENU                46000     // OSX only
+#define IDC_PROFILE_MAIN_MENU           46100     // OSX only
 #define IDC_INPUT_METHODS_MENU          46300     // Linux only
 
 // Custom context menu entries
@@ -225,6 +239,7 @@
 #define IDC_CONTENT_CONTEXT_SAVELINKAS 50103
 #define IDC_CONTENT_CONTEXT_COPYLINKLOCATION 50104
 #define IDC_CONTENT_CONTEXT_COPYEMAILADDRESS 50105
+#define IDC_CONTENT_CONTEXT_OPENLINKWITH 50106
 // Image items.
 #define IDC_CONTENT_CONTEXT_SAVEIMAGEAS 50110
 #define IDC_CONTENT_CONTEXT_COPYIMAGELOCATION 50111
@@ -239,6 +254,8 @@
 #define IDC_CONTENT_CONTEXT_MUTE 50131
 #define IDC_CONTENT_CONTEXT_LOOP 50132
 #define IDC_CONTENT_CONTEXT_CONTROLS 50133
+#define IDC_CONTENT_CONTEXT_ROTATECW 50134
+#define IDC_CONTENT_CONTEXT_ROTATECCW 50135
 // Edit items.
 #define IDC_CONTENT_CONTEXT_COPY 50140
 #define IDC_CONTENT_CONTEXT_CUT 50141
@@ -247,12 +264,16 @@
 #define IDC_CONTENT_CONTEXT_UNDO 50144
 #define IDC_CONTENT_CONTEXT_REDO 50145
 #define IDC_CONTENT_CONTEXT_SELECTALL 50146
+#define IDC_CONTENT_CONTEXT_PASTE_AND_MATCH_STYLE 50147
 // Other items.
 #define IDC_CONTENT_CONTEXT_TRANSLATE 50150
 #define IDC_CONTENT_CONTEXT_INSPECTELEMENT 50151
 #define IDC_CONTENT_CONTEXT_VIEWPAGEINFO 50152
 #define IDC_CONTENT_CONTEXT_LANGUAGE_SETTINGS 50153
 #define IDC_CONTENT_CONTEXT_LOOK_UP_IN_DICTIONARY 50154
+#define IDC_CONTENT_CONTEXT_NO_SPELLING_SUGGESTIONS 50155
+#define IDC_CONTENT_CONTEXT_SPELLING_SUGGESTION 50156
+#define IDC_CONTENT_CONTEXT_SPELLING_TOGGLE 50157
 // Frame items.
 #define IDC_CONTENT_CONTEXT_RELOADFRAME 50160
 #define IDC_CONTENT_CONTEXT_VIEWFRAMESOURCE 50161
@@ -260,6 +281,7 @@
 // Search items.
 #define IDC_CONTENT_CONTEXT_GOTOURL 50170
 #define IDC_CONTENT_CONTEXT_SEARCHWEBFOR 50171
+#define IDC_CONTENT_CONTEXT_ADDSEARCHENGINE 50172
 
 // Context menu items in the bookmark bar
 #define IDC_BOOKMARK_BAR_OPEN_ALL 51000
@@ -276,3 +298,18 @@
 
 // Context menu items in the status tray
 #define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100
+
+// Context menu items for speech recognition
+#define IDC_SPEECH_INPUT_MENU 51200
+#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES 51201
+#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_ABOUT 51202
+
+// Protocol handler menu entries
+#define IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_FIRST     52000
+#define IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_LAST      52199
+#define IDC_CONTENT_CONTEXT_PROTOCOL_HANDLER_SETTINGS  52200
+
+// NOTE: The last valid command value is 57343 (0xDFFF)
+// See http://msdn.microsoft.com/en-us/library/t2zechd4(VS.71).aspx
+
+#endif  // CHROME_APP_CHROME_COMMAND_IDS_H_

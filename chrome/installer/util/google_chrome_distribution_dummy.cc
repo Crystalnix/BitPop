@@ -14,6 +14,7 @@
 
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/values.h"
 
 GoogleChromeDistribution::GoogleChromeDistribution()
     : BrowserDistribution(CHROME_BROWSER) {
@@ -78,6 +79,11 @@ std::wstring GoogleChromeDistribution::GetStateMediumKey() {
 std::wstring GoogleChromeDistribution::GetStatsServerURL() {
   NOTREACHED();
   return std::wstring();
+}
+
+std::string GoogleChromeDistribution::GetNetworkStatsServer() const {
+  NOTREACHED();
+  return std::string();
 }
 
 std::wstring GoogleChromeDistribution::GetDistributionData(HKEY root_key) {

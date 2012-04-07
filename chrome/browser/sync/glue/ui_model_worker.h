@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,11 @@
 #pragma once
 
 #include "base/callback.h"
-#include "base/synchronization/lock.h"
+#include "base/compiler_specific.h"
 #include "base/synchronization/condition_variable.h"
-#include "base/task.h"
-#include "chrome/browser/sync/engine/syncapi.h"
+#include "base/synchronization/lock.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
-
-namespace base {
-class WaitableEvent;
-}
+#include "chrome/browser/sync/util/unrecoverable_error_info.h"
 
 class MessageLoop;
 
@@ -34,31 +30,6 @@ class UIModelWorker : public browser_sync::ModelSafeWorker {
   UIModelWorker();
   virtual ~UIModelWorker();
 
-  // A simple task to signal a waitable event after Run()ning a Closure.
-  class CallDoWorkAndSignalTask : public Task {
-   public:
-    CallDoWorkAndSignalTask(Callback0::Type* work,
-                            base::WaitableEvent* work_done,
-                            UIModelWorker* scheduler)
-        : work_(work), work_done_(work_done), scheduler_(scheduler) {
-    }
-    virtual ~CallDoWorkAndSignalTask() { }
-
-    // Task implementation.
-    virtual void Run();
-
-   private:
-    // Task data - a closure and a waitable event to signal after the work has
-    // been done.
-    Callback0::Type* work_;
-    base::WaitableEvent* work_done_;
-
-    // The UIModelWorker responsible for scheduling us.
-    UIModelWorker* const scheduler_;
-
-    DISALLOW_COPY_AND_ASSIGN(CallDoWorkAndSignalTask);
-  };
-
   // Called by the UI thread on shutdown of the sync service. Blocks until
   // the UIModelWorker has safely met termination conditions, namely that
   // no task scheduled by CallDoWorkFromModelSafeThreadAndWait remains un-
@@ -66,9 +37,9 @@ class UIModelWorker : public browser_sync::ModelSafeWorker {
   void Stop();
 
   // ModelSafeWorker implementation. Called on syncapi SyncerThread.
-  virtual void DoWorkAndWaitUntilDone(Callback0::Type* work);
-  virtual ModelSafeGroup GetModelSafeGroup();
-  virtual bool CurrentThreadIsWorkThread();
+  virtual SyncerError DoWorkAndWaitUntilDone(
+      const WorkCallback& work) OVERRIDE;
+  virtual ModelSafeGroup GetModelSafeGroup() OVERRIDE;
 
   // Upon receiving this idempotent call, the ModelSafeWorker can
   // assume no work will ever be scheduled again from now on. If it has any work
@@ -78,7 +49,7 @@ class UIModelWorker : public browser_sync::ModelSafeWorker {
 
   // Callback from |pending_work_| to notify us that it has been run.
   // Called on ui loop.
-  void OnTaskCompleted() { pending_work_ = NULL; }
+  void OnTaskCompleted() { pending_work_.Reset(); }
 
  private:
   // The life-cycle of a UIModelWorker in three states.
@@ -103,7 +74,7 @@ class UIModelWorker : public browser_sync::ModelSafeWorker {
 
   // We keep a reference to any task we have scheduled so we can gracefully
   // force them to run if the syncer is trying to shutdown.
-  Task* pending_work_;
+  base::Closure pending_work_;
 
   // Set by the SyncCoreThread when Syncapi shutdown has completed and the
   // SyncerThread has terminated, so no more work will be scheduled. Read by

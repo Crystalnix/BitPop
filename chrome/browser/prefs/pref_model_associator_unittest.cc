@@ -7,7 +7,7 @@
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class AbstractPreferenceMergeTest : public testing::Test {
@@ -38,7 +38,7 @@ class AbstractPreferenceMergeTest : public testing::Test {
     const PrefService::Preference* pref =
         pref_service_->FindPreference(pref_name.c_str());
     ASSERT_TRUE(pref);
-    Value::ValueType type = pref->GetType();
+    base::Value::Type type = pref->GetType();
     if (type == Value::TYPE_DICTIONARY)
       empty_value.reset(new DictionaryValue);
     else if (type == Value::TYPE_LIST)

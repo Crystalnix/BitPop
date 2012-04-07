@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,18 @@
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/cpp/completion_callback.h"
 
+// Timeout to wait for some action to complete.
+extern const int kActionTimeoutMs;
+
 const PPB_Testing_Dev* GetTestingInterface();
 std::string ReportError(const char* method, int32_t error);
+void PlatformSleep(int duration_ms);
+bool GetLocalHostPort(PP_Instance instance, std::string* host, uint16_t* port);
 
 class TestCompletionCallback {
  public:
   TestCompletionCallback(PP_Instance instance);
+  TestCompletionCallback(PP_Instance instance, bool force_async);
 
   // Waits for the callback to be called and returns the
   // result. Returns immediately if the callback was previously called
@@ -38,9 +44,40 @@ class TestCompletionCallback {
 
   bool have_result_;
   int32_t result_;
+  bool force_async_;
   bool post_quit_task_;
   unsigned run_count_;
   PP_Instance instance_;
 };
+
+/*
+ * A set of macros to use for platform detection. These were largely copied
+ * from chromium's build_config.h.
+ */
+#if defined(__APPLE__)
+#define PPAPI_OS_MACOSX 1
+#elif defined(ANDROID)
+#define PPAPI_OS_ANDROID 1
+#elif defined(__native_client__)
+#define PPAPI_OS_NACL 1
+#elif defined(__linux__)
+#define PPAPI_OS_LINUX 1
+#elif defined(_WIN32)
+#define PPAPI_OS_WIN 1
+#elif defined(__FreeBSD__)
+#define PPAPI_OS_FREEBSD 1
+#elif defined(__OpenBSD__)
+#define PPAPI_OS_OPENBSD 1
+#elif defined(__sun)
+#define PPAPI_OS_SOLARIS 1
+#else
+#error Please add support for your platform in ppapi/c/pp_macros.h.
+#endif
+
+/* These are used to determine POSIX-like implementations vs Windows. */
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || \
+    defined(__OpenBSD__) || defined(__sun) || defined(__native_client__)
+#define PPAPI_POSIX 1
+#endif
 
 #endif  // PPAPI_TESTS_TEST_UTILS_H_

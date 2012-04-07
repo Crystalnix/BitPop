@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,18 +7,18 @@
 #include "base/message_loop.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_hover_state.h"
-#import "chrome/browser/ui/cocoa/browser_test_helper.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 
 namespace {
 
-typedef CocoaTest BookmarkBarFolderHoverStateTest;
+class BookmarkBarFolderHoverStateTest : public CocoaTest {
+};
 
 // Hover state machine interface.
 // A strict call order is implied with these calls.  It is ONLY valid to make
 // these specific state transitions.
-TEST(BookmarkBarFolderHoverStateTest, HoverState) {
-  BrowserTestHelper helper;
+TEST_F(BookmarkBarFolderHoverStateTest, HoverState) {
+  MessageLoopForUI message_loop;
   scoped_nsobject<BookmarkBarFolderHoverState> bbfhs;
   bbfhs.reset([[BookmarkBarFolderHoverState alloc] init]);
 
@@ -45,11 +45,11 @@ TEST(BookmarkBarFolderHoverStateTest, HoverState) {
   ASSERT_EQ(kHoverStateOpening, [bbfhs hoverState]);
 
   // Test transition from opening to opened.
-  MessageLoop::current()->PostDelayedTask(
+  message_loop.PostDelayedTask(
       FROM_HERE,
-      new MessageLoop::QuitTask,
+      MessageLoop::QuitClosure(),
       bookmarks::kDragHoverOpenDelay * 1000.0 * 1.5);
-  MessageLoop::current()->Run();
+  message_loop.Run();
   ASSERT_EQ(kHoverStateOpen, [bbfhs hoverState]);
   ASSERT_EQ(button, [bbfhs hoverButton]);
 
@@ -65,11 +65,11 @@ TEST(BookmarkBarFolderHoverStateTest, HoverState) {
   // Test transition from closing to closed.
   [bbfhs scheduleCloseBookmarkFolderOnHoverButton];
   ASSERT_EQ(kHoverStateClosing, [bbfhs hoverState]);
-  MessageLoop::current()->PostDelayedTask(
+  message_loop.PostDelayedTask(
       FROM_HERE,
-      new MessageLoop::QuitTask,
+      MessageLoop::QuitClosure(),
       bookmarks::kDragHoverCloseDelay * 1000.0 * 1.5);
-  MessageLoop::current()->Run();
+  message_loop.Run();
   ASSERT_EQ(kHoverStateClosed, [bbfhs hoverState]);
   ASSERT_EQ(nil, [bbfhs hoverButton]);
 }

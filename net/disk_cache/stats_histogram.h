@@ -30,8 +30,8 @@ class StatsHistogram : public base::Histogram {
     }
   };
 
-  explicit StatsHistogram(const std::string& name, Sample minimum,
-                          Sample maximum, size_t bucket_count)
+  StatsHistogram(const std::string& name, Sample minimum,
+                 Sample maximum, size_t bucket_count)
       : Histogram(name, minimum, maximum, bucket_count), init_(false) {}
   virtual ~StatsHistogram();
 
@@ -40,11 +40,12 @@ class StatsHistogram : public base::Histogram {
   // We'll be reporting data from the given set of cache stats.
   bool Init(const Stats* stats);
 
-  virtual Sample ranges(size_t i) const;
-  virtual size_t bucket_count() const;
-  virtual void SnapshotSample(SampleSet* sample) const;
-  virtual Inconsistencies FindCorruption(const SampleSet& snapshot) const;
-  virtual uint32 CalculateRangeChecksum() const;
+  virtual Sample ranges(size_t i) const OVERRIDE;
+  virtual size_t bucket_count() const OVERRIDE;
+  virtual void SnapshotSample(SampleSet* sample) const OVERRIDE;
+  virtual Inconsistencies FindCorruption(
+      const SampleSet& snapshot) const OVERRIDE;
+  virtual uint32 CalculateRangeChecksum() const OVERRIDE;
 
  private:
   bool init_;

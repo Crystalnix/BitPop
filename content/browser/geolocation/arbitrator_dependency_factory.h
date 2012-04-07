@@ -8,13 +8,17 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "content/common/content_export.h"
 
-class AccessTokenStore;
 class GURL;
 class LocationProviderBase;
 
 namespace base {
 class Time;
+}
+
+namespace content {
+class AccessTokenStore;
 }
 
 namespace net {
@@ -23,17 +27,16 @@ class URLRequestContextGetter;
 
 // Allows injection of factory methods for creating the location providers.
 // RefCounted for simplicity of writing tests.
-class GeolocationArbitratorDependencyFactory
+class CONTENT_EXPORT GeolocationArbitratorDependencyFactory
     : public base::RefCounted<GeolocationArbitratorDependencyFactory> {
  public:
   // Defines a function that returns the current time.
   typedef base::Time (*GetTimeNow)();
 
   virtual GetTimeNow GetTimeFunction() = 0;
-  virtual net::URLRequestContextGetter* GetContextGetter() = 0;
-  virtual AccessTokenStore* NewAccessTokenStore() = 0;
+  virtual content::AccessTokenStore* NewAccessTokenStore() = 0;
   virtual LocationProviderBase* NewNetworkLocationProvider(
-      AccessTokenStore* access_token_store,
+      content::AccessTokenStore* access_token_store,
       net::URLRequestContextGetter* context,
       const GURL& url,
       const string16& access_token) = 0;
@@ -46,19 +49,18 @@ class GeolocationArbitratorDependencyFactory
 
 // The default dependency factory, exposed so that it is possible
 // to override only certain parts (e.g. the location providers).
-class DefaultGeolocationArbitratorDependencyFactory
+class CONTENT_EXPORT DefaultGeolocationArbitratorDependencyFactory
     : public GeolocationArbitratorDependencyFactory {
  public:
   // GeolocationArbitratorDependencyFactory
-  virtual net::URLRequestContextGetter* GetContextGetter();
-  virtual GetTimeNow GetTimeFunction();
-  virtual AccessTokenStore* NewAccessTokenStore();
+  virtual GetTimeNow GetTimeFunction() OVERRIDE;
+  virtual content::AccessTokenStore* NewAccessTokenStore() OVERRIDE;
   virtual LocationProviderBase* NewNetworkLocationProvider(
-      AccessTokenStore* access_token_store,
+      content::AccessTokenStore* access_token_store,
       net::URLRequestContextGetter* context,
       const GURL& url,
-      const string16& access_token);
-  virtual LocationProviderBase* NewSystemLocationProvider();
+      const string16& access_token) OVERRIDE;
+  virtual LocationProviderBase* NewSystemLocationProvider() OVERRIDE;
 };
 
 #endif  // CONTENT_BROWSER_GEOLOCATION_ARBITRATOR_DEPENDENCY_FACTORY_H_

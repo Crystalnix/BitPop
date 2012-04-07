@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -62,7 +62,8 @@ static void WriteValue(Message* m, const Value* value, int recursion) {
       break;
     }
     case Value::TYPE_BINARY: {
-      const BinaryValue* binary = static_cast<const BinaryValue*>(value);
+      const base::BinaryValue* binary =
+          static_cast<const base::BinaryValue*>(value);
       m->WriteData(binary->GetBuffer(), static_cast<int>(binary->GetSize()));
       break;
     }
@@ -113,7 +114,7 @@ static bool ReadDictionaryValue(const Message* m, void** iter,
     if (!ReadParam(m, iter, &key) ||
         !ReadValue(m, iter, &subval, recursion + 1))
       return false;
-    value->Set(key, subval);
+    value->SetWithoutPathExpansion(key, subval);
   }
 
   return true;
@@ -185,7 +186,7 @@ static bool ReadValue(const Message* m, void** iter, Value** value,
       int length;
       if (!m->ReadData(iter, &data, &length))
         return false;
-      *value = BinaryValue::CreateWithCopiedBuffer(data, length);
+      *value = base::BinaryValue::CreateWithCopiedBuffer(data, length);
       break;
     }
     case Value::TYPE_DICTIONARY: {
@@ -268,7 +269,7 @@ void ParamTraits<base::Time>::Log(const param_type& p, std::string* l) {
 }
 
 void ParamTraits<base::TimeDelta> ::Write(Message* m, const param_type& p) {
-  ParamTraits<int64> ::Write(m, p.InMicroseconds());
+  ParamTraits<int64> ::Write(m, p.ToInternalValue());
 }
 
 bool ParamTraits<base::TimeDelta> ::Read(const Message* m,
@@ -277,13 +278,32 @@ bool ParamTraits<base::TimeDelta> ::Read(const Message* m,
   int64 value;
   bool ret = ParamTraits<int64> ::Read(m, iter, &value);
   if (ret)
-    *r = base::TimeDelta::FromMicroseconds(value);
+    *r = base::TimeDelta::FromInternalValue(value);
 
   return ret;
 }
 
 void ParamTraits<base::TimeDelta> ::Log(const param_type& p, std::string* l) {
-  ParamTraits<int64> ::Log(p.InMicroseconds(), l);
+  ParamTraits<int64> ::Log(p.ToInternalValue(), l);
+}
+
+void ParamTraits<base::TimeTicks> ::Write(Message* m, const param_type& p) {
+  ParamTraits<int64> ::Write(m, p.ToInternalValue());
+}
+
+bool ParamTraits<base::TimeTicks> ::Read(const Message* m,
+                                         void** iter,
+                                         param_type* r) {
+  int64 value;
+  bool ret = ParamTraits<int64> ::Read(m, iter, &value);
+  if (ret)
+    *r = base::TimeTicks::FromInternalValue(value);
+
+  return ret;
+}
+
+void ParamTraits<base::TimeTicks> ::Log(const param_type& p, std::string* l) {
+  ParamTraits<int64> ::Log(p.ToInternalValue(), l);
 }
 
 void ParamTraits<DictionaryValue>::Write(Message* m, const param_type& p) {
@@ -413,6 +433,10 @@ void ParamTraits<base::FileDescriptor>::Log(const param_type& p,
 #endif  // defined(OS_POSIX)
 
 void ParamTraits<IPC::ChannelHandle>::Write(Message* m, const param_type& p) {
+#if defined(OS_WIN)
+  // On Windows marshalling pipe handle is not supported.
+  DCHECK(p.pipe.handle == NULL);
+#endif  // defined (OS_WIN)
   WriteParam(m, p.name);
 #if defined(OS_POSIX)
   WriteParam(m, p.socket);
@@ -432,6 +456,7 @@ void ParamTraits<IPC::ChannelHandle>::Log(const param_type& p,
                                           std::string* l) {
   l->append(StringPrintf("ChannelHandle(%s", p.name.c_str()));
 #if defined(OS_POSIX)
+  l->append(", ");
   ParamTraits<base::FileDescriptor>::Log(p.socket, l);
 #endif
   l->append(")");
@@ -451,7 +476,7 @@ LogData::~LogData() {
 void ParamTraits<LogData>::Write(Message* m, const param_type& p) {
   WriteParam(m, p.channel);
   WriteParam(m, p.routing_id);
-  WriteParam(m, static_cast<int>(p.type));
+  WriteParam(m, p.type);
   WriteParam(m, p.flags);
   WriteParam(m, p.sent);
   WriteParam(m, p.receive);
@@ -460,18 +485,15 @@ void ParamTraits<LogData>::Write(Message* m, const param_type& p) {
 }
 
 bool ParamTraits<LogData>::Read(const Message* m, void** iter, param_type* r) {
-  int type = -1;
-  bool result =
+  return
       ReadParam(m, iter, &r->channel) &&
       ReadParam(m, iter, &r->routing_id) &&
-      ReadParam(m, iter, &type) &&
+      ReadParam(m, iter, &r->type) &&
       ReadParam(m, iter, &r->flags) &&
       ReadParam(m, iter, &r->sent) &&
       ReadParam(m, iter, &r->receive) &&
       ReadParam(m, iter, &r->dispatch) &&
       ReadParam(m, iter, &r->params);
-  r->type = static_cast<uint16>(type);
-  return result;
 }
 
 }  // namespace IPC

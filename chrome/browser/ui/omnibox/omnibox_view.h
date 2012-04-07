@@ -18,37 +18,57 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "content/common/page_transition_types.h"
-#include "content/common/url_constants.h"
+#include "content/public/common/url_constants.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class AutocompleteEditModel;
 class CommandUpdater;
 class GURL;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 #if defined(TOOLKIT_VIEWS)
+
+// TODO(beng): Move all views-related code to a views-specific sub-interface.
+
+class AutocompleteEditController;
+class LocationBarView;
+class Profile;
+class ToolbarModel;
+
 namespace views {
 class DropTargetEvent;
 class View;
 }  // namespace views
+
 #endif
 
 class OmniboxView {
  public:
+#if defined(TOOLKIT_VIEWS)
+  static OmniboxView* CreateOmniboxView(AutocompleteEditController* controller,
+                                        ToolbarModel* toolbar_model,
+                                        Profile* profile,
+                                        CommandUpdater* command_updater,
+                                        bool popup_window_mode,
+                                        LocationBarView* location_bar);
+#endif
+
   // Used by the automation system for getting at the model from the view.
   virtual AutocompleteEditModel* model() = 0;
   virtual const AutocompleteEditModel* model() const = 0;
 
   // For use when switching tabs, this saves the current state onto the tab so
   // that it can be restored during a later call to Update().
-  virtual void SaveStateToTab(TabContents* tab) = 0;
+  virtual void SaveStateToTab(content::WebContents* tab) = 0;
 
   // Called when any LocationBarView state changes. If
-  // |tab_for_state_restoring| is non-NULL, it points to a TabContents whose
+  // |tab_for_state_restoring| is non-NULL, it points to a WebContents whose
   // state we should restore.
-  virtual void Update(const TabContents* tab_for_state_restoring) = 0;
+  virtual void Update(const content::WebContents* tab_for_state_restoring) = 0;
 
   // Asks the browser to load the specified match's |destination_url|, which
   // is assumed to be one of the popup entries, using the supplied disposition
@@ -110,7 +130,7 @@ class OmniboxView {
   // It is not guaranteed that |*start < *end|, as the selection can be
   // directed.  If there is no selection, |start| and |end| will both be equal
   // to the current cursor position.
-  virtual void GetSelectionBounds(size_t* start, size_t* end) = 0;
+  virtual void GetSelectionBounds(size_t* start, size_t* end) const = 0;
 
   // Selects all the text in the edit.  Use this in place of SetSelAll() to
   // avoid selecting the "phantom newline" at the end of the edit.
@@ -159,6 +179,12 @@ class OmniboxView {
   // Returns the gfx::NativeView of the edit view.
   virtual gfx::NativeView GetNativeView() const = 0;
 
+  // Gets the relative window for the pop up window of AutocompletePopupView.
+  // The pop up window will be shown under the relative window. When an IME
+  // is attached to the rich edit control, the IME window is the relative
+  // window. Otherwise, the top-most window is the relative window.
+  virtual gfx::NativeView GetRelativeWindowForPopup() const = 0;
+
   // Returns the command updater for this view.
   virtual CommandUpdater* GetCommandUpdater() = 0;
 
@@ -178,6 +204,8 @@ class OmniboxView {
   virtual bool IsImeComposing() const = 0;
 
 #if defined(TOOLKIT_VIEWS)
+  virtual int GetMaxEditWidth(int entry_width) const = 0;
+
   // Adds the autocomplete edit view to view hierarchy and
   // returns the views::View of the edit view.
   virtual views::View* AddToView(views::View* parent) = 0;

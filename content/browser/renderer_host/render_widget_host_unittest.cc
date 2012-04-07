@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,21 +6,28 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
 #include "base/timer.h"
-#include "build/build_config.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/backing_store.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas_skia.h"
 
+#if defined(USE_AURA)
+#include "content/browser/renderer_host/render_widget_host_view_aura.h"
+#endif
+
 using base::TimeDelta;
+using content::BrowserThread;
+
+using content::BrowserThreadImpl;
 
 using WebKit::WebInputEvent;
 using WebKit::WebMouseWheelEvent;
@@ -33,21 +40,13 @@ class Size;
 
 class RenderWidgetHostProcess : public MockRenderProcessHost {
  public:
-  explicit RenderWidgetHostProcess(Profile* profile)
-      : MockRenderProcessHost(profile),
+  explicit RenderWidgetHostProcess(content::BrowserContext* browser_context)
+      : MockRenderProcessHost(browser_context),
         current_update_buf_(NULL),
         update_msg_should_reply_(false),
         update_msg_reply_flags_(0) {
-    // DANGER! This is a hack. The RenderWidgetHost checks the channel to see
-    // if the process is still alive, but it doesn't actually dereference it.
-    // An IPC::SyncChannel is nontrivial, so we just fake it here. If you end up
-    // crashing by dereferencing 1, then you'll have to make a real channel.
-    channel_.reset(reinterpret_cast<IPC::SyncChannel*>(0x1));
   }
   ~RenderWidgetHostProcess() {
-    // We don't want to actually delete the channel, since it's not a real
-    // pointer.
-    ignore_result(channel_.release());
     delete current_update_buf_;
   }
 
@@ -60,6 +59,8 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
 
   // Fills the given update parameters with resonable default values.
   void InitUpdateRectParams(ViewHostMsg_UpdateRect_Params* params);
+
+  virtual bool HasConnection() const { return true; }
 
  protected:
   virtual bool WaitForUpdateMsg(int render_widget_id,
@@ -94,6 +95,7 @@ void RenderWidgetHostProcess::InitUpdateRectParams(
   params->copy_rects.push_back(params->bitmap_rect);
   params->view_size = gfx::Size(w, h);
   params->flags = update_msg_reply_flags_;
+  params->needs_ack = true;
 }
 
 bool RenderWidgetHostProcess::WaitForUpdateMsg(int render_widget_id,
@@ -143,7 +145,7 @@ class TestView : public TestRenderWidgetHostView {
 
 class MockRenderWidgetHost : public RenderWidgetHost {
  public:
-  MockRenderWidgetHost(RenderProcessHost* process, int routing_id)
+  MockRenderWidgetHost(content::RenderProcessHost* process, int routing_id)
       : RenderWidgetHost(process, routing_id),
         prehandle_keyboard_event_(false),
         prehandle_keyboard_event_called_(false),
@@ -179,6 +181,10 @@ class MockRenderWidgetHost : public RenderWidgetHost {
     return unresponsive_timer_fired_;
   }
 
+  void set_hung_renderer_delay_ms(int delay_ms) {
+    hung_renderer_delay_ms_ = delay_ms;
+  }
+
  protected:
   virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
                                       bool* is_keyboard_shortcut) {
@@ -209,7 +215,7 @@ class MockRenderWidgetHost : public RenderWidgetHost {
 
 // MockPaintingObserver --------------------------------------------------------
 
-class MockPaintingObserver : public NotificationObserver {
+class MockPaintingObserver : public content::NotificationObserver {
  public:
   void WidgetDidReceivePaintAtSizeAck(RenderWidgetHost* host,
                                       int tag,
@@ -219,15 +225,16 @@ class MockPaintingObserver : public NotificationObserver {
     size_ = size;
   }
 
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
     if (type ==
-        NotificationType::RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK) {
+        content::NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK) {
       RenderWidgetHost::PaintAtSizeAckDetails* size_ack_details =
-          Details<RenderWidgetHost::PaintAtSizeAckDetails>(details).ptr();
+          content::Details<RenderWidgetHost::PaintAtSizeAckDetails>(details).
+              ptr();
       WidgetDidReceivePaintAtSizeAck(
-          Source<RenderWidgetHost>(source).ptr(),
+          content::Source<RenderWidgetHost>(source).ptr(),
           size_ack_details->tag,
           size_ack_details->size);
     }
@@ -256,18 +263,18 @@ class RenderWidgetHostTest : public testing::Test {
  protected:
   // testing::Test
   void SetUp() {
-    profile_.reset(new TestingProfile());
-    process_ = new RenderWidgetHostProcess(profile_.get());
-    host_.reset(new MockRenderWidgetHost(process_, 1));
+    browser_context_.reset(new TestBrowserContext());
+    process_ = new RenderWidgetHostProcess(browser_context_.get());
+    host_.reset(new MockRenderWidgetHost(process_, MSG_ROUTING_NONE));
     view_.reset(new TestView(host_.get()));
-    host_->set_view(view_.get());
+    host_->SetView(view_.get());
     host_->Init();
   }
   void TearDown() {
     view_.reset();
     host_.reset();
     process_ = NULL;
-    profile_.reset();
+    browser_context_.reset();
 
     // Process all pending tasks to avoid leaks.
     MessageLoop::current()->RunAllPending();
@@ -275,9 +282,7 @@ class RenderWidgetHostTest : public testing::Test {
 
   void SendInputEventACK(WebInputEvent::Type type, bool processed) {
     scoped_ptr<IPC::Message> response(
-        new ViewHostMsg_HandleInputEvent_ACK(0));
-    response->WriteInt(type);
-    response->WriteBool(processed);
+        new ViewHostMsg_HandleInputEvent_ACK(0, type, processed));
     host_->OnMessageReceived(*response);
   }
 
@@ -299,7 +304,7 @@ class RenderWidgetHostTest : public testing::Test {
 
   MessageLoopForUI message_loop_;
 
-  scoped_ptr<TestingProfile> profile_;
+  scoped_ptr<TestBrowserContext> browser_context_;
   RenderWidgetHostProcess* process_;  // Deleted automatically by the widget.
   scoped_ptr<MockRenderWidgetHost> host_;
   scoped_ptr<TestView> view_;
@@ -372,33 +377,28 @@ TEST_F(RenderWidgetHostTest, Resize) {
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_EQ(gfx::Size(), host_->in_flight_size_);
-  EXPECT_EQ(gfx::Size(), host_->current_size_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
 
   // Send a rect that has no area but has either width or height set.
-  // since we do not expect ACK, current_size_ should be updated right away.
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 0, 30));
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
-  EXPECT_EQ(gfx::Size(), host_->in_flight_size_);
-  EXPECT_EQ(gfx::Size(0, 30), host_->current_size_);
+  EXPECT_EQ(gfx::Size(0, 30), host_->in_flight_size_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
 
   // Set the same size again. It should not be sent again.
   process_->sink().ClearMessages();
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
-  EXPECT_EQ(gfx::Size(), host_->in_flight_size_);
-  EXPECT_EQ(gfx::Size(0, 30), host_->current_size_);
+  EXPECT_EQ(gfx::Size(0, 30), host_->in_flight_size_);
   EXPECT_FALSE(process_->sink().GetFirstMessageMatching(ViewMsg_Resize::ID));
 
   // A different size should be sent again, however.
   view_->set_bounds(gfx::Rect(0, 0, 0, 31));
   host_->WasResized();
   EXPECT_FALSE(host_->resize_ack_pending_);
-  EXPECT_EQ(gfx::Size(), host_->in_flight_size_);
-  EXPECT_EQ(gfx::Size(0, 31), host_->current_size_);
+  EXPECT_EQ(gfx::Size(0, 31), host_->in_flight_size_);
   EXPECT_TRUE(process_->sink().GetUniqueMessageMatching(ViewMsg_Resize::ID));
 }
 
@@ -416,13 +416,13 @@ TEST_F(RenderWidgetHostTest, ResizeThenCrash) {
   // Simulate a renderer crash before the update message.  Ensure all the
   // resize ack logic is cleared.  Must clear the view first so it doesn't get
   // deleted.
-  host_->set_view(NULL);
+  host_->SetView(NULL);
   host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
   EXPECT_FALSE(host_->resize_ack_pending_);
   EXPECT_EQ(gfx::Size(), host_->in_flight_size_);
 
   // Reset the view so we can exit the test cleanly.
-  host_->set_view(view_.get());
+  host_->SetView(view_.get());
 }
 
 // Tests setting custom background
@@ -430,15 +430,20 @@ TEST_F(RenderWidgetHostTest, Background) {
 #if !defined(OS_MACOSX)
   scoped_ptr<RenderWidgetHostView> view(
       RenderWidgetHostView::CreateViewForWidget(host_.get()));
-  host_->set_view(view.get());
+#if defined(USE_AURA)
+  // TODO(derat): Call this on all platforms: http://crbug.com/102450.
+  static_cast<RenderWidgetHostViewAura*>(view.get())->InitAsChild(NULL);
+#endif
+  host_->SetView(view.get());
 
   // Create a checkerboard background to test with.
-  gfx::CanvasSkia canvas(4, 4, true);
-  canvas.FillRectInt(SK_ColorBLACK, 0, 0, 2, 2);
-  canvas.FillRectInt(SK_ColorWHITE, 2, 0, 2, 2);
-  canvas.FillRectInt(SK_ColorWHITE, 0, 2, 2, 2);
-  canvas.FillRectInt(SK_ColorBLACK, 2, 2, 2, 2);
-  const SkBitmap& background = canvas.getDevice()->accessBitmap(false);
+  gfx::CanvasSkia canvas(gfx::Size(4, 4), true);
+  canvas.FillRect(SK_ColorBLACK, gfx::Rect(0, 0, 2, 2));
+  canvas.FillRect(SK_ColorWHITE, gfx::Rect(2, 0, 2, 2));
+  canvas.FillRect(SK_ColorWHITE, gfx::Rect(0, 2, 2, 2));
+  canvas.FillRect(SK_ColorBLACK, gfx::Rect(2, 2, 2, 2));
+  const SkBitmap& background =
+      canvas.sk_canvas()->getDevice()->accessBitmap(false);
 
   // Set the background and make sure we get back a copy.
   view->SetBackground(background);
@@ -532,7 +537,7 @@ TEST_F(RenderWidgetHostTest, GetBackingStore_RepaintAck) {
 // Test that we don't paint when we're hidden, but we still send the ACK. Most
 // of the rest of the painting is tested in the GetBackingStore* ones.
 TEST_F(RenderWidgetHostTest, HiddenPaint) {
-  BrowserThread ui_thread(BrowserThread::UI, MessageLoop::current());
+  BrowserThreadImpl ui_thread(BrowserThread::UI, MessageLoop::current());
   // Hide the widget, it should have sent out a message to the renderer.
   EXPECT_FALSE(host_->is_hidden_);
   host_->WasHidden();
@@ -570,12 +575,12 @@ TEST_F(RenderWidgetHostTest, PaintAtSize) {
   EXPECT_TRUE(
       process_->sink().GetUniqueMessageMatching(ViewMsg_PaintAtSize::ID));
 
-  NotificationRegistrar registrar;
+  content::NotificationRegistrar registrar;
   MockPaintingObserver observer;
   registrar.Add(
       &observer,
-      NotificationType::RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
-      Source<RenderWidgetHost>(host_.get()));
+      content::NOTIFICATION_RENDER_WIDGET_HOST_DID_RECEIVE_PAINT_AT_SIZE_ACK,
+      content::Source<RenderWidgetHost>(host_.get()));
 
   host_->OnMsgPaintAtSizeAck(kPaintAtSizeTag, gfx::Size(20, 30));
   EXPECT_EQ(host_.get(), observer.host());
@@ -584,7 +589,13 @@ TEST_F(RenderWidgetHostTest, PaintAtSize) {
   EXPECT_EQ(30, observer.size().height());
 }
 
-TEST_F(RenderWidgetHostTest, HandleKeyEventsWeSent) {
+// Fails on Linux Aura, see http://crbug.com/100344
+#if defined(USE_AURA) && !defined(OS_WIN)
+#define MAYBE_HandleKeyEventsWeSent FAILS_HandleKeyEventsWeSent
+#else
+#define MAYBE_HandleKeyEventsWeSent HandleKeyEventsWeSent
+#endif
+TEST_F(RenderWidgetHostTest, MAYBE_HandleKeyEventsWeSent) {
   // Simulate a keyboard event.
   SimulateKeyboardEvent(WebInputEvent::RawKeyDown);
 
@@ -713,7 +724,7 @@ TEST_F(RenderWidgetHostTest, DontPostponeHangMonitorTimeout) {
 
   // Wait long enough for first timeout and see if it fired.
   MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          new MessageLoop::QuitTask(), 10);
+                                          MessageLoop::QuitClosure(), 10);
   MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
 }
@@ -731,7 +742,28 @@ TEST_F(RenderWidgetHostTest, StopAndStartHangMonitorTimeout) {
 
   // Wait long enough for first timeout and see if it fired.
   MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                          new MessageLoop::QuitTask(), 10);
+                                          MessageLoop::QuitClosure(), 40);
+  MessageLoop::current()->Run();
+  EXPECT_TRUE(host_->unresponsive_timer_fired());
+}
+
+// Test that the hang monitor catches two input events but only one ack.
+// This can happen if the second input event causes the renderer to hang.
+// This test will catch a regression of crbug.com/111185 and will only
+// pass when the compositor thread is being used.
+TEST_F(RenderWidgetHostTest, FAILS_MultipleInputEvents) {
+  // Configure the host to wait 10ms before considering
+  // the renderer hung.
+  host_->set_hung_renderer_delay_ms(10);
+
+  // Send two events but only one ack.
+  SimulateKeyboardEvent(WebInputEvent::RawKeyDown);
+  SimulateKeyboardEvent(WebInputEvent::RawKeyDown);
+  SendInputEventACK(WebInputEvent::RawKeyDown, true);
+
+  // Wait long enough for first timeout and see if it fired.
+  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+                                          MessageLoop::QuitClosure(), 40);
   MessageLoop::current()->Run();
   EXPECT_TRUE(host_->unresponsive_timer_fired());
 }

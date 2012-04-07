@@ -6,12 +6,12 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_factory.h"
+#include "chrome/browser/sync/profile_sync_components_factory.h"
 
 namespace browser_sync {
 
 ExtensionDataTypeController::ExtensionDataTypeController(
-    ProfileSyncFactory* profile_sync_factory,
+    ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
     : FrontendDataTypeController(profile_sync_factory,
@@ -32,11 +32,16 @@ bool ExtensionDataTypeController::StartModels() {
 }
 
 void ExtensionDataTypeController::CreateSyncComponents() {
-  ProfileSyncFactory::SyncComponents sync_components =
+  ProfileSyncComponentsFactory::SyncComponents sync_components =
       profile_sync_factory_->CreateExtensionSyncComponents(sync_service_,
                                                      this);
   set_model_associator(sync_components.model_associator);
-  set_change_processor(sync_components.change_processor);
+  generic_change_processor_.reset(static_cast<GenericChangeProcessor*>(
+      sync_components.change_processor));
+}
+
+GenericChangeProcessor* ExtensionDataTypeController::change_processor() const {
+  return generic_change_processor_.get();
 }
 
 void ExtensionDataTypeController::RecordUnrecoverableError(

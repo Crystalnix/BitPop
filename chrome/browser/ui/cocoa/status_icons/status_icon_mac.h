@@ -8,8 +8,10 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/string16.h"
+#include "chrome/browser/status_icons/desktop_notification_balloon.h"
 #include "chrome/browser/status_icons/status_icon.h"
 
 class SkBitmap;
@@ -21,15 +23,17 @@ class StatusIconMac : public StatusIcon {
   StatusIconMac();
   virtual ~StatusIconMac();
 
-  // Overridden from StatusIcon
-  virtual void SetImage(const SkBitmap& image);
-  virtual void SetPressedImage(const SkBitmap& image);
-  virtual void SetToolTip(const string16& tool_tip);
-  virtual void DisplayBalloon(const string16& title, const string16& contents);
+  // Overridden from StatusIcon.
+  virtual void SetImage(const SkBitmap& image) OVERRIDE;
+  virtual void SetPressedImage(const SkBitmap& image) OVERRIDE;
+  virtual void SetToolTip(const string16& tool_tip) OVERRIDE;
+  virtual void DisplayBalloon(const SkBitmap& icon,
+                              const string16& title,
+                              const string16& contents) OVERRIDE;
 
  protected:
   // Overridden from StatusIcon.
-  virtual void UpdatePlatformContextMenu(ui::MenuModel* menu);
+  virtual void UpdatePlatformContextMenu(ui::MenuModel* menu) OVERRIDE;
 
  private:
   // Getter for item_ that allows lazy initialization.
@@ -38,8 +42,10 @@ class StatusIconMac : public StatusIcon {
 
   scoped_nsobject<StatusItemController> controller_;
 
+  // Notification balloon.
+  DesktopNotificationBalloon notification_;
+
   DISALLOW_COPY_AND_ASSIGN(StatusIconMac);
 };
-
 
 #endif // CHROME_BROWSER_UI_COCOA_STATUS_ICONS_STATUS_ICON_MAC_H_

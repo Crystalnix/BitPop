@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,18 @@
 #include <string>
 #include <vector>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/sync/internal_api/includes/syncer_error.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
+namespace base {
+class DictionaryValue;
+}  // namespace
+
 namespace browser_sync {
+
+typedef base::Callback<enum SyncerError(void)> WorkCallback;
 
 enum ModelSafeGroup {
   GROUP_PASSIVE = 0,   // Models that are just "passively" being synced; e.g.
@@ -22,6 +29,7 @@ enum ModelSafeGroup {
                        // native model.
   GROUP_UI,            // Models that live on UI thread and are being synced.
   GROUP_DB,            // Models that live on DB thread and are being synced.
+  GROUP_FILE,          // Models that live on FILE thread and are being synced.
   GROUP_HISTORY,       // Models that live on history thread and are being
                        // synced.
   GROUP_PASSWORD,      // Models that live on the password thread and are
@@ -41,26 +49,18 @@ std::string ModelSafeGroupToString(ModelSafeGroup group);
 // syncable::Directory due to a race.
 class ModelSafeWorker : public base::RefCountedThreadSafe<ModelSafeWorker> {
  public:
-  ModelSafeWorker();
-  virtual ~ModelSafeWorker();
-
   // Any time the Syncer performs model modifications (e.g employing a
   // WriteTransaction), it should be done by this method to ensure it is done
   // from a model-safe thread.
-  virtual void DoWorkAndWaitUntilDone(Callback0::Type* work);
+  virtual SyncerError DoWorkAndWaitUntilDone(const WorkCallback& work) = 0;
 
-  virtual ModelSafeGroup GetModelSafeGroup();
+  virtual ModelSafeGroup GetModelSafeGroup() = 0;
 
-  // Check the current thread and see if it's the thread associated with
-  // this worker.  If this returns true, then it should be safe to operate
-  // on models that are in this worker's group.  If this returns false,
-  // such work should not be attempted.
-  virtual bool CurrentThreadIsWorkThread();
+ protected:
+  virtual ~ModelSafeWorker();
 
  private:
   friend class base::RefCountedThreadSafe<ModelSafeWorker>;
-
-  DISALLOW_COPY_AND_ASSIGN(ModelSafeWorker);
 };
 
 // A map that details which ModelSafeGroup each syncable::ModelType
@@ -68,6 +68,16 @@ class ModelSafeWorker : public base::RefCountedThreadSafe<ModelSafeWorker> {
 // disabling sync for certain types, as well as model association completions.
 typedef std::map<syncable::ModelType, ModelSafeGroup>
     ModelSafeRoutingInfo;
+
+// Caller takes ownership of return value.
+base::DictionaryValue* ModelSafeRoutingInfoToValue(
+    const ModelSafeRoutingInfo& routing_info);
+
+std::string ModelSafeRoutingInfoToString(
+    const ModelSafeRoutingInfo& routing_info);
+
+syncable::ModelTypeSet GetRoutingInfoTypes(
+    const ModelSafeRoutingInfo& routing_info);
 
 ModelSafeGroup GetGroupForModelType(const syncable::ModelType type,
                                     const ModelSafeRoutingInfo& routes);

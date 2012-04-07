@@ -7,6 +7,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <string>
 #include <vector>
 
 class GURL;
@@ -14,6 +15,8 @@ class PrefService;
 class TemplateURL;
 
 namespace TemplateURLPrepopulateData {
+
+extern const int kMaxPrepopulatedEngineID;
 
 void RegisterUserPrefs(PrefService* prefs);
 
@@ -32,6 +35,7 @@ void GetPrepopulatedEngines(PrefService* prefs,
 
 // Returns the default search provider specified by the prepopulate data.
 // The caller owns the returned value, which may be NULL.
+// If |prefs| is NULL, search provider overrides from preferences are not used.
 TemplateURL* GetPrepopulatedDefaultSearch(PrefService* prefs);
 
 // Returns a TemplateURL from the prepopulated data which has the same origin
@@ -41,6 +45,11 @@ TemplateURL* GetEngineForOrigin(PrefService* prefs, const GURL& url_to_find);
 
 // Returns search engine logo for URLs known to have a search engine logo.
 int GetSearchEngineLogo(const GURL& url_to_find);
+
+// Returns the prepopulated search provider whose search URL origin matches the
+// origin of |search_url| or NULL if none is found. The caller is responsible
+// for deleting the returned TemplateURL.
+TemplateURL* FindPrepopulatedEngine(const std::string& search_url);
 
 }  // namespace TemplateURLPrepopulateData
 

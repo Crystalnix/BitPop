@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,8 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/message_box_flags.h"
-#include "views/controls/message_box_view.h"
-#include "views/window/window.h"
+#include "ui/views/controls/message_box_view.h"
+#include "ui/views/widget/widget.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // RestartMessageBox, public:
@@ -22,29 +21,37 @@ void RestartMessageBox::ShowMessageBox(gfx::NativeWindow parent_window) {
 }
 
 int RestartMessageBox::GetDialogButtons() const {
-  return ui::MessageBoxFlags::DIALOGBUTTON_OK;
+  return ui::DIALOG_BUTTON_OK;
 }
 
-std::wstring RestartMessageBox::GetDialogButtonLabel(
-    ui::MessageBoxFlags::DialogButton button) const {
-  DCHECK(button == ui::MessageBoxFlags::DIALOGBUTTON_OK);
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_OK));
+string16 RestartMessageBox::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  DCHECK_EQ(button, ui::DIALOG_BUTTON_OK);
+  return l10n_util::GetStringUTF16(IDS_OK);
 }
 
-std::wstring RestartMessageBox::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+string16 RestartMessageBox::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
 }
 
 void RestartMessageBox::DeleteDelegate() {
   delete this;
 }
 
-bool RestartMessageBox::IsModal() const {
-  return true;
+ui::ModalType RestartMessageBox::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
 views::View* RestartMessageBox::GetContentsView() {
   return message_box_view_;
+}
+
+views::Widget* RestartMessageBox::GetWidget() {
+  return message_box_view_->GetWidget();
+}
+
+const views::Widget* RestartMessageBox::GetWidget() const {
+  return message_box_view_->GetWidget();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,13 +61,11 @@ RestartMessageBox::RestartMessageBox(gfx::NativeWindow parent_window) {
   const int kDialogWidth = 400;
   // Also deleted when the window closes.
   message_box_view_ = new views::MessageBoxView(
-      ui::MessageBoxFlags::kFlagHasMessage |
-          ui::MessageBoxFlags::kFlagHasOKButton,
-      UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_OPTIONS_RELAUNCH_REQUIRED)).c_str(),
-      std::wstring(),
+      views::MessageBoxView::NO_OPTIONS,
+      l10n_util::GetStringUTF16(IDS_OPTIONS_RELAUNCH_REQUIRED),
+      string16(),
       kDialogWidth);
-  views::Window::CreateChromeWindow(parent_window, gfx::Rect(), this)->Show();
+  views::Widget::CreateWindowWithParent(this, parent_window)->Show();
 }
 
 RestartMessageBox::~RestartMessageBox() {

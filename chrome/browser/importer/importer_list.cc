@@ -4,10 +4,12 @@
 
 #include "chrome/browser/importer/importer_list.h"
 
+#include "base/bind.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/importer/firefox_importer_utils.h"
-#include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/importer_bridge.h"
+#include "chrome/browser/importer/importer_data_types.h"
+#include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -19,14 +21,16 @@
 #include "chrome/browser/importer/safari_importer.h"
 #endif
 
+using content::BrowserThread;
+
 namespace {
 
 #if defined(OS_WIN)
 void DetectIEProfiles(std::vector<importer::SourceProfile*>* profiles) {
     // IE always exists and doesn't have multiple profiles.
-  importer::SourceProfile* ie = new importer::SourceProfile();
+  importer::SourceProfile* ie = new importer::SourceProfile;
   ie->importer_name = l10n_util::GetStringUTF16(IDS_IMPORT_FROM_IE);
-  ie->importer_type = importer::MS_IE;
+  ie->importer_type = importer::TYPE_IE;
   ie->source_path.clear();
   ie->app_path.clear();
   ie->services_supported = importer::HISTORY | importer::FAVORITES |
@@ -41,9 +45,9 @@ void DetectSafariProfiles(std::vector<importer::SourceProfile*>* profiles) {
   if (!SafariImporter::CanImport(base::mac::GetUserLibraryPath(), &items))
     return;
 
-  importer::SourceProfile* safari = new importer::SourceProfile();
+  importer::SourceProfile* safari = new importer::SourceProfile;
   safari->importer_name = l10n_util::GetStringUTF16(IDS_IMPORT_FROM_SAFARI);
-  safari->importer_type = importer::SAFARI;
+  safari->importer_type = importer::TYPE_SAFARI;
   safari->source_path.clear();
   safari->app_path.clear();
   safari->services_supported = items;
@@ -67,15 +71,15 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
     GetFirefoxVersionAndPathFromProfile(profile_path, &version, &app_path);
 
   if (version == 2) {
-    firefox_type = importer::FIREFOX2;
+    firefox_type = importer::TYPE_FIREFOX2;
   } else if (version >= 3) {
-    firefox_type = importer::FIREFOX3;
+    firefox_type = importer::TYPE_FIREFOX3;
   } else {
     // Ignores other versions of firefox.
     return;
   }
 
-  importer::SourceProfile* firefox = new importer::SourceProfile();
+  importer::SourceProfile* firefox = new importer::SourceProfile;
   firefox->importer_name = l10n_util::GetStringUTF16(IDS_IMPORT_FROM_FIREFOX);
   firefox->importer_type = firefox_type;
   firefox->source_path = profile_path;
@@ -90,46 +94,49 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
 }
 
 void DetectGoogleToolbarProfiles(
-    std::vector<importer::SourceProfile*>* profiles) {
-  if (FirstRun::IsChromeFirstRun())
+    std::vector<importer::SourceProfile*>* profiles,
+    scoped_refptr<net::URLRequestContextGetter> request_context_getter) {
+  if (first_run::IsChromeFirstRun())
     return;
 
-  importer::SourceProfile* google_toolbar = new importer::SourceProfile();
+  importer::SourceProfile* google_toolbar = new importer::SourceProfile;
   google_toolbar->importer_name =
       l10n_util::GetStringUTF16(IDS_IMPORT_FROM_GOOGLE_TOOLBAR);
-  google_toolbar->importer_type = importer::GOOGLE_TOOLBAR5;
+  google_toolbar->importer_type = importer::TYPE_GOOGLE_TOOLBAR5;
   google_toolbar->source_path.clear();
   google_toolbar->app_path.clear();
   google_toolbar->services_supported = importer::FAVORITES;
+  google_toolbar->request_context_getter = request_context_getter;
   profiles->push_back(google_toolbar);
 }
 
 }  // namespace
 
-ImporterList::ImporterList()
+ImporterList::ImporterList(
+    net::URLRequestContextGetter* request_context_getter)
     : source_thread_id_(BrowserThread::UI),
       observer_(NULL),
       is_observed_(false),
       source_profiles_loaded_(false) {
+ request_context_getter_ = make_scoped_refptr(request_context_getter);
 }
 
-ImporterList::~ImporterList() {
-}
-
-void ImporterList::DetectSourceProfiles(Observer* observer) {
+void ImporterList::DetectSourceProfiles(
+    importer::ImporterListObserver* observer) {
   DCHECK(observer);
   observer_ = observer;
   is_observed_ = true;
 
-  BrowserThread::GetCurrentThreadIdentifier(&source_thread_id_);
+  bool res = BrowserThread::GetCurrentThreadIdentifier(&source_thread_id_);
+  DCHECK(res);
 
   BrowserThread::PostTask(
       BrowserThread::FILE,
       FROM_HERE,
-      NewRunnableMethod(this, &ImporterList::DetectSourceProfilesWorker));
+      base::Bind(&ImporterList::DetectSourceProfilesWorker, this));
 }
 
-void ImporterList::SetObserver(Observer* observer) {
+void ImporterList::SetObserver(importer::ImporterListObserver* observer) {
   observer_ = observer;
 }
 
@@ -140,7 +147,7 @@ void ImporterList::DetectSourceProfilesHack() {
 const importer::SourceProfile& ImporterList::GetSourceProfileAt(
     size_t index) const {
   DCHECK(source_profiles_loaded_);
-  DCHECK(index < count());
+  DCHECK_LT(index, count());
   return *source_profiles_[index];
 }
 
@@ -153,7 +160,10 @@ const importer::SourceProfile& ImporterList::GetSourceProfileForImporterType(
       return *source_profiles_[i];
   }
   NOTREACHED();
-  return *(new importer::SourceProfile());
+  return *(new importer::SourceProfile);
+}
+
+ImporterList::~ImporterList() {
 }
 
 void ImporterList::DetectSourceProfilesWorker() {
@@ -175,7 +185,7 @@ void ImporterList::DetectSourceProfilesWorker() {
     DetectFirefoxProfiles(&profiles);
   }
   // TODO(brg) : Current UI requires win_util.
-  DetectGoogleToolbarProfiles(&profiles);
+  DetectGoogleToolbarProfiles(&profiles, request_context_getter_);
 #elif defined(OS_MACOSX)
   if (ShellIntegration::IsFirefoxDefaultBrowser()) {
     DetectFirefoxProfiles(&profiles);
@@ -194,7 +204,7 @@ void ImporterList::DetectSourceProfilesWorker() {
     BrowserThread::PostTask(
         source_thread_id_,
         FROM_HERE,
-        NewRunnableMethod(this, &ImporterList::SourceProfilesLoaded, profiles));
+        base::Bind(&ImporterList::SourceProfilesLoaded, this, profiles));
   } else {
     source_profiles_->assign(profiles.begin(), profiles.end());
     source_profiles_loaded_ = true;

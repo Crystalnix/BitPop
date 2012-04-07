@@ -4,70 +4,96 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/content_settings/content_settings_mock_provider.h"
+#include "chrome/browser/content_settings/content_settings_utils.h"
 #include "googleurl/src/gurl.h"
 
 namespace content_settings {
 
 TEST(ContentSettingsProviderTest, Mock) {
-  MockDefaultProvider provider(CONTENT_SETTINGS_TYPE_COOKIES,
-                                       CONTENT_SETTING_ALLOW,
-                                       false,
-                                       true);
-  EXPECT_EQ(CONTENT_SETTING_ALLOW,
-            provider.ProvideDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES));
-  EXPECT_EQ(CONTENT_SETTING_DEFAULT,
-            provider.ProvideDefaultSetting(CONTENT_SETTINGS_TYPE_POPUPS));
-  EXPECT_FALSE(provider.DefaultSettingIsManaged(CONTENT_SETTINGS_TYPE_COOKIES));
-  EXPECT_FALSE(provider.DefaultSettingIsManaged(CONTENT_SETTINGS_TYPE_POPUPS));
-  provider.UpdateDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES,
-                                CONTENT_SETTING_BLOCK);
-  EXPECT_EQ(CONTENT_SETTING_BLOCK,
-            provider.ProvideDefaultSetting(CONTENT_SETTINGS_TYPE_COOKIES));
-
   ContentSettingsPattern pattern =
       ContentSettingsPattern::FromString("[*.]youtube.com");
   GURL url("http://www.youtube.com");
 
-  MockProvider mock_provider(
+  MockProvider mock_provider(false);
+  mock_provider.SetWebsiteSetting(
       pattern,
       pattern,
       CONTENT_SETTINGS_TYPE_PLUGINS,
       "java_plugin",
-      CONTENT_SETTING_BLOCK,
-      false,
-      false);
+      Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
 
-  EXPECT_EQ(CONTENT_SETTING_BLOCK, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin"));
-  EXPECT_EQ(CONTENT_SETTING_DEFAULT, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_PLUGINS, "flash_plugin"));
-  EXPECT_EQ(CONTENT_SETTING_DEFAULT, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_GEOLOCATION, ""));
 
-  mock_provider.SetContentSetting(
+  EXPECT_EQ(CONTENT_SETTING_BLOCK,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin",
+                              false));
+  scoped_ptr<Value> value_ptr(
+            GetContentSettingValue(&mock_provider, url, url,
+                                   CONTENT_SETTINGS_TYPE_PLUGINS,
+                                   "java_plugin", false));
+  int int_value = -1;
+  value_ptr->GetAsInteger(&int_value);
+  EXPECT_EQ(CONTENT_SETTING_BLOCK, IntToContentSetting(int_value));
+
+  EXPECT_EQ(CONTENT_SETTING_DEFAULT,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_PLUGINS, "flash_plugin",
+                              false));
+  EXPECT_EQ(NULL,
+            GetContentSettingValue(&mock_provider, url, url,
+                                   CONTENT_SETTINGS_TYPE_PLUGINS,
+                                   "flash_plugin", false));
+  EXPECT_EQ(CONTENT_SETTING_DEFAULT,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_GEOLOCATION, "", false));
+  EXPECT_EQ(NULL,
+            GetContentSettingValue(&mock_provider, url, url,
+                                   CONTENT_SETTINGS_TYPE_GEOLOCATION, "",
+                                   false));
+
+  bool owned = mock_provider.SetWebsiteSetting(
       pattern,
       pattern,
       CONTENT_SETTINGS_TYPE_PLUGINS,
       "java_plugin",
-      CONTENT_SETTING_ALLOW);
-  EXPECT_EQ(CONTENT_SETTING_ALLOW, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin"));
+      Value::CreateIntegerValue(CONTENT_SETTING_ALLOW));
+  EXPECT_TRUE(owned);
+  EXPECT_EQ(CONTENT_SETTING_ALLOW,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin",
+                              false));
 
   mock_provider.set_read_only(true);
-  mock_provider.SetContentSetting(
+  scoped_ptr<base::Value> value(
+      Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
+  owned = mock_provider.SetWebsiteSetting(
       pattern,
       pattern,
       CONTENT_SETTINGS_TYPE_PLUGINS,
       "java_plugin",
-      CONTENT_SETTING_BLOCK);
-  EXPECT_EQ(CONTENT_SETTING_ALLOW, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin"));
+      value.get());
+  EXPECT_FALSE(owned);
+  EXPECT_EQ(CONTENT_SETTING_ALLOW,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin",
+                              false));
 
   EXPECT_TRUE(mock_provider.read_only());
-  mock_provider.set_setting(CONTENT_SETTING_BLOCK);
-  EXPECT_EQ(CONTENT_SETTING_BLOCK, mock_provider.GetContentSetting(
-      url, url, CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin"));
+
+  mock_provider.set_read_only(false);
+  owned = mock_provider.SetWebsiteSetting(
+      pattern,
+      pattern,
+      CONTENT_SETTINGS_TYPE_PLUGINS,
+      "java_plugin",
+      Value::CreateIntegerValue(CONTENT_SETTING_BLOCK));
+  EXPECT_TRUE(owned);
+  EXPECT_EQ(CONTENT_SETTING_BLOCK,
+            GetContentSetting(&mock_provider, url, url,
+                              CONTENT_SETTINGS_TYPE_PLUGINS, "java_plugin",
+                              false));
 }
 
 }  // namespace content_settings

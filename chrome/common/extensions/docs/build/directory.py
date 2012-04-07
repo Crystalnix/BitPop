@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -57,7 +57,7 @@ def parse_json_file(path, encoding="utf-8"):
   return json_obj
 
 class ApiManifest(object):
-  """ Represents the list of API methods contained in extension_api.json """
+  """ Represents the list of API methods contained in the extension API JSON """
 
   _MODULE_DOC_KEYS = ['functions', 'events']
   """ Keys which may be passed to the _parseModuleDocLinksByKey method."""
@@ -66,7 +66,7 @@ class ApiManifest(object):
     """ Read the supplied manifest file and parse its contents.
 
     Args:
-      manifest_paths: Array of paths to API schemas (extension_api.json etc).
+      manifest_paths: Array of paths to API schemas.
     """
     self._manifest = [];
     for path in manifest_paths:
@@ -95,7 +95,7 @@ class ApiManifest(object):
     documentation URLs.
 
     Args:
-      module: The data in extension_api.json corresponding to a single module.
+      module: The data in the extension API JSON for a single module.
       key: A key belonging to _MODULE_DOC_KEYS to determine which set of
           methods to parse, and what kind of documentation URL to generate.
 
@@ -139,7 +139,7 @@ class ApiManifest(object):
                if "nodoc" not in module)
 
   def getDocumentationLinks(self):
-    """ Parses the extension_api.json manifest and returns a dict of all
+    """ Parses the extension API JSON manifest and returns a dict of all
     events and methods for every module, mapped to relative documentation links.
 
     Returns:
@@ -205,8 +205,8 @@ class SamplesManifest(object):
     samples = []
     for path in manifest_paths:
       sample = Sample(path, api_methods, self._base_dir)
-      # Don't render apps
-      if sample.is_app() == False:
+      # Don't render hosted apps
+      if sample.is_hosted_app() == False:
         samples.append(sample)
 
     def compareSamples(sample1, sample2):
@@ -290,6 +290,8 @@ class Sample(dict):
     self['search_string'] = self._get_search_string()
     self['id'] = hashlib.sha1(self['path']).hexdigest()
     self['zip_path'] = self._get_relative_zip_path()
+    self['crx_path'] = self._get_relative_crx_path()
+    self['packaged_app'] = self.is_packaged_app()
 
   _FEATURE_ATTRIBUTES = (
     'browser_action',
@@ -400,6 +402,25 @@ class Sample(dict):
     zip_relpath = os.path.dirname(os.path.dirname(self._get_relative_path()))
     return os.path.join(zip_relpath, zip_filename)
 
+  def _get_relative_crx_path(self):
+    """ Returns a relative path from the base dir to the sample's crx file.
+
+    Note: .crx files are provided manually and may or may not exist.
+
+    Returns:
+      If the .crx file exists, the relative directory path from the sample's
+      manifest directory to this sample's .crx files.
+
+      Otherwise, None.
+    """
+    crx_filename = self._get_crx_filename()
+    crx_relroot = os.path.dirname(os.path.dirname(self._get_relative_path()))
+    crx_relpath = os.path.join(crx_relroot, crx_filename)
+    crx_absroot = os.path.dirname(os.path.dirname(self._manifest_path))
+    crx_abspath = os.path.join(crx_absroot, crx_filename)
+    return os.path.isfile(crx_abspath) and crx_relpath or None
+
+
   def _get_search_string(self):
     """ Constructs a string to be used when searching the samples list.
 
@@ -434,6 +455,17 @@ class Sample(dict):
     sample_dirname = os.path.basename(sample_path)
     return "%s.zip" % sample_dirname
 
+  def _get_crx_filename(self):
+    """ Returns the filename to be used for a generated zip of the sample.
+
+    Returns:
+      A string in the form of "<dirname>.zip" where <dirname> is the name
+      of the directory containing this sample's manifest.json.
+    """
+    sample_path = os.path.realpath(os.path.dirname(self._manifest_path))
+    sample_dirname = os.path.basename(sample_path)
+    return "%s.crx" % sample_dirname
+
   def _parse_description(self):
     """ Returns a localized description of the extension.
 
@@ -453,6 +485,9 @@ class Sample(dict):
     for feature_attr in self._FEATURE_ATTRIBUTES:
       if self._manifest.has_key(feature_attr):
         features.add(feature_attr)
+
+    if self._manifest.has_key('background'):
+      features.add('background_page')
 
     if self._uses_popup():
       features.add('popup')
@@ -623,9 +658,17 @@ class Sample(dict):
                    self._manifest['page_action'].has_key('popup'))
     return has_b_popup or has_p_popup
 
-  def is_app(self):
-    """ Returns true if the extension has an 'app' section in its manifest."""
-    return self._manifest.has_key('app')
+  def is_hosted_app(self):
+    """ Returns true if the manifest has an app but not a local_path."""
+    return (self._manifest.has_key('app') and
+            (not self._manifest['app'].has_key('launch') or
+             not self._manifest['app']['launch'].has_key('local_path')))
+
+  def is_packaged_app(self):
+    """ Returns true if the manifest has an app/launch/local_path section."""
+    return (self._manifest.has_key('app') and
+            self._manifest['app'].has_key('launch') and
+            self._manifest['app']['launch'].has_key('local_path'))
 
   def write_zip(self):
     """ Writes a zip file containing all of the files in this Sample's dir."""

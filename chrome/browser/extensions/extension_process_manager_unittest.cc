@@ -1,13 +1,16 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/site_instance.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/site_instance.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+using content::SiteInstance;
 
 namespace {
 
@@ -42,7 +45,7 @@ TEST_F(ExtensionProcessManagerTest, ProcessGrouping) {
   // Extensions with common origins ("scheme://id/") should be grouped in the
   // same SiteInstance.
   GURL ext1_url1("chrome-extension://ext1_id/index.html");
-  GURL ext1_url2("chrome-extension://ext1_id/toolstrips/toolstrip.html");
+  GURL ext1_url2("chrome-extension://ext1_id/monkey/monkey.html");
   GURL ext2_url1("chrome-extension://ext2_id/index.html");
 
   scoped_refptr<SiteInstance> site11 =

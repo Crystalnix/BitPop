@@ -8,9 +8,12 @@
 
 #include <string>
 
+#include "base/basictypes.h"
 #include "chrome/common/content_settings_types.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
 // This model provides data (icon ids and tooltip) for the content setting icons
 // that are displayed in the location bar.
@@ -24,7 +27,7 @@ class ContentSettingImageModel {
 
   // Notifies this model that its setting might have changed and it may need to
   // update its visibility, icon and tooltip.
-  virtual void UpdateFromTabContents(TabContents* tab_contents) = 0;
+  virtual void UpdateFromWebContents(content::WebContents* web_contents) = 0;
 
   ContentSettingsType get_content_settings_type() const {
     return content_settings_type_;
@@ -51,6 +54,8 @@ class ContentSettingImageModel {
   int icon_;
   int explanatory_string_id_;
   std::string tooltip_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContentSettingImageModel);
 };
 
 #endif  // CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_IMAGE_MODEL_H_

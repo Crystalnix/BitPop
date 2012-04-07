@@ -1,31 +1,40 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/renderer/extensions/extension_helper.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/json/json_value_serializer.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_view_type.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/renderer/extensions/app_bindings.h"
+#include "chrome/renderer/extensions/chrome_v8_context.h"
+#include "chrome/renderer/extensions/chrome_webstore_bindings.h"
 #include "chrome/renderer/extensions/event_bindings.h"
 #include "chrome/renderer/extensions/extension_dispatcher.h"
-#include "chrome/renderer/extensions/extension_process_bindings.h"
+#include "chrome/renderer/extensions/miscellaneous_bindings.h"
+#include "chrome/renderer/extensions/schema_generated_bindings.h"
 #include "chrome/renderer/extensions/user_script_idle_scheduler.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
-#include "content/common/json_value_serializer.h"
-#include "content/renderer/render_view.h"
-#include "webkit/glue/image_resource_fetcher.h"
-#include "webkit/glue/resource_fetcher.h"
+#include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "webkit/glue/image_resource_fetcher.h"
+#include "webkit/glue/resource_fetcher.h"
 
+using extensions::MiscellaneousBindings;
+using extensions::SchemaGeneratedBindings;
 using WebKit::WebConsoleMessage;
 using WebKit::WebDataSource;
 using WebKit::WebFrame;
@@ -40,16 +49,17 @@ namespace {
 // document to another with adoptNode, and so having the object be a
 // RenderViewObserver means it might miss some notifications after it moves.
 typedef std::map<WebFrame*, UserScriptIdleScheduler*> SchedulerMap;
-static base::LazyInstance<SchedulerMap> g_schedulers(base::LINKER_INITIALIZED);
+static base::LazyInstance<SchedulerMap> g_schedulers =
+    LAZY_INSTANCE_INITIALIZER;
 }
 
-ExtensionHelper::ExtensionHelper(RenderView* render_view,
+ExtensionHelper::ExtensionHelper(content::RenderView* render_view,
                                  ExtensionDispatcher* extension_dispatcher)
-    : RenderViewObserver(render_view),
-      RenderViewObserverTracker<ExtensionHelper>(render_view),
+    : content::RenderViewObserver(render_view),
+      content::RenderViewObserverTracker<ExtensionHelper>(render_view),
       extension_dispatcher_(extension_dispatcher),
       pending_app_icon_requests_(0),
-      view_type_(ViewType::INVALID),
+      view_type_(content::VIEW_TYPE_INVALID),
       browser_window_id_(-1) {
 }
 
@@ -96,10 +106,26 @@ bool ExtensionHelper::InstallWebApplicationUsingDefinitionFile(
   }
 
   app_definition_fetcher_.reset(new ResourceFetcher(
-      pending_app_info_->manifest_url, render_view()->webview()->mainFrame(),
+      pending_app_info_->manifest_url, render_view()->GetWebView()->mainFrame(),
       WebURLRequest::TargetIsSubresource,
-      NewCallback(this, &ExtensionHelper::DidDownloadApplicationDefinition)));
+      base::Bind(&ExtensionHelper::DidDownloadApplicationDefinition,
+                 base::Unretained(this))));
   return true;
+}
+
+void ExtensionHelper::InlineWebstoreInstall(
+    int install_id,
+    const std::string& webstore_item_id,
+    const GURL& requestor_url) {
+  Send(new ExtensionHostMsg_InlineWebstoreInstall(
+      routing_id(), install_id, webstore_item_id, requestor_url));
+}
+
+void ExtensionHelper::OnInlineWebstoreInstallResponse(
+    int install_id,
+    bool success,
+    const std::string& error) {
+  ChromeWebstoreExtension::HandleInstallResponse(install_id, success, error);
 }
 
 bool ExtensionHelper::OnMessageReceived(const IPC::Message& message) {
@@ -107,12 +133,15 @@ bool ExtensionHelper::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(ExtensionHelper, message)
     IPC_MESSAGE_HANDLER(ExtensionMsg_Response, OnExtensionResponse)
     IPC_MESSAGE_HANDLER(ExtensionMsg_MessageInvoke, OnExtensionMessageInvoke)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_DeliverMessage, OnExtensionDeliverMessage)
     IPC_MESSAGE_HANDLER(ExtensionMsg_ExecuteCode, OnExecuteCode)
     IPC_MESSAGE_HANDLER(ExtensionMsg_GetApplicationInfo, OnGetApplicationInfo)
     IPC_MESSAGE_HANDLER(ExtensionMsg_UpdateBrowserWindowId,
                         OnUpdateBrowserWindowId)
     IPC_MESSAGE_HANDLER(ExtensionMsg_NotifyRenderViewType,
                         OnNotifyRendererViewType)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_InlineWebstoreInstallResponse,
+                        OnInlineWebstoreInstallResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -176,21 +205,34 @@ void ExtensionHelper::OnExtensionResponse(int request_id,
                                           bool success,
                                           const std::string& response,
                                           const std::string& error) {
-  ExtensionProcessBindings::HandleResponse(
-      request_id, success, response, error);
+  std::string extension_id;
+  SchemaGeneratedBindings::HandleResponse(
+      extension_dispatcher_->v8_context_set(), request_id, success,
+      response, error, &extension_id);
+
+  extension_dispatcher_->CheckIdleStatus(extension_id);
 }
 
 void ExtensionHelper::OnExtensionMessageInvoke(const std::string& extension_id,
                                                const std::string& function_name,
                                                const ListValue& args,
                                                const GURL& event_url) {
-  EventBindings::CallFunction(
+  extension_dispatcher_->v8_context_set().DispatchChromeHiddenMethod(
       extension_id, function_name, args, render_view(), event_url);
+}
+
+void ExtensionHelper::OnExtensionDeliverMessage(int target_id,
+                                                const std::string& message) {
+  MiscellaneousBindings::DeliverMessage(
+      extension_dispatcher_->v8_context_set().GetAll(),
+      target_id,
+      message,
+      render_view());
 }
 
 void ExtensionHelper::OnExecuteCode(
     const ExtensionMsg_ExecuteCode_Params& params) {
-  WebView* webview = render_view()->webview();
+  WebView* webview = render_view()->GetWebView();
   WebFrame* main_frame = webview->mainFrame();
   if (!main_frame) {
     Send(new ExtensionHostMsg_ExecuteCodeFinished(
@@ -207,10 +249,10 @@ void ExtensionHelper::OnExecuteCode(
 
 void ExtensionHelper::OnGetApplicationInfo(int page_id) {
   WebApplicationInfo app_info;
-  if (page_id == render_view()->page_id()) {
+  if (page_id == render_view()->GetPageId()) {
     string16 error;
     web_apps::ParseWebAppFromWebDocument(
-        render_view()->webview()->mainFrame(), &app_info, &error);
+        render_view()->GetWebView()->mainFrame(), &app_info, &error);
   }
 
   // Prune out any data URLs in the set of icons.  The browser process expects
@@ -228,7 +270,7 @@ void ExtensionHelper::OnGetApplicationInfo(int page_id) {
       routing_id(), page_id, app_info));
 }
 
-void ExtensionHelper::OnNotifyRendererViewType(ViewType::Type type) {
+void ExtensionHelper::OnNotifyRendererViewType(content::ViewType type) {
   view_type_ = type;
 }
 
@@ -266,12 +308,13 @@ void ExtensionHelper::DidDownloadApplicationDefinition(
       app_icon_fetchers_.push_back(linked_ptr<ImageResourceFetcher>(
           new ImageResourceFetcher(
               pending_app_info_->icons[i].url,
-              render_view()->webview()->mainFrame(),
+              render_view()->GetWebView()->mainFrame(),
               static_cast<int>(i),
               pending_app_info_->icons[i].width,
               WebURLRequest::TargetIsFavicon,
-              NewCallback(
-                  this, &ExtensionHelper::DidDownloadApplicationIcon))));
+              base::Bind(
+                  &ExtensionHelper::DidDownloadApplicationIcon,
+                  base::Unretained(this)))));
     }
   } else {
     Send(new ExtensionHostMsg_InstallApplication(routing_id(), *app_info));
@@ -284,7 +327,7 @@ void ExtensionHelper::DidDownloadApplicationIcon(ImageResourceFetcher* fetcher,
 
   // Remove the image fetcher from our pending list. We're in the callback from
   // ImageResourceFetcher, best to delay deletion.
-  RenderView::ImageResourceFetcherList::iterator i;
+  ImageResourceFetcherList::iterator i;
   for (i = app_icon_fetchers_.begin(); i != app_icon_fetchers_.end(); ++i) {
     if (i->get() == fetcher) {
       i->release();
@@ -329,8 +372,8 @@ void ExtensionHelper::DidDownloadApplicationIcon(ImageResourceFetcher* fetcher,
 }
 
 void ExtensionHelper::AddErrorToRootConsole(const string16& message) {
-  if (render_view()->webview() && render_view()->webview()->mainFrame()) {
-    render_view()->webview()->mainFrame()->addMessageToConsole(
+  if (render_view()->GetWebView() && render_view()->GetWebView()->mainFrame()) {
+    render_view()->GetWebView()->mainFrame()->addMessageToConsole(
         WebConsoleMessage(WebConsoleMessage::LevelError, message));
   }
 }

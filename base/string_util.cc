@@ -23,7 +23,6 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
-#include "base/third_party/dmg_fp/dmg_fp.h"
 #include "base/utf_string_conversion_utils.h"
 #include "base/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
@@ -166,34 +165,49 @@ const char kWhitespaceASCII[] = {
 const char kUtf8ByteOrderMark[] = "\xEF\xBB\xBF";
 
 template<typename STR>
-bool RemoveCharsT(const STR& input,
-                  const typename STR::value_type remove_chars[],
-                  STR* output) {
+bool ReplaceCharsT(const STR& input,
+                   const typename STR::value_type replace_chars[],
+                   const STR& replace_with,
+                   STR* output) {
   bool removed = false;
   size_t found;
 
   *output = input;
 
-  found = output->find_first_of(remove_chars);
+  found = output->find_first_of(replace_chars);
   while (found != STR::npos) {
     removed = true;
-    output->replace(found, 1, STR());
-    found = output->find_first_of(remove_chars, found);
+    output->replace(found, 1, replace_with);
+    found = output->find_first_of(replace_chars, found);
   }
 
   return removed;
 }
 
+bool ReplaceChars(const string16& input,
+                  const char16 replace_chars[],
+                  const string16& replace_with,
+                  string16* output) {
+  return ReplaceCharsT(input, replace_chars, replace_with, output);
+}
+
+bool ReplaceChars(const std::string& input,
+                  const char replace_chars[],
+                  const std::string& replace_with,
+                  std::string* output) {
+  return ReplaceCharsT(input, replace_chars, replace_with, output);
+}
+
 bool RemoveChars(const string16& input,
                  const char16 remove_chars[],
                  string16* output) {
-  return RemoveCharsT(input, remove_chars, output);
+  return ReplaceChars(input, remove_chars, string16(), output);
 }
 
 bool RemoveChars(const std::string& input,
                  const char remove_chars[],
                  std::string* output) {
-  return RemoveCharsT(input, remove_chars, output);
+  return ReplaceChars(input, remove_chars, std::string(), output);
 }
 
 template<typename STR>
@@ -513,6 +527,8 @@ bool LowerCaseEqualsASCII(string16::const_iterator a_begin,
 }
 #endif
 
+// TODO(port): Resolve wchar_t/iterator issues that require OS_ANDROID here.
+#if !defined(OS_ANDROID)
 bool LowerCaseEqualsASCII(const char* a_begin,
                           const char* a_end,
                           const char* b) {
@@ -532,6 +548,8 @@ bool LowerCaseEqualsASCII(const char16* a_begin,
   return DoLowerCaseEqualsASCII(a_begin, a_end, b);
 }
 #endif
+
+#endif  // !defined(OS_ANDROID)
 
 bool EqualsASCII(const string16& a, const base::StringPiece& b) {
   if (a.length() != b.length())
@@ -604,85 +622,35 @@ bool EndsWith(const string16& str, const string16& search,
 }
 #endif
 
-DataUnits GetByteDisplayUnits(int64 bytes) {
-  // The byte thresholds at which we display amounts.  A byte count is displayed
-  // in unit U when kUnitThresholds[U] <= bytes < kUnitThresholds[U+1].
-  // This must match the DataUnits enum.
-  static const int64 kUnitThresholds[] = {
-    0,              // DATA_UNITS_BYTE,
-    3*1024,         // DATA_UNITS_KIBIBYTE,
-    2*1024*1024,    // DATA_UNITS_MEBIBYTE,
-    1024*1024*1024  // DATA_UNITS_GIBIBYTE,
-  };
-
-  if (bytes < 0) {
-    NOTREACHED() << "Negative bytes value";
-    return DATA_UNITS_BYTE;
-  }
-
-  int unit_index = arraysize(kUnitThresholds);
-  while (--unit_index > 0) {
-    if (bytes >= kUnitThresholds[unit_index])
-      break;
-  }
-
-  DCHECK(unit_index >= DATA_UNITS_BYTE && unit_index <= DATA_UNITS_GIBIBYTE);
-  return DataUnits(unit_index);
-}
-
-// TODO(mpcomplete): deal with locale
-// Byte suffixes.  This must match the DataUnits enum.
-static const char* const kByteStrings[] = {
-  "B",
-  "kB",
-  "MB",
-  "GB"
+static const char* const kByteStringsUnlocalized[] = {
+  " B",
+  " kB",
+  " MB",
+  " GB",
+  " TB",
+  " PB"
 };
 
-static const char* const kSpeedStrings[] = {
-  "B/s",
-  "kB/s",
-  "MB/s",
-  "GB/s"
-};
-
-string16 FormatBytesInternal(int64 bytes,
-                             DataUnits units,
-                             bool show_units,
-                             const char* const* suffix) {
-  if (bytes < 0) {
-    NOTREACHED() << "Negative bytes value";
-    return string16();
-  }
-
-  DCHECK(units >= DATA_UNITS_BYTE && units <= DATA_UNITS_GIBIBYTE);
-
-  // Put the quantity in the right units.
+string16 FormatBytesUnlocalized(int64 bytes) {
   double unit_amount = static_cast<double>(bytes);
-  for (int i = 0; i < units; ++i)
-    unit_amount /= 1024.0;
+  size_t dimension = 0;
+  const int kKilo = 1024;
+  while (unit_amount >= kKilo &&
+         dimension < arraysize(kByteStringsUnlocalized) - 1) {
+    unit_amount /= kKilo;
+    dimension++;
+  }
 
   char buf[64];
-  if (bytes != 0 && units != DATA_UNITS_BYTE && unit_amount < 100)
-    base::snprintf(buf, arraysize(buf), "%.1lf", unit_amount);
-  else
-    base::snprintf(buf, arraysize(buf), "%.0lf", unit_amount);
-
-  std::string ret(buf);
-  if (show_units) {
-    ret += " ";
-    ret += suffix[units];
+  if (bytes != 0 && dimension > 0 && unit_amount < 100) {
+    base::snprintf(buf, arraysize(buf), "%.1lf%s", unit_amount,
+                   kByteStringsUnlocalized[dimension]);
+  } else {
+    base::snprintf(buf, arraysize(buf), "%.0lf%s", unit_amount,
+                   kByteStringsUnlocalized[dimension]);
   }
 
-  return ASCIIToUTF16(ret);
-}
-
-string16 FormatBytes(int64 bytes, DataUnits units, bool show_units) {
-  return FormatBytesInternal(bytes, units, show_units, kByteStrings);
-}
-
-string16 FormatSpeed(int64 bytes, DataUnits units, bool show_units) {
-  return FormatBytesInternal(bytes, units, show_units, kSpeedStrings);
+  return ASCIIToUTF16(buf);
 }
 
 template<class StringType>
@@ -815,7 +783,6 @@ template<class FormatStringType, class OutStringType>
 OutStringType DoReplaceStringPlaceholders(const FormatStringType& format_string,
     const std::vector<OutStringType>& subst, std::vector<size_t>* offsets) {
   size_t substitutions = subst.size();
-  DCHECK(substitutions < 10);
 
   size_t sub_length = 0;
   for (typename std::vector<OutStringType>::const_iterator iter = subst.begin();
@@ -840,7 +807,14 @@ OutStringType DoReplaceStringPlaceholders(const FormatStringType& format_string,
           }
           --i;
         } else {
-          uintptr_t index = *i - '1';
+          uintptr_t index = 0;
+          while (i != format_string.end() && '0' <= *i && *i <= '9') {
+            index *= 10;
+            index += *i - '0';
+            ++i;
+          }
+          --i;
+          index -= 1;
           if (offsets) {
             ReplacementOffset r_offset(index,
                 static_cast<int>(formatted.size()));

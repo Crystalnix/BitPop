@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,10 @@
 #include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
+#include "base/threading/thread_restrictions.h"
 #include "ui/gfx/gl/gl_bindings.h"
 #include "ui/gfx/gl/gl_implementation.h"
+#include "ui/gfx/gl/gl_switches.h"
 
 namespace gfx {
 namespace {
@@ -45,6 +47,16 @@ base::NativeLibrary LoadLibrary(const char* filename) {
 
 }  // namespace anonymous
 
+void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
+#if !defined(USE_WAYLAND)
+  impls->push_back(kGLImplementationDesktopGL);
+#endif
+  impls->push_back(kGLImplementationEGLGLES2);
+#if !defined(USE_WAYLAND)
+  impls->push_back(kGLImplementationOSMesaGL);
+#endif
+}
+
 bool InitializeGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
@@ -52,7 +64,14 @@ bool InitializeGLBindings(GLImplementation implementation) {
   if (GetGLImplementation() != kGLImplementationNone)
     return true;
 
+  // Allow the main thread or another to initialize these bindings
+  // after instituting restrictions on I/O. Going forward they will
+  // likely be used in the browser process on most platforms. The
+  // one-time initialization cost is small, between 2 and 5 ms.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+
   switch (implementation) {
+#if !defined(USE_WAYLAND)
     case kGLImplementationOSMesaGL: {
       FilePath module_path;
       if (!PathService::Get(base::DIR_MODULE, &module_path)) {
@@ -84,7 +103,21 @@ bool InitializeGLBindings(GLImplementation implementation) {
       break;
     }
     case kGLImplementationDesktopGL: {
-      base::NativeLibrary library = LoadLibrary("libGL.so.1");
+      base::NativeLibrary library = NULL;
+      const CommandLine* command_line = CommandLine::ForCurrentProcess();
+
+      if (command_line->HasSwitch(switches::kTestGLLib))
+        library = LoadLibrary(command_line->GetSwitchValueASCII(
+            switches::kTestGLLib).c_str());
+
+      if (!library) {
+#if defined(OS_OPENBSD)
+        library = LoadLibrary("libGL.so");
+#else
+        library = LoadLibrary("libGL.so.1");
+#endif
+      }
+
       if (!library)
         return false;
 
@@ -106,13 +139,16 @@ bool InitializeGLBindings(GLImplementation implementation) {
       InitializeGLBindingsGLX();
       break;
     }
+#endif  // !defined(USE_WAYLAND)
     case kGLImplementationEGLGLES2: {
       base::NativeLibrary gles_library = LoadLibrary("libGLESv2.so");
       if (!gles_library)
         return false;
       base::NativeLibrary egl_library = LoadLibrary("libEGL.so");
-      if (!egl_library)
+      if (!egl_library) {
+        base::UnloadNativeLibrary(gles_library);
         return false;
+      }
 
       GLGetProcAddressProc get_proc_address =
           reinterpret_cast<GLGetProcAddressProc>(
@@ -153,11 +189,52 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
+bool InitializeGLExtensionBindings(GLImplementation implementation,
+    GLContext* context) {
+  switch (implementation) {
+#if !defined(USE_WAYLAND)
+    case kGLImplementationOSMesaGL:
+      InitializeGLExtensionBindingsGL(context);
+      InitializeGLExtensionBindingsOSMESA(context);
+      break;
+    case kGLImplementationDesktopGL:
+      InitializeGLExtensionBindingsGL(context);
+      InitializeGLExtensionBindingsGLX(context);
+      break;
+#endif
+    case kGLImplementationEGLGLES2:
+      InitializeGLExtensionBindingsGL(context);
+      InitializeGLExtensionBindingsEGL(context);
+      break;
+    case kGLImplementationMockGL:
+      InitializeGLExtensionBindingsGL(context);
+      break;
+    default:
+      return false;
+  }
+
+  return true;
+}
+
 void InitializeDebugGLBindings() {
   InitializeDebugGLBindingsEGL();
   InitializeDebugGLBindingsGL();
+#if !defined(USE_WAYLAND)
   InitializeDebugGLBindingsGLX();
   InitializeDebugGLBindingsOSMESA();
+#endif
+}
+
+void ClearGLBindings() {
+  ClearGLBindingsEGL();
+  ClearGLBindingsGL();
+#if !defined(USE_WAYLAND)
+  ClearGLBindingsGLX();
+  ClearGLBindingsOSMESA();
+#endif
+  SetGLImplementation(kGLImplementationNone);
+
+  UnloadGLNativeLibraries();
 }
 
 }  // namespace gfx

@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/ui/cocoa/drag_util.h"
+#include "googleurl/src/gurl.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
 @interface URLDropTargetHandler(Private)
@@ -41,7 +42,7 @@
 // (us).
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-  if (drag_util::IsUnsupportedDropData(sender))
+  if ([[view_ urlDropController] isUnsupportedDropData:sender])
     return NSDragOperationNone;
 
   return [self getDragOperation:sender];
@@ -53,7 +54,7 @@
   // Show indicator for drag data supported for tab contents as well as for
   // local file drags that may not be viewable in tab contents, but should
   // still trigger hover tab selection.
-  if (!drag_util::IsUnsupportedDropData(sender)) {
+  if (![[view_ urlDropController] isUnsupportedDropData:sender]) {
     dragOp = [self getDragOperation:sender];
     if (dragOp == NSDragOperationCopy)
       showIndicator = YES;

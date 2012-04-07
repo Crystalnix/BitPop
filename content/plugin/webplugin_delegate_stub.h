@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/task.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_channel.h"
 #include "third_party/npapi/bindings/npapi.h"
@@ -44,10 +43,10 @@ class WebPluginDelegateStub : public IPC::Channel::Listener,
                         PluginChannel* channel);
 
   // IPC::Channel::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg);
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // IPC::Message::Sender implementation:
-  virtual bool Send(IPC::Message* msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   int instance_id() { return instance_id_; }
   WebPluginProxy* webplugin() { return webplugin_; }
@@ -78,8 +77,16 @@ class WebPluginDelegateStub : public IPC::Channel::Listener,
                               const std::string& result,
                               bool success,
                               int notify_id);
+  void OnGetFormValue(string16* value, bool* success);
 
   void OnSetContentAreaFocus(bool has_focus);
+#if defined(OS_WIN) && !defined(USE_AURA)
+  void OnImeCompositionUpdated(const string16& text,
+                               const std::vector<int>& clauses,
+                               const std::vector<int>& target,
+                               int cursor_position);
+  void OnImeCompositionCompleted(const string16& text);
+#endif
 #if defined(OS_MACOSX)
   void OnSetWindowFocus(bool has_focus);
   void OnContainerHidden();
@@ -96,7 +103,6 @@ class WebPluginDelegateStub : public IPC::Channel::Listener,
   void OnDidReceiveManualData(const std::vector<char>& buffer);
   void OnDidFinishManualLoading();
   void OnDidManualLoadFail();
-  void OnInstallMissingPlugin();
   void OnHandleURLRequestReply(unsigned long resource_id,
                                const GURL& url,
                                int notify_id);

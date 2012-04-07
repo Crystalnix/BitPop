@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/locale_change_guard.h"
 
+#include "base/bind.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
@@ -12,14 +13,18 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::UserMetricsAction;
+using content::WebContents;
 
 namespace chromeos {
 
@@ -43,15 +48,15 @@ LocaleChangeGuard::LocaleChangeGuard(Profile* profile)
       note_(NULL),
       reverted_(false) {
   DCHECK(profile_);
-  registrar_.Add(this, NotificationType::OWNERSHIP_CHECKED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_OWNERSHIP_CHECKED,
+                 content::NotificationService::AllSources());
 }
 
 LocaleChangeGuard::~LocaleChangeGuard() {}
 
 void LocaleChangeGuard::OnLogin() {
-  registrar_.Add(this, NotificationType::LOAD_COMPLETED_MAIN_FRAME,
-                 NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 void LocaleChangeGuard::RevertLocaleChange(const ListValue* list) {
@@ -65,7 +70,7 @@ void LocaleChangeGuard::RevertLocaleChange(const ListValue* list) {
   if (reverted_)
     return;
   reverted_ = true;
-  UserMetrics::RecordAction(UserMetricsAction("LanguageChange_Revert"));
+  content::RecordAction(UserMetricsAction("LanguageChange_Revert"));
   profile_->ChangeAppLocale(
       from_locale_, Profile::APP_LOCALE_CHANGED_VIA_REVERT);
 
@@ -74,22 +79,25 @@ void LocaleChangeGuard::RevertLocaleChange(const ListValue* list) {
     browser->ExecuteCommand(IDC_EXIT);
 }
 
-void LocaleChangeGuard::Observe(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
+void LocaleChangeGuard::Observe(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
   if (profile_ == NULL) {
     NOTREACHED();
     return;
   }
-  switch (type.value) {
-    case NotificationType::LOAD_COMPLETED_MAIN_FRAME: {
-      // We need to perform locale change check only once, so unsubscribe.
-      registrar_.Remove(this, NotificationType::LOAD_COMPLETED_MAIN_FRAME,
-                        NotificationService::AllSources());
-      Check();
+  switch (type) {
+    case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
+      if (profile_ ==
+          content::Source<WebContents>(source)->GetBrowserContext()) {
+        // We need to perform locale change check only once, so unsubscribe.
+        registrar_.Remove(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+                          content::NotificationService::AllSources());
+        Check();
+      }
       break;
     }
-    case NotificationType::OWNERSHIP_CHECKED: {
+    case chrome::NOTIFICATION_OWNERSHIP_CHECKED: {
       if (UserManager::Get()->current_user_is_owner()) {
         PrefService* local_state = g_browser_process->local_state();
         if (local_state) {
@@ -100,10 +108,8 @@ void LocaleChangeGuard::Observe(NotificationType type,
           }
           std::string owner_locale =
               prefs->GetString(prefs::kApplicationLocale);
-          if (!owner_locale.empty()) {
+          if (!owner_locale.empty())
             local_state->SetString(prefs::kOwnerLocale, owner_locale);
-            local_state->ScheduleSavePersistentPrefs();
-          }
         }
       }
       break;
@@ -162,9 +168,10 @@ void LocaleChangeGuard::Check() {
       title_text_));
   note_->Show(
       message_text_, revert_link_text_,
-      NewCallback(this, &LocaleChangeGuard::RevertLocaleChange),
-      true,  // urgent
-      false);  // non-sticky
+      base::Bind(&LocaleChangeGuard::RevertLocaleChange,
+                 AsWeakPtr()),
+                 true,  // urgent
+                 false);  // non-sticky
 }
 
 void LocaleChangeGuard::AcceptLocaleChange() {
@@ -187,10 +194,9 @@ void LocaleChangeGuard::AcceptLocaleChange() {
   }
   if (prefs->GetString(prefs::kApplicationLocale) != to_locale_)
     return;
-  UserMetrics::RecordAction(UserMetricsAction("LanguageChange_Accept"));
+  content::RecordAction(UserMetricsAction("LanguageChange_Accept"));
   prefs->SetString(prefs::kApplicationLocaleBackup, to_locale_);
   prefs->SetString(prefs::kApplicationLocaleAccepted, to_locale_);
-  prefs->ScheduleSavePersistentPrefs();
 }
 
 void LocaleChangeGuard::PrepareChangingLocale(

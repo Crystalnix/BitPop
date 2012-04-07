@@ -13,41 +13,28 @@
 
 #include "base/hash_tables.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/shared_memory.h"
-#include "base/task.h"
+#include "base/time.h"
+#include "content/common/content_export.h"
 #include "ipc/ipc_channel.h"
 #include "webkit/glue/resource_loader_bridge.h"
 
+namespace content {
+class ResourceDispatcherDelegate;
 struct ResourceResponseHead;
+}
 
 // This class serves as a communication interface between the
 // ResourceDispatcherHost in the browser process and the ResourceLoaderBridge in
 // the child process.  It can be used from any child process.
-class ResourceDispatcher : public IPC::Channel::Listener {
+class CONTENT_EXPORT ResourceDispatcher : public IPC::Channel::Listener {
  public:
-  // Interface that allows observing request events and optionally replacing the
-  // peer.
-  class Observer {
-   public:
-    Observer();
-    virtual ~Observer();
-
-    virtual webkit_glue::ResourceLoaderBridge::Peer* OnRequestComplete(
-        webkit_glue::ResourceLoaderBridge::Peer* current_peer,
-        ResourceType::Type resource_type,
-        const net::URLRequestStatus& status) = 0;
-
-    virtual webkit_glue::ResourceLoaderBridge::Peer* OnReceivedResponse(
-        webkit_glue::ResourceLoaderBridge::Peer* current_peer,
-        const std::string& mime_type,
-        const GURL& url) = 0;
-  };
-
   explicit ResourceDispatcher(IPC::Message::Sender* sender);
   virtual ~ResourceDispatcher();
 
   // IPC::Channel::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Creates a ResourceLoaderBridge for this type of dispatcher, this is so
   // this can be tested regardless of the ResourceLoaderBridge::Create
@@ -75,8 +62,11 @@ class ResourceDispatcher : public IPC::Channel::Listener {
   // Toggles the is_deferred attribute for the specified request.
   void SetDefersLoading(int request_id, bool value);
 
-  // Takes ownership of the object.
-  void set_observer(Observer* observer) { observer_.reset(observer); }
+  // This does not take ownership of the delegate. It is expected that the
+  // delegate have a longer lifetime than the ResourceDispatcher.
+  void set_delegate(content::ResourceDispatcherDelegate* delegate) {
+    delegate_ = delegate;
+  }
 
  private:
   friend class ResourceDispatcherTest;
@@ -90,7 +80,8 @@ class ResourceDispatcher : public IPC::Channel::Listener {
         : peer(peer),
           resource_type(resource_type),
           is_deferred(false),
-          url(request_url) {
+          url(request_url),
+          request_start(base::TimeTicks::Now()) {
     }
     ~PendingRequestInfo() { }
     webkit_glue::ResourceLoaderBridge::Peer* peer;
@@ -99,6 +90,9 @@ class ResourceDispatcher : public IPC::Channel::Listener {
     bool is_deferred;
     GURL url;
     linked_ptr<IPC::Message> pending_redirect_message;
+    base::TimeTicks request_start;
+    base::TimeTicks response_start;
+    base::TimeTicks completion_time;
   };
   typedef base::hash_map<int, PendingRequestInfo> PendingRequestList;
 
@@ -115,13 +109,13 @@ class ResourceDispatcher : public IPC::Channel::Listener {
       int request_id,
       int64 position,
       int64 size);
-  void OnReceivedResponse(int request_id, const ResourceResponseHead&);
+  void OnReceivedResponse(int request_id, const content::ResourceResponseHead&);
   void OnReceivedCachedMetadata(int request_id, const std::vector<char>& data);
   void OnReceivedRedirect(
       const IPC::Message& message,
       int request_id,
       const GURL& new_url,
-      const webkit_glue::ResourceResponseInfo& info);
+      const content::ResourceResponseHead& response_head);
   void OnReceivedData(
       const IPC::Message& message,
       int request_id,
@@ -136,7 +130,7 @@ class ResourceDispatcher : public IPC::Channel::Listener {
       int request_id,
       const net::URLRequestStatus& status,
       const std::string& security_info,
-      const base::Time& completion_time);
+      const base::TimeTicks& completion_time);
 
   // Dispatch the message to one of the message response handlers.
   void DispatchMessage(const IPC::Message& message);
@@ -144,6 +138,15 @@ class ResourceDispatcher : public IPC::Channel::Listener {
   // Dispatch any deferred messages for the given request, provided it is not
   // again in the deferred state.
   void FlushDeferredMessages(int request_id);
+
+  void ToResourceResponseInfo(
+      const PendingRequestInfo& request_info,
+      const content::ResourceResponseHead& browser_info,
+      webkit_glue::ResourceResponseInfo* renderer_info) const;
+
+  base::TimeTicks ToRendererCompletionTime(
+      const PendingRequestInfo& request_info,
+      const base::TimeTicks& browser_completion_time) const;
 
   // Returns true if the message passed in is a resource related message.
   static bool IsResourceDispatcherMessage(const IPC::Message& message);
@@ -164,9 +167,9 @@ class ResourceDispatcher : public IPC::Channel::Listener {
   // All pending requests issued to the host
   PendingRequestList pending_requests_;
 
-  ScopedRunnableMethodFactory<ResourceDispatcher> method_factory_;
+  base::WeakPtrFactory<ResourceDispatcher> weak_factory_;
 
-  scoped_ptr<Observer> observer_;
+  content::ResourceDispatcherDelegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcher);
 };

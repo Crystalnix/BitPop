@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,8 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
@@ -22,10 +24,11 @@
 #include "base/stack_container.h"
 #include "base/string_util.h"
 #include "base/threading/thread_restrictions.h"
-#include "content/browser/browser_thread.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_thread.h"
 
+using content::BrowserThread;
 using file_util::ScopedFILE;
 using file_util::OpenFile;
 using file_util::TruncateFile;
@@ -36,7 +39,7 @@ const int32 VisitedLinkMaster::kFileHeaderLengthOffset = 8;
 const int32 VisitedLinkMaster::kFileHeaderUsedOffset = 12;
 const int32 VisitedLinkMaster::kFileHeaderSaltOffset = 16;
 
-const int32 VisitedLinkMaster::kFileCurrentVersion = 2;
+const int32 VisitedLinkMaster::kFileCurrentVersion = 3;
 
 // the signature at the beginning of the URL table = "VLnk" (visited links)
 const int32 VisitedLinkMaster::kFileSignature = 0x6b6e4c56;
@@ -60,86 +63,30 @@ void GenerateSalt(uint8 salt[LINK_SALT_LENGTH]) {
   memcpy(salt, &randval, 8);
 }
 
-// AsyncWriter ----------------------------------------------------------------
+// Returns true if the write was complete.
+static bool WriteToFile(FILE* file,
+                        off_t offset,
+                        const void* data,
+                        size_t data_len) {
+  if (fseek(file, offset, SEEK_SET) != 0)
+    return false;  // Don't write to an invalid part of the file.
+
+  size_t num_written = fwrite(data, 1, data_len, file);
+
+  // The write may not make it to the kernel (stdlib may buffer the write)
+  // until the next fseek/fclose call.  If we crash, it's easy for our used
+  // item count to be out of sync with the number of hashes we write.
+  // Protect against this by calling fflush.
+  int ret = fflush(file);
+  DCHECK_EQ(0, ret);
+  return num_written == data_len;
+}
 
 // This task executes on a background thread and executes a write. This
 // prevents us from blocking the UI thread doing I/O.
-class AsyncWriter : public Task {
- public:
-  AsyncWriter(FILE* file, int32 offset, const void* data, size_t data_len)
-      : file_(file),
-        offset_(offset) {
-    data_->resize(data_len);
-    memcpy(&*data_->begin(), data, data_len);
-  }
-
-  virtual void Run() {
-    WriteToFile(file_, offset_,
-                &*data_->begin(), static_cast<int32>(data_->size()));
-  }
-
-  // Exposed as a static so it can be called directly from the Master to
-  // reduce the number of platform-specific I/O sites we have. Returns true if
-  // the write was complete.
-  static bool WriteToFile(FILE* file,
-                          off_t offset,
-                          const void* data,
-                          size_t data_len) {
-    if (fseek(file, offset, SEEK_SET) != 0)
-      return false;  // Don't write to an invalid part of the file.
-
-    size_t num_written = fwrite(data, 1, data_len, file);
-
-    // The write may not make it to the kernel (stdlib may buffer the write)
-    // until the next fseek/fclose call.  If we crash, it's easy for our used
-    // item count to be out of sync with the number of hashes we write.
-    // Protect against this by calling fflush.
-    int ret = fflush(file);
-    DCHECK_EQ(0, ret);
-    return num_written == data_len;
-  }
-
- private:
-  // The data to write and where to write it.
-  FILE* file_;
-  int32 offset_;  // Offset from the beginning of the file.
-
-  // Most writes are just a single fingerprint, so we reserve that much in this
-  // object to avoid mallocs in that case.
-  StackVector<char, sizeof(VisitedLinkCommon::Fingerprint)> data_;
-
-  DISALLOW_COPY_AND_ASSIGN(AsyncWriter);
-};
-
-// Used to asynchronously set the end of the file. This must be done on the
-// same thread as the writing to keep things synchronized.
-class AsyncSetEndOfFile : public Task {
- public:
-  explicit AsyncSetEndOfFile(FILE* file) : file_(file) {}
-
-  virtual void Run() {
-    TruncateFile(file_);
-  }
-
- private:
-  FILE* file_;
-  DISALLOW_COPY_AND_ASSIGN(AsyncSetEndOfFile);
-};
-
-// Used to asynchronously close a file. This must be done on the same thread as
-// the writing to keep things synchronized.
-class AsyncCloseHandle : public Task {
- public:
-  explicit AsyncCloseHandle(FILE* file) : file_(file) {}
-
-  virtual void Run() {
-    fclose(file_);
-  }
-
- private:
-  FILE* file_;
-  DISALLOW_COPY_AND_ASSIGN(AsyncCloseHandle);
-};
+void AsyncWrite(FILE* file, int32 offset, const std::string& data) {
+  WriteToFile(file, offset, data.data(), data.size());
+}
 
 }  // namespace
 
@@ -244,6 +191,7 @@ void VisitedLinkMaster::InitMembers(Listener* listener, Profile* profile) {
   history_service_override_ = NULL;
   suppress_rebuild_ = false;
   profile_ = profile;
+  sequence_token_ = BrowserThread::GetBlockingPool()->GetSequenceToken();
 
 #ifndef NDEBUG
   posted_asynchronous_operation_ = false;
@@ -293,6 +241,12 @@ VisitedLinkMaster::Hash VisitedLinkMaster::TryToAddURL(const GURL& url) {
     return null_hash_;  // Table is more than 80% full.
 
   return AddFingerprint(fingerprint, true);
+}
+
+void VisitedLinkMaster::PostIOTask(const tracked_objects::Location& from_here,
+                                   const base::Closure& task) {
+  BrowserThread::GetBlockingPool()->PostSequencedWorkerTask(sequence_token_,
+                                                            from_here, task);
 }
 
 void VisitedLinkMaster::AddURL(const GURL& url) {
@@ -533,8 +487,7 @@ bool VisitedLinkMaster::WriteFullTable() {
               hash_table_, table_length_ * sizeof(Fingerprint));
 
   // The hash table may have shrunk, so make sure this is the end.
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE, new AsyncSetEndOfFile(file_));
+  PostIOTask(FROM_HERE, base::Bind(base::IgnoreResult(&TruncateFile), file_));
   return true;
 }
 
@@ -724,9 +677,7 @@ void VisitedLinkMaster::FreeURLTable() {
   }
   if (!file_)
     return;
-
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE, new AsyncCloseHandle(file_));
+  PostIOTask(FROM_HERE, base::Bind(base::IgnoreResult(&fclose), file_));
 }
 
 bool VisitedLinkMaster::ResizeTableIfNecessary() {
@@ -879,6 +830,10 @@ void VisitedLinkMaster::OnTableRebuildComplete(
         AddFingerprint(*i, false);
       added_since_rebuild_.clear();
 
+      // We shouldn't be writing the table from the main thread!
+      //   http://code.google.com/p/chromium/issues/detail?id=24163
+      base::ThreadRestrictions::ScopedAllowIO allow_io;
+
       // Now handle deletions.
       DeleteFingerprintsFromCurrentTable(deleted_since_rebuild_);
       deleted_since_rebuild_.clear();
@@ -886,18 +841,15 @@ void VisitedLinkMaster::OnTableRebuildComplete(
       // Send an update notification to all child processes.
       listener_->NewTable(shared_memory_);
 
-      // We shouldn't be writing the table from the main thread!
-      //   http://code.google.com/p/chromium/issues/detail?id=24163
-      base::ThreadRestrictions::ScopedAllowIO allow_io;
       WriteFullTable();
     }
   }
   table_builder_ = NULL;  // Will release our reference to the builder.
 
   // Notify the unit test that the rebuild is complete (will be NULL in prod.)
-  if (rebuild_complete_task_.get()) {
-    rebuild_complete_task_->Run();
-    rebuild_complete_task_.reset(NULL);
+  if (!rebuild_complete_task_.is_null()) {
+    rebuild_complete_task_.Run();
+    rebuild_complete_task_.Reset();
   }
 }
 
@@ -908,10 +860,9 @@ void VisitedLinkMaster::WriteToFile(FILE* file,
 #ifndef NDEBUG
   posted_asynchronous_operation_ = true;
 #endif
-
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      new AsyncWriter(file, offset, data, data_size));
+  PostIOTask(FROM_HERE,
+      base::Bind(&AsyncWrite, file, offset,
+                 std::string(static_cast<const char*>(data), data_size)));
 }
 
 void VisitedLinkMaster::WriteUsedItemCountToFile() {
@@ -965,7 +916,7 @@ VisitedLinkMaster::TableBuilder::TableBuilder(
     : master_(master),
       success_(true) {
   fingerprints_.reserve(4096);
-  memcpy(salt_, salt, sizeof(salt));
+  memcpy(salt_, salt, LINK_SALT_LENGTH * sizeof(uint8));
 }
 
 // TODO(brettw): Do we want to try to cancel the request if this happens? It
@@ -989,7 +940,7 @@ void VisitedLinkMaster::TableBuilder::OnComplete(bool success) {
   // rebuild is complete.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &TableBuilder::OnCompleteMainThread));
+      base::Bind(&TableBuilder::OnCompleteMainThread, this));
 }
 
 void VisitedLinkMaster::TableBuilder::OnCompleteMainThread() {

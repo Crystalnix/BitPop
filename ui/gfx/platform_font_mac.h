@@ -1,11 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef UI_GFX_PLATFORM_FONT_MAC_
-#define UI_GFX_PLATFORM_FONT_MAC_
+#ifndef UI_GFX_PLATFORM_FONT_MAC_H_
+#define UI_GFX_PLATFORM_FONT_MAC_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "ui/gfx/platform_font.h"
 
 namespace gfx {
@@ -15,34 +16,33 @@ class PlatformFontMac : public PlatformFont {
   PlatformFontMac();
   explicit PlatformFontMac(const Font& other);
   explicit PlatformFontMac(NativeFont native_font);
-  PlatformFontMac(const string16& font_name,
+  PlatformFontMac(const std::string& font_name,
                   int font_size);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const;
-  virtual int GetHeight() const;
-  virtual int GetBaseline() const;
-  virtual int GetAverageCharacterWidth() const;
-  virtual int GetStringWidth(const string16& text) const;
-  virtual int GetExpectedTextWidth(int length) const;
-  virtual int GetStyle() const;
-  virtual string16 GetFontName() const;
-  virtual int GetFontSize() const;
-  virtual NativeFont GetNativeFont() const;
+  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
+  virtual int GetHeight() const OVERRIDE;
+  virtual int GetBaseline() const OVERRIDE;
+  virtual int GetAverageCharacterWidth() const OVERRIDE;
+  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
+  virtual int GetStyle() const OVERRIDE;
+  virtual std::string GetFontName() const OVERRIDE;
+  virtual int GetFontSize() const OVERRIDE;
+  virtual NativeFont GetNativeFont() const OVERRIDE;
 
  private:
-  PlatformFontMac(const string16& font_name, int font_size, int style);
+  PlatformFontMac(const std::string& font_name, int font_size, int style);
   virtual ~PlatformFontMac() {}
 
   // Initialize the object with the specified parameters.
-  void InitWithNameSizeAndStyle(const string16& font_name,
+  void InitWithNameSizeAndStyle(const std::string& font_name,
                                 int font_size,
                                 int style);
 
   // Calculate and cache the font metrics.
   void CalculateMetrics();
 
-  string16 font_name_;
+  std::string font_name_;
   int font_size_;
   int style_;
 
@@ -54,4 +54,4 @@ class PlatformFontMac : public PlatformFont {
 
 }  // namespace gfx
 
-#endif  // UI_GFX_PLATFORM_FONT_MAC_
+#endif  // UI_GFX_PLATFORM_FONT_MAC_H_

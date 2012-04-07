@@ -10,20 +10,20 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "chrome/common/content_settings.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class Browser;
 class Profile;
-class SkBitmap;
 class TabContentsWrapper;
 
 // This model provides data for ContentSettingBubble, and also controls
 // the action triggered when the allow / block radio buttons are triggered.
-class ContentSettingBubbleModel : public NotificationObserver {
+class ContentSettingBubbleModel : public content::NotificationObserver {
  public:
   virtual ~ContentSettingBubbleModel();
 
@@ -68,6 +68,7 @@ class ContentSettingBubbleModel : public NotificationObserver {
     std::string title;
     PopupItems popup_items;
     RadioGroup radio_group;
+    bool radio_group_enabled;
     std::vector<DomainList> domain_lists;
     std::set<std::string> resource_identifiers;
     std::string custom_link;
@@ -80,10 +81,10 @@ class ContentSettingBubbleModel : public NotificationObserver {
 
   const BubbleContent& bubble_content() const { return bubble_content_; }
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   virtual void OnRadioClicked(int radio_index) {}
   virtual void OnPopupClicked(int index) {}
@@ -103,6 +104,9 @@ class ContentSettingBubbleModel : public NotificationObserver {
   }
   void set_radio_group(const RadioGroup& radio_group) {
     bubble_content_.radio_group = radio_group;
+  }
+  void set_radio_group_enabled(bool enabled) {
+    bubble_content_.radio_group_enabled = enabled;
   }
   void add_domain_list(const DomainList& domain_list) {
     bubble_content_.domain_lists.push_back(domain_list);
@@ -124,7 +128,9 @@ class ContentSettingBubbleModel : public NotificationObserver {
   ContentSettingsType content_type_;
   BubbleContent bubble_content_;
   // A registrar for listening for TAB_CONTENTS_DESTROYED notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContentSettingBubbleModel);
 };
 
 #endif  // CHROME_BROWSER_UI_CONTENT_SETTINGS_CONTENT_SETTING_BUBBLE_MODEL_H_

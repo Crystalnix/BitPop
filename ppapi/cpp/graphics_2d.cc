@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_graphics_2d.h"
-#include "ppapi/cpp/common.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/instance.h"
@@ -42,7 +41,7 @@ Graphics2D::Graphics2D(Instance* instance,
   PassRefFromConstructor(get_interface<PPB_Graphics2D>()->Create(
       instance->pp_instance(),
       &size.pp_size(),
-      BoolToPPBool(is_always_opaque)));
+      PP_FromBool(is_always_opaque)));
   if (!is_null()) {
     // Only save the size if allocation succeeded.
     size_ = size;
@@ -100,7 +99,7 @@ void Graphics2D::ReplaceContents(ImageData* image) {
 
 int32_t Graphics2D::Flush(const CompletionCallback& cc) {
   if (!has_interface<PPB_Graphics2D>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Graphics2D>()->Flush(pp_resource(),
                                                 cc.pp_completion_callback());
 }

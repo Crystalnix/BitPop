@@ -12,6 +12,7 @@
 
 #include <list>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
@@ -24,7 +25,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/test_launcher_utils.h"
+#include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/ui/ui_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -33,10 +34,10 @@ namespace {
 // This is for the code that is to be ran in multiple threads at once,
 // to stress a race condition on first process start.
 // We use the thread safe ref counted base class so that we can use the
-// NewRunnableMethod class to run the StartChrome methods in many threads.
+// base::Bind to run the StartChrome methods in many threads.
 class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
  public:
-  explicit ChromeStarter(int timeout_ms, const FilePath& user_data_dir)
+  ChromeStarter(int timeout_ms, const FilePath& user_data_dir)
       : ready_event_(false /* manual */, false /* signaled */),
         done_event_(false /* manual */, false /* signaled */),
         process_handle_(base::kNullProcessHandle),
@@ -92,13 +93,12 @@ class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
     ready_event_.Signal();
     // And then wait for the test to tell us to GO!
     ASSERT_NE(static_cast<base::WaitableEvent*>(NULL), start_event);
-    ASSERT_TRUE(start_event->Wait());
+    start_event->Wait();
 
     // Here we don't wait for the app to be terminated because one of the
     // process will stay alive while the others will be restarted. If we would
     // wait here, we would never get a handle to the main process...
-    base::LaunchApp(command_line, false /* wait */,
-                    false /* hidden */, &process_handle_);
+    base::LaunchProcess(command_line, base::LaunchOptions(), &process_handle_);
     ASSERT_NE(base::kNullProcessHandle, process_handle_);
 
     // We can wait on the handle here, we should get stuck on one and only
@@ -257,17 +257,17 @@ TEST_F(ProcessSingletonTest, MAYBE_StartupRaceCondition) {
                 chrome_starter_threads_[i]->message_loop());
 
       chrome_starter_threads_[i]->message_loop()->PostTask(
-          FROM_HERE, NewRunnableMethod(chrome_starters_[i].get(),
-                                       &ChromeStarter::StartChrome,
-                                       &threads_waker_,
-                                       first_run));
+          FROM_HERE, base::Bind(&ChromeStarter::StartChrome,
+                                chrome_starters_[i].get(),
+                                &threads_waker_,
+                                first_run));
     }
 
     // Wait for all the starters to be ready.
     // We could replace this loop if we ever implement a WaitAll().
     for (size_t i = 0; i < kNbThreads; ++i) {
       SCOPED_TRACE(testing::Message() << "Waiting on thread: " << i << ".");
-      ASSERT_TRUE(chrome_starters_[i]->ready_event_.Wait());
+      chrome_starters_[i]->ready_event_.Wait();
     }
     // GO!
     threads_waker_.Signal();

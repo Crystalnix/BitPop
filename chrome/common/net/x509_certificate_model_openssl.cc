@@ -10,9 +10,9 @@
 
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
-#include "net/base/x509_openssl_util.h"
+#include "net/base/x509_util_openssl.h"
 
-namespace nxou = net::x509_openssl_util;
+namespace x509_util = net::x509_util;
 
 namespace {
 
@@ -27,7 +27,7 @@ std::string GetKeyValuesFromName(X509_NAME* name) {
   for (int i = rdns; i >= 0; --i) {
     std::string key;
     std::string value;
-    if (!nxou::ParsePrincipalKeyAndValueByIndex(name, i, &key, &value))
+    if (!x509_util::ParsePrincipalKeyAndValueByIndex(name, i, &key, &value))
       break;
     ret += key;
     ret += " = ";
@@ -99,8 +99,8 @@ std::string GetIssuerCommonName(
     X509Certificate::OSCertHandle cert_handle,
     const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
-                                 NID_commonName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
+                                      NID_commonName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
@@ -108,8 +108,8 @@ std::string GetIssuerOrgName(
     X509Certificate::OSCertHandle cert_handle,
     const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
-                                 NID_organizationName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
+                                      NID_organizationName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
@@ -117,8 +117,8 @@ std::string GetIssuerOrgUnitName(
     X509Certificate::OSCertHandle cert_handle,
     const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
-                                 NID_organizationalUnitName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_issuer_name(cert_handle),
+                                      NID_organizationalUnitName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
@@ -126,8 +126,8 @@ std::string GetSubjectOrgName(
     X509Certificate::OSCertHandle cert_handle,
     const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
-                                 NID_organizationName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
+                                      NID_organizationName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
@@ -135,23 +135,23 @@ std::string GetSubjectOrgUnitName(
     X509Certificate::OSCertHandle cert_handle,
     const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
-                                 NID_organizationalUnitName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
+                                      NID_organizationalUnitName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
 std::string GetSubjectCommonName(X509Certificate::OSCertHandle cert_handle,
                                  const std::string& alternative_text) {
   std::string ret;
-  nxou::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
-                                 NID_commonName, &ret);
+  x509_util::ParsePrincipalValueByNID(X509_get_subject_name(cert_handle),
+                                      NID_commonName, &ret);
   return AlternativeWhenEmpty(ret, alternative_text);
 }
 
 bool GetTimes(X509Certificate::OSCertHandle cert_handle,
               base::Time* issued, base::Time* expires) {
-  return nxou::ParseDate(X509_get_notBefore(cert_handle), issued) &&
-         nxou::ParseDate(X509_get_notAfter(cert_handle), expires);
+  return x509_util::ParseDate(X509_get_notBefore(cert_handle), issued) &&
+         x509_util::ParseDate(X509_get_notAfter(cert_handle), expires);
 }
 
 std::string GetTitle(net::X509Certificate::OSCertHandle cert_handle) {
@@ -197,8 +197,8 @@ std::string HashCertSHA256(net::X509Certificate::OSCertHandle cert_handle) {
   unsigned char sha256_data[SHA256_DIGEST_LENGTH] = {0};
   unsigned int sha256_size = sizeof(sha256_data);
   int ret = X509_digest(cert_handle, EVP_sha256(), sha256_data, &sha256_size);
-  CHECK(ret);
-  CHECK_EQ(sha256_size, sizeof(sha256_data));
+  DCHECK(ret);
+  DCHECK_EQ(sha256_size, sizeof(sha256_data));
   return ProcessRawBytes(sha256_data, sha256_size);
 }
 
@@ -206,8 +206,8 @@ std::string HashCertSHA1(net::X509Certificate::OSCertHandle cert_handle) {
   unsigned char sha1_data[SHA_DIGEST_LENGTH] = {0};
   unsigned int sha1_size = sizeof(sha1_data);
   int ret = X509_digest(cert_handle, EVP_sha1(), sha1_data, &sha1_size);
-  CHECK(ret);
-  CHECK_EQ(sha1_size, sizeof(sha1_data));
+  DCHECK(ret);
+  DCHECK_EQ(sha1_size, sizeof(sha1_data));
   return ProcessRawBytes(sha1_data, sha1_size);
 }
 

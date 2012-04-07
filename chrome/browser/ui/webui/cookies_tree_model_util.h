@@ -9,8 +9,11 @@
 #include <string>
 
 class CookieTreeNode;
+
+namespace base {
 class DictionaryValue;
 class ListValue;
+}
 
 namespace cookies_tree_model_util {
 
@@ -18,12 +21,13 @@ namespace cookies_tree_model_util {
 std::string GetTreeNodeId(CookieTreeNode* node);
 
 // Populate given |dict| with cookie tree node properties.
-void GetCookieTreeNodeDictionary(const CookieTreeNode& node,
-                                 DictionaryValue* dict);
+// Returns false if the |node| does not need to be shown.
+bool GetCookieTreeNodeDictionary(const CookieTreeNode& node,
+                                 base::DictionaryValue* dict);
 
 // Append the children nodes of |parent| in specified range to |nodes| list.
 void GetChildNodeList(CookieTreeNode* parent, int start, int count,
-                      ListValue* nodes);
+                      base::ListValue* nodes);
 
 // Gets tree node from |path| under |root|. Return NULL if |path| is not valid.
 CookieTreeNode* GetTreeNodeFromPath(CookieTreeNode* root,

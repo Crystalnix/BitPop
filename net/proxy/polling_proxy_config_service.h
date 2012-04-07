@@ -6,6 +6,7 @@
 #define NET_PROXY_POLLING_PROXY_CONFIG_SERVICE_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "net/proxy/proxy_config_service.h"
@@ -17,13 +18,13 @@ namespace net {
 //
 // It runs code to get the current proxy settings on a background worker
 // thread, and notifies registered observers when the value changes.
-class NET_TEST PollingProxyConfigService : public ProxyConfigService {
+class NET_EXPORT_PRIVATE PollingProxyConfigService : public ProxyConfigService {
  public:
   // ProxyConfigService implementation:
-  virtual void AddObserver(Observer* observer);
-  virtual void RemoveObserver(Observer* observer);
-  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config);
-  virtual void OnLazyPoll();
+  virtual void AddObserver(Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(Observer* observer) OVERRIDE;
+  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) OVERRIDE;
+  virtual void OnLazyPoll() OVERRIDE;
 
  protected:
   // Function for retrieving the current proxy configuration.

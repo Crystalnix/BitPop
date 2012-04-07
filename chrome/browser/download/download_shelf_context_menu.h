@@ -13,7 +13,10 @@
 #include "ui/base/models/simple_menu_model.h"
 
 class BaseDownloadItemModel;
+
+namespace content {
 class DownloadItem;
+}
 
 // This class is responsible for the download shelf context menu. Platform
 // specific subclasses are responsible for creating and running the menu.
@@ -25,13 +28,16 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate {
     ALWAYS_OPEN_TYPE,    // Default this file extension to always open.
     CANCEL,              // Cancel the download.
     TOGGLE_PAUSE,        // Temporarily pause a download.
+    DISCARD,             // Discard the malicious download.
+    KEEP,                // Keep the malicious download.
+    LEARN_MORE,          // Show information about download scanning.
     MENU_LAST
   };
 
   virtual ~DownloadShelfContextMenu();
 
-  DownloadItem* download_item() const { return download_item_; }
-  void set_download_item(DownloadItem* item) { download_item_ = item; }
+  content::DownloadItem* download_item() const { return download_item_; }
+  void set_download_item(content::DownloadItem* item) { download_item_ = item; }
 
  protected:
   explicit DownloadShelfContextMenu(BaseDownloadItemModel* download_model);
@@ -53,17 +59,19 @@ class DownloadShelfContextMenu : public ui::SimpleMenuModel::Delegate {
  private:
   ui::SimpleMenuModel* GetInProgressMenuModel();
   ui::SimpleMenuModel* GetFinishedMenuModel();
+  ui::SimpleMenuModel* GetMaliciousMenuModel();
 
   // We show slightly different menus if the download is in progress vs. if the
   // download has finished.
   scoped_ptr<ui::SimpleMenuModel> in_progress_download_menu_model_;
   scoped_ptr<ui::SimpleMenuModel> finished_download_menu_model_;
+  scoped_ptr<ui::SimpleMenuModel> malicious_download_menu_model_;
 
   // A model to control the cancel behavior.
   BaseDownloadItemModel* download_model_;
 
   // Information source.
-  DownloadItem* download_item_;
+  content::DownloadItem* download_item_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadShelfContextMenu);
 };

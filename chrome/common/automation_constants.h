@@ -1,10 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_COMMON_AUTOMATION_CONSTANTS_H__
 #define CHROME_COMMON_AUTOMATION_CONSTANTS_H__
 #pragma once
+
+#include <string>
 
 namespace automation {
 
@@ -43,12 +45,24 @@ enum KeyModifierMasks {
   kControlKeyMask = 1 << 1,
   kAltKeyMask     = 1 << 2,
   kMetaKeyMask    = 1 << 3,
+  kNumLockKeyMask = 1 << 4,
+};
+
+// Recognized by the AutomationProvider's ProcessWebMouseEvent command.
+enum MouseEventType {
+  kMouseDown = 0,
+  kMouseUp,
+  kMouseMove,
+  kMouseEnter,
+  kMouseLeave,
+  kContextMenu,
 };
 
 enum MouseButton {
   kLeftButton = 0,
   kMiddleButton,
   kRightButton,
+  kNoButton,
 };
 
 // The current version of ChromeDriver automation supported by Chrome.
@@ -59,6 +73,48 @@ enum MouseButton {
 //   incompatible way
 // TODO(kkania): Investigate a better backwards compatible automation solution.
 extern const int kChromeDriverAutomationVersion;
+
+// Automation error codes. These provide the client a simple way
+// to detect certain types of errors it may be interested in handling.
+// The error code values must stay consistent across compatible versions.
+enum ErrorCode {
+  // An unknown error occurred.
+  kUnknownError = 0,
+  // Trying to operate on a JavaScript modal dialog when none is open.
+  kNoJavaScriptModalDialogOpen = 1,
+  // An open modal dialog blocked the operation. The operation may have
+  // partially completed.
+  kBlockedByModalDialog = 2,
+  // An ID was supplied that is invalid or does not refer to an existing object.
+  kInvalidId = 3,
+};
+
+// Represents an automation error. Each error has a code and an error message.
+class Error {
+ public:
+  // Creates an invalid error.
+  Error();
+
+  // Creates an error for the given code. A default message for the given code
+  // will be used as the error message.
+  explicit Error(ErrorCode code);
+
+  // Creates an error for the given message. The |kUnknownError| type will
+  // be used.
+  explicit Error(const std::string& error_msg);
+
+  // Creates an error for the given code and message.
+  Error(ErrorCode code, const std::string& error_msg);
+
+  virtual ~Error();
+
+  ErrorCode code() const;
+  const std::string& message() const;
+
+ private:
+  ErrorCode code_;
+  std::string message_;
+};
 
 }  // namespace automation
 
@@ -71,17 +127,14 @@ enum AutomationLaunchResult {
   AUTOMATION_VERSION_MISMATCH,
   AUTOMATION_CREATE_TAB_FAILED,
   AUTOMATION_SERVER_CRASHED,
+  AUTOMATION_CHANNEL_ERROR,
 };
 
 enum AutomationMsg_NavigationResponseValues {
   AUTOMATION_MSG_NAVIGATION_ERROR = 0,
   AUTOMATION_MSG_NAVIGATION_SUCCESS,
   AUTOMATION_MSG_NAVIGATION_AUTH_NEEDED,
-};
-
-enum AutomationMsg_ExtensionResponseValues {
-  AUTOMATION_MSG_EXTENSION_INSTALL_SUCCEEDED = 0,
-  AUTOMATION_MSG_EXTENSION_INSTALL_FAILED
+  AUTOMATION_MSG_NAVIGATION_BLOCKED_BY_MODAL_DIALOG,
 };
 
 // Used in the AutomationMsg_GetExtensionProperty to identify which extension
@@ -94,5 +147,17 @@ enum AutomationMsg_ExtensionProperty {
   AUTOMATION_MSG_EXTENSION_BROWSER_ACTION_INDEX,
 };
 
+// Specifies the font size on a page which is requested by an automation
+// client.
+enum AutomationPageFontSize {
+  SMALLEST_FONT = 8,
+  SMALL_FONT = 12,
+  MEDIUM_FONT = 16,
+  LARGE_FONT = 24,
+  LARGEST_FONT = 36
+};
+
+enum FindInPageDirection { BACK = 0, FWD = 1 };
+enum FindInPageCase { IGNORE_CASE = 0, CASE_SENSITIVE = 1 };
 
 #endif  // CHROME_COMMON_AUTOMATION_CONSTANTS_H__

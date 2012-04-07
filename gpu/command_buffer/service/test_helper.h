@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,20 +6,24 @@
 #define GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 
 #include "gpu/command_buffer/common/gl_mock.h"
-#include "gpu/GLES2/gles2_command_buffer.h"
 
 namespace gpu {
 namespace gles2 {
 
-struct DisallowedExtensions;
+struct DisallowedFeatures;
 
 class TestHelper {
  public:
   static const GLuint kServiceBlackTexture2dId = 701;
-  static const GLuint kServiceBlackTextureCubemapId = 702;
-  static const GLuint kServiceDefaultTexture2dId = 703;
+  static const GLuint kServiceDefaultTexture2dId = 702;
+  static const GLuint kServiceBlackTextureCubemapId = 703;
   static const GLuint kServiceDefaultTextureCubemapId = 704;
+  static const GLuint kServiceBlackExternalTextureId = 705;
+  static const GLuint kServiceDefaultExternalTextureId = 706;
+  static const GLuint kServiceBlackRectangleTextureId = 707;
+  static const GLuint kServiceDefaultRectangleTextureId = 708;
 
+  static const GLint kMaxSamples = 4;
   static const GLint kMaxRenderbufferSize = 1024;
   static const GLint kMaxTextureSize = 2048;
   static const GLint kMaxCubeMapTextureSize = 256;
@@ -37,11 +41,15 @@ class TestHelper {
 
   static void SetupContextGroupInitExpectations(
       ::gfx::MockGLInterface* gl,
-      const DisallowedExtensions& disallowed_extensions,
+      const DisallowedFeatures& disallowed_features,
       const char* extensions);
   static void SetupFeatureInfoInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions);
-  static void SetupTextureManagerInitExpectations(::gfx::MockGLInterface* gl);
+  static void SetupTextureManagerInitExpectations(::gfx::MockGLInterface* gl,
+                                                  const char* extensions);
+ private:
+  static void SetupTextureInitializationExpectations(::gfx::MockGLInterface* gl,
+                                                     GLenum target);
 };
 
 }  // namespace gles2

@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,18 +74,24 @@ void PluginList::GetPluginDirectories(std::vector<FilePath>* plugin_dirs) {
 
   // Load from the machine-wide area
   GetPluginCommonDirectory(plugin_dirs, false);
+
+  // 10.5 includes the Java2 plugin, but as of Java for Mac OS X 10.5 Update 10
+  // no longer has a symlink to it in the Internet Plug-Ins directory.
+  // Manually include it since there's no other way to support Java.
+  if (base::mac::IsOSLeopard()) {
+    plugin_dirs->push_back(FilePath(
+        "/System/Library/Java/Support/Deploy.bundle/Contents/Resources"));
+  }
 }
 
-void PluginList::LoadPluginsFromDir(const FilePath &path,
-                                    ScopedVector<PluginGroup>* plugin_groups,
-                                    std::set<FilePath>* visited_plugins) {
+void PluginList::GetPluginsInDir(
+    const FilePath& path, std::vector<FilePath>* plugins) {
   file_util::FileEnumerator enumerator(path,
                                        false, // not recursive
                                        file_util::FileEnumerator::DIRECTORIES);
   for (FilePath path = enumerator.Next(); !path.value().empty();
        path = enumerator.Next()) {
-    LoadPlugin(path, plugin_groups);
-    visited_plugins->insert(path);
+    plugins->push_back(path);
   }
 }
 
@@ -99,7 +105,7 @@ bool PluginList::ShouldLoadPlugin(const WebPluginInfo& info,
   //  encounter earlier must override plugins we encounter later)
   for (size_t i = 0; i < plugin_groups->size(); ++i) {
     const std::vector<WebPluginInfo>& plugins =
-        (*plugin_groups)[i]->web_plugins_info();
+        (*plugin_groups)[i]->web_plugin_infos();
     for (size_t j = 0; j < plugins.size(); ++j) {
       if (plugins[j].path.BaseName() == info.path.BaseName()) {
         return false;  // Already have a loaded plugin higher in the hierarchy.

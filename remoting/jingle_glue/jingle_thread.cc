@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/message_loop_proxy.h"
 #include "base/message_pump.h"
 #include "base/time.h"
 #include "third_party/libjingle/source/talk/base/ssladapter.h"
@@ -15,49 +16,85 @@ namespace remoting {
 const uint32 kRunTasksMessageId = 1;
 const uint32 kStopMessageId = 2;
 
-class JingleThread::JingleMessagePump : public base::MessagePump,
-                                        public talk_base::MessageHandler {
- public:
-  JingleMessagePump(JingleThread* thread) : thread_(thread) { }
+namespace {
 
-  virtual void Run(Delegate* delegate) { NOTIMPLEMENTED(); }
-  virtual void Quit() { NOTIMPLEMENTED(); }
+class JingleMessagePump : public base::MessagePump,
+                          public talk_base::MessageHandler {
+ public:
+  JingleMessagePump(talk_base::Thread* thread)
+      : thread_(thread), delegate_(NULL), stopping_(false) {
+  }
+
+  virtual void Run(Delegate* delegate) {
+    delegate_ = delegate;
+
+    thread_->Thread::Run();
+    // Call Restart() so that we can run again.
+    thread_->Restart();
+
+    delegate_ = NULL;
+  }
+
+  virtual void Quit() {
+    if (!stopping_) {
+      stopping_ = true;
+
+      // Shutdown gracefully: make sure that we excute all messages
+      // left in the queue before exiting. Thread::Quit() would not do
+      // that.
+      thread_->Post(this, kStopMessageId);
+    }
+  }
+
   virtual void ScheduleWork() {
     thread_->Post(this, kRunTasksMessageId);
   }
+
   virtual void ScheduleDelayedWork(const base::TimeTicks& time) {
     delayed_work_time_ = time;
     ScheduleNextDelayedTask();
   }
 
   void OnMessage(talk_base::Message* msg) {
-    DCHECK(msg->message_id == kRunTasksMessageId);
+    if (msg->message_id == kRunTasksMessageId) {
+      DCHECK(delegate_);
 
-    // Clear currently pending messages in case there were delayed tasks.
-    // Will schedule it again from ScheduleNextDelayedTask() if neccessary.
-    thread_->Clear(this, kRunTasksMessageId);
+      // Clear currently pending messages in case there were delayed tasks.
+      // Will schedule it again from ScheduleNextDelayedTask() if neccessary.
+      thread_->Clear(this, kRunTasksMessageId);
 
-    // This code is executed whenever we get new message in |message_loop_|.
-    // JingleMessagePump posts new tasks in the jingle thread.
-    // TODO(sergeyu): Remove it when JingleThread moved on Chromium's
-    // base::Thread.
-    base::MessagePump::Delegate* delegate = thread_->message_loop();
-    // Process all pending tasks.
-    while (true) {
-      if (delegate->DoWork())
-        continue;
-      if (delegate->DoDelayedWork(&delayed_work_time_))
-        continue;
-      break;
+      // Process all pending tasks.
+      while (true) {
+        if (delegate_->DoWork())
+          continue;
+        if (delegate_->DoDelayedWork(&delayed_work_time_))
+          continue;
+        if (delegate_->DoIdleWork())
+          continue;
+        break;
+      }
+
+      ScheduleNextDelayedTask();
+    } else if (msg->message_id == kStopMessageId) {
+      DCHECK(stopping_);
+      // Stop the thread only if there are no more non-delayed
+      // messages left in the queue, otherwise post another task to
+      // try again later.
+      int delay = thread_->GetDelay();
+      if (delay > 0 || delay == talk_base::kForever) {
+        stopping_ = false;
+        thread_->Quit();
+      } else {
+        thread_->Post(this, kStopMessageId);
+      }
+    } else {
+      NOTREACHED();
     }
-
-    ScheduleNextDelayedTask();
   }
+
 
  private:
   void ScheduleNextDelayedTask() {
-    DCHECK_EQ(thread_->message_loop(), MessageLoop::current());
-
     if (!delayed_work_time_.is_null()) {
       base::TimeTicks now = base::TimeTicks::Now();
       int delay = static_cast<int>((delayed_work_time_ - now).InMilliseconds());
@@ -69,27 +106,21 @@ class JingleThread::JingleMessagePump : public base::MessagePump,
     }
   }
 
-  JingleThread* thread_;
+  talk_base::Thread* thread_;
+  Delegate* delegate_;
   base::TimeTicks delayed_work_time_;
+  bool stopping_;
 };
 
-class JingleThread::JingleMessageLoop : public MessageLoop {
- public:
-  JingleMessageLoop(JingleThread* thread)
-      : MessageLoop(MessageLoop::TYPE_IO) {
-    pump_ = new JingleMessagePump(thread);
-  }
+}  // namespace
 
-  void Initialize() {
-    jingle_message_loop_state_.reset(new AutoRunState(this));
-  }
+JingleThreadMessageLoop::JingleThreadMessageLoop(talk_base::Thread* thread)
+    : MessageLoop(MessageLoop::TYPE_IO) {
+  pump_ = new JingleMessagePump(thread);
+}
 
- private:
-  // AutoRunState sets |state_| for this message loop. It needs to be
-  // created here because we never call Run() or RunAllPending() for
-  // the thread.
-  scoped_ptr<AutoRunState> jingle_message_loop_state_;
-};
+JingleThreadMessageLoop::~JingleThreadMessageLoop() {
+}
 
 TaskPump::TaskPump() {
 }
@@ -113,7 +144,14 @@ JingleThread::JingleThread()
       message_loop_(NULL) {
 }
 
-JingleThread::~JingleThread() { }
+JingleThread::~JingleThread() {
+  // It is important to call Stop here. If we wait for the base class to
+  // call Stop in it's d'tor, then JingleThread::Run() will access member
+  // variables that are already gone. See similar comments in
+  // base/threading/thread.h.
+  if (message_loop_)
+    Stop();
+}
 
 void JingleThread::Start() {
   Thread::Start();
@@ -121,9 +159,9 @@ void JingleThread::Start() {
 }
 
 void JingleThread::Run() {
-  JingleMessageLoop message_loop(this);
-  message_loop.Initialize();
+  JingleThreadMessageLoop message_loop(this);
   message_loop_ = &message_loop;
+  message_loop_proxy_ = base::MessageLoopProxy::current();
 
   TaskPump task_pump;
   task_pump_ = &task_pump;
@@ -131,7 +169,7 @@ void JingleThread::Run() {
   // Signal after we've initialized |message_loop_| and |task_pump_|.
   started_event_.Signal();
 
-  Thread::Run();
+  message_loop.Run();
 
   stopped_event_.Signal();
 
@@ -140,9 +178,7 @@ void JingleThread::Run() {
 }
 
 void JingleThread::Stop() {
-  // Shutdown gracefully: make sure that we excute all messages left in the
-  // queue before exiting. Thread::Stop() would not do that.
-  Post(this, kStopMessageId);
+  message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   stopped_event_.Wait();
 
   // This will wait until the thread is actually finished.
@@ -153,21 +189,12 @@ MessageLoop* JingleThread::message_loop() {
   return message_loop_;
 }
 
-  // Returns task pump if the thread is running, otherwise NULL is returned.
-TaskPump* JingleThread::task_pump() {
-  return task_pump_;
+base::MessageLoopProxy* JingleThread::message_loop_proxy() {
+  return message_loop_proxy_;
 }
 
-void JingleThread::OnMessage(talk_base::Message* msg) {
-  DCHECK(msg->message_id == kStopMessageId);
-
-  // Stop the thread only if there are no more messages left in the queue,
-  // otherwise post another task to try again later.
-  if (!msgq_.empty() || fPeekKeep_) {
-    Post(this, kStopMessageId);
-  } else {
-    MessageQueue::Quit();
-  }
+TaskPump* JingleThread::task_pump() {
+  return task_pump_;
 }
 
 }  // namespace remoting

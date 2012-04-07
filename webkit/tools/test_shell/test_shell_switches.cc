@@ -58,10 +58,6 @@ const char kDumpStatsTable[] = "stats";
 // Use a specified cache directory.
 const char kCacheDir[] = "cache-dir";
 
-// When being run through a memory profiler, trigger memory in use dumps at
-// startup and just prior to shutdown.
-const char kDebugMemoryInUse[] = "debug-memory-in-use";
-
 // Enable cookies on the file:// scheme.  --layout-tests also enables this.
 const char kEnableFileCookies[] = "enable-file-cookies";
 
@@ -88,5 +84,8 @@ const char kAllowExternalPages[] = "allow-external-pages";
 const char kEnableAccel2DCanvas[] = "enable-accelerated-2d-canvas";
 
 const char kEnableAccelCompositing[] = "enable-accelerated-compositing";
+
+// Options to pass to the Dart VM.
+const char kDartFlags[] = "dart-flags";
 
 }  // namespace test_shell

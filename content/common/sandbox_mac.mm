@@ -1,11 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/common/sandbox_mac.h"
 
 #import <Cocoa/Cocoa.h>
-#import <OpenGL/OpenGL.h>
 
 extern "C" {
 #include <sandbox.h>
@@ -15,22 +14,46 @@ extern "C" {
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/mac/mac_util.h"
 #include "base/rand_util_c.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
+#include "base/memory/scoped_nsobject.h"
 #include "base/string16.h"
+#include "base/string_piece.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "content/common/chrome_application_mac.h"
-#include "content/common/content_switches.h"
+#include "content/public/common/content_client.h"
+#include "content/public/common/content_switches.h"
+#include "grit/content_resources.h"
 #include "unicode/uchar.h"
 #include "ui/gfx/gl/gl_surface.h"
 
 namespace {
+
+struct SandboxTypeToResourceIDMapping {
+  content::SandboxType sandbox_type;
+  int sandbox_profile_resource_id;
+};
+
+// Mapping from sandbox process types to resource IDs containing the sandbox
+// profile for all process types known to content.
+SandboxTypeToResourceIDMapping kDefaultSandboxTypeToResourceIDMapping[] = {
+  { content::SANDBOX_TYPE_RENDERER, IDR_RENDERER_SANDBOX_PROFILE },
+  { content::SANDBOX_TYPE_WORKER,   IDR_WORKER_SANDBOX_PROFILE },
+  { content::SANDBOX_TYPE_UTILITY,  IDR_UTILITY_SANDBOX_PROFILE },
+  { content::SANDBOX_TYPE_GPU,      IDR_GPU_SANDBOX_PROFILE },
+  { content::SANDBOX_TYPE_PPAPI,    IDR_PPAPI_SANDBOX_PROFILE },
+};
+
+COMPILE_ASSERT(arraysize(kDefaultSandboxTypeToResourceIDMapping) == \
+               size_t(content::SANDBOX_TYPE_AFTER_LAST_TYPE), \
+               sandbox_type_to_resource_id_mapping_incorrect);
 
 // Try to escape |c| as a "SingleEscapeCharacter" (\n, etc).  If successful,
 // returns true and appends the escape sequence to |dst|.
@@ -66,6 +89,15 @@ bool EscapeSingleChar(char c, std::string* dst) {
 
   dst->append(append);
   return true;
+}
+
+// Errors quoting strings for the Sandbox profile are always fatal, report them
+// in a central place.
+NOINLINE void FatalStringQuoteException(const std::string& str) {
+  // Copy bad string to the stack so it's recorded in the crash dump.
+  char bad_string[256] = {0};
+  base::strlcpy(bad_string, str.c_str(), arraysize(bad_string));
+  DLOG(FATAL) << "String quoting failed " << bad_string;
 }
 
 }  // namespace
@@ -180,7 +212,7 @@ bool Sandbox::QuoteStringForRegex(const std::string& str_utf8,
 //     10.5.6, 10.6.0
 
 // static
-void Sandbox::SandboxWarmup(SandboxProcessType sandbox_type) {
+void Sandbox::SandboxWarmup(int sandbox_type) {
   base::mac::ScopedNSAutoreleasePool scoped_pool;
 
   { // CGColorSpaceCreateWithName(), CGBitmapContextCreate() - 10.5.6
@@ -237,28 +269,10 @@ void Sandbox::SandboxWarmup(SandboxProcessType sandbox_type) {
   }
 
   // Process-type dependent warm-up.
-  switch (sandbox_type) {
-    case SANDBOX_TYPE_GPU:
-      {  // GPU-related stuff is very slow without this, probably because
-         // the sandbox prevents loading graphics drivers or some such.
-         CGLPixelFormatAttribute attribs[] = { (CGLPixelFormatAttribute)0 };
-         CGLPixelFormatObj format;
-         GLint n;
-         CGLChoosePixelFormat(attribs, &format, &n);
-         if (format)
-           CGLReleasePixelFormat(format);
-      }
-
-      {
-         // Preload either the desktop GL or the osmesa so, depending on the
-         // --use-gl flag.
-         gfx::GLSurface::InitializeOneOff();
-      }
-      break;
-
-    default:
-      // To shut up a gcc warning.
-      break;
+  if (sandbox_type == content::SANDBOX_TYPE_GPU) {
+     // Preload either the desktop GL or the osmesa so, depending on the
+     // --use-gl flag.
+     gfx::GLSurface::InitializeOneOff();
   }
 }
 
@@ -299,7 +313,7 @@ NSString* Sandbox::BuildAllowDirectoryAccessSandboxString(
        ++i) {
     std::string subdir_escaped;
     if (!QuotePlainString(i->value(), &subdir_escaped)) {
-      LOG(FATAL) << "String quoting failed " << i->value();
+      FatalStringQuoteException(i->value());
       return nil;
     }
 
@@ -324,76 +338,57 @@ NSString* Sandbox::BuildAllowDirectoryAccessSandboxString(
 
 // Load the appropriate template for the given sandbox type.
 // Returns the template as an NSString or nil on error.
-NSString* LoadSandboxTemplate(Sandbox::SandboxProcessType sandbox_type) {
-  // We use a custom sandbox definition file to lock things down as
-  // tightly as possible.
-  NSString* sandbox_config_filename = nil;
-  switch (sandbox_type) {
-    case Sandbox::SANDBOX_TYPE_RENDERER:
-      sandbox_config_filename = @"renderer";
+NSString* LoadSandboxTemplate(int sandbox_type) {
+  // We use a custom sandbox definition to lock things down as tightly as
+  // possible.
+  int sandbox_profile_resource_id = -1;
+
+  // Find resource id for sandbox profile to use for the specific sandbox type.
+  for (size_t i = 0;
+       i < arraysize(kDefaultSandboxTypeToResourceIDMapping);
+       ++i) {
+    if (kDefaultSandboxTypeToResourceIDMapping[i].sandbox_type ==
+        sandbox_type) {
+      sandbox_profile_resource_id =
+          kDefaultSandboxTypeToResourceIDMapping[i].sandbox_profile_resource_id;
       break;
-    case Sandbox::SANDBOX_TYPE_WORKER:
-      sandbox_config_filename = @"worker";
-      break;
-    case Sandbox::SANDBOX_TYPE_UTILITY:
-      sandbox_config_filename = @"utility";
-      break;
-    case Sandbox::SANDBOX_TYPE_NACL_LOADER:
-      // The Native Client loader is used for safeguarding the user's
-      // untrusted code within Native Client.
-      sandbox_config_filename = @"nacl_loader";
-      break;
-    case Sandbox::SANDBOX_TYPE_GPU:
-      sandbox_config_filename = @"gpu";
-      break;
-    default:
-      NOTREACHED();
-      return nil;
+    }
+  }
+  if (sandbox_profile_resource_id == -1) {
+    // Check if the embedder knows about this sandbox process type.
+    bool sandbox_type_found =
+        content::GetContentClient()->GetSandboxProfileForSandboxType(
+            sandbox_type, &sandbox_profile_resource_id);
+    CHECK(sandbox_type_found) << "Unknown sandbox type " << sandbox_type;
   }
 
-  // Read in the sandbox profile and the common prefix file.
-  NSString* common_sandbox_prefix_path =
-      [base::mac::MainAppBundle() pathForResource:@"common"
-                                          ofType:@"sb"];
-  NSString* common_sandbox_prefix_data =
-      [NSString stringWithContentsOfFile:common_sandbox_prefix_path
-                                encoding:NSUTF8StringEncoding
-                                   error:NULL];
-
-  if (!common_sandbox_prefix_data) {
-    LOG(FATAL) << "Failed to find the sandbox profile on disk "
-               << [common_sandbox_prefix_path fileSystemRepresentation];
+  base::StringPiece sandbox_definition =
+      content::GetContentClient()->GetDataResource(sandbox_profile_resource_id);
+  if (sandbox_definition.empty()) {
+    LOG(FATAL) << "Failed to load the sandbox profile (resource id "
+               << sandbox_profile_resource_id << ")";
     return nil;
   }
 
-  NSString* sandbox_profile_path =
-      [base::mac::MainAppBundle() pathForResource:sandbox_config_filename
-                                          ofType:@"sb"];
-  NSString* sandbox_data =
-      [NSString stringWithContentsOfFile:sandbox_profile_path
-                                 encoding:NSUTF8StringEncoding
-                                    error:NULL];
-
-  if (!sandbox_data) {
-    LOG(FATAL) << "Failed to find the sandbox profile on disk "
-               << [sandbox_profile_path fileSystemRepresentation];
+  base::StringPiece common_sandbox_definition =
+      content::GetContentClient()->GetDataResource(IDR_COMMON_SANDBOX_PROFILE);
+  if (common_sandbox_definition.empty()) {
+    LOG(FATAL) << "Failed to load the common sandbox profile";
     return nil;
   }
+
+  scoped_nsobject<NSString> common_sandbox_prefix_data(
+      [[NSString alloc] initWithBytes:common_sandbox_definition.data()
+                               length:common_sandbox_definition.length()
+                             encoding:NSUTF8StringEncoding]);
+
+  scoped_nsobject<NSString> sandbox_data(
+      [[NSString alloc] initWithBytes:sandbox_definition.data()
+                               length:sandbox_definition.length()
+                             encoding:NSUTF8StringEncoding]);
 
   // Prefix sandbox_data with common_sandbox_prefix_data.
   return [common_sandbox_prefix_data stringByAppendingString:sandbox_data];
-}
-
-// Retrieve OS X version, output parameters are self explanatory.
-void GetOSVersion(bool* snow_leopard_or_higher, bool* lion_or_higher) {
-  int32 major_version, minor_version, bugfix_version;
-  base::SysInfo::OperatingSystemVersionNumbers(&major_version,
-                                               &minor_version,
-                                               &bugfix_version);
-  *snow_leopard_or_higher =
-      (major_version > 10 || (major_version == 10 && minor_version >= 6));
-  *lion_or_higher =
-      (major_version > 10 || (major_version == 10 && minor_version >= 7));
 }
 
 // static
@@ -413,9 +408,9 @@ bool Sandbox::PostProcessSandboxProfile(
   // Split string on "@" characters.
   std::vector<std::string> raw_sandbox_pieces;
   if (Tokenize([sandbox_data UTF8String], "@", &raw_sandbox_pieces) == 0) {
-    LOG(FATAL) << "Bad Sandbox profile, should contain at least one token ("
-               << [sandbox_data UTF8String]
-               << ")";
+    DLOG(FATAL) << "Bad Sandbox profile, should contain at least one token ("
+                << [sandbox_data UTF8String]
+                << ")";
     return false;
   }
 
@@ -439,11 +434,13 @@ bool Sandbox::PostProcessSandboxProfile(
           break;
 
         case SandboxSubstring::LITERAL:
-          QuotePlainString(replacement.value(), &new_piece);
+          if (!QuotePlainString(replacement.value(), &new_piece))
+            FatalStringQuoteException(replacement.value());
           break;
 
         case SandboxSubstring::REGEX:
-          QuoteStringForRegex(replacement.value(), &new_piece);
+          if (!QuoteStringForRegex(replacement.value(), &new_piece))
+            FatalStringQuoteException(replacement.value());
           break;
       }
     }
@@ -466,11 +463,12 @@ bool Sandbox::PostProcessSandboxProfile(
 // Turns on the OS X sandbox for this process.
 
 // static
-bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
+bool Sandbox::EnableSandbox(int sandbox_type,
                             const FilePath& allowed_dir) {
   // Sanity - currently only SANDBOX_TYPE_UTILITY supports a directory being
   // passed in.
-  if (sandbox_type != SANDBOX_TYPE_UTILITY) {
+  if (sandbox_type < content::SANDBOX_TYPE_AFTER_LAST_TYPE &&
+      sandbox_type != content::SANDBOX_TYPE_UTILITY) {
     DCHECK(allowed_dir.empty())
         << "Only SANDBOX_TYPE_UTILITY allows a custom directory parameter.";
   }
@@ -506,14 +504,13 @@ bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
     [tokens_to_remove addObject:@";ENABLE_LOGGING"];
   }
 
-  bool snow_leopard_or_higher;
-  bool lion_or_higher;
-  GetOSVersion(&snow_leopard_or_higher, &lion_or_higher);
+  bool snow_leopard_or_later = base::mac::IsOSSnowLeopardOrLater();
+  bool lion_or_later = base::mac::IsOSLionOrLater();
 
   // Without this, the sandbox will print a message to the system log every
   // time it denies a request.  This floods the console with useless spew. The
   // (with no-log) syntax is only supported on 10.6+
-  if (snow_leopard_or_higher && !enable_logging) {
+  if (snow_leopard_or_later && !enable_logging) {
     substitutions["DISABLE_SANDBOX_DENIAL_LOGGING"] =
         SandboxSubstring("(with no-log)");
   } else {
@@ -522,7 +519,7 @@ bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
 
   // Splice the path of the user's home directory into the sandbox profile
   // (see renderer.sb for details).
-  std::string home_dir = base::SysNSStringToUTF8(NSHomeDirectory());
+  std::string home_dir = [NSHomeDirectory() fileSystemRepresentation];
 
   FilePath home_dir_canonical(home_dir);
   GetCanonicalSandboxPath(&home_dir_canonical);
@@ -531,12 +528,12 @@ bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
       SandboxSubstring(home_dir_canonical.value(),
           SandboxSubstring::LITERAL);
 
-  if (lion_or_higher) {
+  if (lion_or_later) {
     // >=10.7 Sandbox rules.
     [tokens_to_remove addObject:@";10.7_OR_ABOVE"];
   }
 
-  if (snow_leopard_or_higher) {
+  if (snow_leopard_or_later) {
     // >=10.6 Sandbox rules.
     [tokens_to_remove addObject:@";10.6_OR_ABOVE"];
   } else {
@@ -556,10 +553,10 @@ bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
   char* error_buff = NULL;
   int error = sandbox_init(final_sandbox_profile_str.c_str(), 0, &error_buff);
   bool success = (error == 0 && error_buff == NULL);
-  LOG_IF(FATAL, !success) << "Failed to initialize sandbox: "
-                          << error
-                          << " "
-                          << error_buff;
+  DLOG_IF(FATAL, !success) << "Failed to initialize sandbox: "
+                           << error
+                           << " "
+                           << error_buff;
   sandbox_free_error(error_buff);
   return success;
 }
@@ -568,16 +565,16 @@ bool Sandbox::EnableSandbox(SandboxProcessType sandbox_type,
 void Sandbox::GetCanonicalSandboxPath(FilePath* path) {
   int fd = HANDLE_EINTR(open(path->value().c_str(), O_RDONLY));
   if (fd < 0) {
-    PLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
-                << path->value();
+    DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
+                 << path->value();
     return;
   }
   file_util::ScopedFD file_closer(&fd);
 
   FilePath::CharType canonical_path[MAXPATHLEN];
   if (HANDLE_EINTR(fcntl(fd, F_GETPATH, canonical_path)) != 0) {
-    PLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
-                << path->value();
+    DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
+                 << path->value();
     return;
   }
 

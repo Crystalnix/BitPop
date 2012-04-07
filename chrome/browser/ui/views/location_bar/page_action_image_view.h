@@ -10,25 +10,29 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
+#include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
-#include "views/controls/image_view.h"
+#include "ui/views/controls/image_view.h"
 
 class LocationBarView;
+
+namespace content {
+class WebContents;
+}
 namespace views {
-class Menu2;
-};
+class MenuRunner;
+}
 
 // PageActionImageView is used by the LocationBarView to display the icon for a
 // given PageAction and notify the extension when the icon is clicked.
 class PageActionImageView : public views::ImageView,
                             public ImageLoadingTracker::Observer,
                             public ExtensionContextMenuModel::PopupDelegate,
-                            public ExtensionPopup::Observer {
+                            public views::Widget::Observer,
+                            public content::NotificationObserver {
  public:
   PageActionImageView(LocationBarView* owner,
-                      Profile* profile,
                       ExtensionAction* page_action);
   virtual ~PageActionImageView();
 
@@ -56,13 +60,18 @@ class PageActionImageView : public views::ImageView,
   // Overridden from ExtensionContextMenuModelModel::Delegate
   virtual void InspectPopup(ExtensionAction* action) OVERRIDE;
 
-  // Overridden from ExtensionPopup::Observer
-  virtual void ExtensionPopupIsClosing(ExtensionPopup* popup) OVERRIDE;
+  // Overridden from views::Widget::Observer
+  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Called to notify the PageAction that it should determine whether to be
   // visible or hidden. |contents| is the TabContents that is active, |url| is
   // the current page URL.
-  void UpdateVisibility(TabContents* contents, const GURL& url);
+  void UpdateVisibility(content::WebContents* contents, const GURL& url);
 
   // Either notify listeners or show a popup depending on the page action.
   void ExecuteAction(int button, bool inspect_with_devtools);
@@ -74,9 +83,6 @@ class PageActionImageView : public views::ImageView,
   // The location bar view that owns us.
   LocationBarView* owner_;
 
-  // The current profile (not owned by us).
-  Profile* profile_;
-
   // The PageAction that this view represents. The PageAction is not owned by
   // us, it resides in the extension of this particular profile.
   ExtensionAction* page_action_;
@@ -84,10 +90,6 @@ class PageActionImageView : public views::ImageView,
   // A cache of bitmaps the page actions might need to show, mapped by path.
   typedef std::map<std::string, SkBitmap> PageActionMap;
   PageActionMap page_action_icons_;
-
-  // The context menu for this page action.
-  scoped_refptr<ExtensionContextMenuModel> context_menu_contents_;
-  scoped_ptr<views::Menu2> context_menu_menu_;
 
   // The object that is waiting for the image loading to complete
   // asynchronously.
@@ -108,6 +110,10 @@ class PageActionImageView : public views::ImageView,
 
   // The current popup and the button it came from.  NULL if no popup.
   ExtensionPopup* popup_;
+
+  content::NotificationRegistrar registrar_;
+
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PageActionImageView);
 };

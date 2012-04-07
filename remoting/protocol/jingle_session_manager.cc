@@ -1,370 +1,246 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <limits>
-
 #include "remoting/protocol/jingle_session_manager.h"
 
+#include <limits>
+
 #include "base/base64.h"
-#include "base/message_loop.h"
-#include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/bind.h"
+#include "base/message_loop_proxy.h"
+#include "base/string_util.h"
 #include "remoting/base/constants.h"
-#include "remoting/jingle_glue/jingle_thread.h"
-#include "remoting/proto/auth.pb.h"
+#include "remoting/jingle_glue/jingle_info_request.h"
+#include "remoting/jingle_glue/jingle_signaling_connector.h"
+#include "remoting/jingle_glue/signal_strategy.h"
+#include "remoting/protocol/authenticator.h"
+#include "third_party/libjingle/source/talk/base/basicpacketsocketfactory.h"
 #include "third_party/libjingle/source/talk/p2p/base/constants.h"
+#include "third_party/libjingle/source/talk/p2p/base/sessionmanager.h"
 #include "third_party/libjingle/source/talk/p2p/base/transport.h"
+#include "third_party/libjingle/source/talk/p2p/client/httpportallocator.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
-using buzz::QName;
 using buzz::XmlElement;
 
 namespace remoting {
 namespace protocol {
 
-namespace {
-
-const char kDefaultNs[] = "";
-
-const char kChromotingContentName[] = "chromoting";
-
-// Following constants are used to format session description in XML.
-const char kDescriptionTag[] = "description";
-const char kControlTag[] = "control";
-const char kEventTag[] = "event";
-const char kVideoTag[] = "video";
-const char kResolutionTag[] = "initial-resolution";
-const char kAuthenticationTag[] = "authentication";
-const char kCertificateTag[] = "certificate";
-const char kAuthTokenTag[] = "auth-token";
-
-const char kTransportAttr[] = "transport";
-const char kVersionAttr[] = "version";
-const char kCodecAttr[] = "codec";
-const char kWidthAttr[] = "width";
-const char kHeightAttr[] = "height";
-
-const char kStreamTransport[] = "stream";
-const char kDatagramTransport[] = "datagram";
-const char kSrtpTransport[] = "srtp";
-const char kRtpDtlsTransport[] = "rtp-dtls";
-
-const char kVp8Codec[] = "vp8";
-const char kZipCodec[] = "zip";
-
-const char* GetTransportName(ChannelConfig::TransportType type) {
-  switch (type) {
-    case ChannelConfig::TRANSPORT_STREAM:
-      return kStreamTransport;
-    case ChannelConfig::TRANSPORT_DATAGRAM:
-      return kDatagramTransport;
-    case ChannelConfig::TRANSPORT_SRTP:
-      return kSrtpTransport;
-    case ChannelConfig::TRANSPORT_RTP_DTLS:
-      return kRtpDtlsTransport;
-  }
-  NOTREACHED();
-  return NULL;
-}
-
-const char* GetCodecName(ChannelConfig::Codec type) {
-  switch (type) {
-    case ChannelConfig::CODEC_VP8:
-      return kVp8Codec;
-    case ChannelConfig::CODEC_ZIP:
-      return kZipCodec;
-    default:
-      break;
-  }
-  NOTREACHED();
-  return NULL;
-}
-
-
-// Format a channel configuration tag for chromotocol session description,
-// e.g. for video channel:
-//    <video transport="srtp" version="1" codec="vp8" />
-XmlElement* FormatChannelConfig(const ChannelConfig& config,
-                                const std::string& tag_name) {
-  XmlElement* result = new XmlElement(
-      QName(kChromotingXmlNamespace, tag_name));
-
-  result->AddAttr(QName(kDefaultNs, kTransportAttr),
-                   GetTransportName(config.transport));
-
-  result->AddAttr(QName(kDefaultNs, kVersionAttr),
-                  base::IntToString(config.version));
-
-  if (config.codec != ChannelConfig::CODEC_UNDEFINED) {
-    result->AddAttr(QName(kDefaultNs, kCodecAttr),
-                    GetCodecName(config.codec));
-  }
-
-  return result;
-}
-
-bool ParseTransportName(const std::string& value,
-                        ChannelConfig::TransportType* transport) {
-  if (value == kStreamTransport) {
-    *transport = ChannelConfig::TRANSPORT_STREAM;
-  } else if (value == kDatagramTransport) {
-    *transport = ChannelConfig::TRANSPORT_DATAGRAM;
-  } else if (value == kSrtpTransport) {
-    *transport = ChannelConfig::TRANSPORT_SRTP;
-  } else if (value == kRtpDtlsTransport) {
-    *transport = ChannelConfig::TRANSPORT_RTP_DTLS;
-  } else {
-    return false;
-  }
-  return true;
-}
-
-bool ParseCodecName(const std::string& value, ChannelConfig::Codec* codec) {
-  if (value == kVp8Codec) {
-    *codec = ChannelConfig::CODEC_VP8;
-  } else if (value == kZipCodec) {
-    *codec = ChannelConfig::CODEC_ZIP;
-  } else {
-    return false;
-  }
-  return true;
-}
-
-// Returns false if the element is invalid.
-bool ParseChannelConfig(const XmlElement* element, bool codec_required,
-                        ChannelConfig* config) {
-  if (!ParseTransportName(element->Attr(QName(kDefaultNs, kTransportAttr)),
-                          &config->transport) ||
-      !base::StringToInt(element->Attr(QName(kDefaultNs, kVersionAttr)),
-                         &config->version)) {
-    return false;
-  }
-
-  if (codec_required) {
-    if (!ParseCodecName(element->Attr(QName(kDefaultNs, kCodecAttr)),
-                        &config->codec)) {
-      return false;
-    }
-  } else {
-    config->codec = ChannelConfig::CODEC_UNDEFINED;
-  }
-
-  return true;
-}
-
-}  // namespace
-
-ContentDescription::ContentDescription(
-    const CandidateSessionConfig* candidate_config,
-    const std::string& auth_token,
-    scoped_refptr<net::X509Certificate> certificate)
-    : candidate_config_(candidate_config),
-      auth_token_(auth_token),
-      certificate_(certificate) {
-}
-
-ContentDescription::~ContentDescription() { }
-
 JingleSessionManager::JingleSessionManager(
-    JingleThread* jingle_thread)
-    : jingle_thread_(jingle_thread),
-      cricket_session_manager_(NULL),
-      allow_local_ips_(false),
+    base::MessageLoopProxy* message_loop)
+    : message_loop_(message_loop),
+      signal_strategy_(NULL),
+      allow_nat_traversal_(false),
+      ready_(false),
+      http_port_allocator_(NULL),
       closed_(false) {
-  DCHECK(jingle_thread_);
-}
-
-void JingleSessionManager::Init(
-    const std::string& local_jid,
-    cricket::SessionManager* cricket_session_manager,
-    IncomingSessionCallback* incoming_session_callback,
-    crypto::RSAPrivateKey* private_key,
-    scoped_refptr<net::X509Certificate> certificate) {
-  if (MessageLoop::current() != message_loop()) {
-    message_loop()->PostTask(
-        FROM_HERE, NewRunnableMethod(
-            this, &JingleSessionManager::Init,
-            local_jid, cricket_session_manager, incoming_session_callback,
-            private_key, certificate));
-    return;
-  }
-
-  DCHECK(cricket_session_manager);
-  DCHECK(incoming_session_callback);
-
-  local_jid_ = local_jid;
-  certificate_ = certificate;
-  private_key_.reset(private_key);
-  incoming_session_callback_.reset(incoming_session_callback);
-  cricket_session_manager_ = cricket_session_manager;
-  cricket_session_manager_->AddClient(kChromotingXmlNamespace, this);
 }
 
 JingleSessionManager::~JingleSessionManager() {
-  DCHECK(closed_);
+  // Session manager can be destroyed only after all sessions are destroyed.
+  DCHECK(sessions_.empty());
+  Close();
 }
 
-void JingleSessionManager::Close(Task* closed_task) {
-  if (MessageLoop::current() != message_loop()) {
-    message_loop()->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &JingleSessionManager::Close,
-                                     closed_task));
-    return;
+void JingleSessionManager::Init(
+    SignalStrategy* signal_strategy,
+    SessionManager::Listener* listener,
+    const NetworkSettings& network_settings) {
+  DCHECK(CalledOnValidThread());
+
+  DCHECK(signal_strategy);
+  DCHECK(listener);
+
+  signal_strategy_ = signal_strategy;
+  listener_ = listener;
+  allow_nat_traversal_ = network_settings.allow_nat_traversal;
+
+  signal_strategy_->AddListener(this);
+
+  if (!network_manager_.get()) {
+    VLOG(1) << "Creating talk_base::NetworkManager.";
+    network_manager_.reset(new talk_base::BasicNetworkManager());
   }
+  if (!socket_factory_.get()) {
+    VLOG(1) << "Creating talk_base::BasicPacketSocketFactory.";
+    socket_factory_.reset(new talk_base::BasicPacketSocketFactory(
+        talk_base::Thread::Current()));
+  }
+
+  // Initialize |port_allocator_|.
+
+  // We always use PseudoTcp to provide a reliable channel. However
+  // when it is used together with TCP the performance is very bad
+  // so we explicitly disables TCP connections.
+  int port_allocator_flags = cricket::PORTALLOCATOR_DISABLE_TCP;
+
+  if (allow_nat_traversal_) {
+    http_port_allocator_ = new cricket::HttpPortAllocator(
+        network_manager_.get(), socket_factory_.get(), "transp2");
+    port_allocator_.reset(http_port_allocator_);
+  } else {
+    port_allocator_flags |= cricket::PORTALLOCATOR_DISABLE_STUN |
+        cricket::PORTALLOCATOR_DISABLE_RELAY;
+    port_allocator_.reset(
+        new cricket::BasicPortAllocator(
+            network_manager_.get(), socket_factory_.get()));
+  }
+  port_allocator_->set_flags(port_allocator_flags);
+
+  port_allocator_->SetPortRange(
+      network_settings.min_port, network_settings.max_port);
+
+  // Initialize |cricket_session_manager_|.
+  cricket_session_manager_.reset(
+      new cricket::SessionManager(port_allocator_.get()));
+  cricket_session_manager_->AddClient(kChromotingXmlNamespace, this);
+
+  jingle_signaling_connector_.reset(new JingleSignalingConnector(
+      signal_strategy_, cricket_session_manager_.get()));
+
+  OnSignalStrategyStateChange(signal_strategy_->GetState());
+}
+
+void JingleSessionManager::Close() {
+  DCHECK(CalledOnValidThread());
 
   if (!closed_) {
-    // Close all connections.
+    jingle_info_request_.reset();
     cricket_session_manager_->RemoveClient(kChromotingXmlNamespace);
-    while (!sessions_.empty()) {
-      cricket::Session* session = sessions_.front()->ReleaseSession();
-      cricket_session_manager_->DestroySession(session);
-      sessions_.pop_front();
-    }
+    jingle_signaling_connector_.reset();
+    signal_strategy_->RemoveListener(this);
     closed_ = true;
   }
-
-  closed_task->Run();
-  delete closed_task;
 }
 
-void JingleSessionManager::set_allow_local_ips(bool allow_local_ips) {
-  allow_local_ips_ = allow_local_ips;
+void JingleSessionManager::set_authenticator_factory(
+    scoped_ptr<AuthenticatorFactory> authenticator_factory) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(authenticator_factory.get());
+  DCHECK(!authenticator_factory_.get());
+  authenticator_factory_ = authenticator_factory.Pass();
 }
 
-scoped_refptr<protocol::Session> JingleSessionManager::Connect(
+scoped_ptr<Session> JingleSessionManager::Connect(
     const std::string& host_jid,
-    const std::string& receiver_token,
-    CandidateSessionConfig* candidate_config,
-    protocol::Session::StateChangeCallback* state_change_callback) {
-  // Can be called from any thread.
-  scoped_refptr<JingleSession> jingle_session(
-      JingleSession::CreateClientSession(this));
-  jingle_session->set_candidate_config(candidate_config);
-  jingle_session->set_receiver_token(receiver_token);
-  message_loop()->PostTask(
-      FROM_HERE, NewRunnableMethod(this, &JingleSessionManager::DoConnect,
-                                   jingle_session, host_jid, receiver_token,
-                                   state_change_callback));
-  return jingle_session;
-}
+    scoped_ptr<Authenticator> authenticator,
+    scoped_ptr<CandidateSessionConfig> config,
+    const Session::StateChangeCallback& state_change_callback) {
+  DCHECK(CalledOnValidThread());
 
-void JingleSessionManager::DoConnect(
-    scoped_refptr<JingleSession> jingle_session,
-    const std::string& host_jid,
-    const std::string& receiver_token,
-    protocol::Session::StateChangeCallback* state_change_callback) {
-  DCHECK_EQ(message_loop(), MessageLoop::current());
   cricket::Session* cricket_session = cricket_session_manager_->CreateSession(
-      local_jid_, kChromotingXmlNamespace);
+      signal_strategy_->GetLocalJid(), kChromotingXmlNamespace);
+  cricket_session->set_remote_name(host_jid);
 
-  // Initialize connection object before we send initiate stanza.
+  scoped_ptr<JingleSession> jingle_session(
+      new JingleSession(this, cricket_session, authenticator.Pass()));
+  jingle_session->set_candidate_config(config.Pass());
   jingle_session->SetStateChangeCallback(state_change_callback);
-  jingle_session->Init(cricket_session);
-  sessions_.push_back(jingle_session);
+  sessions_.push_back(jingle_session.get());
 
-  cricket_session->Initiate(
-      host_jid,
-      CreateSessionDescription(jingle_session->candidate_config()->Clone(),
-                               receiver_token, NULL));
-}
+  jingle_session->SendSessionInitiate();
 
-JingleThread* JingleSessionManager::jingle_thread() {
-  return jingle_thread_;
-}
-
-MessageLoop* JingleSessionManager::message_loop() {
-  return jingle_thread_->message_loop();
+  return jingle_session.PassAs<Session>();
 }
 
 void JingleSessionManager::OnSessionCreate(
     cricket::Session* cricket_session, bool incoming) {
-  DCHECK_EQ(message_loop(), MessageLoop::current());
+  DCHECK(CalledOnValidThread());
 
-  // Allow local connections if neccessary.
-  cricket_session->set_allow_local_ips(allow_local_ips_);
+  // Allow local connections.
+  cricket_session->set_allow_local_ips(true);
 
-  // If this is an outcoming session the session object is already created.
   if (incoming) {
-    DCHECK(certificate_);
-    DCHECK(private_key_.get());
     JingleSession* jingle_session =
-        JingleSession::CreateServerSession(this, certificate_,
-                                           private_key_.get());
-    sessions_.push_back(make_scoped_refptr(jingle_session));
-    jingle_session->Init(cricket_session);
+        new JingleSession(this, cricket_session, scoped_ptr<Authenticator>());
+    sessions_.push_back(jingle_session);
   }
 }
 
 void JingleSessionManager::OnSessionDestroy(cricket::Session* cricket_session) {
-  DCHECK_EQ(message_loop(), MessageLoop::current());
+  DCHECK(CalledOnValidThread());
 
-  std::list<scoped_refptr<JingleSession> >::iterator it;
+  std::list<JingleSession*>::iterator it;
   for (it = sessions_.begin(); it != sessions_.end(); ++it) {
     if ((*it)->HasSession(cricket_session)) {
       (*it)->ReleaseSession();
-      sessions_.erase(it);
       return;
     }
   }
 }
 
-void JingleSessionManager::AcceptConnection(
-    JingleSession* jingle_session,
-    cricket::Session* cricket_session) {
-  DCHECK_EQ(message_loop(), MessageLoop::current());
+void JingleSessionManager::OnSignalStrategyStateChange(
+    SignalStrategy::State state) {
+  if (state == SignalStrategy::CONNECTED) {
+    // If NAT traversal is enabled then we need to request STUN/Relay info.
+    if (allow_nat_traversal_) {
+      jingle_info_request_.reset(new JingleInfoRequest(signal_strategy_));
+      jingle_info_request_->Send(base::Bind(
+          &JingleSessionManager::OnJingleInfo, base::Unretained(this)));
+    } else if (!ready_) {
+      ready_ = true;
+      listener_->OnSessionManagerReady();
+    }
+  }
+}
+
+SessionManager::IncomingSessionResponse JingleSessionManager::AcceptConnection(
+    JingleSession* jingle_session) {
+  DCHECK(CalledOnValidThread());
 
   // Reject connection if we are closed.
-  if (closed_) {
-    cricket_session->Reject(cricket::STR_TERMINATE_DECLINE);
-    return;
+  if (closed_)
+    return SessionManager::DECLINE;
+
+  IncomingSessionResponse response = SessionManager::DECLINE;
+  listener_->OnIncomingSession(jingle_session, &response);
+  return response;
+}
+
+scoped_ptr<Authenticator> JingleSessionManager::CreateAuthenticator(
+    const std::string& jid, const buzz::XmlElement* auth_message) {
+  DCHECK(CalledOnValidThread());
+
+  if (!authenticator_factory_.get())
+    return scoped_ptr<Authenticator>(NULL);
+  return authenticator_factory_->CreateAuthenticator(jid, auth_message);
+}
+
+void JingleSessionManager::SessionDestroyed(JingleSession* jingle_session) {
+  std::list<JingleSession*>::iterator it =
+      std::find(sessions_.begin(), sessions_.end(), jingle_session);
+  CHECK(it != sessions_.end());
+  cricket::Session* cricket_session = jingle_session->ReleaseSession();
+  cricket_session_manager_->DestroySession(cricket_session);
+  sessions_.erase(it);
+}
+
+void JingleSessionManager::OnJingleInfo(
+    const std::string& token,
+    const std::vector<std::string>& relay_hosts,
+    const std::vector<talk_base::SocketAddress>& stun_hosts) {
+  DCHECK(CalledOnValidThread());
+
+  if (http_port_allocator_) {
+    // TODO(ajwong): Avoid string processing if log-level is low.
+    std::string stun_servers;
+    for (size_t i = 0; i < stun_hosts.size(); ++i) {
+      stun_servers += stun_hosts[i].ToString() + "; ";
+    }
+    VLOG(1) << "Configuring with relay token: " << token
+            << ", relays: " << JoinString(relay_hosts, ';')
+            << ", stun: " << stun_servers;
+    http_port_allocator_->SetRelayToken(token);
+    http_port_allocator_->SetStunHosts(stun_hosts);
+    http_port_allocator_->SetRelayHosts(relay_hosts);
+  } else {
+    LOG(WARNING) << "Jingle info found but no port allocator.";
   }
 
-  const cricket::SessionDescription* session_description =
-      cricket_session->remote_description();
-  const cricket::ContentInfo* content =
-      session_description->FirstContentByType(kChromotingXmlNamespace);
-
-  CHECK(content);
-
-  const ContentDescription* content_description =
-      static_cast<const ContentDescription*>(content->description);
-  jingle_session->set_candidate_config(content_description->config()->Clone());
-  jingle_session->set_initiator_token(content_description->auth_token());
-
-  // Always reject connection if there is no callback.
-  IncomingSessionResponse response = protocol::SessionManager::DECLINE;
-
-  // Use the callback to generate a response.
-  if (incoming_session_callback_.get())
-    incoming_session_callback_->Run(jingle_session, &response);
-
-  switch (response) {
-    case protocol::SessionManager::ACCEPT: {
-      // Connection must be configured by the callback.
-      DCHECK(jingle_session->config());
-      CandidateSessionConfig* candidate_config =
-          CandidateSessionConfig::CreateFrom(jingle_session->config());
-      cricket_session->Accept(
-          CreateSessionDescription(candidate_config,
-                                   jingle_session->initiator_token(),
-                                   jingle_session->server_certificate()));
-      break;
-    }
-
-    case protocol::SessionManager::INCOMPATIBLE: {
-      cricket_session->Reject(cricket::STR_TERMINATE_INCOMPATIBLE_PARAMETERS);
-      break;
-    }
-
-    case protocol::SessionManager::DECLINE: {
-      cricket_session->Reject(cricket::STR_TERMINATE_DECLINE);
-      break;
-    }
-
-    default: {
-      NOTREACHED();
-    }
+  if (!ready_) {
+    ready_ = true;
+    listener_->OnSessionManagerReady();
   }
 }
 
@@ -374,117 +250,10 @@ bool JingleSessionManager::ParseContent(
     const XmlElement* element,
     const cricket::ContentDescription** content,
     cricket::ParseError* error) {
-  if (element->Name() == QName(kChromotingXmlNamespace, kDescriptionTag)) {
-    scoped_ptr<CandidateSessionConfig> config(
-        CandidateSessionConfig::CreateEmpty());
-    const XmlElement* child = NULL;
-
-    // <control> tags.
-    QName control_tag(kChromotingXmlNamespace, kControlTag);
-    child = element->FirstNamed(control_tag);
-    while (child) {
-      ChannelConfig channel_config;
-      if (!ParseChannelConfig(child, false, &channel_config))
-        return false;
-      config->mutable_control_configs()->push_back(channel_config);
-      child = child->NextNamed(control_tag);
-    }
-
-    // <event> tags.
-    QName event_tag(kChromotingXmlNamespace, kEventTag);
-    child = element->FirstNamed(event_tag);
-    while (child) {
-      ChannelConfig channel_config;
-      if (!ParseChannelConfig(child, false, &channel_config))
-        return false;
-      config->mutable_event_configs()->push_back(channel_config);
-      child = child->NextNamed(event_tag);
-    }
-
-    // <video> tags.
-    QName video_tag(kChromotingXmlNamespace, kVideoTag);
-    child = element->FirstNamed(video_tag);
-    while (child) {
-      ChannelConfig channel_config;
-      if (!ParseChannelConfig(child, true, &channel_config))
-        return false;
-      config->mutable_video_configs()->push_back(channel_config);
-      child = child->NextNamed(video_tag);
-    }
-
-    // <initial-resolution> tag.
-    child = element->FirstNamed(QName(kChromotingXmlNamespace, kResolutionTag));
-    if (!child)
-      return false; // Resolution must always be specified.
-    int width;
-    int height;
-    if (!base::StringToInt(child->Attr(QName(kDefaultNs, kWidthAttr)),
-                           &width) ||
-        !base::StringToInt(child->Attr(QName(kDefaultNs, kHeightAttr)),
-                           &height)) {
-      return false;
-    }
-    ScreenResolution resolution(width, height);
-    if (!resolution.IsValid()) {
-      return false;
-    }
-
-    *config->mutable_initial_resolution() = resolution;
-
-    // Parse authentication information.
-    scoped_refptr<net::X509Certificate> certificate;
-    std::string auth_token;
-    child = element->FirstNamed(QName(kChromotingXmlNamespace,
-                                      kAuthenticationTag));
-    if (child) {
-      // Parse the certificate.
-      const XmlElement* cert_tag =
-          child->FirstNamed(QName(kChromotingXmlNamespace, kCertificateTag));
-      if (cert_tag) {
-        std::string base64_cert = cert_tag->BodyText();
-        std::string der_cert;
-        if (!base::Base64Decode(base64_cert, &der_cert)) {
-          LOG(ERROR) << "Failed to decode certificate received from the peer.";
-          return false;
-        }
-
-        certificate = net::X509Certificate::CreateFromBytes(der_cert.data(),
-                                                            der_cert.length());
-        if (!certificate) {
-          LOG(ERROR) << "Failed to create platform-specific certificate handle";
-          return false;
-        }
-      }
-
-      // Parse auth-token.
-      const XmlElement* auth_token_tag =
-          child->FirstNamed(QName(kChromotingXmlNamespace, kAuthTokenTag));
-      if (auth_token_tag) {
-        auth_token = auth_token_tag->BodyText();
-      }
-    }
-
-    *content = new ContentDescription(config.release(), auth_token,
-                                      certificate);
-    return true;
-  }
-  LOG(ERROR) << "Invalid description: " << element->Str();
-  return false;
+  *content = ContentDescription::ParseXml(element);
+  return *content != NULL;
 }
 
-// WriteContent creates content description for chromoting session. The
-// description looks as follows:
-//   <description xmlns="google:remoting">
-//     <control transport="stream" version="1" />
-//     <event transport="datagram" version="1" />
-//     <video transport="srtp" codec="vp8" version="1" />
-//     <initial-resolution width="800" height="600" />
-//     <authentication>
-//       <certificate>[BASE64 Encoded Certificate]</certificate>
-//       <auth-token>...</auth-token> // Me2Mom only.
-//     </authentication>
-//   </description>
-//
 bool JingleSessionManager::WriteContent(
     cricket::SignalingProtocol protocol,
     const cricket::ContentDescription* content,
@@ -493,82 +262,8 @@ bool JingleSessionManager::WriteContent(
   const ContentDescription* desc =
       static_cast<const ContentDescription*>(content);
 
-  XmlElement* root = new XmlElement(
-      QName(kChromotingXmlNamespace, kDescriptionTag), true);
-
-  const CandidateSessionConfig* config = desc->config();
-  std::vector<ChannelConfig>::const_iterator it;
-
-  for (it = config->control_configs().begin();
-       it != config->control_configs().end(); ++it) {
-    root->AddElement(FormatChannelConfig(*it, kControlTag));
-  }
-
-  for (it = config->event_configs().begin();
-       it != config->event_configs().end(); ++it) {
-    root->AddElement(FormatChannelConfig(*it, kEventTag));
-  }
-
-  for (it = config->video_configs().begin();
-       it != config->video_configs().end(); ++it) {
-    root->AddElement(FormatChannelConfig(*it, kVideoTag));
-  }
-
-  XmlElement* resolution_tag = new XmlElement(
-      QName(kChromotingXmlNamespace, kResolutionTag));
-  resolution_tag->AddAttr(QName(kDefaultNs, kWidthAttr),
-                          base::IntToString(
-                              config->initial_resolution().width));
-  resolution_tag->AddAttr(QName(kDefaultNs, kHeightAttr),
-                          base::IntToString(
-                              config->initial_resolution().height));
-  root->AddElement(resolution_tag);
-
-  if (desc->certificate() || !desc->auth_token().empty()) {
-    XmlElement* authentication_tag = new XmlElement(
-        QName(kChromotingXmlNamespace, kAuthenticationTag));
-
-    if (desc->certificate()) {
-      XmlElement* certificate_tag = new XmlElement(
-          QName(kChromotingXmlNamespace, kCertificateTag));
-
-      std::string der_cert;
-      if (!desc->certificate()->GetDEREncoded(&der_cert)) {
-        LOG(DFATAL) << "Cannot obtain DER encoded certificate";
-      }
-
-      std::string base64_cert;
-      if (!base::Base64Encode(der_cert, &base64_cert)) {
-        LOG(DFATAL) << "Cannot perform base64 encode on certificate";
-      }
-
-      certificate_tag->SetBodyText(base64_cert);
-      authentication_tag->AddElement(certificate_tag);
-    }
-
-    if (!desc->auth_token().empty()) {
-      XmlElement* auth_token_tag = new XmlElement(
-          QName(kChromotingXmlNamespace, kAuthTokenTag));
-      auth_token_tag->SetBodyText(desc->auth_token());
-      authentication_tag->AddElement(auth_token_tag);
-    }
-
-    root->AddElement(authentication_tag);
-  }
-
-  *elem = root;
+  *elem = desc->ToXml();
   return true;
-}
-
-cricket::SessionDescription* JingleSessionManager::CreateSessionDescription(
-    const CandidateSessionConfig* config,
-    const std::string& auth_token,
-    scoped_refptr<net::X509Certificate> certificate) {
-  cricket::SessionDescription* desc = new cricket::SessionDescription();
-  desc->AddContent(JingleSession::kChromotingContentName,
-                   kChromotingXmlNamespace,
-                   new ContentDescription(config, auth_token, certificate));
-  return desc;
 }
 
 }  // namespace protocol

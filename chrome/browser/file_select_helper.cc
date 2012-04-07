@@ -6,36 +6,64 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/platform_file.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/browser/child_process_security_policy.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/common/file_chooser_params.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
 // There is only one file-selection happening at any given time,
 // so we allocate an enumeration ID for that purpose.  All IDs from
 // the renderer must start at 0 and increase.
-static const int kFileSelectEnumerationId = -1;
+const int kFileSelectEnumerationId = -1;
+
+void NotifyRenderViewHost(RenderViewHost* render_view_host,
+                          const std::vector<FilePath>& files,
+                          SelectFileDialog::Type dialog_type) {
+  const int kReadFilePermissions =
+      base::PLATFORM_FILE_OPEN |
+      base::PLATFORM_FILE_READ |
+      base::PLATFORM_FILE_EXCLUSIVE_READ |
+      base::PLATFORM_FILE_ASYNC;
+
+  const int kWriteFilePermissions =
+      base::PLATFORM_FILE_CREATE |
+      base::PLATFORM_FILE_CREATE_ALWAYS |
+      base::PLATFORM_FILE_OPEN |
+      base::PLATFORM_FILE_OPEN_ALWAYS |
+      base::PLATFORM_FILE_OPEN_TRUNCATED |
+      base::PLATFORM_FILE_WRITE |
+      base::PLATFORM_FILE_WRITE_ATTRIBUTES |
+      base::PLATFORM_FILE_ASYNC;
+
+  int permissions = kReadFilePermissions;
+  if (dialog_type == SelectFileDialog::SELECT_SAVEAS_FILE)
+    permissions = kWriteFilePermissions;
+  render_view_host->FilesSelectedInChooser(files, permissions);
+}
 }
 
 struct FileSelectHelper::ActiveDirectoryEnumeration {
-  ActiveDirectoryEnumeration() {}
+  ActiveDirectoryEnumeration() : rvh_(NULL) {}
 
   scoped_ptr<DirectoryListerDispatchDelegate> delegate_;
   scoped_ptr<net::DirectoryLister> lister_;
@@ -46,7 +74,9 @@ struct FileSelectHelper::ActiveDirectoryEnumeration {
 FileSelectHelper::FileSelectHelper(Profile* profile)
     : profile_(profile),
       render_view_host_(NULL),
+      web_contents_(NULL),
       select_file_dialog_(),
+      select_file_types_(),
       dialog_type_(SelectFileDialog::SELECT_OPEN_FILE) {
 }
 
@@ -81,9 +111,10 @@ void FileSelectHelper::FileSelected(const FilePath& path,
 
   std::vector<FilePath> files;
   files.push_back(path);
-  render_view_host_->FilesSelectedInChooser(files);
-  // We are done with this showing of the dialog.
-  render_view_host_ = NULL;
+  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+
+  // No members should be accessed from here on.
+  RunFileChooserEnd();
 }
 
 void FileSelectHelper::MultiFilesSelected(const std::vector<FilePath>& files,
@@ -93,9 +124,10 @@ void FileSelectHelper::MultiFilesSelected(const std::vector<FilePath>& files,
   if (!render_view_host_)
     return;
 
-  render_view_host_->FilesSelectedInChooser(files);
-  // We are done with this showing of the dialog.
-  render_view_host_ = NULL;
+  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+
+  // No members should be accessed from here on.
+  RunFileChooserEnd();
 }
 
 void FileSelectHelper::FileSelectionCanceled(void* params) {
@@ -104,10 +136,11 @@ void FileSelectHelper::FileSelectionCanceled(void* params) {
 
   // If the user cancels choosing a file to upload we pass back an
   // empty vector.
-  render_view_host_->FilesSelectedInChooser(std::vector<FilePath>());
+  NotifyRenderViewHost(
+      render_view_host_, std::vector<FilePath>(), dialog_type_);
 
-  // We are done with this showing of the dialog.
-  render_view_host_ = NULL;
+  // No members should be accessed from here on.
+  RunFileChooserEnd();
 }
 
 void FileSelectHelper::StartNewEnumeration(const FilePath& path,
@@ -156,20 +189,16 @@ void FileSelectHelper::OnListDone(int id, int error) {
     return;
   }
   if (id == kFileSelectEnumerationId)
-    entry->rvh_->FilesSelectedInChooser(entry->results_);
+    NotifyRenderViewHost(entry->rvh_, entry->results_, dialog_type_);
   else
     entry->rvh_->DirectoryEnumerationFinished(id, entry->results_);
+
+  EnumerateDirectoryEnd();
 }
 
 SelectFileDialog::FileTypeInfo* FileSelectHelper::GetFileTypesFromAcceptType(
-    const string16& accept_types) {
+    const std::vector<string16>& accept_types) {
   if (accept_types.empty())
-    return NULL;
-
-  // Split the accept-type string on commas.
-  std::vector<string16> mime_types;
-  base::SplitStringUsingSubstr(accept_types, ASCIIToUTF16(","), &mime_types);
-  if (mime_types.empty())
     return NULL;
 
   // Create FileTypeInfo and pre-allocate for the first extension list.
@@ -182,13 +211,14 @@ SelectFileDialog::FileTypeInfo* FileSelectHelper::GetFileTypesFromAcceptType(
   // Find the correspondinge extensions.
   int valid_type_count = 0;
   int description_id = 0;
-  for (size_t i = 0; i < mime_types.size(); ++i) {
-    string16 mime_type = mime_types[i];
-    std::string ascii_mime_type = StringToLowerASCII(UTF16ToASCII(mime_type));
-
-    TrimWhitespace(ascii_mime_type, TRIM_ALL, &ascii_mime_type);
-    if (ascii_mime_type.empty())
-      continue;
+  for (size_t i = 0; i < accept_types.size(); ++i) {
+    std::string ascii_mime_type = UTF16ToASCII(accept_types[i]);
+    // WebKit normalizes MIME types.  See HTMLInputElement::acceptMIMETypes().
+    DCHECK(StringToLowerASCII(ascii_mime_type) == ascii_mime_type)
+        << "A MIME type contains uppercase letter: " << ascii_mime_type;
+    DCHECK(TrimWhitespaceASCII(ascii_mime_type, TRIM_ALL, &ascii_mime_type)
+        == TRIM_NONE)
+        << "A MIME type contains whitespace: '" << ascii_mime_type << "'";
 
     size_t old_extension_size = extensions->size();
     if (ascii_mime_type == "image/*") {
@@ -233,37 +263,71 @@ SelectFileDialog::FileTypeInfo* FileSelectHelper::GetFileTypesFromAcceptType(
 
 void FileSelectHelper::RunFileChooser(
     RenderViewHost* render_view_host,
-    TabContents* tab_contents,
-    const ViewHostMsg_RunFileChooser_Params& params) {
+    content::WebContents* web_contents,
+    const content::FileChooserParams& params) {
   DCHECK(!render_view_host_);
+  DCHECK(!web_contents_);
   render_view_host_ = render_view_host;
+  web_contents_ = web_contents;
   notification_registrar_.RemoveAll();
-  notification_registrar_.Add(this,
-                              NotificationType::RENDER_WIDGET_HOST_DESTROYED,
-                              Source<RenderViewHost>(render_view_host));
+  notification_registrar_.Add(
+      this, content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED,
+      content::Source<RenderWidgetHost>(render_view_host_));
+  notification_registrar_.Add(
+      this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+      content::Source<WebContents>(web_contents_));
+
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&FileSelectHelper::RunFileChooserOnFileThread, this, params));
+
+  // Because this class returns notifications to the RenderViewHost, it is
+  // difficult for callers to know how long to keep a reference to this
+  // instance. We AddRef() here to keep the instance alive after we return
+  // to the caller, until the last callback is received from the file dialog.
+  // At that point, we must call RunFileChooserEnd().
+  AddRef();
+}
+
+void FileSelectHelper::RunFileChooserOnFileThread(
+    const content::FileChooserParams& params) {
+  select_file_types_.reset(
+      GetFileTypesFromAcceptType(params.accept_types));
+
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&FileSelectHelper::RunFileChooserOnUIThread, this, params));
+}
+
+void FileSelectHelper::RunFileChooserOnUIThread(
+    const content::FileChooserParams& params) {
+  if (!render_view_host_ || !web_contents_) {
+    // If the renderer was destroyed before we started, just cancel the
+    // operation.
+    RunFileChooserEnd();
+    return;
+  }
 
   if (!select_file_dialog_.get())
     select_file_dialog_ = SelectFileDialog::Create(this);
 
   switch (params.mode) {
-    case ViewHostMsg_RunFileChooser_Mode::Open:
+    case content::FileChooserParams::Open:
       dialog_type_ = SelectFileDialog::SELECT_OPEN_FILE;
       break;
-    case ViewHostMsg_RunFileChooser_Mode::OpenMultiple:
+    case content::FileChooserParams::OpenMultiple:
       dialog_type_ = SelectFileDialog::SELECT_OPEN_MULTI_FILE;
       break;
-    case ViewHostMsg_RunFileChooser_Mode::OpenFolder:
+    case content::FileChooserParams::OpenFolder:
       dialog_type_ = SelectFileDialog::SELECT_FOLDER;
       break;
-    case ViewHostMsg_RunFileChooser_Mode::Save:
+    case content::FileChooserParams::Save:
       dialog_type_ = SelectFileDialog::SELECT_SAVEAS_FILE;
       break;
     default:
       dialog_type_ = SelectFileDialog::SELECT_OPEN_FILE;  // Prevent warning.
       NOTREACHED();
   }
-  scoped_ptr<SelectFileDialog::FileTypeInfo> file_types(
-      GetFileTypesFromAcceptType(params.accept_types));
   FilePath default_file_name = params.default_file_name;
   if (default_file_name.empty())
     default_file_name = profile_->last_selected_directory();
@@ -271,72 +335,69 @@ void FileSelectHelper::RunFileChooser(
   gfx::NativeWindow owning_window =
       platform_util::GetTopLevel(render_view_host_->view()->GetNativeView());
 
-  select_file_dialog_->SelectFile(dialog_type_,
-                                  params.title,
-                                  default_file_name,
-                                  file_types.get(),
-                                  file_types.get() ? 1 : 0,  // 1-based index.
-                                  FILE_PATH_LITERAL(""),
-                                  tab_contents,
-                                  owning_window,
-                                  NULL);
+  select_file_dialog_->SelectFile(
+      dialog_type_,
+      params.title,
+      default_file_name,
+      select_file_types_.get(),
+      select_file_types_.get() ? 1 : 0,  // 1-based index.
+      FILE_PATH_LITERAL(""),
+      web_contents_,
+      owning_window,
+      NULL);
+
+  select_file_types_.reset();
+}
+
+// This method is called when we receive the last callback from the file
+// chooser dialog. Perform any cleanup and release the reference we added
+// in RunFileChooser().
+void FileSelectHelper::RunFileChooserEnd() {
+  render_view_host_ = NULL;
+  web_contents_ = NULL;
+  Release();
 }
 
 void FileSelectHelper::EnumerateDirectory(int request_id,
                                           RenderViewHost* render_view_host,
                                           const FilePath& path) {
   DCHECK_NE(kFileSelectEnumerationId, request_id);
+
+  // Because this class returns notifications to the RenderViewHost, it is
+  // difficult for callers to know how long to keep a reference to this
+  // instance. We AddRef() here to keep the instance alive after we return
+  // to the caller, until the last callback is received from the enumeration
+  // code. At that point, we must call EnumerateDirectoryEnd().
+  AddRef();
   StartNewEnumeration(path, request_id, render_view_host);
 }
 
-void FileSelectHelper::Observe(NotificationType type,
-                               const NotificationSource& source,
-                               const NotificationDetails& details) {
-  DCHECK(type == NotificationType::RENDER_WIDGET_HOST_DESTROYED);
-  DCHECK(Details<RenderViewHost>(details).ptr() == render_view_host_);
-  render_view_host_ = NULL;
+// This method is called when we receive the last callback from the enumeration
+// code. Perform any cleanup and release the reference we added in
+// EnumerateDirectory().
+void FileSelectHelper::EnumerateDirectoryEnd() {
+  Release();
 }
 
-FileSelectObserver::FileSelectObserver(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents) {
-}
+void FileSelectHelper::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_DESTROYED: {
+      DCHECK(content::Source<RenderWidgetHost>(source).ptr() ==
+             render_view_host_);
+      render_view_host_ = NULL;
+      break;
+    }
 
-FileSelectObserver::~FileSelectObserver() {
-}
+    case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
+      DCHECK(content::Source<WebContents>(source).ptr() == web_contents_);
+      web_contents_ = NULL;
+      break;
+    }
 
-bool FileSelectObserver::OnMessageReceived(const IPC::Message& message) {
-  bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(FileSelectObserver, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_RunFileChooser, OnRunFileChooser)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_EnumerateDirectory, OnEnumerateDirectory)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-
-  return handled;
-}
-
-void FileSelectObserver::OnRunFileChooser(
-    const ViewHostMsg_RunFileChooser_Params& params) {
-  if (!file_select_helper_.get())
-    file_select_helper_.reset(new FileSelectHelper(tab_contents()->profile()));
-  file_select_helper_->RunFileChooser(tab_contents()->render_view_host(),
-                                      tab_contents(),
-                                      params);
-}
-
-void FileSelectObserver::OnEnumerateDirectory(int request_id,
-                                              const FilePath& path) {
-  ChildProcessSecurityPolicy* policy =
-      ChildProcessSecurityPolicy::GetInstance();
-  if (!policy->CanReadDirectory(
-          tab_contents()->render_view_host()->process()->id(),
-          path)) {
-    return;
+    default:
+      NOTREACHED();
   }
-
-  if (!file_select_helper_.get())
-    file_select_helper_.reset(new FileSelectHelper(tab_contents()->profile()));
-  file_select_helper_->EnumerateDirectory(request_id,
-                                          tab_contents()->render_view_host(),
-                                          path);
 }
+

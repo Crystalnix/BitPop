@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,8 @@
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/window_sizer.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -29,8 +29,8 @@ namespace chromeos {
 
 BalloonCollectionImpl::BalloonCollectionImpl()
     : notification_ui_(new NotificationPanel()) {
-  registrar_.Add(this, NotificationType::BROWSER_CLOSED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSED,
+                 content::NotificationService::AllSources());
 }
 
 BalloonCollectionImpl::~BalloonCollectionImpl() {
@@ -40,39 +40,42 @@ BalloonCollectionImpl::~BalloonCollectionImpl() {
 void BalloonCollectionImpl::Add(const Notification& notification,
                                 Profile* profile) {
   Balloon* new_balloon = MakeBalloon(notification, profile);
-  base_.Add(new_balloon);
+  base_.Add(new_balloon, false);
   new_balloon->Show();
   notification_ui_->Add(new_balloon);
 
   // There may be no listener in a unit test.
   if (space_change_listener_)
     space_change_listener_->OnBalloonSpaceChanged();
+
+  // This is used only for testing.
+  if (!on_collection_changed_callback_.is_null())
+    on_collection_changed_callback_.Run();
 }
 
 bool BalloonCollectionImpl::AddWebUIMessageCallback(
     const Notification& notification,
     const std::string& message,
-    MessageCallback* callback) {
+    const BalloonViewHost::MessageCallback& callback) {
   Balloon* balloon = FindBalloon(notification);
-  if (!balloon) {
-    delete callback;
+  if (!balloon)
     return false;
-  }
+
   BalloonViewHost* host =
       static_cast<BalloonViewHost*>(balloon->view()->GetHost());
   return host->AddWebUIMessageCallback(message, callback);
 }
 
+// Called from SystemNotification::Show for system notifications.
 void BalloonCollectionImpl::AddSystemNotification(
     const Notification& notification,
     Profile* profile,
-    bool sticky,
-    bool control) {
-
+    bool sticky) {
   Balloon* new_balloon = new Balloon(notification, profile, this);
   new_balloon->set_view(
-      new chromeos::BalloonViewImpl(sticky, control, true));
-  base_.Add(new_balloon);
+      new chromeos::BalloonViewImpl(
+          sticky, false /*no controls*/, true /*enable webui*/));
+  base_.Add(new_balloon, false);
   new_balloon->Show();
   notification_ui_->Add(new_balloon);
 
@@ -126,11 +129,15 @@ void BalloonCollectionImpl::ResizeBalloon(Balloon* balloon,
 
 void BalloonCollectionImpl::OnBalloonClosed(Balloon* source) {
   notification_ui_->Remove(source);
-  base_.Remove(source);
+  base_.Remove(source);  // Deletes |source|.
 
   // There may be no listener in a unit test.
   if (space_change_listener_)
     space_change_listener_->OnBalloonSpaceChanged();
+
+  // This is used only for testing.
+  if (!on_collection_changed_callback_.is_null())
+    on_collection_changed_callback_.Run();
 }
 
 const BalloonCollectionImpl::Balloons&
@@ -138,11 +145,12 @@ const BalloonCollectionImpl::Balloons&
   return base_.balloons();
 }
 
-void BalloonCollectionImpl::Observe(NotificationType type,
-                                    const NotificationSource& source,
-                                    const NotificationDetails& details) {
-  DCHECK(type == NotificationType::BROWSER_CLOSED);
-  bool app_closing = *Details<bool>(details).ptr();
+void BalloonCollectionImpl::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_BROWSER_CLOSED);
+  bool app_closing = *content::Details<bool>(details).ptr();
   // When exiting, we need to shutdown all renderers in
   // BalloonViewImpl before IO thread gets deleted in the
   // BrowserProcessImpl's destructor.  See http://crbug.com/40810
@@ -159,10 +167,12 @@ void BalloonCollectionImpl::Shutdown() {
   notification_ui_.reset();
 }
 
+// Called from BalloonCollectionImpl::Add for non system notifications.
 Balloon* BalloonCollectionImpl::MakeBalloon(const Notification& notification,
                                             Profile* profile) {
   Balloon* new_balloon = new Balloon(notification, profile, this);
-  new_balloon->set_view(new chromeos::BalloonViewImpl(false, true, false));
+  new_balloon->set_view(new chromeos::BalloonViewImpl(
+      false /*not sticky*/, true /*has controls*/, false /*no web ui*/));
   return new_balloon;
 }
 

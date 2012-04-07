@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -70,11 +71,25 @@ class SyncSession {
     virtual void OnReceivedLongPollIntervalUpdate(
         const base::TimeDelta& new_interval) = 0;
 
+    // The client has been instructed to change its sessions commit
+    // delay.
+    virtual void OnReceivedSessionsCommitDelay(
+        const base::TimeDelta& new_delay) = 0;
+
     // The client needs to cease and desist syncing at once.  This occurs when
     // the Syncer detects that the backend store has fundamentally changed or
     // is a different instance altogether (e.g. swapping from a test instance
     // to production, or a global stop syncing operation has wiped the store).
+    // TODO(lipalani) : Replace this function with the one below. This function
+    // stops the current sync cycle and purges the client. In the new model
+    // the former would be done by the |SyncProtocolError| and
+    // the latter(which is an action) would be done in ProfileSyncService
+    // along with the rest of the actions.
     virtual void OnShouldStopSyncingPermanently() = 0;
+
+    // Called for the syncer to respond to the error sent by the server.
+    virtual void OnSyncProtocolError(
+        const sessions::SyncSessionSnapshot& snapshot) = 0;
 
    protected:
     virtual ~Delegate() {}
@@ -90,9 +105,28 @@ class SyncSession {
   // Builds a thread-safe and read-only copy of the current session state.
   SyncSessionSnapshot TakeSnapshot() const;
 
+  // Builds and sends a snapshot to the session context's listeners.
+  void SendEventNotification(SyncEngineEvent::EventCause cause);
+
   // Returns true if this session contains data that should go through the sync
   // engine again.
   bool HasMoreToSync() const;
+
+  // Returns true if there we did not detect any errors in this session.
+  //
+  // There are many errors that could prevent a sync cycle from succeeding.
+  // These include invalid local state, inability to contact the server,
+  // inability to authenticate with the server, and server errors.  What they
+  // have in common is that the we either need to take some action and then
+  // retry the sync cycle or, in the case of transient errors, retry after some
+  // backoff timer has expired.  Most importantly, the SyncScheduler should not
+  // assume that the original action that triggered the sync cycle (ie. a nudge
+  // or a notification) has been properly serviced.
+  //
+  // This function also returns false if SyncShare has not been called on this
+  // session yet, or if ResetTransientState() has been called on this session
+  // since the last call to SyncShare.
+  bool Succeeded() const;
 
   // Collects all state pertaining to how and why |s| originated and unions it
   // with corresponding state in |this|, leaving |s| unchanged.  Allows |this|
@@ -105,16 +139,22 @@ class SyncSession {
   // session. Purges types from the above 3 which are not in session. Useful
   // to update the sync session when the user has disabled some types from
   // syncing.
-  void RebaseRoutingInfoWithLatest(SyncSession* session);
+  void RebaseRoutingInfoWithLatest(const SyncSession& session);
 
   // Should be called any time |this| is being re-used in a new call to
   // SyncShare (e.g., HasMoreToSync returned true).
   void ResetTransientState();
 
+  // TODO(akalin): Split this into context() and mutable_context().
   SyncSessionContext* context() const { return context_; }
   Delegate* delegate() const { return delegate_; }
   syncable::WriteTransaction* write_transaction() { return write_transaction_; }
-  StatusController* status_controller() { return status_controller_.get(); }
+  const StatusController& status_controller() const {
+    return *status_controller_.get();
+  }
+  StatusController* mutable_status_controller() {
+    return status_controller_.get();
+  }
 
   const ExtensionsActivityMonitor::Records& extensions_activity() const {
     return extensions_activity_;
@@ -131,6 +171,15 @@ class SyncSession {
   const std::vector<ModelSafeWorker*>& workers() const { return workers_; }
   const ModelSafeRoutingInfo& routing_info() const { return routing_info_; }
   const SyncSourceInfo& source() const { return source_; }
+
+  // Returns the set of groups which have enabled types.
+  const std::set<ModelSafeGroup>& GetEnabledGroups() const;
+
+  // Returns the set of enabled groups that have conflicts.
+  std::set<ModelSafeGroup> GetEnabledGroupsWithConflicts() const;
+
+  // Returns the set of enabled groups that have verified updates.
+  std::set<ModelSafeGroup> GetEnabledGroupsWithVerifiedUpdates() const;
 
  private:
   // Extend the encapsulation boundary to utilities for internal member
@@ -151,7 +200,7 @@ class SyncSession {
   syncable::WriteTransaction* write_transaction_;
 
   // The delegate for this session, must never be NULL.
-  Delegate* delegate_;
+  Delegate* const delegate_;
 
   // Our controller for various status and error counters.
   scoped_ptr<StatusController> status_controller_;
@@ -164,6 +213,10 @@ class SyncSession {
   // datatypes should be synced and which workers should be used when working
   // on those datatypes.
   ModelSafeRoutingInfo routing_info_;
+
+  // The set of groups with enabled types.  Computed from
+  // |routing_info_|.
+  std::set<ModelSafeGroup> enabled_groups_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncSession);
 };

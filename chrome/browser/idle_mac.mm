@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,16 +84,22 @@ void StopIdleMonitor() {
   g_screenMonitor = nil;
 }
 
-IdleState CalculateIdleState(unsigned int idle_threshold) {
-  if ([g_screenMonitor isScreensaverRunning] ||
-      [g_screenMonitor isScreenLocked])
-    return IDLE_STATE_LOCKED;
+void CalculateIdleState(unsigned int idle_threshold, IdleCallback notify) {
+  if (CheckIdleStateIsLocked()) {
+    notify.Run(IDLE_STATE_LOCKED);
+    return;
+  }
 
   CFTimeInterval idle_time = CGEventSourceSecondsSinceLastEventType(
       kCGEventSourceStateCombinedSessionState,
       kCGAnyInputEventType);
   if (idle_time >= idle_threshold)
-    return IDLE_STATE_IDLE;
+    notify.Run(IDLE_STATE_IDLE);
+  else
+    notify.Run(IDLE_STATE_ACTIVE);
+}
 
-  return IDLE_STATE_ACTIVE;
+bool CheckIdleStateIsLocked() {
+  return [g_screenMonitor isScreensaverRunning] ||
+      [g_screenMonitor isScreenLocked];
 }

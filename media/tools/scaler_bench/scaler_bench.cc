@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "base/time.h"
 #include "media/base/video_frame.h"
 #include "media/base/yuv_convert.h"
-#include "skia/ext/platform_canvas.h"
+#include "third_party/skia/include/core/SkCanvas.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -33,9 +33,8 @@ static double BenchmarkSkia() {
   std::vector<scoped_refptr<VideoFrame> > source_frames;
   ScopedVector<SkBitmap> dest_frames;
   for (int i = 0; i < num_buffers; i++) {
-    scoped_refptr<VideoFrame> source_frame;
-    VideoFrame::CreateBlackFrame(source_width, source_height, &source_frame);
-    source_frames.push_back(source_frame);
+    source_frames.push_back(
+        VideoFrame::CreateBlackFrame(source_width, source_height));
 
     SkBitmap* bitmap = new SkBitmap();
     bitmap->setConfig(SkBitmap::kARGB_8888_Config,
@@ -118,18 +117,15 @@ static double BenchmarkFilter(media::ScaleFilter filter) {
   std::vector<scoped_refptr<VideoFrame> > dest_frames;
 
   for (int i = 0; i < num_buffers; i++) {
-    scoped_refptr<VideoFrame> source_frame;
-    VideoFrame::CreateBlackFrame(source_width, source_height, &source_frame);
-    source_frames.push_back(source_frame);
+    source_frames.push_back(
+        VideoFrame::CreateBlackFrame(source_width, source_height));
 
-    scoped_refptr<VideoFrame> dest_frame;
-    VideoFrame::CreateFrame(VideoFrame::RGB32,
-                            dest_width,
-                            dest_height,
-                            TimeDelta::FromSeconds(0),
-                            TimeDelta::FromSeconds(0),
-                            &dest_frame);
-    dest_frames.push_back(dest_frame);
+    dest_frames.push_back(
+        VideoFrame::CreateFrame(VideoFrame::RGB32,
+                                dest_width,
+                                dest_height,
+                                TimeDelta::FromSeconds(0),
+                                TimeDelta::FromSeconds(0)));
   }
 
   TimeTicks start = TimeTicks::HighResNow();
@@ -156,11 +152,52 @@ static double BenchmarkFilter(media::ScaleFilter filter) {
   return static_cast<double>((end - start).InMilliseconds()) / num_frames;
 }
 
+static double BenchmarkScaleWithRect() {
+  std::vector<scoped_refptr<VideoFrame> > source_frames;
+  std::vector<scoped_refptr<VideoFrame> > dest_frames;
+
+  for (int i = 0; i < num_buffers; i++) {
+    source_frames.push_back(
+        VideoFrame::CreateBlackFrame(source_width, source_height));
+
+    dest_frames.push_back(
+        VideoFrame::CreateFrame(VideoFrame::RGB32,
+                                dest_width,
+                                dest_height,
+                                TimeDelta::FromSeconds(0),
+                                TimeDelta::FromSeconds(0)));
+  }
+
+  TimeTicks start = TimeTicks::HighResNow();
+  for (int i = 0; i < num_frames; i++) {
+    scoped_refptr<VideoFrame> source_frame = source_frames[i % num_buffers];
+    scoped_refptr<VideoFrame> dest_frame = dest_frames[i % num_buffers];
+
+    media::ScaleYUVToRGB32WithRect(
+        source_frame->data(VideoFrame::kYPlane),
+        source_frame->data(VideoFrame::kUPlane),
+        source_frame->data(VideoFrame::kVPlane),
+        dest_frame->data(0),
+        source_width,
+        source_height,
+        dest_width,
+        dest_height,
+        0, 0,
+        dest_width,
+        dest_height,
+        source_frame->stride(VideoFrame::kYPlane),
+        source_frame->stride(VideoFrame::kUPlane),
+        dest_frame->stride(0));
+  }
+  TimeTicks end = TimeTicks::HighResNow();
+  return static_cast<double>((end - start).InMilliseconds()) / num_frames;
+}
+
 int main(int argc, const char** argv) {
   CommandLine::Init(argc, argv);
   const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
 
-  if (!cmd_line->args().empty()) {
+  if (!cmd_line->GetArgs().empty()) {
     std::cerr << "Usage: " << argv[0] << " [OPTIONS]\n"
               << "  --frames=N                      "
               << "Number of frames\n"
@@ -234,6 +271,8 @@ int main(int argc, const char** argv) {
             << BenchmarkFilter(media::FILTER_BILINEAR_H)
             << "ms/frame" << std::endl;
   std::cout << "Bilinear: " << BenchmarkFilter(media::FILTER_BILINEAR)
+            << "ms/frame" << std::endl;
+  std::cout << "Bilinear with rect: " << BenchmarkScaleWithRect()
             << "ms/frame" << std::endl;
 
   return 0;

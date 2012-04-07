@@ -7,19 +7,20 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/param.h>
-#include <sys/statvfs.h>
-#include <sys/sysctl.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-
-#if !defined(OS_MACOSX)
-#include <gdk/gdk.h>
-#endif
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
+
+#if defined(OS_ANDROID)
+#include <sys/vfs.h>
+#define statvfs statfs  // Android uses a statvfs-like statfs struct and call.
+#else
+#include <sys/statvfs.h>
+#endif
 
 namespace base {
 
@@ -49,7 +50,7 @@ int64 SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
 #if !defined(OS_MACOSX)
 // static
 std::string SysInfo::OperatingSystemName() {
-  utsname info;
+  struct utsname info;
   if (uname(&info) < 0) {
     NOTREACHED();
     return "";
@@ -59,7 +60,7 @@ std::string SysInfo::OperatingSystemName() {
 
 // static
 std::string SysInfo::OperatingSystemVersion() {
-  utsname info;
+  struct utsname info;
   if (uname(&info) < 0) {
     NOTREACHED();
     return "";
@@ -70,37 +71,13 @@ std::string SysInfo::OperatingSystemVersion() {
 
 // static
 std::string SysInfo::CPUArchitecture() {
-  utsname info;
+  struct utsname info;
   if (uname(&info) < 0) {
     NOTREACHED();
     return "";
   }
   return std::string(info.machine);
 }
-
-#if !defined(OS_MACOSX)
-// static
-void SysInfo::GetPrimaryDisplayDimensions(int* width, int* height) {
-  // Note that Bad Things Happen if this isn't called from the UI thread,
-  // but also that there's no way to check that from here.  :(
-  GdkScreen* screen = gdk_screen_get_default();
-  if (width)
-    *width = gdk_screen_get_width(screen);
-  if (height)
-    *height = gdk_screen_get_height(screen);
-}
-
-// static
-int SysInfo::DisplayCount() {
-  // Note that Bad Things Happen if this isn't called from the UI thread,
-  // but also that there's no way to check that from here.  :(
-
-  // This query is kinda bogus for Linux -- do we want number of X screens?
-  // The number of monitors Xinerama has?  We'll just use whatever GDK uses.
-  GdkScreen* screen = gdk_screen_get_default();
-  return gdk_screen_get_n_monitors(screen);
-}
-#endif
 
 // static
 size_t SysInfo::VMAllocationGranularity() {

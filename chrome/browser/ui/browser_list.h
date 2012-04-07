@@ -11,6 +11,7 @@
 
 #include "base/observer_list.h"
 #include "chrome/browser/ui/browser.h"
+#include "ui/gfx/native_widget_types.h"
 
 // Stores a list of all Browser objects.
 class BrowserList {
@@ -94,25 +95,59 @@ class BrowserList {
   // browser currently exists.
   static Browser* FindBrowserWithID(SessionID::id_type desired_id);
 
+  // Find the browser represented by |window| or NULL if not found.
+  static Browser* FindBrowserWithWindow(gfx::NativeWindow window);
+
+  // Find the browser containing |web_contents| or NULL if none is found.
+  // |web_contents| must not be NULL.
+  static Browser* FindBrowserWithWebContents(
+      content::WebContents* web_contents);
+
   // Checks if the browser can be automatically restarted to install upgrades
   // The browser can be automatically restarted when:
   // 1. It's in the background mode (no visible windows).
   // 2. An update exe is present in the install folder.
   static bool CanRestartForUpdate();
 
-  // Called from Browser::Exit.
-  static void Exit();
+  // Starts a user initiated exit process. Called from Browser::Exit.
+  // On platforms other than ChromeOS, this is equivalent to
+  // CloseAllBrowsersAndExit. On ChromeOS, this tells session manager
+  // that chrome is signing out, which lets session manager send
+  // SIGTERM to start actual exit process.
+  static void AttemptUserExit();
 
-  // Closes all browsers and exits.  This is equivalent to
-  // CloseAllBrowsers(true) on platforms where the application exits when no
-  // more windows are remaining.  On other platforms (the Mac), this will
-  // additionally exit the application.
-  static void CloseAllBrowsersAndExit();
+  // Starts a user initiated restart process. On platforms other than
+  // chromeos, this sets a restart bit in the preference so that
+  // chrome will be restarted at the end of shutdown process. On
+  // ChromeOS, this simply exits the chrome, which lets sesssion
+  // manager re-launch the browser with restore last session flag.
+  static void AttemptRestart();
+
+  // Attempt to exit by closing all browsers.  This is equivalent to
+  // CloseAllBrowsers() on platforms where the application exits
+  // when no more windows are remaining. On other platforms (the Mac),
+  // this will additionally exit the application if all browsers are
+  // successfully closed.
+  //  Note that he exit process may be interrupted by download or
+  // unload handler, and the browser may or may not exit.
+  static void AttemptExit();
+
+#if defined(OS_CHROMEOS)
+  // This is equivalent to AttemptUserExit, except that it always set
+  // exit cleanly bit. ChroemOS checks if it can exit without user
+  // interactions, so it will always exit the browser.  This is used to
+  // handle SIGTERM on chromeos which is a signal to force shutdown
+  // the chrome.
+  static void ExitCleanly();
+#endif
 
   // Closes all browsers. If the session is ending the windows are closed
   // directly. Otherwise the windows are closed by way of posting a WM_CLOSE
   // message.
   static void CloseAllBrowsers();
+
+  // Closes all browsers for |profile|.
+  static void CloseAllBrowsersWithProfile(Profile* profile);
 
   // Begins shutdown of the application when the desktop session is ending.
   static void SessionEnding();
@@ -134,25 +169,20 @@ class BrowserList {
   // closes.
   static bool WillKeepAlive();
 
-  // Browsers are added to |browsers_| before they have constructed windows,
+  // Browsers are added to the list before they have constructed windows,
   // so the |window()| member function may return NULL.
-  static const_iterator begin() { return browsers_.begin(); }
-  static const_iterator end() { return browsers_.end(); }
+  static const_iterator begin();
+  static const_iterator end();
 
-  static bool empty() { return browsers_.empty(); }
-  static size_t size() { return browsers_.size(); }
+  static bool empty();
+  static size_t size();
 
   // Returns iterated access to list of open browsers ordered by when
   // they were last active. The underlying data structure is a vector
   // and we push_back on recent access so a reverse iterator gives the
   // latest accessed browser first.
-  static const_reverse_iterator begin_last_active() {
-    return last_active_browsers_.rbegin();
-  }
-
-  static const_reverse_iterator end_last_active() {
-    return last_active_browsers_.rend();
-  }
+  static const_reverse_iterator begin_last_active();
+  static const_reverse_iterator end_last_active();
 
   // Return the number of browsers with the following profile which are
   // currently open.
@@ -165,6 +195,9 @@ class BrowserList {
   // Returns true if at least one incognito session is active.
   static bool IsOffTheRecordSessionActive();
 
+  // Returns true if at least one incognito session is active for |profile|.
+  static bool IsOffTheRecordSessionActiveForProfile(Profile* profile);
+
   // Send out notifications.
   // For ChromeOS, also request session manager to end the session.
   static void NotifyAndTerminate(bool fast_path);
@@ -176,17 +209,7 @@ class BrowserList {
   // Helper method to remove a browser instance from a list of browsers
   static void RemoveBrowserFrom(Browser* browser, BrowserVector* browser_list);
   static void MarkAsCleanShutdown();
-#if defined(OS_CHROMEOS)
-  static bool NeedBeforeUnloadFired();
-  static bool PendingDownloads();
-  static void NotifyWindowManagerAboutSignout();
-
-  static bool signout_;
-#endif
-
-  static BrowserVector browsers_;
-  static BrowserVector last_active_browsers_;
-  static ObserverList<Observer> observers_;
+  static void AttemptExitInternal();
 
   // Counter of calls to StartKeepAlive(). If non-zero, the application will
   // continue running after the last browser has exited.
@@ -217,7 +240,7 @@ class TabContentsIterator {
   }
 
   // Returns the Browser instance associated with the current TabContents.
-  // Valid as long as !Done()
+  // Valid as long as !done()
   Browser* browser() const {
     if (browser_iterator_ != BrowserList::end())
       return *browser_iterator_;

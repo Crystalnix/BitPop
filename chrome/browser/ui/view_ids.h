@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,7 @@ enum ViewID {
   VIEW_ID_AUTOCOMPLETE,
   VIEW_ID_BROWSER_ACTION_TOOLBAR,
   VIEW_ID_FEEDBACK_BUTTON,
+  VIEW_ID_OMNIBOX,
 
   // The Bookmark Bar.
   VIEW_ID_BOOKMARK_BAR,
@@ -71,21 +72,6 @@ enum ViewID {
 
   // The Download shelf.
   VIEW_ID_DOWNLOAD_SHELF,
-
-  // The Sidebar container.
-  VIEW_ID_SIDE_BAR_CONTAINER,
-
-  // The sidebar split.
-  VIEW_ID_SIDE_BAR_SPLIT,
-
-  // The Compact Navigation bar.
-  VIEW_ID_COMPACT_NAV_BAR,
-
-  // The Compact Options bar.
-  VIEW_ID_COMPACT_OPT_BAR,
-
-  // The spacer for the compact navigation bar.
-  VIEW_ID_COMPACT_NAV_BAR_SPACER,
 
   // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
   // If you add new ids, make sure the above test passes.

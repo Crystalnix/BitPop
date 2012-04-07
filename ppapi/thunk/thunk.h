@@ -1,52 +1,81 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef PPAPI_THUNK_THUNK_H_
 #define PPAPI_THUNK_THUNK_H_
 
-struct PPB_Audio;
-struct PPB_AudioConfig;
-struct PPB_AudioTrusted;
-struct PPB_BrokerTrusted;
-struct PPB_Buffer_Dev;
-struct PPB_CharSet_Dev;
-struct PPB_CursorControl_Dev;
-struct PPB_DirectoryReader_Dev;
-struct PPB_FileChooser_Dev;
-struct PPB_FileIO_Dev;
-struct PPB_FileIOTrusted_Dev;
-struct PPB_FileRef_Dev;
-struct PPB_FileSystem_Dev;
-struct PPB_Find_Dev;
-struct PPB_Font_Dev;
-struct PPB_Graphics2D;
-struct PPB_ImageData;
+#include "ppapi/c/ppb_graphics_3d.h"
+#include "ppapi/c/private/ppb_flash_clipboard.h"
+#include "ppapi/c/private/ppb_flash_menu.h"
+#include "ppapi/c/private/ppb_flash_net_connector.h"
+#include "ppapi/c/private/ppb_flash_fullscreen.h"
+#include "ppapi/c/private/ppb_instance_private.h"
+#include "ppapi/c/private/ppb_tcp_socket_private.h"
+#include "ppapi/c/private/ppb_udp_socket_private.h"
+#include "ppapi/c/trusted/ppb_audio_input_trusted_dev.h"
+#include "ppapi/c/trusted/ppb_audio_trusted.h"
+#include "ppapi/c/trusted/ppb_broker_trusted.h"
+#include "ppapi/c/trusted/ppb_buffer_trusted.h"
+#include "ppapi/c/trusted/ppb_file_chooser_trusted.h"
+#include "ppapi/c/trusted/ppb_graphics_3d_trusted.h"
+#include "ppapi/c/trusted/ppb_image_data_trusted.h"
+#include "ppapi/c/trusted/ppb_url_loader_trusted.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
+
+// Declares a getter for the interface thunk of the form:
+//
+//   const PPB_Foo* ppapi::thunk::GetPPB_Foo_Thunk();
+//
+#define IFACE(api_name, interface_name, InterfaceType) \
+  struct InterfaceType; \
+  namespace ppapi { namespace thunk { \
+  PPAPI_THUNK_EXPORT const InterfaceType* Get##InterfaceType##_Thunk(); \
+  } }
+#define PROXIED_IFACE IFACE
+#define UNPROXIED_IFACE IFACE
+
+#include "ppapi/thunk/interfaces_ppb_private.h"
+#include "ppapi/thunk/interfaces_ppb_public_stable.h"
+#include "ppapi/thunk/interfaces_ppb_public_dev.h"
+
+#undef UNPROXIED_IFACE
+#undef PROXIED_IFACE
+#undef IFACE
 
 namespace ppapi {
 namespace thunk {
 
-const PPB_Audio* GetPPB_Audio_Thunk();
-const PPB_AudioConfig* GetPPB_AudioConfig_Thunk();
-const PPB_AudioTrusted* GetPPB_AudioTrusted_Thunk();
-const PPB_BrokerTrusted* GetPPB_Broker_Thunk();
-const PPB_Buffer_Dev* GetPPB_Buffer_Thunk();
-const PPB_CharSet_Dev* GetPPB_CharSet_Thunk();
-const PPB_CursorControl_Dev* GetPPB_CursorControl_Thunk();
-const PPB_DirectoryReader_Dev* GetPPB_DirectoryReader_Thunk();
-const PPB_FileChooser_Dev* GetPPB_FileChooser_Thunk();
-const PPB_FileIO_Dev* GetPPB_FileIO_Thunk();
-const PPB_FileIOTrusted_Dev* GetPPB_FileIOTrusted_Thunk();
-const PPB_FileRef_Dev* GetPPB_FileRef_Thunk();
-const PPB_FileSystem_Dev* GetPPB_FileSystem_Thunk();
-const PPB_Find_Dev* GetPPB_Find_Thunk();
-const PPB_Font_Dev* GetPPB_Font_Thunk();
-const PPB_Graphics2D* GetPPB_Graphics2D_Thunk();
-const PPB_ImageData* GetPPB_ImageData_Thunk();
+// Old-style thunk getters. Only put trusted/private stuff here (it hasn't
+// yet been converted to the new system). Otherwise, add the declaration to
+// the appropriate interfaces_*.h file.
+PPAPI_THUNK_EXPORT const PPB_AudioInputTrusted_Dev_0_1*
+    GetPPB_AudioInputTrusted_0_1_Thunk();
+PPAPI_THUNK_EXPORT const PPB_AudioTrusted_0_6* GetPPB_AudioTrusted_0_6_Thunk();
+PPAPI_THUNK_EXPORT const PPB_BrokerTrusted_0_2* GetPPB_Broker_0_2_Thunk();
+PPAPI_THUNK_EXPORT const PPB_BufferTrusted_0_1*
+    GetPPB_BufferTrusted_0_1_Thunk();
+PPAPI_THUNK_EXPORT const PPB_FileChooserTrusted_0_5*
+    GetPPB_FileChooser_Trusted_0_5_Thunk();
+PPAPI_THUNK_EXPORT const PPB_Flash_Clipboard_3_0*
+    GetPPB_Flash_Clipboard_3_0_Thunk();
+PPAPI_THUNK_EXPORT const PPB_Flash_Menu_0_2* GetPPB_Flash_Menu_0_2_Thunk();
+PPAPI_THUNK_EXPORT const PPB_Flash_NetConnector_0_2*
+    GetPPB_Flash_NetConnector_0_2_Thunk();
+PPAPI_THUNK_EXPORT const PPB_Graphics3DTrusted_1_0*
+    GetPPB_Graphics3DTrusted_1_0_Thunk();
+PPAPI_THUNK_EXPORT const PPB_ImageDataTrusted_0_4*
+    GetPPB_ImageDataTrusted_0_4_Thunk();
+PPAPI_THUNK_EXPORT const PPB_Instance_Private_0_1*
+    GetPPB_Instance_Private_0_1_Thunk();
+PPAPI_THUNK_EXPORT const PPB_TCPSocket_Private_0_3*
+    GetPPB_TCPSocket_Private_0_3_Thunk();
+PPAPI_THUNK_EXPORT const PPB_UDPSocket_Private_0_2*
+    GetPPB_UDPSocket_Private_0_2_Thunk();
+PPAPI_THUNK_EXPORT const PPB_URLLoaderTrusted_0_3*
+    GetPPB_URLLoaderTrusted_0_3_Thunk();
 
 }  // namespace thunk
 }  // namespace ppapi
 
 #endif  // PPAPI_THUNK_THUNK_H_
-
-

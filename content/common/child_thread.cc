@@ -4,23 +4,29 @@
 
 #include "content/common/child_thread.h"
 
-#include "base/message_loop.h"
-#include "base/string_util.h"
 #include "base/command_line.h"
+#include "base/message_loop.h"
+#include "base/process.h"
+#include "base/process_util.h"
+#include "base/string_util.h"
+#include "base/tracked_objects.h"
 #include "content/common/child_process.h"
 #include "content/common/child_process_messages.h"
 #include "content/common/child_trace_message_filter.h"
-#include "content/common/content_switches.h"
 #include "content/common/file_system/file_system_dispatcher.h"
-#include "content/common/notification_service.h"
 #include "content/common/quota_dispatcher.h"
 #include "content/common/resource_dispatcher.h"
 #include "content/common/socket_stream_dispatcher.h"
+#include "content/public/common/content_switches.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_sync_channel.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "ipc/ipc_switches.h"
 #include "webkit/glue/webkit_glue.h"
+
+#if defined(OS_WIN)
+#include "content/common/handle_enumerator_win.h"
+#endif
 
 ChildThread::ChildThread() {
   channel_name_ = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -34,15 +40,8 @@ ChildThread::ChildThread(const std::string& channel_name)
 }
 
 void ChildThread::Init() {
-  check_with_browser_before_shutdown_ = false;
   on_channel_error_called_ = false;
   message_loop_ = MessageLoop::current();
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUserAgent)) {
-    webkit_glue::SetUserAgent(
-        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            switches::kUserAgent));
-  }
-
   channel_.reset(new IPC::SyncChannel(channel_name_,
       IPC::Channel::MODE_CLIENT, this,
       ChildProcess::current()->io_message_loop_proxy(), true,
@@ -59,17 +58,7 @@ void ChildThread::Init() {
   sync_message_filter_ =
       new IPC::SyncMessageFilter(ChildProcess::current()->GetShutDownEvent());
   channel_->AddFilter(sync_message_filter_.get());
-
-#if !defined(NACL_WIN64)
-  // This brings in a depenency on gpu, which isn't linked in with NaCl's win64
-  // build.
   channel_->AddFilter(new ChildTraceMessageFilter());
-#endif
-
-  // When running in unit tests, there is already a NotificationService object.
-  // Since only one can exist at a time per thread, check first.
-  if (!NotificationService::current())
-    notification_service_.reset(new NotificationService);
 }
 
 ChildThread::~ChildThread() {
@@ -132,6 +121,39 @@ webkit_glue::ResourceLoaderBridge* ChildThread::CreateBridge(
   return resource_dispatcher()->CreateBridge(request_info);
 }
 
+base::SharedMemory* ChildThread::AllocateSharedMemory(
+    size_t buf_size) {
+  scoped_ptr<base::SharedMemory> shared_buf;
+#if defined(OS_WIN)
+  shared_buf.reset(new base::SharedMemory);
+  if (!shared_buf->CreateAndMapAnonymous(buf_size)) {
+    NOTREACHED();
+    return NULL;
+  }
+#else
+  // On POSIX, we need to ask the browser to create the shared memory for us,
+  // since this is blocked by the sandbox.
+  base::SharedMemoryHandle shared_mem_handle;
+  if (Send(new ChildProcessHostMsg_SyncAllocateSharedMemory(
+                   buf_size, &shared_mem_handle))) {
+    if (base::SharedMemory::IsHandleValid(shared_mem_handle)) {
+      shared_buf.reset(new base::SharedMemory(shared_mem_handle, false));
+      if (!shared_buf->Map(buf_size)) {
+        NOTREACHED() << "Map failed";
+        return NULL;
+      }
+    } else {
+      NOTREACHED() << "Browser failed to allocate shared memory";
+      return NULL;
+    }
+  } else {
+    NOTREACHED() << "Browser allocation request message failed";
+    return NULL;
+  }
+#endif
+  return shared_buf.release();
+}
+
 ResourceDispatcher* ChildThread::resource_dispatcher() {
   return resource_dispatcher_.get();
 }
@@ -157,12 +179,16 @@ bool ChildThread::OnMessageReceived(const IPC::Message& msg) {
 
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ChildThread, msg)
-    IPC_MESSAGE_HANDLER(ChildProcessMsg_AskBeforeShutdown, OnAskBeforeShutdown)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_Shutdown, OnShutdown)
 #if defined(IPC_MESSAGE_LOG_ENABLED)
     IPC_MESSAGE_HANDLER(ChildProcessMsg_SetIPCLoggingEnabled,
                         OnSetIPCLoggingEnabled)
 #endif
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_SetProfilerStatus,
+                        OnSetProfilerStatus)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_GetChildProfilerData,
+                        OnGetChildProfilerData)
+    IPC_MESSAGE_HANDLER(ChildProcessMsg_DumpHandles, OnDumpHandles)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -179,10 +205,6 @@ bool ChildThread::OnControlMessageReceived(const IPC::Message& msg) {
   return false;
 }
 
-void ChildThread::OnAskBeforeShutdown() {
-  check_with_browser_before_shutdown_ = true;
-}
-
 void ChildThread::OnShutdown() {
   MessageLoop::current()->Quit();
 }
@@ -196,12 +218,42 @@ void ChildThread::OnSetIPCLoggingEnabled(bool enable) {
 }
 #endif  //  IPC_MESSAGE_LOG_ENABLED
 
+void ChildThread::OnSetProfilerStatus(bool enable) {
+  tracked_objects::ThreadData::InitializeAndSetTrackingStatus(enable);
+}
+
+void ChildThread::OnGetChildProfilerData(
+    int sequence_number,
+    const std::string& process_type) {
+  scoped_ptr<base::DictionaryValue> value(
+      tracked_objects::ThreadData::ToValue(false));
+  value->SetString("process_type", process_type);
+  value->SetInteger("process_id", base::GetCurrentProcId());
+
+  Send(new ChildProcessHostMsg_ChildProfilerData(
+      sequence_number, *value.get()));
+}
+
+void ChildThread::OnDumpHandles() {
+#if defined(OS_WIN)
+  scoped_refptr<content::HandleEnumerator> handle_enum(
+      new content::HandleEnumerator(
+          CommandLine::ForCurrentProcess()->HasSwitch(
+              switches::kAuditAllHandles)));
+  handle_enum->EnumerateHandles();
+  Send(new ChildProcessHostMsg_DumpHandlesDone);
+  return;
+#endif
+
+  NOTIMPLEMENTED();
+}
+
 ChildThread* ChildThread::current() {
   return ChildProcess::current()->main_thread();
 }
 
 void ChildThread::OnProcessFinalRelease() {
-  if (on_channel_error_called_ || !check_with_browser_before_shutdown_) {
+  if (on_channel_error_called_) {
     MessageLoop::current()->Quit();
     return;
   }
@@ -209,6 +261,8 @@ void ChildThread::OnProcessFinalRelease() {
   // The child process shutdown sequence is a request response based mechanism,
   // where we send out an initial feeler request to the child process host
   // instance in the browser to verify if it's ok to shutdown the child process.
-  // The browser then sends back a response if it's ok to shutdown.
+  // The browser then sends back a response if it's ok to shutdown. This avoids
+  // race conditions if the process refcount is 0 but there's an IPC message
+  // inflight that would addref it.
   Send(new ChildProcessHostMsg_ShutdownRequest);
 }

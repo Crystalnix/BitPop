@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,25 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "ipc/ipc_channel_handle.h"
 
-class Task;
 class CommandLine;
+class MultiProcessLock;
+
+#if defined(OS_MACOSX)
+#ifdef __OBJC__
+@class NSString;
+#else
+class NSString;
+#endif
+#endif
 
 namespace base {
-  class MessageLoopProxy;
+class MessageLoopProxy;
 }
 
 // Return the IPC channel to connect to the service process.
@@ -32,6 +41,19 @@ std::string GetServiceProcessScopedName(const std::string& append_str);
 // use the user-data-dir and the version as a scoping prefix.
 std::string GetServiceProcessScopedVersionedName(const std::string& append_str);
 #endif  // OS_MACOSX
+
+#if defined(OS_MACOSX)
+// Return the name that is used to extract the socket path out of the
+// dictionary provided by launchd.
+NSString* GetServiceProcessLaunchDSocketEnvVar();
+#endif
+
+#if defined(OS_POSIX)
+// Attempts to take a lock named |name|. If |waiting| is true then this will
+// make multiple attempts to acquire the lock.
+// Caller is responsible for ownership of the MultiProcessLock.
+MultiProcessLock* TakeNamedLock(const std::string& name, bool waiting);
+#endif
 
 // The following methods are used in a process that acts as a client to the
 // service process (typically the browser process).
@@ -67,12 +89,13 @@ class ServiceProcessState {
 
   // Signal that the service process is ready.
   // This method is called when the service process is running and initialized.
-  // |shutdown_task| is invoked when we get a shutdown request from another
+  // |terminate_task| is invoked when we get a terminate request from another
   // process (in the same thread that called SignalReady). It can be NULL.
   // |message_loop_proxy| must be of type IO and is the loop that POSIX uses
   // to monitor the service process.
   bool SignalReady(
-      base::MessageLoopProxy* message_loop_proxy, Task* shutdown_task);
+      base::MessageLoopProxy* message_loop_proxy,
+      const base::Closure& terminate_task);
 
   // Signal that the service process is stopped.
   void SignalStopped();
@@ -87,7 +110,6 @@ class ServiceProcessState {
   IPC::ChannelHandle GetServiceProcessChannel();
 
  private:
-
 #if !defined(OS_MACOSX)
   // Create the shared memory data for the service process.
   bool CreateSharedData();

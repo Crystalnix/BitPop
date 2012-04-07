@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,10 @@
 #include "chrome/common/env_vars.h"
 #include "content/common/chrome_descriptors.h"
 #include "seccompsandbox/linux_syscall_support.h"
+
+#ifndef PR_SET_PTRACER
+#define PR_SET_PTRACER 0x59616d61
+#endif
 
 // Some versions of gcc are prone to warn about unused return values. In cases
 // where we either a) know the call cannot fail, or b) there is nothing we
@@ -144,12 +148,14 @@ class MimeWriter {
   }
 
   // Append key/value pair, splitting value into chunks no larger than
-  // kMaxCrashChunkSize. The msg_type string will have a counter suffix to
-  // distinguish each chunk.
+  // |chunk_size|. |chunk_size| cannot be greater than |kMaxCrashChunkSize|.
+  // The msg_type string will have a counter suffix to distinguish each chunk.
   void AddPairDataInChunks(const char* msg_type,
                            size_t msg_type_size,
                            const char* msg_data,
-                           size_t msg_data_size);
+                           size_t msg_data_size,
+                           size_t chunk_size,
+                           bool strip_trailing_spaces);
 
   // Add binary file dump. Currently this is only done once, so the name is
   // fixed.
@@ -168,6 +174,7 @@ class MimeWriter {
   void AddString(const char* str) {
     AddItem(str, my_strlen(str));
   }
+  void AddItemWithoutTrailingSpaces(const void* base, size_t size);
 
   struct kernel_iovec iov_[kIovCapacity];
   int iov_index_;
@@ -216,7 +223,12 @@ void MimeWriter::AddPairData(const char* msg_type,
 void MimeWriter::AddPairDataInChunks(const char* msg_type,
                                      size_t msg_type_size,
                                      const char* msg_data,
-                                     size_t msg_data_size) {
+                                     size_t msg_data_size,
+                                     size_t chunk_size,
+                                     bool strip_trailing_spaces) {
+  if (chunk_size > kMaxCrashChunkSize)
+    return;
+
   unsigned i = 0;
   size_t done = 0, msg_length = msg_data_size;
 
@@ -225,7 +237,7 @@ void MimeWriter::AddPairDataInChunks(const char* msg_type,
     const unsigned num_len = my_int_len(++i);
     my_itos(num, i, num_len);
 
-    size_t chunk_len = std::min((size_t)kMaxCrashChunkSize, msg_length);
+    size_t chunk_len = std::min(chunk_size, msg_length);
 
     AddString(g_form_data_msg);
     AddItem(msg_type, msg_type_size);
@@ -233,7 +245,11 @@ void MimeWriter::AddPairDataInChunks(const char* msg_type,
     AddString(g_quote_msg);
     AddString(g_rn);
     AddString(g_rn);
-    AddItem(msg_data + done, chunk_len);
+    if (strip_trailing_spaces) {
+      AddItemWithoutTrailingSpaces(msg_data + done, chunk_len);
+    } else {
+      AddItem(msg_data + done, chunk_len);
+    }
     AddString(g_rn);
     AddBoundary();
     Flush();
@@ -263,6 +279,16 @@ void MimeWriter::AddItem(const void* base, size_t size) {
   iov_[iov_index_].iov_base = const_cast<void*>(base);
   iov_[iov_index_].iov_len = size;
   ++iov_index_;
+}
+
+void MimeWriter::AddItemWithoutTrailingSpaces(const void* base, size_t size) {
+  while (size > 0) {
+    const char* c = static_cast<const char*>(base) + size - 1;
+    if (*c != ' ')
+      break;
+    size--;
+  }
+  AddItem(base, size);
 }
 
 }  // namespace
@@ -353,71 +379,95 @@ pid_t HandleCrashDump(const BreakpadInfo& info) {
   IGNORE_RET(sys_close(ufd));
 
   // The MIME block looks like this:
-  //   BOUNDARY \r\n (0, 1)
-  //   Content-Disposition: form-data; name="prod" \r\n \r\n (2..6)
-  //   Chrome_Linux \r\n (7, 8)
-  //   BOUNDARY \r\n (9, 10)
-  //   Content-Disposition: form-data; name="ver" \r\n \r\n (11..15)
-  //   1.2.3.4 \r\n (16, 17)
-  //   BOUNDARY \r\n (18, 19)
-  //   Content-Disposition: form-data; name="guid" \r\n \r\n (20..24)
-  //   1.2.3.4 \r\n (25, 26)
-  //   BOUNDARY \r\n (27, 28)
+  //   BOUNDARY \r\n
+  //   Content-Disposition: form-data; name="prod" \r\n \r\n
+  //   Chrome_Linux \r\n
+  //   BOUNDARY \r\n
+  //   Content-Disposition: form-data; name="ver" \r\n \r\n
+  //   1.2.3.4 \r\n
+  //   BOUNDARY \r\n
+  //   Content-Disposition: form-data; name="guid" \r\n \r\n
+  //   1.2.3.4 \r\n
+  //   BOUNDARY \r\n
   //
   //   zero or one:
-  //   Content-Disposition: form-data; name="ptime" \r\n \r\n (0..4)
-  //   abcdef \r\n (5, 6)
-  //   BOUNDARY \r\n (7, 8)
+  //   Content-Disposition: form-data; name="ptime" \r\n \r\n
+  //   abcdef \r\n
+  //   BOUNDARY \r\n
   //
   //   zero or one:
-  //   Content-Disposition: form-data; name="ptype" \r\n \r\n (0..4)
-  //   abcdef \r\n (5, 6)
-  //   BOUNDARY \r\n (7, 8)
-  //
-  //   zero or one:
-  //   Content-Disposition: form-data; name="lsb-release" \r\n \r\n (0..4)
-  //   abcdef \r\n (5, 6)
-  //   BOUNDARY \r\n (7, 8)
+  //   Content-Disposition: form-data; name="ptype" \r\n \r\n
+  //   abcdef \r\n
+  //   BOUNDARY \r\n
   //
   //   zero or more gpu entries:
-  //   Content-Disposition: form-data; name="gpu-xxxxx" \r\n \r\n (0..4)
-  //   <gpu-xxxxx> \r\n (5, 6)
-  //   BOUNDARY \r\n (7, 8)
+  //   Content-Disposition: form-data; name="gpu-xxxxx" \r\n \r\n
+  //   <gpu-xxxxx> \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero or one:
+  //   Content-Disposition: form-data; name="lsb-release" \r\n \r\n
+  //   abcdef \r\n
+  //   BOUNDARY \r\n
   //
   //   zero or more:
-  //   Content-Disposition: form-data; name="url-chunk-1" \r\n \r\n (0..5)
-  //   abcdef \r\n (6, 7)
-  //   BOUNDARY \r\n (8, 9)
+  //   Content-Disposition: form-data; name="url-chunk-1" \r\n \r\n
+  //   abcdef \r\n
+  //   BOUNDARY \r\n
   //
-  //   Content-Disposition: form-data; name="dump"; filename="dump" \r\n (0,1,2)
-  //   Content-Type: application/octet-stream \r\n \r\n (3,4,5)
-  //   <dump contents> (6)
-  //   \r\n BOUNDARY -- \r\n (7,8,9,10)
-
-  #if defined(OS_CHROMEOS)
-  static const char chrome_product_msg[] = "Chrome_ChromeOS";
-  #else  // OS_LINUX
-  static const char chrome_product_msg[] = "Chrome_Linux";
-  #endif
-  static const char version_msg[] = PRODUCT_VERSION;
-  static const char prod_msg[] = "prod";
-  static const char ver_msg[] = "ver";
-  static const char guid_msg[] = "guid";
-  static const char url_chunk_msg[] = "url-chunk-";
-  static const char process_time_msg[] = "ptime";
-  static const char process_type_msg[] = "ptype";
-  static const char distro_msg[] = "lsb-release";
+  //   zero or one:
+  //   Content-Disposition: form-data; name="channel" \r\n \r\n
+  //   beta \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero or one:
+  //   Content-Disposition: form-data; name="num-views" \r\n \r\n
+  //   3 \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero or one:
+  //   Content-Disposition: form-data; name="num-extensions" \r\n \r\n
+  //   5 \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero to 10:
+  //   Content-Disposition: form-data; name="extension-1" \r\n \r\n
+  //   abcdefghijklmnopqrstuvwxyzabcdef \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero or one:
+  //   Content-Disposition: form-data; name="num-switches" \r\n \r\n
+  //   5 \r\n
+  //   BOUNDARY \r\n
+  //
+  //   zero to 15:
+  //   Content-Disposition: form-data; name="switch-1" \r\n \r\n
+  //   --foo \r\n
+  //   BOUNDARY \r\n
+  //
+  //   Content-Disposition: form-data; name="dump"; filename="dump" \r\n
+  //   Content-Type: application/octet-stream \r\n \r\n
+  //   <dump contents>
+  //   \r\n BOUNDARY -- \r\n
 
   MimeWriter writer(fd, mime_boundary);
+  {
+#if defined(OS_CHROMEOS)
+    static const char chrome_product_msg[] = "Chrome_ChromeOS";
+#else  // OS_LINUX
+    static const char chrome_product_msg[] = "Chrome_Linux";
+#endif
+    static const char version_msg[] = PRODUCT_VERSION;
 
-  writer.AddBoundary();
-  writer.AddPairString(prod_msg, chrome_product_msg);
-  writer.AddBoundary();
-  writer.AddPairString(ver_msg, version_msg);
-  writer.AddBoundary();
-  writer.AddPairString(guid_msg, info.guid);
-  writer.AddBoundary();
-  writer.Flush();
+    writer.AddBoundary();
+    writer.AddPairString("prod", chrome_product_msg);
+    writer.AddBoundary();
+    writer.AddPairString("ver", version_msg);
+    writer.AddBoundary();
+    writer.AddPairString("guid", info.guid);
+    writer.AddBoundary();
+    writer.Flush();
+  }
 
   if (info.process_start_time > 0) {
     struct kernel_timeval tv;
@@ -429,6 +479,7 @@ pid_t HandleCrashDump(const BreakpadInfo& info) {
         const unsigned time_len = my_uint64_len(time);
         my_uint64tos(time_str, time, time_len);
 
+        static const char process_time_msg[] = "ptime";
         writer.AddPairData(process_time_msg, sizeof(process_time_msg) - 1,
                            time_str, time_len);
         writer.AddBoundary();
@@ -438,7 +489,7 @@ pid_t HandleCrashDump(const BreakpadInfo& info) {
   }
 
   if (info.process_type_length) {
-    writer.AddPairString(process_type_msg, info.process_type);
+    writer.AddPairString("ptype", info.process_type);
     writer.AddBoundary();
     writer.Flush();
   }
@@ -466,16 +517,71 @@ pid_t HandleCrashDump(const BreakpadInfo& info) {
   }
 
   if (info.distro_length) {
+    static const char distro_msg[] = "lsb-release";
     writer.AddPairString(distro_msg, info.distro);
     writer.AddBoundary();
     writer.Flush();
   }
 
-  // For rendererers and plugins.
+  // For renderers and plugins.
   if (info.crash_url_length) {
+    static const char url_chunk_msg[] = "url-chunk-";
     static const unsigned kMaxUrlLength = 8 * MimeWriter::kMaxCrashChunkSize;
     writer.AddPairDataInChunks(url_chunk_msg, sizeof(url_chunk_msg) - 1,
-        info.crash_url, std::min(info.crash_url_length, kMaxUrlLength));
+        info.crash_url, std::min(info.crash_url_length, kMaxUrlLength),
+        MimeWriter::kMaxCrashChunkSize, false /* Don't strip whitespaces. */);
+  }
+
+  if (my_strlen(child_process_logging::g_channel)) {
+    writer.AddPairString("channel", child_process_logging::g_channel);
+    writer.AddBoundary();
+    writer.Flush();
+  }
+
+  if (my_strlen(child_process_logging::g_num_views)) {
+    writer.AddPairString("num-views", child_process_logging::g_num_views);
+    writer.AddBoundary();
+    writer.Flush();
+  }
+
+  if (my_strlen(child_process_logging::g_num_extensions)) {
+    writer.AddPairString("num-extensions",
+                         child_process_logging::g_num_extensions);
+    writer.AddBoundary();
+    writer.Flush();
+  }
+
+  unsigned extension_ids_len =
+      my_strlen(child_process_logging::g_extension_ids);
+  if (extension_ids_len) {
+    static const char extension_msg[] = "extension-";
+    static const unsigned kMaxExtensionsLen =
+        kMaxReportedActiveExtensions * child_process_logging::kExtensionLen;
+    writer.AddPairDataInChunks(extension_msg, sizeof(extension_msg) - 1,
+        child_process_logging::g_extension_ids,
+        std::min(extension_ids_len, kMaxExtensionsLen),
+        child_process_logging::kExtensionLen,
+        false /* Don't strip whitespace. */);
+  }
+
+  if (my_strlen(child_process_logging::g_num_switches)) {
+    writer.AddPairString("num-switches",
+                         child_process_logging::g_num_switches);
+    writer.AddBoundary();
+    writer.Flush();
+  }
+
+  unsigned switches_len =
+      my_strlen(child_process_logging::g_switches);
+  if (switches_len) {
+    static const char switch_msg[] = "switch-";
+    static const unsigned kMaxSwitchLen =
+        kMaxSwitches * child_process_logging::kSwitchLen;
+    writer.AddPairDataInChunks(switch_msg, sizeof(switch_msg) - 1,
+        child_process_logging::g_switches,
+        std::min(switches_len, kMaxSwitchLen),
+        child_process_logging::kSwitchLen,
+        true /* Strip whitespace since switches are padded to kSwitchLen. */);
   }
 
   writer.AddFileDump(dump_data, st.st_size);
@@ -618,7 +724,7 @@ static bool CrashDone(const char* dump_path,
   google_breakpad::PageAllocator allocator;
   const unsigned dump_path_len = my_strlen(dump_path);
   const unsigned minidump_id_len = my_strlen(minidump_id);
-  char *const path = reinterpret_cast<char*>(allocator.Alloc(
+  char* const path = reinterpret_cast<char*>(allocator.Alloc(
       dump_path_len + 1 /* '/' */ + minidump_id_len +
       4 /* ".dmp" */ + 1 /* NUL */));
   memcpy(path, dump_path, dump_path_len);
@@ -686,10 +792,10 @@ void EnableCrashDumping(const bool unattended) {
   }
 }
 
-// Currently Non-Browser = Renderer, Plugins and Gpu
-static bool
-NonBrowserCrashHandler(const void* crash_context, size_t crash_context_size,
-                       void* context) {
+// Non-Browser = Extension, Gpu, Plugins, Ppapi and Renderer
+static bool NonBrowserCrashHandler(const void* crash_context,
+                                   size_t crash_context_size,
+                                   void* context) {
   const int fd = reinterpret_cast<intptr_t>(context);
   int fds[2] = { -1, -1 };
   if (sys_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
@@ -697,6 +803,19 @@ NonBrowserCrashHandler(const void* crash_context, size_t crash_context_size,
     sys_write(2, msg, sizeof(msg)-1);
     return false;
   }
+
+  // On kernels with ptrace protection, e.g. Ubuntu 10.10+, the browser cannot
+  // ptrace this crashing process and crash dumping will fail. When using the
+  // SUID sandbox, this crashing process is likely to be in its own PID
+  // namespace, and thus there is no way to permit only the browser process to
+  // ptrace it.
+  // The workaround is to allow all processes to ptrace this process if we
+  // reach this point, by passing -1 as the allowed PID. However, support for
+  // passing -1 as the PID won't reach kernels until around the Ubuntu 12.04
+  // timeframe.
+  sys_prctl(PR_SET_PTRACER, -1);
+
+  // Start constructing the message to send to the browser.
   char guid[kGuidSize + 1] = {0};
   char crash_url[kMaxActiveURLSize + 1] = {0};
   char distro[kDistroSize + 1] = {0};
@@ -717,7 +836,9 @@ NonBrowserCrashHandler(const void* crash_context, size_t crash_context_size,
                             // browser to convert namespace tids.
 
   // The length of the control message:
-  static const unsigned kControlMsgSize = CMSG_SPACE(2*sizeof(int));
+  static const unsigned kControlMsgSize = sizeof(fds);
+  static const unsigned kControlMsgSpaceSize = CMSG_SPACE(kControlMsgSize);
+  static const unsigned kControlMsgLenSize = CMSG_LEN(kControlMsgSize);
 
   const size_t kIovSize = 7;
   struct kernel_msghdr msg;
@@ -740,15 +861,15 @@ NonBrowserCrashHandler(const void* crash_context, size_t crash_context_size,
 
   msg.msg_iov = iov;
   msg.msg_iovlen = kIovSize;
-  char cmsg[kControlMsgSize];
-  my_memset(cmsg, 0, kControlMsgSize);
+  char cmsg[kControlMsgSpaceSize];
+  my_memset(cmsg, 0, kControlMsgSpaceSize);
   msg.msg_control = cmsg;
   msg.msg_controllen = sizeof(cmsg);
 
   struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
   hdr->cmsg_level = SOL_SOCKET;
   hdr->cmsg_type = SCM_RIGHTS;
-  hdr->cmsg_len = CMSG_LEN(2*sizeof(int));
+  hdr->cmsg_len = kControlMsgLenSize;
   ((int*) CMSG_DATA(hdr))[0] = fds[0];
   ((int*) CMSG_DATA(hdr))[1] = fds[1];
 
@@ -774,13 +895,16 @@ void EnableNonBrowserCrashDumping() {
   // We deliberately leak this object.
   google_breakpad::ExceptionHandler* handler =
       new google_breakpad::ExceptionHandler("" /* unused */, NULL, NULL,
-                                            (void*) fd, true);
+                                            reinterpret_cast<void*>(fd), true);
   handler->set_crash_handler(NonBrowserCrashHandler);
 }
 
 void InitCrashReporter() {
   // Determine the process type and take appropriate action.
   const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
+  if (parsed_command_line.HasSwitch(switches::kDisableBreakpad))
+    return;
+
   const std::string process_type =
       parsed_command_line.GetSwitchValueASCII(switches::kProcessType);
   if (process_type.empty()) {

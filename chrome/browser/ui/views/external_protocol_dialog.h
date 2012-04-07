@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,15 @@
 #define CHROME_BROWSER_UI_VIEWS_EXTERNAL_PROTOCOL_DIALOG_H_
 #pragma once
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
-#include "views/window/dialog_delegate.h"
+#include "ui/views/window/dialog_delegate.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
 namespace views {
 class MessageBoxView;
@@ -19,7 +23,7 @@ class MessageBoxView;
 class ExternalProtocolDialog : public views::DialogDelegate {
  public:
   // RunExternalProtocolDialog calls this private constructor.
-  ExternalProtocolDialog(TabContents* tab_contents,
+  ExternalProtocolDialog(content::WebContents* web_contents,
                          const GURL& url,
                          const std::wstring& command);
 
@@ -29,26 +33,23 @@ class ExternalProtocolDialog : public views::DialogDelegate {
 
   virtual ~ExternalProtocolDialog();
 
-  // views::DialogDelegate Methods:
-  virtual int GetDefaultDialogButton() const;
-  virtual std::wstring GetDialogButtonLabel(
-      MessageBoxFlags::DialogButton button) const;
-  virtual std::wstring GetWindowTitle() const;
-  virtual void DeleteDelegate();
-  virtual bool Cancel();
-  virtual bool Accept();
-  virtual views::View* GetContentsView();
-
-  // views::WindowDelegate Methods:
-  virtual bool IsAlwaysOnTop() const { return false; }
-  virtual bool IsModal() const { return false; }
+  // views::DialogDelegate methods:
+  virtual int GetDefaultDialogButton() const OVERRIDE;
+  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual void DeleteDelegate() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual views::View* GetContentsView() OVERRIDE;
+  virtual views::Widget* GetWidget() OVERRIDE;
+  virtual const views::Widget* GetWidget() const OVERRIDE;
 
  private:
   // The message box view whose commands we handle.
   views::MessageBoxView* message_box_view_;
 
-  // The associated TabContents.
-  TabContents* tab_contents_;
+  // The associated WebContents.
+  content::WebContents* web_contents_;
 
   // URL of the external protocol request.
   GURL url_;

@@ -26,23 +26,23 @@ diff -c -r Mesa-7.9/include/GL/gl.h MesaLib/include/GL/gl.h
 *** 72,80 ****
   #  define GLAPIENTRY
   #endif /* WIN32 && !CYGWIN */
-  
+
 ! #if (defined(__BEOS__) && defined(__POWERPC__)) || defined(__QUICKDRAW__)
 ! #  define PRAGMA_EXPORT_SUPPORTED		1
 ! #endif
-  
+
   /*
    * WINDOWS: Include windows.h here to define APIENTRY.
 --- 76,86 ----
   #  define GLAPIENTRY
   #endif /* WIN32 && !CYGWIN */
-  
+
 ! // Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
 ! // support the pragma.
 ! //#if (defined(__BEOS__) && defined(__POWERPC__)) || defined(__QUICKDRAW__)
 ! //#  define PRAGMA_EXPORT_SUPPORTED		1
 ! //#endif
-  
+
   /*
    * WINDOWS: Include windows.h here to define APIENTRY.
 diff -c -r Mesa-7.9/include/GL/glext.h MesaLib/include/GL/glext.h
@@ -50,34 +50,34 @@ diff -c -r Mesa-7.9/include/GL/glext.h MesaLib/include/GL/glext.h
 --- MesaLib/include/GL/glext.h	Thu Oct 14 14:50:37 2010
 ***************
 *** 5030,5043 ****
-  
+
   #ifndef GL_VERSION_1_5
   /* GL types for handling large vertex buffer objects */
 ! typedef ptrdiff_t GLintptr;
 ! typedef ptrdiff_t GLsizeiptr;
   #endif
-  
+
   #ifndef GL_ARB_vertex_buffer_object
   /* GL types for handling large vertex buffer objects */
 ! typedef ptrdiff_t GLintptrARB;
 ! typedef ptrdiff_t GLsizeiptrARB;
   #endif
-  
+
   #ifndef GL_ARB_shader_objects
 --- 5030,5043 ----
-  
+
   #ifndef GL_VERSION_1_5
   /* GL types for handling large vertex buffer objects */
 ! typedef signed long int GLintptr;
 ! typedef signed long int GLsizeiptr;
   #endif
-  
+
   #ifndef GL_ARB_vertex_buffer_object
   /* GL types for handling large vertex buffer objects */
 ! typedef signed long int GLintptrARB;
 ! typedef signed long int GLsizeiptrARB;
   #endif
-  
+
   #ifndef GL_ARB_shader_objects
 diff -c -r Mesa-7.9/include/GL/osmesa.h MesaLib/include/GL/osmesa.h
 *** Mesa-7.9/include/GL/osmesa.h	Thu Feb  4 16:10:39 2010
@@ -85,48 +85,48 @@ diff -c -r Mesa-7.9/include/GL/osmesa.h MesaLib/include/GL/osmesa.h
 ***************
 *** 101,109 ****
   typedef struct osmesa_context *OSMesaContext;
-  
-  
+
+
 ! #if defined(__BEOS__) || defined(__QUICKDRAW__)
 ! #pragma export on
 ! #endif
-  
-  
+
+
   /*
 --- 101,111 ----
   typedef struct osmesa_context *OSMesaContext;
-  
-  
+
+
 ! // Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
 ! // support the pragma.
 ! //#if defined(__BEOS__) || defined(__QUICKDRAW__)
 ! //#pragma export on
 ! //#endif
-  
-  
+
+
   /*
 ***************
 *** 276,284 ****
   OSMesaColorClamp(GLboolean enable);
-  
-  
+
+
 ! #if defined(__BEOS__) || defined(__QUICKDRAW__)
 ! #pragma export off
 ! #endif
-  
-  
+
+
   #ifdef __cplusplus
 --- 278,288 ----
   OSMesaColorClamp(GLboolean enable);
-  
-  
+
+
 ! // Disabled this because __QUICKDRAW__ is defined on Mac and gcc does not
 ! // support the pragma.
 ! //#if defined(__BEOS__) || defined(__QUICKDRAW__)
 ! //#pragma export off
 ! //#endif
-  
-  
+
+
   #ifdef __cplusplus
 diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 *** Mesa-7.9/src/glsl/ast_to_hir.cpp	Fri Oct  1 15:51:28 2010
@@ -138,7 +138,7 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
   #include "glsl_types.h"
   #include "ir.h"
 + #include "safe_strcmp.h"
-  
+
   void
   _mesa_ast_to_hir(exec_list *instructions, struct _mesa_glsl_parse_state *state)
 ***************
@@ -149,7 +149,7 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 !        && (strcmp(var->name, "gl_FragCoord") != 0)) {
         const char *const qual_string = (qual->origin_upper_left)
   	 ? "origin_upper_left" : "pixel_center_integer";
-  
+
 --- 1616,1622 ----
      var->pixel_center_integer = qual->pixel_center_integer;
      var->origin_upper_left = qual->origin_upper_left;
@@ -157,7 +157,7 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 !        && (safe_strcmp(var->name, "gl_FragCoord") != 0)) {
         const char *const qual_string = (qual->origin_upper_left)
   	 ? "origin_upper_left" : "pixel_center_integer";
-  
+
 ***************
 *** 2003,2009 ****
   	     *     gl_MaxTextureCoords."
@@ -166,7 +166,7 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 ! 	    if ((strcmp("gl_TexCoord", var->name) == 0)
   		&& (size > state->Const.MaxTextureCoords)) {
   	       YYLTYPE loc = this->get_location();
-  
+
 --- 2004,2010 ----
   	     *     gl_MaxTextureCoords."
   	     */
@@ -174,7 +174,7 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 ! 	    if ((safe_strcmp("gl_TexCoord", var->name) == 0)
   		&& (size > state->Const.MaxTextureCoords)) {
   	       YYLTYPE loc = this->get_location();
-  
+
 ***************
 *** 2022,2028 ****
   	    delete var;
@@ -195,20 +195,20 @@ diff -c -r Mesa-7.9/src/glsl/ast_to_hir.cpp MesaLib/src/glsl/ast_to_hir.cpp
 ***************
 *** 2336,2342 ****
      }
-  
+
      /* Verify the return type of main() */
 !    if (strcmp(name, "main") == 0) {
         if (! return_type->is_void()) {
   	 YYLTYPE loc = this->get_location();
-  
+
 --- 2337,2343 ----
      }
-  
+
      /* Verify the return type of main() */
 !    if (safe_strcmp(name, "main") == 0) {
         if (! return_type->is_void()) {
   	 YYLTYPE loc = this->get_location();
-  
+
 diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-parse.c
 *** Mesa-7.9/src/glsl/glcpp/glcpp-parse.c	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/glsl/glcpp/glcpp-parse.c	Fri Oct 22 15:30:59 2010
@@ -226,18 +226,18 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-pa
 + #ifdef _MSC_VER
 + #define PRIiMAX "I64i"
 + #endif
-  
+
   #include "glcpp.h"
   #include "main/core.h" /* for struct gl_extensions */
   #include "main/mtypes.h" /* for gl_api enum */
 + #include "safe_strcmp.h"
-  
+
   #define glcpp_print(stream, str) stream = talloc_strdup_append(stream, str)
   #define glcpp_printf(stream, fmt, args, ...) \
 ***************
 *** 2915,2921 ****
   		return 0;
-  
+
   	for (i = 0, node = list->head; node; i++, node = node->next) {
 ! 		if (strcmp (node->str, member) == 0) {
   			if (index)
@@ -245,7 +245,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-pa
   			return 1;
 --- 2923,2929 ----
   		return 0;
-  
+
   	for (i = 0, node = list->head; node; i++, node = node->next) {
 ! 		if (safe_strcmp (node->str, member) == 0) {
   			if (index)
@@ -259,7 +259,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-pa
 ! 		if (strcmp (node_a->str, node_b->str))
   			return 0;
   	}
-  
+
 --- 2963,2969 ----
   	     node_a && node_b;
   	     node_a = node_a->next, node_b = node_b->next)
@@ -267,7 +267,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-pa
 ! 		if (safe_strcmp (node_a->str, node_b->str))
   			return 0;
   	}
-  
+
 ***************
 *** 3182,3189 ****
   		case IDENTIFIER:
@@ -290,19 +290,19 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.c MesaLib/src/glsl/glcpp/glcpp-pa
 ***************
 *** 3832,3838 ****
   		return 0;
-  
+
   	for (node = list; node; node = node->next)
 ! 		if (strcmp (node->identifier, identifier) == 0)
   			return 1;
-  
+
   	return 0;
 --- 3840,3846 ----
   		return 0;
-  
+
   	for (node = list; node; node = node->next)
 ! 		if (safe_strcmp (node->identifier, identifier) == 0)
   			return 1;
-  
+
   	return 0;
 diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-parse.y
 *** Mesa-7.9/src/glsl/glcpp/glcpp-parse.y	Fri Oct  1 15:51:28 2010
@@ -321,18 +321,18 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-pa
 + #ifdef _MSC_VER
 + #define PRIiMAX "I64i"
 + #endif
-  
+
   #include "glcpp.h"
   #include "main/core.h" /* for struct gl_extensions */
   #include "main/mtypes.h" /* for gl_api enum */
 + #include "safe_strcmp.h"
-  
+
   #define glcpp_print(stream, str) stream = talloc_strdup_append(stream, str)
   #define glcpp_printf(stream, fmt, args, ...) \
 ***************
 *** 590,596 ****
   		return 0;
-  
+
   	for (i = 0, node = list->head; node; i++, node = node->next) {
 ! 		if (strcmp (node->str, member) == 0) {
   			if (index)
@@ -340,7 +340,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-pa
   			return 1;
 --- 598,604 ----
   		return 0;
-  
+
   	for (i = 0, node = list->head; node; i++, node = node->next) {
 ! 		if (safe_strcmp (node->str, member) == 0) {
   			if (index)
@@ -354,7 +354,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-pa
 ! 		if (strcmp (node_a->str, node_b->str))
   			return 0;
   	}
-  
+
 --- 638,644 ----
   	     node_a && node_b;
   	     node_a = node_a->next, node_b = node_b->next)
@@ -362,7 +362,7 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-pa
 ! 		if (safe_strcmp (node_a->str, node_b->str))
   			return 0;
   	}
-  
+
 ***************
 *** 857,864 ****
   		case IDENTIFIER:
@@ -385,19 +385,19 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp-parse.y MesaLib/src/glsl/glcpp/glcpp-pa
 ***************
 *** 1507,1513 ****
   		return 0;
-  
+
   	for (node = list; node; node = node->next)
 ! 		if (strcmp (node->identifier, identifier) == 0)
   			return 1;
-  
+
   	return 0;
 --- 1515,1521 ----
   		return 0;
-  
+
   	for (node = list; node; node = node->next)
 ! 		if (safe_strcmp (node->identifier, identifier) == 0)
   			return 1;
-  
+
   	return 0;
 diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp.c MesaLib/src/glsl/glcpp/glcpp.c
 *** Mesa-7.9/src/glsl/glcpp/glcpp.c	Fri Oct  1 15:51:28 2010
@@ -409,25 +409,25 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp.c MesaLib/src/glsl/glcpp/glcpp.c
   #include "glcpp.h"
   #include "main/mtypes.h"
 + #include "safe_strcmp.h"
-  
+
   extern int yydebug;
-  
+
 ***************
 *** 78,84 ****
   	char *text;
   	int fd;
-  
+
 ! 	if (filename == NULL || strcmp (filename, "-") == 0)
   		return load_text_fd (ctx, STDIN_FILENO);
-  
+
   	fd = open (filename, O_RDONLY);
 --- 79,85 ----
   	char *text;
   	int fd;
-  
+
 ! 	if (filename == NULL || safe_strcmp (filename, "-") == 0)
   		return load_text_fd (ctx, STDIN_FILENO);
-  
+
   	fd = open (filename, O_RDONLY);
 diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp.h MesaLib/src/glsl/glcpp/glcpp.h
 *** Mesa-7.9/src/glsl/glcpp/glcpp.h	Fri Oct  1 15:51:28 2010
@@ -437,18 +437,18 @@ diff -c -r Mesa-7.9/src/glsl/glcpp/glcpp.h MesaLib/src/glsl/glcpp/glcpp.h
 --- 24,33 ----
   #ifndef GLCPP_H
   #define GLCPP_H
-  
+
 + /* Windows does not currently have stdint.h. */
 + #ifndef _MSC_VER
   #include <stdint.h>
 + #endif
-  
+
   #include <talloc.h>
-  
+
 ***************
 *** 49,55 ****
 --- 52,62 ----
-  
+
   typedef union YYSTYPE
   {
 + #ifndef _MSC_VER
@@ -469,14 +469,14 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser.cpp MesaLib/src/glsl/glsl_parser.cpp
   #include "glsl_parser_extras.h"
   #include "glsl_types.h"
 + #include "safe_strcmp.h"
-  
+
   #define YYLEX_PARAM state->scanner
-  
+
 ***************
 *** 3966,3975 ****
   	   if (state->ARB_fragment_coord_conventions_enable) {
   	      bool got_one = false;
-  
+
 ! 	      if (strcmp((yyvsp[(1) - (1)].identifier), "origin_upper_left") == 0) {
   		 got_one = true;
   		 (yyval.type_qualifier).q.origin_upper_left = 1;
@@ -487,7 +487,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser.cpp MesaLib/src/glsl/glsl_parser.cpp
 --- 3967,3976 ----
   	   if (state->ARB_fragment_coord_conventions_enable) {
   	      bool got_one = false;
-  
+
 ! 	      if (safe_strcmp((yyvsp[(1) - (1)].identifier), "origin_upper_left") == 0) {
   		 got_one = true;
   		 (yyval.type_qualifier).q.origin_upper_left = 1;
@@ -505,14 +505,14 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
   #include "ir_optimization.h"
   #include "loop_analysis.h"
 + #include "safe_strcmp.h"
-  
+
   _mesa_glsl_parse_state::_mesa_glsl_parse_state(struct __GLcontextRec *ctx,
   					       GLenum target, void *mem_ctx)
 ***************
 *** 148,160 ****
         extension_warn
      } ext_mode;
-  
+
 !    if (strcmp(behavior, "warn") == 0) {
         ext_mode = extension_warn;
 !    } else if (strcmp(behavior, "require") == 0) {
@@ -526,7 +526,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
 --- 149,161 ----
         extension_warn
      } ext_mode;
-  
+
 !    if (safe_strcmp(behavior, "warn") == 0) {
         ext_mode = extension_warn;
 !    } else if (safe_strcmp(behavior, "require") == 0) {
@@ -539,9 +539,9 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
         _mesa_glsl_error(behavior_locp, state,
 ***************
 *** 165,178 ****
-  
+
      bool unsupported = false;
-  
+
 !    if (strcmp(name, "all") == 0) {
         if ((ext_mode == extension_enable) || (ext_mode == extension_require)) {
   	 _mesa_glsl_error(name_locp, state, "Cannot %s all extensions",
@@ -554,9 +554,9 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
          */
         if (state->target != fragment_shader) {
 --- 166,179 ----
-  
+
      bool unsupported = false;
-  
+
 !    if (safe_strcmp(name, "all") == 0) {
         if ((ext_mode == extension_enable) || (ext_mode == extension_require)) {
   	 _mesa_glsl_error(name_locp, state, "Cannot %s all extensions",
@@ -578,7 +578,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
   	 (ext_mode != extension_disable);
         state->ARB_fragment_coord_conventions_warn =
   	 (ext_mode == extension_warn);
-  
+
         unsupported = !state->extensions->ARB_fragment_coord_conventions;
 !    } else if (strcmp(name, "GL_ARB_texture_rectangle") == 0) {
         state->ARB_texture_rectangle_enable = (ext_mode != extension_disable);
@@ -586,7 +586,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
 !    } else if (strcmp(name, "GL_EXT_texture_array") == 0) {
         state->EXT_texture_array_enable = (ext_mode != extension_disable);
         state->EXT_texture_array_warn = (ext_mode == extension_warn);
-  
+
 --- 182,198 ----
   	 state->ARB_draw_buffers_enable = (ext_mode != extension_disable);
   	 state->ARB_draw_buffers_warn = (ext_mode == extension_warn);
@@ -596,7 +596,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
   	 (ext_mode != extension_disable);
         state->ARB_fragment_coord_conventions_warn =
   	 (ext_mode == extension_warn);
-  
+
         unsupported = !state->extensions->ARB_fragment_coord_conventions;
 !    } else if (safe_strcmp(name, "GL_ARB_texture_rectangle") == 0) {
         state->ARB_texture_rectangle_enable = (ext_mode != extension_disable);
@@ -604,7 +604,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_parser_extras.cpp MesaLib/src/glsl/glsl_parser
 !    } else if (safe_strcmp(name, "GL_EXT_texture_array") == 0) {
         state->EXT_texture_array_enable = (ext_mode != extension_disable);
         state->EXT_texture_array_warn = (ext_mode == extension_warn);
-  
+
 diff -c -r Mesa-7.9/src/glsl/glsl_types.cpp MesaLib/src/glsl/glsl_types.cpp
 *** Mesa-7.9/src/glsl/glsl_types.cpp	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/glsl/glsl_types.cpp	Fri Oct 22 15:33:51 2010
@@ -625,7 +625,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_types.cpp MesaLib/src/glsl/glsl_types.cpp
       */
 !    if (strcmp(key1->name, key2->name) != 0)
         return 1;
-  
+
      if (key1->length != key2->length)
 --- 375,381 ----
      /* Return zero is the types match (there is zero difference) or non-zero
@@ -633,7 +633,7 @@ diff -c -r Mesa-7.9/src/glsl/glsl_types.cpp MesaLib/src/glsl/glsl_types.cpp
       */
 !    if (safe_strcmp(key1->name, key2->name) != 0)
         return 1;
-  
+
      if (key1->length != key2->length)
 ***************
 *** 383,389 ****
@@ -654,55 +654,55 @@ diff -c -r Mesa-7.9/src/glsl/glsl_types.cpp MesaLib/src/glsl/glsl_types.cpp
      }
 ***************
 *** 433,439 ****
-  
+
      assert(t->base_type == GLSL_TYPE_STRUCT);
      assert(t->length == num_fields);
 !    assert(strcmp(t->name, name) == 0);
-  
+
      return t;
   }
 --- 434,440 ----
-  
+
      assert(t->base_type == GLSL_TYPE_STRUCT);
      assert(t->length == num_fields);
 !    assert(safe_strcmp(t->name, name) == 0);
-  
+
      return t;
   }
 ***************
 *** 446,452 ****
         return error_type;
-  
+
      for (unsigned i = 0; i < this->length; i++) {
 !       if (strcmp(name, this->fields.structure[i].name) == 0)
   	 return this->fields.structure[i].type;
      }
-  
+
 --- 447,453 ----
         return error_type;
-  
+
      for (unsigned i = 0; i < this->length; i++) {
 !       if (safe_strcmp(name, this->fields.structure[i].name) == 0)
   	 return this->fields.structure[i].type;
      }
-  
+
 ***************
 *** 461,467 ****
         return -1;
-  
+
      for (unsigned i = 0; i < this->length; i++) {
 !       if (strcmp(name, this->fields.structure[i].name) == 0)
   	 return i;
      }
-  
+
 --- 462,468 ----
         return -1;
-  
+
      for (unsigned i = 0; i < this->length; i++) {
 !       if (safe_strcmp(name, this->fields.structure[i].name) == 0)
   	 return i;
      }
-  
+
 diff -c -r Mesa-7.9/src/glsl/hir_field_selection.cpp MesaLib/src/glsl/hir_field_selection.cpp
 *** Mesa-7.9/src/glsl/hir_field_selection.cpp	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/glsl/hir_field_selection.cpp	Fri Oct 22 15:34:11 2010
@@ -713,26 +713,26 @@ diff -c -r Mesa-7.9/src/glsl/hir_field_selection.cpp MesaLib/src/glsl/hir_field_
   #include "ast.h"
   #include "glsl_types.h"
 + #include "safe_strcmp.h"
-  
+
   ir_rvalue *
   _mesa_ast_field_selection_to_hir(const ast_expression *expr,
 ***************
 *** 81,87 ****
         const char *method;
         method = call->subexpressions[0]->primary_expression.identifier;
-  
+
 !       if (op->type->is_array() && strcmp(method, "length") == 0) {
   	 if (!call->expressions.is_empty())
   	    _mesa_glsl_error(&loc, state, "length method takes no arguments.");
-  
+
 --- 82,88 ----
         const char *method;
         method = call->subexpressions[0]->primary_expression.identifier;
-  
+
 !       if (op->type->is_array() && safe_strcmp(method, "length") == 0) {
   	 if (!call->expressions.is_empty())
   	    _mesa_glsl_error(&loc, state, "length method takes no arguments.");
-  
+
 diff -c -r Mesa-7.9/src/glsl/ir.cpp MesaLib/src/glsl/ir.cpp
 *** Mesa-7.9/src/glsl/ir.cpp	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/glsl/ir.cpp	Fri Oct 22 15:34:20 2010
@@ -743,7 +743,7 @@ diff -c -r Mesa-7.9/src/glsl/ir.cpp MesaLib/src/glsl/ir.cpp
   #include "ir_visitor.h"
   #include "glsl_types.h"
 + #include "safe_strcmp.h"
-  
+
   ir_rvalue::ir_rvalue()
   {
 ***************
@@ -790,13 +790,13 @@ diff -c -r Mesa-7.9/src/glsl/ir_constant_expression.cpp MesaLib/src/glsl/ir_cons
   #include "ir_visitor.h"
   #include "glsl_types.h"
 + #include "safe_strcmp.h"
-  
+
   static float
   dot(ir_constant *op0, ir_constant *op1)
 ***************
 *** 850,880 ****
      memset(&data, 0, sizeof(data));
-  
+
      const char *callee = this->callee_name();
 !    if (strcmp(callee, "abs") == 0) {
         expr = new(mem_ctx) ir_expression(ir_unop_abs, type, op[0], NULL);
@@ -828,7 +828,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_constant_expression.cpp MesaLib/src/glsl/ir_cons
   	 assert(op[1]->type->is_float());
 --- 851,881 ----
      memset(&data, 0, sizeof(data));
-  
+
      const char *callee = this->callee_name();
 !    if (safe_strcmp(callee, "abs") == 0) {
         expr = new(mem_ctx) ir_expression(ir_unop_abs, type, op[0], NULL);
@@ -1102,7 +1102,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_constant_expression.cpp MesaLib/src/glsl/ir_cons
 !    } else if (strcmp(callee, "normalize") == 0) {
         assert(op[0]->type->is_float());
         float length = sqrtf(dot(op[0], op[0]));
-  
+
 --- 1069,1077 ----
   	 for (unsigned c = 0; c < op[0]->type->components(); c++)
   	    data.f[c] = op[op[2]->value.b[c] ? 1 : 0]->value.f[c];
@@ -1112,10 +1112,10 @@ diff -c -r Mesa-7.9/src/glsl/ir_constant_expression.cpp MesaLib/src/glsl/ir_cons
 !    } else if (safe_strcmp(callee, "normalize") == 0) {
         assert(op[0]->type->is_float());
         float length = sqrtf(dot(op[0], op[0]));
-  
+
 ***************
 *** 1079,1087 ****
-  
+
         for (unsigned c = 0; c < op[0]->type->components(); c++)
   	 data.f[c] = op[0]->value.f[c] / length;
 !    } else if (strcmp(callee, "not") == 0) {
@@ -1125,7 +1125,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_constant_expression.cpp MesaLib/src/glsl/ir_cons
         for (unsigned c = 0; c < op[0]->type->components(); c++) {
   	 switch (op[0]->type->base_type) {
 --- 1080,1088 ----
-  
+
         for (unsigned c = 0; c < op[0]->type->components(); c++)
   	 data.f[c] = op[0]->value.f[c] / length;
 !    } else if (safe_strcmp(callee, "not") == 0) {
@@ -1282,26 +1282,26 @@ diff -c -r Mesa-7.9/src/glsl/ir_dead_functions.cpp MesaLib/src/glsl/ir_dead_func
    #include "ir_expression_flattening.h"
    #include "glsl_types.h"
 +  #include "safe_strcmp.h"
-  
+
    class signature_entry : public exec_node
    {
 ***************
 *** 90,96 ****
    {
       signature_entry *entry = this->get_signature_entry(ir);
-  
+
 !     if (strcmp(ir->function_name(), "main") == 0) {
          entry->used = true;
       }
-  
+
 --- 91,97 ----
    {
       signature_entry *entry = this->get_signature_entry(ir);
-  
+
 !     if (safe_strcmp(ir->function_name(), "main") == 0) {
          entry->used = true;
       }
-  
+
 diff -c -r Mesa-7.9/src/glsl/ir_function_inlining.cpp MesaLib/src/glsl/ir_function_inlining.cpp
 *** Mesa-7.9/src/glsl/ir_function_inlining.cpp	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/glsl/ir_function_inlining.cpp	Fri Oct 22 15:35:58 2010
@@ -1309,7 +1309,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_function_inlining.cpp MesaLib/src/glsl/ir_functi
 *** 27,33 ****
    * Replaces calls to functions with the body of the function.
    */
-  
+
 ! #include <inttypes.h>
   #include "ir.h"
   #include "ir_visitor.h"
@@ -1317,7 +1317,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_function_inlining.cpp MesaLib/src/glsl/ir_functi
 --- 27,34 ----
    * Replaces calls to functions with the body of the function.
    */
-  
+
 ! /* The use of inttypes.h seems to be unnecessary and causes problems on Windows. */
 ! /* #include <inttypes.h> */
   #include "ir.h"
@@ -1333,7 +1333,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_lower_jumps.cpp MesaLib/src/glsl/ir_lower_jumps.
   #include <string.h>
   #include "ir.h"
 + #include "safe_strcmp.h"
-  
+
   enum jump_strength
   {
 ***************
@@ -1343,7 +1343,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_lower_jumps.cpp MesaLib/src/glsl/ir_lower_jumps.
         this->nesting_depth = 0;
 !       this->is_main = this->signature && (strcmp(this->signature->function_name(), "main") == 0);
      }
-  
+
      ir_variable* get_return_flag()
 --- 126,132 ----
         this->return_flag = 0;
@@ -1351,7 +1351,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_lower_jumps.cpp MesaLib/src/glsl/ir_lower_jumps.
         this->nesting_depth = 0;
 !       this->is_main = this->signature && (safe_strcmp(this->signature->function_name(), "main") == 0);
      }
-  
+
      ir_variable* get_return_flag()
 diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 *** Mesa-7.9/src/glsl/ir_reader.cpp	Fri Oct  1 15:51:28 2010
@@ -1363,9 +1363,9 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
   #include "glsl_types.h"
   #include "s_expression.h"
 + #include "safe_strcmp.h"
-  
+
   const static bool debug = false;
-  
+
 ***************
 *** 128,134 ****
   	 ir_read_error(st, expr, "expected type (array ...) or (struct ...)");
@@ -1386,7 +1386,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 ***************
 *** 150,156 ****
   	 }
-  
+
   	 return glsl_type::get_array_instance(base_type, size->value());
 !       } else if (strcmp(type_sym->value(), "struct") == 0) {
   	 assert(false); // FINISHME
@@ -1394,7 +1394,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
   	 ir_read_error(st, expr, "expected (array ...) or (struct ...); "
 --- 151,157 ----
   	 }
-  
+
   	 return glsl_type::get_array_instance(base_type, size->value());
 !       } else if (safe_strcmp(type_sym->value(), "struct") == 0) {
   	 assert(false); // FINISHME
@@ -1403,24 +1403,24 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 ***************
 *** 189,195 ****
   	 continue; // not a (function ...); ignore it.
-  
+
         s_symbol *tag = SX_AS_SYMBOL(sub->subexpressions.get_head());
 !       if (tag == NULL || strcmp(tag->value(), "function") != 0)
   	 continue; // not a (function ...); ignore it.
-  
+
         ir_function *f = read_function(st, sub, true);
 --- 190,196 ----
   	 continue; // not a (function ...); ignore it.
-  
+
         s_symbol *tag = SX_AS_SYMBOL(sub->subexpressions.get_head());
 !       if (tag == NULL || safe_strcmp(tag->value(), "function") != 0)
   	 continue; // not a (function ...); ignore it.
-  
+
         ir_function *f = read_function(st, sub, true);
 ***************
 *** 233,239 ****
         }
-  
+
         s_symbol *tag = SX_AS_SYMBOL(siglist->subexpressions.get_head());
 !       if (tag == NULL || strcmp(tag->value(), "signature") != 0) {
   	 ir_read_error(st, siglist, "Expected (signature ...)");
@@ -1428,7 +1428,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
         }
 --- 234,240 ----
         }
-  
+
         s_symbol *tag = SX_AS_SYMBOL(siglist->subexpressions.get_head());
 !       if (tag == NULL || safe_strcmp(tag->value(), "signature") != 0) {
   	 ir_read_error(st, siglist, "Expected (signature ...)");
@@ -1461,7 +1461,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 !       if (strcmp(symbol->value(), "continue") == 0 && loop_ctx != NULL)
   	 return new(ctx) ir_loop_jump(ir_loop_jump::jump_continue);
      }
-  
+
 --- 365,373 ----
      void *ctx = st;
      s_symbol *symbol = SX_AS_SYMBOL(expr);
@@ -1471,11 +1471,11 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 !       if (safe_strcmp(symbol->value(), "continue") == 0 && loop_ctx != NULL)
   	 return new(ctx) ir_loop_jump(ir_loop_jump::jump_continue);
      }
-  
+
 ***************
 *** 383,399 ****
      }
-  
+
      ir_instruction *inst = NULL;
 !    if (strcmp(tag->value(), "declare") == 0) {
         inst = read_declaration(st, list);
@@ -1493,7 +1493,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
         inst = read_rvalue(st, list);
 --- 384,400 ----
      }
-  
+
      ir_instruction *inst = NULL;
 !    if (safe_strcmp(tag->value(), "declare") == 0) {
         inst = read_declaration(st, list);
@@ -1512,7 +1512,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 ***************
 *** 443,467 ****
         }
-  
+
         // FINISHME: Check for duplicate/conflicting qualifiers.
 !       if (strcmp(qualifier->value(), "centroid") == 0) {
   	 var->centroid = 1;
@@ -1538,7 +1538,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
   	 ir_read_error(st, list, "unknown qualifier: %s", qualifier->value());
 --- 444,468 ----
         }
-  
+
         // FINISHME: Check for duplicate/conflicting qualifiers.
 !       if (safe_strcmp(qualifier->value(), "centroid") == 0) {
   	 var->centroid = 1;
@@ -1595,7 +1595,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 *** 921,931 ****
      s_symbol *tag = SX_AS_SYMBOL(list->subexpressions.head);
      assert(tag != NULL);
-  
+
 !    if (strcmp(tag->value(), "var_ref") == 0)
         return read_var_ref(st, list);
 !    if (strcmp(tag->value(), "array_ref") == 0)
@@ -1607,7 +1607,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_reader.cpp MesaLib/src/glsl/ir_reader.cpp
 --- 922,932 ----
      s_symbol *tag = SX_AS_SYMBOL(list->subexpressions.head);
      assert(tag != NULL);
-  
+
 !    if (safe_strcmp(tag->value(), "var_ref") == 0)
         return read_var_ref(st, list);
 !    if (safe_strcmp(tag->value(), "array_ref") == 0)
@@ -1626,12 +1626,12 @@ diff -c -r Mesa-7.9/src/glsl/ir_structure_splitting.cpp MesaLib/src/glsl/ir_stru
   #include "ir_rvalue_visitor.h"
   #include "glsl_types.h"
 + #include "safe_strcmp.h"
-  
+
   static bool debug = false;
-  
+
 ***************
 *** 228,235 ****
-  
+
      unsigned int i;
      for (i = 0; i < entry->var->type->length; i++) {
 !       if (strcmp(deref_record->field,
@@ -1640,7 +1640,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_structure_splitting.cpp MesaLib/src/glsl/ir_stru
      }
      assert(i != entry->var->type->length);
 --- 229,236 ----
-  
+
      unsigned int i;
      for (i = 0; i < entry->var->type->length; i++) {
 !       if (safe_strcmp(deref_record->field,
@@ -1655,7 +1655,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_validate.cpp MesaLib/src/glsl/ir_validate.cpp
 *** 33,39 ****
    * a dereference chain.
    */
-  
+
 ! #include <inttypes.h>
   #include "ir.h"
   #include "ir_hierarchical_visitor.h"
@@ -1663,7 +1663,7 @@ diff -c -r Mesa-7.9/src/glsl/ir_validate.cpp MesaLib/src/glsl/ir_validate.cpp
 --- 33,40 ----
    * a dereference chain.
    */
-  
+
 ! /* The use of inttypes.h seems to be unnecessary and causes problems on Windows. */
 ! /* #include <inttypes.h> */
   #include "ir.h"
@@ -1679,14 +1679,14 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
   #include "linker.h"
   #include "ir_optimization.h"
 + #include "safe_strcmp.h"
-  
+
   /**
    * Visitor that determines whether or not a variable is ever written.
 ***************
 *** 95,101 ****
      {
         ir_variable *const var = ir->lhs->variable_referenced();
-  
+
 !       if (strcmp(name, var->name) == 0) {
   	 found = true;
   	 return visit_stop;
@@ -1694,7 +1694,7 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
 --- 96,102 ----
      {
         ir_variable *const var = ir->lhs->variable_referenced();
-  
+
 !       if (safe_strcmp(name, var->name) == 0) {
   	 found = true;
   	 return visit_stop;
@@ -1718,7 +1718,7 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
   	    }
 ***************
 *** 148,154 ****
-  
+
      virtual ir_visitor_status visit(ir_dereference_variable *ir)
      {
 !       if (strcmp(this->name, ir->var->name) == 0) {
@@ -1726,7 +1726,7 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
   	 return visit_stop;
         }
 --- 149,155 ----
-  
+
      virtual ir_visitor_status visit(ir_dereference_variable *ir)
      {
 !       if (safe_strcmp(this->name, ir->var->name) == 0) {
@@ -1737,7 +1737,7 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
 *** 876,882 ****
   	       if (!other_var)
   		  continue;
-  
+
 ! 	       if (strcmp(var->name, other_var->name) == 0 &&
   		   other_var->max_array_access > size) {
   		  size = other_var->max_array_access;
@@ -1745,7 +1745,7 @@ diff -c -r Mesa-7.9/src/glsl/linker.cpp MesaLib/src/glsl/linker.cpp
 --- 877,883 ----
   	       if (!other_var)
   		  continue;
-  
+
 ! 	       if (safe_strcmp(var->name, other_var->name) == 0 &&
   		   other_var->max_array_access > size) {
   		  size = other_var->max_array_access;
@@ -1757,15 +1757,15 @@ diff -c -r Mesa-7.9/src/mapi/glapi/glapi_nop.c MesaLib/src/mapi/glapi/glapi_nop.
 *** 107,113 ****
      return 0;
   }
-  
+
 ! #define TABLE_ENTRY(name) (_glapi_proc) NoOpGeneric
-  
+
   #endif
-  
+
 --- 107,138 ----
      return 0;
   }
-  
+
 ! /**
 !  * This is called if the user somehow calls an unassigned GL dispatch function.
 !  */
@@ -1774,7 +1774,7 @@ diff -c -r Mesa-7.9/src/mapi/glapi/glapi_nop.c MesaLib/src/mapi/glapi/glapi_nop.
 ! {
 !    return NoOpGeneric();
 ! }
-! 
+!
 ! /*
 !  * It is necessary to generate custom no-op entry points at least on
 !  * Windows, where the __stdcall calling convention is used (callee
@@ -1787,14 +1787,14 @@ diff -c -r Mesa-7.9/src/mapi/glapi/glapi_nop.c MesaLib/src/mapi/glapi/glapi_nop.
 ! #define NAME(func)  NoOp##func
 ! #define DISPATCH(func, args, msg)  NoOpGeneric();
 ! #define RETURN_DISPATCH(func, args, msg)  return NoOpGeneric();
-! 
+!
 ! /*
 !  * Defines for the table of no-op entry points.
 !  */
 ! #define TABLE_ENTRY(name) (_glapi_proc) NoOp##name
-  
+
   #endif
-  
+
 diff -c -r Mesa-7.9/src/mesa/main/compiler.h MesaLib/src/mesa/main/compiler.h
 *** Mesa-7.9/src/mesa/main/compiler.h	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/mesa/main/compiler.h	Fri Oct 22 15:44:23 2010
@@ -1809,7 +1809,7 @@ diff -c -r Mesa-7.9/src/mesa/main/compiler.h MesaLib/src/mesa/main/compiler.h
 + # endif
   #  define USED
   #endif
-  
+
 diff -c -r Mesa-7.9/src/mesa/main/histogram.c MesaLib/src/mesa/main/histogram.c
 *** Mesa-7.9/src/mesa/main/histogram.c	Mon Oct  4 18:58:00 2010
 --- MesaLib/src/mesa/main/histogram.c	Tue Oct 26 11:17:37 2010
@@ -1818,13 +1818,13 @@ diff -c -r Mesa-7.9/src/mesa/main/histogram.c MesaLib/src/mesa/main/histogram.c
 --- 32,40 ----
   #include "macros.h"
   #include "main/dispatch.h"
-  
+
 + #if defined(_MSC_VER)
 + #pragma optimize("", off)
 + #endif
-  
+
   #if FEATURE_histogram
-  
+
 diff -c -r Mesa-7.9/src/mesa/main/image.c MesaLib/src/mesa/main/image.c
 *** Mesa-7.9/src/mesa/main/image.c	Mon Oct  4 18:58:00 2010
 --- MesaLib/src/mesa/main/image.c	Tue Oct 26 11:17:45 2010
@@ -1833,11 +1833,11 @@ diff -c -r Mesa-7.9/src/mesa/main/image.c MesaLib/src/mesa/main/image.c
 --- 37,45 ----
   #include "imports.h"
   #include "macros.h"
-  
+
 + #if defined(_MSC_VER)
 + #pragma optimize("", off)
 + #endif
-  
+
   /**
    * NOTE:
 diff -c -r Mesa-7.9/src/mesa/main/mipmap.c MesaLib/src/mesa/main/mipmap.c
@@ -1847,19 +1847,19 @@ diff -c -r Mesa-7.9/src/mesa/main/mipmap.c MesaLib/src/mesa/main/mipmap.c
 *** 34,40 ****
   #include "texstore.h"
   #include "image.h"
-  
-! 
-  
+
+!
+
   static GLint
   bytes_per_pixel(GLenum datatype, GLuint comps)
 --- 34,42 ----
   #include "texstore.h"
   #include "image.h"
-  
+
 ! #if defined(_MSC_VER)
 ! #pragma optimize("", off)
 ! #endif
-  
+
   static GLint
   bytes_per_pixel(GLenum datatype, GLuint comps)
 diff -c -r Mesa-7.9/src/mesa/main/querymatrix.c MesaLib/src/mesa/main/querymatrix.c
@@ -1871,18 +1871,18 @@ diff -c -r Mesa-7.9/src/mesa/main/querymatrix.c MesaLib/src/mesa/main/querymatri
        defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || \
        (defined(__sun) && defined(__C99FEATURES__)) || defined(__MINGW32__) || \
 !      (defined(__sun) && defined(__GNUC__))
-  
+
   /* fpclassify is available. */
-  
+
 --- 73,80 ----
   #elif defined(__APPLE__) || defined(__CYGWIN__) || defined(__FreeBSD__) || \
        defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__) || \
        (defined(__sun) && defined(__C99FEATURES__)) || defined(__MINGW32__) || \
 !      (defined(__sun) && defined(__GNUC__)) || \
 !      (defined(__linux) && defined(__GNUC__))
-  
+
   /* fpclassify is available. */
-  
+
 diff -c -r Mesa-7.9/src/mesa/math/m_eval.c MesaLib/src/mesa/math/m_eval.c
 *** Mesa-7.9/src/mesa/math/m_eval.c	Thu Feb  4 16:10:40 2010
 --- MesaLib/src/mesa/math/m_eval.c	Tue Oct 26 11:18:00 2010
@@ -1891,14 +1891,14 @@ diff -c -r Mesa-7.9/src/mesa/math/m_eval.c MesaLib/src/mesa/math/m_eval.c
 --- 41,50 ----
   #include "main/config.h"
   #include "m_eval.h"
-  
+
 + #if defined(_MSC_VER)
 + #pragma optimize("", off)
 + #endif
-+ 
++
   static GLfloat inv_tab[MAX_EVAL_ORDER];
-  
-  
+
+
 diff -c -r Mesa-7.9/src/mesa/swrast/s_texcombine.c MesaLib/src/mesa/swrast/s_texcombine.c
 *** Mesa-7.9/src/mesa/swrast/s_texcombine.c	Fri Oct  1 15:51:28 2010
 --- MesaLib/src/mesa/swrast/s_texcombine.c	Tue Oct 26 11:01:39 2010
@@ -1907,10 +1907,201 @@ diff -c -r Mesa-7.9/src/mesa/swrast/s_texcombine.c MesaLib/src/mesa/swrast/s_tex
 --- 34,42 ----
   #include "s_context.h"
   #include "s_texcombine.h"
-  
+
 + #if defined(_MSC_VER)
 + #pragma optimize("", off)
 + #endif
-  
+
   /**
    * Pointer to array of float[4]
+diff -c -r Mesa-7.9/src/mapi/glapi/gen/gl_apitemp.py MesaLib/src/mapi/glapi/gen/gl_apitemp.py
+*** Mesa-7.9/src/mapi/glapi/gen/gl_apitemp.py	Mon Aug 15 09:14:29 2011
+--- MesaLib/src/mapi/glapi/gen/gl_apitemp.py	Thu Aug 11 21:23:47 2011
+***************
+*** 79,89 ****
+  			comma = ", "
+
+
+- 		if f.return_type != 'void':
+- 			dispatch = "RETURN_DISPATCH"
+- 		else:
+- 			dispatch = "DISPATCH"
+-
+  		need_proto = False
+  		if not f.is_static_entry_point(name):
+  			need_proto = True
+--- 79,84 ----
+***************
+*** 97,108 ****
+
+  		print '%s %s KEYWORD2 NAME(%s)(%s)' % (keyword, f.return_type, n, f.get_parameter_string(name))
+  		print '{'
+! 		if p_string == "":
+! 			print '   %s(%s, (), (F, "gl%s();\\n"));' \
+! 				% (dispatch, f.name, name)
+  		else:
+! 			print '   %s(%s, (%s), (F, "gl%s(%s);\\n", %s));' \
+! 				% (dispatch, f.name, p_string, name, t_string, o_string)
+  		print '}'
+  		print ''
+  		return
+--- 92,113 ----
+
+  		print '%s %s KEYWORD2 NAME(%s)(%s)' % (keyword, f.return_type, n, f.get_parameter_string(name))
+  		print '{'
+! 		if f.return_type != 'void':
+! 			dispatch = "RETURN_DISPATCH"
+! 			if p_string == "":
+! 				print '   %s(%s, %s, (), (F, "gl%s();\\n"));' \
+! 					% (dispatch, f.return_type, f.name, name)
+! 			else:
+! 				print '   %s(%s, %s, (%s), (F, "gl%s(%s);\\n", %s));' \
+! 					% (dispatch, f.return_type, f.name, p_string, name, t_string, o_string)
+  		else:
+! 			dispatch = "DISPATCH"
+! 			if p_string == "":
+! 				print '   %s(%s, (), (F, "gl%s();\\n"));' \
+! 					% (dispatch, f.name, name)
+! 			else:
+! 				print '   %s(%s, (%s), (F, "gl%s(%s);\\n", %s));' \
+! 					% (dispatch, f.name, p_string, name, t_string, o_string)
+  		print '}'
+  		print ''
+  		return
+***************
+*** 120,126 ****
+   *   NAME(n)  - builds the final function name (usually add "gl" prefix)
+   *   DISPATCH(func, args, msg) - code to do dispatch of named function.
+   *                               msg is a printf-style debug message.
+!  *   RETURN_DISPATCH(func, args, msg) - code to do dispatch with a return value
+   *
+   * Here is an example which generates the usual OpenGL functions:
+   *   #define KEYWORD1
+--- 125,132 ----
+   *   NAME(n)  - builds the final function name (usually add "gl" prefix)
+   *   DISPATCH(func, args, msg) - code to do dispatch of named function.
+   *                               msg is a printf-style debug message.
+!  *   RETURN_DISPATCH(type, func, args, msg) - code to do dispatch with a
+!  *                                            return value of type.
+   *
+   * Here is an example which generates the usual OpenGL functions:
+   *   #define KEYWORD1
+diff -c -r Mesa-7.9/src/mapi/glapi/glapi_dispatch.c MesaLib/src/mapi/glapi/glapi_dispatch.c
+*** Mesa-7.9/src/mapi/glapi/glapi_dispatch.c	Mon Aug 15 09:14:30 2011
+--- MesaLib/src/mapi/glapi/glapi_dispatch.c	Thu Aug 11 21:25:55 2011
+***************
+*** 65,71 ****
+     fprintf MESSAGE;				\
+     CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+! #define RETURN_DISPATCH(FUNC, ARGS, MESSAGE) 	\
+     fprintf MESSAGE;				\
+     return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+--- 65,71 ----
+     fprintf MESSAGE;				\
+     CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+! #define RETURN_DISPATCH(TYPE, FUNC, ARGS, MESSAGE) 	\
+     fprintf MESSAGE;				\
+     return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+***************
+*** 74,80 ****
+  #define DISPATCH(FUNC, ARGS, MESSAGE)		\
+     CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+! #define RETURN_DISPATCH(FUNC, ARGS, MESSAGE) 	\
+     return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+  #endif /* logging */
+--- 74,80 ----
+  #define DISPATCH(FUNC, ARGS, MESSAGE)		\
+     CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+! #define RETURN_DISPATCH(TYPE, FUNC, ARGS, MESSAGE) 	\
+     return CALL_ ## FUNC(GET_DISPATCH(), ARGS);
+
+  #endif /* logging */
+diff -c -r Mesa-7.9/src/mapi/glapi/glapi_nop.c MesaLib/src/mapi/glapi/glapi_nop.c
+*** Mesa-7.9/src/mapi/glapi/glapi_nop.c	Mon Aug 15 09:14:30 2011
+--- MesaLib/src/mapi/glapi/glapi_nop.c	Thu Aug 11 21:29:46 2011
+***************
+*** 86,92 ****
+  #define KEYWORD2 GLAPIENTRY
+  #define NAME(func)  NoOp##func
+  #define DISPATCH(func, args, msg)  Warn(#func);
+! #define RETURN_DISPATCH(func, args, msg)  Warn(#func); return 0
+
+
+  /*
+--- 86,92 ----
+  #define KEYWORD2 GLAPIENTRY
+  #define NAME(func)  NoOp##func
+  #define DISPATCH(func, args, msg)  Warn(#func);
+! #define RETURN_DISPATCH(type, func, args, msg)  Warn(#func); return (type)0
+
+
+  /*
+***************
+*** 96,102 ****
+
+  #else
+
+! static int
+  NoOpGeneric(void)
+  {
+  #if !defined(_WIN32_WCE)
+--- 96,102 ----
+
+  #else
+
+! void
+  NoOpGeneric(void)
+  {
+  #if !defined(_WIN32_WCE)
+***************
+*** 104,110 ****
+        fprintf(stderr, "GL User Error: calling GL function without a rendering context\n");
+     }
+  #endif
+-    return 0;
+  }
+
+  /**
+--- 104,109 ----
+***************
+*** 113,119 ****
+  static GLint
+  NoOpUnused(void)
+  {
+!    return NoOpGeneric();
+  }
+
+  /*
+--- 112,119 ----
+  static GLint
+  NoOpUnused(void)
+  {
+!    NoOpGeneric();
+!    return 0;
+  }
+
+  /*
+***************
+*** 127,133 ****
+  #define KEYWORD2 GLAPIENTRY
+  #define NAME(func)  NoOp##func
+  #define DISPATCH(func, args, msg)  NoOpGeneric();
+! #define RETURN_DISPATCH(func, args, msg)  return NoOpGeneric();
+
+  /*
+   * Defines for the table of no-op entry points.
+--- 127,133 ----
+  #define KEYWORD2 GLAPIENTRY
+  #define NAME(func)  NoOp##func
+  #define DISPATCH(func, args, msg)  NoOpGeneric();
+! #define RETURN_DISPATCH(type, func, args, msg)  NoOpGeneric(); return (type)0
+
+  /*
+   * Defines for the table of no-op entry points.

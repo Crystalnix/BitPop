@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,10 @@ TEST(ChromeFrame, FLAKY_Launch) {
   MessageLoopForUI loop;
   AutomationMockLaunch mock_launch(&loop, kLongWaitTimeout);
 
-  loop.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask, kLongWaitTimeout);
+  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), kLongWaitTimeout);
 
   mock_launch.Navigate("about:blank");
-  loop.Run(NULL);
+  loop.RunWithDispatcher(NULL);
   EXPECT_TRUE(mock_launch.launch_result());
 }
 
@@ -27,10 +27,10 @@ TEST(ChromeFrame, Navigate) {
   MessageLoopForUI loop;
   AutomationMockNavigate mock_navigate(&loop, kLongWaitTimeout);
 
-  loop.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask, kLongWaitTimeout);
+  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), kLongWaitTimeout);
 
   mock_navigate.NavigateRelativeFile(L"postmessage_basic_frame.html");
-  loop.Run(NULL);
+  loop.RunWithDispatcher(NULL);
   EXPECT_FALSE(mock_navigate.navigation_result());
 }
 
@@ -38,10 +38,10 @@ TEST(ChromeFrame, PostMessage) {
   MessageLoopForUI loop;
   AutomationMockPostMessage mock_postmessage(&loop, kLongWaitTimeout);
 
-  loop.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask, kLongWaitTimeout);
+  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), kLongWaitTimeout);
 
   mock_postmessage.NavigateRelativeFile(L"postmessage_basic_frame.html");
-  loop.Run(NULL);
+  loop.RunWithDispatcher(NULL);
   EXPECT_FALSE(mock_postmessage.postmessage_result());
 }
 
@@ -52,10 +52,10 @@ TEST(ChromeFrame, FLAKY_RequestStart) {
   AutomationMockHostNetworkRequestStart mock_request_start(&loop,
                                                            kLongWaitTimeout);
 
-  loop.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask, kLongWaitTimeout);
+  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), kLongWaitTimeout);
 
   mock_request_start.NavigateRelative(L"postmessage_basic_frame.html");
-  loop.Run(NULL);
+  loop.RunWithDispatcher(NULL);
   EXPECT_TRUE(mock_request_start.request_start_result());
 }
 

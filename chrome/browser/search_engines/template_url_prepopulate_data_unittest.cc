@@ -9,11 +9,11 @@
 #include "chrome/browser/search_engines/search_engine_type.h"
 #include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_profile.h"
 #include "grit/theme_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -146,7 +146,7 @@ TEST_F(TemplateURLPrepopulateDataTest, SearchEngineFromOrigin) {
       for (size_t turl_i = 0; turl_i < urls.size(); ++turl_i) {
         GURL engine_url(urls[turl_i]->url()->url());
         if (!engine_url.is_valid()) {
-          engine_url = TemplateURLModel::GenerateSearchURLUsingTermsData(
+          engine_url = TemplateURLService::GenerateSearchURLUsingTermsData(
               urls[turl_i], search_terms_data);
         }
         GURL origin = engine_url.GetOrigin();
@@ -162,7 +162,7 @@ TEST_F(TemplateURLPrepopulateDataTest, SearchEngineFromOrigin) {
         TemplateURLPrepopulateData::GetEngineForOrigin(profile.GetPrefs(),
                                                        *it));
     EXPECT_EQ(
-        TemplateURLModel::GenerateSearchURLUsingTermsData(
+        TemplateURLService::GenerateSearchURLUsingTermsData(
             found_url.get(), search_terms_data).GetOrigin(),
         it->GetOrigin());
   }
@@ -184,4 +184,53 @@ TEST_F(TemplateURLPrepopulateDataTest, GetSearchEngineLogo) {
   EXPECT_EQ(kNoSearchEngineLogo,
             TemplateURLPrepopulateData::GetSearchEngineLogo(engine_no_logo));
 
+}
+
+TEST_F(TemplateURLPrepopulateDataTest, FindPrepopulatedEngine) {
+  // Google URLs in different forms.
+  const char* kGoogleURLs[] = {
+    // Original with google:baseURL:
+    "{google:baseURL}search?{google:RLZ}{google:acceptedSuggestion}"
+    "{google:originalQueryForSuggestion}{google:searchFieldtrialParameter}"
+    "{google:instantFieldTrialGroupParameter}"
+    "sourceid=chrome&ie={inputEncoding}&q={searchTerms}",
+    // Custom with google.com:
+    "http://google.com/search?{google:RLZ}{google:acceptedSuggestion}"
+    "{google:originalQueryForSuggestion}{google:searchFieldtrialParameter}"
+    "{google:instantFieldTrialGroupParameter}"
+    "sourceid=chrome&ie={inputEncoding}&q={searchTerms}",
+    // Custom with a country TLD:
+    "http://www.google.ru/search?{google:RLZ}{google:acceptedSuggestion}"
+    "{google:originalQueryForSuggestion}{google:searchFieldtrialParameter}"
+    "{google:instantFieldTrialGroupParameter}"
+    "sourceid=chrome&ie={inputEncoding}&q={searchTerms}"
+  };
+  scoped_ptr<TemplateURL> t_url;
+  for (size_t i = 0; i < arraysize(kGoogleURLs); ++i) {
+    t_url.reset(
+        TemplateURLPrepopulateData::FindPrepopulatedEngine(kGoogleURLs[i]));
+    ASSERT_TRUE(t_url.get());
+    // Google's prepopulated ID is 1.
+    EXPECT_EQ(1, t_url->prepopulate_id());
+  }
+  // Non-Google URLs.
+  const char* kYahooURLs[] = {
+      "http://search.yahoo.com/search?"
+      "ei={inputEncoding}&fr=crmas&p={searchTerms}",
+      "http://search.yahoo.com/search?p={searchTerms}"
+  };
+  for (size_t i = 0; i < arraysize(kYahooURLs); ++i) {
+    t_url.reset(
+        TemplateURLPrepopulateData::FindPrepopulatedEngine(kYahooURLs[i]));
+    ASSERT_TRUE(t_url.get());
+    // Yahoo!'s prepopulated ID is 2.
+    EXPECT_EQ(2, t_url->prepopulate_id());
+  }
+  // Search URL for which no prepopulated search provider exists.
+  std::string kExampleSearchURL = "http://example.net/search?q={searchTerms}";
+  EXPECT_FALSE(TemplateURLPrepopulateData::FindPrepopulatedEngine(
+      kExampleSearchURL));
+  // Invalid search URL.
+  EXPECT_FALSE(TemplateURLPrepopulateData::FindPrepopulatedEngine(
+      "invalid:search:url"));
 }

@@ -17,10 +17,26 @@
     <script type="text/javascript" src="js/bootstrap.js"></script>
     <script type="text/javascript" src="js/sidebar.js"></script>
   <title>Formats: Manifest Files - Google Chrome Extensions - Google Code</title></head>
-  <body>  <div id="gc-container" class="labs">
-      <div id="devModeWarning">
-        You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
-      </div>
+  <body>  <div id="devModeWarning" class="displayModeWarning">
+    You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
+  </div>
+  <div id="branchWarning" class="displayModeWarning">
+    <span>WARNING: This is the <span id="branchName">BETA</span> documentation.
+    It may not work with the stable release of Chrome.</span>
+    <select id="branchChooser">
+      <option>Choose a different version...
+      </option><option value="">Stable
+      </option><option value="beta">Beta
+      </option><option value="dev">Dev
+      </option><option value="trunk">Trunk
+    </option></select>
+  </div>
+  <div id="unofficialWarning" class="displayModeWarning">
+    <span>WARNING: This is unofficial documentation. It may not work with the
+    current release of Chrome.</span>
+    <button id="goToOfficialDocs">Go to the official docs</button>
+  </div>
+  <div id="gc-container" class="labs">
       <!-- SUBTEMPLATES: DO NOT MOVE FROM THIS LOCATION -->
       <!-- In particular, sub-templates that recurse, must be used by allowing
            jstemplate to make a copy of the template in this section which
@@ -107,6 +123,46 @@
             </div>
           </dl>
         </div>
+
+        <!-- Individual subsections from the table of contents -->
+        <ol>
+          <li id="propertiesTocTemplate">
+            <a href="#properties">Properties</a>
+            <ol>
+              <li>
+                <a href="#property-anchor">propertyName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="methodsTocTemplate">
+            <a>Methods</a>
+            <ol>
+              <li>
+                <a href="#method-anchor">methodName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="eventsTocTemplate">
+            <a>Events</a>
+            <ol>
+              <li>
+                <a href="#event-anchor">eventName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="typesTocTemplate">
+            <a href="#types">Types</a>
+            <ol>
+              <li>
+                <a href="#id-anchor">id</a>
+                <ol>
+                  <div></div>
+                  <div></div>
+                </ol>
+              </li>
+            </ol>
+          </li>
+        </ol>
       </div> <!-- /SUBTEMPLATES -->
 
   <a id="top"></a>
@@ -130,10 +186,10 @@
             </div>
           </form>
 
-          <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+          <script type="text/javascript" src="https://www.google.com/jsapi"></script>
           <script type="text/javascript">google.load("elements", "1", {packages: "transliteration"});</script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
         </td>
       </tr>
     </tbody></table>
@@ -158,6 +214,9 @@
           </li>
           <li id="group_link">
             <a href="http://groups.google.com/a/chromium.org/group/chromium-extensions" title="Google Chrome Extensions developer forum">Group</a>
+          </li>
+          <li id="so_link">
+            <a href="http://stackoverflow.com/questions/tagged/google-chrome-extension" title="[google-chrome-extension] tag on Stack Overflow">Questions?</a>
           </li>
         </ul>
       </div> <!-- end gc-topnav -->
@@ -186,6 +245,7 @@
                 <ul>
                   <li><a href="bookmarks.html">Bookmarks</a></li>
                   <li><a href="cookies.html">Cookies</a></li>
+                  <li><a href="devtools.html">Developer Tools</a></li>
                   <li><a href="events.html">Events</a></li>
                   <li><a href="history.html">History</a></li>
                   <li><a href="management.html">Management</a></li>
@@ -199,9 +259,9 @@
                   <li><a href="background_pages.html">Background Pages</a></li>
                   <li><a href="content_scripts.html">Content Scripts</a></li>
                   <li><a href="xhr.html">Cross-Origin XHR</a></li>
-                  <li><a href="idle.html">Idle</a></li>
                   <li><a href="i18n.html">Internationalization</a></li>
                   <li><a href="messaging.html">Message Passing</a></li>
+                  <li><a href="permissions.html">Optional Permissions</a></li>
                   <li><a href="npapi.html">NPAPI Plugins</a></li>
                 </ul>
               </li>
@@ -286,47 +346,29 @@
                 </li><li>
                   <a href="#name">name</a>
                 </li><li>
+                  <a href="#nacl_modules">nacl_modules</a>
+                </li><li>
+                  <a href="#offline_enabled">offline_enabled</a>
+                </li><li>
                   <a href="#permissions">permissions</a>
                 </li><li>
+                  <a href="#requirements">requirements</a>
+                </li><li>
                   <a href="#version">version</a>
+                </li><li>
+                  <a href="#manifest_version">manifest_version</a>
+                </li><li>
+                  <a href="#web_accessible_resources">web_accessible_resources</a>
                 </li>
               </ol>
             </li>
               <li style="display: none; ">
                 <a href="#apiReference">API reference</a>
                 <ol>
-                  <li>
-                    <a href="#properties">Properties</a>
-                    <ol>
-                      <li>
-                        <a href="#property-anchor">propertyName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Methods</a>
-                    <ol>
-                      <li>
-                        <a href="#method-anchor">methodName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Events</a>
-                    <ol>
-                      <li>
-                        <a href="#event-anchor">eventName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a href="#types">Types</a>
-                    <ol>
-                      <li>
-                        <a href="#id-anchor">id</a>
-                      </li>
-                    </ol>
-                  </li>
+                  <div></div>
+                  <div></div>
+                  <div></div>
+                  <div></div>
                 </ol>
               </li>
           </ol>
@@ -362,6 +404,7 @@ are <b>name</b> and <b>version</b>.
   <em>// Required</em>
   "<a href="#name">name</a>": "<em>My Extension</em>",
   "<a href="#version">version</a>": "<em>versionString</em>",
+  "<a href="#manifest_version">manifest_version</a>": 2,
 
   <em>// Recommended</em>
   "<a href="#description">description</a>": "<em>A plain text description</em>",
@@ -375,19 +418,24 @@ are <b>name</b> and <b>version</b>.
   "<a href="#app">app</a>": {...},
 
   <em>// Add any of these that you need</em>
-  "<a href="background_pages.html">background_page</a>": "<em>aFile</em>.html",
+  "<a href="background_pages.html">background</a>": {...},
   "<a href="override.html">chrome_url_overrides</a>": {...},
   "<a href="content_scripts.html">content_scripts</a>": [...],
+  "<a href="contentSecurityPolicy.html">content_security_policy</a>": "<em>policyString</em>",
   "<a href="fileBrowserHandler.html">file_browser_handlers</a>": [...],
   "<a href="#homepage_url">homepage_url</a>": "http://<em>path/to/homepage</em>",
   "<a href="#incognito">incognito</a>": "spanning" <em>or</em> "split",
   "<a href="#key">key</a>": "<em>publicKey</em>",
   "<a href="#minimum_chrome_version">minimum_chrome_version</a>": "<em>versionString</em>",
-  "<a href="omnibox.html">omnibox</a>": { "keyword" : "<em>aString</em>" },
+  "<a href="#nacl_modules">nacl_modules</a>": [...],
+  "<a href="#offline_enabled">offline_enabled</a>": true,
+  "<a href="omnibox.html">omnibox</a>": { "keyword": "<em>aString</em>" },
   "<a href="options.html">options_page</a>": "<em>aFile</em>.html",
   "<a href="#permissions">permissions</a>": [...],
   "<a href="npapi.html">plugins</a>": [...],
-  "<a href="autoupdate.html">update_url</a>": "http://<em>path/to/updateInfo</em>.xml"
+  "<a href="#requirements">requirements</a>": {...},
+  "<a href="autoupdate.html">update_url</a>": "http://<em>path/to/updateInfo</em>.xml",
+  "<a href="#web_accessible_resources">web_accessible_resources</a>": [...]
 }
 </pre>
 
@@ -452,7 +500,7 @@ see <a href="i18n.html">Internationalization</a> for details.
 The URL of the homepage for this extension. The extensions management page (chrome://extensions)
 will contain a link to this URL.  This field is particularly useful if you
 <a href="hosting.html">host the extension on your own site</a>. If you distribute your
-extension using the <a href="https://chrome.google.com/extensions">Extensions Gallery</a> or <a href="https://chrome.google.com/webstore">Chrome Web Store</a>,
+extension using the <a href="https://chrome.google.com/webstore">Chrome Web Store</a>,
 the homepage URL defaults to the extension's own page.
 </p>
 
@@ -519,9 +567,11 @@ behave if allowed to run in incognito mode.
 
 <p>
 The default for extensions is "spanning", which means that the extension
-will run in a single shared process.  Any events or messages from an incognito
+will run in a single shared process. Any events or messages from an incognito
 tab will be sent to the shared process, with an <em>incognito</em> flag
-indicating where it came from.
+indicating where it came from. Because incognito tabs cannot use this shared
+process, an extension using the "spanning" incognito mode will not be able to
+load pages from its extension package into the main frame of an incognito tab.
 </p>
 
 <p>
@@ -590,6 +640,79 @@ You can specify locale-specific strings for this field;
 see <a href="i18n.html">Internationalization</a> for details.
 </p>
 
+<h3 id="nacl_modules">nacl_modules</h3>
+
+<p>
+One or more mappings from MIME types to the Native Client module
+that handles each type.
+For example, the bold code in the following snippet
+registers a Native Client module as the content handler
+for the OpenOffice spreadsheet MIME type.
+</p>
+
+<pre>{
+  "name": "Native Client OpenOffice Spreadsheet Viewer",
+  "version": "0.1",
+  "description": "Open OpenOffice spreadsheets, right in your browser.",
+  <b>"nacl_modules": [{
+    "path": "OpenOfficeViewer.nmf",
+    "mime_type": "application/vnd.oasis.opendocument.spreadsheet"
+  }]</b>
+}
+</pre>
+
+<p>
+The value of "path" is the location of a Native Client manifest
+(a <code>.nmf</code> file)
+within the extension directory.
+For more information on Native Client and <code>.nmf</code> files, see the
+<a href="http://code.google.com/chrome/nativeclient/docs/technical_overview.html">Native Client Technical Overview</a>.
+</p>
+
+<p>
+Each MIME type can be associated with only one <code>.nmf</code> file,
+but a single <code>.nmf</code> file might handle multiple MIME types.
+The following example shows an extension
+with two <code>.nmf</code> files
+that handle three MIME types.
+</p>
+
+<pre>{
+  "name": "Spreadsheet Viewer",
+  "version": "0.1",
+  "description": "Open OpenOffice and Excel spreadsheets, right in your browser.",
+  "nacl_modules": [{
+    "path": "OpenOfficeViewer.nmf",
+    "mime_type": "application/vnd.oasis.opendocument.spreadsheet"
+  },
+  {
+    "path": "OpenOfficeViewer.nmf",
+    "mime_type": "application/vnd.oasis.opendocument.spreadsheet-template"
+  },
+  {
+    "path": "ExcelViewer.nmf",
+    "mime_type": "application/excel"
+  }]
+}
+</pre>
+
+<p class="note">
+<strong>Note:</strong>
+You can use Native Client modules in extensions
+without specifying "nacl_modules".
+Use "nacl_modules" only if you want the browser
+to use your Native Client module
+to display a particular type of content.
+</p>
+
+<h3 id="offline_enabled">offline_enabled</h3>
+
+<p>
+Whether the app or extension is expected to work offline. When Chrome detects
+that it is offline, apps with this field set to true will be highlighted
+on the New Tab page.
+</p>
+
 <h3 id="permissions">permissions</h3>
 
 <p>
@@ -612,6 +735,13 @@ For example,
 the <a href="tabs.html">Tabs</a> page
 shows you how to
 declare the "tabs" permission.
+</p>
+
+<p class="note">
+<b>Note:</b>
+As of Chrome 16, some permissions can be optional.
+For details, see
+<a href="permissions.html">Optional Permissions</a>.
 </p>
 
 <p>
@@ -719,6 +849,11 @@ table.
        </td>
 </tr>
 <tr>
+  <td> "contentSettings" </td>
+  <td> Required if the extension uses the
+       <a href="contentSettings.html">chrome.contentSettings</a> module. </td>
+</tr>
+<tr>
   <td> "contextMenus" </td>
   <td> Required if the extension uses the
        <a href="contextMenus.html">chrome.contextMenus</a> module. </td>
@@ -769,10 +904,30 @@ table.
        <a href="notifications.html">Desktop Notifications</a>.</td>
 </tr>
 <tr>
+  <td> "privacy" </td>
+  <td> Required if the extension uses the
+       <a href="privacy.html">chrome.privacy</a> module. </td>
+</tr>
+<tr>
+  <td> "proxy" </td>
+  <td> Required if the extension uses the
+       <a href="proxy.html">chrome.proxy</a> module. </td>
+</tr>
+<tr>
   <td> "tabs" </td>
   <td> Required if the extension uses the
        <a href="tabs.html">chrome.tabs</a> or
        <a href="windows.html">chrome.windows</a> module. </td>
+</tr>
+<tr>
+  <td> "tts" </td>
+  <td> Required if the extension uses the
+       <a href="tts.html">chrome.tts</a> module. </td>
+</tr>
+<tr>
+  <td> "ttsEngine" </td>
+  <td> Required if the extension uses the
+       <a href="ttsEngine.html">chrome.ttsEngine</a> module. </td>
 </tr>
 <tr>
   <td> "unlimitedStorage"</td>
@@ -789,8 +944,60 @@ table.
       <code>http://*.example.com</code>.
       </p>       
   </td>
+</tr><tr>
+</tr><tr>
+  <td> "webNavigation" </td>
+  <td> Required if the extension uses the
+       <a href="webNavigation.html">chrome.webNavigation</a> module. </td>
 </tr>
+<tr>
+  <td> "webRequest" </td>
+  <td> Required if the extension uses the
+       <a href="webRequest.html">chrome.webRequest</a> module. </td>
+</tr>
+<tr>
+  <td> "webRequestBlocking" </td>
+  <td> Required if the extension uses the
+       <a href="webRequest.html">chrome.webRequest</a> module in a blocking
+       fashion. </td>
+</tr>
+
 </tbody></table>
+
+<h3 id="requirements">requirements</h3>
+
+<p>
+Technologies required by the app or extension.
+Hosting sites such as the Chrome Web Store may use this list
+to dissuade users from installing apps or extensions
+that will not work on their computer.
+</p>
+
+<p>
+The only supported requirement is "3D",
+which denotes GPU hardware acceleration.
+For that requirement,
+you can list the 3D-related features your app requires,
+as demonstrated in the following example:
+</p>
+
+<pre>"requirements": {
+  "3D": {
+    "features": ["css3d", "webgl"]
+  }
+}
+</pre>
+
+<p>
+The "css3d" requirement refers to the
+<a href="http://www.w3.org/TR/css3-3d-transforms/">CSS 3D Transforms specification</a>,
+and the "webgl" requirement refers to the
+<a href="http://www.khronos.org/webgl/">WebGL API</a>.
+For more information on Chrome 3D graphics support,
+see the help article on
+<a href="http://www.google.com/support/chrome/bin/answer.py?answer=1220892">WebGL and 3D graphics</a>.
+Support for additional requirements checks may be added in the future.
+</p>
 
 
 <h3 id="version">version</h3>
@@ -842,7 +1049,80 @@ For more information, see
 <a href="autoupdate.html">Autoupdating</a>.
 </p>
 
-<!-- [PENDING: Possibly: point to the store/dashboard and make a big deal of the fact that autoupdating is free if you use them.] -->
+
+<h3 id="manifest_version">manifest_version</h3>
+
+<p>
+One integer specifying the version of the manifest file format your package
+requires. As of Chrome 18, developers <em>should</em> specify <code>2</code>
+(without quotes) to use the format as described by this document:
+</p>
+
+<pre>"manifest_version": 2</pre>
+
+<p>
+Consider manifest version 1 <em>deprecated</em> as of Chrome 18. Version 2 is
+not yet <em>required</em>, but we will, at some point in the not-too-distant
+future, stop supporting packages using deprecated manifest versions. Extensions,
+applications, and themes that aren't ready to make the jump to the new manifest
+version in Chrome 18 can either explicitly specify version <code>1</code>, or
+leave the key off entirely.
+</p>
+<p>
+The changes between version 1 and version 2 of the manifest file format are
+described in detail in <a href="manifestVersion.html">the
+<code>manifest_version</code> documentation.</a>
+</p>
+<p class="caution">
+  Setting <code>manifest_version</code> 2 in Chrome 17 or lower is not
+  recommended. If your extension needs to work in older versions of Chrome,
+  stick with version 1 for the moment. We'll give you ample warning before
+  version 1 stops working.
+</p>
+<h3 id="web_accessible_resources">web_accessible_resources</h3>
+<p>
+An array of strings specifying the paths (relative to the package root) of
+packaged resources that are expected to be usable in the context of a web page.
+For example, an extension that injects a content script with the intention of
+building up some custom interface for <code>example.com</code> would whitelist
+any resources that interface requires (images, icons, stylesheets, scripts,
+etc.) as follows:
+</p>
+<pre>{
+  ...
+  "web_accessible_resources": [
+    "images/my-awesome-image1.png",
+    "images/my-amazing-icon1.png",
+    "style/double-rainbow.css",
+    "script/double-rainbow.js"
+  ],
+  ...
+}</pre>
+<p>
+These resources would then be available in a webpage via the URL
+<code>chrome-extension://[PACKAGE ID]/[PATH]</code>, which can be generated with
+the <a href="extension.html#method-getURL">
+  <code>chrome.extension.getURL</code>
+</a> method. Whitelisted resources are served with appropriate
+<a href="http://www.w3.org/TR/cors/">CORS</a> headers, so they're available via
+mechanisms like XHR.
+</p>
+<p>
+Injected content scripts themselves do not need to be whitelisted.
+</p>
+<h4>Default Availablility</h4>
+<p>
+Resources inside of packages using <a href="#manifest_version">
+  <code>manifest_version</code>
+</a> 2 or above are <strong>blocked by default</strong>, and must be whitelisted
+for use via this property.
+</p>
+<p>
+Resources inside of packages using <code>manifest_version</code> 1 are available
+by default, but <em>if</em> you do set this property, then it will be treated as
+a complete list of all whitelisted resources. Resources not listed will be
+blocked.
+</p>
 </div>
 
         <!-- API PAGE -->
@@ -955,7 +1235,7 @@ For more information, see
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>);
               </div>
 
               <div class="description">
@@ -1034,8 +1314,8 @@ For more information, see
   </p>
 
 <!-- begin analytics -->
-<script src="http://www.google-analytics.com/urchin.js" type="text/javascript"></script>
-<script src="http://www.google-analytics.com/ga.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/ga.js" type="text/javascript"></script>
 
 <script type="text/javascript">
   // chrome doc tracking

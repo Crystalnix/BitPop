@@ -11,6 +11,7 @@
 #include "base/file_path.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/appcache/appcache_export.h"
 
 namespace net {
 class URLRequest;
@@ -20,7 +21,6 @@ namespace appcache {
 
 // Defines constants, types, and abstract classes used in the main
 // process and in child processes.
-extern const char kManifestMimeType[];
 
 static const int kNoHostId = 0;
 static const int64 kNoCacheId = 0;
@@ -54,7 +54,12 @@ enum LogLevel {
   LOG_ERROR,
 };
 
-struct AppCacheInfo {
+enum NamespaceType {
+  FALLBACK_NAMESPACE,
+  INTERCEPT_NAMESPACE
+};
+
+struct APPCACHE_EXPORT AppCacheInfo {
   AppCacheInfo();
   ~AppCacheInfo();
 
@@ -63,6 +68,7 @@ struct AppCacheInfo {
   base::Time last_update_time;
   base::Time last_access_time;
   int64 cache_id;
+  int64 group_id;
   Status status;
   int64 size;
   bool is_complete;
@@ -71,7 +77,7 @@ struct AppCacheInfo {
 typedef std::vector<AppCacheInfo> AppCacheInfoVector;
 
 // Type to hold information about a single appcache resource.
-struct AppCacheResourceInfo {
+struct APPCACHE_EXPORT AppCacheResourceInfo {
   AppCacheResourceInfo();
   ~AppCacheResourceInfo();
 
@@ -79,13 +85,29 @@ struct AppCacheResourceInfo {
   int64 size;
   bool is_master;
   bool is_manifest;
+  bool is_intercept;
   bool is_fallback;
   bool is_foreign;
   bool is_explicit;
+  int64 response_id;
 };
 
+typedef std::vector<AppCacheResourceInfo> AppCacheResourceInfoVector;
+
+struct APPCACHE_EXPORT Namespace {
+  Namespace();  // Type is set to FALLBACK_NAMESPACE by default.
+  Namespace(NamespaceType type, const GURL& url, const GURL& target);
+  ~Namespace();
+
+  NamespaceType type;
+  GURL namespace_url;
+  GURL target_url;
+};
+
+typedef std::vector<Namespace> NamespaceVector;
+
 // Interface used by backend (browser-process) to talk to frontend (renderer).
-class AppCacheFrontend {
+class APPCACHE_EXPORT AppCacheFrontend {
  public:
   virtual void OnCacheSelected(
       int host_id, const appcache::AppCacheInfo& info) = 0;
@@ -106,7 +128,7 @@ class AppCacheFrontend {
 };
 
 // Interface used by frontend (renderer) to talk to backend (browser-process).
-class AppCacheBackend {
+class APPCACHE_EXPORT AppCacheBackend {
  public:
   virtual void RegisterHost(int host_id) = 0;
   virtual void UnregisterHost(int host_id) = 0;
@@ -146,7 +168,7 @@ bool IsSchemeSupported(const GURL& url);
 bool IsMethodSupported(const std::string& method);
 bool IsSchemeAndMethodSupported(const net::URLRequest* request);
 
-extern const FilePath::CharType kAppCacheDatabaseName[];
+APPCACHE_EXPORT extern const FilePath::CharType kAppCacheDatabaseName[];
 
 }  // namespace
 

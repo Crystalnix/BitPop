@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,17 @@
 #define CHROME_BROWSER_POLICY_ASYNCHRONOUS_POLICY_TEST_BASE_H_
 #pragma once
 
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/policy/asynchronous_policy_provider.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace policy {
 
-class MockConfigurationPolicyStore;
+class PolicyMap;
 
 // A delegate for testing that can feed arbitrary information to the loader.
 class ProviderDelegateMock : public AsynchronousPolicyProvider::Delegate {
@@ -22,7 +24,7 @@ class ProviderDelegateMock : public AsynchronousPolicyProvider::Delegate {
   ProviderDelegateMock();
   virtual ~ProviderDelegateMock();
 
-  MOCK_METHOD0(Load, DictionaryValue*());
+  MOCK_METHOD0(Load, PolicyMap*());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProviderDelegateMock);
@@ -34,20 +36,15 @@ class AsynchronousPolicyTestBase : public testing::Test {
   virtual ~AsynchronousPolicyTestBase();
 
   // testing::Test:
-  virtual void SetUp();
-  virtual void TearDown();
+  virtual void TearDown() OVERRIDE;
 
  protected:
-  MessageLoop loop_;
-
-  // The mocks that are used in the test must outlive the scope of the test
-  // because they still get accessed in the RunAllPending of the TearDown.
-  scoped_ptr<MockConfigurationPolicyStore> store_;
-  scoped_ptr<ProviderDelegateMock> delegate_;
+  // Create an actual IO loop (needed by FilePathWatcher).
+  MessageLoopForIO loop_;
 
  private:
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(AsynchronousPolicyTestBase);
 };

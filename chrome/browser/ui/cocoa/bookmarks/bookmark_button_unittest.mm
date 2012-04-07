@@ -7,11 +7,10 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
-#import "chrome/browser/ui/cocoa/browser_test_helper.h"
-#import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
-#import "chrome/browser/ui/cocoa/test_event_utils.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#import "ui/base/test/cocoa_test_event_utils.h"
 
 // Fake BookmarkButton delegate to get a pong on mouse entered/exited
 @interface FakeButtonDelegate : NSObject<BookmarkButtonDelegate> {
@@ -60,7 +59,7 @@
 
 namespace {
 
-class BookmarkButtonTest : public CocoaTest {
+class BookmarkButtonTest : public CocoaProfileTest {
 };
 
 // Make sure nothing leaks
@@ -71,7 +70,6 @@ TEST_F(BookmarkButtonTest, Create) {
 
 // Test folder and empty node queries.
 TEST_F(BookmarkButtonTest, FolderAndEmptyOrNot) {
-  BrowserTestHelper helper_;
   scoped_nsobject<BookmarkButton> button;
   scoped_nsobject<BookmarkButtonCell> cell;
 
@@ -84,12 +82,12 @@ TEST_F(BookmarkButtonTest, FolderAndEmptyOrNot) {
   EXPECT_FALSE([button bookmarkNode]);
 
   NSEvent* downEvent =
-      test_event_utils::LeftMouseDownAtPoint(NSMakePoint(10,10));
+      cocoa_test_event_utils::LeftMouseDownAtPoint(NSMakePoint(10,10));
   // Since this returns (does not actually begin a modal drag), success!
   [button beginDrag:downEvent];
 
-  BookmarkModel* model = helper_.profile()->GetBookmarkModel();
-  const BookmarkNode* node = model->GetBookmarkBarNode();
+  BookmarkModel* model = profile()->GetBookmarkModel();
+  const BookmarkNode* node = model->bookmark_bar_node();
   [cell setBookmarkNode:node];
   EXPECT_FALSE([button isEmpty]);
   EXPECT_TRUE([button isFolder]);
@@ -105,7 +103,9 @@ TEST_F(BookmarkButtonTest, FolderAndEmptyOrNot) {
 
 TEST_F(BookmarkButtonTest, MouseEnterExitRedirect) {
   NSEvent* moveEvent =
-      test_event_utils::MouseEventAtPoint(NSMakePoint(10,10), NSMouseMoved, 0);
+      cocoa_test_event_utils::MouseEventAtPoint(NSMakePoint(10,10),
+                                                NSMouseMoved,
+                                                0);
   scoped_nsobject<BookmarkButton> button;
   scoped_nsobject<BookmarkButtonCell> cell;
   scoped_nsobject<FakeButtonDelegate>
@@ -129,8 +129,6 @@ TEST_F(BookmarkButtonTest, MouseEnterExitRedirect) {
 }
 
 TEST_F(BookmarkButtonTest, DragToTrash) {
-  BrowserTestHelper helper_;
-
   scoped_nsobject<BookmarkButton> button;
   scoped_nsobject<BookmarkButtonCell> cell;
   scoped_nsobject<FakeButtonDelegate>
@@ -141,8 +139,8 @@ TEST_F(BookmarkButtonTest, DragToTrash) {
   [button setDelegate:delegate];
 
   // Add a deletable bookmark to the button.
-  BookmarkModel* model = helper_.profile()->GetBookmarkModel();
-  const BookmarkNode* barNode = model->GetBookmarkBarNode();
+  BookmarkModel* model = profile()->GetBookmarkModel();
+  const BookmarkNode* barNode = model->bookmark_bar_node();
   const BookmarkNode* node = model->AddURL(barNode, 0, ASCIIToUTF16("hi mom"),
                                            GURL("http://www.google.com"));
   [cell setBookmarkNode:node];

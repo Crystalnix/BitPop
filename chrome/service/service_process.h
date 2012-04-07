@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,8 @@ class CommandLine;
 
 // The ServiceProcess does not inherit from ChildProcess because this
 // process can live independently of the browser process.
+// ServiceProcess Design Notes
+// https://sites.google.com/a/chromium.org/dev/developers/design-documents/service-processes
 class ServiceProcess : public CloudPrintProxy::Client {
  public:
   ServiceProcess();
@@ -39,6 +41,11 @@ class ServiceProcess : public CloudPrintProxy::Client {
   bool Initialize(MessageLoopForUI* message_loop,
                   const CommandLine& command_line,
                   ServiceProcessState* state);
+
+  // Functions for Cloud Print virtual driver on Mac.
+  void EnableVirtualPrintDriver();
+  void DisableVirtualPrintDriver();
+
   bool Teardown();
   // TODO(sanjeevr): Change various parts of the code such as
   // net::ProxyService::CreateSystemProxyConfigService to take in
@@ -86,23 +93,37 @@ class ServiceProcess : public CloudPrintProxy::Client {
   CloudPrintProxy* GetCloudPrintProxy();
 
   // CloudPrintProxy::Client implementation.
-  virtual void OnCloudPrintProxyEnabled(bool persist_state);
-  virtual void OnCloudPrintProxyDisabled(bool persist_state);
+  virtual void OnCloudPrintProxyEnabled(bool persist_state) OVERRIDE;
+  virtual void OnCloudPrintProxyDisabled(bool persist_state) OVERRIDE;
 
   ServiceURLRequestContextGetter* GetServiceURLRequestContextGetter();
 
  private:
+  friend class TestServiceProcess;
+
   // Schedule a call to ShutdownIfNeeded.
   void ScheduleShutdownCheck();
+
   // Shuts down the process if no services are enabled and no clients are
   // connected.
   void ShutdownIfNeeded();
+
+  // Schedule a call to CloudPrintPolicyCheckIfNeeded.
+  void ScheduleCloudPrintPolicyCheck();
+
+  // Launch the browser for a policy check if we're not connected.
+  void CloudPrintPolicyCheckIfNeeded();
+
   // Called exactly ONCE per process instance for each service that gets
   // enabled in this process.
   void OnServiceEnabled();
+
   // Called exactly ONCE per process instance for each service that gets
   // disabled in this process (note that shutdown != disabled).
   void OnServiceDisabled();
+
+  // Terminate forces the service process to quit.
+  void Terminate();
 
   scoped_ptr<net::NetworkChangeNotifier> network_change_notifier_;
   scoped_ptr<base::Thread> io_thread_;
@@ -128,10 +149,6 @@ class ServiceProcess : public CloudPrintProxy::Client {
 
   DISALLOW_COPY_AND_ASSIGN(ServiceProcess);
 };
-
-// Disable refcounting for runnable method because it is really not needed
-// when we post tasks on the main message loop.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ServiceProcess);
 
 extern ServiceProcess* g_service_process;
 

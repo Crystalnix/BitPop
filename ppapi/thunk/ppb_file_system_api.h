@@ -5,16 +5,18 @@
 #ifndef PPAPI_THUNK_PPB_FILE_SYSTEM_API_H_
 #define PPAPI_THUNK_PPB_FILE_SYSTEM_API_H_
 
-#include "ppapi/c/dev/ppb_file_system_dev.h"
+#include "ppapi/c/ppb_file_system.h"
 
 namespace ppapi {
 namespace thunk {
 
 class PPB_FileSystem_API {
  public:
+  virtual ~PPB_FileSystem_API() {}
+
   virtual int32_t Open(int64_t expected_size,
                        PP_CompletionCallback callback) = 0;
-  virtual PP_FileSystemType_Dev GetType() = 0;
+  virtual PP_FileSystemType GetType() = 0;
 };
 
 }  // namespace thunk

@@ -9,10 +9,15 @@
 #include "base/memory/scoped_nsobject.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
-#import "chrome/browser/ui/cocoa/test_event_utils.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
+#import "ui/base/test/cocoa_test_event_utils.h"
+
+@interface ReloadButton (Testing)
++ (void)setPendingReloadTimeout:(NSTimeInterval)seconds;
+@end
 
 @protocol TargetActionMock <NSObject>
 - (void)anAction:(id)sender;
@@ -35,6 +40,18 @@ class ReloadButtonTest : public CocoaTest {
     [[test_window() contentView] addSubview:button_];
   }
 
+  bool IsMouseInside() {
+    return [[button_ cell] isMouseInside];
+  }
+
+  void MouseEnter() {
+    [[button_ cell] mouseEntered:nil];
+  }
+
+  void MouseExit() {
+    [[button_ cell] mouseExited:nil];
+  }
+
   ReloadButton* button_;
 };
 
@@ -42,12 +59,10 @@ TEST_VIEW(ReloadButtonTest, button_)
 
 // Test that mouse-tracking is setup and does the right thing.
 TEST_F(ReloadButtonTest, IsMouseInside) {
-  EXPECT_TRUE([[button_ trackingAreas] containsObject:[button_ trackingArea]]);
-
-  EXPECT_FALSE([button_ isMouseInside]);
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
-  [button_ mouseExited:nil];
+  EXPECT_FALSE(IsMouseInside());
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
+  MouseExit();
 }
 
 // Verify that multiple clicks do not result in multiple messages to
@@ -61,9 +76,9 @@ TEST_F(ReloadButtonTest, IgnoredMultiClick) {
   [[mock_target expect] anAction:button_];
 
   const std::pair<NSEvent*,NSEvent*> click_one =
-      test_event_utils::MouseClickInView(button_, 1);
+      cocoa_test_event_utils::MouseClickInView(button_, 1);
   const std::pair<NSEvent*,NSEvent*> click_two =
-      test_event_utils::MouseClickInView(button_, 2);
+      cocoa_test_event_utils::MouseClickInView(button_, 2);
   [NSApp postEvent:click_one.second atStart:YES];
   [button_ mouseDown:click_one.first];
   [NSApp postEvent:click_two.second atStart:YES];
@@ -92,7 +107,7 @@ TEST_F(ReloadButtonTest, UpdateTag) {
 // Test that when forcing the mode, it takes effect immediately,
 // regardless of whether the mouse is hovering.
 TEST_F(ReloadButtonTest, SetIsLoadingForce) {
-  EXPECT_FALSE([button_ isMouseInside]);
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 
   // Changes to stop immediately.
@@ -105,29 +120,29 @@ TEST_F(ReloadButtonTest, SetIsLoadingForce) {
 
   // Changes to stop immediately when the mouse is hovered, and
   // doesn't change when the mouse exits.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:YES force:YES];
   EXPECT_EQ(IDC_STOP, [button_ tag]);
-  [button_ mouseExited:nil];
-  EXPECT_FALSE([button_ isMouseInside]);
+  MouseExit();
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_STOP, [button_ tag]);
 
   // Changes to reload immediately when the mouse is hovered, and
   // doesn't change when the mouse exits.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:NO force:YES];
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
-  [button_ mouseExited:nil];
-  EXPECT_FALSE([button_ isMouseInside]);
+  MouseExit();
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 }
 
 // Test that without force, stop mode is set immediately, but reload
 // is affected by the hover status.
 TEST_F(ReloadButtonTest, SetIsLoadingNoForceUnHover) {
-  EXPECT_FALSE([button_ isMouseInside]);
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 
   // Changes to stop immediately when the mouse is not hovering.
@@ -140,22 +155,22 @@ TEST_F(ReloadButtonTest, SetIsLoadingNoForceUnHover) {
 
   // Changes to stop immediately when the mouse is hovered, and
   // doesn't change when the mouse exits.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:YES force:NO];
   EXPECT_EQ(IDC_STOP, [button_ tag]);
-  [button_ mouseExited:nil];
-  EXPECT_FALSE([button_ isMouseInside]);
+  MouseExit();
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_STOP, [button_ tag]);
 
   // Does not change to reload immediately when the mouse is hovered,
   // changes when the mouse exits.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:NO force:NO];
   EXPECT_EQ(IDC_STOP, [button_ tag]);
-  [button_ mouseExited:nil];
-  EXPECT_FALSE([button_ isMouseInside]);
+  MouseExit();
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 }
 
@@ -178,21 +193,21 @@ TEST_F(ReloadButtonTest, DISABLED_SetIsLoadingNoForceTimeout) {
   const NSTimeInterval kShortTimeout = 0.1;
   [ReloadButton setPendingReloadTimeout:kShortTimeout];
 
-  EXPECT_FALSE([button_ isMouseInside]);
+  EXPECT_FALSE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 
   // Move the mouse into the button and press it.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:YES force:NO];
   EXPECT_EQ(IDC_STOP, [button_ tag]);
 
   // Does not change to reload immediately when the mouse is hovered.
-  EXPECT_TRUE([button_ isMouseInside]);
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:NO force:NO];
-  EXPECT_TRUE([button_ isMouseInside]);
+  EXPECT_TRUE(IsMouseInside());
   EXPECT_EQ(IDC_STOP, [button_ tag]);
-  EXPECT_TRUE([button_ isMouseInside]);
+  EXPECT_TRUE(IsMouseInside());
 
   // Spin event loop until the timeout passes.
   NSDate* pastTimeout = [NSDate dateWithTimeIntervalSinceNow:2 * kShortTimeout];
@@ -203,7 +218,7 @@ TEST_F(ReloadButtonTest, DISABLED_SetIsLoadingNoForceTimeout) {
 
   // Mouse is still hovered, button is in reload mode.  If the mouse
   // is no longer hovered, see comment at top of function.
-  EXPECT_TRUE([button_ isMouseInside]);
+  EXPECT_TRUE(IsMouseInside());
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
 }
 
@@ -214,7 +229,7 @@ TEST_F(ReloadButtonTest, StopAfterReloadSet) {
   [button_ setTarget:mock_target];
   [button_ setAction:@selector(anAction:)];
 
-  EXPECT_FALSE([button_ isMouseInside]);
+  EXPECT_FALSE(IsMouseInside());
 
   // Get to stop mode.
   [button_ setIsLoading:YES force:YES];
@@ -227,7 +242,7 @@ TEST_F(ReloadButtonTest, StopAfterReloadSet) {
   // Clicking in stop mode should send the action and transition to
   // reload mode.
   const std::pair<NSEvent*,NSEvent*> click =
-      test_event_utils::MouseClickInView(button_, 1);
+      cocoa_test_event_utils::MouseClickInView(button_, 1);
   [NSApp postEvent:click.second atStart:YES];
   [button_ mouseDown:click.first];
   EXPECT_EQ(IDC_RELOAD, [button_ tag]);
@@ -240,8 +255,8 @@ TEST_F(ReloadButtonTest, StopAfterReloadSet) {
 
   // If hover prevented reload mode immediately taking effect, clicks should do
   // nothing, because the button should be disabled.
-  [button_ mouseEntered:nil];
-  EXPECT_TRUE([button_ isMouseInside]);
+  MouseEnter();
+  EXPECT_TRUE(IsMouseInside());
   [button_ setIsLoading:NO force:NO];
   EXPECT_EQ(IDC_STOP, [button_ tag]);
   EXPECT_FALSE([button_ isEnabled]);

@@ -3,33 +3,8 @@
 // found in the LICENSE file.
 
 #include "content/browser/renderer_host/render_widget_host.h"
-
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/mac/WebScreenInfoFactory.h"
-
-using WebKit::WebScreenInfo;
-using WebKit::WebScreenInfoFactory;
-
-void RenderWidgetHost::OnMsgGetScreenInfo(gfx::NativeViewId view,
-                                          WebScreenInfo* results) {
-  gfx::NativeView native_view = view_ ? view_->GetNativeView() : NULL;
-  *results = WebScreenInfoFactory::screenInfo(native_view);
-}
-
-void RenderWidgetHost::OnMsgGetWindowRect(gfx::NativeViewId window_id,
-                                          gfx::Rect* results) {
-  if (view_) {
-    *results = view_->GetViewBounds();
-  }
-}
-
-void RenderWidgetHost::OnMsgGetRootWindowRect(gfx::NativeViewId window_id,
-                                              gfx::Rect* results) {
-  if (view_) {
-    *results = view_->GetRootWindowRect();
-  }
-}
+#include "content/common/gpu/gpu_messages.h"
 
 void RenderWidgetHost::OnMsgPluginFocusChanged(bool focused, int plugin_id) {
   if (view_)
@@ -85,12 +60,14 @@ void RenderWidgetHost::OnAcceleratedSurfaceSetTransportDIB(
 }
 
 void RenderWidgetHost::OnAcceleratedSurfaceBuffersSwapped(
-    gfx::PluginWindowHandle window, uint64 surface_id) {
+    gfx::PluginWindowHandle window, uint64 surface_handle) {
   if (view_) {
     // This code path could be updated to implement flow control for
     // updating of accelerated plugins as well. However, if we add support
     // for composited plugins then this is not necessary.
-    view_->AcceleratedSurfaceBuffersSwapped(window, surface_id,
-                                            0, 0, 0, 0);
+    GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
+    params.window = window;
+    params.surface_handle = surface_handle;
+    view_->AcceleratedSurfaceBuffersSwapped(params, 0);
   }
 }

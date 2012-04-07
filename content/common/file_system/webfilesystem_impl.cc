@@ -10,20 +10,22 @@
 #include "content/common/file_system/webfilewriter_impl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebFileInfo;
 using WebKit::WebFileSystemCallbacks;
 using WebKit::WebFileSystemEntry;
 using WebKit::WebString;
+using WebKit::WebURL;
 using WebKit::WebVector;
 
 WebFileSystemImpl::WebFileSystemImpl() {
 }
 
-void WebFileSystemImpl::move(const WebString& src_path,
-                             const WebString& dest_path,
+void WebFileSystemImpl::move(const WebURL& src_path,
+                             const WebURL& dest_path,
                              WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -32,8 +34,8 @@ void WebFileSystemImpl::move(const WebString& src_path,
                    new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::copy(const WebString& src_path,
-                             const WebString& dest_path,
+void WebFileSystemImpl::copy(const WebURL& src_path,
+                             const WebURL& dest_path,
                              WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -42,7 +44,7 @@ void WebFileSystemImpl::copy(const WebString& src_path,
                    new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::remove(const WebString& path,
+void WebFileSystemImpl::remove(const WebURL& path,
                                WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -51,7 +53,7 @@ void WebFileSystemImpl::remove(const WebString& path,
                      new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::removeRecursively(const WebString& path,
+void WebFileSystemImpl::removeRecursively(const WebURL& path,
                                           WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -60,7 +62,7 @@ void WebFileSystemImpl::removeRecursively(const WebString& path,
                      new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::readMetadata(const WebString& path,
+void WebFileSystemImpl::readMetadata(const WebURL& path,
                                      WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -68,7 +70,7 @@ void WebFileSystemImpl::readMetadata(const WebString& path,
                            new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::createFile(const WebString& path,
+void WebFileSystemImpl::createFile(const WebURL& path,
                                    bool exclusive,
                                    WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
@@ -77,7 +79,7 @@ void WebFileSystemImpl::createFile(const WebString& path,
                      false, new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::createDirectory(const WebString& path,
+void WebFileSystemImpl::createDirectory(const WebURL& path,
                                         bool exclusive,
                                         WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
@@ -86,7 +88,7 @@ void WebFileSystemImpl::createDirectory(const WebString& path,
                      false, new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::fileExists(const WebString& path,
+void WebFileSystemImpl::fileExists(const WebURL& path,
                                    WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -94,7 +96,7 @@ void WebFileSystemImpl::fileExists(const WebString& path,
                      new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::directoryExists(const WebString& path,
+void WebFileSystemImpl::directoryExists(const WebURL& path,
                                         WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -102,7 +104,7 @@ void WebFileSystemImpl::directoryExists(const WebString& path,
                      new WebFileSystemCallbackDispatcher(callbacks));
 }
 
-void WebFileSystemImpl::readDirectory(const WebString& path,
+void WebFileSystemImpl::readDirectory(const WebURL& path,
                                       WebFileSystemCallbacks* callbacks) {
   FileSystemDispatcher* dispatcher =
       ChildThread::current()->file_system_dispatcher();
@@ -111,6 +113,6 @@ void WebFileSystemImpl::readDirectory(const WebString& path,
 }
 
 WebKit::WebFileWriter* WebFileSystemImpl::createFileWriter(
-    const WebString& path, WebKit::WebFileWriterClient* client) {
+    const WebURL& path, WebKit::WebFileWriterClient* client) {
   return new WebFileWriterImpl(GURL(path), client);
 }

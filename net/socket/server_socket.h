@@ -5,16 +5,16 @@
 #ifndef NET_SOCKET_SERVER_SOCKET_H_
 #define NET_SOCKET_SERVER_SOCKET_H_
 
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
 class IPEndPoint;
 class StreamSocket;
 
-class NET_API ServerSocket {
+class NET_EXPORT ServerSocket {
  public:
   ServerSocket() { }
   virtual ~ServerSocket() { }
@@ -29,7 +29,7 @@ class NET_API ServerSocket {
   // Accept connection. Callback is called when new connection is
   // accepted.
   virtual int Accept(scoped_ptr<StreamSocket>* socket,
-                     CompletionCallback* callback) = 0;
+                     const CompletionCallback& callback) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ServerSocket);
@@ -37,4 +37,4 @@ class NET_API ServerSocket {
 
 }  // namespace net
 
-#endif  // NET_SOCKET_TCP_SERVER_SOCKET_H_
+#endif  // NET_SOCKET_SERVER_SOCKET_H_

@@ -136,12 +136,15 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       policy: The data structure of a policy.
     '''
     features = []
-    for key, value in policy['features'].iteritems():
+    # The sorting is to make the order well-defined for testing.
+    keys = policy['features'].keys()
+    keys.sort()
+    for key in keys:
       key_name = self._FEATURE_MAP[key]
-      if value == 0:
-        value_name = self._GetLocalizedMessage('not_supported')
-      else:
+      if policy['features'][key]:
         value_name = self._GetLocalizedMessage('supported')
+      else:
+        value_name = self._GetLocalizedMessage('not_supported')
       features.append('%s: %s' % (key_name, value_name))
     self.AddText(parent, ', '.join(features))
 
@@ -176,10 +179,11 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     win = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
     win_text = []
     cnt = 1
+    key_name = self.config['win_reg_mandatory_key_name']
     for item in example_value:
       win_text.append(
           '%s\\%s\\%d = "%s"' %
-          (self.config['win_reg_key_name'], policy['name'], cnt, item))
+          (key_name, policy['name'], cnt, item))
       cnt = cnt + 1
     self.AddText(win, '\n'.join(win_text))
 
@@ -339,7 +343,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     self._AddPolicyAttribute(
         dl,
         'win_reg_loc',
-        self.config['win_reg_key_name'] + '\\' + policy['name'],
+        self.config['win_reg_mandatory_key_name'] + '\\' + policy['name'],
         ['.monospace'])
     self._AddPolicyAttribute(
         dl,
@@ -496,7 +500,9 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     }
     # Human-readable names of supported features.
     self._FEATURE_MAP = {
-      'dynamic_refresh': self._GetLocalizedMessage('feature_dynamic_refresh')
+      'dynamic_refresh': self._GetLocalizedMessage('feature_dynamic_refresh'),
+      'can_be_recommended': self._GetLocalizedMessage(
+          'feature_can_be_recommended'),
     }
     # Human-readable names of types.
     self._TYPE_MAP = {

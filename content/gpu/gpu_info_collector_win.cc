@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,9 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <setupapi.h>
+#include <winsatcominterfacei.h>
 
+#include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/scoped_native_library.h"
@@ -29,6 +31,82 @@ std::string VersionNumberToString(uint32 version_number) {
   int hi = (version_number >> 8) & 0xff;
   int low = version_number & 0xff;
   return base::IntToString(hi) + "." + base::IntToString(low);
+}
+
+float GetAssessmentScore(IProvideWinSATResultsInfo* results,
+                         WINSAT_ASSESSMENT_TYPE type) {
+  IProvideWinSATAssessmentInfo* subcomponent = NULL;
+  if (FAILED(results->GetAssessmentInfo(type, &subcomponent)))
+    return 0.0;
+
+  float score = 0.0;
+  if (FAILED(subcomponent->get_Score(&score)))
+    score = 0.0;
+  subcomponent->Release();
+  return score;
+}
+
+content::GpuPerformanceStats RetrieveGpuPerformanceStats() {
+  IQueryRecentWinSATAssessment* assessment = NULL;
+  IProvideWinSATResultsInfo* results = NULL;
+
+  content::GpuPerformanceStats stats;
+
+  do {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) {
+      LOG(ERROR) << "CoInitializeEx() failed";
+      break;
+    }
+
+    hr = CoCreateInstance(__uuidof(CQueryWinSAT),
+                          NULL,
+                          CLSCTX_INPROC_SERVER,
+                          __uuidof(IQueryRecentWinSATAssessment),
+                          reinterpret_cast<void**>(&assessment));
+    if (FAILED(hr)) {
+      LOG(ERROR) << "CoCreateInstance() failed";
+      break;
+    }
+
+    hr = assessment->get_Info(&results);
+    if (FAILED(hr)) {
+      LOG(ERROR) << "get_Info() failed";
+      break;
+    }
+
+    WINSAT_ASSESSMENT_STATE state = WINSAT_ASSESSMENT_STATE_UNKNOWN;
+    hr = results->get_AssessmentState(&state);
+    if (FAILED(hr)) {
+      LOG(ERROR) << "get_AssessmentState() failed";
+      break;
+    }
+    if (state != WINSAT_ASSESSMENT_STATE_VALID &&
+        state != WINSAT_ASSESSMENT_STATE_INCOHERENT_WITH_HARDWARE) {
+      LOG(ERROR) << "Can't retrieve a valid assessment";
+      break;
+    }
+
+    hr = results->get_SystemRating(&stats.overall);
+    if (FAILED(hr))
+      LOG(ERROR) << "Get overall score failed";
+
+    stats.gaming = GetAssessmentScore(results, WINSAT_ASSESSMENT_D3D);
+    if (stats.gaming == 0.0)
+      LOG(ERROR) << "Get gaming score failed";
+
+    stats.graphics = GetAssessmentScore(results, WINSAT_ASSESSMENT_GRAPHICS);
+    if (stats.graphics == 0.0)
+      LOG(ERROR) << "Get graphics score failed";
+  } while (false);
+
+  if (assessment)
+    assessment->Release();
+  if (results)
+    results->Release();
+  CoUninitialize();
+
+  return stats;
 }
 
 }  // namespace anonymous
@@ -60,8 +138,17 @@ typedef BOOL (WINAPI*SetupDiDestroyDeviceInfoListFunc)(
 
 namespace gpu_info_collector {
 
-bool CollectGraphicsInfo(GPUInfo* gpu_info) {
+bool CollectGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
+
+  gpu_info->performance_stats = RetrieveGpuPerformanceStats();
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseGL)) {
+    std::string requested_implementation_name =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kUseGL);
+    if (requested_implementation_name == "swiftshader")
+      return false;
+  }
 
   if (gfx::GetGLImplementation() != gfx::kGLImplementationEGLGLES2) {
     gpu_info->finalized = true;
@@ -72,7 +159,7 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info) {
   // Need to handle the case when running on top of real EGL/GLES2 drivers.
 
   egl::Display* display = static_cast<egl::Display*>(
-      gfx::GLSurfaceEGL::GetDisplay());
+      gfx::GLSurfaceEGL::GetHardwareDisplay());
   if (!display) {
     LOG(ERROR) << "gfx::BaseEGLContext::GetDisplay() failed";
     return false;
@@ -98,17 +185,19 @@ bool CollectGraphicsInfo(GPUInfo* gpu_info) {
   return true;
 }
 
-bool CollectPreliminaryGraphicsInfo(GPUInfo* gpu_info) {
+bool CollectPreliminaryGraphicsInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   bool rt = true;
   if (!CollectVideoCardInfo(gpu_info))
     rt = false;
 
+  gpu_info->performance_stats = RetrieveGpuPerformanceStats();
+
   return rt;
 }
 
-bool CollectGraphicsInfoD3D(IDirect3D9* d3d, GPUInfo* gpu_info) {
+bool CollectGraphicsInfoD3D(IDirect3D9* d3d, content::GPUInfo* gpu_info) {
   DCHECK(d3d);
   DCHECK(gpu_info);
 
@@ -143,8 +232,12 @@ bool CollectGraphicsInfoD3D(IDirect3D9* d3d, GPUInfo* gpu_info) {
   return true;
 }
 
-bool CollectVideoCardInfo(GPUInfo* gpu_info) {
+bool CollectVideoCardInfo(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
+
+  // nvd3d9wrap.dll is loaded into all processes when Optimus is enabled.
+  HMODULE nvd3d9wrap = GetModuleHandleW(L"nvd3d9wrap.dll");
+  gpu_info->optimus = nvd3d9wrap != NULL;
 
   // Taken from http://developer.nvidia.com/object/device_ids.html
   DISPLAY_DEVICE dd;
@@ -172,7 +265,8 @@ bool CollectVideoCardInfo(GPUInfo* gpu_info) {
   return false;
 }
 
-bool CollectDriverInfoD3D(const std::wstring& device_id, GPUInfo* gpu_info) {
+bool CollectDriverInfoD3D(const std::wstring& device_id,
+                          content::GPUInfo* gpu_info) {
   HMODULE lib_setupapi = LoadLibraryW(L"setupapi.dll");
   if (!lib_setupapi) {
     LOG(ERROR) << "Open setupapi.dll failed";
@@ -242,6 +336,22 @@ bool CollectDriverInfoD3D(const std::wstring& device_id, GPUInfo* gpu_info) {
         if (result == ERROR_SUCCESS)
           driver_date = WideToASCII(std::wstring(value));
 
+        std::string driver_vendor;
+        dwcb_data = sizeof(value);
+        result = RegQueryValueExW(
+            key, L"ProviderName", NULL, NULL,
+            reinterpret_cast<LPBYTE>(value), &dwcb_data);
+        if (result == ERROR_SUCCESS) {
+          driver_vendor = WideToASCII(std::wstring(value));
+          // If it's an Intel GPU with a driver provided by AMD then it's
+          // probably AMD's Dynamic Switchable Graphics.
+          // TODO: detect only AMD switchable
+          gpu_info->amd_switchable =
+              driver_vendor == "Advanced Micro Devices, Inc." ||
+              driver_vendor == "ATI Technologies Inc.";
+        }
+
+        gpu_info->driver_vendor = driver_vendor;
         gpu_info->driver_version = driver_version;
         gpu_info->driver_date = driver_date;
         found = true;
@@ -255,7 +365,7 @@ bool CollectDriverInfoD3D(const std::wstring& device_id, GPUInfo* gpu_info) {
   return found;
 }
 
-bool CollectDriverInfoGL(GPUInfo* gpu_info) {
+bool CollectDriverInfoGL(content::GPUInfo* gpu_info) {
   DCHECK(gpu_info);
 
   std::string gl_version_string = gpu_info->gl_version_string;

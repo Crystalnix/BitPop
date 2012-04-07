@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,11 +13,16 @@
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "grit/chromium_strings.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/l10n/l10n_util.h"
+
+// static
+const char BrowserRootView::kViewClassName[] =
+    "browser/ui/views/frame/BrowserRootView";
 
 BrowserRootView::BrowserRootView(BrowserView* browser_view,
                                  views::Widget* widget)
@@ -28,7 +33,7 @@ BrowserRootView::BrowserRootView(BrowserView* browser_view,
 bool BrowserRootView::GetDropFormats(
       int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) {
-  if (tabstrip() && tabstrip()->IsVisible()) {
+  if (tabstrip() && tabstrip()->visible()) {
     *formats = ui::OSExchangeData::URL | ui::OSExchangeData::STRING;
     return true;
   }
@@ -40,7 +45,7 @@ bool BrowserRootView::AreDropTypesRequired() {
 }
 
 bool BrowserRootView::CanDrop(const ui::OSExchangeData& data) {
-  if (!tabstrip() || !tabstrip()->IsVisible())
+  if (!tabstrip() || !tabstrip()->visible())
     return false;
 
   // If there is a URL, we'll allow the drop.
@@ -114,9 +119,13 @@ void BrowserRootView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
 }
 
+std::string BrowserRootView::GetClassName() const {
+  return kViewClassName;
+}
+
 bool BrowserRootView::ShouldForwardToTabStrip(
     const views::DropTargetEvent& event) {
-  if (!tabstrip()->IsVisible())
+  if (!tabstrip()->visible())
     return false;
 
   // Allow the drop as long as the mouse is over the tabstrip or vertically
@@ -148,6 +157,7 @@ bool BrowserRootView::GetPasteAndGoURL(const ui::OSExchangeData& data,
   string16 text;
   if (!data.GetString(&text) || text.empty())
     return false;
+  text = AutocompleteMatch::SanitizeString(text);
 
   AutocompleteMatch match;
   browser_view_->browser()->profile()->GetAutocompleteClassifier()->Classify(

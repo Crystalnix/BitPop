@@ -8,12 +8,14 @@
 
 #include <string>
 
-#include "chrome/browser/browser_signin.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/extensions/webstore_install_helper.h"
+#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/browser/gpu/gpu_data_manager.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class ProfileSyncService;
 
@@ -23,31 +25,25 @@ class WebstorePrivateApi {
   // testing purposes.
   static void SetTestingProfileSyncService(ProfileSyncService* service);
 
-  // Allows you to set the BrowserSignin the function will use for
-  // testing purposes.
-  static void SetTestingBrowserSignin(BrowserSignin* signin);
+  // Allows you to override the WebstoreInstaller delegate for testing.
+  static void SetWebstoreInstallerDelegateForTesting(
+      WebstoreInstaller::Delegate* delegate);
+
+  // If |allow| is true, then the extension IDs used by the SilentlyInstall
+  // apitest will be trusted.
+  static void SetTrustTestIDsForTesting(bool allow);
 };
 
-// TODO(asargent): this is being deprecated in favor of
-// BeginInstallWithManifestFunction. See crbug.com/75821 for details.
-class BeginInstallFunction : public SyncExtensionFunction {
- public:
-  // For use only in tests - sets a flag that can cause this function to ignore
-  // the normal requirement that it is called during a user gesture.
-  static void SetIgnoreUserGestureForTests(bool ignore);
- protected:
-  virtual bool RunImpl();
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstall");
-};
-
-class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
-                                         public ExtensionInstallUI::Delegate {
+class BeginInstallWithManifestFunction
+    : public AsyncExtensionFunction,
+      public ExtensionInstallUI::Delegate,
+      public WebstoreInstallHelper::Delegate {
  public:
   BeginInstallWithManifestFunction();
 
   // Result codes for the return value. If you change this, make sure to
-  // update the description for the beginInstallWithManifest callback in
-  // extension_api.json.
+  // update the description for the beginInstallWithManifest3 callback in
+  // the extension API JSON.
   enum ResultCode {
     ERROR_NONE = 0,
 
@@ -69,34 +65,27 @@ class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
     // The page does not have permission to call this function.
     PERMISSION_DENIED,
 
-    // The function was not called during a user gesture.
-    NO_GESTURE,
+    // Invalid icon url.
+    INVALID_ICON_URL
   };
 
-  // For use only in tests - sets a flag that can cause this function to ignore
-  // the normal requirement that it is called during a user gesture.
-  static void SetIgnoreUserGestureForTests(bool ignore);
-
-  // For use only in tests - sets a flag that makes invocations of
-  // beginInstallWithManifest skip putting up a real dialog, and instead act
-  // as if the dialog choice was to proceed or abort.
-  static void SetAutoConfirmForTests(bool should_proceed);
-
-  // Called when we've successfully parsed the manifest and icon data in the
-  // utility process. Ownership of parsed_manifest is transferred.
-  void OnParseSuccess(const SkBitmap& icon, DictionaryValue* parsed_manifest);
-
-  // Called to indicate a parse failure. The |result_code| parameter should
-  // indicate whether the problem was with the manifest or icon data.
-  void OnParseFailure(ResultCode result_code, const std::string& error_message);
+  // Implementing WebstoreInstallHelper::Delegate interface.
+  virtual void OnWebstoreParseSuccess(
+      const std::string& id,
+      const SkBitmap& icon,
+      base::DictionaryValue* parsed_manifest) OVERRIDE;
+  virtual void OnWebstoreParseFailure(
+      const std::string& id,
+      InstallHelperResultCode result_code,
+      const std::string& error_message) OVERRIDE;
 
   // Implementing ExtensionInstallUI::Delegate interface.
   virtual void InstallUIProceed() OVERRIDE;
-  virtual void InstallUIAbort() OVERRIDE;
+  virtual void InstallUIAbort(bool user_initiated) OVERRIDE;
 
  protected:
   virtual ~BeginInstallWithManifestFunction();
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
 
   // Sets the result_ as a string based on |code|.
   void SetResult(ResultCode code);
@@ -107,66 +96,90 @@ class BeginInstallWithManifestFunction : public AsyncExtensionFunction,
   std::string manifest_;
   std::string icon_data_;
   std::string localized_name_;
+  bool use_app_installed_bubble_;
 
   // The results of parsing manifest_ and icon_data_ go into these two.
-  scoped_ptr<DictionaryValue> parsed_manifest_;
+  scoped_ptr<base::DictionaryValue> parsed_manifest_;
   SkBitmap icon_;
 
   // A dummy Extension object we create for the purposes of using
   // ExtensionInstallUI to prompt for confirmation of the install.
   scoped_refptr<Extension> dummy_extension_;
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstallWithManifest2");
+
+  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.beginInstallWithManifest3");
 };
 
 class CompleteInstallFunction : public SyncExtensionFunction {
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.completeInstall");
 };
 
+class SilentlyInstallFunction : public AsyncExtensionFunction,
+                                public WebstoreInstallHelper::Delegate,
+                                public WebstoreInstaller::Delegate {
+ public:
+  SilentlyInstallFunction();
+
+  // WebstoreInstallHelper::Delegate implementation.
+  virtual void OnWebstoreParseSuccess(
+      const std::string& id,
+      const SkBitmap& icon,
+      base::DictionaryValue* parsed_manifest) OVERRIDE;
+  virtual void OnWebstoreParseFailure(
+      const std::string& id,
+      InstallHelperResultCode result_code,
+      const std::string& error_message) OVERRIDE;
+
+  // WebstoreInstaller::Delegate implementation.
+  virtual void OnExtensionInstallSuccess(const std::string& id) OVERRIDE;
+  virtual void OnExtensionInstallFailure(const std::string& id,
+                                         const std::string& error) OVERRIDE;
+
+ protected:
+  virtual ~SilentlyInstallFunction();
+  virtual bool RunImpl() OVERRIDE;
+
+ private:
+  std::string id_;
+  std::string manifest_;
+  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.silentlyInstall");
+};
+
 class GetBrowserLoginFunction : public SyncExtensionFunction {
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getBrowserLogin");
 };
 
 class GetStoreLoginFunction : public SyncExtensionFunction {
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getStoreLogin");
 };
 
 class SetStoreLoginFunction : public SyncExtensionFunction {
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.setStoreLogin");
 };
 
-class PromptBrowserLoginFunction : public AsyncExtensionFunction,
-                                   public NotificationObserver,
-                                   public BrowserSignin::SigninDelegate {
+class GetWebGLStatusFunction : public AsyncExtensionFunction,
+                               public GpuDataManager::Observer {
  public:
-  PromptBrowserLoginFunction();
-  // Implements BrowserSignin::SigninDelegate interface.
-  virtual void OnLoginSuccess();
-  virtual void OnLoginFailure(const GoogleServiceAuthError& error);
+  GetWebGLStatusFunction();
 
-  // Implements the NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Implementing GpuDataManager::Observer interface.
+  virtual void OnGpuInfoUpdate() OVERRIDE;
 
  protected:
-  virtual ~PromptBrowserLoginFunction();
-  virtual bool RunImpl();
+  virtual ~GetWebGLStatusFunction();
+  virtual bool RunImpl() OVERRIDE;
 
  private:
-  // Creates the message for signing in.
-  virtual string16 GetLoginMessage();
+  void CreateResult(bool webgl_allowed);
 
-  // Are we waiting for a token available notification?
-  bool waiting_for_token_;
+  // A false return value is always valid, but a true one is only valid if full
+  // GPU info has been collected in a GPU process.
+  static bool IsWebGLAllowed(GpuDataManager* manager);
 
-  // Used for listening for TokenService notifications.
-  NotificationRegistrar registrar_;
-
-  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.promptBrowserLogin");
+  DECLARE_EXTENSION_FUNCTION_NAME("webstorePrivate.getWebGLStatus");
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_WEBSTORE_PRIVATE_API_H_

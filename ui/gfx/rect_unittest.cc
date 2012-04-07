@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 
-typedef testing::Test RectTest;
+namespace ui {
 
 TEST(RectTest, Contains) {
   static const struct ContainsCase {
@@ -26,9 +26,9 @@ TEST(RectTest, Contains) {
     {0, 0, 10, 10, 10, 5, false},
     {0, 0, 10, 10, -1, -1, false},
     {0, 0, 10, 10, 50, 50, false},
-  #ifdef NDEBUG
+  #if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
     {0, 0, -10, -10, 0, 0, false},
-  #endif  // NDEBUG
+  #endif
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(contains_cases); ++i) {
     const ContainsCase& value = contains_cases[i];
@@ -280,6 +280,30 @@ TEST(RectTest, IsEmpty) {
   EXPECT_FALSE(gfx::Rect(0, 0, 10, 10).size().IsEmpty());
 }
 
+TEST(RectTest, SplitVertically) {
+  gfx::Rect left_half, right_half;
+
+  // Splitting when origin is (0, 0).
+  gfx::Rect(0, 0, 20, 20).SplitVertically(&left_half, &right_half);
+  EXPECT_TRUE(left_half.Equals(gfx::Rect(0, 0, 10, 20)));
+  EXPECT_TRUE(right_half.Equals(gfx::Rect(10, 0, 10, 20)));
+
+  // Splitting when origin is arbitrary.
+  gfx::Rect(10, 10, 20, 10).SplitVertically(&left_half, &right_half);
+  EXPECT_TRUE(left_half.Equals(gfx::Rect(10, 10, 10, 10)));
+  EXPECT_TRUE(right_half.Equals(gfx::Rect(20, 10, 10, 10)));
+
+  // Splitting a rectangle of zero width.
+  gfx::Rect(10, 10, 0, 10).SplitVertically(&left_half, &right_half);
+  EXPECT_TRUE(left_half.Equals(gfx::Rect(10, 10, 0, 10)));
+  EXPECT_TRUE(right_half.Equals(gfx::Rect(10, 10, 0, 10)));
+
+  // Splitting a rectangle of odd width.
+  gfx::Rect(10, 10, 5, 10).SplitVertically(&left_half, &right_half);
+  EXPECT_TRUE(left_half.Equals(gfx::Rect(10, 10, 2, 10)));
+  EXPECT_TRUE(right_half.Equals(gfx::Rect(12, 10, 3, 10)));
+}
+
 TEST(RectTest, SharesEdgeWith) {
   gfx::Rect r(2, 3, 4, 5);
 
@@ -328,3 +352,5 @@ TEST(RectTest, ConstructAndAssign) {
   gfx::Rect test2(rect_2);
 }
 #endif
+
+}  // namespace ui

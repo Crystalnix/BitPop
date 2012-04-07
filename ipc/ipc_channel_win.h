@@ -12,6 +12,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 
 namespace base {
@@ -30,8 +31,9 @@ class Channel::ChannelImpl : public MessageLoopForIO::IOHandler {
   void Close();
   void set_listener(Listener* listener) { listener_ = listener; }
   bool Send(Message* message);
+  static bool IsNamedServerInitialized(const std::string& channel_id);
  private:
-  const std::wstring PipeName(const std::string& channel_id) const;
+  static const std::wstring PipeName(const std::string& channel_id);
   bool CreatePipe(const IPC::ChannelHandle &channel_handle, Mode mode);
 
   bool ProcessConnection();
@@ -78,7 +80,7 @@ class Channel::ChannelImpl : public MessageLoopForIO::IOHandler {
   // problems.  TODO(darin): make this unnecessary
   bool processing_incoming_;
 
-  ScopedRunnableMethodFactory<ChannelImpl> factory_;
+  base::WeakPtrFactory<ChannelImpl> weak_factory_;
 
   scoped_ptr<base::NonThreadSafe> thread_check_;
 

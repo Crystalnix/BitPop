@@ -6,10 +6,12 @@
 
 #include <userenv.h>
 
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 
 // userenv.dll is required for RegisterGPNotification().
 #pragma comment(lib, "userenv.lib")
+
+using content::BrowserThread;
 
 namespace policy {
 
@@ -29,6 +31,14 @@ ConfigurationPolicyLoaderWin::ConfigurationPolicyLoaderWin(
     PLOG(WARNING) << "Failed to register machine group policy notification.";
     machine_policy_watcher_failed_ = true;
   }
+}
+
+void ConfigurationPolicyLoaderWin::Reload(bool force) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  // Reset the watches BEFORE reading the individual policies to avoid
+  // missing a change notification.
+  SetupWatches();
+  AsynchronousPolicyLoader::Reload(force);
 }
 
 void ConfigurationPolicyLoaderWin::InitOnFileThread() {
@@ -67,19 +77,13 @@ void ConfigurationPolicyLoaderWin::SetupWatches() {
     ScheduleFallbackReloadTask();
 }
 
-void ConfigurationPolicyLoaderWin::Reload() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  AsynchronousPolicyLoader::Reload();
-  SetupWatches();
-}
-
 void ConfigurationPolicyLoaderWin::OnObjectSignaled(HANDLE object) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   DCHECK(object == user_policy_changed_event_.handle() ||
          object == machine_policy_changed_event_.handle())
       << "unexpected object signaled policy reload, obj = "
       << std::showbase << std::hex << object;
-  Reload();
+  Reload(false);
 }
 
 }  // namespace policy

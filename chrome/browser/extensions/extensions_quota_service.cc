@@ -1,11 +1,11 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extensions_quota_service.h"
 
 #include "base/message_loop.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "chrome/browser/extensions/extension_function.h"
 
 // If the browser stays open long enough, we reset state once a day.
@@ -18,7 +18,8 @@ const char QuotaLimitHeuristic::kGenericOverQuotaError[] =
 
 ExtensionsQuotaService::ExtensionsQuotaService() {
   if (MessageLoop::current() != NULL) {  // Null in unit tests.
-    purge_timer_.Start(base::TimeDelta::FromDays(kPurgeIntervalInDays),
+    purge_timer_.Start(FROM_HERE,
+                       base::TimeDelta::FromDays(kPurgeIntervalInDays),
                        this, &ExtensionsQuotaService::Purge);
   }
 }
@@ -81,6 +82,12 @@ void QuotaLimitHeuristic::Bucket::Reset(const Config& config,
     const base::TimeTicks& start) {
   num_tokens_ = config.refill_token_count;
   expiration_ = start + config.refill_interval;
+}
+
+void QuotaLimitHeuristic::SingletonBucketMapper::GetBucketsForArgs(
+    const ListValue* args,
+    BucketList* buckets) {
+  buckets->push_back(&bucket_);
 }
 
 QuotaLimitHeuristic::QuotaLimitHeuristic(const Config& config,

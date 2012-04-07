@@ -14,28 +14,20 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
-#include "chrome/browser/download/download_process_handle.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(TOOLKIT_VIEWS)
-#include "views/view.h"
+#include "ui/views/view.h"
 #endif
 
-class BaseDownloadItemModel;
-class CrxInstaller;
-class DictionaryValue;
-class DownloadItem;
-class DownloadManager;
 class GURL;
-class Profile;
-class ResourceDispatcherHost;
-class SkBitmap;
 
-struct DownloadCreateInfo;
-struct DownloadSaveInfo;
+namespace base {
+class DictionaryValue;
+}
 
 namespace content {
-class ResourceContext;
+class DownloadItem;
 }
 
 namespace gfx {
@@ -50,48 +42,14 @@ namespace download_util {
 // Return the default download directory.
 const FilePath& GetDefaultDownloadDirectory();
 
-// Create a temporary file for a download in the user's default download
-// directory and return true if was successful in creating the file.
-bool CreateTemporaryFileForDownload(FilePath* path);
-
 // Return true if the |download_path| is dangerous path.
 bool DownloadPathIsDangerous(const FilePath& download_path);
 
-// Create an extension based on the file name and mime type.
-void GenerateExtension(const FilePath& file_name,
-                       const std::string& mime_type,
-                       FilePath::StringType* generated_extension);
-
-// Create a file name based on the response from the server.
-void GenerateFileNameFromRequest(const GURL& url,
-                                 const std::string& content_disposition,
-                                 const std::string& referrer_charset,
-                                 const std::string& mime_type,
+// Generate a filename based on the response from the server.  Similar
+// in operation to net::GenerateFileName(), but uses a localized
+// default name.
+void GenerateFileNameFromRequest(const content::DownloadItem& download_item,
                                  FilePath* generated_name);
-
-void GenerateFileNameFromSuggestedName(const GURL& url,
-                                       const std::string& suggested_name,
-                                       const std::string& mime_type,
-                                       FilePath* generated_name);
-
-void GenerateFileName(const GURL& url,
-                      const std::string& content_disposition,
-                      const std::string& referrer_charset,
-                      const std::string& mime_type,
-                      FilePath* generated_name);
-
-// Used to make sure we have a safe file extension and filename for a
-// download.  |file_name| can either be just the file name or it can be a
-// full path to a file.
-void GenerateSafeFileName(const std::string& mime_type, FilePath* file_name);
-
-// Start installing a downloaded item item as a CRX (extension, theme, app,
-// ...).  The installer does work on the file thread, so the installation
-// is not complete when this function returns.  Returns the object managing
-// the installation.
-scoped_refptr<CrxInstaller> OpenChromeExtension(
-    Profile* profile,
-    const DownloadItem& download_item);
 
 // Download progress animations ------------------------------------------------
 
@@ -130,45 +88,6 @@ enum PaintDownloadProgressSize {
   SMALL = 0,
   BIG
 };
-
-// We keep a count of how often various events occur in the
-// histogram "Download.Counts".
-enum DownloadCountTypes {
-  // The download was initiated by navigating to a URL (e.g. by user
-  // click).
-  INITIATED_BY_NAVIGATION_COUNT = 0,
-
-  // The download was initiated by invoking a context menu within a page.
-  INITIATED_BY_CONTEXT_MENU_COUNT,
-
-  // The download was initiated when the SavePackage system rejected
-  // a Save Page As ... by returning false from
-  // SavePackage::IsSaveableContents().
-  INITIATED_BY_SAVE_PACKAGE_FAILURE_COUNT,
-
-  // The download was initiated by a drag and drop from a drag-and-drop
-  // enabled web application.
-  INITIATED_BY_DRAG_N_DROP_COUNT,
-
-  // The download was initiated by explicit RPC from the renderer process
-  // (e.g. by Alt-click).
-  INITIATED_BY_RENDERER_COUNT,
-
-  // Downloads that made it to DownloadResourceHandler -- all of the
-  // above minus those blocked by DownloadThrottlingResourceHandler.
-  UNTHROTTLED_COUNT,
-
-  // Downloads that actually complete.
-  COMPLETED_COUNT,
-
-  // Downloads that are cancelled before completion (user action or error).
-  CANCELLED_COUNT,
-
-  DOWNLOAD_COUNT_TYPES_LAST_ENTRY
-};
-
-// Increment one of the above counts.
-void RecordDownloadCount(DownloadCountTypes type);
 
 // Paint the common download animation progress foreground and background,
 // clipping the foreground to 'percent' full. If percent is -1, then we don't
@@ -212,7 +131,7 @@ void PaintDownloadInterrupted(gfx::Canvas* canvas,
 // Helper function for download views to use when acting as a drag source for a
 // DownloadItem. If |icon| is NULL, no image will be accompany the drag. |view|
 // is only required for Mac OS X, elsewhere it can be NULL.
-void DragDownload(const DownloadItem* download,
+void DragDownload(const content::DownloadItem* download,
                   gfx::Image* icon,
                   gfx::NativeView view);
 
@@ -220,10 +139,11 @@ void DragDownload(const DownloadItem* download,
 
 // Creates a representation of a download in a format that the downloads
 // HTML page can understand.
-DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id);
+base::DictionaryValue* CreateDownloadItemValue(content::DownloadItem* download,
+                                               int id);
 
 // Get the localized status text for an in-progress download.
-string16 GetProgressStatusText(DownloadItem* download);
+string16 GetProgressStatusText(content::DownloadItem* download);
 
 // Update the application icon to indicate overall download progress.
 // |download_count| is the number of downloads currently in progress. If
@@ -234,48 +154,42 @@ void UpdateAppIconDownloadProgress(int download_count,
                                    bool progress_known,
                                    float progress);
 
-// Appends the passed the number between parenthesis the path before the
-// extension.
-void AppendNumberToPath(FilePath* path, int number);
-
-// Attempts to find a number that can be appended to that path to make it
-// unique. If |path| does not exist, 0 is returned.  If it fails to find such
-// a number, -1 is returned.
-int GetUniquePathNumber(const FilePath& path);
-
-// Download the URL. Must be called on the IO thread.
-void DownloadUrl(const GURL& url,
-                 const GURL& referrer,
-                 const std::string& referrer_charset,
-                 const DownloadSaveInfo& save_info,
-                 ResourceDispatcherHost* rdh,
-                 int render_process_host_id,
-                 int render_view_id,
-                 const content::ResourceContext* context);
-
-// Tells the resource dispatcher host to cancel a download request.
-// Must be called on the IO thread.
-// |process_handle| is passed by value because it is ultimately passed to
-// other threads, and this way we don't have to worry about object lifetimes.
-void CancelDownloadRequest(ResourceDispatcherHost* rdh,
-                           DownloadProcessHandle process_handle);
-
-// Sends a notification on downloads being initiated
-// Must be called on the UI thread.
-void NotifyDownloadInitiated(int render_process_id, int render_view_id);
-
 // Same as GetUniquePathNumber, except that it also checks the existence
 // of its .crdownload intermediate path.
 // If |path| does not exist, 0 is returned.  If it fails to find such
 // a number, -1 is returned.
 int GetUniquePathNumberWithCrDownload(const FilePath& path);
 
-// Erases all downloaded files with the specified path and name prefix.
-// Used by download UI tests to clean up the download directory.
-void EraseUniqueDownloadFiles(const FilePath& path_prefix);
-
 // Returns a .crdownload intermediate path for the |suggested_path|.
 FilePath GetCrDownloadPath(const FilePath& suggested_path);
+
+// Check whether we can do the saving page operation for the specified URL.
+bool IsSavableURL(const GURL& url);
+
+// Record the total number of items and the number of in-progress items showing
+// in the shelf when it closes.  Set |autoclose| to true when the shelf is
+// closing itself, false when the user explicitly closed it.
+void RecordShelfClose(int size, int in_progress, bool autoclose);
+
+// Used for counting UMA stats. Similar to content's
+// download_stats::DownloadCountTypes but from the chrome layer.
+enum ChromeDownloadCountTypes {
+  // The download was initiated by navigating to a URL (e.g. by user click).
+  INITIATED_BY_NAVIGATION_COUNT = 0,
+
+  // The download was initiated by invoking a context menu within a page.
+  INITIATED_BY_CONTEXT_MENU_COUNT,
+
+  // The download was initiated by the WebStore installer.
+  INITIATED_BY_WEBSTORE_INSTALLER_COUNT,
+
+  // The download was initiated by the ImageBurner (cros).
+  INITIATED_BY_IMAGE_BURNER_COUNT,
+
+  DOWNLOAD_COUNT_TYPES_LAST_ENTRY,
+};
+
+void RecordDownloadCount(ChromeDownloadCountTypes type);
 
 }  // namespace download_util
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,27 +8,26 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "views/controls/link_listener.h"
-#include "views/view.h"
-#include "views/window/dialog_delegate.h"
+#include "ui/views/controls/link_listener.h"
+#include "ui/views/view.h"
+#include "ui/views/window/dialog_delegate.h"
 
 class Profile;
 
 // The view shown in the instant confirm dialog.
-class InstantConfirmView : public views::View,
-                           public views::DialogDelegate,
+class InstantConfirmView : public views::DialogDelegateView,
                            public views::LinkListener {
  public:
   explicit InstantConfirmView(Profile* profile);
 
   // views::DialogDelegate overrides:
-  virtual bool Accept(bool window_closing);
-  virtual bool Accept();
-  virtual bool Cancel();
-  virtual views::View* GetContentsView();
-  virtual std::wstring GetWindowTitle() const;
-  virtual gfx::Size GetPreferredSize();
-  virtual bool IsModal() const;
+  virtual bool Accept(bool window_closing) OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual views::View* GetContentsView() OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // views::LinkListener overrides:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;

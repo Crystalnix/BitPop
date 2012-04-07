@@ -8,11 +8,10 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/memory/memory_debug.h"
 #include "base/metrics/stats_counters.h"
 #include "base/string_util.h"
-#include "base/sys_info.h"
 #include "base/win/object_watcher.h"
+#include "base/win/windows_version.h"
 #include "net/base/address_list_net_log_param.h"
 #include "net/base/connection_type_histograms.h"
 #include "net/base/io_buffer.h"
@@ -56,10 +55,7 @@ int SetupSocket(SOCKET socket) {
   //    http://blogs.msdn.com/wndp/archive/2006/05/05/Winhec-blog-tcpip-2.aspx
   // Since Vista's auto-tune is better than any static value we can could set,
   // only change these on pre-vista machines.
-  int32 major_version, minor_version, fix_version;
-  base::SysInfo::OperatingSystemVersionNumbers(&major_version, &minor_version,
-    &fix_version);
-  if (major_version < 6) {
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
     const int32 kSocketBufferSize = 64 * 1024;
     SetSocketReceiveBufferSize(socket, kSocketBufferSize);
     SetSocketSendBufferSize(socket, kSocketBufferSize);
@@ -321,12 +317,11 @@ TCPClientSocketWin::TCPClientSocketWin(const AddressList& addresses,
       current_ai_(NULL),
       waiting_read_(false),
       waiting_write_(false),
-      read_callback_(NULL),
-      write_callback_(NULL),
       next_connect_state_(CONNECT_STATE_NONE),
       connect_os_error_(0),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SOCKET)),
-      previously_disconnected_(false) {
+      previously_disconnected_(false),
+      num_bytes_read_(0) {
   scoped_refptr<NetLog::EventParameters> params;
   if (source.is_valid())
     params = new NetLogSourceParameter("source_dependency", source);
@@ -385,7 +380,7 @@ int TCPClientSocketWin::Bind(const IPEndPoint& address) {
 }
 
 
-int TCPClientSocketWin::Connect(CompletionCallback* callback) {
+int TCPClientSocketWin::Connect(const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
 
   // If already connected, then just return OK.
@@ -406,7 +401,8 @@ int TCPClientSocketWin::Connect(CompletionCallback* callback) {
   int rv = DoConnectLoop(OK);
   if (rv == ERR_IO_PENDING) {
     // Synchronous operation not supported.
-    DCHECK(callback);
+    DCHECK(!callback.is_null());
+    // TODO(ajwong): Is setting read_callback_ the right thing to do here??
     read_callback_ = callback;
   } else {
     LogConnectCompletion(rv);
@@ -487,6 +483,7 @@ int TCPClientSocketWin::DoConnect() {
 
   core_->write_overlapped_.hEvent = WSACreateEvent();
 
+  connect_start_time_ = base::TimeTicks::Now();
   if (!connect(socket_, ai->ai_addr, static_cast<int>(ai->ai_addrlen))) {
     // Connected without waiting!
     //
@@ -525,6 +522,7 @@ int TCPClientSocketWin::DoConnectComplete(int result) {
   net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT, params);
 
   if (result == OK) {
+    connect_time_micros_ = base::TimeTicks::Now() - connect_start_time_;
     use_history_.set_was_ever_connected();
     return OK;  // Done!
   }
@@ -590,6 +588,9 @@ bool TCPClientSocketWin::IsConnected() const {
   if (socket_ == INVALID_SOCKET || waiting_connect())
     return false;
 
+  if (waiting_read_)
+    return true;
+
   // Check if connection is alive.
   char c;
   int rv = recv(socket_, &c, 1, MSG_PEEK);
@@ -606,6 +607,9 @@ bool TCPClientSocketWin::IsConnectedAndIdle() const {
 
   if (socket_ == INVALID_SOCKET || waiting_connect())
     return false;
+
+  if (waiting_read_)
+    return true;
 
   // Check if connection is alive and we haven't received any data
   // unexpectedly.
@@ -661,13 +665,21 @@ bool TCPClientSocketWin::UsingTCPFastOpen() const {
   return false;
 }
 
+int64 TCPClientSocketWin::NumBytesRead() const {
+  return num_bytes_read_;
+}
+
+base::TimeDelta TCPClientSocketWin::GetConnectTimeMicros() const {
+  return connect_time_micros_;
+}
+
 int TCPClientSocketWin::Read(IOBuffer* buf,
                              int buf_len,
-                             CompletionCallback* callback) {
+                             const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
   DCHECK_NE(socket_, INVALID_SOCKET);
   DCHECK(!waiting_read_);
-  DCHECK(!read_callback_);
+  DCHECK(read_callback_.is_null());
   DCHECK(!core_->read_iobuffer_);
 
   buf_len = core_->ThrottleReadSize(buf_len);
@@ -682,19 +694,13 @@ int TCPClientSocketWin::Read(IOBuffer* buf,
                    &core_->read_overlapped_, NULL);
   if (rv == 0) {
     if (ResetEventIfSignaled(core_->read_overlapped_.hEvent)) {
-      // Because of how WSARecv fills memory when used asynchronously, Purify
-      // isn't able to detect that it's been initialized, so it scans for 0xcd
-      // in the buffer and reports UMRs (uninitialized memory reads) for those
-      // individual bytes. We override that in PURIFY builds to avoid the
-      // false error reports.
-      // See bug 5297.
-      base::MemoryDebug::MarkAsInitialized(core_->read_buffer_.buf, num);
       base::StatsCounter read_bytes("tcp.read_bytes");
       read_bytes.Add(num);
+      num_bytes_read_ += num;
       if (num > 0)
         use_history_.set_was_used_to_convey_data();
-      LogByteTransfer(net_log_, NetLog::TYPE_SOCKET_BYTES_RECEIVED, num,
-                      core_->read_buffer_.buf);
+      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED, num,
+                                    core_->read_buffer_.buf);
       return static_cast<int>(num);
     }
   } else {
@@ -711,11 +717,11 @@ int TCPClientSocketWin::Read(IOBuffer* buf,
 
 int TCPClientSocketWin::Write(IOBuffer* buf,
                               int buf_len,
-                              CompletionCallback* callback) {
+                              const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
   DCHECK_NE(socket_, INVALID_SOCKET);
   DCHECK(!waiting_write_);
-  DCHECK(!write_callback_);
+  DCHECK(write_callback_.is_null());
   DCHECK_GT(buf_len, 0);
   DCHECK(!core_->write_iobuffer_);
 
@@ -745,8 +751,8 @@ int TCPClientSocketWin::Write(IOBuffer* buf,
       write_bytes.Add(rv);
       if (rv > 0)
         use_history_.set_was_used_to_convey_data();
-      LogByteTransfer(net_log_, NetLog::TYPE_SOCKET_BYTES_SENT, rv,
-                      core_->write_buffer_.buf);
+      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, rv,
+                                    core_->write_buffer_.buf);
       return rv;
     }
   } else {
@@ -798,28 +804,28 @@ void TCPClientSocketWin::LogConnectCompletion(int net_error) {
           sizeof(source_address));
   net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT,
                     make_scoped_refptr(new NetLogStringParameter(
-                        "source address",
+                        "source_address",
                         source_address_str)));
 }
 
 void TCPClientSocketWin::DoReadCallback(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
-  DCHECK(read_callback_);
+  DCHECK(!read_callback_.is_null());
 
-  // since Run may result in Read being called, clear read_callback_ up front.
-  CompletionCallback* c = read_callback_;
-  read_callback_ = NULL;
-  c->Run(rv);
+  // Since Run may result in Read being called, clear read_callback_ up front.
+  CompletionCallback c = read_callback_;
+  read_callback_.Reset();
+  c.Run(rv);
 }
 
 void TCPClientSocketWin::DoWriteCallback(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
-  DCHECK(write_callback_);
+  DCHECK(!write_callback_.is_null());
 
   // since Run may result in Write being called, clear write_callback_ up front.
-  CompletionCallback* c = write_callback_;
-  write_callback_ = NULL;
-  c->Run(rv);
+  CompletionCallback c = write_callback_;
+  write_callback_.Reset();
+  c.Run(rv);
 }
 
 void TCPClientSocketWin::DidCompleteConnect() {
@@ -861,10 +867,11 @@ void TCPClientSocketWin::DidCompleteRead() {
   if (ok) {
     base::StatsCounter read_bytes("tcp.read_bytes");
     read_bytes.Add(num_bytes);
+    num_bytes_read_ += num_bytes;
     if (num_bytes > 0)
       use_history_.set_was_used_to_convey_data();
-    LogByteTransfer(net_log_, NetLog::TYPE_SOCKET_BYTES_RECEIVED, num_bytes,
-                    core_->read_buffer_.buf);
+    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED,
+                                  num_bytes, core_->read_buffer_.buf);
   }
   DoReadCallback(ok ? num_bytes : MapSystemError(WSAGetLastError()));
 }
@@ -894,8 +901,8 @@ void TCPClientSocketWin::DidCompleteWrite() {
       write_bytes.Add(num_bytes);
       if (num_bytes > 0)
         use_history_.set_was_used_to_convey_data();
-      LogByteTransfer(net_log_, NetLog::TYPE_SOCKET_BYTES_SENT, num_bytes,
-                      core_->write_buffer_.buf);
+      net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, num_bytes,
+                                    core_->write_buffer_.buf);
     }
   }
   core_->write_iobuffer_ = NULL;

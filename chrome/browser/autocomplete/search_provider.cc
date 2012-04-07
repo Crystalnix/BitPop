@@ -8,34 +8,56 @@
 #include <cmath>
 
 #include "base/callback.h"
+#include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/icu_string_conversions.h"
+#include "base/json/json_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
-#include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/history/in_memory_database.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/json_value_serializer.h"
+#include "content/public/common/url_fetcher.h"
 #include "googleurl/src/url_util.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_status.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::Time;
 using base::TimeDelta;
+
+namespace {
+
+bool HasMultipleWords(const string16& text) {
+  base::i18n::BreakIterator i(text, base::i18n::BreakIterator::BREAK_WORD);
+  bool found_word = false;
+  if (i.Init()) {
+    while (i.Advance()) {
+      if (i.IsWord()) {
+        if (found_word)
+          return true;
+        found_word = true;
+      }
+    }
+  }
+  return false;
+}
+
+};
 
 // static
 const int SearchProvider::kDefaultProviderURLFetcherID = 1;
@@ -91,16 +113,6 @@ void SearchProvider::FinalizeInstantQuery(const string16& input_text,
   // destination_url for comparison as it varies depending upon the index passed
   // to TemplateURL::ReplaceSearchTerms.
   for (ACMatches::iterator i = matches_.begin(); i != matches_.end();) {
-    // Reset the description/description_class of all searches. We'll set the
-    // description of the new first match in the call to
-    // UpdateFirstSearchMatchDescription() below.
-    if ((i->type == AutocompleteMatch::SEARCH_HISTORY) ||
-        (i->type == AutocompleteMatch::SEARCH_SUGGEST) ||
-        (i->type == AutocompleteMatch::SEARCH_WHAT_YOU_TYPED)) {
-      i->description.clear();
-      i->description_class.clear();
-    }
-
     if (((i->type == AutocompleteMatch::SEARCH_HISTORY) ||
          (i->type == AutocompleteMatch::SEARCH_SUGGEST)) &&
         (i->fill_into_edit == text)) {
@@ -123,10 +135,6 @@ void SearchProvider::FinalizeInstantQuery(const string16& input_text,
                 input_.prevent_inline_autocomplete(), &match_map);
   DCHECK_EQ(1u, match_map.size());
   matches_.push_back(match_map.begin()->second);
-  // Sort the results so that UpdateFirstSearchDescription does the right thing.
-  std::sort(matches_.begin(), matches_.end(), &AutocompleteMatch::MoreRelevant);
-
-  UpdateFirstSearchMatchDescription();
 
   listener_->OnProviderUpdate(true);
 }
@@ -152,12 +160,13 @@ void SearchProvider::Start(const AutocompleteInput& input,
     keyword_provider = NULL;
 
   const TemplateURL* default_provider =
-      profile_->GetTemplateURLModel()->GetDefaultSearchProvider();
+      TemplateURLServiceFactory::GetForProfile(profile_)->
+      GetDefaultSearchProvider();
   if (!TemplateURL::SupportsReplacement(default_provider))
     default_provider = NULL;
 
   if (keyword_provider == default_provider)
-    keyword_provider = NULL;  // No use in querying the same provider twice.
+    default_provider = NULL;  // No use in querying the same provider twice.
 
   if (!default_provider && !keyword_provider) {
     // No valid providers.
@@ -186,8 +195,8 @@ void SearchProvider::Start(const AutocompleteInput& input,
       match.contents.assign(l10n_util::GetStringUTF16(IDS_EMPTY_KEYWORD_VALUE));
       match.contents_class.push_back(
           ACMatchClassification(0, ACMatchClassification::NONE));
+      match.template_url = &providers_.default_provider();
       matches_.push_back(match);
-      UpdateFirstSearchMatchDescription();
     }
     Stop();
     return;
@@ -199,6 +208,14 @@ void SearchProvider::Start(const AutocompleteInput& input,
   StartOrStopSuggestQuery(minimal_changes);
   ConvertResultsToAutocompleteMatches();
 }
+
+class SearchProvider::CompareScoredTerms {
+ public:
+  bool operator()(const ScoredTerm& a, const ScoredTerm& b) {
+    // Sort in descending relevance order.
+    return a.second > b.second;
+  }
+};
 
 void SearchProvider::Run() {
   // Start a new request with the current input.
@@ -228,18 +245,14 @@ void SearchProvider::Stop() {
   default_provider_suggest_text_.clear();
 }
 
-void SearchProvider::OnURLFetchComplete(const URLFetcher* source,
-                                        const GURL& url,
-                                        const net::URLRequestStatus& status,
-                                        int response_code,
-                                        const net::ResponseCookies& cookie,
-                                        const std::string& data) {
+void SearchProvider::OnURLFetchComplete(const content::URLFetcher* source) {
   DCHECK(!done_);
   suggest_results_pending_--;
   DCHECK_GE(suggest_results_pending_, 0);  // Should never go negative.
   const net::HttpResponseHeaders* const response_headers =
-      source->response_headers();
-  std::string json_data(data);
+      source->GetResponseHeaders();
+  std::string json_data;
+  source->GetResponseAsString(&json_data);
   // JSON is supposed to be UTF-8, but some suggest service providers send JSON
   // files in non-UTF-8 encodings.  The actual encoding is usually specified in
   // the Content-Type header field.
@@ -248,7 +261,7 @@ void SearchProvider::OnURLFetchComplete(const URLFetcher* source,
     if (response_headers->GetCharset(&charset)) {
       string16 data_16;
       // TODO(jungshik): Switch to CodePageToUTF8 after it's added.
-      if (base::CodepageToUTF16(data, charset.c_str(),
+      if (base::CodepageToUTF16(json_data, charset.c_str(),
                                 base::OnStringConversionError::FAIL,
                                 &data_16))
         json_data = UTF16ToUTF8(data_16);
@@ -259,7 +272,7 @@ void SearchProvider::OnURLFetchComplete(const URLFetcher* source,
   SuggestResults* suggest_results = is_keyword_results ?
       &keyword_suggest_results_ : &default_suggest_results_;
 
-  if (status.is_success() && response_code == 200) {
+  if (source->GetStatus().is_success() && source->GetResponseCode() == 200) {
     JSONStringValueSerializer deserializer(json_data);
     deserializer.set_allow_trailing_comma(true);
     scoped_ptr<Value> root_val(deserializer.Deserialize(NULL, NULL));
@@ -294,20 +307,23 @@ void SearchProvider::DoHistoryQuery(bool minimal_changes) {
   if (!url_db)
     return;
 
-  // Request history for both the keyword and default provider.
+  // Request history for both the keyword and default provider.  We grab many
+  // more matches than we'll ultimately clamp to so that if there are several
+  // recent multi-word matches who scores are lowered (see
+  // AddHistoryResultsToMap()), they won't crowd out older, higher-scoring
+  // matches.  Note that this doesn't fix the problem entirely, but merely
+  // limits it to cases with a very large number of such multi-word matches; for
+  // now, this seems OK compared with the complexity of a real fix, which would
+  // require multiple searches and tracking of "single- vs. multi-word" in the
+  // database.
+  int num_matches = kMaxMatches * 5;
   if (providers_.valid_keyword_provider()) {
-    url_db->GetMostRecentKeywordSearchTerms(
-        providers_.keyword_provider().id(),
-        keyword_input_text_,
-        static_cast<int>(kMaxMatches),
-        &keyword_history_results_);
+    url_db->GetMostRecentKeywordSearchTerms(providers_.keyword_provider().id(),
+        keyword_input_text_, num_matches, &keyword_history_results_);
   }
   if (providers_.valid_default_provider()) {
-    url_db->GetMostRecentKeywordSearchTerms(
-        providers_.default_provider().id(),
-        input_.text(),
-        static_cast<int>(kMaxMatches),
-        &default_history_results_);
+    url_db->GetMostRecentKeywordSearchTerms(providers_.default_provider().id(),
+        input_.text(), num_matches, &default_history_results_);
   }
 }
 
@@ -315,7 +331,7 @@ void SearchProvider::StartOrStopSuggestQuery(bool minimal_changes) {
   // Don't send any queries to the server until some time has elapsed after
   // the last keypress, to avoid flooding the server with requests we are
   // likely to end up throwing away anyway.
-  static const int kQueryDelayMs = 200;
+  const int kQueryDelayMs = 200;
 
   if (!IsQuerySuitableForSuggest()) {
     StopSuggest();
@@ -347,7 +363,8 @@ void SearchProvider::StartOrStopSuggestQuery(bool minimal_changes) {
   // Kick off a timer that will start the URL fetch if it completes before
   // the user types another character.
   int delay = query_suggest_immediately_ ? 0 : kQueryDelayMs;
-  timer_.Start(TimeDelta::FromMilliseconds(delay), this, &SearchProvider::Run);
+  timer_.Start(FROM_HERE, TimeDelta::FromMilliseconds(delay), this,
+               &SearchProvider::Run);
 }
 
 bool SearchProvider::IsQuerySuitableForSuggest() const {
@@ -416,17 +433,21 @@ void SearchProvider::StopSuggest() {
   have_suggest_results_ = false;
 }
 
-URLFetcher* SearchProvider::CreateSuggestFetcher(int id,
-                                                 const TemplateURL& provider,
-                                                 const string16& text) {
+content::URLFetcher* SearchProvider::CreateSuggestFetcher(
+    int id,
+    const TemplateURL& provider,
+    const string16& text) {
   const TemplateURLRef* const suggestions_url = provider.suggestions_url();
   DCHECK(suggestions_url->SupportsReplacement());
-  URLFetcher* fetcher = URLFetcher::Create(id,
-      GURL(suggestions_url->ReplaceSearchTerms(
-           provider, text,
-           TemplateURLRef::NO_SUGGESTIONS_AVAILABLE, string16())),
-      URLFetcher::GET, this);
-  fetcher->set_request_context(profile_->GetRequestContext());
+  content::URLFetcher* fetcher = content::URLFetcher::Create(
+      id,
+      GURL(suggestions_url->ReplaceSearchTermsUsingProfile(
+          profile_, provider, text, TemplateURLRef::NO_SUGGESTIONS_AVAILABLE,
+          string16())),
+      content::URLFetcher::GET,
+      this);
+  fetcher->SetRequestContext(profile_->GetRequestContext());
+  fetcher->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   fetcher->Start();
   return fetcher;
 }
@@ -472,7 +493,7 @@ bool SearchProvider::ParseSuggestResults(Value* root_val,
       DictionaryValue* dict_val = static_cast<DictionaryValue*>(optional_val);
 
       // Parse Google Suggest specific type extension.
-      static const std::string kGoogleSuggestType("google:suggesttype");
+      const std::string kGoogleSuggestType("google:suggesttype");
       if (dict_val->HasKey(kGoogleSuggestType))
         dict_val->GetList(kGoogleSuggestType, &type_list);
     }
@@ -576,8 +597,6 @@ void SearchProvider::ConvertResultsToAutocompleteMatches() {
   if (matches_.size() > max_total_matches)
     matches_.erase(matches_.begin() + max_total_matches, matches_.end());
 
-  UpdateFirstSearchMatchDescription();
-
   UpdateStarredStateOfMatches();
 
   UpdateDone();
@@ -602,50 +621,99 @@ void SearchProvider::AddHistoryResultsToMap(const HistoryResults& results,
                                             bool is_keyword,
                                             int did_not_accept_suggestion,
                                             MatchMap* map) {
-  int last_relevance = 0;
+  if (results.empty())
+    return;
+
+  bool base_prevent_inline_autocomplete =
+      (input_.type() == AutocompleteInput::URL) ||
+      input_.prevent_inline_autocomplete();
+  const string16& input_text(
+      is_keyword ? keyword_input_text_ : input_.text());
+  bool input_multiple_words = HasMultipleWords(input_text);
+
+  ScoredTerms scored_terms;
+  if (!base_prevent_inline_autocomplete && input_multiple_words) {
+    // ScoreHistoryTerms() allows autocompletion of multi-word, 1-visit queries
+    // if the input also has multiple words.  But if we were already
+    // autocompleting a multi-word, multi-visit query, and the current input is
+    // still a prefix of it, then changing the autocompletion suddenly feels
+    // wrong.  To detect this case, first score as if only one word has been
+    // typed, then check for a best result that is an autocompleted, multi-word
+    // query.  If we find one, then just keep that score set.
+    scored_terms = ScoreHistoryTerms(results, base_prevent_inline_autocomplete,
+                                     false, input_text, is_keyword);
+    if ((scored_terms[0].second < AutocompleteResult::kLowestDefaultScore) ||
+        !HasMultipleWords(scored_terms[0].first))
+      scored_terms.clear();  // Didn't detect the case above, score normally.
+  }
+  if (scored_terms.empty())
+    scored_terms = ScoreHistoryTerms(results, base_prevent_inline_autocomplete,
+                                     input_multiple_words, input_text,
+                                     is_keyword);
+  for (ScoredTerms::const_iterator i(scored_terms.begin());
+       i != scored_terms.end(); ++i) {
+    AddMatchToMap(i->first, input_text, i->second,
+                  AutocompleteMatch::SEARCH_HISTORY, did_not_accept_suggestion,
+                  is_keyword, input_.prevent_inline_autocomplete(), map);
+  }
+}
+
+SearchProvider::ScoredTerms SearchProvider::ScoreHistoryTerms(
+    const HistoryResults& results,
+    bool base_prevent_inline_autocomplete,
+    bool input_multiple_words,
+    const string16& input_text,
+    bool is_keyword) {
   AutocompleteClassifier* classifier = profile_->GetAutocompleteClassifier();
+  ScoredTerms scored_terms;
   for (HistoryResults::const_iterator i(results.begin()); i != results.end();
        ++i) {
-    // History returns results sorted for us. We force the relevance to decrease
-    // so that the sort from history is honored. We should never end up with a
-    // match having a relevance greater than the previous, but they might be
-    // equal. If we didn't force the relevance to decrease and we ended up in a
-    // situation where the relevance was equal, then which was shown first would
-    // be random.
-    // This uses >= to handle the case where 3 or more results have the same
-    // relevance.
-    bool term_looks_like_url = false;
+    // Don't autocomplete multi-word queries that have only been seen once
+    // unless the user has typed more than one word.
+    bool prevent_inline_autocomplete = base_prevent_inline_autocomplete ||
+        (!input_multiple_words && (i->visits < 2) && HasMultipleWords(i->term));
+
     // Don't autocomplete search terms that would normally be treated as URLs
-    // when typed. For example, if the user searched for google.com and types
-    // goog, don't autocomplete to the search term google.com. Otherwise, the
-    // input will look like a URL but act like a search, which is confusing.
+    // when typed. For example, if the user searched for "google.com" and types
+    // "goog", don't autocomplete to the search term "google.com". Otherwise,
+    // the input will look like a URL but act like a search, which is confusing.
     // NOTE: We don't check this in the following cases:
     //  * When inline autocomplete is disabled, we won't be inline
     //    autocompleting this term, so we don't need to worry about confusion as
     //    much.  This also prevents calling Classify() again from inside the
     //    classifier (which will corrupt state and likely crash), since the
-    //    classifier always disabled inline autocomplete.
+    //    classifier always disables inline autocomplete.
     //  * When the user has typed the whole term, the "what you typed" history
     //    match will outrank us for URL-like inputs anyway, so we need not do
     //    anything special.
-    if (!input_.prevent_inline_autocomplete() && classifier &&
-        i->term != input_.text()) {
+    if (!prevent_inline_autocomplete && classifier && (i->term != input_text)) {
       AutocompleteMatch match;
       classifier->Classify(i->term, string16(), false, false, &match, NULL);
-      term_looks_like_url = match.transition == PageTransition::TYPED;
+      prevent_inline_autocomplete =
+          match.transition == content::PAGE_TRANSITION_TYPED;
     }
-    int relevance = CalculateRelevanceForHistory(i->time, term_looks_like_url,
-                                                 is_keyword);
-    if (i != results.begin() && relevance >= last_relevance)
-      relevance = last_relevance - 1;
-    last_relevance = relevance;
-    AddMatchToMap(i->term,
-                  is_keyword ? keyword_input_text_ : input_.text(),
-                  relevance,
-                  AutocompleteMatch::SEARCH_HISTORY, did_not_accept_suggestion,
-                  is_keyword, input_.prevent_inline_autocomplete(),
-                  map);
+
+    int relevance = CalculateRelevanceForHistory(i->time, is_keyword,
+                                                 prevent_inline_autocomplete);
+    scored_terms.push_back(std::make_pair(i->term, relevance));
   }
+
+  // History returns results sorted for us.  However, we may have docked some
+  // results' scores, so things are no longer in order.  Do a stable sort to get
+  // things back in order without otherwise disturbing results with equal
+  // scores, then force the scores to be unique, so that the order in which
+  // they're shown is deterministic.
+  std::stable_sort(scored_terms.begin(), scored_terms.end(),
+                   CompareScoredTerms());
+  int last_relevance = 0;
+  for (ScoredTerms::iterator i(scored_terms.begin()); i != scored_terms.end();
+       ++i) {
+    if ((i != scored_terms.begin()) && (i->second >= last_relevance))
+      i->second = last_relevance - 1;
+    last_relevance = i->second;
+  }
+
+  return scored_terms;
 }
 
 void SearchProvider::AddSuggestResultsToMap(
@@ -686,24 +754,23 @@ int SearchProvider::CalculateRelevanceForWhatYouTyped() const {
   }
 }
 
-int SearchProvider::CalculateRelevanceForHistory(const Time& time,
-                                                 bool looks_like_url,
-                                                 bool is_keyword) const {
+int SearchProvider::CalculateRelevanceForHistory(
+    const Time& time,
+    bool is_keyword,
+    bool prevent_inline_autocomplete) const {
   // The relevance of past searches falls off over time. There are two distinct
   // equations used. If the first equation is used (searches to the primary
-  // provider with a type other than URL that don't autocomplete to a url) the
-  // score starts at 1399 and falls to 1300. If the second equation is used the
-  // relevance of a search 15 minutes ago is discounted about 50 points, while
-  // the relevance of a search two weeks ago is discounted about 450 points.
+  // provider that we want to inline autocomplete), the score starts at 1399 and
+  // falls to 1300. If the second equation is used the relevance of a search 15
+  // minutes ago is discounted 50 points, while the relevance of a search two
+  // weeks ago is discounted 450 points.
   double elapsed_time = std::max((Time::Now() - time).InSecondsF(), 0.);
-
-  if (providers_.is_primary_provider(is_keyword) &&
-      input_.type() != AutocompleteInput::URL &&
-      !input_.prevent_inline_autocomplete() && !looks_like_url) {
+  bool is_primary_provider = providers_.is_primary_provider(is_keyword);
+  if (is_primary_provider && !prevent_inline_autocomplete) {
     // Searches with the past two days get a different curve.
-    const double autocomplete_time= 2 * 24 * 60 * 60;
+    const double autocomplete_time = 2 * 24 * 60 * 60;
     if (elapsed_time < autocomplete_time) {
-      return 1399 - static_cast<int>(99 *
+      return (is_keyword ? 1599 : 1399) - static_cast<int>(99 *
           std::pow(elapsed_time / autocomplete_time, 2.5));
     }
     elapsed_time -= autocomplete_time;
@@ -715,10 +782,10 @@ int SearchProvider::CalculateRelevanceForHistory(const Time& time,
   // Don't let scores go below 0.  Negative relevance scores are meaningful in
   // a different way.
   int base_score;
-  if (!providers_.is_primary_provider(is_keyword))
-    base_score = 200;
-  else
+  if (is_primary_provider)
     base_score = (input_.type() == AutocompleteInput::URL) ? 750 : 1050;
+  else
+    base_score = 200;
   return std::max(0, base_score - score_discount);
 }
 
@@ -757,6 +824,7 @@ void SearchProvider::AddMatchToMap(const string16& query_string,
   std::vector<size_t> content_param_offsets;
   const TemplateURL& provider = is_keyword ? providers_.keyword_provider() :
                                              providers_.default_provider();
+  match.template_url = &provider;
   match.contents.assign(query_string);
   // We do intra-string highlighting for suggestions - the suggested segment
   // will be highlighted, e.g. for input_text = "you" the suggestion may be
@@ -808,7 +876,7 @@ void SearchProvider::AddMatchToMap(const string16& query_string,
   if (is_keyword) {
     match.fill_into_edit.append(
         providers_.keyword_provider().keyword() + char16(' '));
-    match.template_url = &providers_.keyword_provider();
+    search_start += providers_.keyword_provider().keyword().size() + 1;
   }
   match.fill_into_edit.append(query_string);
   // Not all suggestions start with the original input.
@@ -819,15 +887,12 @@ void SearchProvider::AddMatchToMap(const string16& query_string,
 
   const TemplateURLRef* const search_url = provider.url();
   DCHECK(search_url->SupportsReplacement());
-  match.destination_url =
-      GURL(search_url->ReplaceSearchTerms(provider,
-                                          query_string,
-                                          accepted_suggestion,
-                                          input_text));
+  match.destination_url = GURL(search_url->ReplaceSearchTermsUsingProfile(
+      profile_, provider, query_string, accepted_suggestion, input_text));
 
   // Search results don't look like URLs.
-  match.transition =
-      is_keyword ? PageTransition::KEYWORD : PageTransition::GENERATED;
+  match.transition = is_keyword ?
+      content::PAGE_TRANSITION_KEYWORD : content::PAGE_TRANSITION_GENERATED;
 
   // Try to add |match| to |map|.  If a match for |query_string| is already in
   // |map|, replace it if |match| is more relevant.
@@ -886,29 +951,4 @@ void SearchProvider::UpdateDone() {
   // when the timer is started) and we're not waiting on instant.
   done_ = ((suggest_results_pending_ == 0) &&
            (instant_finalized_ || !InstantController::IsEnabled(profile_)));
-}
-
-void SearchProvider::UpdateFirstSearchMatchDescription() {
-  if (!providers_.valid_default_provider() || matches_.empty())
-    return;
-
-  for (ACMatches::iterator i = matches_.begin(); i != matches_.end(); ++i) {
-    AutocompleteMatch& match = *i;
-    switch (match.type) {
-      case AutocompleteMatch::SEARCH_WHAT_YOU_TYPED:
-      case AutocompleteMatch::SEARCH_HISTORY:
-      case AutocompleteMatch::SEARCH_SUGGEST:
-        match.description.assign(l10n_util::GetStringFUTF16(
-            IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION,
-            providers_.default_provider().
-                AdjustedShortNameForLocaleDirection()));
-        match.description_class.push_back(
-            ACMatchClassification(0, ACMatchClassification::DIM));
-        // Only the first search match gets a description.
-        return;
-
-      default:
-        break;
-    }
-  }
 }

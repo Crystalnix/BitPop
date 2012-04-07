@@ -11,13 +11,16 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
+#include "printing/printing_export.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 // This is the interface for platform-specific code for a print backend
 namespace printing {
 
-struct PrinterBasicInfo {
+struct PRINTING_EXPORT PrinterBasicInfo {
   PrinterBasicInfo();
   ~PrinterBasicInfo();
 
@@ -30,7 +33,7 @@ struct PrinterBasicInfo {
 
 typedef std::vector<PrinterBasicInfo> PrinterList;
 
-struct PrinterCapsAndDefaults {
+struct PRINTING_EXPORT PrinterCapsAndDefaults {
   PrinterCapsAndDefaults();
   ~PrinterCapsAndDefaults();
 
@@ -47,7 +50,8 @@ struct PrinterCapsAndDefaults {
 // print system specific. For example, CUPS is available on both Linux and Mac,
 // but not available on ChromeOS, etc. This design allows us to add more
 // functionality on some platforms, while reusing core (CUPS) functions.
-class PrintBackend : public base::RefCountedThreadSafe<PrintBackend> {
+class PRINTING_EXPORT PrintBackend
+    : public base::RefCountedThreadSafe<PrintBackend> {
  public:
   virtual ~PrintBackend();
 
@@ -69,7 +73,7 @@ class PrintBackend : public base::RefCountedThreadSafe<PrintBackend> {
   // settings will be used.
   // Return NULL if no print backend available.
   static scoped_refptr<PrintBackend> CreateInstance(
-      const DictionaryValue* print_backend_settings);
+      const base::DictionaryValue* print_backend_settings);
 };
 
 }  // namespace printing

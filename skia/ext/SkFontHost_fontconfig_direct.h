@@ -22,6 +22,7 @@
 #include <map>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "SkThread.h"
 #include "SkFontHost_fontconfig_impl.h"
 
@@ -35,14 +36,25 @@ class SK_API FontConfigDirect : public FontConfigInterface {
                      bool filefaceid_valid, unsigned filefaceid,
                      const std::string& family,
                      const void* characters, size_t characters_bytes,
-                     bool* is_bold, bool* is_italic);
-  virtual int Open(unsigned filefaceid);
+                     bool* is_bold, bool* is_italic) OVERRIDE;
+  virtual int Open(unsigned filefaceid) OVERRIDE;
 
  private:
   SkMutex mutex_;
   // fileid stored in two maps below are unique per font file.
   std::map<unsigned, std::string> fileid_to_filename_;
   std::map<std::string, unsigned> filename_to_fileid_;
+
+  // Cache of |family,style| to |FontMatch| to minimize querying FontConfig.
+  typedef std::pair<std::string, int> FontMatchKey;
+  struct FontMatch {
+    std::string family;
+    bool is_bold;
+    bool is_italic;
+    unsigned filefaceid;
+  };
+  std::map<FontMatchKey, FontMatch> font_match_cache_;
+
   unsigned next_file_id_;
 };
 

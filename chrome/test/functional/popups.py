@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -18,11 +18,9 @@ class PopupsTest(pyauto.PyUITest):
 
     This method will not run automatically.
     """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
     while True:
       raw_input('Interact with the browser and hit <enter>')
-      pp.pprint(self.GetBlockedPopupsInfo())
+      self.pprint(self.GetBlockedPopupsInfo())
 
   def testPopupBlockerEnabled(self):
     """Verify popup blocking is enabled."""
@@ -148,9 +146,10 @@ class PopupsTest(pyauto.PyUITest):
     self.NavigateToURL(file_url)
     self.assertEqual(1, len(self.GetBlockedPopupsInfo()))
     self.UnblockAndLaunchBlockedPopup(0)
-    history = self.GetHistoryInfo().History()
-    self.assertEqual(2, len(history))
-    self.assertEqual('Popup Success!', history[0]['title'])
+    self.assertTrue(self.WaitUntil(
+        lambda: len(self.GetHistoryInfo().History()) == 2))
+    self.assertEqual('Popup Success!',
+        self.GetHistoryInfo().History()[0]['title'])
 
   def testBlockedPopupNotShowInHistory(self):
     """Verify that a blocked popup does not show up in history."""

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 #define CHROME_BROWSER_HISTORY_URL_DATABASE_H_
 #pragma once
 
-#include "app/sql/statement.h"
 #include "base/basictypes.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/search_engines/template_url_id.h"
+#include "sql/statement.h"
 
 class GURL;
 
@@ -164,14 +164,19 @@ class URLDatabase {
 
   // Autocomplete --------------------------------------------------------------
 
-  // Fills the given array with URLs matching the given prefix. They will be
+  // Fills the given array with URLs matching the given prefix.  They will be
   // sorted by typed count, then by visit count, then by visit date (most recent
   // first) up to the given maximum number.  If |typed_only| is true, only urls
-  // that have been typed once are returned. Called by HistoryURLProvider.
-  void AutocompleteForPrefix(const string16& prefix,
+  // that have been typed once are returned.  For caller convenience, returns
+  // whether any results were found.
+  bool AutocompleteForPrefix(const std::string& prefix,
                              size_t max_results,
                              bool typed_only,
                              std::vector<URLRow>* results);
+
+  // Returns true if the database holds some past typed navigation to a URL on
+  // the provided hostname.
+  bool IsTypedHost(const std::string& host);
 
   // Tries to find the shortest URL beginning with |base| that strictly
   // prefixes |url|, and has minimum visit_ and typed_counts as specified.
@@ -247,13 +252,13 @@ class URLDatabase {
   bool CreateURLTable(bool is_temporary);
   // We have two tiers of indices for the URL table. The main tier is used by
   // all URL databases, and is an index over the URL itself.
-  void CreateMainURLIndex();
+  bool CreateMainURLIndex();
 
   // Ensures the keyword search terms table exists.
   bool InitKeywordSearchTermsTable();
 
   // Creates the indices used for keyword search terms.
-  void CreateKeywordSearchTermsIndices();
+  bool CreateKeywordSearchTermsIndices();
 
   // Deletes the keyword search terms table.
   bool DropKeywordSearchTermsTable();

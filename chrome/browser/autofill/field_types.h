@@ -8,12 +8,6 @@
 
 #include <set>
 
-enum AddressType {
-  kGenericAddress = 0,
-  kBillingAddress,
-  kShippingAddress
-};
-
 // NOTE: This list MUST not be modified.  The server aggregates and stores these
 // types over several versions, so we must remain fully compatible with the
 // Autofill server, which is itself backward-compatible.  The list must be kept
@@ -45,6 +39,8 @@ enum AutofillFieldType {
 
   // Work phone numbers (values [15,19]) are deprecated.
 
+  // Fax numbers (values [20,24]) are deprecated in Chrome, but still supported
+  // by the server.
   PHONE_FAX_NUMBER = 20,
   PHONE_FAX_CITY_CODE = 21,
   PHONE_FAX_COUNTRY_CODE = 22,

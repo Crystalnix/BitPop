@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,118 +6,72 @@
 
 #include <string>
 
-#include "base/memory/singleton.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/common/jstemplate_builder.h"
+#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/user_cros_settings_provider.h"
+#include "chrome/browser/chromeos/cros_settings.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #endif
 
+using content::WebContents;
+using content::WebUIMessageHandler;
+
 namespace {
 
-///////////////////////////////////////////////////////////////////////////////
-//
-// FlagsUIHTMLSource
-//
-///////////////////////////////////////////////////////////////////////////////
+ChromeWebUIDataSource* CreateFlagsUIHTMLSource() {
+  ChromeWebUIDataSource* source =
+      new ChromeWebUIDataSource(chrome::kChromeUIFlagsHost);
 
-class FlagsUIHTMLSource : public ChromeURLDataManager::DataSource {
- public:
-  FlagsUIHTMLSource()
-      : DataSource(chrome::kChromeUIFlagsHost, MessageLoop::current()) {}
-
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string&) const {
-    return "text/html";
-  }
-
- private:
-  ~FlagsUIHTMLSource() {}
-
-  DISALLOW_COPY_AND_ASSIGN(FlagsUIHTMLSource);
-};
-
-void FlagsUIHTMLSource::StartDataRequest(const std::string& path,
-                                        bool is_incognito,
-                                        int request_id) {
-  // Strings used in the JsTemplate file.
-  DictionaryValue localized_strings;
-  localized_strings.SetString("flagsLongTitle",
-      l10n_util::GetStringUTF16(IDS_FLAGS_LONG_TITLE));
-  localized_strings.SetString("flagsTableTitle",
-      l10n_util::GetStringUTF16(IDS_FLAGS_TABLE_TITLE));
-  localized_strings.SetString("flagsNoExperimentsAvailable",
-      l10n_util::GetStringUTF16(IDS_FLAGS_NO_EXPERIMENTS_AVAILABLE));
-  localized_strings.SetString("flagsWarningHeader", l10n_util::GetStringUTF16(
-      IDS_FLAGS_WARNING_HEADER));
-  localized_strings.SetString("flagsBlurb", l10n_util::GetStringUTF16(
-      IDS_FLAGS_WARNING_TEXT));
-  localized_strings.SetString("flagsRestartNotice", l10n_util::GetStringFUTF16(
-      IDS_FLAGS_RELAUNCH_NOTICE,
-      l10n_util::GetStringUTF16(
+  source->AddLocalizedString("flagsLongTitle", IDS_FLAGS_LONG_TITLE);
+  source->AddLocalizedString("flagsTableTitle", IDS_FLAGS_TABLE_TITLE);
+  source->AddLocalizedString("flagsNoExperimentsAvailable",
+                             IDS_FLAGS_NO_EXPERIMENTS_AVAILABLE);
+  source->AddLocalizedString("flagsWarningHeader", IDS_FLAGS_WARNING_HEADER);
+  source->AddLocalizedString("flagsBlurb", IDS_FLAGS_WARNING_TEXT);
+  source->AddLocalizedString("flagsNotSupported", IDS_FLAGS_NOT_AVAILABLE);
+  source->AddLocalizedString("flagsRestartNotice", IDS_FLAGS_RELAUNCH_NOTICE);
+  source->AddLocalizedString("flagsRestartButton", IDS_FLAGS_RELAUNCH_BUTTON);
+  source->AddLocalizedString("disable", IDS_FLAGS_DISABLE);
+  source->AddLocalizedString("enable", IDS_FLAGS_ENABLE);
 #if defined(OS_CHROMEOS)
-          IDS_PRODUCT_OS_NAME
-#else
-          IDS_PRODUCT_NAME
+  // Set the strings to show which user can actually change the flags
+  source->AddLocalizedString("ownerOnly", IDS_OPTIONS_ACCOUNTS_OWNER_ONLY);
+  std::string owner;
+  chromeos::CrosSettings::Get()->GetString(chromeos::kDeviceOwner, &owner);
+  source->AddString("ownerUserId", UTF8ToUTF16(owner));
 #endif
-          )));
-  localized_strings.SetString("flagsRestartButton",
-      l10n_util::GetStringUTF16(IDS_FLAGS_RELAUNCH_BUTTON));
-  localized_strings.SetString("disable",
-      l10n_util::GetStringUTF16(IDS_FLAGS_DISABLE));
-  localized_strings.SetString("enable",
-      l10n_util::GetStringUTF16(IDS_FLAGS_ENABLE));
 
-  base::StringPiece html =
-      ResourceBundle::GetSharedInstance().GetRawDataResource(IDR_FLAGS_HTML);
+  source->set_json_path("strings.js");
+  source->add_resource_path("flags.js", IDR_FLAGS_JS);
+
+  int idr = IDR_FLAGS_HTML;
 #if defined (OS_CHROMEOS)
-  if (!chromeos::UserManager::Get()->current_user_is_owner()) {
-    html = ResourceBundle::GetSharedInstance().GetRawDataResource(
-        IDR_FLAGS_HTML_WARNING);
-
-    // Set the strings to show which user can actually change the flags
-    localized_strings.SetString("ownerOnly", l10n_util::GetStringUTF16(
-        IDS_OPTIONS_ACCOUNTS_OWNER_ONLY));
-    localized_strings.SetString("ownerUserId", UTF8ToUTF16(
-        chromeos::UserCrosSettingsProvider::cached_owner()));
-  }
+  if (!chromeos::UserManager::Get()->current_user_is_owner())
+    idr = IDR_FLAGS_HTML_WARNING;
 #endif
-  static const base::StringPiece flags_html(html);
-  ChromeURLDataManager::DataSource::SetFontAndTextDirection(&localized_strings);
-
-  std::string full_html(flags_html.data(), flags_html.size());
-  jstemplate_builder::AppendJsonHtml(&localized_strings, &full_html);
-  jstemplate_builder::AppendI18nTemplateSourceHtml(&full_html);
-  jstemplate_builder::AppendI18nTemplateProcessHtml(&full_html);
-  jstemplate_builder::AppendJsTemplateSourceHtml(&full_html);
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
+  source->set_default_resource(idr);
+  return source;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -133,7 +87,7 @@ class FlagsDOMHandler : public WebUIMessageHandler {
   virtual ~FlagsDOMHandler() {}
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // Callback for the "requestFlagsExperiments" message.
   void HandleRequestFlagsExperiments(const ListValue* args);
@@ -149,12 +103,15 @@ class FlagsDOMHandler : public WebUIMessageHandler {
 };
 
 void FlagsDOMHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("requestFlagsExperiments",
-      NewCallback(this, &FlagsDOMHandler::HandleRequestFlagsExperiments));
-  web_ui_->RegisterMessageCallback("enableFlagsExperiment",
-      NewCallback(this, &FlagsDOMHandler::HandleEnableFlagsExperimentMessage));
-  web_ui_->RegisterMessageCallback("restartBrowser",
-      NewCallback(this, &FlagsDOMHandler::HandleRestartBrowser));
+  web_ui()->RegisterMessageCallback("requestFlagsExperiments",
+      base::Bind(&FlagsDOMHandler::HandleRequestFlagsExperiments,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("enableFlagsExperiment",
+      base::Bind(&FlagsDOMHandler::HandleEnableFlagsExperimentMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("restartBrowser",
+      base::Bind(&FlagsDOMHandler::HandleRestartBrowser,
+                 base::Unretained(this)));
 }
 
 void FlagsDOMHandler::HandleRequestFlagsExperiments(const ListValue* args) {
@@ -164,7 +121,7 @@ void FlagsDOMHandler::HandleRequestFlagsExperiments(const ListValue* args) {
                   g_browser_process->local_state()));
   results.SetBoolean("needsRestart",
                      about_flags::IsRestartNeededToCommitChanges());
-  web_ui_->CallJavascriptFunction("returnFlagsExperiments", results);
+  web_ui()->CallJavascriptFunction("returnFlagsExperiments", results);
 }
 
 void FlagsDOMHandler::HandleEnableFlagsExperimentMessage(
@@ -186,17 +143,7 @@ void FlagsDOMHandler::HandleEnableFlagsExperimentMessage(
 }
 
 void FlagsDOMHandler::HandleRestartBrowser(const ListValue* args) {
-#if !defined(OS_CHROMEOS)
-  // Set the flag to restore state after the restart.
-  PrefService* pref_service = g_browser_process->local_state();
-  pref_service->SetBoolean(prefs::kRestartLastSessionOnShutdown, true);
-  BrowserList::CloseAllBrowsersAndExit();
-#else
-  // For CrOS instead of browser restart (which is not supported) perform a full
-  // sign out. Session will be only restored is user has that setting set.
-  // Same session restore behavior happens in case of full restart after update.
-  BrowserList::GetLastActive()->Exit();
-#endif
+  BrowserList::AttemptRestart();
 }
 
 }  // namespace
@@ -207,13 +154,12 @@ void FlagsDOMHandler::HandleRestartBrowser(const ListValue* args) {
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-FlagsUI::FlagsUI(TabContents* contents) : WebUI(contents) {
-  AddMessageHandler((new FlagsDOMHandler())->Attach(this));
-
-  FlagsUIHTMLSource* html_source = new FlagsUIHTMLSource();
+FlagsUI::FlagsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+  web_ui->AddMessageHandler(new FlagsDOMHandler());
 
   // Set up the about:flags source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(CreateFlagsUIHTMLSource());
 }
 
 // static

@@ -8,7 +8,9 @@
 
 #include <string>
 
-#include "content/common/page_transition_types.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/common/page_transition_types.h"
+#include "content/public/common/referrer.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/window_open_disposition.h"
@@ -43,13 +45,13 @@ namespace browser {
 struct NavigateParams {
   NavigateParams(Browser* browser,
                  const GURL& a_url,
-                 PageTransition::Type a_transition);
+                 content::PageTransition a_transition);
   NavigateParams(Browser* browser, TabContentsWrapper* a_target_contents);
   ~NavigateParams();
 
   // The URL/referrer to be loaded. Ignored if |target_contents| is non-NULL.
   GURL url;
-  GURL referrer;
+  content::Referrer referrer;
 
   // [in]  A TabContents to be navigated or inserted into the target Browser's
   //       tabstrip. If NULL, |url| or the homepage will be used instead. When
@@ -92,7 +94,10 @@ struct NavigateParams {
 
   // The transition type of the navigation. Default is PageTransition::LINK
   // when target_contents is specified in the constructor.
-  PageTransition::Type transition;
+  content::PageTransition transition;
+
+  // Whether this navigation was initiated by the renderer process.
+  bool is_renderer_initiated;
 
   // The index the caller would like the tab to be positioned at in the
   // TabStrip. The actual index will be determined by the TabHandler in
@@ -107,6 +112,9 @@ struct NavigateParams {
 
   // If non-empty, the new tab is an app tab.
   std::string extension_app_id;
+
+  // If non-empty, the new tab contents encoding is overriden by this value.
+  std::string override_encoding;
 
   // If non-empty, specifies the desired initial position and size of the
   // window if |disposition| == NEW_POPUP.
@@ -146,6 +154,16 @@ struct NavigateParams {
   // Default is RESPECT.
   PathBehavior path_behavior;
 
+  // What to do with the ref component of the URL for singleton navigations.
+  enum RefBehavior {
+    // Two URLs with differing refs are same.
+    IGNORE_REF,
+    // Two URLs with differing refs are different.
+    RESPECT_REF,
+  };
+  // Default is IGNORE.
+  RefBehavior ref_behavior;
+
   // [in]  Specifies a Browser object where the navigation could occur or the
   //       tab could be added. Navigate() is not obliged to use this Browser if
   //       it is not compatible with the operation being performed. If NULL,
@@ -164,12 +182,31 @@ struct NavigateParams {
   // creating a Browser.
   Profile* profile;
 
+  // Refers to a navigation that was parked in the browser in order to be
+  // transferred to another RVH. Only used in case of a redirection of a request
+  // to a different site that created a new RVH.
+  content::GlobalRequestID transferred_global_request_id;
+
  private:
   NavigateParams();
 };
 
 // Navigates according to the configuration specified in |params|.
 void Navigate(NavigateParams* params);
+
+// If the given navigational URL is a Singleton, return the tab index for it.
+// Otherwise, returns -1.
+int GetIndexOfSingletonTab(NavigateParams* params);
+
+// Returns true if the url is allowed to open in incognito window.
+bool IsURLAllowedInIncognito(const GURL& url);
+
+#if defined(OS_CHROMEOS) || defined(USE_AURA)
+// Returns NEW_FOREGROUND_TAB if popup_bounds exceeds a specified percentage
+// of the window size, otherwise returns NEW_POPUP.
+WindowOpenDisposition DispositionForPopupBounds(
+    const gfx::Rect& popup_bounds, int window_width, int window_height);
+#endif
 
 }  // namespace browser
 

@@ -1,19 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/proxy/proxy_resolver_js_bindings.h"
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "net/base/address_list.h"
+#include "net/base/host_cache.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_log_unittest.h"
 #include "net/base/net_util.h"
 #include "net/base/sys_addrinfo.h"
+#include "net/base/test_completion_callback.h"
 #include "net/proxy/proxy_resolver_request_context.h"
+#include "net/proxy/sync_host_resolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -25,70 +29,35 @@ namespace {
 //     192.168.1.1
 //     172.22.34.1
 //     200.100.1.2
-class MockHostResolverWithMultipleResults : public HostResolver {
+class MockHostResolverWithMultipleResults : public SyncHostResolver {
  public:
   // HostResolver methods:
-  virtual int Resolve(const RequestInfo& info,
+  virtual int Resolve(const HostResolver::RequestInfo& info,
                       AddressList* addresses,
-                      CompletionCallback* callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& net_log) {
-    // Build up the result list (in reverse).
-    AddressList temp_list = ResolveIPLiteral("200.100.1.2");
-    temp_list = PrependAddressToList("172.22.34.1", temp_list);
-    temp_list = PrependAddressToList("192.168.1.1", temp_list);
-    *addresses = temp_list;
-    return OK;
+                      const net::BoundNetLog& bound_net_log) OVERRIDE {
+    return ParseAddressList("192.168.1.1,172.22.34.1,200.100.1.2", "",
+                            addresses);
   }
-  virtual void CancelRequest(RequestHandle req) {}
-  virtual void AddObserver(Observer* observer) {}
-  virtual void RemoveObserver(Observer* observer) {}
-  virtual void Shutdown() {}
+
+  virtual void Shutdown() OVERRIDE {}
 
  private:
-  ~MockHostResolverWithMultipleResults() {}
-
-  // Resolves an IP literal to an address list.
-  AddressList ResolveIPLiteral(const char* ip_literal) {
-    AddressList result;
-    int rv = SystemHostResolverProc(ip_literal,
-                                    ADDRESS_FAMILY_UNSPECIFIED,
-                                    0,
-                                    &result, NULL);
-    EXPECT_EQ(OK, rv);
-    EXPECT_EQ(NULL, result.head()->ai_next);
-    return result;
-  }
-
-  // Builds an AddressList that is |ip_literal| + |orig_list|.
-  // |orig_list| must not be empty.
-  AddressList PrependAddressToList(const char* ip_literal,
-                                   const AddressList& orig_list) {
-    // Build an addrinfo for |ip_literal|.
-    AddressList result = ResolveIPLiteral(ip_literal);
-    result.Append(orig_list.head());
-    return result;
-  }
+  virtual ~MockHostResolverWithMultipleResults() {}
 };
 
-class MockFailingHostResolver : public HostResolver {
+class MockFailingHostResolver : public SyncHostResolver {
  public:
   MockFailingHostResolver() : count_(0) {}
 
   // HostResolver methods:
-  virtual int Resolve(const RequestInfo& info,
+  virtual int Resolve(const HostResolver::RequestInfo& info,
                       AddressList* addresses,
-                      CompletionCallback* callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& net_log) {
+                      const net::BoundNetLog& bound_net_log) OVERRIDE {
     count_++;
     return ERR_NAME_NOT_RESOLVED;
   }
 
-  virtual void CancelRequest(RequestHandle req) {}
-  virtual void AddObserver(Observer* observer) {}
-  virtual void RemoveObserver(Observer* observer) {}
-  virtual void Shutdown() {}
+  virtual void Shutdown() OVERRIDE {}
 
   // Returns the number of times Resolve() has been called.
   int count() const { return count_; }
@@ -98,12 +67,35 @@ class MockFailingHostResolver : public HostResolver {
   int count_;
 };
 
+class MockSyncHostResolver : public SyncHostResolver {
+ public:
+  MockSyncHostResolver() {
+    resolver_.set_synchronous_mode(true);
+  }
+
+  virtual int Resolve(const HostResolver::RequestInfo& info,
+                      AddressList* addresses,
+                      const net::BoundNetLog& bound_net_log) OVERRIDE {
+    return resolver_.Resolve(info, addresses, CompletionCallback(), NULL,
+                             bound_net_log);
+  }
+
+  virtual void Shutdown() OVERRIDE {}
+
+  RuleBasedHostResolverProc* rules() {
+    return resolver_.rules();
+  }
+
+ private:
+  MockHostResolver resolver_;
+};
+
 TEST(ProxyResolverJSBindingsTest, DnsResolve) {
-  scoped_ptr<MockHostResolver> host_resolver(new MockHostResolver);
+  MockSyncHostResolver* host_resolver = new MockSyncHostResolver;
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
-      ProxyResolverJSBindings::CreateDefault(host_resolver.get(), NULL, NULL));
+      ProxyResolverJSBindings::CreateDefault(host_resolver, NULL, NULL));
 
   std::string ip_address;
 
@@ -126,11 +118,11 @@ TEST(ProxyResolverJSBindingsTest, DnsResolve) {
 }
 
 TEST(ProxyResolverJSBindingsTest, MyIpAddress) {
-  scoped_ptr<MockHostResolver> host_resolver(new MockHostResolver);
+  MockSyncHostResolver* host_resolver = new MockSyncHostResolver;
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
-      ProxyResolverJSBindings::CreateDefault(host_resolver.get(), NULL, NULL));
+      ProxyResolverJSBindings::CreateDefault(host_resolver, NULL, NULL));
 
   // Our IP address is always going to be 127.0.0.1, since we are using a
   // mock host resolver.
@@ -153,11 +145,11 @@ TEST(ProxyResolverJSBindingsTest, MyIpAddress) {
 //     myIpAddressEx()
 //     dnsResolveEx()
 TEST(ProxyResolverJSBindingsTest, RestrictAddressFamily) {
-  scoped_ptr<MockHostResolver> host_resolver(new MockHostResolver);
+  MockSyncHostResolver* host_resolver = new MockSyncHostResolver;
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
-      ProxyResolverJSBindings::CreateDefault(host_resolver.get(), NULL, NULL));
+      ProxyResolverJSBindings::CreateDefault(host_resolver, NULL, NULL));
 
   // Make it so requests resolve to particular address patterns based on family:
   //  IPV4_ONLY --> 192.168.1.*
@@ -175,13 +167,11 @@ TEST(ProxyResolverJSBindingsTest, RestrictAddressFamily) {
   // depending if the address family was IPV4_ONLY or not.
   HostResolver::RequestInfo info(HostPortPair("foo", 80));
   AddressList address_list;
-  EXPECT_EQ(OK, host_resolver->Resolve(info, &address_list, NULL, NULL,
-                                       BoundNetLog()));
+  EXPECT_EQ(OK, host_resolver->Resolve(info, &address_list, BoundNetLog()));
   EXPECT_EQ("192.168.2.1", NetAddressToString(address_list.head()));
 
   info.set_address_family(ADDRESS_FAMILY_IPV4);
-  EXPECT_EQ(OK, host_resolver->Resolve(info, &address_list, NULL, NULL,
-                                       BoundNetLog()));
+  EXPECT_EQ(OK, host_resolver->Resolve(info, &address_list, BoundNetLog()));
   EXPECT_EQ("192.168.1.1", NetAddressToString(address_list.head()));
 
   std::string ip_address;
@@ -209,12 +199,12 @@ TEST(ProxyResolverJSBindingsTest, RestrictAddressFamily) {
 // separated list of addresses (as opposed to the non-Ex versions which
 // just return the first result).
 TEST(ProxyResolverJSBindingsTest, ExFunctionsReturnList) {
-  scoped_ptr<HostResolver> host_resolver(
-      new MockHostResolverWithMultipleResults);
+  SyncHostResolver* host_resolver =
+      new MockHostResolverWithMultipleResults;
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
-      ProxyResolverJSBindings::CreateDefault(host_resolver.get(), NULL, NULL));
+      ProxyResolverJSBindings::CreateDefault(host_resolver, NULL, NULL));
 
   std::string ip_addresses;
 
@@ -226,12 +216,11 @@ TEST(ProxyResolverJSBindingsTest, ExFunctionsReturnList) {
 }
 
 TEST(ProxyResolverJSBindingsTest, PerRequestDNSCache) {
-  scoped_ptr<MockFailingHostResolver> host_resolver(
-      new MockFailingHostResolver);
+  MockFailingHostResolver* host_resolver = new MockFailingHostResolver;
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
-      ProxyResolverJSBindings::CreateDefault(host_resolver.get(), NULL, NULL));
+      ProxyResolverJSBindings::CreateDefault(host_resolver, NULL, NULL));
 
   std::string ip_address;
 
@@ -249,9 +238,8 @@ TEST(ProxyResolverJSBindingsTest, PerRequestDNSCache) {
   // Now setup a per-request context, and try the same experiment -- we
   // expect the underlying host resolver to receive only 1 request this time,
   // since it will service the others from the per-request DNS cache.
-  HostCache cache(50,
-                  base::TimeDelta::FromMinutes(10),
-                  base::TimeDelta::FromMinutes(10));
+  const unsigned kMaxCacheEntries = 50;
+  HostCache cache(kMaxCacheEntries);
   ProxyResolverRequestContext context(NULL, &cache);
   bindings->set_current_request_context(&context);
 
@@ -276,15 +264,14 @@ TEST(ProxyResolverJSBindingsTest, PerRequestDNSCache) {
 
 // Test that when a binding is called, it logs to the per-request NetLog.
 TEST(ProxyResolverJSBindingsTest, NetLog) {
-  scoped_ptr<MockFailingHostResolver> host_resolver(
-      new MockFailingHostResolver);
+  MockFailingHostResolver* host_resolver = new MockFailingHostResolver;
 
   CapturingNetLog global_log(CapturingNetLog::kUnbounded);
 
   // Get a hold of a DefaultJSBindings* (it is a hidden impl class).
   scoped_ptr<ProxyResolverJSBindings> bindings(
       ProxyResolverJSBindings::CreateDefault(
-          host_resolver.get(), &global_log, NULL));
+          host_resolver, &global_log, NULL));
 
   // Attach a capturing NetLog as the current request's log stream.
   CapturingNetLog log(CapturingNetLog::kUnbounded);

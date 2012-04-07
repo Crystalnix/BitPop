@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -16,50 +17,70 @@
 #include "chrome/common/net/gaia/gaia_auth_consumer.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
 #include "third_party/libjingle/source/talk/base/urlencode.h"
+
+using content::BrowserThread;
+
+namespace {
+
+// The service scope of the OAuth v2 token that ChromeOS login will be
+// requesting.
+const char* kServiceScopeChromeOS = GaiaConstants::kSyncServiceOAuth;
+
+}
 
 namespace chromeos {
 
 // static
 const int OnlineAttempt::kClientLoginTimeoutMs = 10000;
 
-OnlineAttempt::OnlineAttempt(AuthAttemptState* current_attempt,
+OnlineAttempt::OnlineAttempt(bool using_oauth,
+                             AuthAttemptState* current_attempt,
                              AuthAttemptStateResolver* callback)
-    : attempt_(current_attempt),
+    : using_oauth_(using_oauth),
+      attempt_(current_attempt),
       resolver_(callback),
-      fetch_canceler_(NULL),
+      weak_factory_(this),
       try_again_(true) {
-  CHECK(chromeos::CrosLibrary::Get()->EnsureLoaded());
 }
 
 OnlineAttempt::~OnlineAttempt() {
   // Just to be sure.
-  if (gaia_authenticator_.get())
-    gaia_authenticator_->CancelRequest();
+  if (client_fetcher_.get())
+    client_fetcher_->CancelRequest();
+
+  if (oauth_fetcher_.get())
+    oauth_fetcher_->CancelRequest();
 }
 
-void OnlineAttempt::Initiate(Profile* profile) {
+void OnlineAttempt::Initiate(Profile* auth_profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  gaia_authenticator_.reset(new GaiaAuthFetcher(this,
-                                                GaiaConstants::kChromeOSSource,
-                                                profile->GetRequestContext()));
+  if (using_oauth_) {
+    oauth_fetcher_.reset(
+        new GaiaOAuthFetcher(this,
+                             auth_profile->GetRequestContext(),
+                             auth_profile,
+                             kServiceScopeChromeOS));
+  } else {
+    client_fetcher_.reset(
+        new GaiaAuthFetcher(this, GaiaConstants::kChromeOSSource,
+                            auth_profile->GetRequestContext()));
+  }
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &OnlineAttempt::TryClientLogin));
+      base::Bind(&OnlineAttempt::TryClientLogin, this));
 }
 
 void OnlineAttempt::OnClientLoginSuccess(
     const GaiaAuthConsumer::ClientLoginResult& credentials) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   VLOG(1) << "Online login successful!";
-  if (fetch_canceler_) {
-    fetch_canceler_->Cancel();
-    fetch_canceler_ = NULL;
-  }
+
+  weak_factory_.InvalidateWeakPtrs();
 
   if (attempt_->hosted_policy() == GaiaAuthFetcher::HostedAccountsAllowed &&
       attempt_->is_first_time_user()) {
@@ -80,10 +101,9 @@ void OnlineAttempt::OnClientLoginSuccess(
 void OnlineAttempt::OnClientLoginFailure(
     const GoogleServiceAuthError& error) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (fetch_canceler_) {
-    fetch_canceler_->Cancel();
-    fetch_canceler_ = NULL;
-  }
+
+  weak_factory_.InvalidateWeakPtrs();
+
   if (error.state() == GoogleServiceAuthError::REQUEST_CANCELED) {
     if (try_again_) {
       try_again_ = false;
@@ -121,27 +141,65 @@ void OnlineAttempt::OnClientLoginFailure(
                  LoginFailure::FromNetworkAuthFailure(error));
 }
 
+void OnlineAttempt::OnOAuthLoginSuccess(const std::string& sid,
+                                        const std::string& lsid,
+                                        const std::string& auth) {
+  GaiaAuthConsumer::ClientLoginResult credentials(sid,
+    lsid, auth, std::string());
+  OnClientLoginSuccess(credentials);
+}
+
+void OnlineAttempt::OnOAuthLoginFailure(const GoogleServiceAuthError& error) {
+  OnClientLoginFailure(error);
+}
+
 void OnlineAttempt::TryClientLogin() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  fetch_canceler_ = NewRunnableMethod(this, &OnlineAttempt::CancelClientLogin);
-  BrowserThread::PostDelayedTask(BrowserThread::IO, FROM_HERE,
-                                 fetch_canceler_,
-                                 kClientLoginTimeoutMs);
-  gaia_authenticator_->StartClientLogin(
-      attempt_->username,
-      attempt_->password,
-      GaiaConstants::kContactsService,
-      attempt_->login_token,
-      attempt_->login_captcha,
-      attempt_->hosted_policy());
+
+  BrowserThread::PostDelayedTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&OnlineAttempt::CancelClientLogin, weak_factory_.GetWeakPtr()),
+      kClientLoginTimeoutMs);
+
+  if (using_oauth_) {
+    if (!attempt_->oauth1_access_token().length() ||
+        !attempt_->oauth1_access_secret().length()) {
+      // Empty OAuth1 access token and secret probably means that we are
+      // dealing with a legacy ChromeOS account. This should be treated as
+      // invalid/expired token.
+      OnClientLoginFailure(GoogleServiceAuthError(
+          GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS));
+    } else {
+      oauth_fetcher_->StartOAuthLogin(GaiaConstants::kChromeOSSource,
+                                      GaiaConstants::kPicasaService,
+                                      attempt_->oauth1_access_token(),
+                                      attempt_->oauth1_access_secret());
+    }
+  } else {
+    client_fetcher_->StartClientLogin(
+        attempt_->username,
+        attempt_->password,
+        GaiaConstants::kPicasaService,
+        attempt_->login_token,
+        attempt_->login_captcha,
+        attempt_->hosted_policy());
+  }
+}
+
+bool OnlineAttempt::HasPendingFetch() {
+  return using_oauth_ ? oauth_fetcher_->HasPendingFetch() :
+      client_fetcher_->HasPendingFetch();
+}
+
+void OnlineAttempt::CancelRequest() {
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void OnlineAttempt::CancelClientLogin() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (gaia_authenticator_->HasPendingFetch()) {
+  if (HasPendingFetch()) {
     LOG(WARNING) << "Canceling ClientLogin attempt.";
-    gaia_authenticator_->CancelRequest();
-    fetch_canceler_ = NULL;
+    CancelRequest();
 
     TriggerResolve(GaiaAuthConsumer::ClientLoginResult(),
                    LoginFailure(LoginFailure::LOGIN_TIMED_OUT));
@@ -152,7 +210,8 @@ void OnlineAttempt::TriggerResolve(
     const GaiaAuthConsumer::ClientLoginResult& credentials,
     const LoginFailure& outcome) {
   attempt_->RecordOnlineLoginStatus(credentials, outcome);
-  gaia_authenticator_.reset(NULL);
+  client_fetcher_.reset(NULL);
+  oauth_fetcher_.reset(NULL);
   resolver_->Resolve();
 }
 

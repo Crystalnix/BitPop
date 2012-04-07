@@ -53,7 +53,7 @@ const char* ProductDirNameInternal() {
   // in the main app's bundle because it will be set differently on the canary
   // channel, and the autoupdate system dictates that there can be no
   // differences between channels within the versioned directory. This would
-  // normally use base::mac::MainAppBundle(), but that references the
+  // normally use base::mac::FrameworkBundle(), but that references the
   // framework bundle within the versioned directory. Ordinarily, the profile
   // should not be accessed from non-browser processes, but those processes do
   // attempt to get the profile directory, so direct them to look in the outer
@@ -103,6 +103,10 @@ bool GetDefaultUserDataDirectory(FilePath* result) {
 
 bool GetUserDocumentsDirectory(FilePath* result) {
   return base::mac::GetUserDirectory(NSDocumentDirectory, result);
+}
+
+bool GetGlobalApplicationSupportDirectory(FilePath* result) {
+  return base::mac::GetLocalDirectory(NSApplicationSupportDirectory, result);
 }
 
 void GetUserCacheDirectory(const FilePath& profile_dir, FilePath* result) {

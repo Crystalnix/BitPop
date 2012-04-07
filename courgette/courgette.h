@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,14 @@ enum Status {
   C_ADJUSTMENT_FAILED = 27,       //
 };
 
+// What type of executable is something
+// This is part of the patch format. Never reuse an id number.
+enum ExecutableType {
+  EXE_UNKNOWN = 0,
+  EXE_WIN_32_X86 = 1,
+  EXE_ELF_32_X86 = 2,
+};
+
 class SinkStream;
 class SinkStreamSet;
 class SourceStream;
@@ -69,7 +77,6 @@ Status ApplyEnsemblePatch(SourceStream* old, SourceStream* patch,
 // Returns C_OK unless something went wrong.
 // This function first validates that the patch file has a proper header, so the
 // function can be used to 'try' a patch.
-
 Status ApplyEnsemblePatch(const FilePath::CharType* old_file_name,
                           const FilePath::CharType* patch_file_name,
                           const FilePath::CharType* new_file_name);
@@ -80,18 +87,29 @@ Status ApplyEnsemblePatch(const FilePath::CharType* old_file_name,
 Status GenerateEnsemblePatch(SourceStream* old, SourceStream* target,
                              SinkStream* patch);
 
-// Parses a Windows 32-bit 'Portable Executable' format file from memory,
-// storing the pointer to the AssemblyProgram in |*output|.
+// Detects the type of an executable file, and it's length. The length
+// may be slightly smaller than some executables (like ELF), but will include
+// all bytes the courgette algorithm has special benefit for.
+// On sucess:
+//   Fill in type and detected_length, and return C_OK.
+// On failure:
+//   Fill in type with UNKNOWN, detected_length with 0, and
+//   return C_INPUT_NOT_RECOGNIZED
+Status DetectExecutableType(const void* buffer, size_t length,
+                            ExecutableType* type,
+                            size_t* detected_length);
+
+// Attempts to detect the type of executable, and parse it with the
+// appropriate tools, storing the pointer to the AssemblyProgram in |*output|.
 // Returns C_OK if successful, otherwise returns an error status and sets
 // |*output| to NULL.
-Status ParseWin32X86PE(const void* buffer, size_t length,
-                       AssemblyProgram** output);
+Status ParseDetectedExecutable(const void* buffer, size_t length,
+                               AssemblyProgram** output);
 
 // Converts |program| into encoded form, returning it as |*output|.
 // Returns C_OK if succeeded, otherwise returns an error status and
 // sets |*output| to NULL
 Status Encode(AssemblyProgram* program, EncodedProgram** output);
-
 
 // Serializes |encoded| into the stream set.
 // Returns C_OK if succeeded, otherwise returns an error status.

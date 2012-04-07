@@ -6,6 +6,8 @@
 #define WEBKIT_GLUE_RESOURCE_TYPE_H__
 
 #include "base/basictypes.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 class ResourceType {
  public:
@@ -25,6 +27,7 @@ class ResourceType {
     PREFETCH,        // an explicitly requested prefetch
     PRERENDER,       // an explicitly requested prerender
     FAVICON,         // a favicon
+    XHR,             // a XMLHttpRequest
     LAST_TYPE        // Place holder so we don't need to change ValidType
                      // everytime.
   };
@@ -36,6 +39,9 @@ class ResourceType {
   static Type FromInt(int32 type) {
     return static_cast<Type>(type);
   }
+
+  WEBKIT_GLUE_EXPORT static Type FromTargetType(
+      WebKit::WebURLRequest::TargetType type);
 
   static bool IsFrame(ResourceType::Type type) {
     return type == MAIN_FRAME || type == SUB_FRAME;
@@ -51,7 +57,8 @@ class ResourceType {
            type == IMAGE ||
            type == FONT_RESOURCE ||
            type == SUB_RESOURCE ||
-           type == WORKER;
+           type == WORKER ||
+           type == XHR;
   }
 
  private:

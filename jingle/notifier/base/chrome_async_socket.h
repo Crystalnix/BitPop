@@ -15,9 +15,10 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "talk/xmpp/asyncsocket.h"
@@ -45,16 +46,16 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
 
   // The current state (see buzz::AsyncSocket::State; all but
   // STATE_CLOSING is used).
-  virtual State state();
+  virtual State state() OVERRIDE;
 
   // The last generated error.  Errors are generated when the main
   // functions below return false or when SignalClosed is raised due
   // to an asynchronous error.
-  virtual Error error();
+  virtual Error error() OVERRIDE;
 
   // GetError() (which is of type net::Error) != net::OK only when
   // error() == ERROR_WINSOCK.
-  virtual int GetError();
+  virtual int GetError() OVERRIDE;
 
   // Tries to connect to the given address.
   //
@@ -67,7 +68,7 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // Otherwise, starts the connection process and returns true.
   // SignalConnected will be raised when the connection is successful;
   // otherwise, SignalClosed will be raised with a net error set.
-  virtual bool Connect(const talk_base::SocketAddress& address);
+  virtual bool Connect(const talk_base::SocketAddress& address) OVERRIDE;
 
   // Tries to read at most |len| bytes into |data|.
   //
@@ -80,7 +81,7 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // case because StartTls() is called during a slot connected to
   // SignalRead after parsing the final non-TLS reply from the server
   // [see XmppClient::Private::OnSocketRead()].)
-  virtual bool Read(char* data, size_t len, size_t* len_read);
+  virtual bool Read(char* data, size_t len, size_t* len_read) OVERRIDE;
 
   // Queues up |len| bytes of |data| for writing.
   //
@@ -99,11 +100,11 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // Note that there's no guarantee that the data will actually be
   // sent; however, it is guaranteed that the any data sent will be
   // sent in FIFO order.
-  virtual bool Write(const char* data, size_t len);
+  virtual bool Write(const char* data, size_t len) OVERRIDE;
 
   // If the socket is not already closed, closes the socket and raises
   // SignalClosed.  Always returns true.
-  virtual bool Close();
+  virtual bool Close() OVERRIDE;
 
   // Tries to change to a TLS connection with the given domain name.
   //
@@ -116,7 +117,7 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // SignalSSLConnected will be raised when the connection is
   // successful; otherwise, SignalClosed will be raised with a net
   // error set.
-  virtual bool StartTls(const std::string& domain_name);
+  virtual bool StartTls(const std::string& domain_name) OVERRIDE;
 
   // Signal behavior:
   //
@@ -175,12 +176,6 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   // Close functions.
   void DoClose();
 
-  // Callbacks passed to |transport_socket_|.
-  net::CompletionCallbackImpl<ChromeAsyncSocket> connect_callback_;
-  net::CompletionCallbackImpl<ChromeAsyncSocket> read_callback_;
-  net::CompletionCallbackImpl<ChromeAsyncSocket> write_callback_;
-  net::CompletionCallbackImpl<ChromeAsyncSocket> ssl_connect_callback_;
-
   scoped_ptr<ResolvingClientSocketFactory> client_socket_factory_;
 
   // buzz::AsyncSocket state.
@@ -189,8 +184,7 @@ class ChromeAsyncSocket : public buzz::AsyncSocket {
   net::Error net_error_;
 
   // Used by read/write loops.
-  ScopedRunnableMethodFactory<ChromeAsyncSocket>
-      scoped_runnable_method_factory_;
+  base::WeakPtrFactory<ChromeAsyncSocket> weak_factory_;
 
   // NULL iff state() == STATE_CLOSED.
   //

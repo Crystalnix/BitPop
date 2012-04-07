@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,26 @@
 
 #include "build/build_config.h"
 
-#include <queue>
+#include <list>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/browser_child_process_host.h"
-#include "webkit/plugins/npapi/webplugininfo.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/browser_child_process_host_delegate.h"
+#include "content/public/browser/browser_child_process_host_iterator.h"
+#include "ipc/ipc_channel_proxy.h"
+#include "webkit/plugins/webplugininfo.h"
 #include "ui/gfx/native_widget_types.h"
+
+class BrowserChildProcessHostImpl;
+
+namespace content {
+class ResourceContext;
+}
 
 namespace gfx {
 class Rect;
@@ -27,8 +37,6 @@ namespace IPC {
 struct ChannelHandle;
 }
 
-class GURL;
-
 // Represents the browser side of the browser <--> plugin communication
 // channel.  Different plugins run in their own process, but multiple instances
 // of the same plugin run in the same process.  There will be one
@@ -37,15 +45,21 @@ class GURL;
 // starting the plugin process when a plugin is created that doesn't already
 // have a process.  After that, most of the communication is directly between
 // the renderer and plugin processes.
-class PluginProcessHost : public BrowserChildProcessHost {
+class CONTENT_EXPORT PluginProcessHost
+    : public content::BrowserChildProcessHostDelegate,
+      public IPC::Message::Sender {
  public:
   class Client {
    public:
-    // Returns a opaque unique identifier for the process requesting
+    // Returns an opaque unique identifier for the process requesting
     // the channel.
     virtual int ID() = 0;
+    // Returns the resource context for the renderer requesting the channel.
+    virtual const content::ResourceContext& GetResourceContext() = 0;
     virtual bool OffTheRecord() = 0;
-    virtual void SetPluginInfo(const webkit::npapi::WebPluginInfo& info) = 0;
+    virtual void SetPluginInfo(const webkit::WebPluginInfo& info) = 0;
+    virtual void OnFoundPluginProcessHost(PluginProcessHost* host) = 0;
+    virtual void OnSentPluginChannelRequest() = 0;
     // The client should delete itself when one of these methods is called.
     virtual void OnChannelOpened(const IPC::ChannelHandle& handle) = 0;
     virtual void OnError() = 0;
@@ -57,21 +71,34 @@ class PluginProcessHost : public BrowserChildProcessHost {
   PluginProcessHost();
   virtual ~PluginProcessHost();
 
+  // IPC::Message::Sender implementation:
+  virtual bool Send(IPC::Message* message) OVERRIDE;
+
   // Initialize the new plugin process, returning true on success. This must
   // be called before the object can be used.
-  bool Init(const webkit::npapi::WebPluginInfo& info, const std::string& locale);
+  bool Init(const webkit::WebPluginInfo& info);
 
   // Force the plugin process to shutdown (cleanly).
-  virtual void ForceShutdown();
+  void ForceShutdown();
 
-  virtual bool OnMessageReceived(const IPC::Message& msg);
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OnChannelError();
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
   // Tells the plugin process to create a new channel for communication with a
   // renderer.  When the plugin process responds with the channel name,
   // OnChannelOpened in the client is called.
   void OpenChannelToPlugin(Client* client);
+
+  // Cancels all pending channel requests for the given resource context.
+  static void CancelPendingRequestsForResourceContext(
+      const content::ResourceContext* context);
+
+  // This function is called to cancel pending requests to open new channels.
+  void CancelPendingRequest(Client* client);
+
+  // This function is called to cancel sent requests to open new channels.
+  void CancelSentRequest(Client* client);
 
   // This function is called on the IO thread once we receive a reply from the
   // modal HTML dialog (in the form of a JSON string). This function forwards
@@ -85,12 +112,15 @@ class PluginProcessHost : public BrowserChildProcessHost {
   void OnAppActivation();
 #endif
 
-  const webkit::npapi::WebPluginInfo& info() const { return info_; }
+  const webkit::WebPluginInfo& info() const { return info_; }
 
 #if defined(OS_WIN)
   // Tracks plugin parent windows created on the browser UI thread.
   void AddWindow(HWND window);
 #endif
+
+  // Adds an IPC message filter.  A reference will be kept to the filter.
+  void AddFilter(IPC::ChannelProxy::MessageFilter* filter);
 
  private:
   // Sends a message to the plugin process to request creation of a new channel
@@ -103,6 +133,7 @@ class PluginProcessHost : public BrowserChildProcessHost {
 #if defined(OS_WIN)
   void OnPluginWindowDestroyed(HWND window, HWND parent);
   void OnReparentPluginWindow(HWND window, HWND parent);
+  void OnReportExecutableMemory(size_t size);
 #endif
 
 #if defined(USE_X11)
@@ -118,7 +149,8 @@ class PluginProcessHost : public BrowserChildProcessHost {
   void OnPluginSetCursorVisibility(bool visible);
 #endif
 
-  virtual bool CanShutdown();
+  virtual bool CanShutdown() OVERRIDE;
+  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
   void CancelRequests();
 
@@ -128,10 +160,10 @@ class PluginProcessHost : public BrowserChildProcessHost {
 
   // These are the channel requests that we have already sent to
   // the plugin process, but haven't heard back about yet.
-  std::queue<Client*> sent_requests_;
+  std::list<Client*> sent_requests_;
 
   // Information about the plugin.
-  webkit::npapi::WebPluginInfo info_;
+  webkit::WebPluginInfo info_;
 
 #if defined(OS_WIN)
   // Tracks plugin parent windows created on the UI thread.
@@ -148,7 +180,17 @@ class PluginProcessHost : public BrowserChildProcessHost {
   bool plugin_cursor_visible_;
 #endif
 
+  scoped_ptr<BrowserChildProcessHostImpl> process_;
+
   DISALLOW_COPY_AND_ASSIGN(PluginProcessHost);
+};
+
+class PluginProcessHostIterator
+    : public content::BrowserChildProcessHostTypeIterator<PluginProcessHost> {
+ public:
+  PluginProcessHostIterator()
+      : content::BrowserChildProcessHostTypeIterator<PluginProcessHost>(
+          content::PROCESS_TYPE_PLUGIN) {}
 };
 
 #endif  // CONTENT_BROWSER_PLUGIN_PROCESS_HOST_H_

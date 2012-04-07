@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,23 +15,23 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
-#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/common/content_settings_types.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/common/page_transition_types.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class OmniboxViewGtk;
@@ -41,22 +41,22 @@ class ContentSettingImageModel;
 class ContentSettingBubbleGtk;
 class ExtensionAction;
 class GtkThemeService;
-class Profile;
 class SkBitmap;
-class TabContents;
 class ToolbarModel;
+
+namespace content {
+class WebContents;
+}
 
 class LocationBarViewGtk : public AutocompleteEditController,
                            public LocationBar,
                            public LocationBarTesting,
-                           public NotificationObserver {
+                           public content::NotificationObserver {
  public:
   explicit LocationBarViewGtk(Browser* browser);
   virtual ~LocationBarViewGtk();
 
   void Init(bool popup_window_mode);
-
-  void SetProfile(Profile* profile);
 
   // Returns the widget the caller should host.  You must call Init() first.
   GtkWidget* widget() { return hbox_.get(); }
@@ -69,8 +69,8 @@ class LocationBarViewGtk : public AutocompleteEditController,
 
   Browser* browser() const { return browser_; }
 
-  // Returns the current TabContents.
-  TabContents* GetTabContents() const;
+  // Returns the current WebContents.
+  content::WebContents* GetWebContents() const;
 
   // Sets |preview_enabled| for the PageActionViewGtk associated with this
   // |page_action|. If |preview_enabled| is true, the view will display the
@@ -87,7 +87,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // Updates the location bar.  We also reset the bar's permanent text and
   // security style, and, if |tab_for_state_restoring| is non-NULL, also
   // restore saved state that the tab holds.
-  void Update(const TabContents* tab_for_state_restoring);
+  void Update(const content::WebContents* tab_for_state_restoring);
 
   // Show the bookmark bubble.
   void ShowStarBubble(const GURL& url, bool newly_boomkarked);
@@ -98,7 +98,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // Implement the AutocompleteEditController interface.
   virtual void OnAutocompleteAccept(const GURL& url,
                                     WindowOpenDisposition disposition,
-                                    PageTransition::Type transition,
+                                    content::PageTransition transition,
                                     const GURL& alternate_nav_url) OVERRIDE;
   virtual void OnChanged() OVERRIDE;
   virtual void OnSelectionBoundsChanged() OVERRIDE;
@@ -111,35 +111,35 @@ class LocationBarViewGtk : public AutocompleteEditController,
   virtual TabContentsWrapper* GetTabContentsWrapper() const OVERRIDE;
 
   // Implement the LocationBar interface.
-  virtual void ShowFirstRunBubble(FirstRun::BubbleType bubble_type);
+  virtual void ShowFirstRunBubble() OVERRIDE;
   virtual void SetSuggestedText(const string16& text,
-                                InstantCompleteBehavior behavior);
-  virtual std::wstring GetInputString() const;
-  virtual WindowOpenDisposition GetWindowOpenDisposition() const;
-  virtual PageTransition::Type GetPageTransition() const;
-  virtual void AcceptInput();
-  virtual void FocusLocation(bool select_all);
-  virtual void FocusSearch();
-  virtual void UpdateContentSettingsIcons();
-  virtual void UpdatePageActions();
-  virtual void InvalidatePageActions();
-  virtual void SaveStateToContents(TabContents* contents);
-  virtual void Revert();
-  virtual const OmniboxView* location_entry() const;
-  virtual OmniboxView* location_entry();
-  virtual LocationBarTesting* GetLocationBarForTesting();
+                                InstantCompleteBehavior behavior) OVERRIDE;
+  virtual string16 GetInputString() const OVERRIDE;
+  virtual WindowOpenDisposition GetWindowOpenDisposition() const OVERRIDE;
+  virtual content::PageTransition GetPageTransition() const OVERRIDE;
+  virtual void AcceptInput() OVERRIDE;
+  virtual void FocusLocation(bool select_all) OVERRIDE;
+  virtual void FocusSearch() OVERRIDE;
+  virtual void UpdateContentSettingsIcons() OVERRIDE;
+  virtual void UpdatePageActions() OVERRIDE;
+  virtual void InvalidatePageActions() OVERRIDE;
+  virtual void SaveStateToContents(content::WebContents* contents) OVERRIDE;
+  virtual void Revert() OVERRIDE;
+  virtual const OmniboxView* location_entry() const OVERRIDE;
+  virtual OmniboxView* location_entry() OVERRIDE;
+  virtual LocationBarTesting* GetLocationBarForTesting() OVERRIDE;
 
   // Implement the LocationBarTesting interface.
-  virtual int PageActionCount();
-  virtual int PageActionVisibleCount();
-  virtual ExtensionAction* GetPageAction(size_t index);
-  virtual ExtensionAction* GetVisiblePageAction(size_t index);
-  virtual void TestPageActionPressed(size_t index);
+  virtual int PageActionCount() OVERRIDE;
+  virtual int PageActionVisibleCount() OVERRIDE;
+  virtual ExtensionAction* GetPageAction(size_t index) OVERRIDE;
+  virtual ExtensionAction* GetVisiblePageAction(size_t index) OVERRIDE;
+  virtual void TestPageActionPressed(size_t index) OVERRIDE;
 
-  // Implement the NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Implement the content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Edit background color.
   static const GdkColor kBackgroundColor;
@@ -149,21 +149,18 @@ class LocationBarViewGtk : public AutocompleteEditController,
                                      public ui::AnimationDelegate {
    public:
     ContentSettingImageViewGtk(ContentSettingsType content_type,
-                               const LocationBarViewGtk* parent,
-                               Profile* profile);
+                               const LocationBarViewGtk* parent);
     virtual ~ContentSettingImageViewGtk();
 
     GtkWidget* widget() { return alignment_.get(); }
 
-    void set_profile(Profile* profile) { profile_ = profile; }
-
-    bool IsVisible() { return GTK_WIDGET_VISIBLE(widget()); }
-    void UpdateFromTabContents(TabContents* tab_contents);
+    bool IsVisible();
+    void UpdateFromWebContents(content::WebContents* web_contents);
 
     // Overridden from ui::AnimationDelegate:
-    virtual void AnimationProgressed(const ui::Animation* animation);
-    virtual void AnimationEnded(const ui::Animation* animation);
-    virtual void AnimationCanceled(const ui::Animation* animation);
+    virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+    virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+    virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
 
    private:
     // Start the process of showing the label.
@@ -184,19 +181,16 @@ class LocationBarViewGtk : public AutocompleteEditController,
     scoped_ptr<ContentSettingImageModel> content_setting_image_model_;
 
     // The widgets for this content settings view.
-    OwnedWidgetGtk alignment_;
-    OwnedWidgetGtk event_box_;
+    ui::OwnedWidgetGtk alignment_;
+    ui::OwnedWidgetGtk event_box_;
     GtkWidget* hbox_;
-    OwnedWidgetGtk image_;
+    ui::OwnedWidgetGtk image_;
 
     // Explanatory text ("popup blocked").
-    OwnedWidgetGtk label_;
+    ui::OwnedWidgetGtk label_;
 
     // The owning LocationBarViewGtk.
     const LocationBarViewGtk* parent_;
-
-    // The currently active profile.
-    Profile* profile_;
 
     // The currently shown bubble if any.
     ContentSettingBubbleGtk* content_setting_bubble_;
@@ -207,7 +201,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
     // The label's default requisition (cached so we can animate accordingly).
     GtkRequisition label_req_;
 
-    ScopedRunnableMethodFactory<ContentSettingImageViewGtk> method_factory_;
+    base::WeakPtrFactory<ContentSettingImageViewGtk> weak_factory_;
 
     DISALLOW_COPY_AND_ASSIGN(ContentSettingImageViewGtk);
   };
@@ -215,9 +209,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   class PageActionViewGtk : public ImageLoadingTracker::Observer,
                             public ExtensionContextMenuModel::PopupDelegate {
    public:
-    PageActionViewGtk(
-        LocationBarViewGtk* owner, Profile* profile,
-        ExtensionAction* page_action);
+    PageActionViewGtk(LocationBarViewGtk* owner, ExtensionAction* page_action);
     virtual ~PageActionViewGtk();
 
     GtkWidget* widget() { return event_box_.get(); }
@@ -228,22 +220,22 @@ class LocationBarViewGtk : public AutocompleteEditController,
       preview_enabled_ = preview_enabled;
     }
 
-    bool IsVisible() { return GTK_WIDGET_VISIBLE(widget()); }
+    bool IsVisible();
 
     // Called to notify the PageAction that it should determine whether to be
     // visible or hidden. |contents| is the TabContents that is active, |url|
     // is the current page URL.
-    void UpdateVisibility(TabContents* contents, const GURL& url);
+    void UpdateVisibility(content::WebContents* contents, const GURL& url);
 
     // A callback from ImageLoadingTracker for when the image has loaded.
     virtual void OnImageLoaded(
-        SkBitmap* image, const ExtensionResource& resource, int index);
+        SkBitmap* image, const ExtensionResource& resource, int index) OVERRIDE;
 
     // Simulate left mouse click on the page action button.
     void TestActivatePageAction();
 
     // Overridden from ExtensionContextMenuModel::PopupDelegate:
-    virtual void InspectPopup(ExtensionAction* action);
+    virtual void InspectPopup(ExtensionAction* action) OVERRIDE;
 
    private:
     // Show the popup for this page action. If |devtools| is true, show it
@@ -257,9 +249,6 @@ class LocationBarViewGtk : public AutocompleteEditController,
 
     // The location bar view that owns us.
     LocationBarViewGtk* owner_;
-
-    // The current profile (not owned by us).
-    Profile* profile_;
 
     // The PageAction that this view represents. The PageAction is not owned by
     // us, it resides in the extension of this particular profile.
@@ -280,8 +269,8 @@ class LocationBarViewGtk : public AutocompleteEditController,
     ImageLoadingTracker tracker_;
 
     // The widgets for this page action.
-    OwnedWidgetGtk event_box_;
-    OwnedWidgetGtk image_;
+    ui::OwnedWidgetGtk event_box_;
+    ui::OwnedWidgetGtk image_;
 
     // The tab id we are currently showing the icon for.
     int current_tab_id_;
@@ -346,7 +335,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // Set the keyword text for the "Press tab to search BLAH" hint box.
   void SetKeywordHintLabel(const string16& keyword);
 
-  void ShowFirstRunBubbleInternal(FirstRun::BubbleType bubble_type);
+  void ShowFirstRunBubbleInternal();
 
   // Show or hide |tab_to_search_box_| and |tab_to_search_hint_| according to
   // the value of |show_selected_keyword_|, |show_keyword_hint_|, and the
@@ -364,10 +353,10 @@ class LocationBarViewGtk : public AutocompleteEditController,
   bool ShouldOnlyShowLocation();
 
   // The outermost widget we want to be hosted.
-  OwnedWidgetGtk hbox_;
+  ui::OwnedWidgetGtk hbox_;
 
   // Star button.
-  OwnedWidgetGtk star_;
+  ui::OwnedWidgetGtk star_;
   GtkWidget* star_image_;
   bool starred_;
 
@@ -382,11 +371,11 @@ class LocationBarViewGtk : public AutocompleteEditController,
   GtkWidget* security_info_label_;
 
   // Content setting icons.
-  OwnedWidgetGtk content_setting_hbox_;
+  ui::OwnedWidgetGtk content_setting_hbox_;
   ScopedVector<ContentSettingImageViewGtk> content_setting_views_;
 
   // Extension page action icons.
-  OwnedWidgetGtk page_action_hbox_;
+  ui::OwnedWidgetGtk page_action_hbox_;
   ScopedVector<PageActionViewGtk> page_action_views_;
 
   // The widget that contains our tab hints and the location bar.
@@ -410,7 +399,6 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // Alignment used to wrap |location_entry_|.
   GtkWidget* location_entry_alignment_;
 
-  Profile* profile_;
   CommandUpdater* command_updater_;
   ToolbarModel* toolbar_model_;
   Browser* browser_;
@@ -418,16 +406,16 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // When we get an OnAutocompleteAccept notification from the autocomplete
   // edit, we save the input string so we can give it back to the browser on
   // the LocationBar interface via GetInputString().
-  std::wstring location_input_;
+  string16 location_input_;
 
   // The user's desired disposition for how their input should be opened.
   WindowOpenDisposition disposition_;
 
   // The transition type to use for the navigation.
-  PageTransition::Type transition_;
+  content::PageTransition transition_;
 
   // Used to schedule a task for the first run bubble.
-  ScopedRunnableMethodFactory<LocationBarViewGtk> first_run_bubble_;
+  base::WeakPtrFactory<LocationBarViewGtk> weak_ptr_factory_;
 
   // When true, the location bar view is read only and also is has a slightly
   // different presentation (font size / color). This is used for popups.
@@ -436,7 +424,7 @@ class LocationBarViewGtk : public AutocompleteEditController,
   // Provides colors and rendering mode.
   GtkThemeService* theme_service_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Width of the main |hbox_|. Used to properly elide the EV certificate.
   int hbox_width_;

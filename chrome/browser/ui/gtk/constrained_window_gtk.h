@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,19 +9,18 @@
 #include <gtk/gtk.h>
 
 #include "base/basictypes.h"
-#include "base/task.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/browser/tab_contents/constrained_window.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/ui/constrained_window.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
-class TabContents;
+class TabContentsWrapper;
 typedef struct _GdkColor GdkColor;
-#if defined(TOUCH_UI)
-class TabContentsViewTouch;
-#elif defined(TOOLKIT_VIEWS)
+#if defined(TOOLKIT_VIEWS)
 class NativeTabContentsViewGtk;
 #else
-class TabContentsViewGtk;
+class ChromeTabContentsViewWrapperGtk;
 #endif
 
 class ConstrainedWindowGtkDelegate {
@@ -50,23 +49,23 @@ class ConstrainedWindowGtkDelegate {
 // centers the dialog. It is thus an order of magnitude simpler.
 class ConstrainedWindowGtk : public ConstrainedWindow {
  public:
-#if defined(TOUCH_UI)
-   typedef TabContentsViewTouch TabContentsViewType;
-#elif defined(TOOLKIT_VIEWS)
+#if defined(TOOLKIT_VIEWS)
    typedef NativeTabContentsViewGtk TabContentsViewType;
 #else
-   typedef TabContentsViewGtk TabContentsViewType;
+   typedef ChromeTabContentsViewWrapperGtk TabContentsViewType;
 #endif
 
+  ConstrainedWindowGtk(TabContentsWrapper* wrapper,
+                       ConstrainedWindowGtkDelegate* delegate);
   virtual ~ConstrainedWindowGtk();
 
   // Overridden from ConstrainedWindow:
-  virtual void ShowConstrainedWindow();
-  virtual void CloseConstrainedWindow();
-  virtual void FocusConstrainedWindow();
+  virtual void ShowConstrainedWindow() OVERRIDE;
+  virtual void CloseConstrainedWindow() OVERRIDE;
+  virtual void FocusConstrainedWindow() OVERRIDE;
 
-  // Returns the TabContents that constrains this Constrained Window.
-  TabContents* owner() const { return owner_; }
+  // Returns the TabContentsWrapper that constrains this Constrained Window.
+  TabContentsWrapper* owner() const { return wrapper_; }
 
   // Returns the toplevel widget that displays this "window".
   GtkWidget* widget() { return border_.get(); }
@@ -77,20 +76,17 @@ class ConstrainedWindowGtk : public ConstrainedWindow {
  private:
   friend class ConstrainedWindow;
 
-  ConstrainedWindowGtk(TabContents* owner,
-                       ConstrainedWindowGtkDelegate* delegate);
-
   // Signal callbacks.
   CHROMEGTK_CALLBACK_1(ConstrainedWindowGtk, gboolean, OnKeyPress,
                        GdkEventKey*);
   CHROMEGTK_CALLBACK_1(ConstrainedWindowGtk, void, OnHierarchyChanged,
                        GtkWidget*);
 
-  // The TabContents that owns and constrains this ConstrainedWindow.
-  TabContents* owner_;
+  // The TabContentsWrapper that owns and constrains this ConstrainedWindow.
+  TabContentsWrapper* wrapper_;
 
-  // The top level widget container that exports to our TabContentsView.
-  OwnedWidgetGtk border_;
+  // The top level widget container that exports to our WebContentsView.
+  ui::OwnedWidgetGtk border_;
 
   // Delegate that provides the contents of this constrained window.
   ConstrainedWindowGtkDelegate* delegate_;
@@ -98,7 +94,7 @@ class ConstrainedWindowGtk : public ConstrainedWindow {
   // Stores if |ShowConstrainedWindow()| has been called.
   bool visible_;
 
-  ScopedRunnableMethodFactory<ConstrainedWindowGtk> factory_;
+  base::WeakPtrFactory<ConstrainedWindowGtk> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ConstrainedWindowGtk);
 };

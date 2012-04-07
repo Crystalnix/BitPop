@@ -9,12 +9,12 @@
 #include <set>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
-
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "net/url_request/url_request.h"
 
 template <typename T> struct DefaultSingletonTraits;
@@ -23,7 +23,7 @@ class Browser;
 class GURL;
 class Profile;
 
-class MediaPlayer : public NotificationObserver,
+class MediaPlayer : public content::NotificationObserver,
                     public net::URLRequest::Interceptor {
  public:
   struct MediaUrl;
@@ -31,30 +31,29 @@ class MediaPlayer : public NotificationObserver,
 
   virtual ~MediaPlayer();
 
-  // Enqueues this file into the current playlist.  If the mediaplayer is
-  // not currently visible, show it, and play the given url.
-  void EnqueueMediaFile(Profile* profile, const FilePath& file_path,
-                        Browser* creator);
+  // Enqueues this file into the current playlist.
+  void EnqueueMediaFile(Profile* profile, const FilePath& file_path);
 
-  // Enqueues this fileschema url into the current playlist. If the mediaplayer
-  // is not currently visible, show it, and play the given url.
-  void EnqueueMediaFileUrl(const GURL& url, Browser* creator);
+  // Enqueues this fileschema url into the current playlist.
+  void EnqueueMediaFileUrl(const GURL& url);
 
   // Clears out the current playlist, and start playback of the given
-  // |file_path|. If there is no mediaplayer currently, show it, and play the
-  // given |file_path|.
-  void ForcePlayMediaFile(Profile* profile, const FilePath& file_path,
-                          Browser* creator);
+  // |file_path|.
+  void ForcePlayMediaFile(Profile* profile, const FilePath& file_path);
 
   // Clears out the current playlist, and start playback of the given url.
-  // If there is no mediaplayer currently, show it, and play the given url.
-  void ForcePlayMediaURL(const GURL& url, Browser* creator);
+  void ForcePlayMediaURL(const GURL& url);
 
   // Toggle the visibility of the playlist window.
   void TogglePlaylistWindowVisible();
 
-  // Force the playlist window to be shown.
-  void ShowPlaylistWindow();
+  // Popup the mediaplayer, this shows the browser, and sets up its
+  // locations correctly.
+  void PopupMediaPlayer(Browser* creator);
+
+  // Popup the playlist.  Shows the browser, sets it up to point at
+  // chrome://mediaplayer#playlist
+  void PopupPlaylist(Browser* creator);
 
   // Toggle the mediaplayer between fullscreen and windowed.
   void ToggleFullscreen();
@@ -88,18 +87,20 @@ class MediaPlayer : public NotificationObserver,
   // Always returns NULL because we don't want to attempt a redirect
   // before seeing the detected mime type of the request.
   // Implementation of net::URLRequest::Interceptor.
-  virtual net::URLRequestJob* MaybeIntercept(net::URLRequest* request);
+  virtual net::URLRequestJob* MaybeIntercept(
+      net::URLRequest* request) OVERRIDE;
 
   // Determines if the requested document can be viewed by the
   // MediaPlayer.  If it can, returns a net::URLRequestJob that
   // redirects the browser to the view URL.
   // Implementation of net::URLRequest::Interceptor.
-  virtual net::URLRequestJob* MaybeInterceptResponse(net::URLRequest* request);
+  virtual net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request) OVERRIDE;
 
   // Used to detect when the mediaplayer is closed.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Getter for the singleton.
   static MediaPlayer* GetInstance();
@@ -120,16 +121,6 @@ class MediaPlayer : public NotificationObserver,
   GURL GetMediaplayerPlaylistUrl() const;
   GURL GetMediaPlayerUrl() const;
 
-  // Popup the mediaplayer, this shows the browser, and sets up its
-  // locations correctly.
-  void PopupMediaPlayer(Browser* creator);
-
-  // Popup the playlist.  Shows the browser, sets it up to point at
-  // chrome://mediaplayer#playlist
-  void PopupPlaylist(Browser* creator);
-
-  void EnqueueMediaFileUrl(const GURL& url);
-
   // Browser containing the playlist. Used to force closes. This is created
   // By the PopupPlaylist call, and is NULLed out when the window is closed.
   Browser* playlist_browser_;
@@ -140,7 +131,7 @@ class MediaPlayer : public NotificationObserver,
   Browser* mediaplayer_browser_;
 
   // Used to register for events on the windows, like to listen for closes.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // List of mimetypes that the mediaplayer should listen to.  Used for
   // interceptions of url GETs.

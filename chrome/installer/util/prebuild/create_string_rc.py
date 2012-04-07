@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -50,6 +50,7 @@ kStringIds = [
   'IDS_ABOUT_VERSION_COMPANY_NAME',
   'IDS_INSTALL_HIGHER_VERSION',
   'IDS_INSTALL_HIGHER_VERSION_CF',
+  'IDS_INSTALL_HIGHER_VERSION_CB_CF',
   'IDS_INSTALL_SYSTEM_LEVEL_EXISTS',
   'IDS_INSTALL_FAILED',
   'IDS_SAME_VERSION_REPAIR_FAILED',
@@ -62,12 +63,10 @@ kStringIds = [
   'IDS_INSTALL_INVALID_ARCHIVE',
   'IDS_INSTALL_INSUFFICIENT_RIGHTS',
   'IDS_INSTALL_NO_PRODUCTS_TO_UPDATE',
-  'IDS_UNINSTALL_FAILED',
   'IDS_UNINSTALL_COMPLETE',
   'IDS_INSTALL_DIR_IN_USE',
   'IDS_INSTALL_NON_MULTI_INSTALLATION_EXISTS',
   'IDS_INSTALL_MULTI_INSTALLATION_EXISTS',
-  'IDS_INSTALL_CONFLICTING_CHANNEL_EXISTS',
   'IDS_INSTALL_READY_MODE_REQUIRES_CHROME',
   'IDS_INSTALL_INCONSISTENT_UPDATE_POLICY',
   'IDS_OEM_MAIN_SHORTCUT_NAME',
@@ -76,6 +75,7 @@ kStringIds = [
 
 # The ID of the first resource string.
 kFirstResourceID = 1600
+
 
 class TranslationStruct:
   """A helper struct that holds information about a single translation."""
@@ -153,6 +153,7 @@ def CollectTranslatedStrings(branding):
   translated_strings.sort()
   return translated_strings
 
+
 def WriteRCFile(translated_strings, out_filename):
   """Writes a resource (rc) file with all the language strings provided in
   |translated_strings|."""
@@ -177,6 +178,7 @@ def WriteRCFile(translated_strings, out_filename):
   outfile = open(out_filename + '.rc', 'wb')
   outfile.write(''.join(lines).encode('utf-16'))
   outfile.close()
+
 
 def WriteHeaderFile(translated_strings, out_filename):
   """Writes a .h file with resource ids.  This file can be included by the
@@ -220,7 +222,12 @@ def WriteHeaderFile(translated_strings, out_filename):
   outfile.write('\n#endif  // ndef RC_INVOKED\n')
   outfile.close()
 
+
 def main(argv):
+  # TODO: Use optparse to parse command line flags.
+  if len(argv) < 2:
+    print 'Usage:\n  %s <output_directory> [branding]' % argv[0]
+    return 1
   branding = ''
   if (len(sys.argv) > 2):
     branding = argv[2]
@@ -228,10 +235,8 @@ def main(argv):
   kFilebase = os.path.join(argv[1], 'installer_util_strings')
   WriteRCFile(translated_strings, kFilebase)
   WriteHeaderFile(translated_strings, kFilebase)
+  return 0
+
 
 if '__main__' == __name__:
-  if len(sys.argv) < 2:
-    print 'Usage:\n  %s <output_directory> [branding]' % sys.argv[0]
-    sys.exit(1)
-  # Use optparse to parse command line flags.
-  main(sys.argv)
+  sys.exit(main(sys.argv))

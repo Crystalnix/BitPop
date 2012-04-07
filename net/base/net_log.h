@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/net_api.h"
-
-class Value;
+#include "net/base/net_export.h"
 
 namespace base {
 class TimeTicks;
+class Value;
 }
 
 namespace net {
@@ -30,13 +30,7 @@ namespace net {
 // is usually accessed through a BoundNetLog, which will always pass in a
 // specific source ID.
 //
-// ******** The NetLog (and associated logging) is a work in progress ********
-//
-// TODO(eroman): Remove the 'const' qualitifer from the BoundNetLog methods.
-// TODO(eroman): Start a new Source each time URLRequest redirects
-//               (simpler to reason about each as a separate entity).
-
-class NET_API NetLog {
+class NET_EXPORT NetLog {
  public:
   enum EventType {
 #define EVENT_TYPE(label) TYPE_ ## label,
@@ -62,7 +56,7 @@ class NET_API NetLog {
   // Identifies the entity that generated this log. The |id| field should
   // uniquely identify the source, and is used by log observers to infer
   // message groupings. Can use NetLog::NextID() to create unique IDs.
-  struct NET_API Source {
+  struct NET_EXPORT Source {
     static const uint32 kInvalidId = 0;
 
     Source() : type(SOURCE_NONE), id(kInvalidId) {}
@@ -70,7 +64,7 @@ class NET_API NetLog {
     bool is_valid() const { return id != kInvalidId; }
 
     // The caller takes ownership of the returned Value*.
-    Value* ToValue() const;
+    base::Value* ToValue() const;
 
     SourceType type;
     uint32 id;
@@ -79,7 +73,7 @@ class NET_API NetLog {
   // Base class for associating additional parameters with an event. Log
   // observers need to know what specific derivations of EventParameters a
   // particular EventType uses, in order to get at the individual components.
-  class NET_API EventParameters
+  class NET_EXPORT EventParameters
       : public base::RefCountedThreadSafe<EventParameters> {
    public:
     EventParameters() {}
@@ -88,7 +82,7 @@ class NET_API NetLog {
     // Serializes the parameters to a Value tree. This is intended to be a
     // lossless conversion, which is used to serialize the parameters to JSON.
     // The caller takes ownership of the returned Value*.
-    virtual Value* ToValue() const = 0;
+    virtual base::Value* ToValue() const = 0;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(EventParameters);
@@ -106,6 +100,50 @@ class NET_API NetLog {
 
     // Only log events which are cheap, and don't consume much memory.
     LOG_BASIC,
+  };
+
+  // An observer, that must ensure its own thread safety, for events
+  // being added to a NetLog.
+  class NET_EXPORT ThreadSafeObserver {
+   public:
+    // Constructs an observer that wants to see network events, with
+    // the specified minimum event granularity.  A ThreadSafeObserver can only
+    // observe a single NetLog at a time.
+    //
+    // Typical observers should specify LOG_BASIC.
+    //
+    // Observers that need to see the full granularity of events can
+    // specify LOG_ALL. However doing so will have performance consequences.
+    //
+    // Observers will be called on the same thread an entry is added on,
+    // and are responsible for ensuring their own thread safety.
+    explicit ThreadSafeObserver(LogLevel log_level);
+    virtual ~ThreadSafeObserver();
+
+    // Returns the minimum log level for events this observer wants to
+    // receive.
+    LogLevel log_level() const;
+
+    // This method will be called on the thread that the event occurs on.  It
+    // is the responsibility of the observer to handle it in a thread safe
+    // manner.
+    //
+    // It is illegal for an Observer to call any NetLog or
+    // NetLog::Observer functions in response to a call to OnAddEntry.
+    virtual void OnAddEntry(EventType type,
+                            const base::TimeTicks& time,
+                            const Source& source,
+                            EventPhase phase,
+                            EventParameters* params) = 0;
+
+   protected:
+    // Subclasses should only ever modify this if they somehow
+    // collaborate with concrete implementations of NetLog to enable
+    // modification.
+    LogLevel log_level_;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(ThreadSafeObserver);
   };
 
   NetLog() {}
@@ -134,6 +172,14 @@ class NET_API NetLog {
   // and saving expensive log entries.
   virtual LogLevel GetLogLevel() const = 0;
 
+  // Adds an observer. Each observer may be added only once and must
+  // be removed via |RemoveObserver()| before this object goes out of
+  // scope.
+  virtual void AddThreadSafeObserver(ThreadSafeObserver* observer) = 0;
+
+  // Removes an observer.
+  virtual void RemoveThreadSafeObserver(ThreadSafeObserver* observer) = 0;
+
   // Converts a time to the string format that the NetLog uses to represent
   // times.  Strings are used since integers may overflow.
   static std::string TickCountToString(const base::TimeTicks& time);
@@ -152,12 +198,12 @@ class NET_API NetLog {
 
   // Serializes the specified event to a DictionaryValue.
   // If |use_strings| is true, uses strings rather than numeric ids.
-  static Value* EntryToDictionaryValue(NetLog::EventType type,
-                                       const base::TimeTicks& time,
-                                       const NetLog::Source& source,
-                                       NetLog::EventPhase phase,
-                                       NetLog::EventParameters* params,
-                                       bool use_strings);
+  static base::Value* EntryToDictionaryValue(NetLog::EventType type,
+                                             const base::TimeTicks& time,
+                                             const NetLog::Source& source,
+                                             NetLog::EventPhase phase,
+                                             NetLog::EventParameters* params,
+                                             bool use_strings);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NetLog);
@@ -165,7 +211,7 @@ class NET_API NetLog {
 
 // Helper that binds a Source to a NetLog, and exposes convenience methods to
 // output log messages without needing to pass in the source.
-class NET_API BoundNetLog {
+class NET_EXPORT BoundNetLog {
  public:
   BoundNetLog() : net_log_(NULL) {}
 
@@ -195,12 +241,24 @@ class NET_API BoundNetLog {
   void EndEvent(NetLog::EventType event_type,
                 const scoped_refptr<NetLog::EventParameters>& params) const;
 
+  // Just like AddEvent, except |net_error| is a net error code.  A parameter
+  // called "net_error" with the indicated value will be recorded for the event.
+  // |net_error| must be negative, and not ERR_IO_PENDING, as it's not a true
+  // error.
+  void AddEventWithNetErrorCode(NetLog::EventType event_type,
+                                int net_error) const;
+
   // Just like EndEvent, except |net_error| is a net error code.  If it's
   // negative, a parameter called "net_error" with a value of |net_error| is
   // associated with the event.  Otherwise, the end event has no parameters.
   // |net_error| must not be ERR_IO_PENDING, as it's not a true error.
   void EndEventWithNetErrorCode(NetLog::EventType event_type,
                                 int net_error) const;
+
+  // Logs a byte transfer event to the NetLog.  Determines whether to log the
+  // received bytes or not based on the current logging level.
+  void AddByteTransferEvent(NetLog::EventType event_type,
+                            int byte_count, const char* bytes) const;
 
   NetLog::LogLevel GetLogLevel() const;
 
@@ -224,7 +282,7 @@ class NET_API BoundNetLog {
 
 // NetLogStringParameter is a subclass of EventParameters that encapsulates a
 // single std::string parameter.
-class NetLogStringParameter : public NetLog::EventParameters {
+class NET_EXPORT NetLogStringParameter : public NetLog::EventParameters {
  public:
   // |name| must be a string literal.
   NetLogStringParameter(const char* name, const std::string& value);
@@ -234,7 +292,7 @@ class NetLogStringParameter : public NetLog::EventParameters {
     return value_;
   }
 
-  virtual Value* ToValue() const;
+  virtual base::Value* ToValue() const OVERRIDE;
 
  private:
   const char* const name_;
@@ -253,7 +311,7 @@ class NetLogIntegerParameter : public NetLog::EventParameters {
     return value_;
   }
 
-  virtual Value* ToValue() const;
+  virtual base::Value* ToValue() const OVERRIDE;
 
  private:
   const char* name_;
@@ -262,7 +320,7 @@ class NetLogIntegerParameter : public NetLog::EventParameters {
 
 // NetLogSourceParameter is a subclass of EventParameters that encapsulates a
 // single NetLog::Source parameter.
-class NetLogSourceParameter : public NetLog::EventParameters {
+class NET_EXPORT NetLogSourceParameter : public NetLog::EventParameters {
  public:
   // |name| must be a string literal.
   NetLogSourceParameter(const char* name, const NetLog::Source& value)
@@ -272,7 +330,7 @@ class NetLogSourceParameter : public NetLog::EventParameters {
     return value_;
   }
 
-  virtual Value* ToValue() const;
+  virtual base::Value* ToValue() const OVERRIDE;
 
  private:
   const char* name_;
@@ -281,7 +339,7 @@ class NetLogSourceParameter : public NetLog::EventParameters {
 
 // ScopedNetLogEvent logs a begin event on creation, and the corresponding end
 // event on destruction.
-class NET_TEST ScopedNetLogEvent {
+class NET_EXPORT_PRIVATE ScopedNetLogEvent {
  public:
   ScopedNetLogEvent(const BoundNetLog& net_log,
                     NetLog::EventType event_type,

@@ -1,31 +1,38 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/browser_url_handler.h"
-#include "chrome/test/testing_profile.h"
+#include "content/browser/browser_url_handler.h"
 #include "content/browser/renderer_host/test_backing_store.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/site_instance.h"
-#include "content/browser/tab_contents/navigation_controller.h"
+#include "content/browser/site_instance_impl.h"
+#include "content/browser/tab_contents/navigation_controller_impl.h"
+#include "content/browser/tab_contents/navigation_entry_impl.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/common/content_client.h"
 #include "content/common/dom_storage_common.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/common/content_client.h"
+#include "content/test/test_browser_context.h"
 #include "ui/gfx/rect.h"
+#include "webkit/forms/password_form.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
-#include "webkit/glue/password_form.h"
 
-using webkit_glue::PasswordForm;
+using content::NavigationController;
+using content::NavigationEntry;
+using content::RenderViewHostDelegate;
+using content::SiteInstance;
+using webkit::forms::PasswordForm;
 
 void InitNavigateParams(ViewHostMsg_FrameNavigate_Params* params,
                         int page_id,
                         const GURL& url,
-                        PageTransition::Type transition) {
+                        content::PageTransition transition) {
   params->page_id = page_id;
   params->url = url;
-  params->referrer = GURL();
+  params->referrer = content::Referrer();
   params->transition = transition;
   params->redirects = std::vector<GURL>();
   params->should_update_history = false;
@@ -37,6 +44,28 @@ void InitNavigateParams(ViewHostMsg_FrameNavigate_Params* params,
   params->was_within_same_page = false;
   params->is_post = false;
   params->content_state = webkit_glue::CreateHistoryStateForURL(GURL(url));
+}
+
+void SimulateUpdateRect(RenderWidgetHost* widget,
+                        TransportDIB::Id bitmap,
+                        const gfx::Rect& rect) {
+  ViewHostMsg_UpdateRect_Params params;
+  params.bitmap_rect = rect;
+  params.view_size = params.bitmap_rect.size();
+  params.copy_rects.push_back(params.bitmap_rect);
+  params.flags = 0;
+  params.bitmap = bitmap;
+
+  ViewHostMsg_UpdateRect msg(1, params);
+  widget->OnMessageReceived(msg);
+}
+
+TestRenderViewHost* TestRenderViewHost::GetPendingForController(
+    content::NavigationController* controller) {
+  TabContents* tab_contents = static_cast<TabContents*>(
+      controller->GetWebContents());
+  return static_cast<TestRenderViewHost*>(
+      tab_contents->GetRenderManagerForTesting()->pending_render_view_host());
 }
 
 TestRenderViewHost::TestRenderViewHost(SiteInstance* instance,
@@ -51,7 +80,7 @@ TestRenderViewHost::TestRenderViewHost(SiteInstance* instance,
   // For normal RenderViewHosts, this is freed when |Shutdown()| is called.
   // For TestRenderViewHost, the view is explicitly deleted in the destructor
   // below, because TestRenderWidgetHostView::Destroy() doesn't |delete this|.
-  set_view(new TestRenderWidgetHostView(this));
+  SetView(new TestRenderWidgetHostView(this));
 }
 
 TestRenderViewHost::~TestRenderViewHost() {
@@ -62,7 +91,8 @@ TestRenderViewHost::~TestRenderViewHost() {
   delete view();
 }
 
-bool TestRenderViewHost::CreateRenderView(const string16& frame_name) {
+bool TestRenderViewHost::CreateRenderView(const string16& frame_name,
+                                          int32 max_page_id) {
   DCHECK(!render_view_created_);
   render_view_created_ = true;
   return true;
@@ -77,16 +107,16 @@ bool TestRenderViewHost::TestOnMessageReceived(const IPC::Message& msg) {
 }
 
 void TestRenderViewHost::SendNavigate(int page_id, const GURL& url) {
-  SendNavigateWithTransition(page_id, url, PageTransition::LINK);
+  SendNavigateWithTransition(page_id, url, content::PAGE_TRANSITION_LINK);
 }
 
 void TestRenderViewHost::SendNavigateWithTransition(
-    int page_id, const GURL& url, PageTransition::Type transition) {
+    int page_id, const GURL& url, content::PageTransition transition) {
   ViewHostMsg_FrameNavigate_Params params;
 
   params.page_id = page_id;
   params.url = url;
-  params.referrer = GURL();
+  params.referrer = content::Referrer();
   params.transition = transition;
   params.redirects = std::vector<GURL>();
   params.should_update_history = true;
@@ -137,11 +167,19 @@ RenderWidgetHost* TestRenderWidgetHostView::GetRenderWidgetHost() const {
   return NULL;
 }
 
-gfx::NativeView TestRenderWidgetHostView::GetNativeView() {
+gfx::NativeView TestRenderWidgetHostView::GetNativeView() const {
   return NULL;
 }
 
-bool TestRenderWidgetHostView::HasFocus() {
+gfx::NativeViewId TestRenderWidgetHostView::GetNativeViewId() const {
+  return 0;
+}
+
+gfx::NativeViewAccessible TestRenderWidgetHostView::GetNativeViewAccessible() {
+  return NULL;
+}
+
+bool TestRenderWidgetHostView::HasFocus() const {
   return true;
 }
 
@@ -171,22 +209,22 @@ BackingStore* TestRenderWidgetHostView::AllocBackingStore(
   return new TestBackingStore(rwh_, size);
 }
 
+void TestRenderWidgetHostView::OnAcceleratedCompositingStateChange() {
+}
+
+void TestRenderWidgetHostView::AcceleratedSurfaceBuffersSwapped(
+    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
+    int gpu_host_id) {
+}
+
+void TestRenderWidgetHostView::AcceleratedSurfacePostSubBuffer(
+    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
+    int gpu_host_id) {
+}
+
 #if defined(OS_MACOSX)
 
-void TestRenderWidgetHostView::ShowPopupWithItems(
-    gfx::Rect bounds,
-    int item_height,
-    double item_font_size,
-    int selected_item,
-    const std::vector<WebMenuItem>& items,
-    bool right_aligned) {
-}
-
 gfx::Rect TestRenderWidgetHostView::GetViewCocoaBounds() const {
-  return gfx::Rect();
-}
-
-gfx::Rect TestRenderWidgetHostView::GetRootWindowRect() {
   return gfx::Rect();
 }
 
@@ -231,22 +269,15 @@ void TestRenderWidgetHostView::AcceleratedSurfaceSetTransportDIB(
     TransportDIB::Handle transport_dib) {
 }
 
-void TestRenderWidgetHostView::AcceleratedSurfaceBuffersSwapped(
-    gfx::PluginWindowHandle window,
-    uint64 surface_id,
-    int renderer_id,
-    int32 route_id,
-    int gpu_host_id,
-    uint64 swap_buffers_count) {
-}
-
-void TestRenderWidgetHostView::GpuRenderingStateDidChange() {
-}
-#elif defined(OS_WIN)
+#elif defined(OS_WIN) && !defined(USE_AURA)
 void TestRenderWidgetHostView::WillWmDestroy() {
 }
 
-void TestRenderWidgetHostView::ShowCompositorHostWindow(bool show) {
+#endif
+
+#if defined(OS_POSIX) || defined(USE_AURA)
+gfx::Rect TestRenderWidgetHostView::GetRootWindowBounds() {
+  return gfx::Rect();
 }
 #endif
 
@@ -254,13 +285,15 @@ gfx::PluginWindowHandle TestRenderWidgetHostView::GetCompositingSurface() {
   return gfx::kNullPluginWindow;
 }
 
-bool TestRenderWidgetHostView::ContainsNativeView(
-    gfx::NativeView native_view) const {
+bool TestRenderWidgetHostView::LockMouse() {
   return false;
 }
 
+void TestRenderWidgetHostView::UnlockMouse() {
+}
+
 TestRenderViewHostFactory::TestRenderViewHostFactory(
-    RenderProcessHostFactory* rph_factory)
+    content::RenderProcessHostFactory* rph_factory)
     : render_process_host_factory_(rph_factory) {
   RenderViewHostFactory::RegisterFactory(this);
 }
@@ -270,7 +303,7 @@ TestRenderViewHostFactory::~TestRenderViewHostFactory() {
 }
 
 void TestRenderViewHostFactory::set_render_process_host_factory(
-    RenderProcessHostFactory* rph_factory) {
+    content::RenderProcessHostFactory* rph_factory) {
   render_process_host_factory_ = rph_factory;
 }
 
@@ -280,7 +313,8 @@ RenderViewHost* TestRenderViewHostFactory::CreateRenderViewHost(
     int routing_id,
     SessionStorageNamespace* session_storage) {
   // See declaration of render_process_host_factory_ below.
-  instance->set_render_process_host_factory(render_process_host_factory_);
+  static_cast<SiteInstanceImpl*>(instance)->
+      set_render_process_host_factory(render_process_host_factory_);
   return new TestRenderViewHost(instance, delegate, routing_id);
 }
 
@@ -294,7 +328,7 @@ RenderViewHostTestHarness::~RenderViewHostTestHarness() {
 }
 
 NavigationController& RenderViewHostTestHarness::controller() {
-  return contents()->controller();
+  return contents()->GetController();
 }
 
 TestTabContents* RenderViewHostTestHarness::contents() {
@@ -302,20 +336,20 @@ TestTabContents* RenderViewHostTestHarness::contents() {
 }
 
 TestRenderViewHost* RenderViewHostTestHarness::rvh() {
-  return static_cast<TestRenderViewHost*>(contents()->render_view_host());
+  return static_cast<TestRenderViewHost*>(contents()->GetRenderViewHost());
 }
 
 TestRenderViewHost* RenderViewHostTestHarness::pending_rvh() {
   return static_cast<TestRenderViewHost*>(
-      contents()->render_manager()->pending_render_view_host());
+      contents()->GetRenderManagerForTesting()->pending_render_view_host());
 }
 
 TestRenderViewHost* RenderViewHostTestHarness::active_rvh() {
   return pending_rvh() ? pending_rvh() : rvh();
 }
 
-TestingProfile* RenderViewHostTestHarness::profile() {
-  return profile_.get();
+content::BrowserContext* RenderViewHostTestHarness::browser_context() {
+  return browser_context_.get();
 }
 
 MockRenderProcessHost* RenderViewHostTestHarness::process() {
@@ -333,14 +367,14 @@ void RenderViewHostTestHarness::SetContents(TestTabContents* contents) {
 }
 
 TestTabContents* RenderViewHostTestHarness::CreateTestTabContents() {
-  // See comment above profile_ decl for why we check for NULL here.
-  if (!profile_.get())
-    profile_.reset(new TestingProfile());
+  // See comment above browser_context_ decl for why we check for NULL here.
+  if (!browser_context_.get())
+    browser_context_.reset(new TestBrowserContext());
 
   // This will be deleted when the TabContents goes away.
-  SiteInstance* instance = SiteInstance::CreateSiteInstance(profile_.get());
+  SiteInstance* instance = SiteInstance::Create(browser_context_.get());
 
-  return new TestTabContents(profile_.get(), instance);
+  return new TestTabContents(browser_context_.get(), instance);
 }
 
 void RenderViewHostTestHarness::NavigateAndCommit(const GURL& url) {
@@ -351,7 +385,7 @@ void RenderViewHostTestHarness::Reload() {
   NavigationEntry* entry = controller().GetLastCommittedEntry();
   DCHECK(entry);
   controller().Reload(false);
-  rvh()->SendNavigate(entry->page_id(), entry->url());
+  rvh()->SendNavigate(entry->GetPageID(), entry->GetURL());
 }
 
 void RenderViewHostTestHarness::SetUp() {
@@ -362,10 +396,10 @@ void RenderViewHostTestHarness::TearDown() {
   SetContents(NULL);
 
   // Make sure that we flush any messages related to TabContents destruction
-  // before we destroy the profile.
+  // before we destroy the browser context.
   MessageLoop::current()->RunAllPending();
 
-  // Release the profile on the UI thread.
-  message_loop_.DeleteSoon(FROM_HERE, profile_.release());
+  // Release the browser context on the UI thread.
+  message_loop_.DeleteSoon(FROM_HERE, browser_context_.release());
   message_loop_.RunAllPending();
 }

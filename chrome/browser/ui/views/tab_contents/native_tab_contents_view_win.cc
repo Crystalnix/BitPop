@@ -1,32 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/tab_contents/native_tab_contents_view_win.h"
 
-#include "chrome/browser/renderer_host/render_widget_host_view_win.h"
 #include "chrome/browser/tab_contents/web_drop_target_win.h"
 #include "chrome/browser/ui/views/tab_contents/native_tab_contents_view_delegate.h"
 #include "chrome/browser/ui/views/tab_contents/tab_contents_drag_win.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "views/widget/widget.h"
+#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "ui/views/views_delegate.h"
+#include "ui/views/widget/widget.h"
+
+using content::WebContents;
 
 namespace {
 
-// Tabs must be created as child widgets, otherwise they will be given
+// See comment above TempParent in tab_contents_view_win.cc.
+// Also, Tabs must be created as child widgets, otherwise they will be given
 // a FocusManager which will conflict with the FocusManager of the
 // window they eventually end up attached to.
-//
-// A tab will not have a parent HWND whenever it is not active in its
-// host window - for example at creation time and when it's in the
-// background, so we provide a default widget to host them.
-//
-// It may be tempting to use GetDesktopWindow() instead, but this is
-// problematic as the shell sends messages to children of the desktop
-// window that interact poorly with us.
-//
-// See: http://crbug.com/16476
 class HiddenTabHostWindow : public views::Widget {
  public:
   static HWND Instance();
@@ -80,11 +74,10 @@ NativeTabContentsViewWin::NativeTabContentsViewWin(
 }
 
 NativeTabContentsViewWin::~NativeTabContentsViewWin() {
-  CloseNow();
 }
 
-TabContents* NativeTabContentsViewWin::GetTabContents() const {
-  return delegate_->GetTabContents();
+WebContents* NativeTabContentsViewWin::GetWebContents() const {
+  return delegate_->GetWebContents();
 }
 
 void NativeTabContentsViewWin::EndDragging() {
@@ -105,22 +98,23 @@ void NativeTabContentsViewWin::InitNativeTabContentsView() {
   // Remove the root view drop target so we can register our own.
   RevokeDragDrop(GetNativeView());
   drop_target_ = new WebDropTarget(GetNativeView(),
-                                   delegate_->GetTabContents());
+                                   delegate_->GetWebContents());
 }
 
 void NativeTabContentsViewWin::Unparent() {
   // Note that we do not DCHECK on focus_manager_ as it may be NULL when used
   // with an external tab container.
-  NativeWidget::ReparentNativeView(GetNativeView(),
-                                   HiddenTabHostWindow::Instance());
+  views::Widget::ReparentNativeView(GetNativeView(),
+                                    HiddenTabHostWindow::Instance());
 }
 
 RenderWidgetHostView* NativeTabContentsViewWin::CreateRenderWidgetHostView(
     RenderWidgetHost* render_widget_host) {
-  RenderWidgetHostViewWin* view =
-      new RenderWidgetHostViewWin(render_widget_host);
-  view->CreateWnd(GetNativeView());
-  view->ShowWindow(SW_SHOW);
+  RenderWidgetHostView* view =
+      RenderWidgetHostView::CreateViewForWidget(render_widget_host);
+
+  view->InitAsChild(GetNativeView());
+  view->Show();
   return view;
 }
 
@@ -128,7 +122,7 @@ gfx::NativeWindow NativeTabContentsViewWin::GetTopLevelNativeWindow() const {
   return ::GetAncestor(GetNativeView(), GA_ROOT);
 }
 
-void NativeTabContentsViewWin::SetPageTitle(const std::wstring& title) {
+void NativeTabContentsViewWin::SetPageTitle(const string16& title) {
   // It's possible to get this after the hwnd has been destroyed.
   if (GetNativeView())
     ::SetWindowText(GetNativeView(), title.c_str());
@@ -298,7 +292,7 @@ void NativeTabContentsViewWin::ScrollCommon(UINT message, int scroll_type,
   if (!ScrollZoom(scroll_type)) {
     // Reflect scroll message to the view() to give it a chance
     // to process scrolling.
-    SendMessage(delegate_->GetTabContents()->view()->GetContentNativeView(),
+    SendMessage(delegate_->GetWebContents()->GetView()->GetContentNativeView(),
                 message, MAKELONG(scroll_type, position),
                 reinterpret_cast<LPARAM>(scrollbar));
   }

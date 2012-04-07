@@ -4,6 +4,10 @@
 
 #include "chrome/browser/ui/webui/crashes_ui.h"
 
+#include <vector>
+
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/i18n/time_formatting.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/utf_string_conversions.h"
@@ -13,84 +17,49 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/metrics_cros_settings_provider.h"
+#include "chrome/browser/chromeos/cros_settings.h"
 #endif
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
-///////////////////////////////////////////////////////////////////////////////
-//
-// CrashesUIHTMLSource
-//
-///////////////////////////////////////////////////////////////////////////////
+ChromeWebUIDataSource* CreateCrashesUIHTMLSource() {
+  ChromeWebUIDataSource* source =
+      new ChromeWebUIDataSource(chrome::kChromeUICrashesHost);
 
-class CrashesUIHTMLSource : public ChromeURLDataManager::DataSource {
- public:
-  CrashesUIHTMLSource()
-      : DataSource(chrome::kChromeUICrashesHost, MessageLoop::current()) {}
-
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string&) const {
-    return "text/html";
-  }
-
- private:
-  ~CrashesUIHTMLSource() {}
-
-  DISALLOW_COPY_AND_ASSIGN(CrashesUIHTMLSource);
-};
-
-void CrashesUIHTMLSource::StartDataRequest(const std::string& path,
-                                           bool is_incognito,
-                                           int request_id) {
-  DictionaryValue localized_strings;
-  localized_strings.SetString("crashesTitle",
-      l10n_util::GetStringUTF16(IDS_CRASHES_TITLE));
-  localized_strings.SetString("crashCountFormat",
-      l10n_util::GetStringUTF16(IDS_CRASHES_CRASH_COUNT_BANNER_FORMAT));
-  localized_strings.SetString("crashHeaderFormat",
-      l10n_util::GetStringUTF16(IDS_CRASHES_CRASH_HEADER_FORMAT));
-  localized_strings.SetString("crashTimeFormat",
-      l10n_util::GetStringUTF16(IDS_CRASHES_CRASH_TIME_FORMAT));
-  localized_strings.SetString("bugLinkText",
-      l10n_util::GetStringUTF16(IDS_CRASHES_BUG_LINK_LABEL));
-  localized_strings.SetString("noCrashesMessage",
-      l10n_util::GetStringUTF16(IDS_CRASHES_NO_CRASHES_MESSAGE));
-  localized_strings.SetString("disabledHeader",
-      l10n_util::GetStringUTF16(IDS_CRASHES_DISABLED_HEADER));
-  localized_strings.SetString("disabledMessage",
-      l10n_util::GetStringUTF16(IDS_CRASHES_DISABLED_MESSAGE));
-
-  ChromeURLDataManager::DataSource::SetFontAndTextDirection(&localized_strings);
-
-  static const base::StringPiece crashes_html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(IDR_CRASHES_HTML));
-  std::string full_html =
-      jstemplate_builder::GetI18nTemplateHtml(crashes_html, &localized_strings);
-  jstemplate_builder::AppendJsTemplateSourceHtml(&full_html);
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
+  source->AddLocalizedString("crashesTitle", IDS_CRASHES_TITLE);
+  source->AddLocalizedString("crashCountFormat",
+                             IDS_CRASHES_CRASH_COUNT_BANNER_FORMAT);
+  source->AddLocalizedString("crashHeaderFormat",
+                             IDS_CRASHES_CRASH_HEADER_FORMAT);
+  source->AddLocalizedString("crashTimeFormat", IDS_CRASHES_CRASH_TIME_FORMAT);
+  source->AddLocalizedString("bugLinkText", IDS_CRASHES_BUG_LINK_LABEL);
+  source->AddLocalizedString("noCrashesMessage",
+                             IDS_CRASHES_NO_CRASHES_MESSAGE);
+  source->AddLocalizedString("disabledHeader", IDS_CRASHES_DISABLED_HEADER);
+  source->AddLocalizedString("disabledMessage", IDS_CRASHES_DISABLED_MESSAGE);
+  source->set_json_path("strings.js");
+  source->add_resource_path("crashes.js", IDR_CRASHES_JS);
+  source->set_default_resource(IDR_CRASHES_HTML);
+  return source;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,11 +76,10 @@ class CrashesDOMHandler : public WebUIMessageHandler,
   virtual ~CrashesDOMHandler();
 
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // CrashUploadList::Delegate implemenation.
-  virtual void OnCrashListAvailable();
+  virtual void OnCrashListAvailable() OVERRIDE;
 
  private:
   // Asynchronously fetches the list of crashes. Called from JS.
@@ -136,14 +104,12 @@ CrashesDOMHandler::~CrashesDOMHandler() {
   upload_list_->ClearDelegate();
 }
 
-WebUIMessageHandler* CrashesDOMHandler::Attach(WebUI* web_ui) {
-  upload_list_->LoadCrashListAsynchronously();
-  return WebUIMessageHandler::Attach(web_ui);
-}
-
 void CrashesDOMHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("requestCrashList",
-      NewCallback(this, &CrashesDOMHandler::HandleRequestCrashes));
+  upload_list_->LoadCrashListAsynchronously();
+
+  web_ui()->RegisterMessageCallback("requestCrashList",
+      base::Bind(&CrashesDOMHandler::HandleRequestCrashes,
+                 base::Unretained(this)));
 }
 
 void CrashesDOMHandler::HandleRequestCrashes(const ListValue* args) {
@@ -177,13 +143,13 @@ void CrashesDOMHandler::UpdateUI() {
     }
   }
 
-  FundamentalValue enabled(crash_reporting_enabled);
+  base::FundamentalValue enabled(crash_reporting_enabled);
 
   const chrome::VersionInfo version_info;
-  StringValue version(version_info.Version());
+  base::StringValue version(version_info.Version());
 
-  web_ui_->CallJavascriptFunction("updateCrashList", enabled, crash_list,
-                                  version);
+  web_ui()->CallJavascriptFunction("updateCrashList", enabled, crash_list,
+                                   version);
 }
 
 }  // namespace
@@ -194,13 +160,13 @@ void CrashesDOMHandler::UpdateUI() {
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-CrashesUI::CrashesUI(TabContents* contents) : WebUI(contents) {
-  AddMessageHandler((new CrashesDOMHandler())->Attach(this));
-
-  CrashesUIHTMLSource* html_source = new CrashesUIHTMLSource();
+CrashesUI::CrashesUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+  web_ui->AddMessageHandler(new CrashesDOMHandler());
 
   // Set up the chrome://crashes/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(
+      CreateCrashesUIHTMLSource());
 }
 
 // static
@@ -215,7 +181,10 @@ bool CrashesUI::CrashReportingEnabled() {
   PrefService* prefs = g_browser_process->local_state();
   return prefs->GetBoolean(prefs::kMetricsReportingEnabled);
 #elif defined(GOOGLE_CHROME_BUILD) && defined(OS_CHROMEOS)
-  return chromeos::MetricsCrosSettingsProvider::GetMetricsStatus();
+  bool reporting_enabled = false;
+  chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
+                                            &reporting_enabled);
+  return reporting_enabled;
 #else
   return false;
 #endif

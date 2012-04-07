@@ -7,22 +7,20 @@
 #pragma once
 
 #include "base/compiler_specific.h"
-#include "content/browser/tab_contents/constrained_window.h"
+#include "chrome/browser/ui/constrained_window.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "views/window/window.h"
+#include "ui/views/widget/widget.h"
 
-class ConstrainedTabContentsWindowDelegate;
-class ConstrainedWindowAnimation;
-class ConstrainedWindowFrameView;
+class TabContentsWrapper;
+
 namespace views {
 namespace internal {
-class NativeWindowDelegate;
+class NativeWidgetDelegate;
 }
-class NativeWindow;
+class NativeWidget;
 class NonClientFrameView;
-class Window;
-class WindowDelegate;
+class WidgetDelegate;
 }
 
 class NativeConstrainedWindowDelegate {
@@ -36,11 +34,7 @@ class NativeConstrainedWindowDelegate {
   // Called when the NativeConstrainedWindow is clicked on when inactive.
   virtual void OnNativeConstrainedWindowMouseActivate() = 0;
 
-  // Creates the frame view for the constrained window.
-  // TODO(beng): remove once ConstrainedWindowViews is-a views::Window.
-  virtual views::NonClientFrameView* CreateFrameViewForWindow() = 0;
-
-  virtual views::internal::NativeWindowDelegate* AsNativeWindowDelegate() = 0;
+  virtual views::internal::NativeWidgetDelegate* AsNativeWidgetDelegate() = 0;
 };
 
 class NativeConstrainedWindow {
@@ -51,7 +45,7 @@ class NativeConstrainedWindow {
   static NativeConstrainedWindow* CreateNativeConstrainedWindow(
       NativeConstrainedWindowDelegate* delegate);
 
-  virtual views::NativeWindow* AsNativeWindow() = 0;
+  virtual views::NativeWidget* AsNativeWidget() = 0;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -60,34 +54,34 @@ class NativeConstrainedWindow {
 //  A ConstrainedWindow implementation that implements a Constrained Window as
 //  a child HWND with a custom window frame.
 //
-class ConstrainedWindowViews : public views::Window,
+class ConstrainedWindowViews : public views::Widget,
                                public ConstrainedWindow,
                                public NativeConstrainedWindowDelegate {
  public:
-  ConstrainedWindowViews(TabContents* owner,
-                         views::WindowDelegate* window_delegate);
+  ConstrainedWindowViews(TabContentsWrapper* wrapper,
+                         views::WidgetDelegate* widget_delegate);
   virtual ~ConstrainedWindowViews();
 
-  // Returns the TabContents that constrains this Constrained Window.
-  TabContents* owner() const { return owner_; }
+  // Returns the TabContentsWrapper that constrains this Constrained Window.
+  TabContentsWrapper* owner() const { return wrapper_; }
 
   // Overridden from ConstrainedWindow:
   virtual void ShowConstrainedWindow() OVERRIDE;
   virtual void CloseConstrainedWindow() OVERRIDE;
   virtual void FocusConstrainedWindow() OVERRIDE;
+  virtual gfx::NativeWindow GetNativeWindow() OVERRIDE;
 
  private:
-  // Overridden from views::Window:
-  virtual views::NonClientFrameView* CreateFrameViewForWindow() OVERRIDE;
+  // Overridden from views::Widget:
+  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
 
   // Overridden from NativeConstrainedWindowDelegate:
   virtual void OnNativeConstrainedWindowDestroyed() OVERRIDE;
   virtual void OnNativeConstrainedWindowMouseActivate() OVERRIDE;
-  virtual views::internal::NativeWindowDelegate*
-      AsNativeWindowDelegate() OVERRIDE;
+  virtual views::internal::NativeWidgetDelegate*
+      AsNativeWidgetDelegate() OVERRIDE;
 
-  // The TabContents that owns and constrains this ConstrainedWindow.
-  TabContents* owner_;
+  TabContentsWrapper* wrapper_;
 
   NativeConstrainedWindow* native_constrained_window_;
 

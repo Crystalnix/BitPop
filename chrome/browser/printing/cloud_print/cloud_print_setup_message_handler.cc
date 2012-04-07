@@ -4,31 +4,34 @@
 
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_message_handler.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_flow.h"
-
-WebUIMessageHandler* CloudPrintSetupMessageHandler::Attach(WebUI* web_ui) {
-  // Pass the WebUI object to the setup flow.
-  flow_->Attach(web_ui);
-  return WebUIMessageHandler::Attach(web_ui);
-}
+#include "content/public/browser/web_ui.h"
 
 void CloudPrintSetupMessageHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("SubmitAuth",
-      NewCallback(this, &CloudPrintSetupMessageHandler::HandleSubmitAuth));
-  web_ui_->RegisterMessageCallback("PrintTestPage",
-      NewCallback(this, &CloudPrintSetupMessageHandler::HandlePrintTestPage));
-  web_ui_->RegisterMessageCallback("LearnMore",
-      NewCallback(this, &CloudPrintSetupMessageHandler::HandleLearnMore));
+  // Pass the WebUI object to the setup flow.
+  flow_->Attach(web_ui());
+
+  web_ui()->RegisterMessageCallback("SubmitAuth",
+      base::Bind(&CloudPrintSetupMessageHandler::HandleSubmitAuth,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("PrintTestPage",
+      base::Bind(&CloudPrintSetupMessageHandler::HandlePrintTestPage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("LearnMore",
+      base::Bind(&CloudPrintSetupMessageHandler::HandleLearnMore,
+                 base::Unretained(this)));
 }
 
 void CloudPrintSetupMessageHandler::HandleSubmitAuth(const ListValue* args) {
   std::string json;
-  args->GetString(0, &json);
+  bool ret = args->GetString(0, &json);
   std::string username, password, captcha, access_code;
-  if (json.empty()) {
+  if (!ret || json.empty()) {
     NOTREACHED() << "Empty json string";
     return;
   }

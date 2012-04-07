@@ -7,6 +7,8 @@
 #include <set>
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
 #include "base/string_piece.h"
@@ -15,14 +17,20 @@
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace chromeos {
 
@@ -42,25 +50,27 @@ const char kOperatorNameProperty[] = "operatorName";
 const char kStatusProperty[] = "status";
 const char kTechnologyProperty[] = "technology";
 
-class ChooseMobileNetworkHTMLSource
-    : public ChromeURLDataManager::DataSource {
- public:
-  ChooseMobileNetworkHTMLSource();
+ChromeWebUIDataSource *CreateChooseMobileNetworkUIHTMLSource() {
+  ChromeWebUIDataSource *source =
+      new ChromeWebUIDataSource(chrome::kChromeUIChooseMobileNetworkHost);
 
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string&) const {
-    return "text/html";
-  }
+  source->AddLocalizedString("chooseNetworkTitle",
+                             IDS_NETWORK_CHOOSE_MOBILE_NETWORK);
+  source->AddLocalizedString("scanningMsgLine1",
+                             IDS_NETWORK_SCANNING_FOR_MOBILE_NETWORKS);
+  source->AddLocalizedString("scanningMsgLine2",
+                             IDS_NETWORK_SCANNING_THIS_MAY_TAKE_A_MINUTE);
+  source->AddLocalizedString("noMobileNetworks",
+                             IDS_NETWORK_NO_MOBILE_NETWORKS);
+  source->AddLocalizedString("connect", IDS_OPTIONS_SETTINGS_CONNECT);
+  source->AddLocalizedString("cancel", IDS_CANCEL);
 
- private:
-  virtual ~ChooseMobileNetworkHTMLSource() {}
-
-  DISALLOW_COPY_AND_ASSIGN(ChooseMobileNetworkHTMLSource);
-};
+  source->set_json_path("strings.js");
+  source->add_resource_path("choose_mobile_network.js",
+                            IDR_CHOOSE_MOBILE_NETWORK_JS);
+  source->set_default_resource(IDR_CHOOSE_MOBILE_NETWORK_HTML);
+  return source;
+}
 
 class ChooseMobileNetworkHandler
     : public WebUIMessageHandler,
@@ -70,11 +80,11 @@ class ChooseMobileNetworkHandler
   virtual ~ChooseMobileNetworkHandler();
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // NetworkDeviceObserver implementation.
-  virtual void OnNetworkDeviceFoundNetworks(NetworkLibrary* cros,
-                                            const NetworkDevice* device);
+  virtual void OnNetworkDeviceFoundNetworks(
+      NetworkLibrary* cros, const NetworkDevice* device) OVERRIDE;
 
  private:
   // Handlers for JS WebUI messages.
@@ -90,55 +100,10 @@ class ChooseMobileNetworkHandler
   DISALLOW_COPY_AND_ASSIGN(ChooseMobileNetworkHandler);
 };
 
-// ChooseMobileNetworkHTMLSource implementation.
-
-ChooseMobileNetworkHTMLSource::ChooseMobileNetworkHTMLSource()
-    : DataSource(chrome::kChromeUIChooseMobileNetworkHost,
-                 MessageLoop::current()) {
-}
-
-void ChooseMobileNetworkHTMLSource::StartDataRequest(const std::string& path,
-                                                       bool is_incognito,
-                                                       int request_id) {
-  DictionaryValue strings;
-  strings.SetString(
-      "chooseNetworkTitle",
-      l10n_util::GetStringUTF16(IDS_NETWORK_CHOOSE_MOBILE_NETWORK));
-  strings.SetString(
-      "scanningMsgLine1",
-      l10n_util::GetStringUTF16(IDS_NETWORK_SCANNING_FOR_MOBILE_NETWORKS));
-  strings.SetString(
-      "scanningMsgLine2",
-      l10n_util::GetStringUTF16(IDS_NETWORK_SCANNING_THIS_MAY_TAKE_A_MINUTE));
-  strings.SetString(
-      "noMobileNetworks",
-      l10n_util::GetStringUTF16(IDS_NETWORK_NO_MOBILE_NETWORKS));
-  strings.SetString("connect",
-                    l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONNECT));
-  strings.SetString("cancel", l10n_util::GetStringUTF16(IDS_CANCEL));
-  SetFontAndTextDirection(&strings);
-
-  static const base::StringPiece html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_CHOOSE_MOBILE_NETWORK_HTML));
-
-  const std::string& full_html = jstemplate_builder::GetI18nTemplateHtml(
-      html, &strings);
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes());
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
-}
-
 // ChooseMobileNetworkHandler implementation.
 
 ChooseMobileNetworkHandler::ChooseMobileNetworkHandler()
     : is_page_ready_(false), has_pending_results_(false) {
-  if (!CrosLibrary::Get()->EnsureLoaded())
-    return;
-
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   if (const NetworkDevice* cellular = cros->FindCellularDevice()) {
     device_path_ = cellular->device_path();
@@ -155,15 +120,18 @@ ChooseMobileNetworkHandler::~ChooseMobileNetworkHandler() {
 }
 
 void ChooseMobileNetworkHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback(
+  web_ui()->RegisterMessageCallback(
       kJsApiCancel,
-      NewCallback(this, &ChooseMobileNetworkHandler::HandleCancel));
-  web_ui_->RegisterMessageCallback(
+      base::Bind(&ChooseMobileNetworkHandler::HandleCancel,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       kJsApiConnect,
-      NewCallback(this, &ChooseMobileNetworkHandler::HandleConnect));
-  web_ui_->RegisterMessageCallback(
+      base::Bind(&ChooseMobileNetworkHandler::HandleConnect,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
       kJsApiPageReady,
-      NewCallback(this, &ChooseMobileNetworkHandler::HandlePageReady));
+      base::Bind(&ChooseMobileNetworkHandler::HandlePageReady,
+                 base::Unretained(this)));
 }
 
 void ChooseMobileNetworkHandler::OnNetworkDeviceFoundNetworks(
@@ -193,7 +161,7 @@ void ChooseMobileNetworkHandler::OnNetworkDeviceFoundNetworks(
     }
   }
   if (is_page_ready_) {
-    web_ui_->CallJavascriptFunction(kJsApiShowNetworks, networks_list_);
+    web_ui()->CallJavascriptFunction(kJsApiShowNetworks, networks_list_);
     networks_list_.Clear();
     has_pending_results_ = false;
   } else {
@@ -207,9 +175,6 @@ void ChooseMobileNetworkHandler::HandleCancel(const ListValue* args) {
     NOTREACHED();
     return;
   }
-
-  if (!CrosLibrary::Get()->EnsureLoaded())
-    return;
 
   // Switch to automatic mode.
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
@@ -225,9 +190,6 @@ void ChooseMobileNetworkHandler::HandleConnect(const ListValue* args) {
     return;
   }
 
-  if (!CrosLibrary::Get()->EnsureLoaded())
-    return;
-
   NetworkLibrary* cros = CrosLibrary::Get()->GetNetworkLibrary();
   cros->RequestCellularRegister(network_id);
 }
@@ -240,7 +202,7 @@ void ChooseMobileNetworkHandler::HandlePageReady(const ListValue* args) {
   }
 
   if (has_pending_results_) {
-    web_ui_->CallJavascriptFunction(kJsApiShowNetworks, networks_list_);
+    web_ui()->CallJavascriptFunction(kJsApiShowNetworks, networks_list_);
     networks_list_.Clear();
     has_pending_results_ = false;
   }
@@ -249,14 +211,14 @@ void ChooseMobileNetworkHandler::HandlePageReady(const ListValue* args) {
 
 }  // namespace
 
-ChooseMobileNetworkUI::ChooseMobileNetworkUI(TabContents* contents)
-    : WebUI(contents) {
+ChooseMobileNetworkUI::ChooseMobileNetworkUI(content::WebUI* web_ui)
+    : WebUIController(web_ui) {
   ChooseMobileNetworkHandler* handler = new ChooseMobileNetworkHandler();
-  AddMessageHandler((handler)->Attach(this));
-  ChooseMobileNetworkHTMLSource* html_source =
-      new ChooseMobileNetworkHTMLSource();
+  web_ui->AddMessageHandler(handler);
   // Set up the "chrome://choose-mobile-network" source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(
+      CreateChooseMobileNetworkUIHTMLSource());
 }
 
 }  // namespace chromeos

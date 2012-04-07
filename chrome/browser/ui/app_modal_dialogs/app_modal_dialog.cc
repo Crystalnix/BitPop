@@ -4,33 +4,34 @@
 
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
 
+#include "base/logging.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 
-AppModalDialog::AppModalDialog(TabContents* tab_contents,
-                               const std::wstring& title)
-    : skip_this_dialog_(false),
-      tab_contents_(tab_contents),
+using content::WebContents;
+
+AppModalDialog::AppModalDialog(WebContents* web_contents, const string16& title)
+    : valid_(true),
       native_dialog_(NULL),
-      title_(title) {
+      title_(title),
+      web_contents_(web_contents) {
 }
 
 AppModalDialog::~AppModalDialog() {
 }
 
 void AppModalDialog::ShowModalDialog() {
-  if (tab_contents_)
-    tab_contents_->Activate();
-
+  web_contents_->GetDelegate()->ActivateContents(web_contents_);
   CreateAndShowDialog();
 
-  NotificationService::current()->Notify(
-      NotificationType::APP_MODAL_DIALOG_SHOWN,
-      Source<AppModalDialog>(this),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_APP_MODAL_DIALOG_SHOWN,
+      content::Source<AppModalDialog>(this),
+      content::NotificationService::NoDetails());
 }
 
 void AppModalDialog::CreateAndShowDialog() {
@@ -39,7 +40,11 @@ void AppModalDialog::CreateAndShowDialog() {
 }
 
 bool AppModalDialog::IsValid() {
-  return !skip_this_dialog_;
+  return valid_;
+}
+
+void AppModalDialog::Invalidate() {
+  valid_ = false;
 }
 
 bool AppModalDialog::IsJavaScriptModalDialog() {

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,8 +39,6 @@ const wchar_t kGoogleUpdateExecutable[] = L"GoogleUpdate.exe";
 const wchar_t kIEExecutable[] = L"iexplore.exe";
 const wchar_t kInstallerWindow[] = L"Chrome Installer";
 const wchar_t kStandaloneInstaller[] = L"ChromeSetupTest.exe";
-const wchar_t kSystemInstall[] = L"system";
-const wchar_t kUserInstall[] = L"user";
 const wchar_t kUntaggedInstallerPattern[] = L"ChromeStandaloneSetup_";
 const wchar_t kWinFolder[] = L"win";
 
@@ -57,27 +55,27 @@ const wchar_t kIEProcessName[] = L"IEXPLORE.EXE";
 const wchar_t kChromeMetaInstallerExe[] =
     L"\\\\172.23.44.61\\shared\\chrome_autotest\\beta_build\\ChromeSetup.exe";
 const wchar_t kChromeStandAloneInstallerLocation[] =
-    L"\\\\172.24.6.7\\shares\\googleclient\\nightly\\builds\\"
-    L"Win-OmahaInstallers\\latest\\opt-win\\staging\\";
+    L"\\\\filer\\shares\\chromeclient\\builds\\ChromeSigning";
 const wchar_t kChromeApplyTagExe[] =
-    L"\\\\172.23.44.61\\shared\\chrome_autotest\\ApplyTag.exe";
+    L"\\\\filer\\shares\\googleclient\\save\\builds\\Omaha\\1.3.21.57"
+    L"\\opt\\tests\\ApplyTag.exe";
 const wchar_t kChromeApplyTagParameters[] =
     L"\"appguid={8A69D345-D564-463C-AFF1-A69D9E530F96}"
     L"&appname=Chrome&needsadmin=false\"";
-const wchar_t kChromeDiffInstallerLocation[] =
+const wchar_t kChromeInstallersLocation[] =
     L"\\\\172.24.6.7\\shares\\chromeclient\\builds\\chrome\\";
 
 }  // namespace mini_installer_constants
 
 namespace switches {
+// Help.
+extern const char kInstallerHelp[] = "help";
+
 // Back up the profile.
 const char kInstallerTestBackup[] = "backup";
 
 // Control the build under test.
 const char kInstallerTestBuild[] = "build";
-
-// Uninstall before running the tests.
-const char kInstallerTestClean[] = "clean";
 
 // Force the installer tests to run, regardless of the current platform.
 const char kInstallerTestForce[] = "force";

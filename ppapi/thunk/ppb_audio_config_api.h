@@ -6,12 +6,15 @@
 #define PPAPI_THUNK_AUDIO_CONFIG_API_H_
 
 #include "ppapi/c/ppb_audio_config.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
 
 namespace ppapi {
 namespace thunk {
 
-class PPB_AudioConfig_API {
+class PPAPI_THUNK_EXPORT PPB_AudioConfig_API {
  public:
+  virtual ~PPB_AudioConfig_API() {}
+
   virtual PP_AudioSampleRate GetSampleRate() = 0;
   virtual uint32_t GetSampleFrameCount() = 0;
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,12 @@
 #pragma once
 
 #include "base/gtest_prod_util.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/color_utils.h"
 
 class SkBitmap;
 
-class SkBitmapOperations {
+class UI_EXPORT SkBitmapOperations {
  public:
   // Create a bitmap that is an inverted image of the passed in image.
   // Each color becomes its inverse in the color wheel. So (255, 15, 0) becomes

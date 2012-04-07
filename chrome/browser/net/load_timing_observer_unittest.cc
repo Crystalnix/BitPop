@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,19 @@
 
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
+#include "base/message_loop.h"
 #include "base/stringprintf.h"
 #include "base/time.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_netlog_params.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
-using net::NetLog;
 using base::TimeDelta;
+using content::BrowserThread;
+using net::NetLog;
 
 // Serves to Identify the current thread as the IO thread.
 class LoadTimingObserverTest : public testing::Test {
@@ -26,7 +28,7 @@ class LoadTimingObserverTest : public testing::Test {
 
  private:
   MessageLoop message_loop_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread io_thread_;
 };
 
 base::TimeTicks current_time;

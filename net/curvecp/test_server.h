@@ -6,10 +6,9 @@
 #define NET_CURVECP_TEST_SERVER_H_
 #pragma once
 
-#include "base/task.h"
-#include "net/base/completion_callback.h"
+#include "base/compiler_specific.h"
+#include "net/base/test_data_stream.h"
 #include "net/curvecp/curvecp_server_socket.h"
-#include "net/curvecp/test_data_stream.h"
 
 namespace net {
 
@@ -19,19 +18,15 @@ class IOBuffer;
 
 // TestServer is the server which processes the listen socket.
 // It will create an EchoServer instance to handle each connection.
-class TestServer : public CompletionCallback,
-                   public CurveCPServerSocket::Acceptor {
+class TestServer : public CurveCPServerSocket::Acceptor {
  public:
   TestServer();
   virtual ~TestServer();
 
   bool Start(int port);
 
-  // CompletionCallback methods:
-  virtual void RunWithParams(const Tuple1<int>& params);
-
-  // CurveCPServerSocket::Acceptor methods:
-  virtual void OnAccept(CurveCPServerSocket* new_socket);
+  // CurveCPServerSocket::Acceptor implementation.
+  virtual void OnAccept(CurveCPServerSocket* new_socket) OVERRIDE;
 
   // Returns the number of errors this server encountered.
   int error_count() { return errors_; }
@@ -65,8 +60,6 @@ class EchoServer {
   scoped_refptr<DrainableIOBuffer> write_buffer_;
   TestDataStream received_stream_;
   int bytes_received_;
-  CompletionCallbackImpl<EchoServer> read_callback_;
-  CompletionCallbackImpl<EchoServer> write_callback_;
 };
 
 }  // namespace net

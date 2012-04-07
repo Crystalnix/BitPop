@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,10 +7,9 @@
     {
       'target_name': 'memory_watcher',
       'type': 'shared_library',
-      'msvs_guid': '3BD81303-4E14-4559-AA69-B30C3BAB08DD',
       'dependencies': [
-        '../../app/app.gyp:app_base',
         '../../base/base.gyp:base',
+        '../../ui/ui.gyp:ui',
       ],
       'defines': [
         'BUILD_MEMORY_WATCHER',
@@ -38,9 +37,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

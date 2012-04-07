@@ -4,18 +4,21 @@
 
 #include "chrome/browser/sync/util/extensions_activity_monitor.h"
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_bookmarks_module.h"
+#include "chrome/browser/bookmarks/bookmark_extension_api.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using browser_sync::ExtensionsActivityMonitor;
+using content::BrowserThread;
 namespace keys = extension_manifest_keys;
 
 namespace {
@@ -38,33 +41,22 @@ const char* kTestExtensionVersion = "1.0.0.0";
 const char* kTestExtensionName = "foo extension";
 
 template <class FunctionType>
-class BookmarkAPIEventTask : public Task {
- public:
-  BookmarkAPIEventTask(FunctionType* t, Extension* e, size_t repeats,
-                       base::WaitableEvent* done) :
-       extension_(e), function_(t), repeats_(repeats), done_(done) {}
-   virtual void Run() {
-     for (size_t i = 0; i < repeats_; i++) {
-       NotificationService::current()->Notify(
-           NotificationType::EXTENSION_BOOKMARKS_API_INVOKED,
-           Source<Extension>(extension_.get()),
-           Details<const BookmarksFunction>(function_.get()));
-     }
-     done_->Signal();
+void BookmarkAPIEventCallback(FunctionType* function, Extension* extension,
+                              size_t repeats, base::WaitableEvent* done) {
+  for (size_t i = 0; i < repeats; i++) {
+     content::NotificationService::current()->Notify(
+         chrome::NOTIFICATION_EXTENSION_BOOKMARKS_API_INVOKED,
+         content::Source<Extension>(extension),
+         content::Details<const BookmarksFunction>(function));
    }
- private:
-  scoped_refptr<Extension> extension_;
-  scoped_refptr<FunctionType> function_;
-  size_t repeats_;
-  base::WaitableEvent* done_;
-
-  DISALLOW_COPY_AND_ASSIGN(BookmarkAPIEventTask);
-};
+   done->Signal();
+}
 
 class BookmarkAPIEventGenerator {
  public:
   BookmarkAPIEventGenerator() {}
   virtual ~BookmarkAPIEventGenerator() {}
+
   template <class T>
   void NewEvent(const FilePath::StringType& extension_path,
       T* bookmarks_function, size_t repeats) {
@@ -77,32 +69,25 @@ class BookmarkAPIEventGenerator {
         Extension::STRICT_ERROR_CHECKS, &error));
     bookmarks_function->set_name(T::function_name());
     base::WaitableEvent done_event(false, false);
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        new BookmarkAPIEventTask<T>(bookmarks_function, extension,
-                                    repeats, &done_event));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&BookmarkAPIEventCallback<T>,
+                   make_scoped_refptr(bookmarks_function), extension, repeats,
+                   &done_event));
     done_event.Wait();
   }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BookmarkAPIEventGenerator);
 };
+
 }  // namespace
 
-class DoUIThreadSetupTask : public Task {
- public:
-  DoUIThreadSetupTask(NotificationService** service,
-                      base::WaitableEvent* done)
-      : service_(service), signal_when_done_(done) {}
-  virtual ~DoUIThreadSetupTask() {}
-  virtual void Run() {
-    *service_ = new NotificationService();
-    signal_when_done_->Signal();
-  }
- private:
-  NotificationService** service_;
-  base::WaitableEvent* signal_when_done_;
-  DISALLOW_COPY_AND_ASSIGN(DoUIThreadSetupTask);
-};
+void DoUIThreadSetupCallback(content::NotificationService** service,
+                             base::WaitableEvent* done) {
+  *service = content::NotificationService::Create();
+  done->Signal();
+}
 
 class ExtensionsActivityMonitorTest : public testing::Test {
  public:
@@ -113,17 +98,16 @@ class ExtensionsActivityMonitorTest : public testing::Test {
   virtual void SetUp() {
     ui_thread_.Start();
     base::WaitableEvent service_created(false, false);
-    ui_thread_.message_loop()->PostTask(FROM_HERE,
-        new DoUIThreadSetupTask(&service_, &service_created));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&DoUIThreadSetupCallback, &service_, &service_created));
     service_created.Wait();
   }
 
   virtual void TearDown() {
-    ui_thread_.message_loop()->DeleteSoon(FROM_HERE, service_);
+    BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, service_);
     ui_thread_.Stop();
   }
-
-  MessageLoop* ui_loop() { return ui_thread_.message_loop(); }
 
   static std::string GetExtensionIdForPath(
       const FilePath::StringType& extension_path) {
@@ -138,8 +122,8 @@ class ExtensionsActivityMonitorTest : public testing::Test {
     return extension->id();
   }
  private:
-  NotificationService* service_;
-  BrowserThread ui_thread_;
+  content::NotificationService* service_;
+  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(ExtensionsActivityMonitorTest, Basic) {
@@ -180,7 +164,7 @@ TEST_F(ExtensionsActivityMonitorTest, Basic) {
   EXPECT_EQ(writes_by_extension1, results[id1].bookmark_write_count);
   EXPECT_EQ(writes_by_extension2, results[id2].bookmark_write_count);
 
-  ui_loop()->DeleteSoon(FROM_HERE, monitor);
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, monitor);
 }
 
 TEST_F(ExtensionsActivityMonitorTest, Put) {
@@ -217,7 +201,7 @@ TEST_F(ExtensionsActivityMonitorTest, Put) {
   EXPECT_EQ(id2, new_records[id2].extension_id);
   EXPECT_EQ(5U, new_records[id1].bookmark_write_count);
   EXPECT_EQ(8U + 2U, new_records[id2].bookmark_write_count);
-  ui_loop()->DeleteSoon(FROM_HERE, monitor);
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, monitor);
 }
 
 TEST_F(ExtensionsActivityMonitorTest, MultiGet) {
@@ -244,5 +228,5 @@ TEST_F(ExtensionsActivityMonitorTest, MultiGet) {
   EXPECT_EQ(1U, results.size());
   EXPECT_EQ(3U, results[id1].bookmark_write_count);
 
-  ui_loop()->DeleteSoon(FROM_HERE, monitor);
+  BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, monitor);
 }

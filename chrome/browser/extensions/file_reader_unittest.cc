@@ -1,8 +1,9 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
@@ -11,8 +12,11 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/common/extensions/extension_test_util.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -23,7 +27,7 @@ class FileReaderTest : public testing::Test {
   }
  private:
   MessageLoop message_loop_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread file_thread_;
 };
 
 class Receiver {
@@ -31,8 +35,8 @@ class Receiver {
   Receiver() : succeeded_(false) {
   }
 
-  FileReader::Callback* NewCallback() {
-    return ::NewCallback(this, &Receiver::DidReadFile);
+  FileReader::Callback NewCallback() {
+    return base::Bind(&Receiver::DidReadFile, base::Unretained(this));
   }
 
   bool succeeded() const { return succeeded_; }
@@ -52,8 +56,7 @@ class Receiver {
 void RunBasicTest(const char* filename) {
   FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
-  std::string extension_id;
-  Extension::GenerateId("test", &extension_id);
+  std::string extension_id = extension_test_util::MakeId("test");
   ExtensionResource resource(extension_id, path,
                              FilePath().AppendASCII(filename));
   path = path.AppendASCII(filename);
@@ -84,8 +87,7 @@ TEST_F(FileReaderTest, BiggerFile) {
 TEST_F(FileReaderTest, NonExistantFile) {
   FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
-  std::string extension_id;
-  Extension::GenerateId("test", &extension_id);
+  std::string extension_id = extension_test_util::MakeId("test");
   ExtensionResource resource(extension_id, path, FilePath(
       FILE_PATH_LITERAL("file_that_does_not_exist")));
   path = path.AppendASCII("file_that_does_not_exist");

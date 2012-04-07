@@ -19,12 +19,13 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "base/task.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 
+namespace base {
 class Value;
+}
 
 namespace chrome_browser_net {
 
@@ -115,8 +116,8 @@ class Referrer : public SubresourceMap {
   bool Trim(double reduce_rate, double threshold);
 
   // Provide methods for persisting, and restoring contents into a Value class.
-  Value* Serialize() const;
-  void Deserialize(const Value& referrers);
+  base::Value* Serialize() const;
+  void Deserialize(const base::Value& referrers);
 
  private:
   // Helper function for pruning list.  Metric for usefulness is "large accrued

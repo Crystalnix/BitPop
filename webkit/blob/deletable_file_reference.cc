@@ -15,8 +15,8 @@ namespace webkit_blob {
 namespace {
 
 typedef std::map<FilePath, DeletableFileReference*> DeleteableFileMap;
-static base::LazyInstance<DeleteableFileMap> g_deletable_file_map(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<DeleteableFileMap> g_deletable_file_map =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -72,7 +72,8 @@ DeletableFileReference::~DeletableFileReference() {
 
   DCHECK(g_deletable_file_map.Get().find(path_)->second == this);
   g_deletable_file_map.Get().erase(path_);
-  base::FileUtilProxy::Delete(file_thread_, path_, false /* recursive */, NULL);
+  base::FileUtilProxy::Delete(file_thread_, path_, false /* recursive */,
+                              base::FileUtilProxy::StatusCallback());
 }
 
 }  // namespace webkit_blob

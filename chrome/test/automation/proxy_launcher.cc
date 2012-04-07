@@ -1,15 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/automation/proxy_launcher.h"
 
-#include "app/sql/connection.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
-#include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/test/test_file_util.h"
 #include "base/test/test_timeouts.h"
@@ -20,51 +18,25 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/chrome_process_util.h"
-#include "chrome/test/test_launcher_utils.h"
-#include "chrome/test/test_switches.h"
 #include "chrome/test/automation/automation_proxy.h"
+#include "chrome/test/base/chrome_process_util.h"
+#include "chrome/test/base/test_launcher_utils.h"
+#include "chrome/test/base/test_switches.h"
 #include "chrome/test/ui/ui_test.h"
-#include "content/common/child_process_info.h"
 #include "content/common/debug_flags.h"
+#include "content/public/common/process_type.h"
+#include "ipc/ipc_channel.h"
+#include "ipc/ipc_descriptors.h"
+#include "sql/connection.h"
+
+#if defined(OS_POSIX)
+#include <signal.h>
+#endif
 
 namespace {
 
 // Passed as value of kTestType.
 const char kUITestType[] = "ui";
-
-// Rewrite the preferences file to point to the proper image directory.
-void RewritePreferencesFile(const FilePath& user_data_dir) {
-  const FilePath pref_template_path(
-      user_data_dir.AppendASCII("Default").AppendASCII("PreferencesTemplate"));
-  const FilePath pref_path(
-      user_data_dir.AppendASCII("Default").AppendASCII("Preferences"));
-
-  // Read in preferences template.
-  std::string pref_string;
-  EXPECT_TRUE(file_util::ReadFileToString(pref_template_path, &pref_string));
-  string16 format_string = ASCIIToUTF16(pref_string);
-
-  // Make sure temp directory has the proper format for writing to prefs file.
-#if defined(OS_POSIX)
-  std::wstring user_data_dir_w(ASCIIToWide(user_data_dir.value()));
-#elif defined(OS_WIN)
-  std::wstring user_data_dir_w(user_data_dir.value());
-  // In Windows, the FilePath will write '\' for the path separators; change
-  // these to a separator that won't trigger escapes.
-  std::replace(user_data_dir_w.begin(),
-               user_data_dir_w.end(), '\\', '/');
-#endif
-
-  // Rewrite prefs file.
-  std::vector<string16> subst;
-  subst.push_back(WideToUTF16(user_data_dir_w));
-  const std::string prefs_string =
-      UTF16ToASCII(ReplaceStringPlaceholders(format_string, subst, NULL));
-  EXPECT_TRUE(file_util::WriteFile(pref_path, prefs_string.c_str(),
-                                   prefs_string.size()));
-  file_util::EvictFileFromSystemCache(pref_path);
-}
 
 // We want to have a current history database when we start the browser so
 // things like the NTP will have thumbnails.  This method updates the dates
@@ -96,24 +68,35 @@ void UpdateHistoryDates(const FilePath& user_data_dir) {
 
 // ProxyLauncher functions
 
-const char ProxyLauncher::kDefaultInterfacePath[] =
+#if defined(OS_WIN)
+const char ProxyLauncher::kDefaultInterfaceId[] = "ChromeTestingInterface";
+#elif defined(OS_POSIX)
+const char ProxyLauncher::kDefaultInterfaceId[] =
     "/var/tmp/ChromeTestingInterface";
-
-bool ProxyLauncher::in_process_renderer_ = false;
-bool ProxyLauncher::no_sandbox_ = false;
-bool ProxyLauncher::full_memory_dump_ = false;
-bool ProxyLauncher::show_error_dialogs_ = true;
-bool ProxyLauncher::dump_histograms_on_exit_ = false;
-bool ProxyLauncher::enable_dcheck_ = false;
-bool ProxyLauncher::silent_dump_on_dcheck_ = false;
-bool ProxyLauncher::disable_breakpad_ = false;
-std::string ProxyLauncher::js_flags_ = "";
-std::string ProxyLauncher::log_level_ = "";
+#endif
 
 ProxyLauncher::ProxyLauncher()
     : process_(base::kNullProcessHandle),
       process_id_(-1),
-      shutdown_type_(WINDOW_CLOSE) {
+      shutdown_type_(WINDOW_CLOSE),
+      no_sandbox_(CommandLine::ForCurrentProcess()->HasSwitch(
+                      switches::kNoSandbox)),
+      full_memory_dump_(CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kFullMemoryCrashReport)),
+      show_error_dialogs_(CommandLine::ForCurrentProcess()->HasSwitch(
+                              switches::kEnableErrorDialogs)),
+      dump_histograms_on_exit_(CommandLine::ForCurrentProcess()->HasSwitch(
+                                   switches::kDumpHistogramsOnExit)),
+      enable_dcheck_(CommandLine::ForCurrentProcess()->HasSwitch(
+                         switches::kEnableDCHECK)),
+      silent_dump_on_dcheck_(CommandLine::ForCurrentProcess()->HasSwitch(
+                                 switches::kSilentDumpOnDCHECK)),
+      disable_breakpad_(CommandLine::ForCurrentProcess()->HasSwitch(
+                            switches::kDisableBreakpad)),
+      js_flags_(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                    switches::kJavaScriptFlags)),
+      log_level_(CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                     switches::kLoggingLevel)) {
 }
 
 ProxyLauncher::~ProxyLauncher() {}
@@ -131,11 +114,11 @@ bool ProxyLauncher::WaitForBrowserLaunch(bool wait_for_initial_loads) {
       return false;
     }
   } else {
-    // TODO(phajdan.jr): We should get rid of this sleep, but some tests
-    // "rely" on it, e.g. AssertionTest.Assertion and CheckFalseTest.CheckFails.
-    // Those tests do not wait in any way until the crash gets noticed,
-    // so it's possible for the browser to exit before the tested crash happens.
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
+#if defined(OS_WIN)
+    // TODO(phajdan.jr): Get rid of this Sleep when logging_chrome_uitest
+    // stops "relying" on it.
+    base::PlatformThread::Sleep(TestTimeouts::action_timeout());
+#endif
   }
 
   if (!automation()->SetFilteredInet(ShouldFilterInet())) {
@@ -175,10 +158,9 @@ void ProxyLauncher::CloseBrowserAndServer() {
   // Suppress spammy failures that seem to be occurring when running
   // the UI tests in single-process mode.
   // TODO(jhughes): figure out why this is necessary at all, and fix it
-  if (!in_process_renderer_)
-    AssertAppNotRunning(
-        StringPrintf(L"Unable to quit all browser processes. Original PID %d",
-                     &process_id_));
+  AssertAppNotRunning(
+      StringPrintf("Unable to quit all browser processes. Original PID %d",
+                   process_id_));
 
   DisconnectFromRunningBrowser();
 }
@@ -213,16 +195,15 @@ bool ProxyLauncher::LaunchBrowser(const LaunchState& state) {
       return false;
     }
 
-    // If we're using the complex theme data, we need to write the
-    // user_data_dir_ to our preferences file.
-    if (state.profile_type == COMPLEX_THEME)
-      RewritePreferencesFile(user_data_dir());
-
     // Update the history file to include recent dates.
     UpdateHistoryDates(user_data_dir());
   }
 
-  if (!LaunchBrowserHelper(state, false, &process_)) {
+  // Optionally do any final setup of the test environment.
+  if (!state.setup_profile_callback.is_null())
+    state.setup_profile_callback.Run();
+
+  if (!LaunchBrowserHelper(state, true, false, &process_)) {
     LOG(ERROR) << "LaunchBrowserHelper failed.";
     return false;
   }
@@ -234,14 +215,14 @@ bool ProxyLauncher::LaunchBrowser(const LaunchState& state) {
 #if !defined(OS_MACOSX)
 bool ProxyLauncher::LaunchAnotherBrowserBlockUntilClosed(
     const LaunchState& state) {
-  return LaunchBrowserHelper(state, true, NULL);
+  return LaunchBrowserHelper(state, false, true, NULL);
 }
 #endif
 
 void ProxyLauncher::QuitBrowser() {
   // If we have already finished waiting for the browser to exit
   // (or it hasn't launched at all), there's nothing to do here.
-  if (process_ == base::kNullProcessHandle)
+  if (process_ == base::kNullProcessHandle || !automation_proxy_.get())
     return;
 
   if (SESSION_ENDING == shutdown_type_) {
@@ -278,6 +259,7 @@ void ProxyLauncher::QuitBrowser() {
         automation()->GetBrowserWindow(0);
     EXPECT_TRUE(browser_proxy.get());
     if (browser_proxy.get()) {
+      EXPECT_TRUE(browser_proxy->is_valid());
       EXPECT_TRUE(browser_proxy->ApplyAccelerator(IDC_CLOSE_WINDOW));
       browser_proxy = NULL;
     }
@@ -310,13 +292,13 @@ void ProxyLauncher::QuitBrowser() {
 void ProxyLauncher::TerminateBrowser() {
   // If we have already finished waiting for the browser to exit
   // (or it hasn't launched at all), there's nothing to do here.
-  if (process_ == base::kNullProcessHandle)
+  if (process_ == base::kNullProcessHandle || !automation_proxy_.get())
     return;
 
   base::TimeTicks quit_start = base::TimeTicks::Now();
 
   EXPECT_TRUE(automation()->SetFilteredInet(false));
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser.get());
   ASSERT_TRUE(browser->TerminateSession());
@@ -339,17 +321,17 @@ void ProxyLauncher::TerminateBrowser() {
   browser_quit_time_ = base::TimeTicks::Now() - quit_start;
 }
 
-void ProxyLauncher::AssertAppNotRunning(const std::wstring& error_message) {
-  std::wstring final_error_message(error_message);
+void ProxyLauncher::AssertAppNotRunning(const std::string& error_message) {
+  std::string final_error_message(error_message);
 
   ChromeProcessList processes = GetRunningChromeProcesses(process_id_);
   if (!processes.empty()) {
-    final_error_message += L" Leftover PIDs: [";
+    final_error_message += " Leftover PIDs: [";
     for (ChromeProcessList::const_iterator it = processes.begin();
          it != processes.end(); ++it) {
-      final_error_message += StringPrintf(L" %d", *it);
+      final_error_message += StringPrintf(" %d", *it);
     }
-    final_error_message += L" ]";
+    final_error_message += " ]";
   }
   ASSERT_TRUE(processes.empty()) << final_error_message;
 }
@@ -358,7 +340,12 @@ bool ProxyLauncher::WaitForBrowserProcessToQuit(int timeout, int* exit_code) {
 #ifdef WAIT_FOR_DEBUGGER_ON_OPEN
   timeout = 500000;
 #endif
-  bool success = base::WaitForExitCodeWithTimeout(process_, exit_code, timeout);
+  bool success = false;
+
+  // Only wait for exit if the "browser, please terminate" message had a
+  // chance of making it through.
+  if (!automation_proxy_->channel_disconnected_on_failure())
+    success = base::WaitForExitCodeWithTimeout(process_, exit_code, timeout);
 
   if (!success)
     TerminateAllChromeProcesses(process_id_);
@@ -414,13 +401,8 @@ void ProxyLauncher::PrepareTestCommandline(CommandLine* command_line,
     command_line->AppendSwitchASCII(switches::kTestingChannelID,
                                     PrefixedChannelID());
 
-  if (!show_error_dialogs_ &&
-      !CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableErrorDialogs)) {
+  if (!show_error_dialogs_)
     command_line->AppendSwitch(switches::kNoErrorDialogs);
-  }
-  if (in_process_renderer_)
-    command_line->AppendSwitch(switches::kSingleProcess);
   if (no_sandbox_)
     command_line->AppendSwitch(switches::kNoSandbox);
   if (full_memory_dump_)
@@ -450,54 +432,59 @@ void ProxyLauncher::PrepareTestCommandline(CommandLine* command_line,
   command_line->AppendSwitch(switches::kDebugOnStart);
 #endif
 
-  // The tests assume that file:// URIs can freely access other file:// URIs.
-  command_line->AppendSwitch(switches::kAllowFileAccessFromFiles);
-
   // Disable TabCloseableStateWatcher for tests.
   command_line->AppendSwitch(switches::kDisableTabCloseableStateWatcher);
 
   // Allow file:// access on ChromeOS.
   command_line->AppendSwitch(switches::kAllowFileAccess);
-
-  // Allow testing File API over http.
-  command_line->AppendSwitch(switches::kUnlimitedQuotaForFiles);
 }
 
-bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state, bool wait,
+bool ProxyLauncher::LaunchBrowserHelper(const LaunchState& state,
+                                        bool main_launch,
+                                        bool wait,
                                         base::ProcessHandle* process) {
   CommandLine command_line(state.command);
 
   // Add command line arguments that should be applied to all UI tests.
   PrepareTestCommandline(&command_line, state.include_testing_id);
   DebugFlags::ProcessDebugFlags(
-      &command_line, ChildProcessInfo::UNKNOWN_PROCESS, false);
+      &command_line, content::PROCESS_TYPE_UNKNOWN, false);
 
-  // TODO(phajdan.jr): Only run it for "main" browser launch.
-  browser_launch_time_ = base::TimeTicks::Now();
-
-#if defined(OS_WIN)
-  bool started = base::LaunchApp(command_line, wait,
-                                 !state.show_window, process);
-#elif defined(OS_POSIX)
   // Sometimes one needs to run the browser under a special environment
   // (e.g. valgrind) without also running the test harness (e.g. python)
   // under the special environment.  Provide a way to wrap the browser
   // commandline with a special prefix to invoke the special environment.
   const char* browser_wrapper = getenv("BROWSER_WRAPPER");
   if (browser_wrapper) {
+#if defined(OS_WIN)
+    command_line.PrependWrapper(ASCIIToWide(browser_wrapper));
+#elif defined(OS_POSIX)
     command_line.PrependWrapper(browser_wrapper);
+#endif
     VLOG(1) << "BROWSER_WRAPPER was set, prefixing command_line with "
             << browser_wrapper;
   }
 
-  base::file_handle_mapping_vector fds;
-  if (automation_proxy_.get())
-    fds = automation_proxy_->fds_to_map();
+  if (main_launch)
+    browser_launch_time_ = base::TimeTicks::Now();
 
-  bool started = base::LaunchApp(command_line.argv(), fds, wait, process);
+  base::LaunchOptions options;
+  options.wait = wait;
+
+#if defined(OS_WIN)
+  options.start_hidden = !state.show_window;
+#elif defined(OS_POSIX)
+  int ipcfd = -1;
+  file_util::ScopedFD ipcfd_closer(&ipcfd);
+  base::file_handle_mapping_vector fds;
+  if (main_launch && automation_proxy_.get()) {
+    ipcfd = automation_proxy_->channel()->TakeClientFileDescriptor();
+    fds.push_back(std::make_pair(ipcfd, kPrimaryIPCChannel + 3));
+    options.fds_to_remap = &fds;
+  }
 #endif
 
-  return started;
+  return base::LaunchProcess(command_line, options, process);
 }
 
 AutomationProxy* ProxyLauncher::automation() const {
@@ -544,37 +531,45 @@ AutomationProxy* NamedProxyLauncher::CreateAutomationProxy(
   return proxy;
 }
 
-void NamedProxyLauncher::InitializeConnection(const LaunchState& state,
+bool NamedProxyLauncher::InitializeConnection(const LaunchState& state,
                                               bool wait_for_initial_loads) {
-  FilePath testing_channel_path;
-#if defined(OS_WIN)
-  testing_channel_path = FilePath(ASCIIToWide(channel_id_));
-#else
-  testing_channel_path = FilePath(channel_id_);
-#endif
-
   if (launch_browser_) {
+#if defined(OS_POSIX)
     // Because we are waiting on the existence of the testing file below,
     // make sure there isn't one already there before browser launch.
-    EXPECT_TRUE(file_util::Delete(testing_channel_path, false));
+    if (!file_util::Delete(FilePath(channel_id_), false)) {
+      LOG(ERROR) << "Failed to delete " << channel_id_;
+      return false;
+    }
+#endif
 
-    // Set up IPC testing interface as a client.
-    ASSERT_TRUE(LaunchBrowser(state));
+    if (!LaunchBrowser(state)) {
+      LOG(ERROR) << "Failed to LaunchBrowser";
+      return false;
+    }
   }
 
   // Wait for browser to be ready for connections.
-  bool testing_channel_exists = false;
+  bool channel_initialized = false;
   for (int wait_time = 0;
        wait_time < TestTimeouts::action_max_timeout_ms();
        wait_time += automation::kSleepTime) {
-    testing_channel_exists = file_util::PathExists(testing_channel_path);
-    if (testing_channel_exists)
+    channel_initialized = IPC::Channel::IsNamedServerInitialized(channel_id_);
+    if (channel_initialized)
       break;
-    base::PlatformThread::Sleep(automation::kSleepTime);
+    base::PlatformThread::Sleep(
+        base::TimeDelta::FromMilliseconds(automation::kSleepTime));
   }
-  EXPECT_TRUE(testing_channel_exists);
+  if (!channel_initialized) {
+    LOG(ERROR) << "Failed to wait for testing channel presence.";
+    return false;
+  }
 
-  ASSERT_TRUE(ConnectToRunningBrowser(wait_for_initial_loads));
+  if (!ConnectToRunningBrowser(wait_for_initial_loads)) {
+    LOG(ERROR) << "Failed to ConnectToRunningBrowser";
+    return false;
+  }
+  return true;
 }
 
 void NamedProxyLauncher::TerminateConnection() {
@@ -605,9 +600,9 @@ AutomationProxy* AnonymousProxyLauncher::CreateAutomationProxy(
   return proxy;
 }
 
-void AnonymousProxyLauncher::InitializeConnection(const LaunchState& state,
+bool AnonymousProxyLauncher::InitializeConnection(const LaunchState& state,
                                                   bool wait_for_initial_loads) {
-  ASSERT_TRUE(LaunchBrowserAndServer(state, wait_for_initial_loads));
+  return LaunchBrowserAndServer(state, wait_for_initial_loads);
 }
 
 void AnonymousProxyLauncher::TerminateConnection() {

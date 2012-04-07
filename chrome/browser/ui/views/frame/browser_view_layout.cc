@@ -1,15 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/frame/browser_view_layout.h"
 
-#include "chrome/browser/sidebar/sidebar_manager.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
-#include "chrome/browser/ui/views/download/download_shelf_view.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/contents_container.h"
@@ -17,14 +15,14 @@
 #include "chrome/browser/ui/views/tab_contents/tab_contents_container.h"
 #include "chrome/browser/ui/views/tabs/abstract_tab_strip_view.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "ui/base/hit_test.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/scrollbar_size.h"
 #include "ui/gfx/size.h"
-#include "views/controls/single_split_view.h"
-#include "views/window/window.h"
+#include "ui/views/controls/single_split_view.h"
 
-#if !defined(OS_WIN)
-#include "views/window/hit_test.h"
+#if !defined(OS_CHROMEOS) || defined(USE_AURA)
+#include "chrome/browser/ui/views/download/download_shelf_view.h"
 #endif
 
 namespace {
@@ -34,16 +32,6 @@ namespace {
 const int kTabShadowSize = 2;
 // The vertical overlap between the TabStrip and the Toolbar.
 const int kToolbarTabStripVerticalOverlap = 3;
-// The vertical size of the space between the content area and the tabstrip that
-// is inserted in compact navigation mode. Note that we need to use a height
-// that includes the overlap to get the visible height we want, in order to
-// match how the toolbar overlaps the tabstrip.
-const int kCompactNavbarSpacerVisibleHeight = 4;
-const int kCompactNavbarSpacerHeight =
-    kCompactNavbarSpacerVisibleHeight + kToolbarTabStripVerticalOverlap;
-// The size of the padding between the compact navigation/options bars and the
-// tab strip.
-const int kCompactNavbarHorizontalPadding = 2;
 // The number of pixels the bookmark bar should overlap the spacer by if the
 // spacer is visible.
 const int kSpacerBookmarkBarOverlap = 1;
@@ -70,9 +58,6 @@ BrowserViewLayout::BrowserViewLayout()
       contents_split_(NULL),
       contents_container_(NULL),
       infobar_container_(NULL),
-      compact_navigation_bar_(NULL),
-      compact_options_bar_(NULL),
-      compact_spacer_(NULL),
       download_shelf_(NULL),
       active_bookmark_bar_(NULL),
       browser_view_(NULL),
@@ -124,11 +109,8 @@ gfx::Rect BrowserViewLayout::GetFindBarBoundingBox() const {
 
   // First determine the bounding box of the content area in Widget
   // coordinates.
-  gfx::Rect bounding_box(contents_container_->bounds());
-
-  gfx::Point topleft;
-  views::View::ConvertPointToWidget(contents_container_, &topleft);
-  bounding_box.set_origin(topleft);
+  gfx::Rect bounding_box = contents_container_->ConvertRectToWidget(
+      contents_container_->GetLocalBounds());
 
   // Adjust the position and size of the bounding box by the find bar offset
   // calculated during the last Layout.
@@ -175,17 +157,6 @@ int BrowserViewLayout::NonClientHitTest(
       if (tabstrip_->IsPositionInWindowCaption(test_point))
         return HTCAPTION;
       return HTCLIENT;
-    }
-
-    // If the tabstrip is visible and we are in compact navigation mode, test
-    // against the compact navigation and option bars.
-    if (browser_view_->UseCompactNavigationBar()) {
-      test_point = point;
-      if (ConvertedHitTest(parent, compact_navigation_bar_, &test_point))
-        return HTCLIENT;
-      test_point = point;
-      if (ConvertedHitTest(parent, compact_options_bar_, &test_point))
-        return HTCLIENT;
     }
 
     // The top few pixels of the TabStrip are a drop-shadow - as we're pretty
@@ -240,16 +211,13 @@ void BrowserViewLayout::Installed(views::View* host) {
   download_shelf_ = NULL;
   active_bookmark_bar_ = NULL;
   tabstrip_ = NULL;
-  compact_navigation_bar_ = NULL;
-  compact_options_bar_ = NULL;
-  compact_spacer_ = NULL;
   browser_view_ = static_cast<BrowserView*>(host);
 }
 
 void BrowserViewLayout::Uninstalled(views::View* host) {}
 
 void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
-  switch (view->GetID()) {
+  switch (view->id()) {
     case VIEW_ID_CONTENTS_SPLIT: {
       contents_split_ = static_cast<views::SingleSplitView*>(view);
       // We're installed as the LayoutManager before BrowserView creates the
@@ -262,7 +230,11 @@ void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
       infobar_container_ = view;
       break;
     case VIEW_ID_DOWNLOAD_SHELF:
+#if !defined(OS_CHROMEOS) || defined(USE_AURA)
       download_shelf_ = static_cast<DownloadShelfView*>(view);
+#else
+      NOTREACHED();
+#endif
       break;
     case VIEW_ID_BOOKMARK_BAR:
       active_bookmark_bar_ = static_cast<BookmarkBarView*>(view);
@@ -273,20 +245,11 @@ void BrowserViewLayout::ViewAdded(views::View* host, views::View* view) {
     case VIEW_ID_TAB_STRIP:
       tabstrip_ = static_cast<AbstractTabStripView*>(view);
       break;
-    case VIEW_ID_COMPACT_NAV_BAR_SPACER:
-      compact_spacer_ = view;
-      break;
-    case VIEW_ID_COMPACT_NAV_BAR:
-      compact_navigation_bar_ = view;
-      break;
-    case VIEW_ID_COMPACT_OPT_BAR:
-      compact_options_bar_ = view;
-      break;
   }
 }
 
 void BrowserViewLayout::ViewRemoved(views::View* host, views::View* view) {
-  switch (view->GetID()) {
+  switch (view->id()) {
     case VIEW_ID_BOOKMARK_BAR:
       active_bookmark_bar_ = NULL;
       break;
@@ -296,7 +259,7 @@ void BrowserViewLayout::ViewRemoved(views::View* host, views::View* view) {
 void BrowserViewLayout::Layout(views::View* host) {
   vertical_layout_rect_ = browser_view_->GetLocalBounds();
   int top = LayoutTabStripRegion();
-  if (browser_view_->IsTabStripVisible() && !browser_view_->UseVerticalTabs()) {
+  if (browser_view_->IsTabStripVisible()) {
     tabstrip_->SetBackgroundOffset(gfx::Point(
         tabstrip_->GetMirroredX() + browser_view_->GetMirroredX(),
         browser_view_->frame()->GetHorizontalTabStripVerticalOffset(false)));
@@ -314,11 +277,6 @@ void BrowserViewLayout::Layout(views::View* host) {
   // TabContentsContainer's bounds being up to date.
   if (browser()->HasFindBarController()) {
     browser()->GetFindBarController()->find_bar()->MoveWindowIfNecessary(
-        gfx::Rect(), true);
-  }
-  if (browser()->UseCompactNavigationBar()) {
-    DCHECK(browser_view_->compact_location_bar_view_host());
-    browser_view_->compact_location_bar_view_host()->MoveWindowIfNecessary(
         gfx::Rect(), true);
   }
 }
@@ -342,10 +300,6 @@ const Browser* BrowserViewLayout::browser() const {
 
 int BrowserViewLayout::LayoutTabStripRegion() {
   if (!browser_view_->IsTabStripVisible()) {
-    if (compact_navigation_bar_ && compact_options_bar_) {
-      compact_navigation_bar_->SetVisible(false);
-      compact_options_bar_->SetVisible(false);
-    }
     tabstrip_->SetVisible(false);
     tabstrip_->SetBounds(0, 0, 0, 0);
     return 0;
@@ -360,71 +314,21 @@ int BrowserViewLayout::LayoutTabStripRegion() {
                                   &tabstrip_origin);
   tabstrip_bounds.set_origin(tabstrip_origin);
 
-  // If we are in compact nav mode, we want to reduce the tab strip bounds from
-  // both ends enough to lay out the compact navigation and options bars. We
-  // check the pointers to see if the mode is available, and then check the pref
-  // to see if the mode is enabled (and therefore if the additional bars should
-  // be made visible).
-  if (compact_navigation_bar_ && compact_options_bar_) {
-    compact_navigation_bar_->SetVisible(
-        browser_view_->UseCompactNavigationBar());
-    compact_options_bar_->SetVisible(browser_view_->UseCompactNavigationBar());
-
-    if (compact_navigation_bar_->IsVisible()) {
-      gfx::Rect cnav_bar_bounds;
-      gfx::Size cnav_bar_size = compact_navigation_bar_->GetPreferredSize();
-      cnav_bar_bounds.set_origin(tabstrip_bounds.origin());
-      cnav_bar_bounds.set_size(cnav_bar_size);
-      compact_navigation_bar_->SetBoundsRect(cnav_bar_bounds);
-
-      // The options bar is flush right of the tab strip region.
-      gfx::Rect copt_bar_bounds;
-      gfx::Size copt_bar_size = compact_options_bar_->GetPreferredSize();
-      copt_bar_bounds.set_x(std::max(0, tabstrip_bounds.right() -
-                            copt_bar_size.width()));
-      copt_bar_bounds.set_y(tabstrip_origin.y());
-      copt_bar_bounds.set_size(copt_bar_size);
-      compact_options_bar_->SetBoundsRect(copt_bar_bounds);
-
-      // Reduce the bounds of the tab strip accordingly.
-      tabstrip_bounds.set_x(tabstrip_bounds.x() + cnav_bar_size.width() +
-          kCompactNavbarHorizontalPadding);
-      tabstrip_bounds.set_width(std::max(0, tabstrip_bounds.width() -
-          cnav_bar_size.width() - copt_bar_size.width() -
-          kCompactNavbarHorizontalPadding * 2));
-    }
-  }
-
-  if (browser_view_->UseVerticalTabs())
-    vertical_layout_rect_.Inset(tabstrip_bounds.width(), 0, 0, 0);
-
   tabstrip_->SetVisible(true);
   tabstrip_->SetBoundsRect(tabstrip_bounds);
-  return browser_view_->UseVerticalTabs() ?
-      tabstrip_bounds.y() : tabstrip_bounds.bottom();
+  return tabstrip_bounds.bottom();
 }
 
 int BrowserViewLayout::LayoutToolbar(int top) {
   int browser_view_width = vertical_layout_rect_.width();
   bool toolbar_visible = browser_view_->IsToolbarVisible();
-  toolbar_->location_bar()->SetFocusable(toolbar_visible);
+  toolbar_->location_bar()->SetLocationEntryFocusable(toolbar_visible);
   int y = top;
-  if (!browser_view_->UseVerticalTabs()) {
-    y -= ((toolbar_visible || browser_view_->UseCompactNavigationBar()) &&
-           browser_view_->IsTabStripVisible()) ?
-           kToolbarTabStripVerticalOverlap : 0;
-  }
+  y -= (toolbar_visible && browser_view_->IsTabStripVisible()) ?
+        kToolbarTabStripVerticalOverlap : 0;
   int height = toolbar_visible ? toolbar_->GetPreferredSize().height() : 0;
   toolbar_->SetVisible(toolbar_visible);
   toolbar_->SetBounds(vertical_layout_rect_.x(), y, browser_view_width, height);
-
-  // The spacer essentially replaces the toolbar when in compact mode.
-  if (browser_view_->UseCompactNavigationBar()) {
-    compact_spacer_->SetVisible(!toolbar_visible);
-    compact_spacer_->SetBounds(vertical_layout_rect_.x(), y, browser_view_width,
-                       toolbar_visible ? 0 : kCompactNavbarSpacerHeight);
-    height = kCompactNavbarSpacerHeight;
-  }
 
   return y + height;
 }
@@ -455,12 +359,8 @@ int BrowserViewLayout::LayoutBookmarkBar(int top) {
 
   active_bookmark_bar_->set_infobar_visible(InfobarVisible());
   int bookmark_bar_height = active_bookmark_bar_->GetPreferredSize().height();
-  if (!browser_view_->UseCompactNavigationBar()) {
-    y -= views::NonClientFrameView::kClientEdgeThickness +
-        active_bookmark_bar_->GetToolbarOverlap(false);
-  } else {
-    y -= kSpacerBookmarkBarOverlap;
-  }
+  y -= views::NonClientFrameView::kClientEdgeThickness +
+      active_bookmark_bar_->GetToolbarOverlap(false);
   active_bookmark_bar_->SetVisible(true);
   active_bookmark_bar_->SetBounds(vertical_layout_rect_.x(), y,
                                   vertical_layout_rect_.width(),
@@ -482,79 +382,27 @@ int BrowserViewLayout::LayoutInfoBar(int top) {
   return overlapped_top + height;
 }
 
-// |browser_reserved_rect| is in browser_view_ coordinates.
-// |future_source_bounds| is in |source|'s parent coordinates.
-// |future_parent_offset| is required, since parent view is not moved yet.
-// Note that |future_parent_offset| is relative to browser_view_, not to
-// the parent view.
-void BrowserViewLayout::UpdateReservedContentsRect(
-    const gfx::Rect& browser_reserved_rect,
-    TabContentsContainer* source,
-    const gfx::Rect& future_source_bounds,
-    const gfx::Point& future_parent_offset) {
-  gfx::Point resize_corner_origin(browser_reserved_rect.origin());
-  // Convert |resize_corner_origin| from browser_view_ to source's parent
-  // coordinates.
-  views::View::ConvertPointToView(browser_view_, source->parent(),
-                                  &resize_corner_origin);
-  // Create |reserved_rect| in source's parent coordinates.
-  gfx::Rect reserved_rect(resize_corner_origin, browser_reserved_rect.size());
-  // Apply source's parent future offset to it.
-  reserved_rect.Offset(-future_parent_offset.x(), -future_parent_offset.y());
-  if (future_source_bounds.Intersects(reserved_rect)) {
-    // |source| is not properly positioned yet to use ConvertPointToView,
-    // so convert it into |source|'s coordinates manually.
-    reserved_rect.Offset(-future_source_bounds.x(), -future_source_bounds.y());
-  } else {
-    reserved_rect = gfx::Rect();
-  }
-
-  source->SetReservedContentsRect(reserved_rect);
-}
-
 void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
-  // The ultimate idea is to calcualte bounds and reserved areas for all
+  // The ultimate idea is to calculate bounds and reserved areas for all
   // contents views first and then resize them all, so every view
   // (and its contents) is resized and laid out only once.
 
   // The views hierarcy (see browser_view.h for more details):
-  // 1) Sidebar is not allowed:
-  //     contents_split_ -> [contents_container_ | devtools]
-  // 2) Sidebar is allowed:
-  //     contents_split_ ->
-  //         [sidebar_split -> [contents_container_ | sidebar]] | devtools
+  // contents_split_ -> [contents_container_ | devtools]
 
-  gfx::Rect sidebar_split_bounds;
   gfx::Rect contents_bounds;
-  gfx::Rect sidebar_bounds;
   gfx::Rect devtools_bounds;
 
   gfx::Rect contents_split_bounds(vertical_layout_rect_.x(), top,
                                   vertical_layout_rect_.width(),
                                   std::max(0, bottom - top));
-  contents_split_->CalculateChildrenBounds(
-      contents_split_bounds, &sidebar_split_bounds, &devtools_bounds);
   gfx::Point contents_split_offset(
       contents_split_bounds.x() - contents_split_->bounds().x(),
       contents_split_bounds.y() - contents_split_->bounds().y());
-  gfx::Point sidebar_split_offset(contents_split_offset);
-  sidebar_split_offset.Offset(sidebar_split_bounds.x(),
-                              sidebar_split_bounds.y());
 
-  views::SingleSplitView* sidebar_split = browser_view_->sidebar_split_;
-  if (sidebar_split) {
-    DCHECK(sidebar_split == contents_split_->GetChildViewAt(0));
-    sidebar_split->CalculateChildrenBounds(
-        sidebar_split_bounds, &contents_bounds, &sidebar_bounds);
-  } else {
-    contents_bounds = sidebar_split_bounds;
-  }
-
-  // Layout resize corner, sidebar mini tabs and calculate reserved contents
-  // rects here as all contents view bounds are already determined, but not yet
-  // set at this point, so contents will be laid out once at most.
-  // TODO(alekseys): layout sidebar minitabs and adjust reserved rect
-  // accordingly.
+  // Layout resize corner and calculate reserved contents rects here as all
+  // contents view bounds are already determined, but not yet set at this point,
+  // so contents will be laid out once at most.
   gfx::Rect browser_reserved_rect;
   if (!browser_view_->frame_->IsMaximized() &&
       !browser_view_->frame_->IsFullscreen()) {
@@ -569,25 +417,8 @@ void BrowserViewLayout::LayoutTabContents(int top, int bottom) {
     }
   }
 
-  UpdateReservedContentsRect(browser_reserved_rect,
-                             browser_view_->contents_container_,
-                             contents_bounds,
-                             sidebar_split_offset);
-  if (sidebar_split) {
-    UpdateReservedContentsRect(browser_reserved_rect,
-                               browser_view_->sidebar_container_,
-                               sidebar_bounds,
-                               sidebar_split_offset);
-  }
-  UpdateReservedContentsRect(browser_reserved_rect,
-                             browser_view_->devtools_container_,
-                             devtools_bounds,
-                             contents_split_offset);
-
   // Now it's safe to actually resize all contents views in the hierarchy.
   contents_split_->SetBoundsRect(contents_split_bounds);
-  if (sidebar_split)
-    sidebar_split->SetBoundsRect(sidebar_split_bounds);
 }
 
 int BrowserViewLayout::GetTopMarginForActiveContent() {
@@ -596,16 +427,8 @@ int BrowserViewLayout::GetTopMarginForActiveContent() {
     return 0;
   }
 
-  if (contents_split_->GetChildViewAt(1) &&
-      contents_split_->GetChildViewAt(1)->IsVisible())
+  if (contents_split_->child_at(1) && contents_split_->child_at(1)->visible())
     return 0;
-
-  if (SidebarManager::IsSidebarAllowed()) {
-    views::View* sidebar_split = contents_split_->GetChildViewAt(0);
-    if (sidebar_split->GetChildViewAt(1) &&
-        sidebar_split->GetChildViewAt(1)->IsVisible())
-      return 0;
-  }
 
   // Adjust for separator.
   return active_bookmark_bar_->height() -
@@ -613,8 +436,10 @@ int BrowserViewLayout::GetTopMarginForActiveContent() {
 }
 
 int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
+#if !defined(OS_CHROMEOS) || defined(USE_AURA)
   // Re-layout the shelf either if it is visible or if it's close animation
-  // is currently running.
+  // is currently running.  ChromiumOS uses ActiveDownloadsUI instead of
+  // DownloadShelf.
   if (browser_view_->IsDownloadShelfVisible() ||
       (download_shelf_ && download_shelf_->IsClosing())) {
     bool visible = browser()->SupportsWindowFeature(
@@ -627,6 +452,7 @@ int BrowserViewLayout::LayoutDownloadShelf(int bottom) {
     download_shelf_->Layout();
     bottom -= height;
   }
+#endif
   return bottom;
 }
 

@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "remoting/host/capturer.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/protocol/message_decoder.h"
@@ -29,8 +28,8 @@ class EventExecutorMac : public EventExecutor {
   EventExecutorMac(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorMac() {}
 
-  virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
-  virtual void InjectMouseEvent(const MouseEvent* event, Task* done) OVERRIDE;
+  virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
+  virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
 
  private:
   MessageLoop* message_loop_;
@@ -212,50 +211,49 @@ const int kUsVkeyToKeysym[256] = {
   /* VKEY_NONAME */ -1, /* VKEY_PA1 */ -1, /* VKEY_OEM_CLEAR */ -1, -1
 };
 
-void EventExecutorMac::InjectKeyEvent(const KeyEvent* event, Task* done) {
-  base::ScopedTaskRunner done_runner(done);
-
-  int key_code = event->keycode();
+void EventExecutorMac::InjectKeyEvent(const KeyEvent& event) {
+  int key_code = event.keycode();
   if (key_code >= 0 && key_code < 256) {
     int key_sym = kUsVkeyToKeysym[key_code];
     if (key_sym != -1) {
       // We use the deprecated event injection API because the new one doesn't
       // work with switched-out sessions (curtain mode).
-      CGPostKeyboardEvent(0, key_sym, event->pressed());
+      CGError error = CGPostKeyboardEvent(0, key_sym, event.pressed());
+      if (error != kCGErrorSuccess) {
+        LOG(WARNING) << "CGPostKeyboardEvent error " << error;
+      }
     }
   }
 }
 
-void EventExecutorMac::InjectMouseEvent(const MouseEvent* event, Task* done) {
-  base::ScopedTaskRunner done_runner(done);
-
-  if (event->has_x() && event->has_y()) {
+void EventExecutorMac::InjectMouseEvent(const MouseEvent& event) {
+  if (event.has_x() && event.has_y()) {
     // TODO(wez): Checking the validity of the MouseEvent should be done in core
     // cross-platform code, not here!
     // TODO(wez): This code assumes that MouseEvent(0,0) (top-left of client view)
     // corresponds to local (0,0) (top-left of primary monitor).  That won't in
     // general be true on multi-monitor systems, though.
-    gfx::Size size = capturer_->size_most_recent();
-    if (event->x() >= 0 || event->y() >= 0 ||
-        event->x() < size.width() || event->y() < size.height()) {
-      VLOG(3) << "Moving mouse to " << event->x() << "," << event->y();
-      last_x_ = event->x();
-      last_y_ = event->y();
+    SkISize size = capturer_->size_most_recent();
+    if (event.x() >= 0 || event.y() >= 0 ||
+        event.x() < size.width() || event.y() < size.height()) {
+      VLOG(3) << "Moving mouse to " << event.x() << "," << event.y();
+      last_x_ = event.x();
+      last_y_ = event.y();
     } else {
-      VLOG(1) << "Invalid mouse position " << event->x() << "," << event->y();
+      VLOG(1) << "Invalid mouse position " << event.x() << "," << event.y();
     }
   }
-  if (event->has_button() && event->has_button_down()) {
-    if (event->button() >= 1 && event->button() <= 3) {
-      VLOG(2) << "Button " << event->button()
-              << (event->button_down() ? " down" : " up");
-      int button_change = 1 << (event->button() - 1);
-      if (event->button_down())
+  if (event.has_button() && event.has_button_down()) {
+    if (event.button() >= 1 && event.button() <= 3) {
+      VLOG(2) << "Button " << event.button()
+              << (event.button_down() ? " down" : " up");
+      int button_change = 1 << (event.button() - 1);
+      if (event.button_down())
         mouse_buttons_ |= button_change;
       else
         mouse_buttons_ &= ~button_change;
     } else {
-      VLOG(1) << "Unknown mouse button: " << event->button();
+      VLOG(1) << "Unknown mouse button: " << event.button();
     }
   }
   // We use the deprecated CGPostMouseEvent API because we receive low-level
@@ -270,15 +268,22 @@ void EventExecutorMac::InjectMouseEvent(const MouseEvent* event, Task* done) {
     MiddleBit = 1 << (MouseEvent::BUTTON_MIDDLE - 1),
     RightBit = 1 << (MouseEvent::BUTTON_RIGHT - 1)
   };
-  CGPostMouseEvent(position, true, 3,
-                   (mouse_buttons_ & LeftBit) != 0,
-                   (mouse_buttons_ & RightBit) != 0,
-                   (mouse_buttons_ & MiddleBit) != 0);
+  CGError error = CGPostMouseEvent(position, true, 3,
+                                   (mouse_buttons_ & LeftBit) != 0,
+                                   (mouse_buttons_ & RightBit) != 0,
+                                   (mouse_buttons_ & MiddleBit) != 0);
+  if (error != kCGErrorSuccess) {
+    LOG(WARNING) << "CGPostMouseEvent error " << error;
+  }
 
-  if (event->has_wheel_offset_x() && event->has_wheel_offset_y()) {
-    // TODO(jamiewalch): Use either CGPostScrollWheelEvent() or
-    // CGEventCreateScrollWheelEvent() to inject scroll events.
-    NOTIMPLEMENTED() << "No scroll wheel support yet.";
+  if (event.has_wheel_offset_x() && event.has_wheel_offset_y()) {
+    int dx = event.wheel_offset_x();
+    int dy = event.wheel_offset_y();
+    // Note that |dy| (the vertical wheel) is the primary wheel.
+    error = CGPostScrollWheelEvent(2, dy, dx);
+    if (error != kCGErrorSuccess) {
+      LOG(WARNING) << "CGPostScrollWheelEvent error " << error;
+    }
   }
 }
 

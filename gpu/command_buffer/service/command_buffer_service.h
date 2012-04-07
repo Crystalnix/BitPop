@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,10 @@
 #include <set>
 #include <vector>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
-#include "base/task.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 
 namespace gpu {
@@ -21,25 +20,27 @@ namespace gpu {
 // API to manage the put and get pointers.
 class CommandBufferService : public CommandBuffer {
  public:
+  typedef base::Callback<bool(int32)> GetBufferChangedCallback;
   CommandBufferService();
   virtual ~CommandBufferService();
 
   // CommandBuffer implementation:
-  virtual bool Initialize(int32 size);
-  virtual bool Initialize(base::SharedMemory* buffer, int32 size);
-  virtual Buffer GetRingBuffer();
-  virtual State GetState();
-  virtual void Flush(int32 put_offset);
-  virtual State FlushSync(int32 put_offset, int32 last_known_get);
-  virtual void SetGetOffset(int32 get_offset);
-  virtual int32 CreateTransferBuffer(size_t size, int32 id_request);
+  virtual bool Initialize() OVERRIDE;
+  virtual State GetState() OVERRIDE;
+  virtual State GetLastState() OVERRIDE;
+  virtual void Flush(int32 put_offset) OVERRIDE;
+  virtual State FlushSync(int32 put_offset, int32 last_known_get) OVERRIDE;
+  virtual void SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
+  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
+  virtual int32 CreateTransferBuffer(size_t size, int32 id_request) OVERRIDE;
   virtual int32 RegisterTransferBuffer(base::SharedMemory* shared_memory,
                                        size_t size,
-                                       int32 id_request);
-  virtual void DestroyTransferBuffer(int32 id);
-  virtual Buffer GetTransferBuffer(int32 handle);
-  virtual void SetToken(int32 token);
-  virtual void SetParseError(error::Error error);
+                                       int32 id_request) OVERRIDE;
+  virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
+  virtual Buffer GetTransferBuffer(int32 handle) OVERRIDE;
+  virtual void SetToken(int32 token) OVERRIDE;
+  virtual void SetParseError(error::Error error) OVERRIDE;
+  virtual void SetContextLostReason(error::ContextLostReason) OVERRIDE;
 
   // Sets a callback that is called whenever the put offset is changed. When
   // called with sync==true, the callback must not return until some progress
@@ -49,21 +50,28 @@ class CommandBufferService : public CommandBuffer {
   // writer a means of waiting for the reader to make some progress before
   // attempting to write more to the command buffer. Takes ownership of
   // callback.
-  virtual void SetPutOffsetChangeCallback(Callback1<bool>::Type* callback);
-  virtual void SetParseErrorCallback(Callback0::Type* callback);
+  virtual void SetPutOffsetChangeCallback(const base::Closure& callback);
+  // Sets a callback that is called whenever the get buffer is changed.
+  virtual void SetGetBufferChangeCallback(
+      const GetBufferChangedCallback& callback);
+  virtual void SetParseErrorCallback(const base::Closure& callback);
 
  private:
+  int32 ring_buffer_id_;
   Buffer ring_buffer_;
   int32 num_entries_;
   int32 get_offset_;
   int32 put_offset_;
-  scoped_ptr<Callback1<bool>::Type> put_offset_change_callback_;
-  scoped_ptr<Callback0::Type> parse_error_callback_;
+  base::Closure put_offset_change_callback_;
+  GetBufferChangedCallback get_buffer_change_callback_;
+  base::Closure parse_error_callback_;
   std::vector<Buffer> registered_objects_;
   std::set<int32> unused_registered_object_elements_;
   int32 token_;
   uint32 generation_;
   error::Error error_;
+  error::ContextLostReason context_lost_reason_;
+  size_t shared_memory_bytes_allocated_;
 };
 
 }  // namespace gpu

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,39 +17,50 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/sync_global_error.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/global_error.h"
+#include "chrome/browser/ui/global_error_service.h"
+#include "chrome/browser/ui/global_error_service_factory.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "chrome/browser/upgrade_detector.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/profiling.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #endif
 
-#if defined(OS_MACOSX)
-#include "chrome/browser/ui/browser_window.h"
-#endif
-
 #if defined(OS_WIN)
 #include "chrome/browser/enumerate_modules_model_win.h"
 #endif
+
+using content::HostZoomMap;
+using content::UserMetricsAction;
+using content::WebContents;
 
 ////////////////////////////////////////////////////////////////////////////////
 // EncodingMenuModel
@@ -91,12 +102,12 @@ void EncodingMenuModel::Build() {
 }
 
 bool EncodingMenuModel::IsCommandIdChecked(int command_id) const {
-  TabContents* current_tab = browser_->GetSelectedTabContents();
+  WebContents* current_tab = browser_->GetSelectedWebContents();
   if (!current_tab)
     return false;
   EncodingMenuController controller;
   return controller.IsItemChecked(browser_->profile(),
-                                  current_tab->encoding(), command_id);
+                                  current_tab->GetEncoding(), command_id);
 }
 
 bool EncodingMenuModel::IsCommandIdEnabled(int command_id) const {
@@ -187,29 +198,6 @@ void ToolsMenuModel::Build(Browser* browser) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// BookmarkSubMenuModel
-
-BookmarkSubMenuModel::BookmarkSubMenuModel(
-    ui::SimpleMenuModel::Delegate* delegate, Browser* browser)
-    : SimpleMenuModel(delegate) {
-  Build(browser);
-}
-
-BookmarkSubMenuModel::~BookmarkSubMenuModel() {}
-
-void BookmarkSubMenuModel::Build(Browser* browser) {
-  AddCheckItemWithStringId(IDC_SHOW_BOOKMARK_BAR, IDS_SHOW_BOOKMARK_BAR);
-  AddItemWithStringId(IDC_SHOW_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
-  AddItemWithStringId(IDC_IMPORT_SETTINGS, IDS_IMPORT_SETTINGS_TITLE);
-#if defined(OS_MACOSX) || defined(TOOLKIT_VIEWS)
-  AddSeparator();
-#else
-  // TODO: add submenu for bookmarks themselves, restore separator.
-#endif
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
 // WrenchMenuModel
 
 WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
@@ -223,10 +211,11 @@ WrenchMenuModel::WrenchMenuModel(ui::AcceleratorProvider* provider,
 
   tabstrip_model_->AddObserver(this);
 
-  registrar_.Add(this, NotificationType::ZOOM_LEVEL_CHANGED,
-                 Source<HostZoomMap>(browser_->profile()->GetHostZoomMap()));
-  registrar_.Add(this, NotificationType::NAV_ENTRY_COMMITTED,
-                 NotificationService::AllSources());
+  registrar_.Add(
+      this, content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
+      content::Source<HostZoomMap>(browser_->profile()->GetHostZoomMap()));
+  registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+                 content::NotificationService::AllSources());
 }
 
 WrenchMenuModel::~WrenchMenuModel() {
@@ -245,7 +234,8 @@ bool WrenchMenuModel::IsItemForCommandIdDynamic(int command_id) const {
 #endif
          command_id == IDC_SYNC_BOOKMARKS ||
          command_id == IDC_VIEW_BACKGROUND_PAGES ||
-         command_id == IDC_UPGRADE_DIALOG;
+         command_id == IDC_UPGRADE_DIALOG ||
+         command_id == IDC_SHOW_SYNC_SETUP;
 }
 
 string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
@@ -269,15 +259,25 @@ string16 WrenchMenuModel::GetLabelForCommandId(int command_id) const {
       return l10n_util::GetStringFUTF16(IDS_VIEW_BACKGROUND_PAGES,
                                         num_background_pages);
     }
-    case IDC_UPGRADE_DIALOG: {
-#if defined(OS_CHROMEOS)
-      const string16 product_name =
-          l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME);
-#else
-      const string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-#endif
-
-      return l10n_util::GetStringFUTF16(IDS_UPDATE_NOW, product_name);
+    case IDC_UPGRADE_DIALOG:
+      return l10n_util::GetStringUTF16(IDS_UPDATE_NOW);
+    case IDC_SHOW_SYNC_SETUP: {
+      ProfileSyncService* service =
+          ProfileSyncServiceFactory::GetInstance()->GetForProfile(
+              browser_->GetProfile()->GetOriginalProfile());
+      SyncGlobalError* error = service->sync_global_error();
+      if (error && error->HasCustomizedSyncMenuItem())
+        return error->MenuItemLabel();
+      if (service->HasSyncSetupCompleted()) {
+        std::string username = browser_->GetProfile()->GetPrefs()->GetString(
+            prefs::kGoogleServicesUsername);
+        if (!username.empty()) {
+          return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_SYNCED_LABEL,
+                                            UTF8ToUTF16(username));
+        }
+      }
+      return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_PRE_SYNCED_LABEL,
+          l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
     }
     default:
       NOTREACHED();
@@ -296,6 +296,21 @@ bool WrenchMenuModel::GetIconForCommandId(int command_id,
                 UpgradeDetector::UPGRADE_ICON_TYPE_MENU_ICON));
         return true;
       }
+      return false;
+    }
+    case IDC_SHOW_SYNC_SETUP: {
+      ProfileSyncService* service =
+          ProfileSyncServiceFactory::GetInstance()->GetForProfile(
+              browser_->GetProfile()->GetOriginalProfile());
+      SyncGlobalError* error = service->sync_global_error();
+      if (error && error->HasCustomizedSyncMenuItem()) {
+        int icon_id = error->MenuItemIconResourceID();
+        if (icon_id) {
+          *icon = rb.GetNativeImageNamed(icon_id);
+          return true;
+        }
+      }
+      return false;
     }
     default:
       break;
@@ -304,6 +319,27 @@ bool WrenchMenuModel::GetIconForCommandId(int command_id,
 }
 
 void WrenchMenuModel::ExecuteCommand(int command_id) {
+  GlobalError* error = GlobalErrorServiceFactory::GetForProfile(
+      browser_->profile())->GetGlobalErrorByMenuItemCommandID(command_id);
+  if (error) {
+    error->ExecuteMenuItem(browser_);
+    return;
+  }
+
+  if (command_id == IDC_SHOW_SYNC_SETUP) {
+    ProfileSyncService* service =
+        ProfileSyncServiceFactory::GetInstance()->GetForProfile(
+            browser_->GetProfile()->GetOriginalProfile());
+    SyncGlobalError* error = service->sync_global_error();
+    if (error && error->HasCustomizedSyncMenuItem()) {
+      error->ExecuteMenuItem(browser_);
+      return;
+    }
+  }
+
+  if (command_id == IDC_HELP_PAGE)
+    content::RecordAction(UserMetricsAction("ShowHelpTabViaWrenchMenu"));
+
   browser_->ExecuteCommand(command_id);
 }
 
@@ -318,10 +354,11 @@ bool WrenchMenuModel::IsCommandIdChecked(int command_id) const {
 }
 
 bool WrenchMenuModel::IsCommandIdEnabled(int command_id) const {
-  if (command_id == IDC_SHOW_BOOKMARK_BAR) {
-    return !browser_->profile()->GetPrefs()->IsManagedPreference(
-        prefs::kEnableBookmarkBar);
-  }
+  GlobalError* error = GlobalErrorServiceFactory::GetForProfile(
+      browser_->profile())->GetGlobalErrorByMenuItemCommandID(command_id);
+  if (error)
+    return true;
+
   return browser_->command_updater()->IsCommandEnabled(command_id);
 }
 
@@ -374,12 +411,12 @@ void WrenchMenuModel::TabStripModelDeleted() {
   tabstrip_model_ = NULL;
 }
 
-void WrenchMenuModel::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::ZOOM_LEVEL_CHANGED:
-    case NotificationType::NAV_ENTRY_COMMITTED:
+void WrenchMenuModel::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_ZOOM_LEVEL_CHANGED:
+    case content::NOTIFICATION_NAV_ENTRY_COMMITTED:
       UpdateZoomControls();
       break;
     default:
@@ -395,15 +432,15 @@ WrenchMenuModel::WrenchMenuModel()
       tabstrip_model_(NULL) {
 }
 
+#if !defined(OS_CHROMEOS)
 void WrenchMenuModel::Build() {
   AddItemWithStringId(IDC_NEW_TAB, IDS_NEW_TAB);
   AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
-#if defined(OS_CHROMEOS)
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession))
-    AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
-#else
   AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
-#endif
+
+  bookmark_sub_menu_model_.reset(new BookmarkSubMenuModel(this, browser_));
+  AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
+                         bookmark_sub_menu_model_.get());
 
   AddSeparator();
 #if defined(OS_POSIX) && !defined(TOOLKIT_VIEWS)
@@ -451,39 +488,25 @@ void WrenchMenuModel::Build() {
 
   AddSeparator();
 
-  bookmark_sub_menu_model_.reset(new BookmarkSubMenuModel(this, browser_));
-  AddSubMenuWithStringId(IDC_BOOKMARKS_MENU, IDS_BOOKMARKS_MENU,
-                         bookmark_sub_menu_model_.get());
   AddItemWithStringId(IDC_SHOW_HISTORY, IDS_SHOW_HISTORY);
   AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
   AddSeparator();
 
-#if defined(OS_CHROMEOS)
-  AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
-#elif defined(OS_MACOSX)
-  AddItemWithStringId(IDC_OPTIONS, IDS_PREFERENCES);
-#elif defined(TOOLKIT_USES_GTK)
-  string16 preferences = gtk_util::GetStockPreferencesMenuLabel();
-  if (!preferences.empty())
-    AddItem(IDC_OPTIONS, preferences);
-  else
-    AddItemWithStringId(IDC_OPTIONS, IDS_PREFERENCES);
-#else
-  AddItemWithStringId(IDC_OPTIONS, IDS_OPTIONS);
-#endif
+  if (browser_->profile()->GetOriginalProfile()->IsSyncAccessible()) {
+    const string16 short_product_name =
+        l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME);
+    AddItem(IDC_SHOW_SYNC_SETUP, l10n_util::GetStringFUTF16(
+        IDS_SYNC_MENU_PRE_SYNCED_LABEL, short_product_name));
+    AddSeparator();
+  }
 
-#if defined(OS_CHROMEOS)
-  const string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME);
-#else
-  const string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-#endif
-  AddItem(IDC_ABOUT, l10n_util::GetStringFUTF16(IDS_ABOUT, product_name));
+  AddItemWithStringId(IDC_OPTIONS, IDS_SETTINGS);
+  AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
   string16 num_background_pages = base::FormatNumber(
       TaskManager::GetBackgroundPageCount());
   AddItem(IDC_VIEW_BACKGROUND_PAGES, l10n_util::GetStringFUTF16(
       IDS_VIEW_BACKGROUND_PAGES, num_background_pages));
-  AddItem(IDC_UPGRADE_DIALOG, l10n_util::GetStringFUTF16(
-      IDS_UPDATE_NOW, product_name));
+  AddItem(IDC_UPGRADE_DIALOG, l10n_util::GetStringUTF16(IDS_UPDATE_NOW));
   AddItem(IDC_VIEW_INCOMPATIBILITIES, l10n_util::GetStringUTF16(
       IDS_VIEW_INCOMPATIBILITIES));
 
@@ -494,27 +517,36 @@ void WrenchMenuModel::Build() {
 #endif
 
   AddItemWithStringId(IDC_HELP_PAGE, IDS_HELP_PAGE);
-#if defined(OS_CHROMEOS)
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  // Use an icon for IDC_HELP_PAGE menu item.
-  SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE),
-          *rb.GetBitmapNamed(IDR_HELP_MENU));
 
-  // Show IDC_FEEDBACK in top-tier wrench menu for ChromeOS.
-  AddItemWithStringId(IDC_FEEDBACK, IDS_FEEDBACK);
-#endif
+  AddGlobalErrorMenuItems();
 
   if (browser_defaults::kShowExitMenuItem) {
     AddSeparator();
-#if defined(OS_CHROMEOS)
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
-      AddItemWithStringId(IDC_EXIT, IDS_EXIT_GUEST_MODE);
-    } else {
-      AddItemWithStringId(IDC_EXIT, IDS_SIGN_OUT);
-    }
-#else
     AddItemWithStringId(IDC_EXIT, IDS_EXIT);
-#endif
+  }
+}
+#endif // !OS_CHROMEOS
+
+void WrenchMenuModel::AddGlobalErrorMenuItems() {
+  // TODO(sail): Currently we only build the wrench menu once per browser
+  // window. This means that if a new error is added after the menu is built
+  // it won't show in the existing wrench menu. To fix this we need to some
+  // how update the menu if new errors are added.
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  const GlobalErrorService::GlobalErrorList& errors =
+      GlobalErrorServiceFactory::GetForProfile(browser_->profile())->errors();
+  for (GlobalErrorService::GlobalErrorList::const_iterator
+       it = errors.begin(); it != errors.end(); ++it) {
+    GlobalError* error = *it;
+    if (error->HasMenuItem()) {
+      AddItem(error->MenuItemCommandID(), error->MenuItemLabel());
+      int icon_id = error->MenuItemIconResourceID();
+      if (icon_id) {
+        gfx::Image& image = rb.GetImageNamed(icon_id);
+        SetIcon(GetIndexOfCommandId(error->MenuItemCommandID()),
+                *image.ToSkBitmap());
+      }
+    }
   }
 }
 
@@ -538,8 +570,8 @@ void WrenchMenuModel::UpdateZoomControls() {
   bool enable_increment = false;
   bool enable_decrement = false;
   int zoom_percent = 100;
-  if (browser_->GetSelectedTabContents()) {
-    zoom_percent = browser_->GetSelectedTabContents()->GetZoomPercent(
+  if (browser_->GetSelectedWebContents()) {
+    zoom_percent = browser_->GetSelectedWebContents()->GetZoomPercent(
         &enable_increment, &enable_decrement);
   }
   zoom_label_ = l10n_util::GetStringFUTF16(
@@ -547,6 +579,6 @@ void WrenchMenuModel::UpdateZoomControls() {
 }
 
 string16 WrenchMenuModel::GetSyncMenuLabel() const {
-  return sync_ui_util::GetSyncMenuLabel(
-      browser_->profile()->GetOriginalProfile()->GetProfileSyncService());
+  return sync_ui_util::GetSyncMenuLabel(ProfileSyncServiceFactory::
+      GetInstance()->GetForProfile(browser_->profile()->GetOriginalProfile()));
 }

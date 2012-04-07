@@ -5,14 +5,14 @@
 #import "chrome/browser/ui/cocoa/download/download_item_cell.h"
 
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_manager.h"
 #include "chrome/browser/download/download_util.h"
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/download/background_theme.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
 #include "grit/theme_resources.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
@@ -68,6 +68,7 @@ const CGFloat kDropdownArrowHeight = 3;
 const CGFloat kDropdownAreaY = -2;
 
 // Duration of the two-lines-to-one-line animation, in seconds.
+NSTimeInterval kShowStatusDuration = 0.3;
 NSTimeInterval kHideStatusDuration = 0.3;
 
 // Duration of the 'download complete' animation, in seconds.
@@ -75,6 +76,8 @@ const int kCompleteAnimationDuration = 2.5;
 
 // Duration of the 'download interrupted' animation, in seconds.
 const int kInterruptedAnimationDuration = 2.5;
+
+using content::DownloadItem;
 
 // This is a helper class to animate the fading out of the status text.
 @interface DownloadItemCellAnimation : NSAnimation {
@@ -87,6 +90,8 @@ const int kInterruptedAnimationDuration = 2.5;
 
 @interface DownloadItemCell(Private)
 - (void)updateTrackingAreas:(id)sender;
+- (void)setupToggleStatusVisibilityAnimation;
+- (void)showSecondaryTitle;
 - (void)hideSecondaryTitle;
 - (void)animation:(NSAnimation*)animation
        progressed:(NSAnimationProgress)progress;
@@ -107,7 +112,7 @@ const int kInterruptedAnimationDuration = 2.5;
 - (void)setInitialState {
   isStatusTextVisible_ = NO;
   titleY_ = kPrimaryTextPosTop;
-  statusAlpha_ = 1.0;
+  statusAlpha_ = 0.0;
 
   [self setFont:[NSFont systemFontOfSize:
       [NSFont systemFontSizeForControlSize:NSSmallControlSize]]];
@@ -142,8 +147,8 @@ const int kInterruptedAnimationDuration = 2.5;
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   if ([completionAnimation_ isAnimating])
     [completionAnimation_ stopAnimation];
-  if ([hideStatusAnimation_ isAnimating])
-    [hideStatusAnimation_ stopAnimation];
+  if ([toggleStatusVisibilityAnimation_ isAnimating])
+    [toggleStatusVisibilityAnimation_ stopAnimation];
   if (trackingAreaButton_) {
     [[self controlView] removeTrackingArea:trackingAreaButton_];
     trackingAreaButton_.reset();
@@ -165,15 +170,14 @@ const int kInterruptedAnimationDuration = 2.5;
   if (statusText.empty()) {
     // Remove the status text label.
     [self hideSecondaryTitle];
-    isStatusTextVisible_ = NO;
   } else {
     // Set status text.
     NSString* statusString = base::SysUTF16ToNSString(statusText);
     [self setSecondaryTitle:statusString];
-    isStatusTextVisible_ = YES;
+    [self showSecondaryTitle];
   }
 
-  switch (downloadModel->download()->state()) {
+  switch (downloadModel->download()->GetState()) {
     case DownloadItem::COMPLETE:
       // Small downloads may start in a complete state due to asynchronous
       // notifications. In this case, we'll get a second complete notification
@@ -208,7 +212,7 @@ const int kInterruptedAnimationDuration = 2.5;
       percentDone_ = -2;
       break;
     case DownloadItem::IN_PROGRESS:
-      percentDone_ = downloadModel->download()->is_paused() ?
+      percentDone_ = downloadModel->download()->IsPaused() ?
           -1 : downloadModel->download()->PercentComplete();
       break;
     default:
@@ -334,7 +338,7 @@ const int kInterruptedAnimationDuration = 2.5;
 
 - (NSString*)elideTitle:(int)availableWidth {
   NSFont* font = [self font];
-  gfx::Font font_chr(base::SysNSStringToUTF16([font fontName]),
+  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
                      [font pointSize]);
 
   return base::SysUTF16ToNSString(
@@ -343,14 +347,14 @@ const int kInterruptedAnimationDuration = 2.5;
 
 - (NSString*)elideStatus:(int)availableWidth {
   NSFont* font = [self secondaryFont];
-  gfx::Font font_chr(base::SysNSStringToUTF16([font fontName]),
+  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
                      [font pointSize]);
 
   return base::SysUTF16ToNSString(ui::ElideText(
       base::SysNSStringToUTF16([self secondaryTitle]),
       font_chr,
       availableWidth,
-      false));
+      ui::ELIDE_AT_END));
 }
 
 - (ui::ThemeProvider*)backgroundThemeWrappingProvider:
@@ -404,6 +408,12 @@ const int kInterruptedAnimationDuration = 2.5;
           nil];
   NSPoint secondaryPos =
       NSMakePoint(innerFrame.origin.x + kTextPosLeft, kSecondaryTextPosTop);
+
+  gfx::ScopedNSGraphicsContextSaveGState contextSave;
+  NSGraphicsContext* nsContext = [NSGraphicsContext currentContext];
+  CGContextRef cgContext = (CGContextRef)[nsContext graphicsPort];
+  [nsContext setCompositingOperation:NSCompositeSourceOver];
+  CGContextSetAlpha(cgContext, statusAlpha_);
   [secondaryText drawAtPoint:secondaryPos
               withAttributes:secondaryTextAttributes];
 }
@@ -571,8 +581,7 @@ const int kInterruptedAnimationDuration = 2.5;
   [triangle lineToPoint:p3];
   [triangle closePath];
 
-  NSGraphicsContext* context = [NSGraphicsContext currentContext];
-  gfx::ScopedNSGraphicsContextSaveGState scopedGState(context);
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
   scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow.get() setShadowColor:[NSColor whiteColor]];
@@ -593,28 +602,50 @@ const int kInterruptedAnimationDuration = 2.5;
                     kImageHeight);
 }
 
-- (void)hideSecondaryTitle {
-  if (isStatusTextVisible_) {
-    // No core animation -- text in CA layers is not subpixel antialiased :-/
-    hideStatusAnimation_.reset([[DownloadItemCellAnimation alloc]
-        initWithDownloadItemCell:self
-                        duration:kHideStatusDuration
-                  animationCurve:NSAnimationEaseIn]);
-    [hideStatusAnimation_.get() setDelegate:self];
-    [hideStatusAnimation_.get() startAnimation];
+- (void)setupToggleStatusVisibilityAnimation {
+  if (toggleStatusVisibilityAnimation_ &&
+      [toggleStatusVisibilityAnimation_ isAnimating]) {
+    // If the animation is running, cancel the animation and show/hide the
+    // status text immediately.
+    [toggleStatusVisibilityAnimation_ stopAnimation];
+    [self animation:toggleStatusVisibilityAnimation_ progressed:1.0];
+    toggleStatusVisibilityAnimation_.reset();
   } else {
-    // If the download is done so quickly that the status line is never visible,
-    // don't show an animation
-    [self animation:nil progressed:1.0];
+    // Don't use core animation -- text in CA layers is not subpixel antialiased
+    toggleStatusVisibilityAnimation_.reset([[DownloadItemCellAnimation alloc]
+        initWithDownloadItemCell:self
+                        duration:kShowStatusDuration
+                  animationCurve:NSAnimationEaseIn]);
+    [toggleStatusVisibilityAnimation_.get() setDelegate:self];
+    [toggleStatusVisibilityAnimation_.get() startAnimation];
   }
 }
 
+- (void)showSecondaryTitle {
+  if (isStatusTextVisible_)
+    return;
+  isStatusTextVisible_ = YES;
+  [self setupToggleStatusVisibilityAnimation];
+}
+
+- (void)hideSecondaryTitle {
+  if (!isStatusTextVisible_)
+    return;
+  isStatusTextVisible_ = NO;
+  [self setupToggleStatusVisibilityAnimation];
+}
+
 - (void)animation:(NSAnimation*)animation
-      progressed:(NSAnimationProgress)progress {
-  if (animation == hideStatusAnimation_ || animation == nil) {
-    titleY_ = progress*kPrimaryTextOnlyPosTop +
-        (1 - progress)*kPrimaryTextPosTop;
-    statusAlpha_ = 1 - progress;
+   progressed:(NSAnimationProgress)progress {
+  if (animation == toggleStatusVisibilityAnimation_) {
+    if (isStatusTextVisible_) {
+      titleY_ = (1 - progress)*kPrimaryTextOnlyPosTop + kPrimaryTextPosTop;
+      statusAlpha_ = progress;
+    } else {
+      titleY_ = progress*kPrimaryTextOnlyPosTop +
+          (1 - progress)*kPrimaryTextPosTop;
+      statusAlpha_ = 1 - progress;
+    }
     [[self controlView] setNeedsDisplay:YES];
   } else if (animation == completionAnimation_) {
     [[self controlView] setNeedsDisplay:YES];
@@ -622,10 +653,22 @@ const int kInterruptedAnimationDuration = 2.5;
 }
 
 - (void)animationDidEnd:(NSAnimation *)animation {
-  if (animation == hideStatusAnimation_)
-    hideStatusAnimation_.reset();
+  if (animation == toggleStatusVisibilityAnimation_)
+    toggleStatusVisibilityAnimation_.reset();
   else if (animation == completionAnimation_)
     completionAnimation_.reset();
+}
+
+- (BOOL)isStatusTextVisible {
+  return isStatusTextVisible_;
+}
+
+- (CGFloat)statusTextAlpha {
+  return statusAlpha_;
+}
+
+- (void)skipVisibilityAnimation {
+  [toggleStatusVisibilityAnimation_ setCurrentProgress:1.0];
 }
 
 @end

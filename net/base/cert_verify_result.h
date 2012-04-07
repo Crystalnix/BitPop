@@ -8,22 +8,36 @@
 
 #include <vector>
 
-#include "net/base/net_api.h"
+#include "net/base/cert_status_flags.h"
+#include "net/base/net_export.h"
+#include "base/memory/ref_counted.h"
 #include "net/base/x509_cert_types.h"
 
 namespace net {
 
-// The result of certificate verification.  Eventually this may contain the
-// certificate chain that was constructed during certificate verification.
-class NET_API CertVerifyResult {
+class X509Certificate;
+
+// The result of certificate verification.
+class NET_EXPORT CertVerifyResult {
  public:
   CertVerifyResult();
   ~CertVerifyResult();
 
   void Reset();
 
-  // Bitmask of CERT_STATUS_* from net/base/cert_status_flags.h
-  int cert_status;
+  // The certificate and chain that was constructed during verification.
+  // Note that the though the verified certificate will match the originally
+  // supplied certificate, the intermediate certificates stored within may
+  // be substantially different. In the event of a verification failure, this
+  // will contain the chain as supplied by the server. This may be NULL if
+  // running within the sandbox.
+  scoped_refptr<X509Certificate> verified_cert;
+
+  // Bitmask of CERT_STATUS_* from net/base/cert_status_flags.h. Note that
+  // these status flags apply to the certificate chain returned in
+  // |verified_cert|, rather than the originally supplied certificate
+  // chain.
+  CertStatus cert_status;
 
   // Properties of the certificate chain.
   bool has_md5;

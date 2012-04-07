@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
+#include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 
 namespace gpu {
@@ -102,14 +103,18 @@ void ProgramManager::ProgramInfo::Update() {
     DCHECK(length == 0 || name_buffer[length] == '\0');
     if (!IsInvalidPrefix(name_buffer.get(), length)) {
       std::string name;
-      GetCorrectedVariableInfo(false, name_buffer.get(), &name, &size, &type);
+      std::string original_name;
+      GetCorrectedVariableInfo(
+          false, name_buffer.get(), &name, &original_name, &size, &type);
       // TODO(gman): Should we check for error?
       GLint location = glGetAttribLocation(service_id_, name_buffer.get());
       if (location > max_location) {
         max_location = location;
       }
-      attrib_infos_.push_back(VertexAttribInfo(size, type, name, location));
-      max_attrib_name_length_ = std::max(max_attrib_name_length_, length);
+      attrib_infos_.push_back(
+          VertexAttribInfo(size, type, original_name, location));
+      max_attrib_name_length_ = std::max(
+          max_attrib_name_length_, static_cast<GLsizei>(original_name.size()));
     }
   }
 
@@ -142,8 +147,11 @@ void ProgramManager::ProgramInfo::Update() {
     if (!IsInvalidPrefix(name_buffer.get(), length)) {
       GLint location =  glGetUniformLocation(service_id_, name_buffer.get());
       std::string name;
-      GetCorrectedVariableInfo(true, name_buffer.get(), &name, &size, &type);
-      const UniformInfo* info = AddUniformInfo(size, type, location, name);
+      std::string original_name;
+      GetCorrectedVariableInfo(
+          true, name_buffer.get(), &name, &original_name, &size, &type);
+      const UniformInfo* info =
+          AddUniformInfo(size, type, location, name, original_name);
       for (size_t jj = 0; jj < info->element_locations.size(); ++jj) {
         if (info->element_locations[jj] > max_location) {
           max_location = info->element_locations[jj];
@@ -264,8 +272,10 @@ const ProgramManager::ProgramInfo::UniformInfo*
 void ProgramManager::ProgramInfo::GetCorrectedVariableInfo(
     bool use_uniforms,
     const std::string& name, std::string* corrected_name,
+    std::string* original_name,
     GLsizei* size, GLenum* type) const {
   DCHECK(corrected_name);
+  DCHECK(original_name);
   DCHECK(size);
   DCHECK(type);
   const char* kArraySpec = "[0]";
@@ -282,6 +292,7 @@ void ProgramManager::ProgramInfo::GetCorrectedVariableInfo(
         // for that case?
         if (variable_info) {
           *corrected_name = test_name;
+          *original_name = variable_info->name;
           *type = variable_info->type;
           *size = variable_info->size;
           return;
@@ -290,13 +301,15 @@ void ProgramManager::ProgramInfo::GetCorrectedVariableInfo(
     }
   }
   *corrected_name = name;
+  *original_name = name;
 }
 
 const ProgramManager::ProgramInfo::UniformInfo*
     ProgramManager::ProgramInfo::AddUniformInfo(
-        GLsizei size, GLenum type, GLint location, const std::string& name) {
+        GLsizei size, GLenum type, GLint location, const std::string& name,
+        const std::string& original_name) {
   const char* kArraySpec = "[0]";
-  uniform_infos_.push_back(UniformInfo(size, type, name));
+  uniform_infos_.push_back(UniformInfo(size, type, original_name));
   UniformInfo& info = uniform_infos_.back();
   info.element_locations.resize(size);
   info.element_locations[0] = location;
@@ -306,13 +319,6 @@ const ProgramManager::ProgramInfo::UniformInfo*
   info.texture_units.resize(num_texture_units, 0);
 
   if (size > 1) {
-    // Sadly there is no way to tell if this is an array except if the name
-    // has an array string or the size > 1. That means an array of size 1 can
-    // be ambiguous.
-    //
-    // For now we just make sure that if the size is > 1 then the name must have
-    // an array spec.
-
     // Go through the array element locations looking for a match.
     // We can skip the first element because it's the same as the
     // the location without the array operators.
@@ -436,6 +442,88 @@ bool ProgramManager::ProgramInfo::CanLink() const {
     }
   }
   return true;
+}
+
+static uint32 ComputeOffset(const void* start, const void* position) {
+  return static_cast<const uint8*>(position) -
+         static_cast<const uint8*>(start);
+}
+
+void ProgramManager::ProgramInfo::GetProgramInfo(
+    CommonDecoder::Bucket* bucket) const {
+  // NOTE: It seems to me the math in here does not need check for overflow
+  // because the data being calucated from has various small limits. The max
+  // number of attribs + uniforms is somewhere well under 1024. The maximum size
+  // of an identifier is 256 characters.
+  uint32 num_locations = 0;
+  uint32 total_string_size = 0;
+
+  for (size_t ii = 0; ii < attrib_infos_.size(); ++ii) {
+    const VertexAttribInfo& info = attrib_infos_[ii];
+    num_locations += 1;
+    total_string_size += info.name.size();
+  }
+
+  for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
+    const UniformInfo& info = uniform_infos_[ii];
+    num_locations += info.element_locations.size();
+    total_string_size += info.name.size();
+  }
+
+  uint32 num_inputs = attrib_infos_.size() + uniform_infos_.size();
+  uint32 input_size = num_inputs * sizeof(ProgramInput);
+  uint32 location_size = num_locations * sizeof(int32);
+  uint32 size = sizeof(ProgramInfoHeader) +
+      input_size + location_size + total_string_size;
+
+  bucket->SetSize(size);
+  ProgramInfoHeader* header = bucket->GetDataAs<ProgramInfoHeader*>(0, size);
+  ProgramInput* inputs = bucket->GetDataAs<ProgramInput*>(
+      sizeof(ProgramInfoHeader), input_size);
+  int32* locations = bucket->GetDataAs<int32*>(
+      sizeof(ProgramInfoHeader) + input_size, location_size);
+  char* strings = bucket->GetDataAs<char*>(
+      sizeof(ProgramInfoHeader) + input_size + location_size,
+      total_string_size);
+  DCHECK(header);
+  DCHECK(inputs);
+  DCHECK(locations);
+  DCHECK(strings);
+
+  header->link_status = link_status_;
+  header->num_attribs = attrib_infos_.size();
+  header->num_uniforms = uniform_infos_.size();
+
+  for (size_t ii = 0; ii < attrib_infos_.size(); ++ii) {
+    const VertexAttribInfo& info = attrib_infos_[ii];
+    inputs->size = info.size;
+    inputs->type = info.type;
+    inputs->location_offset = ComputeOffset(header, locations);
+    inputs->name_offset = ComputeOffset(header, strings);
+    inputs->name_length = info.name.size();
+    *locations++ = info.location;
+    memcpy(strings, info.name.c_str(), info.name.size());
+    strings += info.name.size();
+    ++inputs;
+  }
+
+  for (size_t ii = 0; ii < uniform_infos_.size(); ++ii) {
+    const UniformInfo& info = uniform_infos_[ii];
+    inputs->size = info.size;
+    inputs->type = info.type;
+    inputs->location_offset = ComputeOffset(header, locations);
+    inputs->name_offset = ComputeOffset(header, strings);
+    inputs->name_length = info.name.size();
+    DCHECK(static_cast<size_t>(info.size) == info.element_locations.size());
+    for (size_t jj = 0; jj < info.element_locations.size(); ++jj) {
+      *locations++ = info.element_locations[jj];
+    }
+    memcpy(strings, info.name.c_str(), info.name.size());
+    strings += info.name.size();
+    ++inputs;
+  }
+
+  DCHECK_EQ(ComputeOffset(header, strings), size);
 }
 
 ProgramManager::ProgramInfo::~ProgramInfo() {}

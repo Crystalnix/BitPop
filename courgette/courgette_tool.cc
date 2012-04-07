@@ -22,6 +22,7 @@
 void PrintHelp() {
   fprintf(stderr,
     "Usage:\n"
+    "  courgette -supported <executable_file>\n"
     "  courgette -dis <executable_file> <binary_assembly_file>\n"
     "  courgette -asm <binary_assembly_file> <executable_file>\n"
     "  courgette -disadj <executable_file> <reference> <binary_assembly_file>\n"
@@ -46,31 +47,21 @@ void Problem(const char* format, ...) {
   exit(1);
 }
 
-std::string ReadOrFail(const std::wstring& file_name, const char* kind) {
-#if defined(OS_WIN)
-  FilePath file_path(file_name);
-#else
-  FilePath file_path(WideToASCII(file_name));
-#endif
+std::string ReadOrFail(const FilePath& file_name, const char* kind) {
   int64 file_size = 0;
-  if (!file_util::GetFileSize(file_path, &file_size))
+  if (!file_util::GetFileSize(file_name, &file_size))
     Problem("Can't read %s file.", kind);
   std::string buffer;
   buffer.reserve(static_cast<size_t>(file_size));
-  if (!file_util::ReadFileToString(file_path, &buffer))
+  if (!file_util::ReadFileToString(file_name, &buffer))
     Problem("Can't read %s file.", kind);
   return buffer;
 }
 
 void WriteSinkToFile(const courgette::SinkStream *sink,
-                     const std::wstring& output_file) {
-#if defined(OS_WIN)
-  FilePath output_path(output_file);
-#else
-  FilePath output_path(WideToASCII(output_file));
-#endif
+                     const FilePath& output_file) {
   int count =
-      file_util::WriteFile(output_path,
+      file_util::WriteFile(output_file,
                            reinterpret_cast<const char*>(sink->Buffer()),
                            static_cast<int>(sink->Length()));
   if (count == -1)
@@ -79,13 +70,14 @@ void WriteSinkToFile(const courgette::SinkStream *sink,
     Problem("Incomplete write.");
 }
 
-void Disassemble(const std::wstring& input_file,
-                 const std::wstring& output_file) {
+void Disassemble(const FilePath& input_file,
+                 const FilePath& output_file) {
   std::string buffer = ReadOrFail(input_file, "input");
 
   courgette::AssemblyProgram* program = NULL;
   const courgette::Status parse_status =
-      courgette::ParseWin32X86PE(buffer.c_str(), buffer.length(), &program);
+      courgette::ParseDetectedExecutable(buffer.c_str(), buffer.length(),
+                                         &program);
 
   if (parse_status != courgette::C_OK)
     Problem("Can't parse input.");
@@ -114,25 +106,60 @@ void Disassemble(const std::wstring& input_file,
   WriteSinkToFile(&sink, output_file);
 }
 
-void DisassembleAndAdjust(const std::wstring& program_file,
-                          const std::wstring& model_file,
-                          const std::wstring& output_file) {
+bool Supported(const FilePath& input_file) {
+  bool result = false;
+
+  std::string buffer = ReadOrFail(input_file, "input");
+
+  courgette::ExecutableType type;
+  size_t detected_length;
+
+  DetectExecutableType(buffer.c_str(), buffer.length(),
+                       &type,
+                       &detected_length);
+
+  // If the detection fails, we just fall back on UNKNOWN
+  std::string format = "Unsupported";
+
+  switch (type)
+  {
+    case courgette::EXE_UNKNOWN:
+      break;
+
+    case courgette::EXE_WIN_32_X86:
+      format = "Windows 32 PE";
+      result = true;
+      break;
+
+    case courgette::EXE_ELF_32_X86:
+      format = "ELF 32 X86";
+      result = true;
+      break;
+  }
+
+  printf("%s Executable\n", format.c_str());
+  return result;
+}
+
+void DisassembleAndAdjust(const FilePath& program_file,
+                          const FilePath& model_file,
+                          const FilePath& output_file) {
   std::string program_buffer = ReadOrFail(program_file, "program");
   std::string model_buffer = ReadOrFail(model_file, "reference");
 
   courgette::AssemblyProgram* program = NULL;
   const courgette::Status parse_program_status =
-      courgette::ParseWin32X86PE(program_buffer.c_str(),
-                                 program_buffer.length(),
-                                 &program);
+      courgette::ParseDetectedExecutable(program_buffer.c_str(),
+                                         program_buffer.length(),
+                                         &program);
   if (parse_program_status != courgette::C_OK)
     Problem("Can't parse program input.");
 
   courgette::AssemblyProgram* model = NULL;
   const courgette::Status parse_model_status =
-      courgette::ParseWin32X86PE(model_buffer.c_str(),
-                                 model_buffer.length(),
-                                 &model);
+      courgette::ParseDetectedExecutable(model_buffer.c_str(),
+                                         model_buffer.length(),
+                                         &model);
   if (parse_model_status != courgette::C_OK)
     Problem("Can't parse model input.");
 
@@ -169,26 +196,26 @@ void DisassembleAndAdjust(const std::wstring& program_file,
 // original file's stream and the new file's stream.  This is completely
 // uninteresting to users, but it is handy for seeing how much each which
 // streams are contributing to the final file size.  Adjustment is optional.
-void DisassembleAdjustDiff(const std::wstring& model_file,
-                           const std::wstring& program_file,
-                           const std::wstring& output_file_root,
+void DisassembleAdjustDiff(const FilePath& model_file,
+                           const FilePath& program_file,
+                           const FilePath& output_file_root,
                            bool adjust) {
   std::string model_buffer = ReadOrFail(model_file, "'old'");
   std::string program_buffer = ReadOrFail(program_file, "'new'");
 
   courgette::AssemblyProgram* model = NULL;
   const courgette::Status parse_model_status =
-      courgette::ParseWin32X86PE(model_buffer.c_str(),
-                                 model_buffer.length(),
-                                 &model);
+      courgette::ParseDetectedExecutable(model_buffer.c_str(),
+                                         model_buffer.length(),
+                                         &model);
   if (parse_model_status != courgette::C_OK)
     Problem("Can't parse model input.");
 
   courgette::AssemblyProgram* program = NULL;
   const courgette::Status parse_program_status =
-      courgette::ParseWin32X86PE(program_buffer.c_str(),
-                                 program_buffer.length(),
-                                 &program);
+      courgette::ParseDetectedExecutable(program_buffer.c_str(),
+                                         program_buffer.length(),
+                                         &program);
   if (parse_program_status != courgette::C_OK)
     Problem("Can't parse program input.");
 
@@ -241,13 +268,15 @@ void DisassembleAdjustDiff(const std::wstring& model_file,
         courgette::CreateBinaryPatch(&old_source, &new_source, &patch_stream);
     if (status != courgette::OK) Problem("-xxx failed.");
 
+    std::string append = std::string("-") + base::IntToString(i);
+
     WriteSinkToFile(&patch_stream,
-                    output_file_root + L"-" + UTF8ToWide(base::IntToString(i)));
+                    output_file_root.InsertBeforeExtensionASCII(append));
   }
 }
 
-void Assemble(const std::wstring& input_file,
-              const std::wstring& output_file) {
+void Assemble(const FilePath& input_file,
+              const FilePath& output_file) {
   std::string buffer = ReadOrFail(input_file, "input");
 
   courgette::SourceStreamSet sources;
@@ -268,9 +297,9 @@ void Assemble(const std::wstring& input_file,
   WriteSinkToFile(&sink, output_file);
 }
 
-void GenerateEnsemblePatch(const std::wstring& old_file,
-                           const std::wstring& new_file,
-                           const std::wstring& patch_file) {
+void GenerateEnsemblePatch(const FilePath& old_file,
+                           const FilePath& new_file,
+                           const FilePath& patch_file) {
   std::string old_buffer = ReadOrFail(old_file, "'old' input");
   std::string new_buffer = ReadOrFail(new_file, "'new' input");
 
@@ -288,26 +317,17 @@ void GenerateEnsemblePatch(const std::wstring& old_file,
   WriteSinkToFile(&patch_stream, patch_file);
 }
 
-void ApplyEnsemblePatch(const std::wstring& old_file,
-                        const std::wstring& patch_file,
-                        const std::wstring& new_file) {
+void ApplyEnsemblePatch(const FilePath& old_file,
+                        const FilePath& patch_file,
+                        const FilePath& new_file) {
   // We do things a little differently here in order to call the same Courgette
   // entry point as the installer.  That entry point point takes file names and
   // returns an status code but does not output any diagnostics.
-#if defined(OS_WIN)
-  FilePath old_path(old_file);
-  FilePath patch_path(patch_file);
-  FilePath new_path(new_file);
-#else
-  FilePath old_path(WideToASCII(old_file));
-  FilePath patch_path(WideToASCII(patch_file));
-  FilePath new_path(WideToASCII(new_file));
-#endif
 
   courgette::Status status =
-      courgette::ApplyEnsemblePatch(old_path.value().c_str(),
-                                    patch_path.value().c_str(),
-                                    new_path.value().c_str());
+      courgette::ApplyEnsemblePatch(old_file.value().c_str(),
+                                    patch_file.value().c_str(),
+                                    new_file.value().c_str());
 
   if (status == courgette::C_OK)
     return;
@@ -354,9 +374,9 @@ void ApplyEnsemblePatch(const std::wstring& old_file,
   Problem("-apply failed.");
 }
 
-void GenerateBSDiffPatch(const std::wstring& old_file,
-                         const std::wstring& new_file,
-                         const std::wstring& patch_file) {
+void GenerateBSDiffPatch(const FilePath& old_file,
+                         const FilePath& new_file,
+                         const FilePath& patch_file) {
   std::string old_buffer = ReadOrFail(old_file, "'old' input");
   std::string new_buffer = ReadOrFail(new_file, "'new' input");
 
@@ -374,9 +394,9 @@ void GenerateBSDiffPatch(const std::wstring& old_file,
   WriteSinkToFile(&patch_stream, patch_file);
 }
 
-void ApplyBSDiffPatch(const std::wstring& old_file,
-                      const std::wstring& patch_file,
-                      const std::wstring& new_file) {
+void ApplyBSDiffPatch(const FilePath& old_file,
+                      const FilePath& patch_file,
+                      const FilePath& new_file) {
   std::string old_buffer = ReadOrFail(old_file, "'old' input");
   std::string patch_buffer = ReadOrFail(patch_file, "'patch' input");
 
@@ -407,6 +427,7 @@ int main(int argc, const char* argv[]) {
       logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
   logging::SetMinLogLevel(logging::LOG_VERBOSE);
 
+  bool cmd_sup = command_line.HasSwitch("supported");
   bool cmd_dis = command_line.HasSwitch("dis");
   bool cmd_asm = command_line.HasSwitch("asm");
   bool cmd_disadj = command_line.HasSwitch("disadj");
@@ -417,14 +438,10 @@ int main(int argc, const char* argv[]) {
   bool cmd_spread_1_adjusted = command_line.HasSwitch("gen1a");
   bool cmd_spread_1_unadjusted = command_line.HasSwitch("gen1u");
 
-  // TODO(evanm): this whole file should use FilePaths instead of wstrings.
-  std::vector<std::wstring> values;
-  for (size_t i = 0; i < command_line.args().size(); ++i) {
-#if defined(OS_WIN)
-    values.push_back(command_line.args()[i]);
-#else
-    values.push_back(ASCIIToWide(command_line.args()[i]));
-#endif
+  std::vector<FilePath> values;
+  const CommandLine::StringVector& args = command_line.GetArgs();
+  for (size_t i = 0; i < args.size(); ++i) {
+    values.push_back(FilePath(args[i]));
   }
 
   // '-repeat=N' is for debugging.  Running many iterations can reveal leaks and
@@ -435,19 +452,24 @@ int main(int argc, const char* argv[]) {
     if (!base::StringToInt(repeat_switch, &repeat_count))
       repeat_count = 1;
 
-  if (cmd_dis + cmd_asm + cmd_disadj + cmd_make_patch + cmd_apply_patch +
-      cmd_make_bsdiff_patch + cmd_apply_bsdiff_patch +
+  if (cmd_sup + cmd_dis + cmd_asm + cmd_disadj + cmd_make_patch +
+      cmd_apply_patch + cmd_make_bsdiff_patch + cmd_apply_bsdiff_patch +
       cmd_spread_1_adjusted + cmd_spread_1_unadjusted
       != 1)
     UsageProblem(
         "Must have exactly one of:\n"
-        "  -asm, -dis, -disadj, -gen or -apply, -genbsdiff or -applybsdiff.");
+        "  -supported -asm, -dis, -disadj, -gen or -apply, -genbsdiff"
+        " or -applybsdiff.");
 
   while (repeat_count-- > 0) {
-    if (cmd_dis) {
-      if (values.size() != 2)
-        UsageProblem("-dis <executable_file> <courgette_file>");
-      Disassemble(values[0], values[1]);
+    if (cmd_sup) {
+      if (values.size() != 1)
+        UsageProblem("-supported <executable_file>");
+      return !Supported(values[0]);
+    } else if (cmd_dis) {
+        if (values.size() != 2)
+          UsageProblem("-dis <executable_file> <courgette_file>");
+        Disassemble(values[0], values[1]);
     } else if (cmd_asm) {
       if (values.size() != 2)
         UsageProblem("-asm <courgette_file_input> <executable_file_output>");
@@ -481,4 +503,6 @@ int main(int argc, const char* argv[]) {
       UsageProblem("No operation specified");
     }
   }
+
+  return 0;
 }

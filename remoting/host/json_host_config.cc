@@ -1,15 +1,16 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/host/json_host_config.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/location.h"
 #include "base/message_loop_proxy.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "base/values.h"
 
 namespace remoting {
@@ -43,7 +44,7 @@ bool JsonHostConfig::Read() {
 
 void JsonHostConfig::Save() {
   message_loop_proxy_->PostTask(
-      FROM_HERE, NewRunnableMethod(this, &JsonHostConfig::DoWrite));
+      FROM_HERE, base::Bind(&JsonHostConfig::DoWrite, this));
 }
 
 void JsonHostConfig::DoWrite() {

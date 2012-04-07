@@ -7,11 +7,11 @@
 #pragma once
 
 #include "base/compiler_specific.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 
 class TabContentsWrapper;
 
-class TabContentsWrapperTestHarness : public RenderViewHostTestHarness {
+class TabContentsWrapperTestHarness : public ChromeRenderViewHostTestHarness {
  public:
   TabContentsWrapperTestHarness();
   virtual ~TabContentsWrapperTestHarness();
@@ -19,8 +19,7 @@ class TabContentsWrapperTestHarness : public RenderViewHostTestHarness {
   virtual TestTabContents* contents() OVERRIDE;
   TabContentsWrapper* contents_wrapper();
 
-  void SetContents(TestTabContents* contents);
-  void SetContentsWrapper(TabContentsWrapper* contents);
+  virtual void SetContents(TestTabContents* contents) OVERRIDE;
 
  protected:
   // testing::Test

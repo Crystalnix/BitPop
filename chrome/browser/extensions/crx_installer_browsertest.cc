@@ -8,7 +8,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/ui_test_utils.h"
 
 class SkBitmap;
 
@@ -30,7 +31,7 @@ class MockInstallUI : public ExtensionInstallUI {
   void OnInstallSuccess(const Extension* extension, SkBitmap* icon) {
     MessageLoopForUI::current()->Quit();
   }
-  void OnInstallFailure(const std::string& error) {
+  void OnInstallFailure(const string16& error) {
     ADD_FAILURE() << "install failed";
     MessageLoopForUI::current()->Quit();
   }
@@ -52,7 +53,8 @@ class ExtensionCrxInstallerTest : public ExtensionBrowserTest {
     MockInstallUI* mock_install_ui = new MockInstallUI(browser()->profile());
 
     scoped_refptr<CrxInstaller> installer(
-        service->MakeCrxInstaller(mock_install_ui /* ownership transferred */));
+        CrxInstaller::Create(service,
+                             mock_install_ui /* ownership transferred */));
 
     installer->set_allow_silent_install(true);
     installer->set_is_gallery_install(true);
@@ -67,13 +69,29 @@ class ExtensionCrxInstallerTest : public ExtensionBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest, Whitelisting) {
-  // We're deprecating this whitelist mechanism, but right now we just assert
-  // that it actually did prompt.
-  EXPECT_TRUE(DidWhitelistInstallPrompt("good.crx",
-                                        "ldnnhddmnhbkjipkidpdiheffobcpfmf"));
 #if !defined(OS_CHROMEOS)
   // An extension with NPAPI should give a prompt.
   EXPECT_TRUE(DidWhitelistInstallPrompt("uitest/plugins.crx",
                                         "hdgllgikmikobbofgnabhfimcfoopgnd"));
 #endif  // !defined(OS_CHROMEOS)
+}
+
+// crbug.com/105728: Fails because the CRX is invalid.
+IN_PROC_BROWSER_TEST_F(ExtensionCrxInstallerTest,
+                       GalleryInstallGetsExperimental) {
+  // We must modify the command line temporarily in order to pack an extension
+  // that requests the experimental permission.
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  CommandLine old_command_line = *command_line;
+  command_line->AppendSwitch(switches::kEnableExperimentalExtensionApis);
+  FilePath crx_path = PackExtension(
+      test_data_dir_.AppendASCII("experimental"));
+  ASSERT_FALSE(crx_path.empty());
+
+  // Now reset the command line so that we are testing specifically whether
+  // installing from webstore enables experimental permissions.
+  *(CommandLine::ForCurrentProcess()) = old_command_line;
+
+  EXPECT_FALSE(InstallExtension(crx_path, 0));
+  EXPECT_TRUE(InstallExtensionFromWebstore(crx_path, 1));
 }

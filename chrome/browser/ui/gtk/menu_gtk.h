@@ -11,8 +11,10 @@
 #include <string>
 #include <vector>
 
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/ui/gtk/g_object_weak_ref.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/gfx/point.h"
 
 class SkBitmap;
@@ -55,7 +57,7 @@ class MenuGtk {
   };
 
   MenuGtk(MenuGtk::Delegate* delegate, ui::MenuModel* model);
-  ~MenuGtk();
+  virtual ~MenuGtk();
 
   // Initialize GTK signal handlers.
   void ConnectSignalHandlers();
@@ -146,7 +148,7 @@ class MenuGtk {
   // Callback for when a menu item is clicked.
   CHROMEGTK_CALLBACK_0(MenuGtk, void, OnMenuItemActivated);
 
-  // Called when one of the buttons are pressed.
+  // Called when one of the buttons is pressed.
   CHROMEGTK_CALLBACK_1(MenuGtk, void, OnMenuButtonPressed, int);
 
   // Called to maybe activate a button if that button isn't supposed to dismiss
@@ -158,6 +160,17 @@ class MenuGtk {
 
   // Sets the activating widget back to a normal appearance.
   CHROMEGTK_CALLBACK_0(MenuGtk, void, OnMenuHidden);
+
+  // Focus out event handler for the menu.
+  CHROMEGTK_CALLBACK_1(MenuGtk, gboolean, OnMenuFocusOut, GdkEventFocus*);
+
+  // Lets dynamic submenu models know when they have been closed.
+  static void OnSubmenuHidden(GtkWidget* widget, gpointer userdata);
+
+  // Scheduled by OnSubmenuHidden() to avoid delivering MenuClosed notifications
+  // before ActivatedAt notifications. |menuitem| is the menu item containing
+  // the submenu that was hidden.
+  static void OnSubmenuHiddenCallback(const GObjectWeakRef& menuitem);
 
   // Sets the enable/disabled state and dynamic labels on our menu items.
   static void SetButtonItemInfo(GtkWidget* button, gpointer userdata);
@@ -187,10 +200,9 @@ class MenuGtk {
   // menu.
   static bool block_activation_;
 
-  // We must free these at shutdown.
-  std::vector<MenuGtk*> submenus_we_own_;
+  ui::GtkSignalRegistrar signal_;
 
-  ScopedRunnableMethodFactory<MenuGtk> factory_;
+  base::WeakPtrFactory<MenuGtk> weak_factory_;
 };
 
 #endif  // CHROME_BROWSER_UI_GTK_MENU_GTK_H_

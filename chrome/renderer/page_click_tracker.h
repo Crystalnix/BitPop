@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
-#include "content/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMEventListener.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 
@@ -28,10 +28,10 @@ class PageClickListener;
 // could easily be changed to report click on any type of WebNode.
 //
 // There is one PageClickTracker per RenderView.
-class PageClickTracker : public RenderViewObserver,
+class PageClickTracker : public content::RenderViewObserver,
                          public WebKit::WebDOMEventListener {
  public:
-  explicit PageClickTracker(RenderView* render_view);
+  explicit PageClickTracker(content::RenderView* render_view);
   virtual ~PageClickTracker();
 
   // Adds/removes a listener for getting notification when an element is
@@ -43,19 +43,17 @@ class PageClickTracker : public RenderViewObserver,
 
  private:
   // RenderView::Observer implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame);
-  virtual void FrameDetached(WebKit::WebFrame* frame);
+  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void FrameDetached(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) OVERRIDE;
 
   // WebKit::WebDOMEventListener implementation.
   virtual void handleEvent(const WebKit::WebDOMEvent& event);
 
-  // Called after the mouse event |event| has been processed by WebKit.
-  virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event);
-
-  // Returns the currently focused node in the associated render view.
-  // That node may be null.
-  WebKit::WebNode GetFocusedNode();
+  // Checks to see if a text field is losing focus and inform listeners if
+  // it is.
+  void HandleTextFieldMaybeLosingFocus(
+      const WebKit::WebNode& newly_clicked_node);
 
   // The last node that was clicked and had focus.
   WebKit::WebNode last_node_clicked_;

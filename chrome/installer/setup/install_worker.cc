@@ -30,13 +30,13 @@
 #include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/installer_state.h"
 #include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/product.h"
 #include "chrome/installer/util/set_reg_value_work_item.h"
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item_list.h"
-
-#include "chrome_tab.h"  // NOLINT
+#include "chrome_frame/chrome_tab.h"
 
 using base::win::RegKey;
 
@@ -125,7 +125,9 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
   // in the Google Update client state key. We do this even for non-MSI
   // managed installs to avoid breaking the edge case whereby an MSI-managed
   // install is updated by a non-msi installer (which would confuse the MSI
-  // machinery if these strings were not also updated).
+  // machinery if these strings were not also updated). The UninstallString
+  // value placed in the client state key is also used by the mini_installer to
+  // locate the setup.exe instance used for binary patching.
   // Do not quote the command line for the MSI invocation.
   FilePath install_path(installer_state.target_path());
   FilePath installer_path(installer_state.GetInstallerDirectory(new_version));
@@ -156,13 +158,13 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
       installer::kUninstallStringField, installer_path.value(), true);
   install_list->AddSetRegValueWorkItem(reg_root, update_state_key,
       installer::kUninstallArgumentsField,
-      uninstall_arguments.command_line_string(), true);
+      uninstall_arguments.GetCommandLineString(), true);
 
   // MSI installations will manage their own uninstall shortcuts.
   if (!installer_state.is_msi() && product.ShouldCreateUninstallEntry()) {
     // We need to quote the command line for the Add/Remove Programs dialog.
     CommandLine quoted_uninstall_cmd(installer_path);
-    DCHECK_EQ(quoted_uninstall_cmd.command_line_string()[0], '"');
+    DCHECK_EQ(quoted_uninstall_cmd.GetCommandLineString()[0], '"');
     quoted_uninstall_cmd.AppendArguments(uninstall_arguments, false);
 
     std::wstring uninstall_reg = browser_dist->GetUninstallRegPath();
@@ -172,7 +174,7 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
         browser_dist->GetAppShortCutName(), true);
     install_list->AddSetRegValueWorkItem(reg_root,
         uninstall_reg, installer::kUninstallStringField,
-        quoted_uninstall_cmd.command_line_string(), true);
+        quoted_uninstall_cmd.GetCommandLineString(), true);
     install_list->AddSetRegValueWorkItem(reg_root,
                                          uninstall_reg,
                                          L"InstallLocation",
@@ -180,11 +182,11 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
                                          true);
 
     // DisplayIcon, NoModify and NoRepair
-    FilePath chrome_icon(install_path.Append(installer::kChromeExe));
-    ShellUtil::GetChromeIcon(product.distribution(), chrome_icon.value());
+    std::wstring chrome_icon = ShellUtil::GetChromeIcon(
+        product.distribution(),
+        install_path.Append(installer::kChromeExe).value());
     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
-                                         L"DisplayIcon", chrome_icon.value(),
-                                         true);
+                                         L"DisplayIcon", chrome_icon, true);
     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
                                          L"NoModify", static_cast<DWORD>(1),
                                          true);
@@ -198,11 +200,11 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
                                          true);
     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
                                          L"Version",
-                                         UTF8ToWide(new_version.GetString()),
+                                         ASCIIToWide(new_version.GetString()),
                                          true);
     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
                                          L"DisplayVersion",
-                                         UTF8ToWide(new_version.GetString()),
+                                         ASCIIToWide(new_version.GetString()),
                                          true);
     install_list->AddSetRegValueWorkItem(reg_root, uninstall_reg,
                                          L"InstallDate",
@@ -211,11 +213,34 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
   }
 }
 
+// Add uninstall-related work items for multi-install scenarios.
+void AddMultiUninstallWorkItems(const InstallerState& installer_state,
+                                const FilePath& setup_path,
+                                const Version& new_version,
+                                WorkItemList* install_list) {
+  DCHECK(installer_state.is_multi_install());
+
+  // The mini_installer needs a reliable way to locate setup.exe for diff
+  // updates. For single-installs, the product's ClientState key is consulted
+  // (Chrome's or Chrome Frame's). For multi-installs, the binaries' key is
+  // used.
+  const HKEY reg_root = installer_state.root_key();
+  std::wstring binaries_state_key(
+      installer_state.multi_package_binaries_distribution()->GetStateKey());
+  FilePath installer_path(
+      installer_state.GetInstallerDirectory(new_version)
+          .Append(setup_path.BaseName()));
+  install_list->AddCreateRegKeyWorkItem(reg_root, binaries_state_key);
+  install_list->AddSetRegValueWorkItem(reg_root, binaries_state_key,
+      installer::kUninstallStringField, installer_path.value(), true);
+}
+
 // Create Version key for a product (if not already present) and sets the new
 // product version as the last step.
 void AddVersionKeyWorkItems(HKEY root,
                             BrowserDistribution* dist,
                             const Version& new_version,
+                            bool add_language_identifier,
                             WorkItemList* list) {
   // Create Version key for each distribution (if not already present) and set
   // the new product version as the last step.
@@ -229,9 +254,20 @@ void AddVersionKeyWorkItems(HKEY root,
                                google_update::kRegOopcrashesField,
                                static_cast<DWORD>(1),
                                false);  // set during first install
+  if (add_language_identifier) {
+    // Write the language identifier of the current translation.  Omaha's set of
+    // languages is a superset of Chrome's set of translations with this one
+    // exception: what Chrome calls "en-us", Omaha calls "en".  sigh.
+    std::wstring language(GetCurrentTranslation());
+    if (LowerCaseEqualsASCII(language, "en-us"))
+      language.resize(2);
+    list->AddSetRegValueWorkItem(root, version_key,
+                                 google_update::kRegLangField, language,
+                                 false);  // do not overwrite language
+  }
   list->AddSetRegValueWorkItem(root, version_key,
                                google_update::kRegVersionField,
-                               UTF8ToWide(new_version.GetString()),
+                               ASCIIToWide(new_version.GetString()),
                                true);  // overwrite version
 }
 
@@ -250,6 +286,106 @@ void AddProductSpecificWorkItems(const InstallationState& original_state,
   }
 }
 
+// Mirror oeminstall the first time anything is installed multi.  There is no
+// need to update the value on future install/update runs since this value never
+// changes.  Note that the value is removed by Google Update after EULA
+// acceptance is processed.
+void AddOemInstallWorkItems(const InstallationState& original_state,
+                            const InstallerState& installer_state,
+                            WorkItemList* install_list) {
+  DCHECK(installer_state.is_multi_install());
+  const bool system_install = installer_state.system_install();
+  if (!original_state.GetProductState(system_install,
+                                      BrowserDistribution::CHROME_BINARIES)) {
+    const HKEY root_key = installer_state.root_key();
+    std::wstring multi_key(
+        installer_state.multi_package_binaries_distribution()->GetStateKey());
+
+    // Copy the value from Chrome unless Chrome isn't installed or being
+    // installed.
+    BrowserDistribution::Type source_type;
+    if (installer_state.FindProduct(BrowserDistribution::CHROME_BROWSER)) {
+      source_type = BrowserDistribution::CHROME_BROWSER;
+    } else if (!installer_state.products().empty()) {
+      // Pick a product, any product.
+      source_type = installer_state.products()[0]->distribution()->GetType();
+    } else {
+      // Nothing is being installed?  Entirely unexpected, so do no harm.
+      LOG(ERROR) << "No products found in AddOemInstallWorkItems";
+      return;
+    }
+    const ProductState* source_product =
+        original_state.GetNonVersionedProductState(system_install, source_type);
+
+    std::wstring oem_install;
+    if (source_product->GetOemInstall(&oem_install)) {
+      VLOG(1) << "Mirroring oeminstall=\"" << oem_install << "\" from "
+              << BrowserDistribution::GetSpecificDistribution(source_type)
+                     ->GetAppShortCutName();
+      install_list->AddCreateRegKeyWorkItem(root_key, multi_key);
+      // Always overwrite an old value.
+      install_list->AddSetRegValueWorkItem(root_key, multi_key,
+                                           google_update::kRegOemInstallField,
+                                           oem_install, true);
+    } else {
+      // Clear any old value.
+      install_list->AddDeleteRegValueWorkItem(
+          root_key, multi_key, google_update::kRegOemInstallField);
+    }
+  }
+}
+
+// Mirror eulaaccepted the first time anything is installed multi.  There is no
+// need to update the value on future install/update runs since
+// GoogleUpdateSettings::SetEULAConsent will modify the value for both the
+// relevant product and for the binaries.
+void AddEulaAcceptedWorkItems(const InstallationState& original_state,
+                              const InstallerState& installer_state,
+                              WorkItemList* install_list) {
+  DCHECK(installer_state.is_multi_install());
+  const bool system_install = installer_state.system_install();
+  if (!original_state.GetProductState(system_install,
+                                      BrowserDistribution::CHROME_BINARIES)) {
+    const HKEY root_key = installer_state.root_key();
+    std::wstring multi_key(
+        installer_state.multi_package_binaries_distribution()->GetStateKey());
+
+    // Copy the value from the product with the greatest value.
+    bool have_eula_accepted = false;
+    BrowserDistribution::Type product_type;
+    DWORD eula_accepted;
+    const Products& products = installer_state.products();
+    for (size_t i = 0, count = products.size(); i != count; ++i) {
+      DWORD dword_value = 0;
+      BrowserDistribution::Type this_type =
+          products[i]->distribution()->GetType();
+      const ProductState* product_state =
+          original_state.GetNonVersionedProductState(
+              system_install, this_type);
+      if (product_state->GetEulaAccepted(&dword_value) &&
+          (!have_eula_accepted || dword_value > eula_accepted)) {
+        have_eula_accepted = true;
+        eula_accepted = dword_value;
+        product_type = this_type;
+      }
+    }
+
+    if (have_eula_accepted) {
+      VLOG(1) << "Mirroring eulaaccepted=" << eula_accepted << " from "
+              << BrowserDistribution::GetSpecificDistribution(product_type)
+                     ->GetAppShortCutName();
+      install_list->AddCreateRegKeyWorkItem(root_key, multi_key);
+      install_list->AddSetRegValueWorkItem(
+          root_key, multi_key, google_update::kRegEULAAceptedField,
+          eula_accepted, true);
+    } else {
+      // Clear any old value.
+      install_list->AddDeleteRegValueWorkItem(
+          root_key, multi_key, google_update::kRegEULAAceptedField);
+    }
+  }
+}
+
 // Adds work items that make registry adjustments for Google Update.
 void AddGoogleUpdateWorkItems(const InstallationState& original_state,
                               const InstallerState& installer_state,
@@ -261,30 +397,44 @@ void AddGoogleUpdateWorkItems(const InstallationState& original_state,
     return;
   }
 
+  const bool system_install = installer_state.system_install();
+  const HKEY root_key = installer_state.root_key();
+  std::wstring multi_key(
+      installer_state.multi_package_binaries_distribution()->GetStateKey());
+
+  // For system-level installs, make sure the ClientStateMedium key for the
+  // binaries exists.
+  if (system_install) {
+    install_list->AddCreateRegKeyWorkItem(
+        root_key,
+        installer_state.multi_package_binaries_distribution()->
+            GetStateMediumKey().c_str());
+  }
+
   // Creating the ClientState key for binaries, if we're migrating to multi then
   // copy over Chrome's brand code if it has one. Chrome Frame currently never
   // has a brand code.
   if (installer_state.state_type() != BrowserDistribution::CHROME_BINARIES) {
-    std::wstring multi_key(
-        installer_state.multi_package_binaries_distribution()->GetStateKey());
     const ProductState* chrome_product_state =
         original_state.GetNonVersionedProductState(
-            installer_state.system_install(),
-            BrowserDistribution::CHROME_BROWSER);
+            system_install, BrowserDistribution::CHROME_BROWSER);
 
     const std::wstring& brand(chrome_product_state->brand());
     if (!brand.empty()) {
-      install_list->AddCreateRegKeyWorkItem(installer_state.root_key(),
-                                            multi_key);
+      install_list->AddCreateRegKeyWorkItem(root_key, multi_key);
       // Write Chrome's brand code to the multi key. Never overwrite the value
       // if one is already present (although this shouldn't happen).
-      install_list->AddSetRegValueWorkItem(installer_state.root_key(),
+      install_list->AddSetRegValueWorkItem(root_key,
                                            multi_key,
                                            google_update::kRegBrandField,
                                            brand,
                                            false);
     }
   }
+
+  AddOemInstallWorkItems(original_state, installer_state, install_list);
+
+  AddEulaAcceptedWorkItems(original_state, installer_state, install_list);
 
   AddUsageStatsWorkItems(original_state, installer_state, install_list);
 
@@ -319,9 +469,11 @@ void AddUsageStatsWorkItems(const InstallationState& original_state,
     std::wstring state_key(
         installer_state.multi_package_binaries_distribution()->GetStateKey());
     install_list->AddCreateRegKeyWorkItem(root_key, state_key);
+    // Overwrite any existing value so that overinstalls (where Omaha writes a
+    // new value into a product's state key) pick up the correct value.
     install_list->AddSetRegValueWorkItem(root_key, state_key,
                                          google_update::kRegUsageStatsField,
-                                         usagestats, false);
+                                         usagestats, true);
 
     for (Products::const_iterator scan = products.begin(), end = products.end();
          scan != end; ++scan) {
@@ -410,14 +562,19 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
   const Products& products = installer_state.products();
 
   // Append work items that will only be executed if this was an update.
-  // We update the 'opv' key with the current version that is active and 'cmd'
-  // key with the rename command to run.
+  // We update the 'opv' value with the current version that is active,
+  // the 'cpv' value with the critical update version (if present), and the
+  // 'cmd' value with the rename command to run.
   {
     scoped_ptr<WorkItemList> in_use_update_work_items(
         WorkItem::CreateConditionalWorkItemList(
             new ConditionRunIfFileExists(new_chrome_exe)));
     in_use_update_work_items->set_log_message("InUseUpdateWorkItemList");
 
+    // |critical_version| will be valid only if this in-use update includes a
+    // version considered critical relative to the version being updated.
+    Version critical_version(installer_state.DetermineCriticalVersion(
+        current_version, new_version));
     FilePath installer_path(installer_state.GetInstallerDirectory(new_version)
         .Append(setup_path.BaseName()));
 
@@ -437,7 +594,15 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
       if (current_version != NULL) {
         in_use_update_work_items->AddSetRegValueWorkItem(root, version_key,
             google_update::kRegOldVersionField,
-            UTF8ToWide(current_version->GetString()), true);
+            ASCIIToWide(current_version->GetString()), true);
+      }
+      if (critical_version.IsValid()) {
+        in_use_update_work_items->AddSetRegValueWorkItem(root, version_key,
+            google_update::kRegCriticalVersionField,
+            ASCIIToWide(critical_version.GetString()), true);
+      } else {
+        in_use_update_work_items->AddDeleteRegValueWorkItem(root, version_key,
+            google_update::kRegCriticalVersionField);
       }
 
       // Adding this registry entry for all products is overkill.
@@ -448,24 +613,32 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
       CommandLine product_rename_cmd(rename);
       products[i]->AppendRenameFlags(&product_rename_cmd);
       in_use_update_work_items->AddSetRegValueWorkItem(
-          root,
-          version_key,
-          google_update::kRegRenameCmdField,
-          product_rename_cmd.command_line_string(),
-          true);
+          root, version_key, google_update::kRegRenameCmdField,
+          product_rename_cmd.GetCommandLineString(), true);
     }
 
     if (current_version != NULL && installer_state.is_multi_install()) {
       BrowserDistribution* dist =
           installer_state.multi_package_binaries_distribution();
+      version_key = dist->GetVersionKey();
       in_use_update_work_items->AddSetRegValueWorkItem(
-          root,
-          dist->GetVersionKey(),
-          google_update::kRegOldVersionField,
-          UTF8ToWide(current_version->GetString()),
-          true);
+          root, version_key, google_update::kRegOldVersionField,
+          ASCIIToWide(current_version->GetString()), true);
+      if (critical_version.IsValid()) {
+        in_use_update_work_items->AddSetRegValueWorkItem(
+            root, version_key, google_update::kRegCriticalVersionField,
+            ASCIIToWide(critical_version.GetString()), true);
+      } else {
+        in_use_update_work_items->AddDeleteRegValueWorkItem(
+            root, version_key, google_update::kRegCriticalVersionField);
+      }
       // TODO(tommi): We should move the rename command here. We also need to
       // update upgrade_utils::SwapNewChromeExeIfPresent.
+    }
+
+    if (installer_state.FindProduct(BrowserDistribution::CHROME_FRAME)) {
+      AddCopyIELowRightsPolicyWorkItems(installer_state,
+                                        in_use_update_work_items.get());
     }
 
     post_install_task_list->AddWorkItem(in_use_update_work_items.release());
@@ -478,14 +651,21 @@ bool AppendPostInstallTasks(const InstallerState& installer_state,
             new Not(new ConditionRunIfFileExists(new_chrome_exe))));
     regular_update_work_items->set_log_message("RegularUpdateWorkItemList");
 
-    // Since this was not an in-use-update, delete 'opv' and 'cmd' keys.
+    // Since this was not an in-use-update, delete 'opv', 'cpv', and 'cmd' keys.
     for (size_t i = 0; i < products.size(); ++i) {
       BrowserDistribution* dist = products[i]->distribution();
       std::wstring version_key(dist->GetVersionKey());
       regular_update_work_items->AddDeleteRegValueWorkItem(root, version_key,
-                                            google_update::kRegOldVersionField);
+          google_update::kRegOldVersionField);
       regular_update_work_items->AddDeleteRegValueWorkItem(root, version_key,
-                                            google_update::kRegRenameCmdField);
+          google_update::kRegCriticalVersionField);
+      regular_update_work_items->AddDeleteRegValueWorkItem(root, version_key,
+          google_update::kRegRenameCmdField);
+    }
+
+    if (installer_state.FindProduct(BrowserDistribution::CHROME_FRAME)) {
+      AddDeleteOldIELowRightsPolicyWorkItems(installer_state,
+                                             regular_update_work_items.get());
     }
 
     post_install_task_list->AddWorkItem(regular_update_work_items.release());
@@ -553,10 +733,22 @@ void AddInstallWorkItems(const InstallationState& original_state,
   FilePath new_chrome_exe(target_path.Append(installer::kChromeNewExe));
 
   install_list->AddDeleteTreeWorkItem(new_chrome_exe, temp_path);
-  install_list->AddCopyTreeWorkItem(
-      src_path.Append(installer::kChromeExe).value(),
-      target_path.Append(installer::kChromeExe).value(),
-      temp_path.value(), WorkItem::NEW_NAME_IF_IN_USE, new_chrome_exe.value());
+
+  if (installer_state.IsChromeFrameRunning(original_state)) {
+    VLOG(1) << "Chrome Frame in use. Copying to new_chrome.exe";
+    install_list->AddCopyTreeWorkItem(
+        src_path.Append(installer::kChromeExe).value(),
+        new_chrome_exe.value(),
+        temp_path.value(),
+        WorkItem::ALWAYS);
+  } else {
+    install_list->AddCopyTreeWorkItem(
+        src_path.Append(installer::kChromeExe).value(),
+        target_path.Append(installer::kChromeExe).value(),
+        temp_path.value(),
+        WorkItem::NEW_NAME_IF_IN_USE,
+        new_chrome_exe.value());
+  }
 
   // Extra executable for 64 bit systems.
   // NOTE: We check for "not disabled" so that if the API call fails, we play it
@@ -594,9 +786,10 @@ void AddInstallWorkItems(const InstallationState& original_state,
       target_path.Append(installer::kDictionaries).value(),
       temp_path.value(), WorkItem::IF_NOT_PRESENT);
 
-  // Delete any old_chrome.exe if present.
+  // Delete any old_chrome.exe if present (ignore failure if it's in use).
   install_list->AddDeleteTreeWorkItem(
-      target_path.Append(installer::kChromeOldExe), temp_path);
+      target_path.Append(installer::kChromeOldExe), temp_path)
+      ->set_ignore_failure(true);
 
   // Copy installer in install directory and
   // add shortcut in Control Panel->Add/Remove Programs.
@@ -604,6 +797,9 @@ void AddInstallWorkItems(const InstallationState& original_state,
                         new_version, install_list);
 
   const HKEY root = installer_state.root_key();
+  // Only set "lang" for user-level installs since for system-level, the install
+  // language may not be related to a given user's runtime language.
+  const bool add_language_identifier = !installer_state.system_install();
 
   const Products& products = installer_state.products();
   for (size_t i = 0; i < products.size(); ++i) {
@@ -613,13 +809,16 @@ void AddInstallWorkItems(const InstallationState& original_state,
                                   install_list, *product);
 
     AddVersionKeyWorkItems(root, product->distribution(), new_version,
-                           install_list);
+                           add_language_identifier, install_list);
   }
 
   if (installer_state.is_multi_install()) {
+    AddMultiUninstallWorkItems(installer_state, setup_path, new_version,
+                               install_list);
+
     AddVersionKeyWorkItems(root,
         installer_state.multi_package_binaries_distribution(), new_version,
-        install_list);
+        add_language_identifier, install_list);
   }
 
   // Add any remaining work items that involve special settings for
@@ -735,17 +934,17 @@ void AddChromeFrameWorkItems(const InstallationState& original_state,
 
       list->AddSetRegValueWorkItem(root, version_key,
                                    google_update::kRegCFTempOptOutCmdField,
-                                   temp_opt_out.command_line_string(), true);
+                                   temp_opt_out.GetCommandLineString(), true);
       list->AddSetRegValueWorkItem(root, version_key,
                                    google_update::kRegCFEndTempOptOutCmdField,
-                                   end_temp_opt_out.command_line_string(),
+                                   end_temp_opt_out.GetCommandLineString(),
                                    true);
       list->AddSetRegValueWorkItem(root, version_key,
                                    google_update::kRegCFOptOutCmdField,
-                                   opt_out.command_line_string(), true);
+                                   opt_out.GetCommandLineString(), true);
       list->AddSetRegValueWorkItem(root, version_key,
                                    google_update::kRegCFOptInCmdField,
-                                   opt_in.command_line_string(), true);
+                                   opt_in.GetCommandLineString(), true);
     } else {
       // If Chrome is not also being uninstalled, we need to update its command
       // line so that it doesn't include uninstalling Chrome Frame now.
@@ -816,63 +1015,71 @@ void AddChromeFrameWorkItems(const InstallationState& original_state,
   }
 }
 
-void AddElevationPolicyWorkItems(const InstallationState& original_state,
-                                 const InstallerState& installer_state,
-                                 const Version& new_version,
-                                 WorkItemList* install_list) {
-  if (!installer_state.is_multi_install()) {
-    VLOG(1) << "Not adding elevation policy for single installs";
-    return;
+namespace {
+
+enum ElevationPolicyId {
+  CURRENT_ELEVATION_POLICY,
+  OLD_ELEVATION_POLICY,
+};
+
+// Although the UUID of the ChromeFrame class is used for the "current" value,
+// this is done only as a convenience; there is no need for the GUID of the Low
+// Rights policies to match the ChromeFrame class's GUID.  Hence, it is safe to
+// use this completely unrelated GUID for the "old" policies.
+const wchar_t kIELowRightsPolicyOldGuid[] =
+    L"{6C288DD7-76FB-4721-B628-56FAC252E199}";
+
+const wchar_t kElevationPolicyKeyPath[] =
+    L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\ElevationPolicy\\";
+
+void GetIELowRightsElevationPolicyKeyPath(ElevationPolicyId policy,
+                                          std::wstring* key_path) {
+  DCHECK(policy == CURRENT_ELEVATION_POLICY || policy == OLD_ELEVATION_POLICY);
+
+  key_path->assign(kElevationPolicyKeyPath,
+                   arraysize(kElevationPolicyKeyPath) - 1);
+  if (policy == CURRENT_ELEVATION_POLICY) {
+    wchar_t cf_clsid[64];
+    int len = StringFromGUID2(__uuidof(ChromeFrame), &cf_clsid[0],
+                              arraysize(cf_clsid));
+    key_path->append(&cf_clsid[0], len - 1);
   } else {
-    const ProductState* cf_state =
-        original_state.GetProductState(installer_state.system_install(),
-                                       BrowserDistribution::CHROME_FRAME);
-    if (cf_state && !cf_state->is_multi_install()) {
-      LOG(WARNING) << "Not adding elevation policy since a single install "
-                      "of CF exists";
-      return;
-    }
+    key_path->append(kIELowRightsPolicyOldGuid,
+                     arraysize(kIELowRightsPolicyOldGuid)- 1);
   }
+}
 
-  FilePath binary_dir(
-      GetChromeInstallPath(installer_state.system_install(),
-          BrowserDistribution::GetSpecificDistribution(
-              BrowserDistribution::CHROME_BINARIES)));
+}  // namespace
 
-  struct {
-    const wchar_t* sub_key;
-    const wchar_t* executable;
-    const FilePath exe_dir;
-  } low_rights_entries[] = {
-    { L"ElevationPolicy\\", kChromeLauncherExe,
-      binary_dir.Append(ASCIIToWide(new_version.GetString())) },
-    { L"DragDrop\\", chrome::kBrowserProcessExecutableName, binary_dir },
-  };
+void AddDeleteOldIELowRightsPolicyWorkItems(
+    const InstallerState& installer_state,
+    WorkItemList* install_list) {
+  DCHECK(install_list);
 
-  bool uninstall = (installer_state.operation() == InstallerState::UNINSTALL);
-  HKEY root = installer_state.root_key();
-  const wchar_t kLowRightsKeyPath[] =
-      L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\";
-  std::wstring key_path(kLowRightsKeyPath);
+  std::wstring key_path;
+  GetIELowRightsElevationPolicyKeyPath(OLD_ELEVATION_POLICY, &key_path);
+  install_list->AddDeleteRegKeyWorkItem(installer_state.root_key(), key_path);
+}
 
-  wchar_t cf_classid[64] = {0};
-  StringFromGUID2(__uuidof(ChromeFrame), cf_classid, arraysize(cf_classid));
+// Adds work items to copy the chrome_launcher IE low rights elevation policy
+// from the primary policy GUID to the "old" policy GUID.  Take care not to
+// perform the copy if there is already an old policy present, as the ones under
+// the main kElevationPolicyGuid would then correspond to an intermediate
+// version (current_version < pv < new_version).
+void AddCopyIELowRightsPolicyWorkItems(const InstallerState& installer_state,
+                                       WorkItemList* install_list) {
+  DCHECK(install_list);
 
-  for (size_t i = 0; i < arraysize(low_rights_entries); ++i) {
-    key_path.append(low_rights_entries[i].sub_key).append(cf_classid);
-    if (uninstall) {
-      install_list->AddDeleteRegKeyWorkItem(root, key_path);
-    } else {
-      install_list->AddCreateRegKeyWorkItem(root, key_path);
-      install_list->AddSetRegValueWorkItem(root, key_path, L"Policy",
-          static_cast<DWORD>(3), true);
-      install_list->AddSetRegValueWorkItem(root, key_path, L"AppName",
-          low_rights_entries[i].executable, true);
-      install_list->AddSetRegValueWorkItem(root, key_path, L"AppPath",
-          low_rights_entries[i].exe_dir.value(), true);
-    }
-    key_path.resize(arraysize(kLowRightsKeyPath) - 1);
-  }
+  std::wstring current_key_path;
+  std::wstring old_key_path;
+
+  GetIELowRightsElevationPolicyKeyPath(CURRENT_ELEVATION_POLICY,
+                                       &current_key_path);
+  GetIELowRightsElevationPolicyKeyPath(OLD_ELEVATION_POLICY, &old_key_path);
+  // Do not clobber existing old policies.
+  install_list->AddCopyRegKeyWorkItem(installer_state.root_key(),
+                                      current_key_path, old_key_path,
+                                      WorkItem::IF_NOT_PRESENT);
 }
 
 void AppendUninstallCommandLineFlags(const InstallerState& installer_state,
@@ -1043,7 +1250,7 @@ void AddQuickEnableWorkItems(const InstallerState& installer_state,
       if (installer_state.verbose_logging())
         cmd_line.AppendSwitch(switches::kVerboseLogging);
       cmd_line.AppendSwitch(switches::kChromeFrameQuickEnable);
-      AppCommand cmd(cmd_line.command_line_string(), true, true);
+      AppCommand cmd(cmd_line.GetCommandLineString(), true, true);
       cmd.AddWorkItems(installer_state.root_key(), cmd_key, work_item_list);
     } else {
       DCHECK(operation == REMOVE_COMMAND);

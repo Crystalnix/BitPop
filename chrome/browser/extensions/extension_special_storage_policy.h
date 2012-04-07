@@ -13,6 +13,7 @@
 #include "googleurl/src/gurl.h"
 #include "webkit/quota/special_storage_policy.h"
 
+class CookieSettings;
 class Extension;
 
 // Special rights are granted to 'extensions' and 'applications'. The
@@ -20,18 +21,23 @@ class Extension;
 // to determine which origins have these rights.
 class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
  public:
-  ExtensionSpecialStoragePolicy();
+  explicit ExtensionSpecialStoragePolicy(CookieSettings* cookie_settings);
 
   // SpecialStoragePolicy methods used by storage subsystems and the browsing
   // data remover. These methods are safe to call on any thread.
-  virtual bool IsStorageProtected(const GURL& origin);
-  virtual bool IsStorageUnlimited(const GURL& origin);
-  virtual bool IsFileHandler(const std::string& extension_id);
+  virtual bool IsStorageProtected(const GURL& origin) OVERRIDE;
+  virtual bool IsStorageUnlimited(const GURL& origin) OVERRIDE;
+  virtual bool IsStorageSessionOnly(const GURL& origin) OVERRIDE;
+  virtual bool IsFileHandler(const std::string& extension_id) OVERRIDE;
+  virtual bool HasSessionOnlyOrigins() OVERRIDE;
 
   // Methods used by the ExtensionService to populate this class.
   void GrantRightsForExtension(const Extension* extension);
   void RevokeRightsForExtension(const Extension* extension);
   void RevokeRightsForAllExtensions();
+
+ protected:
+  virtual ~ExtensionSpecialStoragePolicy();
 
  private:
   class SpecialCollection {
@@ -52,12 +58,13 @@ class ExtensionSpecialStoragePolicy : public quota::SpecialStoragePolicy {
     CachedResults cached_results_;
   };
 
-  virtual ~ExtensionSpecialStoragePolicy();
+  void NotifyChanged();
 
   base::Lock lock_;  // Synchronize all access to the collections.
   SpecialCollection protected_apps_;
   SpecialCollection unlimited_extensions_;
   SpecialCollection file_handler_extensions_;
+  scoped_refptr<CookieSettings> cookie_settings_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_SPECIAL_STORAGE_POLICY_H_

@@ -7,7 +7,6 @@
     {
       'target_name': 'bsdiff',
       'type': 'executable',
-      'msvs_guid': 'E1D0B89E-257B-4BCA-A0C6-A2CD997A2FDC',
       'dependencies': [
         '../bspatch/bspatch.gyp:bspatch',
       ],
@@ -22,9 +21,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

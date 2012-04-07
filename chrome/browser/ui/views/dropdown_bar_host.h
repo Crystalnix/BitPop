@@ -6,18 +6,22 @@
 #define CHROME_BROWSER_UI_VIEWS_DROPDOWN_BAR_HOST_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/common/native_web_keyboard_event.h"
+#include "content/public/browser/native_web_keyboard_event.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/focus/focus_manager.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/focus/focus_manager.h"
 
 class BrowserView;
 class DropdownBarHostDelegate;
 class DropdownBarView;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 namespace ui {
 class SlideAnimation;
@@ -39,7 +43,7 @@ class Widget;
 // obscuring the selection results in FindBar.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class DropdownBarHost : public views::AcceleratorTarget,
+class DropdownBarHost : public ui::AcceleratorTarget,
                         public views::FocusChangeListener,
                         public ui::AnimationDelegate {
  public:
@@ -71,15 +75,18 @@ class DropdownBarHost : public views::AcceleratorTarget,
   virtual void SetDialogPosition(const gfx::Rect& new_pos, bool no_redraw) = 0;
 
   // Overridden from views::FocusChangeListener:
-  virtual void FocusWillChange(views::View* focused_before,
-                               views::View* focused_now);
+  virtual void OnWillChangeFocus(views::View* focused_before,
+                                 views::View* focused_now) OVERRIDE;
+  virtual void OnDidChangeFocus(views::View* focused_before,
+                                views::View* focused_now) OVERRIDE;
 
-  // Overridden from views::AcceleratorTarget:
-  virtual bool AcceleratorPressed(const views::Accelerator& accelerator) = 0;
+  // Overridden from ui::AcceleratorTarget:
+  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) = 0;
+  virtual bool CanHandleAccelerators() const = 0;
 
   // ui::AnimationDelegate implementation:
-  virtual void AnimationProgressed(const ui::Animation* animation);
-  virtual void AnimationEnded(const ui::Animation* animation);
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
 
   // During testing we can disable animations by setting this flag to true,
   // so that opening and closing the dropdown bar is shown instantly, instead of
@@ -141,7 +148,7 @@ class DropdownBarHost : public views::AcceleratorTarget,
 
   // Returns a keyboard event suitable for forwarding.
   NativeWebKeyboardEvent GetKeyboardEvent(
-      const TabContents* contents,
+      const content::WebContents* contents,
       const views::KeyEvent& key_event);
 
   // Returns the animation for the dropdown.

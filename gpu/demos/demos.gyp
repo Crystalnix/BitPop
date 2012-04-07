@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,7 +14,7 @@
       # also be compiled with -fPIC flag. Setting GYP_DEFINES="linux_fpic=1"
       # compiles everything with -fPIC. Disable pepper demos on linux/x64
       # unless linux_fpic is 1.
-      ['OS=="linux" and (target_arch=="x64" or target_arch=="arm") and linux_fpic!=1', {
+      ['os_posix == 1 and OS != "mac" and (target_arch=="x64" or target_arch=="arm") and linux_fpic!=1', {
         'enable_pepper_demos%': 0,
       }, {
         'enable_pepper_demos%': 1,
@@ -41,7 +41,10 @@
         'gpu_demo_framework',
         '../gpu.gyp:command_buffer_client',
         '../gpu.gyp:command_buffer_service',
+        '../gpu.gyp:gles2_implementation',
         '../../base/base.gyp:base',
+        '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../ui/ui.gyp:ui',
       ],
       'sources': [
         'framework/main_exe.cc',
@@ -59,6 +62,7 @@
     },
     {
       'target_name': 'gpu_demo_framework_ppapi',
+      'suppress_wildcard': 1,  # So that 'all' doesn't end up being a bundle.
       'type': 'static_library',
       'dependencies': [
         'gpu_demo_framework',
@@ -107,7 +111,7 @@
           ],
         },
         'conditions': [
-          ['OS=="linux"', {
+          ['os_posix == 1 and OS != "mac"', {
             # -gstabs, used in the official builds, causes an ICE. Remove it.
             'cflags!': ['-gstabs'],
           }],
@@ -200,6 +204,17 @@
       'sources': [
         'gles2_book/example.h',
         'gles2_book/demo_texture_wrap.cc',
+      ],
+    },
+    {
+      'target_name': 'compressed_textures_exe',
+      'type': 'executable',
+      'dependencies': [
+        'gpu_demo_framework_exe',
+        '../../third_party/gles2_book/gles2_book.gyp:es_util',
+      ],
+      'sources': [
+        'compressed_textures/compressed_textures.cc',
       ],
     },
   ],
@@ -301,9 +316,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

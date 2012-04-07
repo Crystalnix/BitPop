@@ -19,9 +19,12 @@
 
 class BookmarkModel;
 class BookmarkNode;
+
+namespace base {
 class DictionaryValue;
 class ListValue;
 class Value;
+}
 
 // BookmarkCodec is responsible for encoding/decoding bookmarks into JSON
 // values. BookmarkCodec is used by BookmarkService.
@@ -39,15 +42,15 @@ class BookmarkCodec {
   // returned object. This is invoked to encode the contents of the bookmark bar
   // model and is currently a convenience to invoking Encode that takes the
   // bookmark bar node and other folder node.
-  Value* Encode(BookmarkModel* model);
+  base::Value* Encode(BookmarkModel* model);
 
   // Encodes the bookmark bar and other folders returning the JSON value. It's
   // up to the caller to delete the returned object.
   // This method is public for use by StarredURLDatabase in migrating the
   // bookmarks out of the database.
-  Value* Encode(const BookmarkNode* bookmark_bar_node,
+  base::Value* Encode(const BookmarkNode* bookmark_bar_node,
                 const BookmarkNode* other_folder_node,
-                const BookmarkNode* synced_folder_node);
+                const BookmarkNode* mobile_folder_node);
 
   // Decodes the previously encoded value to the specified nodes as well as
   // setting |max_node_id| to the greatest node id. Returns true on success,
@@ -56,9 +59,9 @@ class BookmarkCodec {
   // |max_node_id| is set to the max id of the nodes.
   bool Decode(BookmarkNode* bb_node,
               BookmarkNode* other_folder_node,
-              BookmarkNode* synced_folder_node,
+              BookmarkNode* mobile_folder_node,
               int64* max_node_id,
-              const Value& value);
+              const base::Value& value);
 
   // Returns the checksum computed during last encoding/decoding call.
   const std::string& computed_checksum() const { return computed_checksum_; }
@@ -78,7 +81,7 @@ class BookmarkCodec {
   static const char* kRootsKey;
   static const char* kRootFolderNameKey;
   static const char* kOtherBookmarkFolderNameKey;
-  static const char* kSyncedBookmarkFolderNameKey;
+  static const char* kMobileBookmarkFolderNameKey;
   static const char* kVersionKey;
   static const char* kChecksumKey;
   static const char* kIdKey;
@@ -96,22 +99,22 @@ class BookmarkCodec {
  private:
   // Encodes node and all its children into a Value object and returns it.
   // The caller takes ownership of the returned object.
-  Value* EncodeNode(const BookmarkNode* node);
+  base::Value* EncodeNode(const BookmarkNode* node);
 
   // Helper to perform decoding.
   bool DecodeHelper(BookmarkNode* bb_node,
                     BookmarkNode* other_folder_node,
-                    BookmarkNode* synced_folder_node,
-                    const Value& value);
+                    BookmarkNode* mobile_folder_node,
+                    const base::Value& value);
 
   // Decodes the children of the specified node. Returns true on success.
-  bool DecodeChildren(const ListValue& child_value_list,
+  bool DecodeChildren(const base::ListValue& child_value_list,
                       BookmarkNode* parent);
 
   // Reassigns bookmark IDs for all nodes.
   void ReassignIDs(BookmarkNode* bb_node,
                    BookmarkNode* other_node,
-                   BookmarkNode* synced_node);
+                   BookmarkNode* mobile_node);
 
   // Helper to recursively reassign IDs.
   void ReassignIDsHelper(BookmarkNode* node);
@@ -120,7 +123,7 @@ class BookmarkCodec {
   // created appropriately by way of DecodeChildren. If node is NULL a new
   // node is created and added to parent (parent must then be non-NULL),
   // otherwise node is used.
-  bool DecodeNode(const DictionaryValue& value,
+  bool DecodeNode(const base::DictionaryValue& value,
                   BookmarkNode* parent,
                   BookmarkNode* node);
 
@@ -156,7 +159,7 @@ class BookmarkCodec {
   std::set<int64> ids_;
 
   // MD5 context used to compute MD5 hash of all bookmark data.
-  MD5Context md5_context_;
+  base::MD5Context md5_context_;
 
   // Checksums.
   std::string computed_checksum_;

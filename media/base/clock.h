@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+#include "media/base/media_export.h"
 
 namespace media {
 
@@ -24,13 +25,16 @@ namespace media {
 // TODO(scherkus): Clock will some day be responsible for executing callbacks
 // given a media time.  This will be used primarily by video renderers.  For now
 // we'll keep using a poll-and-sleep solution.
-class Clock {
+class MEDIA_EXPORT Clock {
  public:
   // Type for a static function pointer that acts as a time source.
   typedef base::Time(TimeProvider)();
 
   Clock(TimeProvider* time_provider);
   ~Clock();
+
+  // Returns true if the clock is running.
+  bool IsPlaying() const;
 
   // Starts the clock and returns the current media time, which will increase
   // with respect to the current playback rate.

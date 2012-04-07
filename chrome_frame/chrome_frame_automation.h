@@ -15,16 +15,14 @@
 #include "base/memory/scoped_handle.h"
 #include "base/stack_container.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "base/timer.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome_frame/chrome_frame_delegate.h"
-#include "chrome_frame/chrome_frame_histograms.h"
 #include "chrome_frame/plugin_url_request.h"
 #include "chrome_frame/sync_msg_reply_dispatcher.h"
-#include "content/common/page_zoom.h"
+#include "content/public/common/page_zoom.h"
 
 // By a convoluated route, this timeout also winds up being the sync automation
 // message timeout. See the ChromeFrameAutomationProxyImpl ctor and the
@@ -112,14 +110,13 @@ class ChromeFrameLaunchParams :  // NOLINT
                           const FilePath& profile_path,
                           const std::wstring& profile_name,
                           const std::wstring& language,
-                          const std::wstring& extra_arguments,
                           bool incognito, bool widget_mode,
                           bool route_all_top_level_navigations)
     : launch_timeout_(kCommandExecutionTimeout), url_(url),
       referrer_(referrer), profile_path_(profile_path),
       profile_name_(profile_name), language_(language),
-      extra_arguments_(extra_arguments), version_check_(true),
-      incognito_mode_(incognito), is_widget_mode_(widget_mode),
+      version_check_(true), incognito_mode_(incognito),
+      is_widget_mode_(widget_mode),
       route_all_top_level_navigations_(route_all_top_level_navigations) {
   }
 
@@ -162,10 +159,6 @@ class ChromeFrameLaunchParams :  // NOLINT
     return language_;
   }
 
-  const std::wstring& extra_arguments() const {
-    return extra_arguments_;
-  }
-
   bool version_check() const {
     return version_check_;
   }
@@ -198,7 +191,6 @@ class ChromeFrameLaunchParams :  // NOLINT
   FilePath profile_path_;
   std::wstring profile_name_;
   std::wstring language_;
-  std::wstring extra_arguments_;
   bool version_check_;
   bool incognito_mode_;
   bool is_widget_mode_;
@@ -209,7 +201,8 @@ class ChromeFrameLaunchParams :  // NOLINT
 };
 
 // Callback when chrome process launch is complete and automation handshake
-// (Hello message) is established.
+// (Hello message) is established.  All methods are invoked on the automation
+// proxy's worker thread.
 struct DECLSPEC_NOVTABLE LaunchDelegate {  // NOLINT
   virtual void LaunchComplete(ChromeFrameAutomationProxy* proxy,
                               AutomationLaunchResult result) = 0;
@@ -230,9 +223,6 @@ class AutomationProxyCacheEntry
   void AddDelegate(LaunchDelegate* delegate);
   void RemoveDelegate(LaunchDelegate* delegate, base::WaitableEvent* done,
                       bool* was_last_delegate);
-
-  void StartSendUmaInterval(ChromeFrameHistogramSnapshots* snapshots,
-                            int send_interval);
 
   DWORD WaitForThread(DWORD timeout) {  // NOLINT
     DCHECK(thread_.get());
@@ -266,7 +256,6 @@ class AutomationProxyCacheEntry
  protected:
   void CreateProxy(ChromeFrameLaunchParams* params,
                    LaunchDelegate* delegate);
-  void SendUMAData();
 
  protected:
   std::wstring profile_name;
@@ -278,8 +267,6 @@ class AutomationProxyCacheEntry
   // Used for UMA histogram logging to measure the time for the chrome
   // automation server to start;
   base::TimeTicks automation_server_launch_start_time_;
-  ChromeFrameHistogramSnapshots* snapshots_;
-  int uma_send_interval_;
 };
 
 // We must create and destroy automation proxy in a thread with a message loop.
@@ -304,17 +291,10 @@ class ProxyFactory {
   Vector proxies_;
   // Lock if we are going to call GetAutomationServer from more than one thread.
   base::Lock lock_;
-
-  // Gathers histograms to be sent to Chrome.
-  ChromeFrameHistogramSnapshots chrome_frame_histograms_;
-
-  // Interval for sending UMA data
-  int uma_send_interval_;
 };
 
 // Handles all automation requests initiated from the chrome frame objects.
-// These include the chrome tab/chrome frame activex/chrome frame npapi
-// plugin objects.
+// These include the chrome tab/chrome frame activex plugin objects.
 class ChromeFrameAutomationClient
     : public CWindowImpl<ChromeFrameAutomationClient>,
       public TaskMarshallerThroughWindowsMessages<ChromeFrameAutomationClient>,
@@ -403,11 +383,6 @@ class ChromeFrameAutomationClient
   // Url request manager set up.
   void SetUrlFetcher(PluginUrlRequestManager* url_fetcher);
 
-  // Called if the same instance of the ChromeFrameAutomationClient object
-  // is reused.
-  bool Reinitialize(ChromeFrameDelegate* chrome_frame_delegate,
-                    PluginUrlRequestManager* url_fetcher);
-
   // Attaches an existing external tab to this automation client instance.
   void AttachExternalTab(uint64 external_tab_cookie);
   void BlockExternalTab(uint64 cookie);
@@ -418,7 +393,7 @@ class ChromeFrameAutomationClient
   void RemoveBrowsingData(int remove_mask);
 
   // Sets the current zoom level on the tab.
-  void SetZoomLevel(PageZoom::Function zoom_level);
+  void SetZoomLevel(content::PageZoom zoom_level);
 
   // Fires before unload and unload handlers on the page if any. Allows the
   // the website to put up a confirmation dialog on unload.

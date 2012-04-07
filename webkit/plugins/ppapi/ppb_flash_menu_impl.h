@@ -8,41 +8,47 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_point.h"
 #include "ppapi/c/private/ppb_flash_menu.h"
-#include "webkit/plugins/ppapi/callbacks.h"
-#include "webkit/plugins/ppapi/resource.h"
+#include "ppapi/shared_impl/tracked_callback.h"
+#include "ppapi/shared_impl/resource.h"
+#include "ppapi/thunk/ppb_flash_menu_api.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 struct WebMenuItem;
 
 namespace webkit {
 namespace ppapi {
 
-class PPB_Flash_Menu_Impl : public Resource {
+class PPB_Flash_Menu_Impl : public ::ppapi::Resource,
+                            public ::ppapi::thunk::PPB_Flash_Menu_API {
  public:
-  explicit PPB_Flash_Menu_Impl(PluginInstance* instance);
   virtual ~PPB_Flash_Menu_Impl();
 
-  static const PPB_Flash_Menu* GetInterface();
+  static PP_Resource Create(PP_Instance instance,
+                            const PP_Flash_Menu* menu_data);
 
-  bool Init(const PP_Flash_Menu* menu_data);
-
-  // Resource override.
-  virtual PPB_Flash_Menu_Impl* AsPPB_Flash_Menu_Impl();
+  // Resource.
+  virtual ::ppapi::thunk::PPB_Flash_Menu_API* AsPPB_Flash_Menu_API() OVERRIDE;
 
   // PPB_Flash_Menu implementation.
-  int32_t Show(const PP_Point* location,
-               int32_t* selected_id_out,
-               PP_CompletionCallback callback);
+  virtual int32_t Show(const PP_Point* location,
+                       int32_t* selected_id_out,
+                       PP_CompletionCallback callback) OVERRIDE;
 
   // Called to complete |Show()|.
-  void CompleteShow(int32_t result, unsigned action);
+  WEBKIT_PLUGINS_EXPORT void CompleteShow(int32_t result, unsigned action);
 
   typedef std::vector<WebMenuItem> MenuData;
   const MenuData& menu_data() const { return menu_data_; }
 
  private:
+  explicit PPB_Flash_Menu_Impl(PP_Instance instance);
+
+  bool Init(const PP_Flash_Menu* menu_data);
+
   MenuData menu_data_;
 
   // We send |WebMenuItem|s, which have an |unsigned| "action" field instead of
@@ -51,7 +57,7 @@ class PPB_Flash_Menu_Impl : public Resource {
   std::vector<int32_t> menu_id_map_;
 
   // Any pending callback (for |Show()|).
-  scoped_refptr<TrackedCompletionCallback> callback_;
+  scoped_refptr< ::ppapi::TrackedCallback> callback_;
 
   // Output buffers to be filled in when the callback is completed successfully.
   int32_t* selected_id_out_;

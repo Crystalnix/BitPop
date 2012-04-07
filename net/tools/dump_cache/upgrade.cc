@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -212,11 +214,9 @@ bool BaseSM::IsPending() {
 class MasterSM : public BaseSM {
  public:
   MasterSM(const std::wstring& path, HANDLE channel, bool dump_to_disk)
-      : BaseSM(channel), path_(path), dump_to_disk_(dump_to_disk),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            create_callback_(this, &MasterSM::DoCreateEntryComplete)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            write_callback_(this, &MasterSM::DoReadDataComplete)) {
+      : BaseSM(channel),
+        path_(path),
+        dump_to_disk_(dump_to_disk) {
   }
   virtual ~MasterSM() {
     delete writer_;
@@ -266,8 +266,6 @@ class MasterSM : public BaseSM {
   CacheDumpWriter* writer_;
   const std::wstring& path_;
   bool dump_to_disk_;
-  net::CompletionCallbackImpl<MasterSM> create_callback_;
-  net::CompletionCallbackImpl<MasterSM> write_callback_;
 };
 
 void MasterSM::OnIOCompleted(MessageLoopForIO::IOContext* context,
@@ -323,12 +321,12 @@ bool MasterSM::DoInit() {
     writer_ = new DiskDumper(path_);
   } else {
     disk_cache::Backend* cache;
-    TestCompletionCallback cb;
+    net::TestCompletionCallback cb;
     int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
                                             FilePath::FromWStringHack(path_), 0,
                                             false,
                                             cache_thread_.message_loop_proxy(),
-                                            NULL, &cache, &cb);
+                                            NULL, &cache, cb.callback());
     if (cb.GetResult(rv) != net::OK) {
       printf("Unable to initialize new files\n");
       return false;
@@ -396,9 +394,9 @@ void MasterSM::DoGetKey(int bytes_read) {
   std::string key(input_->buffer);
   DCHECK(key.size() == static_cast<size_t>(input_->msg.buffer_bytes - 1));
 
-  int rv = writer_->CreateEntry(key,
-                                reinterpret_cast<disk_cache::Entry**>(&entry_),
-                                &create_callback_);
+  int rv = writer_->CreateEntry(
+      key, reinterpret_cast<disk_cache::Entry**>(&entry_),
+      base::Bind(&MasterSM::DoCreateEntryComplete, base::Unretained(this)));
 
   if (rv != net::ERR_IO_PENDING)
     DoCreateEntryComplete(rv);
@@ -510,8 +508,9 @@ void MasterSM::DoReadData(int bytes_read) {
 
   scoped_refptr<net::WrappedIOBuffer> buf =
       new net::WrappedIOBuffer(input_->buffer);
-  int rv = writer_->WriteEntry(entry_, stream_, offset_, buf, read_size,
-                               &write_callback_);
+  int rv = writer_->WriteEntry(
+      entry_, stream_, offset_, buf, read_size,
+      base::Bind(&MasterSM::DoReadDataComplete, base::Unretained(this)));
   if (rv == net::ERR_IO_PENDING) {
     // We'll continue in DoReadDataComplete.
     read_size_ = read_size;
@@ -549,7 +548,7 @@ void MasterSM::SendQuit() {
 
 void MasterSM::DoEnd() {
   DEBUGMSG("Master DoEnd\n");
-  MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 void MasterSM::Fail() {
@@ -592,24 +591,18 @@ class SlaveSM : public BaseSM {
   void* iterator_;
   Message msg_;  // Used for DoReadDataComplete and DoGetEntryComplete.
 
-  net::CompletionCallbackImpl<SlaveSM> read_callback_;
-  net::CompletionCallbackImpl<SlaveSM> next_callback_;
   scoped_ptr<disk_cache::BackendImpl> cache_;
 };
 
 SlaveSM::SlaveSM(const std::wstring& path, HANDLE channel)
-    : BaseSM(channel), iterator_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &SlaveSM::DoReadDataComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          next_callback_(this, &SlaveSM::DoGetEntryComplete)) {
+    : BaseSM(channel), iterator_(NULL) {
   disk_cache::Backend* cache;
-  TestCompletionCallback cb;
+  net::TestCompletionCallback cb;
   int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
                                           FilePath::FromWStringHack(path), 0,
                                           false,
                                           cache_thread_.message_loop_proxy(),
-                                          NULL, &cache, &cb);
+                                          NULL, &cache, cb.callback());
   if (cb.GetResult(rv) != net::OK) {
     printf("Unable to open cache files\n");
     return;
@@ -733,14 +726,15 @@ int32 SlaveSM::GetEntryFromList() {
 
   int rv;
   if (input_->msg.command == GET_NEXT_ENTRY) {
-    rv = cache_->OpenNextEntry(&iterator_,
-                               reinterpret_cast<disk_cache::Entry**>(&entry_),
-                               &next_callback_);
+    rv = cache_->OpenNextEntry(
+        &iterator_, reinterpret_cast<disk_cache::Entry**>(&entry_),
+        base::Bind(&SlaveSM::DoGetEntryComplete, base::Unretained(this)));
   } else {
     DCHECK(input_->msg.command == GET_PREV_ENTRY);
     rv = cache_->OpenPrevEntry(&iterator_,
                                reinterpret_cast<disk_cache::Entry**>(&entry_),
-                               &next_callback_);
+                               base::Bind(&SlaveSM::DoGetEntryComplete,
+                                          base::Unretained(this)));
   }
   DCHECK_EQ(net::ERR_IO_PENDING, rv);
   return RESULT_PENDING;
@@ -842,7 +836,8 @@ void SlaveSM::DoReadData() {
     scoped_refptr<net::WrappedIOBuffer> buf =
         new net::WrappedIOBuffer(output_->buffer);
     int ret = entry_->ReadData(stream, input_->msg.arg3, buf, size,
-                               &read_callback_);
+                               base::Bind(&SlaveSM::DoReadDataComplete,
+                                          base::Unretained(this)));
     if (ret == net::ERR_IO_PENDING) {
       // Save the message so we can continue were we left.
       msg_ = msg;
@@ -865,7 +860,7 @@ void SlaveSM::DoReadDataComplete(int ret) {
 
 void SlaveSM::DoEnd() {
   DEBUGMSG("\t\t\tSlave DoEnd\n");
-  MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 void SlaveSM::Fail() {

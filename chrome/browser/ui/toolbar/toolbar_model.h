@@ -9,9 +9,17 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/string16.h"
 
 class Browser;
+
+namespace content {
 class NavigationController;
+}
+
+namespace net {
+class X509Certificate;
+}
 
 // This class is the model used by the toolbar, location bar and autocomplete
 // edit.  It populates its states from the current navigation entry retrieved
@@ -35,7 +43,7 @@ class ToolbarModel {
   ~ToolbarModel();
 
   // Returns the text that should be displayed in the location bar.
-  std::wstring GetText() const;
+  string16 GetText() const;
 
   // Returns the security level that the toolbar should display.
   SecurityLevel GetSecurityLevel() const;
@@ -47,18 +55,25 @@ class ToolbarModel {
 
   // Returns the name of the EV cert holder.  Only call this when the security
   // level is EV_SECURE.
-  std::wstring GetEVCertName() const;
+  string16 GetEVCertName() const;
+
+  // Returns whether the URL for the current navigation entry should be
+  // in the location bar.
+  bool ShouldDisplayURL() const;
 
   // Getter/setter of whether the text in location bar is currently being
   // edited.
   void set_input_in_progress(bool value) { input_in_progress_ = value; }
   bool input_in_progress() const { return input_in_progress_; }
 
+  // Returns "<organization_name> [<country>]".
+  static string16 GetEVCertName(const net::X509Certificate& cert);
+
  private:
   // Returns the navigation controller used to retrieve the navigation entry
   // from which the states are retrieved.
   // If this returns NULL, default values are used.
-  NavigationController* GetNavigationController() const;
+  content::NavigationController* GetNavigationController() const;
 
   Browser* browser_;
 

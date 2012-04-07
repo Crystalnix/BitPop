@@ -6,15 +6,17 @@
 #define CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_STORE_WIN_H_
 #pragma once
 
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/password_manager/password_store_default.h"
 
 class LoginDatabase;
 class Profile;
 class WebDataService;
 
-namespace webkit_glue {
+namespace webkit {
+namespace forms {
 struct PasswordForm;
+}
 }
 
 // Windows PasswordStore implementation that uses the default implementation,
@@ -35,7 +37,7 @@ class PasswordStoreWin : public PasswordStoreDefault {
   void ShutdownOnDBThread();
 
   virtual GetLoginsRequest* NewGetLoginsRequest(
-      GetLoginsCallback* callback) OVERRIDE;
+      const GetLoginsCallback& callback) OVERRIDE;
 
   // See PasswordStoreDefault.
   virtual void Shutdown() OVERRIDE;
@@ -43,7 +45,7 @@ class PasswordStoreWin : public PasswordStoreDefault {
 
   // Overridden so that we can save the form for later use.
   virtual void GetLoginsImpl(GetLoginsRequest* request,
-                             const webkit_glue::PasswordForm& form) OVERRIDE;
+                             const webkit::forms::PasswordForm& form) OVERRIDE;
 
   scoped_ptr<DBHandler> db_handler_;
 

@@ -9,10 +9,11 @@
 
 #include "base/string16.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebMenuItemInfo.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 // Container for information about entries in an HTML select popup menu and
 // custom entries of the context menu.
-struct WebMenuItem {
+struct WEBKIT_GLUE_EXPORT WebMenuItem {
   enum Type {
     OPTION    = WebKit::WebMenuItemInfo::Option,
     CHECKABLE_OPTION = WebKit::WebMenuItemInfo::CheckableOption,
@@ -27,6 +28,7 @@ struct WebMenuItem {
   ~WebMenuItem();
 
   string16 label;
+  string16 toolTip;
   Type type;
   unsigned action;
   bool rtl;

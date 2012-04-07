@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -186,6 +186,14 @@ CGColorRef SkColorToCGColorRef(SkColor color) {
                                  SkColorGetA(color) / 255.0);
 }
 
+// Converts ARGB to NSColor.
+NSColor* SkColorToCalibratedNSColor(SkColor color) {
+  return [NSColor colorWithCalibratedRed:SkColorGetR(color) / 255.0
+                                   green:SkColorGetG(color) / 255.0
+                                    blue:SkColorGetB(color) / 255.0
+                                   alpha:SkColorGetA(color) / 255.0];
+}
+
 SkBitmap CGImageToSkBitmap(CGImageRef image) {
   if (!image)
     return SkBitmap();
@@ -299,13 +307,13 @@ SkiaBitLocker::~SkiaBitLocker() {
 void SkiaBitLocker::releaseIfNeeded() {
   if (!cgContext_)
     return;
-  canvas_->getDevice()->accessBitmap(true).unlockPixels();
+  canvas_->getTopDevice()->accessBitmap(true).unlockPixels();
   CGContextRelease(cgContext_);
   cgContext_ = 0;
 }
 
 CGContextRef SkiaBitLocker::cgContext() {
-  SkDevice* device = canvas_->getDevice();
+  SkDevice* device = canvas_->getTopDevice();
   DCHECK(device);
   if (!device)
     return 0;
@@ -326,8 +334,10 @@ CGContextRef SkiaBitLocker::cgContext() {
   // Apply clip in device coordinates.
   CGMutablePathRef clipPath = CGPathCreateMutable();
   SkRegion::Iterator iter(canvas_->getTotalClip());
+  const SkIPoint& pt = device->getOrigin();
   for (; !iter.done(); iter.next()) {
-    const SkIRect& skRect = iter.rect();
+    SkIRect skRect = iter.rect();
+    skRect.offset(-pt);
     CGRect cgRect = SkIRectToCGRect(skRect);
     CGPathAddRect(clipPath, 0, cgRect);
   }
@@ -336,7 +346,8 @@ CGContextRef SkiaBitLocker::cgContext() {
   CGPathRelease(clipPath);
 
   // Apply content matrix.
-  const SkMatrix& skMatrix = canvas_->getTotalMatrix();
+  SkMatrix skMatrix = canvas_->getTotalMatrix();
+  skMatrix.postTranslate(-SkIntToScalar(pt.fX), -SkIntToScalar(pt.fY));
   CGAffineTransform affine = SkMatrixToCGAffineTransform(skMatrix);
   CGContextConcatCTM(cgContext_, affine);
   

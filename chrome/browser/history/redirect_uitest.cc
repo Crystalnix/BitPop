@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
@@ -131,7 +132,10 @@ TEST_F(RedirectTest, FLAKY_ClientEmptyReferer) {
 
 // Tests to make sure a location change when a pending redirect exists isn't
 // flagged as a redirect.
-#if defined(OS_MACOSX)
+#if defined(USE_AURA)
+// http://crbug.com/104396
+#define MAYBE_ClientCancelled FAILS_ClientCancelled
+#elif defined(OS_MACOSX)
 // SimulateOSClick is broken on the Mac: http://crbug.com/45162
 #define MAYBE_ClientCancelled DISABLED_ClientCancelled
 #elif defined(OS_WIN)
@@ -166,7 +170,7 @@ TEST_F(RedirectTest, MAYBE_ClientCancelled) {
   ASSERT_TRUE(window->GetViewBounds(VIEW_ID_TAB_CONTAINER, &tab_view_bounds,
                                     true));
   ASSERT_TRUE(window->SimulateOSClick(tab_view_bounds.CenterPoint(),
-                                      ui::EF_LEFT_BUTTON_DOWN));
+                                      ui::EF_LEFT_MOUSE_BUTTON));
   EXPECT_TRUE(tab_proxy->WaitForNavigation(last_nav_time));
 
   std::vector<GURL> redirects;
@@ -210,7 +214,7 @@ TEST_F(RedirectTest, ClientServerServer) {
   NavigateToURL(first_url);
 
   for (int i = 0; i < 10; ++i) {
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
+    base::PlatformThread::Sleep(TestTimeouts::action_timeout());
     scoped_refptr<TabProxy> tab_proxy(GetActiveTab());
     ASSERT_TRUE(tab_proxy.get());
     ASSERT_TRUE(tab_proxy->GetRedirectsFrom(first_url, &redirects));
@@ -318,7 +322,7 @@ TEST_F(RedirectTest,
   std::wstring final_url_title = UTF8ToWide("Title Of Awesomeness");
   // Wait till the final page has been loaded.
   for (int i = 0; i < 10; ++i) {
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
+    base::PlatformThread::Sleep(TestTimeouts::action_timeout());
     scoped_refptr<TabProxy> tab_proxy(GetActiveTab());
     ASSERT_TRUE(tab_proxy.get());
     ASSERT_TRUE(tab_proxy->GetTabTitle(&tab_title));

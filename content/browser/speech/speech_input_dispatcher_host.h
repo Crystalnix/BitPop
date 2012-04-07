@@ -6,37 +6,46 @@
 #define CONTENT_BROWSER_SPEECH_SPEECH_INPUT_DISPATCHER_HOST_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/speech/speech_input_manager.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/browser_message_filter.h"
+#include "net/url_request/url_request_context_getter.h"
 
 struct SpeechInputHostMsg_StartRecognition_Params;
+
+namespace content {
+class ResourceContext;
+}
 
 namespace speech_input {
 
 // SpeechInputDispatcherHost is a delegate for Speech API messages used by
 // RenderMessageFilter.
 // It's the complement of SpeechInputDispatcher (owned by RenderView).
-class SpeechInputDispatcherHost : public BrowserMessageFilter,
+class SpeechInputDispatcherHost : public content::BrowserMessageFilter,
                                   public SpeechInputManager::Delegate {
  public:
   class SpeechInputCallers;
 
-  explicit SpeechInputDispatcherHost(int render_process_id);
+  SpeechInputDispatcherHost(
+      int render_process_id,
+      net::URLRequestContextGetter* context_getter,
+      SpeechInputPreferences* speech_input_preferences,
+      const content::ResourceContext* resource_context);
 
   // SpeechInputManager::Delegate methods.
-  virtual void SetRecognitionResult(int caller_id,
-                                    const SpeechInputResultArray& result);
-  virtual void DidCompleteRecording(int caller_id);
-  virtual void DidCompleteRecognition(int caller_id);
+  virtual void SetRecognitionResult(
+      int caller_id,
+      const content::SpeechInputResult& result) OVERRIDE;
+  virtual void DidCompleteRecording(int caller_id) OVERRIDE;
+  virtual void DidCompleteRecognition(int caller_id) OVERRIDE;
 
-  // BrowserMessageFilter implementation.
+  // content::BrowserMessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
-  // Singleton accessor setter useful for tests.
-  static void set_manager_accessor(SpeechInputManager::AccessorMethod* method) {
-    manager_accessor_ = method;
-  }
+  // Singleton manager setter useful for tests.
+  CONTENT_EXPORT static void set_manager(SpeechInputManager* manager);
 
  private:
   virtual ~SpeechInputDispatcherHost();
@@ -53,7 +62,11 @@ class SpeechInputDispatcherHost : public BrowserMessageFilter,
   int render_process_id_;
   bool may_have_pending_requests_;  // Set if we received any speech IPC request
 
-  static SpeechInputManager::AccessorMethod* manager_accessor_;
+  scoped_refptr<net::URLRequestContextGetter> context_getter_;
+  scoped_refptr<SpeechInputPreferences> speech_input_preferences_;
+  const content::ResourceContext* resource_context_;
+
+  static SpeechInputManager* manager_;
 
   DISALLOW_COPY_AND_ASSIGN(SpeechInputDispatcherHost);
 };

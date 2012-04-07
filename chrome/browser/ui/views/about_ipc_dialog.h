@@ -10,26 +10,22 @@
 
 #include <atlbase.h>
 #include <atlapp.h>
-#include <atlwin.h>
 #include <atlctrls.h>
+#include <atlwin.h>
 
 #include "base/memory/singleton.h"
 #include "ipc/ipc_logging.h"
-#include "views/controls/button/button.h"
-#include "views/controls/table/table_view.h"
-#include "views/window/dialog_delegate.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/window/dialog_delegate.h"
 
-
-class Profile;
 namespace views {
 class NativeViewHost;
 class TextButton;
 }  // namespace views
 
-class AboutIPCDialog : public views::DialogDelegate,
+class AboutIPCDialog : public views::DialogDelegateView,
                        public views::ButtonListener,
-                       public IPC::Logging::Consumer,
-                       public views::View {
+                       public IPC::Logging::Consumer {
  public:
   // This dialog is a singleton. If the dialog is already opened, it won't do
   // anything, so you can just blindly call this function all you want.
@@ -46,20 +42,21 @@ class AboutIPCDialog : public views::DialogDelegate,
   void SetupControls();
 
   // views::View overrides.
-  virtual gfx::Size GetPreferredSize();
-  virtual views::View* GetContentsView();
-  virtual int GetDialogButtons() const;
-  virtual std::wstring GetWindowTitle() const;
-  virtual void Layout();
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual views::View* GetContentsView() OVERRIDE;
+  virtual int GetDialogButtons() const OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual void Layout() OVERRIDE;
 
   // IPC::Logging::Consumer implementation.
-  virtual void Log(const IPC::LogData& data);
+  virtual void Log(const IPC::LogData& data) OVERRIDE;
 
-  // views::WindowDelegate (via view::DialogDelegate).
-  virtual bool CanResize() const;
+  // views::WidgetDelegate (via views::DialogDelegateView).
+  virtual bool CanResize() const OVERRIDE;
 
   // views::ButtonListener.
-  virtual void ButtonPressed(views::Button* button, const views::Event& event);
+  virtual void ButtonPressed(views::Button* button,
+                             const views::Event& event) OVERRIDE;
 
   WTL::CListViewCtrl message_list_;
 

@@ -7,37 +7,35 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/path_service.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/browser_process.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace printing {
 
-// A helper method that opens the printer management dialog.
-class OpenPrintersDialogTask : public Task {
- public:
-  OpenPrintersDialogTask() {}
+// A helper callback that opens the printer management dialog.
+void OpenPrintersDialogCallback() {
+  FilePath sys_dir;
+  PathService::Get(base::DIR_SYSTEM, &sys_dir);
+  FilePath rundll32 = sys_dir.AppendASCII("rundll32.exe");
+  FilePath shell32dll = sys_dir.AppendASCII("shell32.dll");
 
-  virtual void Run() {
-    FilePath sys_dir;
-    PathService::Get(base::DIR_SYSTEM, &sys_dir);
-    FilePath rundll32 = sys_dir.AppendASCII("rundll32.exe");
-    FilePath shell32dll = sys_dir.AppendASCII("shell32.dll");
-
-    std::wstring args(shell32dll.value());
-    args.append(L",SHHelpShortcuts_RunDLL PrintersFolder");
-    ShellExecute(NULL, L"open", rundll32.value().c_str(), args.c_str(), NULL,
-                 SW_SHOWNORMAL);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(OpenPrintersDialogTask);
-};
+  std::wstring args(shell32dll.value());
+  args.append(L",SHHelpShortcuts_RunDLL PrintersFolder");
+  ShellExecute(NULL, L"open", rundll32.value().c_str(), args.c_str(), NULL,
+               SW_SHOWNORMAL);
+}
 
 void PrinterManagerDialog::ShowPrinterManagerDialog() {
-  g_browser_process->file_thread()->message_loop()->PostTask(
-      FROM_HERE, new OpenPrintersDialogTask);
+  BrowserThread::PostTask(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(OpenPrintersDialogCallback));
 }
 
 }  // namespace printing

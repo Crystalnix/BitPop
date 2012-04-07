@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,15 @@
 #define CHROME_BROWSER_PASSWORD_MANAGER_PASSWORD_FORM_DATA_H_
 #pragma once
 
+#include <ostream>
+
 #include "testing/gmock/include/gmock/gmock.h"
-#include "webkit/glue/password_form.h"
+#include "webkit/forms/password_form.h"
 
 // Struct used for creation of PasswordForms from static arrays of data.
 // Note: This is only meant to be used in unit test.
 struct PasswordFormData {
-  const webkit_glue::PasswordForm::Scheme scheme;
+  const webkit::forms::PasswordForm::Scheme scheme;
   const char* signon_realm;
   const char* origin;
   const char* action;
@@ -28,18 +30,23 @@ struct PasswordFormData {
 
 // Creates and returns a new PasswordForm built from form_data. Caller is
 // responsible for deleting the object when finished with it.
-webkit_glue::PasswordForm* CreatePasswordFormFromData(
+webkit::forms::PasswordForm* CreatePasswordFormFromData(
     const PasswordFormData& form_data);
 
 // Checks whether two vectors of PasswordForms contain equivalent elements,
 // regardless of order.
 bool ContainsSamePasswordFormsPtr(
-    const std::vector<webkit_glue::PasswordForm*>& first,
-    const std::vector<webkit_glue::PasswordForm*>& second);
+    const std::vector<webkit::forms::PasswordForm*>& first,
+    const std::vector<webkit::forms::PasswordForm*>& second);
 
 bool ContainsSamePasswordForms(
-    std::vector<webkit_glue::PasswordForm>& first,
-    std::vector<webkit_glue::PasswordForm>& second);
+    std::vector<webkit::forms::PasswordForm>& first,
+    std::vector<webkit::forms::PasswordForm>& second);
+
+// Pretty-prints the contents of a PasswordForm.
+// TODO(sync): This file must eventually be refactored away -- crbug.com/87185.
+std::ostream& operator<<(std::ostream& os,
+                         const webkit::forms::PasswordForm& form);
 
 // This gmock matcher is used to check that the |arg| contains exactly the same
 // PasswordForms as |forms|, regardless of order.

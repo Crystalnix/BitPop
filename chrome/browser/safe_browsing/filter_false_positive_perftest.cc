@@ -56,7 +56,6 @@
 #include <fstream>
 #include <vector>
 
-#include "app/sql/statement.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
@@ -65,13 +64,15 @@
 #include "base/path_service.h"
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
+#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/time.h"
-#include "crypto/sha2.h"
 #include "chrome/browser/safe_browsing/bloom_filter.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
 #include "chrome/common/chrome_paths.h"
+#include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
+#include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
@@ -242,7 +243,8 @@ void CalculateBloomFilterFalsePositives(
     if (use_weights) {
       std::string::size_type pos = url.find_last_of(",");
       if (pos != std::string::npos) {
-        base::StringToInt(url.begin() + pos + 1, url.end(), &weight);
+        base::StringToInt(base::StringPiece(url.begin() + pos + 1, url.end()),
+                          &weight);
         url = url.substr(0, pos);
       }
     }

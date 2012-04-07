@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,8 @@
 #include <string>
 
 #include "googleurl/src/gurl.h"
+#include "net/base/cert_status_flags.h"
+#include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_status.h"
 #include "webkit/glue/resource_type.h"
 
@@ -36,8 +38,10 @@ class ResourceRequestDetails {
   int origin_child_id() const { return origin_child_id_; }
   const net::URLRequestStatus& status() const { return status_; }
   int ssl_cert_id() const { return ssl_cert_id_; }
-  int ssl_cert_status() const { return ssl_cert_status_; }
+  net::CertStatus ssl_cert_status() const { return ssl_cert_status_; }
   ResourceType::Type resource_type() const { return resource_type_; }
+  net::HostPortPair socket_address() const { return socket_address_; }
+  int64 frame_id() const { return frame_id_; }
 
  private:
   GURL url_;
@@ -49,8 +53,10 @@ class ResourceRequestDetails {
   int origin_child_id_;
   net::URLRequestStatus status_;
   int ssl_cert_id_;
-  int ssl_cert_status_;
+  net::CertStatus ssl_cert_status_;
   ResourceType::Type resource_type_;
+  net::HostPortPair socket_address_;
+  int64 frame_id_;
 };
 
 // Details about a redirection of a resource request.

@@ -10,37 +10,36 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "content/common/page_transition_types.h"
-#include "content/renderer/render_view_observer.h"
-#include "content/renderer/render_process_observer.h"
+#include "content/public/common/page_transition_types.h"
+#include "content/public/renderer/render_process_observer.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "googleurl/src/gurl.h"
-#include "ipc/ipc_platform_file.h"
 
 namespace safe_browsing {
 class ClientPhishingRequest;
 class PhishingClassifier;
 class Scorer;
 
-class PhishingClassifierFilter : public RenderProcessObserver {
+class PhishingClassifierFilter : public content::RenderProcessObserver {
  public:
   static PhishingClassifierFilter* Create();
   virtual ~PhishingClassifierFilter();
 
-  virtual bool OnControlMessageReceived(const IPC::Message& message);
+  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   PhishingClassifierFilter();
-  void OnSetPhishingModel(IPC::PlatformFileForTransit model_file);
+  void OnSetPhishingModel(const std::string& model);
 
   DISALLOW_COPY_AND_ASSIGN(PhishingClassifierFilter);
 };
 
-class PhishingClassifierDelegate : public RenderViewObserver {
+class PhishingClassifierDelegate : public content::RenderViewObserver {
  public:
   // The RenderView owns us.  This object takes ownership of the classifier.
   // Note that if classifier is null, a default instance of PhishingClassifier
   // will be used.
-  static PhishingClassifierDelegate* Create(RenderView* render_view,
+  static PhishingClassifierDelegate* Create(content::RenderView* render_view,
                                             PhishingClassifier* classifier);
   virtual ~PhishingClassifierDelegate();
 
@@ -62,12 +61,12 @@ class PhishingClassifierDelegate : public RenderViewObserver {
   // cancelled.  However, if the navigation is within the same page, we
   // continue running the current classification.
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
-                                        bool is_new_navigation);
+                                        bool is_new_navigation) OVERRIDE;
 
  private:
   friend class PhishingClassifierDelegateTest;
 
-  PhishingClassifierDelegate(RenderView* render_view,
+  PhishingClassifierDelegate(content::RenderView* render_view,
                              PhishingClassifier* classifier);
 
   enum CancelClassificationReason {
@@ -75,6 +74,7 @@ class PhishingClassifierDelegate : public RenderViewObserver {
     NAVIGATE_WITHIN_PAGE,
     PAGE_RECAPTURED,
     SHUTDOWN,
+    NEW_PHISHING_SCORER,
     CANCEL_CLASSIFICATION_MAX  // Always add new values before this one.
   };
 
@@ -82,7 +82,7 @@ class PhishingClassifierDelegate : public RenderViewObserver {
   void CancelPendingClassification(CancelClassificationReason reason);
 
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Called by the RenderView when it receives a StartPhishingDetection IPC
   // from the browser.  This signals that it is ok to begin classification
@@ -116,7 +116,7 @@ class PhishingClassifierDelegate : public RenderViewObserver {
   // to exclude back/forward loads from classification.  Note that this is
   // set in DidCommitProvisionalLoad(); the transition is reset after this
   // call in the RenderView, so we need to save off the value.
-  PageTransition::Type last_main_frame_transition_;
+  content::PageTransition last_main_frame_transition_;
 
   // The URL of the last load that we actually started classification on.
   // This is used to suppress phishing classification on subframe navigation

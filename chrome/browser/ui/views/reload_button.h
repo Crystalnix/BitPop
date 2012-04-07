@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/timer.h"
-#include "views/controls/button/image_button.h"
+#include "ui/views/controls/button/image_button.h"
 
 class Browser;
 class LocationBarView;
@@ -30,6 +30,9 @@ class ReloadButton : public views::ToggleImageButton,
  public:
   enum Mode { MODE_RELOAD = 0, MODE_STOP };
 
+  // The button's class name.
+  static const char kViewClassName[];
+
   ReloadButton(LocationBarView* location_bar, Browser* Browser);
   virtual ~ReloadButton();
 
@@ -44,7 +47,8 @@ class ReloadButton : public views::ToggleImageButton,
   // Overridden from views::View:
   virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
-                              std::wstring* tooltip) OVERRIDE;
+                              string16* tooltip) const OVERRIDE;
+  virtual std::string GetClassName() const OVERRIDE;
 
  private:
   friend class ReloadButtonTest;

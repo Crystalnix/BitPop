@@ -30,18 +30,30 @@ SyncableServiceAdapter::~SyncableServiceAdapter() {
   }
 }
 
-bool SyncableServiceAdapter::AssociateModels() {
+bool SyncableServiceAdapter::AssociateModels(SyncError* error) {
   syncing_ = true;
   SyncDataList initial_sync_data;
-  if (!sync_processor_->GetSyncDataForType(type_, &initial_sync_data)) {
+  SyncError temp_error =
+      sync_processor_->GetSyncDataForType(type_, &initial_sync_data);
+  if (temp_error.IsSet()) {
+    *error = temp_error;
     return false;
   }
-  return service_->MergeDataAndStartSyncing(type_,
-                                            initial_sync_data,
-                                            sync_processor_);
+
+  // TODO(zea): Have all datatypes take ownership of the sync_processor_.
+  // Further, refactor the DTC's to not need this class at all
+  // (crbug.com/100114).
+  temp_error = service_->MergeDataAndStartSyncing(type_,
+                                                  initial_sync_data,
+                                                  sync_processor_);
+  if (temp_error.IsSet()) {
+    *error = temp_error;
+    return false;
+  }
+  return true;
 }
 
-bool SyncableServiceAdapter::DisassociateModels() {
+bool SyncableServiceAdapter::DisassociateModels(SyncError* error) {
   service_->StopSyncing(type_);
   syncing_ = false;
   return true;
@@ -52,8 +64,7 @@ bool SyncableServiceAdapter::SyncModelHasUserCreatedNodes(bool* has_nodes) {
 }
 
 void SyncableServiceAdapter::AbortAssociation() {
-  service_->StopSyncing(type_);
-  syncing_ = false;
+  NOTIMPLEMENTED();
 }
 
 bool SyncableServiceAdapter::CryptoReadyIfNecessary() {

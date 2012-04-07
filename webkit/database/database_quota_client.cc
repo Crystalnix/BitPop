@@ -6,6 +6,9 @@
 
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop_proxy.h"
 #include "net/base/completion_callback.h"
@@ -89,8 +92,10 @@ class DatabaseQuotaClient::GetAllOriginsTask : public GetOriginsTaskBase {
  public:
   GetAllOriginsTask(
       DatabaseQuotaClient* client,
-      base::MessageLoopProxy* db_tracker_thread)
-      : GetOriginsTaskBase(client, db_tracker_thread) {
+      base::MessageLoopProxy* db_tracker_thread,
+      quota::StorageType type)
+      : GetOriginsTaskBase(client, db_tracker_thread),
+        type_(type) {
   }
 
  protected:
@@ -98,8 +103,11 @@ class DatabaseQuotaClient::GetAllOriginsTask : public GetOriginsTaskBase {
     return true;
   }
   virtual void Completed() OVERRIDE {
-    client_->DidGetAllOrigins(origins_);
+    client_->DidGetAllOrigins(origins_, type_);
   }
+
+ private:
+  quota::StorageType type_;
 };
 
 class DatabaseQuotaClient::GetOriginsForHostTask : public GetOriginsTaskBase {
@@ -107,9 +115,11 @@ class DatabaseQuotaClient::GetOriginsForHostTask : public GetOriginsTaskBase {
   GetOriginsForHostTask(
       DatabaseQuotaClient* client,
       base::MessageLoopProxy* db_tracker_thread,
-      const std::string& host)
+      const std::string& host,
+      quota::StorageType type)
       : GetOriginsTaskBase(client, db_tracker_thread),
-        host_(host) {
+        host_(host),
+        type_(type) {
   }
 
  private:
@@ -117,9 +127,10 @@ class DatabaseQuotaClient::GetOriginsForHostTask : public GetOriginsTaskBase {
     return host_ == net::GetHostOrSpecFromURL(origin);
   }
   virtual void Completed() OVERRIDE {
-    client_->DidGetOriginsForHost(host_, origins_);
+    client_->DidGetOriginsForHost(host_, origins_, type_);
   }
   std::string host_;
+  quota::StorageType type_;
 };
 
 class DatabaseQuotaClient::DeleteOriginTask : public HelperTask {
@@ -128,31 +139,31 @@ class DatabaseQuotaClient::DeleteOriginTask : public HelperTask {
       DatabaseQuotaClient* client,
       base::MessageLoopProxy* db_tracker_thread,
       const GURL& origin_url,
-      DeletionCallback* caller_callback)
+      const DeletionCallback& caller_callback)
       : HelperTask(client, db_tracker_thread),
         origin_url_(origin_url),
         result_(quota::kQuotaStatusUnknown),
-        caller_callback_(caller_callback),
-        ALLOW_THIS_IN_INITIALIZER_LIST(completion_callback_(
-            this, &DeleteOriginTask::OnCompletionCallback)) {
+        caller_callback_(caller_callback) {
   }
 
  private:
   virtual void Completed() OVERRIDE {
-    if (!caller_callback_.get())
+    if (caller_callback_.is_null())
       return;
-    caller_callback_->Run(result_);
-    caller_callback_.reset();
+    caller_callback_.Run(result_);
+    caller_callback_.Reset();
   }
 
   virtual void Aborted() OVERRIDE {
-    caller_callback_.reset();
+    caller_callback_.Reset();
   }
 
   virtual bool RunOnTargetThreadAsync() OVERRIDE {
     AddRef();  // balanced in OnCompletionCallback
     string16 origin_id = DatabaseUtil::GetOriginIdentifier(origin_url_);
-    int rv = db_tracker_->DeleteDataForOrigin(origin_id, &completion_callback_);
+    int rv = db_tracker_->DeleteDataForOrigin(
+        origin_id, base::Bind(&DeleteOriginTask::OnCompletionCallback,
+                              base::Unretained(this)));
     if (rv == net::ERR_IO_PENDING)
       return false;  // we wait for the callback
     OnCompletionCallback(rv);
@@ -163,14 +174,14 @@ class DatabaseQuotaClient::DeleteOriginTask : public HelperTask {
     if (rv == net::OK)
       result_ = quota::kQuotaStatusOk;
     original_message_loop()->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &DeleteOriginTask::CallCompleted));
+        FROM_HERE, base::Bind(&DeleteOriginTask::CallCompleted, this));
     Release();  // balanced in RunOnTargetThreadAsync
   }
 
   const GURL origin_url_;
   quota::QuotaStatusCode result_;
-  scoped_ptr<DeletionCallback> caller_callback_;
-  net::CompletionCallbackImpl<DeleteOriginTask> completion_callback_;
+  DeletionCallback caller_callback_;
+  net::CompletionCallback completion_callback_;
 };
 
 // DatabaseQuotaClient --------------------------------------------------------
@@ -195,18 +206,17 @@ void DatabaseQuotaClient::OnQuotaManagerDestroyed() {
 void DatabaseQuotaClient::GetOriginUsage(
     const GURL& origin_url,
     quota::StorageType type,
-    GetUsageCallback* callback_ptr) {
-  DCHECK(callback_ptr);
+    const GetUsageCallback& callback) {
+  DCHECK(!callback.is_null());
   DCHECK(db_tracker_.get());
-  scoped_ptr<GetUsageCallback> callback(callback_ptr);
 
   // All databases are in the temp namespace for now.
   if (type != quota::kStorageTypeTemporary) {
-    callback->Run(0);
+    callback.Run(0);
     return;
   }
 
-  if (usage_for_origin_callbacks_.Add(origin_url, callback.release())) {
+  if (usage_for_origin_callbacks_.Add(origin_url, callback)) {
     scoped_refptr<GetOriginUsageTask> task(
         new GetOriginUsageTask(this, db_tracker_thread_, origin_url));
     task->Start();
@@ -215,20 +225,19 @@ void DatabaseQuotaClient::GetOriginUsage(
 
 void DatabaseQuotaClient::GetOriginsForType(
     quota::StorageType type,
-    GetOriginsCallback* callback_ptr) {
-  DCHECK(callback_ptr);
+    const GetOriginsCallback& callback) {
+  DCHECK(!callback.is_null());
   DCHECK(db_tracker_.get());
-  scoped_ptr<GetOriginsCallback> callback(callback_ptr);
 
   // All databases are in the temp namespace for now.
   if (type != quota::kStorageTypeTemporary) {
-    callback->Run(std::set<GURL>());
+    callback.Run(std::set<GURL>(), type);
     return;
   }
 
-  if (origins_for_type_callbacks_.Add(callback.release())) {
+  if (origins_for_type_callbacks_.Add(callback)) {
     scoped_refptr<GetAllOriginsTask> task(
-        new GetAllOriginsTask(this, db_tracker_thread_));
+        new GetAllOriginsTask(this, db_tracker_thread_, type));
     task->Start();
   }
 }
@@ -236,40 +245,38 @@ void DatabaseQuotaClient::GetOriginsForType(
 void DatabaseQuotaClient::GetOriginsForHost(
     quota::StorageType type,
     const std::string& host,
-    GetOriginsCallback* callback_ptr) {
-  DCHECK(callback_ptr);
+    const GetOriginsCallback& callback) {
+  DCHECK(!callback.is_null());
   DCHECK(db_tracker_.get());
-  scoped_ptr<GetOriginsCallback> callback(callback_ptr);
 
   // All databases are in the temp namespace for now.
   if (type != quota::kStorageTypeTemporary) {
-    callback->Run(std::set<GURL>());
+    callback.Run(std::set<GURL>(), type);
     return;
   }
 
-  if (origins_for_host_callbacks_.Add(host, callback.release())) {
+  if (origins_for_host_callbacks_.Add(host, callback)) {
     scoped_refptr<GetOriginsForHostTask> task(
-        new GetOriginsForHostTask(this, db_tracker_thread_, host));
+        new GetOriginsForHostTask(this, db_tracker_thread_, host, type));
     task->Start();
   }
 }
 
 void DatabaseQuotaClient::DeleteOriginData(const GURL& origin,
                                            quota::StorageType type,
-                                           DeletionCallback* callback_ptr) {
-  DCHECK(callback_ptr);
+                                           const DeletionCallback& callback) {
+  DCHECK(!callback.is_null());
   DCHECK(db_tracker_.get());
-  scoped_ptr<DeletionCallback> callback(callback_ptr);
 
   // All databases are in the temp namespace for now, so nothing to delete.
   if (type != quota::kStorageTypeTemporary) {
-    callback->Run(quota::kQuotaStatusOk);
+    callback.Run(quota::kQuotaStatusOk);
     return;
   }
 
   scoped_refptr<DeleteOriginTask> task(
       new DeleteOriginTask(this, db_tracker_thread_,
-                           origin, callback.release()));
+                           origin, callback));
   task->Start();
 }
 
@@ -279,15 +286,17 @@ void DatabaseQuotaClient::DidGetOriginUsage(
   usage_for_origin_callbacks_.Run(origin_url, usage);
 }
 
-void DatabaseQuotaClient::DidGetAllOrigins(const std::set<GURL>& origins) {
+void DatabaseQuotaClient::DidGetAllOrigins(const std::set<GURL>& origins,
+    quota::StorageType type) {
   DCHECK(origins_for_type_callbacks_.HasCallbacks());
-  origins_for_type_callbacks_.Run(origins);
+  origins_for_type_callbacks_.Run(origins, type);
 }
 
 void DatabaseQuotaClient::DidGetOriginsForHost(
-    const std::string& host, const std::set<GURL>& origins) {
+    const std::string& host, const std::set<GURL>& origins,
+    quota::StorageType type) {
   DCHECK(origins_for_host_callbacks_.HasCallbacks(host));
-  origins_for_host_callbacks_.Run(host, origins);
+  origins_for_host_callbacks_.Run(host, origins, type);
 }
 
 }  // namespace webkit_database

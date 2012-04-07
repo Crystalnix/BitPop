@@ -11,30 +11,31 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 ThemeInstalledInfoBarDelegate::ThemeInstalledInfoBarDelegate(
-    TabContents* tab_contents,
+    InfoBarTabHelper* infobar_helper,
+    ExtensionService* extension_service,
+    ThemeService* theme_service,
     const Extension* new_theme,
     const std::string& previous_theme_id,
     bool previous_using_native_theme)
-    : ConfirmInfoBarDelegate(tab_contents),
-      profile_(tab_contents->profile()),
-      theme_service_(ThemeServiceFactory::GetForProfile(profile_)),
+    : ConfirmInfoBarDelegate(infobar_helper),
+      extension_service_(extension_service),
+      theme_service_(theme_service),
       name_(new_theme->name()),
       theme_id_(new_theme->id()),
       previous_theme_id_(previous_theme_id),
-      previous_using_native_theme_(previous_using_native_theme),
-      tab_contents_(tab_contents) {
+      previous_using_native_theme_(previous_using_native_theme) {
   theme_service_->OnInfobarDisplayed();
-  registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                 content::Source<ThemeService>(theme_service_));
 }
 
 bool ThemeInstalledInfoBarDelegate::MatchesTheme(const Extension* theme) const {
@@ -50,23 +51,19 @@ ThemeInstalledInfoBarDelegate::~ThemeInstalledInfoBarDelegate() {
 
 bool ThemeInstalledInfoBarDelegate::Cancel() {
   if (!previous_theme_id_.empty()) {
-    ExtensionService* service = profile_->GetExtensionService();
-    if (service) {
-      const Extension* previous_theme =
-          service->GetExtensionById(previous_theme_id_, true);
-      if (previous_theme) {
-        theme_service_->SetTheme(previous_theme);
-        return true;
-      }
+    const Extension* previous_theme =
+        extension_service_->GetExtensionById(previous_theme_id_, true);
+    if (previous_theme) {
+      theme_service_->SetTheme(previous_theme);
+        return false;  // The theme change will close us.
     }
   }
 
-  if (previous_using_native_theme_) {
+  if (previous_using_native_theme_)
     theme_service_->SetNativeTheme();
-  } else {
+  else
     theme_service_->UseDefaultTheme();
-  }
-  return true;
+  return false;  // The theme change will close us.
 }
 
 gfx::Image* ThemeInstalledInfoBarDelegate::GetIcon() const {
@@ -74,6 +71,10 @@ gfx::Image* ThemeInstalledInfoBarDelegate::GetIcon() const {
   // asynchronously from disk.
   return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
       IDR_INFOBAR_THEME);
+}
+
+InfoBarDelegate::Type ThemeInstalledInfoBarDelegate::GetInfoBarType() const {
+  return PAGE_ACTION_TYPE;
 }
 
 ThemeInstalledInfoBarDelegate*
@@ -97,27 +98,12 @@ string16 ThemeInstalledInfoBarDelegate::GetButtonLabel(
 }
 
 void ThemeInstalledInfoBarDelegate::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  DCHECK_EQ(NotificationType::BROWSER_THEME_CHANGED, type.value);
-  // If the new theme is different from what this info bar is associated
-  // with, close this info bar since it is no longer relevant.
-  if (theme_id_ != theme_service_->GetThemeID()) {
-    if (tab_contents_ && !tab_contents_->is_being_destroyed()) {
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents_)->
-          RemoveInfoBar(this);
-      // The infobar is gone so there is no reason for this delegate to keep
-      // a pointer to the TabContents (the TabContents has deleted its
-      // reference to this delegate and a new delegate will be created if
-      // a new infobar is created).
-      tab_contents_ = NULL;
-      // Although it's not being used anymore, this delegate is never deleted.
-      // It can not be deleted now because it is still needed if we
-      // "undo" the theme change that triggered this notification
-      // (when InfoBar::OnBackgroundExpose() is called). This will likely
-      // be fixed when infobar delegate deletion is cleaned up for
-      // http://crbug.com/62154.
-    }
-  }
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_BROWSER_THEME_CHANGED, type);
+  // If the new theme is different from what this info bar is associated with,
+  // close this info bar since it is no longer relevant.
+  if (theme_id_ != theme_service_->GetThemeID())
+    RemoveSelf();
 }

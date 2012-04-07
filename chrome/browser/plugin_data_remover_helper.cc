@@ -6,86 +6,67 @@
 
 #include <string>
 
-#include "base/memory/ref_counted.h"
-#include "chrome/browser/plugin_data_remover.h"
+#include "base/bind.h"
+#include "chrome/browser/plugin_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/plugin_data_remover.h"
+#include "content/public/browser/plugin_service.h"
+#include "webkit/plugins/webplugininfo.h"
 
-// The internal class is refcounted so it can outlive PluginDataRemoverHelper.
-class PluginDataRemoverHelper::Internal
-    : public base::RefCountedThreadSafe<PluginDataRemoverHelper::Internal> {
- public:
-  explicit Internal(const char* pref_name, PrefService* prefs)
-      : pref_name_(pref_name), prefs_(prefs) {}
+using content::BrowserThread;
+using content::PluginService;
 
-  void StartUpdate() {
-    BrowserThread::PostTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        NewRunnableMethod(
-            this,
-            &PluginDataRemoverHelper::Internal::UpdateOnFileThread));
-  }
-
-  void Invalidate() {
-    prefs_ = NULL;
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<Internal>;
-
-  ~Internal() {}
-
-  void UpdateOnFileThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    bool result = PluginDataRemover::IsSupported();
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &PluginDataRemoverHelper::Internal::SetPrefOnUIThread,
-                          result));
-  }
-
-  void SetPrefOnUIThread(bool value) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (prefs_)
-      prefs_->SetBoolean(pref_name_.c_str(), value);
-  }
-
-  std::string pref_name_;
-  // Weak pointer.
-  PrefService* prefs_;
-
-  DISALLOW_COPY_AND_ASSIGN(Internal);
-};
-
-PluginDataRemoverHelper::PluginDataRemoverHelper() {}
+PluginDataRemoverHelper::PluginDataRemoverHelper()
+    : profile_(NULL),
+      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {}
 
 PluginDataRemoverHelper::~PluginDataRemoverHelper() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (internal_)
-    internal_->Invalidate();
 }
 
 void PluginDataRemoverHelper::Init(const char* pref_name,
-                                   PrefService* prefs,
-                                   NotificationObserver* observer) {
-  pref_.Init(pref_name, prefs, observer);
-  registrar_.Add(this, NotificationType::PLUGIN_ENABLE_STATUS_CHANGED,
-                 NotificationService::AllSources());
-  internal_ = make_scoped_refptr(new Internal(pref_name, prefs));
-  internal_->StartUpdate();
+                                   Profile* profile,
+                                   content::NotificationObserver* observer) {
+  pref_.Init(pref_name, profile->GetPrefs(), observer);
+  profile_ = profile;
+  registrar_.Add(this, chrome::NOTIFICATION_PLUGIN_ENABLE_STATUS_CHANGED,
+                 content::Source<Profile>(profile));
+  StartUpdate();
 }
 
-void PluginDataRemoverHelper::Observe(NotificationType type,
-                                      const NotificationSource& source,
-                                      const NotificationDetails& details) {
-  if (type.value == NotificationType::PLUGIN_ENABLE_STATUS_CHANGED) {
-    internal_->StartUpdate();
+// static
+bool PluginDataRemoverHelper::IsSupported(PluginPrefs* plugin_prefs) {
+  webkit::WebPluginInfo plugin;
+  return content::PluginDataRemover::IsSupported(&plugin) &&
+      plugin_prefs->IsPluginEnabled(plugin);
+}
+
+void PluginDataRemoverHelper::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_PLUGIN_ENABLE_STATUS_CHANGED) {
+    StartUpdate();
   } else {
     NOTREACHED();
   }
+}
+
+void PluginDataRemoverHelper::StartUpdate() {
+  PluginService::GetInstance()->GetPlugins(
+      base::Bind(&PluginDataRemoverHelper::GotPlugins, factory_.GetWeakPtr(),
+                 make_scoped_refptr(PluginPrefs::GetForProfile(profile_))));
+}
+
+void PluginDataRemoverHelper::GotPlugins(
+    scoped_refptr<PluginPrefs> plugin_prefs,
+    const std::vector<webkit::WebPluginInfo>& plugins) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  bool supported = IsSupported(plugin_prefs);
+  // Set the value on the PrefService instead of through the PrefMember to
+  // notify observers if it changed.
+  profile_->GetPrefs()->SetBoolean(pref_.GetPrefName().c_str(), supported);
 }

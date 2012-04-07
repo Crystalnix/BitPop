@@ -66,6 +66,77 @@ function ExtractSearchParameter(name) {
   return "";
 }
 
+// Parses the message, looking for strings of the form:
+// TESTING_MESSAGE:<message_type>:<message_contents>
+//
+// If the message_data is not a string or does not match the above format, then
+// undefined is returned.
+//
+// Otherwise, returns an array containing 2 items. The 0th element is the
+// message_type, one of:
+//  - ClearContents
+//  - DidExecuteTests
+//  - LogHTML
+//  - SetCookie
+//  - EvalScript
+// The second item is the verbatim message_contents.
+function ParseTestingMessage(message_data) {
+  if (typeof(message_data)!='string')
+    return undefined;
+  var testing_message_prefix = "TESTING_MESSAGE";
+  var delim_str = ":";
+  var delim1 = message_data.indexOf(delim_str);
+  if (message_data.substring(0, delim1) !== testing_message_prefix)
+    return undefined;
+  var delim2 = message_data.indexOf(delim_str, delim1 + 1);
+  if (delim2 == -1)
+    delim2 = message_data.length;
+  var message_type = message_data.substring(delim1 + 1, delim2);
+  var message_contents = message_data.substring(delim2 + 1);
+  return [message_type, message_contents];
+}
+
+function ClearConsole() {
+  window.document.getElementById("console").innerHTML = "";
+}
+
+function LogHTML(html) {
+  window.document.getElementById("console").innerHTML += html;
+}
+
+function SetCookie(key_value_string) {
+  window.document.cookie = key_value_string + "; path=/";
+}
+
+function EvalScript(script) {
+  try {
+    eval(script);
+  } catch(ex) {
+  }
+}
+
+function IsTestingMessage(message_data) {
+  return (ParseTestingMessage(message_data) != undefined);
+}
+
+function handleTestingMessage(message_event) {
+  var type_contents_tuple = ParseTestingMessage(message_event.data);
+  if (type_contents_tuple) {
+    var type = type_contents_tuple[0];
+    var contents = type_contents_tuple[1];
+    if (type === "ClearConsole")
+      ClearConsole();
+    else if (type === "DidExecuteTests")
+      DidExecuteTests();
+    else if (type === "LogHTML")
+      LogHTML(contents);
+    else if (type === "SetCookie")
+      SetCookie(contents);
+    else if (type === "EvalScript")
+      EvalScript(contents);
+  }
+}
+
 onload = function() {
   var testcase = ExtractSearchParameter("testcase");
   var mode = ExtractSearchParameter("mode");
@@ -89,11 +160,40 @@ onload = function() {
     }
   }
   if (obj) {
+    obj.setAttribute("width", 80);
+    obj.setAttribute("height", 80);
+    obj.setAttribute("style",
+                     "background-color:#AAAAAA;border:1px solid black;");
     obj.setAttribute("id", "plugin");
     obj.setAttribute("testcase", testcase);
-    document.getElementById("container").appendChild(obj);
+    obj.setAttribute("protocol", window.location.protocol);
+    var container = document.getElementById("container");
+    container.addEventListener("message", handleTestingMessage, true);
+    // Register a bad dispatchEvent to make sure it isn't used. See 'EVIL' note
+    // below.
+    obj.dispatchEvent = function() {
+      LogHTML("<p>Bad dispatchEvent called!");
+    }
+    container.appendChild(obj);
   }
 }
+
+// EVIL Note:
+// This part of the script does some nefarious things to make sure that it
+// doesn't affect the behavior of PostMessage (on which all the tests rely). In
+// particular, we replace document.createEvent, MessageEvent.initMessageEvent,
+// and the MessageEvent constructor. Previous versions of the PostMessage
+// implementation made use of these and would fail (http://crbug.com/82604).
+document.createEvent = function() {
+  LogHTML("<p>Bad document.createEvent called!");
+}
+function MessageEvent() {
+  LogHTML("<p>Bad MessageEvent constructor called!");
+}
+MessageEvent.prototype.initMessageEvent = function() {
+  LogHTML("<p>Bad MessageEvent.initMessageEvent called!");
+}
+
 </script>
 </head><body>
 <div>

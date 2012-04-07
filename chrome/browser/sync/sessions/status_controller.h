@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,9 @@
 #include <vector>
 #include <map>
 
-#include "base/stl_util-inl.h"
+#include "base/logging.h"
+#include "base/stl_util.h"
+#include "base/time.h"
 #include "chrome/browser/sync/sessions/ordered_commit_set.h"
 #include "chrome/browser/sync/sessions/session_state.h"
 
@@ -52,28 +54,21 @@ class StatusController {
   // since it was created or was last reset.
   bool TestAndClearIsDirty();
 
-  // Progress counters.
-  const ConflictProgress& conflict_progress() {
-    return GetOrCreateModelSafeGroupState(true,
-        group_restriction_)->conflict_progress;
-  }
-  ConflictProgress* mutable_conflict_progress() {
-    return &GetOrCreateModelSafeGroupState(true,
-        group_restriction_)->conflict_progress;
-  }
-  const UpdateProgress& update_progress() {
-    return GetOrCreateModelSafeGroupState(true,
-        group_restriction_)->update_progress;
-  }
-  UpdateProgress* mutable_update_progress() {
-    return &GetOrCreateModelSafeGroupState(true,
-        group_restriction_)->update_progress;
-  }
-  // Some unrestricted, non-ModelChangingSyncerCommand commands need to store
-  // meta information about updates.
-  UpdateProgress* GetUnrestrictedUpdateProgress(ModelSafeGroup group) {
-    return &GetOrCreateModelSafeGroupState(false, group)->update_progress;
-  }
+  // Progress counters.  All const methods may return NULL if the
+  // progress structure doesn't exist, but all non-const methods
+  // auto-create.
+  const ConflictProgress* conflict_progress() const;
+  ConflictProgress* mutable_conflict_progress();
+  const UpdateProgress* update_progress() const;
+  UpdateProgress* mutable_update_progress();
+  const ConflictProgress* GetUnrestrictedConflictProgress(
+      ModelSafeGroup group) const;
+  ConflictProgress* GetUnrestrictedMutableConflictProgressForTest(
+      ModelSafeGroup group);
+  const UpdateProgress* GetUnrestrictedUpdateProgress(
+      ModelSafeGroup group) const;
+  UpdateProgress* GetUnrestrictedMutableUpdateProgressForTest(
+      ModelSafeGroup group);
 
   // ClientToServer messages.
   const ClientToServerMessage& commit_message() {
@@ -88,10 +83,10 @@ class StatusController {
   ClientToServerResponse* mutable_commit_response() {
     return &shared_.commit_response;
   }
-  const syncable::ModelTypeBitSet& updates_request_types() const {
+  const syncable::ModelTypeSet updates_request_types() const {
     return shared_.updates_request_types;
   }
-  void set_updates_request_types(const syncable::ModelTypeBitSet& value) {
+  void set_updates_request_types(syncable::ModelTypeSet value) {
     shared_.updates_request_types = value;
   }
   const ClientToServerResponse& updates_response() const {
@@ -102,8 +97,8 @@ class StatusController {
   }
 
   // Errors and SyncerStatus.
-  const ErrorCounters& error_counters() const {
-    return shared_.error_counters.value();
+  const ErrorCounters& error() const {
+    return shared_.error.value();
   }
   const SyncerStatus& syncer_status() const {
     return shared_.syncer_status.value();
@@ -128,8 +123,12 @@ class StatusController {
     DCHECK(CurrentCommitIdProjectionHasIndex(index));
     return shared_.commit_set.GetCommitIdAt(index);
   }
-  syncable::ModelType GetCommitIdModelTypeAt(size_t index) {
+  syncable::ModelType GetCommitModelTypeAt(size_t index) {
     DCHECK(CurrentCommitIdProjectionHasIndex(index));
+    return shared_.commit_set.GetModelTypeAt(index);
+  }
+  syncable::ModelType GetUnrestrictedCommitModelTypeAt(size_t index) const {
+    DCHECK(!group_restriction_in_effect_) << "Group restriction in effect!";
     return shared_.commit_set.GetModelTypeAt(index);
   }
   const std::vector<int64>& unsynced_handles() const {
@@ -139,9 +138,6 @@ class StatusController {
   }
 
   // Control parameters for sync cycles.
-  bool conflict_sets_built() const {
-    return shared_.control_params.conflict_sets_built;
-  }
   bool conflicts_resolved() const {
     return shared_.control_params.conflicts_resolved;
   }
@@ -192,6 +188,11 @@ class StatusController {
     return group_restriction_;
   }
 
+  base::Time sync_start_time() const {
+    // The time at which we sent the first GetUpdates command for this sync.
+    return sync_start_time_;
+  }
+
   // Check whether a particular model is included by the active group
   // restriction.
   bool ActiveGroupRestrictionIncludesModel(syncable::ModelType model) const {
@@ -213,23 +214,30 @@ class StatusController {
   void increment_num_consecutive_errors_by(int value);
   void set_num_server_changes_remaining(int64 changes_remaining);
   void set_invalid_store(bool invalid_store);
-  void set_syncer_stuck(bool syncer_stuck);
-  void set_syncing(bool syncing);
   void set_num_successful_bookmark_commits(int value);
   void increment_num_successful_commits();
   void increment_num_successful_bookmark_commits();
   void increment_num_updates_downloaded_by(int value);
   void increment_num_tombstone_updates_downloaded_by(int value);
-  void set_types_needing_local_migration(const syncable::ModelTypeSet& types);
+  void set_types_needing_local_migration(syncable::ModelTypeSet types);
   void set_unsynced_handles(const std::vector<int64>& unsynced_handles);
   void increment_num_local_overwrites();
   void increment_num_server_overwrites();
+  void set_sync_protocol_error(const SyncProtocolError& error);
+  void set_last_download_updates_result(const SyncerError result);
+  void set_last_post_commit_result(const SyncerError result);
+  void set_last_process_commit_response_result(const SyncerError result);
 
   void set_commit_set(const OrderedCommitSet& commit_set);
-  void update_conflict_sets_built(bool built);
   void update_conflicts_resolved(bool resolved);
   void reset_conflicts_resolved();
   void set_items_committed();
+
+  void UpdateStartTime();
+
+  void set_debug_info_sent();
+
+  bool debug_info_sent() const;
 
  private:
   friend class ScopedModelSafeGroupRestriction;
@@ -238,9 +246,13 @@ class StatusController {
   // references position |index| into the full set of commit ids in play.
   bool CurrentCommitIdProjectionHasIndex(size_t index);
 
+  // Returns the state, if it exists, or NULL otherwise.
+  const PerModelSafeGroupState* GetModelSafeGroupState(
+      bool restrict, ModelSafeGroup group) const;
+
   // Helper to lazily create objects for per-ModelSafeGroup state.
-  PerModelSafeGroupState* GetOrCreateModelSafeGroupState(bool restrict,
-                                                         ModelSafeGroup group);
+  PerModelSafeGroupState* GetOrCreateModelSafeGroupState(
+      bool restrict, ModelSafeGroup group);
 
   AllModelTypeState shared_;
   std::map<ModelSafeGroup, PerModelSafeGroupState*> per_model_group_;
@@ -258,6 +270,8 @@ class StatusController {
   ModelSafeGroup group_restriction_;
 
   const ModelSafeRoutingInfo routing_info_;
+
+  base::Time sync_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(StatusController);
 };

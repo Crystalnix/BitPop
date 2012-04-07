@@ -12,11 +12,11 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_helpers.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "ui/gfx/color_utils.h"
 
-class DictionaryValue;
 class FilePath;
 class RefCountedMemory;
 namespace ui {
@@ -24,6 +24,9 @@ class DataPack;
 }
 namespace gfx {
 class Image;
+}
+namespace base {
+class DictionaryValue;
 }
 
 // An optimized representation of a theme, backed by a mmapped DataPack.
@@ -44,7 +47,7 @@ class Image;
 // common case, they are backed by mmapped data and the unmmapping operation
 // will trip our IO on the UI thread detector.
 class BrowserThemePack : public base::RefCountedThreadSafe<
-    BrowserThemePack, BrowserThread::DeleteOnFileThread> {
+    BrowserThemePack, content::BrowserThread::DeleteOnFileThread> {
  public:
   // Builds the theme pack from all data from |extension|. This is often done
   // on a separate thread as it takes so long. This can fail and return NULL in
@@ -89,8 +92,9 @@ class BrowserThemePack : public base::RefCountedThreadSafe<
   bool HasCustomImage(int id) const;
 
  private:
-  friend struct BrowserThread::DeleteOnThread<BrowserThread::FILE>;
-  friend class DeleteTask<BrowserThemePack>;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::FILE>;
+  friend class base::DeleteHelper<BrowserThemePack>;
   friend class BrowserThemePackTest;
 
   // Cached images. We cache all retrieved and generated bitmaps and keep
@@ -101,8 +105,8 @@ class BrowserThemePack : public base::RefCountedThreadSafe<
   // The raw PNG memory associated with a certain id.
   typedef std::map<int, scoped_refptr<RefCountedMemory> > RawImages;
 
-  // The type passed to base::DataPack::WritePack.
-  typedef std::map<uint32, base::StringPiece> RawDataForWriting;
+  // The type passed to ui::DataPack::WritePack.
+  typedef std::map<uint16, base::StringPiece> RawDataForWriting;
 
   // An association between an id and the FilePath that has the image data.
   typedef std::map<int, FilePath> FilePathMap;
@@ -117,22 +121,22 @@ class BrowserThemePack : public base::RefCountedThreadSafe<
 
   // Transforms the JSON tint values into their final versions in the |tints_|
   // array.
-  void BuildTintsFromJSON(DictionaryValue* tints_value);
+  void BuildTintsFromJSON(base::DictionaryValue* tints_value);
 
   // Transforms the JSON color values into their final versions in the
   // |colors_| array and also fills in unspecified colors based on tint values.
-  void BuildColorsFromJSON(DictionaryValue* color_value);
+  void BuildColorsFromJSON(base::DictionaryValue* color_value);
 
   // Implementation details of BuildColorsFromJSON().
-  void ReadColorsFromJSON(DictionaryValue* colors_value,
+  void ReadColorsFromJSON(base::DictionaryValue* colors_value,
                           std::map<int, SkColor>* temp_colors);
   void GenerateMissingColors(std::map<int, SkColor>* temp_colors);
 
   // Transforms the JSON display properties into |display_properties_|.
-  void BuildDisplayPropertiesFromJSON(DictionaryValue* display_value);
+  void BuildDisplayPropertiesFromJSON(base::DictionaryValue* display_value);
 
   // Parses the image names out of an extension.
-  void ParseImageNamesFromJSON(DictionaryValue* images_value,
+  void ParseImageNamesFromJSON(base::DictionaryValue* images_value,
                                const FilePath& images_path,
                                FilePathMap* file_paths) const;
 

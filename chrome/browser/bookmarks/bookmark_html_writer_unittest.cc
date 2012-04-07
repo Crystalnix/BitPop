@@ -16,13 +16,14 @@
 #include "chrome/browser/bookmarks/bookmark_html_writer.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/importer/firefox2_importer.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/codec/png_codec.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -41,10 +42,10 @@ void MakeTestSkBitmap(int w, int h, SkBitmap* bmp) {
 
 }  // namespace
 
-class BookmarkHTMLWriterTest : public TestingBrowserProcessTest {
+class BookmarkHTMLWriterTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    TestingBrowserProcessTest::SetUp();
+    testing::Test::SetUp();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     path_ = temp_dir_.path().AppendASCII("bookmarks.html");
   }
@@ -136,8 +137,9 @@ class BookmarksObserver : public BookmarksExportObserver {
 // way of bookmark_html_writer, then using the importer to read it back in.
 TEST_F(BookmarkHTMLWriterTest, Test) {
   MessageLoop message_loop;
-  BrowserThread fake_ui_thread(BrowserThread::UI, &message_loop);
-  BrowserThread fake_file_thread(BrowserThread::FILE, &message_loop);
+  content::TestBrowserThread fake_ui_thread(BrowserThread::UI, &message_loop);
+  content::TestBrowserThread fake_file_thread(BrowserThread::FILE,
+                                              &message_loop);
 
   TestingProfile profile;
   profile.CreateHistoryService(true, false);
@@ -167,7 +169,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   //   F3
   //     F4
   //       url1
-  // Synced
+  // Mobile
   //   url1
   string16 f1_title = ASCIIToUTF16("F\"&;<1\"");
   string16 f2_title = ASCIIToUTF16("F2");
@@ -187,7 +189,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   base::Time t3(t1 + base::TimeDelta::FromHours(1));
   base::Time t4(t1 + base::TimeDelta::FromHours(1));
   const BookmarkNode* f1 = model->AddFolder(
-      model->GetBookmarkBarNode(), 0, f1_title);
+      model->bookmark_bar_node(), 0, f1_title);
   model->AddURLWithCreationTime(f1, 0, url1_title, url1, t1);
   profile.GetHistoryService(Profile::EXPLICIT_ACCESS)->AddPage(url1,
       history::SOURCE_BROWSED);
@@ -196,7 +198,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   message_loop.RunAllPending();
   const BookmarkNode* f2 = model->AddFolder(f1, 1, f2_title);
   model->AddURLWithCreationTime(f2, 0, url2_title, url2, t2);
-  model->AddURLWithCreationTime(model->GetBookmarkBarNode(),
+  model->AddURLWithCreationTime(model->bookmark_bar_node(),
                                 1, url3_title, url3, t3);
 
   model->AddURLWithCreationTime(model->other_node(), 0, url1_title, url1, t1);
@@ -204,9 +206,9 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   const BookmarkNode* f3 = model->AddFolder(model->other_node(), 2, f3_title);
   const BookmarkNode* f4 = model->AddFolder(f3, 0, f4_title);
   model->AddURLWithCreationTime(f4, 0, url1_title, url1, t1);
-  model->AddURLWithCreationTime(model->GetBookmarkBarNode(), 2, url4_title,
+  model->AddURLWithCreationTime(model->bookmark_bar_node(), 2, url4_title,
                                 url4, t4);
-  model->AddURLWithCreationTime(model->synced_node(), 0, url1_title, url1, t1);
+  model->AddURLWithCreationTime(model->mobile_node(), 0, url1_title, url1, t1);
 
   // Write to a temp file.
   BookmarksObserver observer(&message_loop);
@@ -245,7 +247,7 @@ TEST_F(BookmarkHTMLWriterTest, Test) {
   ASSERT_EQ(8U, parsed_bookmarks.size());
   // Windows and ChromeOS builds use Sentence case.
   string16 bookmark_folder_name =
-      l10n_util::GetStringUTF16(IDS_BOOMARK_BAR_FOLDER_NAME);
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_FOLDER_NAME);
   AssertBookmarkEntryEquals(parsed_bookmarks[0], true, url1, url1_title, t1,
                             bookmark_folder_name, f1_title, string16());
   AssertBookmarkEntryEquals(parsed_bookmarks[1], true, url2, url2_title, t2,

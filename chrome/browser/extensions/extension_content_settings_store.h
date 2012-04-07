@@ -5,7 +5,6 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_CONTENT_SETTINGS_STORE_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_CONTENT_SETTINGS_STORE_H_
 
-#include <list>
 #include <map>
 #include <string>
 
@@ -14,19 +13,27 @@
 #include "base/threading/thread_checker.h"
 #include "base/time.h"
 #include "base/tuple.h"
-#include "chrome/browser/content_settings/content_settings_pattern.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
+#include "chrome/browser/extensions/extension_prefs_scope.h"
 #include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_pattern.h"
 #include "googleurl/src/gurl.h"
 
-class DictionaryValue;
+namespace base {
 class ListValue;
+}
+
+namespace content_settings {
+class OriginIdentifierValueMap;
+class RuleIterator;
+}
 
 // This class is the backend for extension-defined content settings. It is used
 // by the content_settings::ExtensionProvider to integrate its settings into the
 // HostContentSettingsMap and by the content settings extension API to provide
 // extensions with access to content settings.
-class ExtensionContentSettingsStore {
+class ExtensionContentSettingsStore
+    : public base::RefCountedThreadSafe<ExtensionContentSettingsStore> {
  public:
   class Observer {
    public:
@@ -37,16 +44,16 @@ class ExtensionContentSettingsStore {
     virtual void OnContentSettingChanged(
         const std::string& extension_id,
         bool incognito) = 0;
-
-    // Called when the ExtensionContentSettingsStore is being destroyed, so
-    // observers can invalidate their weak references.
-    virtual void OnDestruction() = 0;
   };
 
   ExtensionContentSettingsStore();
-  virtual ~ExtensionContentSettingsStore();
 
   // //////////////////////////////////////////////////////////////////////////
+
+  content_settings::RuleIterator* GetRuleIterator(
+      ContentSettingsType type,
+      const content_settings::ResourceIdentifier& identifier,
+      bool incognito) const;
 
   // Sets the content |setting| for |pattern| of extension |ext_id|. The
   // |incognito| flag allow to set whether the provided setting is for
@@ -60,33 +67,23 @@ class ExtensionContentSettingsStore {
       ContentSettingsType type,
       const content_settings::ResourceIdentifier& identifier,
       ContentSetting setting,
-      bool incognito);
+      ExtensionPrefsScope scope);
 
-  ContentSetting GetEffectiveContentSetting(
-      const GURL& embedded_url,
-      const GURL& top_level_url,
-      ContentSettingsType type,
-      const content_settings::ResourceIdentifier& identifier,
-      bool incognito) const;
-
-  // Returns a list of all content setting rules for the content type |type|
-  // and the resource identifier (if specified and the content type uses
-  // resource identifiers).
-  void GetContentSettingsForContentType(
-      ContentSettingsType type,
-      const content_settings::ResourceIdentifier& identifier,
-      bool incognito,
-      content_settings::ProviderInterface::Rules* rules) const;
+  // Clears all contents settings set by the extension |ext_id|.
+  void ClearContentSettingsForExtension(const std::string& ext_id,
+                                        ExtensionPrefsScope scope);
 
   // Serializes all content settings set by the extension with ID |extension_id|
   // and returns them as a ListValue. The caller takes ownership of the returned
   // value.
-  ListValue* GetSettingsForExtension(const std::string& extension_id) const;
+  base::ListValue* GetSettingsForExtension(const std::string& extension_id,
+                                           ExtensionPrefsScope scope) const;
 
   // Deserializes content settings rules from |list| and applies them as set by
   // the extension with ID |extension_id|.
   void SetExtensionContentSettingsFromList(const std::string& extension_id,
-                                           const ListValue* dict);
+                                           const base::ListValue* list,
+                                           ExtensionPrefsScope scope);
 
   // //////////////////////////////////////////////////////////////////////////
 
@@ -109,46 +106,29 @@ class ExtensionContentSettingsStore {
   void RemoveObserver(Observer* observer);
 
  private:
+  friend class base::RefCountedThreadSafe<ExtensionContentSettingsStore>;
+
   struct ExtensionEntry;
-  struct ContentSettingSpec {
-    ContentSettingSpec(const ContentSettingsPattern& pattern,
-                       const ContentSettingsPattern& embedder_pattern,
-                       ContentSettingsType type,
-                       const content_settings::ResourceIdentifier& identifier,
-                       ContentSetting setting);
 
-    ContentSettingsPattern embedded_pattern;
-    ContentSettingsPattern top_level_pattern;
-    ContentSettingsType content_type;
-    content_settings::ResourceIdentifier resource_identifier;
-    ContentSetting setting;
-  };
+  typedef std::multimap<base::Time, ExtensionEntry*> ExtensionEntryMap;
 
-  typedef std::map<std::string, ExtensionEntry*> ExtensionEntryMap;
+  virtual ~ExtensionContentSettingsStore();
 
-  typedef std::list<ContentSettingSpec> ContentSettingSpecList;
-
-  ContentSetting GetContentSettingFromSpecList(
-      const GURL& embedded_url,
-      const GURL& top_level_url,
-      ContentSettingsType type,
-      const content_settings::ResourceIdentifier& identifier,
-      const ContentSettingSpecList& setting_spec_list) const;
-
-  ContentSettingSpecList* GetContentSettingSpecList(
+  content_settings::OriginIdentifierValueMap* GetValueMap(
       const std::string& ext_id,
-      bool incognito);
+      ExtensionPrefsScope scope);
 
-  const ContentSettingSpecList* GetContentSettingSpecList(
+  const content_settings::OriginIdentifierValueMap* GetValueMap(
       const std::string& ext_id,
-      bool incognito) const;
+      ExtensionPrefsScope scope) const;
 
   void NotifyOfContentSettingChanged(const std::string& extension_id,
                                      bool incognito);
 
-  void NotifyOfDestruction();
-
   bool OnCorrectThread();
+
+  ExtensionEntryMap::iterator FindEntry(const std::string& ext_id);
+  ExtensionEntryMap::const_iterator FindEntry(const std::string& ext_id) const;
 
   ExtensionEntryMap entries_;
 

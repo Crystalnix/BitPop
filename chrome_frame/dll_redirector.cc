@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,6 @@
 #include "base/path_service.h"
 #include "base/shared_memory.h"
 #include "base/string_util.h"
-#include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "base/win/windows_version.h"
@@ -43,7 +42,10 @@ DllRedirector::~DllRedirector() {
   if (first_module_handle_) {
     if (first_module_handle_ != reinterpret_cast<HMODULE>(&__ImageBase)) {
       FreeLibrary(first_module_handle_);
+    } else {
+      NOTREACHED() << "Error, DllRedirector attempting to free self.";
     }
+
     first_module_handle_ = NULL;
   }
   UnregisterAsFirstCFModule();
@@ -57,11 +59,7 @@ DllRedirector* DllRedirector::GetInstance() {
 bool DllRedirector::BuildSecurityAttributesForLock(
     CSecurityAttributes* sec_attr) {
   DCHECK(sec_attr);
-  int32 major_version, minor_version, fix_version;
-  base::SysInfo::OperatingSystemVersionNumbers(&major_version,
-                                               &minor_version,
-                                               &fix_version);
-  if (major_version < 6) {
+  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
     // Don't bother with changing ACLs on pre-vista.
     return false;
   }
@@ -147,7 +145,6 @@ bool DllRedirector::RegisterAsFirstCFModule() {
     // back to loading our current version. We return true to indicate that the
     // caller should not attempt to delegate to an already loaded version.
     dll_version_.swap(our_version);
-    first_module_handle_ = reinterpret_cast<HMODULE>(&__ImageBase);
     return true;
   }
 
@@ -187,9 +184,6 @@ bool DllRedirector::RegisterAsFirstCFModule() {
                   dll_version_->GetString().c_str(),
                   std::min(kSharedMemorySize,
                            dll_version_->GetString().length() + 1));
-
-        // Mark ourself as the first module in.
-        first_module_handle_ = reinterpret_cast<HMODULE>(&__ImageBase);
       } else {
         char buffer[kSharedMemorySize] = {0};
         memcpy(buffer, shared_memory_->memory(), kSharedMemorySize - 1);
@@ -200,7 +194,6 @@ bool DllRedirector::RegisterAsFirstCFModule() {
           // memory or we did parse a version and it is the same as our own,
           // then pretend we're first in to avoid trying to load any other DLLs.
           dll_version_.reset(our_version.release());
-          first_module_handle_ = reinterpret_cast<HMODULE>(&__ImageBase);
           created_beacon = true;
         }
       }
@@ -233,15 +226,14 @@ void DllRedirector::UnregisterAsFirstCFModule() {
 LPFNGETCLASSOBJECT DllRedirector::GetDllGetClassObjectPtr() {
   HMODULE first_module_handle = GetFirstModule();
 
-  LPFNGETCLASSOBJECT proc_ptr = reinterpret_cast<LPFNGETCLASSOBJECT>(
-      GetProcAddress(first_module_handle, "DllGetClassObject"));
-  if (!proc_ptr) {
-    DPLOG(ERROR) << "DllRedirector: Could not get address of DllGetClassObject "
-                    "from first loaded module.";
-    // Oh boink, the first module we loaded was somehow bogus, make ourselves
-    // the first module again.
-    first_module_handle = reinterpret_cast<HMODULE>(&__ImageBase);
+  LPFNGETCLASSOBJECT proc_ptr = NULL;
+  if (first_module_handle) {
+    proc_ptr = reinterpret_cast<LPFNGETCLASSOBJECT>(
+        GetProcAddress(first_module_handle, "DllGetClassObject"));
+    DPLOG_IF(ERROR, !proc_ptr) << "DllRedirector: Could not get address of "
+                                  "DllGetClassObject from first loaded module.";
   }
+
   return proc_ptr;
 }
 
@@ -266,9 +258,11 @@ HMODULE DllRedirector::GetFirstModule() {
 
   if (first_module_handle_ == NULL) {
     first_module_handle_ = LoadVersionedModule(dll_version_.get());
-    if (!first_module_handle_) {
-      first_module_handle_ = reinterpret_cast<HMODULE>(&__ImageBase);
-    }
+  }
+
+  if (first_module_handle_ == reinterpret_cast<HMODULE>(&__ImageBase)) {
+    NOTREACHED() << "Should not be loading own version.";
+    first_module_handle_ = NULL;
   }
 
   return first_module_handle_;
@@ -277,24 +271,30 @@ HMODULE DllRedirector::GetFirstModule() {
 HMODULE DllRedirector::LoadVersionedModule(Version* version) {
   DCHECK(version);
 
-  FilePath module_path;
-  PathService::Get(base::FILE_MODULE, &module_path);
-  DCHECK(!module_path.empty());
+  HMODULE hmodule = NULL;
+  wchar_t system_buffer[MAX_PATH];
+  HMODULE this_module = reinterpret_cast<HMODULE>(&__ImageBase);
+  system_buffer[0] = 0;
+  if (GetModuleFileName(this_module, system_buffer,
+                        arraysize(system_buffer)) != 0) {
+    FilePath module_path(system_buffer);
 
-  // For a module located in
-  // Foo\XXXXXXXXX\<module>.dll, load
-  // Foo\<version>\<module>.dll:
-  FilePath module_name = module_path.BaseName();
-  module_path = module_path.DirName()
-                           .DirName()
-                           .Append(ASCIIToWide(version->GetString()))
-                           .Append(module_name);
+    // For a module located in
+    // Foo\XXXXXXXXX\<module>.dll, load
+    // Foo\<version>\<module>.dll:
+    FilePath module_name = module_path.BaseName();
+    module_path = module_path.DirName()
+                             .DirName()
+                             .Append(ASCIIToWide(version->GetString()))
+                             .Append(module_name);
 
-  HMODULE hmodule = LoadLibrary(module_path.value().c_str());
-  if (hmodule == NULL) {
-    DPLOG(ERROR) << "Could not load reported module version "
-                 << version->GetString();
+    hmodule = LoadLibrary(module_path.value().c_str());
+    if (hmodule == NULL) {
+      DPLOG(ERROR) << "Could not load reported module version "
+                   << version->GetString();
+    }
+  } else {
+    DPLOG(FATAL) << "Failed to get module file name";
   }
-
   return hmodule;
 }

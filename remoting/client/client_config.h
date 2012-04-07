@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,10 @@
 #define REMOTING_CLIENT_CLIENT_CONFIG_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "remoting/protocol/authentication_method.h"
 
 namespace remoting {
 
@@ -15,11 +17,15 @@ struct ClientConfig {
   ClientConfig();
   ~ClientConfig();
 
+  std::string local_jid;
+
   std::string host_jid;
-  std::string username;
-  std::string auth_token;
-  std::string auth_service;
-  std::string nonce;
+  std::string host_public_key;
+
+  std::string shared_secret;
+  bool use_v1_authenticator;
+  std::vector<protocol::AuthenticationMethod> authentication_methods;
+  std::string authentication_tag;
 };
 
 }  // namespace remoting

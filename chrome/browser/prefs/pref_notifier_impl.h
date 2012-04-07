@@ -14,29 +14,35 @@
 #include "chrome/browser/prefs/pref_notifier.h"
 
 class PrefService;
+
+namespace content {
 class NotificationObserver;
+}
 
 // The PrefNotifier implementation used by the PrefService.
 class PrefNotifierImpl : public PrefNotifier,
                          public base::NonThreadSafe {
  public:
+  PrefNotifierImpl();
   explicit PrefNotifierImpl(PrefService* pref_service);
   virtual ~PrefNotifierImpl();
 
   // If the pref at the given path changes, we call the observer's Observe
   // method with PREF_CHANGED.
-  void AddPrefObserver(const char* path, NotificationObserver* obs);
-  void RemovePrefObserver(const char* path, NotificationObserver* obs);
+  void AddPrefObserver(const char* path, content::NotificationObserver* obs);
+  void RemovePrefObserver(const char* path, content::NotificationObserver* obs);
 
   // PrefNotifier overrides.
-  virtual void OnPreferenceChanged(const std::string& pref_name);
-  virtual void OnInitializationCompleted(bool succeeded);
+  virtual void OnPreferenceChanged(const std::string& pref_name) OVERRIDE;
+  virtual void OnInitializationCompleted(bool succeeded) OVERRIDE;
+
+  void SetPrefService(PrefService* pref_service);
 
  protected:
   // A map from pref names to a list of observers. Observers get fired in the
   // order they are added. These should only be accessed externally for unit
   // testing.
-  typedef ObserverList<NotificationObserver> NotificationObserverList;
+  typedef ObserverList<content::NotificationObserver> NotificationObserverList;
   typedef base::hash_map<std::string, NotificationObserverList*>
       PrefObserverMap;
 

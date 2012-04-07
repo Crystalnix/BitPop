@@ -5,13 +5,14 @@
 #include "content/renderer/geolocation_dispatcher.h"
 
 #include "content/common/geolocation_messages.h"
+#include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPermissionRequest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPermissionRequestManager.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationClient.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPosition.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
 using WebKit::WebGeolocationController;
 using WebKit::WebGeolocationError;
@@ -19,8 +20,8 @@ using WebKit::WebGeolocationPermissionRequest;
 using WebKit::WebGeolocationPermissionRequestManager;
 using WebKit::WebGeolocationPosition;
 
-GeolocationDispatcher::GeolocationDispatcher(RenderView* render_view)
-    : RenderViewObserver(render_view),
+GeolocationDispatcher::GeolocationDispatcher(RenderViewImpl* render_view)
+    : content::RenderViewObserver(render_view),
       pending_permissions_(new WebGeolocationPermissionRequestManager()),
       enable_high_accuracy_(false),
       updating_(false) {

@@ -6,8 +6,8 @@
 
 #include <deque>
 
+#include "base/sys_byteorder.h"
 #include "content/browser/renderer_host/p2p/socket_host_test_utils.h"
-#include "net/base/sys_byteorder.h"
 #include "net/socket/stream_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,6 +16,8 @@ using ::testing::_;
 using ::testing::DeleteArg;
 using ::testing::DoAll;
 using ::testing::Return;
+
+namespace content {
 
 class P2PSocketHostTcpTest : public testing::Test {
  protected:
@@ -165,3 +167,5 @@ TEST_F(P2PSocketHostTcpTest, SendAfterStunRequest) {
 
   EXPECT_EQ(expected_data, sent_data_);
 }
+
+}  // namespace content

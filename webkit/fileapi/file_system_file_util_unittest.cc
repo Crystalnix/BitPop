@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,45 +11,15 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #include "webkit/fileapi/file_system_test_helper.h"
-#include "webkit/fileapi/local_file_system_file_util.h"
-#include "webkit/fileapi/obfuscated_file_system_file_util.h"
+#include "webkit/fileapi/native_file_util.h"
+#include "webkit/fileapi/obfuscated_file_util.h"
+#include "webkit/fileapi/test_file_set.h"
 
-using namespace fileapi;
-
-namespace {
-
-struct CopyMoveTestCaseRecord {
-  bool is_directory;
-  const FilePath::CharType path[64];
-  int64 data_file_size;
-};
-
-const CopyMoveTestCaseRecord kCopyMoveTestCases[] = {
-  {true, FILE_PATH_LITERAL("dir a"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir a"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir d"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir d/dir e"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir d/dir e/dir f"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir d/dir e/dir g"), 0},
-  {true, FILE_PATH_LITERAL("dir a/dir d/dir e/dir h"), 0},
-  {true, FILE_PATH_LITERAL("dir b"), 0},
-  {true, FILE_PATH_LITERAL("dir b/dir a"), 0},
-  {true, FILE_PATH_LITERAL("dir c"), 0},
-  {false, FILE_PATH_LITERAL("file 0"), 38},
-  {false, FILE_PATH_LITERAL("file 2"), 60},
-  {false, FILE_PATH_LITERAL("file 3"), 0},
-  {false, FILE_PATH_LITERAL("dir a/file 0"), 39},
-  {false, FILE_PATH_LITERAL("dir a/dir d/dir e/dir g/file 0"), 40},
-  {false, FILE_PATH_LITERAL("dir a/dir d/dir e/dir g/file 1"), 41},
-  {false, FILE_PATH_LITERAL("dir a/dir d/dir e/dir g/file 2"), 42},
-  {false, FILE_PATH_LITERAL("dir a/dir d/dir e/dir g/file 3"), 50},
-};
-
-}  // namespace (anonymous)
+namespace fileapi {
 
 // This is not yet a full unit test for FileSystemFileUtil.  TODO(ericu): Adapt
 // the other subclasses' unit tests, as mentioned in the comments in
-// ObfuscatedFileSystemFileUtil's unit test.
+// ObfuscatedFileUtil's unit test.
 // Currently this is just a test of cross-filesystem copy and move, which
 // actually exercises subclasses of FileSystemFileUtil as well as the class
 // itself.  We currently only test copies between obfuscated filesystems.
@@ -65,6 +35,9 @@ class FileSystemFileUtilTest : public testing::Test {
 
   FileSystemOperationContext* NewContext(FileSystemTestOriginHelper* helper) {
     FileSystemOperationContext* context = helper->NewOperationContext();
+    // We need to allocate quota for paths for
+    // TestCrossFileSystemCopyMoveHelper, since it calls into OFSFU, which
+    // charges quota for paths.
     context->set_allowed_bytes_growth(1024 * 1024);
     return context;
   }
@@ -75,11 +48,10 @@ class FileSystemFileUtilTest : public testing::Test {
       bool copy) {
     ScopedTempDir base_dir;
     ASSERT_TRUE(base_dir.CreateUniqueTempDir());
-    scoped_refptr<ObfuscatedFileSystemFileUtil> file_util(
-        new ObfuscatedFileSystemFileUtil(base_dir.path()));
+    scoped_refptr<ObfuscatedFileUtil> file_util(
+        new ObfuscatedFileUtil(base_dir.path(), new NativeFileUtil()));
     FileSystemTestOriginHelper src_helper(src_origin, src_type);
     src_helper.SetUp(base_dir.path(),
-                     false,  // incognito
                      false,  // unlimited quota
                      NULL,  // quota::QuotaManagerProxy
                      file_util.get());
@@ -89,8 +61,9 @@ class FileSystemFileUtilTest : public testing::Test {
     // Set up all the source data.
     scoped_ptr<FileSystemOperationContext> context;
     FilePath test_root(FILE_PATH_LITERAL("root directory"));
-    for (size_t i = 0; i < arraysize(kCopyMoveTestCases); ++i) {
-      const CopyMoveTestCaseRecord& test_case = kCopyMoveTestCases[i];
+
+    for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
+      const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
       FilePath path = test_root.Append(test_case.path);
       if (test_case.is_directory) {
         context.reset(NewContext(&src_helper));
@@ -112,13 +85,13 @@ class FileSystemFileUtilTest : public testing::Test {
     FileSystemContext* file_system_context = dest_helper.file_system_context();
     scoped_ptr<FileSystemOperationContext> copy_context(
         new FileSystemOperationContext(file_system_context, NULL));
-    copy_context->set_src_file_system_file_util(file_util);
-    copy_context->set_dest_file_system_file_util(file_util);
+    copy_context->set_src_file_util(file_util);
+    copy_context->set_dest_file_util(file_util);
     copy_context->set_src_origin_url(src_helper.origin());
     copy_context->set_dest_origin_url(dest_helper.origin());
     copy_context->set_src_type(src_helper.type());
     copy_context->set_dest_type(dest_helper.type());
-    copy_context->set_allowed_bytes_growth(1024 * 1024);
+    copy_context->set_allowed_bytes_growth(1024 * 1024); // OFSFU path quota.
 
     if (copy)
       ASSERT_EQ(base::PLATFORM_FILE_OK,
@@ -128,8 +101,8 @@ class FileSystemFileUtilTest : public testing::Test {
           file_util->Move(copy_context.get(), test_root, test_root));
 
     // Validate that the destination paths are correct.
-    for (size_t i = 0; i < arraysize(kCopyMoveTestCases); ++i) {
-      const CopyMoveTestCaseRecord& test_case = kCopyMoveTestCases[i];
+    for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
+      const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
       FilePath path = test_root.Append(test_case.path);
 
       base::PlatformFileInfo dest_file_info;
@@ -152,8 +125,8 @@ class FileSystemFileUtilTest : public testing::Test {
 
     // Validate that the source paths are still there [for a copy] or gone [for
     // a move].
-    for (size_t i = 0; i < arraysize(kCopyMoveTestCases); ++i) {
-      const CopyMoveTestCaseRecord& test_case = kCopyMoveTestCases[i];
+    for (size_t i = 0; i < test::kRegularTestCaseSize; ++i) {
+      const test::TestCaseRecord& test_case = test::kRegularTestCases[i];
       FilePath path = test_root.Append(test_case.path);
       base::PlatformFileInfo src_file_info;
       FilePath data_path;
@@ -204,3 +177,5 @@ TEST_F(FileSystemFileUtilTest, TestCrossFileSystemMoveSameOrigin) {
 
   TestCrossFileSystemCopyMoveHelper(origin, src_type, origin, dest_type, false);
 }
+
+}  // namespace fileapi

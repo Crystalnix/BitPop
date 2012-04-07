@@ -12,6 +12,7 @@
 #include "base/string_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
+#include "net/http/http_server_properties_impl.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_http_utils.h"
 
@@ -38,7 +39,7 @@ MockWrite* ChopWriteFrame(const char* data, int length, int num_chunks) {
 // |num_chunks| is the number of chunks to create.
 MockWrite* ChopWriteFrame(const spdy::SpdyFrame& frame, int num_chunks) {
   return ChopWriteFrame(frame.data(),
-                        frame.length() + spdy::SpdyFrame::size(),
+                        frame.length() + spdy::SpdyFrame::kHeaderSize,
                         num_chunks);
 }
 
@@ -63,7 +64,7 @@ MockRead* ChopReadFrame(const char* data, int length, int num_chunks) {
 // |num_chunks| is the number of chunks to create.
 MockRead* ChopReadFrame(const spdy::SpdyFrame& frame, int num_chunks) {
   return ChopReadFrame(frame.data(),
-                       frame.length() + spdy::SpdyFrame::size(),
+                       frame.length() + spdy::SpdyFrame::kHeaderSize,
                        num_chunks);
 }
 
@@ -193,6 +194,13 @@ spdy::SpdyFrame* ConstructSpdyPacket(const SpdyHeaderInfo& header_info,
 spdy::SpdyFrame* ConstructSpdySettings(spdy::SpdySettings settings) {
   spdy::SpdyFramer framer;
   return framer.CreateSettings(settings);
+}
+
+// Construct a SPDY PING frame.
+// Returns the constructed frame.  The caller takes ownership of the frame.
+spdy::SpdyFrame* ConstructSpdyPing() {
+  spdy::SpdyFramer framer;
+  return framer.CreatePingFrame(1);
 }
 
 // Construct a SPDY GOAWAY frame.
@@ -750,7 +758,7 @@ spdy::SpdyFrame* ConstructWrappedSpdyFrame(
     const scoped_ptr<spdy::SpdyFrame>& frame,
     int stream_id) {
   return ConstructSpdyBodyFrame(stream_id, frame->data(),
-                                frame->length() + spdy::SpdyFrame::size(),
+                                frame->length() + spdy::SpdyFrame::kHeaderSize,
                                 false);
 }
 
@@ -764,7 +772,6 @@ int ConstructSpdyReplyString(const char* const extra_headers[],
                              char* buffer,
                              int buffer_length) {
   int packet_size = 0;
-  int header_count = 0;
   char* buffer_write = buffer;
   int buffer_left = buffer_length;
   spdy::SpdyHeaderBlock headers;
@@ -772,7 +779,6 @@ int ConstructSpdyReplyString(const char* const extra_headers[],
     return 0;
   // Copy in the extra headers.
   AppendHeadersToSpdyFrame(extra_headers, extra_header_count, &headers);
-  header_count = headers.size();
   // The iterator gets us the list of header/value pairs in sorted order.
   spdy::SpdyHeaderBlock::iterator next = headers.begin();
   spdy::SpdyHeaderBlock::iterator last = headers.end();
@@ -835,7 +841,7 @@ int ConstructSpdyReplyString(const char* const extra_headers[],
 // Create a MockWrite from the given SpdyFrame.
 MockWrite CreateMockWrite(const spdy::SpdyFrame& req) {
   return MockWrite(
-      true, req.data(), req.length() + spdy::SpdyFrame::size());
+      true, req.data(), req.length() + spdy::SpdyFrame::kHeaderSize);
 }
 
 // Create a MockWrite from the given SpdyFrame and sequence number.
@@ -846,13 +852,13 @@ MockWrite CreateMockWrite(const spdy::SpdyFrame& req, int seq) {
 // Create a MockWrite from the given SpdyFrame and sequence number.
 MockWrite CreateMockWrite(const spdy::SpdyFrame& req, int seq, bool async) {
   return MockWrite(
-      async, req.data(), req.length() + spdy::SpdyFrame::size(), seq);
+      async, req.data(), req.length() + spdy::SpdyFrame::kHeaderSize, seq);
 }
 
 // Create a MockRead from the given SpdyFrame.
 MockRead CreateMockRead(const spdy::SpdyFrame& resp) {
   return MockRead(
-      true, resp.data(), resp.length() + spdy::SpdyFrame::size());
+      true, resp.data(), resp.length() + spdy::SpdyFrame::kHeaderSize);
 }
 
 // Create a MockRead from the given SpdyFrame and sequence number.
@@ -863,7 +869,7 @@ MockRead CreateMockRead(const spdy::SpdyFrame& resp, int seq) {
 // Create a MockRead from the given SpdyFrame and sequence number.
 MockRead CreateMockRead(const spdy::SpdyFrame& resp, int seq, bool async) {
   return MockRead(
-      async, resp.data(), resp.length() + spdy::SpdyFrame::size(), seq);
+      async, resp.data(), resp.length() + spdy::SpdyFrame::kHeaderSize, seq);
 }
 
 // Combines the given SpdyFrames into the given char array and returns
@@ -872,12 +878,12 @@ int CombineFrames(const spdy::SpdyFrame** frames, int num_frames,
                   char* buff, int buff_len) {
   int total_len = 0;
   for (int i = 0; i < num_frames; ++i) {
-    total_len += frames[i]->length() + spdy::SpdyFrame::size();
+    total_len += frames[i]->length() + spdy::SpdyFrame::kHeaderSize;
   }
   DCHECK_LE(total_len, buff_len);
   char* ptr = buff;
   for (int i = 0; i < num_frames; ++i) {
-    int len = frames[i]->length() + spdy::SpdyFrame::size();
+    int len = frames[i]->length() + spdy::SpdyFrame::kHeaderSize;
     memcpy(ptr, frames[i]->data(), len);
     ptr += len;
   }
@@ -925,6 +931,7 @@ HttpNetworkSession* SpdySessionDependencies::SpdyCreateSession(
   params.ssl_config_service = session_deps->ssl_config_service;
   params.http_auth_handler_factory =
       session_deps->http_auth_handler_factory.get();
+  params.http_server_properties = &session_deps->http_server_properties;
   return new HttpNetworkSession(params);
 }
 
@@ -940,6 +947,7 @@ HttpNetworkSession* SpdySessionDependencies::SpdyCreateSessionDeterministic(
   params.ssl_config_service = session_deps->ssl_config_service;
   params.http_auth_handler_factory =
       session_deps->http_auth_handler_factory.get();
+  params.http_server_properties = &session_deps->http_server_properties;
   return new HttpNetworkSession(params);
 }
 
@@ -951,6 +959,7 @@ SpdyURLRequestContext::SpdyURLRequestContext()
   storage_.set_ssl_config_service(new SSLConfigServiceDefaults);
   storage_.set_http_auth_handler_factory(HttpAuthHandlerFactory::CreateDefault(
       host_resolver()));
+  storage_.set_http_server_properties(new HttpServerPropertiesImpl);
   net::HttpNetworkSession::Params params;
   params.client_socket_factory = &socket_factory_;
   params.host_resolver = host_resolver();
@@ -959,6 +968,7 @@ SpdyURLRequestContext::SpdyURLRequestContext()
   params.ssl_config_service = ssl_config_service();
   params.http_auth_handler_factory = http_auth_handler_factory();
   params.network_delegate = network_delegate();
+  params.http_server_properties = http_server_properties();
   scoped_refptr<HttpNetworkSession> network_session(
       new HttpNetworkSession(params));
   storage_.set_http_transaction_factory(new HttpCache(
@@ -969,7 +979,7 @@ SpdyURLRequestContext::SpdyURLRequestContext()
 SpdyURLRequestContext::~SpdyURLRequestContext() {
 }
 
-const SpdyHeaderInfo make_spdy_header(spdy::SpdyControlType type) {
+const SpdyHeaderInfo MakeSpdyHeader(spdy::SpdyControlType type) {
   const SpdyHeaderInfo kHeader = {
     type,                         // Kind = Syn
     1,                            // Stream ID

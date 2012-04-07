@@ -11,9 +11,11 @@
 #include "base/threading/thread.h"
 #include "printing/backend/print_backend.h"
 
-class CloudPrintProxyService;
 class GURL;
+
+namespace base {
 class DictionaryValue;
+}
 
 namespace gaia {
 struct OAuthClientInfo;
@@ -28,9 +30,6 @@ class CloudPrintProxyFrontend {
  public:
   CloudPrintProxyFrontend() {}
 
-  // There is a list of printers available that can be registered.
-  virtual void OnPrinterListAvailable(
-      const printing::PrinterList& printer_list) = 0;
   // We successfully authenticated with the cloud print server. This callback
   // allows the frontend to persist the tokens.
   virtual void OnAuthenticated(const std::string& robot_oauth_refresh_token,
@@ -55,8 +54,9 @@ class CloudPrintProxyBackend {
   // use system default settings.
   CloudPrintProxyBackend(
       CloudPrintProxyFrontend* frontend,
+      const std::string& proxy_id,
       const GURL& cloud_print_server_url,
-      const DictionaryValue* print_sys_settings,
+      const base::DictionaryValue* print_sys_settings,
       const gaia::OAuthClientInfo& oauth_client_info,
       bool enable_job_poll);
   ~CloudPrintProxyBackend();

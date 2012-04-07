@@ -10,15 +10,15 @@
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "content/common/child_process.h"
-#include "content/common/content_client.h"
-#include "content/common/content_switches.h"
+#include "content/public/common/content_client.h"
+#include "content/public/common/content_switches.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 
 namespace {
 
 // Appends any plugins from the command line to the given vector.
-void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
+void ComputePluginsFromCommandLine(
+    std::vector<content::PepperPluginInfo>* plugins) {
   bool out_of_process =
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kPpapiOutOfProcess);
   const std::string value =
@@ -33,7 +33,6 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
   //    <file-path> +
   //    ["#" + <name> + ["#" + <description> + ["#" + <version>]]] +
   //    *1( LWS + ";" + LWS + <mime-type> )
-
   std::vector<std::string> modules;
   base::SplitString(value, ',', &modules);
   for (size_t i = 0; i < modules.size(); ++i) {
@@ -47,7 +46,7 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
     std::vector<std::string> name_parts;
     base::SplitString(parts[0], '#', &name_parts);
 
-    PepperPluginInfo plugin;
+    content::PepperPluginInfo plugin;
     plugin.is_out_of_process = out_of_process;
 #if defined(OS_WIN)
     // This means we can't provide plugins from non-ASCII paths, but
@@ -64,9 +63,9 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
     if (name_parts.size() > 3)
       plugin.version = name_parts[3];
     for (size_t j = 1; j < parts.size(); ++j) {
-      webkit::npapi::WebPluginMimeType mime_type(parts[j],
-                                                 std::string(),
-                                                 plugin.description);
+      webkit::WebPluginMimeType mime_type(parts[j],
+                                          std::string(),
+                                          plugin.description);
       plugin.mime_types.push_back(mime_type);
     }
 
@@ -76,35 +75,40 @@ void ComputePluginsFromCommandLine(std::vector<PepperPluginInfo>* plugins) {
 
 }  // namespace
 
-webkit::npapi::WebPluginInfo PepperPluginInfo::ToWebPluginInfo() const {
-  webkit::npapi::WebPluginInfo info;
+webkit::WebPluginInfo content::PepperPluginInfo::ToWebPluginInfo() const {
+  webkit::WebPluginInfo info;
 
-  info.name = name.empty() ? path.BaseName().LossyDisplayName() :
-      ASCIIToUTF16(name);
+  info.type = is_out_of_process ?
+      (is_sandboxed ?
+        webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_OUT_OF_PROCESS :
+        webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED) :
+      webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_IN_PROCESS;
+
+  info.name = name.empty() ?
+      path.BaseName().LossyDisplayName() : UTF8ToUTF16(name);
   info.path = path;
   info.version = ASCIIToUTF16(version);
   info.desc = ASCIIToUTF16(description);
   info.mime_types = mime_types;
 
-  webkit::npapi::WebPluginInfo::EnabledStates enabled_state =
-      webkit::npapi::WebPluginInfo::USER_ENABLED_POLICY_UNMANAGED;
-
-  if (!enabled) {
-    enabled_state =
-        webkit::npapi::WebPluginInfo::USER_DISABLED_POLICY_UNMANAGED;
-  }
-
-  info.enabled = enabled_state;
   return info;
 }
 
-PepperPluginInfo::PepperPluginInfo()
-    : is_internal(false),
-      is_out_of_process(false),
-      enabled(true) {
-}
+bool MakePepperPluginInfo(const webkit::WebPluginInfo& webplugin_info,
+                          content::PepperPluginInfo* pepper_info) {
+  if (!webkit::IsPepperPlugin(webplugin_info))
+    return false;
 
-PepperPluginInfo::~PepperPluginInfo() {
+  pepper_info->is_out_of_process = webkit::IsOutOfProcessPlugin(webplugin_info);
+  pepper_info->is_sandboxed = webplugin_info.type !=
+      webkit::WebPluginInfo::PLUGIN_TYPE_PEPPER_UNSANDBOXED;
+
+  pepper_info->path = FilePath(webplugin_info.path);
+  pepper_info->name = UTF16ToASCII(webplugin_info.name);
+  pepper_info->description = UTF16ToASCII(webplugin_info.desc);
+  pepper_info->version = UTF16ToASCII(webplugin_info.version);
+  pepper_info->mime_types = webplugin_info.mime_types;
+  return true;
 }
 
 // static
@@ -118,34 +122,46 @@ PepperPluginRegistry* PepperPluginRegistry::GetInstance() {
 }
 
 // static
-void PepperPluginRegistry::ComputeList(std::vector<PepperPluginInfo>* plugins) {
+void PepperPluginRegistry::ComputeList(
+    std::vector<content::PepperPluginInfo>* plugins) {
   content::GetContentClient()->AddPepperPlugins(plugins);
   ComputePluginsFromCommandLine(plugins);
 }
 
 // static
 void PepperPluginRegistry::PreloadModules() {
-  std::vector<PepperPluginInfo> plugins;
+  std::vector<content::PepperPluginInfo> plugins;
   ComputeList(&plugins);
   for (size_t i = 0; i < plugins.size(); ++i) {
-    if (!plugins[i].is_internal) {
+    if (!plugins[i].is_internal && plugins[i].is_sandboxed) {
       std::string error;
       base::NativeLibrary library = base::LoadNativeLibrary(plugins[i].path,
                                                             &error);
-      LOG_IF(WARNING, !library) << "Unable to load plugin "
-                                << plugins[i].path.value() << " "
-                                << error;
+      DLOG_IF(WARNING, !library) << "Unable to load plugin "
+                                 << plugins[i].path.value() << " "
+                                 << error;
+      (void)library;  // Prevent release-mode warning.
     }
   }
 }
 
-const PepperPluginInfo* PepperPluginRegistry::GetInfoForPlugin(
-    const FilePath& path) const {
+const content::PepperPluginInfo* PepperPluginRegistry::GetInfoForPlugin(
+    const webkit::WebPluginInfo& info) {
   for (size_t i = 0; i < plugin_list_.size(); ++i) {
-    if (path == plugin_list_[i].path)
+    if (info.path == plugin_list_[i].path)
       return &plugin_list_[i];
   }
-  return NULL;
+  // We did not find the plugin in our list. But wait! the plugin can also
+  // be a latecomer, as it happens with pepper flash. This information
+  // is actually in |info| and we can use it to construct it and add it to
+  // the list. This same deal needs to be done in the browser side in
+  // PluginService.
+  content::PepperPluginInfo plugin;
+  if (!MakePepperPluginInfo(info, &plugin))
+    return NULL;
+
+  plugin_list_.push_back(plugin);
+  return &plugin_list_[plugin_list_.size() - 1];
 }
 
 webkit::ppapi::PluginModule* PepperPluginRegistry::GetLiveModule(
@@ -196,7 +212,7 @@ PepperPluginRegistry::PepperPluginRegistry() {
   // the initialized module, it will still try to unregister itself in its
   // destructor.
   for (size_t i = 0; i < plugin_list_.size(); i++) {
-    const PepperPluginInfo& current = plugin_list_[i];
+    const content::PepperPluginInfo& current = plugin_list_[i];
     if (current.is_out_of_process)
       continue;  // Out of process plugins need no special pre-initialization.
 
@@ -219,13 +235,3 @@ PepperPluginRegistry::PepperPluginRegistry() {
   }
 }
 
-base::MessageLoopProxy* PepperPluginRegistry::GetIPCMessageLoop() {
-  // This is called only in the renderer so we know we have a child process.
-  DCHECK(ChildProcess::current()) << "Must be in the renderer.";
-  return ChildProcess::current()->io_message_loop_proxy();
-}
-
-base::WaitableEvent* PepperPluginRegistry::GetShutdownEvent() {
-  DCHECK(ChildProcess::current()) << "Must be in the renderer.";
-  return ChildProcess::current()->GetShutDownEvent();
-}

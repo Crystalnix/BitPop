@@ -1,6 +1,5 @@
-#!/usr/bin/python
-#
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -37,8 +36,6 @@ from idl_option import GetOption, Option, ParseOptions
 
 
 Option('output', 'Generate output.')
-Option('test_same', 'Test that the output matches.')
-Option('test_expect', 'Test that the output matches.')
 
 #
 # IDL Lexer
@@ -51,7 +48,9 @@ class IDLLexer(object):
       'COMMENT',
       'DESCRIBE',
       'ENUM',
+      'LABEL',
       'SYMBOL',
+      'INLINE',
       'INTERFACE',
       'STRUCT',
       'TYPEDEF',
@@ -64,14 +63,17 @@ class IDLLexer(object):
       'STRING',
 
     # Operators
-      'LSHIFT'
+      'LSHIFT',
+      'RSHIFT'
   ]
 
   # 'keywords' is a map of string to token type.  All SYMBOL tokens are
   # matched against keywords, to determine if the token is actually a keyword.
   keywords = {
+    'attribute' : 'ATTRIBUTE',
     'describe' : 'DESCRIBE',
     'enum'  : 'ENUM',
+    'label' : 'LABEL',
     'interface' : 'INTERFACE',
     'readonly' : 'READONLY',
     'struct' : 'STRUCT',
@@ -80,7 +82,7 @@ class IDLLexer(object):
 
   # 'literals' is a value expected by lex which specifies a list of valid
   # literal tokens, meaning the token type and token value are identical.
-  literals = '"*.(){}[],;:=+-'
+  literals = '"*.(){}[],;:=+-/~|&^'
 
   # Token definitions
   #
@@ -94,10 +96,11 @@ class IDLLexer(object):
 
   # Constant values
   t_FLOAT = r'-?(\d+\.\d*|\d*\.\d+)([Ee][+-]?\d+)?|-?\d+[Ee][+-]?\d+'
-  t_INT = r'-?[0-9]+'
+  t_INT = r'-?[0-9]+[uU]?'
   t_OCT = r'-?0[0-7]+'
   t_HEX = r'-?0[Xx][0-9A-Fa-f]+'
   t_LSHIFT = r'<<'
+  t_RSHIFT = r'>>'
 
   # A line ending '\n', we use this to increment the line number
   def t_LINE_END(self, t):
@@ -116,9 +119,12 @@ class IDLLexer(object):
   def t_COMMENT(self, t):
     r'(/\*(.|\n)*?\*/)|(//.*)'
     self.AddLines(t.value.count('\n'))
+    return t
 
-    # C++ comments should keep the newline
-    if t.value[:2] == '//': t.value += '\n'
+  # Return a "preprocessor" inline block
+  def t_INLINE(self, t):
+    r'\#inline (.|\n)*\#endinl.*'
+    self.AddLines(t.value.count('\n'))
     return t
 
   # A symbol or keyword.
@@ -130,11 +136,25 @@ class IDLLexer(object):
     return t
 
   def t_ANY_error(self, t):
+    msg = "Unrecognized input"
     line = self.lexobj.lineno
+
+    # If that line has not been accounted for, then we must have hit
+    # EoF, so compute the beginning of the line that caused the problem.
+    if line >= len(self.index):
+      # Find the offset in the line of the first word causing the issue
+      word = t.value.split()[0]
+      offs = self.lines[line - 1].find(word)
+      # Add the computed line's starting position
+      self.index.append(self.lexobj.lexpos - offs)
+      msg = "Unexpected EoF reached after"
+
     pos = self.lexobj.lexpos - self.index[line]
     file = self.lexobj.filename
-    out = self.ErrorMessage(file, line, pos, "Unrecognized input")
+    out = self.ErrorMessage(file, line, pos, msg)
     sys.stderr.write(out + '\n')
+    self.lex_errors += 1
+
 
   def AddLines(self, count):
     # Set the lexer position for the beginning of the next line.  In the case
@@ -167,6 +187,7 @@ class IDLLexer(object):
     self.lines = data.split('\n')
     self.index = [0]
     self.lexobj.input(data)
+    self.lex_errors = 0
 
   def __init__(self):
     self.lexobj = lex.lex(object=self, lextab=None, optimize=0)
@@ -189,6 +210,17 @@ def FilesToTokens(filenames, verbose=False):
       t = lexer.lexobj.token()
       if t is None: break
       outlist.append(t)
+  return outlist
+
+
+def TokensFromText(text):
+  lexer = IDLLexer()
+  lexer.SetData('unknown', text)
+  outlist = []
+  while 1:
+    t = lexer.lexobj.token()
+    if t is None: break
+    outlist.append(t.value)
   return outlist
 
 #
@@ -214,19 +246,32 @@ def TextToTokens(source):
 # single space.  The new source is then tokenized and compared against the
 # old set.
 #
-def TestSame(values):
-  src1 = ' '.join(values)
-  src2 = ' '.join(TextToTokens(src1))
+def TestSame(values1):
+  # Recreate the source from the tokens.  We use newline instead of whitespace
+  # since the '//' and #inline regex are line sensitive.
+  text = '\n'.join(values1)
+  values2 = TextToTokens(text)
+
+  count1 = len(values1)
+  count2 = len(values2)
+  if count1 != count2:
+    print "Size mismatch original %d vs %d\n" % (count1, count2)
+    if count1 > count2: count1 = count2
+
+  for i in range(count1):
+    if values1[i] != values2[i]:
+      print "%d >>%s<< >>%s<<" % (i, values1[i], values2[i])
 
   if GetOption('output'):
     sys.stdout.write('Generating original.txt and tokenized.txt\n')
     open('original.txt', 'w').write(src1)
     open('tokenized.txt', 'w').write(src2)
 
-  if src1 == src2:
+  if values1 == values2:
     sys.stdout.write('Same: Pass\n')
     return 0
 
+  print "****************\n%s\n%s***************\n" % (src1, src2)
   sys.stdout.write('Same: Failed\n')
   return -1
 
@@ -262,8 +307,6 @@ def TestExpect(tokens):
   return -1
 
 
-
-
 def Main(args):
   filenames = ParseOptions(args)
 
@@ -282,6 +325,6 @@ def Main(args):
     sys.stderr.write('%s\n' % str(le))
   return -1
 
+
 if __name__ == '__main__':
   sys.exit(Main(sys.argv[1:]))
-

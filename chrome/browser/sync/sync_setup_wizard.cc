@@ -7,8 +7,47 @@
 #include <stddef.h>
 #include <ostream>
 
+#include "base/command_line.h"
 #include "base/logging.h"
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/sync_setup_flow.h"
+#include "chrome/browser/sync/util/oauth.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
+
+namespace {
+
+// If we just need to pop open an individual dialog, say to collect
+// gaia credentials in the event of a steady-state auth failure, this is
+// a "discrete" run (as in not a continuous wizard flow).  This returns
+// the end state to pass to Run for a given |start_state|.
+SyncSetupWizard::State GetEndStateForDiscreteRun(
+    SyncSetupWizard::State start_state) {
+  SyncSetupWizard::State result = SyncSetupWizard::FATAL_ERROR;
+  if (start_state == SyncSetupWizard::GAIA_LOGIN ||
+      start_state == SyncSetupWizard::OAUTH_LOGIN) {
+    result = SyncSetupWizard::GAIA_SUCCESS;
+  } else if (start_state == SyncSetupWizard::ENTER_PASSPHRASE ||
+             start_state == SyncSetupWizard::NONFATAL_ERROR ||
+             start_state == SyncSetupWizard::SYNC_EVERYTHING ||
+             start_state == SyncSetupWizard::CONFIGURE) {
+    result = SyncSetupWizard::DONE;
+  }
+  DCHECK_NE(SyncSetupWizard::FATAL_ERROR, result) <<
+      "Invalid start state for discrete run: " << start_state;
+  return result;
+}
+
+// Helper to return whether |state| warrants starting a new flow.
+bool IsTerminalState(SyncSetupWizard::State state) {
+  return state == SyncSetupWizard::GAIA_SUCCESS ||
+         state == SyncSetupWizard::DONE ||
+         state == SyncSetupWizard::FATAL_ERROR ||
+         state == SyncSetupWizard::SETUP_ABORTED_BY_PENDING_CLEAR;
+}
+
+}  // namespace
 
 SyncSetupWizard::SyncSetupWizard(ProfileSyncService* service)
     : service_(service),
@@ -29,59 +68,49 @@ void SyncSetupWizard::Step(State advance_state) {
       return;
     // No flow is in progress, and we have never escorted the user all the
     // way through the wizard flow.
+    // TODO(atwilson): Make sure this works on all autostart_enabled platforms.
+    State end_state = DONE;
+    if (service_->auto_start_enabled() &&
+        !service_->profile()->GetPrefs()->GetBoolean(
+            prefs::kSyncSuppressStart)) {
+      end_state = GAIA_SUCCESS;
+    }
     flow_container_->set_flow(
-        SyncSetupFlow::Run(service_, flow_container_, advance_state, DONE));
+        SyncSetupFlow::Run(service_, flow_container_, advance_state,
+                           end_state));
   } else {
     // No flow in progress, but we've finished the wizard flow once before.
     // This is just a discrete run.
     if (IsTerminalState(advance_state))
-      return;  // Nothing to do.
+      return;
     flow_container_->set_flow(SyncSetupFlow::Run(service_, flow_container_,
         advance_state, GetEndStateForDiscreteRun(advance_state)));
   }
 }
 
-// static
-bool SyncSetupWizard::IsTerminalState(State advance_state) {
-  return advance_state == GAIA_SUCCESS ||
-         advance_state == DONE ||
-         advance_state == FATAL_ERROR ||
-         advance_state == SETUP_ABORTED_BY_PENDING_CLEAR;
+bool SyncSetupWizard::IsVisible() const {
+  return flow_container_->get_flow() != NULL &&
+         flow_container_->get_flow()->IsAttached();
 }
 
-bool SyncSetupWizard::IsVisible() const {
-  return flow_container_->get_flow() != NULL;
+// static
+SyncSetupWizard::State SyncSetupWizard::GetLoginState() {
+  return browser_sync::IsUsingOAuth() ?
+      SyncSetupWizard::OAUTH_LOGIN :
+      SyncSetupWizard::GAIA_LOGIN;
 }
 
 void SyncSetupWizard::Focus() {
   SyncSetupFlow* flow = flow_container_->get_flow();
-  if (flow) {
+  if (flow)
     flow->Focus();
-  }
 }
 
 SyncSetupFlow* SyncSetupWizard::AttachSyncSetupHandler(
     SyncSetupFlowHandler* handler) {
   SyncSetupFlow* flow = flow_container_->get_flow();
-  if (!flow)
+  if (!flow || !flow->AttachSyncSetupHandler(handler))
     return NULL;
 
-  flow->AttachSyncSetupHandler(handler);
   return flow;
-}
-
-// static
-SyncSetupWizard::State SyncSetupWizard::GetEndStateForDiscreteRun(
-    State start_state) {
-  State result = FATAL_ERROR;
-  if (start_state == GAIA_LOGIN) {
-    result = GAIA_SUCCESS;
-  } else if (start_state == ENTER_PASSPHRASE ||
-             start_state == SYNC_EVERYTHING ||
-             start_state == CONFIGURE) {
-    result = DONE;
-  }
-  DCHECK_NE(FATAL_ERROR, result) <<
-      "Invalid start state for discrete run: " << start_state;
-  return result;
 }

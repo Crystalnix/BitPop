@@ -6,14 +6,14 @@
 
 namespace gfx {
 
-GLContextStub::GLContextStub() {
+GLContextStub::GLContextStub() : GLContext(NULL) {
 }
 
 GLContextStub::~GLContextStub() {
 }
 
-bool GLContextStub::Initialize(GLContext* shared_context,
-                               GLSurface* compatible_surface) {
+bool GLContextStub::Initialize(
+    GLSurface* compatible_surface, GpuPreference gpu_preference) {
   return true;
 }
 
@@ -21,6 +21,7 @@ void GLContextStub::Destroy() {
 }
 
 bool GLContextStub::MakeCurrent(GLSurface* surface) {
+  SetCurrent(this, surface);
   return true;
 }
 

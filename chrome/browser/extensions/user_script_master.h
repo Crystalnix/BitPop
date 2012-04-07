@@ -6,34 +6,42 @@
 #define CHROME_BROWSER_EXTENSIONS_USER_SCRIPT_MASTER_H_
 #pragma once
 
+#include <map>
+#include <string>
+
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
+#include "base/string_piece.h"
+#include "chrome/browser/extensions/extension_info_map.h"
+#include "chrome/common/extensions/extension_messages.h"
+#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/extensions/user_script.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
-namespace base {
-class StringPiece;
+namespace content {
+class RenderProcessHost;
 }
 
 class Profile;
-class RenderProcessHost;
+
+typedef std::map<std::string, ExtensionSet::ExtensionPathAndDefaultLocale>
+    ExtensionsInfo;
 
 // Manages a segment of shared memory that contains the user scripts the user
 // has installed.  Lives on the UI thread.
 class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
-                         public NotificationObserver {
+                         public content::NotificationObserver {
  public:
-  // For testability, the constructor takes the path the scripts live in.
-  // This is normally a directory inside the profile.
-  explicit UserScriptMaster(const FilePath& script_dir, Profile* profile);
+  explicit UserScriptMaster(Profile* profile);
 
   // Kicks off a process on the file thread to reload scripts from disk
   // into a new chunk of shared memory and notify renderers.
-  virtual void StartScan();
+  virtual void StartLoad();
 
   // Gets the segment of shared memory for the scripts.
   base::SharedMemory* GetSharedMemory() const {
@@ -46,27 +54,16 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   // Return true if we have any scripts ready.
   bool ScriptsReady() const { return shared_memory_.get() != NULL; }
 
-  // Returns the path to the directory user scripts are stored in.
-  FilePath user_script_dir() const { return user_script_dir_; }
-
  protected:
   friend class base::RefCountedThreadSafe<UserScriptMaster>;
 
   virtual ~UserScriptMaster();
 
- private:
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse1);
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse2);
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse3);
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse4);
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse5);
-  FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, Parse6);
-
  public:
   // We reload user scripts on the file thread to prevent blocking the UI.
   // ScriptReloader lives on the file thread and does the reload
   // work, and then sends a message back to its master with a new SharedMemory*.
-  // ScriptReloader is the worker that manages running the script scan
+  // ScriptReloader is the worker that manages running the script load
   // on the file thread. It must be created on, and its public API must only be
   // called from, the master's thread.
   class ScriptReloader
@@ -76,15 +73,12 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     static bool ParseMetadataHeader(const base::StringPiece& script_text,
                                     UserScript* script);
 
-    static void LoadScriptsFromDirectory(const FilePath& script_dir,
-                                         UserScriptList* result);
-
     explicit ScriptReloader(UserScriptMaster* master);
 
-    // Start a scan for scripts.
+    // Start loading of scripts.
     // Will always send a message to the master upon completion.
-    void StartScan(const FilePath& script_dir,
-                   const UserScriptList& external_scripts);
+    void StartLoad(const UserScriptList& external_scripts,
+                   const ExtensionsInfo& extension_info_);
 
     // The master is going away; don't call it back.
     void DisownMaster() {
@@ -92,53 +86,60 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     }
 
    private:
+    FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, SkipBOMAtTheBeginning);
+    FRIEND_TEST_ALL_PREFIXES(UserScriptMasterTest, LeaveBOMNotAtTheBeginning);
     friend class base::RefCountedThreadSafe<UserScriptMaster::ScriptReloader>;
 
     ~ScriptReloader() {}
 
     // Where functions are run:
     //    master          file
-    //   StartScan   ->  RunScan
-    //                     LoadScriptsFromDirectory()
-    //                     LoadLoneScripts()
-    // NotifyMaster  <-  RunScan
+    //   StartLoad   ->  RunLoad
+    //                     LoadUserScripts()
+    // NotifyMaster  <-  RunLoad
 
     // Runs on the master thread.
     // Notify the master that new scripts are available.
     void NotifyMaster(base::SharedMemory* memory);
 
     // Runs on the File thread.
-    // Scan the specified directory and lone scripts, calling NotifyMaster when
-    // done. The parameters are intentionally passed by value so their lifetimes
-    // aren't tied to the caller.
-    void RunScan(const FilePath script_dir, UserScriptList lone_scripts);
+    // Load the specified user scripts, calling NotifyMaster when done.
+    // |user_scripts| is intentionally passed by value so its lifetime isn't
+    // tied to the caller.
+    void RunLoad(const UserScriptList& user_scripts);
+
+    void LoadUserScripts(UserScriptList* user_scripts);
+
+    // Uses extensions_info_ to build a map of localization messages.
+    // Returns NULL if |extension_id| is invalid.
+    SubstitutionMap* GetLocalizationMessages(std::string extension_id);
 
     // A pointer back to our master.
     // May be NULL if DisownMaster() is called.
     UserScriptMaster* master_;
 
+    // Maps extension info needed for localization to an extension ID.
+    ExtensionsInfo extensions_info_;
+
     // The message loop to call our master back on.
     // Expected to always outlive us.
-    BrowserThread::ID master_thread_id_;
+    content::BrowserThread::ID master_thread_id_;
 
     DISALLOW_COPY_AND_ASSIGN(ScriptReloader);
   };
 
  private:
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Sends the renderer process a new set of user scripts.
-  void SendUpdate(RenderProcessHost* process,
+  void SendUpdate(content::RenderProcessHost* process,
                   base::SharedMemory* shared_memory);
 
   // Manages our notification registrations.
-  NotificationRegistrar registrar_;
-
-  // The directories containing user scripts.
-  FilePath user_script_dir_;
+  content::NotificationRegistrar registrar_;
 
   // We hang on to our pointer to know if we've already got one running.
   scoped_refptr<ScriptReloader> script_reloader_;
@@ -146,17 +147,20 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   // Contains the scripts that were found the last time scripts were updated.
   scoped_ptr<base::SharedMemory> shared_memory_;
 
-  // List of scripts outside of script directories we should also load.
-  UserScriptList lone_scripts_;
+  // List of scripts from currently-installed extensions we should load.
+  UserScriptList user_scripts_;
+
+  // Maps extension info needed for localization to an extension ID.
+  ExtensionsInfo extensions_info_;
 
   // If the extensions service has finished loading its initial set of
   // extensions.
   bool extensions_service_ready_;
 
-  // If the script directory is modified while we're rescanning it, we note
-  // that we're currently mid-scan and then start over again once the scan
-  // finishes.  This boolean tracks whether another scan is pending.
-  bool pending_scan_;
+  // If list of user scripts is modified while we're loading it, we note
+  // that we're currently mid-load and then start over again once the load
+  // finishes.  This boolean tracks whether another load is pending.
+  bool pending_load_;
 
   // The profile for which the scripts managed here are installed.
   Profile* profile_;

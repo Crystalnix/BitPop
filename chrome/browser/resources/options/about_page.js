@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,13 +58,9 @@ cr.define('options', function() {
         $('aboutPageMoreInfo').hidden = false;
       };
 
-      if (!AccountsOptions.currentUserIsOwner()) {
-        $('channelSelect').disabled = true;
-      } else {
-        var self = this;
-        $('channelSelect').onchange = function(event) {
-          self.selectedOptionOnChange_(event.target.value);
-        };
+      var self = this;
+      $('channelSelect').onchange = function(event) {
+        self.channelSelectOnChanged_(event.target.value);
       }
 
       // Notify the handler that the page is ready.
@@ -128,7 +124,23 @@ cr.define('options', function() {
       $('checkNow').disabled = !enable;
     },
 
-    selectedOptionOnChange_: function(value) {
+    enableReleaseChannel_: function(enable) {
+      $('channelSelect').disabled = !enable;
+    },
+
+    setReleaseChannel_: function(channel) {
+      // Write the value into the pref which will end up in the policy.
+      // Eventually, the update engine will use the policy value as the
+      // source truth for the update channel (see http://crosbug/17015).
+      Preferences.setStringPref("cros.system.releaseChannel", channel);
+      this.selectedChannel_ = channel;
+      chrome.send('SetReleaseTrack', [channel]);
+    },
+
+    // This function is called when the user changes the release channel from
+    // the 'channelSelect' <select> element. It either calls back into Chrome to
+    // switch the channel or displays a confirmation box if switching to dev.
+    channelSelectOnChanged_: function(value) {
       if (value == 'dev-channel') {
         // Open confirm dialog.
         var self = this;
@@ -140,16 +152,14 @@ cr.define('options', function() {
           function() {
             // Ok, so set release track and update selected channel.
             $('channelWarningBlock').hidden = false;
-            chrome.send('SetReleaseTrack', [value]);
-            self.selectedChannel_ = value; },
+            self.setReleaseChannel_(value); },
           function() {
             // Cancel, so switch back to previous selected channel.
             self.updateSelectedOption_(self.selectedChannel_); }
           );
       } else {
         $('channelWarningBlock').hidden = true;
-        chrome.send('SetReleaseTrack', [value]);
-        this.selectedChannel_ = value;
+        this.setReleaseChannel_(value);
       }
     },
 
@@ -191,6 +201,10 @@ cr.define('options', function() {
 
   AboutPage.updateEnableCallback = function(enable) {
     AboutPage.getInstance().updateEnable_(enable);
+  };
+
+  AboutPage.updateEnableReleaseChannelCallback = function(enable) {
+    AboutPage.getInstance().enableReleaseChannel_(enable);
   };
 
   AboutPage.updateSelectedOptionCallback = function(value) {

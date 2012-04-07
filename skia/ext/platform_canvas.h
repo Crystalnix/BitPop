@@ -20,7 +20,6 @@ class SK_API PlatformCanvas : public SkCanvas {
  public:
   // If you use the version with no arguments, you MUST call initialize()
   PlatformCanvas();
-  explicit PlatformCanvas(SkDeviceFactory* factory);
   // Set is_opaque if you are going to erase the bitmap and not use
   // transparency: this will enable some optimizations.
   PlatformCanvas(int width, int height, bool is_opaque);
@@ -34,7 +33,7 @@ class SK_API PlatformCanvas : public SkCanvas {
                  CGContextRef context);
   PlatformCanvas(int width, int height, bool is_opaque, uint8_t* context);
 #elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
-      defined(__Solaris__)
+      defined(__sun) || defined(ANDROID)
   // Linux ---------------------------------------------------------------------
 
   // Construct a canvas from the given memory region. The memory is not cleared
@@ -56,7 +55,7 @@ class SK_API PlatformCanvas : public SkCanvas {
   bool initialize(int width, int height, bool is_opaque, uint8_t* data = NULL);
 
 #elif defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
-      defined(__Solaris__)
+      defined(__sun) || defined(ANDROID)
   // For two-part init, call if you use the no-argument constructor above
   bool initialize(int width, int height, bool is_opaque, uint8_t* data = NULL);
 #endif
@@ -109,6 +108,13 @@ SK_API SkDevice* GetTopDevice(const SkCanvas& canvas);
 // Set is_opaque if you are going to erase the bitmap and not use
 // transparency: this will enable some optimizations.
 SK_API SkCanvas* CreateBitmapCanvas(int width, int height, bool is_opaque);
+
+// Non-crashing version of CreateBitmapCanvas
+// returns NULL if allocation fails for any reason.
+// Use this instead of CreateBitmapCanvas in places that are likely to
+// attempt to allocate very large canvases (therefore likely to fail),
+// and where it is possible to recover gracefully from the failed allocation.
+SK_API SkCanvas* TryCreateBitmapCanvas(int width, int height, bool is_opaque);
 
 // Returns true if native platform routines can be used to draw on the
 // given canvas. If this function returns false, BeginPlatformPaint will

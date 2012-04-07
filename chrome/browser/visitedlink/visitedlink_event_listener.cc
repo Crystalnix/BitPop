@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,10 @@
 #include "base/shared_memory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_widget_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_process_host.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -30,7 +31,7 @@ static const unsigned kVisitedLinkBufferThreshold = 50;
 // As opposed to the VisitedLinkEventListener, which coalesces to
 // reduce the rate of messages being sent to render processes, this class
 // ensures that the updates occur only when explicitly requested. This is
-// used for BrowserRenderProcessHost to only send Add/Reset link events to the
+// used for RenderProcessHostImpl to only send Add/Reset link events to the
 // renderers when their tabs are visible and the corresponding RenderViews are
 // created.
 class VisitedLinkUpdater {
@@ -41,13 +42,15 @@ class VisitedLinkUpdater {
 
   // Informs the renderer about a new visited link table.
   void SendVisitedLinkTable(base::SharedMemory* table_memory) {
-    RenderProcessHost* process = RenderProcessHost::FromID(render_process_id_);
+    content::RenderProcessHost* process =
+        content::RenderProcessHost::FromID(render_process_id_);
     if (!process)
       return;  // Happens in tests
     base::SharedMemoryHandle handle_for_process;
     table_memory->ShareToProcess(process->GetHandle(), &handle_for_process);
     if (base::SharedMemory::IsHandleValid(handle_for_process))
-      process->Send(new ViewMsg_VisitedLink_NewTable(handle_for_process));
+      process->Send(new ChromeViewMsg_VisitedLink_NewTable(
+          handle_for_process));
   }
 
   // Buffers |links| to update, but doesn't actually relay them.
@@ -75,7 +78,8 @@ class VisitedLinkUpdater {
   // Sends visited link update messages: a list of links whose visited state
   // changed or reset of visited state for all links.
   void Update() {
-    RenderProcessHost* process = RenderProcessHost::FromID(render_process_id_);
+    content::RenderProcessHost* process =
+        content::RenderProcessHost::FromID(render_process_id_);
     if (!process)
       return;  // Happens in tests
 
@@ -83,7 +87,7 @@ class VisitedLinkUpdater {
       return;
 
     if (reset_needed_) {
-      process->Send(new ViewMsg_VisitedLink_Reset());
+      process->Send(new ChromeViewMsg_VisitedLink_Reset());
       reset_needed_ = false;
       return;
     }
@@ -91,7 +95,7 @@ class VisitedLinkUpdater {
     if (pending_.empty())
       return;
 
-    process->Send(new ViewMsg_VisitedLink_Add(pending_));
+    process->Send(new ChromeViewMsg_VisitedLink_Add(pending_));
 
     pending_.clear();
   }
@@ -102,13 +106,14 @@ class VisitedLinkUpdater {
   VisitedLinkCommon::Fingerprints pending_;
 };
 
-VisitedLinkEventListener::VisitedLinkEventListener() {
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_CREATED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_TERMINATED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED,
-                 NotificationService::AllSources());
+VisitedLinkEventListener::VisitedLinkEventListener(Profile* profile)
+    : profile_(profile) {
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CREATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED,
+                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 VisitedLinkEventListener::~VisitedLinkEventListener() {
@@ -121,8 +126,13 @@ void VisitedLinkEventListener::NewTable(base::SharedMemory* table_memory) {
   // Send to all RenderProcessHosts.
   for (Updaters::iterator i = updaters_.begin(); i != updaters_.end(); ++i) {
     // Make sure to not send to incognito renderers.
-    RenderProcessHost* process = RenderProcessHost::FromID(i->first);
-    VisitedLinkMaster* master = process->profile()->GetVisitedLinkMaster();
+    content::RenderProcessHost* process =
+        content::RenderProcessHost::FromID(i->first);
+    if (!process)
+      continue;
+    Profile* profile = Profile::FromBrowserContext(
+        process->GetBrowserContext());
+    VisitedLinkMaster* master = profile->GetVisitedLinkMaster();
     if (master && master->shared_memory() == table_memory)
       i->second->SendVisitedLinkTable(table_memory);
   }
@@ -132,7 +142,7 @@ void VisitedLinkEventListener::Add(VisitedLinkMaster::Fingerprint fingerprint) {
   pending_visited_links_.push_back(fingerprint);
 
   if (!coalesce_timer_.IsRunning()) {
-    coalesce_timer_.Start(
+    coalesce_timer_.Start(FROM_HERE,
         TimeDelta::FromMilliseconds(kCommitIntervalMs), this,
         &VisitedLinkEventListener::CommitVisitedLinks);
   }
@@ -158,34 +168,43 @@ void VisitedLinkEventListener::CommitVisitedLinks() {
   pending_visited_links_.clear();
 }
 
-void VisitedLinkEventListener::Observe(NotificationType type,
-                                       const NotificationSource& source,
-                                       const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::RENDERER_PROCESS_CREATED: {
-      RenderProcessHost* process = Source<RenderProcessHost>(source).ptr();
-      updaters_[process->id()] =
-          make_linked_ptr(new VisitedLinkUpdater(process->id()));
+void VisitedLinkEventListener::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_RENDERER_PROCESS_CREATED: {
+      content::RenderProcessHost* process =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      Profile* profile =
+          Profile::FromBrowserContext(process->GetBrowserContext());
+      if (!profile_->IsSameProfile(profile))
+        return;
+      updaters_[process->GetID()] =
+          make_linked_ptr(new VisitedLinkUpdater(process->GetID()));
 
       // Initialize support for visited links. Send the renderer process its
       // initial set of visited links.
-      VisitedLinkMaster* master = process->profile()->GetVisitedLinkMaster();
+      VisitedLinkMaster* master = profile->GetVisitedLinkMaster();
       if (!master)
         return;
 
-      updaters_[process->id()]->SendVisitedLinkTable(master->shared_memory());
+      updaters_[process->GetID()]->SendVisitedLinkTable(
+          master->shared_memory());
       break;
     }
-    case NotificationType::RENDERER_PROCESS_TERMINATED: {
-      RenderProcessHost* process = Source<RenderProcessHost>(source).ptr();
-      if (updaters_.count(process->id())) {
-        updaters_.erase(process->id());
+    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
+      content::RenderProcessHost* process =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      if (updaters_.count(process->GetID())) {
+        updaters_.erase(process->GetID());
       }
       break;
     }
-    case NotificationType::RENDER_WIDGET_VISIBILITY_CHANGED: {
-      RenderWidgetHost* widget = Source<RenderWidgetHost>(source).ptr();
-      int child_id = widget->process()->id();
+    case content::NOTIFICATION_RENDER_WIDGET_VISIBILITY_CHANGED: {
+      RenderWidgetHost* widget =
+          content::Source<RenderWidgetHost>(source).ptr();
+      int child_id = widget->process()->GetID();
       if (updaters_.count(child_id))
         updaters_[child_id]->Update();
       break;

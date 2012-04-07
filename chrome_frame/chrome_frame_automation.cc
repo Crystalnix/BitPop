@@ -1,9 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome_frame/chrome_frame_automation.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
@@ -37,10 +39,6 @@ int64 kAutomationServerReasonableLaunchDelay = 1000;  // in milliseconds
 #else
 int64 kAutomationServerReasonableLaunchDelay = 1000 * 10;
 #endif
-
-int kDefaultSendUMADataInterval = 20000;  // in milliseconds.
-
-static const wchar_t kUmaSendIntervalValue[] = L"UmaSendInterval";
 
 class ChromeFrameAutomationProxyImpl::TabProxyNotificationMessageFilter
     : public IPC::ChannelProxy::MessageFilter {
@@ -200,21 +198,19 @@ struct LaunchTimeStats {
 #endif
 };
 
-DISABLE_RUNNABLE_METHOD_REFCOUNT(AutomationProxyCacheEntry);
-
 AutomationProxyCacheEntry::AutomationProxyCacheEntry(
     ChromeFrameLaunchParams* params, LaunchDelegate* delegate)
     : profile_name(params->profile_name()),
-      launch_result_(AUTOMATION_LAUNCH_RESULT_INVALID),
-      snapshots_(NULL), uma_send_interval_(1) {
+      launch_result_(AUTOMATION_LAUNCH_RESULT_INVALID) {
   DCHECK(delegate);
   thread_.reset(new base::Thread(WideToASCII(profile_name).c_str()));
   thread_->Start();
   // Use scoped_refptr so that the params will get released when the task
   // has been run.
   scoped_refptr<ChromeFrameLaunchParams> ref_params(params);
-  thread_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(this,
-      &AutomationProxyCacheEntry::CreateProxy, ref_params, delegate));
+  thread_->message_loop()->PostTask(
+      FROM_HERE, base::Bind(&AutomationProxyCacheEntry::CreateProxy,
+                            base::Unretained(this), ref_params, delegate));
 }
 
 AutomationProxyCacheEntry::~AutomationProxyCacheEntry() {
@@ -229,17 +225,6 @@ AutomationProxyCacheEntry::~AutomationProxyCacheEntry() {
   if (MessageLoop::current() == NULL) {
     proxy_.release();
   }
-}
-
-void AutomationProxyCacheEntry::StartSendUmaInterval(
-    ChromeFrameHistogramSnapshots* snapshots, int send_interval) {
-  DCHECK(snapshots);
-  DCHECK(!snapshots_);
-  snapshots_ = snapshots;
-  uma_send_interval_ = send_interval;
-  thread_->message_loop()->PostDelayedTask(FROM_HERE,
-      NewRunnableMethod(this, &AutomationProxyCacheEntry::SendUMAData),
-      send_interval);
 }
 
 void AutomationProxyCacheEntry::CreateProxy(ChromeFrameLaunchParams* params,
@@ -265,57 +250,65 @@ void AutomationProxyCacheEntry::CreateProxy(ChromeFrameLaunchParams* params,
   proxy->set_perform_version_check(params->version_check());
 
   // Launch browser
-  scoped_ptr<CommandLine> command_line(
-      chrome_launcher::CreateLaunchCommandLine());
-  command_line->AppendSwitchASCII(switches::kAutomationClientChannelID,
-                                  channel_id);
+  std::wstring command_line_string;
+  scoped_ptr<CommandLine> command_line;
+  if (chrome_launcher::CreateLaunchCommandLine(&command_line)) {
+    command_line->AppendSwitchASCII(switches::kAutomationClientChannelID,
+                                    channel_id);
 
-  // Run Chrome in Chrome Frame mode. In practice, this modifies the paths
-  // and registry keys that Chrome looks in via the BrowserDistribution
-  // mechanism.
-  command_line->AppendSwitch(switches::kChromeFrame);
+    // Run Chrome in Chrome Frame mode. In practice, this modifies the paths
+    // and registry keys that Chrome looks in via the BrowserDistribution
+    // mechanism.
+    command_line->AppendSwitch(switches::kChromeFrame);
 
-  // Chrome Frame never wants Chrome to start up with a First Run UI.
-  command_line->AppendSwitch(switches::kNoFirstRun);
+    // Chrome Frame never wants Chrome to start up with a First Run UI.
+    command_line->AppendSwitch(switches::kNoFirstRun);
 
-  command_line->AppendSwitch(switches::kDisablePopupBlocking);
+    // Chrome Frame never wants to run background extensions since they
+    // interfere with in-use updates.
+    command_line->AppendSwitch(switches::kDisableBackgroundMode);
 
-  // Disable the "Whoa! Chrome has crashed." dialog, because that isn't very
-  // useful for Chrome Frame users.
-#ifndef NDEBUG
-  command_line->AppendSwitch(switches::kNoErrorDialogs);
+    command_line->AppendSwitch(switches::kDisablePopupBlocking);
+
+#if defined(GOOGLE_CHROME_BUILD)
+    // Chrome Frame should use the native print dialog.
+    command_line->AppendSwitch(switches::kDisablePrintPreview);
 #endif
 
-  // In headless mode runs like reliability test runs we want full crash dumps
-  // from chrome.
-  if (IsHeadlessMode())
-    command_line->AppendSwitch(switches::kFullMemoryCrashReport);
+    // Disable the "Whoa! Chrome has crashed." dialog, because that isn't very
+    // useful for Chrome Frame users.
+#ifndef NDEBUG
+    command_line->AppendSwitch(switches::kNoErrorDialogs);
+#endif
 
-  // In accessible mode automation tests expect renderer accessibility to be
-  // enabled in chrome.
-  if (IsAccessibleMode())
-    command_line->AppendSwitch(switches::kForceRendererAccessibility);
+    // In headless mode runs like reliability test runs we want full crash dumps
+    // from chrome.
+    if (IsHeadlessMode())
+      command_line->AppendSwitch(switches::kFullMemoryCrashReport);
 
-  DVLOG(1) << "Profile path: " << params->profile_path().value();
-  command_line->AppendSwitchPath(switches::kUserDataDir,
-                                 params->profile_path());
+    // In accessible mode automation tests expect renderer accessibility to be
+    // enabled in chrome.
+    if (IsAccessibleMode())
+      command_line->AppendSwitch(switches::kForceRendererAccessibility);
 
-  // Ensure that Chrome is running the specified version of chrome.dll.
-  command_line->AppendSwitchNative(switches::kChromeVersion,
-                                   GetCurrentModuleVersion());
+    DVLOG(1) << "Profile path: " << params->profile_path().value();
+    command_line->AppendSwitchPath(switches::kUserDataDir,
+                                   params->profile_path());
 
-  if (!params->language().empty())
-    command_line->AppendSwitchNative(switches::kLang, params->language());
+    // Ensure that Chrome is running the specified version of chrome.dll.
+    command_line->AppendSwitchNative(switches::kChromeVersion,
+                                     GetCurrentModuleVersion());
 
-  std::wstring command_line_string(command_line->command_line_string());
-  // If there are any extra arguments, append them to the command line.
-  if (!params->extra_arguments().empty()) {
-    command_line_string += L' ' + params->extra_arguments();
+    if (!params->language().empty())
+      command_line->AppendSwitchNative(switches::kLang, params->language());
+
+    command_line_string = command_line->GetCommandLineString();
   }
 
   automation_server_launch_start_time_ = base::TimeTicks::Now();
 
-  if (!base::LaunchApp(command_line_string, false, false, NULL)) {
+  if (command_line_string.empty() ||
+      !base::LaunchProcess(command_line_string, base::LaunchOptions(), NULL)) {
     // We have no code for launch failure.
     launch_result_ = AUTOMATION_LAUNCH_RESULT_INVALID;
   } else {
@@ -381,9 +374,6 @@ void AutomationProxyCacheEntry::RemoveDelegate(LaunchDelegate* delegate,
     if (launch_delegates_.size() == 1) {
       *was_last_delegate = true;
 
-      if (snapshots_)
-        SendUMAData();
-
       // Process pending notifications.
       thread_->message_loop()->RunAllPending();
 
@@ -421,38 +411,7 @@ void AutomationProxyCacheEntry::OnChannelError() {
   }
 }
 
-void AutomationProxyCacheEntry::SendUMAData() {
-  DCHECK(IsSameThread(base::PlatformThread::CurrentId()));
-  DCHECK(snapshots_);
-  // IE uses the chrome frame provided UMA data uploading scheme. NPAPI
-  // continues to use Chrome to upload UMA data.
-  if (CrashMetricsReporter::GetInstance()->active()) {
-    return;
-  }
-
-  if (!proxy_.get()) {
-    DLOG(WARNING) << __FUNCTION__ << " NULL proxy, can't send UMA data";
-  } else {
-    ChromeFrameHistogramSnapshots::HistogramPickledList histograms =
-        snapshots_->GatherAllHistograms();
-
-    if (!histograms.empty()) {
-      proxy_->Send(new AutomationMsg_RecordHistograms(histograms));
-    }
-
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &AutomationProxyCacheEntry::SendUMAData),
-        uma_send_interval_);
-  }
-}
-
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ProxyFactory);
-
-ProxyFactory::ProxyFactory()
-    : uma_send_interval_(0) {
-  uma_send_interval_ = GetConfigInt(kDefaultSendUMADataInterval,
-                                    kUmaSendIntervalValue);
+ProxyFactory::ProxyFactory() {
 }
 
 ProxyFactory::~ProxyFactory() {
@@ -483,18 +442,12 @@ void ProxyFactory::GetAutomationServer(
     DVLOG(1) << __FUNCTION__ << " creating new proxy entry";
     entry = new AutomationProxyCacheEntry(params, delegate);
     proxies_.container().push_back(entry);
-
-    // IE uses the chrome frame provided UMA data uploading scheme. NPAPI
-    // continues to use Chrome to upload UMA data.
-    if (!CrashMetricsReporter::GetInstance()->active()) {
-      entry->StartSendUmaInterval(&chrome_frame_histograms_,
-                                  uma_send_interval_);
-    }
   } else if (delegate) {
     // Notify the new delegate of the launch status from the worker thread
     // and add it to the list of delegates.
-    entry->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(entry.get(),
-        &AutomationProxyCacheEntry::AddDelegate, delegate));
+    entry->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&AutomationProxyCacheEntry::AddDelegate,
+                              base::Unretained(entry.get()), delegate));
   }
 
   DCHECK(automation_server_id != NULL);
@@ -531,9 +484,10 @@ bool ProxyFactory::ReleaseAutomationServer(void* server_id,
   bool last_delegate = false;
   if (delegate) {
     base::WaitableEvent done(true, false);
-    entry->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(entry,
-        &AutomationProxyCacheEntry::RemoveDelegate, delegate, &done,
-        &last_delegate));
+    entry->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&AutomationProxyCacheEntry::RemoveDelegate,
+                   base::Unretained(entry), delegate, &done, &last_delegate));
     done.Wait();
   }
 
@@ -551,14 +505,8 @@ bool ProxyFactory::ReleaseAutomationServer(void* server_id,
   return true;
 }
 
-static base::LazyInstance<ProxyFactory,
-                          base::LeakyLazyInstanceTraits<ProxyFactory> >
-    g_proxy_factory(base::LINKER_INITIALIZED);
-
-template <> struct RunnableMethodTraits<ChromeFrameAutomationClient> {
-  static void RetainCallee(ChromeFrameAutomationClient* obj) {}
-  static void ReleaseCallee(ChromeFrameAutomationClient* obj) {}
-};
+static base::LazyInstance<ProxyFactory>::Leaky
+    g_proxy_factory = LAZY_INSTANCE_INITIALIZER;
 
 ChromeFrameAutomationClient::ChromeFrameAutomationClient()
     : chrome_frame_delegate_(NULL),
@@ -621,7 +569,7 @@ bool ChromeFrameAutomationClient::Initialize(
   // Create a window on the UI thread for marshaling messages back and forth
   // from the IPC thread. This window cannot be a message only window as the
   // external chrome tab window is created as a child of this window. This
-  // window is eventually reparented to the ActiveX/NPAPI plugin window.
+  // window is eventually reparented to the ActiveX plugin window.
   if (!Create(GetDesktopWindow(), NULL, NULL,
               WS_CHILDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
               WS_EX_TOOLWINDOW)) {
@@ -657,14 +605,6 @@ void ChromeFrameAutomationClient::Uninitialize() {
   init_state_ = UNINITIALIZING;
 
   // Called from client's FinalRelease() / destructor
-  // ChromeFrameAutomationClient may wait for the initialization (launch)
-  // to complete while Uninitialize is called.
-  // We either have to:
-  // 1) Make ReleaseAutomationServer blocking call (wait until thread exits)
-  // 2) Behave like a COM object i.e. increase module lock count.
-  // Otherwise the DLL may get unloaded while we have running threads.
-  // Unfortunately in NPAPI case we cannot increase module lock count, hence
-  // we stick with blocking/waiting
   if (url_fetcher_) {
     // Clean up any outstanding requests
     url_fetcher_->StopAllRequests();
@@ -678,7 +618,7 @@ void ChromeFrameAutomationClient::Uninitialize() {
     tab_ = NULL;    // scoped_refptr::Release
   }
 
-  // Wait for the background thread to exit.
+  // Wait for the automation proxy's worker thread to exit.
   ReleaseAutomationServer();
 
   // We must destroy the window, since if there are pending tasks
@@ -725,7 +665,7 @@ bool ChromeFrameAutomationClient::InitiateNavigation(
       FilePath profile_path;
       chrome_launch_params_ = new ChromeFrameLaunchParams(parsed_url,
           referrer_gurl, profile_path, L"", SimpleResourceLoader::GetLanguage(),
-          L"", false, false, route_all_top_level_navigations_);
+          false, false, route_all_top_level_navigations_);
     } else {
       chrome_launch_params_->set_referrer(referrer_gurl);
       chrome_launch_params_->set_url(parsed_url);
@@ -817,13 +757,14 @@ void ChromeFrameAutomationClient::FindInPage(const std::wstring& search_string,
                                              FindInPageDirection forward,
                                              FindInPageCase match_case,
                                              bool find_next) {
-  DCHECK(tab_.get());
+  // Note that we can be called by the find dialog after the tab has gone away.
+  if (!tab_)
+    return;
 
   // What follows is quite similar to TabProxy::FindInPage() but uses
   // the SyncMessageReplyDispatcher to avoid concerns about blocking
   // synchronous messages.
   AutomationMsg_Find_Params params;
-  params.unused = 0;
   params.search_string = WideToUTF16Hack(search_string);
   params.find_next = find_next;
   params.match_case = (match_case == CASE_SENSITIVE);
@@ -854,24 +795,24 @@ void ChromeFrameAutomationClient::CreateExternalTab() {
     navigate_after_initialization_ = false;
   }
 
-  const ExternalTabSettings settings(
-      m_hWnd,
-      gfx::Rect(),
-      WS_CHILD,
-      chrome_launch_params_->incognito(),
-      !use_chrome_network_,
-      handle_top_level_requests_,
-      chrome_launch_params_->url(),
-      chrome_launch_params_->referrer(),
-      // Infobars disabled in widget mode.
-      !chrome_launch_params_->widget_mode(),
-      chrome_launch_params_->route_all_top_level_navigations());
+  ExternalTabSettings settings;
+  settings.parent = m_hWnd;
+  settings.style = WS_CHILD;
+  settings.is_incognito = chrome_launch_params_->incognito();
+  settings.load_requests_via_automation = !use_chrome_network_;
+  settings.handle_top_level_requests = handle_top_level_requests_;
+  settings.initial_url = chrome_launch_params_->url();
+  settings.referrer = chrome_launch_params_->referrer();
+  // Infobars disabled in widget mode.
+  settings.infobars_enabled = !chrome_launch_params_->widget_mode();
+  settings.route_all_top_level_navigations =
+      chrome_launch_params_->route_all_top_level_navigations();
 
   UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "ChromeFrame.HostNetworking", !use_chrome_network_, 0, 1, 2);
+      "ChromeFrame.HostNetworking", !use_chrome_network_, 1, 2, 3);
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("ChromeFrame.HandleTopLevelRequests",
-                              handle_top_level_requests_, 0, 1, 2);
+                              handle_top_level_requests_, 1, 2, 3);
 
   IPC::SyncMessage* message =
       new AutomationMsg_CreateExternalTab(settings, NULL, NULL, 0, 0);
@@ -902,7 +843,7 @@ AutomationLaunchResult ChromeFrameAutomationClient::CreateExternalTabComplete(
   return launch_result;
 }
 
-// Invoked in launch background thread.
+// Invoked in the automation proxy's worker thread.
 void ChromeFrameAutomationClient::LaunchComplete(
     ChromeFrameAutomationProxy* proxy,
     AutomationLaunchResult result) {
@@ -939,19 +880,22 @@ void ChromeFrameAutomationClient::LaunchComplete(
     }
   } else {
     // Launch failed. Note, we cannot delete proxy here.
-    PostTask(FROM_HERE, NewRunnableMethod(this,
-        &ChromeFrameAutomationClient::InitializeComplete, result));
+    PostTask(FROM_HERE,
+             base::Bind(&ChromeFrameAutomationClient::InitializeComplete,
+                        base::Unretained(this), result));
   }
 }
 
+// Invoked in the automation proxy's worker thread.
 void ChromeFrameAutomationClient::AutomationServerDied() {
   // Make sure we notify our delegate.
-  PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ChromeFrameAutomationClient::InitializeComplete,
-      AUTOMATION_SERVER_CRASHED));
+  PostTask(
+      FROM_HERE, base::Bind(&ChromeFrameAutomationClient::InitializeComplete,
+                            base::Unretained(this), AUTOMATION_SERVER_CRASHED));
   // Then uninitialize.
-  PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ChromeFrameAutomationClient::Uninitialize));
+  PostTask(
+      FROM_HERE, base::Bind(&ChromeFrameAutomationClient::Uninitialize,
+                            base::Unretained(this)));
 }
 
 void ChromeFrameAutomationClient::InitializeComplete(
@@ -959,7 +903,6 @@ void ChromeFrameAutomationClient::InitializeComplete(
   DCHECK_EQ(base::PlatformThread::CurrentId(), ui_thread_id_);
   if (result != AUTOMATION_SUCCESS) {
     DLOG(WARNING) << "InitializeComplete: failure " << result;
-    ReleaseAutomationServer();
   } else {
     init_state_ = INITIALIZED;
 
@@ -1051,14 +994,17 @@ bool ChromeFrameAutomationClient::ProcessUrlRequestMessage(TabProxy* tab,
       break;
   }
 
-  PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ChromeFrameAutomationClient::ProcessUrlRequestMessage, tab, msg, true));
+  PostTask(
+      FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(
+              &ChromeFrameAutomationClient::ProcessUrlRequestMessage),
+          base::Unretained(this), tab, msg, true));
   return true;
 }
 
 // These are invoked in channel's background thread.
-// Cannot call any method of the activex/npapi here since they are STA
-// kind of beings.
+// Cannot call any method of the activex here since it is a STA kind of being.
 // By default we marshal the IPC message to the main/GUI thread and from there
 // we safely invoke chrome_frame_delegate_->OnMessageReceived(msg).
 bool ChromeFrameAutomationClient::OnMessageReceived(TabProxy* tab,
@@ -1072,8 +1018,9 @@ bool ChromeFrameAutomationClient::OnMessageReceived(TabProxy* tab,
   if (chrome_frame_delegate_ == NULL)
     return false;
 
-  PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ChromeFrameAutomationClient::OnMessageReceivedUIThread, msg));
+  PostTask(FROM_HERE,
+           base::Bind(&ChromeFrameAutomationClient::OnMessageReceivedUIThread,
+                      base::Unretained(this), msg));
   return true;
 }
 
@@ -1083,8 +1030,10 @@ void ChromeFrameAutomationClient::OnChannelError(TabProxy* tab) {
   if (chrome_frame_delegate_ == NULL)
     return;
 
-  PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ChromeFrameAutomationClient::OnChannelErrorUIThread));
+  PostTask(
+      FROM_HERE,
+      base::Bind(&ChromeFrameAutomationClient::OnChannelErrorUIThread,
+                 base::Unretained(this)));
 }
 
 void ChromeFrameAutomationClient::OnMessageReceivedUIThread(
@@ -1116,9 +1065,9 @@ void ChromeFrameAutomationClient::ReportNavigationError(
   if (ui_thread_id_ == base::PlatformThread::CurrentId()) {
     chrome_frame_delegate_->OnLoadFailed(error_code, url);
   } else {
-    PostTask(FROM_HERE, NewRunnableMethod(this,
-        &ChromeFrameAutomationClient::ReportNavigationError,
-        error_code, url));
+    PostTask(FROM_HERE,
+             base::Bind(&ChromeFrameAutomationClient::ReportNavigationError,
+                        base::Unretained(this), error_code, url));
   }
 }
 
@@ -1227,34 +1176,6 @@ void ChromeFrameAutomationClient::PrintTab() {
     tab_->PrintAsync();
 }
 
-bool ChromeFrameAutomationClient::Reinitialize(
-    ChromeFrameDelegate* delegate,
-    PluginUrlRequestManager* url_fetcher) {
-  if (url_fetcher_) {
-    // Clean up any outstanding requests
-    url_fetcher_->StopAllRequests();
-    url_fetcher_ = NULL;
-  }
-
-  if (!tab_.get() || !::IsWindow(chrome_window_)) {
-    NOTREACHED();
-    DLOG(WARNING) << "ChromeFrameAutomationClient instance reused "
-                  << "with invalid tab";
-    return false;
-  }
-
-  if (!delegate) {
-    NOTREACHED();
-    return false;
-  }
-
-  chrome_frame_delegate_ = delegate;
-  DeleteAllPendingTasks();
-  SetUrlFetcher(url_fetcher);
-  SetParentWindow(NULL);
-  return true;
-}
-
 void ChromeFrameAutomationClient::AttachExternalTab(
     uint64 external_tab_cookie) {
   DCHECK_EQ(static_cast<TabProxy*>(NULL), tab_.get());
@@ -1296,7 +1217,7 @@ void ChromeFrameAutomationClient::SetUrlFetcher(
   url_fetcher_->set_delegate(this);
 }
 
-void ChromeFrameAutomationClient::SetZoomLevel(PageZoom::Function zoom_level) {
+void ChromeFrameAutomationClient::SetZoomLevel(content::PageZoom zoom_level) {
   if (automation_server_) {
     automation_server_->Send(new AutomationMsg_SetZoomLevel(tab_handle_,
                                                             zoom_level));
@@ -1327,14 +1248,15 @@ void ChromeFrameAutomationClient::OnResponseStarted(int request_id,
     const char* mime_type,  const char* headers, int size,
     base::Time last_modified, const std::string& redirect_url,
     int redirect_status, const net::HostPortPair& socket_address) {
-  const AutomationURLResponse response(
-      mime_type,
-      headers ? headers : "",
-      size,
-      last_modified,
-      redirect_url,
-      redirect_status,
-      socket_address);
+  AutomationURLResponse response;
+  response.mime_type = mime_type;
+  if (headers)
+    response.headers = headers;
+  response.content_length = size;
+  response.last_modified = last_modified;
+  response.redirect_url = redirect_url;
+  response.redirect_status = redirect_status;
+  response.socket_address = socket_address;
 
   automation_server_->Send(new AutomationMsg_RequestStarted(
       tab_->handle(), request_id, response));

@@ -6,7 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "app/mac/nsimage_cache.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/process_util.h"
 #include "base/sys_string_conversions.h"
@@ -14,34 +14,60 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/multi_key_equivalent_button.h"
+#import "chrome/browser/ui/cocoa/tab_contents/favicon_util.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/logging_chrome.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#import "chrome/browser/ui/cocoa/tab_contents/favicon_util.h"
-#include "content/common/result_codes.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::WebContents;
 
 namespace {
 // We only support showing one of these at a time per app.  The
 // controller owns itself and is released when its window is closed.
 HungRendererController* g_instance = NULL;
-}  // end namespace
+}  // namespace
+
+class WebContentsObserverBridge : public content::WebContentsObserver {
+ public:
+  WebContentsObserverBridge(WebContents* web_contents,
+                            HungRendererController* controller)
+    : content::WebContentsObserver(web_contents),
+      controller_(controller) {
+  }
+
+ protected:
+  // WebContentsObserver overrides:
+  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE {
+    [controller_ renderViewGone];
+  }
+  virtual void WebContentsDestroyed(WebContents* tab) OVERRIDE {
+    [controller_ renderViewGone];
+  }
+
+ private:
+  HungRendererController* controller_;  // weak
+
+  DISALLOW_COPY_AND_ASSIGN(WebContentsObserverBridge);
+};
 
 @implementation HungRendererController
 
 - (id)initWithWindowNibName:(NSString*)nibName {
-  NSString* nibpath = [base::mac::MainAppBundle() pathForResource:nibName
-                                                          ofType:@"nib"];
+  NSString* nibpath = [base::mac::FrameworkBundle() pathForResource:nibName
+                                                             ofType:@"nib"];
   self = [super initWithWindowNibPath:nibpath owner:self];
   if (self) {
     [tableView_ setDataSource:self];
@@ -87,14 +113,14 @@ HungRendererController* g_instance = NULL;
 - (IBAction)kill:(id)sender {
   if (hungContents_)
     base::KillProcess(hungContents_->GetRenderProcessHost()->GetHandle(),
-                      ResultCodes::HUNG, false);
+                      content::RESULT_CODE_HUNG, false);
   // Cannot call performClose:, because the close button is disabled.
   [self close];
 }
 
 - (IBAction)wait:(id)sender {
-  if (hungContents_ && hungContents_->render_view_host())
-    hungContents_->render_view_host()->RestartHangMonitorTimeout();
+  if (hungContents_ && hungContents_->GetRenderViewHost())
+    hungContents_->GetRenderViewHost()->RestartHangMonitorTimeout();
   // Cannot call performClose:, because the close button is disabled.
   [self close];
 }
@@ -135,17 +161,23 @@ HungRendererController* g_instance = NULL;
   [self autorelease];
 }
 
-- (void)showForTabContents:(TabContents*)contents {
+// TODO(shess): This could observe all of the tabs referenced in the
+// loop, updating the dialog and keeping it up so long as any remain.
+// Tabs closed by their renderer will close the dialog (that's
+// activity!), so it would not add much value.  Also, the views
+// implementation only monitors the initiating tab.
+- (void)showForWebContents:(WebContents*)contents {
   DCHECK(contents);
   hungContents_ = contents;
+  hungContentsObserver_.reset(new WebContentsObserverBridge(contents, self));
   scoped_nsobject<NSMutableArray> titles([[NSMutableArray alloc] init]);
   scoped_nsobject<NSMutableArray> favicons([[NSMutableArray alloc] init]);
   for (TabContentsIterator it; !it.done(); ++it) {
-    if (it->tab_contents()->GetRenderProcessHost() ==
+    if (it->web_contents()->GetRenderProcessHost() ==
         hungContents_->GetRenderProcessHost()) {
-      string16 title = (*it)->tab_contents()->GetTitle();
+      string16 title = (*it)->web_contents()->GetTitle();
       if (title.empty())
-        title = TabContentsWrapper::GetDefaultTitle();
+        title = CoreTabHelper::GetDefaultTitle();
       [titles addObject:base::SysUTF16ToNSString(title)];
       [favicons addObject:mac::FaviconForTabContents(*it)];
     }
@@ -158,7 +190,7 @@ HungRendererController* g_instance = NULL;
   [self showWindow:self];
 }
 
-- (void)endForTabContents:(TabContents*)contents {
+- (void)endForWebContents:(WebContents*)contents {
   DCHECK(contents);
   DCHECK(hungContents_);
   if (hungContents_ && hungContents_->GetRenderProcessHost() ==
@@ -166,6 +198,11 @@ HungRendererController* g_instance = NULL;
     // Cannot call performClose:, because the close button is disabled.
     [self close];
   }
+}
+
+- (void)renderViewGone {
+  // Cannot call performClose:, because the close button is disabled.
+  [self close];
 }
 
 @end
@@ -182,18 +219,18 @@ HungRendererController* g_instance = NULL;
 
 namespace browser {
 
-void ShowHungRendererDialog(TabContents* contents) {
+void ShowNativeHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed()) {
     if (!g_instance)
       g_instance = [[HungRendererController alloc]
                      initWithWindowNibName:@"HungRendererDialog"];
-    [g_instance showForTabContents:contents];
+    [g_instance showForWebContents:contents];
   }
 }
 
-void HideHungRendererDialog(TabContents* contents) {
+void HideNativeHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed() && g_instance)
-    [g_instance endForTabContents:contents];
+    [g_instance endForWebContents:contents];
 }
 
 }  // namespace browser

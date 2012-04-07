@@ -17,7 +17,7 @@ namespace ui {
 //
 // A ThrobAnimation has two durations: the duration used when behavior like
 // a SlideAnimation, and the duration used when throbbing.
-class ThrobAnimation : public SlideAnimation {
+class UI_EXPORT ThrobAnimation : public SlideAnimation {
  public:
   explicit ThrobAnimation(AnimationDelegate* target);
   virtual ~ThrobAnimation() {}
@@ -30,12 +30,12 @@ class ThrobAnimation : public SlideAnimation {
   void SetThrobDuration(int duration) { throb_duration_ = duration; }
 
   // Overridden to reset to the slide duration.
-  virtual void Reset();
-  virtual void Show();
-  virtual void Hide();
+  virtual void Reset() OVERRIDE;
+  virtual void Show() OVERRIDE;
+  virtual void Hide() OVERRIDE;
 
   // Overridden to maintain the slide duration.
-  virtual void SetSlideDuration(int duration);
+  virtual void SetSlideDuration(int duration) OVERRIDE;
 
   // The number of cycles remaining until the animation stops.
   void set_cycles_remaining(int value) { cycles_remaining_ = value; }
@@ -43,7 +43,7 @@ class ThrobAnimation : public SlideAnimation {
 
  protected:
   // Overriden to continually throb (assuming we're throbbing).
-  virtual void Step(base::TimeTicks time_now);
+  virtual void Step(base::TimeTicks time_now) OVERRIDE;
 
  private:
   // Resets state such that we behave like SlideAnimation.

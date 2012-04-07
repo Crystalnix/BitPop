@@ -4,33 +4,37 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"  // TODO(viettrungluu): remove
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+
+using content::UserMetricsAction;
 
 
 // Simple class to watch for tab creation/destruction and close the bubble.
 // Bridge between Chrome-style notifications and ObjC-style notifications.
-class BookmarkBubbleNotificationBridge : public NotificationObserver {
+class BookmarkBubbleNotificationBridge : public content::NotificationObserver {
  public:
   BookmarkBubbleNotificationBridge(BookmarkBubbleController* controller,
                                    SEL selector);
   virtual ~BookmarkBubbleNotificationBridge() {}
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details);
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details);
  private:
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   BookmarkBubbleController* controller_;  // weak; owns us.
   SEL selector_;   // SEL sent to controller_ on notification.
 };
@@ -40,18 +44,18 @@ BookmarkBubbleNotificationBridge::BookmarkBubbleNotificationBridge(
     : controller_(controller), selector_(selector) {
   // registrar_ will automatically RemoveAll() when destroyed so we
   // don't need to do so explicitly.
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_CONNECTED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::TAB_CLOSED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_CONNECTED,
+                 content::NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_TAB_CLOSED,
+                 content::NotificationService::AllSources());
 }
 
 // At this time all notifications instigate the same behavior (go
 // away) so we don't bother checking which notification came in.
 void BookmarkBubbleNotificationBridge::Observe(
-  NotificationType type,
-  const NotificationSource& source,
-  const NotificationDetails& details) {
+  int type,
+  const content::NotificationSource& source,
+  const content::NotificationDetails& details) {
   [controller_ performSelector:selector_ withObject:controller_];
 }
 
@@ -88,8 +92,8 @@ void BookmarkBubbleNotificationBridge::Observe(
                       node:(const BookmarkNode*)node
      alreadyBookmarked:(BOOL)alreadyBookmarked {
   NSString* nibPath =
-      [base::mac::MainAppBundle() pathForResource:@"BookmarkBubble"
-                                          ofType:@"nib"];
+      [base::mac::FrameworkBundle() pathForResource:@"BookmarkBubble"
+                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
     parentWindow_ = parentWindow;
     model_ = model;
@@ -106,6 +110,17 @@ void BookmarkBubbleNotificationBridge::Observe(
   return self;
 }
 
+- (void)awakeFromNib {
+  // Check if NSTextFieldCell supports the method. This check is in place as
+  // only 10.6 and greater support the setUsesSingleLineMode method.
+  // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
+  NSTextFieldCell* nameFieldCell_ = [nameTextField_ cell];
+  if ([nameFieldCell_
+          respondsToSelector:@selector(setUsesSingleLineMode:)]) {
+    [nameFieldCell_ setUsesSingleLineMode:YES];
+  }
+}
+
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [super dealloc];
@@ -116,7 +131,7 @@ void BookmarkBubbleNotificationBridge::Observe(
 // until we find something visible to pulse.
 - (void)startPulsingBookmarkButton:(const BookmarkNode*)node  {
   while (node) {
-    if ((node->parent() == model_->GetBookmarkBarNode()) ||
+    if ((node->parent() == model_->bookmark_bar_node()) ||
         (node == model_->other_node())) {
       pulsingBookmarkNode_ = node;
       NSValue *value = [NSValue valueWithPointer:node];
@@ -198,11 +213,11 @@ void BookmarkBubbleNotificationBridge::Observe(
   origin.x -= bubbleArrowtip.x;
   [window setFrameOrigin:origin];
   [parentWindow_ addChildWindow:window ordered:NSWindowAbove];
-  // Default is IDS_BOOMARK_BUBBLE_PAGE_BOOKMARK; "Bookmark".
+  // Default is IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARK; "Bookmark".
   // If adding for the 1st time the string becomes "Bookmark Added!"
   if (!alreadyBookmarked_) {
     NSString* title =
-        l10n_util::GetNSString(IDS_BOOMARK_BUBBLE_PAGE_BOOKMARKED);
+        l10n_util::GetNSString(IDS_BOOKMARK_BUBBLE_PAGE_BOOKMARKED);
     [bigTitle_ setStringValue:title];
   }
 
@@ -252,7 +267,7 @@ void BookmarkBubbleNotificationBridge::Observe(
 }
 
 - (IBAction)edit:(id)sender {
-  UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Edit"));
+  content::RecordAction(UserMetricsAction("BookmarkBubble_Edit"));
   [self showEditor];
 }
 
@@ -276,9 +291,8 @@ void BookmarkBubbleNotificationBridge::Observe(
 
 - (IBAction)remove:(id)sender {
   [self stopPulsingBookmarkButton];
-  // TODO(viettrungluu): get rid of conversion and utf_string_conversions.h.
-  model_->SetURLStarred(node_->GetURL(), node_->GetTitle(), false);
-  UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"));
+  bookmark_utils::RemoveAllBookmarks(model_, node_->url());
+  content::RecordAction(UserMetricsAction("BookmarkBubble_Unstar"));
   node_ = NULL;  // no longer valid
   [self ok:sender];
 }
@@ -295,7 +309,7 @@ void BookmarkBubbleNotificationBridge::Observe(
   NSMenuItem* selected = [folderPopUpButton_ selectedItem];
   ChooseAnotherFolder* chooseItem = [[self class] chooseAnotherFolderObject];
   if ([[selected representedObject] isEqual:chooseItem]) {
-    UserMetrics::RecordAction(
+    content::RecordAction(
         UserMetricsAction("BookmarkBubble_EditFromCombobox"));
     [self showEditor];
   }
@@ -324,7 +338,7 @@ void BookmarkBubbleNotificationBridge::Observe(
   NSString* newTitle = [nameTextField_ stringValue];
   if (![oldTitle isEqual:newTitle]) {
     model_->SetTitle(node_, base::SysNSStringToUTF16(newTitle));
-    UserMetrics::RecordAction(
+    content::RecordAction(
         UserMetricsAction("BookmarkBubble_ChangeTitleInBubble"));
   }
   // Then the parent folder.
@@ -341,7 +355,7 @@ void BookmarkBubbleNotificationBridge::Observe(
   if (oldParent != newParent) {
     int index = newParent->child_count();
     model_->Move(node_, newParent, index);
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBubble_ChangeParent"));
+    content::RecordAction(UserMetricsAction("BookmarkBubble_ChangeParent"));
   }
 }
 
@@ -372,7 +386,7 @@ void BookmarkBubbleNotificationBridge::Observe(
 
 + (NSString*)chooseAnotherFolderString {
   return l10n_util::GetNSStringWithFixup(
-      IDS_BOOMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER);
+      IDS_BOOKMARK_BUBBLE_CHOOSER_ANOTHER_FOLDER);
 }
 
 // For the given folder node, walk the tree and add folder names to
@@ -380,7 +394,7 @@ void BookmarkBubbleNotificationBridge::Observe(
 - (void)addFolderNodes:(const BookmarkNode*)parent
          toPopUpButton:(NSPopUpButton*)button
            indentation:(int)indentation {
-  if (!model_->is_root(parent))  {
+  if (!model_->is_root_node(parent))  {
     NSString* title = base::SysUTF16ToNSString(parent->GetTitle());
     NSMenu* menu = [button menu];
     NSMenuItem* item = [menu addItemWithTitle:title

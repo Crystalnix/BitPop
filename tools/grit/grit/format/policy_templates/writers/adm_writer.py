@@ -75,121 +75,136 @@ class AdmWriter(template_writer.TemplateWriter):
   def _AddGuiString(self, name, value):
     # Escape newlines in the value.
     value = value.replace('\n', '\\n')
-    line = '%s="%s"' % (name, value)
-    self.strings.AddLine(line)
+    if name in self.strings_seen:
+      assert value == self.strings_seen[name]
+    else:
+      self.strings_seen[name] = value
+      line = '%s="%s"' % (name, value)
+      self.strings.AddLine(line)
 
-  def _WriteSupported(self):
-    self.policies.AddLine('#if version >= 4', 1)
-    self.policies.AddLine('SUPPORTED !!SUPPORTED_WINXPSP2')
-    self.policies.AddLine('#endif', -1)
+  def _WriteSupported(self, builder):
+    builder.AddLine('#if version >= 4', 1)
+    builder.AddLine('SUPPORTED !!SUPPORTED_WINXPSP2')
+    builder.AddLine('#endif', -1)
 
-  def _WritePart(self, policy):
+  def _WritePart(self, policy, key_name, builder):
     '''Writes the PART ... END PART section of a policy.
 
     Args:
       policy: The policy to write to the output.
+      key_name: The registry key backing the policy.
+      builder: Builder to append lines to.
     '''
     policy_part_name = policy['name'] + '_Part'
     self._AddGuiString(policy_part_name, policy['label'])
 
     # Print the PART ... END PART section:
-    self.policies.AddLine()
+    builder.AddLine()
     adm_type = self.TYPE_TO_INPUT[policy['type']]
-    self.policies.AddLine('PART !!%s  %s' % (policy_part_name, adm_type), 1)
+    builder.AddLine('PART !!%s  %s' % (policy_part_name, adm_type), 1)
     if policy['type'] == 'list':
       # Note that the following line causes FullArmor ADMX Migrator to create
       # corrupt ADMX files. Please use admx_writer to get ADMX files.
-      self.policies.AddLine('KEYNAME "%s\\%s"' %
-                      (self.config['win_reg_key_name'], policy['name']))
-      self.policies.AddLine('VALUEPREFIX ""')
+      builder.AddLine('KEYNAME "%s\\%s"' % (key_name, policy['name']))
+      builder.AddLine('VALUEPREFIX ""')
     else:
-      self.policies.AddLine('VALUENAME "%s"' % policy['name'])
+      builder.AddLine('VALUENAME "%s"' % policy['name'])
     if policy['type'] in ('int-enum', 'string-enum'):
-      self.policies.AddLine('ITEMLIST', 1)
+      builder.AddLine('ITEMLIST', 1)
       for item in policy['items']:
         if policy['type'] == 'int-enum':
           value_text = 'NUMERIC ' + str(item['value'])
         else:
           value_text = '"' + item['value'] + '"'
-        self.policies.AddLine('NAME !!%s_DropDown VALUE %s' %
+        builder.AddLine('NAME !!%s_DropDown VALUE %s' %
             (item['name'], value_text))
         self._AddGuiString(item['name'] + '_DropDown', item['caption'])
-      self.policies.AddLine('END ITEMLIST', -1)
-    self.policies.AddLine('END PART', -1)
+      builder.AddLine('END ITEMLIST', -1)
+    builder.AddLine('END PART', -1)
 
-  def WritePolicy(self, policy):
+  def _WritePolicy(self, policy, key_name, builder):
     self._AddGuiString(policy['name'] + '_Policy', policy['caption'])
-    self.policies.AddLine('POLICY !!%s_Policy' % policy['name'], 1)
-    self._WriteSupported()
+    builder.AddLine('POLICY !!%s_Policy' % policy['name'], 1)
+    self._WriteSupported(builder)
     policy_explain_name = policy['name'] + '_Explain'
     self._AddGuiString(policy_explain_name, policy['desc'])
-    self.policies.AddLine('EXPLAIN !!' + policy_explain_name)
+    builder.AddLine('EXPLAIN !!' + policy_explain_name)
 
     if policy['type'] == 'main':
-      self.policies.AddLine('VALUENAME "%s"' % policy['name'])
-      self.policies.AddLine('VALUEON NUMERIC 1')
-      self.policies.AddLine('VALUEOFF NUMERIC 0')
+      builder.AddLine('VALUENAME "%s"' % policy['name'])
+      builder.AddLine('VALUEON NUMERIC 1')
+      builder.AddLine('VALUEOFF NUMERIC 0')
     else:
-      self._WritePart(policy)
+      self._WritePart(policy, key_name, builder)
 
-    self.policies.AddLine('END POLICY', -1)
-    self.policies.AddLine()
+    builder.AddLine('END POLICY', -1)
+    builder.AddLine()
+
+  def WritePolicy(self, policy):
+    self._WritePolicy(policy,
+                      self.config['win_reg_mandatory_key_name'],
+                      self.policies)
+
+  def WriteRecommendedPolicy(self, policy):
+    self._WritePolicy(policy,
+                      self.config['win_reg_recommended_key_name'],
+                      self.recommended_policies)
 
   def BeginPolicyGroup(self, group):
-    self._open_category = len(group['policies']) > 1
-    # Open a category for the policies if there is more than one in the
-    # group.
-    if self._open_category:
-      category_name = group['name'] + '_Category'
-      self._AddGuiString(category_name, group['caption'])
-      self.policies.AddLine('CATEGORY !!' + category_name, 1)
+    category_name = group['name'] + '_Category'
+    self._AddGuiString(category_name, group['caption'])
+    self.policies.AddLine('CATEGORY !!' + category_name, 1)
 
   def EndPolicyGroup(self):
-    if self._open_category:
-      self.policies.AddLine('END CATEGORY', -1)
-      self.policies.AddLine('')
+    self.policies.AddLine('END CATEGORY', -1)
+    self.policies.AddLine('')
 
-  def _CreateTemplateForClass(self, policy_class, policies):
+  def BeginRecommendedPolicyGroup(self, group):
+    category_name = group['name'] + '_Category'
+    self._AddGuiString(category_name, group['caption'])
+    self.recommended_policies.AddLine('CATEGORY !!' + category_name, 1)
+
+  def EndRecommendedPolicyGroup(self):
+    self.recommended_policies.AddLine('END CATEGORY', -1)
+    self.recommended_policies.AddLine('')
+
+  def _CreateTemplate(self, category_path, key_name, policies):
     '''Creates the whole ADM template except for the [Strings] section, and
     returns it as an |IndentedStringBuilder|.
 
     Args:
-      policy_class: USER or MACHINE
+      category_path: List of strings representing the category path.
+      key_name: Main registry key backing the policies.
       policies: ADM code for all the policies in an |IndentedStringBuilder|.
     '''
     lines = IndentedStringBuilder()
-    category_path = self.config['win_category_path']
-
-    lines.AddLine('CLASS ' + policy_class, 1)
-    if self.config['build'] == 'chrome':
-      lines.AddLine('CATEGORY !!' + category_path[0], 1)
-      lines.AddLine('CATEGORY !!' + category_path[1], 1)
-    elif self.config['build'] == 'chromium':
-      lines.AddLine('CATEGORY !!' + category_path[0], 1)
-    lines.AddLine('KEYNAME "%s"' % self.config['win_reg_key_name'])
+    for part in category_path:
+      lines.AddLine('CATEGORY !!' + part, 1)
+    lines.AddLine('KEYNAME "%s"' % key_name)
     lines.AddLine()
 
     lines.AddLines(policies)
 
-    if self.config['build'] == 'chrome':
+    for part in category_path:
       lines.AddLine('END CATEGORY', -1)
-      lines.AddLine('END CATEGORY', -1)
-      lines.AddLine('', -1)
-    elif self.config['build'] == 'chromium':
-      lines.AddLine('END CATEGORY', -1)
-      lines.AddLine('', -1)
+    lines.AddLine()
 
     return lines
 
   def BeginTemplate(self):
-    category_path = self.config['win_category_path']
     self._AddGuiString(self.config['win_supported_os'],
                        self.messages['win_supported_winxpsp2']['text'])
+    category_path = self.config['win_mandatory_category_path']
+    recommended_category_path = self.config['win_recommended_category_path']
+    recommended_name = '%s (%s)' % \
+        (self.config['app_name'], self.messages['doc_recommended']['text'])
     if self.config['build'] == 'chrome':
       self._AddGuiString(category_path[0], 'Google')
       self._AddGuiString(category_path[1], self.config['app_name'])
+      self._AddGuiString(recommended_category_path[1], recommended_name)
     elif self.config['build'] == 'chromium':
       self._AddGuiString(category_path[0], self.config['app_name'])
+      self._AddGuiString(recommended_category_path[0], recommended_name)
     # All the policies will be written into self.policies.
     # The final template text will be assembled into self.lines by
     # self.EndTemplate().
@@ -197,12 +212,19 @@ class AdmWriter(template_writer.TemplateWriter):
   def EndTemplate(self):
     # Copy policies into self.lines.
     policy_class = self.config['win_group_policy_class'].upper()
-    if policy_class in ('BOTH', 'MACHINE'):
-      self.lines.AddLines(self._CreateTemplateForClass('MACHINE',
-                                                       self.policies))
-    if policy_class in ('BOTH', 'USER'):
-      self.lines.AddLines(self._CreateTemplateForClass('USER',
-                                                       self.policies))
+    for class_name in ['MACHINE', 'USER']:
+      if policy_class != 'BOTH' and policy_class != class_name:
+        continue
+      self.lines.AddLine('CLASS ' + class_name, 1)
+      self.lines.AddLines(self._CreateTemplate(
+          self.config['win_mandatory_category_path'],
+          self.config['win_reg_mandatory_key_name'],
+          self.policies))
+      self.lines.AddLines(self._CreateTemplate(
+          self.config['win_recommended_category_path'],
+          self.config['win_reg_recommended_key_name'],
+          self.recommended_policies))
+      self.lines.AddLine('', -1)
     # Copy user strings into self.lines.
     self.lines.AddLine('[Strings]')
     self.lines.AddLines(self.strings)
@@ -212,8 +234,12 @@ class AdmWriter(template_writer.TemplateWriter):
     self.lines = IndentedStringBuilder()
     # String buffer for building the strings section of the ADM file.
     self.strings = IndentedStringBuilder()
+    # Map of strings seen, to avoid duplicates.
+    self.strings_seen = {}
     # String buffer for building the policies of the ADM file.
     self.policies = IndentedStringBuilder()
+    # String buffer for building the recommended policies of the ADM file.
+    self.recommended_policies = IndentedStringBuilder()
 
   def GetTemplateText(self):
     return self.lines.ToString()

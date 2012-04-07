@@ -1,15 +1,19 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stl_util-inl.h"
+#include "base/message_loop.h"
+#include "base/process.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extensions_quota_service.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
+using content::BrowserThread;
 
 typedef QuotaLimitHeuristic::Bucket Bucket;
 typedef QuotaLimitHeuristic::Config Config;
@@ -52,14 +56,14 @@ class MockMapper : public QuotaLimitHeuristic::BucketMapper {
 class MockFunction : public ExtensionFunction {
  public:
   explicit MockFunction(const std::string& name) { set_name(name); }
-  virtual void SetArgs(const ListValue* args) {}
-  virtual const std::string GetError() { return std::string(); }
-  virtual const std::string GetResult() { return std::string(); }
-  virtual void Run() {}
-  virtual void Destruct() const { delete this; }
-  virtual bool RunImpl() { return true; }
-  virtual void SendResponse(bool) { }
-  virtual void HandleBadMessage() { }
+  virtual void SetArgs(const ListValue* args) OVERRIDE {}
+  virtual const std::string GetError() OVERRIDE { return std::string(); }
+  virtual void SetError(const std::string& error) OVERRIDE {}
+  virtual const std::string GetResult() OVERRIDE { return std::string(); }
+  virtual void Run() OVERRIDE {}
+  virtual void Destruct() const OVERRIDE { delete this; }
+  virtual bool RunImpl() OVERRIDE { return true; }
+  virtual void SendResponse(bool) OVERRIDE { }
 };
 
 class TimedLimitMockFunction : public MockFunction {
@@ -118,7 +122,7 @@ class ExtensionsQuotaServiceTest : public testing::Test {
   std::string extension_c_;
   scoped_ptr<ExtensionsQuotaService> service_;
   MessageLoop loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 };
 
 class QuotaLimitHeuristicTest : public testing::Test {
@@ -200,14 +204,14 @@ TEST_F(ExtensionsQuotaServiceTest, NoHeuristic) {
 TEST_F(ExtensionsQuotaServiceTest, FrozenHeuristic) {
   scoped_refptr<MockFunction> f(new FrozenMockFunction("foo"));
   ListValue args;
-  args.Append(new FundamentalValue(1));
+  args.Append(new base::FundamentalValue(1));
   EXPECT_FALSE(service_->Assess(extension_a_, f, &args, kStartTime));
 }
 
 TEST_F(ExtensionsQuotaServiceTest, SingleHeuristic) {
   scoped_refptr<MockFunction> f(new TimedLimitMockFunction("foo"));
   ListValue args;
-  args.Append(new FundamentalValue(1));
+  args.Append(new base::FundamentalValue(1));
   EXPECT_TRUE(service_->Assess(extension_a_, f, &args, kStartTime));
   EXPECT_TRUE(service_->Assess(extension_a_, f, &args,
               kStartTime + TimeDelta::FromSeconds(10)));
@@ -215,8 +219,8 @@ TEST_F(ExtensionsQuotaServiceTest, SingleHeuristic) {
               kStartTime + TimeDelta::FromSeconds(15)));
 
   ListValue args2;
-  args2.Append(new FundamentalValue(1));
-  args2.Append(new FundamentalValue(2));
+  args2.Append(new base::FundamentalValue(1));
+  args2.Append(new base::FundamentalValue(2));
   EXPECT_TRUE(service_->Assess(extension_b_, f, &args2, kStartTime));
   EXPECT_TRUE(service_->Assess(extension_b_, f, &args2,
               kStartTime + TimeDelta::FromSeconds(10)));
@@ -230,7 +234,7 @@ TEST_F(ExtensionsQuotaServiceTest, SingleHeuristic) {
 
   // Test that items are independent.
   ListValue args3;
-  args3.Append(new FundamentalValue(3));
+  args3.Append(new base::FundamentalValue(3));
   EXPECT_TRUE(service_->Assess(extension_c_, f, &args, kStartTime));
   EXPECT_TRUE(service_->Assess(extension_c_, f, &args3,
               kStartTime + TimeDelta::FromSeconds(10)));
@@ -247,7 +251,7 @@ TEST_F(ExtensionsQuotaServiceTest, SingleHeuristic) {
 TEST_F(ExtensionsQuotaServiceTest, ChainedHeuristics) {
   scoped_refptr<MockFunction> f(new ChainedLimitsMockFunction("foo"));
   ListValue args;
-  args.Append(new FundamentalValue(1));
+  args.Append(new base::FundamentalValue(1));
 
   // First, test that the low limit can be avoided but the higher one is hit.
   // One event per minute for 20 minutes comes in under the sustained limit,
@@ -281,8 +285,8 @@ TEST_F(ExtensionsQuotaServiceTest, MultipleFunctionsDontInterfere) {
 
   ListValue args_f;
   ListValue args_g;
-  args_f.Append(new FundamentalValue(1));
-  args_g.Append(new FundamentalValue(2));
+  args_f.Append(new base::FundamentalValue(1));
+  args_g.Append(new base::FundamentalValue(2));
 
   EXPECT_TRUE(service_->Assess(extension_a_, f, &args_f, kStartTime));
   EXPECT_TRUE(service_->Assess(extension_a_, g, &args_g, kStartTime));
@@ -300,7 +304,7 @@ TEST_F(ExtensionsQuotaServiceTest, ViolatorsWillBeViolators) {
   scoped_refptr<MockFunction> f(new TimedLimitMockFunction("foo"));
   scoped_refptr<MockFunction> g(new TimedLimitMockFunction("bar"));
   ListValue arg;
-  arg.Append(new FundamentalValue(1));
+  arg.Append(new base::FundamentalValue(1));
   EXPECT_TRUE(service_->Assess(extension_a_, f, &arg, kStartTime));
   EXPECT_TRUE(service_->Assess(extension_a_, f, &arg,
               kStartTime + TimeDelta::FromSeconds(10)));

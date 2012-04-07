@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,11 +14,13 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/scrollbar_size.h"
-#include "views/focus/external_focus_tracker.h"
-#include "views/focus/view_storage.h"
-#include "views/widget/widget.h"
+#include "ui/views/focus/external_focus_tracker.h"
+#include "ui/views/focus/view_storage.h"
+#include "ui/views/widget/widget.h"
 
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+#include "ui/gfx/scoped_sk_region.h"
+#elif defined(OS_WIN)
 #include "base/win/scoped_gdi_object.h"
 #elif defined(TOOLKIT_USES_GTK)
 #include "ui/base/gtk/scoped_handle_gtk.h"
@@ -26,7 +28,9 @@
 
 namespace {
 
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+typedef gfx::ScopedSkRegion ScopedPlatformRegion;
+#elif defined(OS_WIN)
 typedef base::win::ScopedRegion ScopedPlatformRegion;
 #elif defined(TOOLKIT_USES_GTK)
 typedef ui::ScopedRegion ScopedPlatformRegion;
@@ -65,13 +69,15 @@ void DropdownBarHost::Init(views::View* view,
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_CONTROL);
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.parent_widget = browser_view_->GetWidget();
+#if defined(USE_AURA)
+  params.transparent = true;
+#endif
   host_->Init(params);
   host_->SetContentsView(view_);
 
   // Start listening to focus changes, so we can register and unregister our
   // own handler for Escape.
-  focus_manager_ =
-      views::FocusManager::GetFocusManagerForNativeView(host_->GetNativeView());
+  focus_manager_ = host_->GetFocusManager();
   if (focus_manager_) {
     focus_manager_->AddFocusChangeListener(this);
   } else {
@@ -149,8 +155,8 @@ bool DropdownBarHost::IsVisible() const {
 
 ////////////////////////////////////////////////////////////////////////////////
 // DropdownBarHost, views::FocusChangeListener implementation:
-void DropdownBarHost::FocusWillChange(views::View* focused_before,
-                                      views::View* focused_now) {
+void DropdownBarHost::OnWillChangeFocus(views::View* focused_before,
+                                        views::View* focused_now) {
   // First we need to determine if one or both of the views passed in are child
   // views of our view.
   bool our_view_before = focused_before && view_->Contains(focused_before);
@@ -170,6 +176,10 @@ void DropdownBarHost::FocusWillChange(views::View* focused_before,
     // original handler for Escape.
     UnregisterAccelerators();
   }
+}
+
+void DropdownBarHost::OnDidChangeFocus(views::View* focused_before,
+                                       views::View* focused_now) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -328,14 +338,14 @@ void DropdownBarHost::UpdateWindowEdges(const gfx::Rect& new_pos) {
 
 void DropdownBarHost::RegisterAccelerators() {
   DCHECK(!esc_accel_target_registered_);
-  views::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
+  ui::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
   focus_manager_->RegisterAccelerator(escape, this);
   esc_accel_target_registered_ = true;
 }
 
 void DropdownBarHost::UnregisterAccelerators() {
   DCHECK(esc_accel_target_registered_);
-  views::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
+  ui::Accelerator escape(ui::VKEY_ESCAPE, false, false, false);
   focus_manager_->UnregisterAccelerator(escape, this);
   esc_accel_target_registered_ = false;
 }

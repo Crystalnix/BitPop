@@ -76,7 +76,7 @@ void Login::UpdateXmppSettings(const buzz::XmppClientSettings& user_settings) {
   *(login_settings_->modifiable_user_settings()) = user_settings;
 }
 
-void Login::OnConnect(base::WeakPtr<talk_base::Task> base_task) {
+void Login::OnConnect(base::WeakPtr<buzz::XmppTaskParentInterface> base_task) {
   ResetReconnectState();
   delegate_->OnConnect(base_task);
 }
@@ -117,7 +117,7 @@ void Login::TryReconnect() {
   VLOG(1) << "Reconnecting in "
           << reconnect_interval_.InSeconds() << " seconds";
   reconnect_timer_.Start(
-      reconnect_interval_, this, &Login::DoReconnect);
+      FROM_HERE, reconnect_interval_, this, &Login::DoReconnect);
   delegate_->OnDisconnect();
 }
 

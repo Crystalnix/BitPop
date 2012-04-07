@@ -8,8 +8,16 @@
 
 #include "base/basictypes.h"
 
+class ChromeProxyConfigService;
 class CommandLine;
-class PrefProxyConfigTracker;
+class PrefProxyConfigTrackerImpl;
+class PrefService;
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+class ProxyConfigServiceImpl;
+}
+#endif  // defined(OS_CHROMEOS)
 
 namespace net {
 class NetLog;
@@ -22,8 +30,19 @@ class ProxyServiceFactory {
  public:
   // Creates a ProxyConfigService that delivers the system preferences
   // (or the respective ChromeOS equivalent).
-  static net::ProxyConfigService* CreateProxyConfigService(
-      PrefProxyConfigTracker* proxy_config_tracker);
+  // If |wait_for_first_update| is true, the ChromeProxyConfigService
+  // returns "pending" until it has been informed about the proxy configuration
+  // by calling its UpdateProxyConfig method.
+  static ChromeProxyConfigService* CreateProxyConfigService(
+      bool wait_for_first_update);
+
+#if defined(OS_CHROMEOS)
+  static chromeos::ProxyConfigServiceImpl* CreatePrefProxyConfigTracker(
+      PrefService* pref_service);
+#else
+  static PrefProxyConfigTrackerImpl* CreatePrefProxyConfigTracker(
+      PrefService* pref_service);
+#endif  // defined(OS_CHROMEOS)
 
   // Create a proxy service according to the options on command line.
   static net::ProxyService* CreateProxyService(

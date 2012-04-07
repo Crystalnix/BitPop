@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,24 +6,27 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/sys_info.h"
 #include "base/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/renderer_host/browser_render_process_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_process_host.h"
 
 using base::Time;
 using base::TimeDelta;
 using WebKit::WebCache;
 
-static const unsigned int kReviseAllocationDelayMS = 200 /* milliseconds */;
+static const int kReviseAllocationDelayMS = 200;
 
 // The default size limit of the in-memory cache is 8 MB
 static const int kDefaultMemoryCacheSize = 8 * 1024 * 1024;
@@ -61,11 +64,11 @@ WebCacheManager* WebCacheManager::GetInstance() {
 
 WebCacheManager::WebCacheManager()
     : global_size_limit_(GetDefaultGlobalSizeLimit()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(revise_allocation_factory_(this)) {
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_CREATED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_TERMINATED,
-                 NotificationService::AllSources());
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CREATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 WebCacheManager::~WebCacheManager() {
@@ -135,15 +138,6 @@ void WebCacheManager::ObserveStats(int renderer_id,
   entry->second.liveSize = stats.liveSize;
   entry->second.maxDeadCapacity = stats.maxDeadCapacity;
   entry->second.minDeadCapacity = stats.minDeadCapacity;
-
-  // trigger notification
-  WebCache::UsageStats stats_details(stats);
-  // &stats_details is only valid during the notification.
-  // See notification_types.h.
-  NotificationService::current()->Notify(
-      NotificationType::WEB_CACHE_STATS_OBSERVED,
-      Source<RenderProcessHost>(RenderProcessHost::FromID(renderer_id)),
-      Details<WebCache::UsageStats>(&stats_details));
 }
 
 void WebCacheManager::SetGlobalSizeLimit(size_t bytes) {
@@ -153,22 +147,31 @@ void WebCacheManager::SetGlobalSizeLimit(size_t bytes) {
 
 void WebCacheManager::ClearCache() {
   // Tell each renderer process to clear the cache.
-  ClearRendederCache(active_renderers_);
-  ClearRendederCache(inactive_renderers_);
+  ClearRendederCache(active_renderers_, INSTANTLY);
+  ClearRendederCache(inactive_renderers_, INSTANTLY);
 }
 
-void WebCacheManager::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::RENDERER_PROCESS_CREATED: {
-      RenderProcessHost* process = Source<RenderProcessHost>(source).ptr();
-      Add(process->id());
+void WebCacheManager::ClearCacheOnNavigation() {
+  // Tell each renderer process to clear the cache when a tab is reloaded or
+  // the user navigates to a new website.
+  ClearRendederCache(active_renderers_, ON_NAVIGATION);
+  ClearRendederCache(inactive_renderers_, ON_NAVIGATION);
+}
+
+void WebCacheManager::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_RENDERER_PROCESS_CREATED: {
+      content::RenderProcessHost* process =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      Add(process->GetID());
       break;
     }
-    case NotificationType::RENDERER_PROCESS_TERMINATED: {
-      RenderProcessHost* process = Source<RenderProcessHost>(source).ptr();
-      Remove(process->id());
+    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED: {
+      content::RenderProcessHost* process =
+          content::Source<content::RenderProcessHost>(source).ptr();
+      Remove(process->GetID());
       break;
     }
     default:
@@ -305,7 +308,8 @@ void WebCacheManager::EnactStrategy(const AllocationStrategy& strategy) {
   // Inform each render process of its cache allocation.
   AllocationStrategy::const_iterator allocation = strategy.begin();
   while (allocation != strategy.end()) {
-    RenderProcessHost* host = RenderProcessHost::FromID(allocation->first);
+    content::RenderProcessHost* host =
+        content::RenderProcessHost::FromID(allocation->first);
     if (host) {
       // This is the capacity this renderer has been allocated.
       size_t capacity = allocation->second;
@@ -320,20 +324,23 @@ void WebCacheManager::EnactStrategy(const AllocationStrategy& strategy) {
       // capacity lower.
       size_t max_dead_capacity = capacity;
 
-      host->Send(new ViewMsg_SetCacheCapacities(min_dead_capacity,
-                                                max_dead_capacity,
-                                                capacity));
+      host->Send(new ChromeViewMsg_SetCacheCapacities(min_dead_capacity,
+                                                      max_dead_capacity,
+                                                      capacity));
     }
     ++allocation;
   }
 }
 
-void WebCacheManager::ClearRendederCache(const std::set<int>& renderers) {
+void WebCacheManager::ClearRendederCache(
+    const std::set<int>& renderers,
+    WebCacheManager::ClearCacheOccasion occasion) {
   std::set<int>::const_iterator iter = renderers.begin();
   for (; iter != renderers.end(); ++iter) {
-    RenderProcessHost* host = RenderProcessHost::FromID(*iter);
+    content::RenderProcessHost* host =
+        content::RenderProcessHost::FromID(*iter);
     if (host)
-      host->Send(new ViewMsg_ClearCache());
+      host->Send(new ChromeViewMsg_ClearCache(occasion == ON_NAVIGATION));
   }
 }
 
@@ -411,9 +418,10 @@ void WebCacheManager::ReviseAllocationStrategyLater() {
   // Ask to be called back in a few milliseconds to actually recompute our
   // allocation.
   MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      revise_allocation_factory_.NewRunnableMethod(
-          &WebCacheManager::ReviseAllocationStrategy),
-      kReviseAllocationDelayMS);
+      base::Bind(
+          &WebCacheManager::ReviseAllocationStrategy,
+          weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(kReviseAllocationDelayMS));
 }
 
 void WebCacheManager::FindInactiveRenderers() {

@@ -31,14 +31,14 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_observer.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
 
 class PrefService;
 
 namespace subtle {
 
-class PrefMemberBase : public NotificationObserver {
+class PrefMemberBase : public content::NotificationObserver {
  protected:
   class Internal : public base::RefCountedThreadSafe<Internal> {
    public:
@@ -47,9 +47,9 @@ class PrefMemberBase : public NotificationObserver {
     // Update the value, either by calling |UpdateValueInternal| directly
     // or by dispatching to the right thread.
     // Takes ownership of |value|.
-    virtual void UpdateValue(Value* value, bool is_managed) const;
+    virtual void UpdateValue(base::Value* value, bool is_managed) const;
 
-    void MoveToThread(BrowserThread::ID thread_id);
+    void MoveToThread(content::BrowserThread::ID thread_id);
 
     // See PrefMember<> for description.
     bool IsManaged() const {
@@ -67,11 +67,11 @@ class PrefMemberBase : public NotificationObserver {
    private:
     // This method actually updates the value. It should only be called from
     // the thread the PrefMember is on.
-    virtual bool UpdateValueInternal(const Value& value) const = 0;
+    virtual bool UpdateValueInternal(const base::Value& value) const = 0;
 
     bool IsOnCorrectThread() const;
 
-    BrowserThread::ID thread_id_;
+    content::BrowserThread::ID thread_id_;
     mutable bool is_managed_;
 
     DISALLOW_COPY_AND_ASSIGN(Internal);
@@ -82,19 +82,19 @@ class PrefMemberBase : public NotificationObserver {
 
   // See PrefMember<> for description.
   void Init(const char* pref_name, PrefService* prefs,
-            NotificationObserver* observer);
+            content::NotificationObserver* observer);
 
   virtual void CreateInternal() const = 0;
 
   // See PrefMember<> for description.
   void Destroy();
 
-  void MoveToThread(BrowserThread::ID thread_id);
+  void MoveToThread(content::BrowserThread::ID thread_id);
 
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   void VerifyValuePrefName() const {
     DCHECK(!pref_name_.empty());
@@ -118,7 +118,7 @@ class PrefMemberBase : public NotificationObserver {
  // Ordered the members to compact the class instance.
  private:
   std::string pref_name_;
-  NotificationObserver* observer_;
+  content::NotificationObserver* observer_;
   PrefService* prefs_;
 
  protected:
@@ -139,7 +139,7 @@ class PrefMember : public subtle::PrefMemberBase {
   // don't want any notifications of changes.
   // This method should only be called on the UI thread.
   void Init(const char* pref_name, PrefService* prefs,
-            NotificationObserver* observer) {
+            content::NotificationObserver* observer) {
     subtle::PrefMemberBase::Init(pref_name, prefs, observer);
   }
 
@@ -155,7 +155,7 @@ class PrefMember : public subtle::PrefMemberBase {
   // via PostTask.
   // This method should only be used from the thread the PrefMember is currently
   // on, which is the UI thread by default.
-  void MoveToThread(BrowserThread::ID thread_id) {
+  void MoveToThread(content::BrowserThread::ID thread_id) {
     subtle::PrefMemberBase::MoveToThread(thread_id);
   }
 
@@ -217,7 +217,7 @@ class PrefMember : public subtle::PrefMemberBase {
    protected:
     virtual ~Internal() {}
 
-    virtual bool UpdateValueInternal(const Value& value) const;
+    virtual bool UpdateValueInternal(const base::Value& value) const;
 
     // We cache the value of the pref so we don't have to keep walking the pref
     // tree.

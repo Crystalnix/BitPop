@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2006-2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,8 @@
 #include "sandbox/src/target_services.h"
 
 namespace sandbox {
+
+SANDBOX_INTERCEPT NtExports g_nt;
 
 // Hooks NtOpenThread and proxy the call to the broker if it's trying to
 // open a thread in the same process.
@@ -394,6 +396,52 @@ BOOL WINAPI TargetCreateProcessA(CreateProcessAFunction orig_CreateProcessA,
 
   ::SetLastError(original_error);
   return FALSE;
+}
+
+// Creates a thread without registering with CSRSS. This is required if we
+// closed the CSRSS ALPC port after lockdown.
+HANDLE WINAPI TargetCreateThread(CreateThreadFunction orig_CreateThread,
+                                 LPSECURITY_ATTRIBUTES thread_attributes,
+                                 SIZE_T stack_size,
+                                 LPTHREAD_START_ROUTINE start_address,
+                                 PVOID parameter,
+                                 DWORD creation_flags,
+                                 LPDWORD thread_id) {
+// Try the normal CreateThread; switch to RtlCreateUserThread if needed.
+  static bool use_create_thread = true;
+  HANDLE thread;
+  if (use_create_thread) {
+    thread = orig_CreateThread(thread_attributes, stack_size, start_address,
+                               parameter, creation_flags, thread_id);
+    if (thread)
+      return thread;
+  }
+
+  PSECURITY_DESCRIPTOR sd =
+      thread_attributes ? thread_attributes->lpSecurityDescriptor : NULL;
+  CLIENT_ID client_id;
+
+  NTSTATUS result = g_nt.RtlCreateUserThread(NtCurrentProcess, sd,
+                                             creation_flags & CREATE_SUSPENDED,
+                                             0, stack_size, 0, start_address,
+                                             parameter, &thread, &client_id);
+  if (!NT_SUCCESS(result))
+    return 0;
+
+  // CSRSS is closed if we got here, so use RtlCreateUserThread from here on.
+  use_create_thread = false;
+  if (thread_id)
+    *thread_id = HandleToUlong(client_id.UniqueThread);
+  return thread;
+}
+
+// Cache the default LCID to avoid pinging CSRSS after lockdown.
+// TODO(jschuh): This approach will miss a default locale changes after
+// lockdown. In the future we may want to have the broker check instead.
+LCID WINAPI TargetGetUserDefaultLCID(
+    GetUserDefaultLCIDFunction orig_GetUserDefaultLCID) {
+  static LCID default_lcid = orig_GetUserDefaultLCID();
+  return default_lcid;
 }
 
 }  // namespace sandbox

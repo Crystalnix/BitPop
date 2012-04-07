@@ -15,22 +15,12 @@ class TabStripModel;
 // created each time the menu is shown.
 class TabMenuModel : public ui::SimpleMenuModel {
  public:
-  // TODO: nuke this constructor when callers are updated.
-  TabMenuModel(ui::SimpleMenuModel::Delegate* delegate, bool is_pinned);
   TabMenuModel(ui::SimpleMenuModel::Delegate* delegate,
                TabStripModel* tab_strip,
                int index);
   virtual ~TabMenuModel() {}
 
-  // Returns true if vertical tabs are enabled.
-  static bool AreVerticalTabsEnabled();
-
-  // Returns true if compact navigation bar is enabled.
-  static bool IsCompactNavigationModeEnabled();
-
  private:
-  // TODO: nuke this when first constructor is removed.
-  void Build(bool is_pinned);
   void Build(TabStripModel* tab_strip, int index);
 
   DISALLOW_COPY_AND_ASSIGN(TabMenuModel);

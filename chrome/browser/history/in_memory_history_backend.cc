@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,15 +16,12 @@
 #include "chrome/browser/history/in_memory_url_index.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 
 namespace history {
-
-// If a page becomes starred we use this id in place of the real starred id.
-// See note in OnURLsStarred.
-static const StarID kBogusStarredID = 0x0FFFFFFF;
 
 InMemoryHistoryBackend::InMemoryHistoryBackend()
     : profile_(NULL) {
@@ -65,25 +62,28 @@ void InMemoryHistoryBackend::AttachToHistoryService(Profile* profile) {
 
   // Register for the notifications we care about.
   // We only want notifications for the associated profile.
-  Source<Profile> source(profile_);
-  registrar_.Add(this, NotificationType::HISTORY_URL_VISITED, source);
-  registrar_.Add(this, NotificationType::HISTORY_TYPED_URLS_MODIFIED, source);
-  registrar_.Add(this, NotificationType::HISTORY_URLS_DELETED, source);
-  registrar_.Add(this, NotificationType::HISTORY_KEYWORD_SEARCH_TERM_UPDATED,
+  content::Source<Profile> source(profile_);
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URL_VISITED, source);
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED,
                  source);
-  registrar_.Add(this, NotificationType::TEMPLATE_URL_REMOVED, source);
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED, source);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED,
+                 source);
+  registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_REMOVED, source);
 }
 
-void InMemoryHistoryBackend::Observe(NotificationType type,
-                                     const NotificationSource& source,
-                                     const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::HISTORY_URL_VISITED: {
-      Details<history::URLVisitedDetails> visited_details(details);
-      PageTransition::Type primary_type =
-          PageTransition::StripQualifier(visited_details->transition);
+void InMemoryHistoryBackend::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_HISTORY_URL_VISITED: {
+      content::Details<history::URLVisitedDetails> visited_details(details);
+      content::PageTransition primary_type =
+          content::PageTransitionStripQualifier(visited_details->transition);
       if (visited_details->row.typed_count() > 0 ||
-          primary_type == PageTransition::KEYWORD ||
+          primary_type == content::PAGE_TRANSITION_KEYWORD ||
           HasKeyword(visited_details->row.url())) {
         URLsModifiedDetails modified_details;
         modified_details.changed_urls.push_back(visited_details->row);
@@ -91,20 +91,21 @@ void InMemoryHistoryBackend::Observe(NotificationType type,
       }
       break;
     }
-    case NotificationType::HISTORY_KEYWORD_SEARCH_TERM_UPDATED:
+    case chrome::NOTIFICATION_HISTORY_KEYWORD_SEARCH_TERM_UPDATED:
       OnKeywordSearchTermUpdated(
-          *Details<history::KeywordSearchTermDetails>(details).ptr());
+          *content::Details<history::KeywordSearchTermDetails>(details).ptr());
       break;
-    case NotificationType::HISTORY_TYPED_URLS_MODIFIED:
+    case chrome::NOTIFICATION_HISTORY_TYPED_URLS_MODIFIED:
       OnTypedURLsModified(
-          *Details<history::URLsModifiedDetails>(details).ptr());
+          *content::Details<history::URLsModifiedDetails>(details).ptr());
       break;
-    case NotificationType::HISTORY_URLS_DELETED:
-      OnURLsDeleted(*Details<history::URLsDeletedDetails>(details).ptr());
+    case chrome::NOTIFICATION_HISTORY_URLS_DELETED:
+      OnURLsDeleted(
+          *content::Details<history::URLsDeletedDetails>(details).ptr());
       break;
-    case NotificationType::TEMPLATE_URL_REMOVED:
+    case chrome::NOTIFICATION_TEMPLATE_URL_REMOVED:
       db_->DeleteAllSearchTermsForKeyword(
-          *(Details<TemplateURLID>(details).ptr()));
+          *(content::Details<TemplateURLID>(details).ptr()));
       break;
     default:
       // For simplicity, the unit tests send us all notifications, even when
@@ -145,7 +146,7 @@ void InMemoryHistoryBackend::OnURLsDeleted(const URLsDeletedDetails& details) {
     if (!db_->InitFromScratch())
       db_.reset();
     if (index_.get())
-      index_->ReloadFromHistory(db_.get(), true);
+      index_->ReloadFromHistory(db_.get());
     return;
   }
 

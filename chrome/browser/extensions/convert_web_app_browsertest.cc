@@ -7,17 +7,18 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 
 class ExtensionFromWebAppTest
-    : public InProcessBrowserTest, public NotificationObserver {
+    : public InProcessBrowserTest, public content::NotificationObserver {
  protected:
   ExtensionFromWebAppTest() : installed_extension_(NULL) {
   }
@@ -31,12 +32,13 @@ class ExtensionFromWebAppTest
     command_line->AppendSwitch(switches::kEnableCrxlessWebApps);
   }
 
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    if (type == NotificationType::EXTENSION_INSTALLED) {
-      const Extension* extension = Details<const Extension>(details).ptr();
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    if (type == chrome::NOTIFICATION_EXTENSION_INSTALLED) {
+      const Extension* extension =
+          content::Details<const Extension>(details).ptr();
       if (extension->id() == expected_extension_id_) {
         installed_extension_ = extension;
         MessageLoopForUI::current()->Quit();
@@ -50,9 +52,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, Basic) {
   browser()->profile()->GetExtensionService()->set_show_extensions_prompts(
       false);
 
-  NotificationRegistrar registrar;
-  registrar.Add(this, NotificationType::EXTENSION_INSTALLED,
-                NotificationService::AllSources());
+  content::NotificationRegistrar registrar;
+  registrar.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                content::NotificationService::AllSources());
 
   expected_extension_id_ = "fnpgoaochgbdfjndakichfafiocjjpmm";
   ui_test_utils::NavigateToURL(
@@ -70,11 +72,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, Basic) {
   EXPECT_EQ(extension_misc::LAUNCH_PANEL,
             installed_extension_->launch_container());
 
-  ASSERT_EQ(2u, installed_extension_->api_permissions().size());
-  EXPECT_TRUE(installed_extension_->api_permissions().find("geolocation") !=
-              installed_extension_->api_permissions().end());
-  EXPECT_TRUE(installed_extension_->api_permissions().find("notifications") !=
-              installed_extension_->api_permissions().end());
+  ASSERT_EQ(2u, installed_extension_->GetActivePermissions()->apis().size());
+  EXPECT_TRUE(installed_extension_->HasAPIPermission(
+      ExtensionAPIPermission::kGeolocation));
+  EXPECT_TRUE(installed_extension_->HasAPIPermission(
+      ExtensionAPIPermission::kNotification));
 
   ASSERT_EQ(3u, installed_extension_->icons().map().size());
   EXPECT_EQ("icons/16.png", installed_extension_->icons().Get(

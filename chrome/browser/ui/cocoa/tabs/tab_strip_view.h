@@ -12,7 +12,6 @@
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 
 @class NewTabButton;
-@class ProfileMenuButton;
 
 // A view class that handles rendering the tab strip and drops of URLS with
 // a positioning locator for drop feedback.
@@ -26,7 +25,6 @@
 
   // Weak; the following come from the nib.
   NewTabButton* newTabButton_;
-  ProfileMenuButton* profileMenuButton_;
 
   // Whether the drop-indicator arrow is shown, and if it is, the coordinate of
   // its tip.
@@ -34,10 +32,12 @@
   NSPoint dropArrowPosition_;
 }
 
-@property(assign, nonatomic) IBOutlet NewTabButton* newTabButton;
-@property(assign, nonatomic) IBOutlet ProfileMenuButton* profileMenuButton;
 @property(assign, nonatomic) BOOL dropArrowShown;
 @property(assign, nonatomic) NSPoint dropArrowPosition;
+
+// Name starts with "get" because methods staring with "new" return retained
+// objects according to Cocoa's create rule.
+- (NewTabButton*)getNewTabButton;
 
 @end
 
@@ -46,6 +46,10 @@
 @interface TabStripView(Protected)
 - (void)drawBottomBorder:(NSRect)bounds;
 - (BOOL)doubleClickMinimizesWindow;
+@end
+
+@interface TabStripView(TestingAPI)
+- (void)setNewTabButton:(NewTabButton*)button;
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_TABS_TAB_STRIP_VIEW_H_

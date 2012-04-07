@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "chrome/installer/util/language_selector.h"
 
 namespace {
@@ -63,7 +64,7 @@ std::wstring GetLocalizedEulaResource() {
 
   // Spaces and DOS paths must be url encoded.
   std::wstring url_path =
-      StringPrintf(L"res://%ls/#23/%ls", full_exe_path, resource.c_str());
+      base::StringPrintf(L"res://%ls/#23/%ls", full_exe_path, resource.c_str());
 
   // The cast is safe because url_path has limited length
   // (see the definition of full_exe_path and resource).
@@ -75,6 +76,10 @@ std::wstring GetLocalizedEulaResource() {
   if (SUCCEEDED(hr))
     return std::wstring(url_canon.get());
   return url_path;
+}
+
+std::wstring GetCurrentTranslation() {
+  return GetLanguageSelector().selected_translation();
 }
 
 }  // namespace installer

@@ -25,11 +25,20 @@ namespace installer {
 
 class InstallationState;
 class InstallerState;
-class Package;
 class Product;
 
+// Helper function for AddGoogleUpdateWorkItems that mirrors oeminstall.
+void AddOemInstallWorkItems(const InstallationState& original_state,
+                            const InstallerState& installer_state,
+                            WorkItemList* install_list);
+
+// Helper function for AddGoogleUpdateWorkItems that mirrors eulaaccepted.
+void AddEulaAcceptedWorkItems(const InstallationState& original_state,
+                              const InstallerState& installer_state,
+                              WorkItemList* install_list);
+
 // Adds work items that make registry adjustments for Google Update; namely,
-// copy a brand value and move a usagestats value.
+// copy brand, oeminstall, and eulaaccepted values; and move a usagestats value.
 void AddGoogleUpdateWorkItems(const InstallationState& original_state,
                               const InstallerState& installer_state,
                               WorkItemList* install_list);
@@ -123,17 +132,23 @@ void AddUninstallShortcutWorkItems(const InstallerState& installer_state,
                                    const Product& product);
 
 // Create Version key for a product (if not already present) and sets the new
-// product version as the last step.
+// product version as the last step.  If |add_language_identifier| is true, the
+// "lang" value is also set according to the currently selected translation.
 void AddVersionKeyWorkItems(HKEY root,
                             BrowserDistribution* dist,
                             const Version& new_version,
+                            bool add_language_identifier,
                             WorkItemList* list);
 
-// [Un]Registers Chrome and ChromeLauncher in IE's low rights elevation policy.
-void AddElevationPolicyWorkItems(const InstallationState& original_state,
-                                 const InstallerState& installer_state,
-                                 const Version& new_version,
-                                 WorkItemList* install_list);
+// Unregisters the "opv" version of ChromeLauncher from IE's low rights
+// elevation policy.
+void AddDeleteOldIELowRightsPolicyWorkItems(
+    const InstallerState& installer_state,
+    WorkItemList* install_list);
+
+// Adds work items to copy IE low rights policies for an in-use update.
+void AddCopyIELowRightsPolicyWorkItems(const InstallerState& installer_state,
+                                       WorkItemList* install_list);
 
 // Utility method currently shared between install.cc and install_worker.cc
 void AppendUninstallCommandLineFlags(const InstallerState& installer_state,

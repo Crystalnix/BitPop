@@ -13,6 +13,7 @@
 #include "base/process_util.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
+#include "base/test/test_reg_util_win.h"
 #include "base/utf_string_conversions.h"
 #include "base/version.h"
 #include "base/win/registry.h"
@@ -35,17 +36,24 @@ using base::win::RegKey;
 using installer::InstallationState;
 using installer::InstallerState;
 using installer::MasterPreferences;
+using registry_util::RegistryOverrideManager;
 
 class InstallerStateTest : public TestWithTempDirAndDeleteTempOverrideKeys {
  protected:
 };
 
-// An installer state on which we can tweak the target path.
+// An installer state on which we can access otherwise protected members.
 class MockInstallerState : public InstallerState {
  public:
   MockInstallerState() : InstallerState() { }
   void set_target_path(const FilePath& target_path) {
     target_path_ = target_path;
+  }
+  static bool IsFileInUse(const FilePath& file) {
+    return InstallerState::IsFileInUse(file);
+  }
+  const Version& critical_update_version() const {
+    return critical_update_version_;
   }
 };
 
@@ -340,8 +348,10 @@ TEST_F(InstallerStateTest, WithProduct) {
 
   HKEY root = system_level ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   EXPECT_EQ(root, installer_state.root_key());
+
   {
-    TempRegKeyOverride override(root, L"root_pit");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_pit");
     BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
         BrowserDistribution::CHROME_BROWSER);
     RegKey chrome_key(root, dist->GetVersionKey().c_str(), KEY_ALL_ACCESS);
@@ -373,7 +383,8 @@ TEST_F(InstallerStateTest, InstallerResult) {
 
   // check results for a fresh install of single Chrome
   {
-    TempRegKeyOverride override(root, L"root_inst_res");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
     CommandLine cmd_line = CommandLine::FromString(L"setup.exe --system-level");
     const MasterPreferences prefs(cmd_line);
     InstallationState machine_state;
@@ -400,11 +411,11 @@ TEST_F(InstallerStateTest, InstallerResult) {
         key.ReadValue(installer::kInstallerSuccessLaunchCmdLine, &value));
     EXPECT_EQ(launch_cmd, value);
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 
   // check results for a fresh install of multi Chrome
   {
-    TempRegKeyOverride override(root, L"root_inst_res");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
     CommandLine cmd_line = CommandLine::FromString(
         L"setup.exe --system-level --multi-install --chrome");
     const MasterPreferences prefs(cmd_line);
@@ -432,7 +443,6 @@ TEST_F(InstallerStateTest, InstallerResult) {
     EXPECT_EQ(launch_cmd, value);
     key.Close();
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 }
 
 // Test GetCurrentVersion when migrating single Chrome to multi
@@ -456,4 +466,184 @@ TEST_F(InstallerStateTest, GetCurrentVersionMigrateChrome) {
   // Is the Chrome version picked up?
   scoped_ptr<Version> version(installer_state.GetCurrentVersion(machine_state));
   EXPECT_TRUE(version.get() != NULL);
+}
+
+TEST_F(InstallerStateTest, IsFileInUse) {
+  ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+
+  FilePath temp_file;
+  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir.path(), &temp_file));
+
+  EXPECT_FALSE(MockInstallerState::IsFileInUse(temp_file));
+
+  {
+    // Open a handle to the file with the same access mode and sharing options
+    // as the loader.
+    base::win::ScopedHandle temp_handle(
+        CreateFile(temp_file.value().c_str(),
+                   SYNCHRONIZE | FILE_EXECUTE,
+                   FILE_SHARE_DELETE | FILE_SHARE_READ,
+                   NULL, OPEN_EXISTING, 0, 0));
+    ASSERT_TRUE(temp_handle != NULL);
+
+    // The file should now be in use.
+    EXPECT_TRUE(MockInstallerState::IsFileInUse(temp_file));
+  }
+
+  // And once the handle is gone, it should no longer be in use.
+  EXPECT_FALSE(MockInstallerState::IsFileInUse(temp_file));
+}
+
+// A fixture for testing InstallerState::DetermineCriticalVersion.  Individual
+// tests must invoke Initialize() with a critical version.
+class InstallerStateCriticalVersionTest : public ::testing::Test {
+ protected:
+  InstallerStateCriticalVersionTest() : cmd_line_(CommandLine::NO_PROGRAM) {}
+
+  // Creates a set of versions for use by all test runs.
+  static void SetUpTestCase() {
+    low_version_    = new Version("15.0.874.106");
+    opv_version_    = new Version("15.0.874.255");
+    middle_version_ = new Version("16.0.912.32");
+    pv_version_     = new Version("16.0.912.255");
+    high_version_   = new Version("17.0.932.0");
+  }
+
+  // Cleans up versions used by all test runs.
+  static void TearDownTestCase() {
+    delete low_version_;
+    delete opv_version_;
+    delete middle_version_;
+    delete pv_version_;
+    delete high_version_;
+  }
+
+  // Initializes the InstallerState to use for a test run.  The returned
+  // instance's critical update version is set to |version|.  |version| may be
+  // NULL, in which case the critical update version is unset.
+  MockInstallerState& Initialize(const Version* version) {
+    cmd_line_ = version == NULL ?
+        CommandLine::FromString(L"setup.exe") :
+        CommandLine::FromString(
+            L"setup.exe --critical-update-version=" +
+            ASCIIToWide(version->GetString()));
+    prefs_.reset(new MasterPreferences(cmd_line_));
+    machine_state_.Initialize();
+    installer_state_.Initialize(cmd_line_, *prefs_, machine_state_);
+    return installer_state_;
+  }
+
+  static Version* low_version_;
+  static Version* opv_version_;
+  static Version* middle_version_;
+  static Version* pv_version_;
+  static Version* high_version_;
+
+  CommandLine cmd_line_;
+  scoped_ptr<MasterPreferences> prefs_;
+  InstallationState machine_state_;
+  MockInstallerState installer_state_;
+};
+
+Version* InstallerStateCriticalVersionTest::low_version_ = NULL;
+Version* InstallerStateCriticalVersionTest::opv_version_ = NULL;
+Version* InstallerStateCriticalVersionTest::middle_version_ = NULL;
+Version* InstallerStateCriticalVersionTest::pv_version_ = NULL;
+Version* InstallerStateCriticalVersionTest::high_version_ = NULL;
+
+// Test the case where the critical version is less than the currently-running
+// Chrome.  The critical version is ignored since it doesn't apply.
+TEST_F(InstallerStateCriticalVersionTest, CriticalBeforeOpv) {
+  MockInstallerState& installer_state(Initialize(low_version_));
+
+  EXPECT_TRUE(installer_state.critical_update_version().Equals(*low_version_));
+  // Unable to determine the installed version, so assume critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(NULL, *pv_version_).IsValid());
+  // Installed version is past the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(opv_version_, *pv_version_)
+          .IsValid());
+  // Installed version is past the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(pv_version_, *pv_version_)
+          .IsValid());
+}
+
+// Test the case where the critical version is equal to the currently-running
+// Chrome.  The critical version is ignored since it doesn't apply.
+TEST_F(InstallerStateCriticalVersionTest, CriticalEqualsOpv) {
+  MockInstallerState& installer_state(Initialize(opv_version_));
+
+  EXPECT_TRUE(installer_state.critical_update_version().Equals(*opv_version_));
+  // Unable to determine the installed version, so assume critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(NULL, *pv_version_).IsValid());
+  // Installed version equals the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(opv_version_, *pv_version_)
+          .IsValid());
+  // Installed version equals the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(pv_version_, *pv_version_)
+          .IsValid());
+}
+
+// Test the case where the critical version is between the currently-running
+// Chrome and the to-be-installed Chrome.
+TEST_F(InstallerStateCriticalVersionTest, CriticalBetweenOpvAndPv) {
+  MockInstallerState& installer_state(Initialize(middle_version_));
+
+  EXPECT_TRUE(installer_state.critical_update_version().Equals(
+      *middle_version_));
+  // Unable to determine the installed version, so assume critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(NULL, *pv_version_).IsValid());
+  // Installed version before the critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(opv_version_, *pv_version_)
+          .IsValid());
+  // Installed version is past the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(pv_version_, *pv_version_)
+          .IsValid());
+}
+
+// Test the case where the critical version is the same as the to-be-installed
+// Chrome.
+TEST_F(InstallerStateCriticalVersionTest, CriticalEqualsPv) {
+  MockInstallerState& installer_state(Initialize(pv_version_));
+
+  EXPECT_TRUE(installer_state.critical_update_version().Equals(
+      *pv_version_));
+  // Unable to determine the installed version, so assume critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(NULL, *pv_version_).IsValid());
+  // Installed version before the critical update.
+  EXPECT_TRUE(
+      installer_state.DetermineCriticalVersion(opv_version_, *pv_version_)
+          .IsValid());
+  // Installed version equals the critical update.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(pv_version_, *pv_version_)
+          .IsValid());
+}
+
+// Test the case where the critical version is greater than the to-be-installed
+// Chrome.
+TEST_F(InstallerStateCriticalVersionTest, CriticalAfterPv) {
+  MockInstallerState& installer_state(Initialize(high_version_));
+
+  EXPECT_TRUE(installer_state.critical_update_version().Equals(
+      *high_version_));
+  // Critical update newer than the new version.
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(NULL, *pv_version_).IsValid());
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(opv_version_, *pv_version_)
+          .IsValid());
+  EXPECT_FALSE(
+      installer_state.DetermineCriticalVersion(pv_version_, *pv_version_)
+          .IsValid());
 }

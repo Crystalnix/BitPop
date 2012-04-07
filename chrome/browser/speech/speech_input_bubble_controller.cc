@@ -4,20 +4,24 @@
 
 #include "chrome/browser/speech/speech_input_bubble_controller.h"
 
+#include "base/bind.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/gfx/rect.h"
+
+using content::BrowserThread;
+using content::WebContents;
 
 namespace speech_input {
 
 SpeechInputBubbleController::SpeechInputBubbleController(Delegate* delegate)
     : delegate_(delegate),
       current_bubble_caller_id_(0),
-      registrar_(new NotificationRegistrar) {
+      registrar_(new content::NotificationRegistrar) {
 }
 
 SpeechInputBubbleController::~SpeechInputBubbleController() {
@@ -31,27 +35,26 @@ void SpeechInputBubbleController::CreateBubble(int caller_id,
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &SpeechInputBubbleController::CreateBubble,
+        base::Bind(&SpeechInputBubbleController::CreateBubble, this,
                           caller_id, render_process_id, render_view_id,
                           element_rect));
     return;
   }
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  TabContents* tab_contents = tab_util::GetTabContentsByID(render_process_id,
+  WebContents* web_contents = tab_util::GetWebContentsByID(render_process_id,
                                                            render_view_id);
 
   DCHECK_EQ(0u, bubbles_.count(caller_id));
-  SpeechInputBubble* bubble = SpeechInputBubble::Create(tab_contents, this,
+  SpeechInputBubble* bubble = SpeechInputBubble::Create(web_contents, this,
                                                         element_rect);
   if (!bubble) {
     // Could be null if tab or display rect were invalid.
     // Simulate the cancel button being clicked to inform the delegate.
     BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
-          NewRunnableMethod(
-              this,
+          base::Bind(
               &SpeechInputBubbleController::InvokeDelegateButtonClicked,
-              caller_id, SpeechInputBubble::BUTTON_CANCEL));
+              this, caller_id, SpeechInputBubble::BUTTON_CANCEL));
     return;
   }
 
@@ -98,10 +101,10 @@ void SpeechInputBubbleController::UpdateTabContentsSubscription(
   // If there are any other bubbles existing for the same TabContents, we would
   // have subscribed to tab close notifications on their behalf and we need to
   // stay registered. So we don't change the subscription in such cases.
-  TabContents* tab_contents = bubbles_[caller_id]->tab_contents();
+  WebContents* web_contents = bubbles_[caller_id]->web_contents();
   for (BubbleCallerIdMap::iterator iter = bubbles_.begin();
        iter != bubbles_.end(); ++iter) {
-    if (iter->second->tab_contents() == tab_contents &&
+    if (iter->second->web_contents() == web_contents &&
         iter->first != caller_id) {
       // At least one other bubble exists for the same TabContents. So don't
       // make any change to the subscription.
@@ -110,28 +113,28 @@ void SpeechInputBubbleController::UpdateTabContentsSubscription(
   }
 
   if (action == BUBBLE_ADDED) {
-    registrar_->Add(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                    Source<TabContents>(tab_contents));
+    registrar_->Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                    content::Source<WebContents>(web_contents));
   } else {
-    registrar_->Remove(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                    Source<TabContents>(tab_contents));
+    registrar_->Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                    content::Source<WebContents>(web_contents));
   }
 }
 
-void SpeechInputBubbleController::Observe(NotificationType type,
-                                          const NotificationSource& source,
-                                          const NotificationDetails& details) {
-  if (type == NotificationType::TAB_CONTENTS_DESTROYED) {
+void SpeechInputBubbleController::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED) {
     // Cancel all bubbles and active recognition sessions for this tab.
-    TabContents* tab_contents = Source<TabContents>(source).ptr();
+    WebContents* web_contents = content::Source<WebContents>(source).ptr();
     BubbleCallerIdMap::iterator iter = bubbles_.begin();
     while (iter != bubbles_.end()) {
-      if (iter->second->tab_contents() == tab_contents) {
+      if (iter->second->web_contents() == web_contents) {
         BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-            NewRunnableMethod(
-                this,
+            base::Bind(
                 &SpeechInputBubbleController::InvokeDelegateButtonClicked,
-                iter->first, SpeechInputBubble::BUTTON_CANCEL));
+                this, iter->first, SpeechInputBubble::BUTTON_CANCEL));
         CloseBubble(iter->first);
         // We expect to have a very small number of items in this map so
         // redo-ing from start is ok.
@@ -149,8 +152,8 @@ void SpeechInputBubbleController::ProcessRequestInUiThread(
     int caller_id, RequestType type, const string16& text, float volume,
     float noise_volume) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, NewRunnableMethod(
-        this, &SpeechInputBubbleController::ProcessRequestInUiThread,
+    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, base::Bind(
+        &SpeechInputBubbleController::ProcessRequestInUiThread, this,
         caller_id, type, text, volume, noise_volume));
     return;
   }
@@ -208,10 +211,9 @@ void SpeechInputBubbleController::InfoBubbleButtonClicked(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this,
+      base::Bind(
           &SpeechInputBubbleController::InvokeDelegateButtonClicked,
-          current_bubble_caller_id_, button));
+          this, current_bubble_caller_id_, button));
 }
 
 void SpeechInputBubbleController::InfoBubbleFocusChanged() {
@@ -223,10 +225,9 @@ void SpeechInputBubbleController::InfoBubbleFocusChanged() {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this,
+      base::Bind(
           &SpeechInputBubbleController::InvokeDelegateFocusChanged,
-          old_bubble_caller_id));
+          this, old_bubble_caller_id));
 }
 
 void SpeechInputBubbleController::InvokeDelegateButtonClicked(

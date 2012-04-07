@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "build/build_config.h"
+#include "ui/base/ui_export.h"
 
 // This file provides cross platform typedefs for native widget types.
 //   NativeWindow: this is a handle to a native, top-level window
@@ -36,64 +36,145 @@
 // 'views' and with our Chrome UI code where the elements are also called
 // 'views'.
 
+#if defined(USE_AURA)
+class SkRegion;
+namespace aura {
+class Event;
+class Window;
+}
+#endif  // defined(USE_AURA)
+
 #if defined(OS_WIN)
 #include <windows.h>  // NOLINT
 typedef struct HFONT__* HFONT;
+struct IAccessible;
 #elif defined(OS_MACOSX)
 struct CGContext;
 #ifdef __OBJC__
+@class NSCursor;
+@class NSEvent;
 @class NSFont;
 @class NSImage;
 @class NSView;
 @class NSWindow;
 @class NSTextField;
 #else
+class NSCursor;
+class NSEvent;
 class NSFont;
 class NSImage;
 class NSView;
 class NSWindow;
 class NSTextField;
 #endif  // __OBJC__
-#elif defined(TOOLKIT_USES_GTK)
+#elif defined(OS_POSIX)
 typedef struct _PangoFontDescription PangoFontDescription;
+typedef struct _cairo cairo_t;
+#endif
+
+#if defined(USE_WAYLAND)
+typedef struct _GdkPixbuf GdkPixbuf;
+struct wl_egl_window;
+
+namespace ui {
+class WaylandWindow;
+}
+
+typedef struct _GdkRegion GdkRegion;
+#elif defined(TOOLKIT_USES_GTK)
 typedef struct _GdkCursor GdkCursor;
+typedef union _GdkEvent GdkEvent;
 typedef struct _GdkPixbuf GdkPixbuf;
 typedef struct _GdkRegion GdkRegion;
 typedef struct _GtkWidget GtkWidget;
 typedef struct _GtkWindow GtkWindow;
-typedef struct _cairo cairo_t;
+#elif defined(OS_ANDROID)
+class ChromeView;
 #endif
 class SkBitmap;
 
 namespace gfx {
 
-#if defined(OS_WIN)
-typedef HFONT NativeFont;
+#if defined(USE_AURA)
+// See ui/aura/cursor.h for values.
+typedef int NativeCursor;
+typedef aura::Window* NativeView;
+typedef aura::Window* NativeWindow;
+typedef SkRegion* NativeRegion;
+typedef aura::Event* NativeEvent;
+#elif defined(OS_WIN)
+typedef HCURSOR NativeCursor;
 typedef HWND NativeView;
 typedef HWND NativeWindow;
-typedef HWND NativeEditView;
-typedef HDC NativeDrawingContext;
-typedef HCURSOR NativeCursor;
-typedef HMENU NativeMenu;
 typedef HRGN NativeRegion;
+typedef MSG NativeEvent;
 #elif defined(OS_MACOSX)
-typedef NSFont* NativeFont;
+typedef NSCursor* NativeCursor;
 typedef NSView* NativeView;
 typedef NSWindow* NativeWindow;
-typedef NSTextField* NativeEditView;
-typedef CGContext* NativeDrawingContext;
+typedef NSEvent* NativeEvent;
+#elif defined(USE_WAYLAND)
 typedef void* NativeCursor;
-typedef void* NativeMenu;
-#elif defined(USE_X11)
-typedef PangoFontDescription* NativeFont;
+typedef ui::WaylandWindow* NativeView;
+typedef ui::WaylandWindow* NativeWindow;
+// TODO(dnicoara) This should be replaced with a cairo region or maybe
+// a Wayland specific region
+typedef GdkRegion* NativeRegion;
+typedef void* NativeEvent;
+#elif defined(TOOLKIT_USES_GTK)
+typedef GdkCursor* NativeCursor;
 typedef GtkWidget* NativeView;
 typedef GtkWindow* NativeWindow;
+typedef GdkRegion* NativeRegion;
+typedef GdkEvent* NativeEvent;
+#elif defined(OS_ANDROID)
+typedef void* NativeCursor;
+typedef ChromeView* NativeView;
+typedef ChromeView* NativeWindow;
+typedef void* NativeRegion;
+typedef void* NativeEvent;
+#endif
+
+#if defined(OS_WIN)
+typedef HFONT NativeFont;
+typedef HWND NativeEditView;
+typedef HDC NativeDrawingContext;
+typedef HMENU NativeMenu;
+typedef IAccessible* NativeViewAccessible;
+#elif defined(OS_MACOSX)
+typedef NSFont* NativeFont;
+typedef NSTextField* NativeEditView;
+typedef CGContext* NativeDrawingContext;
+typedef void* NativeMenu;
+typedef void* NativeViewAccessible;
+#elif defined(USE_WAYLAND)
+typedef PangoFontDescription* NativeFont;
+typedef void* NativeEditView;
+typedef cairo_t* NativeDrawingContext;
+typedef void* NativeMenu;
+typedef void* NativeViewAccessible;
+#elif defined(TOOLKIT_USES_GTK)
+typedef PangoFontDescription* NativeFont;
 typedef GtkWidget* NativeEditView;
 typedef cairo_t* NativeDrawingContext;
-typedef GdkCursor* NativeCursor;
 typedef GtkWidget* NativeMenu;
-typedef GdkRegion* NativeRegion;
+typedef void* NativeViewAccessible;
+#elif defined(USE_AURA)
+typedef PangoFontDescription* NativeFont;
+typedef void* NativeEditView;
+typedef cairo_t* NativeDrawingContext;
+typedef void* NativeMenu;
+typedef void* NativeViewAccessible;
+#elif defined(OS_ANDROID)
+typedef void* NativeFont;
+typedef void* NativeEditView;
+typedef void* NativeDrawingContext;
+typedef void* NativeMenu;
+typedef void* NativeViewAccessible;
 #endif
+
+// A constant value to indicate that gfx::NativeCursor refers to no cursor.
+const gfx::NativeCursor kNullCursor = static_cast<gfx::NativeCursor>(NULL);
 
 #if defined(OS_MACOSX)
 typedef NSImage NativeImageType;
@@ -111,7 +192,7 @@ typedef NativeImageType* NativeImage;
 // See comment at the top of the file for usage.
 typedef intptr_t NativeViewId;
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 // Convert a NativeViewId to a NativeView.
 //
 // On Windows, we pass an HWND into the renderer. As stated above, the renderer
@@ -120,10 +201,10 @@ static inline NativeView NativeViewFromId(NativeViewId id) {
   return reinterpret_cast<NativeView>(id);
 }
 #define NativeViewFromIdInBrowser(x) NativeViewFromId(x)
-#elif defined(OS_POSIX)
-// On Mac and Linux, a NativeView is a pointer to an object, and is useless
-// outside the process in which it was created. NativeViewFromId should only be
-// used inside the appropriate platform ifdef outside of the browser.
+#elif defined(OS_POSIX) || defined(USE_AURA)
+// On Mac, Linux and USE_AURA, a NativeView is a pointer to an object, and is
+// useless outside the process in which it was created. NativeViewFromId should
+// only be used inside the appropriate platform ifdef outside of the browser.
 // (NativeViewFromIdInBrowser can be used everywhere in the browser.) If your
 // cross-platform design involves a call to NativeViewFromId from outside the
 // browser it will never work on Mac or Linux and is fundamentally broken.
@@ -135,27 +216,27 @@ static inline NativeView NativeViewFromIdInBrowser(NativeViewId id) {
 }
 #endif  // defined(OS_POSIX)
 
-// Convert a NativeView to a NativeViewId.  See the comments at the top of
-// this file.
-#if defined(OS_WIN) || defined(OS_MACOSX)
-static inline NativeViewId IdFromNativeView(NativeView view) {
-  return reinterpret_cast<NativeViewId>(view);
-}
-#elif defined(USE_X11)
-// Not inlined because it involves pulling too many headers.
-NativeViewId IdFromNativeView(NativeView view);
-#endif  // defined(USE_X11)
-
-
 // PluginWindowHandle is an abstraction wrapping "the types of windows
 // used by NPAPI plugins".  On Windows it's an HWND, on X it's an X
 // window id.
 #if defined(OS_WIN)
   typedef HWND PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = NULL;
+#elif defined(USE_WAYLAND)
+  typedef struct wl_egl_window* PluginWindowHandle;
+  const PluginWindowHandle kNullPluginWindow = NULL;
 #elif defined(USE_X11)
   typedef unsigned long PluginWindowHandle;
   const PluginWindowHandle kNullPluginWindow = 0;
+#elif defined(USE_AURA) && defined(OS_MACOSX)
+  // Mac-Aura uses NSView-backed GLSurface.  Regular Mac does not.
+  // TODO(dhollowa): Rationalize these two definitions. http://crbug.com/104551.
+  typedef NSView* PluginWindowHandle;
+  const PluginWindowHandle kNullPluginWindow = 0;
+#elif defined(OS_ANDROID)
+  typedef uint64 PluginWindowHandle;
+  const PluginWindowHandle kNullPluginWindow = 0;
+  const PluginWindowHandle kDummyPluginWindow = 0xFEEDBEEF;
 #else
   // On OS X we don't have windowed plugins.
   // We use a NULL/0 PluginWindowHandle in shared code to indicate there
@@ -175,8 +256,16 @@ NativeViewId IdFromNativeView(NativeView view);
 #if defined(OS_WIN)
 typedef HWND AcceleratedWidget;
 const AcceleratedWidget kNullAcceleratedWidget = NULL;
+#elif defined(USE_WAYLAND)
+typedef struct wl_egl_window* AcceleratedWidget;
+const AcceleratedWidget kNullAcceleratedWidget = NULL;
 #elif defined(USE_X11)
 typedef unsigned long AcceleratedWidget;
+const AcceleratedWidget kNullAcceleratedWidget = 0;
+#elif defined(USE_AURA) && defined(OS_MACOSX)
+// Mac-Aura uses NSView-backed GLSurface.  Regular Mac does not.
+// TODO(dhollowa): Rationalize these two definitions. http://crbug.com/104551.
+typedef NSView* AcceleratedWidget;
 const AcceleratedWidget kNullAcceleratedWidget = 0;
 #else
 typedef void* AcceleratedWidget;

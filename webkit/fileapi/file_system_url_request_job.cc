@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/fileapi/file_system_url_request_job.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util_proxy.h"
@@ -22,8 +23,8 @@
 #include "net/http/http_util.h"
 #include "net/url_request/url_request.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
+#include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_util.h"
 
 using net::URLRequest;
@@ -55,9 +56,12 @@ static net::HttpResponseHeaders* CreateHttpResponseHeaders() {
 class FileSystemURLRequestJob::CallbackDispatcher
     : public FileSystemCallbackDispatcher {
  public:
-  explicit CallbackDispatcher(FileSystemURLRequestJob* job)
-      : job_(job) {
-    DCHECK(job_);
+  // An instance of this class must be created by Create()
+  // (so that we do not leak ownerships).
+  static scoped_ptr<FileSystemCallbackDispatcher> Create(
+      FileSystemURLRequestJob* job) {
+    return scoped_ptr<FileSystemCallbackDispatcher>(
+        new CallbackDispatcher(job));
   }
 
   // fileapi::FileSystemCallbackDispatcher overrides.
@@ -93,6 +97,10 @@ class FileSystemURLRequestJob::CallbackDispatcher
   }
 
  private:
+  explicit CallbackDispatcher(FileSystemURLRequestJob* job) : job_(job) {
+    DCHECK(job_);
+  }
+
   // TODO(adamk): Get rid of the need for refcounting here by
   // allowing FileSystemOperations to be cancelled.
   scoped_refptr<FileSystemURLRequestJob> job_;
@@ -105,10 +113,7 @@ FileSystemURLRequestJob::FileSystemURLRequestJob(
     : URLRequestJob(request),
       file_system_context_(file_system_context),
       file_thread_proxy_(file_thread_proxy),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          io_callback_(this, &FileSystemURLRequestJob::DidRead)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       stream_(NULL),
       is_directory_(false),
       remaining_bytes_(0) {
@@ -122,9 +127,10 @@ FileSystemURLRequestJob::~FileSystemURLRequestJob() {
 }
 
 void FileSystemURLRequestJob::Start() {
-  MessageLoop::current()->PostTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(
-          &FileSystemURLRequestJob::StartAsync));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&FileSystemURLRequestJob::StartAsync,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void FileSystemURLRequestJob::Kill() {
@@ -133,8 +139,7 @@ void FileSystemURLRequestJob::Kill() {
     stream_.reset(NULL);
   }
   URLRequestJob::Kill();
-  method_factory_.RevokeAll();
-  callback_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 bool FileSystemURLRequestJob::ReadRawData(net::IOBuffer* dest, int dest_size,
@@ -154,7 +159,9 @@ bool FileSystemURLRequestJob::ReadRawData(net::IOBuffer* dest, int dest_size,
     return true;
   }
 
-  int rv = stream_->Read(dest->data(), dest_size, &io_callback_);
+  int rv = stream_->Read(dest->data(), dest_size,
+                         base::Bind(&FileSystemURLRequestJob::DidRead,
+                                    base::Unretained(this)));
   if (rv >= 0) {
     // Data is immediately available.
     *bytes_read = rv;
@@ -213,12 +220,19 @@ int FileSystemURLRequestJob::GetResponseCode() const {
 }
 
 void FileSystemURLRequestJob::StartAsync() {
-  if (request_) {
-    (new FileSystemOperation(new CallbackDispatcher(this),
-                             file_thread_proxy_,
-                             file_system_context_,
-                             NULL))->GetMetadata(request_->url());
+  if (!request_)
+    return;
+  FileSystemOperationInterface* operation =
+      file_system_context_->CreateFileSystemOperation(
+          request_->url(),
+          CallbackDispatcher::Create(this),
+          file_thread_proxy_);
+  if (!operation) {
+    NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
+                                net::ERR_INVALID_URL));
+    return;
   }
+  operation->GetMetadata(request_->url());
 }
 
 void FileSystemURLRequestJob::DidGetMetadata(
@@ -238,7 +252,8 @@ void FileSystemURLRequestJob::DidGetMetadata(
   if (!is_directory_) {
     base::FileUtilProxy::CreateOrOpen(
         file_thread_proxy_, platform_path, kFileFlags,
-        callback_factory_.NewCallback(&FileSystemURLRequestJob::DidOpen));
+        base::Bind(&FileSystemURLRequestJob::DidOpen,
+                   weak_factory_.GetWeakPtr()));
   } else {
     NotifyHeadersComplete();
   }

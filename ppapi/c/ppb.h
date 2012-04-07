@@ -1,30 +1,40 @@
-/* Copyright (c) 2010 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From ppb.idl modified Fri Aug 12 10:40:59 2011. */
+
 #ifndef PPAPI_C_PPB_H_
 #define PPAPI_C_PPB_H_
 
+#include "ppapi/c/pp_macros.h"
+#include "ppapi/c/pp_stdint.h"
+
 /**
  * @file
- * This file defines a function pointer type for the PPB_GetInterface function.
+ * This file defines a function pointer type for the
+ * <code>PPB_GetInterface</code> function.
  */
+
 
 /**
  * @addtogroup Typedefs
  * @{
  */
-
 /**
- * This function pointer type defines the signature for the PPB_GetInterface
- * function. A generic PPB_GetInterface pointer is passed to
- * PPP_InitializedModule when your module is loaded. You can use this pointer
- * to request a pointer to a specific browser interface. Browser interface
- * names are ASCII strings and are generally defined in the header file for the
- * interface, such as PP_AUDIO_INTERFACE found in ppb.audio.h or
- * PPB_GRAPHICS_2D_INTERFACE in ppb_graphics_2d.h. Click
- * <a href="http://code.google.com/chrome/nativeclient/docs/reference/pepperc/
- *globals_defs.html" title="macros">here</a> for a complete list of interface
+ * This function pointer type defines the signature for the
+ * <code>PPB_GetInterface</code> function. A generic
+ * <code>PPB_GetInterface</code> pointer is passed to
+ * <code>PPP_InitializedModule</code> when your module is loaded. You can use
+ * this pointer to request a pointer to a specific browser interface. Browser
+ * interface names are ASCII strings and are generally defined in the header
+ * file for the interface, such as <code>PPB_AUDIO_INTERFACE</code> found in
+ * <code>ppb.audio.h</code> or
+ * <code>PPB_GRAPHICS_2D_INTERFACE</code> in <code>ppb_graphics_2d.h</code>.
+ * Click
+ * <a href="/chrome/nativeclient/docs/reference/pepperc/globals_defs.html"
+ * title="macros">here</a> for a complete list of interface
  * names.
  *
  * This value will be NULL if the interface is not supported on the browser.
@@ -33,5 +43,6 @@ typedef const void* (*PPB_GetInterface)(const char* interface_name);
 /**
  * @}
  */
+
 #endif  /* PPAPI_C_PPB_H_ */
 

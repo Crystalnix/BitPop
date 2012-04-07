@@ -8,14 +8,16 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
-#include "chrome/browser/chromeos/cros/mock_library_loader.h"
 #include "chrome/browser/chromeos/cros/mock_cryptohome_library.h"
+#include "chrome/browser/chromeos/cros/mock_library_loader.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/test_attempt_state.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 using ::testing::AnyNumber;
 using ::testing::Invoke;
@@ -115,7 +117,8 @@ class CryptohomeOpTest : public ::testing::Test {
         .Times(1)
         .RetiresOnSaturation();
 
-    EXPECT_TRUE(op->Initiate());
+    op->Initiate();
+
     // Force IO thread to finish tasks so I can verify |state_|.
     io_thread_.Stop();
 
@@ -124,15 +127,19 @@ class CryptohomeOpTest : public ::testing::Test {
   }
 
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread io_thread_;
   std::string username_;
   std::string hash_ascii_;
   TestAttemptState state_;
   scoped_ptr<MockAuthAttemptStateResolver> resolver_;
   scoped_refptr<CryptohomeOp> op_;
-  scoped_ptr<MockCryptohomeLibrary> mock_library_;
 
+  // Initializes / shuts down a stub CrosLibrary.
+  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
+
+  // Provide a mock for testing cryptohome.
+  scoped_ptr<MockCryptohomeLibrary> mock_library_;
 };
 
 TEST_F(CryptohomeOpTest, MountSuccess) {

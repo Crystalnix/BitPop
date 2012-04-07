@@ -7,6 +7,14 @@
 // that need to test out CookieMonster interactions with the backing store.
 // It should only be included by test code.
 
+#ifndef NET_BASE_COOKIE_MONSTER_STORE_TEST_H_
+#define NET_BASE_COOKIE_MONSTER_STORE_TEST_H_
+#pragma once
+
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
 #include "net/base/cookie_monster.h"
 
 namespace base {
@@ -14,6 +22,29 @@ class Time;
 }
 
 namespace net {
+
+// Wrapper class for posting a loaded callback. Since the Callback class is not
+// reference counted, we cannot post a callback to the message loop directly,
+// instead we post a LoadedCallbackTask.
+class LoadedCallbackTask
+    : public base::RefCountedThreadSafe<LoadedCallbackTask> {
+ public:
+  typedef CookieMonster::PersistentCookieStore::LoadedCallback LoadedCallback;
+
+  LoadedCallbackTask(LoadedCallback loaded_callback,
+                     std::vector<CookieMonster::CanonicalCookie*> cookies);
+  ~LoadedCallbackTask();
+
+  void Run() {
+    loaded_callback_.Run(cookies_);
+  }
+
+ private:
+  LoadedCallback loaded_callback_;
+  std::vector<CookieMonster::CanonicalCookie*> cookies_;
+
+  DISALLOW_COPY_AND_ASSIGN(LoadedCallbackTask);
+};  // Wrapper class LoadedCallbackTask
 
 // Describes a call to one of the 3 functions of PersistentCookieStore.
 struct CookieStoreCommand {
@@ -51,21 +82,23 @@ class MockPersistentCookieStore
     return commands_;
   }
 
-  virtual bool Load(
-      std::vector<CookieMonster::CanonicalCookie*>* out_cookies);
+  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE;
 
-  virtual void AddCookie(const CookieMonster::CanonicalCookie& cookie);
+  virtual void LoadCookiesForKey(const std::string& key,
+    const LoadedCallback& loaded_callback) OVERRIDE;
+
+  virtual void AddCookie(const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
   virtual void UpdateCookieAccessTime(
-      const CookieMonster::CanonicalCookie& cookie);
+      const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
   virtual void DeleteCookie(
-      const CookieMonster::CanonicalCookie& cookie);
+      const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
-  virtual void Flush(Task* completion_task);
+  virtual void Flush(const base::Closure& callback) OVERRIDE;
 
   // No files are created so nothing to clear either
-  virtual void SetClearLocalStateOnExit(bool clear_local_state);
+  virtual void SetClearLocalStateOnExit(bool clear_local_state) OVERRIDE;
 
  private:
   CommandList commands_;
@@ -73,6 +106,9 @@ class MockPersistentCookieStore
   // Deferred result to use when Load() is called.
   bool load_return_value_;
   std::vector<CookieMonster::CanonicalCookie*> load_result_;
+  // Indicates if the store has been fully loaded to avoid returning duplicate
+  // cookies.
+  bool loaded_;
 
   DISALLOW_COPY_AND_ASSIGN(MockPersistentCookieStore);
 };
@@ -92,7 +128,7 @@ class MockCookieMonsterDelegate : public CookieMonster::Delegate {
   virtual void OnCookieChanged(
       const CookieMonster::CanonicalCookie& cookie,
       bool removed,
-      CookieMonster::Delegate::ChangeCause cause);
+      CookieMonster::Delegate::ChangeCause cause) OVERRIDE;
 
  private:
   virtual ~MockCookieMonsterDelegate();
@@ -101,6 +137,12 @@ class MockCookieMonsterDelegate : public CookieMonster::Delegate {
 
   DISALLOW_COPY_AND_ASSIGN(MockCookieMonsterDelegate);
 };
+
+// Helper to build a single CanonicalCookie.
+CookieMonster::CanonicalCookie BuildCanonicalCookie(
+    const std::string& key,
+    const std::string& cookie_line,
+    const base::Time& creation_time);
 
 // Helper to build a list of CanonicalCookie*s.
 void AddCookieToList(
@@ -117,27 +159,33 @@ class MockSimplePersistentCookieStore
   MockSimplePersistentCookieStore();
   virtual ~MockSimplePersistentCookieStore();
 
-  virtual bool Load(
-      std::vector<CookieMonster::CanonicalCookie*>* out_cookies);
+  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE;
+
+  virtual void LoadCookiesForKey(const std::string& key,
+      const LoadedCallback& loaded_callback) OVERRIDE;
 
   virtual void AddCookie(
-      const CookieMonster::CanonicalCookie& cookie);
+      const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
   virtual void UpdateCookieAccessTime(
-      const CookieMonster::CanonicalCookie& cookie);
+      const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
   virtual void DeleteCookie(
-      const CookieMonster::CanonicalCookie& cookie);
+      const CookieMonster::CanonicalCookie& cookie) OVERRIDE;
 
-  virtual void Flush(Task* completion_task);
+  virtual void Flush(const base::Closure& callback) OVERRIDE;
 
-  virtual void SetClearLocalStateOnExit(bool clear_local_state);
+  virtual void SetClearLocalStateOnExit(bool clear_local_state) OVERRIDE;
 
  private:
   typedef std::map<int64, CookieMonster::CanonicalCookie>
       CanonicalCookieMap;
 
   CanonicalCookieMap cookies_;
+
+  // Indicates if the store has been fully loaded to avoid return duplicate
+  // cookies in subsequent load requests
+  bool loaded_;
 };
 
 // Helper function for creating a CookieMonster backed by a
@@ -154,3 +202,5 @@ CookieMonster* CreateMonsterFromStoreForGC(
     int days_old);
 
 }  // namespace net
+
+#endif  // NET_BASE_COOKIE_MONSTER_STORE_TEST_H_

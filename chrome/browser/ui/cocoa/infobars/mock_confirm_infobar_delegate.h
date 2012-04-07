@@ -11,8 +11,6 @@
 #include "base/string16.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 
-class SkBitmap;
-
 class MockConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // Called when |this| is about to be destroyed.
@@ -44,7 +42,7 @@ class MockConfirmInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() OVERRIDE;
+  virtual string16 GetLinkText() const OVERRIDE;
   virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   Owner* owner_;

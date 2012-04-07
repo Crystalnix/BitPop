@@ -50,7 +50,7 @@ class desktopui_PyAutoFunctionalTests(chrome_test.ChromeTestBase):
             # Allow browser restart by its babysitter (session_manager)
             if os.path.exists(constants.DISABLE_BROWSER_RESTART_MAGIC_FILE):
                 os.remove(constants.DISABLE_BROWSER_RESTART_MAGIC_FILE)
-            login.nuke_login_manager()
+            cros_ui.nuke()
         assert os.path.exists(minidumps_file)
 
         # Setup /tmp/disable_chrome_restart
@@ -59,20 +59,45 @@ class desktopui_PyAutoFunctionalTests(chrome_test.ChromeTestBase):
             open(constants.DISABLE_BROWSER_RESTART_MAGIC_FILE, 'w').close()
         assert os.path.exists(constants.DISABLE_BROWSER_RESTART_MAGIC_FILE)
 
-    def run_once(self):
-        """Run pyauto functional tests."""
-        # Enable chrome testing interface and Login
-        deps_dir = os.path.join(self.autodir, 'deps')
-        pyautolib_dir = os.path.join(self.cr_source_dir,
-                                     'chrome', 'test', 'pyautolib')
-        login_cmd = cros_ui.xcommand_as(
-            'python %s chromeos_utils.ChromeosUtils.LoginToDefaultAccount '
-            '-v --no-http-server' %
-                os.path.join(pyautolib_dir, 'chromeos', 'chromeos_utils.py'))
-        utils.system(login_cmd)
+    def run_once(self, suite=None, tests=None,
+                 as_chronos=True, auto_login=True):
+        """Run pyauto functional tests.
 
-        # Run pyauto tests "FULL" suite
-        functional_cmd = cros_ui.xcommand_as(
-            '%s/chrome_test/test_src/chrome/test/functional/'
-            'pyauto_functional.py --suite=FULL -v' % deps_dir)
-        utils.system(functional_cmd)
+        Args:
+            suite: the pyauto functional suite to run.
+            tests: the test modules to run.
+            as_chronos: if True, run tests as chronos.
+            auto_login: if True, login to default account before firing off.
+
+        Either suite or tests should be specified, not both.
+        """
+        assert suite or tests, 'Should specify suite or tests'
+        assert not (suite and tests), \
+            'Should specify either suite or tests, not both'
+
+        deps_dir = os.path.join(self.autodir, 'deps')
+        if auto_login:
+            # Enable chrome testing interface and Login.
+            pyautolib_dir = os.path.join(self.cr_source_dir,
+                                         'chrome', 'test', 'pyautolib')
+            login_cmd = cros_ui.xcommand_as(
+                'python %s chromeos_utils.ChromeosUtils.LoginToDefaultAccount '
+                '-v --no-http-server' % os.path.join(
+                    pyautolib_dir, 'chromeos', 'chromeos_utils.py'))
+            print 'Login cmd', login_cmd
+            utils.system(login_cmd)
+
+        # Run tests.
+        functional_cmd = 'python %s/chrome_test/test_src/' \
+            'chrome/test/functional/pyauto_functional.py -v ' % deps_dir
+        if suite:
+            functional_cmd += ' --suite=%s' % suite
+        elif tests:
+            functional_cmd += tests
+
+        if as_chronos:
+            launch_cmd = cros_ui.xcommand_as(functional_cmd)
+        else:
+            launch_cmd = cros_ui.xcommand(functional_cmd)
+        print 'Test launch cmd', launch_cmd
+        utils.system(launch_cmd)

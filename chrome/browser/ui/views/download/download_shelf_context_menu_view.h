@@ -7,17 +7,19 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/download/download_shelf_context_menu.h"
 
 class BaseDownloadItemModel;
 
 namespace gfx {
-class Point;
+class Rect;
 }
 
 namespace views {
-class Menu2;
+class MenuRunner;
+class Widget;
 }
 
 class DownloadShelfContextMenuView : public DownloadShelfContextMenu {
@@ -25,14 +27,12 @@ class DownloadShelfContextMenuView : public DownloadShelfContextMenu {
   explicit DownloadShelfContextMenuView(BaseDownloadItemModel* model);
   virtual ~DownloadShelfContextMenuView();
 
-  void Run(const gfx::Point& point);
-
-  // This method runs when the caller has been deleted and we should not attempt
-  // to access download_item().
-  void Stop();
+  // |rect| is the bounding area for positioning the menu in screen coordinates.
+  // The menu will be positioned above or below but not overlapping |rect|.
+  void Run(views::Widget* parent_widget, const gfx::Rect& rect);
 
  private:
-  scoped_ptr<views::Menu2> menu_;
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadShelfContextMenuView);
 };

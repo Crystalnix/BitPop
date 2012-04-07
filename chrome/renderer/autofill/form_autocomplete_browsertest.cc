@@ -2,23 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/time.h"
 #include "chrome/common/autofill_messages.h"
-#include "chrome/test/render_view_test.h"
+#include "chrome/test/base/chrome_render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFormElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
-#include "webkit/glue/form_data.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "webkit/forms/form_data.h"
 #include "webkit/glue/web_io_operators.h"
 
-using webkit_glue::FormData;
+using webkit::forms::FormData;
 using WebKit::WebFrame;
 using WebKit::WebString;
 using WebKit::WebTextDirection;
 using WebKit::WebURLError;
 
-typedef RenderViewTest FormAutocompleteTest;
+typedef ChromeRenderViewTest FormAutocompleteTest;
 
 // Tests that submitting a form generates a FormSubmitted message
 // with the form fields.
@@ -31,15 +32,16 @@ TEST_F(FormAutocompleteTest, NormalFormSubmit) {
   ExecuteJavaScript("document.getElementById('myForm').submit();");
   ProcessPendingMessages();
 
-  const IPC::Message* message = render_thread_.sink().GetFirstMessageMatching(
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormSubmitted::ID);
   ASSERT_TRUE(message != NULL);
 
-  Tuple1<FormData> forms;
+  // The tuple also includes a timestamp, which is ignored.
+  Tuple2<FormData, base::TimeTicks> forms;
   AutofillHostMsg_FormSubmitted::Read(message, &forms);
   ASSERT_EQ(2U, forms.a.fields.size());
 
-  webkit_glue::FormField& form_field = forms.a.fields[0];
+  webkit::forms::FormField& form_field = forms.a.fields[0];
   EXPECT_EQ(WebString("fname"), form_field.name);
   EXPECT_EQ(WebString("Rick"), form_field.value);
 
@@ -62,7 +64,7 @@ TEST_F(FormAutocompleteTest, AutoCompleteOffFormSubmit) {
   ProcessPendingMessages();
 
   // No FormSubmitted message should have been sent.
-  EXPECT_FALSE(render_thread_.sink().GetFirstMessageMatching(
+  EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormSubmitted::ID));
 }
 
@@ -79,15 +81,16 @@ TEST_F(FormAutocompleteTest, AutoCompleteOffInputSubmit) {
   ProcessPendingMessages();
 
   // No FormSubmitted message should have been sent.
-  const IPC::Message* message = render_thread_.sink().GetFirstMessageMatching(
+  const IPC::Message* message = render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormSubmitted::ID);
   ASSERT_TRUE(message != NULL);
 
-  Tuple1<FormData> forms;
+  // The tuple also includes a timestamp, which is ignored.
+  Tuple2<FormData, base::TimeTicks> forms;
   AutofillHostMsg_FormSubmitted::Read(message, &forms);
   ASSERT_EQ(1U, forms.a.fields.size());
 
-  webkit_glue::FormField& form_field = forms.a.fields[0];
+  webkit::forms::FormField& form_field = forms.a.fields[0];
   EXPECT_EQ(WebString("fname"), form_field.name);
   EXPECT_EQ(WebString("Rick"), form_field.value);
 }
@@ -116,6 +119,6 @@ TEST_F(FormAutocompleteTest, DynamicAutoCompleteOffFormSubmit) {
   ProcessPendingMessages();
 
   // No FormSubmitted message should have been sent.
-  EXPECT_FALSE(render_thread_.sink().GetFirstMessageMatching(
+  EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       AutofillHostMsg_FormSubmitted::ID));
 }

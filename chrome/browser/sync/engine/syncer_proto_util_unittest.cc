@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,20 +7,53 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/message_loop.h"
+#include "base/time.h"
 #include "chrome/browser/sync/engine/syncproto.h"
+#include "chrome/browser/sync/sessions/session_state.h"
+#include "chrome/browser/sync/sessions/sync_session_context.h"
+#include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
+#include "chrome/browser/sync/protocol/password_specifics.pb.h"
+#include "chrome/browser/sync/protocol/sync.pb.h"
+#include "chrome/browser/sync/protocol/sync_enums.pb.h"
 #include "chrome/browser/sync/syncable/blob.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
+#include "chrome/browser/sync/syncable/model_type_test_util.h"
 #include "chrome/browser/sync/syncable/syncable.h"
-#include "chrome/test/sync/engine/mock_connection_manager.h"
-#include "chrome/test/sync/engine/test_directory_setter_upper.h"
+#include "chrome/browser/sync/test/engine/mock_connection_manager.h"
+#include "chrome/browser/sync/test/engine/test_directory_setter_upper.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
 using syncable::Blob;
 using syncable::ScopedDirLookup;
-using syncable::SyncName;
+using ::testing::_;
 
 namespace browser_sync {
+using sessions::SyncSessionContext;
+
+class MockSyncSessionContext : public SyncSessionContext {
+ public:
+  MockSyncSessionContext() {}
+  ~MockSyncSessionContext() {}
+  MOCK_METHOD2(SetUnthrottleTime, void(syncable::ModelTypeSet,
+                                       const base::TimeTicks&));
+};
+
+class MockDelegate : public sessions::SyncSession::Delegate {
+ public:
+   MockDelegate() {}
+   ~MockDelegate() {}
+
+  MOCK_METHOD0(IsSyncingCurrentlySilenced, bool());
+  MOCK_METHOD1(OnReceivedShortPollIntervalUpdate, void(const base::TimeDelta&));
+  MOCK_METHOD1(OnReceivedLongPollIntervalUpdate ,void(const base::TimeDelta&));
+  MOCK_METHOD1(OnReceivedSessionsCommitDelay, void(const base::TimeDelta&));
+  MOCK_METHOD1(OnSyncProtocolError, void(const sessions::SyncSessionSnapshot&));
+  MOCK_METHOD0(OnShouldStopSyncingPermanently, void());
+  MOCK_METHOD1(OnSilencedUntil, void(const base::TimeTicks&));
+};
 
 TEST(SyncerProtoUtil, TestBlobToProtocolBufferBytesUtilityFunctions) {
   unsigned char test_data1[] = {1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 4, 2, 9};
@@ -137,6 +170,7 @@ class SyncerProtoUtilTest : public testing::Test {
   }
 
  protected:
+  MessageLoop message_loop_;
   browser_sync::TestDirectorySetterUpper setter_upper_;
 };
 
@@ -163,7 +197,7 @@ TEST_F(SyncerProtoUtilTest, VerifyResponseBirthday) {
   response.set_store_birthday("meat");
   EXPECT_FALSE(SyncerProtoUtil::VerifyResponseBirthday(lookup, &response));
 
-  response.set_error_code(ClientToServerResponse::CLEAR_PENDING);
+  response.set_error_code(sync_pb::SyncEnums::CLEAR_PENDING);
   EXPECT_FALSE(SyncerProtoUtil::VerifyResponseBirthday(lookup, &response));
 }
 
@@ -189,17 +223,18 @@ class DummyConnectionManager : public browser_sync::ServerConnectionManager {
         access_denied_(false) {}
 
   virtual ~DummyConnectionManager() {}
-  virtual bool PostBufferWithCachedAuth(const PostBufferParams* params,
-                                        ScopedServerStatusWatcher* watcher) {
+  virtual bool PostBufferWithCachedAuth(
+      PostBufferParams* params,
+      ScopedServerStatusWatcher* watcher) OVERRIDE {
     if (send_error_) {
       return false;
     }
 
     ClientToServerResponse response;
     if (access_denied_) {
-      response.set_error_code(ClientToServerResponse::ACCESS_DENIED);
+      response.set_error_code(sync_pb::SyncEnums::ACCESS_DENIED);
     }
-    response.SerializeToString(params->buffer_out);
+    response.SerializeToString(&params->buffer_out);
 
     return true;
   }
@@ -237,4 +272,31 @@ TEST_F(SyncerProtoUtilTest, PostAndProcessHeaders) {
       msg, &response));
 }
 
+TEST_F(SyncerProtoUtilTest, HandleThrottlingWithDatatypes) {
+  MockSyncSessionContext context;
+  SyncProtocolError error;
+  error.error_type = browser_sync::THROTTLED;
+  syncable::ModelTypeSet types;
+  types.Put(syncable::BOOKMARKS);
+  types.Put(syncable::PASSWORDS);
+  error.error_data_types = types;
+
+  base::TimeTicks ticks = base::TimeTicks::Now();
+
+  EXPECT_CALL(context, SetUnthrottleTime(HasModelTypes(types), ticks));
+
+  SyncerProtoUtil::HandleThrottleError(error, ticks, &context, NULL);
+}
+
+TEST_F(SyncerProtoUtilTest, HandleThrottlingNoDatatypes) {
+  MockDelegate delegate;
+  SyncProtocolError error;
+  error.error_type = browser_sync::THROTTLED;
+
+  base::TimeTicks ticks = base::TimeTicks::Now();
+
+  EXPECT_CALL(delegate, OnSilencedUntil(ticks));
+
+  SyncerProtoUtil::HandleThrottleError(error, ticks, NULL, &delegate);
+}
 }  // namespace browser_sync

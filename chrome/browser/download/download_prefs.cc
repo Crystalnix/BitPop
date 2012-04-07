@@ -4,18 +4,28 @@
 
 #include "chrome/browser/download/download_prefs.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_extensions.h"
+#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/download/download_util.h"
-#include "chrome/browser/download/save_package.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/browser/save_page_type.h"
+
+using content::BrowserThread;
+using content::DownloadManager;
 
 DownloadPrefs::DownloadPrefs(PrefService* prefs) : prefs_(prefs) {
   prompt_for_download_.Init(prefs::kPromptForDownload, prefs, NULL);
@@ -57,7 +67,7 @@ void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
                              false,
                              PrefService::UNSYNCABLE_PREF);
   prefs->RegisterIntegerPref(prefs::kSaveFileType,
-                             SavePackage::SAVE_AS_COMPLETE_HTML,
+                             content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML,
                              PrefService::UNSYNCABLE_PREF);
 
   // The default download path is userprofile\download.
@@ -71,7 +81,8 @@ void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
   // Ensure that the download directory specified in the preferences exists.
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&file_util::CreateDirectory, default_download_path));
+      base::Bind(base::IgnoreResult(&file_util::CreateDirectory),
+                 default_download_path));
 #endif  // defined(OS_CHROMEOS)
 
   // If the download path is dangerous we forcefully reset it. But if we do
@@ -86,6 +97,23 @@ void DownloadPrefs::RegisterUserPrefs(PrefService* prefs) {
     }
     prefs->SetBoolean(prefs::kDownloadDirUpgraded, true);
   }
+}
+
+// static
+DownloadPrefs* DownloadPrefs::FromDownloadManager(
+    DownloadManager* download_manager) {
+  ChromeDownloadManagerDelegate* delegate =
+      static_cast<ChromeDownloadManagerDelegate*>(download_manager->delegate());
+  return delegate->download_prefs();
+}
+
+// static
+DownloadPrefs* DownloadPrefs::FromBrowserContext(
+    content::BrowserContext* browser_context) {
+  Profile* profile = static_cast<Profile*>(browser_context);
+  DownloadService* download_service =
+      DownloadServiceFactory::GetForProfile(profile);
+  return FromDownloadManager(download_service->GetDownloadManager());
 }
 
 bool DownloadPrefs::PromptForDownload() const {

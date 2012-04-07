@@ -6,8 +6,10 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/message_loop.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -35,31 +37,29 @@ MockAuthResponseHandler::MockAuthResponseHandler(
 
 MockAuthResponseHandler::~MockAuthResponseHandler() {}
 
-void MockAuthResponseHandler::CompleteFetch(URLFetcher::Delegate* delegate,
-                                            const GURL remote,
-                                            const net::URLRequestStatus status,
-                                            const int http_response_code,
-                                            const std::string data) {
-  delegate->OnURLFetchComplete(NULL,
-                               remote,
-                               status,
-                               http_response_code,
-                               net::ResponseCookies(),
-                               data);
+void MockAuthResponseHandler::CompleteFetch(
+    content::URLFetcherDelegate* delegate,
+    const GURL remote,
+    const net::URLRequestStatus status,
+    const int http_response_code,
+    const std::string data) {
+  TestURLFetcher fetcher(0, GURL(), delegate);
+  fetcher.set_url(remote);
+  fetcher.set_status(status);
+  fetcher.set_response_code(http_response_code);
+  fetcher.SetResponseString(data);
+  delegate->OnURLFetchComplete(&fetcher);
 }
 
-URLFetcher* MockAuthResponseHandler::MockNetwork(
+content::URLFetcher* MockAuthResponseHandler::MockNetwork(
     std::string data,
-    URLFetcher::Delegate* delegate) {
+    content::URLFetcherDelegate* delegate) {
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(MockAuthResponseHandler::CompleteFetch,
-                          delegate,
-                          remote_,
-                          status_,
-                          http_response_code_,
-                          data_));
-  return new URLFetcher(GURL(), URLFetcher::GET, delegate);
+      base::Bind(MockAuthResponseHandler::CompleteFetch, delegate, remote_,
+                 status_, http_response_code_, data_));
+  return content::URLFetcher::Create(
+      GURL(), content::URLFetcher::GET, delegate);
 }
 
 }  // namespace chromeos

@@ -27,7 +27,7 @@ void ChromeFramePluginGetParamsCoordinates(
     int* y);
 
 // A class to implement common functionality for all types of
-// plugins: NPAPI. ActiveX and ActiveDoc
+// plugins: ActiveX and ActiveDoc
 template <typename T>
 class ChromeFramePlugin
     : public ChromeFrameDelegateImpl,
@@ -66,7 +66,6 @@ END_MSG_MAP()
   }
 
   bool InitializeAutomation(const std::wstring& profile_name,
-                            const std::wstring& extra_chrome_arguments,
                             bool incognito, bool is_widget_mode,
                             const GURL& url, const GURL& referrer,
                             bool route_all_top_level_navigations) {
@@ -83,8 +82,7 @@ END_MSG_MAP()
     FilePath actual_profile_name = profile_path.BaseName();
     launch_params_ = new ChromeFrameLaunchParams(url, referrer, profile_path,
         actual_profile_name.value(), SimpleResourceLoader::GetLanguage(),
-        extra_chrome_arguments, incognito_mode, is_widget_mode,
-        route_all_top_level_navigations);
+        incognito_mode, is_widget_mode, route_all_top_level_navigations);
     return automation_client_->Initialize(this, launch_params_);
   }
 
@@ -120,23 +118,20 @@ END_MSG_MAP()
     OnLoadFailed(error_code, gurl.spec());
   }
 
-  virtual void OnHandleContextMenu(HANDLE menu_handle,
+  virtual void OnHandleContextMenu(const ContextMenuModel& menu_model,
                                    int align_flags,
                                    const MiniContextMenuParams& params) {
-    if (!menu_handle || !automation_client_.get()) {
+    if (!automation_client_.get()) {
       NOTREACHED();
       return;
     }
 
-    // TrackPopupMenuEx call will fail on IE on Vista running
-    // in low integrity mode. We DO seem to be able to enumerate the menu
-    // though, so just clone it and show the copy:
-    HMENU copy = UtilCloneContextMenu(static_cast<HMENU>(menu_handle));
-    if (!copy)
+    HMENU menu = BuildContextMenu(menu_model);
+    if (!menu)
       return;
 
     T* self = static_cast<T*>(this);
-    if (self->PreProcessContextMenu(copy)) {
+    if (self->PreProcessContextMenu(menu)) {
       // In order for the context menu to handle keyboard input, give the
       // ActiveX window focus.
       ignore_setfocus_ = true;
@@ -145,7 +140,7 @@ END_MSG_MAP()
       UINT flags = align_flags | TPM_LEFTBUTTON | TPM_RETURNCMD | TPM_RECURSE;
       int x, y;
       ChromeFramePluginGetParamsCoordinates(params, &x, &y);
-      UINT selected = TrackPopupMenuEx(copy, flags, x, y, GetWindow(), NULL);
+      UINT selected = TrackPopupMenuEx(menu, flags, x, y, GetWindow(), NULL);
       // Menu is over now give focus back to chrome
       GiveFocusToChrome(false);
       if (IsValid() && selected != 0 &&
@@ -154,7 +149,7 @@ END_MSG_MAP()
       }
     }
 
-    DestroyMenu(copy);
+    DestroyMenu(menu);
   }
 
   LRESULT OnSetFocus(UINT message, WPARAM wparam, LPARAM lparam,

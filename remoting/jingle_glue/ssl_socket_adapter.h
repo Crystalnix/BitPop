@@ -39,28 +39,28 @@ class TransportSocket : public net::StreamSocket, public sigslot::has_slots<> {
     addr_ = addr;
   }
 
-  // net::StreamSocket implementation
+  // net::StreamSocket implementation.
+  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
+  virtual void Disconnect() OVERRIDE;
+  virtual bool IsConnected() const OVERRIDE;
+  virtual bool IsConnectedAndIdle() const OVERRIDE;
+  virtual int GetPeerAddress(net::AddressList* address) const OVERRIDE;
+  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE;
+  virtual const net::BoundNetLog& NetLog() const OVERRIDE;
+  virtual void SetSubresourceSpeculation() OVERRIDE;
+  virtual void SetOmniboxSpeculation() OVERRIDE;
+  virtual bool WasEverUsed() const OVERRIDE;
+  virtual bool UsingTCPFastOpen() const OVERRIDE;
+  virtual int64 NumBytesRead() const OVERRIDE;
+  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
 
-  virtual int Connect(net::CompletionCallback* callback);
-  virtual void Disconnect();
-  virtual bool IsConnected() const;
-  virtual bool IsConnectedAndIdle() const;
-  virtual int GetPeerAddress(net::AddressList* address) const;
-  virtual int GetLocalAddress(net::IPEndPoint* address) const;
-  virtual const net::BoundNetLog& NetLog() const;
-  virtual void SetSubresourceSpeculation();
-  virtual void SetOmniboxSpeculation();
-  virtual bool WasEverUsed() const;
-  virtual bool UsingTCPFastOpen() const;
-
-  // net::Socket implementation
-
+  // net::Socket implementation.
   virtual int Read(net::IOBuffer* buf, int buf_len,
-                   net::CompletionCallback* callback);
+                   const net::CompletionCallback& callback) OVERRIDE;
   virtual int Write(net::IOBuffer* buf, int buf_len,
-                    net::CompletionCallback* callback);
-  virtual bool SetReceiveBufferSize(int32 size);
-  virtual bool SetSendBufferSize(int32 size);
+                    const net::CompletionCallback& callback) OVERRIDE;
+  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
 
  private:
   friend class SSLSocketAdapter;
@@ -68,8 +68,9 @@ class TransportSocket : public net::StreamSocket, public sigslot::has_slots<> {
   void OnReadEvent(talk_base::AsyncSocket* socket);
   void OnWriteEvent(talk_base::AsyncSocket* socket);
 
-  net::CompletionCallback* read_callback_;
-  net::CompletionCallback* write_callback_;
+  // Holds the user's completion callback when Write and Read are called.
+  net::CompletionCallback read_callback_;
+  net::CompletionCallback write_callback_;
 
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_len_;
@@ -99,13 +100,13 @@ class SSLSocketAdapter : public talk_base::SSLAdapter {
   // negotiation will begin as soon as the socket connects.
   //
   // restartable is not implemented, and must be set to false.
-  virtual int StartSSL(const char* hostname, bool restartable);
+  virtual int StartSSL(const char* hostname, bool restartable) OVERRIDE;
 
   // Create the default SSL adapter for this platform.
   static SSLSocketAdapter* Create(AsyncSocket* socket);
 
-  virtual int Send(const void* pv, size_t cb);
-  virtual int Recv(void* pv, size_t cb);
+  virtual int Send(const void* pv, size_t cb) OVERRIDE;
+  virtual int Recv(void* pv, size_t cb) OVERRIDE;
 
  private:
   friend class TransportSocket;
@@ -126,18 +127,19 @@ class SSLSocketAdapter : public talk_base::SSLAdapter {
   void OnRead(int result);
   void OnWrite(int result);
 
-  virtual void OnConnectEvent(talk_base::AsyncSocket* socket);
+  virtual void OnConnectEvent(talk_base::AsyncSocket* socket) OVERRIDE;
 
   int BeginSSL();
 
   bool ignore_bad_cert_;
   std::string hostname_;
   TransportSocket* transport_socket_;
-  scoped_ptr<net::SSLClientSocket> ssl_socket_;
+
+  // |cert_verifier_| must be defined before |ssl_socket_|, so that
+  // it's destroyed after |ssl_socket_|.
   scoped_ptr<net::CertVerifier> cert_verifier_;
-  net::CompletionCallbackImpl<SSLSocketAdapter> connected_callback_;
-  net::CompletionCallbackImpl<SSLSocketAdapter> read_callback_;
-  net::CompletionCallbackImpl<SSLSocketAdapter> write_callback_;
+  scoped_ptr<net::SSLClientSocket> ssl_socket_;
+
   SSLState ssl_state_;
   IOState read_state_;
   IOState write_state_;

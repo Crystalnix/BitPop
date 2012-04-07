@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include "base/utf_string_conversions.h"
+#include "base/test/test_reg_util_win.h"
 #include "base/version.h"
 #include "base/win/registry.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -16,6 +17,7 @@
 
 using base::win::RegKey;
 using installer::ProductState;
+using registry_util::RegistryOverrideManager;
 
 class ProductStateTest : public testing::Test {
  protected:
@@ -48,7 +50,7 @@ void ProductStateTest::SetUpTestCase() {
       BrowserDistribution::CHROME_BROWSER);
 
   // And we'll play in HKCU here:
-  temp_key_path_.assign(TempRegKeyOverride::kTempTestKeyPath)
+  temp_key_path_.assign(RegistryOverrideManager::kTempTestKeyPath)
       .append(1, L'\\')
       .append(L"ProductStateTest");
 }
@@ -68,7 +70,7 @@ void ProductStateTest::SetUp() {
   system_install_ = true;
   overridden_ = (system_install_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER);
 
-  // Override for test purposes.  We don't use TempRegKeyOverride
+  // Override for test purposes.  We don't use ScopedRegistryKeyOverride
   // directly because it doesn't suit itself to our use here.
   RegKey temp_key;
   EXPECT_EQ(ERROR_SUCCESS,
@@ -94,7 +96,7 @@ void ProductStateTest::TearDown() {
   system_install_ = false;
 
   // Shotgun approach to clearing out data we may have written.
-  TempRegKeyOverride::DeleteAllTempKeys();
+  RegistryOverrideManager::DeleteAllTempKeys();
 
   testing::Test::TearDown();
 }
@@ -283,8 +285,8 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     ApplyUninstallCommand(NULL, NULL);
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_TRUE(state.GetSetupPath().empty());
-    EXPECT_TRUE(state.uninstall_command().command_line_string().empty());
-    EXPECT_EQ(0U, state.uninstall_command().GetSwitchCount());
+    EXPECT_TRUE(state.uninstall_command().GetCommandLineString().empty());
+    EXPECT_TRUE(state.uninstall_command().GetSwitches().empty());
   }
 
   // Empty values.
@@ -293,8 +295,8 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     ApplyUninstallCommand(L"", L"");
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_TRUE(state.GetSetupPath().empty());
-    EXPECT_TRUE(state.uninstall_command().command_line_string().empty());
-    EXPECT_EQ(0U, state.uninstall_command().GetSwitchCount());
+    EXPECT_TRUE(state.uninstall_command().GetCommandLineString().empty());
+    EXPECT_TRUE(state.uninstall_command().GetSwitches().empty());
   }
 
   // Uninstall command without exe.
@@ -303,8 +305,9 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     ApplyUninstallCommand(NULL, L"--uninstall");
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_TRUE(state.GetSetupPath().empty());
-    EXPECT_EQ(L" --uninstall", state.uninstall_command().command_line_string());
-    EXPECT_EQ(1U, state.uninstall_command().GetSwitchCount());
+    EXPECT_EQ(L" --uninstall",
+              state.uninstall_command().GetCommandLineString());
+    EXPECT_EQ(1U, state.uninstall_command().GetSwitches().size());
   }
 
   // Uninstall command without args.
@@ -313,8 +316,8 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     ApplyUninstallCommand(L"setup.exe", NULL);
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_EQ(L"setup.exe", state.GetSetupPath().value());
-    EXPECT_EQ(L"setup.exe", state.uninstall_command().command_line_string());
-    EXPECT_EQ(0U, state.uninstall_command().GetSwitchCount());
+    EXPECT_EQ(L"setup.exe", state.uninstall_command().GetCommandLineString());
+    EXPECT_TRUE(state.uninstall_command().GetSwitches().empty());
   }
 
   // Uninstall command with exe that requires quoting.
@@ -324,8 +327,8 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_EQ(L"set up.exe", state.GetSetupPath().value());
     EXPECT_EQ(L"\"set up.exe\"",
-        state.uninstall_command().command_line_string());
-    EXPECT_EQ(0U, state.uninstall_command().GetSwitchCount());
+              state.uninstall_command().GetCommandLineString());
+    EXPECT_TRUE(state.uninstall_command().GetSwitches().empty());
   }
 
   // Uninstall command with both exe and args.
@@ -335,8 +338,8 @@ TEST_F(ProductStateTest, InitializeUninstallCommand) {
     EXPECT_TRUE(state.Initialize(system_install_, dist_));
     EXPECT_EQ(L"setup.exe", state.GetSetupPath().value());
     EXPECT_EQ(L"setup.exe --uninstall",
-              state.uninstall_command().command_line_string());
-    EXPECT_EQ(1U, state.uninstall_command().GetSwitchCount());
+              state.uninstall_command().GetCommandLineString());
+    EXPECT_EQ(1U, state.uninstall_command().GetSwitches().size());
   }
 }
 

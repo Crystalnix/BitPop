@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 #define UI_GFX_POINT_H_
 #pragma once
 
-#include "build/build_config.h"
+#include <string>
 
-#include <iosfwd>
+#include "build/build_config.h"
+#include "ui/base/ui_export.h"
 
 #if defined(OS_WIN)
 typedef unsigned long DWORD;
@@ -20,7 +21,7 @@ typedef struct tagPOINT POINT;
 namespace gfx {
 
 // A point has an x and y coordinate.
-class Point {
+class UI_EXPORT Point {
  public:
   Point();
   Point(int x, int y);
@@ -65,6 +66,10 @@ class Point {
     return copy;
   }
 
+  Point Middle(const Point& other) const {
+    return Point((x_ + other.x_) / 2, (y_ + other.y_) / 2);
+  }
+
   bool operator==(const Point& rhs) const {
     return x_ == rhs.x_ && y_ == rhs.y_;
   }
@@ -89,12 +94,13 @@ class Point {
   CGPoint ToCGPoint() const;
 #endif
 
+  // Returns a string representation of point.
+  std::string ToString() const;
+
  private:
   int x_;
   int y_;
 };
-
-std::ostream& operator<<(std::ostream& out, const gfx::Point& p);
 
 }  // namespace gfx
 

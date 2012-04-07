@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -24,11 +24,21 @@ class PDFTest(pyauto.PyUITest):
       tab_index: tab index  Defaults to 0
       windex: window index.  Defaults to 0
     """
+    # Sometimes the zoom/fit bar is not fully loaded.  We need to wait for it to
+    # load before we can perform actions.
+    js = """if (document.getElementsByName("plugin") &&
+      document.getElementsByName("plugin")[0])
+      { window.domAutomationController.send("true"); }
+      else {window.domAutomationController.send("false"); }"""
+    self.assertTrue(self.WaitUntil(lambda: self.ExecuteJavascript(js,
+      tab_index=tab_index, windex=windex), expect_retval="true"),
+      msg='Could not find zoom/fit to page/width bar so we will not be able '
+          'to peform the requested action')
     assert action in ('fitToHeight', 'fitToWidth', 'ZoomIn', 'ZoomOut')
     js = 'document.getElementsByName("plugin")[0].%s()' % action
     # Add an empty string so that there's something to return back
     # (or else it hangs)
-    return self.GetDOMValue('%s + ""' % js, 0, tab_index)
+    return self.GetDOMValue('%s + ""' % js, tab_index)
 
 
   def testPDFRunner(self):
@@ -45,10 +55,13 @@ class PDFTest(pyauto.PyUITest):
     # Add a pdf file over http:// to the list of pdf files.
     # crbug.com/70454
     pdf_files += ['http://www.irs.gov/pub/irs-pdf/fw4.pdf']
+
+    # Some pdfs cause known crashes. Exclude them. crbug.com/63549
+    exclude_list = ('nullip.pdf', 'sample.pdf')
+    pdf_files = [x for x in pdf_files if
+                 os.path.basename(x) not in exclude_list]
+
     for url in pdf_files:
-      # Some pdfs cause known crashes. Exclude them. crbug.com/63549
-      if os.path.basename(url) in ('nullip.pdf', 'sample.pdf'):
-        continue
       self.AppendTab(pyauto.GURL(url))
     for tab_index in range(1, len(pdf_files) + 1):
       self.ActivateTab(tab_index)

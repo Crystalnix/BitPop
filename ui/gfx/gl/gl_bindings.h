@@ -15,9 +15,8 @@
 #include <GL/glext.h>
 
 #include "build/build_config.h"
-#if defined(OS_WIN)
 #include "base/logging.h"
-#endif
+#include "ui/gfx/gl/gl_export.h"
 
 // The standard OpenGL native extension headers are also included.
 #if defined(OS_WIN)
@@ -41,10 +40,11 @@
 #define GL_BINDING_CALL
 #endif
 
-#if defined(OS_WIN)
 #define GL_SERVICE_LOG(args) DLOG(INFO) << args;
+#if !defined(NDEBUG)
+  #define GL_SERVICE_LOG_CODE_BLOCK(code)
 #else
-#define GL_SERVICE_LOG(args)
+  #define GL_SERVICE_LOG_CODE_BLOCK(code) code
 #endif
 
 // Forward declare OSMesa types.
@@ -60,14 +60,24 @@ typedef int EGLint;
 typedef void *EGLConfig;
 typedef void *EGLContext;
 typedef void *EGLDisplay;
+typedef void *EGLImageKHR;
 typedef void *EGLSurface;
 typedef void *EGLClientBuffer;
 typedef void (*__eglMustCastToProperFunctionPointerType)(void);
+typedef void* GLeglImageOES;
 
 #if defined(OS_WIN)
 typedef HDC     EGLNativeDisplayType;
 typedef HBITMAP EGLNativePixmapType;
 typedef HWND    EGLNativeWindowType;
+#elif defined(OS_ANDROID)
+typedef void                       *EGLNativeDisplayType;
+typedef struct egl_native_pixmap_t *EGLNativePixmapType;
+typedef struct ANativeWindow       *EGLNativeWindowType;
+#elif defined(USE_WAYLAND)
+typedef struct wl_display     *EGLNativeDisplayType;
+typedef struct wl_egl_pixmap  *EGLNativePixmapType;
+typedef struct wl_egl_window  *EGLNativeWindowType;
 #else
 typedef Display *EGLNativeDisplayType;
 typedef Pixmap   EGLNativePixmapType;
@@ -85,6 +95,8 @@ typedef Window   EGLNativeWindowType;
 #elif defined(USE_X11)
 #include "gl_bindings_autogen_egl.h"
 #include "gl_bindings_autogen_glx.h"
+#elif defined(OS_ANDROID)
+#include "gl_bindings_autogen_egl.h"
 #endif
 
 namespace gfx {

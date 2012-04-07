@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,15 +22,11 @@ WebPageScreen::WebPageScreen() {}
 WebPageScreen::~WebPageScreen() {}
 
 ///////////////////////////////////////////////////////////////////////////////
-// WebPageScreen, TabContentsDelegate implementation:
-
-bool WebPageScreen::IsPopup(TabContents* source) {
-  return false;
-}
+// WebPageScreen, content::WebContentsDelegate implementation:
 
 bool WebPageScreen::ShouldAddNavigationToHistory(
     const history::HistoryAddPageArgs& add_page_args,
-    NavigationType::Type navigation_type) {
+    content::NavigationType navigation_type) {
   return false;
 }
 
@@ -50,7 +46,8 @@ void WebPageScreen::OnNetworkTimeout() {
 
 void WebPageScreen::StartTimeoutTimer() {
   StopTimeoutTimer();
-  timeout_timer_.Start(TimeDelta::FromSeconds(kNetworkTimeoutSec),
+  timeout_timer_.Start(FROM_HERE,
+                       TimeDelta::FromSeconds(kNetworkTimeoutSec),
                        this,
                        &WebPageScreen::OnNetworkTimeout);
 }

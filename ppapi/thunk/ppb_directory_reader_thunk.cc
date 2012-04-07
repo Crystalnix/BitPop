@@ -1,12 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ppapi/c/dev/ppb_directory_reader_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/thunk/thunk.h"
+#include "ppapi/thunk/common.h"
 #include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/thunk.h"
 #include "ppapi/thunk/ppb_directory_reader_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
 
@@ -32,8 +33,9 @@ int32_t GetNextEntry(PP_Resource directory_reader,
                      PP_CompletionCallback callback) {
   EnterResource<PPB_DirectoryReader_API> enter(directory_reader, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  return enter.object()->GetNextEntry(entry, callback);
+    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
+  int32_t result = enter.object()->GetNextEntry(entry, callback);
+  return MayForceCallback(callback, result);
 }
 
 const PPB_DirectoryReader_Dev g_ppb_directory_reader_thunk = {
@@ -44,7 +46,7 @@ const PPB_DirectoryReader_Dev g_ppb_directory_reader_thunk = {
 
 }  // namespace
 
-const PPB_DirectoryReader_Dev* GetPPB_DirectoryReader_Thunk() {
+const PPB_DirectoryReader_Dev_0_5* GetPPB_DirectoryReader_Dev_0_5_Thunk() {
   return &g_ppb_directory_reader_thunk;
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,30 +9,27 @@
 #include <vector>
 
 #include "base/string16.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/history/history.h"
-#include "content/browser/cancelable_request.h"
-#include "content/browser/tab_contents/navigation_entry.h"
 #include "googleurl/src/gurl.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
-class PrefService;
+class PageInfoModelObserver;
 class Profile;
+
+namespace content {
+struct SSLStatus;
+}
 
 // The model that provides the information that should be displayed in the page
 // info dialog/bubble.
 class PageInfoModel {
  public:
-  class PageInfoModelObserver {
-   public:
-    virtual ~PageInfoModelObserver() {}
-
-    virtual void ModelChanged() = 0;
-  };
-
   enum SectionInfoType {
     SECTION_INFO_IDENTITY = 0,
     SECTION_INFO_CONNECTION,
     SECTION_INFO_FIRST_VISIT,
+    SECTION_INFO_INTERNAL_PAGE,  // Used for chrome:// pages, etc.
   };
 
   // NOTE: ICON_STATE_OK ... ICON_STATE_ERROR must be listed in increasing
@@ -49,7 +46,9 @@ class PageInfoModel {
     // For example, unverified identity over HTTPS.
     ICON_STATE_ERROR,
     // An information icon.
-    ICON_STATE_INFO
+    ICON_STATE_INFO,
+    // Icon for internal pages.
+    ICON_STATE_INTERNAL_PAGE,
   };
 
   struct SectionInfo {
@@ -79,7 +78,7 @@ class PageInfoModel {
 
   PageInfoModel(Profile* profile,
                 const GURL& url,
-                const NavigationEntry::SSLStatus& ssl,
+                const content::SSLStatus& ssl,
                 bool show_history,
                 PageInfoModelObserver* observer);
   ~PageInfoModel();

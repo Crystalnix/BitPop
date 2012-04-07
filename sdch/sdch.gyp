@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -10,7 +10,6 @@
     {
       'target_name': 'sdch',
       'type': 'static_library',
-      'msvs_guid': 'F54ABC59-5C00-414A-A9BA-BAF26D1699F0',
       'sources': [
         'open-vcdiff/src/addrcache.cc',
         'open-vcdiff/src/adler32.c',
@@ -54,17 +53,11 @@
         ],
       },
       'conditions': [
-        [ 'OS == "linux"', { 'include_dirs': [ 'linux' ] } ],
-        [ 'OS == "freebsd" or OS == "openbsd"', { 'include_dirs': [ 'bsd' ] } ],
+        [ 'OS == "linux" or OS == "android"', { 'include_dirs': [ 'linux' ] } ],
+        [ 'os_bsd==1 or OS=="solaris"', { 'include_dirs': [ 'bsd' ] } ],
         [ 'OS == "mac"', { 'include_dirs': [ 'mac' ] } ],
         [ 'OS == "win"', { 'include_dirs': [ 'open-vcdiff/vsprojects' ] } ],
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

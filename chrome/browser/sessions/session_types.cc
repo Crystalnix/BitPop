@@ -5,24 +5,27 @@
 #include "chrome/browser/sessions/session_types.h"
 
 #include "base/string_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+
+using content::NavigationEntry;
 
 // TabNavigation --------------------------------------------------------------
 
 TabNavigation::TabNavigation()
-    : transition_(PageTransition::TYPED),
+    : transition_(content::PAGE_TRANSITION_TYPED),
       type_mask_(0),
       index_(-1) {
 }
 
 TabNavigation::TabNavigation(int index,
                              const GURL& virtual_url,
-                             const GURL& referrer,
+                             const content::Referrer& referrer,
                              const string16& title,
                              const std::string& state,
-                             PageTransition::Type transition)
+                             content::PageTransition transition)
     : virtual_url_(virtual_url),
       referrer_(referrer),
       title_(title),
@@ -57,31 +60,46 @@ TabNavigation& TabNavigation::operator=(const TabNavigation& tab) {
 }
 
 // static
-NavigationEntry* TabNavigation::ToNavigationEntry(int page_id,
-                                                  Profile *profile) const {
-  NavigationEntry* entry = NavigationController::CreateNavigationEntry(
+NavigationEntry* TabNavigation::ToNavigationEntry(
+    int page_id, Profile *profile) const {
+  NavigationEntry* entry = content::NavigationController::CreateNavigationEntry(
       virtual_url_,
       referrer_,
       // Use a transition type of reload so that we don't incorrectly
       // increase the typed count.
-      PageTransition::RELOAD,
+      content::PAGE_TRANSITION_RELOAD,
+      false,
+      // The extra headers are not sync'ed across sessions.
+      std::string(),
       profile);
 
-  entry->set_page_id(page_id);
-  entry->set_title(title_);
-  entry->set_content_state(state_);
-  entry->set_has_post_data(type_mask_ & TabNavigation::HAS_POST_DATA);
+  entry->SetPageID(page_id);
+  entry->SetTitle(title_);
+  entry->SetContentState(state_);
+  entry->SetHasPostData(type_mask_ & TabNavigation::HAS_POST_DATA);
 
   return entry;
 }
 
 void TabNavigation::SetFromNavigationEntry(const NavigationEntry& entry) {
-  virtual_url_ = entry.virtual_url();
-  referrer_ = entry.referrer();
-  title_ = entry.title();
-  state_ = entry.content_state();
-  transition_ = entry.transition_type();
-  type_mask_ = entry.has_post_data() ? TabNavigation::HAS_POST_DATA : 0;
+  virtual_url_ = entry.GetVirtualURL();
+  referrer_ = entry.GetReferrer();
+  title_ = entry.GetTitle();
+  state_ = entry.GetContentState();
+  transition_ = entry.GetTransitionType();
+  type_mask_ = entry.GetHasPostData() ? TabNavigation::HAS_POST_DATA : 0;
+}
+
+// static
+void TabNavigation::CreateNavigationEntriesFromTabNavigations(
+    Profile* profile,
+    const std::vector<TabNavigation>& navigations,
+    std::vector<NavigationEntry*>* entries) {
+  int page_id = 0;
+  for (std::vector<TabNavigation>::const_iterator i =
+           navigations.begin(); i != navigations.end(); ++i, ++page_id) {
+    entries->push_back(i->ToNavigationEntry(page_id, profile));
+  }
 }
 
 // SessionTab -----------------------------------------------------------------
@@ -101,19 +119,9 @@ SessionWindow::SessionWindow()
     : selected_tab_index(-1),
       type(Browser::TYPE_TABBED),
       is_constrained(true),
-      is_maximized(false) {
+      show_state(ui::SHOW_STATE_DEFAULT) {
 }
 
 SessionWindow::~SessionWindow() {
   STLDeleteElements(&tabs);
 }
-
-// ForeignSession --------------------------------------------------------------
-
-ForeignSession::ForeignSession() : foreign_session_tag("invalid") {
-}
-
-ForeignSession::~ForeignSession() {
-  STLDeleteElements(&windows);
-}
-

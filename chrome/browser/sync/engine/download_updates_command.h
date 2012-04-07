@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,11 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/engine/syncer_command.h"
+#include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
 namespace sync_pb {
@@ -41,12 +44,12 @@ class DownloadUpdatesCommand : public SyncerCommand {
   virtual ~DownloadUpdatesCommand();
 
   // SyncerCommand implementation.
-  virtual void ExecuteImpl(sessions::SyncSession* session);
-
-  void SetRequestedTypes(const syncable::ModelTypeBitSet& target_datatypes,
-                         sync_pb::EntitySpecifics* filter_protobuf);
+  virtual SyncerError ExecuteImpl(sessions::SyncSession* session) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(DownloadUpdatesCommandTest, VerifyAppendDebugInfo);
+  void AppendClientDebugInfoIfNeeded(sessions::SyncSession* session,
+      sync_pb::DebugInfo* debug_info);
   DISALLOW_COPY_AND_ASSIGN(DownloadUpdatesCommand);
 };
 

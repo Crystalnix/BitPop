@@ -4,22 +4,128 @@
 
 #import "chrome/browser/ui/cocoa/applescript/tab_applescript.h"
 
+#import <Carbon/Carbon.h>
+#import <Foundation/NSAppleEventDescriptor.h>
+
 #include "base/file_path.h"
 #include "base/logging.h"
 #import "base/memory/scoped_nsobject.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/download/save_package.h"
+#include "chrome/browser/printing/print_view_manager.h"
+#include "chrome/browser/sessions/restore_tab_helper.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/cocoa/applescript/error_applescript.h"
-#include "chrome/browser/ui/download/download_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/save_page_type.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "googleurl/src/gurl.h"
+
+using content::NavigationController;
+using content::NavigationEntry;
+using content::OpenURLParams;
+using content::Referrer;
+using content::WebContents;
+
+@interface AnyResultValue : NSObject {
+ @private
+  scoped_nsobject<NSAppleEventDescriptor> descriptor;
+}
+- (id)initWithDescriptor:(NSAppleEventDescriptor*)desc;
+- (NSAppleEventDescriptor *)scriptingAnyDescriptor;
+@end
+
+@implementation AnyResultValue
+
+- (id)initWithDescriptor:(NSAppleEventDescriptor*)desc {
+  if (self = [super init]) {
+    descriptor.reset([desc retain]);
+  }
+  return self;
+}
+
+- (NSAppleEventDescriptor *)scriptingAnyDescriptor {
+  return descriptor.get();
+}
+
+@end
+
+static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
+  NSAppleEventDescriptor* descriptor = nil;
+  switch (value->GetType()) {
+    case Value::TYPE_NULL:
+      descriptor = [NSAppleEventDescriptor
+          descriptorWithTypeCode:cMissingValue];
+      break;
+    case Value::TYPE_BOOLEAN: {
+      bool bool_value;
+      value->GetAsBoolean(&bool_value);
+      descriptor = [NSAppleEventDescriptor descriptorWithBoolean:bool_value];
+      break;
+    }
+    case Value::TYPE_INTEGER: {
+      int int_value;
+      value->GetAsInteger(&int_value);
+      descriptor = [NSAppleEventDescriptor descriptorWithInt32:int_value];
+      break;
+    }
+    case Value::TYPE_DOUBLE: {
+      double double_value;
+      value->GetAsDouble(&double_value);
+      descriptor = [NSAppleEventDescriptor
+          descriptorWithDescriptorType:typeIEEE64BitFloatingPoint
+                                 bytes:&double_value
+                                length:sizeof(double_value)];
+      break;
+    }
+    case Value::TYPE_STRING: {
+      std::string string_value;
+      value->GetAsString(&string_value);
+      descriptor = [NSAppleEventDescriptor descriptorWithString:
+          base::SysUTF8ToNSString(string_value)];
+      break;
+    }
+    case Value::TYPE_BINARY:
+      NOTREACHED();
+      break;
+    case Value::TYPE_DICTIONARY: {
+      DictionaryValue* dictionary_value = static_cast<DictionaryValue*>(value);
+      descriptor = [NSAppleEventDescriptor recordDescriptor];
+      NSAppleEventDescriptor* userRecord = [NSAppleEventDescriptor
+          listDescriptor];
+      for (DictionaryValue::key_iterator iter(dictionary_value->begin_keys());
+           iter != dictionary_value->end_keys(); ++iter) {
+        Value* item;
+        if (dictionary_value->Get(*iter, &item)) {
+          [userRecord insertDescriptor:[NSAppleEventDescriptor
+              descriptorWithString:base::SysUTF8ToNSString(*iter)] atIndex:0];
+          [userRecord insertDescriptor:valueToDescriptor(item) atIndex:0];
+        }
+      }
+      // Description of what keyASUserRecordFields does.
+      // http://www.mail-archive.com/cocoa-dev%40lists.apple.com/msg40149.html
+      [descriptor setDescriptor:userRecord forKeyword:keyASUserRecordFields];
+      break;
+    }
+    case Value::TYPE_LIST: {
+      ListValue* list_value;
+      value->GetAsList(&list_value);
+      descriptor = [NSAppleEventDescriptor listDescriptor];
+      for (unsigned i = 0; i < list_value->GetSize(); ++i) {
+        Value* item;
+        list_value->Get(i, &item);
+        [descriptor insertDescriptor:valueToDescriptor(item) atIndex:0];
+      }
+      break;
+    }
+  }
+  return descriptor;
+}
 
 @interface TabAppleScript()
 @property (nonatomic, copy) NSString* tempURL;
@@ -38,7 +144,6 @@
         [[NSNumber alloc]
             initWithInt:futureSessionIDOfTab]);
     [self setUniqueID:numID];
-    [self setTempURL:@""];
   }
   return self;
 }
@@ -61,7 +166,7 @@
     tabContents_ = aTabContent;
     scoped_nsobject<NSNumber> numID(
         [[NSNumber alloc]
-            initWithInt:tabContents_->controller().session_id().id()]);
+            initWithInt:tabContents_->restore_tab_helper()->session_id().id()]);
     [self setUniqueID:numID];
   }
   return self;
@@ -75,10 +180,11 @@
   tabContents_ = aTabContent;
   scoped_nsobject<NSNumber> numID(
       [[NSNumber alloc]
-          initWithInt:tabContents_->controller().session_id().id()]);
+          initWithInt:tabContents_->restore_tab_helper()->session_id().id()]);
   [self setUniqueID:numID];
 
-  [self setURL:[self tempURL]];
+  if ([self tempURL])
+    [self setURL:[self tempURL]];
 }
 
 - (NSString*)URL {
@@ -86,11 +192,12 @@
     return nil;
   }
 
-  NavigationEntry* entry = tabContents_->controller().GetActiveEntry();
+  NavigationEntry* entry =
+      tabContents_->web_contents()->GetController().GetActiveEntry();
   if (!entry) {
     return nil;
   }
-  const GURL& url = entry->virtual_url();
+  const GURL& url = entry->GetVirtualURL();
   return base::SysUTF8ToNSString(url.spec());
 }
 
@@ -109,37 +216,41 @@
     return;
   }
 
-  NavigationEntry* entry = tabContents_->controller().GetActiveEntry();
+  NavigationEntry* entry =
+      tabContents_->web_contents()->GetController().GetActiveEntry();
   if (!entry)
     return;
 
-  const GURL& previousURL = entry->virtual_url();
-  tabContents_->tab_contents()->OpenURL(url,
-                                        previousURL,
-                                        CURRENT_TAB,
-                                        PageTransition::TYPED);
+  const GURL& previousURL = entry->GetVirtualURL();
+  tabContents_->web_contents()->OpenURL(OpenURLParams(
+      url,
+      content::Referrer(previousURL, WebKit::WebReferrerPolicyDefault),
+      CURRENT_TAB,
+      content::PAGE_TRANSITION_TYPED,
+      false));
 }
 
 - (NSString*)title {
-  NavigationEntry* entry = tabContents_->controller().GetActiveEntry();
+  NavigationEntry* entry =
+      tabContents_->web_contents()->GetController().GetActiveEntry();
   if (!entry)
     return nil;
 
   std::wstring title;
   if (entry != NULL) {
-    title = UTF16ToWideHack(entry->title());
+    title = UTF16ToWideHack(entry->GetTitle());
   }
 
   return base::SysWideToNSString(title);
 }
 
 - (NSNumber*)loading {
-  BOOL loadingValue = tabContents_->tab_contents()->is_loading() ? YES : NO;
+  BOOL loadingValue = tabContents_->web_contents()->IsLoading() ? YES : NO;
   return [NSNumber numberWithBool:loadingValue];
 }
 
 - (void)handlesUndoScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -149,7 +260,7 @@
 }
 
 - (void)handlesRedoScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -159,7 +270,7 @@
 }
 
 - (void)handlesCutScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -169,7 +280,7 @@
 }
 
 - (void)handlesCopyScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -179,7 +290,7 @@
 }
 
 - (void)handlesPasteScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -189,7 +300,7 @@
 }
 
 - (void)handlesSelectAllScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return;
@@ -199,25 +310,28 @@
 }
 
 - (void)handlesGoBackScriptCommand:(NSScriptCommand*)command {
-  NavigationController& navigationController = tabContents_->controller();
+  NavigationController& navigationController =
+      tabContents_->web_contents()->GetController();
   if (navigationController.CanGoBack())
     navigationController.GoBack();
 }
 
 - (void)handlesGoForwardScriptCommand:(NSScriptCommand*)command {
-  NavigationController& navigationController = tabContents_->controller();
+  NavigationController& navigationController =
+      tabContents_->web_contents()->GetController();
   if (navigationController.CanGoForward())
     navigationController.GoForward();
 }
 
 - (void)handlesReloadScriptCommand:(NSScriptCommand*)command {
-  NavigationController& navigationController = tabContents_->controller();
+  NavigationController& navigationController =
+      tabContents_->web_contents()->GetController();
   const bool checkForRepost = true;
   navigationController.Reload(checkForRepost);
 }
 
 - (void)handlesStopScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     // We tolerate Stop being called even before a view has been created.
     // So just log a warning instead of a NOTREACHED().
@@ -225,7 +339,7 @@
     return;
   }
 
-  view->Send(new ViewMsg_Stop(view->routing_id()));
+  view->Stop();
 }
 
 - (void)handlesPrintScriptCommand:(NSScriptCommand*)command {
@@ -242,7 +356,7 @@
   // Scripter has not specifed the location at which to save, so we prompt for
   // it.
   if (!fileURL) {
-    tabContents_->download_tab_helper()->OnSavePage();
+    tabContents_->web_contents()->OnSavePage();
     return;
   }
 
@@ -255,39 +369,42 @@
 
   NSString* saveType = [dictionary objectForKey:@"FileType"];
 
-  SavePackage::SavePackageType savePackageType =
-      SavePackage::SAVE_AS_COMPLETE_HTML;
+  content::SavePageType savePageType = content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML;
   if (saveType) {
     if ([saveType isEqualToString:@"only html"]) {
-      savePackageType = SavePackage::SAVE_AS_ONLY_HTML;
+      savePageType = content::SAVE_PAGE_TYPE_AS_ONLY_HTML;
     } else if ([saveType isEqualToString:@"complete html"]) {
-      savePackageType = SavePackage::SAVE_AS_COMPLETE_HTML;
+      savePageType = content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML;
     } else {
       AppleScript::SetError(AppleScript::errInvalidSaveType);
       return;
     }
   }
 
-  tabContents_->download_tab_helper()->SavePage(mainFile,
-                                                directoryPath,
-                                                savePackageType);
+  tabContents_->web_contents()->SavePage(mainFile, directoryPath, savePageType);
 }
 
+- (void)handlesCloseScriptCommand:(NSScriptCommand*)command {
+  WebContents* contents = tabContents_->web_contents();
+  contents->GetDelegate()->CloseContents(contents);
+}
 
 - (void)handlesViewSourceScriptCommand:(NSScriptCommand*)command {
-  NavigationEntry* entry = tabContents_->controller().GetLastCommittedEntry();
+  NavigationEntry* entry =
+      tabContents_->web_contents()->GetController().GetLastCommittedEntry();
   if (entry) {
-    tabContents_->tab_contents()->OpenURL(
+    tabContents_->web_contents()->OpenURL(OpenURLParams(
         GURL(chrome::kViewSourceScheme + std::string(":") +
-             entry->url().spec()),
-        GURL(),
+             entry->GetURL().spec()),
+        Referrer(),
         NEW_FOREGROUND_TAB,
-        PageTransition::LINK);
+        content::PAGE_TRANSITION_LINK,
+        false));
   }
 }
 
 - (id)handlesExecuteJavascriptScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = tabContents_->render_view_host();
+  RenderViewHost* view = tabContents_->web_contents()->GetRenderViewHost();
   if (!view) {
     NOTREACHED();
     return nil;
@@ -295,10 +412,9 @@
 
   string16 script = base::SysNSStringToUTF16(
       [[command evaluatedArguments] objectForKey:@"javascript"]);
-  view->ExecuteJavascriptInWebFrame(string16(), script);
-
-  // TODO(Shreyas): Figure out a way to get the response back.
-  return nil;
+  Value* value = view->ExecuteJavascriptAndGetValue(string16(), script);
+  NSAppleEventDescriptor* descriptor = valueToDescriptor(value);
+  return [[[AnyResultValue alloc] initWithDescriptor:descriptor] autorelease];
 }
 
 @end

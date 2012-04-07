@@ -7,10 +7,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/test/webdriver/commands/set_timeout_commands.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
+#include "chrome/test/webdriver/commands/set_timeout_commands.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_session.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace webdriver {
@@ -74,10 +74,10 @@ TEST(ImplicitWaitCommandTest, SettingImplicitWaits) {
   AssertError(kBadRequest, "ms parameter is not a number", &command);
 
   parameters->SetInteger("ms", -1);
-  AssertError(kBadRequest, "timeout must be non-negative: -1", &command);
+  AssertError(kBadRequest, "Timeout must be non-negative", &command);
 
   parameters->SetDouble("ms", -3.0);
-  AssertError(kBadRequest, "timeout must be non-negative: -3", &command);
+  AssertError(kBadRequest, "Timeout must be non-negative", &command);
 
   parameters->SetInteger("ms", 1);
   AssertTimeoutSet(test_session, 1, &command);

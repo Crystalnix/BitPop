@@ -4,14 +4,17 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/bind.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/message_loop.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/importer_lock_dialog.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+
+using content::UserMetricsAction;
 
 namespace importer {
 
@@ -27,14 +30,11 @@ void ShowImportLockDialog(gfx::NativeWindow parent,
   [lock_alert setMessageText:l10n_util::GetNSStringWithFixup(
       IDS_IMPORTER_LOCK_TITLE)];
 
-  if ([lock_alert runModal] == NSAlertFirstButtonReturn) {
-    MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-        importer_host, &ImporterHost::OnImportLockDialogEnd, true));
-  } else {
-    MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-        importer_host, &ImporterHost::OnImportLockDialogEnd, false));
-  }
-  UserMetrics::RecordAction(UserMetricsAction("ImportLockDialogCocoa_Shown"));
+  bool is_continue = [lock_alert runModal] == NSAlertFirstButtonReturn;
+  MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&ImporterHost::OnImportLockDialogEnd,
+                 importer_host, is_continue));
+  content::RecordAction(UserMetricsAction("ImportLockDialogCocoa_Shown"));
 }
 
 }  // namespace importer

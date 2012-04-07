@@ -7,83 +7,49 @@
 #include "base/metrics/histogram.h"
 #include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/content_settings/content_settings_details.h"
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_object_proxy.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/notifications/notifications_prefs_cache.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_child_process_host.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/site_instance.h"
 #include "content/browser/worker_host/worker_process_host.h"
-#include "content/common/desktop_notification_messages.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/show_desktop_notification_params.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "net/base/escape.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using content::BrowserThread;
+using content::WebContents;
 using WebKit::WebNotificationPresenter;
 using WebKit::WebTextDirection;
+using WebKit::WebSecurityOrigin;
 
 const ContentSetting kDefaultSetting = CONTENT_SETTING_ASK;
-
-namespace {
-
-typedef content_settings::ProviderInterface::Rules Rules;
-
-void GetOriginsWithSettingFromContentSettingsRules(
-    const Rules& content_setting_rules,
-    ContentSetting setting,
-    std::vector<GURL>* origins) {
-  origins->clear();
-
-  for (Rules::const_iterator rule = content_setting_rules.begin();
-       rule != content_setting_rules.end();
-       ++rule) {
-    if (setting == rule->content_setting) {
-      std::string url_str = rule->requesting_url_pattern.ToString();
-      if (!rule->requesting_url_pattern.IsValid()) {
-        // TODO(markusheintz): This will be removed in one of the next
-        // refactoring steps as this entire function will disapear.
-        LOG(DFATAL) << "Ignoring invalid content settings pattern: "
-                    << url_str;
-      } else if (url_str.find(ContentSettingsPattern::kDomainWildcard) == 0) {
-        // TODO(markusheintz): This must be changed once the UI code is
-        // refactored and content_settings patterns are fully supported for
-        // notifications settings.
-        LOG(DFATAL) << "Ignoring unsupported content settings pattern: "
-                    << url_str << ". Content settings patterns other than "
-                    << "hostnames (e.g. wildcard patterns) are not supported "
-                    << "for notification content settings yet.";
-      } else {
-        origins->push_back(
-            content_settings::NotificationProvider::ToGURL(
-                rule->requesting_url_pattern));
-      }
-    }
-  }
-}
-
-}  // namespace
 
 // NotificationPermissionInfoBarDelegate --------------------------------------
 
@@ -91,12 +57,14 @@ void GetOriginsWithSettingFromContentSettingsRules(
 // permissions.
 class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  NotificationPermissionInfoBarDelegate(TabContents* contents,
-                                        const GURL& origin,
-                                        const string16& display_name,
-                                        int process_id,
-                                        int route_id,
-                                        int callback_context);
+  NotificationPermissionInfoBarDelegate(
+      InfoBarTabHelper* infobar_helper,
+      DesktopNotificationService* notification_service,
+      const GURL& origin,
+      const string16& display_name,
+      int process_id,
+      int route_id,
+      int callback_context);
 
  private:
   virtual ~NotificationPermissionInfoBarDelegate();
@@ -116,8 +84,8 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
   // origin_ for extensions.
   string16 display_name_;
 
-  // The Profile that we restore sessions from.
-  Profile* profile_;
+  // The notification service to be used.
+  DesktopNotificationService* notification_service_;
 
   // The callback information that tells us how to respond to javascript via
   // the correct RenderView.
@@ -132,16 +100,17 @@ class NotificationPermissionInfoBarDelegate : public ConfirmInfoBarDelegate {
 };
 
 NotificationPermissionInfoBarDelegate::NotificationPermissionInfoBarDelegate(
-    TabContents* contents,
+    InfoBarTabHelper* infobar_helper,
+    DesktopNotificationService* notification_service,
     const GURL& origin,
     const string16& display_name,
     int process_id,
     int route_id,
     int callback_context)
-    : ConfirmInfoBarDelegate(contents),
+    : ConfirmInfoBarDelegate(infobar_helper),
       origin_(origin),
       display_name_(display_name),
-      profile_(contents->profile()),
+      notification_service_(notification_service),
       process_id_(process_id),
       route_id_(route_id),
       callback_context_(callback_context),
@@ -154,15 +123,13 @@ NotificationPermissionInfoBarDelegate::
     UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Ignored", 1);
 
   RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
-  if (host) {
-    host->Send(new DesktopNotificationMsg_PermissionRequestDone(
-        route_id_, callback_context_));
-  }
+  if (host)
+    host->DesktopNotificationPermissionRequestDone(callback_context_);
 }
 
 gfx::Image* NotificationPermissionInfoBarDelegate::GetIcon() const {
   return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-     IDR_PRODUCT_ICON_32);
+      IDR_INFOBAR_DESKTOP_NOTIFICATIONS);
 }
 
 InfoBarDelegate::Type
@@ -183,16 +150,14 @@ string16 NotificationPermissionInfoBarDelegate::GetButtonLabel(
 
 bool NotificationPermissionInfoBarDelegate::Accept() {
   UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Allowed", 1);
-  DesktopNotificationServiceFactory::GetForProfile(profile_)->
-      GrantPermission(origin_);
+  notification_service_->GrantPermission(origin_);
   action_taken_ = true;
   return true;
 }
 
 bool NotificationPermissionInfoBarDelegate::Cancel() {
   UMA_HISTOGRAM_COUNTS("NotificationPermissionRequest.Denied", 1);
-  DesktopNotificationServiceFactory::GetForProfile(profile_)->
-      DenyPermission(origin_);
+  notification_service_->DenyPermission(origin_);
   action_taken_ = true;
   return true;
 }
@@ -209,8 +174,8 @@ string16 DesktopNotificationService::CreateDataUrl(
   if (icon_url.is_valid()) {
     resource = IDR_NOTIFICATION_ICON_HTML;
     subst.push_back(icon_url.spec());
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(title)));
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(body)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(title)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
     // icon float position
     subst.push_back(dir == WebKit::WebTextDirectionRightToLeft ?
                     "right" : "left");
@@ -220,12 +185,12 @@ string16 DesktopNotificationService::CreateDataUrl(
     // Strings are div names in the template file.
     string16 line_name = title.empty() ? ASCIIToUTF16("description")
                                        : ASCIIToUTF16("title");
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(line_name)));
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(line)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line_name)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(line)));
   } else {
     resource = IDR_NOTIFICATION_2LINE_HTML;
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(title)));
-    subst.push_back(EscapeForHTML(UTF16ToUTF8(body)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(title)));
+    subst.push_back(net::EscapeForHTML(UTF16ToUTF8(body)));
   }
   // body text direction
   subst.push_back(dir == WebKit::WebTextDirectionRightToLeft ?
@@ -248,15 +213,13 @@ string16 DesktopNotificationService::CreateDataUrl(
 
   std::string data = ReplaceStringPlaceholders(template_html, subst, NULL);
   return UTF8ToUTF16("data:text/html;charset=utf-8," +
-                      EscapeQueryParamValue(data, false));
+                      net::EscapeQueryParamValue(data, false));
 }
 
 DesktopNotificationService::DesktopNotificationService(Profile* profile,
     NotificationUIManager* ui_manager)
     : profile_(profile),
       ui_manager_(ui_manager) {
-  prefs_registrar_.Init(profile_->GetPrefs());
-  InitPrefs();
   StartObserving();
 }
 
@@ -264,153 +227,61 @@ DesktopNotificationService::~DesktopNotificationService() {
   StopObserving();
 }
 
-void DesktopNotificationService::RegisterUserPrefs(PrefService* user_prefs) {
-  content_settings::NotificationProvider::RegisterUserPrefs(user_prefs);
-}
-
-// Initialize the cache with the allowed and denied origins, or
-// create the preferences if they don't exist yet.
-void DesktopNotificationService::InitPrefs() {
-  provider_.reset(new content_settings::NotificationProvider(profile_));
-
-  std::vector<GURL> allowed_origins;
-  std::vector<GURL> denied_origins;
-  ContentSetting default_content_setting = CONTENT_SETTING_DEFAULT;
-
-  if (!profile_->IsOffTheRecord()) {
-    default_content_setting =
-        profile_->GetHostContentSettingsMap()->GetDefaultContentSetting(
-            CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-    allowed_origins = GetAllowedOrigins();
-    denied_origins = GetBlockedOrigins();
-  }
-
-  prefs_cache_ = new NotificationsPrefsCache();
-  prefs_cache_->SetCacheDefaultContentSetting(default_content_setting);
-  prefs_cache_->SetCacheAllowedOrigins(allowed_origins);
-  prefs_cache_->SetCacheDeniedOrigins(denied_origins);
-  prefs_cache_->set_is_initialized(true);
-}
-
 void DesktopNotificationService::StartObserving() {
   if (!profile_->IsOffTheRecord()) {
-    prefs_registrar_.Add(prefs::kDesktopNotificationAllowedOrigins, this);
-    prefs_registrar_.Add(prefs::kDesktopNotificationDeniedOrigins, this);
-    notification_registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-                                NotificationService::AllSources());
-    notification_registrar_.Add(
-        this,
-        NotificationType::CONTENT_SETTINGS_CHANGED,
-        // TODO(markusheintz): Remember to change to HostContentSettingsMap.
-        NotificationService::AllSources());
+    notification_registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                                content::Source<Profile>(profile_));
   }
-  notification_registrar_.Add(this, NotificationType::PROFILE_DESTROYED,
-                              Source<Profile>(profile_));
+  notification_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+                              content::Source<Profile>(profile_));
 }
 
 void DesktopNotificationService::StopObserving() {
-  if (!profile_->IsOffTheRecord()) {
-    prefs_registrar_.RemoveAll();
-  }
   notification_registrar_.RemoveAll();
 }
 
 void DesktopNotificationService::GrantPermission(const GURL& origin) {
-  ContentSettingsPattern pattern =
-      content_settings::NotificationProvider::ToContentSettingsPattern(origin);
-  provider_->SetContentSetting(
-      pattern,
-      pattern,
+  ContentSettingsPattern primary_pattern =
+      ContentSettingsPattern::FromURLNoWildcard(origin);
+  profile_->GetHostContentSettingsMap()->SetContentSetting(
+      primary_pattern,
+      ContentSettingsPattern::Wildcard(),
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
       NO_RESOURCE_IDENTIFIER,
       CONTENT_SETTING_ALLOW);
-
-  // Schedule a cache update on the IO thread.
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          prefs_cache_.get(),
-          &NotificationsPrefsCache::CacheAllowedOrigin,
-          origin));
 }
 
 void DesktopNotificationService::DenyPermission(const GURL& origin) {
-  // Update content settings
-  ContentSettingsPattern pattern =
-      content_settings::NotificationProvider::ToContentSettingsPattern(origin);
-  provider_->SetContentSetting(
-      pattern,
-      pattern,
+  ContentSettingsPattern primary_pattern =
+      ContentSettingsPattern::FromURLNoWildcard(origin);
+  profile_->GetHostContentSettingsMap()->SetContentSetting(
+      primary_pattern,
+      ContentSettingsPattern::Wildcard(),
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
       NO_RESOURCE_IDENTIFIER,
       CONTENT_SETTING_BLOCK);
-
-  // Schedule a cache update on the IO thread.
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          prefs_cache_.get(),
-          &NotificationsPrefsCache::CacheDeniedOrigin,
-          origin));
 }
 
-void DesktopNotificationService::Observe(NotificationType type,
-                                         const NotificationSource& source,
-                                         const NotificationDetails& details) {
-  if (NotificationType::PREF_CHANGED == type) {
-    const std::string& name = *Details<std::string>(details).ptr();
-    OnPrefsChanged(name);
-  } else if (NotificationType::CONTENT_SETTINGS_CHANGED == type) {
-    // TODO(markusheintz): Check if content settings type default was changed;
-    const ContentSetting default_content_setting =
-        profile_->GetHostContentSettingsMap()->GetDefaultContentSetting(
-            CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-    // Schedule a cache update on the IO thread.
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(
-            prefs_cache_.get(),
-            &NotificationsPrefsCache::SetCacheDefaultContentSetting,
-            default_content_setting));
-  } else if (NotificationType::EXTENSION_UNLOADED == type) {
+void DesktopNotificationService::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
     // Remove all notifications currently shown or queued by the extension
     // which was unloaded.
     const Extension* extension =
-        Details<UnloadedExtensionInfo>(details)->extension;
+        content::Details<UnloadedExtensionInfo>(details)->extension;
     if (extension)
-      ui_manager_->CancelAllBySourceOrigin(extension->url());
-  } else if (NotificationType::PROFILE_DESTROYED == type) {
+      GetUIManager()->CancelAllBySourceOrigin(extension->url());
+  } else if (type == chrome::NOTIFICATION_PROFILE_DESTROYED) {
     StopObserving();
   }
 }
 
-void DesktopNotificationService::OnPrefsChanged(const std::string& pref_name) {
-  if (pref_name == prefs::kDesktopNotificationAllowedOrigins) {
-    // Schedule a cache update on the IO thread.
-    std::vector<GURL> allowed_origins(GetAllowedOrigins());
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(
-            prefs_cache_.get(),
-            &NotificationsPrefsCache::SetCacheAllowedOrigins,
-            allowed_origins));
-  } else if (pref_name == prefs::kDesktopNotificationDeniedOrigins) {
-    // Schedule a cache update on the IO thread.
-    std::vector<GURL> denied_origins(GetBlockedOrigins());
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(
-            prefs_cache_.get(),
-            &NotificationsPrefsCache::SetCacheDeniedOrigins,
-            denied_origins));
-  } else {
-    NOTREACHED();
-  }
-}
-
-ContentSetting DesktopNotificationService::GetDefaultContentSetting() {
+ContentSetting DesktopNotificationService::GetDefaultContentSetting(
+    std::string* provider_id) {
   return profile_->GetHostContentSettingsMap()->GetDefaultContentSetting(
-      CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+      CONTENT_SETTINGS_TYPE_NOTIFICATIONS, provider_id);
 }
 
 void DesktopNotificationService::SetDefaultContentSetting(
@@ -419,97 +290,55 @@ void DesktopNotificationService::SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS, setting);
 }
 
-bool DesktopNotificationService::IsDefaultContentSettingManaged() const {
-  return profile_->GetHostContentSettingsMap()->IsDefaultContentSettingManaged(
-      CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-}
-
 void DesktopNotificationService::ResetToDefaultContentSetting() {
   profile_->GetHostContentSettingsMap()->SetDefaultContentSetting(
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS, CONTENT_SETTING_DEFAULT);
 }
 
-std::vector<GURL> DesktopNotificationService::GetAllowedOrigins() {
-  content_settings::ProviderInterface::Rules content_setting_rules;
-  provider_->GetAllContentSettingsRules(
+void DesktopNotificationService::GetNotificationsSettings(
+    ContentSettingsForOneType* settings) {
+  profile_->GetHostContentSettingsMap()->GetSettingsForOneType(
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
       NO_RESOURCE_IDENTIFIER,
-      &content_setting_rules);
-  std::vector<GURL> allowed_origins;
-
-  GetOriginsWithSettingFromContentSettingsRules(
-      content_setting_rules, CONTENT_SETTING_ALLOW, &allowed_origins);
-
-  return allowed_origins;
+      settings);
 }
 
-std::vector<GURL> DesktopNotificationService::GetBlockedOrigins() {
-  content_settings::ProviderInterface::Rules content_settings_rules;
-  provider_->GetAllContentSettingsRules(
-      CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
-      NO_RESOURCE_IDENTIFIER,
-      &content_settings_rules);
-  std::vector<GURL> denied_origins;
-
-  GetOriginsWithSettingFromContentSettingsRules(
-      content_settings_rules, CONTENT_SETTING_BLOCK, &denied_origins);
-
-  return denied_origins;
-}
-
-void DesktopNotificationService::ResetAllowedOrigin(const GURL& origin) {
-  ContentSettingsPattern pattern =
-      ContentSettingsPattern::FromURLNoWildcard(origin);
-  provider_->SetContentSetting(
+void DesktopNotificationService::ClearSetting(
+    const ContentSettingsPattern& pattern) {
+  profile_->GetHostContentSettingsMap()->SetContentSetting(
       pattern,
-      pattern,
-      CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
-      NO_RESOURCE_IDENTIFIER,
-      CONTENT_SETTING_DEFAULT);
-}
-
-void DesktopNotificationService::ResetBlockedOrigin(const GURL& origin) {
-  ContentSettingsPattern pattern =
-      ContentSettingsPattern::FromURLNoWildcard(origin);
-  provider_->SetContentSetting(
-      pattern,
-      pattern,
+      ContentSettingsPattern::Wildcard(),
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
       NO_RESOURCE_IDENTIFIER,
       CONTENT_SETTING_DEFAULT);
 }
 
 void DesktopNotificationService::ResetAllOrigins() {
-  provider_->ClearAllContentSettingsRules(CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
+  profile_->GetHostContentSettingsMap()->ClearSettingsForOneType(
+      CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
 }
 
 ContentSetting DesktopNotificationService::GetContentSetting(
     const GURL& origin) {
-  ContentSetting provided_setting = provider_->GetContentSetting(
+  return profile_->GetHostContentSettingsMap()->GetContentSetting(
       origin,
       origin,
       CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
       NO_RESOURCE_IDENTIFIER);
-  if (CONTENT_SETTING_DEFAULT == provided_setting)
-    return GetDefaultContentSetting();
-  return provided_setting;
 }
 
 void DesktopNotificationService::RequestPermission(
     const GURL& origin, int process_id, int route_id, int callback_context,
-    TabContents* tab) {
+    WebContents* tab) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!tab) {
-    Browser* browser = BrowserList::GetLastActive();
+    Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
     if (browser)
-      tab = browser->GetSelectedTabContents();
+      tab = browser->GetSelectedWebContents();
   }
 
   if (!tab)
     return;
-
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab);
 
   // If |origin| hasn't been seen before and the default content setting for
   // notifications is "ask", show an infobar.
@@ -518,23 +347,28 @@ void DesktopNotificationService::RequestPermission(
   ContentSetting setting = GetContentSetting(origin);
   if (setting == CONTENT_SETTING_ASK) {
     // Show an info bar requesting permission.
-    wrapper->AddInfoBar(
-        new NotificationPermissionInfoBarDelegate(
-            tab, origin, DisplayNameForOrigin(origin), process_id,
-            route_id, callback_context));
+    TabContentsWrapper* wrapper =
+        TabContentsWrapper::GetCurrentWrapperForContents(tab);
+    InfoBarTabHelper* infobar_helper = wrapper->infobar_tab_helper();
+    infobar_helper->AddInfoBar(new NotificationPermissionInfoBarDelegate(
+        infobar_helper,
+        DesktopNotificationServiceFactory::GetForProfile(wrapper->profile()),
+        origin,
+        DisplayNameForOrigin(origin),
+        process_id,
+        route_id,
+        callback_context));
   } else {
     // Notify renderer immediately.
     RenderViewHost* host = RenderViewHost::FromID(process_id, route_id);
-    if (host) {
-      host->Send(new DesktopNotificationMsg_PermissionRequestDone(
-          route_id, callback_context));
-    }
+    if (host)
+      host->DesktopNotificationPermissionRequestDone(callback_context);
   }
 }
 
 void DesktopNotificationService::ShowNotification(
     const Notification& notification) {
-  ui_manager_->Add(notification, profile_);
+  GetUIManager()->Add(notification, profile_);
 }
 
 bool DesktopNotificationService::CancelDesktopNotification(
@@ -542,12 +376,11 @@ bool DesktopNotificationService::CancelDesktopNotification(
   scoped_refptr<NotificationObjectProxy> proxy(
       new NotificationObjectProxy(process_id, route_id, notification_id,
                                   false));
-  return ui_manager_->CancelById(proxy->id());
+  return GetUIManager()->CancelById(proxy->id());
 }
 
-
 bool DesktopNotificationService::ShowDesktopNotification(
-    const DesktopNotificationHostMsg_Show_Params& params,
+    const content::ShowDesktopNotificationHostMsgParams& params,
     int process_id, int route_id, DesktopNotificationSource source) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   const GURL& origin = params.origin;
@@ -575,9 +408,14 @@ string16 DesktopNotificationService::DisplayNameForOrigin(
     const GURL& origin) {
   // If the source is an extension, lookup the display name.
   if (origin.SchemeIs(chrome::kExtensionScheme)) {
-    ExtensionService* ext_service = profile_->GetExtensionService();
-    if (ext_service) {
-      const Extension* extension = ext_service->GetExtensionByURL(origin);
+    ExtensionService* extension_service = profile_->GetExtensionService();
+    if (extension_service) {
+      const Extension* extension =
+          extension_service->extensions()->GetExtensionOrAppByURL(
+              ExtensionURLInfo(
+                  WebSecurityOrigin::createFromString(
+                      UTF8ToUTF16(origin.spec())),
+                  origin));
       if (extension)
         return UTF8ToUTF16(extension->name());
     }
@@ -586,8 +424,37 @@ string16 DesktopNotificationService::DisplayNameForOrigin(
 }
 
 void DesktopNotificationService::NotifySettingsChange() {
-  NotificationService::current()->Notify(
-      NotificationType::DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
-      Source<DesktopNotificationService>(this),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
+      content::Source<DesktopNotificationService>(this),
+      content::NotificationService::NoDetails());
+}
+
+NotificationUIManager* DesktopNotificationService::GetUIManager() {
+  // We defer setting ui_manager_ to the global singleton until we need it
+  // in order to avoid UI dependent construction during startup.
+  if (!ui_manager_)
+    ui_manager_ = g_browser_process->notification_ui_manager();
+  return ui_manager_;
+}
+
+WebKit::WebNotificationPresenter::Permission
+    DesktopNotificationService::HasPermission(const GURL& origin) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  HostContentSettingsMap* host_content_settings_map =
+      profile_->GetHostContentSettingsMap();
+  ContentSetting setting = host_content_settings_map->GetContentSetting(
+      origin,
+      origin,
+      CONTENT_SETTINGS_TYPE_NOTIFICATIONS,
+      NO_RESOURCE_IDENTIFIER);
+
+  if (setting == CONTENT_SETTING_ALLOW)
+    return WebKit::WebNotificationPresenter::PermissionAllowed;
+  if (setting == CONTENT_SETTING_BLOCK)
+    return WebKit::WebNotificationPresenter::PermissionDenied;
+  if (setting == CONTENT_SETTING_ASK)
+    return WebKit::WebNotificationPresenter::PermissionNotAllowed;
+  NOTREACHED() << "Invalid notifications settings value: " << setting;
+  return WebKit::WebNotificationPresenter::PermissionNotAllowed;
 }

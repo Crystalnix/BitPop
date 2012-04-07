@@ -1,25 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/webui/options/password_manager_handler.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "webkit/glue/password_form.h"
+#include "webkit/forms/password_form.h"
 
 PasswordManagerHandler::PasswordManagerHandler()
     : ALLOW_THIS_IN_INITIALIZER_LIST(populater_(this)),
@@ -70,32 +71,41 @@ void PasswordManagerHandler::GetLocalizedValues(
                 IDS_PASSWORDS_EXCEPTIONS_WINDOW_TITLE);
 
   localized_strings->SetString("passwordManagerLearnMoreURL",
-      google_util::AppendGoogleLocaleParam(
-          GURL(chrome::kPasswordManagerLearnMoreURL)).spec());
+                               chrome::kPasswordManagerLearnMoreURL);
 }
 
 void PasswordManagerHandler::Initialize() {
+  // Due to the way that handlers are (re)initialized under certain types of
+  // navigation, we may already be initialized. (See bugs 88986 and 86448.)
+  // If this is the case, return immediately. This is a hack.
+  // TODO(mdm): remove this hack once it is no longer necessary.
+  if (!show_passwords_.GetPrefName().empty())
+    return;
+
   show_passwords_.Init(prefs::kPasswordManagerAllowShowPasswords,
-                       web_ui_->GetProfile()->GetPrefs(), this);
-  // We should not cache web_ui_->GetProfile(). See crosbug.com/6304.
+                       Profile::FromWebUI(web_ui())->GetPrefs(), this);
+  // We should not cache web_ui()->GetProfile(). See crosbug.com/6304.
   PasswordStore* store = GetPasswordStore();
   if (store)
     store->AddObserver(this);
 }
 
 void PasswordManagerHandler::RegisterMessages() {
-  DCHECK(web_ui_);
-
-  web_ui_->RegisterMessageCallback("updatePasswordLists",
-      NewCallback(this, &PasswordManagerHandler::UpdatePasswordLists));
-  web_ui_->RegisterMessageCallback("removeSavedPassword",
-      NewCallback(this, &PasswordManagerHandler::RemoveSavedPassword));
-  web_ui_->RegisterMessageCallback("removePasswordException",
-      NewCallback(this, &PasswordManagerHandler::RemovePasswordException));
-  web_ui_->RegisterMessageCallback("removeAllSavedPasswords",
-      NewCallback(this, &PasswordManagerHandler::RemoveAllSavedPasswords));
-  web_ui_->RegisterMessageCallback("removeAllPasswordExceptions", NewCallback(
-      this, &PasswordManagerHandler::RemoveAllPasswordExceptions));
+  web_ui()->RegisterMessageCallback("updatePasswordLists",
+      base::Bind(&PasswordManagerHandler::UpdatePasswordLists,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeSavedPassword",
+      base::Bind(&PasswordManagerHandler::RemoveSavedPassword,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removePasswordException",
+      base::Bind(&PasswordManagerHandler::RemovePasswordException,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeAllSavedPasswords",
+      base::Bind(&PasswordManagerHandler::RemoveAllSavedPasswords,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeAllPasswordExceptions",
+      base::Bind(&PasswordManagerHandler::RemoveAllPasswordExceptions,
+                 base::Unretained(this)));
 }
 
 void PasswordManagerHandler::OnLoginsChanged() {
@@ -103,14 +113,16 @@ void PasswordManagerHandler::OnLoginsChanged() {
 }
 
 PasswordStore* PasswordManagerHandler::GetPasswordStore() {
-  return web_ui_->GetProfile()->GetPasswordStore(Profile::EXPLICIT_ACCESS);
+  return Profile::FromWebUI(web_ui())->
+      GetPasswordStore(Profile::EXPLICIT_ACCESS);
 }
 
-void PasswordManagerHandler::Observe(NotificationType type,
-                                     const NotificationSource& source,
-                                     const NotificationDetails& details) {
-  if (type.value == NotificationType::PREF_CHANGED) {
-    std::string* pref_name = Details<std::string>(details).ptr();
+void PasswordManagerHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_PREF_CHANGED) {
+    std::string* pref_name = content::Details<std::string>(details).ptr();
     if (*pref_name == prefs::kPasswordManagerAllowShowPasswords) {
       UpdatePasswordLists(NULL);
     }
@@ -124,8 +136,8 @@ void PasswordManagerHandler::UpdatePasswordLists(const ListValue* args) {
   password_list_.reset();
   password_exception_list_.reset();
 
-  languages_ =
-      web_ui_->GetProfile()->GetPrefs()->GetString(prefs::kAcceptLanguages);
+  languages_ = Profile::FromWebUI(web_ui())->GetPrefs()->
+      GetString(prefs::kAcceptLanguages);
   populater_.Populate();
   exception_populater_.Populate();
 }
@@ -174,6 +186,13 @@ void PasswordManagerHandler::RemoveAllPasswordExceptions(
 }
 
 void PasswordManagerHandler::SetPasswordList() {
+  // Due to the way that handlers are (re)initialized under certain types of
+  // navigation, we may not be initialized yet. (See bugs 88986 and 86448.)
+  // If this is the case, initialize on demand. This is a hack.
+  // TODO(mdm): remove this hack once it is no longer necessary.
+  if (show_passwords_.GetPrefName().empty())
+    Initialize();
+
   ListValue entries;
   bool show_passwords = *show_passwords_;
   string16 empty;
@@ -187,8 +206,8 @@ void PasswordManagerHandler::SetPasswordList() {
     entries.Append(entry);
   }
 
-  web_ui_->CallJavascriptFunction("PasswordManager.setSavedPasswordsList",
-                                  entries);
+  web_ui()->CallJavascriptFunction("PasswordManager.setSavedPasswordsList",
+                                   entries);
 }
 
 void PasswordManagerHandler::SetPasswordExceptionList() {
@@ -198,8 +217,8 @@ void PasswordManagerHandler::SetPasswordExceptionList() {
         net::FormatUrl(password_exception_list_[i]->origin, languages_)));
   }
 
-  web_ui_->CallJavascriptFunction("PasswordManager.setPasswordExceptionsList",
-                                  entries);
+  web_ui()->CallJavascriptFunction("PasswordManager.setPasswordExceptionsList",
+                                   entries);
 }
 
 PasswordManagerHandler::ListPopulater::ListPopulater(
@@ -230,7 +249,7 @@ void PasswordManagerHandler::PasswordListPopulater::Populate() {
 void PasswordManagerHandler::PasswordListPopulater::
     OnPasswordStoreRequestDone(
         CancelableRequestProvider::Handle handle,
-        const std::vector<webkit_glue::PasswordForm*>& result) {
+        const std::vector<webkit::forms::PasswordForm*>& result) {
   DCHECK_EQ(pending_login_query_, handle);
   pending_login_query_ = 0;
   page_->password_list_.reset();
@@ -259,7 +278,7 @@ void PasswordManagerHandler::PasswordExceptionListPopulater::Populate() {
 void PasswordManagerHandler::PasswordExceptionListPopulater::
     OnPasswordStoreRequestDone(
         CancelableRequestProvider::Handle handle,
-        const std::vector<webkit_glue::PasswordForm*>& result) {
+        const std::vector<webkit::forms::PasswordForm*>& result) {
   DCHECK_EQ(pending_login_query_, handle);
   pending_login_query_ = 0;
   page_->password_exception_list_.reset();

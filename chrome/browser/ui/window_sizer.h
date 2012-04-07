@@ -6,12 +6,29 @@
 #define CHROME_BROWSER_UI_WINDOW_SIZER_H_
 #pragma once
 
-#include <vector>
-
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/gfx/rect.h"
 
 class Browser;
+
+// An interface implemented by an object that can retrieve information about
+// the monitors on the system.
+class MonitorInfoProvider {
+ public:
+  virtual ~MonitorInfoProvider() {}
+
+  // Returns the bounds of the work area of the primary monitor.
+  virtual gfx::Rect GetPrimaryMonitorWorkArea() const = 0;
+
+  // Returns the bounds of the primary monitor.
+  virtual gfx::Rect GetPrimaryMonitorBounds() const = 0;
+
+  // Returns the bounds of the work area of the monitor that most closely
+  // intersects the provided bounds.
+  virtual gfx::Rect GetMonitorWorkAreaMatching(
+      const gfx::Rect& match_rect) const = 0;
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 // WindowSizer
@@ -26,60 +43,18 @@ class Browser;
 //
 class WindowSizer {
  public:
-  class MonitorInfoProvider;
   class StateProvider;
 
-  // The WindowSizer assumes ownership of these objects.
+  // WindowSizer owns |state_provider| and will create a default
+  // MonitorInfoProvider using the physical screen.
+  explicit WindowSizer(StateProvider* state_provider);
+
+  // WindowSizer owns |state_provider| and |monitor_info_provider|.
+  // It will use the supplied monitor info provider. Used only for testing.
   WindowSizer(StateProvider* state_provider,
               MonitorInfoProvider* monitor_info_provider);
+
   virtual ~WindowSizer();
-
-  // Static factory methods to create default MonitorInfoProvider
-  // instances.  The returned object is owned by the caller.
-  static MonitorInfoProvider* CreateDefaultMonitorInfoProvider();
-
-  // An interface implemented by an object that can retrieve information about
-  // the monitors on the system.
-  class MonitorInfoProvider {
-   public:
-    MonitorInfoProvider() {}
-    virtual ~MonitorInfoProvider() {}
-
-    // Returns the bounds of the work area of the primary monitor.
-    virtual gfx::Rect GetPrimaryMonitorWorkArea() const = 0;
-
-    // Returns the bounds of the primary monitor.
-    virtual gfx::Rect GetPrimaryMonitorBounds() const = 0;
-
-    // Returns the bounds of the work area of the monitor that most closely
-    // intersects the provided bounds.
-    virtual gfx::Rect GetMonitorWorkAreaMatching(
-        const gfx::Rect& match_rect) const = 0;
-
-    // Returns the delta between the work area and the monitor bounds for the
-    // monitor that most closely intersects the provided bounds.
-    virtual gfx::Point GetBoundsOffsetMatching(
-        const gfx::Rect& match_rect) const = 0;
-
-    // Ensures number and coordinates of work areas are up-to-date.  You must
-    // call this before calling either of the below functions, as work areas can
-    // change while the program is running.
-    virtual void UpdateWorkAreas() = 0;
-
-    // Returns the number of monitors on the system.
-    size_t GetMonitorCount() const {
-      return work_areas_.size();
-    }
-
-    // Returns the bounds of the work area of the monitor at the specified
-    // index.
-    gfx::Rect GetWorkAreaAt(size_t index) const {
-      return work_areas_[index];
-    }
-
-   protected:
-    std::vector<gfx::Rect> work_areas_;
-  };
 
   // An interface implemented by an object that can retrieve state from either a
   // persistent store or an existing window.
@@ -90,7 +65,6 @@ class WindowSizer {
     // Retrieve the persisted bounds of the window. Returns true if there was
     // persisted data to retrieve state information, false otherwise.
     virtual bool GetPersistentState(gfx::Rect* bounds,
-                                    bool* maximized,
                                     gfx::Rect* work_area) const = 0;
 
     // Retrieve the bounds of the most recent window of the matching type.
@@ -99,20 +73,14 @@ class WindowSizer {
     virtual bool GetLastActiveWindowState(gfx::Rect* bounds) const = 0;
   };
 
-  // Determines the position, size and maximized state for a window as it is
-  // created. This function uses several strategies to figure out optimal size
-  // and placement, first looking for an existing active window, then falling
-  // back to persisted data from a previous session, finally utilizing a default
+  // Determines the position and size for a window as it is created. This
+  // function uses several strategies to figure out optimal size and placement,
+  // first looking for an existing active window, then falling back to persisted
+  // data from a previous session, finally utilizing a default
   // algorithm. If |specified_bounds| are non-empty, this value is returned
   // instead. For use only in testing.
-  //
-  // NOTE: |maximized| is only set if we're restoring a saved maximized window.
-  // When creating a new window based on an existing active window, standard
-  // Windows behavior is to have it always be nonmaximized, even if the existing
-  // window is maximized.
   void DetermineWindowBounds(const gfx::Rect& specified_bounds,
-                             gfx::Rect* bounds,
-                             bool* maximized) const;
+                             gfx::Rect* bounds) const;
 
   // Determines the size, position and maximized state for the browser window.
   // See documentation for DetermineWindowBounds above. Normally,
@@ -122,8 +90,7 @@ class WindowSizer {
   static void GetBrowserWindowBounds(const std::string& app_name,
                                      const gfx::Rect& specified_bounds,
                                      const Browser* browser,
-                                     gfx::Rect* window_bounds,
-                                     bool* maximized);
+                                     gfx::Rect* window_bounds);
 
   // Returns the default origin for popups of the given size.
   static gfx::Point GetDefaultPopupOrigin(const gfx::Size& size);
@@ -145,16 +112,12 @@ class WindowSizer {
   // in local state preferences. Returns true if local state exists containing
   // this information, false if this information does not exist and a default
   // size should be used.
-  bool GetSavedWindowBounds(gfx::Rect* bounds, bool* maximized) const;
+  bool GetSavedWindowBounds(gfx::Rect* bounds) const;
 
   // Gets the default window position and size if there is no last window and
   // no saved window placement in prefs. This function determines the default
   // size based on monitor size, etc.
   void GetDefaultWindowBounds(gfx::Rect* default_bounds) const;
-
-  // Returns true if the specified position is "offscreen" for the given edge,
-  // meaning that it's outside all work areas in the direction of that edge.
-  bool PositionIsOffscreen(int position, Edge edge) const;
 
   // Adjusts |bounds| to be visible onscreen, biased toward the work area of the
   // monitor containing |other_bounds|.  Despite the name, this doesn't
@@ -170,8 +133,8 @@ class WindowSizer {
       gfx::Rect* bounds) const;
 
   // Providers for persistent storage and monitor metrics.
-  StateProvider* state_provider_;
-  MonitorInfoProvider* monitor_info_provider_;
+  scoped_ptr<StateProvider> state_provider_;
+  scoped_ptr<MonitorInfoProvider> monitor_info_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSizer);
 };

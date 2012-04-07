@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/browser.h"
@@ -13,7 +14,8 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/location_bar_view_gtk.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
@@ -49,7 +51,7 @@ ReloadButtonGtk::ReloadButtonGtk(LocationBarViewGtk* location_bar,
   g_signal_connect(widget(), "expose-event", G_CALLBACK(OnExposeThunk), this);
   g_signal_connect(widget(), "leave-notify-event",
                    G_CALLBACK(OnLeaveNotifyThunk), this);
-  GTK_WIDGET_UNSET_FLAGS(widget(), GTK_CAN_FOCUS);
+  gtk_widget_set_can_focus(widget(), FALSE);
 
   gtk_widget_set_has_tooltip(widget(), TRUE);
   g_signal_connect(widget(), "query-tooltip", G_CALLBACK(OnQueryTooltipThunk),
@@ -61,8 +63,8 @@ ReloadButtonGtk::ReloadButtonGtk(LocationBarViewGtk* location_bar,
   if (theme_service_) {
     theme_service_->InitThemesFor(this);
     registrar_.Add(this,
-                   NotificationType::BROWSER_THEME_CHANGED,
-                   Source<ThemeService>(theme_service_));
+                   chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                   content::Source<ThemeService>(theme_service_));
   }
 
   // Set the default double-click timer delay to the system double-click time.
@@ -83,7 +85,7 @@ void ReloadButtonGtk::ChangeMode(Mode mode, bool force) {
   // If the change is forced, or the user isn't hovering the icon, or it's safe
   // to change it to the other image type, make the change immediately;
   // otherwise we'll let it happen later.
-  if (force || ((GTK_WIDGET_STATE(widget()) == GTK_STATE_NORMAL) &&
+  if (force || ((gtk_widget_get_state(widget()) == GTK_STATE_NORMAL) &&
       !testing_mouse_hovered_) || ((mode == MODE_STOP) ?
           !double_click_timer_.IsRunning() : (visible_mode_ != MODE_STOP))) {
     double_click_timer_.Stop();
@@ -118,22 +120,22 @@ void ReloadButtonGtk::ChangeMode(Mode mode, bool force) {
     // Go ahead and change to reload after a bit, which allows repeated reloads
     // without moving the mouse.
     if (!stop_to_reload_timer_.IsRunning()) {
-      stop_to_reload_timer_.Start(stop_to_reload_timer_delay_, this,
+      stop_to_reload_timer_.Start(FROM_HERE, stop_to_reload_timer_delay_, this,
                                   &ReloadButtonGtk::OnStopToReloadTimer);
     }
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// ReloadButtonGtk, NotificationObserver implementation:
+// ReloadButtonGtk, content::NotificationObserver implementation:
 
-void ReloadButtonGtk::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& /* details */) {
-  DCHECK(NotificationType::BROWSER_THEME_CHANGED == type);
+void ReloadButtonGtk::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  DCHECK(chrome::NOTIFICATION_BROWSER_THEME_CHANGED == type);
 
   GtkThemeService* provider = static_cast<GtkThemeService*>(
-      Source<ThemeService>(source).ptr());
+      content::Source<ThemeService>(source).ptr());
   DCHECK_EQ(provider, theme_service_);
   GtkButtonWidth = 0;
   UpdateThemeButtons();
@@ -171,7 +173,7 @@ void ReloadButtonGtk::OnClicked(GtkWidget* /* sender */) {
     }
 
     WindowOpenDisposition disposition =
-        event_utils::DispositionFromEventFlags(modifier_state_uint);
+        event_utils::DispositionFromGdkState(modifier_state_uint);
     if ((disposition == CURRENT_TAB) && location_bar_) {
       // Forcibly reset the location bar, since otherwise it won't discard any
       // ongoing user edits, since it doesn't realize this is a user-initiated
@@ -184,7 +186,7 @@ void ReloadButtonGtk::OnClicked(GtkWidget* /* sender */) {
     // here as the browser will do that when it actually starts loading (which
     // may happen synchronously, thus the need to do this before telling the
     // browser to execute the reload command).
-    double_click_timer_.Start(double_click_timer_delay_, this,
+    double_click_timer_.Start(FROM_HERE, double_click_timer_delay_, this,
                               &ReloadButtonGtk::OnDoubleClickTimer);
 
     if (browser_)
@@ -195,6 +197,7 @@ void ReloadButtonGtk::OnClicked(GtkWidget* /* sender */) {
 
 gboolean ReloadButtonGtk::OnExpose(GtkWidget* widget,
                                    GdkEventExpose* e) {
+  TRACE_EVENT0("ui::gtk", "ReloadButtonGtk::OnExpose");
   if (theme_service_ && theme_service_->UsingNativeTheme())
     return FALSE;
   return ((visible_mode_ == MODE_RELOAD) ? reload_ : stop_).OnExpose(
@@ -227,18 +230,18 @@ void ReloadButtonGtk::UpdateThemeButtons() {
 
   if (use_gtk) {
     gtk_widget_ensure_style(widget());
+    GtkStyle* style = gtk_widget_get_style(widget());
     GtkIconSet* icon_set = gtk_style_lookup_icon_set(
-        widget()->style,
+        style,
         (visible_mode_ == MODE_RELOAD) ? GTK_STOCK_REFRESH : GTK_STOCK_STOP);
     if (icon_set) {
-      GtkStateType state = static_cast<GtkStateType>(
-          GTK_WIDGET_STATE(widget()));
+      GtkStateType state = gtk_widget_get_state(widget());
       if (visible_mode_ == MODE_STOP && stop_.paint_override() != -1)
         state = static_cast<GtkStateType>(stop_.paint_override());
 
       GdkPixbuf* pixbuf = gtk_icon_set_render_icon(
           icon_set,
-          widget()->style,
+          style,
           gtk_widget_get_direction(widget()),
           state,
           GTK_ICON_SIZE_SMALL_TOOLBAR,

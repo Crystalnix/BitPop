@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,9 @@
 
 #include <string>
 
-#include "ppapi/cpp/var.h"
+#include "ppapi/c/dev/ppb_var_deprecated.h"
+#include "ppapi/cpp/private/var_private.h"
 #include "ppapi/tests/test_case.h"
-
-struct PPB_Var_Deprecated;
 
 class TestVarDeprecated : public TestCase {
  public:
@@ -18,9 +17,9 @@ class TestVarDeprecated : public TestCase {
 
   // TestCase implementation.
   virtual bool Init();
-  virtual void RunTest();
+  virtual void RunTests(const std::string& filter);
 
-  void set_var_from_page(const pp::Var& v) { var_from_page_ = v; }
+  void set_var_from_page(const pp::VarPrivate& v) { var_from_page_ = v; }
 
  protected:
   // Test case protected overrides.
@@ -41,8 +40,7 @@ class TestVarDeprecated : public TestCase {
   const PPB_Var_Deprecated* var_interface_;
 
   // Saves the var from when a value is set on the test from the page.
-  pp::Var var_from_page_;
+  pp::VarPrivate var_from_page_;
 };
 
 #endif  // PPAPI_TEST_TEST_VAR_DEPRECATED_H_
-

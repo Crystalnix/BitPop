@@ -7,11 +7,14 @@
 #pragma once
 
 #include "chrome/browser/ui/views/tab_contents/native_tab_contents_view.h"
-#include "views/widget/native_widget_win.h"
+#include "ui/views/widget/native_widget_win.h"
 
 class WebDropTarget;
-class TabContents;
 class TabContentsDragWin;
+
+namespace content {
+class WebContents;
+}
 
 class NativeTabContentsViewWin : public views::NativeWidgetWin,
                                  public NativeTabContentsView {
@@ -22,7 +25,7 @@ class NativeTabContentsViewWin : public views::NativeWidgetWin,
 
   WebDropTarget* drop_target() const { return drop_target_.get(); }
 
-  TabContents* GetTabContents() const;
+  content::WebContents* GetWebContents() const;
 
   void EndDragging();
 
@@ -33,7 +36,7 @@ class NativeTabContentsViewWin : public views::NativeWidgetWin,
   virtual RenderWidgetHostView* CreateRenderWidgetHostView(
       RenderWidgetHost* render_widget_host) OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
-  virtual void SetPageTitle(const std::wstring& title) OVERRIDE;
+  virtual void SetPageTitle(const string16& title) OVERRIDE;
   virtual void StartDragging(const WebDropData& drop_data,
                              WebKit::WebDragOperationsMask ops,
                              const SkBitmap& image,

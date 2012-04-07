@@ -1,30 +1,37 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// The purprose of SessionManager is to facilitate creation of chromotocol
+// The purpose of SessionManager is to facilitate creation of chromotocol
 // sessions. Both host and client use it to establish chromotocol
 // sessions. JingleChromotocolServer implements this inteface using
 // libjingle.
 //
 // OUTGOING SESSIONS
 // Connect() must be used to create new session to a remote host. The
-// returned sessionion is initially in INITIALIZING state. Later state is
-// changed to CONNECTED if the session is accepted by the host or CLOSED
-// if the session is rejected.
+// returned session is initially in INITIALIZING state. Later state is
+// changed to CONNECTED if the session is accepted by the host or
+// CLOSED if the session is rejected.
 //
 // INCOMING SESSIONS
 // The IncomingSessionCallback is called when a client attempts to connect.
 // The callback function decides whether the session should be accepted or
 // rejected.
 //
+// AUTHENTICATION
+// Implementations of the Session and SessionManager interfaces
+// delegate authentication to an Authenticator implementation. For
+// incoming connections authenticators are created using an
+// AuthenticatorFactory set via the set_authenticator_factory()
+// method. For outgoing sessions authenticator must be passed to the
+// Connect() method. The Session's state changes to AUTHENTICATED once
+// authentication succeeds.
+//
 // SESSION OWNERSHIP AND SHUTDOWN
-// SessionManager owns all Chromotocol Session it creates. The server
-// must not be closed while sessions created by the server are still in use.
-// When shutting down the Close() method for the sessionion and the server
-// objects must be called in the following order: Session,
-// SessionManager, JingleClient. The same order must be followed in the case
-// of rejected and failed sessions.
+// The SessionManager must not be closed or destroyed before all sessions
+// created by that SessionManager are destroyed. Caller owns Sessions
+// created by a SessionManager (except rejected
+// sessions). The SignalStrategy must outlive the SessionManager.
 //
 // PROTOCOL VERSION NEGOTIATION
 // When client connects to a host it sends a session-initiate stanza with list
@@ -50,60 +57,108 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/threading/non_thread_safe.h"
 #include "remoting/protocol/session.h"
 
-class Task;
-
 namespace remoting {
+
+class SignalStrategy;
+
 namespace protocol {
 
+class Authenticator;
+class AuthenticatorFactory;
+
+struct NetworkSettings {
+  NetworkSettings()
+      : allow_nat_traversal(false),
+        min_port(0),
+        max_port(0) {
+  }
+
+  explicit NetworkSettings(bool allow_nat_traversal_value)
+      : allow_nat_traversal(allow_nat_traversal_value),
+        min_port(0),
+        max_port(0) {
+  }
+
+  bool allow_nat_traversal;
+
+  // |min_port| and |max_port| specify range (inclusive) of ports used by
+  // P2P sessions. Any port can be used when both values are set to 0.
+  int min_port;
+  int max_port;
+};
+
 // Generic interface for Chromoting session manager.
-class SessionManager : public base::RefCountedThreadSafe<SessionManager> {
+//
+// TODO(sergeyu): Split this into two separate interfaces: one for the
+// client side and one for the host side.
+class SessionManager : public base::NonThreadSafe {
  public:
+  SessionManager() { }
+  virtual ~SessionManager() { }
+
   enum IncomingSessionResponse {
     ACCEPT,
     INCOMPATIBLE,
     DECLINE,
   };
 
-  // IncomingSessionCallback is called when a new session is received. If
-  // the callback decides to accept the session it should set the second
-  // argument to ACCEPT. Otherwise it should set it to DECLINE, or
-  // INCOMPATIBLE. INCOMPATIBLE indicates that the session has incompatible
-  // configuration, and cannot be accepted.
-  // If the callback accepts session then it must also set configuration
-  // for the new session using Session::set_config().
-  typedef Callback2<Session*, IncomingSessionResponse*>::Type
-      IncomingSessionCallback;
+  class Listener {
+   public:
+    Listener() { }
+    ~Listener() { }
 
-  // Tries to create a session to the host |jid|.
+    // Called when the session manager is ready to create outgoing
+    // sessions. May be called from Init() or after Init()
+    // returns.
+    virtual void OnSessionManagerReady() = 0;
+
+    // Called when a new session is received. If the host decides to
+    // accept the session it should set the |response| to
+    // ACCEPT. Otherwise it should set it to DECLINE, or
+    // INCOMPATIBLE. INCOMPATIBLE indicates that the session has
+    // incompatible configuration, and cannot be accepted. If the
+    // callback accepts the |session| then it must also set
+    // configuration for the |session| using Session::set_config().
+    // The callback must take ownership of the |session| if it ACCEPTs it.
+    virtual void OnIncomingSession(Session* session,
+                                   IncomingSessionResponse* response) = 0;
+  };
+
+  // Initializes the session client. Caller retains ownership of the
+  // |signal_strategy| and |listener|.
+  virtual void Init(SignalStrategy* signal_strategy,
+                    Listener* listener,
+                    const NetworkSettings& network_settings) = 0;
+
+  // Tries to create a session to the host |jid|. Must be called only
+  // after initialization has finished successfully, i.e. after
+  // Listener::OnInitialized() has been called.
   //
   // |host_jid| is the full jid of the host to connect to.
-  // |host_public_key| is used to encrypt the client authentication token.
-  // |client_oauth_token| is a short-lived OAuth token identify the client.
+  // |authenticator| is a client authenticator for the session.
   // |config| contains the session configurations that the client supports.
   // |state_change_callback| is called when the connection state changes.
-  //
-  // This function may be called from any thread. The |state_change_callback|
-  // is invoked on the network thread.
-  //
-  // Ownership of the |config| is passed to the new session.
-  virtual scoped_refptr<Session> Connect(
+  virtual scoped_ptr<Session> Connect(
       const std::string& host_jid,
-      const std::string& client_token,
-      CandidateSessionConfig* config,
-      Session::StateChangeCallback* state_change_callback) = 0;
+      scoped_ptr<Authenticator> authenticator,
+      scoped_ptr<CandidateSessionConfig> config,
+      const Session::StateChangeCallback& state_change_callback) = 0;
 
-  // Close session manager and all current sessions. |close_task| is executed
-  // after the session client is actually closed. No callbacks are called after
-  // |closed_task| is executed.
-  virtual void Close(Task* closed_task) = 0;
+  // Close session manager. Can be called only after all corresponding
+  // sessions are destroyed. No callbacks are called after this method
+  // returns.
+  virtual void Close() = 0;
 
- protected:
-  friend class base::RefCountedThreadSafe<SessionManager>;
-
-  SessionManager() { }
-  virtual ~SessionManager() { }
+  // Set authenticator factory that should be used to authenticate
+  // incoming connection. No connections will be accepted if
+  // authenticator factory isn't set. Must not be called more than
+  // once per SessionManager because it may not be safe to delete
+  // factory before all authenticators it created are deleted.
+  virtual void set_authenticator_factory(
+      scoped_ptr<AuthenticatorFactory> authenticator_factory) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SessionManager);

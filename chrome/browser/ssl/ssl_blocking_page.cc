@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,20 +10,26 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/dom_operation_notification_details.h"
-#include "chrome/browser/ssl/ssl_cert_error_handler.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
+#include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "content/browser/cert_store.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/browser/ssl/ssl_cert_error_handler.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/ssl_status.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::NavigationController;
+using content::NavigationEntry;
 
 namespace {
 
@@ -42,21 +48,23 @@ void RecordSSLBlockingPageStats(SSLBlockingPageEvent event) {
 
 // Note that we always create a navigation entry with SSL errors.
 // No error happening loading a sub-resource triggers an interstitial so far.
-SSLBlockingPage::SSLBlockingPage(SSLCertErrorHandler* handler,
-                                 Delegate* delegate,
-                                 ErrorLevel error_level)
-    : ChromeInterstitialPage(handler->GetTabContents(),
-                             true,
-                             handler->request_url()),
+SSLBlockingPage::SSLBlockingPage(
+    SSLCertErrorHandler* handler,
+    bool overridable,
+    const base::Callback<void(SSLCertErrorHandler*, bool)>& callback)
+    : ChromeInterstitialPage(
+          tab_util::GetWebContentsByID(
+              handler->render_process_host_id(), handler->tab_contents_id()),
+          true,
+          handler->request_url()),
       handler_(handler),
-      delegate_(delegate),
-      delegate_has_been_notified_(false),
-      error_level_(error_level) {
+      callback_(callback),
+      overridable_(overridable) {
   RecordSSLBlockingPageStats(SHOW);
 }
 
 SSLBlockingPage::~SSLBlockingPage() {
-  if (!delegate_has_been_notified_) {
+  if (!callback_.is_null()) {
     // The page is closed without the user having chosen what to do, default to
     // deny.
     NotifyDenyCertificate();
@@ -66,7 +74,10 @@ SSLBlockingPage::~SSLBlockingPage() {
 std::string SSLBlockingPage::GetHTMLContents() {
   // Let's build the html error page.
   DictionaryValue strings;
-  SSLErrorInfo error_info = delegate_->GetSSLErrorInfo(handler_);
+  SSLErrorInfo error_info = SSLErrorInfo::CreateError(
+      SSLErrorInfo::NetErrorToErrorType(handler_->cert_error()),
+      handler_->ssl_info().cert, handler_->request_url());
+
   strings.SetString("headLine", error_info.title());
   strings.SetString("description", error_info.details());
 
@@ -75,7 +86,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
   SetExtraInfo(&strings, error_info.extra_information());
 
   int resource_id;
-  if (error_level_ == ERROR_OVERRIDABLE) {
+  if (overridable_) {
     resource_id = IDR_SSL_ROAD_BLOCK_HTML;
     strings.SetString("title",
                       l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_TITLE));
@@ -83,13 +94,18 @@ std::string SSLBlockingPage::GetHTMLContents() {
                       l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_PROCEED));
     strings.SetString("exit",
                       l10n_util::GetStringUTF16(IDS_SSL_BLOCKING_PAGE_EXIT));
+    strings.SetString("shouldNotProceed",
+                      l10n_util::GetStringUTF16(
+                          IDS_SSL_BLOCKING_PAGE_SHOULD_NOT_PROCEED));
   } else {
-    DCHECK_EQ(error_level_, ERROR_FATAL);
     resource_id = IDR_SSL_ERROR_HTML;
     strings.SetString("title",
                       l10n_util::GetStringUTF16(IDS_SSL_ERROR_PAGE_TITLE));
     strings.SetString("back",
                       l10n_util::GetStringUTF16(IDS_SSL_ERROR_PAGE_BACK));
+    strings.SetString("cannotProceed",
+                      l10n_util::GetStringUTF16(
+                          IDS_SSL_ERROR_PAGE_CANNOT_PROCEED));
   }
 
   strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
@@ -103,16 +119,17 @@ std::string SSLBlockingPage::GetHTMLContents() {
 void SSLBlockingPage::UpdateEntry(NavigationEntry* entry) {
   const net::SSLInfo& ssl_info = handler_->ssl_info();
   int cert_id = CertStore::GetInstance()->StoreCert(
-      ssl_info.cert, tab()->render_view_host()->process()->id());
+      ssl_info.cert, tab()->GetRenderProcessHost()->GetID());
 
-  entry->ssl().set_security_style(SECURITY_STYLE_AUTHENTICATION_BROKEN);
-  entry->ssl().set_cert_id(cert_id);
-  entry->ssl().set_cert_status(ssl_info.cert_status);
-  entry->ssl().set_security_bits(ssl_info.security_bits);
-  NotificationService::current()->Notify(
-      NotificationType::SSL_VISIBLE_STATE_CHANGED,
-      Source<NavigationController>(&tab()->controller()),
-      NotificationService::NoDetails());
+  entry->GetSSL().security_style =
+      content::SECURITY_STYLE_AUTHENTICATION_BROKEN;
+  entry->GetSSL().cert_id = cert_id;
+  entry->GetSSL().cert_status = ssl_info.cert_status;
+  entry->GetSSL().security_bits = ssl_info.security_bits;
+  content::NotificationService::current()->Notify(
+      content::NOTIFICATION_SSL_VISIBLE_STATE_CHANGED,
+      content::Source<NavigationController>(&tab()->GetController()),
+      content::NotificationService::NoDetails());
 }
 
 void SSLBlockingPage::CommandReceived(const std::string& command) {
@@ -141,24 +158,28 @@ void SSLBlockingPage::DontProceed() {
 }
 
 void SSLBlockingPage::NotifyDenyCertificate() {
-  DCHECK(!delegate_has_been_notified_);
+  // It's possible that callback_ may not exist if the user clicks "Proceed"
+  // followed by pressing the back button before the interstitial is hidden.
+  // In that case the certificate will still be treated as allowed.
+  if (callback_.is_null())
+    return;
 
-  delegate_->OnDenyCertificate(handler_);
-  delegate_has_been_notified_ = true;
+  callback_.Run(handler_, false);
+  callback_.Reset();
 }
 
 void SSLBlockingPage::NotifyAllowCertificate() {
-  DCHECK(!delegate_has_been_notified_);
+  DCHECK(!callback_.is_null());
 
-  delegate_->OnAllowCertificate(handler_);
-  delegate_has_been_notified_ = true;
+  callback_.Run(handler_, true);
+  callback_.Reset();
 }
 
 // static
 void SSLBlockingPage::SetExtraInfo(
     DictionaryValue* strings,
     const std::vector<string16>& extra_info) {
-  DCHECK(extra_info.size() < 5);  // We allow 5 paragraphs max.
+  DCHECK_LT(extra_info.size(), 5U);  // We allow 5 paragraphs max.
   const char* keys[5] = {
       "moreInfo1", "moreInfo2", "moreInfo3", "moreInfo4", "moreInfo5"
   };

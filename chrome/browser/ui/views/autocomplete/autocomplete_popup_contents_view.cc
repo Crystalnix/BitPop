@@ -4,6 +4,12 @@
 
 #include "chrome/browser/ui/views/autocomplete/autocomplete_popup_contents_view.h"
 
+#if defined(OS_WIN)
+#include <commctrl.h>
+#include <dwmapi.h>
+#include <objidl.h>
+#endif
+
 #include "base/compiler_specific.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
@@ -12,7 +18,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/views/autocomplete/autocomplete_result_view.h"
-#include "chrome/browser/ui/views/bubble/bubble_border.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -24,26 +29,23 @@
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
+#include "ui/views/bubble/bubble_border.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/painter.h"
+#include "ui/views/widget/widget.h"
 #include "unicode/ubidi.h"
-#include "views/controls/button/text_button.h"
-#include "views/controls/label.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/painter.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
 
 #if defined(OS_WIN)
-#include <commctrl.h>
-#include <dwmapi.h>
-#include <objidl.h>
-
 #include "base/win/scoped_gdi_object.h"
-#include "views/widget/native_widget_win.h"
+#if !defined(USE_AURA)
+#include "ui/views/widget/native_widget_win.h"
 #endif
-
-#if defined(TOOLKIT_USES_GTK)
-#include "ui/gfx/skia_utils_gtk.h"
+#endif
+#if defined(USE_AURA)
+#include "ash/wm/window_animations.h"
 #endif
 
 namespace {
@@ -116,23 +118,6 @@ class OptInButtonBorder : public views::Border {
 
   DISALLOW_COPY_AND_ASSIGN(OptInButtonBorder);
 };
-
-gfx::NativeView GetRelativeWindowForPopup(gfx::NativeView edit_native_view) {
-#if defined(OS_WIN)
-  // When an IME is attached to the rich-edit control, retrieve its window
-  // handle and show this popup window under the IME windows.
-  // Otherwise, show this popup window under top-most windows.
-  // TODO(hbono): http://b/1111369 if we exclude this popup window from the
-  // display area of IME windows, this workaround becomes unnecessary.
-  HWND ime_window = ImmGetDefaultIMEWnd(edit_native_view);
-  return ime_window ? ime_window : HWND_NOTOPMOST;
-#elif defined(TOOLKIT_USES_GTK)
-  GtkWidget* toplevel = gtk_widget_get_toplevel(edit_native_view);
-  DCHECK(GTK_WIDGET_TOPLEVEL(toplevel));
-  return toplevel;
-#endif
-}
-
 }  // namespace
 
 class AutocompletePopupContentsView::AutocompletePopupWidget
@@ -143,7 +128,7 @@ class AutocompletePopupContentsView::AutocompletePopupWidget
   virtual ~AutocompletePopupWidget() {}
 
  private:
-   DISALLOW_COPY_AND_ASSIGN(AutocompletePopupWidget);
+  DISALLOW_COPY_AND_ASSIGN(AutocompletePopupWidget);
 };
 
 class AutocompletePopupContentsView::InstantOptInView
@@ -158,7 +143,7 @@ class AutocompletePopupContentsView::InstantOptInView
                         SkColorSetRGB(255, 242, 183),
                         SkColorSetRGB(250, 230, 145))) {
     views::Label* label = new views::Label(
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_INSTANT_OPT_IN_LABEL)));
+        l10n_util::GetStringUTF16(IDS_INSTANT_OPT_IN_LABEL));
     label->SetFont(label_font);
 
     views::GridLayout* layout = new views::GridLayout(this);
@@ -192,12 +177,13 @@ class AutocompletePopupContentsView::InstantOptInView
 
   virtual void OnPaint(gfx::Canvas* canvas) {
     canvas->Save();
-    canvas->TranslateInt(kOptInBackgroundHInset, kOptInBackgroundVInset);
+    canvas->Translate(gfx::Point(kOptInBackgroundHInset,
+                                 kOptInBackgroundVInset));
     bg_painter_->Paint(width() - kOptInBackgroundHInset * 2,
                        height() - kOptInBackgroundVInset * 2, canvas);
-    canvas->DrawRectInt(ResourceBundle::toolbar_separator_color, 0, 0,
-                        width() - kOptInBackgroundHInset * 2,
-                        height() - kOptInBackgroundVInset * 2);
+    canvas->DrawRect(gfx::Rect(0, 0, width() - kOptInBackgroundHInset * 2,
+                               height() - kOptInBackgroundVInset * 2),
+                     ResourceBundle::toolbar_separator_color);
     canvas->Restore();
   }
 
@@ -206,12 +192,11 @@ class AutocompletePopupContentsView::InstantOptInView
   views::View* CreateButton(int id, const gfx::Font& font) {
     // NOTE: we can't use NativeButton as the popup is a layered window and
     // native buttons don't draw  in layered windows.
-    // TODO: these buttons look crap. Figure out the right border/background to
-    // use.
-    views::TextButton* button =
-        new views::TextButton(this, UTF16ToWide(l10n_util::GetStringUTF16(id)));
+    // TODO(sky): these buttons look crap. Figure out the right
+    // border/background to use.
+    views::TextButton* button = new views::TextButton(
+        this, l10n_util::GetStringUTF16(id));
     button->set_border(new OptInButtonBorder());
-    button->SetNormalHasBorder(true);
     button->set_tag(id);
     button->SetFont(font);
     button->set_animate_on_state_change(false);
@@ -231,11 +216,11 @@ AutocompletePopupContentsView::AutocompletePopupContentsView(
     const gfx::Font& font,
     OmniboxView* omnibox_view,
     AutocompleteEditModel* edit_model,
-    Profile* profile,
-    const views::View* location_bar)
-    : model_(new AutocompletePopupModel(this, edit_model, profile)),
+    views::View* location_bar)
+    : model_(new AutocompletePopupModel(this, edit_model)),
       opt_in_view_(NULL),
       omnibox_view_(omnibox_view),
+      profile_(edit_model->profile()),
       location_bar_(location_bar),
       result_font_(font.DeriveFont(kEditFontAdjust)),
       result_bold_font_(result_font_.DeriveFont(0, gfx::Font::BOLD)),
@@ -243,7 +228,9 @@ AutocompletePopupContentsView::AutocompletePopupContentsView(
       ALLOW_THIS_IN_INITIALIZER_LIST(size_animation_(this)) {
   // The following little dance is required because set_border() requires a
   // pointer to a non-const object.
-  BubbleBorder* bubble_border = new BubbleBorder(BubbleBorder::NONE);
+  views::BubbleBorder* bubble_border =
+      new views::BubbleBorder(views::BubbleBorder::NONE,
+                              views::BubbleBorder::NO_SHADOW);
   bubble_border_ = bubble_border;
   set_border(bubble_border);
   // The contents is owned by the LocationBarView.
@@ -276,8 +263,8 @@ void AutocompletePopupContentsView::LayoutChildren() {
   gfx::Rect contents_rect = GetContentsBounds();
   int top = contents_rect.y();
   for (int i = 0; i < child_count(); ++i) {
-    View* v = GetChildViewAt(i);
-    if (v->IsVisible()) {
+    View* v = child_at(i);
+    if (v->visible()) {
       v->SetBounds(contents_rect.x(), top, contents_rect.width(),
                    v->GetPreferredSize().height());
       top = v->bounds().bottom();
@@ -293,7 +280,7 @@ bool AutocompletePopupContentsView::IsOpen() const {
 }
 
 void AutocompletePopupContentsView::InvalidateLine(size_t line) {
-  GetChildViewAt(static_cast<int>(line))->SchedulePaint();
+  child_at(static_cast<int>(line))->SchedulePaint();
 }
 
 void AutocompletePopupContentsView::UpdatePopupAppearance() {
@@ -315,7 +302,7 @@ void AutocompletePopupContentsView::UpdatePopupAppearance() {
   // we have enough row views.
   size_t child_rv_count = child_count();
   if (opt_in_view_) {
-    DCHECK(child_rv_count > 0);
+    DCHECK_GT(child_rv_count, 0u);
     child_rv_count--;
   }
   for (size_t i = 0; i < model_->result().size(); ++i) {
@@ -325,15 +312,15 @@ void AutocompletePopupContentsView::UpdatePopupAppearance() {
           CreateResultView(this, i, result_font_, result_bold_font_);
       AddChildViewAt(result_view, static_cast<int>(i));
     } else {
-      result_view = static_cast<AutocompleteResultView*>(GetChildViewAt(i));
+      result_view = static_cast<AutocompleteResultView*>(child_at(i));
       result_view->SetVisible(true);
     }
     result_view->SetMatch(GetMatchAtIndex(i));
   }
   for (size_t i = model_->result().size(); i < child_rv_count; ++i)
-    GetChildViewAt(i)->SetVisible(false);
+    child_at(i)->SetVisible(false);
 
-  PromoCounter* counter = model_->profile()->GetInstantPromoCounter();
+  PromoCounter* counter = profile_->GetInstantPromoCounter();
   if (!opt_in_view_ && counter && counter->ShouldShow(base::Time::Now())) {
     opt_in_view_ = new InstantOptInView(this, result_bold_font_, result_font_);
     AddChildView(opt_in_view_);
@@ -359,12 +346,24 @@ void AutocompletePopupContentsView::UpdatePopupAppearance() {
     views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
     params.can_activate = false;
     params.transparent = true;
-    params.parent = location_bar_->GetWidget()->GetNativeView();
+    params.parent_widget = location_bar_->GetWidget();
     params.bounds = GetPopupBounds();
     popup_->Init(params);
+#if defined(USE_AURA)
+    // TODO(beng): This should be if defined(USE_ASH)
+    ash::SetWindowVisibilityAnimationType(
+        popup_->GetNativeView(),
+        ash::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
+#endif
     popup_->SetContentsView(this);
-    popup_->MoveAbove(
-        GetRelativeWindowForPopup(omnibox_view_->GetNativeView()));
+    popup_->StackAbove(omnibox_view_->GetRelativeWindowForPopup());
+    if (!popup_.get()) {
+      // For some IMEs GetRelativeWindowForPopup triggers the omnibox to lose
+      // focus, thereby closing (and destroying) the popup.
+      // TODO(sky): this won't be needed once we close the omnibox on input
+      // window showing.
+      return;
+    }
     popup_->Show();
   } else {
     // Animate the popup shrinking, but don't animate growing larger since that
@@ -508,7 +507,7 @@ void AutocompletePopupContentsView::OnMouseExited(
 // AutocompletePopupContentsView, protected:
 
 void AutocompletePopupContentsView::PaintResultViews(gfx::CanvasSkia* canvas) {
-  canvas->drawColor(AutocompleteResultView::GetColor(
+  canvas->sk_canvas()->drawColor(AutocompleteResultView::GetColor(
       AutocompleteResultView::NORMAL, AutocompleteResultView::BACKGROUND));
   View::PaintChildren(canvas);
 }
@@ -517,7 +516,7 @@ int AutocompletePopupContentsView::CalculatePopupHeight() {
   DCHECK_GE(static_cast<size_t>(child_count()), model_->result().size());
   int popup_height = 0;
   for (size_t i = 0; i < model_->result().size(); ++i)
-    popup_height += GetChildViewAt(i)->GetPreferredSize().height();
+    popup_height += child_at(i)->GetPreferredSize().height();
   return popup_height +
       (opt_in_view_ ? opt_in_view_->GetPreferredSize().height() : 0);
 }
@@ -544,7 +543,7 @@ void AutocompletePopupContentsView::OnPaint(gfx::Canvas* canvas) {
   // Instead, we paint all our children into a second canvas and use that as a
   // shader to fill a path representing the round-rect clipping region. This
   // yields a nice anti-aliased edge.
-  gfx::CanvasSkia contents_canvas(width(), height(), true);
+  gfx::CanvasSkia contents_canvas(size(), true);
   PaintResultViews(&contents_canvas);
 
   // We want the contents background to be slightly transparent so we can see
@@ -558,7 +557,7 @@ void AutocompletePopupContentsView::OnPaint(gfx::Canvas* canvas) {
   paint.setAntiAlias(true);
 
   SkShader* shader = SkShader::CreateBitmapShader(
-      contents_canvas.getDevice()->accessBitmap(false),
+      contents_canvas.sk_canvas()->getDevice()->accessBitmap(false),
       SkShader::kClamp_TileMode,
       SkShader::kClamp_TileMode);
   paint.setShader(shader);
@@ -566,7 +565,7 @@ void AutocompletePopupContentsView::OnPaint(gfx::Canvas* canvas) {
 
   gfx::Path path;
   MakeContentsPath(&path, GetContentsBounds());
-  canvas->AsCanvasSkia()->drawPath(path, paint);
+  canvas->GetSkCanvas()->drawPath(path, paint);
 
   // Now we paint the border, so it will be alpha-blended atop the contents.
   // This looks slightly better in the corners than drawing the contents atop
@@ -599,12 +598,12 @@ void AutocompletePopupContentsView::MakeContentsPath(
            SkIntToScalar(bounding_rect.right()),
            SkIntToScalar(bounding_rect.bottom()));
 
-  SkScalar radius = SkIntToScalar(BubbleBorder::GetCornerRadius());
+  SkScalar radius = SkIntToScalar(views::BubbleBorder::GetCornerRadius());
   path->addRoundRect(rect, radius, radius);
 }
 
 void AutocompletePopupContentsView::UpdateBlurRegion() {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // We only support background blurring on Vista with Aero-Glass enabled.
   if (!views::NativeWidgetWin::IsAeroGlassEnabled() || !GetWidget())
     return;
@@ -617,11 +616,7 @@ void AutocompletePopupContentsView::UpdateBlurRegion() {
 
   // Translate the contents rect into widget coordinates, since that's what
   // DwmEnableBlurBehindWindow expects a region in.
-  gfx::Rect contents_rect = GetContentsBounds();
-  gfx::Point origin(contents_rect.origin());
-  views::View::ConvertPointToWidget(this, &origin);
-  contents_rect.set_origin(origin);
-
+  gfx::Rect contents_rect = ConvertRectToWidget(GetContentsBounds());
   gfx::Path contents_path;
   MakeContentsPath(&contents_path, contents_rect);
   base::win::ScopedGDIObject<HRGN> popup_region;
@@ -636,7 +631,7 @@ void AutocompletePopupContentsView::MakeCanvasTransparent(
   // Allow the window blur effect to show through the popup background.
   SkAlpha alpha = GetThemeProvider()->ShouldUseNativeFrame() ?
       kGlassPopupAlpha : kOpaquePopupAlpha;
-  canvas->AsCanvasSkia()->drawColor(SkColorSetA(
+  canvas->GetSkCanvas()->drawColor(SkColorSetA(
       AutocompleteResultView::GetColor(AutocompleteResultView::NORMAL,
       AutocompleteResultView::BACKGROUND), alpha), SkXfermode::kDstIn_Mode);
 }
@@ -665,7 +660,7 @@ size_t AutocompletePopupContentsView::GetIndexForPoint(
   int nb_match = model_->result().size();
   DCHECK(nb_match <= child_count());
   for (int i = 0; i < nb_match; ++i) {
-    views::View* child = GetChildViewAt(i);
+    views::View* child = child_at(i);
     gfx::Point point_in_child_coords(point);
     View::ConvertPointToView(this, child, &point_in_child_coords);
     if (child->HitTest(point_in_child_coords))
@@ -700,12 +695,12 @@ gfx::Rect AutocompletePopupContentsView::CalculateTargetBounds(int h) {
 void AutocompletePopupContentsView::UserPressedOptIn(bool opt_in) {
   delete opt_in_view_;
   opt_in_view_ = NULL;
-  PromoCounter* counter = model_->profile()->GetInstantPromoCounter();
+  PromoCounter* counter = profile_->GetInstantPromoCounter();
   DCHECK(counter);
   counter->Hide();
   if (opt_in) {
     browser::ShowInstantConfirmDialogIfNecessary(
-        location_bar_->GetWindow()->GetNativeWindow(), model_->profile());
+        location_bar_->GetWidget()->GetNativeWindow(), profile_);
   }
   UpdatePopupAppearance();
 }

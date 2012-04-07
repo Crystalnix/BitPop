@@ -1,10 +1,4 @@
-// Copyright 2008, Google Inc.
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +8,7 @@
 #include "base/test/test_file_util.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "webkit/glue/plugins/plugin_list.h"
+#include "webkit/plugins/npapi/plugin_list.h"
 
 namespace npapi_test {
 const char kTestCompleteCookie[] = "status";
@@ -22,6 +16,9 @@ const char kTestCompleteSuccess[] = "OK";
 }  // namespace npapi_test.
 
 NPAPITesterBase::NPAPITesterBase() {
+  // Some NPAPI tests schedule garbage collection to force object tear-down.
+  launch_arguments_.AppendSwitchASCII(switches::kJavaScriptFlags,
+                                      "--expose_gc");
 }
 
 void NPAPITesterBase::SetUp() {

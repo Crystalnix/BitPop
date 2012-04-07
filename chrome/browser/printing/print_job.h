@@ -10,10 +10,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/printing/print_job_worker_owner.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
-class GURL;
 class Thread;
 
 namespace printing {
@@ -34,7 +33,7 @@ class PrinterQuery;
 // reference to the job to be sure it is kept alive. All the code in this class
 // runs in the UI thread.
 class PrintJob : public PrintJobWorkerOwner,
-                 public NotificationObserver,
+                 public content::NotificationObserver,
                  public MessageLoop::DestructionObserver {
  public:
   // Create a empty PrintJob. When initializing with this constructor,
@@ -46,21 +45,21 @@ class PrintJob : public PrintJobWorkerOwner,
   void Initialize(PrintJobWorkerOwner* job, PrintedPagesSource* source,
                   int page_count);
 
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // PrintJobWorkerOwner
+  // PrintJobWorkerOwner implementation.
   virtual void GetSettingsDone(const PrintSettings& new_settings,
-                               PrintingContext::Result result);
-  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner);
-  virtual MessageLoop* message_loop();
-  virtual const PrintSettings& settings() const;
-  virtual int cookie() const;
+                               PrintingContext::Result result) OVERRIDE;
+  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) OVERRIDE;
+  virtual MessageLoop* message_loop() OVERRIDE;
+  virtual const PrintSettings& settings() const OVERRIDE;
+  virtual int cookie() const OVERRIDE;
 
-  // DestructionObserver
-  virtual void WillDestroyCurrentMessageLoop();
+  // DestructionObserver implementation.
+  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
 
   // Starts the actual printing. Signals the worker that it should begin to
   // spool as soon as data is available.
@@ -109,7 +108,7 @@ class PrintJob : public PrintJobWorkerOwner,
   // eventual deadlock.
   void ControlledWorkerShutdown();
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Main message loop reference. Used to send notifications in the right
   // thread.

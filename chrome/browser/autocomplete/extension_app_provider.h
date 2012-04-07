@@ -20,15 +20,14 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-
-class TemplateURLModel;
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class ExtensionAppProvider : public AutocompleteProvider,
-                             public NotificationObserver {
+                             public content::NotificationObserver {
  public:
   ExtensionAppProvider(ACProviderListener* listener, Profile* profile);
 
@@ -41,11 +40,20 @@ class ExtensionAppProvider : public AutocompleteProvider,
                      bool minimal_changes) OVERRIDE;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ExtensionAppProviderTest, CreateMatchSanitize);
+
   // An ExtensionApp is a pair of Extension Name and the Launch URL.
   typedef std::pair<string16, string16> ExtensionApp;
   typedef std::vector<ExtensionApp> ExtensionApps;
 
   virtual ~ExtensionAppProvider();
+
+  // Construct a match for the specified parameters.
+  AutocompleteMatch CreateAutocompleteMatch(const AutocompleteInput& input,
+                                            const string16& name,
+                                            const string16& url,
+                                            size_t name_match_index,
+                                            size_t url_match_index);
 
   // Fetch the current app list and cache it locally.
   void RefreshAppList();
@@ -59,12 +67,12 @@ class ExtensionAppProvider : public AutocompleteProvider,
                          int target_length,
                          const GURL& url);
 
-  // NotificationObserver implementation:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver implementation:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Our cache of ExtensionApp objects (name + url) representing the extension
   // apps we know about.

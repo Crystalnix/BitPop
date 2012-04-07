@@ -10,8 +10,13 @@ ResourceDispatcherTest.CrossSiteAfterCrash
 NewTabUITest.NTPHasThumbnails
 # http://crbug.com/45574   Unhappy on ChromeOS valgrind
 LayoutPluginTester.UnloadNoCrash
-# These tests fail due to timeouts, see http://crbug.com/64619
-OptionsUITest.CommandAgainGoesBackToOptionsTab
-OptionsUITest.TwoCommandsOneTab
 # Fails on chromeos. http://crbug.com/84294.
 PPAPITest.Transport
+# Leaking memory due to flakiness. http://crbug.com/77442
+WorkerFileSystemTest.ResolveURLHttpTests
+# Leaking memory due to flakiness. http://crbug.com/31739
+SessionHistoryTest.BasicBackForward
+# Times out on CrOS pretty often. http://crbug.com/92535
+AutomatedUITestBase.FindInPage
+# Fails consistently. http://crbug.com/97107
+RunInBackgroundTest.RunInBackgroundBasicTest

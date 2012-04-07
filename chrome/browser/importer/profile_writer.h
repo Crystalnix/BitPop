@@ -16,12 +16,13 @@
 #include "chrome/browser/history/history_types.h"
 #include "googleurl/src/gurl.h"
 
-class BookmarkModel;
 class Profile;
 class TemplateURL;
 
-namespace webkit_glue {
+namespace webkit {
+namespace forms {
 struct PasswordForm;
+}
 }
 
 #if defined(OS_WIN)
@@ -35,6 +36,7 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   struct BookmarkEntry {
     BookmarkEntry();
     ~BookmarkEntry();
+    bool operator==(const BookmarkEntry& other) const;
 
     bool in_toolbar;
     bool is_folder;
@@ -50,10 +52,10 @@ class ProfileWriter : public base::RefCountedThreadSafe<ProfileWriter> {
   // If the models haven't been loaded, the importer waits to run until they've
   // completed.
   virtual bool BookmarkModelIsLoaded() const;
-  virtual bool TemplateURLModelIsLoaded() const;
+  virtual bool TemplateURLServiceIsLoaded() const;
 
   // Helper methods for adding data to local stores.
-  virtual void AddPasswordForm(const webkit_glue::PasswordForm& form);
+  virtual void AddPasswordForm(const webkit::forms::PasswordForm& form);
 
 #if defined(OS_WIN)
   virtual void AddIE7PasswordInfo(const IE7PasswordInfo& info);

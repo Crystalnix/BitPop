@@ -35,6 +35,7 @@
 # error You should only be including windows/port.cc in a windows environment!
 #endif
 
+#define NOMINMAX       // so std::max, below, compiles correctly
 #include <config.h>
 #include <string.h>    // for strlen(), memset(), memcmp()
 #include <assert.h>
@@ -43,28 +44,11 @@
 #include "port.h"
 #include "base/logging.h"
 #include "base/spinlock.h"
+#include "internal_logging.h"
 #include "system-alloc.h"
 
 // -----------------------------------------------------------------------
 // Basic libraries
-
-// These call the windows _vsnprintf, but always NUL-terminate.
-int safe_vsnprintf(char *str, size_t size, const char *format, va_list ap) {
-  if (size == 0)        // not even room for a \0?
-    return -1;          // not what C99 says to do, but what windows does
-  str[size-1] = '\0';
-  return _vsnprintf(str, size-1, format, ap);
-}
-
-#ifndef HAVE_SNPRINTF
-int snprintf(char *str, size_t size, const char *format, ...) {
-  va_list ap;
-  va_start(ap, format);
-  const int r = vsnprintf(str, size, format, ap);
-  va_end(ap);
-  return r;
-}
-#endif
 
 int getpagesize() {
   static int pagesize = 0;
@@ -77,14 +61,27 @@ int getpagesize() {
   return pagesize;
 }
 
-extern "C" PERFTOOLS_DLL_DECL void* __sbrk(ptrdiff_t increment) {
+extern "C" PERFTOOLS_DLL_DECL void* __sbrk(std::ptrdiff_t increment) {
   LOG(FATAL, "Windows doesn't implement sbrk!\n");
   return NULL;
 }
 
+// We need to write to 'stderr' without having windows allocate memory.
+// The safest way is via a low-level call like WriteConsoleA().  But
+// even then we need to be sure to print in small bursts so as to not
+// require memory allocation.
+extern "C" PERFTOOLS_DLL_DECL void WriteToStderr(const char* buf, int len) {
+  // Looks like windows allocates for writes of >80 bytes
+  for (int i = 0; i < len; i += 80) {
+    write(STDERR_FILENO, buf + i, std::min(80, len - i));
+  }
+}
+
+
 // -----------------------------------------------------------------------
 // Threads code
 
+// Declared (not extern "C") in thread_cache.h
 bool CheckIfKernelSupportsTLS() {
   // TODO(csilvers): return true (all win's since win95, at least, support this)
   return false;
@@ -105,9 +102,15 @@ bool CheckIfKernelSupportsTLS() {
 // Force a reference to p_thread_callback_tcmalloc and p_process_term_tcmalloc
 // to prevent whole program optimization from discarding the variables.
 #ifdef _MSC_VER
+#if defined(_M_IX86)
 #pragma comment(linker, "/INCLUDE:__tls_used")
 #pragma comment(linker, "/INCLUDE:_p_thread_callback_tcmalloc")
 #pragma comment(linker, "/INCLUDE:_p_process_term_tcmalloc")
+#elif defined(_M_X64)
+#pragma comment(linker, "/INCLUDE:_tls_used")
+#pragma comment(linker, "/INCLUDE:p_thread_callback_tcmalloc")
+#pragma comment(linker, "/INCLUDE:p_process_term_tcmalloc")
+#endif
 #endif
 
 // When destr_fn eventually runs, it's supposed to take as its
@@ -151,7 +154,8 @@ static void NTAPI on_tls_callback(HINSTANCE h, DWORD dwReason, PVOID pv) {
 extern "C" {
 // This tells the linker to run these functions.
 #pragma data_seg(push, old_seg)
-#pragma data_seg(".CRT$XLB")
+  // Use CRT$XLY instead of CRT$XLB to ensure we're called LATER in sequence.
+#pragma data_seg(".CRT$XLY")
 void (NTAPI *p_thread_callback_tcmalloc)(
     HINSTANCE h, DWORD dwReason, PVOID pv) = on_tls_callback;
 #pragma data_seg(".CRT$XTU")
@@ -173,7 +177,7 @@ BOOL WINAPI DllMain(HINSTANCE h, DWORD dwReason, PVOID pv) {
 
 #endif  // #ifdef _MSC_VER
 
-pthread_key_t PthreadKeyCreate(void (*destr_fn)(void*)) {
+extern "C" pthread_key_t PthreadKeyCreate(void (*destr_fn)(void*)) {
   // Semantics are: we create a new key, and then promise to call
   // destr_fn with TlsGetValue(key) when the thread is destroyed
   // (as long as TlsGetValue(key) is not NULL).
@@ -187,9 +191,37 @@ pthread_key_t PthreadKeyCreate(void (*destr_fn)(void*)) {
   return key;
 }
 
+// NOTE: this is Win2K and later.  For Win98 we could use a CRITICAL_SECTION...
+extern "C" int perftools_pthread_once(pthread_once_t *once_control,
+                                      void (*init_routine)(void)) {
+  // Try for a fast path first. Note: this should be an acquire semantics read.
+  // It is on x86 and x64, where Windows runs.
+  if (*once_control != 1) {
+    while (true) {
+      switch (InterlockedCompareExchange(once_control, 2, 0)) {
+        case 0:
+          init_routine();
+          InterlockedExchange(once_control, 1);
+          return 0;
+        case 1:
+          // The initializer has already been executed
+          return 0;
+        default:
+          // The initializer is being processed by another thread
+          SwitchToThread();
+      }
+    }
+  }
+  return 0;
+}
+
 
 // -----------------------------------------------------------------------
 // These functions replace system-alloc.cc
+
+// The current system allocator. Because we don't link with system-alloc.cc,
+// we need to define our own.
+SysAllocator* sys_alloc = NULL;
 
 // This is mostly like MmapSysAllocator::Alloc, except it does these weird
 // munmap's in the middle of the page, which is forbidden in windows.
@@ -225,6 +257,31 @@ extern void* TCMalloc_SystemAlloc(size_t size, size_t *actual_size,
   assert((reinterpret_cast<uintptr_t>(result) & (alignment - 1)) == 0);
 
   return result;
+}
+
+size_t TCMalloc_SystemAddGuard(void* start, size_t size) {
+  static size_t pagesize = 0;
+  if (pagesize == 0) {
+    SYSTEM_INFO system_info;
+    GetSystemInfo(&system_info);
+    pagesize = system_info.dwPageSize;
+  }
+
+  // We know that TCMalloc_SystemAlloc will give us a correct page alignment
+  // regardless, so we can just assert to detect erroneous callers.
+  assert(reinterpret_cast<size_t>(start) % pagesize == 0);
+
+  // Add a guard page to catch metadata corruption. We're using the
+  // PAGE_GUARD flag rather than NO_ACCESS because we want the unique
+  // exception in crash reports.
+  DWORD permissions = 0;
+  if (size > pagesize &&
+      VirtualProtect(start, pagesize, PAGE_READONLY | PAGE_GUARD,
+                     &permissions)) {
+    return pagesize;
+  }
+
+  return 0;
 }
 
 void TCMalloc_SystemRelease(void* start, size_t length) {

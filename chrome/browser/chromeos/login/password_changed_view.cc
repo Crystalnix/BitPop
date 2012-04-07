@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,12 @@
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/controls/button/radio_button.h"
-#include "views/controls/label.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/radio_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 using views::Button;
 using views::GridLayout;
@@ -29,7 +29,9 @@ using views::Textfield;
 namespace chromeos {
 
 namespace {
+
 const int kPasswordFieldWidthChars = 20;
+
 }  // namespace
 
 PasswordChangedView::PasswordChangedView(Delegate* delegate,
@@ -48,34 +50,30 @@ bool PasswordChangedView::Accept() {
 }
 
 int PasswordChangedView::GetDialogButtons() const {
- return MessageBoxFlags::DIALOGBUTTON_OK;
+  return ui::DIALOG_BUTTON_OK;
 }
 
 views::View* PasswordChangedView::GetInitiallyFocusedView() {
-  if (!full_sync_disabled_) {
-    return views::DialogDelegate::GetInitiallyFocusedView();
-  } else {
-    DCHECK(old_password_field_);
-    return old_password_field_;
-  }
+  DCHECK(old_password_field_);
+  return old_password_field_;
 }
 
-bool PasswordChangedView::IsModal() const {
-  return true;
+ui::ModalType PasswordChangedView::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
 views::View* PasswordChangedView::GetContentsView() {
   return this;
 }
 
-std::wstring PasswordChangedView::GetWindowTitle() const {
-  return UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_DIALOG_BOX_TITLE));
+string16 PasswordChangedView::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(
+      IDS_LOGIN_PASSWORD_CHANGED_DIALOG_BOX_TITLE);
 }
 
 gfx::Size PasswordChangedView::GetPreferredSize() {
   // TODO(nkostylev): Once UI is finalized, create locale settings.
-  return gfx::Size(views::Window::GetLocalizedContentsSize(
+  return gfx::Size(views::Widget::GetLocalizedContentsSize(
       IDS_PASSWORD_CHANGED_DIALOG_WIDTH_CHARS,
       IDS_PASSWORD_CHANGED_DIALOG_HEIGHT_LINES));
 }
@@ -97,29 +95,26 @@ void PasswordChangedView::Init() {
   title_label_ = new Label();
   title_label_->SetFont(title_font);
   title_label_->SetText(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_TITLE)));
+      l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_TITLE));
   title_label_->SetHorizontalAlignment(Label::ALIGN_LEFT);
 
   description_label_ = new Label();
   description_label_->SetText(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_DESC)));
+      l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_DESC));
   description_label_->SetMultiLine(true);
   description_label_->SetHorizontalAlignment(Label::ALIGN_LEFT);
 
   full_sync_radio_ = new RadioButton(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_RESET)),
-      0);
+      l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_RESET), 0);
   full_sync_radio_->set_listener(this);
   full_sync_radio_->SetMultiLine(true);
 
   delta_sync_radio_ = new RadioButton(
-      UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_MIGRATE)),
-      0);
+      l10n_util::GetStringUTF16(IDS_LOGIN_PASSWORD_CHANGED_MIGRATE), 0);
   delta_sync_radio_->set_listener(this);
   delta_sync_radio_->SetMultiLine(true);
 
-  old_password_field_ = new TextfieldWithMargin(Textfield::STYLE_PASSWORD);
+  old_password_field_ = new TextfieldWithMargin(Textfield::STYLE_OBSCURED);
   old_password_field_->set_text_to_display_when_empty(
       l10n_util::GetStringUTF16(IDS_LOGIN_PREVIOUS_PASSWORD));
   old_password_field_->set_default_width_in_chars(kPasswordFieldWidthChars);
@@ -147,10 +142,6 @@ void PasswordChangedView::Init() {
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
   layout->StartRow(0, 0);
-  layout->AddView(full_sync_radio_);
-  layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
-
-  layout->StartRow(0, 0);
   layout->AddView(delta_sync_radio_);
   layout->AddPaddingRow(0, views::kRelatedControlSmallVerticalSpacing);
 
@@ -160,18 +151,13 @@ void PasswordChangedView::Init() {
   layout->AddPaddingRow(0, views::kUnrelatedControlVerticalSpacing);
 
   layout->StartRow(0, 0);
-  layout->AddView(old_password_field_);
+  layout->AddView(full_sync_radio_);
+  layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
+  delta_sync_radio_->SetChecked(true);
   // Disable options if needed.
-  if (!full_sync_disabled_) {
-    full_sync_radio_->SetChecked(true);
-    old_password_field_->SetEnabled(false);
-  } else {
+  if (full_sync_disabled_)
     full_sync_radio_->SetEnabled(false);
-    delta_sync_radio_->SetChecked(true);
-    old_password_field_->SetEnabled(true);
-  }
-
 }
 
 bool PasswordChangedView::ExitDialog() {

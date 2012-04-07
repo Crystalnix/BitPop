@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_parser.h"
 #include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "googleurl/src/gurl.h"
@@ -111,7 +111,7 @@ bool GetFirefoxVersionAndPathFromProfile(const FilePath& profile_path,
     if (equal != std::string::npos) {
       std::string key = line.substr(0, equal);
       if (key == "LastVersion") {
-        *version = line.substr(equal + 1)[0] - '0';
+        base::StringToInt(line.substr(equal + 1), version);
         ret = true;
       } else if (key == "LastAppDir") {
         // TODO(evanm): If the path in question isn't convertible to
@@ -218,7 +218,7 @@ void ParseSearchEnginesFromXMLFiles(const std::vector<FilePath>& xml_files,
       // Give this a keyword to facilitate tab-to-search, if possible.
       GURL gurl = GURL(url);
       template_url->set_keyword(
-          TemplateURLModel::GenerateKeyword(gurl, false));
+          TemplateURLService::GenerateKeyword(gurl, false));
       template_url->set_logo_id(
           TemplateURLPrepopulateData::GetSearchEngineLogo(gurl));
       template_url->set_show_in_default_list(true);
@@ -288,42 +288,6 @@ std::string ReadPrefsJsValue(const FilePath& profile_path,
     return "";
 
   return GetPrefsJsValue(content, pref_key);
-}
-
-int GetFirefoxDefaultSearchEngineIndex(
-    const std::vector<TemplateURL*>& search_engines,
-    const FilePath& profile_path) {
-  // The default search engine is contained in the file prefs.js found in the
-  // profile directory.
-  // It is the "browser.search.selectedEngine" property.
-  if (search_engines.empty())
-    return -1;
-
-  std::string default_se_name =
-      ReadPrefsJsValue(profile_path, "browser.search.selectedEngine");
-
-  if (default_se_name.empty()) {
-    // browser.search.selectedEngine does not exist if the user has not changed
-    // from the default (or has selected the default).
-    // TODO: should fallback to 'browser.search.defaultengine' if selectedEngine
-    // is empty.
-    return -1;
-  }
-
-  int default_se_index = -1;
-  for (std::vector<TemplateURL*>::const_iterator iter = search_engines.begin();
-       iter != search_engines.end(); ++iter) {
-    if (default_se_name == UTF16ToUTF8((*iter)->short_name())) {
-      default_se_index = static_cast<int>(iter - search_engines.begin());
-      break;
-    }
-  }
-  if (default_se_index == -1) {
-    LOG(WARNING) <<
-        "Firefox default search engine not found in search engine list";
-  }
-
-  return default_se_index;
 }
 
 GURL GetHomepage(const FilePath& profile_path) {

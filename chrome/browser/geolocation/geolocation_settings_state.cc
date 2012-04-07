@@ -4,14 +4,16 @@
 
 #include "chrome/browser/geolocation/geolocation_settings_state.h"
 
+#include <string>
+
 #include "base/string_piece.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/geolocation/geolocation_content_settings_map.h"
+#include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "net/base/net_util.h"
 
 GeolocationSettingsState::GeolocationSettingsState(Profile* profile)
@@ -30,11 +32,11 @@ void GeolocationSettingsState::OnGeolocationPermissionSet(
 void GeolocationSettingsState::DidNavigate(
     const content::LoadCommittedDetails& details) {
   if (details.entry)
-    embedder_url_ = details.entry->url();
+    embedder_url_ = details.entry->GetURL();
   if (state_map_.empty())
     return;
   if (!details.entry ||
-      details.previous_url.GetOrigin() != details.entry->url().GetOrigin()) {
+      details.previous_url.GetOrigin() != details.entry->GetURL().GetOrigin()) {
     state_map_.clear();
     return;
   }
@@ -54,8 +56,9 @@ void GeolocationSettingsState::GetDetailedInfo(
     unsigned int* tab_state_flags) const {
   DCHECK(tab_state_flags);
   DCHECK(embedder_url_.is_valid());
-  const ContentSetting default_setting =
-      profile_->GetGeolocationContentSettingsMap()->GetDefaultContentSetting();
+  ContentSetting default_setting =
+      profile_->GetHostContentSettingsMap()->GetDefaultContentSetting(
+          CONTENT_SETTINGS_TYPE_GEOLOCATION, NULL);
   std::set<std::string> formatted_hosts;
   std::set<std::string> repeated_formatted_hosts;
 
@@ -83,8 +86,11 @@ void GeolocationSettingsState::GetDetailedInfo(
     }
 
     const ContentSetting saved_setting =
-        profile_->GetGeolocationContentSettingsMap()->GetContentSetting(
-            i->first, embedder_url_);
+        profile_->GetHostContentSettingsMap()->GetContentSetting(
+            i->first,
+            embedder_url_,
+            CONTENT_SETTINGS_TYPE_GEOLOCATION,
+            std::string());
     if (saved_setting != default_setting)
       *tab_state_flags |= TABSTATE_HAS_EXCEPTION;
     if (saved_setting != i->second)

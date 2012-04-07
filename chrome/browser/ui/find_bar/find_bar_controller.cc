@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,13 +10,19 @@
 #include "build/build_config.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
+#include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/gfx/rect.h"
+
+using content::NavigationController;
+using content::WebContents;
 
 // The minimum space between the FindInPage window and the search result.
 static const int kMinFindWndDistanceFromSelection = 5;
@@ -84,10 +90,14 @@ void FindBarController::ChangeTabContents(TabContentsWrapper* contents) {
   if (!tab_contents_)
     return;
 
-  registrar_.Add(this, NotificationType::FIND_RESULT_AVAILABLE,
-                 Source<TabContents>(tab_contents_->tab_contents()));
-  registrar_.Add(this, NotificationType::NAV_ENTRY_COMMITTED,
-                 Source<NavigationController>(&tab_contents_->controller()));
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_FIND_RESULT_AVAILABLE,
+                 content::Source<WebContents>(tab_contents_->web_contents()));
+  registrar_.Add(
+      this,
+      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::Source<NavigationController>(
+          &tab_contents_->web_contents()->GetController()));
 
   MaybeSetPrepopulateText();
 
@@ -104,16 +114,17 @@ void FindBarController::ChangeTabContents(TabContentsWrapper* contents) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// FindBarHost, NotificationObserver implementation:
+// FindBarHost, content::NotificationObserver implementation:
 
-void FindBarController::Observe(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
+void FindBarController::Observe(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
   FindTabHelper* find_tab_helper = tab_contents_->find_tab_helper();
-  if (type == NotificationType::FIND_RESULT_AVAILABLE) {
+  if (type == chrome::NOTIFICATION_FIND_RESULT_AVAILABLE) {
     // Don't update for notifications from TabContentses other than the one we
     // are actively tracking.
-    if (Source<TabContents>(source).ptr() == tab_contents_->tab_contents()) {
+    if (content::Source<WebContents>(source).ptr() ==
+        tab_contents_->web_contents()) {
       UpdateFindBarForCurrentResult();
       if (find_tab_helper->find_result().final_update() &&
           find_tab_helper->find_result().number_of_matches() == 0) {
@@ -123,19 +134,19 @@ void FindBarController::Observe(NotificationType type,
           find_bar_->AudibleAlert();
       }
     }
-  } else if (type == NotificationType::NAV_ENTRY_COMMITTED) {
+  } else if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
     NavigationController* source_controller =
-        Source<NavigationController>(source).ptr();
-    if (source_controller == &tab_contents_->controller()) {
+        content::Source<NavigationController>(source).ptr();
+    if (source_controller == &tab_contents_->web_contents()->GetController()) {
       content::LoadCommittedDetails* commit_details =
-          Details<content::LoadCommittedDetails>(details).ptr();
-      PageTransition::Type transition_type =
-          commit_details->entry->transition_type();
+          content::Details<content::LoadCommittedDetails>(details).ptr();
+      content::PageTransition transition_type =
+          commit_details->entry->GetTransitionType();
       // We hide the FindInPage window when the user navigates away, except on
       // reload.
       if (find_bar_->IsFindBarVisible()) {
-        if (PageTransition::StripQualifier(transition_type) !=
-            PageTransition::RELOAD) {
+        if (content::PageTransitionStripQualifier(transition_type) !=
+            content::PAGE_TRANSITION_RELOAD) {
           EndFindSession(kKeepSelection);
         } else {
           // On Reload we want to make sure FindNext is converted to a full Find
@@ -220,7 +231,7 @@ void FindBarController::MaybeSetPrepopulateText() {
     find_string = find_tab_helper->previous_find_text();
   if (find_string.empty()) {
     find_string =
-        FindBarState::GetLastPrepopulateText(tab_contents_->profile());
+        FindBarStateFactory::GetLastPrepopulateText(tab_contents_->profile());
   }
 
   // Update the find bar with existing results and search text, regardless of

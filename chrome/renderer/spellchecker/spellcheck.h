@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "base/string16.h"
 #include "base/time.h"
 #include "chrome/renderer/spellchecker/spellcheck_worditerator.h"
-#include "content/renderer/render_process_observer.h"
+#include "content/public/renderer/render_process_observer.h"
 #include "ipc/ipc_platform_file.h"
 #include "unicode/uscript.h"
 
@@ -25,9 +25,13 @@ namespace file_util {
 class MemoryMappedFile;
 }
 
+namespace WebKit {
+struct WebTextCheckingResult;
+}
+
 // TODO(morrita): Needs reorg with SpellCheckProvider.
 // See http://crbug.com/73699.
-class SpellCheck : public RenderProcessObserver {
+class SpellCheck : public content::RenderProcessObserver {
  public:
   SpellCheck();
   virtual ~SpellCheck();
@@ -53,6 +57,15 @@ class SpellCheck : public RenderProcessObserver {
                       int* misspelling_len,
                       std::vector<string16>* optional_suggestions);
 
+  // SpellCheck a paragrpah.
+  // Returns true if |text| is correctly spelled, false otherwise.
+  // If the spellchecker failed to initialize, always returns true.
+  // The |tag| parameter should either be a unique identifier for the document,
+  // or 0.
+  bool SpellCheckParagraph(const string16& text,
+                           int tag,
+                           std::vector<WebKit::WebTextCheckingResult>* results);
+
   // Find a possible correctly spelled word for a misspelled word. Computes an
   // empty string if input misspelled word is too long, there is ambiguity, or
   // the correct spelling cannot be determined.
@@ -68,10 +81,10 @@ class SpellCheck : public RenderProcessObserver {
   }
 
  private:
-  FRIEND_TEST(SpellCheckTest, GetAutoCorrectionWord_EN_US);
+  FRIEND_TEST_ALL_PREFIXES(SpellCheckTest, GetAutoCorrectionWord_EN_US);
 
   // RenderProcessObserver implementation:
-  virtual bool OnControlMessageReceived(const IPC::Message& message);
+  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers.
   void OnInit(IPC::PlatformFileForTransit bdict_file,
@@ -121,6 +134,14 @@ class SpellCheck : public RenderProcessObserver {
   // Represents character attributes used for filtering out characters which
   // are not supported by this SpellCheck object.
   SpellcheckCharAttribute character_attributes_;
+
+  // Represents word iterators used in this spellchecker. The |text_iterator_|
+  // splits text provided by WebKit into words, contractions, or concatenated
+  // words. The |contraction_iterator_| splits a concatenated word extracted by
+  // |text_iterator_| into word components so we can treat a concatenated word
+  // consisting only of correct words as a correct word.
+  SpellcheckWordIterator text_iterator_;
+  SpellcheckWordIterator contraction_iterator_;
 
   // Remember state for auto spell correct.
   bool auto_spell_correct_turned_on_;

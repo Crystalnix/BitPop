@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #endif
 #include <string>
 #include "base/basictypes.h"
+#include "base/memory/scoped_ptr.h"
 #include "ipc/ipc_message.h"
 
 namespace base {
@@ -21,10 +22,11 @@ namespace IPC {
 
 class MessageReplyDeserializer;
 
-class SyncMessage : public Message {
+class IPC_EXPORT SyncMessage : public Message {
  public:
   SyncMessage(int32 routing_id, uint32 type, PriorityValue priority,
               MessageReplyDeserializer* deserializer);
+  virtual ~SyncMessage();
 
   // Call this to get a deserializer for the output parameters.
   // Note that this can only be called once, and the caller is responsible
@@ -76,12 +78,12 @@ class SyncMessage : public Message {
   static bool ReadSyncHeader(const Message& msg, SyncHeader* header);
   static bool WriteSyncHeader(Message* msg, const SyncHeader& header);
 
-  MessageReplyDeserializer* deserializer_;
+  scoped_ptr<MessageReplyDeserializer> deserializer_;
   base::WaitableEvent* pump_messages_event_;
 };
 
 // Used to deserialize parameters from a reply to a synchronous message
-class MessageReplyDeserializer {
+class IPC_EXPORT MessageReplyDeserializer {
  public:
   virtual ~MessageReplyDeserializer() {}
   bool SerializeOutputParameters(const Message& msg);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,23 +8,25 @@
 
 #include "base/basictypes.h"
 #include "base/id_map.h"
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebExceptionCode.h"
 
 class IndexedDBKey;
 class NullableString16;
-class Profile;
-class SerializedScriptValue;
 struct IndexedDBHostMsg_DatabaseCreateObjectStore_Params;
 struct IndexedDBHostMsg_FactoryDeleteDatabase_Params;
+struct IndexedDBHostMsg_FactoryGetDatabaseNames_Params;
 struct IndexedDBHostMsg_FactoryOpen_Params;
+struct IndexedDBHostMsg_IndexCount_Params;
 struct IndexedDBHostMsg_IndexOpenCursor_Params;
+struct IndexedDBHostMsg_ObjectStoreCount_Params;
 struct IndexedDBHostMsg_ObjectStoreCreateIndex_Params;
 struct IndexedDBHostMsg_ObjectStoreOpenCursor_Params;
 struct IndexedDBHostMsg_ObjectStorePut_Params;
 
 namespace WebKit {
+class WebDOMStringList;
 class WebIDBCursor;
 class WebIDBDatabase;
 class WebIDBIndex;
@@ -32,18 +34,25 @@ class WebIDBObjectStore;
 class WebIDBTransaction;
 }
 
+namespace content {
+class SerializedScriptValue;
+}
+
 // Handles all IndexedDB related messages from a particular renderer process.
-class IndexedDBDispatcherHost : public BrowserMessageFilter {
+class IndexedDBDispatcherHost : public content::BrowserMessageFilter {
  public:
   // Only call the constructor from the UI thread.
   IndexedDBDispatcherHost(int process_id, WebKitContext* webkit_context);
 
-  // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing();
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+  // content::BrowserMessageFilter implementation.
+  virtual void OnChannelClosing() OVERRIDE;
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
+
+  void TransactionComplete(int32 transaction_id);
 
   // A shortcut for accessing our context.
   IndexedDBContext* Context() {
@@ -53,16 +62,25 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   // The various IndexedDBCallbacks children call these methods to add the
   // results into the applicable map.  See below for more details.
   int32 Add(WebKit::WebIDBCursor* idb_cursor);
-  int32 Add(WebKit::WebIDBDatabase* idb_database);
+  int32 Add(WebKit::WebIDBDatabase* idb_database,
+            int32 thread_id,
+            const GURL& origin_url);
   int32 Add(WebKit::WebIDBIndex* idb_index);
   int32 Add(WebKit::WebIDBObjectStore* idb_object_store);
-  int32 Add(WebKit::WebIDBTransaction* idb_transaction);
+  int32 Add(WebKit::WebIDBTransaction* idb_transaction,
+            int32 thread_id,
+            const GURL& origin_url);
+  int32 Add(WebKit::WebDOMStringList* domStringList);
+
+  WebKit::WebIDBCursor* GetCursorFromId(int32 cursor_id);
 
  private:
   virtual ~IndexedDBDispatcherHost();
 
   // Message processing. Most of the work is delegated to the dispatcher hosts
   // below.
+  void OnIDBFactoryGetDatabaseNames(
+      const IndexedDBHostMsg_FactoryGetDatabaseNames_Params& p);
   void OnIDBFactoryOpen(const IndexedDBHostMsg_FactoryOpen_Params& p);
 
   void OnIDBFactoryDeleteDatabase(
@@ -81,6 +99,10 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
 
   template <typename ObjectType>
   void DestroyObject(IDMap<ObjectType, IDMapOwnPointer>* map, int32 object_id);
+
+  // Used in nested classes.
+  typedef std::map<int32, GURL> WebIDBObjectIDToURLMap;
+  typedef std::map<int32, int64> WebIDBTransactionIDToSizeMap;
 
   class DatabaseDispatcherHost {
    public:
@@ -102,20 +124,23 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
                              int32 transaction_id,
                              WebKit::WebExceptionCode* ec);
     void OnSetVersion(int32 idb_database_id,
+                      int32 thread_id,
                       int32 response_id,
                       const string16& version,
                       WebKit::WebExceptionCode* ec);
-    void OnTransaction(int32 idb_database_id,
+    void OnTransaction(int32 thread_id,
+                       int32 idb_database_id,
                        const std::vector<string16>& names,
-                       int32 mode, int32 timeout,
+                       int32 mode,
                        int32* idb_transaction_id,
                        WebKit::WebExceptionCode* ec);
-    void OnOpen(int32 idb_database_id, int32 response_id);
+    void OnOpen(int32 idb_database_id, int32 thread_id, int32 response_id);
     void OnClose(int32 idb_database_id);
     void OnDestroyed(int32 idb_database_id);
 
     IndexedDBDispatcherHost* parent_;
     IDMap<WebKit::WebIDBDatabase, IDMapOwnPointer> map_;
+    WebIDBObjectIDToURLMap database_url_map_;
   };
 
   class IndexDispatcherHost {
@@ -130,17 +155,22 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnStoreName(int32 idb_index_id, string16* store_name);
     void OnKeyPath(int32 idb_index_id, NullableString16* key_path);
     void OnUnique(int32 idb_index_id, bool* unique);
+    void OnMultiEntry(int32 idb_index_id, bool* multi_entry);
     void OnOpenObjectCursor(
         const IndexedDBHostMsg_IndexOpenCursor_Params& params,
         WebKit::WebExceptionCode* ec);
     void OnOpenKeyCursor(const IndexedDBHostMsg_IndexOpenCursor_Params& params,
                          WebKit::WebExceptionCode* ec);
+    void OnCount(const IndexedDBHostMsg_IndexCount_Params& params,
+                 WebKit::WebExceptionCode* ec);
     void OnGetObject(int idb_index_id,
+                     int32 thread_id,
                      int32 response_id,
                      const IndexedDBKey& key,
                      int32 transaction_id,
                      WebKit::WebExceptionCode* ec);
     void OnGetKey(int idb_index_id,
+                  int32 thread_id,
                   int32 response_id,
                   const IndexedDBKey& key,
                   int32 transaction_id,
@@ -164,6 +194,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnIndexNames(int32 idb_object_store_id,
                       std::vector<string16>* index_names);
     void OnGet(int idb_object_store_id,
+               int32 thread_id,
                int32 response_id,
                const IndexedDBKey& key,
                int32 transaction_id,
@@ -171,11 +202,13 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnPut(const IndexedDBHostMsg_ObjectStorePut_Params& params,
                WebKit::WebExceptionCode* ec);
     void OnDelete(int idb_object_store_id,
+                  int32 thread_id,
                   int32 response_id,
                   const IndexedDBKey& key,
                   int32 transaction_id,
                   WebKit::WebExceptionCode* ec);
     void OnClear(int idb_object_store_id,
+                 int32 thread_id,
                  int32 response_id,
                  int32 transaction_id,
                  WebKit::WebExceptionCode* ec);
@@ -194,6 +227,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnOpenCursor(
         const IndexedDBHostMsg_ObjectStoreOpenCursor_Params& params,
         WebKit::WebExceptionCode* ec);
+    void OnCount(const IndexedDBHostMsg_ObjectStoreCount_Params& params,
+                 WebKit::WebExceptionCode* ec);
     void OnDestroyed(int32 idb_object_store_id);
 
     IndexedDBDispatcherHost* parent_;
@@ -212,17 +247,26 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnKey(int32 idb_object_store_id, IndexedDBKey* key);
     void OnPrimaryKey(int32 idb_object_store_id, IndexedDBKey* primary_key);
     void OnValue(int32 idb_object_store_id,
-                 SerializedScriptValue* script_value,
-                 IndexedDBKey* key);
+                 content::SerializedScriptValue* script_value);
     void OnUpdate(int32 idb_object_store_id,
+                  int32 thread_id,
                   int32 response_id,
-                  const SerializedScriptValue& value,
+                  const content::SerializedScriptValue& value,
                   WebKit::WebExceptionCode* ec);
     void OnContinue(int32 idb_object_store_id,
+                    int32 thread_id,
                     int32 response_id,
                     const IndexedDBKey& key,
                     WebKit::WebExceptionCode* ec);
+    void OnPrefetch(int32 idb_cursor_id,
+                    int32 thread_id,
+                    int32 response_id,
+                    int n,
+                    WebKit::WebExceptionCode* ec);
+    void OnPrefetchReset(int32 idb_cursor_id, int used_prefetches,
+                         int unused_prefetches);
     void OnDelete(int32 idb_object_store_id,
+                  int32 thread_id,
                   int32 response_id,
                   WebKit::WebExceptionCode* ec);
     void OnDestroyed(int32 idb_cursor_id);
@@ -252,9 +296,11 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     IndexedDBDispatcherHost* parent_;
     typedef IDMap<WebKit::WebIDBTransaction, IDMapOwnPointer> MapType;
     MapType map_;
+    WebIDBObjectIDToURLMap transaction_url_map_;
+    WebIDBTransactionIDToSizeMap transaction_size_map_;
   };
 
-  // Data shared between renderer processes with the same profile.
+  // Data shared between renderer processes with the same browser context.
   scoped_refptr<WebKitContext> webkit_context_;
 
   // Only access on WebKit thread.

@@ -10,6 +10,7 @@
 #include "net/base/address_list.h"
 #include "net/base/sys_addrinfo.h"
 #include "net/http/http_network_session.h"
+#include "net/http/http_server_properties.h"
 #include "net/spdy/spdy_session.h"
 
 
@@ -40,9 +41,12 @@ bool SpdySessionPool::g_force_single_domain = false;
 bool SpdySessionPool::g_enable_ip_pooling = true;
 
 SpdySessionPool::SpdySessionPool(HostResolver* resolver,
-                                 SSLConfigService* ssl_config_service)
-    : ssl_config_service_(ssl_config_service),
-      resolver_(resolver) {
+                                 SSLConfigService* ssl_config_service,
+                                 HttpServerProperties* http_server_properties)
+    : http_server_properties_(http_server_properties),
+      ssl_config_service_(ssl_config_service),
+      resolver_(resolver),
+      verify_domain_authentication_(true) {
   NetworkChangeNotifier::AddIPAddressObserver(this);
   if (ssl_config_service_)
     ssl_config_service_->AddObserver(this);
@@ -109,7 +113,9 @@ scoped_refptr<SpdySession> SpdySessionPool::GetInternal(
 
   DCHECK(!only_use_existing_sessions);
 
-  spdy_session = new SpdySession(host_port_proxy_pair, this, &spdy_settings_,
+  spdy_session = new SpdySession(host_port_proxy_pair, this,
+                                 http_server_properties_,
+                                 verify_domain_authentication_,
                                  net_log.net_log());
   UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionGet",
                             CREATED_NEW,
@@ -134,7 +140,9 @@ net::Error SpdySessionPool::GetSpdySessionFromSocket(
                             IMPORTED_FROM_SOCKET,
                             SPDY_SESSION_GET_MAX);
   // Create the SPDY session and add it to the pool.
-  *spdy_session = new SpdySession(host_port_proxy_pair, this, &spdy_settings_,
+  *spdy_session = new SpdySession(host_port_proxy_pair, this,
+                                  http_server_properties_,
+                                  verify_domain_authentication_,
                                   net_log.net_log());
   SpdySessionList* list = GetSessionList(host_port_proxy_pair);
   if (!list)
@@ -154,10 +162,8 @@ net::Error SpdySessionPool::GetSpdySessionFromSocket(
   // direct connection.
   if (g_enable_ip_pooling  && host_port_proxy_pair.second.is_direct()) {
     AddressList addresses;
-    if (connection->socket()->GetPeerAddress(&addresses) == OK) {
-      const addrinfo* address = addresses.head();
-      AddAlias(address, host_port_proxy_pair);
-    }
+    if (connection->socket()->GetPeerAddress(&addresses) == OK)
+      AddAlias(addresses.head(), host_port_proxy_pair);
   }
 
   // Now we can initialize the session with the SSL socket.
@@ -193,7 +199,6 @@ void SpdySessionPool::Remove(const scoped_refptr<SpdySession>& session) {
 Value* SpdySessionPool::SpdySessionPoolInfoToValue() const {
   ListValue* list = new ListValue();
 
-  SpdySessionsMap::const_iterator spdy_session_pool_it = sessions_.begin();
   for (SpdySessionsMap::const_iterator it = sessions_.begin();
        it != sessions_.end(); ++it) {
     SpdySessionList* sessions = it->second;
@@ -207,7 +212,7 @@ Value* SpdySessionPool::SpdySessionPoolInfoToValue() const {
 
 void SpdySessionPool::OnIPAddressChanged() {
   CloseCurrentSessions();
-  spdy_settings_.Clear();
+  http_server_properties_->ClearSpdySettings();
 }
 
 void SpdySessionPool::OnSSLConfigChanged() {
@@ -342,12 +347,9 @@ void SpdySessionPool::RemoveSessionList(
 bool SpdySessionPool::LookupAddresses(const HostPortProxyPair& pair,
                                       AddressList* addresses) const {
   net::HostResolver::RequestInfo resolve_info(pair.first);
-  resolve_info.set_only_use_cached_response(true);
-  int rv = resolver_->Resolve(resolve_info,
-                              addresses,
-                              NULL,
-                              NULL,
-                              net::BoundNetLog());
+  int rv = resolver_->ResolveFromCache(resolve_info,
+                                       addresses,
+                                       net::BoundNetLog());
   DCHECK_NE(ERR_IO_PENDING, rv);
   return rv == OK;
 }
@@ -414,6 +416,22 @@ void SpdySessionPool::CloseCurrentSessions() {
   }
   DCHECK(sessions_.empty());
   DCHECK(aliases_.empty());
+}
+
+void SpdySessionPool::CloseIdleSessions() {
+  SpdySessionsMap::const_iterator map_it = sessions_.begin();
+  while (map_it != sessions_.end()) {
+    SpdySessionList* list = map_it->second;
+    ++map_it;
+    CHECK(list);
+
+    // Assumes there is only 1 element in the list
+    SpdySessionList::iterator session_it = list->begin();
+    const scoped_refptr<SpdySession>& session = *session_it;
+    CHECK(session);
+    if (!session->is_active())
+      session->CloseSessionOnError(net::ERR_ABORTED, true);
+  }
 }
 
 }  // namespace net

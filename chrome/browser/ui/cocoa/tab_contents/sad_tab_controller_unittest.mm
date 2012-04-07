@@ -5,35 +5,36 @@
 #include "base/debug/debugger.h"
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/tab_contents/sad_tab_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/sad_tab_view.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
 
 @interface SadTabView (ExposedForTesting)
 // Implementation is below.
-- (NSButton*)linkButton;
+- (HyperlinkTextView*)helpTextView;
 @end
 
 @implementation SadTabView (ExposedForTesting)
-- (NSButton*)linkButton {
-  return linkButton_;
+- (HyperlinkTextView*)helpTextView {
+  return help_.get();
 }
 @end
 
 namespace {
 
-class SadTabControllerTest : public RenderViewHostTestHarness {
+class SadTabControllerTest : public ChromeRenderViewHostTestHarness {
  public:
   SadTabControllerTest() : test_window_(nil) {
     link_clicked_ = false;
   }
 
   virtual void SetUp() {
-    RenderViewHostTestHarness::SetUp();
-    // Inherting from RenderViewHostTestHarness means we can't inherit from
-    // from CocoaTest, so do a bootstrap and create test window.
+    ChromeRenderViewHostTestHarness::SetUp();
+    // Inherting from ChromeRenderViewHostTestHarness means we can't inherit
+    // from from CocoaTest, so do a bootstrap and create test window.
     CocoaTest::BootstrapCocoa();
     test_window_ = [[CocoaTestHelperWindow alloc] init];
     if (base::debug::BeingDebugged()) {
@@ -46,25 +47,25 @@ class SadTabControllerTest : public RenderViewHostTestHarness {
   virtual void TearDown() {
     [test_window_ close];
     test_window_ = nil;
-    RenderViewHostTestHarness::TearDown();
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   // Creates the controller and adds its view to contents, caller has ownership.
   SadTabController* CreateController() {
-    NSView* contentView = [test_window_ contentView];
     SadTabController* controller =
-        [[SadTabController alloc] initWithTabContents:contents()
-                                            superview:contentView];
+        [[SadTabController alloc] initWithWebContents:contents()];
     EXPECT_TRUE(controller);
     NSView* view = [controller view];
     EXPECT_TRUE(view);
+    NSView* contentView = [test_window_ contentView];
+    [contentView addSubview:view];
 
     return controller;
   }
 
-  NSButton* GetLinkButton(SadTabController* controller) {
+  HyperlinkTextView* GetHelpTextView(SadTabController* controller) {
     SadTabView* view = static_cast<SadTabView*>([controller view]);
-    return ([view linkButton]);
+    return ([view helpTextView]);
   }
 
   static bool link_clicked_;
@@ -77,24 +78,24 @@ bool SadTabControllerTest::link_clicked_;
 TEST_F(SadTabControllerTest, WithTabContents) {
   scoped_nsobject<SadTabController> controller(CreateController());
   EXPECT_TRUE(controller);
-  NSButton* link = GetLinkButton(controller);
-  EXPECT_TRUE(link);
+  HyperlinkTextView* help = GetHelpTextView(controller);
+  EXPECT_TRUE(help);
 }
 
 TEST_F(SadTabControllerTest, WithoutTabContents) {
   DeleteContents();
   scoped_nsobject<SadTabController> controller(CreateController());
   EXPECT_TRUE(controller);
-  NSButton* link = GetLinkButton(controller);
-  EXPECT_FALSE(link);
+  HyperlinkTextView* help = GetHelpTextView(controller);
+  EXPECT_FALSE(help);
 }
 
 TEST_F(SadTabControllerTest, ClickOnLink) {
   scoped_nsobject<SadTabController> controller(CreateController());
-  NSButton* link = GetLinkButton(controller);
-  EXPECT_TRUE(link);
+  HyperlinkTextView* help = GetHelpTextView(controller);
+  EXPECT_TRUE(help);
   EXPECT_FALSE(link_clicked_);
-  [link performClick:link];
+  [help clickedOnLink:nil atIndex:0];
   EXPECT_TRUE(link_clicked_);
 }
 

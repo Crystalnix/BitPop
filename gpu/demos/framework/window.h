@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,18 @@
 #define GPU_DEMOS_FRAMEWORK_WINDOW_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/client/gles2_cmd_helper.h"
+#include "gpu/command_buffer/service/command_buffer_service.h"
+#include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "ui/gfx/gl/gl_context.h"
+#include "ui/gfx/gl/gl_surface.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gpu {
+
+class TransferBuffer;
+
 namespace demos {
 
 class Demo;
@@ -39,6 +48,14 @@ class Window {
 
   gfx::NativeWindow window_handle_;
   scoped_ptr<Demo> demo_;
+
+  scoped_ptr<gpu::CommandBufferService> command_buffer_;
+  scoped_ptr<gpu::GpuScheduler> gpu_scheduler_;
+  scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
+  scoped_refptr<gfx::GLContext> context_;
+  scoped_refptr<gfx::GLSurface> surface_;
+  scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_cmd_helper_;
+  scoped_ptr<gpu::TransferBuffer> transfer_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(Window);
 };

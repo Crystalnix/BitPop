@@ -11,7 +11,7 @@
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 
 class Profile;
-class RefCountedBytes;
+class RefCountedMemory;
 
 class ThemeSource : public ChromeURLDataManager::DataSource {
  public:
@@ -21,13 +21,14 @@ class ThemeSource : public ChromeURLDataManager::DataSource {
   // the path we registered.
   virtual void StartDataRequest(const std::string& path,
                                 bool is_incognito,
-                                int request_id);
-  virtual std::string GetMimeType(const std::string& path) const;
+                                int request_id) OVERRIDE;
+  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
 
   // Used to tell ChromeURLDataManager which thread to handle the request on.
-  virtual MessageLoop* MessageLoopForRequestPath(const std::string& path) const;
+  virtual MessageLoop* MessageLoopForRequestPath(
+      const std::string& path) const OVERRIDE;
 
-  virtual bool ShouldReplaceExistingSource() const;
+  virtual bool ShouldReplaceExistingSource() const OVERRIDE;
 
  protected:
   virtual ~ThemeSource();
@@ -40,7 +41,7 @@ class ThemeSource : public ChromeURLDataManager::DataSource {
   Profile* profile_;
 
   // We grab the CSS early so we don't have to go back to the UI thread later.
-  scoped_refptr<RefCountedBytes> css_bytes_;
+  scoped_refptr<RefCountedMemory> css_bytes_;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeSource);
 };

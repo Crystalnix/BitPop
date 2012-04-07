@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -90,6 +90,11 @@ class MemoryChunk {
            pointer < reinterpret_cast<const int8*>(shm_.ptr) + shm_.size;
   }
 
+  // Returns true of any memory in this chuck is in use.
+  bool InUse() {
+    return allocator_.InUse();
+  }
+
  private:
   int32 shm_id_;
   gpu::Buffer shm_;
@@ -104,6 +109,14 @@ class MappedMemoryManager {
   explicit MappedMemoryManager(CommandBufferHelper* helper);
 
   ~MappedMemoryManager();
+
+  unsigned int chunk_size_multiple() const {
+    return chunk_size_multiple_;
+  }
+
+  void set_chunk_size_multiple(unsigned int multiple) {
+    chunk_size_multiple_ = multiple;
+  }
 
   // Allocates a block of memory
   // Parameters:
@@ -129,9 +142,19 @@ class MappedMemoryManager {
   //   token: the token value to wait for before re-using the memory.
   void FreePendingToken(void* pointer, int32 token);
 
+  // Free Any Shared memory that is not in use.
+  void FreeUnused();
+
+  // Used for testing
+  size_t num_chunks() {
+    return chunks_.size();
+  }
+
  private:
   typedef std::vector<MemoryChunk*> MemoryChunkVector;
 
+  // size a chunk is rounded up to.
+  unsigned int chunk_size_multiple_;
   CommandBufferHelper* helper_;
   MemoryChunkVector chunks_;
 

@@ -9,11 +9,11 @@
 #include <map>
 #include <vector>
 
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/renderer/page_click_listener.h"
-#include "content/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "webkit/glue/password_form_dom_manager.h"
+#include "webkit/forms/password_form_dom_manager.h"
 
 namespace WebKit {
 class WebInputElement;
@@ -24,10 +24,10 @@ namespace autofill {
 
 // This class is responsible for filling password forms.
 // There is one PasswordAutofillManager per RenderView.
-class PasswordAutofillManager : public RenderViewObserver,
+class PasswordAutofillManager : public content::RenderViewObserver,
                                 public PageClickListener {
  public:
-  explicit PasswordAutofillManager(RenderView* render_view);
+  explicit PasswordAutofillManager(content::RenderView* render_view);
   virtual ~PasswordAutofillManager();
 
   // WebViewClient editor related calls forwarded by the RenderView.
@@ -45,48 +45,53 @@ class PasswordAutofillManager : public RenderViewObserver,
   // A no-op.  No filling happens for selection.  But this method returns
   // true when |node| is fillable by password Autofill.
   bool DidSelectAutofillSuggestion(const WebKit::WebNode& node);
+  // A no-op.  Password forms are not previewed, so they do not need to be
+  // cleared when the selection changes.  However, this method returns
+  // true when |node| is fillable by password Autofill.
+  bool DidClearAutofillSelection(const WebKit::WebNode& node);
 
  private:
   friend class PasswordAutofillManagerTest;
 
   struct PasswordInfo {
     WebKit::WebInputElement password_field;
-    webkit_glue::PasswordFormFillData fill_data;
+    webkit::forms::PasswordFormFillData fill_data;
     bool backspace_pressed_last;
     PasswordInfo() : backspace_pressed_last(false) {}
   };
   typedef std::map<WebKit::WebElement, PasswordInfo> LoginToPasswordInfoMap;
 
   // RenderViewObserver:
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame);
-  virtual void DidFinishLoad(WebKit::WebFrame* frame);
-  virtual void FrameDetached(WebKit::WebFrame* frame);
-  virtual void FrameWillClose(WebKit::WebFrame* frame);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void DidFinishLoad(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void FrameDetached(WebKit::WebFrame* frame) OVERRIDE;
+  virtual void FrameWillClose(WebKit::WebFrame* frame) OVERRIDE;
 
   // PageClickListener:
   virtual bool InputElementClicked(const WebKit::WebInputElement& element,
                                    bool was_focused,
-                                   bool is_focused);
+                                   bool is_focused) OVERRIDE;
+  virtual bool InputElementLostFocus() OVERRIDE;
 
   // RenderView IPC handlers:
-  void OnFillPasswordForm(const webkit_glue::PasswordFormFillData& form_data);
+  void OnFillPasswordForm(const webkit::forms::PasswordFormFillData& form_data);
 
   // Scans the given frame for password forms and sends them up to the browser.
   // If |only_visible| is true, only forms visible in the layout are sent.
   void SendPasswordForms(WebKit::WebFrame* frame, bool only_visible);
 
-  void GetSuggestions(const webkit_glue::PasswordFormFillData& fill_data,
+  void GetSuggestions(const webkit::forms::PasswordFormFillData& fill_data,
                       const string16& input,
                       std::vector<string16>* suggestions);
 
-  bool ShowSuggestionPopup(const webkit_glue::PasswordFormFillData& fill_data,
+  bool ShowSuggestionPopup(const webkit::forms::PasswordFormFillData& fill_data,
                            const WebKit::WebInputElement& user_input);
 
   bool FillUserNameAndPassword(
       WebKit::WebInputElement* username_element,
       WebKit::WebInputElement* password_element,
-      const webkit_glue::PasswordFormFillData& fill_data,
+      const webkit::forms::PasswordFormFillData& fill_data,
       bool exact_username_match,
       bool set_selection);
 
@@ -95,7 +100,7 @@ class PasswordAutofillManager : public RenderViewObserver,
   void PerformInlineAutocomplete(
       const WebKit::WebInputElement& username,
       const WebKit::WebInputElement& password,
-      const webkit_glue::PasswordFormFillData& fill_data);
+      const webkit::forms::PasswordFormFillData& fill_data);
 
   // Invoked when the passed frame is closing.  Gives us a chance to clear any
   // reference we may have to elements in that frame.
@@ -109,7 +114,7 @@ class PasswordAutofillManager : public RenderViewObserver,
   // The logins we have filled so far with their associated info.
   LoginToPasswordInfoMap login_to_password_info_;
 
-  ScopedRunnableMethodFactory<PasswordAutofillManager> method_factory_;
+  base::WeakPtrFactory<PasswordAutofillManager> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordAutofillManager);
 };

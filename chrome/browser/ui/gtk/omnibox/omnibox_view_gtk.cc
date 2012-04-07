@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,9 @@
 #include <algorithm>
 
 #include "base/logging.h"
+#include "base/property_bag.h"
 #include "base/string_util.h"
+#include "base/utf_string_conversion_utils.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
@@ -21,17 +23,23 @@
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "third_party/undoview/undo_view.h"
 #include "ui/base/animation/multi_animation.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/dragdrop/gtk_dnd_util.h"
+#include "ui/base/gtk/gtk_compat.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/color_utils.h"
@@ -43,13 +51,15 @@
 #include "chrome/browser/ui/views/autocomplete/autocomplete_popup_contents_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
-#include "views/controls/textfield/native_textfield_views.h"
-#include "views/events/event.h"
+#include "ui/views/controls/textfield/native_textfield_views.h"
+#include "ui/views/events/event.h"
 #else
-#include "chrome/browser/autocomplete/autocomplete_popup_view_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/location_bar_view_gtk.h"
+#include "chrome/browser/ui/gtk/omnibox/omnibox_popup_view_gtk.h"
 #endif
+
+using content::WebContents;
 
 namespace {
 
@@ -98,9 +108,10 @@ struct AutocompleteEditState {
 };
 
 // Returns a lazily initialized property bag accessor for saving our state in a
-// TabContents.
-PropertyAccessor<AutocompleteEditState>* GetStateAccessor() {
-  static PropertyAccessor<AutocompleteEditState> state;
+// WebContents.
+base::PropertyAccessor<AutocompleteEditState>* GetStateAccessor() {
+  CR_DEFINE_STATIC_LOCAL(
+      base::PropertyAccessor<AutocompleteEditState>, state, ());
   return &state;
 }
 
@@ -178,8 +189,8 @@ OmniboxViewGtk::OmniboxViewGtk(
       popup_window_mode_(popup_window_mode),
       security_level_(ToolbarModel::NONE),
       mark_set_handler_id_(0),
-#if defined(OS_CHROMEOS)
       button_1_pressed_(false),
+#if defined(OS_CHROMEOS)
       text_selected_during_click_(false),
       text_view_focused_before_button_press_(false),
 #endif
@@ -198,24 +209,19 @@ OmniboxViewGtk::OmniboxViewGtk(
       handling_key_press_(false),
       content_maybe_changed_by_key_press_(false),
       update_popup_without_focus_(false),
-#if GTK_CHECK_VERSION(2, 20, 0)
+      supports_pre_edit_(gtk_check_version(2, 20, 0)),
       pre_edit_size_before_change_(0),
-#endif
       going_to_focus_(NULL) {
   popup_view_.reset(
 #if defined(TOOLKIT_VIEWS)
       new AutocompletePopupContentsView
 #else
-      new AutocompletePopupViewGtk
+      new OmniboxPopupViewGtk
 #endif
-          (GetFont(), this, model_.get(), profile, location_bar));
+          (GetFont(), this, model_.get(), location_bar));
 }
 
 OmniboxViewGtk::~OmniboxViewGtk() {
-  NotificationService::current()->Notify(NotificationType::OMNIBOX_DESTROYED,
-                                         Source<OmniboxViewGtk>(this),
-                                         NotificationService::NoDetails());
-
   // Explicitly teardown members which have a reference to us.  Just to be safe
   // we want them to be destroyed before destroying any other internal state.
   popup_view_.reset();
@@ -328,6 +334,10 @@ void OmniboxViewGtk::Init() {
   // version after the normal call has happened.
   g_signal_connect_after(text_view_, "drag-data-get",
                    G_CALLBACK(&HandleDragDataGetThunk), this);
+  g_signal_connect_after(text_view_, "drag-begin",
+                   G_CALLBACK(&HandleDragBeginThunk), this);
+  g_signal_connect_after(text_view_, "drag-end",
+                   G_CALLBACK(&HandleDragEndThunk), this);
   g_signal_connect(text_view_, "backspace",
                    G_CALLBACK(&HandleBackSpaceThunk), this);
   g_signal_connect(text_view_, "copy-clipboard",
@@ -344,10 +354,10 @@ void OmniboxViewGtk::Init() {
                    G_CALLBACK(&HandleDeleteFromCursorThunk), this);
   g_signal_connect(text_view_, "hierarchy-changed",
                    G_CALLBACK(&HandleHierarchyChangedThunk), this);
-#if GTK_CHECK_VERSION(2, 20, 0)
-  g_signal_connect(text_view_, "preedit-changed",
-                   G_CALLBACK(&HandlePreEditChangedThunk), this);
-#endif
+  if (supports_pre_edit_) {
+    g_signal_connect(text_view_, "preedit-changed",
+                     G_CALLBACK(&HandlePreEditChangedThunk), this);
+  }
   g_signal_connect(text_view_, "undo", G_CALLBACK(&HandleUndoRedoThunk), this);
   g_signal_connect(text_view_, "redo", G_CALLBACK(&HandleUndoRedoThunk), this);
   g_signal_connect_after(text_view_, "undo",
@@ -408,8 +418,8 @@ void OmniboxViewGtk::Init() {
 
 #if !defined(TOOLKIT_VIEWS)
   registrar_.Add(this,
-                 NotificationType::BROWSER_THEME_CHANGED,
-                 NotificationService::AllSources());
+                 chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                 content::Source<ThemeService>(theme_service_));
   theme_service_->InitThemesFor(this);
 #else
   // Manually invoke SetBaseColor() because TOOLKIT_VIEWS doesn't observe
@@ -449,7 +459,7 @@ const AutocompleteEditModel* OmniboxViewGtk::model() const {
   return model_.get();
 }
 
-void OmniboxViewGtk::SaveStateToTab(TabContents* tab) {
+void OmniboxViewGtk::SaveStateToTab(WebContents* tab) {
   DCHECK(tab);
   // If any text has been selected, register it as the PRIMARY selection so it
   // can still be pasted via middle-click after the text view is cleared.
@@ -458,14 +468,14 @@ void OmniboxViewGtk::SaveStateToTab(TabContents* tab) {
   // NOTE: GetStateForTabSwitch may affect GetSelection, so order is important.
   AutocompleteEditModel::State model_state = model_->GetStateForTabSwitch();
   GetStateAccessor()->SetProperty(
-      tab->property_bag(),
+      tab->GetPropertyBag(),
       AutocompleteEditState(model_state, ViewState(GetSelection())));
 }
 
-void OmniboxViewGtk::Update(const TabContents* contents) {
+void OmniboxViewGtk::Update(const WebContents* contents) {
   // NOTE: We're getting the URL text here from the ToolbarModel.
   bool visibly_changed_permanent_text =
-      model_->UpdatePermanentText(WideToUTF16Hack(toolbar_model_->GetText()));
+      model_->UpdatePermanentText(toolbar_model_->GetText());
 
   ToolbarModel::SecurityLevel security_level =
         toolbar_model_->GetSecurityLevel();
@@ -476,7 +486,7 @@ void OmniboxViewGtk::Update(const TabContents* contents) {
     selected_text_.clear();
     RevertAll();
     const AutocompleteEditState* state =
-        GetStateAccessor()->GetProperty(contents->property_bag());
+        GetStateAccessor()->GetProperty(contents->GetPropertyBag());
     if (state) {
       model_->RestoreState(state->model_state);
 
@@ -513,16 +523,16 @@ string16 OmniboxViewGtk::GetText() const {
   string16 out(UTF8ToUTF16(utf8));
   g_free(utf8);
 
-#if GTK_CHECK_VERSION(2, 20, 0)
-  // We need to treat the text currently being composed by the input method as
-  // part of the text content, so that omnibox can work correctly in the middle
-  // of composition.
-  if (pre_edit_.size()) {
-    GtkTextMark* mark = gtk_text_buffer_get_insert(text_buffer_);
-    gtk_text_buffer_get_iter_at_mark(text_buffer_, &start, mark);
-    out.insert(gtk_text_iter_get_offset(&start), pre_edit_);
+  if (supports_pre_edit_) {
+    // We need to treat the text currently being composed by the input method
+    // as part of the text content, so that omnibox can work correctly in the
+    // middle of composition.
+    if (pre_edit_.size()) {
+      GtkTextMark* mark = gtk_text_buffer_get_insert(text_buffer_);
+      gtk_text_buffer_get_iter_at_mark(text_buffer_, &start, mark);
+      out.insert(gtk_text_iter_get_offset(&start), pre_edit_);
+    }
   }
-#endif
   return out;
 }
 
@@ -586,7 +596,7 @@ bool OmniboxViewGtk::DeleteAtEndPressed() {
 }
 
 void OmniboxViewGtk::GetSelectionBounds(string16::size_type* start,
-                                        string16::size_type* end) {
+                                        string16::size_type* end) const {
   CharRange selection = GetSelection();
   *start = static_cast<size_t>(selection.cp_min);
   *end = static_cast<size_t>(selection.cp_max);
@@ -671,9 +681,8 @@ void OmniboxViewGtk::OnBeforePossibleChange() {
   // Record our state.
   text_before_change_ = GetText();
   sel_before_change_ = GetSelection();
-#if GTK_CHECK_VERSION(2, 20, 0)
-  pre_edit_size_before_change_ = pre_edit_.size();
-#endif
+  if (supports_pre_edit_)
+    pre_edit_size_before_change_ = pre_edit_.size();
 }
 
 // TODO(deanm): This is mostly stolen from Windows, and will need some work.
@@ -710,10 +719,10 @@ bool OmniboxViewGtk::OnAfterPossibleChange() {
   // See if the text or selection have changed since OnBeforePossibleChange().
   const string16 new_text(GetText());
   text_changed_ = (new_text != text_before_change_);
-#if GTK_CHECK_VERSION(2, 20, 0)
-  text_changed_ =
-      text_changed_ || (pre_edit_.size() != pre_edit_size_before_change_);
-#endif
+  if (supports_pre_edit_) {
+    text_changed_ =
+        text_changed_ || (pre_edit_.size() != pre_edit_size_before_change_);
+  }
 
   if (text_changed_)
     AdjustTextJustification();
@@ -756,6 +765,12 @@ gfx::NativeView OmniboxViewGtk::GetNativeView() const {
   return alignment_.get();
 }
 
+gfx::NativeView OmniboxViewGtk::GetRelativeWindowForPopup() const {
+  GtkWidget* toplevel = gtk_widget_get_toplevel(GetNativeView());
+  DCHECK(gtk_widget_is_toplevel(toplevel));
+  return toplevel;
+}
+
 CommandUpdater* OmniboxViewGtk::GetCommandUpdater() {
   return command_updater_;
 }
@@ -772,11 +787,10 @@ void OmniboxViewGtk::SetInstantSuggestion(const string16& suggestion,
     gtk_widget_hide(instant_view_);
     return;
   }
-  if (animate_to_complete
-#if GTK_CHECK_VERSION(2, 20, 0)
-      && pre_edit_.empty()
-#endif
-      ) {
+  bool animate = animate_to_complete;
+  if (supports_pre_edit_)
+    animate = animate && pre_edit_.empty();
+  if (animate) {
     instant_animation_->set_delegate(this);
     instant_animation_->Start();
   }
@@ -837,14 +851,14 @@ int OmniboxViewGtk::TextWidth() const {
 }
 
 bool OmniboxViewGtk::IsImeComposing() const {
-#if GTK_CHECK_VERSION(2, 20, 0)
-  return !pre_edit_.empty();
-#else
-  return false;
-#endif
+  return supports_pre_edit_ && !pre_edit_.empty();
 }
 
 #if defined(TOOLKIT_VIEWS)
+int OmniboxViewGtk::GetMaxEditWidth(int entry_width) const {
+  return entry_width;
+}
+
 views::View* OmniboxViewGtk::AddToView(views::View* parent) {
   views::NativeViewHost* host = new views::NativeViewHost;
   parent->AddChildView(host);
@@ -863,9 +877,7 @@ int OmniboxViewGtk::OnPerformDrop(
     if (data.GetURLAndTitle(&url, &title))
       text = UTF8ToUTF16(url.spec());
   } else {
-    string16 data_string;
-    if (data.GetString(&data_string))
-      text = CollapseWhitespace(data_string, true);
+    data.GetString(&text);
   }
 
   if (!text.empty() && OnPerformDropImpl(text))
@@ -873,47 +885,12 @@ int OmniboxViewGtk::OnPerformDrop(
 
   return ui::DragDropTypes::DRAG_NONE;
 }
+#endif  // defined(TOOLKIT_VIEWS)
 
-// static
-OmniboxView* OmniboxViewGtk::Create(AutocompleteEditController* controller,
-                                    ToolbarModel* toolbar_model,
-                                    Profile* profile,
-                                    CommandUpdater* command_updater,
-                                    bool popup_window_mode,
-                                    views::View* location_bar) {
-  if (views::NativeTextfieldViews::IsTextfieldViewsEnabled()) {
-    OmniboxViewViews* omnibox_view = new OmniboxViewViews(controller,
-                                                          toolbar_model,
-                                                          profile,
-                                                          command_updater,
-                                                          popup_window_mode,
-                                                          location_bar);
-    omnibox_view->Init();
-    return omnibox_view;
-  }
-
-  OmniboxViewGtk* omnibox_view = new OmniboxViewGtk(controller,
-                                                    toolbar_model,
-                                                    profile,
-                                                    command_updater,
-                                                    popup_window_mode,
-                                                    location_bar);
-  omnibox_view->Init();
-
-  // Make all the children of the widget visible. NOTE: this won't display
-  // anything, it just toggles the visible flag.
-  gtk_widget_show_all(omnibox_view->GetNativeView());
-  // Hide the widget. NativeViewHostGtk will make it visible again as necessary.
-  gtk_widget_hide(omnibox_view->GetNativeView());
-
-  return omnibox_view;
-}
-#endif
-
-void OmniboxViewGtk::Observe(NotificationType type,
-                             const NotificationSource& source,
-                             const NotificationDetails& details) {
-  DCHECK(type == NotificationType::BROWSER_THEME_CHANGED);
+void OmniboxViewGtk::Observe(int type,
+                             const content::NotificationSource& source,
+                             const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED);
 
   SetBaseColor();
 }
@@ -970,8 +947,8 @@ void OmniboxViewGtk::SetBaseColor() {
 #else
     background_color_ptr = &LocationBarViewGtk::kBackgroundColor;
 #endif
-    gtk_widget_modify_cursor(
-        text_view_, &gtk_util::kGdkBlack, &gtk_util::kGdkGray);
+    GdkColor gray = GDK_COLOR_RGB(0x7f, 0x7f, 0x7f);
+    gtk_widget_modify_cursor(text_view_, &ui::kGdkBlack, &gray);
     gtk_widget_modify_base(text_view_, GTK_STATE_NORMAL, background_color_ptr);
 
 #if !defined(TOOLKIT_VIEWS)
@@ -1230,7 +1207,7 @@ gboolean OmniboxViewGtk::HandleKeyRelease(GtkWidget* widget,
   if (event->keyval == GDK_Control_L || event->keyval == GDK_Control_R) {
     // Round trip to query the control state after the release.  This allows
     // you to release one control key while still holding another control key.
-    GdkDisplay* display = gdk_drawable_get_display(event->window);
+    GdkDisplay* display = gdk_window_get_display(event->window);
     GdkModifierType mod;
     gdk_display_get_pointer(display, NULL, NULL, NULL, &mod);
     if (!(mod & GDK_CONTROL_MASK))
@@ -1252,12 +1229,12 @@ gboolean OmniboxViewGtk::HandleViewButtonPress(GtkWidget* sender,
   DCHECK(text_view_);
 
   if (event->button == 1) {
+    button_1_pressed_ = true;
 #if defined(OS_CHROMEOS)
     // When the first button is pressed, track some stuff that will help us
     // determine whether we should select all of the text when the button is
     // released.
-    button_1_pressed_ = true;
-    text_view_focused_before_button_press_ = GTK_WIDGET_HAS_FOCUS(text_view_);
+    text_view_focused_before_button_press_ = gtk_widget_has_focus(text_view_);
     text_selected_during_click_ = false;
 #endif
 
@@ -1278,11 +1255,10 @@ gboolean OmniboxViewGtk::HandleViewButtonRelease(GtkWidget* sender,
   if (event->button != 1)
     return FALSE;
 
-  DCHECK(text_view_);
-
-#if defined(OS_CHROMEOS)
+  bool button_1_was_pressed = button_1_pressed_;
   button_1_pressed_ = false;
-#endif
+
+  DCHECK(text_view_);
 
   // Call the GtkTextView default handler, ignoring the fact that it will
   // likely have told us to stop propagating.  We want to handle selection.
@@ -1305,8 +1281,11 @@ gboolean OmniboxViewGtk::HandleViewButtonRelease(GtkWidget* sender,
   }
 #endif
 
-  // Inform |model_| about possible text selection change.
-  OnAfterPossibleChange();
+  // Inform |model_| about possible text selection change. We may get a button
+  // release with no press (e.g. if the user clicks in the omnibox to dismiss a
+  // bubble).
+  if (button_1_was_pressed)
+    OnAfterPossibleChange();
 
   return TRUE;  // Don't continue, we called the default handler already.
 }
@@ -1462,10 +1441,14 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
   // back after shutdown, and similar issues.
   GtkClipboard* x_clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
   gchar* text = gtk_clipboard_wait_for_text(x_clipboard);
-  string16 text_wstr = UTF8ToUTF16(text ? text : "");
+  string16 sanitized_text(text ?
+      StripJavascriptSchemas(CollapseWhitespace(UTF8ToUTF16(text), true)) :
+      string16());
   g_free(text);
 
-  // Paste and Go menu item.
+  // Paste and Go menu item. Note that CanPasteAndGo() needs to be called
+  // before is_paste_and_search() in order to set up the paste-and-go state.
+  bool can_paste_and_go = model_->CanPasteAndGo(sanitized_text);
   GtkWidget* paste_go_menuitem = gtk_menu_item_new_with_mnemonic(
       gfx::ConvertAcceleratorsFromWindowsStyle(
           l10n_util::GetStringUTF8(model_->is_paste_and_search() ?
@@ -1473,8 +1456,7 @@ void OmniboxViewGtk::HandlePopulatePopup(GtkWidget* sender, GtkMenu* menu) {
   gtk_menu_shell_append(GTK_MENU_SHELL(menu), paste_go_menuitem);
   g_signal_connect(paste_go_menuitem, "activate",
                    G_CALLBACK(HandlePasteAndGoThunk), this);
-  gtk_widget_set_sensitive(paste_go_menuitem,
-                           model_->CanPasteAndGo(text_wstr));
+  gtk_widget_set_sensitive(paste_go_menuitem, can_paste_and_go);
   gtk_widget_show(paste_go_menuitem);
 
   g_signal_connect(menu, "deactivate",
@@ -1579,7 +1561,7 @@ void OmniboxViewGtk::HandleDragDataReceived(GtkWidget* sender,
   string16 possible_url = UTF8ToUTF16(reinterpret_cast<char*>(text));
   g_free(text);
   if (OnPerformDropImpl(possible_url)) {
-    gtk_drag_finish(context, TRUE, TRUE, time);
+    gtk_drag_finish(context, TRUE, FALSE, time);
 
     static guint signal_id =
         g_signal_lookup("drag-data-received", GTK_TYPE_WIDGET);
@@ -1593,22 +1575,64 @@ void OmniboxViewGtk::HandleDragDataGet(GtkWidget* widget,
                                        guint target_type,
                                        guint time) {
   DCHECK(text_view_);
-  // If GTK put the normal textual version of the selection in our drag data,
-  // put our doctored selection that might have the 'http://' prefix. Also, GTK
-  // is confused about signedness of its datatypes, leading to the weird switch
-  // statement (no set of casts fixes this).
+
   switch (target_type) {
     case GTK_TEXT_BUFFER_TARGET_INFO_TEXT: {
-      gtk_selection_data_set_text(selection_data, selected_text_.c_str(), -1);
+      gtk_selection_data_set_text(selection_data, dragged_text_.c_str(), -1);
+      break;
+    }
+    case ui::CHROME_NAMED_URL: {
+      WebContents* current_tab =
+          BrowserList::GetLastActive()->GetSelectedWebContents();
+      string16 tab_title = current_tab->GetTitle();
+      // Pass an empty string if user has edited the URL.
+      if (current_tab->GetURL().spec() != dragged_text_)
+        tab_title = string16();
+      ui::WriteURLWithName(selection_data, GURL(dragged_text_),
+                           tab_title, target_type);
+      break;
     }
   }
+}
+
+void OmniboxViewGtk::HandleDragBegin(GtkWidget* widget,
+                                       GdkDragContext* context) {
+  string16 text = UTF8ToUTF16(GetSelectedText());
+
+  if (text.empty())
+    return;
+
+  // Use AdjustTextForCopy to make sure we prefix the text with 'http://'.
+  CharRange selection = GetSelection();
+  GURL url;
+  bool write_url;
+  model_->AdjustTextForCopy(selection.selection_min(), IsSelectAll(), &text,
+                            &url, &write_url);
+  if (write_url) {
+    selected_text_ = UTF16ToUTF8(text);
+    GtkTargetList* copy_targets =
+        gtk_text_buffer_get_copy_target_list(text_buffer_);
+    gtk_target_list_add(copy_targets,
+                        ui::GetAtomForTarget(ui::CHROME_NAMED_URL),
+                        GTK_TARGET_SAME_APP, ui::CHROME_NAMED_URL);
+  }
+  dragged_text_ = selected_text_;
+}
+
+void OmniboxViewGtk::HandleDragEnd(GtkWidget* widget,
+                                       GdkDragContext* context) {
+  GdkAtom atom = ui::GetAtomForTarget(ui::CHROME_NAMED_URL);
+  GtkTargetList* copy_targets =
+      gtk_text_buffer_get_copy_target_list(text_buffer_);
+  gtk_target_list_remove(copy_targets, atom);
+  dragged_text_.clear();
 }
 
 void OmniboxViewGtk::HandleInsertText(GtkTextBuffer* buffer,
                                       GtkTextIter* location,
                                       const gchar* text,
                                       gint len) {
-  std::string filtered_text;
+  string16 filtered_text;
   filtered_text.reserve(len);
 
   // Filter out new line and tab characters.
@@ -1622,29 +1646,31 @@ void OmniboxViewGtk::HandleInsertText(GtkTextBuffer* buffer,
   if (len == 1 && (text[0] == '\n' || text[0] == '\r'))
     enter_was_inserted_ = true;
 
-  const gchar* p = text;
-  while (*p && (p - text) < len) {
+  for (const gchar* p = text; *p && (p - text) < len;
+       p = g_utf8_next_char(p)) {
     gunichar c = g_utf8_get_char(p);
-    const gchar* next = g_utf8_next_char(p);
 
     // 0x200B is Zero Width Space, which is inserted just before the instant
     // anchor for working around the GtkTextView's misalignment bug.
     // This character might be captured and inserted into the content by undo
     // manager, so we need to filter it out here.
-    if (c != L'\n' && c != L'\r' && c != L'\t' && c != 0x200B)
-      filtered_text.append(p, next);
-
-    p = next;
+    if (c != 0x200B)
+      base::WriteUnicodeCharacter(c, &filtered_text);
   }
 
-  if (filtered_text.length()) {
+  if (model_->is_pasting())
+    filtered_text = StripJavascriptSchemas(
+        CollapseWhitespace(filtered_text, true));
+
+  if (!filtered_text.empty()) {
     // Avoid inserting the text after the instant anchor.
     ValidateTextBufferIter(location);
 
     // Call the default handler to insert filtered text.
     GtkTextBufferClass* klass = GTK_TEXT_BUFFER_GET_CLASS(buffer);
-    klass->insert_text(buffer, location, filtered_text.data(),
-                       static_cast<gint>(filtered_text.length()));
+    std::string utf8_text = UTF16ToUTF8(filtered_text);
+    klass->insert_text(buffer, location, utf8_text.data(),
+                       static_cast<gint>(utf8_text.length()));
   }
 
   // Stop propagating the signal emission to prevent the default handler from
@@ -1693,12 +1719,10 @@ void OmniboxViewGtk::HandleViewMoveFocus(GtkWidget* widget,
   if (model_->is_keyword_hint())
     handled = model_->AcceptKeyword();
 
-#if GTK_CHECK_VERSION(2, 20, 0)
-  if (!handled && !pre_edit_.empty())
+  if (supports_pre_edit_ && !handled && !pre_edit_.empty())
     handled = true;
-#endif
 
-  if (!handled && GTK_WIDGET_VISIBLE(instant_view_))
+  if (!handled && gtk_widget_get_visible(instant_view_))
     handled = model_->CommitSuggestedText(true);
 
   if (!handled) {
@@ -1771,7 +1795,8 @@ void OmniboxViewGtk::HandleCopyOrCutClipboard(bool copy) {
 }
 
 bool OmniboxViewGtk::OnPerformDropImpl(const string16& text) {
-  if (model_->CanPasteAndGo(CollapseWhitespace(text, true))) {
+  if (model_->CanPasteAndGo(StripJavascriptSchemas(
+      CollapseWhitespace(text, true)))) {
     model_->PasteAndGo();
     return true;
   }
@@ -1802,8 +1827,8 @@ gfx::Font OmniboxViewGtk::GetFont() {
     return font;
   } else {
     return gfx::Font(
-        ResourceBundle::GetSharedInstance().GetFont(ResourceBundle::BaseFont).
-            GetFontName(),
+        ui::ResourceBundle::GetSharedInstance().GetFont(
+            ui::ResourceBundle::BaseFont).GetFontName(),
         popup_window_mode_ ?
             browser_defaults::kAutocompleteEditFontPixelSizeInPopup :
             browser_defaults::kAutocompleteEditFontPixelSize);
@@ -1908,7 +1933,7 @@ void OmniboxViewGtk::SelectAllInternal(bool reversed,
 }
 
 void OmniboxViewGtk::StartUpdatingHighlightedText() {
-  if (GTK_WIDGET_REALIZED(text_view_)) {
+  if (gtk_widget_get_realized(text_view_)) {
     GtkClipboard* clipboard =
         gtk_widget_get_clipboard(text_view_, GDK_SELECTION_PRIMARY);
     DCHECK(clipboard);
@@ -1920,7 +1945,7 @@ void OmniboxViewGtk::StartUpdatingHighlightedText() {
 }
 
 void OmniboxViewGtk::FinishUpdatingHighlightedText() {
-  if (GTK_WIDGET_REALIZED(text_view_)) {
+  if (gtk_widget_get_realized(text_view_)) {
     GtkClipboard* clipboard =
         gtk_widget_get_clipboard(text_view_, GDK_SELECTION_PRIMARY);
     DCHECK(clipboard);
@@ -1948,14 +1973,14 @@ OmniboxViewGtk::CharRange OmniboxViewGtk::GetSelection() const {
   gint start_offset = gtk_text_iter_get_offset(&start);
   gint end_offset = gtk_text_iter_get_offset(&insert);
 
-#if GTK_CHECK_VERSION(2, 20, 0)
-  // Nothing should be selected when we are in the middle of composition.
-  DCHECK(pre_edit_.empty() || start_offset == end_offset);
-  if (!pre_edit_.empty()) {
-    start_offset += pre_edit_.size();
-    end_offset += pre_edit_.size();
+  if (supports_pre_edit_) {
+    // Nothing should be selected when we are in the middle of composition.
+    DCHECK(pre_edit_.empty() || start_offset == end_offset);
+    if (!pre_edit_.empty()) {
+      start_offset += pre_edit_.size();
+      end_offset += pre_edit_.size();
+    }
   }
-#endif
 
   return CharRange(start_offset, end_offset);
 }
@@ -1971,13 +1996,12 @@ void OmniboxViewGtk::ItersFromCharRange(const CharRange& range,
 int OmniboxViewGtk::GetTextLength() const {
   GtkTextIter end;
   gtk_text_buffer_get_iter_at_mark(text_buffer_, &end, instant_mark_);
-#if GTK_CHECK_VERSION(2, 20, 0)
-  // We need to count the length of the text being composed, because we treat
-  // it as part of the content in GetText().
-  return gtk_text_iter_get_offset(&end) + pre_edit_.size();
-#else
+  if (supports_pre_edit_) {
+    // We need to count the length of the text being composed, because we treat
+    // it as part of the content in GetText().
+    return gtk_text_iter_get_offset(&end) + pre_edit_.size();
+  }
   return gtk_text_iter_get_offset(&end);
-#endif
 }
 
 void OmniboxViewGtk::PlaceCaretAt(int pos) {
@@ -1993,17 +2017,17 @@ bool OmniboxViewGtk::IsCaretAtEnd() const {
 }
 
 void OmniboxViewGtk::EmphasizeURLComponents() {
-#if GTK_CHECK_VERSION(2, 20, 0)
-  // We can't change the text style easily, if the pre-edit string (the text
-  // being composed by the input method) is not empty, which is not treated as
-  // a part of the text content inside GtkTextView. And it's ok to simply return
-  // in this case, as this method will be called again when the pre-edit string
-  // gets committed.
-  if (pre_edit_.size()) {
-    strikethrough_ = CharRange();
-    return;
+  if (supports_pre_edit_) {
+    // We can't change the text style easily, if the pre-edit string (the text
+    // being composed by the input method) is not empty, which is not treated as
+    // a part of the text content inside GtkTextView. And it's ok to simply
+    // return in this case, as this method will be called again when the
+    // pre-edit string gets committed.
+    if (pre_edit_.size()) {
+      strikethrough_ = CharRange();
+      return;
+    }
   }
-#endif
   // See whether the contents are a URL with a non-empty host portion, which we
   // should emphasize.  To check for a URL, rather than using the type returned
   // by Parse(), ask the model, which will check the desired page transition for
@@ -2274,7 +2298,6 @@ void OmniboxViewGtk::UpdatePrimarySelectionIfValidURL() {
   }
 }
 
-#if GTK_CHECK_VERSION(2, 20, 0)
 void OmniboxViewGtk::HandlePreEditChanged(GtkWidget* sender,
                                           const gchar* pre_edit) {
   // GtkTextView won't fire "begin-user-action" and "end-user-action" signals
@@ -2293,7 +2316,6 @@ void OmniboxViewGtk::HandlePreEditChanged(GtkWidget* sender,
   }
   OnAfterPossibleChange();
 }
-#endif
 
 void OmniboxViewGtk::HandleWindowSetFocus(GtkWindow* sender,
                                           GtkWidget* focus) {
@@ -2339,3 +2361,41 @@ void OmniboxViewGtk::AdjustVerticalAlignmentOfInstantView() {
   pango_layout_iter_free(iter);
   g_object_set(instant_anchor_tag_, "rise", baseline - height, NULL);
 }
+
+#if defined(TOOLKIT_VIEWS)
+// static
+OmniboxView* OmniboxView::CreateOmniboxView(
+    AutocompleteEditController* controller,
+    ToolbarModel* toolbar_model,
+    Profile* profile,
+    CommandUpdater* command_updater,
+    bool popup_window_mode,
+    LocationBarView* location_bar) {
+  if (views::Widget::IsPureViews()) {
+    OmniboxViewViews* omnibox_view = new OmniboxViewViews(controller,
+                                                          toolbar_model,
+                                                          profile,
+                                                          command_updater,
+                                                          popup_window_mode,
+                                                          location_bar);
+    omnibox_view->Init();
+    return omnibox_view;
+  }
+
+  OmniboxViewGtk* omnibox_view = new OmniboxViewGtk(controller,
+                                                    toolbar_model,
+                                                    profile,
+                                                    command_updater,
+                                                    popup_window_mode,
+                                                    location_bar);
+  omnibox_view->Init();
+
+  // Make all the children of the widget visible. NOTE: this won't display
+  // anything, it just toggles the visible flag.
+  gtk_widget_show_all(omnibox_view->GetNativeView());
+  // Hide the widget. NativeViewHostGtk will make it visible again as necessary.
+  gtk_widget_hide(omnibox_view->GetNativeView());
+
+  return omnibox_view;
+}
+#endif

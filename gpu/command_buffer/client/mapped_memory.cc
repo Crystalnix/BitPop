@@ -23,7 +23,8 @@ MemoryChunk::MemoryChunk(
 }
 
 MappedMemoryManager::MappedMemoryManager(CommandBufferHelper* helper)
-    : helper_(helper) {
+    : chunk_size_multiple_(1),
+      helper_(helper) {
 }
 
 MappedMemoryManager::~MappedMemoryManager() {
@@ -52,7 +53,10 @@ void* MappedMemoryManager::Alloc(
 
   // Make a new chunk to satisfy the request.
   CommandBuffer* cmd_buf = helper_->command_buffer();
-  int32 id = cmd_buf->CreateTransferBuffer(size, -1);
+  unsigned int chunk_size =
+      ((size + chunk_size_multiple_ - 1) / chunk_size_multiple_) *
+      chunk_size_multiple_;
+  int32 id = cmd_buf->CreateTransferBuffer(chunk_size, -1);
   if (id == -1) {
     return NULL;
   }
@@ -86,6 +90,21 @@ void MappedMemoryManager::FreePendingToken(void* pointer, int32 token) {
     }
   }
   GPU_NOTREACHED();
+}
+
+void MappedMemoryManager::FreeUnused() {
+  CommandBuffer* cmd_buf = helper_->command_buffer();
+  MemoryChunkVector::iterator iter = chunks_.begin();
+  while (iter != chunks_.end()) {
+    MemoryChunk* chunk = *iter;
+    chunk->FreeUnused();
+    if (!chunk->InUse()) {
+      cmd_buf->DestroyTransferBuffer(chunk->shm_id());
+      iter = chunks_.erase(iter);
+    } else {
+      ++iter;
+    }
+  }
 }
 
 }  // namespace gpu

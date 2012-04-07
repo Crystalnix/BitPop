@@ -1,28 +1,31 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <vector>
-#include <string>
 #include <cstdio>
+#include <string>
+#include <vector>
 
-#include "base/message_loop.h"
 #include "base/file_util.h"
+#include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/shared_memory.h"
 #include "base/string_util.h"
-#include "chrome/browser/visitedlink/visitedlink_master.h"
 #include "chrome/browser/visitedlink/visitedlink_event_listener.h"
+#include "chrome/browser/visitedlink/visitedlink_master.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/visitedlink_slave.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/browser_render_process_host.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/common/notification_service.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -103,7 +106,7 @@ class VisitedLinkTest : public testing::Test {
       master_.reset(NULL);
 
     if (history_service_.get()) {
-      history_service_->SetOnBackendDestroyTask(new MessageLoop::QuitTask);
+      history_service_->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
       history_service_->Cleanup();
       history_service_ = NULL;
 
@@ -113,6 +116,9 @@ class VisitedLinkTest : public testing::Test {
       // our destroy task.
       MessageLoop::current()->Run();
     }
+
+    // Wait for all pending file I/O to be completed.
+    BrowserThread::GetBlockingPool()->FlushForTesting();
   }
 
   // Loads the database from disk and makes sure that the same URLs are present
@@ -177,8 +183,8 @@ class VisitedLinkTest : public testing::Test {
   ScopedTempDir temp_dir_;
 
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   // Filenames for the services;
   FilePath history_dir_;
@@ -399,7 +405,7 @@ TEST_F(VisitedLinkTest, Rebuild) {
   // complete before we set the task because the rebuild completion message
   // is posted to the message loop; until we Run() it, rebuild can not
   // complete.
-  master_->set_rebuild_complete_task(new MessageLoop::QuitTask);
+  master_->set_rebuild_complete_task(MessageLoop::QuitClosure());
   MessageLoop::current()->Run();
 
   // Test that all URLs were written to the database properly.
@@ -420,7 +426,7 @@ TEST_F(VisitedLinkTest, BigImport) {
     master_->AddURL(TestURL(i));
 
   // Wait for the rebuild to complete.
-  master_->set_rebuild_complete_task(new MessageLoop::QuitTask);
+  master_->set_rebuild_complete_task(MessageLoop::QuitClosure());
   MessageLoop::current()->Run();
 
   // Ensure that the right number of URLs are present
@@ -454,15 +460,17 @@ TEST_F(VisitedLinkTest, Listener) {
 
 class VisitCountingProfile : public TestingProfile {
  public:
-  explicit VisitCountingProfile(VisitedLinkEventListener* event_listener)
+  VisitCountingProfile()
       : add_count_(0),
         add_event_count_(0),
         reset_event_count_(0),
-        event_listener_(event_listener) {}
+        event_listener_(ALLOW_THIS_IN_INITIALIZER_LIST(
+            new VisitedLinkEventListener(this))) {}
 
   virtual VisitedLinkMaster* GetVisitedLinkMaster() {
     if (!visited_link_master_.get()) {
-      visited_link_master_.reset(new VisitedLinkMaster(event_listener_, this));
+      visited_link_master_.reset(
+          new VisitedLinkMaster(event_listener_.get(), this));
       visited_link_master_->Init();
     }
     return visited_link_master_.get();
@@ -486,23 +494,26 @@ class VisitCountingProfile : public TestingProfile {
   int add_count_;
   int add_event_count_;
   int reset_event_count_;
-  VisitedLinkEventListener* event_listener_;
+  scoped_ptr<VisitedLinkEventListener> event_listener_;
   scoped_ptr<VisitedLinkMaster> visited_link_master_;
 };
 
-// Stub out as little as possible, borrowing from BrowserRenderProcessHost.
-class VisitRelayingRenderProcessHost : public BrowserRenderProcessHost {
+// Stub out as little as possible, borrowing from RenderProcessHost.
+class VisitRelayingRenderProcessHost : public RenderProcessHostImpl {
  public:
-  explicit VisitRelayingRenderProcessHost(Profile* profile)
-      : BrowserRenderProcessHost(profile) {
-    NotificationService::current()->Notify(
-        NotificationType::RENDERER_PROCESS_CREATED,
-        Source<RenderProcessHost>(this), NotificationService::NoDetails());
+  explicit VisitRelayingRenderProcessHost(
+      content::BrowserContext* browser_context)
+          : RenderProcessHostImpl(browser_context) {
+    content::NotificationService::current()->Notify(
+        content::NOTIFICATION_RENDERER_PROCESS_CREATED,
+        content::Source<RenderProcessHost>(this),
+        content::NotificationService::NoDetails());
   }
   virtual ~VisitRelayingRenderProcessHost() {
-    NotificationService::current()->Notify(
-        NotificationType::RENDERER_PROCESS_TERMINATED,
-        Source<RenderProcessHost>(this), NotificationService::NoDetails());
+    content::NotificationService::current()->Notify(
+        content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+        content::Source<content::RenderProcessHost>(this),
+        content::NotificationService::NoDetails());
   }
 
   virtual bool Init(bool is_accessibility_enabled) {
@@ -523,14 +534,15 @@ class VisitRelayingRenderProcessHost : public BrowserRenderProcessHost {
 
   virtual bool Send(IPC::Message* msg) {
     VisitCountingProfile* counting_profile =
-        static_cast<VisitCountingProfile*>(profile());
+        static_cast<VisitCountingProfile*>(
+            Profile::FromBrowserContext(GetBrowserContext()));
 
-    if (msg->type() == ViewMsg_VisitedLink_Add::ID) {
+    if (msg->type() == ChromeViewMsg_VisitedLink_Add::ID) {
       void* iter = NULL;
       std::vector<uint64> fingerprints;
       CHECK(IPC::ReadParam(msg, &iter, &fingerprints));
       counting_profile->CountAddEvent(fingerprints.size());
-    } else if (msg->type() == ViewMsg_VisitedLink_Reset::ID) {
+    } else if (msg->type() == ChromeViewMsg_VisitedLink_Reset::ID) {
       counting_profile->CountResetEvent();
     }
 
@@ -547,12 +559,13 @@ class VisitRelayingRenderProcessHost : public BrowserRenderProcessHost {
 };
 
 class VisitedLinkRenderProcessHostFactory
-    : public RenderProcessHostFactory {
+    : public content::RenderProcessHostFactory {
  public:
   VisitedLinkRenderProcessHostFactory()
-      : RenderProcessHostFactory() {}
-  virtual RenderProcessHost* CreateRenderProcessHost(Profile* profile) const {
-    return new VisitRelayingRenderProcessHost(profile);
+      : content::RenderProcessHostFactory() {}
+  virtual content::RenderProcessHost* CreateRenderProcessHost(
+      content::BrowserContext* browser_context) const OVERRIDE {
+    return new VisitRelayingRenderProcessHost(browser_context);
   }
 
  private:
@@ -560,34 +573,30 @@ class VisitedLinkRenderProcessHostFactory
   DISALLOW_COPY_AND_ASSIGN(VisitedLinkRenderProcessHostFactory);
 };
 
-class VisitedLinkEventsTest : public RenderViewHostTestHarness {
+class VisitedLinkEventsTest : public ChromeRenderViewHostTestHarness {
  public:
   VisitedLinkEventsTest()
-      : RenderViewHostTestHarness(),
-        ui_thread_(BrowserThread::UI, &message_loop_),
+      : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_) {}
-  ~VisitedLinkEventsTest() {
-    // This ends up using the file thread to schedule the delete.
-    profile_.reset();
-    message_loop_.RunAllPending();
-  }
+  virtual ~VisitedLinkEventsTest() {}
   virtual void SetFactoryMode() {}
   virtual void SetUp() {
     SetFactoryMode();
-    event_listener_.reset(new VisitedLinkEventListener());
     rvh_factory_.set_render_process_host_factory(&vc_rph_factory_);
-    profile_.reset(new VisitCountingProfile(event_listener_.get()));
-    RenderViewHostTestHarness::SetUp();
+    browser_context_.reset(new VisitCountingProfile());
+    ChromeRenderViewHostTestHarness::SetUp();
   }
 
   VisitCountingProfile* profile() const {
-    return static_cast<VisitCountingProfile*>(profile_.get());
+    return static_cast<VisitCountingProfile*>(browser_context_.get());
   }
 
   void WaitForCoalescense() {
     // Let the timer fire.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                            new MessageLoop::QuitTask(), 110);
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        MessageLoop::QuitClosure(),
+        base::TimeDelta::FromMilliseconds(110));
     MessageLoop::current()->Run();
   }
 
@@ -595,16 +604,15 @@ class VisitedLinkEventsTest : public RenderViewHostTestHarness {
   VisitedLinkRenderProcessHostFactory vc_rph_factory_;
 
  private:
-  scoped_ptr<VisitedLinkEventListener> event_listener_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(VisitedLinkEventsTest);
 };
 
 TEST_F(VisitedLinkEventsTest, Coalescense) {
   // add some URLs to master.
-  VisitedLinkMaster* master = profile_->GetVisitedLinkMaster();
+  VisitedLinkMaster* master = profile()->GetVisitedLinkMaster();
   // Add a few URLs.
   master->AddURL(GURL("http://acidtests.org/"));
   master->AddURL(GURL("http://google.com/"));
@@ -656,8 +664,8 @@ TEST_F(VisitedLinkEventsTest, Coalescense) {
 }
 
 TEST_F(VisitedLinkEventsTest, Basics) {
-  VisitedLinkMaster* master = profile_->GetVisitedLinkMaster();
-  rvh()->CreateRenderView(string16());
+  VisitedLinkMaster* master = profile()->GetVisitedLinkMaster();
+  rvh()->CreateRenderView(string16(), -1);
 
   // Add a few URLs.
   master->AddURL(GURL("http://acidtests.org/"));
@@ -680,8 +688,8 @@ TEST_F(VisitedLinkEventsTest, Basics) {
 }
 
 TEST_F(VisitedLinkEventsTest, TabVisibility) {
-  VisitedLinkMaster* master = profile_->GetVisitedLinkMaster();
-  rvh()->CreateRenderView(string16());
+  VisitedLinkMaster* master = profile()->GetVisitedLinkMaster();
+  rvh()->CreateRenderView(string16(), -1);
 
   // Simulate tab becoming inactive.
   rvh()->WasHidden();

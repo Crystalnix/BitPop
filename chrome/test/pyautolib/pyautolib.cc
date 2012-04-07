@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/base_paths.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/test/automation/extension_proxy.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/pyautolib/pyautolib.h"
 #include "googleurl/src/gurl.h"
@@ -23,7 +25,9 @@ PyUITestSuiteBase::PyUITestSuiteBase(int argc, char** argv)
 }
 
 PyUITestSuiteBase::~PyUITestSuiteBase() {
+#if defined(OS_MACOSX)
   pool_.Recycle();
+#endif
   Shutdown();
 }
 
@@ -122,10 +126,20 @@ bool PyUITestBase::RunCommand(int browser_command, int window_index) {
   return browser_proxy->RunCommand(browser_command);
 }
 
+bool PyUITestBase::IsMenuCommandEnabled(int id, int window_index) {
+  scoped_refptr<BrowserProxy> browser_proxy =
+      automation()->GetBrowserWindow(window_index);
+  EXPECT_TRUE(browser_proxy.get());
+  bool enabled = false;
+  if (browser_proxy.get())
+    EXPECT_TRUE(browser_proxy->IsMenuCommandEnabled(id, &enabled));
+  return enabled;
+}
+
 bool PyUITestBase::ActivateTab(int tab_index, int window_index) {
   scoped_refptr<BrowserProxy> browser_proxy =
       automation()->GetBrowserWindow(window_index);
-  return browser_proxy->ActivateTab(tab_index);
+  return browser_proxy->BringToFront() && browser_proxy->ActivateTab(tab_index);
 }
 
 void PyUITestBase::SetDownloadShelfVisible(bool is_visible, int window_index) {
@@ -201,17 +215,7 @@ int PyUITestBase::GetBrowserWindowCount() {
   return num_windows;
 }
 
-std::string PyUITestBase::InstallExtension(const FilePath& crx_file,
-                                           bool with_ui) {
-  scoped_refptr<ExtensionProxy> proxy =
-      automation()->InstallExtension(crx_file, with_ui);
-  std::string id;
-  if (!proxy.get() || !proxy.get()->GetId(&id))
-    return "";
-  return id;
-}
-
-bool PyUITestBase::GetBookmarkBarVisibility() {
+bool PyUITestBase::GetBookmarkBarState(bool* visible, bool* detached) {
   scoped_refptr<BrowserProxy> browser_proxy =
       automation()->GetBrowserWindow(0);  // Window doesn't matter.
   EXPECT_TRUE(browser_proxy.get());
@@ -219,9 +223,27 @@ bool PyUITestBase::GetBookmarkBarVisibility() {
     return false;
 
   // We have no use for animating in this context.
-  bool visible, animating;
-  EXPECT_TRUE(browser_proxy->GetBookmarkBarVisibility(&visible, &animating));
+  bool animating;
+  EXPECT_TRUE(browser_proxy->GetBookmarkBarVisibility(visible,
+                                                      &animating,
+                                                      detached));
+  return true;
+}
+
+bool PyUITestBase::GetBookmarkBarVisibility() {
+  // We have no use for detached in this context.
+  bool visible, detached;
+  if (!GetBookmarkBarState(&visible, &detached))
+    return false;
   return visible;
+}
+
+bool PyUITestBase::IsBookmarkBarDetached() {
+  // We have no use for visible in this context.
+  bool visible, detached;
+  if (!GetBookmarkBarState(&visible, &detached))
+    return false;
+  return detached;
 }
 
 bool PyUITestBase::WaitForBookmarkBarVisibilityChange(bool wait_for_open) {
@@ -337,36 +359,6 @@ std::string PyUITestBase::_SendJSONRequest(int window_index,
     }
   }
   return response;
-}
-
-std::wstring PyUITestBase::ExecuteJavascript(const std::wstring& script,
-                                             int window_index,
-                                             int tab_index,
-                                             const std::wstring& frame_xpath) {
-  scoped_refptr<BrowserProxy> browser_proxy =
-      automation()->GetBrowserWindow(window_index);
-  EXPECT_TRUE(browser_proxy.get());
-  std::wstring response;
-  if (!browser_proxy.get())
-    return response;
-  scoped_refptr<TabProxy> tab_proxy =
-      browser_proxy->GetTab(tab_index);
-  EXPECT_TRUE(tab_proxy.get());
-  if (!tab_proxy.get())
-    return response;
-
-  EXPECT_TRUE(tab_proxy->ExecuteAndExtractString(frame_xpath, script,
-                                                 &response));
-  return response;
-}
-
-std::wstring PyUITestBase::GetDOMValue(const std::wstring& expr,
-                                       int window_index,
-                                       int tab_index,
-                                       const std::wstring& frame_xpath) {
-  std::wstring script = std::wstring(L"window.domAutomationController.send(") +
-      expr + std::wstring(L")");
-  return ExecuteJavascript(script, window_index, tab_index, frame_xpath);
 }
 
 bool PyUITestBase::ResetToDefaultTheme() {

@@ -10,7 +10,6 @@
 #include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_graphics_2d.h"
-#include "ppapi/cpp/common.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/graphics_2d.h"
 #include "ppapi/cpp/image_data.h"
@@ -28,30 +27,30 @@ void FlushCallbackNOP(void* data, int32_t result) {
 }
 
 void FlushCallbackQuitMessageLoop(void* data, int32_t result) {
-  reinterpret_cast<TestGraphics2D*>(data)->QuitMessageLoop();
+  static_cast<TestGraphics2D*>(data)->QuitMessageLoop();
 }
 
 }  // namespace
 
 bool TestGraphics2D::Init() {
-  graphics_2d_interface_ = reinterpret_cast<PPB_Graphics2D const*>(
+  graphics_2d_interface_ = static_cast<const PPB_Graphics2D*>(
       pp::Module::Get()->GetBrowserInterface(PPB_GRAPHICS_2D_INTERFACE));
-  image_data_interface_ = reinterpret_cast<PPB_ImageData const*>(
+  image_data_interface_ = static_cast<const PPB_ImageData*>(
       pp::Module::Get()->GetBrowserInterface(PPB_IMAGEDATA_INTERFACE));
   return graphics_2d_interface_ && image_data_interface_ &&
-         InitTestingInterface();
+         CheckTestingInterface();
 }
 
-void TestGraphics2D::RunTest() {
-  instance_->LogTest("InvalidResource", TestInvalidResource());
-  instance_->LogTest("InvalidSize", TestInvalidSize());
-  instance_->LogTest("Humongous", TestHumongous());
-  instance_->LogTest("InitToZero", TestInitToZero());
-  instance_->LogTest("Describe", TestDescribe());
-  instance_->LogTest("Paint", TestPaint());
-  //instance_->LogTest("Scroll", TestScroll());  // TODO(brettw) implement.
-  instance_->LogTest("Replace", TestReplace());
-  instance_->LogTest("Flush", TestFlush());
+void TestGraphics2D::RunTests(const std::string& filter) {
+  RUN_TEST(InvalidResource, filter);
+  RUN_TEST(InvalidSize, filter);
+  RUN_TEST(Humongous, filter);
+  RUN_TEST(InitToZero, filter);
+  RUN_TEST(Describe, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(Paint, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(Scroll, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(Replace, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(Flush, filter);
 }
 
 void TestGraphics2D::QuitMessageLoop() {
@@ -61,7 +60,7 @@ void TestGraphics2D::QuitMessageLoop() {
 bool TestGraphics2D::ReadImageData(const pp::Graphics2D& dc,
                                    pp::ImageData* image,
                                    const pp::Point& top_left) const {
-  return pp::PPBoolToBool(testing_interface_->ReadImageData(
+  return PP_ToBool(testing_interface_->ReadImageData(
       dc.pp_resource(),
       image->pp_resource(),
       &top_left.pp_point()));
@@ -79,8 +78,11 @@ bool TestGraphics2D::IsDCUniformColor(const pp::Graphics2D& dc,
 }
 
 bool TestGraphics2D::FlushAndWaitForDone(pp::Graphics2D* context) {
-  pp::CompletionCallback cc(&FlushCallbackQuitMessageLoop, this);
+  int32_t flags = (force_async_ ? 0 : PP_COMPLETIONCALLBACK_FLAG_OPTIONAL);
+  pp::CompletionCallback cc(&FlushCallbackQuitMessageLoop, this, flags);
   int32_t rv = context->Flush(cc);
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return false;
   if (rv == PP_OK)
     return true;
   if (rv != PP_OK_COMPLETIONPENDING)
@@ -209,11 +211,11 @@ std::string TestGraphics2D::TestInvalidResource() {
   // Flush.
   if (graphics_2d_interface_->Flush(
           image.pp_resource(),
-          PP_MakeCompletionCallback(&FlushCallbackNOP, NULL)) == PP_OK)
+          PP_MakeOptionalCompletionCallback(&FlushCallbackNOP, NULL)) == PP_OK)
     return "Flush succeeded with a different resource";
   if (graphics_2d_interface_->Flush(
           null_context.pp_resource(),
-          PP_MakeCompletionCallback(&FlushCallbackNOP, NULL)) == PP_OK)
+          PP_MakeOptionalCompletionCallback(&FlushCallbackNOP, NULL)) == PP_OK)
     return "Flush succeeded with a NULL resource";
 
   // ReadImageData.
@@ -298,7 +300,7 @@ std::string TestGraphics2D::TestDescribe() {
                                         &is_always_opaque))
     return "Describe failed";
   if (size.width != w || size.height != h ||
-      is_always_opaque != pp::BoolToPPBool(always_opaque))
+      is_always_opaque != PP_FromBool(always_opaque))
     return "Mismatch of data.";
 
   PASS();
@@ -388,59 +390,134 @@ std::string TestGraphics2D::TestScroll() {
   pp::Graphics2D dc(instance_, pp::Size(w, h), false);
   if (dc.is_null())
     return "Failure creating a boring device.";
+  if (!instance_->BindGraphics(dc))
+    return "Failure to bind the boring device.";
 
   // Make sure the device background is 0.
   if (!IsDCUniformColor(dc, 0))
     return "Bad initial color.";
 
-  const int image_w = 15, image_h = 23;
+  const int image_width = 15, image_height = 23;
   pp::ImageData test_image(instance_, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
-                           pp::Size(image_w, image_h), false);
+                           pp::Size(image_width, image_height), false);
   FillImageWithGradient(&test_image);
+  pp::ImageData no_image(instance_, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
+                         pp::Size(image_width, image_height), false);
+  FillRectInImage(&no_image, pp::Rect(0, 0, image_width, image_height), 0);
+  pp::ImageData readback_image(instance_, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
+                               pp::Size(image_width, image_height), false);
+  pp::ImageData readback_scroll(instance_, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
+                                pp::Size(image_width, image_height), false);
+
+  if (test_image.size() != pp::Size(image_width, image_height))
+    return "Wrong test image size\n";
 
   int image_x = 51, image_y = 72;
   dc.PaintImageData(test_image, pp::Point(image_x, image_y));
   if (!FlushAndWaitForDone(&dc))
     return "Couldn't flush to fill backing store.";
 
-  // TC1, Scroll image to a free space.
+  // Test Case 1. Incorrect usage when scrolling image to a free space.
+  // The clip area is *not* the area to shift around within the graphics device
+  // by specified amount. It's the area to which the scroll is limited. So if
+  // the clip area is the size of the image and the amount points to free space,
+  // the scroll won't result in additional images.
   int dx = -40, dy = -48;
-  pp::Rect clip = pp::Rect(image_x, image_y, test_image.size().width(),
-                           test_image.size().height());
+  int scroll_x = image_x + dx, scroll_y = image_y + dy;
+  pp::Rect clip(image_x, image_y, image_width, image_height);
   dc.Scroll(clip, pp::Point(dx, dy));
-
   if (!FlushAndWaitForDone(&dc))
     return "TC1, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC1, Couldn't read back scrolled image data.";
+  if (!CompareImages(no_image, readback_scroll))
+    return "TC1, Read back scrolled image is not the same as no image.";
 
-  image_x += dx;
-  image_y += dy;
-
-  pp::ImageData readback(instance_, PP_IMAGEDATAFORMAT_BGRA_PREMUL,
-                         pp::Size(image_w, image_h), false);
-  if (!ReadImageData(dc, &readback, pp::Point(image_x, image_y)))
-    return "TC1, Couldn't read back image data.";
-
-  if (!CompareImages(test_image, readback))
-    return "TC1, Read back image is not the same as test image.";
-
-  // TC2, Scroll image to an overlapping space.
-  dx = 6;
-  dy = 9;
-  clip = pp::Rect(image_x, image_y, test_image.size().width(),
-                  test_image.size().height());
-  dc.Scroll(clip, pp::Point(dx, dy));
-
+  // Test Case 2.
+  // The amount is intended to place the image in the free space outside
+  // of the original, but the clip area extends beyond the graphics device area.
+  // This scroll is invalid and will be a noop.
+  scroll_x = 11, scroll_y = 24;
+  clip = pp::Rect(0, 0, w, h + 1);
+  dc.Scroll(clip, pp::Point(scroll_x - image_x, scroll_y - image_y));
   if (!FlushAndWaitForDone(&dc))
     return "TC2, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC2, Couldn't read back scrolled image data.";
+  if (!CompareImages(no_image, readback_scroll))
+    return "TC2, Read back scrolled image is not the same as no image.";
 
-  image_x += dx;
-  image_y += dy;
+  // Test Case 3.
+  // The amount is intended to place the image in the free space outside
+  // of the original, but the clip area does not cover the image,
+  // so there is nothing to scroll.
+  scroll_x = 11, scroll_y = 24;
+  clip = pp::Rect(0, 0, image_x, image_y);
+  dc.Scroll(clip, pp::Point(scroll_x - image_x, scroll_y - image_y));
+  if (!FlushAndWaitForDone(&dc))
+    return "TC3, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC3, Couldn't read back scrolled image data.";
+  if (!CompareImages(no_image, readback_scroll))
+    return "TC3, Read back scrolled image is not the same as no image.";
 
-  if (!ReadImageData(dc, &readback, pp::Point(image_x, image_y)))
-    return "TC2, Couldn't read back image data.";
+  // Test Case 4.
+  // Same as TC3, but the clip covers part of the image.
+  // This part will be scrolled to the intended origin.
+  int part_w = image_width / 2, part_h = image_height / 2;
+  clip = pp::Rect(0, 0, image_x + part_w, image_y + part_h);
+  dc.Scroll(clip, pp::Point(scroll_x - image_x, scroll_y - image_y));
+  if (!FlushAndWaitForDone(&dc))
+    return "TC4, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC4, Couldn't read back scrolled image data.";
+  if (CompareImages(test_image, readback_scroll))
+    return "TC4, Read back scrolled image is the same as test image.";
+  pp::Rect part_rect(part_w, part_h);
+  if (!CompareImageRect(test_image, part_rect, readback_scroll, part_rect))
+    return "TC4, Read back scrolled image is not the same as part test image.";
 
-  if (!CompareImages(test_image, readback))
-    return "TC2, Read back image is not the same as test image.";
+  // Test Case 5
+  // Same as TC3, but the clip area covers the entire image.
+  // It will be scrolled to the intended origin.
+  clip = pp::Rect(0, 0, image_x + image_width, image_y + image_height);
+  dc.Scroll(clip, pp::Point(scroll_x - image_x, scroll_y - image_y));
+  if (!FlushAndWaitForDone(&dc))
+    return "TC5, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC5, Couldn't read back scrolled image data.";
+  if (!CompareImages(test_image, readback_scroll))
+    return "TC5, Read back scrolled image is not the same as test image.";
+
+  // Note that the undefined area left by the scroll does not actually get
+  // cleared, so the original image is still there. This is not guaranteed and
+  // is not something for users to rely on, but we can test for this here, so
+  // we know when the underlying behavior changes.
+  if (!ReadImageData(dc, &readback_image, pp::Point(image_x, image_y)))
+    return "Couldn't read back original image data.";
+  if (!CompareImages(test_image, readback_image))
+    return "Read back original image is not the same as test image.";
+
+  // Test Case 6.
+  // Scroll image to an overlapping space. The clip area is limited
+  // to the image, so this will just modify its area.
+  dx = 6;
+  dy = 9;
+  scroll_x = image_x + dx;
+  scroll_y = image_y + dy;
+  clip = pp::Rect(image_x, image_y, image_width, image_height);
+  dc.Scroll(clip, pp::Point(dx, dy));
+  if (!FlushAndWaitForDone(&dc))
+    return "TC6, Couldn't flush to scroll.";
+  if (!ReadImageData(dc, &readback_image, pp::Point(image_x, image_y)))
+    return "TC6, Couldn't read back image data.";
+  if (CompareImages(test_image, readback_image))
+    return "TC6, Read back image is still the same as test image.";
+  pp::Rect scroll_rect(image_width - dx, image_height - dy);
+  if (!ReadImageData(dc, &readback_scroll, pp::Point(scroll_x, scroll_y)))
+    return "TC6, Couldn't read back scrolled image data.";
+  if (!CompareImageRect(test_image, scroll_rect, readback_scroll, scroll_rect))
+    return "TC6, Read back scrolled image is not the same as part test image.";
 
   PASS();
 }
@@ -514,7 +591,7 @@ std::string TestGraphics2D::TestFlush() {
     return "Failure to allocate background image";
   dc.PaintImageData(background, pp::Point(0, 0));
 
-  int32_t rv = dc.Flush(pp::CompletionCallback::Block());
+  int32_t rv = dc.Flush(pp::BlockUntilComplete());
   if (rv == PP_OK || rv == PP_OK_COMPLETIONPENDING)
     return "Flush succeeded from the main thread with no callback.";
 
@@ -526,16 +603,27 @@ std::string TestGraphics2D::TestFlush() {
   if (!FlushAndWaitForDone(&dc_nopaints))
     return "Couldn't flush the nopaint device";
 
+  int32_t flags = (force_async_ ? 0 : PP_COMPLETIONCALLBACK_FLAG_OPTIONAL);
+
   // Test that multiple flushes fail if we don't get a callback in between.
-  rv = dc_nopaints.Flush(pp::CompletionCallback(&FlushCallbackNOP, NULL));
+  rv = dc_nopaints.Flush(pp::CompletionCallback(&FlushCallbackNOP, NULL,
+                                                flags));
+  if (force_async_ && rv != PP_OK_COMPLETIONPENDING)
+    return "Flush must complete asynchronously.";
   if (rv != PP_OK && rv != PP_OK_COMPLETIONPENDING)
     return "Couldn't flush first time for multiple flush test.";
 
-  if (rv != PP_OK) {
-    // If the first flush would block, then a second should fail.
-    rv = dc_nopaints.Flush(pp::CompletionCallback(&FlushCallbackNOP, NULL));
-    if (rv == PP_OK || rv == PP_OK_COMPLETIONPENDING)
-      return "Second flush succeeded before callback ran.";
+  if (rv == PP_OK_COMPLETIONPENDING) {
+    // If the first flush completes asynchronously, then a second should fail.
+    rv = dc_nopaints.Flush(pp::CompletionCallback(&FlushCallbackNOP, NULL,
+                                                  flags));
+    if (force_async_) {
+      if (rv != PP_OK_COMPLETIONPENDING)
+        return "Second flush must fail asynchronously.";
+    } else {
+      if (rv == PP_OK || rv == PP_OK_COMPLETIONPENDING)
+        return "Second flush succeeded before callback ran.";
+    }
   }
 
   PASS();

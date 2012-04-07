@@ -1,13 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "printing/pdf_metafile_cg_mac.h"
 
 #include "base/file_path.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/thread_local.h"
 #include "ui/gfx/rect.h"
@@ -34,18 +35,8 @@ namespace {
 // single-process mode. TODO(avi): This Apple bug appears fixed in 10.7; when
 // 10.7 is the minimum required version for Chromium, remove this hack.
 
-base::ThreadLocalPointer<struct __CFSet> thread_pdf_docs;
-
-bool PDFBugFixed() {
-  int32 major_version;
-  int32 minor_version;
-  int32 bugfix_version;
-  base::SysInfo::OperatingSystemVersionNumbers(&major_version,
-                                               &minor_version,
-                                               &bugfix_version);
-  return
-      major_version > 10 || (major_version == 10 && minor_version >= 7);
-}
+base::LazyInstance<base::ThreadLocalPointer<struct __CFSet> >::Leaky
+    thread_pdf_docs = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -54,25 +45,24 @@ namespace printing {
 PdfMetafileCg::PdfMetafileCg()
     : page_is_open_(false),
       thread_pdf_docs_owned_(false) {
-  static bool bug_fixed = PDFBugFixed();
-  if (!thread_pdf_docs.Get() && !bug_fixed) {
+  if (!thread_pdf_docs.Pointer()->Get() &&
+      base::mac::IsOSSnowLeopardOrEarlier()) {
     thread_pdf_docs_owned_ = true;
-    thread_pdf_docs.Set(CFSetCreateMutable(kCFAllocatorDefault,
-                                           0,
-                                           &kCFTypeSetCallBacks));
+    thread_pdf_docs.Pointer()->Set(
+        CFSetCreateMutable(kCFAllocatorDefault, 0, &kCFTypeSetCallBacks));
   }
 }
 
 PdfMetafileCg::~PdfMetafileCg() {
-  DCHECK(CalledOnValidThread());
-  if (pdf_doc_ && thread_pdf_docs.Get()) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (pdf_doc_ && thread_pdf_docs.Pointer()->Get()) {
     // Transfer ownership to the pool.
-    CFSetAddValue(thread_pdf_docs.Get(), pdf_doc_);
+    CFSetAddValue(thread_pdf_docs.Pointer()->Get(), pdf_doc_);
   }
 
   if (thread_pdf_docs_owned_) {
-    CFRelease(thread_pdf_docs.Get());
-    thread_pdf_docs.Set(NULL);
+    CFRelease(thread_pdf_docs.Pointer()->Get());
+    thread_pdf_docs.Pointer()->Set(NULL);
   }
 }
 
@@ -139,12 +129,12 @@ bool PdfMetafileCg::StartPage(const gfx::Size& page_size,
   page_is_open_ = true;
   CGContextSaveGState(context_);
 
+  // Move to the context origin.
+  CGContextTranslateCTM(context_, content_area.x(), -content_area.y());
+
   // Flip the context.
   CGContextTranslateCTM(context_, 0, height);
   CGContextScaleCTM(context_, scale_factor, -scale_factor);
-
-  // Move to the context origin.
-  CGContextTranslateCTM(context_, content_area.x(), content_area.y());
 
   return context_.get() != NULL;
 }
@@ -192,7 +182,7 @@ bool PdfMetafileCg::RenderPage(unsigned int page_number,
     return false;
   }
   CGPDFPageRef pdf_page = CGPDFDocumentGetPage(pdf_doc, page_number);
-  CGRect source_rect = CGPDFPageGetBoxRect(pdf_page, kCGPDFMediaBox);
+  CGRect source_rect = CGPDFPageGetBoxRect(pdf_page, kCGPDFCropBox);
   float scaling_factor = 1.0;
   // See if we need to scale the output.
   bool scaling_needed =
@@ -210,20 +200,16 @@ bool PdfMetafileCg::RenderPage(unsigned int page_number,
     }
   }
   // Some PDFs have a non-zero origin. Need to take that into account.
-  float x_offset = rect.origin.x - (source_rect.origin.x * scaling_factor);
-  float y_offset = rect.origin.y - (source_rect.origin.y * scaling_factor);
+  float x_offset = -1 * source_rect.origin.x * scaling_factor;
+  float y_offset = -1 * source_rect.origin.y * scaling_factor;
 
-  if (center_vertically) {
+  if (center_horizontally) {
     x_offset += (rect.size.width -
                      (source_rect.size.width * scaling_factor))/2;
   }
-  if (center_horizontally) {
+  if (center_vertically) {
     y_offset += (rect.size.height -
                      (source_rect.size.height * scaling_factor))/2;
-  } else {
-    // Since 0 y begins at the bottom, we need to adjust so the output appears
-    // nearer the top if we are not centering horizontally.
-    y_offset += rect.size.height - (source_rect.size.height * scaling_factor);
   }
   CGContextSaveGState(context);
   CGContextTranslateCTM(context, x_offset, y_offset);

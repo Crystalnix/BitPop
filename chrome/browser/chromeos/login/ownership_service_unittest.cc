@@ -10,15 +10,18 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/login/mock_owner_key_utils.h"
 #include "chrome/browser/chromeos/login/owner_manager_unittest.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "crypto/nss_util.h"
 #include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
 using ::crypto::RSAPrivateKey;
 using ::testing::DoAll;
 using ::testing::Eq;
@@ -30,7 +33,7 @@ using ::testing::_;
 
 namespace chromeos {
 
-class OwnershipServiceTest : public ::testing::Test {
+class OwnershipServiceTest : public testing::Test {
  public:
   OwnershipServiceTest()
       : message_loop_(MessageLoop::TYPE_UI),
@@ -69,8 +72,8 @@ class OwnershipServiceTest : public ::testing::Test {
   FilePath tmpfile_;
 
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   std::vector<uint8> fake_public_key_;
   scoped_ptr<RSAPrivateKey> fake_private_key_;
@@ -109,7 +112,8 @@ TEST_F(OwnershipServiceTest, IsOwnershipNone) {
 }
 
 TEST_F(OwnershipServiceTest, LoadOwnerKeyFail) {
-  MockKeyLoadObserver loader;
+  base::WaitableEvent event(true, false);
+  MockKeyLoadObserver loader(&event);
   EXPECT_CALL(*mock_, GetOwnerKeyFilePath())
       .WillRepeatedly(Return(tmpfile_));
   EXPECT_CALL(*mock_, ImportPublicKey(tmpfile_, _))
@@ -119,18 +123,22 @@ TEST_F(OwnershipServiceTest, LoadOwnerKeyFail) {
   service_->StartLoadOwnerKeyAttempt();
 
   // Run remaining events, until ExportPublicKeyViaDbus().
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, UpdateOwnerKey) {
-  MockKeyUpdateUser delegate;
+  base::WaitableEvent event(true, false);
+  MockKeyUpdateUser delegate(&event);
   service_->StartUpdateOwnerKey(std::vector<uint8>(), &delegate);
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, LoadOwnerKey) {
-  MockKeyLoadObserver loader;
+  base::WaitableEvent event(true, false);
+  MockKeyLoadObserver loader(&event);
   loader.ExpectKeyFetchSuccess(true);
 
   EXPECT_CALL(*mock_, GetOwnerKeyFilePath())
@@ -141,7 +149,8 @@ TEST_F(OwnershipServiceTest, LoadOwnerKey) {
       .RetiresOnSaturation();
   service_->StartLoadOwnerKeyAttempt();
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, NotYetOwnedVerify) {
@@ -150,14 +159,16 @@ TEST_F(OwnershipServiceTest, NotYetOwnedVerify) {
   EXPECT_CALL(*mock_, GetOwnerKeyFilePath())
       .WillRepeatedly(Return(tmpfile_));
 
-  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE, &event);
   service_->StartVerifyAttempt("", std::vector<uint8>(), &delegate);
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, GetKeyFailDuringVerify) {
-  MockKeyLoadObserver loader;
+  MockKeyLoadObserver loader(NULL);
   loader.ExpectKeyFetchSuccess(false);
 
   EXPECT_CALL(*mock_, GetOwnerKeyFilePath())
@@ -166,16 +177,17 @@ TEST_F(OwnershipServiceTest, GetKeyFailDuringVerify) {
       .WillOnce(Return(false))
       .RetiresOnSaturation();
 
-  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE, &event);
   service_->StartVerifyAttempt("", std::vector<uint8>(), &delegate);
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, GetKeyAndVerify) {
-  MockKeyLoadObserver loader;
+  MockKeyLoadObserver loader(NULL);
   loader.ExpectKeyFetchSuccess(true);
-  loader.SetQuitOnKeyFetch(false);
 
   std::string data;
   std::vector<uint8> sig(0, 2);
@@ -190,16 +202,17 @@ TEST_F(OwnershipServiceTest, GetKeyAndVerify) {
       .WillOnce(Return(true))
       .RetiresOnSaturation();
 
-  MockKeyUser delegate(OwnerManager::SUCCESS);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::SUCCESS, &event);
   service_->StartVerifyAttempt(data, sig, &delegate);
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnershipServiceTest, GetKeyAndFailVerify) {
-  MockKeyLoadObserver loader;
+  MockKeyLoadObserver loader(NULL);
   loader.ExpectKeyFetchSuccess(true);
-  loader.SetQuitOnKeyFetch(false);
 
   std::string data;
   std::vector<uint8> sig(0, 2);
@@ -214,10 +227,12 @@ TEST_F(OwnershipServiceTest, GetKeyAndFailVerify) {
       .WillOnce(Return(false))
       .RetiresOnSaturation();
 
-  MockKeyUser delegate(OwnerManager::OPERATION_FAILED);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::OPERATION_FAILED, &event);
   service_->StartVerifyAttempt(data, sig, &delegate);
 
-  message_loop_.Run();
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 }  // namespace chromeos

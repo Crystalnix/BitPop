@@ -1,14 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/page_info_bubble_controller.h"
 
+#include "base/bind.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/sys_string_conversions.h"
-#include "base/task.h"
 #include "chrome/browser/certificate_viewer.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/page_info_model.h"
+#include "chrome/browser/page_info_model_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -18,6 +21,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/common/url_constants.h"
 #include "content/browser/cert_store.h"
+#include "content/public/browser/ssl_status.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "net/base/cert_status_flags.h"
@@ -25,7 +29,11 @@
 #import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::OpenURLParams;
+using content::Referrer;
+using content::SSLStatus;
 
 @interface PageInfoBubbleController (Private)
 - (PageInfoModel*)model;
@@ -93,31 +101,31 @@ const CGFloat kTextWidth = kWindowWidth - (kImageSize + kImageSpacing +
     kFramePadding * 2);
 
 // Bridge that listens for change notifications from the model.
-class PageInfoModelBubbleBridge : public PageInfoModel::PageInfoModelObserver {
+class PageInfoModelBubbleBridge : public PageInfoModelObserver {
  public:
   PageInfoModelBubbleBridge()
       : controller_(nil),
-        ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)) {
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
   }
 
   // PageInfoModelObserver implementation.
-  virtual void ModelChanged() {
+  virtual void OnPageInfoModelChanged() OVERRIDE {
     // Check to see if a layout has already been scheduled.
-    if (!task_factory_.empty())
+    if (weak_ptr_factory_.HasWeakPtrs())
       return;
 
     // Delay performing layout by a second so that all the animations from
     // InfoBubbleWindow and origin updates from BaseBubbleController finish, so
     // that we don't all race trying to change the frame's origin.
     //
-    // Using ScopedRunnableMethodFactory is superior here to |-performSelector:|
-    // because it will not retain its target; if the child outlives its parent,
-    // zombies get left behind (http://crbug.com/59619). This will also cancel
-    // the scheduled Tasks if the controller (and thus this bridge) get
-    // destroyed before the message can be delivered.
+    // Using MessageLoop is superior here to |-performSelector:| because it will
+    // not retain its target; if the child outlives its parent, zombies get left
+    // behind (http://crbug.com/59619). This will cancel the scheduled task if
+    // the controller (and thus this bridge) get destroyed before the message
+    // can be delivered.
     MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        task_factory_.NewRunnableMethod(
-            &PageInfoModelBubbleBridge::PerformLayout),
+        base::Bind(&PageInfoModelBubbleBridge::PerformLayout,
+                   weak_ptr_factory_.GetWeakPtr()),
         1000 /* milliseconds */);
   }
 
@@ -128,13 +136,16 @@ class PageInfoModelBubbleBridge : public PageInfoModel::PageInfoModelObserver {
 
  private:
   void PerformLayout() {
+    // If the window is animating closed when this is called, the
+    // animation could be holding the last reference to |controller_|
+    // (and thus |this|).  Pin it until the task is completed.
+    scoped_nsobject<PageInfoBubbleController> keep_alive([controller_ retain]);
     [controller_ performLayout];
   }
 
   PageInfoBubbleController* controller_;  // weak
 
-  // Factory that vends RunnableMethod tasks for scheduling layout.
-  ScopedRunnableMethodFactory<PageInfoModelBubbleBridge> task_factory_;
+  base::WeakPtrFactory<PageInfoModelBubbleBridge> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PageInfoModelBubbleBridge);
 };
@@ -146,7 +157,7 @@ namespace browser {
 void ShowPageInfoBubble(gfx::NativeWindow parent,
                         Profile* profile,
                         const GURL& url,
-                        const NavigationEntry::SSLStatus& ssl,
+                        const SSLStatus& ssl,
                         bool show_history) {
   PageInfoModelBubbleBridge* bridge = new PageInfoModelBubbleBridge();
   PageInfoModel* model =
@@ -156,7 +167,7 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
                                                 modelObserver:bridge
                                                  parentWindow:parent];
   bridge->set_controller(controller);
-  [controller setCertID:ssl.cert_id()];
+  [controller setCertID:ssl.cert_id];
   [controller showWindow:nil];
 }
 
@@ -167,7 +178,7 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
 @synthesize certID = certID_;
 
 - (id)initWithPageInfoModel:(PageInfoModel*)model
-              modelObserver:(PageInfoModel::PageInfoModelObserver*)bridge
+              modelObserver:(PageInfoModelObserver*)bridge
                parentWindow:(NSWindow*)parentWindow {
   DCHECK(parentWindow);
 
@@ -201,10 +212,11 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
 }
 
 - (IBAction)showHelpPage:(id)sender {
-  GURL url = google_util::AppendGoogleLocaleParam(
-      GURL(chrome::kPageInfoHelpCenterURL));
   Browser* browser = BrowserList::GetLastActive();
-  browser->OpenURL(url, GURL(), NEW_FOREGROUND_TAB, PageTransition::LINK);
+  OpenURLParams params(
+      GURL(chrome::kPageInfoHelpCenterURL), Referrer(), NEW_FOREGROUND_TAB,
+      content::PAGE_TRANSITION_LINK, false);
+  browser->OpenURL(params);
 }
 
 // This will create the subviews for the page info window. The general layout
@@ -220,9 +232,13 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
   // Keep the new subviews in an array that gets replaced at the end.
   NSMutableArray* subviews = [NSMutableArray array];
 
+  // Whether to include the help button at the bottom of the page info bubble.
+  const int sectionCount = model_->GetSectionCount();
+  BOOL showHelpButton = !(sectionCount == 1 && model_->GetSectionInfo(0).type ==
+      PageInfoModel::SECTION_INFO_INTERNAL_PAGE);
+
   // The subviews will be attached to the PageInfoContentView, which has a
   // flipped origin. This allows the code to build top-to-bottom.
-  const int sectionCount = model_->GetSectionCount();
   for (int i = 0; i < sectionCount; ++i) {
     PageInfoModel::SectionInfo info = model_->GetSectionInfo(i);
 
@@ -261,12 +277,19 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
       offset += imageBaselineDelta;
 
     // Add the separators.
-    offset += kVerticalSpacing;
-    offset += [self addSeparatorToSubviews:subviews atOffset:offset];
+    int testSectionCount = sectionCount - 1;
+    if (i != testSectionCount || (i == testSectionCount && showHelpButton)) {
+      offset += kVerticalSpacing;
+      offset += [self addSeparatorToSubviews:subviews atOffset:offset];
+    }
   }
 
-  // The last item at the bottom of the window is the help center link.
-  offset += [self addHelpButtonToSubviews:subviews atOffset:offset];
+  // The last item at the bottom of the window is the help center link. Do not
+  // show this for the internal pages, which have one section.
+  if (showHelpButton)
+    offset += [self addHelpButtonToSubviews:subviews atOffset:offset];
+
+  // Add the bottom padding.
   offset += kVerticalSpacing;
 
   // Create the dummy view that uses flipped coordinates.
@@ -274,6 +297,7 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
   scoped_nsobject<PageInfoContentView> contentView(
       [[PageInfoContentView alloc] initWithFrame:contentFrame]);
   [contentView setSubviews:subviews];
+  [contentView setAutoresizingMask:NSViewMinYMargin];
 
   NSRect windowFrame = NSMakeRect(0, 0, kWindowWidth, offset);
   windowFrame.size = [[[self window] contentView] convertSize:windowFrame.size
@@ -434,15 +458,10 @@ void ShowPageInfoBubble(gfx::NativeWindow parent,
 // next offset.
 - (CGFloat)addSeparatorToSubviews:(NSMutableArray*)subviews
                          atOffset:(CGFloat)offset {
-  const CGFloat kSpacerHeight = 1.0;
-  NSRect frame = NSMakeRect(kFramePadding, offset,
-      kWindowWidth - 2 * kFramePadding, kSpacerHeight);
-  scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
-  [spacer setBoxType:NSBoxSeparator];
-  [spacer setBorderType:NSLineBorder];
-  [spacer setAlphaValue:0.2];
-  [subviews addObject:spacer.get()];
-  return kVerticalSpacing + kSpacerHeight;
+  NSBox* spacer = [self separatorWithFrame:NSMakeRect(kFramePadding, offset,
+      kWindowWidth - 2 * kFramePadding, 0)];
+  [subviews addObject:spacer];
+  return kVerticalSpacing + NSHeight([spacer frame]);
 }
 
 // Takes in the bubble's height and the parent window, which should be a

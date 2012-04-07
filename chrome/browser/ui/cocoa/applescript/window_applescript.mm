@@ -21,7 +21,7 @@
 #import "chrome/browser/ui/cocoa/applescript/tab_applescript.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 
 @interface WindowAppleScript(WindowAppleScriptPrivateMethods)
 // The NSWindow that corresponds to this window.
@@ -37,19 +37,19 @@
       objectForKey:@"KeyDictionary"] objectForKey:@"mode"];
   AppController* appDelegate = [NSApp delegate];
 
-  Profile* defaultProfile = [appDelegate defaultProfile];
+  Profile* lastProfile = [appDelegate lastProfile];
 
-  if (!defaultProfile) {
+  if (!lastProfile) {
     AppleScript::SetError(AppleScript::errGetProfile);
     return nil;
   }
 
   Profile* profile;
   if ([mode isEqualToString:AppleScript::kIncognitoWindowMode]) {
-    profile = defaultProfile->GetOffTheRecordProfile();
+    profile = lastProfile->GetOffTheRecordProfile();
   }
   else if ([mode isEqualToString:AppleScript::kNormalWindowMode] || !mode) {
-    profile = defaultProfile;
+    profile = lastProfile;
   } else {
     // Mode cannot be anything else
     AppleScript::SetError(AppleScript::errInvalidMode);
@@ -151,7 +151,7 @@
 
   for (int i = 0; i < browser_->tab_count(); ++i) {
     // Check to see if tab is closing.
-    if (browser_->GetTabContentsAt(i)->is_being_destroyed()) {
+    if (browser_->GetWebContentsAt(i)->IsBeingDestroyed()) {
       continue;
     }
 
@@ -175,8 +175,8 @@
   base::TimeTicks newTabStartTime = base::TimeTicks::Now();
   TabContentsWrapper* contents =
       browser_->AddSelectedTabWithURL(GURL(chrome::kChromeUINewTabURL),
-                                      PageTransition::TYPED);
-  contents->tab_contents()->set_new_tab_start_time(newTabStartTime);
+                                      content::PAGE_TRANSITION_TYPED);
+  contents->web_contents()->SetNewTabStartTime(newTabStartTime);
   [aTab setTabContent:contents];
 }
 
@@ -190,21 +190,21 @@
   base::TimeTicks newTabStartTime = base::TimeTicks::Now();
   browser::NavigateParams params(browser_,
                                  GURL(chrome::kChromeUINewTabURL),
-                                 PageTransition::TYPED);
+                                 content::PAGE_TRANSITION_TYPED);
   params.disposition = NEW_FOREGROUND_TAB;
   params.tabstrip_index = index;
   browser::Navigate(&params);
-  params.target_contents->tab_contents()->set_new_tab_start_time(
+  params.target_contents->web_contents()->SetNewTabStartTime(
       newTabStartTime);
 
   [aTab setTabContent:params.target_contents];
 }
 
 - (void)removeFromTabsAtIndex:(int)index {
-  browser_->tabstrip_model()->DetachTabContentsAt(index);
+  browser_->CloseTabContents(browser_->GetWebContentsAt(index));
 }
 
-- (NSNumber*)orderedIndex{
+- (NSNumber*)orderedIndex {
   return [NSNumber numberWithInt:[[self nativeHandle] orderedIndex]];
 }
 
@@ -242,6 +242,25 @@
   // window() can be NULL during startup.
   if (browser_->window())
     browser_->window()->Close();
+}
+
+- (NSNumber*)presenting {
+  BOOL presentingValue = NO;
+  if (browser_->window())
+    presentingValue = browser_->window()->InPresentationMode();
+  return [NSNumber numberWithBool:presentingValue];
+}
+
+- (void)handlesEnterPresentationMode:(NSScriptCommand*)command {
+  if (browser_->window()) {
+    browser_->window()->EnterPresentationMode(
+        GURL(), FEB_TYPE_FULLSCREEN_EXIT_INSTRUCTION);
+  }
+}
+
+- (void)handlesExitPresentationMode:(NSScriptCommand*)command {
+  if (browser_->window())
+    browser_->window()->ExitPresentationMode();
 }
 
 @end

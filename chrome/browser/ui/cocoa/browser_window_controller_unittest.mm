@@ -1,25 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
-#include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 @interface BrowserWindowController (JustForTesting)
 // Already defined in BWC.
-- (void)saveWindowPositionToPrefs:(PrefService*)prefs;
+- (void)saveWindowPositionIfNeeded;
 - (void)layoutSubviews;
 @end
 
@@ -52,36 +53,32 @@
   return static_cast<NSSplitView*>([devToolsController_ view]);
 }
 
-- (NSView*)sidebarView {
-  return [sidebarController_ view];
-}
-
 - (BOOL)bookmarkBarVisible {
   return [bookmarkBarController_ isVisible];
 }
 @end
 
-class BrowserWindowControllerTest : public CocoaTest {
+class BrowserWindowControllerTest : public CocoaProfileTest {
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    Browser* browser = browser_helper_.browser();
-    controller_ = [[BrowserWindowController alloc] initWithBrowser:browser
+    CocoaProfileTest::SetUp();
+    ASSERT_TRUE(browser());
+
+    controller_ = [[BrowserWindowController alloc] initWithBrowser:browser()
                                                      takeOwnership:NO];
   }
 
   virtual void TearDown() {
     [controller_ close];
-    CocoaTest::TearDown();
+    CocoaProfileTest::TearDown();
   }
 
  public:
-  BrowserTestHelper browser_helper_;
   BrowserWindowController* controller_;
 };
 
 TEST_F(BrowserWindowControllerTest, TestSaveWindowPosition) {
-  PrefService* prefs = browser_helper_.profile()->GetPrefs();
+  PrefService* prefs = profile()->GetPrefs();
   ASSERT_TRUE(prefs != NULL);
 
   // Check to make sure there is no existing pref for window placement.
@@ -92,7 +89,8 @@ TEST_F(BrowserWindowControllerTest, TestSaveWindowPosition) {
 
   // Ask the window to save its position, then check that a preference
   // exists.
-  [controller_ saveWindowPositionToPrefs:prefs];
+  BrowserList::SetLastActive(browser());
+  [controller_ saveWindowPositionIfNeeded];
   browser_window_placement =
       prefs->GetDictionary(prefs::kBrowserWindowPlacement);
   ASSERT_TRUE(browser_window_placement);
@@ -107,7 +105,7 @@ TEST_F(BrowserWindowControllerTest, TestFullScreenWindow) {
 
 TEST_F(BrowserWindowControllerTest, TestNormal) {
   // Force the bookmark bar to be shown.
-  browser_helper_.profile()->GetPrefs()->
+  profile()->GetPrefs()->
       SetBoolean(prefs::kShowBookmarkBar, true);
   [controller_ updateBookmarkBarVisibilityWithAnimation:NO];
 
@@ -120,7 +118,7 @@ TEST_F(BrowserWindowControllerTest, TestNormal) {
   // And make sure a controller for a pop-up window is not normal.
   // popup_browser will be owned by its window.
   Browser *popup_browser(Browser::CreateForType(Browser::TYPE_POPUP,
-                                                browser_helper_.profile()));
+                                                profile()));
   NSWindow *cocoaWindow = popup_browser->window()->GetNativeHandle();
   BrowserWindowController* controller =
       static_cast<BrowserWindowController*>([cocoaWindow windowController]);
@@ -129,6 +127,56 @@ TEST_F(BrowserWindowControllerTest, TestNormal) {
   EXPECT_FALSE([controller hasTabStrip]);
   EXPECT_TRUE([controller hasTitleBar]);
   EXPECT_FALSE([controller isBookmarkBarVisible]);
+  [controller close];
+}
+
+TEST_F(BrowserWindowControllerTest, TestSetBounds) {
+  // Create a normal browser with bounds smaller than the minimum.
+  Browser::CreateParams params(Browser::TYPE_TABBED, profile());
+  params.initial_bounds = gfx::Rect(0, 0, 50, 50);
+  Browser* browser = Browser::CreateWithParams(params);
+  NSWindow *cocoaWindow = browser->window()->GetNativeHandle();
+  BrowserWindowController* controller =
+    static_cast<BrowserWindowController*>([cocoaWindow windowController]);
+
+  ASSERT_TRUE([controller isTabbedWindow]);
+  BrowserWindow* browser_window = [controller browserWindow];
+  EXPECT_EQ(browser_window, browser->window());
+  gfx::Rect bounds = browser_window->GetBounds();
+  EXPECT_EQ(400, bounds.width());
+  EXPECT_EQ(272, bounds.height());
+
+  // Try to set the bounds smaller than the minimum.
+  browser_window->SetBounds(gfx::Rect(0, 0, 50, 50));
+  bounds = browser_window->GetBounds();
+  EXPECT_EQ(400, bounds.width());
+  EXPECT_EQ(272, bounds.height());
+
+  [controller close];
+}
+
+TEST_F(BrowserWindowControllerTest, TestSetBoundsPopup) {
+  // Create a popup with bounds smaller than the minimum.
+  Browser::CreateParams params(Browser::TYPE_POPUP, profile());
+  params.initial_bounds = gfx::Rect(0, 0, 50, 50);
+  Browser* browser = Browser::CreateWithParams(params);
+  NSWindow *cocoaWindow = browser->window()->GetNativeHandle();
+  BrowserWindowController* controller =
+    static_cast<BrowserWindowController*>([cocoaWindow windowController]);
+
+  ASSERT_FALSE([controller isTabbedWindow]);
+  BrowserWindow* browser_window = [controller browserWindow];
+  EXPECT_EQ(browser_window, browser->window());
+  gfx::Rect bounds = browser_window->GetBounds();
+  EXPECT_EQ(100, bounds.width());
+  EXPECT_EQ(122, bounds.height());
+
+  // Try to set the bounds smaller than the minimum.
+  browser_window->SetBounds(gfx::Rect(0, 0, 50, 50));
+  bounds = browser_window->GetBounds();
+  EXPECT_EQ(100, bounds.width());
+  EXPECT_EQ(122, bounds.height());
+
   [controller close];
 }
 
@@ -141,7 +189,7 @@ TEST_F(BrowserWindowControllerTest, BookmarkBarControllerIndirection) {
 
   // Explicitly show the bar. Can't use bookmark_utils::ToggleWhenVisible()
   // because of the notification issues.
-  browser_helper_.profile()->GetPrefs()->
+  profile()->GetPrefs()->
       SetBoolean(prefs::kShowBookmarkBar, true);
 
   [controller_ updateBookmarkBarVisibilityWithAnimation:NO];
@@ -373,7 +421,7 @@ TEST_F(BrowserWindowControllerTest, TestResizeViews) {
 
 TEST_F(BrowserWindowControllerTest, TestResizeViewsWithBookmarkBar) {
   // Force a display of the bookmark bar.
-  browser_helper_.profile()->GetPrefs()->
+  profile()->GetPrefs()->
       SetBoolean(prefs::kShowBookmarkBar, true);
   [controller_ updateBookmarkBarVisibilityWithAnimation:NO];
 
@@ -419,7 +467,7 @@ TEST_F(BrowserWindowControllerTest, TestResizeViewsWithBookmarkBar) {
   CheckViewPositions(controller_);
 
   // Remove the bookmark bar and recheck
-  browser_helper_.profile()->GetPrefs()->
+  profile()->GetPrefs()->
       SetBoolean(prefs::kShowBookmarkBar, false);
   [controller_ resizeView:bookmark newHeight:0];
   CheckViewPositions(controller_);
@@ -434,8 +482,7 @@ TEST_F(BrowserWindowControllerTest, TestResizeViewsWithBookmarkBar) {
 TEST_F(BrowserWindowControllerTest, BookmarkBarIsSameWidth) {
   // Set the pref to the bookmark bar is visible when the toolbar is
   // first created.
-  browser_helper_.profile()->GetPrefs()->SetBoolean(
-      prefs::kShowBookmarkBar, true);
+  profile()->GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
 
   // Make sure the bookmark bar is the same width as the toolbar
   NSView* bookmarkBarView = [controller_ bookmarkView];
@@ -558,20 +605,6 @@ TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
   EXPECT_GT(findBar_index, bookmark_index);
 }
 
-// Tests that the sidebar view and devtools view are both non-opaque.
-TEST_F(BrowserWindowControllerTest, TestSplitViewsAreNotOpaque) {
-  // Add a subview to the sidebar view to mimic what happens when a tab is added
-  // to the window.  NSSplitView only marks itself as non-opaque when one of its
-  // subviews is non-opaque, so the test will not pass without this subview.
-  scoped_nsobject<NSView> view(
-      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)]);
-  [[controller_ sidebarView] addSubview:view];
-
-  EXPECT_FALSE([[controller_ tabContentArea] isOpaque]);
-  EXPECT_FALSE([[controller_ devToolsView] isOpaque]);
-  EXPECT_FALSE([[controller_ sidebarView] isOpaque]);
-}
-
 // Tests that status bubble's base frame does move when devTools are docked.
 TEST_F(BrowserWindowControllerTest, TestStatusBubblePositioning) {
   ASSERT_EQ(1U, [[[controller_ devToolsView] subviews] count]);
@@ -594,27 +627,33 @@ TEST_F(BrowserWindowControllerTest, TestStatusBubblePositioning) {
  @private
   // We release the window ourselves, so we don't have to rely on the unittest
   // doing it for us.
-  scoped_nsobject<NSWindow> fullscreenWindow_;
+  scoped_nsobject<NSWindow> testFullscreenWindow_;
 }
 @end
 
-class BrowserWindowFullScreenControllerTest : public CocoaTest {
+class BrowserWindowFullScreenControllerTest : public CocoaProfileTest {
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    Browser* browser = browser_helper_.browser();
+    CocoaProfileTest::SetUp();
+    ASSERT_TRUE(browser());
+
+    // This test case crashes when run on Lion. Fail early.
+    if (base::mac::IsOSLionOrLater()) {
+      controller_ = nil;  // Need to make sure this isn't uninitialized memory.
+      FAIL() << "This test crashes on Lion; http://crbug.com/93925";
+    }
+
     controller_ =
-        [[BrowserWindowControllerFakeFullscreen alloc] initWithBrowser:browser
+        [[BrowserWindowControllerFakeFullscreen alloc] initWithBrowser:browser()
                                                          takeOwnership:NO];
   }
 
   virtual void TearDown() {
     [controller_ close];
-    CocoaTest::TearDown();
+    CocoaProfileTest::TearDown();
   }
 
  public:
-  BrowserTestHelper browser_helper_;
   BrowserWindowController* controller_;
 };
 
@@ -630,11 +669,13 @@ static bool IsFrontWindow(NSWindow *window) {
          [[frontmostWindow parentWindow] isEqual:window];
 }
 
-TEST_F(BrowserWindowFullScreenControllerTest, TestFullscreen) {
+TEST_F(BrowserWindowFullScreenControllerTest, TestFullscreenNotLion) {
+  CreateBrowserWindow();
   EXPECT_FALSE([controller_ isFullscreen]);
-  [controller_ setFullscreen:YES];
+  [controller_ enterFullscreenForURL:GURL()
+                       bubbleType:FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION];
   EXPECT_TRUE([controller_ isFullscreen]);
-  [controller_ setFullscreen:NO];
+  [controller_ exitFullscreen];
   EXPECT_FALSE([controller_ isFullscreen]);
 }
 
@@ -642,18 +683,20 @@ TEST_F(BrowserWindowFullScreenControllerTest, TestFullscreen) {
 // problem (such as a modal dialog up).  This tests is a very useful canary, so
 // please do not mark it as flaky without first verifying that there are no bot
 // problems.
-TEST_F(BrowserWindowFullScreenControllerTest, TestActivate) {
+TEST_F(BrowserWindowFullScreenControllerTest, TestActivateNotLion) {
+  CreateBrowserWindow();
   EXPECT_FALSE([controller_ isFullscreen]);
 
   [controller_ activate];
   EXPECT_TRUE(IsFrontWindow([controller_ window]));
 
-  [controller_ setFullscreen:YES];
+  [controller_ enterFullscreenForURL:GURL()
+                       bubbleType:FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION];
   [controller_ activate];
   EXPECT_TRUE(IsFrontWindow([controller_ createFullscreenWindow]));
 
   // We have to cleanup after ourselves by unfullscreening.
-  [controller_ setFullscreen:NO];
+  [controller_ exitFullscreen];
 }
 
 @implementation BrowserWindowControllerFakeFullscreen
@@ -663,15 +706,15 @@ TEST_F(BrowserWindowFullScreenControllerTest, TestActivate) {
 // whole screen. We have to return an actual window because |-layoutSubviews|
 // looks at the window's frame.
 - (NSWindow*)createFullscreenWindow {
-  if (fullscreenWindow_.get())
-    return fullscreenWindow_.get();
+  if (testFullscreenWindow_.get())
+    return testFullscreenWindow_.get();
 
-  fullscreenWindow_.reset(
+  testFullscreenWindow_.reset(
       [[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,400,400)
                                   styleMask:NSBorderlessWindowMask
                                     backing:NSBackingStoreBuffered
                                       defer:NO]);
-  return fullscreenWindow_.get();
+  return testFullscreenWindow_.get();
 }
 @end
 

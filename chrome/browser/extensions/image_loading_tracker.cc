@@ -1,18 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/image_loading_tracker.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "webkit/glue/image_decoder.h"
+
+using content::BrowserThread;
 
 ImageLoadingTracker::Observer::~Observer() {}
 
@@ -43,8 +46,8 @@ class ImageLoadingTracker::ImageLoader
     DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::FILE));
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(this, &ImageLoader::LoadOnFileThread, resource,
-                          max_size, id));
+        base::Bind(&ImageLoader::LoadOnFileThread, this, resource,
+                   max_size, id));
   }
 
   void LoadOnFileThread(const ExtensionResource& resource,
@@ -90,8 +93,8 @@ class ImageLoadingTracker::ImageLoader
 
     BrowserThread::PostTask(
         callback_thread_id_, FROM_HERE,
-        NewRunnableMethod(this, &ImageLoader::ReportOnUIThread,
-                          image, resource, original_size, id));
+        base::Bind(&ImageLoader::ReportOnUIThread, this,
+                   image, resource, original_size, id));
   }
 
   void ReportOnUIThread(SkBitmap* image, const ExtensionResource& resource,
@@ -121,8 +124,8 @@ class ImageLoadingTracker::ImageLoader
 ImageLoadingTracker::ImageLoadingTracker(Observer* observer)
     : observer_(observer),
       next_id_(0) {
-  registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::NotificationService::AllSources());
 }
 
 ImageLoadingTracker::~ImageLoadingTracker() {
@@ -153,9 +156,8 @@ void ImageLoadingTracker::LoadImage(const Extension* extension,
     return;
   }
 
-  if (cache == CACHE) {
+  if (cache == CACHE)
     load_map_[id] = extension;
-  }
 
   // Instruct the ImageLoader to load this on the File thread. LoadImage does
   // not block.
@@ -179,21 +181,20 @@ void ImageLoadingTracker::OnImageLoaded(
   observer_->OnImageLoaded(image, resource, id);
 }
 
-void ImageLoadingTracker::Observe(NotificationType type,
-                                  const NotificationSource& source,
-                                  const NotificationDetails& details) {
-  DCHECK(type == NotificationType::EXTENSION_UNLOADED);
+void ImageLoadingTracker::Observe(int type,
+                                  const content::NotificationSource& source,
+                                  const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
 
   const Extension* extension =
-      Details<UnloadedExtensionInfo>(details)->extension;
+      content::Details<UnloadedExtensionInfo>(details)->extension;
 
   // Remove all entries in the load_map_ referencing the extension. This ensures
   // we don't attempt to cache the image when the load completes.
   for (LoadMap::iterator i = load_map_.begin(); i != load_map_.end();) {
-    if (i->second == extension) {
+    if (i->second == extension)
       load_map_.erase(i++);
-    } else {
+    else
       ++i;
-    }
   }
 }

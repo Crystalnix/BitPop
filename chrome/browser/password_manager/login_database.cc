@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,16 +7,16 @@
 #include <algorithm>
 #include <limits>
 
-#include "app/sql/statement.h"
-#include "app/sql/transaction.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
+#include "sql/statement.h"
+#include "sql/transaction.h"
 
-using webkit_glue::PasswordForm;
+using webkit::forms::PasswordForm;
 
 static const int kCurrentVersionNumber = 1;
 static const int kCompatibleVersionNumber = 1;
@@ -332,7 +332,7 @@ bool LoginDatabase::GetLogins(const PasswordForm& form,
 bool LoginDatabase::GetLoginsCreatedBetween(
     const base::Time begin,
     const base::Time end,
-    std::vector<webkit_glue::PasswordForm*>* forms) const {
+    std::vector<webkit::forms::PasswordForm*>* forms) const {
   DCHECK(forms);
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE,
       "SELECT origin_url, action_url, "

@@ -5,9 +5,13 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_view.h"
 
 #include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
+#include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
-#include "content/browser/user_metrics.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#include "content/public/browser/user_metrics.h"
+
+using content::UserMetricsAction;
 
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
@@ -69,7 +73,8 @@
 // dragClipboardContainsBookmarks].  http://crbug.com/35966
 // Shim function to assist in unit testing.
 - (BOOL)dragClipboardContainsBookmarks {
-  return bookmark_pasteboard_helper_mac::DragClipboardContainsBookmarks();
+  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
+      bookmark_pasteboard_helper_mac::kDragPasteboard);
 }
 
 // Virtually identical to [BookmarkBarView draggingEntered:].
@@ -182,11 +187,25 @@
   if (data && [info draggingSource]) {
     BookmarkButton* button = nil;
     [data getBytes:&button length:sizeof(button)];
-    BOOL copy = !([info draggingSourceOperationMask] & NSDragOperationMove);
+
+    // If we're dragging from one profile to another, disallow moving (only
+    // allow copying). Each profile has its own bookmark model, so one way to
+    // check whether we are dragging across profiles is to see if the
+    // |BookmarkNode| corresponding to |button| exists in this profile. If it
+    // does, we're dragging within a profile; otherwise, we're dragging across
+    // profiles.
+    const BookmarkModel* const model = [[self controller] bookmarkModel];
+    const BookmarkNode* const source_node = [button bookmarkNode];
+    const BookmarkNode* const target_node =
+        model->GetNodeByID(source_node->id());
+
+    BOOL copy =
+        !([info draggingSourceOperationMask] & NSDragOperationMove) ||
+        (source_node != target_node);
     doDrag = [[self controller] dragButton:button
                                         to:[info draggingLocation]
                                       copy:copy];
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBarFolder_DragEnd"));
+    content::RecordAction(UserMetricsAction("BookmarkBarFolder_DragEnd"));
   }
   return doDrag;
 }

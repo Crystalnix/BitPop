@@ -5,7 +5,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsFrontend.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
@@ -14,6 +14,7 @@
 #include "webkit/tools/test_shell/test_shell_devtools_callargs.h"
 #include "webkit/tools/test_shell/test_shell_devtools_client.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop.h"
 
@@ -25,7 +26,7 @@ using WebKit::WebView;
 
 TestShellDevToolsClient::TestShellDevToolsClient(TestShellDevToolsAgent *agent,
                                                  WebView* web_view)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(call_method_factory_(this)),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       dev_tools_agent_(agent),
       web_view_(web_view) {
   web_tools_frontend_.reset(WebDevToolsFrontend::create(web_view_, this,
@@ -36,25 +37,15 @@ TestShellDevToolsClient::TestShellDevToolsClient(TestShellDevToolsAgent *agent,
 TestShellDevToolsClient::~TestShellDevToolsClient() {
   // It is a chance that page will be destroyed at detach step of
   // dev_tools_agent_ and we should clean pending requests a bit earlier.
-  call_method_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
   if (dev_tools_agent_)
     dev_tools_agent_->detach();
-}
-
-void TestShellDevToolsClient::sendFrontendLoaded() {
-  if (dev_tools_agent_)
-    dev_tools_agent_->frontendLoaded();
 }
 
 void TestShellDevToolsClient::sendMessageToBackend(
      const WebString& data) {
   if (dev_tools_agent_)
     dev_tools_agent_->AsyncCall(TestShellDevToolsCallArgs(data));
-}
-
-void TestShellDevToolsClient::sendDebuggerCommandToAgent(
-     const WebString& command) {
-  WebDevToolsAgent::executeDebuggerCommand(command, 1);
 }
 
 void TestShellDevToolsClient::activateWindow() {
@@ -74,9 +65,10 @@ void TestShellDevToolsClient::undockWindow() {
 }
 
 void TestShellDevToolsClient::AsyncCall(const TestShellDevToolsCallArgs &args) {
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      call_method_factory_.NewRunnableMethod(&TestShellDevToolsClient::Call,
-                                             args), 0);
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&TestShellDevToolsClient::Call, weak_factory_.GetWeakPtr(),
+                 args));
 }
 
 void TestShellDevToolsClient::Call(const TestShellDevToolsCallArgs &args) {

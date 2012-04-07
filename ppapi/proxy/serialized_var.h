@@ -11,18 +11,19 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/proxy/ppapi_proxy_export.h"
 
 namespace IPC {
 class Message;
 }
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class Dispatcher;
 class VarSerializationRules;
 
-// This class encapsulates a var so that we can serialize and deserialize it
+// This class encapsulates a var so that we can serialize and deserialize it.
 // The problem is that for strings, serialization and deserialization requires
 // knowledge from outside about how to get at or create a string. So this
 // object groups the var with a dispatcher so that string values can be set or
@@ -40,13 +41,13 @@ class VarSerializationRules;
 // objects and for dealing with strings
 //
 // This makes SerializedVar complicated and easy to mess up. To make it
-// reasonable to use all functions are protected and there are a use-specific
-// classes that encapsulate exactly one type of use in a way that typically
+// reasonable to use, all functions are protected and there are use-specific
+// classes that each encapsulate exactly one type of use in a way that typically
 // won't compile if you do the wrong thing.
 //
 // The IPC system is designed to pass things around and will make copies in
 // some cases, so our system must be designed so that this stuff will work.
-// This is challenging when the SerializedVar must to some cleanup after the
+// This is challenging when the SerializedVar must do some cleanup after the
 // message is sent. To work around this, we create an inner class using a
 // linked_ptr so all copies of a SerializedVar can share and we can guarantee
 // that the actual data will get cleaned up on shutdown.
@@ -61,7 +62,7 @@ class VarSerializationRules;
 //
 // The helper classes used for accessing the SerializedVar have more reasonable
 // behavior and will enforce that you don't do stupid things.
-class SerializedVar {
+class PPAPI_PROXY_EXPORT SerializedVar {
  public:
   SerializedVar();
   ~SerializedVar();
@@ -82,7 +83,7 @@ class SerializedVar {
   friend class SerializedVarTestConstructor;
   friend class SerializedVarVectorReceiveInput;
 
-  class Inner : public base::RefCounted<Inner> {
+  class PPAPI_PROXY_EXPORT Inner : public base::RefCounted<Inner> {
    public:
     Inner();
     Inner(VarSerializationRules* serialization_rules);
@@ -102,6 +103,11 @@ class SerializedVar {
     void SetVar(PP_Var var);
     const std::string& GetString() const;
     std::string* GetStringPtr();
+
+    // For the SerializedVarTestConstructor, this writes the Var value as if
+    // it was just received off the wire, without any serialization rules.
+    void ForceSetVarValueForTest(PP_Var value);
+    void ForceSetStringValueForTest(const std::string& str);
 
     void WriteToMessage(IPC::Message* m) const;
     bool ReadFromMessage(const IPC::Message* m, void** iter);
@@ -140,7 +146,7 @@ class SerializedVar {
     // a string ID. Before this, the as_id will be 0 for VARTYPE_STRING.
     PP_Var var_;
 
-    // Holds the literal string value to/from IPC. This will be valid of the
+    // Holds the literal string value to/from IPC. This will be valid if the
     // var_ is VARTYPE_STRING.
     std::string string_value_;
 
@@ -176,9 +182,9 @@ class SerializedVar {
 //   IPC_MESSAGE_ROUTED1(MyFunction, SerializedVar);
 // Sender would be:
 //   void MyFunctionProxy(PP_Var param) {
-//     Send(new MyFunctionMsg(SerializedVarSendInput(param));
+//     Send(new MyFunctionMsg(SerializedVarSendInput(dispatcher, param));
 //   }
-class SerializedVarSendInput : public SerializedVar {
+class PPAPI_PROXY_EXPORT SerializedVarSendInput : public SerializedVar {
  public:
   SerializedVarSendInput(Dispatcher* dispatcher, const PP_Var& var);
 
@@ -207,7 +213,8 @@ class SerializedVarSendInput : public SerializedVar {
 //     Send(new MyFunctionMsg(&result));
 //     return result.Return(dispatcher());
 //   }
-class ReceiveSerializedVarReturnValue : public SerializedVar {
+class PPAPI_PROXY_EXPORT ReceiveSerializedVarReturnValue
+    : public SerializedVar {
  public:
   // Note that we can't set the dispatcher in the constructor because the
   // data will be overridden when the return value is set. This constructor is
@@ -236,7 +243,7 @@ class ReceiveSerializedVarReturnValue : public SerializedVar {
 //     ReceiveSerializedException se(dispatcher(), exception)
 //     Send(new PpapiHostMsg_Foo(&se));
 //   }
-class ReceiveSerializedException : public SerializedVar {
+class PPAPI_PROXY_EXPORT ReceiveSerializedException : public SerializedVar {
  public:
   ReceiveSerializedException(Dispatcher* dispatcher, PP_Var* exception);
   ~ReceiveSerializedException();
@@ -267,7 +274,7 @@ class ReceiveSerializedException : public SerializedVar {
 //     ReceiveSerializedVarVectorOutParam vect(dispatcher, count, vars);
 //     Send(new MyMsg(vect.OutParam()));
 //   }
-class ReceiveSerializedVarVectorOutParam {
+class PPAPI_PROXY_EXPORT ReceiveSerializedVarVectorOutParam {
  public:
   ReceiveSerializedVarVectorOutParam(Dispatcher* dispatcher,
                                      uint32_t* output_count,
@@ -298,7 +305,7 @@ class ReceiveSerializedVarVectorOutParam {
 //   void OnMsgMyFunction(SerializedVarReceiveInput param) {
 //     MyFunction(param.Get());
 //   }
-class SerializedVarReceiveInput {
+class PPAPI_PROXY_EXPORT SerializedVarReceiveInput {
  public:
   // We rely on the implicit constructor here since the IPC layer will call
   // us with a SerializedVar. Pass this object by value, the copy constructor
@@ -326,7 +333,7 @@ class SerializedVarReceiveInput {
 //     PP_Var* array = vector.Get(dispatcher, &size);
 //     MyFunction(size, array);
 //   }
-class SerializedVarVectorReceiveInput {
+class PPAPI_PROXY_EXPORT SerializedVarVectorReceiveInput {
  public:
   SerializedVarVectorReceiveInput(const std::vector<SerializedVar>& serialized);
   ~SerializedVarVectorReceiveInput();
@@ -354,7 +361,7 @@ class SerializedVarVectorReceiveInput {
 //   void OnMsgMyFunction(SerializedVarReturnValue result) {
 //     result.Return(dispatcher(), MyFunction());
 //   }
-class SerializedVarReturnValue {
+class PPAPI_PROXY_EXPORT SerializedVarReturnValue {
  public:
   // We rely on the implicit constructor here since the IPC layer will call
   // us with a SerializedVar*. Pass this object by value, the copy constructor
@@ -382,7 +389,7 @@ class SerializedVarReturnValue {
 //   void OnMsgMyFunction(SerializedVarOutParam out_param) {
 //     MyFunction(out_param.OutParam(dispatcher()));
 //   }
-class SerializedVarOutParam {
+class PPAPI_PROXY_EXPORT SerializedVarOutParam {
  public:
   // We rely on the implicit constructor here since the IPC layer will call
   // us with a SerializedVar*. Pass this object by value, the copy constructor
@@ -408,7 +415,7 @@ class SerializedVarOutParam {
 // For returning an array of PP_Vars to the other side and transferring
 // ownership.
 //
-class SerializedVarVectorOutParam {
+class PPAPI_PROXY_EXPORT SerializedVarVectorOutParam {
  public:
   SerializedVarVectorOutParam(std::vector<SerializedVar>* serialized);
   ~SerializedVarVectorOutParam();
@@ -425,8 +432,9 @@ class SerializedVarVectorOutParam {
 };
 
 // For tests that just want to construct a SerializedVar for giving it to one
-// of the other classes.
-class SerializedVarTestConstructor : public SerializedVar {
+// of the other classes. This emulates a SerializedVar just received over the
+// wire from another process.
+class PPAPI_PROXY_EXPORT SerializedVarTestConstructor : public SerializedVar {
  public:
   // For POD-types and objects.
   explicit SerializedVarTestConstructor(const PP_Var& pod_var);
@@ -436,7 +444,7 @@ class SerializedVarTestConstructor : public SerializedVar {
 };
 
 // For tests that want to read what's in a SerializedVar.
-class SerializedVarTestReader : public SerializedVar {
+class PPAPI_PROXY_EXPORT SerializedVarTestReader : public SerializedVar {
  public:
   explicit SerializedVarTestReader(const SerializedVar& var);
 
@@ -449,7 +457,7 @@ class SerializedVarTestReader : public SerializedVar {
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_SERIALIZED_VAR_H_
 

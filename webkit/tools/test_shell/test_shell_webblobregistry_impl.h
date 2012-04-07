@@ -6,7 +6,7 @@
 #define WEBKIT_TOOLS_TEST_SHELL_TEST_SHELL_WEBBLOBREGISTRY_IMPL_H_
 
 #include "base/memory/ref_counted.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBlobRegistry.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebBlobRegistry.h"
 
 class GURL;
 
@@ -32,15 +32,14 @@ class TestShellWebBlobRegistryImpl
                                const WebKit::WebURL& src_url);
   virtual void unregisterBlobURL(const WebKit::WebURL& url);
 
-  // Run on I/O thread.
-  void DoRegisterBlobUrl(const GURL& url, webkit_blob::BlobData* blob_data);
-  void DoRegisterBlobUrlFrom(const GURL& url, const GURL& src_url);
-  void DoUnregisterBlobUrl(const GURL& url);
-
- protected:
+ private:
   friend class base::RefCountedThreadSafe<TestShellWebBlobRegistryImpl>;
 
- private:
+  // Run on I/O thread.
+  void AddFinishedBlob(const GURL& url, webkit_blob::BlobData* blob_data);
+  void CloneBlob(const GURL& url, const GURL& src_url);
+  void RemoveBlob(const GURL& url);
+
   DISALLOW_COPY_AND_ASSIGN(TestShellWebBlobRegistryImpl);
 };
 

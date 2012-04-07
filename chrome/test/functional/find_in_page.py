@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -9,6 +9,7 @@ import unittest
 
 import pyauto_functional
 import pyauto
+import pyauto_errors
 import test_utils
 
 
@@ -42,22 +43,6 @@ class FindMatchTests(pyauto.PyUITest):
     case_insenstive_result = (self.FindInPage('The', match_case=False)
                               ['match_count'])
     self.assertTrue(case_insenstive_result >= case_sensitive_result)
-
-  def testLocalizationAndCaseOrder(self):
-    """Verify that we check for localization.
-
-    Here we check the Turkish-i scenario where we verify that we
-    find both dotted and dotless I's.
-    """
-    url = self.GetFileURLForDataPath('find_in_page', 'turkish.html')
-    self.NavigateToURL(url)
-    dotless = self.FindInPage(u'\u0131')['match_count']
-    dotted = self.FindInPage('i')['match_count']
-    capital_i_with_dot = self.FindInPage(u'\u0130')['match_count']
-    capital_i = self.FindInPage('I')['match_count']
-    self.assertNotEqual(dotless, dotted)
-    self.assertNotEqual(capital_i_with_dot, capital_i)
-    self.assertNotEqual(dotted, capital_i_with_dot)
 
   def testSearchInTextAreas(self):
     """Verify search for text within various forms and text areas."""
@@ -230,7 +215,16 @@ class FindMatchTests(pyauto.PyUITest):
   def _VerifySearchInPDFURL(self, url, word, expected_count):
     """Verify that we can find in a pdf file."""
     self.NavigateToURL(url)
-    search_count = self.FindInPage(word)['match_count']
+    # Check for JSONInterfaceError thrown when FindInPage called before page
+    # loaded crbug.com/107448.
+    num_loops = 10
+    for loop in range(num_loops):
+      try:
+        search_count = self.FindInPage(word, timeout=1000)['match_count']
+        break
+      except pyauto_errors.JSONInterfaceError:
+        if loop == num_loops - 1:
+          raise
     self.assertEqual(expected_count, search_count,
                      'Failed to find in the %s pdf file' % url)
 
@@ -245,12 +239,11 @@ class FindMatchTests(pyauto.PyUITest):
       return
     # Search in pdf file over file://.
     file_url = self.GetFileURLForDataPath('plugin', 'Embed.pdf')
-    self._VerifySearchInPDFURL(file_url, 'adobe', 8) 
+    self._VerifySearchInPDFURL(file_url, 'adobe', 8)
 
-    # Disabling this test crbug.com/70927 
     # Search in pdf file over http://.
-    # http_url = 'http://www.irs.gov/pub/irs-pdf/fw4.pdf'
-    # self._VerifySearchInPDFURL(http_url, 'Allowances', 16) 
+    http_url = 'http://www.irs.gov/pub/irs-pdf/fw4.pdf'
+    self._VerifySearchInPDFURL(http_url, 'Allowances', 16)
 
 if __name__ == '__main__':
   pyauto_functional.Main()

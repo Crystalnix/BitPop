@@ -8,10 +8,12 @@
 
 typedef struct _GtkWidget GtkWidget;
 
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
-class TabContents;
+namespace content {
+class WebContents;
+}
 
 class SadTabGtk {
  public:
@@ -20,8 +22,8 @@ class SadTabGtk {
     KILLED    // The tab was killed.  Display the killed tab page.
   };
 
-  explicit SadTabGtk(TabContents* tab_contents, Kind kind);
-  virtual ~SadTabGtk();
+  SadTabGtk(content::WebContents* web_contents, Kind kind);
+  ~SadTabGtk();
 
   GtkWidget* widget() const { return event_box_.get(); }
 
@@ -30,8 +32,8 @@ class SadTabGtk {
 
   void OnLinkButtonClick();
 
-  TabContents* tab_contents_;
-  OwnedWidgetGtk event_box_;
+  content::WebContents* web_contents_;
+  ui::OwnedWidgetGtk event_box_;
   Kind kind_;
 
   DISALLOW_COPY_AND_ASSIGN(SadTabGtk);

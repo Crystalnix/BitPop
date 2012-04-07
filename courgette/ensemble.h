@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,17 +30,18 @@ namespace courgette {
 
 // Forward declarations:
 class Ensemble;
-class PEInfo;
 
 // An Element is a region of an Ensemble with an identifyable kind.
 //
 class Element {
  public:
-  enum Kind { WIN32_X86_WITH_CODE, WIN32_NOCODE };
+  Element(ExecutableType kind,
+          Ensemble* ensemble,
+          const Region& region);
 
-  virtual ~Element() {}
+  virtual ~Element();
 
-  Kind kind() const { return kind_; }
+  ExecutableType kind() const { return kind_; }
   const Region& region() const { return region_; }
 
   // The name is used only for debugging and logging.
@@ -50,14 +51,8 @@ class Element {
   // containing Ensemble.
   size_t offset_in_ensemble() const;
 
-  // Some subclasses of Element might have a PEInfo.
-  virtual PEInfo* GetPEInfo() const { return NULL; }
-
- protected:
-  Element(Kind kind, Ensemble* ensemble, const Region& region);
-
  private:
-  Kind kind_;
+  ExecutableType kind_;
   Ensemble* ensemble_;
   Region region_;
 
@@ -138,11 +133,6 @@ struct CourgettePatchFile {
   static const uint32 kMagic = 'C' | ('o' << 8) | ('u' << 16);
 
   static const uint32 kVersion = 20110216;
-
-  // Transformation method IDs.
-  enum TransformationMethodId {
-    T_COURGETTE_WIN32_X86 = 1,  // Windows 32 bit 'Portable Executable' x86.
-  };
 };
 
 // For any transform you would implement both a TransformationPatcher and a
@@ -212,7 +202,7 @@ class TransformationPatchGenerator {
   virtual ~TransformationPatchGenerator();
 
   // Returns the TransformationMethodId that identies this transformation.
-  virtual CourgettePatchFile::TransformationMethodId Kind() = 0;
+  virtual ExecutableType Kind() = 0;
 
   // Writes the parameters that will be passed to TransformationPatcher::Init.
   virtual Status WriteInitialParameters(SinkStream* parameter_stream) = 0;

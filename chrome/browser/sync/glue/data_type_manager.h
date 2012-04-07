@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,14 @@
 #define CHROME_BROWSER_SYNC_GLUE_DATA_TYPE_MANAGER_H__
 #pragma once
 
+#include <list>
 #include <set>
+#include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
-#include "chrome/browser/sync/engine/configure_reason.h"
+#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
+#include "chrome/browser/sync/internal_api/configure_reason.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
 namespace browser_sync {
@@ -36,45 +38,37 @@ class DataTypeManager {
 
   // Update NotifyDone() in data_type_manager_impl.cc if you update
   // this.
-  enum ConfigureResult {
+  enum ConfigureStatus {
+    UNKNOWN = -1,
     OK,                  // Configuration finished without error.
-    ASSOCIATION_FAILED,  // An error occurred during model association.
+    PARTIAL_SUCCESS,     // Some data types had an error while starting up.
     ABORTED,             // Start was aborted by calling Stop() before
                          // all types were started.
-    UNRECOVERABLE_ERROR  // A data type experienced an unrecoverable error
-                         // during startup.
+    RETRY,               // Download failed due to a transient error and it
+                         // is being retried.
+    UNRECOVERABLE_ERROR  // We got an unrecoverable error during startup.
   };
 
-  typedef std::set<syncable::ModelType> TypeSet;
+  typedef syncable::ModelTypeSet TypeSet;
 
-  // In case of an error the location is filled with the location the
-  // error originated from. In case of a success the error location value
-  // is to be not used.
-  // TODO(tim): We should rename this / ConfigureResult to something more
-  // flexible like SyncConfigureDoneDetails.
-  struct ConfigureResultWithErrorLocation {
-    ConfigureResult result;
+  // Note: |errors| is only filled when status is not OK.
+  struct ConfigureResult {
+    ConfigureResult();
+    ConfigureResult(ConfigureStatus status,
+                    TypeSet requested_types);
+    ConfigureResult(ConfigureStatus status,
+                    TypeSet requested_types,
+                    const std::list<SyncError>& errors);
+    ~ConfigureResult();
+    ConfigureStatus status;
     TypeSet requested_types;
-    scoped_ptr<tracked_objects::Location> location;
-
-    ConfigureResultWithErrorLocation();
-    ConfigureResultWithErrorLocation(const ConfigureResult& result,
-        const tracked_objects::Location& location,
-        const TypeSet& requested_types)
-        : result(result),
-          requested_types(requested_types) {
-      this->location.reset(new tracked_objects::Location(
-          location.function_name(),
-          location.file_name(),
-          location.line_number(),
-          location.program_counter()));
-    }
-
-      ~ConfigureResultWithErrorLocation();
+    std::list<SyncError> errors;
   };
-
 
   virtual ~DataTypeManager() {}
+
+  // Convert a ConfigureStatus to string for debug purposes.
+  static std::string ConfigureStatusToString(ConfigureStatus status);
 
   // Begins asynchronous configuration of data types.  Any currently
   // running data types that are not in the desired_types set will be
@@ -88,10 +82,10 @@ class DataTypeManager {
   // Note that you may call Configure() while configuration is in
   // progress.  Configuration will be complete only when the
   // desired_types supplied in the last call to Configure is achieved.
-  virtual void Configure(const TypeSet& desired_types,
+  virtual void Configure(TypeSet desired_types,
                          sync_api::ConfigureReason reason) = 0;
 
-  virtual void ConfigureWithoutNigori(const TypeSet& desired_types,
+  virtual void ConfigureWithoutNigori(TypeSet desired_types,
       sync_api::ConfigureReason reason) = 0;
 
   // Synchronously stops all registered data types.  If called after
@@ -99,9 +93,6 @@ class DataTypeManager {
   // configure and any data types that have been started will be
   // stopped.
   virtual void Stop() = 0;
-
-  // Reference to map of data type controllers.
-  virtual const DataTypeController::TypeMap& controllers() = 0;
 
   // The current state of the data type manager.
   virtual State state() = 0;

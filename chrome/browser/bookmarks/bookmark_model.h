@@ -6,31 +6,33 @@
 #define CHROME_BROWSER_BOOKMARKS_BOOKMARK_MODEL_H_
 #pragma once
 
-#include "build/build_config.h"
-
 #include <set>
 #include <vector>
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/string16.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_service.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history.h"
-#include "chrome/browser/history/history_types.h"
-#include "content/browser/cancelable_request.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/tree_node_model.h"
 
+class BookmarkExpandedStateTracker;
 class BookmarkIndex;
 class BookmarkLoadDetails;
 class BookmarkModel;
+class BookmarkModelObserver;
 class BookmarkStorage;
+class PrefService;
 class Profile;
 
 namespace bookmark_utils {
@@ -40,61 +42,57 @@ struct TitleMatch;
 // BookmarkNode ---------------------------------------------------------------
 
 // BookmarkNode contains information about a starred entry: title, URL, favicon,
-// star id and type. BookmarkNodes are returned from a BookmarkModel.
-//
+// id and type. BookmarkNodes are returned from BookmarkModel.
 class BookmarkNode : public ui::TreeNode<BookmarkNode> {
-  friend class BookmarkModel;
-
  public:
   enum Type {
     URL,
     FOLDER,
     BOOKMARK_BAR,
     OTHER_NODE,
-    SYNCED
+    MOBILE
   };
-  // Creates a new node with the specified url and id of 0
+
+  // Creates a new node with an id of 0 and |url|.
   explicit BookmarkNode(const GURL& url);
-  // Creates a new node with the specified url and id.
+  // Creates a new node with |id| and |url|.
   BookmarkNode(int64 id, const GURL& url);
+
   virtual ~BookmarkNode();
 
-  // Returns the URL.
-  const GURL& GetURL() const { return url_; }
-  // Sets the URL to the given value.
-  void SetURL(const GURL& url) { url_ = url; }
+  // Set the node's internal title. Note that this neither invokes observers
+  // nor updates any bookmark model this node may be in. For that functionality,
+  // BookmarkModel::SetTitle(..) should be used instead.
+  virtual void SetTitle(const string16& title) OVERRIDE;
 
-  // Returns a unique id for this node.
+  // Returns an unique id for this node.
   // For bookmark nodes that are managed by the bookmark model, the IDs are
   // persisted across sessions.
   int64 id() const { return id_; }
-  // Sets the id to the given value.
   void set_id(int64 id) { id_ = id; }
 
-  // Returns the type of this node.
-  BookmarkNode::Type type() const { return type_; }
-  void set_type(BookmarkNode::Type type) { type_ = type; }
+  const GURL& url() const { return url_; }
+  void set_url(const GURL& url) { url_ = url; }
 
-  // Returns the time the bookmark/folder was added.
+  Type type() const { return type_; }
+  void set_type(Type type) { type_ = type; }
+
+  // Returns the time the node was added.
   const base::Time& date_added() const { return date_added_; }
-  // Sets the time the bookmark/folder was added.
   void set_date_added(const base::Time& date) { date_added_ = date; }
 
   // Returns the last time the folder was modified. This is only maintained
-  // for folders (including the bookmark and other folder).
+  // for folders (including the bookmark bar and other folder).
   const base::Time& date_folder_modified() const {
     return date_folder_modified_;
   }
-  // Sets the last time the folder was modified.
   void set_date_folder_modified(const base::Time& date) {
     date_folder_modified_ = date;
   }
 
-  // Convenience for testing if this nodes represents a folder. A folder is a
+  // Convenience for testing if this node represents a folder. A folder is a
   // node whose type is not URL.
   bool is_folder() const { return type_ != URL; }
-
-  // Is this a URL?
   bool is_url() const { return type_ == URL; }
 
   // Returns the favicon. In nearly all cases you should use the method
@@ -107,17 +105,8 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode> {
   // The following methods are used by the bookmark model, and are not
   // really useful outside of it.
 
-  bool is_favicon_loaded() const { return loaded_favicon_; }
-  void set_favicon_loaded(bool value) { loaded_favicon_ = value; }
-
-  // Accessor method for controlling the visibility of a bookmark node/sub-tree.
-  // Note that visibility is not propagated down the tree hierarchy so if a
-  // parent node is marked as invisible, a child node may return "Visible". This
-  // function is primarily useful when traversing the model to generate a UI
-  // representation but we may want to suppress some nodes.
-  // TODO(yfriedman): Remove this when enable-synced-bookmarks-folder is
-  // no longer a command line flag.
-  bool IsVisible() const;
+  bool is_favicon_loaded() const { return is_favicon_loaded_; }
+  void set_is_favicon_loaded(bool loaded) { is_favicon_loaded_ = loaded; }
 
   HistoryService::Handle favicon_load_handle() const {
     return favicon_load_handle_;
@@ -126,113 +115,151 @@ class BookmarkNode : public ui::TreeNode<BookmarkNode> {
     favicon_load_handle_ = handle;
   }
 
-  // Called when the favicon becomes invalid.
-  void InvalidateFavicon();
-
-  // Resets the properties of the node from the supplied entry.
-  // This is used by the bookmark model and not really useful outside of it.
-  void Reset(const history::StarredEntry& entry);
+  // Accessor method for controlling the visibility of a bookmark node/sub-tree.
+  // Note that visibility is not propagated down the tree hierarchy so if a
+  // parent node is marked as invisible, a child node may return "Visible". This
+  // function is primarily useful when traversing the model to generate a UI
+  // representation but we may want to suppress some nodes.
+  virtual bool IsVisible() const;
 
   // TODO(sky): Consider adding last visit time here, it'll greatly simplify
   // HistoryContentsProvider.
 
  private:
-  // helper to initialize various fields during construction.
+  friend class BookmarkModel;
+
+  // A helper function to initialize various fields during construction.
   void Initialize(int64 id);
 
-  // Unique identifier for this node.
+  // Called when the favicon becomes invalid.
+  void InvalidateFavicon();
+
+  // The unique identifier for this node.
   int64 id_;
 
-  // Whether the favicon has been loaded.
-  bool loaded_favicon_;
+  // The URL of this node. BookmarkModel maintains maps off this URL, so changes
+  // to the URL must be done through the BookmarkModel.
+  GURL url_;
 
-  // The favicon.
+  // The type of this node. See enum above.
+  Type type_;
+
+  // Date of when this node was created.
+  base::Time date_added_;
+
+  // Date of the last modification. Only used for folders.
+  base::Time date_folder_modified_;
+
+  // The favicon of this node.
   SkBitmap favicon_;
+
+  // Whether the favicon has been loaded.
+  bool is_favicon_loaded_;
 
   // If non-zero, it indicates we're loading the favicon and this is the handle
   // from the HistoryService.
   HistoryService::Handle favicon_load_handle_;
 
-  // The URL. BookmarkModel maintains maps off this URL, it is important that
-  // changes to the URL is done through the bookmark model.
-  GURL url_;
-
-  // Type of node.
-  BookmarkNode::Type type_;
-
-  // Date we were created.
-  base::Time date_added_;
-
-  // Time last modified. Only used for folders.
-  base::Time date_folder_modified_;
-
   DISALLOW_COPY_AND_ASSIGN(BookmarkNode);
+};
+
+// BookmarkPermanentNode -------------------------------------------------------
+
+// Node used for the permanent folders (excluding the root).
+class BookmarkPermanentNode : public BookmarkNode {
+ public:
+  explicit BookmarkPermanentNode(int64 id);
+  virtual ~BookmarkPermanentNode();
+
+  // WARNING: this code is used for other projects. Contact noyau@ for details.
+  void set_visible(bool value) { visible_ = value; }
+
+  // BookmarkNode overrides:
+  virtual bool IsVisible() const OVERRIDE;
+
+ private:
+  bool visible_;
+
+  DISALLOW_COPY_AND_ASSIGN(BookmarkPermanentNode);
 };
 
 // BookmarkModel --------------------------------------------------------------
 
-// BookmarkModel provides a directed acyclic graph of the starred entries
-// and folders. Two graphs are provided for the two entry points: those on
-// the bookmark bar, and those in the other folder.
+// BookmarkModel provides a directed acyclic graph of URLs and folders.
+// Three graphs are provided for the three entry points: those on the 'bookmarks
+// bar', those in the 'other bookmarks' folder and those in the 'mobile' folder.
 //
-// An observer may be attached to observer relevant events.
+// An observer may be attached to observe relevant events.
 //
 // You should NOT directly create a BookmarkModel, instead go through the
 // Profile.
-
-class BookmarkModel : public NotificationObserver, public BookmarkService {
-  friend class BookmarkCodecTest;
-  friend class BookmarkModelTest;
-  friend class BookmarkStorage;
-
+class BookmarkModel : public content::NotificationObserver,
+                      public BookmarkService {
  public:
   explicit BookmarkModel(Profile* profile);
   virtual ~BookmarkModel();
+
+  static void RegisterUserPrefs(PrefService* prefs);
+
+  // Invoked prior to destruction to release any necessary resources.
+  void Cleanup();
 
   // Loads the bookmarks. This is called by Profile upon creation of the
   // BookmarkModel. You need not invoke this directly.
   void Load();
 
-  // Returns the root node. The bookmark bar node and other node are children of
-  // the root node.
+  // Returns true if the model finished loading.
+  // This is virtual so it can be mocked.
+  virtual bool IsLoaded() const;
+
+  // Returns the root node. The 'bookmark bar' node and 'other' node are
+  // children of the root node.
   const BookmarkNode* root_node() { return &root_; }
 
-  // Returns the bookmark bar node. This is NULL until loaded.
-  const BookmarkNode* GetBookmarkBarNode() { return bookmark_bar_node_; }
+  // Returns the 'bookmark bar' node. This is NULL until loaded.
+  const BookmarkNode* bookmark_bar_node() { return bookmark_bar_node_; }
 
   // Returns the 'other' node. This is NULL until loaded.
   const BookmarkNode* other_node() { return other_node_; }
 
-  // Returns the 'synced' node. This is NULL until loaded.
-  const BookmarkNode* synced_node() { return synced_node_; }
+  // Returns the 'mobile' node. This is NULL until loaded.
+  const BookmarkNode* mobile_node() { return mobile_node_; }
+
+  bool is_root_node(const BookmarkNode* node) const { return node == &root_; }
+
+  // Returns whether the given |node| is one of the permanent nodes - root node,
+  // 'bookmark bar' node, 'other' node or 'mobile' node.
+  bool is_permanent_node(const BookmarkNode* node) const {
+    return node == &root_ ||
+           node == bookmark_bar_node_ ||
+           node == other_node_ ||
+           node == mobile_node_;
+  }
+
+  Profile* profile() const { return profile_; }
 
   // Returns the parent the last node was added to. This never returns NULL
   // (as long as the model is loaded).
   const BookmarkNode* GetParentForNewNodes();
 
-  void AddObserver(BookmarkModelObserver* observer) {
-    observers_.AddObserver(observer);
-  }
+  void AddObserver(BookmarkModelObserver* observer);
+  void RemoveObserver(BookmarkModelObserver* observer);
 
-  void RemoveObserver(BookmarkModelObserver* observer) {
-    observers_.RemoveObserver(observer);
-  }
-
-  // Notify the observes that an import is about to happen, so they can
-  // delay any expensive UI updates until it is finished.
+  // Notifies the observers that an import is about to happen, so they can delay
+  // any expensive UI updates until it's finished.
   void BeginImportMode();
   void EndImportMode();
 
-  // Unstars or deletes the specified entry. Removing a folder entry recursively
-  // unstars all nodes. Observers are notified immediately.
+  // Removes the node at the given |index| from |parent|. Removing a folder node
+  // recursively removes all nodes. Observers are notified immediately.
   void Remove(const BookmarkNode* parent, int index);
 
-  // Moves the specified entry to a new location.
+  // Moves |node| to |new_parent| and inserts it at the given |index|.
   void Move(const BookmarkNode* node,
             const BookmarkNode* new_parent,
             int index);
 
-  // Duplicates a bookmark node and inserts it at a new location.
+  // Inserts a copy of |node| into |new_parent| at |index|.
   void Copy(const BookmarkNode* node,
             const BookmarkNode* new_parent,
             int index);
@@ -241,40 +268,39 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // loaded it is loaded and the observer of the model notified when done.
   const SkBitmap& GetFavicon(const BookmarkNode* node);
 
-  // Sets the title of the specified node.
+  // Sets the title of |node|.
   void SetTitle(const BookmarkNode* node, const string16& title);
 
-  // Sets the URL of the specified bookmark node.
+  // Sets the URL of |node|.
   void SetURL(const BookmarkNode* node, const GURL& url);
 
-  // Returns true if the model finished loading.
-  virtual bool IsLoaded();
-
-  // Returns the set of nodes with the specified URL.
+  // Returns the set of nodes with the |url|.
   void GetNodesByURL(const GURL& url, std::vector<const BookmarkNode*>* nodes);
 
-  // Returns the most recently added node for the url. Returns NULL if url is
-  // not bookmarked.
+  // Returns the most recently added node for the |url|. Returns NULL if |url|
+  // is not bookmarked.
   const BookmarkNode* GetMostRecentlyAddedNodeForURL(const GURL& url);
 
-  // Returns all the bookmarked urls. This method is thread safe.
-  virtual void GetBookmarks(std::vector<GURL>* urls);
-
-  // Returns true if there are bookmarks, otherwise returns false. This method
-  // is thread safe.
+  // Returns true if there are bookmarks, otherwise returns false.
+  // This method is thread safe.
   bool HasBookmarks();
 
-  // Returns true if there is a bookmark for the specified URL. This method is
-  // thread safe. See BookmarkService for more details on this.
-  virtual bool IsBookmarked(const GURL& url);
+  // Returns true if there is a bookmark with the |url|.
+  // This method is thread safe.
+  // See BookmarkService for more details on this.
+  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
 
-  // Blocks until loaded; this is NOT invoked on the main thread. See
-  // BookmarkService for more details on this.
-  virtual void BlockTillLoaded();
+  // Returns all the bookmarked urls.
+  // This method is thread safe.
+  // See BookmarkService for more details on this.
+  virtual void GetBookmarks(std::vector<GURL>* urls) OVERRIDE;
 
-  // Returns the node with the specified id, or NULL if there is no node with
-  // the specified id.
-  const BookmarkNode* GetNodeByID(int64 id);
+  // Blocks until loaded; this is NOT invoked on the main thread.
+  // See BookmarkService for more details on this.
+  virtual void BlockTillLoaded() OVERRIDE;
+
+  // Returns the node with |id|, or NULL if there is no node with |id|.
+  const BookmarkNode* GetNodeByID(int64 id) const;
 
   // Adds a new folder node at the specified position.
   const BookmarkNode* AddFolder(const BookmarkNode* parent,
@@ -298,15 +324,8 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // BookmarkNodeChildrenReordered method.
   void SortChildren(const BookmarkNode* parent);
 
-  // This is the convenience that makes sure the url is starred or not starred.
-  // If is_starred is false, all bookmarks for URL are removed. If is_starred is
-  // true and there are no bookmarks for url, a bookmark is created.
-  void SetURLStarred(const GURL& url,
-                     const string16& title,
-                     bool is_starred);
-
-  // Sets the date modified time of the specified node.
-  void SetDateFolderModified(const BookmarkNode* parent, const base::Time time);
+  // Sets the date when the folder was modified.
+  void SetDateFolderModified(const BookmarkNode* node, const base::Time time);
 
   // Resets the 'date modified' time of the node to 0. This is used during
   // importing to exclude the newly created folders from showing up in the
@@ -317,27 +336,6 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
       const string16& text,
       size_t max_count,
       std::vector<bookmark_utils::TitleMatch>* matches);
-
-  Profile* profile() const { return profile_; }
-
-  bool is_root(const BookmarkNode* node) const { return node == &root_; }
-  bool is_bookmark_bar_node(const BookmarkNode* node) const {
-    return node == bookmark_bar_node_;
-  }
-  bool is_synced_bookmarks_node(const BookmarkNode* node) const {
-    return node == synced_node_;
-  }
-  bool is_other_bookmarks_node(const BookmarkNode* node) const {
-    return node == other_node_;
-  }
-  // Returns whether the given node is one of the permanent nodes - root node,
-  // bookmark bar node or other bookmarks node.
-  bool is_permanent_node(const BookmarkNode* node) const {
-    return is_root(node) ||
-           is_bookmark_bar_node(node) ||
-           is_other_bookmarks_node(node) ||
-           is_synced_bookmarks_node(node);
-  }
 
   // Sets the store to NULL, making it so the BookmarkModel does not persist
   // any changes to disk. This is only useful during testing to speed up
@@ -350,21 +348,31 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // Returns the next node ID.
   int64 next_node_id() const { return next_node_id_; }
 
+  // Returns the object responsible for tracking the set of expanded nodes in
+  // the bookmark editor.
+  BookmarkExpandedStateTracker* expanded_state_tracker() {
+    return expanded_state_tracker_.get();
+  }
+
+  // Sets the visibility of one of the permanent nodes. This is set by sync.
+  void SetPermanentNodeVisible(BookmarkNode::Type type, bool value);
+
  private:
+  friend class BookmarkCodecTest;
+  friend class BookmarkModelTest;
+  friend class BookmarkStorage;
+
   // Used to order BookmarkNodes by URL.
   class NodeURLComparator {
    public:
     bool operator()(const BookmarkNode* n1, const BookmarkNode* n2) const {
-      return n1->GetURL() < n2->GetURL();
+      return n1->url() < n2->url();
     }
   };
 
-  // Implementation of IsBookmarked. Before calling this the caller must
-  // obtain a lock on url_lock_.
+  // Implementation of IsBookmarked. Before calling this the caller must obtain
+  // a lock on |url_lock_|.
   bool IsBookmarkedNoLock(const GURL& url);
-
-  // Overriden to notify the observer the favicon has been loaded.
-  void FaviconLoaded(const BookmarkNode* node);
 
   // Removes the node from internal maps and recurses through all children. If
   // the node is a url, its url is added to removed_urls.
@@ -376,7 +384,7 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // BookmarkModel takes ownership of |details|.
   void DoneLoading(BookmarkLoadDetails* details);
 
-  // Populates nodes_ordered_by_url_set_ from root.
+  // Populates |nodes_ordered_by_url_set_| from root.
   void PopulateNodesByURL(BookmarkNode* node);
 
   // Removes the node from its parent, sends notification, and deletes it.
@@ -392,21 +400,14 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
                         bool was_bookmarked);
 
   // Implementation of GetNodeByID.
-  const BookmarkNode* GetNodeByID(const BookmarkNode* node, int64 id);
+  const BookmarkNode* GetNodeByID(const BookmarkNode* node, int64 id) const;
 
   // Returns true if the parent and index are valid.
   bool IsValidIndex(const BookmarkNode* parent, int index, bool allow_end);
 
-  // Creates the bookmark bar/synced/other nodes. These call into
-  // CreateRootNodeFromStarredEntry.
-  BookmarkNode* CreateBookmarkNode();
-  BookmarkNode* CreateOtherBookmarksNode();
-  BookmarkNode* CreateSyncedBookmarksNode();
-
-  // Creates a root node (either the bookmark bar node or other node) from the
-  // specified starred entry.
-  BookmarkNode* CreateRootNodeFromStarredEntry(
-      const history::StarredEntry& entry);
+  // Creates one of the possible permanent nodes (bookmark bar node, other node
+  // and mobile node) from |type|.
+  BookmarkPermanentNode* CreatePermanentNode(BookmarkNode::Type type);
 
   // Notification that a favicon has finished loading. If we can decode the
   // favicon, FaviconLoaded is invoked.
@@ -417,13 +418,16 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // favicon service.
   void LoadFavicon(BookmarkNode* node);
 
+  // Called to notify the observers that the favicon has been loaded.
+  void FaviconLoaded(const BookmarkNode* node);
+
   // If we're waiting on a favicon for node, the load request is canceled.
   void CancelPendingFaviconLoadRequests(BookmarkNode* node);
 
-  // NotificationObserver.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Generates and returns the next node ID.
   int64 generate_next_node_id();
@@ -433,14 +437,11 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // decoding since during decoding codec assigns node IDs.
   void set_next_node_id(int64 id) { next_node_id_ = id; }
 
-  // Records that the bookmarks file was changed externally.
-  void SetFileChanged();
-
   // Creates and returns a new BookmarkLoadDetails. It's up to the caller to
   // delete the returned object.
   BookmarkLoadDetails* CreateLoadDetails();
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   Profile* profile_;
 
@@ -455,9 +456,9 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   // children.
   BookmarkNode root_;
 
-  BookmarkNode* bookmark_bar_node_;
-  BookmarkNode* other_node_;
-  BookmarkNode* synced_node_;
+  BookmarkPermanentNode* bookmark_bar_node_;
+  BookmarkPermanentNode* other_node_;
+  BookmarkPermanentNode* mobile_node_;
 
   // The maximum ID assigned to the bookmark nodes in the model.
   int64 next_node_id_;
@@ -467,8 +468,8 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
 
   // Set of nodes ordered by URL. This is not a map to avoid copying the
   // urls.
-  // WARNING: nodes_ordered_by_url_set_ is accessed on multiple threads. As
-  // such, be sure and wrap all usage of it around url_lock_.
+  // WARNING: |nodes_ordered_by_url_set_| is accessed on multiple threads. As
+  // such, be sure and wrap all usage of it around |url_lock_|.
   typedef std::multiset<BookmarkNode*, NodeURLComparator> NodesOrderedByURLSet;
   NodesOrderedByURLSet nodes_ordered_by_url_set_;
   base::Lock url_lock_;
@@ -482,6 +483,8 @@ class BookmarkModel : public NotificationObserver, public BookmarkService {
   scoped_ptr<BookmarkIndex> index_;
 
   base::WaitableEvent loaded_signal_;
+
+  scoped_ptr<BookmarkExpandedStateTracker> expanded_state_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkModel);
 };

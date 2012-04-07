@@ -6,7 +6,9 @@
 
 #include <limits>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/mac/mac_util.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
@@ -124,7 +126,7 @@ void StatusBubbleMac::SetStatus(const string16& status) {
   SetText(status, false);
 }
 
-void StatusBubbleMac::SetURL(const GURL& url, const string16& languages) {
+void StatusBubbleMac::SetURL(const GURL& url, const std::string& languages) {
   url_ = url;
   languages_ = languages;
 
@@ -146,12 +148,11 @@ void StatusBubbleMac::SetURL(const GURL& url, const string16& languages) {
   scaled_width = [[parent_ contentView] convertSize:scaled_width fromView:nil];
   text_width = static_cast<int>(scaled_width.width);
   NSFont* font = [[window_ contentView] font];
-  gfx::Font font_chr(base::SysNSStringToUTF16([font fontName]),
+  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
                      [font pointSize]);
 
-  string16 original_url_text = net::FormatUrl(url, UTF16ToUTF8(languages));
-  string16 status = ui::ElideUrl(url, font_chr, text_width,
-      UTF16ToUTF8(languages));
+  string16 original_url_text = net::FormatUrl(url, languages);
+  string16 status = ui::ElideUrl(url, font_chr, text_width, languages);
 
   SetText(status, true);
 
@@ -169,8 +170,9 @@ void StatusBubbleMac::SetURL(const GURL& url, const string16& languages) {
     ExpandBubble();
   } else if (original_url_text.length() > status.length()) {
     MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        expand_timer_factory_.NewRunnableMethod(
-            &StatusBubbleMac::ExpandBubble), kExpandHoverDelay);
+        base::Bind(&StatusBubbleMac::ExpandBubble,
+                   expand_timer_factory_.GetWeakPtr()),
+        kExpandHoverDelay);
   }
 }
 
@@ -209,10 +211,12 @@ void StatusBubbleMac::SetText(const string16& text, bool is_url) {
   else
     show = false;
 
-  if (show)
+  if (show) {
+    UpdateSizeAndPosition();
     StartShowing();
-  else
+  } else {
     StartHiding();
+  }
 }
 
 void StatusBubbleMac::Hide() {
@@ -258,89 +262,94 @@ void StatusBubbleMac::Hide() {
   url_text_ = nil;
 }
 
-void StatusBubbleMac::MouseMoved(
-    const gfx::Point& location, bool left_content) {
-  if (left_content)
-    return;
-
+void StatusBubbleMac::SetFrameAvoidingMouse(
+    NSRect window_frame, const gfx::Point& mouse_pos) {
   if (!window_)
     return;
 
-  // TODO(thakis): Use 'location' here instead of NSEvent.
-  NSPoint cursor_location = [NSEvent mouseLocation];
-  --cursor_location.y;  // docs say the y coord starts at 1 not 0; don't ask why
+  // Bubble's base rect in |parent_| (window base) coordinates.
+  NSRect base_rect;
+  if ([delegate_ respondsToSelector:@selector(statusBubbleBaseFrame)]) {
+    base_rect = [delegate_ statusBubbleBaseFrame];
+  } else {
+    base_rect = [[parent_ contentView] bounds];
+    base_rect = [[parent_ contentView] convertRect:base_rect toView:nil];
+  }
 
-  // Bubble's base frame in |parent_| coordinates.
-  NSRect baseFrame;
-  if ([delegate_ respondsToSelector:@selector(statusBubbleBaseFrame)])
-    baseFrame = [delegate_ statusBubbleBaseFrame];
-  else
-    baseFrame = [[parent_ contentView] frame];
+  // To start, assume default positioning in the lower left corner.
+  // The window_frame position is in global (screen) coordinates.
+  window_frame.origin = [parent_ convertBaseToScreen:base_rect.origin];
 
-  // Get the normal position of the frame.
-  NSRect window_frame = [window_ frame];
-  window_frame.origin = [parent_ convertBaseToScreen:baseFrame.origin];
-
-  // Get the cursor position relative to the popup.
-  cursor_location.x -= NSMaxX(window_frame);
-  cursor_location.y -= NSMaxY(window_frame);
-
+  // Get the cursor position relative to the top right corner of the bubble.
+  gfx::Point relative_pos(mouse_pos.x() - NSMaxX(window_frame),
+                          mouse_pos.y() - NSMaxY(window_frame));
 
   // If the mouse is in a position where we think it would move the
-  // status bubble, figure out where and how the bubble should be moved.
-  if (cursor_location.y < kMousePadding &&
-      cursor_location.x < kMousePadding) {
-    int offset = kMousePadding - cursor_location.y;
+  // status bubble, figure out where and how the bubble should be moved, and
+  // what sorts of corners it should have.
+  unsigned long corner_flags;
+  if (relative_pos.y() < kMousePadding &&
+      relative_pos.x() < kMousePadding) {
+    int offset = kMousePadding - relative_pos.y();
 
     // Make the movement non-linear.
     offset = offset * offset / kMousePadding;
 
     // When the mouse is entering from the right, we want the offset to be
     // scaled by how horizontally far away the cursor is from the bubble.
-    if (cursor_location.x > 0) {
-      offset = offset * ((kMousePadding - cursor_location.x) / kMousePadding);
+    if (relative_pos.x() > 0) {
+      offset *= (kMousePadding - relative_pos.x()) / kMousePadding;
     }
 
-    bool isOnScreen = true;
+    bool is_on_screen = true;
     NSScreen* screen = [window_ screen];
     if (screen &&
         NSMinY([screen visibleFrame]) > NSMinY(window_frame) - offset) {
-      isOnScreen = false;
+      is_on_screen = false;
     }
 
     // If something is shown below tab contents (devtools, download shelf etc.),
     // adjust the position to sit on top of it.
-    bool isAnyShelfVisible = NSMinY(baseFrame) > 0;
+    bool is_any_shelf_visible = NSMinY(base_rect) > 0;
 
-    if (isOnScreen && !isAnyShelfVisible) {
+    if (is_on_screen && !is_any_shelf_visible) {
       // Cap the offset and change the visual presentation of the bubble
       // depending on where it ends up (so that rounded corners square off
       // and mate to the edges of the tab content).
       if (offset >= NSHeight(window_frame)) {
         offset = NSHeight(window_frame);
-        [[window_ contentView] setCornerFlags:
-            kRoundedBottomLeftCorner | kRoundedBottomRightCorner];
+        corner_flags = kRoundedBottomLeftCorner | kRoundedBottomRightCorner;
       } else if (offset > 0) {
-        [[window_ contentView] setCornerFlags:
-            kRoundedTopRightCorner | kRoundedBottomLeftCorner |
-            kRoundedBottomRightCorner];
+        corner_flags = kRoundedTopRightCorner |
+                       kRoundedBottomLeftCorner |
+                       kRoundedBottomRightCorner;
       } else {
-        [[window_ contentView] setCornerFlags:kRoundedTopRightCorner];
+        corner_flags = kRoundedTopRightCorner;
       }
+
+      // Place the bubble on the left, but slightly lower.
       window_frame.origin.y -= offset;
     } else {
       // Cannot move the bubble down without obscuring other content.
-      // Move it to the right instead.
-      [[window_ contentView] setCornerFlags:kRoundedTopLeftCorner];
-
-      // Subtract border width + bubble width.
-      window_frame.origin.x += NSWidth(baseFrame) - NSWidth(window_frame);
+      // Move it to the far right instead.
+      corner_flags = kRoundedTopLeftCorner;
+      window_frame.origin.x += NSWidth(base_rect) - NSWidth(window_frame);
     }
   } else {
-    [[window_ contentView] setCornerFlags:kRoundedTopRightCorner];
+    // Use the default position in the lower left corner of the content area.
+    corner_flags = kRoundedTopRightCorner;
   }
 
+  corner_flags |= OSDependentCornerFlags(window_frame);
+
+  [[window_ contentView] setCornerFlags:corner_flags];
   [window_ setFrame:window_frame display:YES];
+}
+
+void StatusBubbleMac::MouseMoved(
+    const gfx::Point& location, bool left_content) {
+  if (!left_content)
+    SetFrameAvoidingMouse([window_ frame], location);
 }
 
 void StatusBubbleMac::UpdateDownloadShelfVisibility(bool visible) {
@@ -369,6 +378,10 @@ void StatusBubbleMac::Create() {
   [window_ setContentView:view];
 
   [window_ setAlphaValue:0.0];
+
+  // TODO(dtseng): Ignore until we provide NSAccessibility support.
+  [window_ accessibilitySetOverrideValue:NSAccessibilityUnknownRole
+      forAttribute:NSAccessibilityRoleAttribute];
 
   // Set a delegate for the fade-in and fade-out transitions to be notified
   // when fades are complete.  The ownership model is for window_ to own
@@ -435,8 +448,6 @@ void StatusBubbleMac::SetState(StatusBubbleState state) {
 
   if (state == kBubbleHidden)
     [window_ setFrame:NSMakeRect(0, 0, 1, 1) display:YES];
-  else
-    UpdateSizeAndPosition();
 
   if ([delegate_ respondsToSelector:@selector(statusBubbleWillEnterState:)])
     [delegate_ statusBubbleWillEnterState:state];
@@ -501,17 +512,16 @@ void StatusBubbleMac::StartTimer(int64 delay_ms) {
   // There can only be one running timer.
   CancelTimer();
 
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      timer_factory_.NewRunnableMethod(&StatusBubbleMac::TimerFired),
+  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+      base::Bind(&StatusBubbleMac::TimerFired, timer_factory_.GetWeakPtr()),
       delay_ms);
 }
 
 void StatusBubbleMac::CancelTimer() {
   DCHECK([NSThread isMainThread]);
 
-  if (!timer_factory_.empty())
-    timer_factory_.RevokeAll();
+  if (timer_factory_.HasWeakPtrs())
+    timer_factory_.InvalidateWeakPtrs();
 }
 
 void StatusBubbleMac::TimerFired() {
@@ -578,7 +588,16 @@ void StatusBubbleMac::StartHiding() {
 
 void StatusBubbleMac::CancelExpandTimer() {
   DCHECK([NSThread isMainThread]);
-  expand_timer_factory_.RevokeAll();
+  expand_timer_factory_.InvalidateWeakPtrs();
+}
+
+// Get the current location of the mouse in screen coordinates. To make this
+// class testable, all code should use this method rather than using
+// NSEvent mouseLocation directly.
+gfx::Point StatusBubbleMac::GetMouseLocation() {
+  NSPoint p = [NSEvent mouseLocation];
+  --p.y;  // The docs say the y coord starts at 1 not 0; don't ask why.
+  return gfx::Point(p.x, p.y);
 }
 
 void StatusBubbleMac::ExpandBubble() {
@@ -590,10 +609,10 @@ void StatusBubbleMac::ExpandBubble() {
 
   // Generate the URL string that fits in the expanded bubble.
   NSFont* font = [[window_ contentView] font];
-  gfx::Font font_chr(base::SysNSStringToUTF16([font fontName]),
+  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
       [font pointSize]);
-  string16 expanded_url = ui::ElideUrl(url_, font_chr,
-      max_bubble_width, UTF16ToUTF8(languages_));
+  string16 expanded_url = ui::ElideUrl(
+      url_, font_chr, max_bubble_width, languages_);
 
   // Scale width from gfx::Font in view coordinates to window coordinates.
   int required_width_for_string =
@@ -630,8 +649,17 @@ void StatusBubbleMac::ExpandBubble() {
   actual_window_frame.size.width = NSWidth(window_frame);
 
   // Do not expand if it's going to cover mouse location.
-  if (NSPointInRect([NSEvent mouseLocation], actual_window_frame))
+  gfx::Point p = GetMouseLocation();
+  if (NSPointInRect(NSMakePoint(p.x(), p.y()), actual_window_frame))
     return;
+
+  // Get the current corner flags and see what needs to change based on the
+  // expansion. This is only needed on Lion, which has rounded window bottoms.
+  if (base::mac::IsOSLionOrLater()) {
+    unsigned long corner_flags = [[window_ contentView] cornerFlags];
+    corner_flags |= OSDependentCornerFlags(actual_window_frame);
+    [[window_ contentView] setCornerFlags:corner_flags];
+  }
 
   [NSAnimationContext beginGrouping];
   [[NSAnimationContext currentContext] setDuration:kExpansionDuration];
@@ -643,7 +671,8 @@ void StatusBubbleMac::UpdateSizeAndPosition() {
   if (!window_)
     return;
 
-  [window_ setFrame:CalculateWindowFrame(/*expand=*/false) display:YES];
+  SetFrameAvoidingMouse(CalculateWindowFrame(/*expand=*/false),
+                        GetMouseLocation());
 }
 
 void StatusBubbleMac::SwitchParentWindow(NSWindow* parent) {
@@ -678,4 +707,32 @@ NSRect StatusBubbleMac::CalculateWindowFrame(bool expanded_width) {
 
   screenRect.size = size;
   return screenRect;
+}
+
+unsigned long StatusBubbleMac::OSDependentCornerFlags(NSRect window_frame) {
+  unsigned long corner_flags = 0;
+
+  if (base::mac::IsOSLionOrLater()) {
+    NSRect parent_frame = [parent_ frame];
+
+    // Round the bottom corners when they're right up against the
+    // corresponding edge of the parent window, or when below the parent
+    // window.
+    if (NSMinY(window_frame) <= NSMinY(parent_frame)) {
+      if (NSMinX(window_frame) == NSMinX(parent_frame)) {
+        corner_flags |= kRoundedBottomLeftCorner;
+      }
+
+      if (NSMaxX(window_frame) == NSMaxX(parent_frame)) {
+        corner_flags |= kRoundedBottomRightCorner;
+      }
+    }
+
+    // Round the top corners when the bubble is below the parent window.
+    if (NSMinY(window_frame) < NSMinY(parent_frame)) {
+      corner_flags |= kRoundedTopLeftCorner | kRoundedTopRightCorner;
+    }
+  }
+
+  return corner_flags;
 }

@@ -33,12 +33,12 @@ class URLFetcher;
 //                              | Have Pending tasks
 //                              |
 //                              |
-//       <----Delete Pending -- | ---Update Pending----->
-//       |                      |                       |
-//       |                      |                       |
-//       |                      |                       |
-// Delete Printer from server   |                 Update Printer info on server
-//   Shutdown                   |                      Go to Stop
+//                              | ---Update Pending----->
+//                              |                       |
+//                              |                       |
+//                              |                       |
+//                              |                 Update Printer info on server
+//                              |                      Go to Stop
 //                              |
 //                              | Job Available
 //                              |
@@ -88,14 +88,10 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
  public:
   class Delegate {
    public:
-     virtual void OnPrinterJobHandlerShutdown(
-        PrinterJobHandler* job_handler, const std::string& printer_id) = 0;
+     // Notify delegate about authentication error.
      virtual void OnAuthError() = 0;
-     // Called when the PrinterJobHandler cannot find the printer locally. The
-     // delegate returns |delete_from_server| to true if the printer should be
-     // deleted from the server,false otherwise.
-     virtual void OnPrinterNotFound(const std::string& printer_name,
-                                    bool* delete_from_server) = 0;
+     // Notify delegate that printer has been deleted.
+     virtual void OnPrinterDeleted(const std::string& printer_name) = 0;
 
    protected:
      virtual ~Delegate() {}
@@ -115,6 +111,7 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
                     Delegate* delegate);
   virtual ~PrinterJobHandler();
   bool Initialize();
+  std::string GetPrinterName() const;
   // Requests a job check. |reason| is the reason for fetching the job. Used
   // for logging and diagnostc purposes.
   void CheckForJobs(const std::string& reason);
@@ -127,91 +124,87 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
 
   // CloudPrintURLFetcher::Delegate implementation.
   virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
       const net::ResponseCookies& cookies,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      const std::string& data);
+      const std::string& data) OVERRIDE;
   virtual CloudPrintURLFetcher::ResponseAction HandleJSONData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      DictionaryValue* json_data,
-      bool succeeded);
-  virtual void OnRequestGiveUp();
-  virtual void OnRequestAuthError();
+      base::DictionaryValue* json_data,
+      bool succeeded) OVERRIDE;
+  virtual void OnRequestGiveUp() OVERRIDE;
+  virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() OVERRIDE;
+  virtual std::string GetAuthHeader() OVERRIDE;
 
   // JobStatusUpdater::Delegate implementation
-  virtual bool OnJobCompleted(JobStatusUpdater* updater);
-  virtual void OnAuthError();
+  virtual bool OnJobCompleted(JobStatusUpdater* updater) OVERRIDE;
+  virtual void OnAuthError() OVERRIDE;
 
   // cloud_print::PrinterWatcherDelegate implementation
-  virtual void OnPrinterDeleted();
-  virtual void OnPrinterChanged();
-  virtual void OnJobChanged();
+  virtual void OnPrinterDeleted() OVERRIDE;
+  virtual void OnPrinterChanged() OVERRIDE;
+  virtual void OnJobChanged() OVERRIDE;
 
   // cloud_print::JobSpoolerDelegate implementation.
   // Called on print_thread_.
-  virtual void OnJobSpoolSucceeded(const cloud_print::PlatformJobId& job_id);
-  virtual void OnJobSpoolFailed();
+  virtual void OnJobSpoolSucceeded(
+      const cloud_print::PlatformJobId& job_id) OVERRIDE;
+  virtual void OnJobSpoolFailed() OVERRIDE;
 
   // End Delegate implementations
 
  private:
   // Prototype for a JSON data handler.
   typedef CloudPrintURLFetcher::ResponseAction
-      (PrinterJobHandler::*JSONDataHandler)(const URLFetcher* source,
+      (PrinterJobHandler::*JSONDataHandler)(const content::URLFetcher* source,
                                             const GURL& url,
-                                            DictionaryValue* json_data,
+                                            base::DictionaryValue* json_data,
                                             bool succeeded);
   // Prototype for a data handler.
   typedef CloudPrintURLFetcher::ResponseAction
-      (PrinterJobHandler::*DataHandler)(const URLFetcher* source,
+      (PrinterJobHandler::*DataHandler)(const content::URLFetcher* source,
                                         const GURL& url,
                                         const std::string& data);
   // Begin request handlers for each state in the state machine
   CloudPrintURLFetcher::ResponseAction HandlePrinterUpdateResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      DictionaryValue* json_data,
-      bool succeeded);
-
-  CloudPrintURLFetcher::ResponseAction HandlePrinterDeleteResponse(
-      const URLFetcher* source,
-      const GURL& url,
-      DictionaryValue* json_data,
+      base::DictionaryValue* json_data,
       bool succeeded);
 
   CloudPrintURLFetcher::ResponseAction HandleJobMetadataResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      DictionaryValue* json_data,
+      base::DictionaryValue* json_data,
       bool succeeded);
 
   CloudPrintURLFetcher::ResponseAction HandlePrintTicketResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
   CloudPrintURLFetcher::ResponseAction HandlePrintDataResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
   CloudPrintURLFetcher::ResponseAction HandleSuccessStatusUpdateResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      DictionaryValue* json_data,
+      base::DictionaryValue* json_data,
       bool succeeded);
 
   CloudPrintURLFetcher::ResponseAction HandleFailureStatusUpdateResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
-      DictionaryValue* json_data,
+      base::DictionaryValue* json_data,
       bool succeeded);
   // End request handlers for each state in the state machine
 
@@ -288,7 +281,6 @@ class PrinterJobHandler : public base::RefCountedThreadSafe<PrinterJobHandler>,
   // Flags that specify various pending server updates
   bool job_check_pending_;
   bool printer_update_pending_;
-  bool printer_delete_pending_;
 
   // Some task in the state machine is in progress.
   bool task_in_progress_;

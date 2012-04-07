@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/webui/history_ui.h"
 
-#include <algorithm>
 #include <set>
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/i18n/time_formatting.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
@@ -19,27 +19,34 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
-#include "chrome/common/jstemplate_builder.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/time_format.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::UserMetricsAction;
+using content::WebContents;
 
 // Maximum number of search results to return in a given search. We should
 // eventually remove this.
@@ -60,9 +67,9 @@ class HistoryUIHTMLSource : public ChromeWebUIDataSource {
   // the path we registered.
   virtual void StartDataRequest(const std::string& path,
                                 bool is_incognito,
-                                int request_id);
+                                int request_id) OVERRIDE;
 
-  virtual std::string GetMimeType(const std::string& path) const;
+  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
 
  private:
   ~HistoryUIHTMLSource();
@@ -70,14 +77,12 @@ class HistoryUIHTMLSource : public ChromeWebUIDataSource {
   DISALLOW_COPY_AND_ASSIGN(HistoryUIHTMLSource);
 };
 
-
 HistoryUIHTMLSource::HistoryUIHTMLSource()
     : ChromeWebUIDataSource(chrome::kChromeUIHistoryHost) {
   AddLocalizedString("loading", IDS_HISTORY_LOADING);
   AddLocalizedString("title", IDS_HISTORY_TITLE);
-  AddLocalizedString("loading", IDS_HISTORY_LOADING);
   AddLocalizedString("newest", IDS_HISTORY_NEWEST);
-  AddLocalizedString("newer",  IDS_HISTORY_NEWER);
+  AddLocalizedString("newer", IDS_HISTORY_NEWER);
   AddLocalizedString("older", IDS_HISTORY_OLDER);
   AddLocalizedString("searchresultsfor", IDS_HISTORY_SEARCHRESULTSFOR);
   AddLocalizedString("history", IDS_HISTORY_BROWSERESULTS);
@@ -92,6 +97,10 @@ HistoryUIHTMLSource::HistoryUIHTMLSource()
                      IDS_HISTORY_OPEN_CLEAR_BROWSING_DATA_DIALOG);
   AddLocalizedString("deletewarning",
                      IDS_HISTORY_DELETE_PRIOR_VISITS_WARNING);
+  AddLocalizedString("actionMenuDescription",
+                     IDS_HISTORY_ACTION_MENU_DESCRIPTION);
+  AddLocalizedString("removeFromHistory", IDS_HISTORY_REMOVE_PAGE);
+  AddLocalizedString("moreFromSite", IDS_HISTORY_MORE_FROM_SITE);
 }
 
 HistoryUIHTMLSource::~HistoryUIHTMLSource() {
@@ -129,24 +138,28 @@ BrowsingHistoryHandler::~BrowsingHistoryHandler() {
   cancelable_delete_consumer_.CancelAllRequests();
 }
 
-WebUIMessageHandler* BrowsingHistoryHandler::Attach(WebUI* web_ui) {
+void BrowsingHistoryHandler::RegisterMessages() {
   // Create our favicon data source.
-  Profile* profile = web_ui->GetProfile();
+  Profile* profile = Profile::FromWebUI(web_ui());
   profile->GetChromeURLDataManager()->AddDataSource(
       new FaviconSource(profile, FaviconSource::FAVICON));
 
-  return WebUIMessageHandler::Attach(web_ui);
-}
+  // Get notifications when history is cleared.
+  registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
+      content::Source<Profile>(profile->GetOriginalProfile()));
 
-void BrowsingHistoryHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("getHistory",
-      NewCallback(this, &BrowsingHistoryHandler::HandleGetHistory));
-  web_ui_->RegisterMessageCallback("searchHistory",
-      NewCallback(this, &BrowsingHistoryHandler::HandleSearchHistory));
-  web_ui_->RegisterMessageCallback("removeURLsOnOneDay",
-      NewCallback(this, &BrowsingHistoryHandler::HandleRemoveURLsOnOneDay));
-  web_ui_->RegisterMessageCallback("clearBrowsingData",
-      NewCallback(this, &BrowsingHistoryHandler::HandleClearBrowsingData));
+  web_ui()->RegisterMessageCallback("getHistory",
+      base::Bind(&BrowsingHistoryHandler::HandleGetHistory,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("searchHistory",
+      base::Bind(&BrowsingHistoryHandler::HandleSearchHistory,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeURLsOnOneDay",
+      base::Bind(&BrowsingHistoryHandler::HandleRemoveURLsOnOneDay,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("clearBrowsingData",
+      base::Bind(&BrowsingHistoryHandler::HandleClearBrowsingData,
+                 base::Unretained(this)));
 }
 
 void BrowsingHistoryHandler::HandleGetHistory(const ListValue* args) {
@@ -155,7 +168,8 @@ void BrowsingHistoryHandler::HandleGetHistory(const ListValue* args) {
 
   // Get arguments (if any).
   int day = 0;
-  ExtractIntegerValue(args, &day);
+  bool res = ExtractIntegerValue(args, &day);
+  DCHECK(res);
 
   // Set our query options.
   history::QueryOptions options;
@@ -168,11 +182,12 @@ void BrowsingHistoryHandler::HandleGetHistory(const ListValue* args) {
   search_text_ = string16();
 
   HistoryService* hs =
-      web_ui_->GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+      Profile::FromWebUI(web_ui())->GetHistoryService(Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text_,
       options,
       &cancelable_search_consumer_,
-      NewCallback(this, &BrowsingHistoryHandler::QueryComplete));
+      base::Bind(&BrowsingHistoryHandler::QueryComplete,
+                 base::Unretained(this)));
 }
 
 void BrowsingHistoryHandler::HandleSearchHistory(const ListValue* args) {
@@ -193,22 +208,27 @@ void BrowsingHistoryHandler::HandleSearchHistory(const ListValue* args) {
   // Need to remember the query string for our results.
   search_text_ = query;
   HistoryService* hs =
-      web_ui_->GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+      Profile::FromWebUI(web_ui())->GetHistoryService(Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text_,
       options,
       &cancelable_search_consumer_,
-      NewCallback(this, &BrowsingHistoryHandler::QueryComplete));
+      base::Bind(&BrowsingHistoryHandler::QueryComplete,
+                 base::Unretained(this)));
 }
 
 void BrowsingHistoryHandler::HandleRemoveURLsOnOneDay(const ListValue* args) {
   if (cancelable_delete_consumer_.HasPendingRequests()) {
-    web_ui_->CallJavascriptFunction("deleteFailed");
+    web_ui()->CallJavascriptFunction("deleteFailed");
     return;
   }
 
   // Get day to delete data from.
   int visit_time = 0;
-  ExtractIntegerValue(args, &visit_time);
+  if (!ExtractIntegerValue(args, &visit_time)) {
+    LOG(ERROR) << "Unable to extract integer argument.";
+    web_ui()->CallJavascriptFunction("deleteFailed");
+    return;
+  }
   base::Time::Exploded exploded;
   base::Time::FromTimeT(
       static_cast<time_t>(visit_time)).LocalExplode(&exploded);
@@ -217,7 +237,7 @@ void BrowsingHistoryHandler::HandleRemoveURLsOnOneDay(const ListValue* args) {
   base::Time end_time = begin_time + base::TimeDelta::FromDays(1);
 
   // Get URLs.
-  std::set<GURL> urls;
+  DCHECK(urls_to_be_deleted_.empty());
   for (ListValue::const_iterator v = args->begin() + 1;
        v != args->end(); ++v) {
     if ((*v)->GetType() != Value::TYPE_STRING)
@@ -226,20 +246,23 @@ void BrowsingHistoryHandler::HandleRemoveURLsOnOneDay(const ListValue* args) {
     string16 string16_value;
     if (!string_value->GetAsString(&string16_value))
       continue;
-    urls.insert(GURL(string16_value));
+
+    urls_to_be_deleted_.insert(GURL(string16_value));
   }
 
   HistoryService* hs =
-      web_ui_->GetProfile()->GetHistoryService(Profile::EXPLICIT_ACCESS);
+      Profile::FromWebUI(web_ui())->GetHistoryService(Profile::EXPLICIT_ACCESS);
   hs->ExpireHistoryBetween(
-      urls, begin_time, end_time, &cancelable_delete_consumer_,
-      NewCallback(this, &BrowsingHistoryHandler::RemoveComplete));
+      urls_to_be_deleted_, begin_time, end_time, &cancelable_delete_consumer_,
+      base::Bind(&BrowsingHistoryHandler::RemoveComplete,
+                 base::Unretained(this)));
 }
 
 void BrowsingHistoryHandler::HandleClearBrowsingData(const ListValue* args) {
   // TODO(beng): This is an improper direct dependency on Browser. Route this
   // through some sort of delegate.
-  Browser* browser = BrowserList::FindBrowserWithProfile(web_ui_->GetProfile());
+  Profile* profile = Profile::FromWebUI(web_ui());
+  Browser* browser = BrowserList::FindBrowserWithProfile(profile);
   if (browser)
     browser->OpenClearBrowsingDataDialog();
 }
@@ -286,8 +309,9 @@ void BrowsingHistoryHandler::QueryComplete(
           base::TimeFormatShortDate(page.visit_time()));
       page_value->SetString("snippet", page.snippet().text());
     }
+    Profile* profile = Profile::FromWebUI(web_ui());
     page_value->SetBoolean("starred",
-        web_ui_->GetProfile()->GetBookmarkModel()->IsBookmarked(page.url()));
+        profile->GetBookmarkModel()->IsBookmarked(page.url()));
     results_value.Append(page_value);
   }
 
@@ -295,26 +319,42 @@ void BrowsingHistoryHandler::QueryComplete(
   info_value.SetString("term", search_text_);
   info_value.SetBoolean("finished", results->reached_beginning());
 
-  web_ui_->CallJavascriptFunction("historyResult", info_value, results_value);
+  web_ui()->CallJavascriptFunction("historyResult", info_value, results_value);
 }
 
 void BrowsingHistoryHandler::RemoveComplete() {
-  // Some Visits were deleted from history. Reload the list.
-  web_ui_->CallJavascriptFunction("deleteComplete");
+  urls_to_be_deleted_.clear();
+
+  // Notify the page that the deletion request succeeded.
+  web_ui()->CallJavascriptFunction("deleteComplete");
 }
 
 void BrowsingHistoryHandler::ExtractSearchHistoryArguments(
-      const ListValue* args,
-      int* month,
-      string16* query) {
-  CHECK(args->GetSize() == 2);
-  query->clear();
-  CHECK(args->GetString(0, query));
-
-  string16 string16_value;
-  CHECK(args->GetString(1, &string16_value));
+    const ListValue* args,
+    int* month,
+    string16* query) {
   *month = 0;
-  base::StringToInt(string16_value, month);
+  Value* list_member;
+
+  // Get search string.
+  if (args->Get(0, &list_member) &&
+      list_member->GetType() == Value::TYPE_STRING) {
+    const StringValue* string_value =
+      static_cast<const StringValue*>(list_member);
+    string_value->GetAsString(query);
+  }
+
+  // Get search month.
+  if (args->Get(1, &list_member) &&
+      list_member->GetType() == Value::TYPE_STRING) {
+    const StringValue* string_value =
+      static_cast<const StringValue*>(list_member);
+    string16 string16_value;
+    if (string_value->GetAsString(&string16_value)) {
+      bool converted = base::StringToInt(string16_value, month);
+      DCHECK(converted);
+    }
+  }
 }
 
 history::QueryOptions BrowsingHistoryHandler::CreateMonthQueryOptions(
@@ -360,25 +400,43 @@ history::QueryOptions BrowsingHistoryHandler::CreateMonthQueryOptions(
   return options;
 }
 
+void BrowsingHistoryHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type != chrome::NOTIFICATION_HISTORY_URLS_DELETED) {
+    NOTREACHED();
+    return;
+  }
+  history::URLsDeletedDetails* deletedDetails =
+      content::Details<history::URLsDeletedDetails>(details).ptr();
+  if (deletedDetails->urls != urls_to_be_deleted_ ||
+      deletedDetails->all_history) {
+    // Notify the page that someone else deleted from the history.
+    web_ui()->CallJavascriptFunction("historyDeleted");
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //
 // HistoryUI
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-HistoryUI::HistoryUI(TabContents* contents) : WebUI(contents) {
-  AddMessageHandler((new BrowsingHistoryHandler())->Attach(this));
+HistoryUI::HistoryUI(content::WebUI* web_ui) : WebUIController(web_ui) {
+  web_ui->AddMessageHandler(new BrowsingHistoryHandler());
 
   HistoryUIHTMLSource* html_source = new HistoryUIHTMLSource();
 
   // Set up the chrome://history/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(html_source);
 }
 
 // static
 const GURL HistoryUI::GetHistoryURLWithSearchText(const string16& text) {
   return GURL(std::string(chrome::kChromeUIHistoryURL) + "#q=" +
-              EscapeQueryParamValue(UTF16ToUTF8(text), true));
+              net::EscapeQueryParamValue(UTF16ToUTF8(text), true));
 }
 
 // static

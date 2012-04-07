@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,15 @@
 #include <algorithm>
 #include <set>
 #include <string>
-#include "app/sql/transaction.h"
+
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
+#include "chrome/browser/history/starred_url_database.h"
+#include "sql/transaction.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -46,13 +48,13 @@ void ComputeDatabaseMetrics(const FilePath& history_name,
   UMA_HISTOGRAM_MEMORY_MB("History.DatabaseFileMB", file_mb);
 
   sql::Statement url_count(db.GetUniqueStatement("SELECT count(*) FROM urls"));
-  if (!url_count || !url_count.Step())
+  if (!url_count.Step())
     return;
   UMA_HISTOGRAM_COUNTS("History.URLTableCount", url_count.ColumnInt(0));
 
   sql::Statement visit_count(db.GetUniqueStatement(
       "SELECT count(*) FROM visits"));
-  if (!visit_count || !visit_count.Step())
+  if (!visit_count.Step())
     return;
   UMA_HISTOGRAM_COUNTS("History.VisitTableCount", visit_count.ColumnInt(0));
 }
@@ -128,7 +130,7 @@ sql::InitStatus HistoryDatabase::Init(const FilePath& history_name,
 void HistoryDatabase::BeginExclusiveMode() {
   // We can't use set_exclusive_locking() since that only has an effect before
   // the DB is opened.
-  db_.Execute("PRAGMA locking_mode=EXCLUSIVE");
+  ignore_result(db_.Execute("PRAGMA locking_mode=EXCLUSIVE"));
 }
 
 // static
@@ -170,7 +172,7 @@ bool HistoryDatabase::RecreateAllTablesButURL() {
 void HistoryDatabase::Vacuum() {
   DCHECK_EQ(0, db_.transaction_nesting()) <<
       "Can not have a transaction when vacuuming.";
-  db_.Execute("VACUUM");
+  ignore_result(db_.Execute("VACUUM"));
 }
 
 void HistoryDatabase::ThumbnailMigrationDone() {
@@ -186,25 +188,18 @@ bool HistoryDatabase::GetNeedsThumbnailMigration() {
 bool HistoryDatabase::SetSegmentID(VisitID visit_id, SegmentID segment_id) {
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE,
       "UPDATE visits SET segment_id = ? WHERE id = ?"));
-  if (!s) {
-    NOTREACHED() << db_.GetErrorMessage();
-    return false;
-  }
   s.BindInt64(0, segment_id);
   s.BindInt64(1, visit_id);
   DCHECK(db_.GetLastChangeCount() == 1);
+
   return s.Run();
 }
 
 SegmentID HistoryDatabase::GetSegmentID(VisitID visit_id) {
   sql::Statement s(db_.GetCachedStatement(SQL_FROM_HERE,
       "SELECT segment_id FROM visits WHERE id = ?"));
-  if (!s) {
-    NOTREACHED() << db_.GetErrorMessage();
-    return 0;
-  }
-
   s.BindInt64(0, visit_id);
+
   if (s.Step()) {
     if (s.ColumnType(0) == sql::COLUMN_TYPE_NULL)
       return 0;
@@ -260,7 +255,8 @@ sql::InitStatus HistoryDatabase::EnsureCurrentVersion(
   // Put migration code here
 
   if (cur_version == 15) {
-    if (!MigrateBookmarksToFile(tmp_bookmarks_path) ||
+    StarredURLDatabase starred_url_database(&db_);
+    if (!starred_url_database.MigrateBookmarksToFile(tmp_bookmarks_path) ||
         !DropStarredIDFromURLs()) {
       LOG(WARNING) << "Unable to update history database to version 16.";
       return sql::INIT_FAILURE;
@@ -320,18 +316,18 @@ void HistoryDatabase::MigrateTimeEpoch() {
   // Update all the times in the URLs and visits table in the main database.
   // For visits, clear the indexed flag since we'll delete the FTS databases in
   // the next step.
-  db_.Execute(
+  ignore_result(db_.Execute(
       "UPDATE urls "
       "SET last_visit_time = last_visit_time + 11644473600000000 "
-      "WHERE id IN (SELECT id FROM urls WHERE last_visit_time > 0);");
-  db_.Execute(
+      "WHERE id IN (SELECT id FROM urls WHERE last_visit_time > 0);"));
+  ignore_result(db_.Execute(
       "UPDATE visits "
       "SET visit_time = visit_time + 11644473600000000, is_indexed = 0 "
-      "WHERE id IN (SELECT id FROM visits WHERE visit_time > 0);");
-  db_.Execute(
+      "WHERE id IN (SELECT id FROM visits WHERE visit_time > 0);"));
+  ignore_result(db_.Execute(
       "UPDATE segment_usage "
       "SET time_slot = time_slot + 11644473600000000 "
-      "WHERE id IN (SELECT id FROM segment_usage WHERE time_slot > 0);");
+      "WHERE id IN (SELECT id FROM segment_usage WHERE time_slot > 0);"));
 
   // Erase all the full text index files. These will take a while to update and
   // are less important, so we just blow them away. Same with the archived

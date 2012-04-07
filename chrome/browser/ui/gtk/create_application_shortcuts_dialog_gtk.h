@@ -7,12 +7,16 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_helpers.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
 #include "chrome/browser/shell_integration.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "ui/base/gtk/gtk_signal.h"
+
+using content::BrowserThread;
 
 typedef struct _GdkPixbuf GdkPixbuf;
 typedef struct _GtkWidget GtkWidget;
@@ -69,7 +73,7 @@ class CreateApplicationShortcutsDialogGtk
 
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
-  friend class DeleteTask<CreateApplicationShortcutsDialogGtk>;
+  friend class base::DeleteHelper<CreateApplicationShortcutsDialogGtk>;
   DISALLOW_COPY_AND_ASSIGN(CreateApplicationShortcutsDialogGtk);
 };
 
@@ -83,7 +87,7 @@ class CreateWebApplicationShortcutsDialogGtk
                                          TabContentsWrapper* tab_contents);
   virtual ~CreateWebApplicationShortcutsDialogGtk() {}
 
-  virtual void OnCreatedShortcut(void);
+  virtual void OnCreatedShortcut(void) OVERRIDE;
 
  private:
 
@@ -100,8 +104,8 @@ class CreateChromeApplicationShortcutsDialogGtk
   // Displays the dialog box to create application shortcuts for |app|.
   static void Show(GtkWindow* parent, const Extension* app);
 
-  explicit CreateChromeApplicationShortcutsDialogGtk(GtkWindow* parent,
-                                                     const Extension* app);
+  CreateChromeApplicationShortcutsDialogGtk(GtkWindow* parent,
+                                            const Extension* app);
   virtual ~CreateChromeApplicationShortcutsDialogGtk() {}
 
   // Implement ImageLoadingTracker::Observer.  |tracker_| is used to
@@ -109,7 +113,7 @@ class CreateChromeApplicationShortcutsDialogGtk
   // it to the "Create Shortcut" dailog box.
   virtual void OnImageLoaded(SkBitmap* image,
                              const ExtensionResource& resource,
-                             int index);
+                             int index) OVERRIDE;
 
  private:
   const Extension* app_;

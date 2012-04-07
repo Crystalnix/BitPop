@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,17 +16,21 @@
 
 using syncable::ScopedDirLookup;
 
+using sync_pb::DebugInfo;
+
 namespace browser_sync {
 using sessions::StatusController;
 using sessions::SyncSession;
 using std::string;
 using syncable::FIRST_REAL_MODEL_TYPE;
 using syncable::MODEL_TYPE_COUNT;
+using syncable::ModelTypeSet;
+using syncable::ModelTypeSetToString;
 
 DownloadUpdatesCommand::DownloadUpdatesCommand() {}
 DownloadUpdatesCommand::~DownloadUpdatesCommand() {}
 
-void DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
+SyncerError DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
   ClientToServerMessage client_to_server_message;
   ClientToServerResponse update_response;
 
@@ -36,7 +40,7 @@ void DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
   GetUpdatesMessage* get_updates =
       client_to_server_message.mutable_get_updates();
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSyncedBookmarksFolder)) {
+          switches::kCreateMobileBookmarksFolder)) {
     get_updates->set_include_syncable_bookmarks(true);
   }
 
@@ -44,31 +48,31 @@ void DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
                       session->context()->account_name());
   if (!dir.good()) {
     LOG(ERROR) << "Scoped dir lookup failed!";
-    return;
+    return DIRECTORY_LOOKUP_FAILED;
   }
 
   // Request updates for all enabled types.
-  syncable::ModelTypeBitSet enabled_types;
+  const ModelTypeSet enabled_types =
+      GetRoutingInfoTypes(session->routing_info());
+  DVLOG(1) << "Getting updates for types "
+           << ModelTypeSetToString(enabled_types);
+  DCHECK(!enabled_types.Empty());
+
   const syncable::ModelTypePayloadMap& type_payload_map =
       session->source().types;
-  for (ModelSafeRoutingInfo::const_iterator i = session->routing_info().begin();
-       i != session->routing_info().end(); ++i) {
-    syncable::ModelType model_type = syncable::ModelTypeFromInt(i->first);
-    enabled_types[i->first] = true;
+  for (ModelTypeSet::Iterator it = enabled_types.First();
+       it.Good(); it.Inc()) {
     sync_pb::DataTypeProgressMarker* progress_marker =
         get_updates->add_from_progress_marker();
-    dir->GetDownloadProgress(model_type, progress_marker);
+    dir->GetDownloadProgress(it.Get(), progress_marker);
 
     // Set notification hint if present.
     syncable::ModelTypePayloadMap::const_iterator type_payload =
-        type_payload_map.find(i->first);
+        type_payload_map.find(it.Get());
     if (type_payload != type_payload_map.end()) {
       progress_marker->set_notification_hint(type_payload->second);
     }
   }
-
-  VLOG(1) << "Getting updates for types " << enabled_types.to_string();
-  DCHECK(enabled_types.any());
 
   // We want folders for our associated types, always.  If we were to set
   // this to false, the server would send just the non-container items
@@ -83,47 +87,52 @@ void DownloadUpdatesCommand::ExecuteImpl(SyncSession* session) {
 
   SyncerProtoUtil::AddRequestBirthday(dir, &client_to_server_message);
 
-  bool ok = SyncerProtoUtil::PostClientToServerMessage(
+  DebugInfo* debug_info = client_to_server_message.mutable_debug_info();
+
+  AppendClientDebugInfoIfNeeded(session, debug_info);
+
+  SyncerError result = SyncerProtoUtil::PostClientToServerMessage(
       client_to_server_message,
       &update_response,
       session);
 
-  VLOG(2) << SyncerProtoUtil::ClientToServerResponseDebugString(
+  DVLOG(2) << SyncerProtoUtil::ClientToServerResponseDebugString(
       update_response);
 
-  StatusController* status = session->status_controller();
+  StatusController* status = session->mutable_status_controller();
   status->set_updates_request_types(enabled_types);
-  if (!ok) {
+  if (result != SYNCER_OK) {
     status->increment_num_consecutive_errors();
     status->mutable_updates_response()->Clear();
     LOG(ERROR) << "PostClientToServerMessage() failed during GetUpdates";
-    return;
+    return result;
   }
 
   status->mutable_updates_response()->CopyFrom(update_response);
 
-  VLOG(1) << "GetUpdates "
-          << " returned " << update_response.get_updates().entries_size()
-          << " updates and indicated "
-          << update_response.get_updates().changes_remaining()
-          << " updates left on server.";
+  DVLOG(1) << "GetUpdates "
+           << " returned " << update_response.get_updates().entries_size()
+           << " updates and indicated "
+           << update_response.get_updates().changes_remaining()
+           << " updates left on server.";
+  return result;
 }
 
-void DownloadUpdatesCommand::SetRequestedTypes(
-    const syncable::ModelTypeBitSet& target_datatypes,
-    sync_pb::EntitySpecifics* filter_protobuf) {
-  // The datatypes which should be synced are dictated by the value of the
-  // ModelSafeRoutingInfo.  If a datatype is in the routing info map, it
-  // should be synced (even if it's GROUP_PASSIVE).
-  int requested_type_count = 0;
-  for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
-    if (target_datatypes[i]) {
-      requested_type_count++;
-      syncable::AddDefaultExtensionValue(syncable::ModelTypeFromInt(i),
-                                         filter_protobuf);
+void DownloadUpdatesCommand::AppendClientDebugInfoIfNeeded(
+    sessions::SyncSession* session,
+    DebugInfo* debug_info) {
+  // We want to send the debug info only once per sync cycle. Check if it has
+  // already been sent.
+  if (!session->status_controller().debug_info_sent()) {
+    DVLOG(1) << "Sending client debug info ...";
+    // could be null in some unit tests.
+    if (session->context()->debug_info_getter()) {
+      session->context()->debug_info_getter()->GetAndClearDebugInfo(
+          debug_info);
     }
+    session->mutable_status_controller()->set_debug_info_sent();
   }
-  DCHECK_LT(0, requested_type_count) << "Doing GetUpdates with empty filter.";
 }
+
 
 }  // namespace browser_sync

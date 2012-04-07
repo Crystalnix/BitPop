@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,31 +6,52 @@
 
 #include <vector>
 
+#include "base/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/views/window.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/native_web_keyboard_event.h"
+#include "chrome/browser/ui/webui/html_dialog_controller.h"
+#include "content/public/browser/native_web_keyboard_event.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/base/keycodes/keyboard_codes.h"
-#include "views/events/event.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/events/event.h"
+#include "ui/views/widget/root_view.h"
+#include "ui/views/widget/widget.h"
 
 #if defined(TOOLKIT_USES_GTK)
-#include "views/window/native_window_gtk.h"
+#include "ui/views/widget/native_widget_gtk.h"
 #endif
+
+#if defined(USE_AURA)
+#include "ui/aura/event.h"
+#include "ui/views/widget/native_widget_aura.h"
+#endif
+
+class RenderWidgetHost;
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace browser {
 
 // Declared in browser_dialogs.h so that others don't need to depend on our .h.
-gfx::NativeWindow ShowHtmlDialog(gfx::NativeWindow parent, Profile* profile,
-                                 HtmlDialogUIDelegate* delegate) {
-  HtmlDialogView* html_view =
-      new HtmlDialogView(profile, delegate);
-  browser::CreateViewsWindow(parent, gfx::Rect(), html_view);
+gfx::NativeWindow ShowHtmlDialog(gfx::NativeWindow parent,
+                                 Profile* profile,
+                                 Browser* browser,
+                                 HtmlDialogUIDelegate* delegate,
+                                 DialogStyle style) {
+  HtmlDialogView* html_view = new HtmlDialogView(profile, browser, delegate);
+  browser::CreateViewsWindow(parent, html_view, style);
   html_view->InitDialog();
-  html_view->window()->Show();
-  return html_view->window()->GetNativeWindow();
+  html_view->GetWidget()->Show();
+  return html_view->GetWidget()->GetNativeWindow();
+}
+
+void CloseHtmlDialog(gfx::NativeWindow window) {
+  views::Widget::GetWidgetForNativeWindow(window)->Close();
 }
 
 }  // namespace browser
@@ -39,10 +60,13 @@ gfx::NativeWindow ShowHtmlDialog(gfx::NativeWindow parent, Profile* profile,
 // HtmlDialogView, public:
 
 HtmlDialogView::HtmlDialogView(Profile* profile,
+                               Browser* browser,
                                HtmlDialogUIDelegate* delegate)
     : DOMView(),
       HtmlDialogTabContentsDelegate(profile),
-      delegate_(delegate) {
+      initialized_(false),
+      delegate_(delegate),
+      dialog_controller_(new HtmlDialogController(this, profile, browser)) {
 }
 
 HtmlDialogView::~HtmlDialogView() {
@@ -58,41 +82,50 @@ gfx::Size HtmlDialogView::GetPreferredSize() {
   return out;
 }
 
-bool HtmlDialogView::AcceleratorPressed(const views::Accelerator& accelerator) {
+bool HtmlDialogView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   // Pressing ESC closes the dialog.
   DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.key_code());
-  OnWindowClosed();
   OnDialogClosed(std::string());
   return true;
 }
 
+void HtmlDialogView::ViewHierarchyChanged(
+    bool is_add, View* parent, View* child) {
+  DOMView::ViewHierarchyChanged(is_add, parent, child);
+  if (is_add && GetWidget() && !initialized_) {
+    initialized_ = true;
+#if defined(OS_CHROMEOS) && defined(TOOLKIT_USES_GTK)
+    CHECK(
+        static_cast<views::NativeWidgetGtk*>(
+            GetWidget()->native_widget())->SuppressFreezeUpdates());
+#endif
+    RegisterDialogAccelerators();
+  }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-// HtmlDialogView, views::WindowDelegate implementation:
+// HtmlDialogView, views::WidgetDelegate implementation:
 
 bool HtmlDialogView::CanResize() const {
   return true;
 }
 
-bool HtmlDialogView::IsModal() const {
-  if (delegate_)
-    return delegate_->IsDialogModal();
-  return false;
+ui::ModalType HtmlDialogView::GetModalType() const {
+  return GetDialogModalType();
 }
 
-std::wstring HtmlDialogView::GetWindowTitle() const {
+string16 HtmlDialogView::GetWindowTitle() const {
   if (delegate_)
     return delegate_->GetDialogTitle();
-  return std::wstring();
+  return string16();
 }
 
 void HtmlDialogView::WindowClosing() {
   // If we still have a delegate that means we haven't notified it of the
   // dialog closing. This happens if the user clicks the Close button on the
   // dialog.
-  if (delegate_) {
-    OnWindowClosed();
+  if (delegate_)
     OnDialogClosed("");
-  }
 }
 
 views::View* HtmlDialogView::GetContentsView() {
@@ -107,14 +140,24 @@ bool HtmlDialogView::ShouldShowWindowTitle() const {
   return ShouldShowDialogTitle();
 }
 
+views::Widget* HtmlDialogView::GetWidget() {
+  return View::GetWidget();
+}
+
+const views::Widget* HtmlDialogView::GetWidget() const {
+  return View::GetWidget();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HtmlDialogUIDelegate implementation:
 
-bool HtmlDialogView::IsDialogModal() const {
-  return IsModal();
+ui::ModalType HtmlDialogView::GetDialogModalType() const {
+  if (delegate_)
+    return delegate_->GetDialogModalType();
+  return ui::MODAL_TYPE_NONE;
 }
 
-std::wstring HtmlDialogView::GetDialogTitle() const {
+string16 HtmlDialogView::GetDialogTitle() const {
   return GetWindowTitle();
 }
 
@@ -146,17 +189,16 @@ void HtmlDialogView::OnDialogClosed(const std::string& json_retval) {
   if (delegate_) {
     HtmlDialogUIDelegate* dialog_delegate = delegate_;
     delegate_ = NULL;  // We will not communicate further with the delegate.
+
+    // Store the dialog content area size.
+    dialog_delegate->StoreDialogSize(GetContentsBounds().size());
+
     dialog_delegate->OnDialogClosed(json_retval);
   }
-  window()->Close();
+  GetWidget()->Close();
 }
 
-void HtmlDialogView::OnWindowClosed() {
-  if (delegate_)
-      delegate_->OnWindowClosed();
-}
-
-void HtmlDialogView::OnCloseContents(TabContents* source,
+void HtmlDialogView::OnCloseContents(WebContents* source,
                                      bool* out_close_dialog) {
   if (delegate_)
     delegate_->OnCloseContents(source, out_close_dialog);
@@ -175,9 +217,9 @@ bool HtmlDialogView::HandleContextMenu(const ContextMenuParams& params) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// TabContentsDelegate implementation:
+// content::WebContentsDelegate implementation:
 
-void HtmlDialogView::MoveContents(TabContents* source, const gfx::Rect& pos) {
+void HtmlDialogView::MoveContents(WebContents* source, const gfx::Rect& pos) {
   // The contained web page wishes to resize itself. We let it do this because
   // if it's a dialog we know about, we trust it not to be mean to the user.
   GetWidget()->SetBounds(pos);
@@ -187,14 +229,19 @@ void HtmlDialogView::MoveContents(TabContents* source, const gfx::Rect& pos) {
 // We don't handle global keyboard shortcuts here, but that's fine since
 // they're all browser-specific. (This may change in the future.)
 void HtmlDialogView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+  aura::KeyEvent aura_event(event.os_event->native_event(), false);
+  views::NativeWidgetAura* aura_widget =
+      static_cast<views::NativeWidgetAura*>(GetWidget()->native_widget());
+  aura_widget->OnKeyEvent(&aura_event);
+#elif defined(OS_WIN)
   // Any unhandled keyboard/character messages should be defproced.
   // This allows stuff like F10, etc to work correctly.
   DefWindowProc(event.os_event.hwnd, event.os_event.message,
                   event.os_event.wParam, event.os_event.lParam);
 #elif defined(TOOLKIT_USES_GTK)
-  views::NativeWindowGtk* window_gtk =
-      static_cast<views::NativeWindowGtk*>(window()->native_window());
+  views::NativeWidgetGtk* window_gtk =
+      static_cast<views::NativeWidgetGtk*>(GetWidget()->native_widget());
   if (event.os_event && !event.skip_in_browser) {
     views::KeyEvent views_event(reinterpret_cast<GdkEvent*>(event.os_event));
     window_gtk->HandleKeyboardEvent(views_event);
@@ -202,11 +249,40 @@ void HtmlDialogView::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 #endif
 }
 
-void HtmlDialogView::CloseContents(TabContents* source) {
+void HtmlDialogView::CloseContents(WebContents* source) {
   bool close_dialog = false;
   OnCloseContents(source, &close_dialog);
   if (close_dialog)
     OnDialogClosed(std::string());
+}
+
+content::WebContents* HtmlDialogView::OpenURLFromTab(
+    content::WebContents* source,
+    const content::OpenURLParams& params) {
+  content::WebContents* new_contents = NULL;
+  if (delegate_ &&
+      delegate_->HandleOpenURLFromTab(source, params, &new_contents)) {
+    return new_contents;
+  }
+  return HtmlDialogTabContentsDelegate::OpenURLFromTab(source, params);
+}
+
+void HtmlDialogView::AddNewContents(content::WebContents* source,
+                                    content::WebContents* new_contents,
+                                    WindowOpenDisposition disposition,
+                                    const gfx::Rect& initial_pos,
+                                    bool user_gesture) {
+  if (delegate_ && delegate_->HandleAddNewContents(
+          source, new_contents, disposition, initial_pos, user_gesture)) {
+    return;
+  }
+  HtmlDialogTabContentsDelegate::AddNewContents(
+      source, new_contents, disposition, initial_pos, user_gesture);
+}
+
+void HtmlDialogView::LoadingStateChanged(content::WebContents* source) {
+  if (delegate_)
+    delegate_->OnLoadingStateChanged(source);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -216,15 +292,34 @@ void HtmlDialogView::InitDialog() {
   // Now Init the DOMView. This view runs in its own process to render the html.
   DOMView::Init(profile(), NULL);
 
-  tab_contents_->set_delegate(this);
+  WebContents* web_contents = dom_contents_->web_contents();
+  web_contents->SetDelegate(this);
 
   // Set the delegate. This must be done before loading the page. See
   // the comment above HtmlDialogUI in its header file for why.
-  HtmlDialogUI::GetPropertyAccessor().SetProperty(tab_contents_->property_bag(),
-                                                  this);
-
-  // Pressing the ESC key will close the dialog.
-  AddAccelerator(views::Accelerator(ui::VKEY_ESCAPE, false, false, false));
+  HtmlDialogUI::GetPropertyAccessor().SetProperty(
+      web_contents->GetPropertyBag(), this);
+  tab_watcher_.reset(new TabFirstRenderWatcher(web_contents, this));
 
   DOMView::LoadURL(GetDialogContentURL());
+}
+
+void HtmlDialogView::RegisterDialogAccelerators() {
+  // Pressing the ESC key will close the dialog.
+  AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, false, false, false));
+}
+
+void HtmlDialogView::OnRenderHostCreated(RenderViewHost* host) {
+}
+
+void HtmlDialogView::OnTabMainFrameLoaded() {
+}
+
+void HtmlDialogView::OnTabMainFrameFirstRender() {
+#if defined(OS_CHROMEOS) && defined(TOOLKIT_USES_GTK)
+  if (initialized_) {
+    views::NativeWidgetGtk::UpdateFreezeUpdatesProperty(
+        GTK_WINDOW(GetWidget()->GetNativeView()), false);
+  }
+#endif
 }

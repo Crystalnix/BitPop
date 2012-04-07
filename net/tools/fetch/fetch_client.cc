@@ -5,6 +5,8 @@
 #include "build/build_config.h"
 
 #include "base/at_exit.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop.h"
@@ -22,6 +24,7 @@
 #include "net/http/http_network_layer.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_info.h"
+#include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction.h"
 #include "net/proxy/proxy_service.h"
 
@@ -48,18 +51,14 @@ class Driver {
   int clients_;
 };
 
-static base::LazyInstance<Driver> g_driver(base::LINKER_INITIALIZED);
+static base::LazyInstance<Driver> g_driver = LAZY_INSTANCE_INITIALIZER;
 
 // A network client
 class Client {
  public:
   Client(net::HttpTransactionFactory* factory, const std::string& url) :
       url_(url),
-      buffer_(new net::IOBuffer(kBufferSize)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          connect_callback_(this, &Client::OnConnectComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &Client::OnReadComplete)) {
+      buffer_(new net::IOBuffer(kBufferSize)) {
     int rv = factory->CreateTransaction(&transaction_);
     DCHECK_EQ(net::OK, rv);
     buffer_->AddRef();
@@ -67,14 +66,18 @@ class Client {
     request_info_.url = url_;
     request_info_.method = "GET";
     int state = transaction_->Start(
-        &request_info_, &connect_callback_, net::BoundNetLog());
+        &request_info_,
+        base::Bind(&Client::OnConnectComplete, base::Unretained(this)),
+        net::BoundNetLog());
     DCHECK(state == net::ERR_IO_PENDING);
   };
 
  private:
   void OnConnectComplete(int result) {
     // Do work here.
-    int state = transaction_->Read(buffer_.get(), kBufferSize, &read_callback_);
+    int state = transaction_->Read(
+        buffer_.get(), kBufferSize,
+        base::Bind(&Client::OnReadComplete, base::Unretained(this)));
     if (state == net::ERR_IO_PENDING)
       return;  // IO has started.
     if (state < 0)
@@ -93,7 +96,9 @@ class Client {
     bytes_read.Add(result);
 
     // Issue a read for more data.
-    int state = transaction_->Read(buffer_.get(), kBufferSize, &read_callback_);
+    int state = transaction_->Read(
+        buffer_.get(), kBufferSize,
+        base::Bind(&Client::OnReadComplete, base::Unretained(this)));
     if (state == net::ERR_IO_PENDING)
       return;  // IO has started.
     if (state < 0)
@@ -113,8 +118,6 @@ class Client {
   net::HttpRequestInfo request_info_;
   scoped_ptr<net::HttpTransaction> transaction_;
   scoped_refptr<net::IOBuffer> buffer_;
-  net::CompletionCallbackImpl<Client> connect_callback_;
-  net::CompletionCallbackImpl<Client> read_callback_;
 };
 
 int main(int argc, char** argv) {
@@ -150,12 +153,14 @@ int main(int argc, char** argv) {
   net::HttpTransactionFactory* factory = NULL;
   scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver.get()));
+  net::HttpServerPropertiesImpl http_server_properties;
 
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = host_resolver.get();
   session_params.cert_verifier = cert_verifier.get();
   session_params.proxy_service = proxy_service.get();
   session_params.http_auth_handler_factory = http_auth_handler_factory.get();
+  session_params.http_server_properties = &http_server_properties;
   session_params.ssl_config_service = ssl_config_service;
 
   scoped_refptr<net::HttpNetworkSession> network_session(

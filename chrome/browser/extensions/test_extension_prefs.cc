@@ -4,12 +4,14 @@
 
 #include "chrome/browser/extensions/test_extension_prefs.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/values.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/values.h"
 #include "chrome/browser/extensions/extension_pref_store.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_prefs.h"
@@ -19,9 +21,10 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/json_pref_store.h"
-#include "chrome/test/signaling_task.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -48,7 +51,9 @@ class MockExtensionPrefs : public ExtensionPrefs {
 
 }  // namespace
 
-TestExtensionPrefs::TestExtensionPrefs() : pref_service_(NULL) {
+TestExtensionPrefs::TestExtensionPrefs()
+    : pref_service_(NULL),
+      extensions_disabled_(false) {
   EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
   preferences_file_ = temp_dir_.path().AppendASCII("Preferences");
   extensions_dir_ = temp_dir_.path().AppendASCII("Extensions");
@@ -68,9 +73,12 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
     // need to wait for any pending I/O to complete before creating a new
     // PrefService.
     base::WaitableEvent io_finished(false, false);
-    pref_service_->SavePersistentPrefs();
-    EXPECT_TRUE(BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                                        new SignalingTask(&io_finished)));
+    pref_service_-> CommitPendingWrite();
+    EXPECT_TRUE(BrowserThread::PostTask(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&base::WaitableEvent::Signal,
+                   base::Unretained(&io_finished))));
 
     // If the FILE thread is in fact the current thread (possible in testing
     // scenarios), we have to ensure the task has a chance to run. If the FILE
@@ -78,7 +86,7 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
     // (otherwise the Wait below will hang).
     MessageLoop::current()->RunAllPending();
 
-    EXPECT_TRUE(io_finished.Wait());
+    io_finished.Wait();
   }
 
   extension_pref_value_map_.reset(new ExtensionPrefValueMap);
@@ -92,6 +100,7 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
   prefs_.reset(new MockExtensionPrefs(pref_service_.get(),
                                       temp_dir_.path(),
                                       extension_pref_value_map_.get()));
+  prefs_->Init(extensions_disabled_);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtension(std::string name) {
@@ -101,20 +110,41 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtension(std::string name) {
   return AddExtensionWithManifest(dictionary, Extension::INTERNAL);
 }
 
+scoped_refptr<Extension> TestExtensionPrefs::AddApp(std::string name) {
+  DictionaryValue dictionary;
+  dictionary.SetString(extension_manifest_keys::kName, name);
+  dictionary.SetString(extension_manifest_keys::kVersion, "0.1");
+  dictionary.SetString(extension_manifest_keys::kApp, "true");
+  dictionary.SetString(extension_manifest_keys::kLaunchWebURL,
+                       "http://example.com");
+  return AddExtensionWithManifest(dictionary, Extension::INTERNAL);
+
+}
+
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifest(
     const DictionaryValue& manifest, Extension::Location location) {
+  return AddExtensionWithManifestAndFlags(manifest, location,
+                                          Extension::STRICT_ERROR_CHECKS);
+}
+
+scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
+    const DictionaryValue& manifest,
+    Extension::Location location,
+    int extra_flags) {
   std::string name;
   EXPECT_TRUE(manifest.GetString(extension_manifest_keys::kName, &name));
   FilePath path =  extensions_dir_.AppendASCII(name);
   std::string errors;
   scoped_refptr<Extension> extension = Extension::Create(
-      path, location, manifest, Extension::STRICT_ERROR_CHECKS, &errors);
-  EXPECT_TRUE(extension);
+      path, location, manifest, extra_flags, &errors);
+  EXPECT_TRUE(extension) << errors;
   if (!extension)
     return NULL;
 
   EXPECT_TRUE(Extension::IdIsValid(extension->id()));
-  prefs_->OnExtensionInstalled(extension, Extension::ENABLED);
+  prefs_->OnExtensionInstalled(extension, Extension::ENABLED,
+                               extra_flags & Extension::FROM_WEBSTORE,
+                               StringOrdinal::CreateInitialOrdinal());
   return extension;
 }
 
@@ -126,4 +156,8 @@ std::string TestExtensionPrefs::AddExtensionAndReturnId(std::string name) {
 PrefService* TestExtensionPrefs::CreateIncognitoPrefService() const {
   return pref_service_->CreateIncognitoPrefService(
       new ExtensionPrefStore(extension_pref_value_map_.get(), true));
+}
+
+void TestExtensionPrefs::set_extensions_disabled(bool extensions_disabled) {
+  extensions_disabled_ = extensions_disabled;
 }

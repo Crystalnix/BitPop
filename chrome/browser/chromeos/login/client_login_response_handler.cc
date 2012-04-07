@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <string>
 
-#include "chrome/browser/chromeos/login/google_authenticator.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/common/net/gaia/gaia_urls.h"
+#include "content/public/common/url_fetcher.h"
 #include "net/base/load_flags.h"
 
 namespace chromeos {
@@ -19,28 +19,28 @@ const char ClientLoginResponseHandler::kService[] = "service=gaia";
 
 // Overridden from AuthResponseHandler.
 bool ClientLoginResponseHandler::CanHandle(const GURL& url) {
-  return (url.spec().find(AuthResponseHandler::kClientLoginUrl) !=
+  return (url.spec().find(GaiaUrls::GetInstance()->client_login_url()) !=
           std::string::npos);
 }
 
 // Overridden from AuthResponseHandler.
-URLFetcher* ClientLoginResponseHandler::Handle(
+content::URLFetcher* ClientLoginResponseHandler::Handle(
     const std::string& to_process,
-    URLFetcher::Delegate* catcher) {
+    content::URLFetcherDelegate* catcher) {
   VLOG(1) << "Handling ClientLogin response!";
   payload_.assign(to_process);
   std::replace(payload_.begin(), payload_.end(), '\n', '&');
   payload_.append(kService);
 
-  URLFetcher* fetcher =
-      new URLFetcher(GURL(AuthResponseHandler::kIssueAuthTokenUrl),
-                     URLFetcher::POST,
-                     catcher);
-  fetcher->set_load_flags(net::LOAD_DO_NOT_SEND_COOKIES);
-  fetcher->set_upload_data("application/x-www-form-urlencoded", payload_);
+  content::URLFetcher* fetcher = content::URLFetcher::Create(
+      GURL(GaiaUrls::GetInstance()->issue_auth_token_url()),
+      content::URLFetcher::POST,
+      catcher);
+  fetcher->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES);
+  fetcher->SetUploadData("application/x-www-form-urlencoded", payload_);
   if (getter_) {
-    VLOG(1) << "Fetching " << AuthResponseHandler::kIssueAuthTokenUrl;
-    fetcher->set_request_context(getter_);
+    VLOG(1) << "Fetching " << GaiaUrls::GetInstance()->issue_auth_token_url();
+    fetcher->SetRequestContext(getter_);
     fetcher->Start();
   }
   return fetcher;

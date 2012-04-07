@@ -2,47 +2,44 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/task.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "net/base/cookie_store.h"
 #include "net/base/mock_host_resolver.h"
 #include "net/test/test_server.h"
-#include "net/url_request/url_request_context.cc"
+#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+
+using content::BrowserThread;
 
 namespace {
 
-class GetCookiesTask : public Task {
- public:
-  GetCookiesTask(const GURL& url,
-                 net::URLRequestContextGetter* context_getter,
-                 base::WaitableEvent* event,
-                 std::string* cookies)
-      : url_(url),
-        context_getter_(context_getter),
-        event_(event),
-        cookies_(cookies) {}
+void GetCookiesCallback(std::string* cookies_out,
+                        base::WaitableEvent* event,
+                        const std::string& cookies) {
+  *cookies_out = cookies;
+  event->Signal();
+}
 
-  virtual void Run() {
-    *cookies_ =
-        context_getter_->GetURLRequestContext()->cookie_store()->
-        GetCookies(url_);
-    event_->Signal();
-  }
-
- private:
-  const GURL& url_;
-  net::URLRequestContextGetter* const context_getter_;
-  base::WaitableEvent* const event_;
-  std::string* const cookies_;
-
-  DISALLOW_COPY_AND_ASSIGN(GetCookiesTask);
-};
+void GetCookiesOnIOThread(const GURL& url,
+                          net::URLRequestContextGetter* context_getter,
+                          base::WaitableEvent* event,
+                          std::string* cookies) {
+  net::CookieStore* cookie_store =
+      context_getter->GetURLRequestContext()->cookie_store();
+  cookie_store->GetCookiesWithOptionsAsync(
+      url, net::CookieOptions(),
+      base::Bind(&GetCookiesCallback,
+                 base::Unretained(cookies), base::Unretained(event)));
+}
 
 class CookiePolicyBrowserTest : public InProcessBrowserTest {
  protected:
@@ -57,8 +54,9 @@ class CookiePolicyBrowserTest : public InProcessBrowserTest {
     EXPECT_TRUE(
         BrowserThread::PostTask(
             BrowserThread::IO, FROM_HERE,
-            new GetCookiesTask(url, context_getter, &event, &cookies)));
-    EXPECT_TRUE(event.Wait());
+            base::Bind(&GetCookiesOnIOThread, url,
+                       make_scoped_refptr(context_getter), &event, &cookies)));
+    event.Wait();
     return cookies;
   }
 
@@ -70,8 +68,8 @@ class CookiePolicyBrowserTest : public InProcessBrowserTest {
 IN_PROC_BROWSER_TEST_F(CookiePolicyBrowserTest, AllowFirstPartyCookies) {
   ASSERT_TRUE(test_server()->Start());
 
-  browser()->profile()->GetHostContentSettingsMap()->
-      SetBlockThirdPartyCookies(true);
+  browser()->profile()->GetPrefs()->SetBoolean(prefs::kBlockThirdPartyCookies,
+                                               true);
 
   GURL url(test_server()->GetURL("set-cookie?cookie1"));
 
@@ -90,8 +88,8 @@ IN_PROC_BROWSER_TEST_F(CookiePolicyBrowserTest,
                        AllowFirstPartyCookiesRedirect) {
   ASSERT_TRUE(test_server()->Start());
 
-  browser()->profile()->GetHostContentSettingsMap()->
-      SetBlockThirdPartyCookies(true);
+  browser()->profile()->GetPrefs()->SetBoolean(prefs::kBlockThirdPartyCookies,
+                                               true);
 
   GURL url(test_server()->GetURL("server-redirect?"));
   GURL redirected_url(test_server()->GetURL("set-cookie?cookie2"));

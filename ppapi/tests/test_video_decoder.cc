@@ -6,32 +6,31 @@
 
 #include "ppapi/c/dev/ppb_video_decoder_dev.h"
 #include "ppapi/c/dev/ppb_testing_dev.h"
+#include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/tests/testing_instance.h"
 
 REGISTER_TEST_CASE(VideoDecoder);
 
 bool TestVideoDecoder::Init() {
-  video_decoder_interface_ = reinterpret_cast<PPB_VideoDecoder_Dev const*>(
+  video_decoder_interface_ = static_cast<const PPB_VideoDecoder_Dev*>(
       pp::Module::Get()->GetBrowserInterface(PPB_VIDEODECODER_DEV_INTERFACE));
-  var_interface_ = reinterpret_cast<PPB_Var const*>(
-      pp::Module::Get()->GetBrowserInterface(PPB_VAR_INTERFACE));
-  return video_decoder_interface_ && var_interface_ && InitTestingInterface();
+  return video_decoder_interface_ && CheckTestingInterface();
 }
 
-void TestVideoDecoder::RunTest() {
-  instance_->LogTest("Create", TestCreate());
+void TestVideoDecoder::RunTests(const std::string& filter) {
+  RUN_TEST(CreateFailure, filter);
 }
 
 void TestVideoDecoder::QuitMessageLoop() {
   testing_interface_->QuitMessageLoop(instance_->pp_instance());
 }
 
-std::string TestVideoDecoder::TestCreate() {
+std::string TestVideoDecoder::TestCreateFailure() {
   PP_Resource decoder = video_decoder_interface_->Create(
-      instance_->pp_instance(), NULL, PP_MakeCompletionCallback(NULL, NULL));
-  if (decoder == 0) {
-    return "Error creating the decoder";
-  }
+      instance_->pp_instance(), 0, static_cast<PP_VideoDecoder_Profile>(-1));
+  if (decoder != 0)
+    return "Create: error detecting invalid context & configs";
+
   PASS();
 }

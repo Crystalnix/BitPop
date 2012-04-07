@@ -6,20 +6,22 @@
 #define CHROME_BROWSER_UI_GTK_INFOBARS_BEFORE_TRANSLATE_INFOBAR_GTK_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/ui/gtk/infobars/translate_infobar_base_gtk.h"
 
 class TranslateInfoBarDelegate;
 
 class BeforeTranslateInfoBar : public TranslateInfoBarBase {
  public:
-  explicit BeforeTranslateInfoBar(TranslateInfoBarDelegate* delegate);
+  BeforeTranslateInfoBar(InfoBarTabHelper* owner,
+                         TranslateInfoBarDelegate* delegate);
   virtual ~BeforeTranslateInfoBar();
 
   // Overridden from TranslateInfoBarBase:
-  virtual void Init();
+  virtual void Init() OVERRIDE;
 
  protected:
-  virtual bool ShowOptionsMenuButton() const;
+  virtual bool ShowOptionsMenuButton() const OVERRIDE;
 
  private:
   CHROMEGTK_CALLBACK_0(BeforeTranslateInfoBar, void, OnLanguageModified);

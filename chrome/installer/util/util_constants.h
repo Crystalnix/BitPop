@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -35,7 +35,7 @@ enum InstallStatus {
   CHROME_RUNNING,         // 16. Chrome currently running (when trying to
                           // uninstall)
   UNINSTALL_CONFIRMED,    // 17. User has confirmed Chrome uninstall
-  UNINSTALL_DELETE_PROFILE, // 18. User confirmed uninstall and profile deletion
+  UNINSTALL_DELETE_PROFILE,  // 18. User okayed uninstall and profile deletion.
   UNINSTALL_SUCCESSFUL,   // 19. Chrome successfully uninstalled
   UNINSTALL_FAILED,       // 20. Chrome uninstallation failed
   UNINSTALL_CANCELLED,    // 21. User cancelled Chrome uninstallation
@@ -92,6 +92,9 @@ enum ArchiveType {
 };
 
 // Stages of an installation reported through Google Update on failure.
+// The order and value of existing enums must not change. Please add new
+// values to the end (before NUM_STAGES) and update the compile assert below
+// to assert on the last value added.
 enum InstallerStage {
   NO_STAGE,                    // 0: No stage to report.
   PRECONDITIONS,               // 1: Evaluating pre-install conditions.
@@ -102,15 +105,24 @@ enum InstallerStage {
   BUILDING,                    // 6: Building the install work item list.
   EXECUTING,                   // 7: Executing the install work item list.
   ROLLINGBACK,                 // 8: Rolling-back the install work item list.
-  FINISHING,                   // 9: Finishing after the install work item list.
-  NUM_STAGES                   // 10: The number of stages.
+  REFRESHING_POLICY,           // 9: Refreshing the elevation policy.
+  UPDATING_CHANNELS,           // 10: Updating channel information.
+  COPYING_PREFERENCES_FILE,    // 11: Copying preferences file.
+  CREATING_SHORTCUTS,          // 12: Creating shortcuts.
+  REGISTERING_CHROME,          // 13: Performing Chrome registration.
+  REMOVING_OLD_VERSIONS,       // 14: Deleting old version directories.
+  FINISHING,                   // 15: Finishing the install.
+  CONFIGURE_AUTO_LAUNCH,       // 16: Configuring Chrome to auto-launch.
+  NUM_STAGES                   // 17: The number of stages.
 };
 
-COMPILE_ASSERT(FINISHING == 9,
+// When we start reporting the numerical values from the enum, the order
+// above MUST be preserved.
+COMPILE_ASSERT(CONFIGURE_AUTO_LAUNCH == 16,
                never_ever_ever_change_InstallerStage_values_bang);
 
 namespace switches {
-extern const char kCeee[];
+extern const char kAutoLaunchChrome[];
 extern const char kChrome[];
 extern const char kChromeFrame[];
 extern const char kChromeFrameQuickEnable[];
@@ -120,6 +132,7 @@ extern const char kChromeFrameReadyModeTempOptOut[];
 extern const char kChromeFrameReadyModeEndTempOptOut[];
 extern const char kChromeSxS[];
 extern const char kCreateAllShortcuts[];
+extern const char kCriticalUpdateVersion[];
 extern const char kDeleteProfile[];
 extern const char kDisableLogging[];
 extern const char kDoNotCreateShortcuts[];
@@ -160,7 +173,6 @@ extern const wchar_t kChromeFrameHelperExe[];
 extern const wchar_t kChromeFrameHelperWndClass[];
 extern const wchar_t kChromeFrameReadyModeField[];
 extern const wchar_t kChromeLauncherExe[];
-extern const wchar_t kChromeNaCl64Dll[];
 extern const wchar_t kChromeOldExe[];
 extern const wchar_t kChromeNewExe[];
 extern const wchar_t kCmdQuickEnableCf[];
@@ -179,16 +191,29 @@ extern const wchar_t kUninstallInstallationDate[];
 extern const char kUninstallMetricsName[];
 extern const wchar_t kUninstallStringField[];
 
-// Used by InstallUtil::WriteInstallerResult.
-extern const wchar_t kInstallerResult[];
+// Google Update installer result API
 extern const wchar_t kInstallerError[];
+extern const wchar_t kInstallerExtraCode1[];
+extern const wchar_t kInstallerResult[];
 extern const wchar_t kInstallerResultUIString[];
 extern const wchar_t kInstallerSuccessLaunchCmdLine[];
 
+// Google Update named environment variable that implies kSystemLevel.
+extern const char kGoogleUpdateIsMachineEnvVar[];
+
 // Product options.
-extern const wchar_t kOptionCeee[];
 extern const wchar_t kOptionMultiInstall[];
 extern const wchar_t kOptionReadyMode[];
+
+// Chrome channel display names.
+// NOTE: Canary is not strictly a 'channel', but rather a separate product
+//     installed side-by-side. However, GoogleUpdateSettings::GetChromeChannel
+//     will return "canary" for that product.
+extern const wchar_t kChromeChannelUnknown[];
+extern const wchar_t kChromeChannelCanary[];
+extern const wchar_t kChromeChannelDev[];
+extern const wchar_t kChromeChannelBeta[];
+extern const wchar_t kChromeChannelStable[];
 
 }  // namespace installer
 

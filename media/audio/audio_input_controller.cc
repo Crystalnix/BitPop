@@ -4,23 +4,34 @@
 
 #include "media/audio/audio_input_controller.h"
 
+#include "base/bind.h"
 #include "base/threading/thread_restrictions.h"
 #include "media/base/limits.h"
 
-namespace media {
+namespace {
+const int kMaxInputChannels = 2;
+const int kTimerResetInterval = 1;  // One second.
+}
 
-static const int kMaxInputChannels = 2;
+namespace media {
 
 // static
 AudioInputController::Factory* AudioInputController::factory_ = NULL;
 
-AudioInputController::AudioInputController(EventHandler* handler,
+AudioInputController::AudioInputController(AudioManager* audio_manager,
+                                           EventHandler* handler,
                                            SyncWriter* sync_writer)
-    : handler_(handler),
+    : audio_manager_(audio_manager),
+      handler_(handler),
       stream_(NULL),
+      ALLOW_THIS_IN_INITIALIZER_LIST(no_data_timer_(FROM_HERE,
+          base::TimeDelta::FromSeconds(kTimerResetInterval),
+          this,
+          &AudioInputController::DoReportNoDataError)),
       state_(kEmpty),
       thread_("AudioInputControllerThread"),
       sync_writer_(sync_writer) {
+  DCHECK(audio_manager_);  // Fail early.
 }
 
 AudioInputController::~AudioInputController() {
@@ -29,58 +40,58 @@ AudioInputController::~AudioInputController() {
 
 // static
 scoped_refptr<AudioInputController> AudioInputController::Create(
+    AudioManager* audio_manager,
     EventHandler* event_handler,
-    AudioParameters params) {
+    const AudioParameters& params) {
+  DCHECK(audio_manager);
   if (!params.IsValid() || (params.channels > kMaxInputChannels))
     return NULL;
 
   if (factory_) {
-    return factory_->Create(event_handler, params);
+    return factory_->Create(audio_manager, event_handler, params);
   }
 
   scoped_refptr<AudioInputController> controller(new AudioInputController(
-      event_handler, NULL));
+      audio_manager, event_handler, NULL));
 
   // Start the thread and post a task to create the audio input stream.
+  // Pass an empty string to indicate using default device.
+  std::string device_id = AudioManagerBase::kDefaultDeviceId;
   controller->thread_.Start();
-  controller->thread_.message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(controller.get(), &AudioInputController::DoCreate,
-                        params));
+  controller->thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoCreate, controller.get(),
+      params, device_id));
   return controller;
 }
 
 // static
 scoped_refptr<AudioInputController> AudioInputController::CreateLowLatency(
+    AudioManager* audio_manager,
     EventHandler* event_handler,
-    AudioParameters params,
+    const AudioParameters& params,
+    const std::string& device_id,
     SyncWriter* sync_writer) {
+  DCHECK(audio_manager);
   DCHECK(sync_writer);
 
   if (!params.IsValid() || (params.channels > kMaxInputChannels))
     return NULL;
 
-  if (!AudioManager::GetAudioManager())
-    return NULL;
-
   // Starts the audio controller thread.
   scoped_refptr<AudioInputController> controller(new AudioInputController(
-      event_handler, sync_writer));
+      audio_manager, event_handler, sync_writer));
 
   // Start the thread and post a task to create the audio input stream.
   controller->thread_.Start();
-  controller->thread_.message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(controller.get(), &AudioInputController::DoCreate,
-                        params));
+  controller->thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoCreate, controller.get(), params, device_id));
   return controller;
 }
 
 void AudioInputController::Record() {
   DCHECK(thread_.IsRunning());
-  thread_.message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(this, &AudioInputController::DoRecord));
+  thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoRecord, this));
 }
 
 void AudioInputController::Close() {
@@ -91,9 +102,8 @@ void AudioInputController::Close() {
   }
 
   // Wait for all tasks to complete on the audio thread.
-  thread_.message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(this, &AudioInputController::DoClose));
+  thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoClose, this));
 
   // A ScopedAllowIO object is required to join the thread when calling Stop.
   // This is because as joining threads may be a long operation it's now
@@ -106,8 +116,9 @@ void AudioInputController::Close() {
   thread_.Stop();
 }
 
-void AudioInputController::DoCreate(AudioParameters params) {
-  stream_ = AudioManager::GetAudioManager()->MakeAudioInputStream(params);
+void AudioInputController::DoCreate(const AudioParameters& params,
+                                    const std::string& device_id) {
+  stream_ = audio_manager_->MakeAudioInputStream(params, device_id);
 
   if (!stream_) {
     // TODO(satish): Define error types.
@@ -123,6 +134,8 @@ void AudioInputController::DoCreate(AudioParameters params) {
     return;
   }
 
+  thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoResetNoDataTimer, this));
   state_ = kCreated;
   handler_->OnCreated(this);
 }
@@ -168,18 +181,31 @@ void AudioInputController::DoReportError(int code) {
   handler_->OnError(this, code);
 }
 
+void AudioInputController::DoReportNoDataError() {
+  DCHECK_EQ(thread_.message_loop(), MessageLoop::current());
+  handler_->OnError(this, 0);
+}
+
+void AudioInputController::DoResetNoDataTimer() {
+  DCHECK_EQ(thread_.message_loop(), MessageLoop::current());
+  no_data_timer_.Reset();
+}
+
 void AudioInputController::OnData(AudioInputStream* stream, const uint8* data,
-                                  uint32 size) {
+                                  uint32 size, uint32 hardware_delay_bytes) {
   {
     base::AutoLock auto_lock(lock_);
     if (state_ != kRecording)
       return;
   }
 
+  thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoResetNoDataTimer, this));
+
   // Use SyncSocket if we are in a low-latency mode.
   if (LowLatencyMode()) {
     sync_writer_->Write(data, size);
-    sync_writer_->UpdateRecordedBytes(size);
+    sync_writer_->UpdateRecordedBytes(hardware_delay_bytes);
     return;
   }
 
@@ -194,9 +220,8 @@ void AudioInputController::OnClose(AudioInputStream* stream) {
 
 void AudioInputController::OnError(AudioInputStream* stream, int code) {
   // Handle error on the audio controller thread.
-  thread_.message_loop()->PostTask(
-      FROM_HERE,
-      NewRunnableMethod(this, &AudioInputController::DoReportError, code));
+  thread_.message_loop()->PostTask(FROM_HERE, base::Bind(
+      &AudioInputController::DoReportError, this, code));
 }
 
 }  // namespace media

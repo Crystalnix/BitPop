@@ -9,62 +9,6 @@ be available for now. -->
     <output filename="grit/chromium_strings.h" type="rc_header">
       <emit emit_type='prepend'></emit>
     </output>
-    <!-- We use different filenames here so we can include the file easily in
-         vcproj files using $(CHROMIUM_BUILD). -->
-    <output filename="strings_am.rc" type="rc_all" lang="am" />
-    <output filename="strings_ar.rc" type="rc_all" lang="ar" />
-    <output filename="strings_bg.rc" type="rc_all" lang="bg" />
-    <output filename="strings_bn.rc" type="rc_all" lang="bn" />
-    <output filename="strings_ca.rc" type="rc_all" lang="ca" />
-    <output filename="strings_cs.rc" type="rc_all" lang="cs" />
-    <output filename="strings_da.rc" type="rc_all" lang="da" />
-    <output filename="strings_de.rc" type="rc_all" lang="de" />
-    <output filename="strings_el.rc" type="rc_all" lang="el" />
-    <output filename="strings_en-GB.rc" type="rc_all" lang="en-GB" />
-    <output filename="strings_en-US.rc" type="rc_all" lang="en" />
-    <output filename="strings_es.rc" type="rc_all" lang="es" />
-    <output filename="strings_es-419.rc" type="rc_all" lang="es-419" />
-    <output filename="strings_et.rc" type="rc_all" lang="et" />
-    <output filename="strings_fa.rc" type="rc_all" lang="fa" />
-    <output filename="strings_fi.rc" type="rc_all" lang="fi" />
-    <output filename="strings_fil.rc" type="rc_all" lang="fil" />
-    <output filename="strings_fr.rc" type="rc_all" lang="fr" />
-    <output filename="strings_gu.rc" type="rc_all" lang="gu" />
-    <output filename="strings_he.rc" type="rc_all" lang="he" />
-    <output filename="strings_hi.rc" type="rc_all" lang="hi" />
-    <output filename="strings_hr.rc" type="rc_all" lang="hr" />
-    <output filename="strings_hu.rc" type="rc_all" lang="hu" />
-    <output filename="strings_id.rc" type="rc_all" lang="id" />
-    <output filename="strings_it.rc" type="rc_all" lang="it" />
-    <output filename="strings_ja.rc" type="rc_all" lang="ja" />
-    <output filename="strings_kn.rc" type="rc_all" lang="kn" />
-    <output filename="strings_ko.rc" type="rc_all" lang="ko" />
-    <output filename="strings_lt.rc" type="rc_all" lang="lt" />
-    <output filename="strings_lv.rc" type="rc_all" lang="lv" />
-    <output filename="strings_ml.rc" type="rc_all" lang="ml" />
-    <output filename="strings_mr.rc" type="rc_all" lang="mr" />
-    <output filename="strings_nl.rc" type="rc_all" lang="nl" />
-    <output filename="strings_nb.rc" type="rc_all" lang="no" />
-    <!-- 'no' for Norwegian Bokmål. It should be 'nb'. -->
-    <output filename="strings_pl.rc" type="rc_all" lang="pl" />
-    <output filename="strings_pt-BR.rc" type="rc_all" lang="pt-BR" />
-    <output filename="strings_pt-PT.rc" type="rc_all" lang="pt-PT" />
-    <output filename="strings_ro.rc" type="rc_all" lang="ro" />
-    <output filename="strings_ru.rc" type="rc_all" lang="ru" />
-    <output filename="strings_sk.rc" type="rc_all" lang="sk" />
-    <output filename="strings_sl.rc" type="rc_all" lang="sl" />
-    <output filename="strings_sr.rc" type="rc_all" lang="sr" />
-    <output filename="strings_sv.rc" type="rc_all" lang="sv" />
-    <output filename="strings_sw.rc" type="rc_all" lang="sw" />
-    <output filename="strings_ta.rc" type="rc_all" lang="ta" />
-    <output filename="strings_te.rc" type="rc_all" lang="te" />
-    <output filename="strings_th.rc" type="rc_all" lang="th" />
-    <output filename="strings_tr.rc" type="rc_all" lang="tr" />
-    <output filename="strings_uk.rc" type="rc_all" lang="uk" />
-    <output filename="strings_vi.rc" type="rc_all" lang="vi" />
-    <output filename="strings_zh-CN.rc" type="rc_all" lang="zh-CN" />
-    <output filename="strings_zh-TW.rc" type="rc_all" lang="zh-TW" />
-
     <output filename="chromium_strings_am.pak" type="data_package" lang="am" />
     <output filename="chromium_strings_ar.pak" type="data_package" lang="ar" />
     <if expr="pp_ifdef('use_third_party_translations')">
@@ -72,6 +16,9 @@ be available for now. -->
     </if>
     <output filename="chromium_strings_bg.pak" type="data_package" lang="bg" />
     <output filename="chromium_strings_bn.pak" type="data_package" lang="bn" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="chromium_strings_bs.pak" type="data_package" lang="bs" />
+    </if>
     <output filename="chromium_strings_ca.pak" type="data_package" lang="ca" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="chromium_strings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
@@ -80,6 +27,9 @@ be available for now. -->
     <output filename="chromium_strings_da.pak" type="data_package" lang="da" />
     <output filename="chromium_strings_de.pak" type="data_package" lang="de" />
     <output filename="chromium_strings_el.pak" type="data_package" lang="el" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="chromium_strings_en-AU.pak" type="data_package" lang="en-AU" />
+    </if>
     <output filename="chromium_strings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="chromium_strings_en-US.pak" type="data_package" lang="en" />
     <if expr="pp_ifdef('use_third_party_translations')">
@@ -92,6 +42,7 @@ be available for now. -->
       <output filename="chromium_strings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="chromium_strings_fa.pak" type="data_package" lang="fa" />
+    <output filename="chromium_strings_fake-bidi.pak" type="data_package" lang="fake-bidi" />
     <output filename="chromium_strings_fi.pak" type="data_package" lang="fi" />
     <output filename="chromium_strings_fil.pak" type="data_package" lang="fil" />
     <output filename="chromium_strings_fr.pak" type="data_package" lang="fr" />
@@ -105,6 +56,7 @@ be available for now. -->
     <output filename="chromium_strings_hu.pak" type="data_package" lang="hu" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="chromium_strings_hy.pak" type="data_package" lang="hy" />
+      <output filename="chromium_strings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="chromium_strings_id.pak" type="data_package" lang="id" />
     <output filename="chromium_strings_it.pak" type="data_package" lang="it" />
@@ -116,11 +68,13 @@ be available for now. -->
     <output filename="chromium_strings_ko.pak" type="data_package" lang="ko" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="chromium_strings_ku.pak" type="data_package" lang="ku" />
+      <output filename="chromium_strings_kw.pak" type="data_package" lang="kw" />
     </if>
     <output filename="chromium_strings_lt.pak" type="data_package" lang="lt" />
     <output filename="chromium_strings_lv.pak" type="data_package" lang="lv" />
     <output filename="chromium_strings_ml.pak" type="data_package" lang="ml" />
     <output filename="chromium_strings_mr.pak" type="data_package" lang="mr" />
+    <output filename="chromium_strings_ms.pak" type="data_package" lang="ms" />
     <output filename="chromium_strings_nl.pak" type="data_package" lang="nl" />
     <output filename="chromium_strings_nb.pak" type="data_package" lang="no" />
     <!-- 'no' for Norwegian Bokmål. It should be 'nb'. -->
@@ -149,10 +103,15 @@ be available for now. -->
   <translations>
     <if expr="pp_ifdef('use_third_party_translations')">
       <file path="../../third_party/launchpad_translations/chromium_strings_ast.xtb" lang="ast" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_bg.xtb" lang="bg" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_bs.xtb" lang="bs" />
       <file path="../../third_party/launchpad_translations/chromium_strings_ca.xtb" lang="ca" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_ca-valencia.xtb" lang="ca@valencia" />
       <file path="../../third_party/launchpad_translations/chromium_strings_cs.xtb" lang="cs" />
       <file path="../../third_party/launchpad_translations/chromium_strings_da.xtb" lang="da" />
       <file path="../../third_party/launchpad_translations/chromium_strings_de.xtb" lang="de" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_en-AU.xtb" lang="en-AU" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_eo.xtb" lang="eo" />
       <file path="../../third_party/launchpad_translations/chromium_strings_es.xtb" lang="es" />
       <file path="../../third_party/launchpad_translations/chromium_strings_et.xtb" lang="et" />
       <file path="../../third_party/launchpad_translations/chromium_strings_eu.xtb" lang="eu" />
@@ -161,11 +120,15 @@ be available for now. -->
       <file path="../../third_party/launchpad_translations/chromium_strings_gl.xtb" lang="gl" />
       <file path="../../third_party/launchpad_translations/chromium_strings_he.xtb" lang="he" />
       <file path="../../third_party/launchpad_translations/chromium_strings_hy.xtb" lang="hy" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_ia.xtb" lang="ia" />
       <file path="../../third_party/launchpad_translations/chromium_strings_id.xtb" lang="id" />
       <file path="../../third_party/launchpad_translations/chromium_strings_it.xtb" lang="it" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_ja.xtb" lang="ja" />
       <file path="../../third_party/launchpad_translations/chromium_strings_ka.xtb" lang="ka" />
       <file path="../../third_party/launchpad_translations/chromium_strings_ku.xtb" lang="ku" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_kw.xtb" lang="kw" />
       <file path="../../third_party/launchpad_translations/chromium_strings_lt.xtb" lang="lt" />
+      <file path="../../third_party/launchpad_translations/chromium_strings_ms.xtb" lang="ms" />
       <file path="../../third_party/launchpad_translations/chromium_strings_nl.xtb" lang="nl" />
       <file path="../../third_party/launchpad_translations/chromium_strings_no.xtb" lang="no" />
       <file path="../../third_party/launchpad_translations/chromium_strings_pt-BR.xtb" lang="pt-BR" />
@@ -191,14 +154,14 @@ be available for now. -->
         Chromium
       </message>
       <message name="IDS_PRODUCT_DESCRIPTION" desc="Browser description">
-        Chromium is a web browser that runs web pages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Chromium.
+        Chromium is a web browser that runs webpages and applications with lightning speed. It's fast, stable, and easy to use. Browse the web more safely with malware and phishing protection built into Chromium.
       </message>
       <if expr="pp_ifdef('chromeos')">
         <message name="IDS_PRODUCT_OS_NAME" desc="The Chrome OS application name">
           Chromium OS
         </message>
       </if>
-      <if expr="os.find('win') != -1">
+      <if expr="is_win">
         <message name="IDS_PRODUCT_FRAME_NAME" desc="The Chrome Frame application name">
           Chromium Frame
         </message>
@@ -206,7 +169,7 @@ be available for now. -->
           Chromium Frame Update.
         </message>
         <message name="IDS_VERSIONMISMATCH">
-          Chromium Frame has been updated. Please relaunch your browser. Chrome version: <ph name="TODO_0001">%ls<ex>TODO</ex></ph>, Chromium Frame version: <ph name="TODO_0002">%ls<ex>TODO</ex></ph>
+          Chromium Frame has been updated. Please relaunch your browser. Chromium version: <ph name="TODO_0001">%ls<ex>TODO</ex></ph>, Chromium Frame version: <ph name="TODO_0002">%ls<ex>TODO</ex></ph>
         </message>
         <message name="IDS_VERSIONUNKNOWN">
           Unknown version.
@@ -225,19 +188,19 @@ be available for now. -->
         Instant
       </message>
       <message name="IDS_CERT_ERROR_COMMON_NAME_INVALID_EXTRA_INFO_2" desc="2nd paragraph of extra information for an unsafe common name in an X509 certificate">
-        In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. Chromium can say for sure that you reached &lt;strong&gt;<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, Chromium will not check for any further name mismatches. In general, it is best not to proceed past this point.
+        In this case, the address listed in the certificate does not match the address of the website your browser tried to go to. One possible reason for this is that your communications are being intercepted by an attacker who is presenting a certificate for a different website, which would cause a mismatch. Another possible reason is that the server is set up to return the same certificate for multiple websites, including the one you are attempting to visit, even though that certificate is not valid for all of those websites. Chromium can say for sure that you reached &lt;strong&gt;<ph name="DOMAIN2">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but cannot verify that that is the same site as &lt;strong&gt;<ph name="DOMAIN">$2<ex>www.paypal.com</ex></ph>&lt;/strong&gt; which you intended to reach. If you proceed, Chromium will not check for any further name mismatches.
       </message>
       <message name="IDS_CERT_ERROR_EXPIRED_DETAILS" desc="Details for an expired X509 certificate">
-        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented an expired certificate. No information is available to indicate whether that certificate has been compromised since its expiration. This means Chromium cannot guarantee that you are communicating with &lt;strong&gt;<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. You should not proceed.
+        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented an expired certificate. No information is available to indicate whether that certificate has been compromised since its expiration. This means Chromium cannot guarantee that you are communicating with &lt;strong&gt;<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker.
       </message>
       <message name="IDS_CERT_ERROR_NOT_YET_VALID_DETAILS" desc="Details for an X509 certificate that is not yet valid">
-        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate that is not yet valid. No information is available to indicate whether that certificate can be trusted. Chromium cannot reliably guarantee that you are communicating with &lt;strong&gt;<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. You should ensure that your clock and time zone are set correctly on your computer. If they are not, you should correct any issues and refresh this page. If they are correct, you should not proceed.
+        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate that is not yet valid. No information is available to indicate whether that certificate can be trusted. Chromium cannot reliably guarantee that you are communicating with &lt;strong&gt;<ph name="DOMAIN2">$2<ex>paypal.com</ex></ph>&lt;/strong&gt; and not an attacker. You should ensure that your clock and time zone are set correctly on your computer. If they are not, you should correct any issues and refresh this page.
       </message>
       <message name="IDS_CERT_ERROR_AUTHORITY_INVALID_DETAILS" desc="Details for an X509 certificate with an invalid authority">
-        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by your computer's operating system. This may mean that the server has generated its own security credentials, which Chromium cannot rely on for identity information, or an attacker may be trying to intercept your communications. You should not proceed, &lt;strong&gt;especially&lt;/strong&gt; if you have never seen this warning before for this site.
+        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the server presented a certificate issued by an entity that is not trusted by your computer's operating system. This may mean that the server has generated its own security credentials, which Chromium cannot rely on for identity information, or an attacker may be trying to intercept your communications.
       </message>
       <message name="IDS_CERT_ERROR_CONTAINS_ERRORS_DETAILS" desc="Details of the error page for an X509 certificate that contains errors">
-        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the certificate that the server presented contains errors. Chromium cannot use a certificate with errors and cannot validate the identity of the site that you have attempted to connect to. Your connection is not secure and you should not proceed.
+        You attempted to reach &lt;strong&gt;<ph name="DOMAIN">$1<ex>paypal.com</ex></ph>&lt;/strong&gt;, but the certificate that the server presented contains errors. Chromium cannot use a certificate with errors and cannot validate the identity of the site that you have attempted to connect to.
       </message>
       <message name="IDS_TASK_MANAGER_TITLE" desc="The title of the Task Manager window">
         Task Manager - Chromium
@@ -256,7 +219,7 @@ be available for now. -->
         The Chromium Authors
       </message>
       <message name="IDS_ABOUT_VERSION_COPYRIGHT" desc="Copyright information on the about pages">
-        Copyright © 2006-2011 The Chromium Authors. All Rights Reserved.
+        Copyright © 2006-2012 The Chromium Authors. All Rights Reserved.
       </message>
       <message name="IDS_ABOUT_VERSION_LICENSE" desc="The label below the copyright message, containing the URLs.">
         Chromium is made possible by the <ph name="BEGIN_LINK_CHROMIUM">BEGIN_LINK_CHR</ph>Chromium<ph name="END_LINK_CHROMIUM">END_LINK_CHR</ph> open source project and other <ph name="BEGIN_LINK_OSS">BEGIN_LINK_OSS</ph>open source software<ph name="END_LINK_OSS">END_LINK_OSS</ph>.
@@ -288,16 +251,6 @@ be available for now. -->
       <message name="IDS_IMPORTER_LOCK_TEXT" desc="The message to be displayed on dialog">
         Sadly, your Mozilla Firefox settings are not available while that browser is running. To import those settings to Chromium, save your work and close all Firefox windows. Then click Continue.
       </message>
-      <if expr="not pp_ifdef('use_titlecase')">
-        <message name="IDS_BUGREPORT_CHROME_MISBEHAVES" desc="Report a bug/problem type: Browser is misbehaving">
-          Chromium is misbehaving
-        </message>
-      </if>
-      <if expr="pp_ifdef('use_titlecase')">
-        <message name="IDS_BUGREPORT_CHROME_MISBEHAVES" desc="In Title Case: Report a bug/problem type: Browser is misbehaving">
-          Chromium is Misbehaving
-        </message>
-      </if>
       <message name="IDS_ABOUT_CHROME_TITLE" desc="Dialog title">
         About Chromium
       </message>
@@ -323,6 +276,9 @@ be available for now. -->
       <message name="IDS_NEW_TAB_CHROME_WELCOME_PAGE_TITLE"
                desc="Title for the hard-coded thumbnail that represents the Google Chrome Welcome page.  This is used on the NTP when there aren't enough thumbnails to show.">
         Welcome to Chromium
+      </message>
+      <message name="IDS_NTP4_INTRO_MESSAGE" desc="Message explaning the navigation bar at the bottom of the new NTP.">
+        Chromium's New Tab page has been remodeled. Switch between sections by clicking these labels. Chromium will remember your preference for next time.
       </message>
       <if expr="not pp_ifdef('chromeos')">
         <message name="IDS_EXTERNAL_PROTOCOL_INFORMATION" desc="General information about what Chrome is trying to do when opening this external protocol">
@@ -365,19 +321,27 @@ be available for now. -->
         Continue running background apps when Chromium is closed
       </message>
       <message name="IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY" desc="Summary of problem displayed in dialog when we can't create a directory for this user.">
-        Chromium cannot read and write to its data directory:\n\n<ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
+Chromium cannot read and write to its data directory:
+
+<ph name="USER_DATA_DIRECTORY">$1<ex>C:\Documents and Settings\devint\Local Settings\Application Data\Google\Chrome</ex></ph>
       </message>
       <message name="IDS_EULA_CHECKBOX_ENABLE_LOGGING" desc="The label of the checkbox to enable/disable crash and user metrics logging">
         Optional: Help make Chromium better by automatically sending usage statistics and crash reports to Google.
       </message>
       <message name="IDS_PROFILE_TOO_NEW_ERROR" desc="Error displayed on startup when the profile is from a newer version of the product and can not be read">
-        Your profile can not be used because it is from a newer version of Chromium.\n\nSome features may be unavailable. Please specify a different profile directory or use a newer version of Chromium.
+Your profile can not be used because it is from a newer version of Chromium.
+
+Some features may be unavailable. Please specify a different profile directory or use a newer version of Chromium.
       </message>
       <message name="IDS_PREFERENCES_UNREADABLE_ERROR" desc="Error displayed on startup when user preferences file can not be read">
-        Your preferences can not be read.\n\nSome features may be unavailable and changes to preferences won't be saved.
+Your preferences can not be read.
+
+Some features may be unavailable and changes to preferences won't be saved.
       </message>
       <message name="IDS_PREFERENCES_CORRUPT_ERROR" desc="Error displayed on startup when user preferences file can not be read">
-        Your preferences file is corrupt or invalid.\n\nChromium is unable to recover your settings.
+Your preferences file is corrupt or invalid.
+
+Chromium is unable to recover your settings.
       </message>
       <!-- Crash Recovery Dialog -->
       <message name="IDS_CRASH_RECOVERY_TITLE" desc="Title of dialog shown when the browser crashes.">
@@ -399,13 +363,16 @@ be available for now. -->
         An administrator has installed Chromium on this system, and it is available for all users. The system-level Chromium will replace your user-level installation now.
       </message>
       <message name="IDS_INSTALL_HIGHER_VERSION" desc="Error displayed when higher version already exists.">
-        This computer already has a more recent version of Chromium. If the software is not working, please uninstall Chromium and download it again.
+        This computer already has a more recent version of Chromium. If the software is not working, please uninstall Chromium and try again.
       </message>
       <message name="IDS_INSTALL_HIGHER_VERSION_CF" desc="Error displayed when higher version already exists.">
-        This computer already has a more recent version of Chromium Frame. If the software is not working, please uninstall Chromium Frame and download it again.
+        This computer already has a more recent version of Chromium Frame. If the software is not working, please uninstall Chromium Frame and try again.
       </message>
-      <message name="IDS_INSTALL_SYSTEM_LEVEL_EXISTS" desc="Error displayed during user level install if system level Chromium is already installed.">
-        Chromium is already installed and available to all users of this computer. If you want to install Chromium at the user level, you must first uninstall the system-level version installed by an administrator.
+      <message name="IDS_INSTALL_HIGHER_VERSION_CB_CF" desc="Error displayed when higher version of Chromium and Chromium Frame already exists">
+        This computer already has a more recent version of Chromium and Chromium Frame. If the software is not working, please uninstall both Chromium and Chromium Frame and try again.
+      </message>
+      <message name="IDS_INSTALL_SYSTEM_LEVEL_EXISTS" desc="Error displayed during user level install if system level Chromium Frame is already installed.">
+        Chromium Frame is already installed and available to all users of this computer. If you want to install Chromium Frame at the user level, you must first uninstall the system-level version installed by an administrator.
       </message>
       <message name="IDS_INSTALL_FAILED" desc="Error displayed if installation fails due to some unknown error.">
         Installation failed due to unspecified error. If Chromium is currently running, please close it and try again.
@@ -443,9 +410,6 @@ be available for now. -->
       <message name="IDS_INSTALL_APP_CONFLICT" desc="Error displayed if installation fails due to another existing application.">
         A conflict with another installed application has been detected.
       </message>
-      <message name="IDS_UNINSTALL_FAILED" desc="Error during uninstall if we can not find the installation directory from registry.">
-        Chromium is not installed or it failed to find installation directory. Please download Chromium again.
-      </message>
       <message name="IDS_UNINSTALL_COMPLETE" desc="Text displayed on dialog that is shown when uninstall is complete and no reboot is required.">
         Uninstallation complete.
       </message>
@@ -457,9 +421,6 @@ be available for now. -->
       </message>
       <message name="IDS_INSTALL_MULTI_INSTALLATION_EXISTS" desc="Error during install if a multi-install Chromium or Chromium Frame is present, thereby preventing the installation of a single-install Chromium or Chromium Frame.">
         A conflicting installation of Chromium or Chromium Frame was found on the system. Please uninstall it and try again.
-      </message>
-      <message name="IDS_INSTALL_CONFLICTING_CHANNEL_EXISTS" desc="Error during install if a version of Chromium on a different update channel exists when installing Chromium Frame.">
-        A conflicting installation of Chromium was found on the system. Please uninstall it and try again.
       </message>
       <message name="IDS_INSTALL_READY_MODE_REQUIRES_CHROME" desc="Chrome Frame in ready mode requires Chrome.">
         Invalid arguments. Chromium Frame cannot be installed in ready mode without also installing Chromium.
@@ -530,12 +491,139 @@ be available for now. -->
       <message name="IDS_CRASHES_DISABLED_MESSAGE" desc="The explanatory message for chrome://crashes when crash reporting is disabled">
         Crash reporting is not available in Chromium.
       </message>
+      <!-- Page Info bubble -->
+      <message name="IDS_PAGE_INFO_INTERNAL_PAGE" desc="Message to display in the page info bubble when the page you are on is a chrome:// page or about:something.">
+        You are viewing a secure Chromium page.
+      </message>
       <!-- Print Preview -->
       <message name="IDS_PRINT_PREVIEW_NO_PLUGIN" desc="Message to display when the PDF viewer is missing.">
-      Sorry! Chromium does not include the PDF viewer built into Google Chrome, which is required to show the print preview.
+        Chromium does not include the PDF viewer which is required for Print Preview to function.
       </message>
 
-      <if expr="os == 'darwin'">
+      <!-- Download Shelf Items -->
+      <message name="IDS_DOWNLOAD_STATUS_CRX_INSTALL_RUNNING"
+               desc="Message shown when a CRX has been downloaded and is being unpacked.">
+        Adding to Chromium...
+      </message>
+
+      <!-- Remove in-progress downloads confirmation dialog -->
+      <message name="IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_WARNING" desc="Title of the dialog asking for user confirmation to close the browser when one download is in-progress.">
+        Do you want to exit Chromium with a download in progress?
+      </message>
+      <message name="IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_WARNING" desc="Title of the dialog asking for user confirmation to close the browser when multiple downloads are in-progress.">
+        Do you want to exit Chromium with <ph name="DOWNLOAD_COUNT">$1<ex>3</ex></ph> downloads in progress?
+      </message>
+      <message name="IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_EXPLANATION" desc="Explanation of the dialog asking for user confirmation to close the browser when one download is in-progress.">
+        If you close Chromium now, this download will be canceled.
+      </message>
+      <message name="IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_EXPLANATION" desc="Explanation of the dialog asking for user confirmation to close the browser when multiple downloads are in-progress.">
+        If you close Chromium now, these downloads will be canceled.
+      </message>
+
+      <!-- "Create application shortcuts" dialog -->
+      <if expr="is_posix and not is_macosx">
+        <message name="IDS_CREATE_SHORTCUTS_ERROR_LABEL" desc="Contents of the main label in the error dialog box when creating an application shortcut failed.">
+          Chromium cannot create an application shortcut because it cannot determine the current desktop environment.
+        </message>
+      </if>
+
+      <!-- Autolaunch infobar -->
+      <message name="IDS_AUTO_LAUNCH_INFOBAR_TEXT" desc="The text to show in the infobar when Chromium was automatically launched on startup">
+        Chromium is configured to automatically launch when you start your computer.
+      </message>
+
+      <!-- about:flags -->
+      <if expr="not pp_ifdef('chromeos')">
+        <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to relaunch Chromium. Shown next to a button that says 'Relaunch Now'.">
+          Your changes will take effect the next time you relaunch Chromium.
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_FLAGS_RELAUNCH_NOTICE" desc="Notifies the user that he needs to restart Chromium OS. Shown next to a button that says 'Restart Now'.">
+          Your changes will take effect the next time you restart Chromium OS.
+        </message>
+      </if>
+
+      <!-- Obsolete System info bar -->
+      <message name="IDS_SYSTEM_OBSOLETE_MESSAGE" desc="Message shown when your OS is no longer supported. This messages is followed by a 'Learn more' link.">
+         Chromium is no longer updating because your operating system is obsolete.
+      </message>
+
+      <!-- About Chrome View -->
+      <message name="IDS_UPGRADE_AVAILABLE" desc="Status label: A new version of Chromium is available">
+        A new version of Chromium is available
+      </message>
+      <message name="IDS_UPGRADE_SUCCESSFUL" desc="Status label: Successfully upgraded">
+        Chromium has been updated to <ph name="VERSION">$1<ex>0.1.131</ex></ph>
+      </message>
+      <message name="IDS_UPGRADE_SUCCESSFUL_NOVERSION" desc="Status label: Successfully upgraded">
+        Chromium has been updated
+      </message>
+      <message name="IDS_UPGRADE_SUCCESSFUL_RELAUNCH" desc="Status label: Successfully updated">
+        Relaunch Chromium to finish updating
+      </message>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_UPGRADE_ALREADY_UP_TO_DATE" desc="Status label: Already up to date">
+          Chromium is up to date
+        </message>
+      </if>
+      <if expr="not pp_ifdef('chromeos')">
+        <message name="IDS_UPGRADE_ALREADY_UP_TO_DATE" desc="Status label: Already up to date">
+          Chromium is up to date (<ph name="VERSION">$1<ex>0.1.131</ex></ph>)
+        </message>
+      </if>
+
+      <!-- Extension/App install prompt -->
+      <message name="IDS_EXTENSION_INLINE_INSTALL_PROMPT_TITLE" desc="Titlebar of the extension or app inline installation prompt window">
+        Add to Chromium
+      </message>
+
+      <!-- Extension alerts. -->
+      <message name="IDS_EXTENSION_ALERT_ITEM_EXTERNAL" desc="A statement that an external extension has been newly installed. End users have no idea what an 'external' extension is, so we simply call them extensions.">
+The extension "<ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph>" has been added to Chromium.
+'''
+      </message>
+
+      <!-- Extension installed bubble -->
+      <message name="IDS_EXTENSION_INSTALLED_HEADING" desc="First line in the content area of the extension installed bubble. Instructs that the extension was installed.">
+        <ph name="EXTENSION_NAME">$1<ex>Gmail Checker</ex></ph> has been added to Chromium.
+      </message>
+
+      <!-- chrome://settings/extensions page -->
+      <message name="IDS_EXTENSIONS_INCOGNITO_WARNING" desc="Warns the user that Chromium cannot prevent extensions from recording history in incognito mode. Displayed in extensions management UI after an extension is selected to be run in incognito mode.">
+        <ph name="BEGIN_BOLD">&lt;b&gt;</ph>Warning:<ph name="END_BOLD">&lt;/b&gt;</ph> Chromium cannot prevent extensions from recording your browsing history. To disable this extension in incognito mode, unselect this option.
+      </message>
+      <message name="IDS_EXTENSIONS_UNINSTALL" desc="The link for uninstalling extensions.">
+        Remove from Chromium
+      </message>
+
+      <!-- Wrench menu -->
+      <if expr="pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+        <message name="IDS_ABOUT" desc="In Title Case: The text label of the About Chrome menu item">
+          About &amp;Chromium
+        </message>
+        <message name="IDS_UPDATE_NOW" desc="In Title Case: The text label of the Update Chrome Now menu item">
+          Update &amp;Chromium
+        </message>
+      </if>
+      <if expr="not pp_ifdef('use_titlecase') and not pp_ifdef('chromeos')">
+        <message name="IDS_ABOUT" desc="The text label of the About Chrome menu item">
+          About &amp;Chromium
+        </message>
+        <message name="IDS_UPDATE_NOW" desc="The text label of the Update Chrome Now menu item">
+          Update &amp;Chromium
+        </message>
+      </if>
+      <if expr="pp_ifdef('chromeos')">
+        <message name="IDS_ABOUT" desc="The text label of the About Chrome OS menu item">
+          About &amp;Chromium OS
+        </message>
+        <message name="IDS_UPDATE_NOW" desc="The text label of the Update Chrome OS Now menu item">
+          Update &amp;Chromium OS
+        </message>
+      </if>
+
+      <if expr="is_macosx">
         <message name="IDS_APP_MENU_PRODUCT_NAME" desc="The application's short name, used for the Mac's application menu, activity monitor, etc. This should be less than 16 characters. Example: Chrome, not Google Chrome.">
           Chromium
         </message>
@@ -572,6 +660,15 @@ be available for now. -->
           Chromium Utility
         </message>
       </if>
+
+      <!-- Sync promo page chrome://syncpromo -->
+      <message name="IDS_SYNC_PROMO_V_LEARN_MORE" desc="Learn more link at the bottom of the sync promo.">
+        See <ph name="BEGIN_LINK">&lt;a target="_blank" href="$1"&gt;</ph>more benefits<ph name="END_LINK">&lt;/a&gt;</ph> of signing in to Chromium.
+      </message>
+
+      <message name="IDS_AUTOFILL_OPTIONS_POPUP" desc="The value of the Autofill options menu entry.">
+        Chromium Autofill settings
+      </message>
     </messages>
   </release>
 </grit>

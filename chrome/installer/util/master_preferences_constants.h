@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -13,16 +13,14 @@ namespace installer {
 namespace master_preferences {
 // All the preferences below are expected to be inside the JSON "distribution"
 // block. Some of them also have equivalent command line option. If same option
-// is specified in master preference as well as command line, the commnd line
+// is specified in master preference as well as command line, the command line
 // value takes precedence.
 
 // Boolean. Use alternate text for the shortcut. Cmd line override present.
 extern const char kAltShortcutText[];
-// Boolean. Use alternate smaller first run info bubble.
-extern const char kAltFirstRunBubble[];
-// Boolean. CEEE features of Chrome Frame should be enabled as part of
-// the install.  Requires kChromeFrame to be specified as well.
-extern const char kCeee[];
+// Boolean. Whether to instruct the installer to auto-launch chrome on computer
+// startup. The default (if not provided) is |false|.
+extern const char kAutoLaunchChrome[];
 // Boolean. This is to be a Chrome install. (When using MultiInstall)
 extern const char kChrome[];
 // Boolean. This is to be a Chrome Frame install.
@@ -73,10 +71,6 @@ extern const char kMsi[];
 extern const char kMultiInstall[];
 // Boolean. Show EULA dialog before install.
 extern const char kRequireEula[];
-// Boolean. Use experimental search engine selection dialog.
-extern const char kSearchEngineExperimentPref[];
-// Boolean. Randomize logos in experimental search engine selection dialog.
-extern const char kSearchEngineExperimentRandomizePref[];
 // Boolean. Install Chrome to system wise location. Cmd line override present.
 extern const char kSystemLevel[];
 // Boolean. Run installer in verbose mode. Cmd line override present.

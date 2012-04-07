@@ -4,16 +4,22 @@
 
 #include "chrome/browser/sync/glue/theme_change_processor.h"
 
+#include "base/location.h"
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/glue/theme_util.h"
+#include "chrome/browser/sync/internal_api/includes/unrecoverable_error_handler.h"
+#include "chrome/browser/sync/internal_api/change_record.h"
+#include "chrome/browser/sync/internal_api/read_node.h"
+#include "chrome/browser/sync/internal_api/write_node.h"
+#include "chrome/browser/sync/internal_api/write_transaction.h"
 #include "chrome/browser/sync/protocol/theme_specifics.pb.h"
-#include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 
 namespace browser_sync {
 
@@ -26,14 +32,15 @@ ThemeChangeProcessor::ThemeChangeProcessor(
 
 ThemeChangeProcessor::~ThemeChangeProcessor() {}
 
-void ThemeChangeProcessor::Observe(NotificationType type,
-                                   const NotificationSource& source,
-                                   const NotificationDetails& details) {
+void ThemeChangeProcessor::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
   DCHECK(running());
   DCHECK(profile_);
-  DCHECK(type == NotificationType::BROWSER_THEME_CHANGED);
+  DCHECK(type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED);
 
-  sync_api::WriteTransaction trans(share_handle());
+  sync_api::WriteTransaction trans(FROM_HERE, share_handle());
   sync_api::WriteNode node(&trans);
   if (!node.InitByClientTagLookup(syncable::THEMES,
                                   kCurrentThemeClientTag)) {
@@ -58,8 +65,7 @@ void ThemeChangeProcessor::Observe(NotificationType type,
 
 void ThemeChangeProcessor::ApplyChangesFromSyncModel(
     const sync_api::BaseTransaction* trans,
-    const sync_api::SyncManager::ChangeRecord* changes,
-    int change_count) {
+    const sync_api::ImmutableChangeRecordList& changes) {
   if (!running()) {
     return;
   }
@@ -68,20 +74,20 @@ void ThemeChangeProcessor::ApplyChangesFromSyncModel(
   // generates multiple changes.  When we fix syncapi to not do that,
   // we can remove the extra logic below.  See:
   // http://code.google.com/p/chromium/issues/detail?id=41696 .
-  if (change_count < 1) {
-    std::string err("Unexpected change_count: ");
-    err += change_count;
-    error_handler()->OnUnrecoverableError(FROM_HERE, err);
+  if (changes.Get().empty()) {
+    error_handler()->OnUnrecoverableError(FROM_HERE,
+                                          "Change list unexpectedly empty");
     return;
   }
-  if (change_count > 1) {
+  const size_t change_count = changes.Get().size();
+  if (change_count > 1u) {
     LOG(WARNING) << change_count << " theme changes detected; "
                  << "only applying the last one";
   }
-  const sync_api::SyncManager::ChangeRecord& change =
-      changes[change_count - 1];
-  if (change.action != sync_api::SyncManager::ChangeRecord::ACTION_UPDATE &&
-      change.action != sync_api::SyncManager::ChangeRecord::ACTION_DELETE) {
+  const sync_api::ChangeRecord& change =
+      changes.Get()[change_count - 1];
+  if (change.action != sync_api::ChangeRecord::ACTION_UPDATE &&
+      change.action != sync_api::ChangeRecord::ACTION_DELETE) {
     std::string err = "strange theme change.action " + change.action;
     error_handler()->OnUnrecoverableError(FROM_HERE, err);
     return;
@@ -89,7 +95,7 @@ void ThemeChangeProcessor::ApplyChangesFromSyncModel(
   sync_pb::ThemeSpecifics theme_specifics;
   // If the action is a delete, simply use the default values for
   // ThemeSpecifics, which would cause the default theme to be set.
-  if (change.action != sync_api::SyncManager::ChangeRecord::ACTION_DELETE) {
+  if (change.action != sync_api::ChangeRecord::ACTION_DELETE) {
     sync_api::ReadNode node(trans);
     if (!node.InitByIdLookup(change.id)) {
       error_handler()->OnUnrecoverableError(FROM_HERE,
@@ -100,9 +106,8 @@ void ThemeChangeProcessor::ApplyChangesFromSyncModel(
     DCHECK(profile_);
     theme_specifics = node.GetThemeSpecifics();
   }
-  StopObserving();
+  ScopedStopObserving<ThemeChangeProcessor> stop_observing(this);
   SetCurrentThemeFromThemeSpecificsIfNecessary(theme_specifics, profile_);
-  StartObserving();
 }
 
 void ThemeChangeProcessor::StartImpl(Profile* profile) {
@@ -118,16 +123,16 @@ void ThemeChangeProcessor::StopImpl() {
 
 void ThemeChangeProcessor::StartObserving() {
   DCHECK(profile_);
-  VLOG(1) << "Observing BROWSER_THEME_CHANGED";
+  DVLOG(1) << "Observing BROWSER_THEME_CHANGED";
   notification_registrar_.Add(
-      this, NotificationType::BROWSER_THEME_CHANGED,
-      Source<ThemeService>(
+      this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+      content::Source<ThemeService>(
           ThemeServiceFactory::GetForProfile(profile_)));
 }
 
 void ThemeChangeProcessor::StopObserving() {
   DCHECK(profile_);
-  VLOG(1) << "Unobserving all notifications";
+  DVLOG(1) << "Unobserving all notifications";
   notification_registrar_.RemoveAll();
 }
 

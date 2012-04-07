@@ -31,6 +31,40 @@
 #define GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES 0x8B8B
 #define GL_RGB8_OES                            0x8051
 #define GL_RGBA8_OES                           0x8058
+#define GL_HALF_FLOAT_OES                      0x8D61
+
+// GL_OES_EGL_image_external
+#define GL_TEXTURE_EXTERNAL_OES                0x8D65
+#define GL_SAMPLER_EXTERNAL_OES                0x8D66
+#define GL_TEXTURE_BINDING_EXTERNAL_OES        0x8D67
+#define GL_REQUIRED_TEXTURE_IMAGE_UNITS_OES    0x8D68
+
+// GL_ANGLE_translated_shader_source
+#define GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE 0x93A0
+
+// GL_ANGLE_pack_reverse_row_order
+#define GL_PACK_REVERSE_ROW_ORDER_ANGLE    0x93A4
+
+// GL_ANGLE_texture_usage
+#define GL_TEXTURE_USAGE_ANGLE                 0x93A2
+#define GL_FRAMEBUFFER_ATTACHMENT_ANGLE        0x93A3
+
+// GL_EXT_texture_storage
+#define GL_TEXTURE_IMMUTABLE_FORMAT_EXT        0x912F
+#define GL_ALPHA8_EXT                          0x803C
+#define GL_LUMINANCE8_EXT                      0x8040
+#define GL_LUMINANCE8_ALPHA8_EXT               0x8045
+#define GL_RGBA32F_EXT                         0x8814
+#define GL_RGB32F_EXT                          0x8815
+#define GL_ALPHA32F_EXT                        0x8816
+#define GL_LUMINANCE32F_EXT                    0x8818
+#define GL_LUMINANCE_ALPHA32F_EXT              0x8819
+#define GL_RGBA16F_EXT                         0x881A
+#define GL_RGB16F_EXT                          0x881B
+#define GL_ALPHA16F_EXT                        0x881C
+#define GL_LUMINANCE16F_EXT                    0x881E
+#define GL_LUMINANCE_ALPHA16F_EXT              0x881F
+#define GL_BGRA8_EXT                           0x93A1
 
 #define GL_GLEXT_PROTOTYPES 1
 

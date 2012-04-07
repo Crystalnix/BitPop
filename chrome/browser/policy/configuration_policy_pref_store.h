@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 #define CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_PREF_STORE_H_
 #pragma once
 
-#include <set>
 #include <string>
 
 #include "base/basictypes.h"
@@ -14,14 +13,11 @@
 #include "base/observer_list.h"
 #include "base/values.h"
 #include "chrome/browser/policy/configuration_policy_provider.h"
-#include "chrome/browser/policy/configuration_policy_store_interface.h"
 #include "chrome/common/pref_store.h"
 
-class Profile;
+class PrefValueMap;
 
 namespace policy {
-
-class ConfigurationPolicyPrefKeeper;
 
 // An implementation of PrefStore that bridges policy settings as read from a
 // ConfigurationPolicyProvider to preferences.
@@ -35,22 +31,23 @@ class ConfigurationPolicyPrefStore
   virtual ~ConfigurationPolicyPrefStore();
 
   // PrefStore methods:
-  virtual void AddObserver(PrefStore::Observer* observer);
-  virtual void RemoveObserver(PrefStore::Observer* observer);
-  virtual bool IsInitializationComplete() const;
+  virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
+  virtual size_t NumberOfObservers() const OVERRIDE;
+  virtual bool IsInitializationComplete() const OVERRIDE;
   virtual ReadResult GetValue(const std::string& key,
-                              const Value** result) const;
+                              const Value** result) const OVERRIDE;
 
   // ConfigurationPolicyProvider::Observer methods:
-  virtual void OnUpdatePolicy();
-  virtual void OnProviderGoingAway();
+  virtual void OnUpdatePolicy(ConfigurationPolicyProvider* provider) OVERRIDE;
+  virtual void OnProviderGoingAway(
+      ConfigurationPolicyProvider* provider) OVERRIDE;
 
   // Creates a ConfigurationPolicyPrefStore that reads managed platform policy.
   static ConfigurationPolicyPrefStore* CreateManagedPlatformPolicyPrefStore();
 
   // Creates a ConfigurationPolicyPrefStore that reads managed cloud policy.
-  static ConfigurationPolicyPrefStore* CreateManagedCloudPolicyPrefStore(
-      Profile* profile);
+  static ConfigurationPolicyPrefStore* CreateManagedCloudPolicyPrefStore();
 
   // Creates a ConfigurationPolicyPrefStore that reads recommended platform
   // policy.
@@ -58,20 +55,16 @@ class ConfigurationPolicyPrefStore
       CreateRecommendedPlatformPolicyPrefStore();
 
   // Creates a ConfigurationPolicyPrefStore that reads recommended cloud policy.
-  static ConfigurationPolicyPrefStore* CreateRecommendedCloudPolicyPrefStore(
-      Profile* profile);
-
-  // Returns the default policy definition list for Chrome.
-  static const ConfigurationPolicyProvider::PolicyDefinitionList*
-      GetChromePolicyDefinitionList();
+  static ConfigurationPolicyPrefStore* CreateRecommendedCloudPolicyPrefStore();
 
  private:
   // Refreshes policy information, rereading policy from the provider and
   // sending out change notifications as appropriate.
   void Refresh();
 
-  static const ConfigurationPolicyProvider::PolicyDefinitionList
-      kPolicyDefinitionList;
+  // Returns a new PrefValueMap containing the preference values that correspond
+  // to the policies currently provided by |provider_|.
+  PrefValueMap* CreatePreferencesFromPolicies();
 
   // The policy provider from which policy settings are read.
   ConfigurationPolicyProvider* provider_;
@@ -81,7 +74,7 @@ class ConfigurationPolicyPrefStore
   bool initialization_complete_;
 
   // Current policy preferences.
-  scoped_ptr<ConfigurationPolicyPrefKeeper> policy_keeper_;
+  scoped_ptr<PrefValueMap> prefs_;
 
   ObserverList<PrefStore::Observer, true> observers_;
 

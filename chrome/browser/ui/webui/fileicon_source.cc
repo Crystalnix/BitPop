@@ -14,7 +14,7 @@
 #include "net/base/escape.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 // The path used in internal URLs to file icon data.
 static const char kFileIconPath[] = "fileicon";
@@ -29,7 +29,8 @@ FileIconSource::~FileIconSource() {
 void FileIconSource::StartDataRequest(const std::string& path,
                                       bool is_incognito,
                                       int request_id) {
-  std::string escaped_path = UnescapeURLComponent(path, UnescapeRule::SPACES);
+  std::string escaped_path = net::UnescapeURLComponent(path,
+      net::UnescapeRule::SPACES);
 #if defined(OS_WIN)
   // The path we receive has the wrong slashes and escaping for what we need;
   // this only appears to matter for getting icons from .exe files.
@@ -45,7 +46,7 @@ void FileIconSource::StartDataRequest(const std::string& path,
 
   if (icon) {
     scoped_refptr<RefCountedBytes> icon_data(new RefCountedBytes);
-    gfx::PNGCodec::EncodeBGRASkBitmap(*icon, false, &icon_data->data);
+    gfx::PNGCodec::EncodeBGRASkBitmap(*icon, false, &icon_data->data());
 
     SendResponse(request_id, icon_data);
   } else {
@@ -53,7 +54,8 @@ void FileIconSource::StartDataRequest(const std::string& path,
     IconManager::Handle h = im->LoadIcon(escaped_filepath,
         IconLoader::NORMAL,
         &cancelable_consumer_,
-        NewCallback(this, &FileIconSource::OnFileIconDataAvailable));
+        base::Bind(&FileIconSource::OnFileIconDataAvailable,
+                   base::Unretained(this)));
 
     // Attach the ChromeURLDataManager request ID to the history request.
     cancelable_consumer_.SetClientData(im, h, request_id);
@@ -72,7 +74,7 @@ void FileIconSource::OnFileIconDataAvailable(IconManager::Handle handle,
 
   if (icon) {
     scoped_refptr<RefCountedBytes> icon_data(new RefCountedBytes);
-    gfx::PNGCodec::EncodeBGRASkBitmap(*icon, false, &icon_data->data);
+    gfx::PNGCodec::EncodeBGRASkBitmap(*icon, false, &icon_data->data());
 
     SendResponse(request_id, icon_data);
   } else {

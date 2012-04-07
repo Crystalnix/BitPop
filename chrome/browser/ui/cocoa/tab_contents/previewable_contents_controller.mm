@@ -5,8 +5,11 @@
 #import "chrome/browser/ui/cocoa/tab_contents/previewable_contents_controller.h"
 
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+
+using content::WebContents;
 
 @implementation PreviewableContentsController
 
@@ -14,12 +17,12 @@
 
 - (id)init {
   if ((self = [super initWithNibName:@"PreviewableContents"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
   }
   return self;
 }
 
-- (void)showPreview:(TabContents*)preview {
+- (void)showPreview:(WebContents*)preview {
   DCHECK(preview);
 
   // Remove any old preview contents before showing the new one.

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,12 @@
 #define REMOTING_PROTOCOL_VIDEO_WRITER_H_
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "remoting/protocol/video_stub.h"
+
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
 
 namespace remoting {
 namespace protocol {
@@ -19,15 +24,26 @@ namespace protocol {
 class Session;
 class SessionConfig;
 
-// TODO(sergeyu): VideoWriter should implement VideoStub interface.
 class VideoWriter : public VideoStub {
  public:
   virtual ~VideoWriter();
 
-  static VideoWriter* Create(const SessionConfig* config);
+  // The callback is called when initialization is finished. The
+  // parameter is set to true on success.
+  typedef base::Callback<void(bool)> InitializedCallback;
+
+  static VideoWriter* Create(base::MessageLoopProxy* message_loop,
+                             const SessionConfig& config);
 
   // Initializes the writer.
-  virtual void Init(Session* session) = 0;
+  virtual void Init(Session* session, const InitializedCallback& callback) = 0;
+
+  // Stops writing. Must be called on the network thread before this
+  // object is destroyed.
+  virtual void Close() = 0;
+
+  // Returns true if the channel is connected.
+  virtual bool is_connected() = 0;
 
  protected:
   VideoWriter() { }

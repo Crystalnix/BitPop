@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,13 @@
 #include <set>
 #include <vector>
 
-#include "app/sql/connection.h"
 #include "base/base_switches.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
@@ -36,6 +37,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
@@ -43,19 +45,20 @@
 #include "chrome/test/automation/proxy_launcher.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
-#include "chrome/test/chrome_process_util.h"
-#include "chrome/test/test_switches.h"
+#include "chrome/test/base/chrome_process_util.h"
+#include "chrome/test/base/test_switches.h"
 #include "content/common/debug_flags.h"
-#include "content/common/json_value_serializer.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "ui/gfx/gl/gl_implementation.h"
-#include "ui/gfx/gl/gl_switches.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/gfx/compositor/compositor_switches.h"
+#endif
 
 using base::Time;
 using base::TimeDelta;
@@ -89,7 +92,7 @@ UITestBase::UITestBase()
       clear_profile_(true),
       include_testing_id_(true),
       enable_file_cookies_(true),
-      profile_type_(ProxyLauncher::DEFAULT_THEME) {
+      profile_type_(UITestBase::DEFAULT_THEME) {
   PathService::Get(chrome::DIR_APP, &browser_directory_);
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_directory_);
 }
@@ -104,7 +107,7 @@ UITestBase::UITestBase(MessageLoop::Type msg_loop_type)
       clear_profile_(true),
       include_testing_id_(true),
       enable_file_cookies_(true),
-      profile_type_(ProxyLauncher::DEFAULT_THEME) {
+      profile_type_(UITestBase::DEFAULT_THEME) {
   PathService::Get(chrome::DIR_APP, &browser_directory_);
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_directory_);
 }
@@ -117,16 +120,16 @@ void UITestBase::SetUp() {
   // We don't want to reset the ProxyLauncher's state in those cases.
   if (!launcher_.get())
     launcher_.reset(CreateProxyLauncher());
-  launcher_->AssertAppNotRunning(L"Please close any other instances "
-                                 L"of the app before testing.");
+  launcher_->AssertAppNotRunning("Please close any other instances "
+                                 "of the app before testing.");
 
   JavaScriptExecutionController::set_timeout(
       TestTimeouts::action_max_timeout_ms());
   test_start_time_ = Time::NowFromSystemTime();
 
   SetLaunchSwitches();
-  launcher_->InitializeConnection(DefaultLaunchState(),
-                                  wait_for_initial_loads_);
+  ASSERT_TRUE(launcher_->InitializeConnection(DefaultLaunchState(),
+                                              wait_for_initial_loads_));
 }
 
 void UITestBase::TearDown() {
@@ -174,12 +177,13 @@ ProxyLauncher* UITestBase::CreateProxyLauncher() {
 }
 
 ProxyLauncher::LaunchState UITestBase::DefaultLaunchState() {
-  FilePath browser_executable = browser_directory_.Append(
-      chrome::kBrowserProcessExecutablePath);
+  FilePath browser_executable = browser_directory_.Append(GetExecutablePath());
   CommandLine command(browser_executable);
   command.AppendArguments(launch_arguments_, false);
+  base::Closure setup_profile_callback = base::Bind(&UITestBase::SetUpProfile,
+                                                    base::Unretained(this));
   ProxyLauncher::LaunchState state =
-      { clear_profile_, template_user_data_, profile_type_,
+      { clear_profile_, template_user_data_, setup_profile_callback,
         command, include_testing_id_, show_window_ };
   return state;
 }
@@ -189,6 +193,10 @@ bool UITestBase::ShouldFilterInet() {
 }
 
 void UITestBase::SetLaunchSwitches() {
+  // All flags added here should also be added in ExtraChromeFlags() in
+  // chrome/test/pyautolib/pyauto.py as well to take effect for all tests
+  // on chromeos.
+
   // We need cookies on file:// for things like the page cycler.
   if (enable_file_cookies_)
     launch_arguments_.AppendSwitch(switches::kEnableFileCookies);
@@ -198,9 +206,15 @@ void UITestBase::SetLaunchSwitches() {
     launch_arguments_.AppendSwitchASCII(switches::kHomePage, homepage_);
   if (!test_name_.empty())
     launch_arguments_.AppendSwitchASCII(switches::kTestName, test_name_);
-#if defined(OS_CHROMEOS)
-  launch_arguments_.AppendSwitch(switches::kSkipChromeOSComponents);
+#if defined(USE_AURA)
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableTestCompositor)) {
+    launch_arguments_.AppendSwitch(switches::kTestCompositor);
+  }
 #endif
+}
+
+void UITestBase::SetUpProfile() {
 }
 
 void UITestBase::LaunchBrowser() {
@@ -314,16 +328,18 @@ void UITestBase::NavigateToURLBlockUntilNavigationsComplete(
 bool UITestBase::WaitForBookmarkBarVisibilityChange(BrowserProxy* browser,
                                                     bool wait_for_open) {
   const int kCycles = 10;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
   for (int i = 0; i < kCycles; i++) {
     bool visible = false;
     bool animating = true;
-    if (!browser->GetBookmarkBarVisibility(&visible, &animating))
+    bool detached;
+    if (!browser->GetBookmarkBarVisibility(&visible, &animating, &detached))
       return false;  // Some error.
     if (visible == wait_for_open && !animating)
       return true;  // Bookmark bar visibility change complete.
 
     // Give it a chance to catch up.
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms() / kCycles);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitForBookmarkBarVisibilityChange";
@@ -386,13 +402,13 @@ int UITestBase::GetTabCount(int window_index) {
 
 void UITestBase::WaitUntilTabCount(int tab_count) {
   const int kMaxIntervals = 10;
-  const int kIntervalMs = TestTimeouts::action_timeout_ms() / kMaxIntervals;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kMaxIntervals;
 
   for (int i = 0; i < kMaxIntervals; ++i) {
     if (GetTabCount() == tab_count)
       return;
 
-    base::PlatformThread::Sleep(kIntervalMs);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitUntilTabCount";
@@ -407,6 +423,12 @@ FilePath UITestBase::GetDownloadDirectory() {
   FilePath download_directory;
   EXPECT_TRUE(tab_proxy->GetDownloadDirectory(&download_directory));
   return download_directory;
+}
+
+const FilePath::CharType* UITestBase::GetExecutablePath() {
+  if (launch_arguments_.HasSwitch(switches::kEnableChromiumBranding))
+    return chrome::kBrowserProcessExecutablePathChromium;
+  return chrome::kBrowserProcessExecutablePath;
 }
 
 void UITestBase::CloseBrowserAsync(BrowserProxy* browser) const {
@@ -431,7 +453,7 @@ bool UITestBase::CloseBrowser(BrowserProxy* browser,
   if (*application_closed) {
     int exit_code = -1;
     EXPECT_TRUE(launcher_->WaitForBrowserProcessToQuit(
-                    TestTimeouts::action_max_timeout_ms(), &exit_code));
+        TestTimeouts::action_max_timeout_ms(), &exit_code));
     EXPECT_EQ(0, exit_code);  // Expect a clean shutown.
   }
 
@@ -440,25 +462,25 @@ bool UITestBase::CloseBrowser(BrowserProxy* browser,
 
 // static
 FilePath UITestBase::ComputeTypicalUserDataSource(
-    ProxyLauncher::ProfileType profile_type) {
+    UITestBase::ProfileType profile_type) {
   FilePath source_history_file;
   EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA,
                                &source_history_file));
   source_history_file = source_history_file.AppendASCII("profiles");
   switch (profile_type) {
-    case ProxyLauncher::DEFAULT_THEME:
+    case UITestBase::DEFAULT_THEME:
       source_history_file = source_history_file.AppendASCII("typical_history");
       break;
-    case ProxyLauncher::COMPLEX_THEME:
+    case UITestBase::COMPLEX_THEME:
       source_history_file = source_history_file.AppendASCII("complex_theme");
       break;
-    case ProxyLauncher::NATIVE_THEME:
+    case UITestBase::NATIVE_THEME:
       source_history_file = source_history_file.AppendASCII("gtk_theme");
       break;
-    case ProxyLauncher::CUSTOM_FRAME:
+    case UITestBase::CUSTOM_FRAME:
       source_history_file = source_history_file.AppendASCII("custom_frame");
       break;
-    case ProxyLauncher::CUSTOM_FRAME_NATIVE_THEME:
+    case UITestBase::CUSTOM_FRAME_NATIVE_THEME:
       source_history_file =
           source_history_file.AppendASCII("custom_frame_gtk_theme");
       break;
@@ -486,6 +508,15 @@ void UITestBase::SetBrowserDirectory(const FilePath& dir) {
   browser_directory_ = dir;
 }
 
+void UITestBase::AppendBrowserLaunchSwitch(const char* name) {
+  launch_arguments_.AppendSwitch(name);
+}
+
+void UITestBase::AppendBrowserLaunchSwitch(const char* name,
+                                           const char* value) {
+  launch_arguments_.AppendSwitchASCII(name, value);
+}
+
 // UITest methods
 
 void UITest::SetUp() {
@@ -497,16 +528,6 @@ void UITest::SetUp() {
     set_test_name(test_info->test_case_name() + std::string(".") +
                   test_info->name());
   }
-
-  // Force tests to use OSMesa if they launch the GPU process. This is in
-  // UITest::SetUp so that it does not affect pyautolib, which runs tests that
-  // do not work with OSMesa.
-  launch_arguments_.AppendSwitchASCII(switches::kUseGL,
-                                      gfx::kGLImplementationOSMesaName);
-
-  // Mac does not support accelerated compositing with OSMesa. Disable on all
-  // platforms so it is consistent. http://crbug.com/58343
-  launch_arguments_.AppendSwitch(switches::kDisableAcceleratedCompositing);
 
   UITestBase::SetUp();
   PlatformTest::SetUp();
@@ -553,7 +574,7 @@ DictionaryValue* UITest::GetLocalState() {
 DictionaryValue* UITest::GetDefaultProfilePreferences() {
   FilePath path;
   PathService::Get(chrome::DIR_USER_DATA, &path);
-  path = path.AppendASCII(chrome::kNotSignedInProfile);
+  path = path.AppendASCII(chrome::kInitialProfile);
   return LoadDictionaryValueFromPath(path.Append(chrome::kPreferencesFilename));
 }
 
@@ -583,10 +604,12 @@ void UITest::WaitForFinish(const std::string &name,
 }
 
 bool UITest::EvictFileFromSystemCacheWrapper(const FilePath& path) {
-  for (int i = 0; i < 10; i++) {
+  const int kCycles = 10;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
+  for (int i = 0; i < kCycles; i++) {
     if (file_util::EvictFileFromSystemCache(path))
       return true;
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms() / 10);
+    base::PlatformThread::Sleep(kDelay);
   }
   return false;
 }
@@ -601,6 +624,7 @@ void UITest::WaitForGeneratedFileAndCheck(
   base::PlatformFileInfo previous, current;
   bool exist = false;
   const int kCycles = 20;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
   for (int i = 0; i < kCycles; ++i) {
     if (exist) {
       file_util::GetFileInfo(generated_file, &current);
@@ -611,7 +635,7 @@ void UITest::WaitForGeneratedFileAndCheck(
       file_util::GetFileInfo(generated_file, &previous);
       exist = true;
     }
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms() / kCycles);
+    base::PlatformThread::Sleep(kDelay);
   }
   EXPECT_TRUE(exist);
 
@@ -639,11 +663,11 @@ bool UITest::WaitUntilJavaScriptCondition(TabProxy* tab,
                                           const std::wstring& frame_xpath,
                                           const std::wstring& jscript,
                                           int timeout_ms) {
-  const int kIntervalMs = 250;
-  const int kMaxIntervals = timeout_ms / kIntervalMs;
+  const TimeDelta kDelay = TimeDelta::FromMilliseconds(250);
+  const int kMaxDelays = timeout_ms / kDelay.InMilliseconds();
 
   // Wait until the test signals it has completed.
-  for (int i = 0; i < kMaxIntervals; ++i) {
+  for (int i = 0; i < kMaxDelays; ++i) {
     bool done_value = false;
     bool success = tab->ExecuteAndExtractBool(frame_xpath, jscript,
                                               &done_value);
@@ -653,7 +677,7 @@ bool UITest::WaitUntilJavaScriptCondition(TabProxy* tab,
     if (done_value)
       return true;
 
-    base::PlatformThread::Sleep(kIntervalMs);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitUntilJavaScriptCondition";
@@ -665,16 +689,16 @@ bool UITest::WaitUntilCookieValue(TabProxy* tab,
                                   const char* cookie_name,
                                   int timeout_ms,
                                   const char* expected_value) {
-  const int kIntervalMs = 250;
-  const int kMaxIntervals = timeout_ms / kIntervalMs;
+  const TimeDelta kDelay = TimeDelta::FromMilliseconds(250);
+  const int kMaxDelays = timeout_ms / kDelay.InMilliseconds();
 
   std::string cookie_value;
-  for (int i = 0; i < kMaxIntervals; ++i) {
+  for (int i = 0; i < kMaxDelays; ++i) {
     EXPECT_TRUE(tab->GetCookieByName(url, cookie_name, &cookie_value));
     if (cookie_value == expected_value)
       return true;
 
-    base::PlatformThread::Sleep(kIntervalMs);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitUntilCookieValue";
@@ -685,16 +709,16 @@ std::string UITest::WaitUntilCookieNonEmpty(TabProxy* tab,
                                             const GURL& url,
                                             const char* cookie_name,
                                             int timeout_ms) {
-  const int kIntervalMs = 250;
-  const int kMaxIntervals = timeout_ms / kIntervalMs;
+  const TimeDelta kDelay = TimeDelta::FromMilliseconds(250);
+  const int kMaxDelays = timeout_ms / kDelay.InMilliseconds();
 
-  for (int i = 0; i < kMaxIntervals; ++i) {
+  for (int i = 0; i < kMaxDelays; ++i) {
     std::string cookie_value;
     EXPECT_TRUE(tab->GetCookieByName(url, cookie_name, &cookie_value));
     if (!cookie_value.empty())
       return cookie_value;
 
-    base::PlatformThread::Sleep(kIntervalMs);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitUntilCookieNonEmpty";
@@ -712,6 +736,7 @@ bool UITest::WaitForDownloadShelfInvisible(BrowserProxy* browser) {
 bool UITest::WaitForFindWindowVisibilityChange(BrowserProxy* browser,
                                                bool wait_for_open) {
   const int kCycles = 10;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
   for (int i = 0; i < kCycles; i++) {
     bool visible = false;
     if (!browser->IsFindWindowFullyVisible(&visible))
@@ -720,7 +745,7 @@ bool UITest::WaitForFindWindowVisibilityChange(BrowserProxy* browser,
       return true;  // Find window visibility change complete.
 
     // Give it a chance to catch up.
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms() / kCycles);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   ADD_FAILURE() << "Timeout reached in WaitForFindWindowVisibilityChange";
@@ -729,6 +754,27 @@ bool UITest::WaitForFindWindowVisibilityChange(BrowserProxy* browser,
 
 void UITest::TerminateBrowser() {
   launcher_->TerminateBrowser();
+
+  // Make sure the UMA metrics say we didn't crash.
+  scoped_ptr<DictionaryValue> local_prefs(GetLocalState());
+  bool exited_cleanly;
+  ASSERT_TRUE(local_prefs.get());
+  ASSERT_TRUE(local_prefs->GetBoolean(prefs::kStabilityExitedCleanly,
+                                      &exited_cleanly));
+  ASSERT_TRUE(exited_cleanly);
+
+  // And that session end was successful.
+  bool session_end_completed;
+  ASSERT_TRUE(local_prefs->GetBoolean(prefs::kStabilitySessionEndCompleted,
+                                      &session_end_completed));
+  ASSERT_TRUE(session_end_completed);
+
+  // Make sure session restore says we didn't crash.
+  scoped_ptr<DictionaryValue> profile_prefs(GetDefaultProfilePreferences());
+  ASSERT_TRUE(profile_prefs.get());
+  ASSERT_TRUE(profile_prefs->GetBoolean(prefs::kSessionExitedCleanly,
+                                        &exited_cleanly));
+  ASSERT_TRUE(exited_cleanly);
 }
 
 void UITest::NavigateToURLAsync(const GURL& url) {
@@ -740,6 +786,7 @@ void UITest::NavigateToURLAsync(const GURL& url) {
 bool UITest::WaitForDownloadShelfVisibilityChange(BrowserProxy* browser,
                                                   bool wait_for_open) {
   const int kCycles = 10;
+  const TimeDelta kDelay = TestTimeouts::action_timeout() / kCycles;
   int fail_count = 0;
   int incorrect_state_count = 0;
   base::Time start = base::Time::Now();
@@ -759,7 +806,7 @@ bool UITest::WaitForDownloadShelfVisibilityChange(BrowserProxy* browser,
     incorrect_state_count++;
 
     // Give it a chance to catch up.
-    base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms() / kCycles);
+    base::PlatformThread::Sleep(kDelay);
   }
 
   LOG(INFO) << "Elapsed time: " << (base::Time::Now() - start).InSecondsF()

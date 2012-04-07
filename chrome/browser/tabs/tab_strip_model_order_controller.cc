@@ -5,6 +5,9 @@
 #include "chrome/browser/tabs/tab_strip_model_order_controller.h"
 
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "content/public/browser/web_contents.h"
+
+using content::NavigationController;
 
 ///////////////////////////////////////////////////////////////////////////////
 // TabStripModelOrderController, public:
@@ -22,7 +25,7 @@ TabStripModelOrderController::~TabStripModelOrderController() {
 
 int TabStripModelOrderController::DetermineInsertionIndex(
     TabContentsWrapper* new_contents,
-    PageTransition::Type transition,
+    content::PageTransition transition,
     bool foreground) {
   int tab_count = tabstrip_->count();
   if (!tab_count)
@@ -30,7 +33,8 @@ int TabStripModelOrderController::DetermineInsertionIndex(
 
   // NOTE: TabStripModel enforces that all non-mini-tabs occur after mini-tabs,
   // so we don't have to check here too.
-  if (transition == PageTransition::LINK && tabstrip_->active_index() != -1) {
+  if (transition == content::PAGE_TRANSITION_LINK &&
+      tabstrip_->active_index() != -1) {
     int delta = (insertion_policy_ == TabStripModel::INSERT_AFTER) ? 1 : 0;
     if (foreground) {
       // If the page was opened in the foreground by a link click in another
@@ -38,7 +42,7 @@ int TabStripModelOrderController::DetermineInsertionIndex(
       return tabstrip_->active_index() + delta;
     }
     NavigationController* opener =
-        &tabstrip_->GetSelectedTabContents()->controller();
+        &tabstrip_->GetActiveTabContents()->web_contents()->GetController();
     // Get the index of the next item opened by this tab, and insert after
     // it...
     int index;
@@ -73,7 +77,8 @@ int TabStripModelOrderController::DetermineNewSelectedIndex(
   // want to select the first in that child group, not the next tab in the same
   // group of the removed tab.
   NavigationController* removed_controller =
-      &tabstrip_->GetTabContentsAt(removing_index)->controller();
+      &tabstrip_->GetTabContentsAt(removing_index)->
+          web_contents()->GetController();
   // The parent opener should never be the same as the controller being removed.
   DCHECK(parent_opener != removed_controller);
   int index = tabstrip_->GetIndexOfNextTabContentsOpenedBy(removed_controller,
@@ -111,9 +116,6 @@ void TabStripModelOrderController::ActiveTabChanged(
     TabContentsWrapper* new_contents,
     int index,
     bool user_gesture) {
-  if (old_contents == new_contents)
-    return;
-
   NavigationController* old_opener = NULL;
   if (old_contents) {
     int index = tabstrip_->GetIndexOfTabContents(old_contents);
@@ -126,11 +128,13 @@ void TabStripModelOrderController::ActiveTabChanged(
         tabstrip_->ForgetGroup(old_contents);
     }
   }
-  NavigationController* new_opener =
-      tabstrip_->GetOpenerOfTabContentsAt(index);
+  NavigationController* new_opener = tabstrip_->GetOpenerOfTabContentsAt(index);
+
   if (user_gesture && new_opener != old_opener &&
-      new_opener != &old_contents->controller() &&
-      old_opener != &new_contents->controller()) {
+      ((old_contents == NULL && new_opener == NULL) ||
+          new_opener != &old_contents->web_contents()->GetController()) &&
+      ((new_contents == NULL && old_opener == NULL) ||
+          old_opener != &new_contents->web_contents()->GetController())) {
     tabstrip_->ForgetAllOpeners();
   }
 }

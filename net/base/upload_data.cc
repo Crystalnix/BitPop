@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,12 +137,6 @@ void UploadData::AppendBytes(const char* bytes, int bytes_len) {
   }
 }
 
-void UploadData::AppendFile(const FilePath& file_path) {
-  DCHECK(!is_chunked_);
-  elements_.push_back(Element());
-  elements_.back().SetToFilePath(file_path);
-}
-
 void UploadData::AppendFileRange(const FilePath& file_path,
                                  uint64 offset, uint64 length,
                                  const base::Time& expected_modification_time) {
@@ -173,11 +167,30 @@ void UploadData::set_chunk_callback(ChunkCallback* callback) {
 }
 
 uint64 UploadData::GetContentLength() {
+  if (is_chunked_)
+    return 0;
+
   uint64 len = 0;
   std::vector<Element>::iterator it = elements_.begin();
   for (; it != elements_.end(); ++it)
     len += (*it).GetContentLength();
   return len;
+}
+
+bool UploadData::IsInMemory() const {
+  // Chunks are in memory, but UploadData does not have all the chunks at
+  // once. Chunks are provided progressively with AppendChunk() as chunks
+  // are ready. Check is_chunked_ here, rather than relying on the loop
+  // below, as there is a case that is_chunked_ is set to true, but the
+  // first chunk is not yet delivered.
+  if (is_chunked_)
+    return false;
+
+  for (size_t i = 0; i < elements_.size(); ++i) {
+    if (elements_[i].type() != TYPE_BYTES)
+      return false;
+  }
+  return true;
 }
 
 void UploadData::SetElements(const std::vector<Element>& elements) {

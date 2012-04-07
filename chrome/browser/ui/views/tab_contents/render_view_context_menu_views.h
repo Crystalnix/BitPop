@@ -8,21 +8,23 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/string16.h"
 #include "chrome/browser/tab_contents/render_view_context_menu.h"
-#include "views/controls/menu/menu_2.h"
+
+namespace views {
+class MenuItemView;
+class MenuModelAdapter;
+class MenuRunner;
+}  // namespace views
 
 class RenderViewContextMenuViews : public RenderViewContextMenu {
  public:
-  RenderViewContextMenuViews(TabContents* tab_contents,
-                           const ContextMenuParams& params);
+  RenderViewContextMenuViews(content::WebContents* tab_contents,
+                             const ContextMenuParams& params);
 
   virtual ~RenderViewContextMenuViews();
 
   void RunMenuAt(int x, int y);
-
-  gfx::NativeMenu GetMenuHandle() const {
-    return (menu_.get() ? menu_->GetNativeMenu() : NULL);
-  }
 
 #if defined(OS_WIN)
   // Set this menu to show for an external tab contents. This
@@ -32,14 +34,24 @@ class RenderViewContextMenuViews : public RenderViewContextMenu {
 
   void UpdateMenuItemStates();
 
+  // RenderViewContextMenuDelegate implementation.
+  virtual void UpdateMenuItem(int command_id,
+                              bool enabled,
+                              bool hidden,
+                              const string16& title) OVERRIDE;
+
  protected:
-  // RenderViewContextMenu implementation --------------------------------------
-  virtual void PlatformInit();
-  virtual bool GetAcceleratorForCommandId(int command_id,
-                                          ui::Accelerator* accelerator);
+  // RenderViewContextMenu implementation.
+  virtual void PlatformInit() OVERRIDE;
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE;
+
  private:
   // The context menu itself and its contents.
-  scoped_ptr<views::Menu2> menu_;
+  scoped_ptr<views::MenuModelAdapter> menu_delegate_;
+  views::MenuItemView* menu_;  // Owned by menu_runner_.
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewContextMenuViews);
 };

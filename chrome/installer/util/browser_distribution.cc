@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -53,6 +53,16 @@ BrowserDistribution::Type GetCurrentDistributionType() {
 }
 
 }  // end namespace
+
+// CHROME_BINARIES represents the binaries shared by multi-install products and
+// is not a product in and of itself, so it is not present in this collection.
+const BrowserDistribution::Type BrowserDistribution::kProductTypes[] = {
+  BrowserDistribution::CHROME_BROWSER,
+  BrowserDistribution::CHROME_FRAME,
+};
+
+const size_t BrowserDistribution::kNumProductTypes =
+    arraysize(BrowserDistribution::kProductTypes);
 
 BrowserDistribution::BrowserDistribution()
     : type_(CHROME_BROWSER) {
@@ -179,6 +189,10 @@ std::wstring BrowserDistribution::GetStatsServerURL() {
   return L"";
 }
 
+std::string BrowserDistribution::GetNetworkStatsServer() const {
+  return "";
+}
+
 std::wstring BrowserDistribution::GetDistributionData(HKEY root_key) {
   return L"";
 }
@@ -196,6 +210,10 @@ std::wstring BrowserDistribution::GetVersionKey() {
 }
 
 bool BrowserDistribution::CanSetAsDefault() {
+  return true;
+}
+
+bool BrowserDistribution::CanCreateDesktopShortcuts() {
   return true;
 }
 

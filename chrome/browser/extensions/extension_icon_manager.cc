@@ -1,11 +1,11 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_icon_manager.h"
 
 #include "base/logging.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
@@ -25,8 +25,9 @@ namespace {
 static SkBitmap ApplyPadding(const SkBitmap& source,
                              const gfx::Insets& padding) {
   scoped_ptr<gfx::CanvasSkia> result(
-      new gfx::CanvasSkia(source.width() + padding.width(),
-                          source.height() + padding.height(), false));
+      new gfx::CanvasSkia(gfx::Size(source.width() + padding.width(),
+                                    source.height() + padding.height()),
+                          false));
   result->DrawBitmapInt(
       source,
       0, 0, source.width(), source.height(),
@@ -54,7 +55,7 @@ void ExtensionIconManager::LoadIcon(const Extension* extension) {
     pending_icons_.insert(extension->id());
     image_tracker_.LoadImage(extension,
                              icon_resource,
-                             gfx::Size(kFaviconSize, kFaviconSize),
+                             gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize),
                              ImageLoadingTracker::CACHE);
   }
 }
@@ -68,8 +69,8 @@ const SkBitmap& ExtensionIconManager::GetIcon(const std::string& extension_id) {
     result = &default_icon_;
   }
   DCHECK(result);
-  DCHECK_EQ(kFaviconSize + padding_.width(), result->width());
-  DCHECK_EQ(kFaviconSize + padding_.height(), result->height());
+  DCHECK_EQ(gfx::kFaviconSize + padding_.width(), result->width());
+  DCHECK_EQ(gfx::kFaviconSize + padding_.height(), result->height());
   return *result;
 }
 
@@ -106,10 +107,11 @@ void ExtensionIconManager::EnsureDefaultIcon() {
 SkBitmap ExtensionIconManager::ApplyTransforms(const SkBitmap& source) {
   SkBitmap result = source;
 
-  if (result.width() != kFaviconSize || result.height() != kFaviconSize) {
+  if (result.width() != gfx::kFaviconSize ||
+      result.height() != gfx::kFaviconSize) {
     result = skia::ImageOperations::Resize(
         result, skia::ImageOperations::RESIZE_LANCZOS3,
-        kFaviconSize, kFaviconSize);
+        gfx::kFaviconSize, gfx::kFaviconSize);
   }
 
   if (monochrome_) {

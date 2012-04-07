@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,11 @@
 #define SKIA_EXT_BITMAP_PLATFORM_DEVICE_MAC_H_
 #pragma once
 
-#include "skia/ext/platform_device_mac.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "skia/ext/platform_device.h"
 
 namespace skia {
-
-class BitmapPlatformDeviceFactory : public SkDeviceFactory {
- public:
-  virtual SkDevice* newDevice(SkCanvas* ignored, SkBitmap::Config config,
-                              int width, int height,
-                              bool isOpaque, bool isForLayer);
-};
-
 
 // A device is basically a wrapper around SkBitmap that provides a surface for
 // SkCanvas to draw into. Our device provides a surface CoreGraphics can also
@@ -32,7 +26,7 @@ class BitmapPlatformDeviceFactory : public SkDeviceFactory {
 // For us, that other bitmap will become invalid as soon as the device becomes
 // invalid, which may lead to subtle bugs. Therefore, DO NOT ASSIGN THE
 // DEVICE'S PIXEL DATA TO ANOTHER BITMAP, make sure you copy instead.
-class BitmapPlatformDevice : public PlatformDevice {
+class BitmapPlatformDevice : public PlatformDevice, public SkDevice {
  public:
   // |context| may be NULL.
   static BitmapPlatformDevice* Create(CGContextRef context,
@@ -44,32 +38,16 @@ class BitmapPlatformDevice : public PlatformDevice {
                                               int width, int height,
                                               bool is_opaque);
 
-  // Copy constructor. When copied, devices duplicate their internal data, so
-  // stay linked. This is because their implementation is very heavyweight
-  // (lots of memory and CoreGraphics state). If a device has been copied, both
-  // clip rects and other state will stay in sync.
-  //
-  // This means it will NOT work to duplicate a device and assign it to a
-  // canvas, because the two canvases will each set their own clip rects, and
-  // the resulting CoreGraphics drawing state will be unpredictable.
-  //
-  // Copy constucting and "=" is designed for saving the device or passing it
-  // around to another routine willing to deal with the bitmap data directly.
-  BitmapPlatformDevice(const BitmapPlatformDevice& other);
   virtual ~BitmapPlatformDevice();
 
-  // See warning for copy constructor above.
-  BitmapPlatformDevice& operator=(const BitmapPlatformDevice& other);
-
   // PlatformDevice overrides
-  virtual CGContextRef GetBitmapContext();
+  virtual CGContextRef GetBitmapContext() OVERRIDE;
   virtual void DrawToNativeContext(CGContextRef context, int x, int y,
-                                   const CGRect* src_rect);
-  virtual void MakeOpaque(int x, int y, int width, int height);
+                                   const CGRect* src_rect) OVERRIDE;
 
   // SkDevice overrides
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
-                             const SkClipStack&);
+                             const SkClipStack&) OVERRIDE;
 
  protected:
   // Reference counted data that can be shared between multiple devices. This
@@ -83,14 +61,17 @@ class BitmapPlatformDevice : public PlatformDevice {
   // Flushes the CoreGraphics context so that the pixel data can be accessed
   // directly by Skia. Overridden from SkDevice, this is called when Skia
   // starts accessing pixel data.
-  virtual void onAccessBitmap(SkBitmap*);
+  virtual void onAccessBitmap(SkBitmap*) OVERRIDE;
 
-  // Override SkDevice.
-  virtual SkDeviceFactory* onNewDeviceFactory();
+  virtual SkDevice* onCreateCompatibleDevice(SkBitmap::Config, int width,
+                                             int height, bool isOpaque,
+                                             Usage usage) OVERRIDE;
 
   // Data associated with this device, guaranteed non-null. We hold a reference
   // to this object.
   BitmapPlatformDeviceData* data_;
+
+  DISALLOW_COPY_AND_ASSIGN(BitmapPlatformDevice);
 };
 
 }  // namespace skia

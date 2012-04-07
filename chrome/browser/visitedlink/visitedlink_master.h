@@ -12,10 +12,12 @@
 #include <set>
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/shared_memory.h"
+#include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/common/visitedlink_common.h"
 
@@ -102,9 +104,9 @@ class VisitedLinkMaster : public VisitedLinkCommon {
   // Sets a task to execute when the next rebuild from history is complete.
   // This is used by unit tests to wait for the rebuild to complete before
   // they continue. The pointer will be owned by this object after the call.
-  void set_rebuild_complete_task(Task* task) {
-    DCHECK(!rebuild_complete_task_.get());
-    rebuild_complete_task_.reset(task);
+  void set_rebuild_complete_task(const base::Closure& task) {
+    DCHECK(rebuild_complete_task_.is_null());
+    rebuild_complete_task_ = task;
   }
 
   // returns the number of items in the table for testing verification
@@ -161,6 +163,10 @@ class VisitedLinkMaster : public VisitedLinkCommon {
 
   // File I/O functions
   // ------------------
+
+  // Posts the given task to the blocking worker pool with our options.
+  void PostIOTask(const tracked_objects::Location& from_here,
+                  const base::Closure& task);
 
   // Writes the entire table to disk, returning true on success. It will leave
   // the table file open and the handle to it in file_
@@ -311,6 +317,9 @@ class VisitedLinkMaster : public VisitedLinkCommon {
   // (it knows the path to where the data is stored)
   Profile* profile_;
 
+  // Lazily initialized sequence token for posting file tasks.
+  base::SequencedWorkerPool::SequenceToken sequence_token_;
+
   // When non-NULL, indicates we are in database rebuild mode and points to
   // the class collecting fingerprint information from the history system.
   // The pointer is owned by this class, but it must remain valid while the
@@ -359,9 +368,9 @@ class VisitedLinkMaster : public VisitedLinkCommon {
   // BrowserProcess. This is provided for unit tests.
   HistoryService* history_service_override_;
 
-  // When non-NULL, indicates the task that should be run after the next
-  // rebuild from history is complete.
-  scoped_ptr<Task> rebuild_complete_task_;
+  // When set, indicates the task that should be run after the next rebuild from
+  // history is complete.
+  base::Closure rebuild_complete_task_;
 
   // Set to prevent us from attempting to rebuild the database from global
   // history if we have an error opening the file. This is used for testing,

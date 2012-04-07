@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,9 @@
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #include "chrome/common/content_settings_types.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "chrome/common/content_settings.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class HostContentSettingsMap;
 class ProtocolHandlerRegistry;
@@ -22,16 +23,16 @@ class ContentSettingsHandler : public OptionsPageUIHandler {
   virtual ~ContentSettingsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
+  virtual void GetLocalizedValues(DictionaryValue* localized_strings) OVERRIDE;
 
-  virtual void Initialize();
+  virtual void Initialize() OVERRIDE;
 
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Gets a string identifier for the group name, for use in HTML.
   static std::string ContentSettingsTypeToGroupName(ContentSettingsType type);
@@ -85,10 +86,11 @@ class ContentSettingsHandler : public OptionsPageUIHandler {
   // rejected. Called while the user is editing an exception pattern.
   void CheckExceptionPatternValidity(const ListValue* args);
 
-  // Sets the global 3rd party cookies pref.
-  void SetAllowThirdPartyCookies(const ListValue* args);
-
   // Utility functions ---------------------------------------------------------
+
+  // Applies content settings whitelists to reduce breakage / user confusion.
+  void ApplyWhitelist(ContentSettingsType content_type,
+                      ContentSetting default_setting);
 
   // Gets the HostContentSettingsMap for the normal profile.
   HostContentSettingsMap* GetContentSettingsMap();
@@ -97,19 +99,17 @@ class ContentSettingsHandler : public OptionsPageUIHandler {
   // is no active incognito session.
   HostContentSettingsMap* GetOTRContentSettingsMap();
 
-  // Gets the default setting in string form.
-  std::string GetSettingDefaultFromModel(ContentSettingsType type);
-
-  // Returns true if the default setting for the given content settings type
-  // |type| is managed.
-  bool GetDefaultSettingManagedFromModel(ContentSettingsType type);
+  // Gets the default setting in string form. If |provider_id| is not NULL, the
+  // id of the provider which provided the default setting is assigned to it.
+  std::string GetSettingDefaultFromModel(ContentSettingsType type,
+                                         std::string* provider_id);
 
   // Gets the ProtocolHandlerRegistry for the normal profile.
   ProtocolHandlerRegistry* GetProtocolHandlerRegistry();
 
   // Member variables ---------------------------------------------------------
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
   PrefChangeRegistrar pref_change_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsHandler);

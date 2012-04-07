@@ -6,15 +6,14 @@
 #define PPAPI_THUNK_CURSOR_CONTROL_API_H_
 
 #include "ppapi/c/dev/ppb_cursor_control_dev.h"
-#include "ppapi/proxy/interface_id.h"
+#include "ppapi/shared_impl/api_id.h"
 
 namespace ppapi {
 namespace thunk {
 
 class PPB_CursorControl_FunctionAPI {
  public:
-  static const ::pp::proxy::InterfaceID interface_id =
-      ::pp::proxy::INTERFACE_ID_PPB_CURSORCONTROL;
+  virtual ~PPB_CursorControl_FunctionAPI() {}
 
   virtual PP_Bool SetCursor(PP_Instance instance,
                             PP_CursorType_Dev type,
@@ -24,6 +23,9 @@ class PPB_CursorControl_FunctionAPI {
   virtual PP_Bool UnlockCursor(PP_Instance instance) = 0;
   virtual PP_Bool HasCursorLock(PP_Instance instance) = 0;
   virtual PP_Bool CanLockCursor(PP_Instance instance) = 0;
+
+  static const ApiID kApiID = API_ID_PPB_CURSORCONTROL;
+
 };
 
 }  // namespace thunk

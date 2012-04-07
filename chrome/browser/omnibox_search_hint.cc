@@ -1,40 +1,48 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/omnibox_search_hint.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/memory/weak_ptr.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/task.h"
-// TODO(avi): remove when conversions not needed any more
-#include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+using content::NavigationController;
+using content::NavigationEntry;
+
 // The URLs of search engines for which we want to trigger the infobar.
-const char* kSearchEngineURLs[] = {
+const char* const kSearchEngineURLs[] = {
     "http://www.google.com/",
     "http://www.yahoo.com/",
     "http://www.bing.com/",
@@ -76,22 +84,23 @@ class HintInfoBar : public ConfirmInfoBarDelegate {
   bool should_expire_;
 
   // Used to delay the expiration of the info-bar.
-  ScopedRunnableMethodFactory<HintInfoBar> method_factory_;
+  base::WeakPtrFactory<HintInfoBar> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HintInfoBar);
 };
 
 HintInfoBar::HintInfoBar(OmniboxSearchHint* omnibox_hint)
-    : ConfirmInfoBarDelegate(omnibox_hint->tab()->tab_contents()),
+    : ConfirmInfoBarDelegate(omnibox_hint->tab()->infobar_tab_helper()),
       omnibox_hint_(omnibox_hint),
       action_taken_(false),
       should_expire_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   // We want the info-bar to stick-around for few seconds and then be hidden
   // on the next navigation after that.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(&HintInfoBar::AllowExpiry),
-      8000);  // 8 seconds.
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&HintInfoBar::AllowExpiry, weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromSeconds(8));
 }
 
 HintInfoBar::~HintInfoBar() {
@@ -101,7 +110,7 @@ HintInfoBar::~HintInfoBar() {
 
 bool HintInfoBar::ShouldExpire(
     const content::LoadCommittedDetails& details) const {
-  return details.is_user_initiated_main_frame_load() && should_expire_;
+  return details.is_navigation_to_different_page() && should_expire_;
 }
 
 void HintInfoBar::InfoBarDismissed() {
@@ -146,45 +155,46 @@ bool HintInfoBar::Accept() {
 // OmniboxSearchHint ----------------------------------------------------------
 
 OmniboxSearchHint::OmniboxSearchHint(TabContentsWrapper* tab) : tab_(tab) {
-  NavigationController* controller = &(tab->controller());
-  notification_registrar_.Add(this,
-                              NotificationType::NAV_ENTRY_COMMITTED,
-                              Source<NavigationController>(controller));
+  NavigationController* controller = &(tab->web_contents()->GetController());
+  notification_registrar_.Add(
+      this,
+      content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+      content::Source<NavigationController>(controller));
   // Fill the search_engine_urls_ map, used for faster look-up (overkill?).
-  for (size_t i = 0;
-       i < sizeof(kSearchEngineURLs) / sizeof(kSearchEngineURLs[0]); ++i) {
+  for (size_t i = 0; i < arraysize(kSearchEngineURLs); ++i)
     search_engine_urls_[kSearchEngineURLs[i]] = 1;
-  }
 
   // Listen for omnibox to figure-out when the user searches from the omnibox.
   notification_registrar_.Add(this,
-                              NotificationType::OMNIBOX_OPENED_URL,
-                              Source<Profile>(tab->profile()));
+                              chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+                              content::Source<Profile>(tab->profile()));
 }
 
 OmniboxSearchHint::~OmniboxSearchHint() {
 }
 
-void OmniboxSearchHint::Observe(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
-  if (type == NotificationType::NAV_ENTRY_COMMITTED) {
-    NavigationEntry* entry = tab_->controller().GetActiveEntry();
-    if (search_engine_urls_.find(entry->url().spec()) ==
+void OmniboxSearchHint::Observe(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
+  if (type == content::NOTIFICATION_NAV_ENTRY_COMMITTED) {
+    content::NavigationEntry* entry =
+        tab_->web_contents()->GetController().GetActiveEntry();
+    if (search_engine_urls_.find(entry->GetURL().spec()) ==
         search_engine_urls_.end()) {
       // The search engine is not in our white-list, bail.
       return;
     }
     const TemplateURL* const default_provider =
-        tab_->profile()->GetTemplateURLModel()->GetDefaultSearchProvider();
+        TemplateURLServiceFactory::GetForProfile(tab_->profile())->
+        GetDefaultSearchProvider();
     if (!default_provider)
       return;
 
     const TemplateURLRef* const search_url = default_provider->url();
-    if (search_url->GetHost() == entry->url().host())
+    if (search_url->GetHost() == entry->GetURL().host())
       ShowInfoBar();
-  } else if (type == NotificationType::OMNIBOX_OPENED_URL) {
-    AutocompleteLog* log = Details<AutocompleteLog>(details).ptr();
+  } else if (type == chrome::NOTIFICATION_OMNIBOX_OPENED_URL) {
+    AutocompleteLog* log = content::Details<AutocompleteLog>(details).ptr();
     AutocompleteMatch::Type type =
         log->result.match_at(log->selected_index).type;
     if (type == AutocompleteMatch::SEARCH_WHAT_YOU_TYPED ||
@@ -198,12 +208,12 @@ void OmniboxSearchHint::Observe(NotificationType type,
 }
 
 void OmniboxSearchHint::ShowInfoBar() {
-  tab_->AddInfoBar(new HintInfoBar(this));
+  tab_->infobar_tab_helper()->AddInfoBar(new HintInfoBar(this));
 }
 
 void OmniboxSearchHint::ShowEnteringQuery() {
-  LocationBar* location_bar = BrowserList::GetLastActive()->window()->
-      GetLocationBar();
+  LocationBar* location_bar = BrowserList::GetLastActiveWithProfile(
+      tab_->profile())->window()->GetLocationBar();
   OmniboxView* omnibox_view = location_bar->location_entry();
   location_bar->FocusLocation(true);
   omnibox_view->SetUserText(

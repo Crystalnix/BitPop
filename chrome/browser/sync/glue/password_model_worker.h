@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,8 @@
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 
 class PasswordStore;
@@ -29,13 +30,15 @@ class PasswordModelWorker : public browser_sync::ModelSafeWorker {
   virtual ~PasswordModelWorker();
 
   // ModelSafeWorker implementation. Called on syncapi SyncerThread.
-  virtual void DoWorkAndWaitUntilDone(Callback0::Type* work);
-  virtual ModelSafeGroup GetModelSafeGroup();
-  virtual bool CurrentThreadIsWorkThread();
+  virtual SyncerError DoWorkAndWaitUntilDone(
+      const WorkCallback& work) OVERRIDE;
+  virtual ModelSafeGroup GetModelSafeGroup() OVERRIDE;
 
  private:
-  void CallDoWorkAndSignalTask(Callback0::Type* work,
-                               base::WaitableEvent* done);
+  void CallDoWorkAndSignalTask(
+    const WorkCallback& work,
+    base::WaitableEvent* done,
+    SyncerError* error);
 
   scoped_refptr<PasswordStore> password_store_;
   DISALLOW_COPY_AND_ASSIGN(PasswordModelWorker);

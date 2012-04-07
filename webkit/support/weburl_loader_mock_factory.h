@@ -8,9 +8,9 @@
 #include <map>
 
 #include "base/file_path.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 
 namespace WebKit {
 class WebData;
@@ -31,7 +31,7 @@ class WebURLLoaderMockFactory {
   WebURLLoaderMockFactory();
   virtual ~WebURLLoaderMockFactory();
 
-  // Called by TestWebKitClient to create a WebURLLoader.
+  // Called by TestWebKitPlatformSupport to create a WebURLLoader.
   // Non-mocked request are forwarded to |default_loader| which should not be
   // NULL.
   virtual WebKit::WebURLLoader* CreateURLLoader(

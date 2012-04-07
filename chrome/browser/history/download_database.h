@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,14 @@
 #define CHROME_BROWSER_HISTORY_DOWNLOAD_DATABASE_H_
 #pragma once
 
-#include "chrome/browser/history/history_types.h"
+#include <set>
+#include <string>
 
-struct DownloadHistoryInfo;
+#include "base/threading/platform_thread.h"
+#include "chrome/browser/history/history_types.h"
+#include "sql/meta_table.h"
+
+struct DownloadPersistentStoreInfo;
 class FilePath;
 
 namespace sql {
@@ -24,11 +29,15 @@ class DownloadDatabase {
   DownloadDatabase();
   virtual ~DownloadDatabase();
 
+  int next_download_id() const { return next_id_; }
+
   // Get all the downloads from the database.
-  void QueryDownloads(std::vector<DownloadHistoryInfo>* results);
+  void QueryDownloads(std::vector<DownloadPersistentStoreInfo>* results);
 
   // Update the state of one download. Returns true if successful.
-  bool UpdateDownload(int64 received_bytes, int32 state, DownloadID db_handle);
+  // Does not update |url|, |start_time|, |total_bytes|; uses |db_handle| only
+  // to select the row in the database table to update.
+  bool UpdateDownload(const DownloadPersistentStoreInfo& data);
 
   // Update the path of one download. Returns true if successful.
   bool UpdateDownloadPath(const FilePath& path, DownloadID db_handle);
@@ -40,7 +49,7 @@ class DownloadDatabase {
   bool CleanUpInProgressEntries();
 
   // Create a new database entry for one download and return its primary db id.
-  int64 CreateDownload(const DownloadHistoryInfo& info);
+  int64 CreateDownload(const DownloadPersistentStoreInfo& info);
 
   // Remove a download from the database.
   void RemoveDownload(DownloadID db_handle);
@@ -49,7 +58,7 @@ class DownloadDatabase {
   // (inclusive) and before |remove_end|. You may use null Time values
   // to do an unbounded delete in either direction. This function ignores
   // all downloads that are in progress or are waiting to be cancelled.
-  void RemoveDownloadsBetween(base::Time remove_begin, base::Time remove_end);
+  bool RemoveDownloadsBetween(base::Time remove_begin, base::Time remove_end);
 
  protected:
   // Returns the database for the functions in this interface.
@@ -63,6 +72,18 @@ class DownloadDatabase {
   bool DropDownloadTable();
 
  private:
+  // TODO(rdsmith): Remove after http://crbug.com/96627 has been resolved.
+  void CheckThread();
+
+  bool EnsureColumnExists(const std::string& name, const std::string& type);
+
+  bool owning_thread_set_;
+  base::PlatformThreadId owning_thread_;
+
+  int next_id_;
+  int next_db_handle_;
+  sql::MetaTable meta_table_;
+
   DISALLOW_COPY_AND_ASSIGN(DownloadDatabase);
 };
 

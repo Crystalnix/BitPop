@@ -1,14 +1,22 @@
-/* Copyright (c) 2010 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From pp_macros.idl modified Thu Dec  8 23:25:05 2011. */
+
 #ifndef PPAPI_C_PP_MACROS_H_
 #define PPAPI_C_PP_MACROS_H_
+
 
 /**
  * @file
  * Defines the API ...
- *
+ */
+
+
+
+/*
  * @addtogroup PP
  * @{
  */
@@ -84,6 +92,22 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES_IMPL(NAME, struct NAME, SIZE)
  */
 #define PP_COMPILE_ASSERT_ENUM_SIZE_IN_BYTES(NAME, SIZE) \
 PP_COMPILE_ASSERT_SIZE_IN_BYTES_IMPL(NAME, enum NAME, SIZE)
+
+/* This is roughly copied from base/compiler_specific.h, and makes it possible
+   to pass 'this' in a constructor initializer list, when you really mean it.
+   E.g.:
+   Foo::Foo(MyInstance* instance)
+       : PP_ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)) {}
+ */
+#if defined(COMPILER_MSVC)
+# define PP_ALLOW_THIS_IN_INITIALIZER_LIST(code) \
+    __pragma(warning(push)) \
+    __pragma(warning(disable:4355)) \
+    code \
+    __pragma(warning(pop))
+#else
+# define PP_ALLOW_THIS_IN_INITIALIZER_LIST(code) code
+#endif
 
 /**
  * @}

@@ -1,59 +1,49 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/extensions/extensions_ui.h"
+#include "chrome/browser/ui/webui/options/extension_settings_handler.h"
 
-#include <algorithm>
-
+#include "base/auto_reset.h"
 #include "base/base64.h"
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/memory/singleton.h"
 #include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/threading/thread.h"
 #include "base/utf_string_conversions.h"
+#include "base/values.h"
 #include "base/version.h"
-#include "chrome/browser/debugger/devtools_manager.h"
-#include "chrome/browser/debugger/devtools_toggle_action.h"
+#include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_disabled_infobar_delegate.h"
-#include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_message_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_updater.h"
+#include "chrome/browser/extensions/extension_warning_set.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/background_contents.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_view_type.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/url_pattern.h"
-#include "chrome/common/extensions/user_script.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/render_widget_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/color_utils.h"
-#include "ui/gfx/skbitmap_operations.h"
-#include "webkit/glue/image_decoder.h"
+
+using content::WebContents;
 
 namespace {
 
@@ -64,7 +54,9 @@ bool ShouldShowExtension(const Extension* extension) {
 
   // Don't show component extensions because they are only extensions as an
   // implementation detail of Chrome.
-  if (extension->location() == Extension::COMPONENT)
+  if (extension->location() == Extension::COMPONENT &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kShowComponentExtensionOptions))
     return false;
 
   // Always show unpacked extensions and apps.
@@ -80,379 +72,201 @@ bool ShouldShowExtension(const Extension* extension) {
 
 }  // namespace
 
-////////////////////////////////////////////////////////////////////////////////
-//
-// ExtensionsHTMLSource
-//
-////////////////////////////////////////////////////////////////////////////////
-
-ExtensionsUIHTMLSource::ExtensionsUIHTMLSource()
-    : DataSource(chrome::kChromeUIExtensionsHost, MessageLoop::current()) {
-}
-
-void ExtensionsUIHTMLSource::StartDataRequest(const std::string& path,
-                                              bool is_incognito,
-                                              int request_id) {
-  DictionaryValue localized_strings;
-  localized_strings.SetString("title",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_TITLE));
-  localized_strings.SetString("devModeLink",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEVELOPER_MODE_LINK));
-  localized_strings.SetString("devModePrefix",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEVELOPER_MODE_PREFIX));
-  localized_strings.SetString("loadUnpackedButton",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOAD_UNPACKED_BUTTON));
-  localized_strings.SetString("packButton",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_PACK_BUTTON));
-  localized_strings.SetString("updateButton",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_UPDATE_BUTTON));
-  localized_strings.SetString("noExtensions",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_NONE_INSTALLED));
-  localized_strings.SetString("suggestGallery",
-      l10n_util::GetStringFUTF16(IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY,
-          ASCIIToUTF16("<a href='") +
-              ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-                  GURL(Extension::ChromeStoreLaunchURL())).spec()) +
-              ASCIIToUTF16("'>"),
-          ASCIIToUTF16("</a>")));
-  localized_strings.SetString("getMoreExtensions",
-      ASCIIToUTF16("<a href='") +
-      ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
-          GURL(Extension::ChromeStoreLaunchURL())).spec()) +
-      ASCIIToUTF16("'>") +
-      l10n_util::GetStringUTF16(IDS_GET_MORE_EXTENSIONS) +
-      ASCIIToUTF16("</a>"));
-  localized_strings.SetString("extensionCrashed",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_CRASHED_EXTENSION));
-  localized_strings.SetString("extensionDisabled",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_DISABLED_EXTENSION));
-  localized_strings.SetString("inDevelopment",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_IN_DEVELOPMENT));
-  localized_strings.SetString("viewIncognito",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_VIEW_INCOGNITO));
-  localized_strings.SetString("extensionId",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ID));
-  localized_strings.SetString("extensionVersion",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_VERSION));
-  localized_strings.SetString("inspectViews",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_INSPECT_VIEWS));
-  localized_strings.SetString("inspectPopupsInstructions",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_INSPECT_POPUPS_INSTRUCTIONS));
-  localized_strings.SetString("disable",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_DISABLE));
-  localized_strings.SetString("enable",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE));
-  localized_strings.SetString("enableIncognito",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE_INCOGNITO));
-  localized_strings.SetString("allowFileAccess",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ALLOW_FILE_ACCESS));
-  localized_strings.SetString("incognitoWarning",
-      l10n_util::GetStringFUTF16(IDS_EXTENSIONS_INCOGNITO_WARNING,
-                                 l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
-  localized_strings.SetString("reload",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_RELOAD));
-  localized_strings.SetString("uninstall",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_UNINSTALL));
-  localized_strings.SetString("options",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_OPTIONS));
-  localized_strings.SetString("packDialogTitle",
-      l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_TITLE));
-  localized_strings.SetString("packDialogHeading",
-      l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_HEADING));
-  localized_strings.SetString("rootDirectoryLabel",
-      l10n_util::GetStringUTF16(
-          IDS_EXTENSION_PACK_DIALOG_ROOT_DIRECTORY_LABEL));
-  localized_strings.SetString("packDialogBrowse",
-      l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_BROWSE));
-  localized_strings.SetString("privateKeyLabel",
-      l10n_util::GetStringUTF16(IDS_EXTENSION_PACK_DIALOG_PRIVATE_KEY_LABEL));
-  localized_strings.SetString("okButton",
-      l10n_util::GetStringUTF16(IDS_OK));
-  localized_strings.SetString("cancelButton",
-      l10n_util::GetStringUTF16(IDS_CANCEL));
-  localized_strings.SetString("showButton",
-      l10n_util::GetStringUTF16(IDS_EXTENSIONS_SHOW_BUTTON));
-
-  SetFontAndTextDirection(&localized_strings);
-
-  static const base::StringPiece extensions_html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_EXTENSIONS_UI_HTML));
-  std::string full_html(extensions_html.data(), extensions_html.size());
-  jstemplate_builder::AppendJsonHtml(&localized_strings, &full_html);
-  jstemplate_builder::AppendI18nTemplateSourceHtml(&full_html);
-  jstemplate_builder::AppendI18nTemplateProcessHtml(&full_html);
-  jstemplate_builder::AppendJsTemplateSourceHtml(&full_html);
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
-}
-
-std::string ExtensionsUIHTMLSource::GetMimeType(const std::string&) const {
-  return "text/html";
-}
-
-////////////////////////////////////////////////////////////////////////////////
-//
-// ExtensionsDOMHandler::IconLoader
-//
-////////////////////////////////////////////////////////////////////////////////
-
-ExtensionsDOMHandler::IconLoader::IconLoader(ExtensionsDOMHandler* handler)
-    : handler_(handler) {
-}
-
-void ExtensionsDOMHandler::IconLoader::LoadIcons(
-    std::vector<ExtensionResource>* icons, DictionaryValue* json) {
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(this,
-          &IconLoader::LoadIconsOnFileThread, icons, json));
-}
-
-void ExtensionsDOMHandler::IconLoader::Cancel() {
-  handler_ = NULL;
-}
-
-void ExtensionsDOMHandler::IconLoader::LoadIconsOnFileThread(
-    std::vector<ExtensionResource>* icons, DictionaryValue* json) {
-  scoped_ptr<std::vector<ExtensionResource> > icons_deleter(icons);
-  scoped_ptr<DictionaryValue> json_deleter(json);
-
-  ListValue* extensions = NULL;
-  CHECK(json->GetList("extensions", &extensions));
-
-  for (size_t i = 0; i < icons->size(); ++i) {
-    DictionaryValue* extension = NULL;
-    CHECK(extensions->GetDictionary(static_cast<int>(i), &extension));
-
-    // Read the file.
-    std::string file_contents;
-    if (icons->at(i).relative_path().empty() ||
-        !file_util::ReadFileToString(icons->at(i).GetFilePath(),
-                                     &file_contents)) {
-      // If there's no icon, use the default icon. This is safe to do from
-      // the file thread.
-      // TODO(erikkay) Assuming we're going to keep showing apps in this list,
-      // then we need to figure out when we should use the app default icon.
-      file_contents = ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_EXTENSION_DEFAULT_ICON).as_string();
-    }
-
-    // If the extension is disabled, we desaturate the icon to add to the
-    // disabledness effect.
-    bool enabled = false;
-    CHECK(extension->GetBoolean("enabled", &enabled));
-    if (!enabled) {
-      const unsigned char* data =
-          reinterpret_cast<const unsigned char*>(file_contents.data());
-      webkit_glue::ImageDecoder decoder;
-      scoped_ptr<SkBitmap> decoded(new SkBitmap());
-      *decoded = decoder.Decode(data, file_contents.length());
-
-      // Desaturate the icon and lighten it a bit.
-      color_utils::HSL shift = {-1, 0, 0.6};
-      *decoded = SkBitmapOperations::CreateHSLShiftedBitmap(*decoded, shift);
-
-      std::vector<unsigned char> output;
-      gfx::PNGCodec::EncodeBGRASkBitmap(*decoded, false, &output);
-
-      // Lame, but we must make a copy of this now, because base64 doesn't take
-      // the same input type.
-      file_contents.assign(reinterpret_cast<char*>(&output.front()),
-                           output.size());
-    }
-
-    // Create a data URL (all icons are converted to PNGs during unpacking).
-    std::string base64_encoded;
-    base::Base64Encode(file_contents, &base64_encoded);
-    GURL icon_url("data:image/png;base64," + base64_encoded);
-
-    extension->SetString("icon", icon_url.spec());
-  }
-
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &IconLoader::ReportResultOnUIThread,
-                        json_deleter.release()));
-}
-
-void ExtensionsDOMHandler::IconLoader::ReportResultOnUIThread(
-    DictionaryValue* json) {
-  if (handler_)
-    handler_->OnIconsLoaded(json);
-}
-
-
 ///////////////////////////////////////////////////////////////////////////////
 //
-// ExtensionsDOMHandler
+// ExtensionSettingsHandler
 //
 ///////////////////////////////////////////////////////////////////////////////
 
-ExtensionsDOMHandler::ExtensionsDOMHandler(ExtensionService* extension_service)
-    : extension_service_(extension_service),
+ExtensionSettingsHandler::ExtensionSettingsHandler()
+    : extension_service_(NULL),
       ignore_notifications_(false),
-      deleting_rvh_(NULL) {
+      deleting_rvh_(NULL),
+      registered_for_notifications_(false) {
 }
 
-void ExtensionsDOMHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("requestExtensionsData",
-      NewCallback(this, &ExtensionsDOMHandler::HandleRequestExtensionsData));
-  web_ui_->RegisterMessageCallback("toggleDeveloperMode",
-      NewCallback(this, &ExtensionsDOMHandler::HandleToggleDeveloperMode));
-  web_ui_->RegisterMessageCallback("inspect",
-      NewCallback(this, &ExtensionsDOMHandler::HandleInspectMessage));
-  web_ui_->RegisterMessageCallback("reload",
-      NewCallback(this, &ExtensionsDOMHandler::HandleReloadMessage));
-  web_ui_->RegisterMessageCallback("enable",
-      NewCallback(this, &ExtensionsDOMHandler::HandleEnableMessage));
-  web_ui_->RegisterMessageCallback("enableIncognito",
-      NewCallback(this, &ExtensionsDOMHandler::HandleEnableIncognitoMessage));
-  web_ui_->RegisterMessageCallback("allowFileAccess",
-      NewCallback(this, &ExtensionsDOMHandler::HandleAllowFileAccessMessage));
-  web_ui_->RegisterMessageCallback("uninstall",
-      NewCallback(this, &ExtensionsDOMHandler::HandleUninstallMessage));
-  web_ui_->RegisterMessageCallback("options",
-      NewCallback(this, &ExtensionsDOMHandler::HandleOptionsMessage));
-  web_ui_->RegisterMessageCallback("showButton",
-      NewCallback(this, &ExtensionsDOMHandler::HandleShowButtonMessage));
-  web_ui_->RegisterMessageCallback("load",
-      NewCallback(this, &ExtensionsDOMHandler::HandleLoadMessage));
-  web_ui_->RegisterMessageCallback("pack",
-      NewCallback(this, &ExtensionsDOMHandler::HandlePackMessage));
-  web_ui_->RegisterMessageCallback("autoupdate",
-      NewCallback(this, &ExtensionsDOMHandler::HandleAutoUpdateMessage));
-  web_ui_->RegisterMessageCallback("selectFilePath",
-      NewCallback(this, &ExtensionsDOMHandler::HandleSelectFilePathMessage));
+ExtensionSettingsHandler::~ExtensionSettingsHandler() {
+  // There may be pending file dialogs, we need to tell them that we've gone
+  // away so they don't try and call back to us.
+  if (load_extension_dialog_.get())
+    load_extension_dialog_->ListenerDestroyed();
+
+  registrar_.RemoveAll();
 }
 
-void ExtensionsDOMHandler::HandleRequestExtensionsData(const ListValue* args) {
-  DictionaryValue* results = new DictionaryValue();
+// static
+void ExtensionSettingsHandler::RegisterUserPrefs(PrefService* prefs) {
+  prefs->RegisterBooleanPref(prefs::kExtensionsUIDeveloperMode,
+                             false,
+                             PrefService::SYNCABLE_PREF);
+}
+
+void ExtensionSettingsHandler::RegisterMessages() {
+  extension_service_ = Profile::FromWebUI(web_ui())->GetOriginalProfile()->
+      GetExtensionService();
+
+  web_ui()->RegisterMessageCallback("extensionSettingsRequestExtensionsData",
+      base::Bind(&ExtensionSettingsHandler::HandleRequestExtensionsData,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsToggleDeveloperMode",
+      base::Bind(&ExtensionSettingsHandler::HandleToggleDeveloperMode,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsInspect",
+      base::Bind(&ExtensionSettingsHandler::HandleInspectMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsReload",
+      base::Bind(&ExtensionSettingsHandler::HandleReloadMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsEnable",
+      base::Bind(&ExtensionSettingsHandler::HandleEnableMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsEnableIncognito",
+      base::Bind(&ExtensionSettingsHandler::HandleEnableIncognitoMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsAllowFileAccess",
+      base::Bind(&ExtensionSettingsHandler::HandleAllowFileAccessMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsUninstall",
+      base::Bind(&ExtensionSettingsHandler::HandleUninstallMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsOptions",
+      base::Bind(&ExtensionSettingsHandler::HandleOptionsMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsShowButton",
+      base::Bind(&ExtensionSettingsHandler::HandleShowButtonMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsLoad",
+      base::Bind(&ExtensionSettingsHandler::HandleLoadMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsAutoupdate",
+      base::Bind(&ExtensionSettingsHandler::HandleAutoUpdateMessage,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("extensionSettingsSelectFilePath",
+      base::Bind(&ExtensionSettingsHandler::HandleSelectFilePathMessage,
+                 base::Unretained(this)));
+}
+
+void ExtensionSettingsHandler::HandleRequestExtensionsData(
+    const ListValue* args) {
+  DictionaryValue results;
 
   // Add the extensions to the results structure.
   ListValue *extensions_list = new ListValue();
 
-  // Stores the icon resource for each of the extensions in extensions_list. We
-  // build up a list of them here, then load them on the file thread in
-  // ::LoadIcons().
-  std::vector<ExtensionResource>* extension_icons =
-      new std::vector<ExtensionResource>();
+  ExtensionWarningSet* warnings = extension_service_->extension_warnings();
 
-  const ExtensionList* extensions = extension_service_->extensions();
-  for (ExtensionList::const_iterator extension = extensions->begin();
+  const ExtensionSet* extensions = extension_service_->extensions();
+  for (ExtensionSet::const_iterator extension = extensions->begin();
        extension != extensions->end(); ++extension) {
     if (ShouldShowExtension(*extension)) {
       extensions_list->Append(CreateExtensionDetailValue(
-          extension_service_.get(),
+          extension_service_,
           *extension,
           GetActivePagesForExtension(*extension),
+          warnings,
           true, false));  // enabled, terminated
-      extension_icons->push_back(PickExtensionIcon(*extension));
     }
   }
   extensions = extension_service_->disabled_extensions();
-  for (ExtensionList::const_iterator extension = extensions->begin();
+  for (ExtensionSet::const_iterator extension = extensions->begin();
        extension != extensions->end(); ++extension) {
     if (ShouldShowExtension(*extension)) {
       extensions_list->Append(CreateExtensionDetailValue(
-          extension_service_.get(),
+          extension_service_,
           *extension,
           GetActivePagesForExtension(*extension),
+          warnings,
           false, false));  // enabled, terminated
-      extension_icons->push_back(PickExtensionIcon(*extension));
     }
   }
   extensions = extension_service_->terminated_extensions();
   std::vector<ExtensionPage> empty_pages;
-  for (ExtensionList::const_iterator extension = extensions->begin();
+  for (ExtensionSet::const_iterator extension = extensions->begin();
        extension != extensions->end(); ++extension) {
     if (ShouldShowExtension(*extension)) {
       extensions_list->Append(CreateExtensionDetailValue(
-          extension_service_.get(),
+          extension_service_,
           *extension,
           empty_pages,  // Terminated process has no active pages.
+          warnings,
           false, true));  // enabled, terminated
-      extension_icons->push_back(PickExtensionIcon(*extension));
     }
   }
-  results->Set("extensions", extensions_list);
+  results.Set("extensions", extensions_list);
 
-  bool developer_mode = web_ui_->GetProfile()->GetPrefs()
-      ->GetBoolean(prefs::kExtensionsUIDeveloperMode);
-  results->SetBoolean("developerMode", developer_mode);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  bool developer_mode =
+      profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
+  results.SetBoolean("developerMode", developer_mode);
 
-  if (icon_loader_.get())
-    icon_loader_->Cancel();
+  web_ui()->CallJavascriptFunction("ExtensionSettings.returnExtensionsData",
+                                   results);
 
-  icon_loader_ = new IconLoader(this);
-  icon_loader_->LoadIcons(extension_icons, results);
+  MaybeRegisterForNotifications();
 }
 
-void ExtensionsDOMHandler::OnIconsLoaded(DictionaryValue* json) {
-  web_ui_->CallJavascriptFunction(L"returnExtensionsData", *json);
-  delete json;
+void ExtensionSettingsHandler::MaybeRegisterForNotifications() {
+  if (registered_for_notifications_)
+    return;
+
+  registered_for_notifications_  = true;
+  Profile* profile = Profile::FromWebUI(web_ui());
 
   // Register for notifications that we need to reload the page.
-  registrar_.RemoveAll();
-  registrar_.Add(this, NotificationType::EXTENSION_LOADED,
-      NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::EXTENSION_PROCESS_CREATED,
-      NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-      NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::EXTENSION_UPDATE_DISABLED,
-      NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_WARNING_CHANGED,
+                 content::Source<Profile>(profile));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_CREATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
-      NotificationType::NAV_ENTRY_COMMITTED,
-      NotificationService::AllSources());
+                 content::NOTIFICATION_RENDER_VIEW_HOST_CREATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
-      NotificationType::RENDER_VIEW_HOST_CREATED,
-      NotificationService::AllSources());
+                 content::NOTIFICATION_RENDER_VIEW_HOST_DELETED,
+                 content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
-      NotificationType::RENDER_VIEW_HOST_DELETED,
-      NotificationService::AllSources());
+                 chrome::NOTIFICATION_BACKGROUND_CONTENTS_NAVIGATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this,
-      NotificationType::BACKGROUND_CONTENTS_NAVIGATED,
-      NotificationService::AllSources());
-  registrar_.Add(this,
-      NotificationType::BACKGROUND_CONTENTS_DELETED,
-      NotificationService::AllSources());
-  registrar_.Add(this,
-      NotificationType::EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-      NotificationService::AllSources());
+                 chrome::NOTIFICATION_BACKGROUND_CONTENTS_DELETED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      content::Source<ExtensionPrefs>(profile->GetExtensionService()->
+                             extension_prefs()));
 }
 
-ExtensionResource ExtensionsDOMHandler::PickExtensionIcon(
-    const Extension* extension) {
-  return extension->GetIconResource(Extension::EXTENSION_ICON_MEDIUM,
-                                    ExtensionIconSet::MATCH_BIGGER);
-}
-
-ExtensionUninstallDialog* ExtensionsDOMHandler::GetExtensionUninstallDialog() {
+ExtensionUninstallDialog*
+ExtensionSettingsHandler::GetExtensionUninstallDialog() {
   if (!extension_uninstall_dialog_.get()) {
     extension_uninstall_dialog_.reset(
-        new ExtensionUninstallDialog(web_ui_->GetProfile()));
+        ExtensionUninstallDialog::Create(Profile::FromWebUI(web_ui()), this));
   }
   return extension_uninstall_dialog_.get();
 }
 
-void ExtensionsDOMHandler::HandleToggleDeveloperMode(const ListValue* args) {
-  bool developer_mode = web_ui_->GetProfile()->GetPrefs()
-      ->GetBoolean(prefs::kExtensionsUIDeveloperMode);
-  web_ui_->GetProfile()->GetPrefs()->SetBoolean(
+void ExtensionSettingsHandler::HandleToggleDeveloperMode(
+      const ListValue* args) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  bool developer_mode =
+      profile->GetPrefs()->GetBoolean(prefs::kExtensionsUIDeveloperMode);
+  profile->GetPrefs()->SetBoolean(
       prefs::kExtensionsUIDeveloperMode, !developer_mode);
+  HandleRequestExtensionsData(NULL);
 }
 
-void ExtensionsDOMHandler::HandleInspectMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleInspectMessage(const ListValue* args) {
   std::string render_process_id_str;
   std::string render_view_id_str;
   int render_process_id;
   int render_view_id;
-  CHECK(args->GetSize() == 2);
+  CHECK_EQ(2U, args->GetSize());
   CHECK(args->GetString(0, &render_process_id_str));
   CHECK(args->GetString(1, &render_view_id_str));
   CHECK(base::StringToInt(render_process_id_str, &render_process_id));
@@ -464,27 +278,34 @@ void ExtensionsDOMHandler::HandleInspectMessage(const ListValue* args) {
     return;
   }
 
-  DevToolsManager::GetInstance()->OpenDevToolsWindow(host);
+  DevToolsWindow::OpenDevToolsWindow(host);
 }
 
-void ExtensionsDOMHandler::HandleReloadMessage(const ListValue* args) {
-  std::string extension_id = WideToASCII(ExtractStringValue(args));
+void ExtensionSettingsHandler::HandleReloadMessage(const ListValue* args) {
+  std::string extension_id = UTF16ToUTF8(ExtractStringValue(args));
   CHECK(!extension_id.empty());
   extension_service_->ReloadExtension(extension_id);
 }
 
-void ExtensionsDOMHandler::HandleEnableMessage(const ListValue* args) {
-  CHECK(args->GetSize() == 2);
+void ExtensionSettingsHandler::HandleEnableMessage(const ListValue* args) {
+  CHECK_EQ(2U, args->GetSize());
   std::string extension_id, enable_str;
   CHECK(args->GetString(0, &extension_id));
   CHECK(args->GetString(1, &enable_str));
+
+  const Extension* extension =
+      extension_service_->GetExtensionById(extension_id, true);
+  if (!Extension::UserMayDisable(extension->location())) {
+    LOG(ERROR) << "Attempt to enable an extension that is non-usermanagable was"
+               << "made. Extension id: " << extension->id();
+    return;
+  }
+
   if (enable_str == "true") {
     ExtensionPrefs* prefs = extension_service_->extension_prefs();
     if (prefs->DidExtensionEscalatePermissions(extension_id)) {
-      const Extension* extension =
-          extension_service_->GetExtensionById(extension_id, true);
       ShowExtensionDisabledDialog(extension_service_,
-                                  web_ui_->GetProfile(), extension);
+                                  Profile::FromWebUI(web_ui()), extension);
     } else {
       extension_service_->EnableExtension(extension_id);
     }
@@ -493,8 +314,9 @@ void ExtensionsDOMHandler::HandleEnableMessage(const ListValue* args) {
   }
 }
 
-void ExtensionsDOMHandler::HandleEnableIncognitoMessage(const ListValue* args) {
-  CHECK(args->GetSize() == 2);
+void ExtensionSettingsHandler::HandleEnableIncognitoMessage(
+    const ListValue* args) {
+  CHECK_EQ(2U, args->GetSize());
   std::string extension_id, enable_str;
   CHECK(args->GetString(0, &extension_id));
   CHECK(args->GetString(1, &enable_str));
@@ -513,13 +335,14 @@ void ExtensionsDOMHandler::HandleEnableIncognitoMessage(const ListValue* args) {
   // notification for this case.
   //
   // Bug: http://crbug.com/41384
-  ignore_notifications_ = true;
-  extension_service_->SetIsIncognitoEnabled(extension, enable_str == "true");
-  ignore_notifications_ = false;
+  AutoReset<bool> auto_reset_ignore_notifications(&ignore_notifications_, true);
+  extension_service_->SetIsIncognitoEnabled(extension->id(),
+                                            enable_str == "true");
 }
 
-void ExtensionsDOMHandler::HandleAllowFileAccessMessage(const ListValue* args) {
-  CHECK(args->GetSize() == 2);
+void ExtensionSettingsHandler::HandleAllowFileAccessMessage(
+    const ListValue* args) {
+  CHECK_EQ(2U, args->GetSize());
   std::string extension_id, allow_str;
   CHECK(args->GetString(0, &extension_id));
   CHECK(args->GetString(1, &allow_str));
@@ -527,11 +350,18 @@ void ExtensionsDOMHandler::HandleAllowFileAccessMessage(const ListValue* args) {
       extension_service_->GetExtensionById(extension_id, true);
   DCHECK(extension);
 
+  if (!Extension::UserMayDisable(extension->location())) {
+    LOG(ERROR) << "Attempt to change allow file access of an extension that is "
+               << "non-usermanagable was made. Extension id : "
+               << extension->id();
+    return;
+  }
+
   extension_service_->SetAllowFileAccess(extension, allow_str == "true");
 }
 
-void ExtensionsDOMHandler::HandleUninstallMessage(const ListValue* args) {
-  std::string extension_id = WideToASCII(ExtractStringValue(args));
+void ExtensionSettingsHandler::HandleUninstallMessage(const ListValue* args) {
+  std::string extension_id = UTF16ToUTF8(ExtractStringValue(args));
   CHECK(!extension_id.empty());
   const Extension* extension =
       extension_service_->GetExtensionById(extension_id, true);
@@ -540,15 +370,21 @@ void ExtensionsDOMHandler::HandleUninstallMessage(const ListValue* args) {
   if (!extension)
     return;
 
+  if (!Extension::UserMayDisable(extension->location())) {
+    LOG(ERROR) << "Attempt to uninstall an extension that is non-usermanagable "
+               << "was made. Extension id : " << extension->id();
+    return;
+  }
+
   if (!extension_id_prompting_.empty())
     return;  // Only one prompt at a time.
 
   extension_id_prompting_ = extension_id;
 
-  GetExtensionUninstallDialog()->ConfirmUninstall(this, extension);
+  GetExtensionUninstallDialog()->ConfirmUninstall(extension);
 }
 
-void ExtensionsDOMHandler::ExtensionDialogAccepted() {
+void ExtensionSettingsHandler::ExtensionUninstallAccepted() {
   DCHECK(!extension_id_prompting_.empty());
 
   bool was_terminated = false;
@@ -566,7 +402,8 @@ void ExtensionsDOMHandler::ExtensionDialogAccepted() {
     return;
 
   extension_service_->UninstallExtension(extension_id_prompting_,
-                                          false /* external_uninstall */, NULL);
+                                         false,  // External uninstall.
+                                         NULL);  // Error.
   extension_id_prompting_ = "";
 
   // There will be no EXTENSION_UNLOADED notification for terminated
@@ -575,92 +412,48 @@ void ExtensionsDOMHandler::ExtensionDialogAccepted() {
     HandleRequestExtensionsData(NULL);
 }
 
-void ExtensionsDOMHandler::ExtensionDialogCanceled() {
+void ExtensionSettingsHandler::ExtensionUninstallCanceled() {
   extension_id_prompting_ = "";
 }
 
-void ExtensionsDOMHandler::HandleOptionsMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleOptionsMessage(const ListValue* args) {
   const Extension* extension = GetExtension(args);
   if (!extension || extension->options_url().is_empty())
     return;
-  web_ui_->GetProfile()->GetExtensionProcessManager()->OpenOptionsPage(
+  Profile::FromWebUI(web_ui())->GetExtensionProcessManager()->OpenOptionsPage(
       extension, NULL);
 }
 
-void ExtensionsDOMHandler::HandleShowButtonMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleShowButtonMessage(const ListValue* args) {
   const Extension* extension = GetExtension(args);
   extension_service_->SetBrowserActionVisibility(extension, true);
 }
 
-void ExtensionsDOMHandler::HandleLoadMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleLoadMessage(const ListValue* args) {
   FilePath::StringType string_path;
-  CHECK(args->GetSize() == 1) << args->GetSize();
+  CHECK_EQ(1U, args->GetSize()) << args->GetSize();
   CHECK(args->GetString(0, &string_path));
-  extension_service_->LoadExtension(FilePath(string_path));
+  extensions::UnpackedInstaller::Create(extension_service_)->
+      Load(FilePath(string_path));
 }
 
-void ExtensionsDOMHandler::ShowAlert(const std::string& message) {
+void ExtensionSettingsHandler::ShowAlert(const std::string& message) {
   ListValue arguments;
   arguments.Append(Value::CreateStringValue(message));
-  web_ui_->CallJavascriptFunction(L"alert", arguments);
+  web_ui()->CallJavascriptFunction("alert", arguments);
 }
 
-void ExtensionsDOMHandler::HandlePackMessage(const ListValue* args) {
-  std::string extension_path;
-  std::string private_key_path;
-  CHECK(args->GetSize() == 2);
-  CHECK(args->GetString(0, &extension_path));
-  CHECK(args->GetString(1, &private_key_path));
-
-  FilePath root_directory =
-      FilePath::FromWStringHack(UTF8ToWide(extension_path));
-  FilePath key_file = FilePath::FromWStringHack(UTF8ToWide(private_key_path));
-
-  if (root_directory.empty()) {
-    if (extension_path.empty()) {
-      ShowAlert(l10n_util::GetStringUTF8(
-          IDS_EXTENSION_PACK_DIALOG_ERROR_ROOT_REQUIRED));
-    } else {
-      ShowAlert(l10n_util::GetStringUTF8(
-          IDS_EXTENSION_PACK_DIALOG_ERROR_ROOT_INVALID));
-    }
-
-    return;
-  }
-
-  if (!private_key_path.empty() && key_file.empty()) {
-    ShowAlert(l10n_util::GetStringUTF8(
-        IDS_EXTENSION_PACK_DIALOG_ERROR_KEY_INVALID));
-    return;
-  }
-
-  pack_job_ = new PackExtensionJob(this, root_directory, key_file);
-  pack_job_->Start();
-}
-
-void ExtensionsDOMHandler::OnPackSuccess(const FilePath& crx_file,
-                                         const FilePath& pem_file) {
-  ShowAlert(UTF16ToUTF8(PackExtensionJob::StandardSuccessMessage(crx_file,
-                                                                 pem_file)));
-
-  ListValue results;
-  web_ui_->CallJavascriptFunction(L"hidePackDialog", results);
-}
-
-void ExtensionsDOMHandler::OnPackFailure(const std::string& error) {
-  ShowAlert(error);
-}
-
-void ExtensionsDOMHandler::HandleAutoUpdateMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleAutoUpdateMessage(const ListValue* args) {
   ExtensionUpdater* updater = extension_service_->updater();
   if (updater)
     updater->CheckNow();
 }
 
-void ExtensionsDOMHandler::HandleSelectFilePathMessage(const ListValue* args) {
+void ExtensionSettingsHandler::HandleSelectFilePathMessage(
+    const ListValue* args) {
   std::string select_type;
   std::string operation;
-  CHECK(args->GetSize() == 2);
+  CHECK_EQ(2U, args->GetSize());
   CHECK(args->GetString(0, &select_type));
   CHECK(args->GetString(1, &operation));
 
@@ -693,58 +486,136 @@ void ExtensionsDOMHandler::HandleSelectFilePathMessage(const ListValue* args) {
 
   load_extension_dialog_ = SelectFileDialog::Create(this);
   load_extension_dialog_->SelectFile(type, select_title, FilePath(), &info,
-      file_type_index, FILE_PATH_LITERAL(""), web_ui_->tab_contents(),
-      web_ui_->tab_contents()->view()->GetTopLevelNativeWindow(), NULL);
+      file_type_index, FILE_PATH_LITERAL(""), web_ui()->GetWebContents(),
+      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
 }
 
 
-void ExtensionsDOMHandler::FileSelected(const FilePath& path, int index,
-                                        void* params) {
+void ExtensionSettingsHandler::FileSelected(const FilePath& path, int index,
+                                            void* params) {
   // Add the extensions to the results structure.
   ListValue results;
   results.Append(Value::CreateStringValue(path.value()));
-  web_ui_->CallJavascriptFunction(L"window.handleFilePathSelected", results);
+  web_ui()->CallJavascriptFunction("window.handleFilePathSelected", results);
 }
 
-void ExtensionsDOMHandler::MultiFilesSelected(
+void ExtensionSettingsHandler::MultiFilesSelected(
     const std::vector<FilePath>& files, void* params) {
   NOTREACHED();
 }
 
-void ExtensionsDOMHandler::Observe(NotificationType type,
-                                   const NotificationSource& source,
-                                   const NotificationDetails& details) {
-  switch (type.value) {
+void ExtensionSettingsHandler::GetLocalizedValues(
+    DictionaryValue* localized_strings) {
+  RegisterTitle(localized_strings, "extensionSettings",
+                IDS_MANAGE_EXTENSIONS_SETTING_WINDOWS_TITLE);
+
+  localized_strings->SetString("extensionSettingsVisitWebsite",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_VISIT_WEBSITE));
+
+  localized_strings->SetString("extensionSettingsDeveloperMode",
+    l10n_util::GetStringUTF16(IDS_EXTENSIONS_DEVELOPER_MODE_LINK));
+  localized_strings->SetString("extensionSettingsNoExtensions",
+    l10n_util::GetStringUTF16(IDS_EXTENSIONS_NONE_INSTALLED));
+  localized_strings->SetString("extensionSettingsSuggestGallery",
+      l10n_util::GetStringFUTF16(IDS_EXTENSIONS_NONE_INSTALLED_SUGGEST_GALLERY,
+          ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
+              GURL(extension_urls::GetWebstoreLaunchURL())).spec())));
+  localized_strings->SetString("extensionSettingsGetMoreExtensions",
+      l10n_util::GetStringFUTF16(IDS_GET_MORE_EXTENSIONS,
+          ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
+              GURL(extension_urls::GetWebstoreLaunchURL())).spec())));
+  localized_strings->SetString("extensionSettingsExtensionId",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ID));
+  localized_strings->SetString("extensionSettingsExtensionPath",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_PATH));
+  localized_strings->SetString("extensionSettingsInspectViews",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_INSPECT_VIEWS));
+  localized_strings->SetString("viewIncognito",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_VIEW_INCOGNITO));
+  localized_strings->SetString("extensionSettingsEnable",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE));
+  localized_strings->SetString("extensionSettingsEnabled",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLED));
+  localized_strings->SetString("extensionSettingsRemove",
+    l10n_util::GetStringUTF16(IDS_EXTENSIONS_REMOVE));
+  localized_strings->SetString("extensionSettingsEnableIncognito",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ENABLE_INCOGNITO));
+  localized_strings->SetString("extensionSettingsAllowFileAccess",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_ALLOW_FILE_ACCESS));
+  localized_strings->SetString("extensionSettingsIncognitoWarning",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_INCOGNITO_WARNING));
+  localized_strings->SetString("extensionSettingsReload",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_RELOAD));
+  localized_strings->SetString("extensionSettingsOptions",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_OPTIONS_LINK));
+  localized_strings->SetString("extensionSettingsPolicyControlled",
+     l10n_util::GetStringUTF16(IDS_EXTENSIONS_POLICY_CONTROLLED));
+  localized_strings->SetString("extensionSettingsShowButton",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_SHOW_BUTTON));
+  localized_strings->SetString("extensionSettingsLoadUnpackedButton",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_LOAD_UNPACKED_BUTTON));
+  localized_strings->SetString("extensionSettingsPackButton",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_PACK_BUTTON));
+  localized_strings->SetString("extensionSettingsUpdateButton",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_UPDATE_BUTTON));
+  localized_strings->SetString("extensionSettingsCrashMessage",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_CRASHED_EXTENSION));
+  localized_strings->SetString("extensionSettingsInDevelopment",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_IN_DEVELOPMENT));
+  localized_strings->SetString("extensionSettingsWarningsTitle",
+      l10n_util::GetStringUTF16(IDS_EXTENSION_WARNINGS_TITLE));
+  localized_strings->SetString("extensionSettingsShowDetails",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_SHOW_DETAILS));
+  localized_strings->SetString("extensionSettingsHideDetails",
+      l10n_util::GetStringUTF16(IDS_EXTENSIONS_HIDE_DETAILS));
+}
+
+void ExtensionSettingsHandler::Initialize() {
+}
+
+void ExtensionSettingsHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  Profile* source_profile = NULL;
+  switch (type) {
     // We listen for notifications that will result in the page being
     // repopulated with data twice for the same event in certain cases.
-    // For instance, EXTENSION_LOADED & EXTENSION_PROCESS_CREATED because
+    // For instance, EXTENSION_LOADED & EXTENSION_HOST_CREATED because
     // we don't know about the views for an extension at EXTENSION_LOADED, but
-    // if we only listen to EXTENSION_PROCESS_CREATED, we'll miss extensions
-    // that don't have a process at startup. Similarly, NAV_ENTRY_COMMITTED &
-    // RENDER_VIEW_HOST_CREATED because we want to handle both
-    // the case of navigating from a non-extension page to an extension page in
-    // a TabContents (which will generate NAV_ENTRY_COMMITTED) as well as
-    // extension content being shown in popups and balloons (which will generate
-    // RENDER_VIEW_CREATED but no NAV_ENTRY_COMMITTED).
+    // if we only listen to EXTENSION_HOST_CREATED, we'll miss extensions
+    // that don't have a process at startup.
     //
     // Doing it this way gets everything but causes the page to be rendered
     // more than we need. It doesn't seem to result in any noticeable flicker.
-    case NotificationType::RENDER_VIEW_HOST_DELETED:
-      deleting_rvh_ = Details<RenderViewHost>(details).ptr();
+    case content::NOTIFICATION_RENDER_VIEW_HOST_DELETED:
+      deleting_rvh_ = content::Source<RenderViewHost>(source).ptr();
+      // Fall through.
+    case content::NOTIFICATION_RENDER_VIEW_HOST_CREATED:
+      source_profile = Profile::FromBrowserContext(
+          content::Source<RenderViewHost>(source)->site_instance()->
+          GetBrowserContext());
+      if (!profile->IsSameProfile(source_profile))
+        return;
       MaybeUpdateAfterNotification();
       break;
-    case NotificationType::BACKGROUND_CONTENTS_DELETED:
-      deleting_rvh_ = Details<BackgroundContents>(details)->render_view_host();
+    case chrome::NOTIFICATION_BACKGROUND_CONTENTS_DELETED:
+      deleting_rvh_ = content::Details<BackgroundContents>(details)->
+          web_contents()->GetRenderViewHost();
+      // Fall through.
+    case chrome::NOTIFICATION_BACKGROUND_CONTENTS_NAVIGATED:
+    case chrome::NOTIFICATION_EXTENSION_HOST_CREATED:
+      source_profile = content::Source<Profile>(source).ptr();
+      if (!profile->IsSameProfile(source_profile))
+          return;
       MaybeUpdateAfterNotification();
       break;
-    case NotificationType::EXTENSION_LOADED:
-    case NotificationType::EXTENSION_PROCESS_CREATED:
-    case NotificationType::EXTENSION_UNLOADED:
-    case NotificationType::EXTENSION_UPDATE_DISABLED:
-    case NotificationType::RENDER_VIEW_HOST_CREATED:
-    case NotificationType::NAV_ENTRY_COMMITTED:
-    case NotificationType::BACKGROUND_CONTENTS_NAVIGATED:
-    case NotificationType::EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED:
+    case chrome::NOTIFICATION_EXTENSION_WARNING_CHANGED:
+    case chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED:
       MaybeUpdateAfterNotification();
       break;
     default:
@@ -752,32 +623,46 @@ void ExtensionsDOMHandler::Observe(NotificationType type,
   }
 }
 
-const Extension* ExtensionsDOMHandler::GetExtension(const ListValue* args) {
-  std::string extension_id = WideToASCII(ExtractStringValue(args));
+const Extension* ExtensionSettingsHandler::GetExtension(const ListValue* args) {
+  std::string extension_id = UTF16ToUTF8(ExtractStringValue(args));
   CHECK(!extension_id.empty());
   return extension_service_->GetExtensionById(extension_id, true);
 }
 
-void ExtensionsDOMHandler::MaybeUpdateAfterNotification() {
-  if (!ignore_notifications_ && web_ui_->tab_contents())
+void ExtensionSettingsHandler::MaybeUpdateAfterNotification() {
+  WebContents* contents = web_ui()->GetWebContents();
+  if (!ignore_notifications_ && contents && contents->GetRenderViewHost())
     HandleRequestExtensionsData(NULL);
   deleting_rvh_ = NULL;
 }
 
 // Static
-DictionaryValue* ExtensionsDOMHandler::CreateExtensionDetailValue(
+DictionaryValue* ExtensionSettingsHandler::CreateExtensionDetailValue(
     ExtensionService* service, const Extension* extension,
-    const std::vector<ExtensionPage>& pages, bool enabled, bool terminated) {
+    const std::vector<ExtensionPage>& pages,
+    const ExtensionWarningSet* warnings_set,
+    bool enabled, bool terminated) {
   DictionaryValue* extension_data = new DictionaryValue();
-
+  GURL icon =
+      ExtensionIconSource::GetIconURL(extension,
+                                      Extension::EXTENSION_ICON_MEDIUM,
+                                      ExtensionIconSet::MATCH_BIGGER,
+                                      !enabled, NULL);
   extension_data->SetString("id", extension->id());
   extension_data->SetString("name", extension->name());
   extension_data->SetString("description", extension->description());
+  if (extension->location() == Extension::LOAD)
+    extension_data->SetString("path", extension->path().value());
   extension_data->SetString("version", extension->version()->GetString());
+  extension_data->SetString("icon", icon.spec());
+  extension_data->SetBoolean("isUnpacked",
+                             extension->location() == Extension::LOAD);
+  extension_data->SetBoolean("mayDisable",
+                             Extension::UserMayDisable(extension->location()));
   extension_data->SetBoolean("enabled", enabled);
   extension_data->SetBoolean("terminated", terminated);
   extension_data->SetBoolean("enabledIncognito",
-      service ? service->IsIncognitoEnabled(extension) : false);
+      service ? service->IsIncognitoEnabled(extension->id()) : false);
   extension_data->SetBoolean("wantsFileAccess", extension->wants_file_access());
   extension_data->SetBoolean("allowFileAccess",
       service ? service->AllowFileAccess(extension) : false);
@@ -792,7 +677,7 @@ DictionaryValue* ExtensionsDOMHandler::CreateExtensionDetailValue(
   else
     extension_data->SetInteger("order", 2);
 
-  if (!extension->options_url().is_empty())
+  if (!extension->options_url().is_empty() && enabled)
     extension_data->SetString("options_url", extension->options_url().spec());
 
   if (service && !service->GetBrowserActionVisibility(extension))
@@ -820,10 +705,26 @@ DictionaryValue* ExtensionsDOMHandler::CreateExtensionDetailValue(
       extension->browser_action() || extension->page_action());
   extension_data->SetString("homepageUrl", extension->GetHomepageURL().spec());
 
+  // Add warnings.
+  ListValue* warnings_list = new ListValue;
+  if (warnings_set) {
+    std::set<ExtensionWarningSet::WarningType> warnings;
+    warnings_set->GetWarningsAffectingExtension(extension->id(), &warnings);
+
+    for (std::set<ExtensionWarningSet::WarningType>::const_iterator iter =
+             warnings.begin();
+         iter != warnings.end();
+         ++iter) {
+      string16 warning_string(ExtensionWarningSet::GetLocalizedWarning(*iter));
+      warnings_list->Append(Value::CreateStringValue(warning_string));
+    }
+  }
+  extension_data->Set("warnings", warnings_list);
+
   return extension_data;
 }
 
-std::vector<ExtensionPage> ExtensionsDOMHandler::GetActivePagesForExtension(
+std::vector<ExtensionPage> ExtensionSettingsHandler::GetActivePagesForExtension(
     const Extension* extension) {
   std::vector<ExtensionPage> result;
 
@@ -831,8 +732,8 @@ std::vector<ExtensionPage> ExtensionsDOMHandler::GetActivePagesForExtension(
   ExtensionProcessManager* process_manager =
       extension_service_->profile()->GetExtensionProcessManager();
   GetActivePagesForExtensionProcess(
-      process_manager->GetExtensionProcess(extension->url()),
-      extension, &result);
+      process_manager->GetRenderViewHostsForExtension(
+          extension->id()), &result);
 
   // Repeat for the incognito process, if applicable.
   if (extension_service_->profile()->HasOffTheRecordProfile() &&
@@ -841,84 +742,29 @@ std::vector<ExtensionPage> ExtensionsDOMHandler::GetActivePagesForExtension(
         extension_service_->profile()->GetOffTheRecordProfile()->
             GetExtensionProcessManager();
     GetActivePagesForExtensionProcess(
-        process_manager->GetExtensionProcess(extension->url()),
-        extension, &result);
+        process_manager->GetRenderViewHostsForExtension(
+            extension->id()), &result);
   }
 
   return result;
 }
 
-void ExtensionsDOMHandler::GetActivePagesForExtensionProcess(
-    RenderProcessHost* process,
-    const Extension* extension,
+void ExtensionSettingsHandler::GetActivePagesForExtensionProcess(
+    const std::set<RenderViewHost*>& views,
     std::vector<ExtensionPage> *result) {
-  if (!process)
-    return;
-
-  RenderProcessHost::listeners_iterator iter = process->ListenersIterator();
-  for (; !iter.IsAtEnd(); iter.Advance()) {
-    const RenderWidgetHost* widget =
-        static_cast<const RenderWidgetHost*>(iter.GetCurrentValue());
-    DCHECK(widget);
-    if (!widget || !widget->IsRenderView())
-      continue;
-    const RenderViewHost* host = static_cast<const RenderViewHost*>(widget);
+  for (std::set<RenderViewHost*>::const_iterator iter = views.begin();
+       iter != views.end(); ++iter) {
+    RenderViewHost* host = *iter;
+    int host_type = host->delegate()->GetRenderViewType();
     if (host == deleting_rvh_ ||
-        ViewType::EXTENSION_POPUP == host->delegate()->GetRenderViewType() ||
-        ViewType::EXTENSION_DIALOG == host->delegate()->GetRenderViewType())
+        chrome::VIEW_TYPE_EXTENSION_POPUP == host_type ||
+        chrome::VIEW_TYPE_EXTENSION_DIALOG == host_type)
       continue;
 
     GURL url = host->delegate()->GetURL();
-    if (url.SchemeIs(chrome::kExtensionScheme)) {
-      if (url.host() != extension->id())
-        continue;
-    } else if (!extension->web_extent().MatchesURL(url)) {
-      continue;
-    }
-
-    result->push_back(ExtensionPage(url, process->id(), host->routing_id(),
-                                    process->profile()->IsOffTheRecord()));
+    content::RenderProcessHost* process = host->process();
+    result->push_back(
+        ExtensionPage(url, process->GetID(), host->routing_id(),
+                      process->GetBrowserContext()->IsOffTheRecord()));
   }
-}
-
-ExtensionsDOMHandler::~ExtensionsDOMHandler() {
-  // There may be pending file dialogs, we need to tell them that we've gone
-  // away so they don't try and call back to us.
-  if (load_extension_dialog_.get())
-    load_extension_dialog_->ListenerDestroyed();
-
-  if (pack_job_.get())
-    pack_job_->ClearClient();
-
-  if (icon_loader_.get())
-    icon_loader_->Cancel();
-}
-
-// ExtensionsDOMHandler, public: -----------------------------------------------
-
-ExtensionsUI::ExtensionsUI(TabContents* contents) : WebUI(contents) {
-  ExtensionService *exstension_service =
-      GetProfile()->GetOriginalProfile()->GetExtensionService();
-
-  ExtensionsDOMHandler* handler = new ExtensionsDOMHandler(exstension_service);
-  AddMessageHandler(handler);
-  handler->Attach(this);
-
-  ExtensionsUIHTMLSource* html_source = new ExtensionsUIHTMLSource();
-
-  // Set up the chrome://extensions/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
-}
-
-// static
-RefCountedMemory* ExtensionsUI::GetFaviconResourceBytes() {
-  return ResourceBundle::GetSharedInstance().
-      LoadDataResourceBytes(IDR_PLUGIN);
-}
-
-// static
-void ExtensionsUI::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kExtensionsUIDeveloperMode,
-                             false,
-                             PrefService::SYNCABLE_PREF);
 }

@@ -25,21 +25,19 @@
 #include "base/message_loop.h"
 #include "base/process.h"
 #include "base/time.h"
-#include "build/build_config.h"
-// TODO(evanm): we should be able to just forward-declare
-// AutomationProxy here, but many files that #include this one don't
-// themselves #include automation_proxy.h.
-#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/proxy_launcher.h"
+#include "googleurl/src/gurl.h"
 #include "testing/platform_test.h"
 
 class AutomationProxy;
 class BrowserProxy;
-class DictionaryValue;
 class FilePath;
 class GURL;
-class ScopedTempDir;
 class TabProxy;
+
+namespace base {
+class DictionaryValue;
+}
 
 // Base class for UI Tests. This implements the core of the functions.
 // This base class decouples all automation functionality from testing
@@ -48,6 +46,15 @@ class TabProxy;
 // rather than UITestBase.
 class UITestBase {
  public:
+  // Profile theme type choices.
+  enum ProfileType {
+    DEFAULT_THEME = 0,
+    COMPLEX_THEME = 1,
+    NATIVE_THEME = 2,
+    CUSTOM_FRAME = 3,
+    CUSTOM_FRAME_NATIVE_THEME = 4,
+  };
+
   // ********* Utility functions *********
 
   // Launches the browser only.
@@ -166,10 +173,12 @@ class UITestBase {
   // Gets the directory for the currently active profile in the browser.
   FilePath GetDownloadDirectory();
 
+  // Gets the executable file path of the Chrome browser process.
+  const FilePath::CharType* GetExecutablePath();
+
   // Returns the directory name where the "typical" user data is that we use
   // for testing.
-  static FilePath ComputeTypicalUserDataSource(
-      ProxyLauncher::ProfileType profile_type);
+  static FilePath ComputeTypicalUserDataSource(ProfileType profile_type);
 
   // Return the user data directory being used by the browser instance in
   // UITest::SetUp().
@@ -242,6 +251,14 @@ class UITestBase {
   // Use Chromium binaries from the given directory.
   void SetBrowserDirectory(const FilePath& dir);
 
+  // Appends a command-line switch (no associated value) to be passed to the
+  // browser when launched.
+  void AppendBrowserLaunchSwitch(const char* name);
+
+  // Appends a command-line switch with associated value to be passed to the
+  // browser when launched.
+  void AppendBrowserLaunchSwitch(const char* name, const char* value);
+
  protected:
   // String to display when a test fails because the crash service isn't
   // running.
@@ -270,6 +287,10 @@ class UITestBase {
   // Extra command-line switches that need to be passed to the browser are
   // added in this function. Add new command-line switches here.
   void SetLaunchSwitches();
+
+  // Called by the ProxyLauncher just before the browser is launched, allowing
+  // setup of the profile for the runtime environment..
+  virtual void SetUpProfile();
 
   // Returns the proxy for the currently active tab, or NULL if there is no
   // tab or there was some kind of error. Only looks at the first window, for
@@ -329,7 +350,7 @@ class UITestBase {
   scoped_ptr<ProxyLauncher> launcher_;
 
   // Are we using a profile with a complex theme?
-  ProxyLauncher::ProfileType profile_type_;
+  ProfileType profile_type_;
 
   // PID file for websocket server.
   FilePath websocket_pid_file_;
@@ -346,10 +367,10 @@ class UITest : public UITestBase, public PlatformTest {
     : UITestBase(), PlatformTest(), message_loop_(msg_loop_type) {
   }
 
-  virtual void SetUp();
-  virtual void TearDown();
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
-  virtual ProxyLauncher* CreateProxyLauncher();
+  virtual ProxyLauncher* CreateProxyLauncher() OVERRIDE;
 
   // Count the number of active browser processes launched by this test.
   // The count includes browser sub-processes.
@@ -357,12 +378,12 @@ class UITest : public UITestBase, public PlatformTest {
 
   // Returns a copy of local state preferences. The caller is responsible for
   // deleting the returned object. Returns NULL if there is an error.
-  DictionaryValue* GetLocalState();
+  base::DictionaryValue* GetLocalState();
 
   // Returns a copy of the default profile preferences. The caller is
   // responsible for deleting the returned object. Returns NULL if there is an
   // error.
-  DictionaryValue* GetDefaultProfilePreferences();
+  base::DictionaryValue* GetDefaultProfilePreferences();
 
   // Waits for the test case to finish.
   // ASSERTS if there are test failures.

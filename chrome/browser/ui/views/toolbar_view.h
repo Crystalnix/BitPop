@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,63 +7,58 @@
 #pragma once
 
 #include <set>
-#include <vector>
+#include <string>
 
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
-#include "chrome/browser/ui/views/accessible_pane_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/reload_button.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/animation/slide_animation.h"
-#include "ui/base/models/accelerator.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/menu/menu.h"
-#include "views/controls/menu/menu_wrapper.h"
-#include "views/controls/menu/view_menu_delegate.h"
-#include "views/view.h"
+#include "ui/views/accessible_pane_view.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/view.h"
 
 class BrowserActionsContainer;
 class Browser;
-class Profile;
 class WrenchMenu;
 
+namespace views {
+class MenuListener;
+}
+
 // The Browser Window's toolbar.
-class ToolbarView : public AccessiblePaneView,
+class ToolbarView : public views::AccessiblePaneView,
                     public views::ViewMenuDelegate,
                     public ui::AcceleratorProvider,
                     public LocationBarView::Delegate,
-                    public NotificationObserver,
+                    public content::NotificationObserver,
                     public CommandUpdater::CommandObserver,
                     public views::ButtonListener {
  public:
+  // The view class name.
+  static const char kViewClassName[];
+
   explicit ToolbarView(Browser* browser);
   virtual ~ToolbarView();
 
   // Create the contents of the Browser Toolbar
-  void Init(Profile* profile);
-
-  // Sets the profile which is active on the currently-active tab.
-  void SetProfile(Profile* profile);
-  Profile* profile() { return profile_; }
+  void Init();
 
   // Updates the toolbar (and transitively the location bar) with the states of
   // the specified |tab|.  If |should_restore_state| is true, we're switching
   // (back?) to this tab and should restore any previous location bar state
   // (such as user editing) as well.
-  void Update(TabContents* tab, bool should_restore_state);
-
-  // Set focus to the toolbar with complete keyboard access, with the
-  // focus initially set to the location bar. Focus will be restored
-  // to the ViewStorage with id |view_storage_id| if the user escapes.
-  void SetPaneFocusAndFocusLocationBar(int view_storage_id);
+  void Update(content::WebContents* tab, bool should_restore_state);
 
   // Set focus to the toolbar with complete keyboard access, with the
   // focus initially set to the app menu. Focus will be restored
-  // to the ViewStorage with id |view_storage_id| if the user escapes.
-  void SetPaneFocusAndFocusAppMenu(int view_storage_id);
+  // to the last focused view if the user escapes.
+  void SetPaneFocusAndFocusAppMenu();
 
   // Returns true if the app menu is focused.
   bool IsAppMenuFocused();
@@ -88,10 +83,10 @@ class ToolbarView : public AccessiblePaneView,
   views::MenuButton* app_menu() const { return app_menu_; }
 
   // Overridden from AccessiblePaneView
-  virtual bool SetPaneFocus(int view_storage_id, View* initial_focus) OVERRIDE;
+  virtual bool SetPaneFocus(View* initial_focus) OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
-  // Overridden from views::MenuDelegate:
+  // Overridden from views::ViewMenuDelegate:
   virtual void RunMenu(views::View* source, const gfx::Point& pt) OVERRIDE;
 
   // Overridden from LocationBarView::Delegate:
@@ -106,10 +101,10 @@ class ToolbarView : public AccessiblePaneView,
   virtual void ButtonPressed(views::Button* sender, const views::Event& event)
       OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Overridden from ui::AcceleratorProvider:
   virtual bool GetAcceleratorForCommandId(
@@ -126,6 +121,8 @@ class ToolbarView : public AccessiblePaneView,
   virtual int OnDragUpdated(const views::DropTargetEvent& event) OVERRIDE;
   virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
+  virtual std::string GetClassName() const OVERRIDE;
+  virtual bool AcceleratorPressed(const ui::Accelerator& acc) OVERRIDE;
 
   // The apparent horizontal space between most items, and the vertical padding
   // above and below them.
@@ -135,9 +132,8 @@ class ToolbarView : public AccessiblePaneView,
   static const int kVertSpacing;
 
  protected:
-
   // Overridden from AccessiblePaneView
-  virtual views::View* GetDefaultFocusableChild() OVERRIDE;
+  virtual bool SetPaneFocusAndFocusDefault() OVERRIDE;
   virtual void RemovePaneFocus() OVERRIDE;
 
  private:
@@ -166,8 +162,11 @@ class ToolbarView : public AccessiblePaneView,
     return display_mode_ == DISPLAYMODE_NORMAL;
   }
 
-  // Updates the badge on the app menu (Wrench).
-  void UpdateAppMenuBadge();
+  // Shows the critical notification bubble against the wrench menu.
+  void ShowCriticalNotification();
+
+  // Updates the badge and the accessible name of the app menu (Wrench).
+  void UpdateAppMenuState();
 
   // Gets a badge for the wrench icon corresponding to the number of
   // unacknowledged background pages in the system.
@@ -187,7 +186,6 @@ class ToolbarView : public AccessiblePaneView,
   LocationBarView* location_bar_;
   BrowserActionsContainer* browser_actions_;
   views::MenuButton* app_menu_;
-  Profile* profile_;
   Browser* browser_;
 
   // Contents of the profiles menu to populate with profile names.
@@ -199,16 +197,13 @@ class ToolbarView : public AccessiblePaneView,
   // The display mode used when laying out the toolbar.
   DisplayMode display_mode_;
 
-  // The contents of the wrench menu.
-  scoped_ptr<ui::SimpleMenuModel> wrench_menu_model_;
-
   // Wrench menu.
-  scoped_refptr<WrenchMenu> wrench_menu_;
+  scoped_ptr<WrenchMenu> wrench_menu_;
 
-  // Vector of listeners to receive callbacks when the menu opens.
-  std::vector<views::MenuListener*> menu_listeners_;
+  // A list of listeners to call when the menu opens.
+  ObserverList<views::MenuListener> menu_listeners_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ToolbarView);
 };

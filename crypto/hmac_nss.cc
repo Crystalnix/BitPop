@@ -48,7 +48,7 @@ bool HMAC::Init(const unsigned char *key, int key_length) {
     return false;
   }
 
-  plat_->slot_.reset(PK11_GetBestSlot(plat_->mechanism_, NULL));
+  plat_->slot_.reset(PK11_GetInternalSlot());
   if (!plat_->slot_.get()) {
     NOTREACHED();
     return false;
@@ -73,7 +73,7 @@ bool HMAC::Init(const unsigned char *key, int key_length) {
   return true;
 }
 
-bool HMAC::Sign(const std::string& data,
+bool HMAC::Sign(const base::StringPiece& data,
                 unsigned char* digest,
                 int digest_length) const {
   if (!plat_->sym_key_.get()) {

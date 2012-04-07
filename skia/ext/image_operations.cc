@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "skia/ext/image_operations.h"
 
 // TODO(pkasting): skia/ext should not depend on base/!
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/stack_container.h"
@@ -98,10 +99,6 @@ class ResizeFilter {
                int dest_width, int dest_height,
                const SkIRect& dest_subset);
 
-  // Returns the bounds in the input bitmap of data that is used in the output.
-  // The filter offsets are within this rectangle.
-  const SkIRect& src_depend() { return src_depend_; }
-
   // Returns the filled filter values.
   const ConvolutionFilter1D& x_filter() { return x_filter_; }
   const ConvolutionFilter1D& y_filter() { return y_filter_; }
@@ -165,9 +162,6 @@ class ResizeFilter {
   }
 
   ImageOperations::ResizeMethod method_;
-
-  // Subset of source the filters will touch.
-  SkIRect src_depend_;
 
   // Size of the filter support on one side only in the destination space.
   // See GetFilterSupport.
@@ -368,6 +362,9 @@ SkBitmap ImageOperations::Resize(const SkBitmap& source,
 SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
                                          int dest_width, int dest_height,
                                          const SkIRect& dest_subset) {
+  TRACE_EVENT2("skia", "ImageOperations::ResizeSubpixel",
+               "src_pixels", source.width()*source.height(),
+               "dst_pixels", dest_width*dest_height);
   // Currently only works on Linux/BSD because these are the only platforms
   // where SkFontHost::GetSubpixelOrder is defined.
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -405,7 +402,13 @@ SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
   result.setConfig(SkBitmap::kARGB_8888_Config, dest_subset.width(),
                    dest_subset.height());
   result.allocPixels();
+  if (!result.readyToDraw())
+    return img;
+
   SkAutoLockPixels locker(img);
+  if (!img.readyToDraw())
+    return img;
+
   uint32* src_row = img.getAddr32(0, 0);
   uint32* dst_row = result.getAddr32(0, 0);
   for (int y = 0; y < dest_subset.height(); y++) {
@@ -468,6 +471,9 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
                                       ResizeMethod method,
                                       int dest_width, int dest_height,
                                       const SkIRect& dest_subset) {
+  TRACE_EVENT2("skia", "ImageOperations::ResizeBasic",
+               "src_pixels", source.width()*source.height(),
+               "dst_pixels", dest_width*dest_height);
   // Ensure that the ResizeMethod enumeration is sound.
   SkASSERT(((RESIZE_FIRST_QUALITY_METHOD <= method) &&
             (method <= RESIZE_LAST_QUALITY_METHOD)) ||
@@ -493,6 +499,8 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
            (method <= ImageOperations::RESIZE_LAST_ALGORITHM_METHOD));
 
   SkAutoLockPixels locker(source);
+  if (!source.readyToDraw())
+      return SkBitmap();
 
   ResizeFilter filter(method, source.width(), source.height(),
                       dest_width, dest_height, dest_subset);
@@ -509,6 +517,9 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
   result.setConfig(SkBitmap::kARGB_8888_Config,
                    dest_subset.width(), dest_subset.height());
   result.allocPixels();
+  if (!result.readyToDraw())
+    return SkBitmap();
+
   BGRAConvolve2D(source_subset, static_cast<int>(source.rowBytes()),
                  !source.isOpaque(), filter.x_filter(), filter.y_filter(),
                  static_cast<int>(result.rowBytes()),

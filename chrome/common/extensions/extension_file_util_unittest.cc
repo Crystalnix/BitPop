@@ -1,20 +1,28 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/extension_file_util.h"
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace keys = extension_manifest_keys;
 
+#if defined(OS_WIN)
+// http://crbug.com/106381
+#define InstallUninstallGarbageCollect DISABLED_InstallUninstallGarbageCollect
+#endif
 TEST(ExtensionFileUtil, InstallUninstallGarbageCollect) {
   ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -100,6 +108,11 @@ TEST(ExtensionFileUtil, LoadExtensionWithoutLocalesFolder) {
   EXPECT_TRUE(error.empty());
 }
 
+#if defined(OS_WIN)
+// http://crbug.com/106381
+#define CheckIllegalFilenamesNoUnderscores \
+    DISABLED_CheckIllegalFilenamesNoUnderscores
+#endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesNoUnderscores) {
   ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -115,6 +128,11 @@ TEST(ExtensionFileUtil, CheckIllegalFilenamesNoUnderscores) {
                                                             &error));
 }
 
+#if defined(OS_WIN)
+// http://crbug.com/106381
+#define CheckIllegalFilenamesOnlyReserved \
+    DISABLED_CheckIllegalFilenamesOnlyReserved
+#endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesOnlyReserved) {
   ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -127,6 +145,11 @@ TEST(ExtensionFileUtil, CheckIllegalFilenamesOnlyReserved) {
                                                             &error));
 }
 
+#if defined(OS_WIN)
+// http://crbug.com/106381
+#define CheckIllegalFilenamesReservedAndIllegal \
+    DISABLED_CheckIllegalFilenamesReservedAndIllegal
+#endif
 TEST(ExtensionFileUtil, CheckIllegalFilenamesReservedAndIllegal) {
   ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -236,6 +259,106 @@ TEST(ExtensionFileUtil, ExtensionURLToRelativeFilePath) {
     EXPECT_EQ(expected_path.value(), actual_path.value()) <<
       " For the path " << url;
   }
+}
+
+static scoped_refptr<Extension> LoadExtensionManifest(
+    DictionaryValue* manifest,
+    const FilePath& manifest_dir,
+    Extension::Location location,
+    int extra_flags,
+    std::string* error) {
+  scoped_refptr<Extension> extension = Extension::Create(
+      manifest_dir, location, *manifest, extra_flags, error);
+  return extension;
+}
+
+static scoped_refptr<Extension> LoadExtensionManifest(
+    const std::string& manifest_value,
+    const FilePath& manifest_dir,
+    Extension::Location location,
+    int extra_flags,
+    std::string* error) {
+  JSONStringValueSerializer serializer(manifest_value);
+  scoped_ptr<Value> result(serializer.Deserialize(NULL, error));
+  if (!result.get())
+    return NULL;
+  CHECK_EQ(Value::TYPE_DICTIONARY, result->GetType());
+  return LoadExtensionManifest(static_cast<DictionaryValue*>(result.get()),
+                               manifest_dir,
+                               location,
+                               extra_flags,
+                               error);
+}
+
+#if defined(OS_WIN)
+// http://crbug.com/108279
+#define ValidateThemeUTF8 DISABLED_ValidateThemeUTF8
+#endif
+TEST(ExtensionFileUtil, ValidateThemeUTF8) {
+  ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+
+  // "aeo" with accents. Use http://0xcc.net/jsescape/ to decode them.
+  std::string non_ascii_file = "\xC3\xA0\xC3\xA8\xC3\xB2.png";
+  FilePath non_ascii_path = temp.path().Append(FilePath::FromUTF8Unsafe(
+      non_ascii_file));
+  file_util::WriteFile(non_ascii_path, "", 0);
+
+  std::string kManifest =
+      base::StringPrintf(
+          "{ \"name\": \"Test\", \"version\": \"1.0\", "
+          "  \"theme\": { \"images\": { \"theme_frame\": \"%s\" } }"
+          "}", non_ascii_file.c_str());
+  std::string error;
+  scoped_refptr<Extension> extension = LoadExtensionManifest(
+      kManifest, temp.path(), Extension::LOAD, 0, &error);
+  ASSERT_TRUE(extension.get()) << error;
+
+  EXPECT_TRUE(extension_file_util::ValidateExtension(extension, &error)) <<
+      error;
+}
+
+#if defined(OS_WIN)
+// This test hangs on Windows sometimes. http://crbug.com/110279
+#define MAYBE_BackgroundScriptsMustExist DISABLED_BackgroundScriptsMustExist
+#else
+#define MAYBE_BackgroundScriptsMustExist BackgroundScriptsMustExist
+#endif
+TEST(ExtensionFileUtil, MAYBE_BackgroundScriptsMustExist) {
+  ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+
+  scoped_ptr<DictionaryValue> value(new DictionaryValue());
+  value->SetString("name", "test");
+  value->SetString("version", "1");
+  value->SetInteger("manifest_version", 1);
+
+  ListValue* scripts = new ListValue();
+  scripts->Append(Value::CreateStringValue("foo.js"));
+  value->Set("background.scripts", scripts);
+
+  std::string error;
+  scoped_refptr<Extension> extension = LoadExtensionManifest(
+      value.get(), temp.path(), Extension::LOAD, 0, &error);
+  ASSERT_TRUE(extension.get()) << error;
+
+  EXPECT_FALSE(extension_file_util::ValidateExtension(extension, &error));
+  EXPECT_EQ(l10n_util::GetStringFUTF8(
+      IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED, ASCIIToUTF16("foo.js")),
+           error);
+
+  scripts->Clear();
+  scripts->Append(Value::CreateStringValue("http://google.com/foo.js"));
+
+  extension = LoadExtensionManifest(value.get(), temp.path(), Extension::LOAD,
+                                    0, &error);
+  ASSERT_TRUE(extension.get()) << error;
+
+  EXPECT_FALSE(extension_file_util::ValidateExtension(extension, &error));
+  EXPECT_EQ(l10n_util::GetStringFUTF8(
+      IDS_EXTENSION_LOAD_BACKGROUND_SCRIPT_FAILED,
+      ASCIIToUTF16("http://google.com/foo.js")),
+           error);
 }
 
 // TODO(aa): More tests as motivation allows. Maybe steal some from

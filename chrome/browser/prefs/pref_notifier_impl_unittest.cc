@@ -6,10 +6,12 @@
 #include "chrome/browser/prefs/pref_observer_mock.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/pref_value_store.h"
-#include "chrome/test/testing_pref_service.h"
-#include "content/common/notification_observer_mock.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/test/notification_observer_mock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -33,7 +35,7 @@ class MockPrefNotifier : public PrefNotifierImpl {
 
   MOCK_METHOD1(FireObservers, void(const std::string& path));
 
-  size_t CountObserver(const char* path, NotificationObserver* obs) {
+  size_t CountObserver(const char* path, content::NotificationObserver* obs) {
     PrefObserverMap::const_iterator observer_iterator =
         pref_observers()->find(path);
     if (observer_iterator == pref_observers()->end())
@@ -41,7 +43,7 @@ class MockPrefNotifier : public PrefNotifierImpl {
 
     NotificationObserverList* observer_list = observer_iterator->second;
     NotificationObserverList::Iterator it(*observer_list);
-    NotificationObserver* existing_obs;
+    content::NotificationObserver* existing_obs;
     size_t count = 0;
     while ((existing_obs = it.GetNext()) != NULL) {
       if (existing_obs == obs)
@@ -78,15 +80,14 @@ TEST_F(PrefNotifierTest, OnPreferenceChanged) {
 
 TEST_F(PrefNotifierTest, OnInitializationCompleted) {
   MockPrefNotifier notifier(&pref_service_);
-  NotificationObserverMock observer;
-  NotificationRegistrar registrar;
-  registrar.Add(&observer, NotificationType::PREF_INITIALIZATION_COMPLETED,
-                Source<PrefService>(&pref_service_));
+  content::NotificationObserverMock observer;
+  content::NotificationRegistrar registrar;
+  registrar.Add(&observer, chrome::NOTIFICATION_PREF_INITIALIZATION_COMPLETED,
+                content::Source<PrefService>(&pref_service_));
   EXPECT_CALL(observer, Observe(
-      Field(&NotificationType::value,
-            NotificationType::PREF_INITIALIZATION_COMPLETED),
-      Source<PrefService>(&pref_service_),
-      Property(&Details<bool>::ptr, testing::Pointee(true))));
+      int(chrome::NOTIFICATION_PREF_INITIALIZATION_COMPLETED),
+      content::Source<PrefService>(&pref_service_),
+      Property(&content::Details<bool>::ptr, testing::Pointee(true))));
   notifier.OnInitializationCompleted(true);
 }
 
@@ -104,13 +105,13 @@ TEST_F(PrefNotifierTest, AddAndRemovePrefObservers) {
   // Re-adding the same observer for the same pref doesn't change anything.
   // Skip this in debug mode, since it hits a DCHECK and death tests aren't
   // thread-safe.
-#if defined(NDEBUG)
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
   notifier.AddPrefObserver(pref_name, &obs1_);
   ASSERT_EQ(1u, notifier.CountObserver(pref_name, &obs1_));
   ASSERT_EQ(0u, notifier.CountObserver(pref_name2, &obs1_));
   ASSERT_EQ(0u, notifier.CountObserver(pref_name, &obs2_));
   ASSERT_EQ(0u, notifier.CountObserver(pref_name2, &obs2_));
-#endif  // NDEBUG
+#endif
 
   // Ensure that we can add the same observer to a different pref.
   notifier.AddPrefObserver(pref_name2, &obs1_);
@@ -154,7 +155,7 @@ TEST_F(PrefNotifierTest, AddAndRemovePrefObservers) {
 }
 
 TEST_F(PrefNotifierTest, FireObservers) {
-  FundamentalValue value_true(true);
+  base::FundamentalValue value_true(true);
   PrefNotifierImpl notifier(&pref_service_);
   notifier.AddPrefObserver(kChangedPref, &obs1_);
   notifier.AddPrefObserver(kUnchangedPref, &obs1_);

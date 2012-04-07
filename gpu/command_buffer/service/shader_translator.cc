@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@ bool InitializeShaderTranslator() {
 using gpu::gles2::ShaderTranslator;
 void GetVariableInfo(ShHandle compiler, ShShaderInfo var_type,
                      ShaderTranslator::VariableMap* var_map) {
-  int name_len = 0;
+  int name_len = 0, mapped_name_len = 0;
   switch (var_type) {
     case SH_ACTIVE_ATTRIBUTES:
       ShGetInfo(compiler, SH_ACTIVE_ATTRIBUTE_MAX_LENGTH, &name_len);
@@ -36,27 +36,39 @@ void GetVariableInfo(ShHandle compiler, ShShaderInfo var_type,
       break;
     default: NOTREACHED();
   }
-  if (name_len <= 1) return;
+  ShGetInfo(compiler, SH_MAPPED_NAME_MAX_LENGTH, &mapped_name_len);
+  if (name_len <= 1 || mapped_name_len <= 1) return;
   scoped_array<char> name(new char[name_len]);
+  scoped_array<char> mapped_name(new char[mapped_name_len]);
 
   int num_vars = 0;
   ShGetInfo(compiler, var_type, &num_vars);
   for (int i = 0; i < num_vars; ++i) {
+    int len = 0;
     int size = 0;
     ShDataType type = SH_NONE;
 
     switch (var_type) {
       case SH_ACTIVE_ATTRIBUTES:
-        ShGetActiveAttrib(compiler, i, NULL, &size, &type, name.get(), NULL);
+        ShGetActiveAttrib(
+            compiler, i, &len, &size, &type, name.get(), mapped_name.get());
         break;
       case SH_ACTIVE_UNIFORMS:
-        ShGetActiveUniform(compiler, i, NULL, &size, &type, name.get(), NULL);
+        ShGetActiveUniform(
+            compiler, i, &len, &size, &type, name.get(), mapped_name.get());
         break;
       default: NOTREACHED();
     }
 
-    ShaderTranslator::VariableInfo info(type, size);
-    (*var_map)[name.get()] = info;
+    // In theory we should CHECK(len <= name_len - 1) here, but ANGLE needs
+    // to handle long struct field name mapping before we can do this.
+    // Also, we should modify the ANGLE interface to also return a length
+    // for mapped_name.
+    std::string name_string(name.get(), std::min(len, name_len - 1));
+    mapped_name.get()[mapped_name_len - 1] = '\0';
+
+    ShaderTranslator::VariableInfo info(type, size, name_string);
+    (*var_map)[mapped_name.get()] = info;
   }
 }
 }  // namespace
@@ -66,7 +78,8 @@ namespace gles2 {
 
 ShaderTranslator::ShaderTranslator()
     : compiler_(NULL),
-      implementation_is_glsl_es_(false) {
+      implementation_is_glsl_es_(false),
+      needs_built_in_function_emulation_(false) {
 }
 
 ShaderTranslator::~ShaderTranslator() {
@@ -74,10 +87,13 @@ ShaderTranslator::~ShaderTranslator() {
     ShDestruct(compiler_);
 }
 
-bool ShaderTranslator::Init(ShShaderType shader_type,
-                            ShShaderSpec shader_spec,
-                            const ShBuiltInResources* resources,
-                            bool implementation_is_glsl_es) {
+bool ShaderTranslator::Init(
+    ShShaderType shader_type,
+    ShShaderSpec shader_spec,
+    const ShBuiltInResources* resources,
+    ShaderTranslatorInterface::GlslImplementationType glsl_implementation_type,
+    ShaderTranslatorInterface::GlslBuiltInFunctionBehavior
+        glsl_built_in_function_behavior) {
   // Make sure Init is called only once.
   DCHECK(compiler_ == NULL);
   DCHECK(shader_type == SH_FRAGMENT_SHADER || shader_type == SH_VERTEX_SHADER);
@@ -87,8 +103,14 @@ bool ShaderTranslator::Init(ShShaderType shader_type,
   if (!InitializeShaderTranslator())
     return false;
 
-  compiler_ = ShConstructCompiler(shader_type, shader_spec, resources);
-  implementation_is_glsl_es_ = implementation_is_glsl_es;
+  ShShaderOutput shader_output =
+      (glsl_implementation_type == kGlslES ? SH_ESSL_OUTPUT : SH_GLSL_OUTPUT);
+
+  compiler_ = ShConstructCompiler(
+      shader_type, shader_spec, shader_output, resources);
+  implementation_is_glsl_es_ = (glsl_implementation_type == kGlslES);
+  needs_built_in_function_emulation_ =
+      (glsl_built_in_function_behavior == kGlslBuiltInFunctionEmulated);
   return compiler_ != NULL;
 }
 
@@ -99,26 +121,18 @@ bool ShaderTranslator::Translate(const char* shader) {
   ClearResults();
 
   bool success = false;
-  int compile_options = SH_OBJECT_CODE | SH_ATTRIBUTES_UNIFORMS;
+  int compile_options =
+      SH_OBJECT_CODE | SH_ATTRIBUTES_UNIFORMS | SH_MAP_LONG_VARIABLE_NAMES;
+  if (needs_built_in_function_emulation_)
+    compile_options |= SH_EMULATE_BUILT_IN_FUNCTIONS;
   if (ShCompile(compiler_, &shader, 1, compile_options)) {
     success = true;
-    if (!implementation_is_glsl_es_) {
-      // Get translated shader.
-      int obj_code_len = 0;
-      ShGetInfo(compiler_, SH_OBJECT_CODE_LENGTH, &obj_code_len);
-      if (obj_code_len > 1) {
-        translated_shader_.reset(new char[obj_code_len]);
-        ShGetObjectCode(compiler_, translated_shader_.get());
-      }
-    } else {
-      // Pass down the original shader's source rather than the
-      // compiler's output. TODO(kbr): once the shader compiler has a
-      // GLSL ES backend, use its output.
-      int shader_code_len = 1 + strlen(shader);
-      if (shader_code_len > 1) {
-        translated_shader_.reset(new char[shader_code_len]);
-        strncpy(translated_shader_.get(), shader, shader_code_len);
-      }
+    // Get translated shader.
+    int obj_code_len = 0;
+    ShGetInfo(compiler_, SH_OBJECT_CODE_LENGTH, &obj_code_len);
+    if (obj_code_len > 1) {
+      translated_shader_.reset(new char[obj_code_len]);
+      ShGetObjectCode(compiler_, translated_shader_.get());
     }
     // Get info for attribs and uniforms.
     GetVariableInfo(compiler_, SH_ACTIVE_ATTRIBUTES, &attrib_map_);

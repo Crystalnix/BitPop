@@ -49,6 +49,7 @@
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/net/x509_certificate_model.h"
+#include "crypto/scoped_nss_types.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "net/third_party/mozilla_security_manager/nsNSSCertTrust.h"
@@ -117,6 +118,8 @@ SECOidTag eku_ms_lifetime_signing = SEC_OID_UNKNOWN;
 SECOidTag eku_ms_smart_card_logon = SEC_OID_UNKNOWN;
 SECOidTag eku_ms_key_recovery_agent = SEC_OID_UNKNOWN;
 SECOidTag eku_netscape_international_step_up = SEC_OID_UNKNOWN;
+SECOidTag cert_attribute_business_category = SEC_OID_UNKNOWN;
+SECOidTag cert_attribute_ev_incorporation_country = SEC_OID_UNKNOWN;
 
 void RegisterDynamicOids() {
   if (ms_cert_ext_certtype != SEC_OID_UNKNOWN)
@@ -125,7 +128,7 @@ void RegisterDynamicOids() {
   ms_cert_ext_certtype = RegisterDynamicOid("1.3.6.1.4.1.311.20.2");
   ms_certsrv_ca_version = RegisterDynamicOid("1.3.6.1.4.1.311.21.1");
   ms_nt_principal_name = RegisterDynamicOid("1.3.6.1.4.1.311.20.2.3");
-  ms_nt_principal_name = RegisterDynamicOid("1.3.6.1.4.1.311.25.1");
+  ms_ntds_replication = RegisterDynamicOid("1.3.6.1.4.1.311.25.1");
 
   eku_ms_individual_code_signing = RegisterDynamicOid("1.3.6.1.4.1.311.2.1.21");
   eku_ms_commercial_code_signing = RegisterDynamicOid("1.3.6.1.4.1.311.2.1.22");
@@ -145,6 +148,13 @@ void RegisterDynamicOids() {
   eku_ms_key_recovery_agent = RegisterDynamicOid("1.3.6.1.4.1.311.21.6");
   eku_netscape_international_step_up = RegisterDynamicOid(
       "2.16.840.1.113730.4.1");
+
+  // These two OIDs will be built-in as SEC_OID_BUSINESS_CATEGORY and
+  // SEC_OID_EV_INCORPORATION_COUNTRY starting in NSS 3.13.  Until then,
+  // we need to add them dynamically.
+  cert_attribute_business_category = RegisterDynamicOid("2.5.4.15");
+  cert_attribute_ev_incorporation_country = RegisterDynamicOid(
+      "1.3.6.1.4.1.311.60.2.1.3");
 }
 
 std::string DumpOidString(SECItem* oid) {
@@ -318,6 +328,9 @@ std::string GetOIDText(SECItem* oid) {
     case SEC_OID_PKIX_USER_NOTICE_QUALIFIER:
       string_id = IDS_CERT_PKIX_USER_NOTICE_QUALIFIER;
       break;
+    case SEC_OID_UNKNOWN:
+      string_id = -1;
+      break;
 
     // There are a billionty other OIDs we could add here.  I tried to get the
     // important ones...
@@ -360,6 +373,10 @@ std::string GetOIDText(SECItem* oid) {
         string_id = IDS_CERT_EKU_MS_KEY_RECOVERY_AGENT;
       else if (oid_tag == eku_netscape_international_step_up)
         string_id = IDS_CERT_EKU_NETSCAPE_INTERNATIONAL_STEP_UP;
+      else if (oid_tag == cert_attribute_business_category)
+        string_id = IDS_CERT_OID_BUSINESS_CATEGORY;
+      else if (oid_tag == cert_attribute_ev_incorporation_country)
+        string_id = IDS_CERT_OID_EV_INCORPORATION_COUNTRY;
       else
         string_id = -1;
       break;
@@ -567,7 +584,7 @@ std::string ProcessGeneralNames(PRArenaPool* arena,
 std::string ProcessAltName(SECItem* extension_data) {
   CERTGeneralName* name_list;
 
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   CHECK(arena.get());
 
   name_list = CERT_DecodeAltNameExtension(arena.get(), extension_data);
@@ -579,7 +596,7 @@ std::string ProcessAltName(SECItem* extension_data) {
 
 std::string ProcessSubjectKeyId(SECItem* extension_data) {
   SECItem decoded;
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   CHECK(arena.get());
 
   std::string rv;
@@ -597,7 +614,7 @@ std::string ProcessSubjectKeyId(SECItem* extension_data) {
 
 std::string ProcessAuthKeyId(SECItem* extension_data) {
   CERTAuthKeyID* ret;
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   std::string rv;
 
   CHECK(arena.get());
@@ -761,7 +778,7 @@ std::string ProcessCrlDistPoints(SECItem* extension_data) {
     {RF_CERTIFICATE_HOLD, IDS_CERT_REVOCATION_REASON_CERTIFICATE_HOLD},
   };
 
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   CHECK(arena.get());
 
   crldp = CERT_DecodeCRLDistributionPoints(arena.get(), extension_data);
@@ -808,7 +825,7 @@ std::string ProcessAuthInfoAccess(SECItem* extension_data) {
   std::string rv;
   CERTAuthInfoAccess** aia;
   CERTAuthInfoAccess* desc;
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   CHECK(arena.get());
 
   aia = CERT_DecodeAuthInfoAccessExtension(arena.get(), extension_data);
@@ -851,7 +868,7 @@ std::string ProcessIA5String(SECItem* extension_data) {
 std::string ProcessBMPString(SECItem* extension_data) {
   std::string rv;
   SECItem item;
-  ScopedPRArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
+  crypto::ScopedPLArenaPool arena(PORT_NewArena(DER_DEFAULT_CHUNKSIZE));
   CHECK(arena.get());
 
   if (SEC_ASN1DecodeItem(arena.get(), &item,

@@ -1,25 +1,31 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/renderer/external_host_bindings.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/values.h"
 #include "chrome/common/render_messages.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 
 using WebKit::WebBindings;
 
-ExternalHostBindings::ExternalHostBindings() : frame_(NULL) {
-  BindMethod("postMessage", &ExternalHostBindings::postMessage);
+ExternalHostBindings::ExternalHostBindings(IPC::Message::Sender* sender,
+                                           int routing_id)
+    : frame_(NULL), sender_(sender), routing_id_(routing_id) {
+  BindCallback("postMessage", base::Bind(&ExternalHostBindings::PostMessage,
+                                         base::Unretained(this)));
   BindProperty("onmessage", &on_message_handler_);
 }
 
 ExternalHostBindings::~ExternalHostBindings() {
 }
 
-void ExternalHostBindings::postMessage(
+void ExternalHostBindings::PostMessage(
     const CppArgumentList& args, CppVariant* result) {
   DCHECK(result);
 
@@ -47,18 +53,11 @@ void ExternalHostBindings::postMessage(
     target = "*";
   }
 
-  std::string origin;
-  GURL origin_url(GURL(frame_->url()).GetOrigin());
-  if (origin_url.is_empty()) {
-    // If the origin is not a scheme/host/port tuple, then return the literal
-    // string "null".
-    origin = "null";
-  } else {
-    origin = origin_url.spec();
-  }
+  std::string origin = frame_->document().securityOrigin().toString().utf8();
 
-  result->Set(sender()->Send(new ViewHostMsg_ForwardMessageToExternalHost(
-      routing_id(), message, origin, target)));
+  result->Set(sender_->Send(
+      new ChromeViewHostMsg_ForwardMessageToExternalHost(
+          routing_id_, message, origin, target)));
 }
 
 bool ExternalHostBindings::ForwardMessageFromExternalHost(
@@ -70,21 +69,24 @@ bool ExternalHostBindings::ForwardMessageFromExternalHost(
   bool status = false;
 
   if (target.compare("*") != 0) {
-    GURL frame_url(frame_->url());
-    GURL frame_origin(frame_url.GetOrigin());
+    // TODO(abarth): This code should use WebSecurityOrigin::toString to
+    // make origin strings. GURL::GetOrigin() doesn't understand all the
+    // cases that WebSecurityOrigin::toString understands.
+    GURL document_url(frame_->document().url());
+    GURL document_origin(document_url.GetOrigin());
     GURL target_origin(GURL(target).GetOrigin());
 
     // We want to compare the origins of the two URLs but first
     // we need to make sure that we don't compare an invalid one
     // to a valid one.
-    bool drop = (frame_origin.is_valid() != target_origin.is_valid());
+    bool drop = (document_origin.is_valid() != target_origin.is_valid());
 
     if (!drop) {
-      if (!frame_origin.is_valid()) {
+      if (!document_origin.is_valid()) {
         // Both origins are invalid, so compare the URLs as opaque strings.
-        drop = (frame_url.spec().compare(target) != 0);
+        drop = (document_url.spec().compare(target) != 0);
       } else {
-        drop = (frame_origin != target_origin);
+        drop = (document_origin != target_origin);
       }
     }
 
@@ -138,6 +140,12 @@ bool ExternalHostBindings::ForwardMessageFromExternalHost(
   }
 
   return status;
+}
+
+void ExternalHostBindings::BindToJavascript(WebKit::WebFrame* frame,
+                                            const std::string& classname) {
+  frame_ = frame;
+  CppBoundClass::BindToJavascript(frame, classname);
 }
 
 bool ExternalHostBindings::CreateMessageEvent(NPObject** message_event) {

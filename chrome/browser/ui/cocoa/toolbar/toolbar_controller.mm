@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "app/mac/nsimage_cache.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
 #include "base/string_util.h"
@@ -19,13 +19,12 @@
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/accelerators_cocoa.h"
 #import "chrome/browser/ui/cocoa/background_gradient_view.h"
-#import "chrome/browser/ui/cocoa/encoding_menu_controller_delegate_mac.h"
+#include "chrome/browser/ui/cocoa/drag_util.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_action_button.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_container_view.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
@@ -41,27 +40,31 @@
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_view.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/wrench_menu_controller.h"
+#include "chrome/browser/ui/global_error_service.h"
+#include "chrome/browser/ui/global_error_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/upgrade_detector.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/base/models/accelerator_cocoa.h"
-#include "ui/base/models/menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
+
+using content::OpenURLParams;
+using content::Referrer;
+using content::WebContents;
 
 namespace {
 
@@ -79,7 +82,8 @@ const CGFloat kWrenchMenuLeftPadding = 3.0;
 
 }  // namespace
 
-@interface ToolbarController(Private)
+@interface ToolbarController()
+@property(assign, nonatomic) Browser* browser;
 - (void)addAccessibilityDescriptions;
 - (void)initCommandStatus:(CommandUpdater*)commands;
 - (void)prefChanged:(std::string*)prefName;
@@ -97,46 +101,29 @@ const CGFloat kWrenchMenuLeftPadding = 3.0;
 
 namespace ToolbarControllerInternal {
 
-// A C++ delegate that handles the accelerators in the wrench menu.
-class WrenchAcceleratorDelegate : public ui::AcceleratorProvider {
- public:
-  virtual bool GetAcceleratorForCommandId(int command_id,
-      ui::Accelerator* accelerator_generic) {
-    // Downcast so that when the copy constructor is invoked below, the key
-    // string gets copied, too.
-    ui::AcceleratorCocoa* out_accelerator =
-        static_cast<ui::AcceleratorCocoa*>(accelerator_generic);
-    AcceleratorsCocoa* keymap = AcceleratorsCocoa::GetInstance();
-    const ui::AcceleratorCocoa* accelerator =
-        keymap->GetAcceleratorForCommand(command_id);
-    if (accelerator) {
-      *out_accelerator = *accelerator;
-      return true;
-    }
-    return false;
-  }
-};
-
 // A class registered for C++ notifications. This is used to detect changes in
 // preferences and upgrade available notifications. Bridges the notification
 // back to the ToolbarController.
-class NotificationBridge : public NotificationObserver {
+class NotificationBridge : public content::NotificationObserver {
  public:
   explicit NotificationBridge(ToolbarController* controller)
       : controller_(controller) {
-    registrar_.Add(this, NotificationType::UPGRADE_RECOMMENDED,
-                   NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_UPGRADE_RECOMMENDED,
+                   content::NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED,
+                   content::Source<Profile>([controller browser]->profile()));
   }
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    switch (type.value) {
-      case NotificationType::PREF_CHANGED:
-        [controller_ prefChanged:Details<std::string>(details).ptr()];
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    switch (type) {
+      case chrome::NOTIFICATION_PREF_CHANGED:
+        [controller_ prefChanged:content::Details<std::string>(details).ptr()];
         break;
-      case NotificationType::UPGRADE_RECOMMENDED:
+      case chrome::NOTIFICATION_UPGRADE_RECOMMENDED:
+      case chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED:
         [controller_ badgeWrenchMenuIfNeeded];
         break;
       default:
@@ -147,12 +134,14 @@ class NotificationBridge : public NotificationObserver {
  private:
   ToolbarController* controller_;  // weak, owns us
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 }  // namespace ToolbarControllerInternal
 
 @implementation ToolbarController
+
+@synthesize browser = browser_;
 
 - (id)initWithModel:(ToolbarModel*)model
            commands:(CommandUpdater*)commands
@@ -162,7 +151,7 @@ class NotificationBridge : public NotificationObserver {
        nibFileNamed:(NSString*)nibName {
   DCHECK(model && commands && profile && [nibName length]);
   if ((self = [super initWithNibName:nibName
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     toolbarModel_ = model;
     commands_ = commands;
     profile_ = profile;
@@ -265,6 +254,9 @@ class NotificationBridge : public NotificationObserver {
   [self badgeWrenchMenuIfNeeded];
 
   [wrenchButton_ setOpenMenuOnClick:YES];
+
+  [backButton_ setOpenMenuOnRightClick:YES];
+  [forwardButton_ setOpenMenuOnRightClick:YES];
 
   [backButton_ setHandleMiddleClick:YES];
   [forwardButton_ setHandleMiddleClick:YES];
@@ -434,7 +426,7 @@ class NotificationBridge : public NotificationObserver {
   [homeButton_ setEnabled:commands->IsCommandEnabled(IDC_HOME) ? YES : NO];
 }
 
-- (void)updateToolbarWithContents:(TabContents*)tab
+- (void)updateToolbarWithContents:(WebContents*)tab
                shouldRestoreState:(BOOL)shouldRestore {
   locationBarView_->Update(tab, shouldRestore ? true : false);
 
@@ -540,14 +532,11 @@ class NotificationBridge : public NotificationObserver {
 // Install the menu wrench buttons. Calling this repeatedly is inexpensive so it
 // can be done every time the buttons are shown.
 - (void)installWrenchMenu {
-  if (wrenchMenuModel_.get())
+  if (wrenchMenuController_.get())
     return;
-  acceleratorDelegate_.reset(
-      new ToolbarControllerInternal::WrenchAcceleratorDelegate());
 
-  wrenchMenuModel_.reset(new WrenchMenuModel(
-      acceleratorDelegate_.get(), browser_));
-  [wrenchMenuController_ setModel:wrenchMenuModel_.get()];
+  wrenchMenuController_.reset(
+      [[WrenchMenuController alloc] initWithBrowser:browser_]);
   [wrenchMenuController_ setUseWithPopUpButtonCell:YES];
   [wrenchButton_ setAttachedMenu:[wrenchMenuController_ menu]];
 }
@@ -561,9 +550,12 @@ class NotificationBridge : public NotificationObserver {
     [[wrenchButton_ cell]
         setOverlayImageID:UpgradeDetector::GetInstance()->GetIconResourceID(
             UpgradeDetector::UPGRADE_ICON_TYPE_BADGE)];
-  } else {
-    [[wrenchButton_ cell] setOverlayImageID:0];
+    return;
   }
+
+  int error_badge_id = GlobalErrorServiceFactory::GetForProfile(
+      browser_->profile())->GetFirstBadgeResourceID();
+  [[wrenchButton_ cell] setOverlayImageID:error_badge_id];
 }
 
 - (void)prefChanged:(std::string*)prefName {
@@ -741,6 +733,10 @@ class NotificationBridge : public NotificationObserver {
   return browserActionsController_.get();
 }
 
+- (NSView*)wrenchButton {
+  return wrenchButton_;
+}
+
 // (URLDropTargetController protocol)
 - (void)dropURLs:(NSArray*)urls inView:(NSView*)view at:(NSPoint)point {
   // TODO(viettrungluu): This code is more or less copied from the code in
@@ -762,10 +758,10 @@ class NotificationBridge : public NotificationObserver {
   if (url.SchemeIs(chrome::kJavaScriptScheme)) {
     browser_->window()->GetLocationBar()->location_entry()->SetUserText(
         OmniboxView::StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
-    return;
   }
-  browser_->GetSelectedTabContents()->OpenURL(url, GURL(), CURRENT_TAB,
-                                              PageTransition::TYPED);
+  OpenURLParams params(
+      url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
+  browser_->GetSelectedWebContents()->OpenURL(params);
 }
 
 // (URLDropTargetController protocol)
@@ -780,8 +776,9 @@ class NotificationBridge : public NotificationObserver {
       base::SysNSStringToUTF16(text), string16(), false, false, &match, NULL);
   GURL url(match.destination_url);
 
-  browser_->GetSelectedTabContents()->OpenURL(url, GURL(), CURRENT_TAB,
-                                              PageTransition::TYPED);
+  OpenURLParams params(
+      url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
+  browser_->GetSelectedWebContents()->OpenURL(params);
 }
 
 // (URLDropTargetController protocol)
@@ -792,6 +789,11 @@ class NotificationBridge : public NotificationObserver {
 // (URLDropTargetController protocol)
 - (void)hideDropURLsIndicatorInView:(NSView*)view {
   // Do nothing.
+}
+
+// (URLDropTargetController protocol)
+- (BOOL)isUnsupportedDropData:(id<NSDraggingInfo>)info {
+  return drag_util::IsUnsupportedDropData(profile_, info);
 }
 
 @end

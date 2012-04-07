@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -15,13 +15,13 @@
     ]
   },
   'conditions': [
-    ['os_posix == 1 and OS != "mac"', {
+    ['os_posix == 1 and OS != "mac" and OS != "android"', {
       # On Linux, we implicitly already depend on expat via fontconfig;
       # let's not pull it in twice.
       'targets': [
         {
           'target_name': 'expat',
-          'type': 'settings',
+          'type': 'none',
           'link_settings': {
             'libraries': [
               '-lexpat',
@@ -59,7 +59,7 @@
                 'COMPILED_FROM_DSP',
               ],
             }],
-            ['OS=="mac" or OS=="freebsd" or OS=="openbsd"', {
+            ['OS=="mac" or OS=="android" or os_bsd==1', {
               'defines': [
                 'HAVE_EXPAT_CONFIG_H',
               ],
@@ -70,9 +70,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

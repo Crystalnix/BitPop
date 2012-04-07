@@ -21,20 +21,21 @@ class CapturerFake : public Capturer {
   virtual ~CapturerFake();
 
   // Capturer interface.
-  virtual void ScreenConfigurationChanged();
-  virtual media::VideoFrame::Format pixel_format() const;
-  virtual void ClearInvalidRects();
-  virtual void InvalidateRects(const InvalidRects& inval_rects);
-  virtual void InvalidateScreen(const gfx::Size& size);
-  virtual void InvalidateFullScreen();
-  virtual void CaptureInvalidRects(CaptureCompletedCallback* callback);
-  virtual const gfx::Size& size_most_recent() const;
+  virtual void ScreenConfigurationChanged() OVERRIDE;
+  virtual media::VideoFrame::Format pixel_format() const OVERRIDE;
+  virtual void ClearInvalidRegion() OVERRIDE;
+  virtual void InvalidateRegion(const SkRegion& invalid_region) OVERRIDE;
+  virtual void InvalidateScreen(const SkISize& size) OVERRIDE;
+  virtual void InvalidateFullScreen() OVERRIDE;
+  virtual void CaptureInvalidRegion(
+      const CaptureCompletedCallback& callback) OVERRIDE;
+  virtual const SkISize& size_most_recent() const OVERRIDE;
 
  private:
   // Generates an image in the front buffer.
   void GenerateImage();
 
-  gfx::Size size_;
+  SkISize size_;
   int bytes_per_row_;
   int box_pos_x_;
   int box_pos_y_;

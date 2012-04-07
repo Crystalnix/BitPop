@@ -7,6 +7,7 @@
 #pragma once
 
 #include "net/base/net_log.h"
+#include "net/base/rand_callback.h"
 #include "net/udp/datagram_client_socket.h"
 #include "net/udp/udp_socket.h"
 
@@ -15,21 +16,26 @@ namespace net {
 class BoundNetLog;
 
 // A client socket that uses UDP as the transport layer.
-class NET_TEST UDPClientSocket : public DatagramClientSocket {
+class NET_EXPORT_PRIVATE UDPClientSocket : public DatagramClientSocket {
  public:
-  UDPClientSocket(net::NetLog* net_log,
+  UDPClientSocket(DatagramSocket::BindType bind_type,
+                  const RandIntCallback& rand_int_cb,
+                  net::NetLog* net_log,
                   const net::NetLog::Source& source);
   virtual ~UDPClientSocket();
 
-  // Implement DatagramClientSocket:
-  virtual int Connect(const IPEndPoint& address);
-  virtual int Read(IOBuffer* buf, int buf_len, CompletionCallback* callback);
-  virtual int Write(IOBuffer* buf, int buf_len, CompletionCallback* callback);
-  virtual void Close();
-  virtual int GetPeerAddress(IPEndPoint* address) const;
-  virtual int GetLocalAddress(IPEndPoint* address) const;
-  virtual bool SetReceiveBufferSize(int32 size);
-  virtual bool SetSendBufferSize(int32 size);
+  // DatagramClientSocket implementation.
+  virtual int Connect(const IPEndPoint& address) OVERRIDE;
+  virtual int Read(IOBuffer* buf, int buf_len,
+                   const CompletionCallback& callback) OVERRIDE;
+  virtual int Write(IOBuffer* buf, int buf_len,
+                    const CompletionCallback& callback) OVERRIDE;
+  virtual void Close() OVERRIDE;
+  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
+  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
+  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual const BoundNetLog& NetLog() const OVERRIDE;
 
  private:
   UDPSocket socket_;

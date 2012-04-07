@@ -6,13 +6,14 @@
 
 #include <windows.h>
 
+#include "base/command_line.h"
 #include "base/string_util.h"
 #include "base/string_number_conversions.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
-#include "content/common/gpu/gpu_info.h"
+#include "content/public/common/gpu_info.h"
 #include "googleurl/src/gurl.h"
 
 namespace child_process_logging {
@@ -38,6 +39,10 @@ typedef void (__cdecl *MainSetGpuInfo)(const wchar_t*, const wchar_t*,
 // exported in breakpad_win.cc:
 //   void __declspec(dllexport) __cdecl SetNumberOfViews.
 typedef void (__cdecl *MainSetNumberOfViews)(int);
+
+// exported in breakpad_win.cc:
+//   void __declspec(dllexport) __cdecl SetCommandLine
+typedef void (__cdecl *MainSetCommandLine)(const CommandLine*);
 
 void SetActiveURL(const GURL& url) {
   static MainSetActiveURL set_active_url = NULL;
@@ -126,7 +131,7 @@ void SetActiveExtensions(const std::set<std::string>& extension_ids) {
   }
 }
 
-void SetGpuInfo(const GPUInfo& gpu_info) {
+void SetGpuInfo(const content::GPUInfo& gpu_info) {
   static MainSetGpuInfo set_gpu_info = NULL;
   if (!set_gpu_info) {
     HMODULE exe_module = GetModuleHandle(chrome::kBrowserProcessExecutableName);
@@ -143,6 +148,20 @@ void SetGpuInfo(const GPUInfo& gpu_info) {
       UTF8ToUTF16(gpu_info.driver_version).c_str(),
       UTF8ToUTF16(gpu_info.pixel_shader_version).c_str(),
       UTF8ToUTF16(gpu_info.vertex_shader_version).c_str());
+}
+
+void SetCommandLine(const CommandLine* command_line) {
+  static MainSetCommandLine set_command_line = NULL;
+  if (!set_command_line) {
+    HMODULE exe_module = GetModuleHandle(chrome::kBrowserProcessExecutableName);
+    if (!exe_module)
+      return;
+    set_command_line = reinterpret_cast<MainSetCommandLine>(
+        GetProcAddress(exe_module, "SetCommandLine"));
+    if (!set_command_line)
+      return;
+  }
+  (set_command_line)(command_line);
 }
 
 void SetNumberOfViews(int number_of_views) {

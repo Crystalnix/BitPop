@@ -33,6 +33,12 @@
             'src/filesystem_interception.h',
             'src/filesystem_policy.cc',
             'src/filesystem_policy.h',
+            'src/handle_closer.cc',
+            'src/handle_closer.h',
+            'src/handle_closer_agent.cc',
+            'src/handle_closer_agent.h',
+            'src/handle_table.cc',
+            'src/handle_table.h',
             'src/interception.cc',
             'src/interception.h',
             'src/interception_agent.cc',
@@ -126,21 +132,31 @@
     ],
   },
   'conditions': [
-    [ 'os_posix == 1 and OS != "mac" and OS != "linux"', {
-      # GYP requires that each file have at least one target defined.
+    [ 'OS!="win" and OS!="mac"', {
       'targets': [
         {
           'target_name': 'sandbox',
-          'type': 'settings',
+          'type': 'none',
+          'conditions': [
+            # Only compile in the seccomp code for the flag combination
+            # where we support it.
+            [ 'OS=="linux" and target_arch!="arm" and toolkit_views==0 and selinux==0', {
+              'dependencies': [
+                '../seccompsandbox/seccomp.gyp:seccomp_sandbox',
+              ],
+            }],
+          ],
         },
       ],
     }],
-    [ 'OS=="linux" and selinux==0 and clang==0', {
+    [ 'OS=="linux" and selinux==0', {
       'targets': [
         {
           'target_name': 'chrome_sandbox',
           'type': 'executable',
           'sources': [
+            'linux/suid/init_process.c',
+            'linux/suid/init_process.h',
             'linux/suid/linux_util.c',
             'linux/suid/linux_util.h',
             'linux/suid/process_util.h',
@@ -154,26 +170,6 @@
           'include_dirs': [
             '..',
           ],
-        },
-        {
-          'target_name': 'sandbox',
-          'type': 'static_library',
-          'conditions': [
-            ['target_arch!="arm"', {
-               'dependencies': [
-                 '../seccompsandbox/seccomp.gyp:seccomp_sandbox',
-               ]},
-            ],
-          ],
-        },
-      ],
-    }],
-    [ 'OS=="linux" and (selinux==1 or clang==1)', {
-      # GYP requires that each file have at least one target defined.
-      'targets': [
-        {
-          'target_name': 'sandbox',
-          'type': 'settings',
         },
       ],
     }],
@@ -193,7 +189,6 @@
           'export_dependent_settings': [
             '../base/base.gyp:base',
           ],
-          'msvs_guid': '881F6A97-D539-4C48-B401-DF04385B2343',
           'sources': [
             # Files that are used by the 32-bit version of Windows sandbox only.
             'src/resolver_32.cc',
@@ -238,13 +233,13 @@
           'dependencies': [
             '../testing/gtest.gyp:gtest',
             '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_static_win64',
           ],
           'configurations': {
             'Common_Base': {
               'msvs_target_platform': 'x64',
             },
           },
-          'msvs_guid': 'BE3468E6-B314-4310-B449-6FC0C52EE155',
           'sources': [
             # Files that are used by the 64-bit version of Windows sandbox only.
             'src/interceptors_64.cc',
@@ -282,6 +277,7 @@
             'src/dep_test.cc',
             'src/file_policy_test.cc',
             'tests/integration_tests/integration_tests_test.cc',
+            'src/handle_closer_test.cc',
             'src/integrity_level_test.cc',
             'src/ipc_ping_test.cc',
             'src/named_pipe_policy_test.cc',
@@ -385,9 +381,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

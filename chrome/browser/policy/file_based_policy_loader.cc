@@ -1,13 +1,16 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/policy/file_based_policy_loader.h"
 
-#include "base/compiler_specific.h"
-#include "content/browser/browser_thread.h"
+#include "base/files/file_path_watcher.h"
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/policy/policy_map.h"
+#include "content/public/browser/browser_thread.h"
 
 using ::base::files::FilePathWatcher;
+using content::BrowserThread;
 
 namespace {
 
@@ -58,7 +61,7 @@ class FileBasedPolicyWatcherDelegate : public FilePathWatcher::Delegate {
 void FileBasedPolicyLoader::OnFilePathChanged(
     const FilePath& path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  Reload();
+  Reload(false);
 }
 
 void FileBasedPolicyLoader::OnFilePathError(const FilePath& path) {
@@ -66,25 +69,27 @@ void FileBasedPolicyLoader::OnFilePathError(const FilePath& path) {
              << " failed.";
 }
 
-void FileBasedPolicyLoader::Reload() {
+void FileBasedPolicyLoader::Reload(bool force) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  if (!delegate())
+  if (!delegate()) {
+    PostUpdatePolicyTask(NULL);
     return;
+  }
 
   // Check the directory time in order to see whether a reload is required.
   base::TimeDelta delay;
   base::Time now = base::Time::Now();
-  if (!IsSafeToReloadPolicy(now, &delay)) {
+  if (!force && !IsSafeToReloadPolicy(now, &delay)) {
     ScheduleReloadTask(delay);
     return;
   }
 
   // Load the policy definitions.
-  scoped_ptr<DictionaryValue> new_policy(delegate()->Load());
+  scoped_ptr<PolicyMap> new_policy(delegate()->Load());
 
   // Check again in case the directory has changed while reading it.
-  if (!IsSafeToReloadPolicy(now, &delay)) {
+  if (!force && !IsSafeToReloadPolicy(now, &delay)) {
     ScheduleReloadTask(delay);
     return;
   }
@@ -106,7 +111,7 @@ void FileBasedPolicyLoader::InitOnFileThread() {
   // There might have been changes to the directory in the time between
   // construction of the loader and initialization of the watcher. Call reload
   // to detect if that is the case.
-  Reload();
+  Reload(false);
 
   ScheduleFallbackReloadTask();
 }

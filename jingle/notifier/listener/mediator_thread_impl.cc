@@ -4,6 +4,7 @@
 
 #include "jingle/notifier/listener/mediator_thread_impl.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -38,7 +39,8 @@ class MediatorThreadImpl::Core
   void RemoveObserver(Observer* observer);
 
   // Login::Delegate implementation. Called on I/O thread.
-  virtual void OnConnect(base::WeakPtr<talk_base::Task> base_task);
+  virtual void OnConnect(
+      base::WeakPtr<buzz::XmppTaskParentInterface> base_task);
   virtual void OnDisconnect();
 
   // PushNotificationsListenTaskDelegate implementation. Called on I/O thread.
@@ -63,7 +65,7 @@ class MediatorThreadImpl::Core
   // Invoked on either the caller thread or the I/O thread.
   virtual ~Core();
   scoped_refptr<ObserverListThreadSafe<Observer> > observers_;
-  base::WeakPtr<talk_base::Task> base_task_;
+  base::WeakPtr<buzz::XmppTaskParentInterface> base_task_;
 
   const NotifierOptions notifier_options_;
 
@@ -187,7 +189,7 @@ void MediatorThreadImpl::Core::UpdateXmppSettings(
 }
 
 void MediatorThreadImpl::Core::OnConnect(
-    base::WeakPtr<talk_base::Task> base_task) {
+    base::WeakPtr<buzz::XmppTaskParentInterface> base_task) {
   DCHECK(notifier_options_.request_context_getter->GetIOMessageLoopProxy()->
       BelongsToCurrentThread());
   base_task_ = base_task;
@@ -212,108 +214,90 @@ void MediatorThreadImpl::Core::OnDisconnect() {
 
 MediatorThreadImpl::MediatorThreadImpl(const NotifierOptions& notifier_options)
     : core_(new Core(notifier_options)),
-      construction_message_loop_proxy_(
-          base::MessageLoopProxy::CreateForCurrentThread()),
+      parent_message_loop_proxy_(
+          base::MessageLoopProxy::current()),
       io_message_loop_proxy_(
           notifier_options.request_context_getter->GetIOMessageLoopProxy()) {
 }
 
 MediatorThreadImpl::~MediatorThreadImpl() {
-  DCHECK(construction_message_loop_proxy_->BelongsToCurrentThread());
+  DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   LogoutImpl();
 }
 
 void MediatorThreadImpl::AddObserver(Observer* observer) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   core_->AddObserver(observer);
 }
 
 void MediatorThreadImpl::RemoveObserver(Observer* observer) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   core_->RemoveObserver(observer);
 }
 
 void MediatorThreadImpl::Start() {
-  DCHECK(construction_message_loop_proxy_->BelongsToCurrentThread());
+  DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
 }
 
 void MediatorThreadImpl::Login(const buzz::XmppClientSettings& settings) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::Login,
-                        settings));
+      base::Bind(&MediatorThreadImpl::Core::Login, core_.get(), settings));
 }
 
 void MediatorThreadImpl::Logout() {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   LogoutImpl();
 }
 
 void MediatorThreadImpl::ListenForUpdates() {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::ListenForPushNotifications));
+      base::Bind(&MediatorThreadImpl::Core::ListenForPushNotifications,
+                 core_.get()));
 }
 
 void MediatorThreadImpl::SubscribeForUpdates(
     const SubscriptionList& subscriptions) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(
-          core_.get(),
-          &MediatorThreadImpl::Core::SubscribeForPushNotifications,
-          subscriptions));
+      base::Bind(&MediatorThreadImpl::Core::SubscribeForPushNotifications,
+                 core_.get(), subscriptions));
 }
 
 void MediatorThreadImpl::SendNotification(
     const Notification& data) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::SendNotification,
-                        data));
+      base::Bind(&MediatorThreadImpl::Core::SendNotification, core_.get(),
+                 data));
 }
 
 void MediatorThreadImpl::UpdateXmppSettings(
     const buzz::XmppClientSettings& settings) {
-  CheckOrSetValidThread();
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::UpdateXmppSettings,
-                        settings));
+      base::Bind(&MediatorThreadImpl::Core::UpdateXmppSettings, core_.get(),
+                 settings));
 }
 
 void MediatorThreadImpl::TriggerOnConnectForTest(
-    base::WeakPtr<talk_base::Task> base_task) {
-  CheckOrSetValidThread();
+    base::WeakPtr<buzz::XmppTaskParentInterface> base_task) {
+    DCHECK(parent_message_loop_proxy_->BelongsToCurrentThread());
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::OnConnect,
-                        base_task));
+      base::Bind(&MediatorThreadImpl::Core::OnConnect, core_.get(), base_task));
 }
 
 void MediatorThreadImpl::LogoutImpl() {
   io_message_loop_proxy_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(core_.get(),
-                        &MediatorThreadImpl::Core::Disconnect));
-}
-
-void MediatorThreadImpl::CheckOrSetValidThread() {
-  if (method_message_loop_proxy_) {
-    DCHECK(method_message_loop_proxy_->BelongsToCurrentThread());
-  } else {
-    method_message_loop_proxy_ =
-        base::MessageLoopProxy::CreateForCurrentThread();
-  }
+      base::Bind(&MediatorThreadImpl::Core::Disconnect, core_.get()));
 }
 
 }  // namespace notifier

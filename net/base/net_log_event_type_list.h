@@ -1,9 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // NOTE: No header guards are used, since this file is intended to be expanded
 // directly into net_log.h. DO NOT include this file anywhere else.
+
+// In the event of a failure, a many end events will have a |net_error|
+// parameter with the integer error code associated with the failure.  Most
+// of these parameters are not individually documented.
 
 // --------------------------------------------------------------------------
 // General pseudo-events
@@ -12,6 +16,15 @@
 // Something got cancelled (we determine what is cancelled based on the
 // log context around it.)
 EVENT_TYPE(CANCELLED)
+
+// Something failed (we determine what failed based on the log context
+// around it.)
+// The event has the following parameters:
+//
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//   }
+EVENT_TYPE(FAILED)
 
 // Marks the creation/destruction of a request (net::URLRequest or
 // SocketStream).
@@ -132,12 +145,12 @@ EVENT_TYPE(HOST_RESOLVER_IMPL_JOB)
 // ------------------------------------------------------------------------
 
 // The start/end of auto-detect + custom PAC URL configuration.
-EVENT_TYPE(INIT_PROXY_RESOLVER)
+EVENT_TYPE(PROXY_SCRIPT_DECIDER)
 
 // The start/end of when proxy autoconfig was artificially paused following
 // a network change event. (We wait some amount of time after being told of
 // network changes to avoid hitting spurious errors during auto-detect).
-EVENT_TYPE(INIT_PROXY_RESOLVER_WAIT)
+EVENT_TYPE(PROXY_SCRIPT_DECIDER_WAIT)
 
 // The start/end of download of a PAC script. This could be the well-known
 // WPAD URL (if testing auto-detect), or a custom PAC URL.
@@ -151,24 +164,15 @@ EVENT_TYPE(INIT_PROXY_RESOLVER_WAIT)
 //   {
 //      "net_error": <Net error code integer>,
 //   }
-EVENT_TYPE(INIT_PROXY_RESOLVER_FETCH_PAC_SCRIPT)
-
-// The start/end of the testing of a PAC script (trying to parse the fetched
-// file as javascript).
-//
-// If the parsing of the script failed, the END phase will have parameters:
-//   {
-//      "net_error": <Net error code integer>,
-//   }
-EVENT_TYPE(INIT_PROXY_RESOLVER_SET_PAC_SCRIPT)
+EVENT_TYPE(PROXY_SCRIPT_DECIDER_FETCH_PAC_SCRIPT)
 
 // This event means that initialization failed because there was no
 // configured script fetcher. (This indicates a configuration error).
-EVENT_TYPE(INIT_PROXY_RESOLVER_HAS_NO_FETCHER)
+EVENT_TYPE(PROXY_SCRIPT_DECIDER_HAS_NO_FETCHER)
 
 // This event is emitted after deciding to fall-back to the next source
 // of PAC scripts in the list.
-EVENT_TYPE(INIT_PROXY_RESOLVER_FALLING_BACK_TO_NEXT_PAC_SOURCE)
+EVENT_TYPE(PROXY_SCRIPT_DECIDER_FALLING_BACK_TO_NEXT_PAC_SOURCE)
 
 // ------------------------------------------------------------------------
 // ProxyService
@@ -206,6 +210,28 @@ EVENT_TYPE(PROXY_SERVICE_RESOLVED_PROXY_LIST)
 // Note that the "old_config" key will be omitted on the first fetch of the
 // proxy settings (since there wasn't a previous value).
 EVENT_TYPE(PROXY_CONFIG_CHANGED)
+
+// Emitted when a list of bad proxies is reported to the proxy service.
+//
+// Parameters:
+//   {
+//     "bad_proxy_list": <List of bad proxies>,
+//   }
+EVENT_TYPE(BAD_PROXY_LIST_REPORTED)
+
+// ------------------------------------------------------------------------
+// ProxyList
+// ------------------------------------------------------------------------
+
+// Emitted when the first proxy server in a list is being marked as
+// bad and proxy resolution is going to failover to the next one in
+// the list.  The fallback is local to the request.
+//
+// Parameters:
+//   {
+//     "bad_proxy": <URI representation of the failed proxy server>,
+//   }
+EVENT_TYPE(PROXY_LIST_FALLBACK)
 
 // ------------------------------------------------------------------------
 // Proxy Resolver
@@ -253,6 +279,19 @@ EVENT_TYPE(WAITING_FOR_PROXY_RESOLVER_THREAD)
 EVENT_TYPE(SUBMITTED_TO_RESOLVER_THREAD)
 
 // ------------------------------------------------------------------------
+// Socket (Shared by stream and datagram sockets)
+// ------------------------------------------------------------------------
+
+// Marks the begin/end of a socket (TCP/SOCKS/SSL/UDP).
+//
+// The BEGIN phase contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source identifier for the controlling entity>,
+//   }
+EVENT_TYPE(SOCKET_ALIVE)
+
+// ------------------------------------------------------------------------
 // StreamSocket
 // ------------------------------------------------------------------------
 
@@ -265,10 +304,11 @@ EVENT_TYPE(SUBMITTED_TO_RESOLVER_THREAD)
 //     "address_list": <List of network address strings>,
 //   }
 //
-// And the END event will contain the following parameters on failure:
+// And the END event will contain the following parameters:
 //
 //   {
-//     "net_error": <Net integer error code>,
+//     "net_error": <Net integer error code, on error>,
+//     "source_address": <Local source address of the connection, on success>,
 //   }
 EVENT_TYPE(TCP_CONNECT)
 
@@ -287,7 +327,7 @@ EVENT_TYPE(TCP_CONNECT)
 //   }
 EVENT_TYPE(TCP_CONNECT_ATTEMPT)
 
-// The start/end of a TCP connect(). This corresponds with a call to
+// The start/end of a TCP accept(). This corresponds with a call to
 // TCPServerSocket::Accept().
 //
 // The END event will contain the following parameters on success:
@@ -299,9 +339,6 @@ EVENT_TYPE(TCP_CONNECT_ATTEMPT)
 //     "net_error": <Net integer error code>,
 //   }
 EVENT_TYPE(TCP_ACCEPT)
-
-// Marks the begin/end of a socket (TCP/SOCKS/SSL).
-EVENT_TYPE(SOCKET_ALIVE)
 
 // This event is logged to the socket stream whenever the socket is
 // acquired/released via a ClientSocketHandle.
@@ -360,11 +397,34 @@ EVENT_TYPE(SOCKS_UNEXPECTED_AUTH)
 //   }
 EVENT_TYPE(SOCKS_UNKNOWN_ADDRESS_TYPE)
 
-// The start/end of a SSL connect().
+// The start/end of an SSL "connect" (aka client handshake).
 EVENT_TYPE(SSL_CONNECT)
 
-// The start/end of a SSL accept().
-EVENT_TYPE(SSL_ACCEPT)
+// The start/end of an SSL server handshake (aka "accept").
+EVENT_TYPE(SSL_SERVER_HANDSHAKE)
+
+// The SSL server requested a client certificate.
+EVENT_TYPE(SSL_CLIENT_CERT_REQUESTED)
+
+// The start/end of getting an origin-bound certificate and private key.
+//
+// The END event will contain the following parameters on failure:
+//
+//   {
+//     "net_error": <Net integer error code>,
+//   }
+EVENT_TYPE(SSL_GET_ORIGIN_BOUND_CERT)
+
+// A client certificate (or none) was provided to the SSL library to be sent
+// to the SSL server.
+// The following parameters are attached to the event:
+//   {
+//     "cert_count": <Number of certificates>,
+//   }
+//   A cert_count of 0 means no client certificate was provided.
+//   A cert_count of -1 means a client certificate was provided but we don't
+//   know the size of the certificate chain.
+EVENT_TYPE(SSL_CLIENT_CERT_PROVIDED)
 
 // An SSL error occurred while trying to do the indicated activity.
 // The following parameters are attached to the event:
@@ -416,6 +476,54 @@ EVENT_TYPE(SSL_SOCKET_BYTES_SENT)
 //   }
 EVENT_TYPE(SOCKET_BYTES_RECEIVED)
 EVENT_TYPE(SSL_SOCKET_BYTES_RECEIVED)
+
+// Certificates were received from the SSL server (during a handshake or
+// renegotiation). This event is only present when logging at LOG_ALL.
+// The following parameters are attached to the event:
+//  {
+//    "certificates": <A list of PEM encoded certificates in the order that
+//                     they were sent by the server>,
+//  }
+EVENT_TYPE(SSL_CERTIFICATES_RECEIVED)
+
+// ------------------------------------------------------------------------
+// DatagramSocket
+// ------------------------------------------------------------------------
+
+// The start/end of a UDP client connecting.
+//
+// The START event contains these parameters:
+//
+//   {
+//     "address": <Remote address being connected to>,
+//   }
+//
+// And the END event will contain the following parameter:
+//
+//   {
+//     "net_error": <Net integer error code, on failure>,
+//   }
+EVENT_TYPE(UDP_CONNECT)
+
+// The specified number of bytes were transferred on the socket.
+// The following parameters are attached:
+//   {
+//     "address": <Remote address of data transfer.  Not present when not
+//                 specified for UDP_BYTES_SENT events>,
+//     "byte_count": <Number of bytes that were just received>,
+//     "hex_encoded_bytes": <The exact bytes received, as a hexadecimal string.
+//                           Only present when byte logging is enabled>,
+//   }
+EVENT_TYPE(UDP_BYTES_RECEIVED)
+EVENT_TYPE(UDP_BYTES_SENT)
+
+// Logged when an error occurs while reading or writing to/from a UDP socket.
+// The following parameters are attached:
+//   {
+//     "net_error": <Net error code>,
+//   }
+EVENT_TYPE(UDP_RECEIVE_ERROR)
+EVENT_TYPE(UDP_SEND_ERROR)
 
 // ------------------------------------------------------------------------
 // ClientSocketPoolBase::ConnectJob
@@ -537,9 +645,20 @@ EVENT_TYPE(URL_REQUEST_START_JOB)
 //   }
 EVENT_TYPE(URL_REQUEST_REDIRECTED)
 
-// Measures the time a net::URLRequest is blocked waiting for an extension to
-// respond to the onBefoteRequest extension event.
-EVENT_TYPE(URL_REQUEST_BLOCKED_ON_EXTENSION)
+// Measures the time a net::URLRequest is blocked waiting for a delegate
+// (usually an extension) to respond to the onBeforeRequest extension event.
+EVENT_TYPE(URL_REQUEST_BLOCKED_ON_DELEGATE)
+
+// The specified number of bytes were read from the net::URLRequest.
+// The filtered event is used when the bytes were passed through a filter before
+// being read.  This event is only present when byte logging is enabled.
+// The following parameters are attached:
+//   {
+//     "byte_count": <Number of bytes that were just sent>,
+//     "hex_encoded_bytes": <The exact bytes sent, as a hexadecimal string>,
+//   }
+EVENT_TYPE(URL_REQUEST_JOB_BYTES_READ)
+EVENT_TYPE(URL_REQUEST_JOB_FILTERED_BYTES_READ)
 
 // ------------------------------------------------------------------------
 // HttpCache
@@ -665,12 +784,28 @@ EVENT_TYPE(HTTP_STREAM_REQUEST)
 // Measures the time taken to execute the HttpStreamFactoryImpl::Job
 EVENT_TYPE(HTTP_STREAM_JOB)
 
-// Identifies the NetLog::Source() for the Job that fulfilled the request.
-// request. The event parameters are:
+// Identifies the NetLog::Source() for the Job that fulfilled the Request.
+// The event parameters are:
 //   {
-//      "source_dependency": <Source identifier for the job we acquired>,
+//      "source_dependency": <Source identifier for Job we acquired>,
 //   }
 EVENT_TYPE(HTTP_STREAM_REQUEST_BOUND_TO_JOB)
+
+// Identifies the NetLog::Source() for the Request that the Job was attached to.
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifier for the Request to which we were
+//                            attached>,
+//   }
+EVENT_TYPE(HTTP_STREAM_JOB_BOUND_TO_REQUEST)
+
+// Logs the protocol negotiated with the server. The event parameters are:
+//   {
+//      "status": <The NPN status ("negotiated", "unsupported", "no-overlap")>,
+//      "proto": <The NPN protocol negotiated>,
+//      "server_protos": <The list of server advertised protocols>,
+//   }
+EVENT_TYPE(HTTP_STREAM_REQUEST_PROTO)
 
 // ------------------------------------------------------------------------
 // HttpNetworkTransaction
@@ -725,6 +860,13 @@ EVENT_TYPE(HTTP_TRANSACTION_READ_BODY)
 // Measures the time taken to read the response out of the socket before
 // restarting for authentication, on keep alive connections.
 EVENT_TYPE(HTTP_TRANSACTION_DRAIN_BODY_FOR_AUTH_RESTART)
+
+// This event is sent when we try to restart a transaction after an error.
+// The following parameters are attached:
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//   }
+EVENT_TYPE(HTTP_TRANSACTION_RESTART_AFTER_ERROR)
 
 // ------------------------------------------------------------------------
 // SpdySession
@@ -804,6 +946,14 @@ EVENT_TYPE(SPDY_SESSION_RST_STREAM)
 //     "status": <The reason for the RST_STREAM>,
 //   }
 EVENT_TYPE(SPDY_SESSION_SEND_RST_STREAM)
+
+// Sending of a SPDY PING frame.
+// The following parameters are attached:
+//   {
+//     "unique_id": <The unique id of the PING message>,
+//     "type": <The PING type ("sent", "received")>,
+//   }
+EVENT_TYPE(SPDY_SESSION_PING)
 
 // Receipt of a SPDY GOAWAY frame.
 // The following parameters are attached:
@@ -1045,3 +1195,215 @@ EVENT_TYPE(THROTTLING_REJECTED_REQUEST)
 //     "retry_after_ms":    <Milliseconds until retry-after expires>
 //   }
 EVENT_TYPE(THROTTLING_GOT_CUSTOM_RETRY_AFTER)
+
+// ------------------------------------------------------------------------
+// DnsTransaction
+// ------------------------------------------------------------------------
+
+// The start/end of a DnsTransaction.
+//
+// The BEGIN phase contains the following parameters:
+//
+// {
+//   "hostname": <The hostname it is trying to resolve>,
+//   "query_type": <Type of the query>,
+//   "source_dependency":  <Source id, if any, of what created the
+//                          transaction>,
+// }
+//
+// The END phase contains the following parameters:
+//
+// {
+//   "net_error": <The net error code for the failure, if any>,
+// }
+EVENT_TYPE(DNS_TRANSACTION)
+
+// The start/end of a DnsTransaction query for a fully-qualified domain name.
+//
+// The BEGIN phase contains the following parameters:
+//
+// {
+//   "qname": <The fully-qualified domain name it is trying to resolve>,
+// }
+//
+// The END phase contains the following parameters:
+//
+// {
+//   "net_error": <The net error code for the failure, if any>,
+// }
+EVENT_TYPE(DNS_TRANSACTION_QUERY)
+
+// This event is created when DnsTransaction creates a new UDP socket and
+// tries to resolve the fully-qualified name.
+//
+// It has a single parameter:
+//
+//   {
+//     "socket_source": <Source id of the UDP socket created for the attempt>,
+//   }
+EVENT_TYPE(DNS_TRANSACTION_ATTEMPT)
+
+// This event is created when DnsTransaction receives a matching response.
+//
+// It has the following parameters:
+//
+//   {
+//     "rcode": <rcode in the received response>,
+//     "answer_count": <answer_count in the received response>,
+//     "socket_source": <Source id of the UDP socket that received the
+//                       response>,
+//   }
+EVENT_TYPE(DNS_TRANSACTION_RESPONSE)
+
+// ------------------------------------------------------------------------
+// AsyncHostResolver
+// ------------------------------------------------------------------------
+
+// The start/end of waiting on a host resolve (DNS) request.
+// The BEGIN phase contains the following parameters:
+//
+//   {
+//     "source_dependency": <Source id of the request being waited on>,
+//   }
+EVENT_TYPE(ASYNC_HOST_RESOLVER)
+
+// The start/end of a host resolve (DNS) request.
+//
+// The BEGIN phase contains the following parameters:
+//
+//   {
+//     "hostname": <Hostname associated with the request>,
+//     "address_family": <Address family of the request>,
+//     "allow_cached_response": <Whether to allow cached response>,
+//     "only_use_cached_response": <Use cached results only>,
+//     "is_speculative": <Whether the lookup is speculative>,
+//     "priority": <Priority of the request>,
+//     "source_dependency": <Source id, if any, of what created the request>,
+//   }
+//
+// If an error occurred, the END phase will contain this parameter:
+//   {
+//     "net_error": <The net error code integer for the failure>,
+//   }
+EVENT_TYPE(ASYNC_HOST_RESOLVER_REQUEST)
+
+// This event is created when a new DnsTransaction is about to be created
+// for a request.
+EVENT_TYPE(ASYNC_HOST_RESOLVER_CREATE_DNS_TRANSACTION)
+
+// This event is logged when a request is handled by a cache entry.
+EVENT_TYPE(ASYNC_HOST_RESOLVER_CACHE_HIT)
+
+// ------------------------------------------------------------------------
+// ChromeExtension
+// ------------------------------------------------------------------------
+
+// TODO(eroman): This is a layering violation. Fix this in the context
+// of http://crbug.com/90674.
+
+// This event is created when a Chrome extension aborts a request.
+//
+//  {
+//    "extension_id": <Extension ID that caused the abortion>
+//  }
+EVENT_TYPE(CHROME_EXTENSION_ABORTED_REQUEST)
+
+// This event is created when a Chrome extension redirects a request.
+//
+//  {
+//    "extension_id": <Extension ID that caused the redirection>
+//  }
+EVENT_TYPE(CHROME_EXTENSION_REDIRECTED_REQUEST)
+
+// This event is created when a Chrome extension modifieds the headers of a
+// request.
+//
+//  {
+//    "extension_id":     <Extension ID that caused the modification>,
+//    "modified_headers": [ "<header>: <value>", ... ],
+//    "deleted_headers":  [ "<header>", ... ]
+//  }
+EVENT_TYPE(CHROME_EXTENSION_MODIFIED_HEADERS)
+
+// This event is created when a Chrome extension tried to modify a request
+// but was ignored due to a conflict.
+//
+//  {
+//    "extension_id": <Extension ID that was ignored>
+//  }
+EVENT_TYPE(CHROME_EXTENSION_IGNORED_DUE_TO_CONFLICT)
+
+// This event is created when a Chrome extension provides authentication
+// credentials.
+//
+//  {
+//    "extension_id": <Extension ID that provides credentials>
+//  }
+EVENT_TYPE(CHROME_EXTENSION_PROVIDE_AUTH_CREDENTIALS)
+
+// ------------------------------------------------------------------------
+// HostBlacklistManager
+// ------------------------------------------------------------------------
+
+// TODO(joaodasilva): Layering violation, see comment above.
+// http://crbug.com/90674.
+
+// This event is created when a request is blocked by a policy.
+EVENT_TYPE(CHROME_POLICY_ABORTED_REQUEST)
+
+// ------------------------------------------------------------------------
+// CertVerifier
+// ------------------------------------------------------------------------
+
+// This event is created when we start a CertVerifier request.
+EVENT_TYPE(CERT_VERIFIER_REQUEST)
+
+// This event is created when we start a CertVerifier job.
+// The END phase event parameters are:
+//   {
+//     "certificates": <A list of PEM encoded certificates, the first one
+//                      being the certificate to verify and the remaining
+//                      being intermediate certificates to assist path
+//                      building. Only present when byte logging is enabled.>
+//   }
+EVENT_TYPE(CERT_VERIFIER_JOB)
+
+// This event is created when a CertVerifier request attaches to a job.
+//
+// The event parameters are:
+//   {
+//      "source_dependency": <Source identifer for the job we are bound to>,
+//   }
+EVENT_TYPE(CERT_VERIFIER_REQUEST_BOUND_TO_JOB)
+
+// ------------------------------------------------------------------------
+// HttpPipelinedConnection
+// ------------------------------------------------------------------------
+
+// The start/end of a HttpPipelinedConnection.
+//   {
+//     "host_and_port": <The host-port string>,
+//   }
+EVENT_TYPE(HTTP_PIPELINED_CONNECTION)
+
+// This event is created when a pipelined connection finishes sending a request.
+//   {
+//     "source_dependency": <Source id of the requesting stream>,
+//   }
+EVENT_TYPE(HTTP_PIPELINED_CONNECTION_SENT_REQUEST)
+
+// This event is created when a pipelined connection finishes receiving the
+// response headers.
+//   {
+//     "source_dependency": <Source id of the requesting stream>,
+//     "feedback": <The value of HttpPipelinedConnection::Feedback indicating
+//                  pipeline capability>,
+//   }
+EVENT_TYPE(HTTP_PIPELINED_CONNECTION_RECEIVED_HEADERS)
+
+// This event is created when a pipelined stream closes.
+//   {
+//     "source_dependency": <Source id of the requesting stream>,
+//     "must_close": <True if the pipeline must shut down>,
+//   }
+EVENT_TYPE(HTTP_PIPELINED_CONNECTION_STREAM_CLOSED)

@@ -4,32 +4,42 @@
 
 #include "chrome/browser/ui/webui/options/content_settings_handler.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/content_settings_details.h"
+#include "chrome/browser/content_settings/content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/geolocation/geolocation_content_settings_map.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/content_settings_helper.h"
+#include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/common/content_switches.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::UserMetricsAction;
 
 namespace {
 
@@ -38,9 +48,14 @@ struct ContentSettingsTypeNameEntry {
   const char* name;
 };
 
+typedef std::map<ContentSettingsPattern, ContentSetting> OnePatternSettings;
+typedef std::map<ContentSettingsPattern, OnePatternSettings>
+    AllPatternsSettings;
+
 const char* kDisplayPattern = "displayPattern";
 const char* kSetting = "setting";
 const char* kOrigin = "origin";
+const char* kSource = "source";
 const char* kEmbeddingOrigin = "embeddingOrigin";
 
 const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
@@ -51,7 +66,14 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
   {CONTENT_SETTINGS_TYPE_POPUPS, "popups"},
   {CONTENT_SETTINGS_TYPE_GEOLOCATION, "location"},
   {CONTENT_SETTINGS_TYPE_NOTIFICATIONS, "notifications"},
+  {CONTENT_SETTINGS_TYPE_INTENTS, "intents"},
+  {CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE, "auto-select-certificate"},
+  {CONTENT_SETTINGS_TYPE_FULLSCREEN, "fullscreen"},
+  {CONTENT_SETTINGS_TYPE_MOUSELOCK, "mouselock"},
 };
+COMPILE_ASSERT(arraysize(kContentSettingsTypeGroupNames) ==
+                   CONTENT_SETTINGS_NUM_TYPES,
+               MISSING_CONTENT_SETTINGS_TYPE);
 
 ContentSettingsType ContentSettingsTypeFromGroupName(const std::string& name) {
   for (size_t i = 0; i < arraysize(kContentSettingsTypeGroupNames); ++i) {
@@ -96,14 +118,16 @@ ContentSetting ContentSettingFromString(const std::string& name) {
   return CONTENT_SETTING_DEFAULT;
 }
 
-std::string GeolocationExceptionToString(const GURL& origin,
-                                         const GURL& embedding_origin) {
+std::string GeolocationExceptionToString(
+    const ContentSettingsPattern& origin,
+    const ContentSettingsPattern& embedding_origin) {
   if (origin == embedding_origin)
-    return content_settings_helper::OriginToString(origin);
+    return origin.ToString();
 
   // TODO(estade): the page needs to use CSS to indent the string.
   std::string indent(" ");
-  if (embedding_origin.is_empty()) {
+
+  if (embedding_origin == ContentSettingsPattern::Wildcard()) {
     // NOTE: As long as the user cannot add/edit entries from the exceptions
     // dialog, it's impossible to actually have a non-default setting for some
     // origin "embedded on any other site", so this row will never appear.  If
@@ -115,7 +139,7 @@ std::string GeolocationExceptionToString(const GURL& origin,
 
   return indent + l10n_util::GetStringFUTF8(
       IDS_EXCEPTIONS_GEOLOCATION_EMBEDDED_ON_HOST,
-      UTF8ToUTF16(content_settings_helper::OriginToString(embedding_origin)));
+      UTF8ToUTF16(embedding_origin.ToString()));
 }
 
 // Create a DictionaryValue* that will act as a data source for a single row
@@ -123,36 +147,28 @@ std::string GeolocationExceptionToString(const GURL& origin,
 // Ownership of the pointer is passed to the caller.
 DictionaryValue* GetExceptionForPage(
     const ContentSettingsPattern& pattern,
-    ContentSetting setting) {
+    const ContentSetting& setting,
+    const std::string& provider_name) {
   DictionaryValue* exception = new DictionaryValue();
-  exception->Set(
-      kDisplayPattern,
-      new StringValue(pattern.ToString()));
-  exception->Set(
-      kSetting,
-      new StringValue(ContentSettingToString(setting)));
+  exception->SetString(kDisplayPattern, pattern.ToString());
+  exception->SetString(kSetting, ContentSettingToString(setting));
+  exception->SetString(kSource, provider_name);
   return exception;
 }
 
 // Create a DictionaryValue* that will act as a data source for a single row
 // in the Geolocation exceptions table. Ownership of the pointer is passed to
 // the caller.
-DictionaryValue* GetGeolocationExceptionForPage(const GURL& origin,
-                                                const GURL& embedding_origin,
-                                                ContentSetting setting) {
+DictionaryValue* GetGeolocationExceptionForPage(
+    const ContentSettingsPattern& origin,
+    const ContentSettingsPattern& embedding_origin,
+    ContentSetting setting) {
   DictionaryValue* exception = new DictionaryValue();
-  exception->Set(
-      kDisplayPattern,
-      new StringValue(GeolocationExceptionToString(origin, embedding_origin)));
-  exception->Set(
-      kSetting,
-      new StringValue(ContentSettingToString(setting)));
-  exception->Set(
-      kOrigin,
-      new StringValue(origin.spec()));
-  exception->Set(
-      kEmbeddingOrigin,
-      new StringValue(embedding_origin.spec()));
+  exception->SetString(kDisplayPattern,
+                       GeolocationExceptionToString(origin, embedding_origin));
+  exception->SetString(kSetting, ContentSettingToString(setting));
+  exception->SetString(kOrigin, origin.ToString());
+  exception->SetString(kEmbeddingOrigin, embedding_origin.ToString());
   return exception;
 }
 
@@ -160,18 +176,14 @@ DictionaryValue* GetGeolocationExceptionForPage(const GURL& origin,
 // in the desktop notifications exceptions table. Ownership of the pointer is
 // passed to the caller.
 DictionaryValue* GetNotificationExceptionForPage(
-    const GURL& url,
-    ContentSetting setting) {
+    const ContentSettingsPattern& pattern,
+    ContentSetting setting,
+    const std::string& provider_name) {
   DictionaryValue* exception = new DictionaryValue();
-  exception->Set(
-      kDisplayPattern,
-      new StringValue(content_settings_helper::OriginToString(url)));
-  exception->Set(
-      kSetting,
-      new StringValue(ContentSettingToString(setting)));
-  exception->Set(
-      kOrigin,
-      new StringValue(url.spec()));
+  exception->SetString(kDisplayPattern, pattern.ToString());
+  exception->SetString(kSetting, ContentSettingToString(setting));
+  exception->SetString(kOrigin, pattern.ToString());
+  exception->SetString(kSource, provider_name);
   return exception;
 }
 
@@ -231,7 +243,7 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "plugins_ask", IDS_PLUGIN_ASK_RADIO },
     { "plugins_allow", IDS_PLUGIN_LOAD_RADIO },
     { "plugins_block", IDS_PLUGIN_NOLOAD_RADIO },
-    { "disable_individual_plugins", IDS_PLUGIN_SELECTIVE_DISABLE },
+    { "disableIndividualPlugins", IDS_PLUGIN_SELECTIVE_DISABLE },
     // Pop-ups filter.
     { "popups_tab_label", IDS_POPUP_TAB_LABEL },
     { "popups_header", IDS_POPUP_HEADER },
@@ -249,72 +261,86 @@ void ContentSettingsHandler::GetLocalizedValues(
     { "notifications_allow", IDS_NOTIFICATIONS_ALLOW_RADIO },
     { "notifications_ask", IDS_NOTIFICATIONS_ASK_RADIO },
     { "notifications_block", IDS_NOTIFICATIONS_BLOCK_RADIO },
+    // Intents filter.
+    { "intentsTabLabel", IDS_INTENTS_TAB_LABEL },
+    { "intentsAllow", IDS_INTENTS_ALLOW_RADIO },
+    { "intentsAsk", IDS_INTENTS_ASK_RADIO },
+    { "intentsBlock", IDS_INTENTS_BLOCK_RADIO },
+    { "intents_header", IDS_INTENTS_HEADER },
+    // Fullscreen filter.
+    { "fullscreen_tab_label", IDS_FULLSCREEN_TAB_LABEL },
+    { "fullscreen_header", IDS_FULLSCREEN_HEADER },
+    // Mouse Lock filter.
+    { "mouselock_tab_label", IDS_MOUSE_LOCK_TAB_LABEL },
+    { "mouselock_header", IDS_MOUSE_LOCK_HEADER },
+    { "mouselock_allow", IDS_MOUSE_LOCK_ALLOW_RADIO },
+    { "mouselock_ask", IDS_MOUSE_LOCK_ASK_RADIO },
+    { "mouselock_block", IDS_MOUSE_LOCK_BLOCK_RADIO },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "contentSettingsPage",
                 IDS_CONTENT_SETTINGS_TITLE);
-  localized_strings->SetBoolean("enable_click_to_play",
+  localized_strings->SetBoolean("enable_web_intents",
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableClickToPlay));
+          switches::kEnableWebIntents));
 }
 
 void ContentSettingsHandler::Initialize() {
-  const HostContentSettingsMap* settings_map = GetContentSettingsMap();
-  scoped_ptr<Value> block_3rd_party(Value::CreateBooleanValue(
-      settings_map->BlockThirdPartyCookies()));
-  web_ui_->CallJavascriptFunction("ContentSettings.setBlockThirdPartyCookies",
-                                  *block_3rd_party.get());
-
   notification_registrar_.Add(
-      this, NotificationType::OTR_PROFILE_CREATED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_PROFILE_CREATED,
+      content::NotificationService::AllSources());
   notification_registrar_.Add(
-      this, NotificationType::PROFILE_DESTROYED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+      content::NotificationService::AllSources());
 
   UpdateHandlersEnabledRadios();
   UpdateAllExceptionsViewsFromModel();
   notification_registrar_.Add(
-      this, NotificationType::CONTENT_SETTINGS_CHANGED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_CONTENT_SETTINGS_CHANGED,
+      content::NotificationService::AllSources());
   notification_registrar_.Add(
-      this, NotificationType::DESKTOP_NOTIFICATION_DEFAULT_CHANGED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
+      content::NotificationService::AllSources());
+  Profile* profile = Profile::FromWebUI(web_ui());
   notification_registrar_.Add(
-      this, NotificationType::DESKTOP_NOTIFICATION_SETTINGS_CHANGED,
-      NotificationService::AllSources());
-  notification_registrar_.Add(
-      this, NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_PROTOCOL_HANDLER_REGISTRY_CHANGED,
+      content::Source<Profile>(profile));
 
-  PrefService* prefs = web_ui_->GetProfile()->GetPrefs();
+  PrefService* prefs = profile->GetPrefs();
   pref_change_registrar_.Init(prefs);
-  pref_change_registrar_.Add(prefs::kGeolocationDefaultContentSetting, this);
   pref_change_registrar_.Add(prefs::kGeolocationContentSettings, this);
 }
 
-void ContentSettingsHandler::Observe(NotificationType type,
-                                     const NotificationSource& source,
-                                     const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::PROFILE_DESTROYED: {
-      Profile* profile = static_cast<Source<Profile> >(source).ptr();
-      if (profile->IsOffTheRecord()) {
-        web_ui_->CallJavascriptFunction(
+void ContentSettingsHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
+      if (content::Source<Profile>(source).ptr()->IsOffTheRecord()) {
+        web_ui()->CallJavascriptFunction(
             "ContentSettingsExceptionsArea.OTRProfileDestroyed");
       }
       break;
     }
 
-    case NotificationType::OTR_PROFILE_CREATED: {
-      UpdateAllOTRExceptionsViewsFromModel();
+    case chrome::NOTIFICATION_PROFILE_CREATED: {
+      if (content::Source<Profile>(source).ptr()->IsOffTheRecord())
+        UpdateAllOTRExceptionsViewsFromModel();
       break;
     }
 
-    case NotificationType::CONTENT_SETTINGS_CHANGED: {
+    case chrome::NOTIFICATION_CONTENT_SETTINGS_CHANGED: {
+      // Filter out notifications from other profiles.
+      HostContentSettingsMap* map =
+          content::Source<HostContentSettingsMap>(source).ptr();
+      if (map != GetContentSettingsMap() &&
+          map != GetOTRContentSettingsMap())
+        break;
+
       const ContentSettingsDetails* settings_details =
-          Details<const ContentSettingsDetails>(details).ptr();
+          content::Details<const ContentSettingsDetails>(details).ptr();
 
       // TODO(estade): we pretend update_all() is always true.
       if (settings_details->update_all_types())
@@ -324,26 +350,20 @@ void ContentSettingsHandler::Observe(NotificationType type,
       break;
     }
 
-    case NotificationType::PREF_CHANGED: {
-      const std::string& pref_name = *Details<std::string>(details).ptr();
-      if (pref_name == prefs::kGeolocationDefaultContentSetting)
-        UpdateSettingDefaultFromModel(CONTENT_SETTINGS_TYPE_GEOLOCATION);
-      else if (pref_name == prefs::kGeolocationContentSettings)
+    case chrome::NOTIFICATION_PREF_CHANGED: {
+      const std::string& pref_name =
+          *content::Details<std::string>(details).ptr();
+      if (pref_name == prefs::kGeolocationContentSettings)
         UpdateGeolocationExceptionsView();
       break;
     }
 
-    case NotificationType::DESKTOP_NOTIFICATION_DEFAULT_CHANGED: {
-      UpdateSettingDefaultFromModel(CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
-      break;
-    }
-
-    case NotificationType::DESKTOP_NOTIFICATION_SETTINGS_CHANGED: {
+    case chrome::NOTIFICATION_DESKTOP_NOTIFICATION_SETTINGS_CHANGED: {
       UpdateNotificationExceptionsView();
       break;
     }
 
-    case NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED: {
+    case chrome::NOTIFICATION_PROTOCOL_HANDLER_REGISTRY_CHANGED: {
       UpdateHandlersEnabledRadios();
       break;
     }
@@ -356,57 +376,53 @@ void ContentSettingsHandler::Observe(NotificationType type,
 void ContentSettingsHandler::UpdateSettingDefaultFromModel(
     ContentSettingsType type) {
   DictionaryValue filter_settings;
+  std::string provider_id;
   filter_settings.SetString(ContentSettingsTypeToGroupName(type) + ".value",
-      GetSettingDefaultFromModel(type));
-  filter_settings.SetBoolean(ContentSettingsTypeToGroupName(type) + ".managed",
-      GetDefaultSettingManagedFromModel(type));
+                            GetSettingDefaultFromModel(type, &provider_id));
+  filter_settings.SetString(
+      ContentSettingsTypeToGroupName(type) + ".managedBy",
+      provider_id);
 
-  web_ui_->CallJavascriptFunction(
+  web_ui()->CallJavascriptFunction(
       "ContentSettings.setContentFilterSettingsValue", filter_settings);
 }
 
 std::string ContentSettingsHandler::GetSettingDefaultFromModel(
-    ContentSettingsType type) {
+    ContentSettingsType type, std::string* provider_id) {
+  Profile* profile = Profile::FromWebUI(web_ui());
   ContentSetting default_setting;
-  if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
-    default_setting = web_ui_->GetProfile()->
-        GetGeolocationContentSettingsMap()->GetDefaultContentSetting();
-  } else if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
-    default_setting = DesktopNotificationServiceFactory::GetForProfile(
-        web_ui_->GetProfile())->GetDefaultContentSetting();
+  if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
+    default_setting =
+        DesktopNotificationServiceFactory::GetForProfile(profile)->
+            GetDefaultContentSetting(provider_id);
   } else {
-    default_setting = GetContentSettingsMap()->GetDefaultContentSetting(type);
+    default_setting =
+        profile->GetHostContentSettingsMap()->
+            GetDefaultContentSetting(type, provider_id);
   }
 
   return ContentSettingToString(default_setting);
 }
 
-bool ContentSettingsHandler::GetDefaultSettingManagedFromModel(
-    ContentSettingsType type) {
-  if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
-    return web_ui_->GetProfile()->
-        GetGeolocationContentSettingsMap()->IsDefaultContentSettingManaged();
-  } else if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
-    return DesktopNotificationServiceFactory::GetForProfile(
-        web_ui_->GetProfile())->IsDefaultContentSettingManaged();
-  } else {
-    return GetContentSettingsMap()->IsDefaultContentSettingManaged(type);
-  }
-}
-
 void ContentSettingsHandler::UpdateHandlersEnabledRadios() {
 #if defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
-  DCHECK(web_ui_);
-  FundamentalValue handlers_enabled(GetProtocolHandlerRegistry()->enabled());
+  base::FundamentalValue handlers_enabled(
+      GetProtocolHandlerRegistry()->enabled());
 
-  web_ui_->CallJavascriptFunction("ContentSettings.updateHandlersEnabledRadios",
+  web_ui()->CallJavascriptFunction(
+      "ContentSettings.updateHandlersEnabledRadios",
       handlers_enabled);
-#endif // defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
+#endif  // defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
 }
 
 void ContentSettingsHandler::UpdateAllExceptionsViewsFromModel() {
   for (int type = CONTENT_SETTINGS_TYPE_DEFAULT + 1;
        type < CONTENT_SETTINGS_NUM_TYPES; ++type) {
+    // The content settings type CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE
+    // is supposed to be set by policy only. Hence there is no user facing UI
+    // for this content type and we skip it here.
+    if (type == CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE)
+      continue;
     UpdateExceptionsViewFromModel(static_cast<ContentSettingsType>(type));
   }
 }
@@ -420,18 +436,18 @@ void ContentSettingsHandler::UpdateAllOTRExceptionsViewsFromModel() {
 
 void ContentSettingsHandler::UpdateExceptionsViewFromModel(
     ContentSettingsType type) {
+  // Skip updating intents unless it's enabled from the command line.
+  if (type == CONTENT_SETTINGS_TYPE_INTENTS &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableWebIntents))
+    return;
+
   switch (type) {
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
       UpdateGeolocationExceptionsView();
       break;
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
       UpdateNotificationExceptionsView();
-      break;
-    case CONTENT_SETTINGS_TYPE_PRERENDER:
-      // Prerender is currently (02/24/2011) an experimental feature which is
-      // only turned on via about:flags. There is intentionally no UI in
-      // chrome://preferences for CONTENT_SETTINGS_TYPE_PRERENDER.
-      // TODO(cbentzel): Change once prerender moves out of about:flags.
       break;
     default:
       UpdateExceptionsViewFromHostContentSettingsMap(type);
@@ -444,7 +460,8 @@ void ContentSettingsHandler::UpdateOTRExceptionsViewFromModel(
   switch (type) {
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-    case CONTENT_SETTINGS_TYPE_PRERENDER:
+    case CONTENT_SETTINGS_TYPE_INTENTS:
+    case CONTENT_SETTINGS_TYPE_AUTO_SELECT_CERTIFICATE:
       break;
     default:
       UpdateExceptionsViewFromOTRHostContentSettingsMap(type);
@@ -453,43 +470,65 @@ void ContentSettingsHandler::UpdateOTRExceptionsViewFromModel(
 }
 
 void ContentSettingsHandler::UpdateGeolocationExceptionsView() {
-  GeolocationContentSettingsMap* map =
-      web_ui_->GetProfile()->GetGeolocationContentSettingsMap();
-  GeolocationContentSettingsMap::AllOriginsSettings all_settings =
-      map->GetAllOriginsSettings();
-  GeolocationContentSettingsMap::AllOriginsSettings::const_iterator i;
+  Profile* profile = Profile::FromWebUI(web_ui());
+  HostContentSettingsMap* map = profile->GetHostContentSettingsMap();
+
+  ContentSettingsForOneType all_settings;
+  map->GetSettingsForOneType(
+      CONTENT_SETTINGS_TYPE_GEOLOCATION,
+      std::string(),
+      &all_settings);
+
+  // Group geolocation settings by primary_pattern.
+  AllPatternsSettings all_patterns_settings;
+  for (ContentSettingsForOneType::iterator i =
+           all_settings.begin();
+       i != all_settings.end();
+       ++i) {
+    // Don't add default settings.
+    if (i->primary_pattern == ContentSettingsPattern::Wildcard() &&
+        i->secondary_pattern == ContentSettingsPattern::Wildcard() &&
+        i->source != "preferences") {
+      continue;
+    }
+    all_patterns_settings[i->primary_pattern][i->secondary_pattern] =
+        i->setting;
+  }
 
   ListValue exceptions;
-  for (i = all_settings.begin(); i != all_settings.end(); ++i) {
-    const GURL& origin = i->first;
-    const GeolocationContentSettingsMap::OneOriginSettings& one_settings =
-        i->second;
+  for (AllPatternsSettings::iterator i = all_patterns_settings.begin();
+       i != all_patterns_settings.end();
+       ++i) {
+    const ContentSettingsPattern& primary_pattern = i->first;
+    const OnePatternSettings& one_settings = i->second;
 
-    GeolocationContentSettingsMap::OneOriginSettings::const_iterator parent =
-        one_settings.find(origin);
+    OnePatternSettings::const_iterator parent =
+        one_settings.find(primary_pattern);
 
     // Add the "parent" entry for the non-embedded setting.
     ContentSetting parent_setting =
         parent == one_settings.end() ? CONTENT_SETTING_DEFAULT : parent->second;
-    exceptions.Append(
-        GetGeolocationExceptionForPage(origin, origin, parent_setting));
+    exceptions.Append(GetGeolocationExceptionForPage(primary_pattern,
+                                                     primary_pattern,
+                                                     parent_setting));
 
     // Add the "children" for any embedded settings.
-    GeolocationContentSettingsMap::OneOriginSettings::const_iterator j;
-    for (j = one_settings.begin(); j != one_settings.end(); ++j) {
+    for (OnePatternSettings::const_iterator j = one_settings.begin();
+         j != one_settings.end();
+         ++j) {
       // Skip the non-embedded setting which we already added above.
       if (j == parent)
         continue;
 
       exceptions.Append(
-          GetGeolocationExceptionForPage(origin, j->first, j->second));
+          GetGeolocationExceptionForPage(primary_pattern, j->first, j->second));
     }
   }
 
   StringValue type_string(
       ContentSettingsTypeToGroupName(CONTENT_SETTINGS_TYPE_GEOLOCATION));
-  web_ui_->CallJavascriptFunction("ContentSettings.setExceptions",
-                                  type_string, exceptions);
+  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions",
+                                   type_string, exceptions);
 
   // This is mainly here to keep this function ideologically parallel to
   // UpdateExceptionsViewFromHostContentSettingsMap().
@@ -497,26 +536,34 @@ void ContentSettingsHandler::UpdateGeolocationExceptionsView() {
 }
 
 void ContentSettingsHandler::UpdateNotificationExceptionsView() {
+  Profile* profile = Profile::FromWebUI(web_ui());
   DesktopNotificationService* service =
-      DesktopNotificationServiceFactory::GetForProfile(web_ui_->GetProfile());
+      DesktopNotificationServiceFactory::GetForProfile(profile);
 
-  std::vector<GURL> allowed(service->GetAllowedOrigins());
-  std::vector<GURL> blocked(service->GetBlockedOrigins());
+  ContentSettingsForOneType settings;
+  service->GetNotificationsSettings(&settings);
 
   ListValue exceptions;
-  for (size_t i = 0; i < allowed.size(); ++i) {
+  for (ContentSettingsForOneType::const_iterator i =
+           settings.begin();
+       i != settings.end();
+       ++i) {
+    // Don't add default settings.
+    if (i->primary_pattern == ContentSettingsPattern::Wildcard() &&
+        i->secondary_pattern == ContentSettingsPattern::Wildcard() &&
+        i->source != "preferences") {
+      continue;
+    }
+
     exceptions.Append(
-        GetNotificationExceptionForPage(allowed[i], CONTENT_SETTING_ALLOW));
-  }
-  for (size_t i = 0; i < blocked.size(); ++i) {
-    exceptions.Append(
-        GetNotificationExceptionForPage(blocked[i], CONTENT_SETTING_BLOCK));
+        GetNotificationExceptionForPage(i->primary_pattern, i->setting,
+                                        i->source));
   }
 
   StringValue type_string(
       ContentSettingsTypeToGroupName(CONTENT_SETTINGS_TYPE_NOTIFICATIONS));
-  web_ui_->CallJavascriptFunction("ContentSettings.setExceptions",
-                                  type_string, exceptions);
+  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions",
+                                   type_string, exceptions);
 
   // This is mainly here to keep this function ideologically parallel to
   // UpdateExceptionsViewFromHostContentSettingsMap().
@@ -525,19 +572,44 @@ void ContentSettingsHandler::UpdateNotificationExceptionsView() {
 
 void ContentSettingsHandler::UpdateExceptionsViewFromHostContentSettingsMap(
     ContentSettingsType type) {
-  HostContentSettingsMap::SettingsForOneType entries;
+  ContentSettingsForOneType entries;
   GetContentSettingsMap()->GetSettingsForOneType(type, "", &entries);
 
   ListValue exceptions;
   for (size_t i = 0; i < entries.size(); ++i) {
-    exceptions.Append(GetExceptionForPage(entries[i].first, entries[i].second));
+    // Skip default settings from extensions and policy, and the default content
+    // settings; all of them will affect the default setting UI.
+    if (entries[i].primary_pattern == ContentSettingsPattern::Wildcard() &&
+        entries[i].secondary_pattern == ContentSettingsPattern::Wildcard() &&
+        entries[i].source != "preference") {
+      continue;
+    }
+    // The content settings UI does not support secondary content settings
+    // pattern yet. For content settings set through the content settings UI the
+    // secondary pattern is by default a wildcard pattern. Hence users are not
+    // able to modify content settings with a secondary pattern other than the
+    // wildcard pattern. So only show settings that the user is able to modify.
+    // TODO(bauerb): Support a read-only view for those patterns.
+    if (entries[i].secondary_pattern == ContentSettingsPattern::Wildcard()) {
+      exceptions.Append(
+          GetExceptionForPage(entries[i].primary_pattern, entries[i].setting,
+                              entries[i].source));
+    } else {
+      LOG(ERROR) << "Secondary content settings patterns are not "
+                 << "supported by the content settings UI";
+    }
   }
 
   StringValue type_string(ContentSettingsTypeToGroupName(type));
-  web_ui_->CallJavascriptFunction("ContentSettings.setExceptions", type_string,
-                                  exceptions);
+  web_ui()->CallJavascriptFunction("ContentSettings.setExceptions", type_string,
+                                   exceptions);
 
   UpdateExceptionsViewFromOTRHostContentSettingsMap(type);
+
+  // TODO(koz): The default for fullscreen is always 'ask'.
+  // http://crbug.com/104683
+  if (type == CONTENT_SETTINGS_TYPE_FULLSCREEN)
+    return;
 
   // The default may also have changed (we won't get a separate notification).
   // If it hasn't changed, this call will be harmless.
@@ -550,36 +622,79 @@ void ContentSettingsHandler::UpdateExceptionsViewFromOTRHostContentSettingsMap(
   if (!otr_settings_map)
     return;
 
-  HostContentSettingsMap::SettingsForOneType otr_entries;
+  ContentSettingsForOneType otr_entries;
   otr_settings_map->GetSettingsForOneType(type, "", &otr_entries);
 
   ListValue otr_exceptions;
   for (size_t i = 0; i < otr_entries.size(); ++i) {
-    otr_exceptions.Append(GetExceptionForPage(otr_entries[i].first,
-                                              otr_entries[i].second));
+    // Off-the-record HostContentSettingsMap contains incognito content settings
+    // as well as normal content settings. Here, we use the incongnito settings
+    // only.
+    if (!otr_entries[i].incognito)
+      continue;
+    // The content settings UI does not support secondary content settings
+    // pattern yet. For content settings set through the content settings UI the
+    // secondary pattern is by default a wildcard pattern. Hence users are not
+    // able to modify content settings with a secondary pattern other than the
+    // wildcard pattern. So only show settings that the user is able to modify.
+    // TODO(bauerb): Support a read-only view for those patterns.
+    if (otr_entries[i].secondary_pattern ==
+        ContentSettingsPattern::Wildcard()) {
+      otr_exceptions.Append(
+          GetExceptionForPage(otr_entries[i].primary_pattern,
+                              otr_entries[i].setting,
+                              otr_entries[i].source));
+    } else {
+      LOG(ERROR) << "Secondary content settings patterns are not "
+                 << "supported by the content settings UI";
+    }
   }
 
   StringValue type_string(ContentSettingsTypeToGroupName(type));
-  web_ui_->CallJavascriptFunction("ContentSettings.setOTRExceptions",
-                                  type_string, otr_exceptions);
+  web_ui()->CallJavascriptFunction("ContentSettings.setOTRExceptions",
+                                   type_string, otr_exceptions);
 }
 
 void ContentSettingsHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback("setContentFilter",
-      NewCallback(this,
-                  &ContentSettingsHandler::SetContentFilter));
-  web_ui_->RegisterMessageCallback("setAllowThirdPartyCookies",
-      NewCallback(this,
-                  &ContentSettingsHandler::SetAllowThirdPartyCookies));
-  web_ui_->RegisterMessageCallback("removeException",
-      NewCallback(this,
-                  &ContentSettingsHandler::RemoveException));
-  web_ui_->RegisterMessageCallback("setException",
-      NewCallback(this,
-                  &ContentSettingsHandler::SetException));
-  web_ui_->RegisterMessageCallback("checkExceptionPatternValidity",
-      NewCallback(this,
-                  &ContentSettingsHandler::CheckExceptionPatternValidity));
+  web_ui()->RegisterMessageCallback("setContentFilter",
+      base::Bind(&ContentSettingsHandler::SetContentFilter,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeException",
+      base::Bind(&ContentSettingsHandler::RemoveException,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("setException",
+      base::Bind(&ContentSettingsHandler::SetException,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("checkExceptionPatternValidity",
+      base::Bind(&ContentSettingsHandler::CheckExceptionPatternValidity,
+                 base::Unretained(this)));
+}
+
+void ContentSettingsHandler::ApplyWhitelist(ContentSettingsType content_type,
+                                            ContentSetting default_setting) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  HostContentSettingsMap* map = GetContentSettingsMap();
+  if (content_type != CONTENT_SETTINGS_TYPE_PLUGINS)
+    return;
+  const int kDefaultWhitelistVersion = 1;
+  PrefService* prefs = profile->GetPrefs();
+  int version = prefs->GetInteger(
+      prefs::kContentSettingsDefaultWhitelistVersion);
+  if (version >= kDefaultWhitelistVersion)
+    return;
+  ContentSetting old_setting =
+      map->GetDefaultContentSetting(CONTENT_SETTINGS_TYPE_PLUGINS, NULL);
+  if (old_setting == CONTENT_SETTING_ALLOW &&
+      default_setting == CONTENT_SETTING_ASK) {
+    map->SetWebsiteSetting(
+        ContentSettingsPattern::Wildcard(),
+        ContentSettingsPattern::Wildcard(),
+        CONTENT_SETTINGS_TYPE_PLUGINS,
+        "google-talk",
+        Value::CreateIntegerValue(CONTENT_SETTING_ALLOW));
+  }
+  prefs->SetInteger(prefs::kContentSettingsDefaultWhitelistVersion,
+                    kDefaultWhitelistVersion);
 }
 
 void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
@@ -593,23 +708,55 @@ void ContentSettingsHandler::SetContentFilter(const ListValue* args) {
 
   ContentSetting default_setting = ContentSettingFromString(setting);
   ContentSettingsType content_type = ContentSettingsTypeFromGroupName(group);
-  if (content_type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
-    web_ui_->GetProfile()->GetGeolocationContentSettingsMap()->
-        SetDefaultContentSetting(default_setting);
-  } else if (content_type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
-    DesktopNotificationServiceFactory::GetForProfile(web_ui_->GetProfile())->
+  if (content_type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
+    Profile* profile = Profile::FromWebUI(web_ui());
+    DesktopNotificationServiceFactory::GetForProfile(profile)->
         SetDefaultContentSetting(default_setting);
   } else {
-    GetContentSettingsMap()->
-        SetDefaultContentSetting(content_type, default_setting);
+    HostContentSettingsMap* map = GetContentSettingsMap();
+    ApplyWhitelist(content_type, default_setting);
+    map->SetDefaultContentSetting(content_type, default_setting);
   }
-}
-
-void ContentSettingsHandler::SetAllowThirdPartyCookies(const ListValue* args) {
-  string16 allow = ExtractStringValue(args);
-
-  GetContentSettingsMap()->SetBlockThirdPartyCookies(
-      LowerCaseEqualsASCII(allow, "true"));
+  switch (content_type) {
+    case CONTENT_SETTINGS_TYPE_COOKIES:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultCookieSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_IMAGES:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultImagesSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_JAVASCRIPT:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultJavaScriptSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_PLUGINS:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultPluginsSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_POPUPS:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultPopupsSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultNotificationsSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_GEOLOCATION:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultGeolocationSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_INTENTS:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultHandlersSettingChanged"));
+      break;
+    case CONTENT_SETTINGS_TYPE_MOUSELOCK:
+      content::RecordAction(
+          UserMetricsAction("Options_DefaultMouseLockSettingChanged"));
+      break;
+    default:
+      break;
+  }
 }
 
 void ContentSettingsHandler::RemoveException(const ListValue* args) {
@@ -617,6 +764,7 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
   std::string type_string;
   CHECK(args->GetString(arg_i++, &type_string));
 
+  Profile* profile = Profile::FromWebUI(web_ui());
   ContentSettingsType type = ContentSettingsTypeFromGroupName(type_string);
   if (type == CONTENT_SETTINGS_TYPE_GEOLOCATION) {
     std::string origin;
@@ -626,9 +774,11 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
     rv = args->GetString(arg_i++, &embedding_origin);
     DCHECK(rv);
 
-    web_ui_->GetProfile()->GetGeolocationContentSettingsMap()->
-        SetContentSetting(GURL(origin),
-                          GURL(embedding_origin),
+    profile->GetHostContentSettingsMap()->
+        SetContentSetting(ContentSettingsPattern::FromString(origin),
+                          ContentSettingsPattern::FromString(embedding_origin),
+                          CONTENT_SETTINGS_TYPE_GEOLOCATION,
+                          std::string(),
                           CONTENT_SETTING_DEFAULT);
   } else if (type == CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
     std::string origin;
@@ -638,14 +788,11 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
     rv = args->GetString(arg_i++, &setting);
     DCHECK(rv);
     ContentSetting content_setting = ContentSettingFromString(setting);
-    if (content_setting == CONTENT_SETTING_ALLOW) {
-      DesktopNotificationServiceFactory::GetForProfile(web_ui_->GetProfile())->
-          ResetAllowedOrigin(GURL(origin));
-    } else {
-      DCHECK_EQ(content_setting, CONTENT_SETTING_BLOCK);
-      DesktopNotificationServiceFactory::GetForProfile(web_ui_->GetProfile())->
-          ResetBlockedOrigin(GURL(origin));
-    }
+
+    DCHECK(content_setting == CONTENT_SETTING_ALLOW ||
+           content_setting == CONTENT_SETTING_BLOCK);
+    DesktopNotificationServiceFactory::GetForProfile(profile)->
+        ClearSetting(ContentSettingsPattern::FromString(origin));
   } else {
     std::string mode;
     bool rv = args->GetString(arg_i++, &mode);
@@ -662,7 +809,8 @@ void ContentSettingsHandler::RemoveException(const ListValue* args) {
     // got destroyed before we received this message.
     if (settings_map) {
       settings_map->SetContentSetting(
-          ContentSettingsPattern::LegacyFromString(pattern),
+          ContentSettingsPattern::FromString(pattern),
+          ContentSettingsPattern::Wildcard(),
           ContentSettingsTypeFromGroupName(type_string),
           "",
           CONTENT_SETTING_DEFAULT);
@@ -696,9 +844,8 @@ void ContentSettingsHandler::SetException(const ListValue* args) {
   // got destroyed before we received this message.
   if (!settings_map)
     return;
-
-  settings_map->SetContentSetting(ContentSettingsPattern::LegacyFromString(
-                                      pattern),
+  settings_map->SetContentSetting(ContentSettingsPattern::FromString(pattern),
+                                  ContentSettingsPattern::Wildcard(),
                                   type,
                                   "",
                                   ContentSettingFromString(setting));
@@ -715,13 +862,13 @@ void ContentSettingsHandler::CheckExceptionPatternValidity(
   CHECK(args->GetString(arg_i++, &pattern_string));
 
   ContentSettingsPattern pattern =
-      ContentSettingsPattern::LegacyFromString(pattern_string);
+      ContentSettingsPattern::FromString(pattern_string);
 
   scoped_ptr<Value> mode_value(Value::CreateStringValue(mode_string));
   scoped_ptr<Value> pattern_value(Value::CreateStringValue(pattern_string));
   scoped_ptr<Value> valid_value(Value::CreateBooleanValue(pattern.IsValid()));
 
-  web_ui_->CallJavascriptFunction(
+  web_ui()->CallJavascriptFunction(
       "ContentSettings.patternValidityCheckComplete",
       *type,
       *mode_value.get(),
@@ -742,16 +889,16 @@ std::string ContentSettingsHandler::ContentSettingsTypeToGroupName(
 }
 
 HostContentSettingsMap* ContentSettingsHandler::GetContentSettingsMap() {
-  return web_ui_->GetProfile()->GetHostContentSettingsMap();
+  return Profile::FromWebUI(web_ui())->GetHostContentSettingsMap();
 }
 
 ProtocolHandlerRegistry* ContentSettingsHandler::GetProtocolHandlerRegistry() {
-  return web_ui_->GetProfile()->GetProtocolHandlerRegistry();
+  return Profile::FromWebUI(web_ui())->GetProtocolHandlerRegistry();
 }
 
 HostContentSettingsMap*
     ContentSettingsHandler::GetOTRContentSettingsMap() {
-  Profile* profile = web_ui_->GetProfile();
+  Profile* profile = Profile::FromWebUI(web_ui());
   if (profile->HasOffTheRecordProfile())
     return profile->GetOffTheRecordProfile()->GetHostContentSettingsMap();
   return NULL;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,14 +23,16 @@
 #include "net/base/mime_util.h"
 #include "net/base/net_util.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPoint.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "ui/base/gtk/gtk_compat.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/glue/plugins/plugin_list.h"
 #include "webkit/glue/resource_loader_bridge.h"
 #include "webkit/glue/webkit_glue.h"
 #include "webkit/glue/webpreferences.h"
+#include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
+#include "webkit/tools/test_shell/test_shell_webkit_init.h"
 #include "webkit/tools/test_shell/test_webview_delegate.h"
 
 using WebKit::WebPoint;
@@ -57,7 +59,7 @@ gboolean MainWindowDestroyed(GtkWindow* window, TestShell* shell) {
 
   if (TestShell::windowList()->empty() || shell->is_modal()) {
     MessageLoop::current()->PostTask(FROM_HERE,
-                                     new MessageLoop::QuitTask());
+                                     MessageLoop::QuitClosure());
   }
 
   delete shell;
@@ -159,7 +161,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   FilePath data_path;
   PathService::Get(base::DIR_EXE, &data_path);
   data_path = data_path.Append("test_shell.pak");
-  ResourceBundle::InitSharedInstanceForTest(data_path);
+  ResourceBundle::InitSharedInstanceWithPakFile(data_path);
 
   FilePath resources_dir;
   PathService::Get(base::DIR_SOURCE_ROOT, &resources_dir);
@@ -374,15 +376,16 @@ void TestShell::TestFinished() {
 
 void TestShell::SizeTo(int width, int height) {
   GtkWidget* widget = m_webViewHost->view_handle();
-  if (widget->allocation.width == width &&
-      widget->allocation.height == height) {
+
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(widget, &allocation);
+  if (allocation.width == width && allocation.height == height) {
     // Nothing to do.
     return;
   }
 
   gtk_widget_set_size_request(widget, width, height);
-  if (widget->allocation.width > width ||
-      widget->allocation.height > height) {
+  if (allocation.width > width || allocation.height > height) {
     // We've been sized smaller.  Shrink the window so it snaps back to the
     // appropriate size.
     gtk_window_resize(GTK_WINDOW(m_mainWnd), 1, 1);
@@ -431,7 +434,7 @@ void TestShell::InteractiveSetFocus(WebWidgetHost* host, bool enable) {
     gtk_widget_grab_focus(widget);
   } else if (gtk_widget_is_focus(widget)) {
     GtkWidget *toplevel = gtk_widget_get_toplevel(widget);
-    if (GTK_WIDGET_TOPLEVEL(toplevel))
+    if (gtk_widget_is_toplevel(toplevel))
       gtk_window_set_focus(GTK_WINDOW(toplevel), NULL);
   }
 }
@@ -487,7 +490,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const std::wstring& frame_name) {
+                                const string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -500,7 +503,7 @@ void TestShell::LoadURLForFrame(const GURL& url,
   }
 
   navigation_controller_->LoadEntry(
-      new TestNavigationEntry(-1, url, std::wstring(), frame_name));
+      new TestNavigationEntry(-1, url, frame_name));
 }
 
 bool TestShell::PromptForSaveFile(const wchar_t* prompt_title,
@@ -561,13 +564,11 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 
 //-----------------------------------------------------------------------------
 
-namespace webkit_glue {
-
-string16 GetLocalizedString(int message_id) {
+string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   return ResourceBundle::GetSharedInstance().GetLocalizedString(message_id);
 }
 
-base::StringPiece GetDataResource(int resource_id) {
+base::StringPiece TestShellWebKitInit::GetDataResource(int resource_id) {
   switch (resource_id) {
     case IDR_BROKENIMAGE:
       resource_id = IDR_BROKENIMAGE_TESTSHELL;
@@ -578,5 +579,3 @@ base::StringPiece GetDataResource(int resource_id) {
   }
   return TestShell::ResourceProvider(resource_id);
 }
-
-}  // namespace webkit_glue

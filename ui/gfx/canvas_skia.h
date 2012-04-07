@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,17 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/gfx/canvas.h"
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(TOOLKIT_USES_GTK)
 typedef struct _GdkPixbuf GdkPixbuf;
 #endif
+
+class SkBitmap;
 
 namespace gfx {
 
@@ -34,8 +38,7 @@ class Canvas;
 // source and destination colors are combined. Unless otherwise specified,
 // the variant that does not take a SkXfermode::Mode uses a transfer mode
 // of kSrcOver_Mode.
-class CanvasSkia : public skia::PlatformCanvas,
-                   public Canvas {
+class UI_EXPORT CanvasSkia : public Canvas {
  public:
   enum TruncateFadeMode {
     TruncateFadeTail,
@@ -43,11 +46,18 @@ class CanvasSkia : public skia::PlatformCanvas,
     TruncateFadeHeadAndTail,
   };
 
-  // Creates an empty Canvas. Callers must use initialize before using the
-  // canvas.
+  // Creates an empty canvas.
   CanvasSkia();
 
-  CanvasSkia(int width, int height, bool is_opaque);
+  // If this canvas is not opaque, it's explicitly cleared to transparent before
+  // being returned.
+  CanvasSkia(const gfx::Size& size, bool is_opaque);
+
+  // Constructs a canvas the size of the provided |bitmap|, and draws the
+  // bitmap into it.
+  CanvasSkia(const SkBitmap& bitmap, bool is_opaque);
+
+  explicit CanvasSkia(SkCanvas* canvas);
 
   virtual ~CanvasSkia();
 
@@ -60,6 +70,10 @@ class CanvasSkia : public skia::PlatformCanvas,
                             int* width, int* height,
                             int flags);
 
+  // Returns the number of horizontal pixels needed to display the specified
+  // |text| with |font|.
+  static int GetStringWidth(const string16& text, const gfx::Font& font);
+
   // Returns the default text alignment to be used when drawing text on a
   // gfx::CanvasSkia based on the directionality of the system locale language.
   // This function is used by gfx::Canvas::DrawStringInt when the text alignment
@@ -69,75 +83,74 @@ class CanvasSkia : public skia::PlatformCanvas,
   // gfx::Canvas::TEXT_ALIGN_RIGHT.
   static int DefaultCanvasTextAlignment();
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  // Draw the pixbuf in its natural size at (x, y).
-  void DrawGdkPixbuf(GdkPixbuf* pixbuf, int x, int y);
-#endif
-
-#if defined(OS_WIN) || (defined(OS_POSIX) && !defined(OS_MACOSX))
   // Draws text with a 1-pixel halo around it of the given color.
   // On Windows, it allows ClearType to be drawn to an otherwise transparenct
   //   bitmap for drag images. Drag images have only 1-bit of transparency, so
   //   we don't do any fancy blurring.
   // On Linux, text with halo is created by stroking it with 2px |halo_color|
   //   then filling it with |text_color|.
+  // On Mac, NOTIMPLEMENTED.
+  //   TODO(dhollowa): Skia-native implementation is underway.  Cut over to
+  //   that when ready.  http::/crbug.com/109946
   void DrawStringWithHalo(const string16& text,
                           const gfx::Font& font,
                           const SkColor& text_color,
                           const SkColor& halo_color,
                           int x, int y, int w, int h,
                           int flags);
-#endif
 
   // Extracts a bitmap from the contents of this canvas.
   SkBitmap ExtractBitmap() const;
 
   // Overridden from Canvas:
-  virtual void Save();
-  virtual void SaveLayerAlpha(uint8 alpha);
-  virtual void SaveLayerAlpha(uint8 alpha, const gfx::Rect& layer_bounds);
-  virtual void Restore();
-  virtual bool ClipRectInt(int x, int y, int w, int h);
-  virtual void TranslateInt(int x, int y);
-  virtual void ScaleInt(int x, int y);
-  virtual void FillRectInt(const SkColor& color, int x, int y, int w, int h);
-  virtual void FillRectInt(const SkColor& color, int x, int y, int w, int h,
-                           SkXfermode::Mode mode);
-  virtual void FillRectInt(const gfx::Brush* brush, int x, int y, int w, int h);
-  virtual void DrawRectInt(const SkColor& color, int x, int y, int w, int h);
-  virtual void DrawRectInt(const SkColor& color,
-                           int x, int y, int w, int h,
-                           SkXfermode::Mode mode);
-  virtual void DrawRectInt(int x, int y, int w, int h, const SkPaint& paint);
+  virtual void Save() OVERRIDE;
+  virtual void SaveLayerAlpha(uint8 alpha) OVERRIDE;
+  virtual void SaveLayerAlpha(uint8 alpha,
+                              const gfx::Rect& layer_bounds) OVERRIDE;
+  virtual void Restore() OVERRIDE;
+  virtual bool ClipRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void Translate(const gfx::Point& point) OVERRIDE;
+  virtual void Scale(int x_scale, int y_scale) OVERRIDE;
+  virtual void FillRect(const SkColor& color, const gfx::Rect& rect) OVERRIDE;
+  virtual void FillRect(const SkColor& color,
+                        const gfx::Rect& rect,
+                        SkXfermode::Mode mode) OVERRIDE;
+  virtual void FillRect(const gfx::Brush* brush,
+                        const gfx::Rect& rect) OVERRIDE;
+  virtual void DrawRect(const gfx::Rect& rect, const SkColor& color) OVERRIDE;
+  virtual void DrawRect(const gfx::Rect& rect,
+                        const SkColor& color,
+                        SkXfermode::Mode mode) OVERRIDE;
+  virtual void DrawRect(const gfx::Rect& rect, const SkPaint& paint) OVERRIDE;
   virtual void DrawLineInt(const SkColor& color,
                            int x1, int y1,
-                           int x2, int y2);
-  virtual void DrawBitmapInt(const SkBitmap& bitmap, int x, int y);
+                           int x2, int y2) OVERRIDE;
+  virtual void DrawBitmapInt(const SkBitmap& bitmap, int x, int y) OVERRIDE;
   virtual void DrawBitmapInt(const SkBitmap& bitmap,
                              int x, int y,
-                             const SkPaint& paint);
+                             const SkPaint& paint) OVERRIDE;
   virtual void DrawBitmapInt(const SkBitmap& bitmap,
                              int src_x, int src_y, int src_w, int src_h,
                              int dest_x, int dest_y, int dest_w, int dest_h,
-                             bool filter);
+                             bool filter) OVERRIDE;
   virtual void DrawBitmapInt(const SkBitmap& bitmap,
                              int src_x, int src_y, int src_w, int src_h,
                              int dest_x, int dest_y, int dest_w, int dest_h,
                              bool filter,
-                             const SkPaint& paint);
+                             const SkPaint& paint) OVERRIDE;
   virtual void DrawStringInt(const string16& text,
                              const gfx::Font& font,
                              const SkColor& color,
-                             int x, int y, int w, int h);
+                             int x, int y, int w, int h) OVERRIDE;
   virtual void DrawStringInt(const string16& text,
                              const gfx::Font& font,
                              const SkColor& color,
-                             const gfx::Rect& display_rect);
+                             const gfx::Rect& display_rect) OVERRIDE;
   virtual void DrawStringInt(const string16& text,
                              const gfx::Font& font,
                              const SkColor& color,
                              int x, int y, int w, int h,
-                             int flags);
+                             int flags) OVERRIDE;
 #if defined(OS_WIN)
   // Draws the given string with the beginning and/or the end using a fade
   // gradient. When truncating the head
@@ -151,17 +164,22 @@ class CanvasSkia : public skia::PlatformCanvas,
       const SkColor& color,
       const gfx::Rect& display_rect);
 #endif
-  virtual void DrawFocusRect(int x, int y, int width, int height);
-  virtual void TileImageInt(const SkBitmap& bitmap, int x, int y, int w, int h);
+  virtual void DrawFocusRect(const gfx::Rect& rect) OVERRIDE;
+  virtual void TileImageInt(const SkBitmap& bitmap,
+                            int x, int y, int w, int h) OVERRIDE;
   virtual void TileImageInt(const SkBitmap& bitmap,
                             int src_x, int src_y,
-                            int dest_x, int dest_y, int w, int h);
-  virtual gfx::NativeDrawingContext BeginPlatformPaint();
-  virtual void EndPlatformPaint();
-  virtual void Transform(const ui::Transform& transform);
-  virtual ui::TextureID GetTextureID();
-  virtual CanvasSkia* AsCanvasSkia();
-  virtual const CanvasSkia* AsCanvasSkia() const;
+                            int dest_x, int dest_y, int w, int h) OVERRIDE;
+  virtual gfx::NativeDrawingContext BeginPlatformPaint() OVERRIDE;
+  virtual void EndPlatformPaint() OVERRIDE;
+  virtual void Transform(const ui::Transform& transform) OVERRIDE;
+  virtual CanvasSkia* AsCanvasSkia() OVERRIDE;
+  virtual const CanvasSkia* AsCanvasSkia() const OVERRIDE;
+  virtual SkCanvas* GetSkCanvas() OVERRIDE;
+  virtual const SkCanvas* GetSkCanvas() const OVERRIDE;
+
+  SkCanvas* sk_canvas() const { return canvas_; }
+  skia::PlatformCanvas* platform_canvas() const { return owned_canvas_.get(); }
 
  private:
   // Test whether the provided rectangle intersects the current clip rect.
@@ -178,9 +196,12 @@ class CanvasSkia : public skia::PlatformCanvas,
                      int flags);
 #endif
 
+  scoped_ptr<skia::PlatformCanvas> owned_canvas_;
+  SkCanvas* canvas_;
+
   DISALLOW_COPY_AND_ASSIGN(CanvasSkia);
 };
 
-}  // namespace gfx;
+}  // namespace gfx
 
 #endif  // UI_GFX_CANVAS_SKIA_H_

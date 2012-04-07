@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,25 +8,26 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
+#include "grit/ui_resources_standard.h"
+#include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/path.h"
-#include "views/controls/button/image_button.h"
-#include "views/window/window.h"
-#include "views/window/window_resources.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_delegate.h"
 
-#if !defined(OS_WIN)
-#include "views/window/hit_test.h"
-#endif
+using content::WebContents;
 
 namespace {
+
 // The frame border is only visible in restored mode and is hardcoded to 1 px on
 // each side regardless of the system window border size.
 const int kFrameBorderThickness = 1;
@@ -49,23 +50,25 @@ const int kIconTitleSpacing = 4;
 const int kTitleCloseButtonSpacing = 5;
 // There is a 4 px gap between the close button and the frame border.
 const int kCloseButtonFrameBorderSpacing = 4;
-}
+
+const SkColor kFrameColorAppPanel = SK_ColorWHITE;
+const SkColor kFrameColorAppPanelInactive = SK_ColorWHITE;
+
+}  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
 // AppPanelBrowserFrameView, public:
 
 AppPanelBrowserFrameView::AppPanelBrowserFrameView(BrowserFrame* frame,
                                                    BrowserView* browser_view)
-    : BrowserNonClientFrameView(),
+    : BrowserNonClientFrameView(frame, browser_view),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           close_button_(new views::ImageButton(this))),
-      window_icon_(NULL),
-      frame_(frame),
-      browser_view_(browser_view) {
+      window_icon_(NULL) {
   DCHECK(browser_view->ShouldShowWindowIcon());
   DCHECK(browser_view->ShouldShowWindowTitle());
 
-  frame_->set_frame_type(views::Window::FRAME_TYPE_FORCE_CUSTOM);
+  frame->set_frame_type(views::Widget::FRAME_TYPE_FORCE_CUSTOM);
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   close_button_->SetImage(views::CustomButton::BS_NORMAL,
@@ -108,7 +111,7 @@ void AppPanelBrowserFrameView::UpdateThrobber(bool running) {
 }
 
 gfx::Size AppPanelBrowserFrameView::GetMinimumSize() {
-  gfx::Size min_size(browser_view_->GetMinimumSize());
+  gfx::Size min_size(browser_view()->GetMinimumSize());
   int border_thickness = NonClientBorderThickness();
   min_size.Enlarge(2 * border_thickness,
                    NonClientTopBorderHeight() + border_thickness);
@@ -140,14 +143,14 @@ int AppPanelBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   if (!bounds().Contains(point))
     return HTNOWHERE;
 
-  int frame_component = frame_->client_view()->NonClientHitTest(point);
+  int frame_component = frame()->client_view()->NonClientHitTest(point);
 
   // See if we're in the sysmenu region.  (We check the ClientView first to be
   // consistent with OpaqueBrowserFrameView; it's not really necessary here.)
   gfx::Rect sysmenu_rect(IconBounds());
   // In maximized mode we extend the rect to the screen corner to take advantage
   // of Fitts' Law.
-  if (frame_->IsMaximized())
+  if (frame()->IsMaximized())
     sysmenu_rect.SetRect(0, 0, sysmenu_rect.right(), sysmenu_rect.bottom());
   sysmenu_rect.set_x(GetMirroredXForRect(sysmenu_rect));
   if (sysmenu_rect.Contains(point))
@@ -157,14 +160,14 @@ int AppPanelBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
     return frame_component;
 
   // Then see if the point is within any of the window controls.
-  if (close_button_->IsVisible() &&
+  if (close_button_->visible() &&
       close_button_->GetMirroredBounds().Contains(point))
     return HTCLOSE;
 
   int window_component = GetHTComponentForFrame(point,
       NonClientBorderThickness(), NonClientBorderThickness(),
       kResizeAreaCornerSize, kResizeAreaCornerSize,
-      frame_->window_delegate()->CanResize());
+      frame()->widget_delegate()->CanResize());
   // Fall back to the caption if no other component matches.
   return (window_component == HTNOWHERE) ? HTCAPTION : window_component;
 }
@@ -173,7 +176,7 @@ void AppPanelBrowserFrameView::GetWindowMask(const gfx::Size& size,
                                              gfx::Path* window_mask) {
   DCHECK(window_mask);
 
-  if (frame_->IsMaximized())
+  if (frame()->IsMaximized())
     return;
 
   // Redefine the window visible region for the new size.
@@ -195,10 +198,6 @@ void AppPanelBrowserFrameView::GetWindowMask(const gfx::Size& size,
   window_mask->close();
 }
 
-void AppPanelBrowserFrameView::EnableClose(bool enable) {
-  close_button_->SetEnabled(enable);
-}
-
 void AppPanelBrowserFrameView::ResetWindowControls() {
   // The close button isn't affected by this constraint.
 }
@@ -212,12 +211,12 @@ void AppPanelBrowserFrameView::UpdateWindowIcon() {
 // AppPanelBrowserFrameView, views::View overrides:
 
 void AppPanelBrowserFrameView::OnPaint(gfx::Canvas* canvas) {
-  if (frame_->IsMaximized())
+  if (frame()->IsMaximized())
     PaintMaximizedFrameBorder(canvas);
   else
     PaintRestoredFrameBorder(canvas);
   PaintTitleBar(canvas);
-  if (!frame_->IsMaximized())
+  if (!frame()->IsMaximized())
     PaintRestoredClientEdge(canvas);
 }
 
@@ -233,7 +232,7 @@ void AppPanelBrowserFrameView::Layout() {
 void AppPanelBrowserFrameView::ButtonPressed(views::Button* sender,
                                              const views::Event& event) {
   if (sender == close_button_)
-    frame_->Close();
+    frame()->Close();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -242,25 +241,25 @@ void AppPanelBrowserFrameView::ButtonPressed(views::Button* sender,
 bool AppPanelBrowserFrameView::ShouldTabIconViewAnimate() const {
   // This function is queried during the creation of the window as the
   // TabIconView we host is initialized, so we need to NULL check the selected
-  // TabContents because in this condition there is not yet a selected tab.
-  TabContents* current_tab = browser_view_->GetSelectedTabContents();
-  return current_tab ? current_tab->is_loading() : false;
+  // WebContents because in this condition there is not yet a selected tab.
+  WebContents* current_tab = browser_view()->GetSelectedWebContents();
+  return current_tab ? current_tab->IsLoading() : false;
 }
 
 SkBitmap AppPanelBrowserFrameView::GetFaviconForTabIconView() {
-  return frame_->window_delegate()->GetWindowIcon();
+  return frame()->widget_delegate()->GetWindowIcon();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // AppPanelBrowserFrameView, private:
 
 int AppPanelBrowserFrameView::FrameBorderThickness() const {
-  return frame_->IsMaximized() ? 0 : kFrameBorderThickness;
+  return frame()->IsMaximized() ? 0 : kFrameBorderThickness;
 }
 
 int AppPanelBrowserFrameView::NonClientBorderThickness() const {
   return FrameBorderThickness() +
-      (frame_->IsMaximized() ? 0 : kClientEdgeThickness);
+      (frame()->IsMaximized() ? 0 : kClientEdgeThickness);
 }
 
 int AppPanelBrowserFrameView::NonClientTopBorderHeight() const {
@@ -271,7 +270,7 @@ int AppPanelBrowserFrameView::NonClientTopBorderHeight() const {
 
 int AppPanelBrowserFrameView::TitlebarBottomThickness() const {
   return kTitlebarTopAndBottomEdgeThickness +
-      (frame_->IsMaximized() ? 0 : kClientEdgeThickness);
+      (frame()->IsMaximized() ? 0 : kClientEdgeThickness);
 }
 
 int AppPanelBrowserFrameView::IconSize() const {
@@ -295,7 +294,7 @@ gfx::Rect AppPanelBrowserFrameView::IconBounds() const {
   // with restored windows, so when the window is restored, instead of
   // calculating the remaining space from below the frame border, we calculate
   // from below the top border-plus-padding.
-  int unavailable_px_at_top = frame_->IsMaximized() ?
+  int unavailable_px_at_top = frame()->IsMaximized() ?
       frame_thickness : kTitlebarTopAndBottomEdgeThickness;
   // When the icon is shorter than the minimum space we reserve for the caption
   // button, we vertically center it.  We want to bias rounding to put extra
@@ -328,26 +327,36 @@ void AppPanelBrowserFrameView::PaintRestoredFrameBorder(gfx::Canvas* canvas) {
   SkColor frame_color;
   if (ShouldPaintAsActive()) {
     theme_frame = rb.GetBitmapNamed(IDR_FRAME_APP_PANEL);
-    frame_color = ResourceBundle::frame_color_app_panel;
+    frame_color = kFrameColorAppPanel;
   } else {
-    theme_frame = rb.GetBitmapNamed(IDR_FRAME_APP_PANEL);  // TODO
-    frame_color = ResourceBundle::frame_color_app_panel_inactive;
+    theme_frame = rb.GetBitmapNamed(IDR_FRAME_APP_PANEL);
+    frame_color = kFrameColorAppPanelInactive;
   }
 
   // Fill with the frame color first so we have a constant background for
   // areas not covered by the theme image.
-  canvas->FillRectInt(frame_color, 0, 0, width(), theme_frame->height());
-  // Now fill down the sides.
-  canvas->FillRectInt(frame_color, 0, theme_frame->height(), left_edge->width(),
-                      height() - theme_frame->height());
-  canvas->FillRectInt(frame_color, width() - right_edge->width(),
-                      theme_frame->height(), right_edge->width(),
-                      height() - theme_frame->height());
-  // Now fill the bottom area.
-  canvas->FillRectInt(frame_color, left_edge->width(),
-                      height() - bottom_edge->height(),
-                      width() - left_edge->width() - right_edge->width(),
-                      bottom_edge->height());
+  canvas->FillRect(frame_color,
+                   gfx::Rect(0, 0, width(), theme_frame->height()));
+
+  int remaining_height = height() - theme_frame->height();
+  if (remaining_height > 0) {
+    // Now fill down the sides.
+    canvas->FillRect(frame_color,
+                     gfx::Rect(0, theme_frame->height(), left_edge->width(),
+                               remaining_height));
+    canvas->FillRect(frame_color,
+                     gfx::Rect(width() - right_edge->width(),
+                               theme_frame->height(), right_edge->width(),
+                               remaining_height));
+    int center_width = width() - left_edge->width() - right_edge->width();
+    if (center_width > 0) {
+      // Now fill the bottom area.
+      canvas->FillRect(frame_color,
+                       gfx::Rect(left_edge->width(),
+                                 height() - bottom_edge->height(),
+                                 center_width, bottom_edge->height()));
+    }
+  }
 
   // Draw the theme frame.
   canvas->TileImageInt(*theme_frame, 0, 0, width(), theme_frame->height());
@@ -393,13 +402,13 @@ void AppPanelBrowserFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
   SkBitmap* titlebar_bottom = rb.GetBitmapNamed(IDR_APP_TOP_CENTER);
   int edge_height = titlebar_bottom->height() - kClientEdgeThickness;
   canvas->TileImageInt(*titlebar_bottom, 0,
-                       frame_->client_view()->y() - edge_height,
+                       frame()->client_view()->y() - edge_height,
                        width(), edge_height);
 }
 
 void AppPanelBrowserFrameView::PaintTitleBar(gfx::Canvas* canvas) {
   // The window icon is painted by the TabIconView.
-  views::WindowDelegate* d = frame_->window_delegate();
+  views::WidgetDelegate* d = frame()->widget_delegate();
   canvas->DrawStringInt(d->GetWindowTitle(), BrowserFrame::GetTitleFont(),
       SK_ColorBLACK, GetMirroredXForRect(title_bounds_), title_bounds_.y(),
       title_bounds_.width(), title_bounds_.height());
@@ -449,17 +458,18 @@ void AppPanelBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
       client_area_top, left->width(), client_area_height);
 
   // Draw the toolbar color to fill in the edges.
-  canvas->DrawRectInt(ResourceBundle::toolbar_color,
+  canvas->DrawRect(gfx::Rect(
       client_area_bounds.x() - kClientEdgeThickness,
       client_area_top - kClientEdgeThickness,
       client_area_bounds.width() + kClientEdgeThickness,
-      client_area_bottom - client_area_top + kClientEdgeThickness);
+      client_area_bottom - client_area_top + kClientEdgeThickness),
+      ResourceBundle::toolbar_color);
 }
 
 void AppPanelBrowserFrameView::LayoutWindowControls() {
   close_button_->SetImageAlignment(views::ImageButton::ALIGN_LEFT,
                                    views::ImageButton::ALIGN_BOTTOM);
-  bool is_maximized = frame_->IsMaximized();
+  bool is_maximized = frame()->IsMaximized();
   // There should always be the same number of non-border pixels visible to the
   // side of the close button.  In maximized mode we extend the button to the
   // screen corner to obey Fitts' Law.

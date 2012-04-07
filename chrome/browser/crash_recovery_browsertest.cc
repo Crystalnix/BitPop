@@ -4,23 +4,30 @@
 
 #include "base/file_path.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/common/notification_type.h"
-#include "content/common/page_transition_types.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/page_transition_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::NavigationController;
+using content::OpenURLParams;
+using content::Referrer;
 
 namespace {
 
 void SimulateRendererCrash(Browser* browser) {
-  browser->OpenURL(GURL(chrome::kAboutCrashURL), GURL(), CURRENT_TAB,
-                   PageTransition::TYPED);
-  LOG(ERROR) << "SimulateRendererCrash, before WaitForNotification";
-  ui_test_utils::WaitForNotification(
-      NotificationType::TAB_CONTENTS_DISCONNECTED);
-  LOG(ERROR) << "SimulateRendererCrash, after WaitForNotification";
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
+      content::NotificationService::AllSources());
+  browser->OpenURL(OpenURLParams(
+      GURL(chrome::kChromeUICrashURL), Referrer(), CURRENT_TAB,
+      content::PAGE_TRANSITION_TYPED, false));
+  observer.Wait();
 }
 
 }  // namespace
@@ -29,7 +36,7 @@ class CrashRecoveryBrowserTest : public InProcessBrowserTest {
 };
 
 // Test that reload works after a crash.
-// Disabled, http://crbug.com/29331, http://crbug.com/69637.
+// Disabled, http://crbug.com/29331 , http://crbug.com/69637 .
 IN_PROC_BROWSER_TEST_F(CrashRecoveryBrowserTest, Reload) {
   // The title of the active tab should change each time this URL is loaded.
   GURL url(
@@ -42,10 +49,13 @@ IN_PROC_BROWSER_TEST_F(CrashRecoveryBrowserTest, Reload) {
   ASSERT_TRUE(ui_test_utils::GetCurrentTabTitle(browser(),
                                                 &title_before_crash));
   SimulateRendererCrash(browser());
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<NavigationController>(
+          &browser()->GetSelectedTabContentsWrapper()->web_contents()->
+              GetController()));
   browser()->Reload(CURRENT_TAB);
-  LOG(ERROR) << "Before WaitForNavigationInCurrentTab";
-  ASSERT_TRUE(ui_test_utils::WaitForNavigationInCurrentTab(browser()));
-  LOG(ERROR) << "After WaitForNavigationInCurrentTab";
+  observer.Wait();
   ASSERT_TRUE(ui_test_utils::GetCurrentTabTitle(browser(),
                                                 &title_after_crash));
   EXPECT_NE(title_before_crash, title_after_crash);
@@ -69,10 +79,13 @@ IN_PROC_BROWSER_TEST_F(CrashRecoveryBrowserTest, LoadInNewTab) {
   ASSERT_TRUE(ui_test_utils::GetCurrentTabTitle(browser(),
                                                 &title_before_crash));
   SimulateRendererCrash(browser());
+  ui_test_utils::WindowedNotificationObserver observer(
+      content::NOTIFICATION_LOAD_STOP,
+      content::Source<NavigationController>(
+          &browser()->GetSelectedTabContentsWrapper()->web_contents()->
+              GetController()));
   browser()->Reload(CURRENT_TAB);
-  LOG(ERROR) << "Before WaitForNavigationInCurrentTab";
-  ASSERT_TRUE(ui_test_utils::WaitForNavigationInCurrentTab(browser()));
-  LOG(ERROR) << "After WaitForNavigationInCurrentTab";
+  observer.Wait();
   ASSERT_TRUE(ui_test_utils::GetCurrentTabTitle(browser(),
                                                 &title_after_crash));
   EXPECT_EQ(title_before_crash, title_after_crash);

@@ -11,6 +11,7 @@ import os
 import posixpath
 import types
 import sys
+
 from grit import grd_reader
 from grit import util
 
@@ -93,9 +94,13 @@ def relpath(path, start=os.path.curdir):
 
     rel_list = [os.path.pardir] * (len(start_list)-i) + path_list[i:]
     if not rel_list:
-        return curdir
+        return os.path.curdir
     return os.path.join(*rel_list)
 ##############################################################################
+
+
+class WrongNumberOfArguments(Exception):
+  pass
 
 
 def Outputs(filename, defines):
@@ -130,6 +135,24 @@ def Outputs(filename, defines):
   return [t.replace('\\', '/') for t in target]
 
 
+def GritSourceFiles():
+  files = []
+  grit_root_dir = relpath(os.path.dirname(__file__), os.getcwd())
+  for root, dirs, filenames in os.walk(grit_root_dir):
+    grit_src = [os.path.join(root, f) for f in filenames
+                if f.endswith('.py')]
+    files.extend(grit_src)
+  # TODO(joi@chromium.org): Once we switch to specifying the
+  # resource_ids file via a .grd attribute, it should be considered an
+  # input of grit and this bit should no longer be necessary.
+  default_resource_ids = relpath(
+      os.path.join(grit_root_dir, '..', 'gritsettings', 'resource_ids'),
+      os.getcwd())
+  if os.path.exists(default_resource_ids):
+    files.append(default_resource_ids)
+  return files
+
+
 def Inputs(filename, defines):
   grd = grd_reader.Parse(
       filename, debug=False, defines=defines, tags_to_ignore=set(['messages']))
@@ -147,20 +170,12 @@ def Inputs(filename, defines):
         if node.attrs['flattenhtml'] == 'true':
           files.extend(node.GetHtmlResourceFilenames())
 
-  # Add in the grit source files.  If one of these change, we want to re-run
-  # grit.
-  grit_root_dir = relpath(os.path.dirname(__file__), os.getcwd())
-  for root, dirs, filenames in os.walk(grit_root_dir):
-    grit_src = [os.path.join(root, f) for f in filenames
-                if f.endswith('.py') or f == 'resource_ids']
-    files.extend(grit_src)
-
-  return [f.replace('\\', '/') for f in files]
+  return files
 
 
 def PrintUsage():
-  print 'USAGE: ./grit_info.py --inputs [-D foo] <grd-files>..'
-  print '       ./grit_info.py --outputs [-D foo] <out-prefix> <grd-files>..'
+  print 'USAGE: ./grit_info.py --inputs [-D foo] <grd-file>'
+  print '       ./grit_info.py --outputs [-D foo] <out-prefix> <grd-file>'
 
 
 def DoMain(argv):
@@ -175,36 +190,47 @@ def DoMain(argv):
 
   options, args = parser.parse_args(argv)
 
-  if not len(args):
-    return None
-
   defines = {}
   for define in options.defines:
     defines[define] = 1
 
   if options.inputs:
-    for filename in args:
-      inputs = Inputs(filename, defines)
-      # Include grd file as second input (works around gyp expecting it).
-      inputs = [inputs[0], filename] + inputs[1:]
-      if options.whitelist_files:
-        inputs.extend(options.whitelist_files)
-      return '\n'.join(inputs)
-  elif options.outputs:
-    if len(args) < 2:
-      return None
+    if len(args) > 1:
+      raise WrongNumberOfArguments("Expected 0 or 1 arguments for --inputs.")
 
-    for f in args[1:]:
-      outputs = [posixpath.join(args[0], f) for f in Outputs(f, defines)]
-      return '\n'.join(outputs)
+    inputs = []
+    if len(args) == 1:
+      filename = args[0]
+      inputs = Inputs(filename, defines)
+
+    # Add in the grit source files.  If one of these change, we want to re-run
+    # grit.
+    inputs.extend(GritSourceFiles())
+    inputs = [f.replace('\\', '/') for f in inputs]
+
+    if len(args) == 1:
+      # Include grd file as second input (works around gyp expecting it).
+      inputs = [inputs[0], args[0]] + inputs[1:]
+    if options.whitelist_files:
+      inputs.extend(options.whitelist_files)
+    return '\n'.join(inputs)
+  elif options.outputs:
+    if len(args) != 2:
+      raise WrongNumberOfArguments("Expected exactly 2 arguments for --ouputs.")
+
+    prefix, filename = args
+    outputs = [posixpath.join(prefix, f) for f in Outputs(filename, defines)]
+    return '\n'.join(outputs)
   else:
-    return None
+    raise WrongNumberOfArguments("Expected --inputs or --outputs.")
 
 
 def main(argv):
-  result = DoMain(argv[1:])
-  if result == None:
+  try:
+    result = DoMain(argv[1:])
+  except WrongNumberOfArguments, e:
     PrintUsage()
+    print e
     return 1
   print result
   return 0

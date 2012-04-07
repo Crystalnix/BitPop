@@ -1,10 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
 
 #include "base/i18n/rtl.h"
+#include "base/utf_string_conversions.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/tab_contents/simple_alert_infobar_delegate.h"
 #include "chrome/browser/ui/browser.h"
@@ -15,9 +17,10 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 // When an extension is installed on Mac with neither browser action nor
 // page action icons, show an infobar instead of a popup bubble.
@@ -35,14 +38,15 @@ static void ShowGenericExtensionInstalledInfoBar(
 
   string16 extension_name = UTF8ToUTF16(new_extension->name());
   base::i18n::AdjustStringForLocaleDirection(&extension_name);
-  string16 msg =
-      l10n_util::GetStringFUTF16(IDS_EXTENSION_INSTALLED_HEADING,
-                                 extension_name) +
-      UTF8ToUTF16(" ") +
-      l10n_util::GetStringUTF16(IDS_EXTENSION_INSTALLED_MANAGE_INFO_MAC);
+  string16 msg = l10n_util::GetStringFUTF16(IDS_EXTENSION_INSTALLED_HEADING,
+                                            extension_name)
+                 + UTF8ToUTF16(" ")
+                 + l10n_util::GetStringUTF16(
+                       IDS_EXTENSION_INSTALLED_MANAGE_INFO_MAC);
+  InfoBarTabHelper* infobar_helper = wrapper->infobar_tab_helper();
   InfoBarDelegate* delegate = new SimpleAlertInfoBarDelegate(
-      wrapper->tab_contents(), new gfx::Image(new SkBitmap(icon)), msg, true);
-  wrapper->AddInfoBar(delegate);
+      infobar_helper, new gfx::Image(new SkBitmap(icon)), msg, true);
+  infobar_helper->AddInfoBar(delegate);
 }
 
 namespace browser {

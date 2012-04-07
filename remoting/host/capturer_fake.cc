@@ -4,8 +4,6 @@
 
 #include "remoting/host/capturer_fake.h"
 
-#include "ui/gfx/rect.h"
-
 namespace remoting {
 
 // CapturerFake generates a white picture of size kWidth x kHeight with a
@@ -39,7 +37,7 @@ CapturerFake::~CapturerFake() {
 }
 
 void CapturerFake::ScreenConfigurationChanged() {
-  size_ = gfx::Size(kWidth, kHeight);
+  size_ = SkISize::Make(kWidth, kHeight);
   bytes_per_row_ = size_.width() * kBytesPerPixel;
   pixel_format_ = media::VideoFrame::RGB32;
 
@@ -54,15 +52,15 @@ media::VideoFrame::Format CapturerFake::pixel_format() const {
   return pixel_format_;
 }
 
-void CapturerFake::ClearInvalidRects() {
-  helper.ClearInvalidRects();
+void CapturerFake::ClearInvalidRegion() {
+  helper.ClearInvalidRegion();
 }
 
-void CapturerFake::InvalidateRects(const InvalidRects& inval_rects) {
-  helper.InvalidateRects(inval_rects);
+void CapturerFake::InvalidateRegion(const SkRegion& invalid_region) {
+  helper.InvalidateRegion(invalid_region);
 }
 
-void CapturerFake::InvalidateScreen(const gfx::Size& size) {
+void CapturerFake::InvalidateScreen(const SkISize& size) {
   helper.InvalidateScreen(size);
 }
 
@@ -70,14 +68,13 @@ void CapturerFake::InvalidateFullScreen() {
   helper.InvalidateFullScreen();
 }
 
-void CapturerFake::CaptureInvalidRects(CaptureCompletedCallback* callback) {
-  scoped_ptr<CaptureCompletedCallback> callback_deleter(callback);
-
+void CapturerFake::CaptureInvalidRegion(
+    const CaptureCompletedCallback& callback) {
   GenerateImage();
   InvalidateScreen(size_);
 
-  InvalidRects inval_rects;
-  helper.SwapInvalidRects(inval_rects);
+  SkRegion invalid_region;
+  helper.SwapInvalidRegion(&invalid_region);
 
   DataPlanes planes;
   planes.data[0] = buffers_[current_buffer_].get();
@@ -87,14 +84,14 @@ void CapturerFake::CaptureInvalidRects(CaptureCompletedCallback* callback) {
   scoped_refptr<CaptureData> capture_data(new CaptureData(planes,
                                                           size_,
                                                           pixel_format_));
-  capture_data->mutable_dirty_rects() = inval_rects;
+  capture_data->mutable_dirty_region() = invalid_region;
 
   helper.set_size_most_recent(capture_data->size());
 
-  callback->Run(capture_data);
+  callback.Run(capture_data);
 }
 
-const gfx::Size& CapturerFake::size_most_recent() const {
+const SkISize& CapturerFake::size_most_recent() const {
   return helper.size_most_recent();
 }
 

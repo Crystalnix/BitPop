@@ -10,20 +10,23 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/sync/engine/http_post_provider_factory.h"
-#include "chrome/browser/sync/engine/http_post_provider_interface.h"
-#include "chrome/browser/sync/engine/syncapi.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/browser/sync/internal_api/http_post_provider_factory.h"
+#include "chrome/browser/sync/internal_api/http_post_provider_interface.h"
+#include "content/public/common/url_fetcher_delegate.h"
 #include "googleurl/src/gurl.h"
-#include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
+#include "net/url_request/url_request_context.h"
 
 class MessageLoop;
 class HttpBridgeTest;
+
+namespace net {
+class HttpResponseHeaders;
+}
 
 namespace browser_sync {
 
@@ -35,7 +38,7 @@ namespace browser_sync {
 // needs to stick around across context switches, etc.
 class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
                    public sync_api::HttpPostProviderInterface,
-                   public URLFetcher::Delegate {
+                   public content::URLFetcherDelegate {
  public:
   // A request context used for HTTP requests bridged from the sync backend.
   // A bridged RequestContext has a dedicated in-memory cookie store and does
@@ -52,7 +55,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     // the browser's UA string.
     void set_user_agent(const std::string& ua) { user_agent_ = ua; }
 
-    virtual const std::string& GetUserAgent(const GURL& url) const {
+    virtual const std::string& GetUserAgent(const GURL& url) const OVERRIDE {
       // If the user agent is set explicitly return that, otherwise call the
       // base class method to return default value.
       return user_agent_.empty() ?
@@ -79,8 +82,9 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     bool is_user_agent_set() const { return !user_agent_.empty(); }
 
     // net::URLRequestContextGetter implementation.
-    virtual net::URLRequestContext* GetURLRequestContext();
-    virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() const;
+    virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
+    virtual scoped_refptr<base::MessageLoopProxy>
+        GetIOMessageLoopProxy() const OVERRIDE;
 
    private:
     virtual ~RequestContextGetter() {}
@@ -99,30 +103,26 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   explicit HttpBridge(RequestContextGetter* context);
 
   // sync_api::HttpPostProvider implementation.
-  virtual void SetUserAgent(const char* user_agent);
-  virtual void SetExtraRequestHeaders(const char* headers);
-  virtual void SetURL(const char* url, int port);
+  virtual void SetUserAgent(const char* user_agent) OVERRIDE;
+  virtual void SetExtraRequestHeaders(const char* headers) OVERRIDE;
+  virtual void SetURL(const char* url, int port) OVERRIDE;
   virtual void SetPostPayload(const char* content_type, int content_length,
-                              const char* content);
-  virtual bool MakeSynchronousPost(int* os_error_code, int* response_code);
-  virtual void Abort();
+                              const char* content) OVERRIDE;
+  virtual bool MakeSynchronousPost(int* error_code,
+                                   int* response_code) OVERRIDE;
+  virtual void Abort() OVERRIDE;
 
   // WARNING: these response content methods are used to extract plain old data
   // and not null terminated strings, so you should make sure you have read
   // GetResponseContentLength() characters when using GetResponseContent. e.g
   // string r(b->GetResponseContent(), b->GetResponseContentLength()).
-  virtual int GetResponseContentLength() const;
-  virtual const char* GetResponseContent() const;
+  virtual int GetResponseContentLength() const OVERRIDE;
+  virtual const char* GetResponseContent() const OVERRIDE;
   virtual const std::string GetResponseHeaderValue(
-      const std::string& name) const;
+      const std::string& name) const OVERRIDE;
 
-  // URLFetcher::Delegate implementation.
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // content::URLFetcherDelegate implementation.
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
 #if defined(UNIT_TEST)
   net::URLRequestContextGetter* GetRequestContextGetter() const {
@@ -178,7 +178,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     // NOTE: This is not a scoped_ptr for a reason. It must be deleted on the
     // same thread that created it, which isn't the same thread |this| gets
     // deleted on. We must manually delete url_poster_ on the IO loop.
-    URLFetcher* url_poster;
+    content::URLFetcher* url_poster;
 
     // Used to support 'Abort' functionality.
     bool aborted;
@@ -187,7 +187,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
     bool request_completed;
     bool request_succeeded;
     int http_response_code;
-    int os_error_code;
+    int error_code;
     std::string response_content;
     scoped_refptr<net::HttpResponseHeaders> response_headers;
   };
@@ -195,7 +195,7 @@ class HttpBridge : public base::RefCountedThreadSafe<HttpBridge>,
   // This lock synchronizes use of state involved in the flow to fetch a URL
   // using URLFetcher.  Because we can Abort() from any thread, for example,
   // this flow needs to be synchronized to gracefully clean up URLFetcher and
-  // return appropriate values in os_error_code.
+  // return appropriate values in |error_code|.
   mutable base::Lock fetch_state_lock_;
   URLFetchState fetch_state_;
 

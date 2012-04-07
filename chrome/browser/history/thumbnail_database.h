@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,13 @@
 
 #include <vector>
 
-#include "app/sql/connection.h"
-#include "app/sql/init_status.h"
-#include "app/sql/meta_table.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/history/history_types.h"
+#include "sql/connection.h"
+#include "sql/init_status.h"
+#include "sql/meta_table.h"
 
 class FilePath;
 class RefCountedMemory;
@@ -23,6 +23,10 @@ class SkBitmap;
 
 namespace base {
 class Time;
+}
+
+namespace gfx {
+class Image;
 }
 
 namespace history {
@@ -71,9 +75,9 @@ class ThumbnailDatabase {
   // Sets the given data to be the thumbnail for the given URL,
   // overwriting any previous data. If the SkBitmap contains no pixel
   // data, the thumbnail will be deleted.
-  void SetPageThumbnail(const GURL& url,
+  bool SetPageThumbnail(const GURL& url,
                         URLID id,
-                        const SkBitmap& thumbnail,
+                        const gfx::Image* thumbnail,
                         const ThumbnailScore& score,
                         base::Time time);
 
@@ -161,6 +165,10 @@ class ThumbnailDatabase {
   // Checks whether a favicon is used by any URLs in the database.
   bool HasMappingFor(FaviconID id);
 
+  // Clones the existing mappings from |old_page_url| if |new_page_url| has no
+  // mappings. Otherwise, will leave mappings alone.
+  bool CloneIconMapping(const GURL& old_page_url, const GURL& new_page_url);
+
   // Temporary IconMapping -----------------------------------------------------
   //
   // Creates a temporary table to store icon mapping. Icon mapping will be
@@ -220,7 +228,10 @@ class ThumbnailDatabase {
 
  private:
   friend class ExpireHistoryBackend;
+  FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest,
+                           GetFaviconAfterMigrationToTopSites);
   FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, UpgradeToVersion4);
+  FRIEND_TEST_ALL_PREFIXES(ThumbnailDatabaseTest, UpgradeToVersion5);
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, MigrationIconMapping);
 
   // Creates the thumbnail table, returning true if the table already exists
@@ -236,11 +247,17 @@ class ThumbnailDatabase {
   // need to copy the favicons between two database files.
   bool InitFaviconsTable(sql::Connection* db, bool is_temporary);
 
+  // Helper function to handle cleanup on upgrade failures.
+  sql::InitStatus CantUpgradeToVersion(int cur_version);
+
   // Adds support for the new metadata on web page thumbnails.
   bool UpgradeToVersion3();
 
   // Adds support for the icon_type in favicon table.
   bool UpgradeToVersion4();
+
+  // Adds support for sizes in favicon table.
+  bool UpgradeToVersion5();
 
   // Migrates the icon mapping data from URL database to Thumbnail database.
   // Return whether the migration succeeds.
@@ -250,7 +267,7 @@ class ThumbnailDatabase {
   // initialization after the table is created. This is a separate function
   // because it is used by SwapFaviconTables to create an index over the
   // newly-renamed favicons table (formerly the temporary table with no index).
-  void InitFaviconsIndex();
+  bool InitFaviconsIndex();
 
   // Creates the icon_map table, return true if the table already exists or was
   // successfully created.
@@ -261,7 +278,7 @@ class ThumbnailDatabase {
   // because it is used by CommitTemporaryIconMappingTable to create an index
   // over the newly-renamed icon_mapping table (formerly the temporary table
   // with no index).
-  void InitIconMappingIndex();
+  bool InitIconMappingIndex();
 
   // Adds a mapping between the given page_url and icon_id; The mapping will be
   // added to temp_icon_mapping table if is_temporary is true.
@@ -269,6 +286,9 @@ class ThumbnailDatabase {
   IconMappingID AddIconMapping(const GURL& page_url,
                                FaviconID icon_id,
                                bool is_temporary);
+
+  // Returns True if the current database is latest.
+  bool IsLatestVersion();
 
   sql::Connection db_;
   sql::MetaTable meta_table_;

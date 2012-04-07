@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,15 @@
 #include <set>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/stringprintf.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
@@ -25,23 +28,29 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "content/browser/renderer_host/render_widget_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "net/base/network_change_notifier.h"
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/network_state_notifier.h"
 #endif
 
-// Are we in the process of restoring?
-static bool restoring = false;
+using content::NavigationController;
+using content::WebContents;
 
 namespace {
+
+class SessionRestoreImpl;
+
+// Pointers to profiles for which the session restore is in progress.
+std::set<SessionRestoreImpl*>* active_session_restorers = NULL;
 
 // TabLoader ------------------------------------------------------------------
 
@@ -56,10 +65,11 @@ static const int kInitialDelayTimerMS = 100;
 //
 // This is not part of SessionRestoreImpl so that synchronous destruction
 // of SessionRestoreImpl doesn't have timing problems.
-class TabLoader : public NotificationObserver {
+class TabLoader : public content::NotificationObserver,
+                  public net::NetworkChangeNotifier::OnlineStateObserver {
  public:
   explicit TabLoader(base::TimeTicks restore_started);
-  ~TabLoader();
+  virtual ~TabLoader();
 
   // Schedules a tab for loading.
   void ScheduleLoad(NavigationController* controller);
@@ -84,9 +94,12 @@ class TabLoader : public NotificationObserver {
 
   // NotificationObserver method. Removes the specified tab and loads the next
   // tab.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // net::NetworkChangeNotifier::OnlineStateObserver overrides.
+  virtual void OnOnlineStateChanged(bool online) OVERRIDE;
 
   // Removes the listeners from the specified tab and removes the tab from
   // the set of tabs to load and list of tabs we're waiting to get a load
@@ -107,7 +120,7 @@ class TabLoader : public NotificationObserver {
   // Called when a tab goes away or a load completes.
   void HandleTabClosedOrLoaded(NavigationController* controller);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Current delay before a new tab is loaded. See class description for
   // details.
@@ -154,6 +167,7 @@ TabLoader::TabLoader(base::TimeTicks restore_started)
 TabLoader::~TabLoader() {
   DCHECK((got_first_paint_ || render_widget_hosts_to_paint_.empty()) &&
           tabs_loading_.empty() && tabs_to_load_.empty());
+  net::NetworkChangeNotifier::RemoveOnlineStateObserver(this);
 }
 
 void TabLoader::ScheduleLoad(NavigationController* controller) {
@@ -176,16 +190,14 @@ void TabLoader::TabIsLoading(NavigationController* controller) {
 }
 
 void TabLoader::StartLoading() {
-  registrar_.Add(this, NotificationType::RENDER_WIDGET_HOST_DID_PAINT,
-                 NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDER_WIDGET_HOST_DID_PAINT,
+                 content::NotificationService::AllSources());
 #if defined(OS_CHROMEOS)
-  if (chromeos::NetworkStateNotifier::is_connected()) {
+  if (!net::NetworkChangeNotifier::IsOffline()) {
     loading_ = true;
     LoadNextTab();
   } else {
-    // Start listening to network state notification now.
-    registrar_.Add(this, NotificationType::NETWORK_STATE_CHANGED,
-                   NotificationService::AllSources());
+    net::NetworkChangeNotifier::AddOnlineStateObserver(this);
   }
 #else
   loading_ = true;
@@ -200,7 +212,7 @@ void TabLoader::LoadNextTab() {
     tabs_loading_.insert(tab);
     tabs_to_load_.pop_front();
     tab->LoadIfNecessary();
-    if (tab->tab_contents()) {
+    if (tab->GetWebContents()) {
       int tab_index;
       Browser* browser = Browser::GetBrowserForController(tab, &tab_index);
       if (browser && browser->active_index() != tab_index) {
@@ -211,7 +223,7 @@ void TabLoader::LoadNextTab() {
         // NOTE: We need to do this here rather than when the tab is added to
         // the Browser as at that time not everything has been created, so that
         // the call would do nothing.
-        tab->tab_contents()->WasHidden();
+        tab->GetWebContents()->WasHidden();
       }
     }
   }
@@ -220,71 +232,48 @@ void TabLoader::LoadNextTab() {
     force_load_timer_.Stop();
     // Each time we load a tab we also set a timer to force us to start loading
     // the next tab if this one doesn't load quickly enough.
-    force_load_timer_.Start(
+    force_load_timer_.Start(FROM_HERE,
         base::TimeDelta::FromMilliseconds(force_load_delay_),
         this, &TabLoader::ForceLoadTimerFired);
   }
 }
 
-void TabLoader::Observe(NotificationType type,
-                        const NotificationSource& source,
-                        const NotificationDetails& details) {
-  switch (type.value) {
-#if defined(OS_CHROMEOS)
-    case NotificationType::NETWORK_STATE_CHANGED: {
-      chromeos::NetworkStateDetails* state_details =
-          Details<chromeos::NetworkStateDetails>(details).ptr();
-      switch (state_details->state()) {
-        case chromeos::NetworkStateDetails::CONNECTED:
-          if (!loading_) {
-            loading_ = true;
-            LoadNextTab();
-          }
-          // Start loading
-          break;
-        case chromeos::NetworkStateDetails::CONNECTING:
-        case chromeos::NetworkStateDetails::DISCONNECTED:
-          // Disconnected while loading. Set loading_ false so
-          // that it stops trying to load next tab.
-          loading_ = false;
-          break;
-        default:
-          NOTREACHED() << "Unknown nework state notification:"
-                       << state_details->state();
-      }
-      break;
-    }
-#endif
-    case NotificationType::LOAD_START: {
+void TabLoader::Observe(int type,
+                        const content::NotificationSource& source,
+                        const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_LOAD_START: {
       // Add this render_widget_host to the set of those we're waiting for
       // paints on. We want to only record stats for paints that occur after
       // a load has finished.
-      NavigationController* tab = Source<NavigationController>(source).ptr();
+      NavigationController* tab =
+          content::Source<NavigationController>(source).ptr();
       RenderWidgetHost* render_widget_host = GetRenderWidgetHost(tab);
       DCHECK(render_widget_host);
       render_widget_hosts_loading_.insert(render_widget_host);
       break;
     }
-    case NotificationType::TAB_CONTENTS_DESTROYED: {
-      TabContents* tab_contents = Source<TabContents>(source).ptr();
+    case content::NOTIFICATION_WEB_CONTENTS_DESTROYED: {
+      WebContents* web_contents = content::Source<WebContents>(source).ptr();
       if (!got_first_paint_) {
         RenderWidgetHost* render_widget_host =
-            GetRenderWidgetHost(&tab_contents->controller());
+            GetRenderWidgetHost(&web_contents->GetController());
         render_widget_hosts_loading_.erase(render_widget_host);
       }
-      HandleTabClosedOrLoaded(&tab_contents->controller());
+      HandleTabClosedOrLoaded(&web_contents->GetController());
       break;
     }
-    case NotificationType::LOAD_STOP: {
-      NavigationController* tab = Source<NavigationController>(source).ptr();
+    case content::NOTIFICATION_LOAD_STOP: {
+      NavigationController* tab =
+          content::Source<NavigationController>(source).ptr();
       render_widget_hosts_to_paint_.insert(GetRenderWidgetHost(tab));
       HandleTabClosedOrLoaded(tab);
       break;
     }
-    case NotificationType::RENDER_WIDGET_HOST_DID_PAINT: {
+    case content::NOTIFICATION_RENDER_WIDGET_HOST_DID_PAINT: {
       if (!got_first_paint_) {
         RenderWidgetHost* render_widget_host =
-            Source<RenderWidgetHost>(source).ptr();
+            content::Source<RenderWidgetHost>(source).ptr();
         if (render_widget_hosts_to_paint_.find(render_widget_host) !=
             render_widget_hosts_to_paint_.end()) {
           // Got a paint for one of our renderers, so record time.
@@ -322,7 +311,7 @@ void TabLoader::Observe(NotificationType type,
       break;
     }
     default:
-      NOTREACHED() << "Unknown notification received:" << type.value;
+      NOTREACHED() << "Unknown notification received:" << type;
   }
   // Delete ourselves when we're not waiting for any more notifications.
   if ((got_first_paint_ || render_widget_hosts_to_paint_.empty()) &&
@@ -330,13 +319,24 @@ void TabLoader::Observe(NotificationType type,
     delete this;
 }
 
+void TabLoader::OnOnlineStateChanged(bool online) {
+  if (online) {
+    if (!loading_) {
+      loading_ = true;
+      LoadNextTab();
+    }
+  } else {
+    loading_ = false;
+  }
+}
+
 void TabLoader::RemoveTab(NavigationController* tab) {
-  registrar_.Remove(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                    Source<TabContents>(tab->tab_contents()));
-  registrar_.Remove(this, NotificationType::LOAD_STOP,
-                    Source<NavigationController>(tab));
-  registrar_.Remove(this, NotificationType::LOAD_START,
-                    Source<NavigationController>(tab));
+  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                    content::Source<WebContents>(tab->GetWebContents()));
+  registrar_.Remove(this, content::NOTIFICATION_LOAD_STOP,
+                    content::Source<NavigationController>(tab));
+  registrar_.Remove(this, content::NOTIFICATION_LOAD_START,
+                    content::Source<NavigationController>(tab));
 
   TabsLoading::iterator i = tabs_loading_.find(tab);
   if (i != tabs_loading_.end())
@@ -354,10 +354,10 @@ void TabLoader::ForceLoadTimerFired() {
 }
 
 RenderWidgetHost* TabLoader::GetRenderWidgetHost(NavigationController* tab) {
-  TabContents* tab_contents = tab->tab_contents();
-  if (tab_contents) {
+  WebContents* web_contents = tab->GetWebContents();
+  if (web_contents) {
     RenderWidgetHostView* render_widget_host_view =
-        tab_contents->GetRenderWidgetHostView();
+        web_contents->GetRenderWidgetHostView();
     if (render_widget_host_view)
       return render_widget_host_view->GetRenderWidgetHost();
   }
@@ -365,12 +365,12 @@ RenderWidgetHost* TabLoader::GetRenderWidgetHost(NavigationController* tab) {
 }
 
 void TabLoader::RegisterForNotifications(NavigationController* controller) {
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                 Source<TabContents>(controller->tab_contents()));
-  registrar_.Add(this, NotificationType::LOAD_STOP,
-                 Source<NavigationController>(controller));
-  registrar_.Add(this, NotificationType::LOAD_START,
-                 Source<NavigationController>(controller));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<WebContents>(controller->GetWebContents()));
+  registrar_.Add(this, content::NOTIFICATION_LOAD_STOP,
+                 content::Source<NavigationController>(controller));
+  registrar_.Add(this, content::NOTIFICATION_LOAD_START,
+                 content::Source<NavigationController>(controller));
   ++tab_count_;
 }
 
@@ -406,30 +406,52 @@ void TabLoader::HandleTabClosedOrLoaded(NavigationController* tab) {
 // SessionRestoreImpl is responsible for fetching the set of tabs to create
 // from SessionService. SessionRestoreImpl deletes itself when done.
 
-class SessionRestoreImpl : public NotificationObserver {
+class SessionRestoreImpl : public content::NotificationObserver {
  public:
   SessionRestoreImpl(Profile* profile,
                      Browser* browser,
                      bool synchronous,
-                     bool clobber_existing_window,
+                     bool clobber_existing_tab,
                      bool always_create_tabbed_browser,
                      const std::vector<GURL>& urls_to_open)
       : profile_(profile),
         browser_(browser),
         synchronous_(synchronous),
-        clobber_existing_window_(clobber_existing_window),
+        clobber_existing_tab_(clobber_existing_tab),
         always_create_tabbed_browser_(always_create_tabbed_browser),
         urls_to_open_(urls_to_open),
-        restore_started_(base::TimeTicks::Now()) {
+        restore_started_(base::TimeTicks::Now()),
+        browser_shown_(false) {
+
+    // Iterate the active session restorers to find if there is a
+    // SessionRestoreImpl referring the same profile. This should not happen but
+    // for some reason it happens still. TODO(marja): figure out why.
+    if (active_session_restorers == NULL)
+      active_session_restorers = new std::set<SessionRestoreImpl*>();
+
+    std::set<SessionRestoreImpl*>::const_iterator it;
+    for (it = active_session_restorers->begin();
+         it != active_session_restorers->end(); ++it) {
+      if ((*it)->profile_ == profile)
+        break;
+    }
+    DCHECK(it == active_session_restorers->end());
+
+    active_session_restorers->insert(this);
+
+    // When asynchronous its possible for there to be no windows. To make sure
+    // Chrome doesn't prematurely exit AddRef the process. We'll release in the
+    // destructor when restore is done.
+    g_browser_process->AddRefModule();
   }
 
   Browser* Restore() {
     SessionService* session_service =
         SessionServiceFactory::GetForProfile(profile_);
     DCHECK(session_service);
-    SessionService::SessionCallback* callback =
-        NewCallback(this, &SessionRestoreImpl::OnGotSession);
-    session_service->GetLastSession(&request_consumer_, callback);
+    session_service->GetLastSession(
+        &request_consumer_,
+        base::Bind(&SessionRestoreImpl::OnGotSession, base::Unretained(this)));
 
     if (synchronous_) {
       bool old_state = MessageLoop::current()->NestableTasksAllowed();
@@ -442,8 +464,8 @@ class SessionRestoreImpl : public NotificationObserver {
     }
 
     if (browser_) {
-      registrar_.Add(this, NotificationType::BROWSER_CLOSED,
-                     Source<Browser>(browser_));
+      registrar_.Add(this, chrome::NOTIFICATION_BROWSER_CLOSED,
+                     content::Source<Browser>(browser_));
     }
 
     return browser_;
@@ -451,16 +473,16 @@ class SessionRestoreImpl : public NotificationObserver {
 
   // Restore window(s) from a foreign session.
   void RestoreForeignSession(
-      std::vector<SessionWindow*>::const_iterator begin,
-      std::vector<SessionWindow*>::const_iterator end) {
+      std::vector<const SessionWindow*>::const_iterator begin,
+      std::vector<const SessionWindow*>::const_iterator end) {
     StartTabCreation();
     // Create a browser instance to put the restored tabs in.
-    for (std::vector<SessionWindow*>::const_iterator i = begin;
-        i != end; ++i) {
+    for (std::vector<const SessionWindow*>::const_iterator i = begin;
+         i != end; ++i) {
       Browser* browser = CreateRestoredBrowser(
           static_cast<Browser::Type>((*i)->type),
           (*i)->bounds,
-          (*i)->is_maximized);
+          (*i)->show_state);
 
       // Restore and show the browser.
       const int initial_tab_count = browser->tab_count();
@@ -468,7 +490,7 @@ class SessionRestoreImpl : public NotificationObserver {
       RestoreTabsToBrowser(*(*i), browser, selected_tab_index);
       ShowBrowser(browser, initial_tab_count, selected_tab_index);
       tab_loader_->TabIsLoading(
-          &browser->GetSelectedTabContents()->controller());
+          &browser->GetSelectedWebContents()->GetController());
       NotifySessionServiceOfRestoredTabs(browser, initial_tab_count);
     }
 
@@ -481,7 +503,7 @@ class SessionRestoreImpl : public NotificationObserver {
   void RestoreForeignTab(const SessionTab& tab) {
     StartTabCreation();
     Browser* current_browser =
-        browser_ ? browser_ : BrowserList::GetLastActive();
+        browser_ ? browser_ : BrowserList::GetLastActiveWithProfile(profile_);
     RestoreTab(tab, current_browser->tab_count(), current_browser, true);
     NotifySessionServiceOfRestoredTabs(current_browser,
                                        current_browser->tab_count());
@@ -490,14 +512,21 @@ class SessionRestoreImpl : public NotificationObserver {
 
   ~SessionRestoreImpl() {
     STLDeleteElements(&windows_);
-    restoring = false;
+
+    active_session_restorers->erase(this);
+    if (active_session_restorers->empty()) {
+      delete active_session_restorers;
+      active_session_restorers = NULL;
+    }
+
+    g_browser_process->ReleaseModule();
   }
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    switch (type.value) {
-      case NotificationType::BROWSER_CLOSED:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    switch (type) {
+      case chrome::NOTIFICATION_BROWSER_CLOSED:
         delete this;
         return;
 
@@ -506,6 +535,8 @@ class SessionRestoreImpl : public NotificationObserver {
         break;
     }
   }
+
+  Profile* profile() { return profile_; }
 
  private:
   // Invoked when beginning to create new tabs. Resets the tab_loader_.
@@ -550,15 +581,31 @@ class SessionRestoreImpl : public NotificationObserver {
       MessageLoop::current()->DeleteSoon(FROM_HERE, this);
     }
 
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-End", false);
+#endif
     return browser;
   }
 
   void OnGotSession(SessionService::Handle handle,
                     std::vector<SessionWindow*>* windows) {
+    base::TimeDelta time_to_got_sessions =
+        base::TimeTicks::Now() - restore_started_;
+    UMA_HISTOGRAM_CUSTOM_TIMES(
+        "SessionRestore.TimeToGotSessions",
+        time_to_got_sessions,
+        base::TimeDelta::FromMilliseconds(10),
+        base::TimeDelta::FromSeconds(1000),
+        100);
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-GotSession", false);
+#endif
     if (synchronous_) {
       // See comment above windows_ as to why we don't process immediately.
       windows_.swap(*windows);
-      MessageLoop::current()->Quit();
+      MessageLoop::current()->QuitNow();
       return;
     }
 
@@ -566,11 +613,24 @@ class SessionRestoreImpl : public NotificationObserver {
   }
 
   Browser* ProcessSessionWindows(std::vector<SessionWindow*>* windows) {
+    base::TimeDelta time_to_process_sessions =
+        base::TimeTicks::Now() - restore_started_;
+    UMA_HISTOGRAM_CUSTOM_TIMES(
+        "SessionRestore.TimeToProcessSessions",
+        time_to_process_sessions,
+        base::TimeDelta::FromMilliseconds(10),
+        base::TimeDelta::FromSeconds(1000),
+        100);
+
     if (windows->empty()) {
       // Restore was unsuccessful.
       return FinishedTabCreation(false, false);
     }
 
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-CreatingTabs-Start", false);
+#endif
     StartTabCreation();
 
     Browser* current_browser =
@@ -579,47 +639,68 @@ class SessionRestoreImpl : public NotificationObserver {
     // tabbed browsers exist.
     Browser* last_browser = NULL;
     bool has_tabbed_browser = false;
+
+    // Determine if there is a visible window.
+    bool has_visible_browser = false;
+    for (std::vector<SessionWindow*>::iterator i = windows->begin();
+         i != windows->end(); ++i) {
+      if ((*i)->show_state != ui::SHOW_STATE_MINIMIZED)
+        has_visible_browser = true;
+    }
+
     for (std::vector<SessionWindow*>::iterator i = windows->begin();
          i != windows->end(); ++i) {
       Browser* browser = NULL;
       if (!has_tabbed_browser && (*i)->type == Browser::TYPE_TABBED)
         has_tabbed_browser = true;
       if (i == windows->begin() && (*i)->type == Browser::TYPE_TABBED &&
-          !clobber_existing_window_) {
-        // If there is an open tabbed browser window, use it. Otherwise fall
-        // through and create a new one.
+          current_browser && current_browser->is_type_tabbed() &&
+          !current_browser->profile()->IsOffTheRecord()) {
+        // The first set of tabs is added to the existing browser.
         browser = current_browser;
-        if (browser && (!browser->is_type_tabbed() ||
-                        browser->profile()->IsOffTheRecord())) {
-          browser = NULL;
+      } else {
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-CreateRestoredBrowser-Start", false);
+#endif
+        // Show the first window if none are visible.
+        ui::WindowShowState show_state = (*i)->show_state;
+        if (!has_visible_browser) {
+          show_state = ui::SHOW_STATE_NORMAL;
+          has_visible_browser = true;
         }
-      }
-      if (!browser) {
+
         browser = CreateRestoredBrowser(
-            static_cast<Browser::Type>((*i)->type),
-            (*i)->bounds,
-            (*i)->is_maximized);
+            static_cast<Browser::Type>((*i)->type), (*i)->bounds, show_state);
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-CreateRestoredBrowser-End", false);
+#endif
       }
       if ((*i)->type == Browser::TYPE_TABBED)
         last_browser = browser;
-      const int initial_tab_count = browser->tab_count();
+      WebContents* active_tab = browser->GetSelectedWebContents();
+      int initial_tab_count = browser->tab_count();
       int selected_tab_index = (*i)->selected_tab_index;
       RestoreTabsToBrowser(*(*i), browser, selected_tab_index);
       ShowBrowser(browser, initial_tab_count, selected_tab_index);
+      if (clobber_existing_tab_ && i == windows->begin() &&
+          (*i)->type == Browser::TYPE_TABBED && active_tab &&
+          browser == browser_ && browser->tab_count() > initial_tab_count) {
+        browser->CloseTabContents(active_tab);
+        active_tab = NULL;
+      }
       tab_loader_->TabIsLoading(
-          &browser->GetSelectedTabContents()->controller());
+          &browser->GetSelectedWebContents()->GetController());
       NotifySessionServiceOfRestoredTabs(browser, initial_tab_count);
     }
 
-    // If we're restoring a session as the result of a crash and the session
-    // included at least one tabbed browser, then close the browser window
-    // that was opened when the user clicked to restore the session.
-    if (clobber_existing_window_ && current_browser && has_tabbed_browser &&
-        current_browser->is_type_tabbed()) {
-      current_browser->CloseAllTabs();
-    }
     if (last_browser && !urls_to_open_.empty())
       AppendURLsToBrowser(last_browser, urls_to_open_);
+#if defined(OS_CHROMEOS)
+    chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
+        "SessionRestore-CreatingTabs-End", false);
+#endif
     // If last_browser is NULL and urls_to_open_ is non-empty,
     // FinishedTabCreation will create a new TabbedBrowser and add the urls to
     // it.
@@ -633,13 +714,16 @@ class SessionRestoreImpl : public NotificationObserver {
                             Browser* browser,
                             int selected_tab_index) {
     DCHECK(!window.tabs.empty());
+    int initial_tab_count = browser->tab_count();
     for (std::vector<SessionTab*>::const_iterator i = window.tabs.begin();
          i != window.tabs.end(); ++i) {
       const SessionTab& tab = *(*i);
-      const int tab_index = static_cast<int>(i - window.tabs.begin());
+      const int tab_index = static_cast<int>(i - window.tabs.begin()) +
+          initial_tab_count;
       // Don't schedule a load for the selected tab, as ShowBrowser() will
       // already have done that.
-      RestoreTab(tab, tab_index, browser, tab_index != selected_tab_index);
+      RestoreTab(tab, tab_index, browser,
+                 tab_index != (selected_tab_index + initial_tab_count));
     }
   }
 
@@ -655,7 +739,7 @@ class SessionRestoreImpl : public NotificationObserver {
                  static_cast<int>(tab.navigations.size() - 1)));
 
     // Record an app launch, if applicable.
-    GURL url = tab.navigations.at(tab.current_navigation_index).virtual_url();
+    GURL url = tab.navigations.at(selected_index).virtual_url();
     if (
 #if defined(OS_CHROMEOS)
         browser->profile()->GetExtensionService() &&
@@ -666,7 +750,7 @@ class SessionRestoreImpl : public NotificationObserver {
                                 extension_misc::APP_LAUNCH_BUCKET_BOUNDARY);
     }
 
-    TabContents* tab_contents =
+    WebContents* web_contents =
         browser->AddRestoredTab(tab.navigations,
                                 tab_index,
                                 selected_index,
@@ -676,17 +760,16 @@ class SessionRestoreImpl : public NotificationObserver {
                                 true,
                                 NULL);
     if (schedule_load)
-      tab_loader_->ScheduleLoad(&tab_contents->controller());
+      tab_loader_->ScheduleLoad(&web_contents->GetController());
   }
 
   Browser* CreateRestoredBrowser(Browser::Type type,
                                  gfx::Rect bounds,
-                                 bool is_maximized) {
+                                 ui::WindowShowState show_state) {
     Browser* browser = new Browser(type, profile_);
     browser->set_override_bounds(bounds);
-    browser->set_maximized_state(is_maximized ?
-        Browser::MAXIMIZED_STATE_MAXIMIZED :
-        Browser::MAXIMIZED_STATE_UNMAXIMIZED);
+    browser->set_show_state(show_state);
+    browser->set_is_session_restore(true);
     browser->InitBrowserWindow();
     return browser;
   }
@@ -694,20 +777,33 @@ class SessionRestoreImpl : public NotificationObserver {
   void ShowBrowser(Browser* browser,
                    int initial_tab_count,
                    int selected_session_index) {
-    if (browser_ == browser) {
-      browser->ActivateTabAt(browser->tab_count() - 1, true);
-      return;
-    }
-
     DCHECK(browser);
     DCHECK(browser->tab_count());
     browser->ActivateTabAt(
         std::min(initial_tab_count + std::max(0, selected_session_index),
                  browser->tab_count() - 1), true);
+
+    if (browser_ == browser)
+      return;
+
     browser->window()->Show();
+    browser->set_is_session_restore(false);
+
     // TODO(jcampan): http://crbug.com/8123 we should not need to set the
     //                initial focus explicitly.
-    browser->GetSelectedTabContents()->view()->SetInitialFocus();
+    browser->GetSelectedWebContents()->GetView()->SetInitialFocus();
+
+    if (!browser_shown_) {
+      browser_shown_ = true;
+      base::TimeDelta time_to_first_show =
+          base::TimeTicks::Now() - restore_started_;
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          "SessionRestore.TimeToFirstShow",
+          time_to_first_show,
+          base::TimeDelta::FromMilliseconds(10),
+          base::TimeDelta::FromSeconds(1000),
+          100);
+    }
   }
 
   // Appends the urls in |urls| to |browser|.
@@ -719,7 +815,7 @@ class SessionRestoreImpl : public NotificationObserver {
         add_types |= TabStripModel::ADD_ACTIVE;
       int index = browser->GetIndexForInsertionDuringRestore(i);
       browser::NavigateParams params(browser, urls[i],
-                                     PageTransition::START_PAGE);
+                                     content::PAGE_TRANSITION_START_PAGE);
       params.disposition = i == 0 ? NEW_FOREGROUND_TAB : NEW_BACKGROUND_TAB;
       params.tabstrip_index = index;
       params.tabstrip_add_types = add_types;
@@ -733,7 +829,7 @@ class SessionRestoreImpl : public NotificationObserver {
     SessionService* session_service =
         SessionServiceFactory::GetForProfile(profile_);
     for (int i = initial_count; i < browser->tab_count(); ++i)
-      session_service->TabRestored(&browser->GetTabContentsAt(i)->controller(),
+      session_service->TabRestored(browser->GetTabContentsWrapperAt(i),
                                    browser->tabstrip_model()->IsTabPinned(i));
   }
 
@@ -746,8 +842,8 @@ class SessionRestoreImpl : public NotificationObserver {
   // Whether or not restore is synchronous.
   const bool synchronous_;
 
-  // See description in RestoreSession (in .h).
-  const bool clobber_existing_window_;
+  // See description of CLOBBER_CURRENT_TAB.
+  const bool clobber_existing_tab_;
 
   // If true and there is an error or there are no windows to restore, we
   // create a tabbed browser anyway. This is used on startup to make sure at
@@ -769,25 +865,29 @@ class SessionRestoreImpl : public NotificationObserver {
   // windows when the nested message loop exits.
   std::vector<SessionWindow*> windows_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // The time we started the restore.
   base::TimeTicks restore_started_;
+
+  // Set to true after the first browser is shown.
+  bool browser_shown_;
+
+  DISALLOW_COPY_AND_ASSIGN(SessionRestoreImpl);
 };
 
 }  // namespace
 
 // SessionRestore -------------------------------------------------------------
 
-static Browser* Restore(Profile* profile,
-                        Browser* browser,
-                        bool synchronous,
-                        bool clobber_existing_window,
-                        bool always_create_tabbed_browser,
-                        const std::vector<GURL>& urls_to_open) {
+// static
+Browser* SessionRestore::RestoreSession(Profile* profile,
+                                        Browser* browser,
+                                        uint32 behavior,
+                                        const std::vector<GURL>& urls_to_open) {
 #if defined(OS_CHROMEOS)
   chromeos::BootTimesLoader::Get()->AddLoginTimeMarker(
-      "SessionRestoreStarted", false);
+      "SessionRestore-Start", false);
 #endif
   DCHECK(profile);
   // Always restore from the original profile (incognito profiles have no
@@ -797,31 +897,21 @@ static Browser* Restore(Profile* profile,
     NOTREACHED();
     return NULL;
   }
-  restoring = true;
   profile->set_restored_last_session(true);
   // SessionRestoreImpl takes care of deleting itself when done.
-  SessionRestoreImpl* restorer =
-      new SessionRestoreImpl(profile, browser, synchronous,
-                             clobber_existing_window,
-                             always_create_tabbed_browser, urls_to_open);
+  SessionRestoreImpl* restorer = new SessionRestoreImpl(
+      profile, browser, (behavior & SYNCHRONOUS) != 0,
+      (behavior & CLOBBER_CURRENT_TAB) != 0,
+      (behavior & ALWAYS_CREATE_TABBED_BROWSER) != 0,
+      urls_to_open);
   return restorer->Restore();
-}
-
-// static
-void SessionRestore::RestoreSession(Profile* profile,
-                                    Browser* browser,
-                                    bool clobber_existing_window,
-                                    bool always_create_tabbed_browser,
-                                    const std::vector<GURL>& urls_to_open) {
-  Restore(profile, browser, false, clobber_existing_window,
-          always_create_tabbed_browser, urls_to_open);
 }
 
 // static
 void SessionRestore::RestoreForeignSessionWindows(
     Profile* profile,
-    std::vector<SessionWindow*>::const_iterator begin,
-    std::vector<SessionWindow*>::const_iterator end) {
+    std::vector<const SessionWindow*>::const_iterator begin,
+    std::vector<const SessionWindow*>::const_iterator end) {
   // Create a SessionRestore object to eventually restore the tabs.
   std::vector<GURL> gurls;
   SessionRestoreImpl restorer(profile,
@@ -840,13 +930,14 @@ void SessionRestore::RestoreForeignSessionTab(Profile* profile,
 }
 
 // static
-Browser* SessionRestore::RestoreSessionSynchronously(
-    Profile* profile,
-    const std::vector<GURL>& urls_to_open) {
-  return Restore(profile, NULL, true, false, true, urls_to_open);
-}
-
-// static
-bool SessionRestore::IsRestoring() {
-  return restoring;
+bool SessionRestore::IsRestoring(const Profile* profile) {
+  if (active_session_restorers == NULL)
+    return false;
+  for (std::set<SessionRestoreImpl*>::const_iterator it =
+           active_session_restorers->begin();
+       it != active_session_restorers->end(); ++it) {
+    if ((*it)->profile() == profile)
+      return true;
+  }
+  return false;
 }

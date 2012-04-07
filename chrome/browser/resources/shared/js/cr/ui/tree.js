@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -218,6 +218,16 @@ cr.define('cr.ui', function() {
   };
 
   /**
+   * Determines the visibility of icons next to the treeItem labels. If set to
+   * 'hidden', no space is reserved for icons and no icons are displayed next
+   * to treeItem labels. If set to 'parent', folder icons will be displayed
+   * next to expandable parent nodes. If set to 'all' folder icons will be
+   * displayed next to all nodes. Icons can be set using the treeItem's icon
+   * property.
+   */
+  cr.defineProperty(Tree, 'iconVisibility', cr.PropertyKind.ATTR);
+
+  /**
    * This is used as a blueprint for new tree item elements.
    * @type {!HTMLElement}
    */
@@ -229,6 +239,7 @@ cr.define('cr.ui', function() {
         '<span class=tree-label></span>' +
         '</div>' +
         '<div class=tree-children></div>';
+    treeItem.setAttribute('role', 'treeitem');
     return treeItem;
   })();
 
@@ -570,7 +581,7 @@ cr.define('cr.ui', function() {
         function onFocus() {
           input.removeEventListener('focus', onFocus);
           // 20 = the padding and border of the tree-row
-          cr.ui.limitInputWidth(input, rowElement, 20);
+          cr.ui.limitInputWidth(input, rowElement, 100);
         }
         input.addEventListener('focus', onFocus);
         input.focus();

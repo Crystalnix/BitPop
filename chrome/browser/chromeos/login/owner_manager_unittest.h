@@ -10,85 +10,62 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "base/synchronization/waitable_event.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 
 namespace chromeos {
-class MockKeyLoadObserver : public NotificationObserver {
+class MockKeyLoadObserver : public content::NotificationObserver {
  public:
-  MockKeyLoadObserver()
-      : success_expected_(false),
-        quit_on_observe_(true),
-        observed_(false) {
-    registrar_.Add(
-        this,
-        NotificationType::OWNER_KEY_FETCH_ATTEMPT_FAILED,
-        NotificationService::AllSources());
-    registrar_.Add(
-        this,
-        NotificationType::OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED,
-        NotificationService::AllSources());
-  }
-
+  explicit MockKeyLoadObserver(base::WaitableEvent* e);
   virtual ~MockKeyLoadObserver();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  void ExpectKeyFetchSuccess(bool should_succeed) {
-    success_expected_ = should_succeed;
-  }
-
-  void SetQuitOnKeyFetch(bool should_quit) { quit_on_observe_ = should_quit; }
+  void ExpectKeyFetchSuccess(bool should_succeed);
 
  private:
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   bool success_expected_;
-  bool quit_on_observe_;
+  base::WaitableEvent* event_;
   bool observed_;
   DISALLOW_COPY_AND_ASSIGN(MockKeyLoadObserver);
 };
 
 class MockKeyUser : public OwnerManager::Delegate {
  public:
-  explicit MockKeyUser(const OwnerManager::KeyOpCode expected)
-      : expected_(expected),
-        quit_on_callback_(true) {
-  }
-  MockKeyUser(const OwnerManager::KeyOpCode expected, bool quit_on_callback)
-      : expected_(expected),
-        quit_on_callback_(quit_on_callback) {
-  }
-
+  MockKeyUser(const OwnerManager::KeyOpCode expected, base::WaitableEvent* e);
   virtual ~MockKeyUser() {}
 
   virtual void OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
-                       const std::vector<uint8>& payload);
+                               const std::vector<uint8>& payload) OVERRIDE;
 
   const OwnerManager::KeyOpCode expected_;
-  const bool quit_on_callback_;
  private:
+  base::WaitableEvent* event_;
   DISALLOW_COPY_AND_ASSIGN(MockKeyUser);
 };
 
 class MockKeyUpdateUser : public OwnerManager::KeyUpdateDelegate {
  public:
-  MockKeyUpdateUser() {}
+  explicit MockKeyUpdateUser(base::WaitableEvent* e) : event_(e) {}
   virtual ~MockKeyUpdateUser() {}
 
-  virtual void OnKeyUpdated();
+  virtual void OnKeyUpdated() OVERRIDE;
 
  private:
+  base::WaitableEvent* event_;
   DISALLOW_COPY_AND_ASSIGN(MockKeyUpdateUser);
 };
 
@@ -96,16 +73,18 @@ class MockKeyUpdateUser : public OwnerManager::KeyUpdateDelegate {
 class MockSigner : public OwnerManager::Delegate {
  public:
   MockSigner(const OwnerManager::KeyOpCode expected,
-             const std::vector<uint8>& sig);
+             const std::vector<uint8>& sig,
+             base::WaitableEvent* e);
   virtual ~MockSigner();
 
   virtual void OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
-                       const std::vector<uint8>& payload);
+                               const std::vector<uint8>& payload) OVERRIDE;
 
   const OwnerManager::KeyOpCode expected_code_;
   const std::vector<uint8> expected_sig_;
 
  private:
+  base::WaitableEvent* event_;
   DISALLOW_COPY_AND_ASSIGN(MockSigner);
 };
 

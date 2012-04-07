@@ -36,9 +36,9 @@ const char kTagDryRunFlag[] = "__cp__dry_run";
 
 
 const char kDefaultCloudPrintServerUrl[] = "https://www.google.com/cloudprint";
-const char kGaiaUrl[] = "https://www.google.com/accounts/ClientLogin";
 const char kCloudPrintGaiaServiceId[] = "cloudprint";
 const char kSyncGaiaServiceId[] = "chromiumsync";
+const char kProxyAuthUserAgent[] = "ChromiumBrowser";
 const char kCloudPrintPushNotificationsSource[] = "cloudprint.google.com";
 // The cloud print server expects the X-Google-CloudPrint-Proxy header for
 // certain requests.

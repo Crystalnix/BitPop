@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/text_elider.h"
 
@@ -79,9 +80,9 @@ ExternalProtocolDialogGtk::ExternalProtocolDialogGtk(const GURL& url)
   message_text += l10n_util::GetStringUTF8(IDS_EXTERNAL_PROTOCOL_WARNING);
 
   // Create the content-holding vbox.
-  GtkWidget* vbox = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* vbox = gtk_vbox_new(FALSE, ui::kControlSpacing);
   gtk_container_set_border_width(GTK_CONTAINER(vbox),
-                                 gtk_util::kContentAreaBorder);
+                                 ui::kContentAreaBorder);
 
   // Add the message text.
   GtkWidget* label = gtk_label_new(message_text.c_str());
@@ -95,8 +96,8 @@ ExternalProtocolDialogGtk::ExternalProtocolDialogGtk(const GURL& url)
                      FALSE, FALSE, 0);
 
   // Add our vbox to the dialog.
-  gtk_box_pack_start(GTK_BOX(GTK_DIALOG(dialog_)->vbox), vbox,
-                     FALSE, FALSE, 0);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_pack_start(GTK_BOX(content_area), vbox, FALSE, FALSE, 0);
 
   g_signal_connect(dialog_, "response", G_CALLBACK(OnResponseThunk), this);
 

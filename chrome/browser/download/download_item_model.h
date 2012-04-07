@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,16 +9,20 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/string16.h"
 
-class DownloadItem;
 class SavePackage;
+
+namespace content {
+class DownloadItem;
+}
 
 // This class provides an interface for functions which have different behaviors
 // depending on the type of download.
 class BaseDownloadItemModel {
  public:
-  explicit BaseDownloadItemModel(DownloadItem* download)
+  explicit BaseDownloadItemModel(content::DownloadItem* download)
       : download_(download) { }
   virtual ~BaseDownloadItemModel() { }
 
@@ -28,10 +32,10 @@ class BaseDownloadItemModel {
   // Get the status text to display.
   virtual string16 GetStatusText() = 0;
 
-  DownloadItem* download() { return download_; }
+  content::DownloadItem* download() { return download_; }
 
  protected:
-  DownloadItem* download_;
+  content::DownloadItem* download_;
 };
 
 // This class is a model class for DownloadItemView. It provides functionality
@@ -39,38 +43,17 @@ class BaseDownloadItemModel {
 // status.
 class DownloadItemModel : public BaseDownloadItemModel {
  public:
-  explicit DownloadItemModel(DownloadItem* download);
+  explicit DownloadItemModel(content::DownloadItem* download);
   virtual ~DownloadItemModel() { }
 
   // Cancel the downloading.
-  virtual void CancelTask();
+  virtual void CancelTask() OVERRIDE;
 
   // Get downloading status text.
-  virtual string16 GetStatusText();
+  virtual string16 GetStatusText() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DownloadItemModel);
-};
-
-// This class is a model class for DownloadItemView. It provides cancel
-// functionality for saving page, and also the text for displaying saving
-// status.
-class SavePageModel : public BaseDownloadItemModel {
- public:
-  SavePageModel(SavePackage* save, DownloadItem* download);
-  virtual ~SavePageModel() { }
-
-  // Cancel the page saving.
-  virtual void CancelTask();
-
-  // Get page saving status text.
-  virtual string16 GetStatusText();
-
- private:
-  // Saving page management.
-  SavePackage* save_;
-
-  DISALLOW_COPY_AND_ASSIGN(SavePageModel);
 };
 
 #endif  // CHROME_BROWSER_DOWNLOAD_DOWNLOAD_ITEM_MODEL_H_

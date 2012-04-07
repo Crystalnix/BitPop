@@ -4,8 +4,10 @@
 
 #include "chrome/browser/chromeos/notifications/balloon_view.h"
 
+#include <algorithm>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/notifications/balloon_view_host.h"
@@ -16,24 +18,28 @@
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/views/notifications/balloon_view_host.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/background.h"
-#include "views/controls/button/button.h"
-#include "views/controls/button/image_button.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/label.h"
-#include "views/controls/menu/menu_2.h"
-#include "views/controls/menu/view_menu_delegate.h"
-#include "views/widget/widget.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 // Menu commands
@@ -61,7 +67,6 @@ class NotificationControlView : public views::View,
       : balloon_view_(view),
         close_button_(NULL),
         options_menu_contents_(NULL),
-        options_menu_menu_(NULL),
         options_menu_button_(NULL) {
     // TODO(oshima): make background transparent.
     set_background(views::Background::CreateSolidBackground(SK_ColorWHITE));
@@ -82,8 +87,8 @@ class NotificationControlView : public views::View,
 
     AddChildView(close_button_);
 
-    options_menu_button_
-        = new views::MenuButton(NULL, std::wstring(), this, false);
+    options_menu_button_ = new views::MenuButton(
+        NULL, string16(), this, false);
     options_menu_button_->SetFont(rb.GetFont(ResourceBundle::SmallFont));
     options_menu_button_->SetIcon(*rb.GetBitmapNamed(IDR_NOTIFICATION_MENU));
     options_menu_button_->set_border(NULL);
@@ -117,7 +122,18 @@ class NotificationControlView : public views::View,
   // views::ViewMenuDelegate implements.
   virtual void RunMenu(views::View* source, const gfx::Point& pt) {
     CreateOptionsMenu();
-    options_menu_menu_->RunMenuAt(pt, views::Menu2::ALIGN_TOPRIGHT);
+
+    views::MenuModelAdapter menu_model_adapter(options_menu_contents_.get());
+    menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
+
+    gfx::Point screen_location;
+    views::View::ConvertPointToScreen(options_menu_button_, &screen_location);
+    if (menu_runner_->RunMenuAt(
+            source->GetWidget()->GetTopLevelWidget(), options_menu_button_,
+            gfx::Rect(screen_location, options_menu_button_->size()),
+            views::MenuItemView::TOPRIGHT, views::MenuRunner::HAS_MNEMONICS) ==
+        views::MenuRunner::MENU_DELETED)
+      return;
   }
 
   // views::ButtonListener implements.
@@ -167,8 +183,6 @@ class NotificationControlView : public views::View,
     // Figure out where to show the source info.
     options_menu_contents_->AddItem(kNoopCommand, source_label_text);
     options_menu_contents_->AddItem(kRevokePermissionCommand, label_text);
-
-    options_menu_menu_.reset(new views::Menu2(options_menu_contents_.get()));
   }
 
   BalloonViewImpl* balloon_view_;
@@ -177,7 +191,7 @@ class NotificationControlView : public views::View,
 
   // The options menu.
   scoped_ptr<ui::SimpleMenuModel> options_menu_contents_;
-  scoped_ptr<views::Menu2> options_menu_menu_;
+  scoped_ptr<views::MenuRunner> menu_runner_;
   views::MenuButton* options_menu_button_;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationControlView);
@@ -186,7 +200,6 @@ class NotificationControlView : public views::View,
 BalloonViewImpl::BalloonViewImpl(bool sticky, bool controls, bool web_ui)
     : balloon_(NULL),
       html_contents_(NULL),
-      method_factory_(this),
       stale_(false),
       sticky_(sticky),
       controls_(controls),
@@ -201,7 +214,7 @@ BalloonViewImpl::~BalloonViewImpl() {
   if (control_view_host_.get()) {
     control_view_host_->CloseNow();
   }
-  if (html_contents_) {
+  if (html_contents_.get()) {
     html_contents_->Shutdown();
   }
 }
@@ -211,27 +224,29 @@ BalloonViewImpl::~BalloonViewImpl() {
 
 void BalloonViewImpl::Show(Balloon* balloon) {
   balloon_ = balloon;
-  html_contents_ = new BalloonViewHost(balloon);
+  html_contents_.reset(new BalloonViewHost(balloon));
   if (web_ui_)
     html_contents_->EnableWebUI();
   AddChildView(html_contents_->view());
   notification_registrar_.Add(this,
-    NotificationType::NOTIFY_BALLOON_DISCONNECTED, Source<Balloon>(balloon));
+    chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
+    content::Source<Balloon>(balloon));
 }
 
 void BalloonViewImpl::Update() {
   stale_ = false;
-  if (html_contents_->render_view_host())
-    html_contents_->render_view_host()->NavigateToURL(
-        balloon_->notification().content_url());
+  if (!html_contents_->web_contents())
+    return;
+  html_contents_->web_contents()->GetController().LoadURL(
+      balloon_->notification().content_url(), content::Referrer(),
+      content::PAGE_TRANSITION_LINK, std::string());
 }
 
 void BalloonViewImpl::Close(bool by_user) {
   closed_ = true;
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      method_factory_.NewRunnableMethod(
-          &BalloonViewImpl::DelayedClose, by_user));
+      base::Bind(&BalloonViewImpl::DelayedClose, AsWeakPtr(), by_user));
 }
 
 gfx::Size BalloonViewImpl::GetSize() const {
@@ -240,7 +255,7 @@ gfx::Size BalloonViewImpl::GetSize() const {
 }
 
 BalloonHost* BalloonViewImpl::GetHost() const {
-  return html_contents_;
+  return html_contents_.get();
 }
 
 void BalloonViewImpl::RepositionToBalloon() {
@@ -256,8 +271,9 @@ void BalloonViewImpl::Layout() {
   SetBounds(x(), y(), size.width(), size.height());
 
   html_contents_->view()->SetBounds(0, 0, size.width(), size.height());
-  if (html_contents_->render_view_host()) {
-    RenderWidgetHostView* view = html_contents_->render_view_host()->view();
+  if (html_contents_->web_contents()) {
+    RenderWidgetHostView* view =
+        html_contents_->web_contents()->GetRenderViewHost()->view();
     if (view)
       view->SetSize(size);
   }
@@ -285,12 +301,12 @@ gfx::Size BalloonViewImpl::GetPreferredSize() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// NotificationObserver overrides.
+// content::NotificationObserver overrides.
 
-void BalloonViewImpl::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  if (type != NotificationType::NOTIFY_BALLOON_DISCONNECTED) {
+void BalloonViewImpl::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  if (type != chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED) {
     NOTREACHED();
     return;
   }
@@ -298,7 +314,8 @@ void BalloonViewImpl::Observe(NotificationType type,
   // If the renderer process attached to this balloon is disconnected
   // (e.g., because of a crash), we want to close the balloon.
   notification_registrar_.Remove(this,
-      NotificationType::NOTIFY_BALLOON_DISCONNECTED, Source<Balloon>(balloon_));
+      chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
+      content::Source<Balloon>(balloon_));
   Close(false);
 }
 
@@ -316,7 +333,7 @@ void BalloonViewImpl::Activated() {
 
   // Get the size of Control View.
   gfx::Size size =
-      control_view_host_->GetRootView()->GetChildViewAt(0)->GetPreferredSize();
+      control_view_host_->GetRootView()->child_at(0)->GetPreferredSize();
   control_view_host_->Show();
   control_view_host_->SetBounds(
       gfx::Rect(width() - size.width() - kControlViewRightMargin,
@@ -335,7 +352,7 @@ void BalloonViewImpl::Deactivated() {
 
 void BalloonViewImpl::DelayedClose(bool by_user) {
   html_contents_->Shutdown();
-  html_contents_ = NULL;
+  html_contents_.reset();
   balloon_->OnClose(by_user);
 }
 
@@ -346,7 +363,8 @@ void BalloonViewImpl::DenyPermission() {
 }
 
 gfx::NativeView BalloonViewImpl::GetParentNativeView() {
-  RenderWidgetHostView* view = html_contents_->render_view_host()->view();
+  RenderWidgetHostView* view =
+      html_contents_->web_contents()->GetRenderViewHost()->view();
   DCHECK(view);
   return view->GetNativeView();
 }

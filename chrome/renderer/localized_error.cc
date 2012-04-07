@@ -8,29 +8,43 @@
 #include "base/logging.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
-#include "base/sys_info.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/extension_set.h"
+#include "content/public/renderer/render_thread.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "webkit/glue/webkit_glue.h"
 
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 using WebKit::WebURLError;
+using content::RenderThread;
 
 namespace {
 
 static const char kRedirectLoopLearnMoreUrl[] =
     "https://www.google.com/support/chrome/bin/answer.py?answer=95626";
 static const char kWeakDHKeyLearnMoreUrl[] =
-    "http://sites.google.com/a/chromium.org/dev/err_ssl_weak_server_ephemeral_dh_key";
+    "http://sites.google.com/a/chromium.org/dev/"
+    "err_ssl_weak_server_ephemeral_dh_key";
 static const char kESETLearnMoreUrl[] =
     "http://kb.eset.com/esetkb/index?page=content&id=SOLN2588";
+static const char kKasperskyLearnMoreUrl[] =
+    "http://support.kaspersky.com/kav2012/settings/options"
+    "?print=true&qid=208284701";
+#if defined(OS_CHROMEOS)
+static const char kAppWarningLearnMoreUrl[] =
+    "chrome-extension://honijodknafkokifofgiaalefdiedpko/main.html"
+    "?answer=1721911";
+#endif  // defined(OS_CHROMEOS)
 
 enum NAV_SUGGESTIONS {
   SUGGEST_NONE     = 0,
@@ -40,7 +54,8 @@ enum NAV_SUGGESTIONS {
   SUGGEST_DNS_CONFIG = 1 << 3,
   SUGGEST_FIREWALL_CONFIG = 1 << 4,
   SUGGEST_PROXY_CONFIG = 1 << 5,
-  SUGGEST_LEARNMORE = 1 << 6,
+  SUGGEST_DISABLE_EXTENSION = 1 << 6,
+  SUGGEST_LEARNMORE = 1 << 7,
 };
 
 struct LocalizedErrorMap {
@@ -177,6 +192,27 @@ const LocalizedErrorMap net_error_options[] = {
    IDS_ERRORPAGES_DETAILS_EMPTY_RESPONSE,
    SUGGEST_RELOAD,
   },
+  {net::ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH,
+   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
+   IDS_ERRORPAGES_HEADING_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_SUMMARY_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_DETAILS_RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH,
+   SUGGEST_NONE,
+  },
+  {net::ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION,
+   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
+   IDS_ERRORPAGES_HEADING_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_SUMMARY_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_DETAILS_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION,
+   SUGGEST_NONE,
+  },
+  {net::ERR_RESPONSE_HEADERS_MULTIPLE_LOCATION,
+   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
+   IDS_ERRORPAGES_HEADING_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_SUMMARY_DUPLICATE_HEADERS,
+   IDS_ERRORPAGES_DETAILS_RESPONSE_HEADERS_MULTIPLE_LOCATION,
+   SUGGEST_NONE,
+  },
   {net::ERR_SSL_PROTOCOL_ERROR,
    IDS_ERRORPAGES_TITLE_LOAD_FAILED,
    IDS_ERRORPAGES_HEADING_SSL_PROTOCOL_ERROR,
@@ -212,12 +248,33 @@ const LocalizedErrorMap net_error_options[] = {
    IDS_ERRORPAGES_DETAILS_SSL_PROTOCOL_ERROR,
    SUGGEST_LEARNMORE,
   },
+  {net::ERR_KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION,
+   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
+   IDS_ERRORPAGES_HEADING_KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION,
+   IDS_ERRORPAGES_SUMMARY_KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION,
+   IDS_ERRORPAGES_DETAILS_SSL_PROTOCOL_ERROR,
+   SUGGEST_LEARNMORE,
+  },
+  {net::ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN,
+   IDS_ERRORPAGES_TITLE_LOAD_FAILED,
+   IDS_ERRORPAGES_HEADING_PINNING_FAILURE,
+   IDS_ERRORPAGES_SUMMARY_PINNING_FAILURE,
+   IDS_ERRORPAGES_DETAILS_PINNING_FAILURE,
+   SUGGEST_NONE,
+  },
   {net::ERR_TEMPORARILY_THROTTLED,
    IDS_ERRORPAGES_TITLE_ACCESS_DENIED,
    IDS_ERRORPAGES_HEADING_ACCESS_DENIED,
    IDS_ERRORPAGES_SUMMARY_TEMPORARILY_THROTTLED,
    IDS_ERRORPAGES_DETAILS_TEMPORARILY_THROTTLED,
    SUGGEST_NONE,
+  },
+  {net::ERR_BLOCKED_BY_CLIENT,
+   IDS_ERRORPAGES_TITLE_BLOCKED,
+   IDS_ERRORPAGES_HEADING_BLOCKED,
+   IDS_ERRORPAGES_SUMMARY_BLOCKED,
+   IDS_ERRORPAGES_DETAILS_BLOCKED,
+   SUGGEST_DISABLE_EXTENSION,
   },
 };
 
@@ -442,14 +499,12 @@ void LocalizedError::GetStrings(const WebKit::WebURLError& error,
         IDS_ERRORPAGES_SUMMARY_INTERNET_DISCONNECTED_PLATFORM;
 #if defined(OS_WIN)
     // Different versions of Windows have different instructions.
-    int32 major_version, minor_version, bugfix_version;
-    base::SysInfo::OperatingSystemVersionNumbers(
-        &major_version, &minor_version, &bugfix_version);
-    if (major_version < 6) {
+    base::win::Version windows_version = base::win::GetVersion();
+    if (windows_version < base::win::VERSION_VISTA) {
       // XP, XP64, and Server 2003.
       platform_string_id =
           IDS_ERRORPAGES_SUMMARY_INTERNET_DISCONNECTED_PLATFORM_XP;
-    } else if (major_version == 6 && minor_version == 0) {
+    } else if (windows_version == base::win::VERSION_VISTA) {
       // Vista
       platform_string_id =
           IDS_ERRORPAGES_SUMMARY_INTERNET_DISCONNECTED_PLATFORM_VISTA;
@@ -525,14 +580,40 @@ void LocalizedError::GetStrings(const WebKit::WebURLError& error,
   }
 
   if (options.suggestions & SUGGEST_PROXY_CONFIG) {
+#if defined(OS_CHROMEOS)
+    DictionaryValue* suggest_proxy_config = new DictionaryValue();
+#else
     DictionaryValue* suggest_proxy_config = GetStandardMenuItemsText();
+#endif  // defined(OS_CHROMEOS)
     suggest_proxy_config->SetString("msg",
         l10n_util::GetStringFUTF16(IDS_ERRORPAGES_SUGGESTION_PROXY_CONFIG,
             l10n_util::GetStringUTF16(
                 IDS_ERRORPAGES_SUGGESTION_PROXY_DISABLE_PLATFORM)));
+#if defined(OS_CHROMEOS)
+    suggest_proxy_config->SetString("settingsTitle",
+        l10n_util::GetStringUTF16(IDS_SETTINGS_TITLE));
+    suggest_proxy_config->SetString("internetTitle",
+        l10n_util::GetStringUTF16(IDS_OPTIONS_INTERNET_TAB_LABEL));
+    suggest_proxy_config->SetString("optionsButton",
+        l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OPTIONS));
+    suggest_proxy_config->SetString("networkTab",
+        l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_INTERNET_TAB_NETWORK));
+    suggest_proxy_config->SetString("proxyButton",
+        l10n_util::GetStringUTF16(
+            IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_CHANGE_PROXY_BUTTON));
+#else
     suggest_proxy_config->SetString("proxyTitle",
         l10n_util::GetStringUTF16(IDS_OPTIONS_PROXIES_CONFIGURE_BUTTON));
+#endif  // defined(OS_CHROMEOS)
     error_strings->Set("suggestionsProxyConfig", suggest_proxy_config);
+  }
+
+  if (options.suggestions & SUGGEST_DISABLE_EXTENSION) {
+    DictionaryValue* suggestion = new DictionaryValue;
+    suggestion->SetString("msg",
+        l10n_util::GetStringUTF16(IDS_ERRORPAGES_SUGGESTION_DISABLE_EXTENSION));
+    suggestion->SetString("reloadUrl", failed_url_string);
+    error_strings->Set("suggestionsDisableExtension", suggestion);
   }
 
   if (options.suggestions & SUGGEST_LEARNMORE) {
@@ -547,6 +628,9 @@ void LocalizedError::GetStrings(const WebKit::WebURLError& error,
       case net::ERR_ESET_ANTI_VIRUS_SSL_INTERCEPTION:
         learn_more_url = GURL(kESETLearnMoreUrl);
         break;
+      case net::ERR_KASPERSKY_ANTI_VIRUS_SSL_INTERCEPTION:
+        learn_more_url = GURL(kKasperskyLearnMoreUrl);
+        break;
       default:
         break;
     }
@@ -554,7 +638,8 @@ void LocalizedError::GetStrings(const WebKit::WebURLError& error,
     if (learn_more_url.is_valid()) {
       // Add the language parameter to the URL.
       std::string query = learn_more_url.query() + "&hl=" +
-          webkit_glue::GetWebKitLocale();
+          RenderThread::Get()->GetLocale();
+
       GURL::Replacements repl;
       repl.SetQueryStr(query);
       learn_more_url = learn_more_url.ReplaceComponents(repl);
@@ -566,6 +651,15 @@ void LocalizedError::GetStrings(const WebKit::WebURLError& error,
       error_strings->Set("suggestionsLearnMore", suggest_learn_more);
     }
   }
+}
+
+string16 LocalizedError::GetErrorDetails(const WebKit::WebURLError& error) {
+  const LocalizedErrorMap* error_map =
+      LookupErrorMap(error.domain.utf8(), error.reason);
+  if (error_map)
+    return l10n_util::GetStringUTF16(error_map->details_resource_id);
+  else
+    return l10n_util::GetStringUTF16(IDS_ERRORPAGES_DETAILS_UNKNOWN);
 }
 
 bool LocalizedError::HasStrings(const std::string& error_domain,
@@ -618,4 +712,14 @@ void LocalizedError::GetAppErrorStrings(
   error_strings->SetString("name", app->name());
   error_strings->SetString("msg",
       l10n_util::GetStringUTF16(IDS_ERRORPAGES_APP_WARNING));
+
+#if defined(OS_CHROMEOS)
+  GURL learn_more_url(kAppWarningLearnMoreUrl);
+  DictionaryValue* suggest_learn_more = new DictionaryValue();
+  suggest_learn_more->SetString("msg",
+                                l10n_util::GetStringUTF16(
+                                    IDS_ERRORPAGES_SUGGESTION_LEARNMORE));
+  suggest_learn_more->SetString("learnMoreUrl", learn_more_url.spec());
+  error_strings->Set("suggestionsLearnMore", suggest_learn_more);
+#endif  // defined(OS_CHROMEOS)
 }

@@ -4,12 +4,12 @@
 
 #include "ppapi/cpp/instance.h"
 
-#include "ppapi/c/dev/ppp_printing_dev.h"
+#include "ppapi/c/pp_errors.h"
+#include "ppapi/c/ppb_input_event.h"
 #include "ppapi/c/ppb_instance.h"
 #include "ppapi/c/ppb_messaging.h"
-#include "ppapi/cpp/common.h"
-#include "ppapi/cpp/dev/surface_3d_dev.h"
 #include "ppapi/cpp/graphics_2d.h"
+#include "ppapi/cpp/graphics_3d.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/logging.h"
 #include "ppapi/cpp/module.h"
@@ -17,10 +17,15 @@
 #include "ppapi/cpp/point.h"
 #include "ppapi/cpp/resource.h"
 #include "ppapi/cpp/var.h"
+#include "ppapi/cpp/view.h"
 
 namespace pp {
 
 namespace {
+
+template <> const char* interface_name<PPB_InputEvent>() {
+  return PPB_INPUT_EVENT_INTERFACE;
+}
 
 template <> const char* interface_name<PPB_Instance>() {
   return PPB_INSTANCE_INTERFACE;
@@ -50,6 +55,11 @@ bool Instance::Init(uint32_t /*argc*/, const char* /*argn*/[],
   return true;
 }
 
+void Instance::DidChangeView(const View& view) {
+  // Call the deprecated version for source backwards-compat.
+  DidChangeView(view.GetRect(), view.GetClipRect());
+}
+
 void Instance::DidChangeView(const pp::Rect& /*position*/,
                              const pp::Rect& /*clip*/) {
 }
@@ -62,7 +72,7 @@ bool Instance::HandleDocumentLoad(const URLLoader& /*url_loader*/) {
   return false;
 }
 
-bool Instance::HandleInputEvent(const PP_InputEvent& /*event*/) {
+bool Instance::HandleInputEvent(const InputEvent& /*event*/) {
   return false;
 }
 
@@ -70,60 +80,45 @@ void Instance::HandleMessage(const Var& /*message*/) {
   return;
 }
 
-Var Instance::GetSelectedText(bool /* html */) {
-  return Var();
-}
-
-#ifndef PPAPI_INSTANCE_REMOVE_SCRIPTING
-Var Instance::GetWindowObject() {
-  if (!has_interface<PPB_Instance>())
-    return Var();
-  return Var(Var::PassRef(),
-             get_interface<PPB_Instance>()->GetWindowObject(pp_instance()));
-}
-
-Var Instance::GetOwnerElementObject() {
-  if (!has_interface<PPB_Instance>())
-    return Var();
-  return Var(Var::PassRef(),
-             get_interface<PPB_Instance>()->GetOwnerElementObject(
-                 pp_instance()));
-}
-
-Var Instance::ExecuteScript(const Var& script, Var* exception) {
-  if (!has_interface<PPB_Instance>())
-    return Var();
-  return Var(Var::PassRef(),
-             get_interface<PPB_Instance>()->ExecuteScript(
-                 pp_instance(),
-                 script.pp_var(),
-                 Var::OutException(exception).get()));
-}
-
-Var Instance::GetInstanceObject() {
-  return Var();
-}
-#endif
-
 bool Instance::BindGraphics(const Graphics2D& graphics) {
   if (!has_interface<PPB_Instance>())
     return false;
-  return PPBoolToBool(get_interface<PPB_Instance>()->BindGraphics(
+  return PP_ToBool(get_interface<PPB_Instance>()->BindGraphics(
       pp_instance(), graphics.pp_resource()));
 }
 
-bool Instance::BindGraphics(const Surface3D_Dev& graphics) {
+bool Instance::BindGraphics(const Graphics3D& graphics) {
   if (!has_interface<PPB_Instance>())
     return false;
-  return PPBoolToBool(get_interface<PPB_Instance>()->BindGraphics(
+  return PP_ToBool(get_interface<PPB_Instance>()->BindGraphics(
       pp_instance(), graphics.pp_resource()));
 }
 
 bool Instance::IsFullFrame() {
   if (!has_interface<PPB_Instance>())
     return false;
-  return PPBoolToBool(get_interface<PPB_Instance>()->IsFullFrame(
-      pp_instance()));
+  return PP_ToBool(get_interface<PPB_Instance>()->IsFullFrame(pp_instance()));
+}
+
+int32_t Instance::RequestInputEvents(uint32_t event_classes) {
+  if (!has_interface<PPB_InputEvent>())
+    return PP_ERROR_NOINTERFACE;
+  return get_interface<PPB_InputEvent>()->RequestInputEvents(pp_instance(),
+                                                             event_classes);
+}
+
+int32_t Instance::RequestFilteringInputEvents(uint32_t event_classes) {
+  if (!has_interface<PPB_InputEvent>())
+    return PP_ERROR_NOINTERFACE;
+  return get_interface<PPB_InputEvent>()->RequestFilteringInputEvents(
+      pp_instance(), event_classes);
+}
+
+void Instance::ClearInputEventRequest(uint32_t event_classes) {
+  if (!has_interface<PPB_InputEvent>())
+    return;
+  get_interface<PPB_InputEvent>()->ClearInputEventRequest(pp_instance(),
+                                                          event_classes);
 }
 
 void Instance::PostMessage(const Var& message) {

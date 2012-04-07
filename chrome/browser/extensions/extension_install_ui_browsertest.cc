@@ -6,16 +6,15 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/theme_installed_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/web_contents.h"
 
-namespace {
-
-}  // namespace
+using content::WebContents;
 
 class ExtensionInstallUIBrowserTest : public ExtensionBrowserTest {
  public:
@@ -24,12 +23,13 @@ class ExtensionInstallUIBrowserTest : public ExtensionBrowserTest {
   void VerifyThemeInfoBarAndUndoInstall() {
     TabContentsWrapper* tab = browser()->GetSelectedTabContentsWrapper();
     ASSERT_TRUE(tab);
-    ASSERT_EQ(1U, tab->infobar_count());
-    ConfirmInfoBarDelegate* delegate =
-        tab->GetInfoBarDelegateAt(0)->AsConfirmInfoBarDelegate();
+    InfoBarTabHelper* infobar_helper = tab->infobar_tab_helper();
+    ASSERT_EQ(1U, infobar_helper->infobar_count());
+    ConfirmInfoBarDelegate* delegate = infobar_helper->
+        GetInfoBarDelegateAt(0)->AsConfirmInfoBarDelegate();
     ASSERT_TRUE(delegate);
     delegate->Cancel();
-    ASSERT_EQ(0U, tab->infobar_count());
+    ASSERT_EQ(0U, infobar_helper->infobar_count());
   }
 
   const Extension* GetTheme() const {
@@ -37,8 +37,16 @@ class ExtensionInstallUIBrowserTest : public ExtensionBrowserTest {
   }
 };
 
+// Flaky on linux. See http://crbug.com/86105
+#if defined(OS_LINUX)
+#define MAYBE_TestThemeInstallUndoResetsToDefault \
+FLAKY_TestThemeInstallUndoResetsToDefault
+#else
+#define MAYBE_TestThemeInstallUndoResetsToDefault \
+TestThemeInstallUndoResetsToDefault
+#endif
 IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
-                       TestThemeInstallUndoResetsToDefault) {
+                       MAYBE_TestThemeInstallUndoResetsToDefault) {
   // Install theme once and undo to verify we go back to default theme.
   FilePath theme_crx = PackExtension(test_data_dir_.AppendASCII("theme"));
   ASSERT_TRUE(InstallExtensionWithUI(theme_crx, 1));
@@ -64,8 +72,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
   ASSERT_EQ(NULL, GetTheme());
 }
 
+// Flaky on linux. See http://crbug.com/86105
+#if defined(OS_LINUX)
+#define MAYBE_TestThemeInstallUndoResetsToPreviousTheme \
+FLAKY_TestThemeInstallUndoResetsToPreviousTheme
+#else
+#define MAYBE_TestThemeInstallUndoResetsToPreviousTheme \
+TestThemeInstallUndoResetsToPreviousTheme
+#endif
 IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
-                       TestThemeInstallUndoResetsToPreviousTheme) {
+                       MAYBE_TestThemeInstallUndoResetsToPreviousTheme) {
   // Install first theme.
   FilePath theme_path = test_data_dir_.AppendASCII("theme");
   ASSERT_TRUE(InstallExtensionWithUI(theme_path, 1));
@@ -94,11 +110,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
                                                 browser()->profile()));
 
   EXPECT_EQ(num_tabs + 1, browser()->tab_count());
-  TabContents* tab_contents = browser()->GetSelectedTabContents();
-  ASSERT_TRUE(tab_contents);
-  EXPECT_TRUE(StartsWithASCII(tab_contents->GetURL().spec(),
-                              "chrome://newtab/#app-id=",  // id changes
-                              false));
+  WebContents* web_contents = browser()->GetSelectedWebContents();
+  ASSERT_TRUE(web_contents);
+  EXPECT_TRUE(StartsWithASCII(web_contents->GetURL().spec(),
+                              "chrome://newtab/", false));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
@@ -116,9 +131,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionInstallUIBrowserTest,
 
   EXPECT_EQ(num_incognito_tabs, incognito_browser->tab_count());
   EXPECT_EQ(num_normal_tabs + 1, browser()->tab_count());
-  TabContents* tab_contents = browser()->GetSelectedTabContents();
-  ASSERT_TRUE(tab_contents);
-  EXPECT_TRUE(StartsWithASCII(tab_contents->GetURL().spec(),
-                              "chrome://newtab/#app-id=",  // id changes
-                              false));
+  WebContents* web_contents = browser()->GetSelectedWebContents();
+  ASSERT_TRUE(web_contents);
+  EXPECT_TRUE(StartsWithASCII(web_contents->GetURL().spec(),
+                              "chrome://newtab/", false));
 }

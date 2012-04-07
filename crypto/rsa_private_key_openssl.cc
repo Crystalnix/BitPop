@@ -10,7 +10,6 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
 #include "crypto/openssl_util.h"
 
 namespace crypto {
@@ -41,7 +40,7 @@ bool ExportKey(EVP_PKEY* key,
   if (!data || len < 0)
     return false;
 
-  STLAssignToVector(output, reinterpret_cast<const uint8*>(data), len);
+  output->assign(data, data + len);
   return true;
 }
 
@@ -76,11 +75,12 @@ RSAPrivateKey* RSAPrivateKey::CreateSensitive(uint16 num_bits) {
 // static
 RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfo(
     const std::vector<uint8>& input) {
-  OpenSSLErrStackTracer err_tracer(FROM_HERE);
+  if (input.empty())
+    return NULL;
 
+  OpenSSLErrStackTracer err_tracer(FROM_HERE);
   // BIO_new_mem_buf is not const aware, but it does not modify the buffer.
-  char* data = reinterpret_cast<char*>(const_cast<uint8*>(
-      vector_as_array(&input)));
+  char* data = reinterpret_cast<char*>(const_cast<uint8*>(&input[0]));
   ScopedOpenSSL<BIO, BIO_free_all> bio(BIO_new_mem_buf(data, input.size()));
   if (!bio.get())
     return NULL;
@@ -124,11 +124,22 @@ RSAPrivateKey::~RSAPrivateKey() {
     EVP_PKEY_free(key_);
 }
 
-bool RSAPrivateKey::ExportPrivateKey(std::vector<uint8>* output) {
+RSAPrivateKey* RSAPrivateKey::Copy() const {
+  scoped_ptr<RSAPrivateKey> copy(new RSAPrivateKey());
+  RSA* rsa = EVP_PKEY_get1_RSA(key_);
+  if (!rsa)
+    return NULL;
+  copy->key_ = EVP_PKEY_new();
+  if (!EVP_PKEY_set1_RSA(copy->key_, rsa))
+    return NULL;
+  return copy.release();
+}
+
+bool RSAPrivateKey::ExportPrivateKey(std::vector<uint8>* output) const {
   return ExportKey(key_, i2d_PKCS8PrivateKeyInfo_bio, output);
 }
 
-bool RSAPrivateKey::ExportPublicKey(std::vector<uint8>* output) {
+bool RSAPrivateKey::ExportPublicKey(std::vector<uint8>* output) const {
   return ExportKey(key_, i2d_PUBKEY_bio, output);
 }
 

@@ -17,15 +17,19 @@
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/base/ui_base_types.h"
 
-class NavigationController;
-class NavigationEntry;
 class Profile;
 class SessionCommand;
+class TabContentsWrapper;
 struct SessionTab;
 struct SessionWindow;
+
+namespace content {
+class NavigationEntry;
+}
 
 // SessionService ------------------------------------------------------------
 
@@ -48,7 +52,7 @@ struct SessionWindow;
 // SessionService rebuilds the contents of the file from the open state
 // of the browser.
 class SessionService : public BaseSessionService,
-                       public NotificationObserver {
+                       public content::NotificationObserver {
   friend class SessionServiceTestHelper;
  public:
   // Creates a SessionService for the specified profile.
@@ -57,6 +61,12 @@ class SessionService : public BaseSessionService,
   explicit SessionService(const FilePath& save_path);
 
   virtual ~SessionService();
+
+  // Returns true if a new window opening should really be treated like the
+  // start of a session (with potential session restore, startup URLs, etc.).
+  // In particular, this is true if there are no tabbed browsers running
+  // currently (eg. because only background or other app pages are running).
+  bool ShouldNewWindowStartSession();
 
   // Invoke at a point when you think session restore might occur. For example,
   // during startup and window creation this is invoked to see if a session
@@ -81,7 +91,7 @@ class SessionService : public BaseSessionService,
   // Sets the bounds of a window.
   void SetWindowBounds(const SessionID& window_id,
                        const gfx::Rect& bounds,
-                       bool is_maximized);
+                       ui::WindowShowState show_state);
 
   // Sets the visual index of the tab in its parent window.
   void SetTabIndexInWindow(const SessionID& window_id,
@@ -129,12 +139,11 @@ class SessionService : public BaseSessionService,
   void UpdateTabNavigation(const SessionID& window_id,
                            const SessionID& tab_id,
                            int index,
-                           const NavigationEntry& entry);
+                           const content::NavigationEntry& entry);
 
   // Notification that a tab has restored its entries or a closed tab is being
   // reused.
-  void TabRestored(NavigationController* controller,
-                   bool pinned);
+  void TabRestored(TabContentsWrapper* tab, bool pinned);
 
   // Sets the index of the selected entry in the navigation controller for the
   // specified tab.
@@ -151,7 +160,7 @@ class SessionService : public BaseSessionService,
   // notified. To take ownership of the vector clear it before returning.
   //
   // The time gives the time the session was closed.
-  typedef Callback2<Handle, std::vector<SessionWindow*>*>::Type
+  typedef base::Callback<void(Handle, std::vector<SessionWindow*>*)>
       SessionCallback;
 
   // Fetches the contents of the last session, notifying the callback when
@@ -162,21 +171,11 @@ class SessionService : public BaseSessionService,
   // callback invokes OnGotSessionCommands from which we map the
   // SessionCommands to browser state, then notify the callback.
   Handle GetLastSession(CancelableRequestConsumerBase* consumer,
-                        SessionCallback* callback);
-
-  // Fetches the contents of the current session, notifying the callback when
-  // done. If the callback is supplied an empty vector of SessionWindows
-  // it means the session could not be restored.
-  //
-  // The created request does NOT directly invoke the callback, rather the
-  // callback invokes OnGotSessionCommands from which we map the
-  // SessionCommands to browser state, then notify the callback.
-  Handle GetCurrentSession(CancelableRequestConsumerBase* consumer,
-                           SessionCallback* callback);
+                        const SessionCallback& callback);
 
   // Overridden from BaseSessionService because we want some UMA reporting on
   // session update activities.
-  virtual void Save();
+  virtual void Save() OVERRIDE;
 
  private:
   typedef std::map<SessionID::id_type, std::pair<int, int> > IdToRange;
@@ -200,9 +199,9 @@ class SessionService : public BaseSessionService,
   bool RestoreIfNecessary(const std::vector<GURL>& urls_to_open,
                           Browser* browser);
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Sets the application extension id of the specified tab.
   void SetTabExtensionAppID(const SessionID& window_id,
@@ -219,7 +218,7 @@ class SessionService : public BaseSessionService,
 
   SessionCommand* CreateSetWindowBoundsCommand(const SessionID& window_id,
                                                const gfx::Rect& bounds,
-                                               bool is_maximized);
+                                               ui::WindowShowState show_state);
 
   SessionCommand* CreateSetTabIndexInWindowCommand(const SessionID& tab_id,
                                                    int new_index);
@@ -303,13 +302,13 @@ class SessionService : public BaseSessionService,
                             std::map<int, SessionWindow*>* windows);
 
   // Adds commands to commands that will recreate the state of the specified
-  // NavigationController. This adds at most kMaxNavigationCountToPersist
-  // navigations (in each direction from the current navigation index).
+  // tab. This adds at most kMaxNavigationCountToPersist navigations (in each
+  // direction from the current navigation index).
   // A pair is added to tab_to_available_range indicating the range of
   // indices that were written.
   void BuildCommandsForTab(
       const SessionID& window_id,
-      NavigationController* controller,
+      TabContentsWrapper* tab,
       int index_in_window,
       bool is_pinned,
       std::vector<SessionCommand*>* commands,
@@ -344,7 +343,7 @@ class SessionService : public BaseSessionService,
 
   // Schedules the specified command. This method takes ownership of the
   // command.
-  virtual void ScheduleCommand(SessionCommand* command);
+  virtual void ScheduleCommand(SessionCommand* command) OVERRIDE;
 
   // Converts all pending tab/window closes to commands and schedules them.
   void CommitPendingCloses();
@@ -382,7 +381,7 @@ class SessionService : public BaseSessionService,
   // currently called when Save() is called to compare how often the
   // session data is currently saved verses when we may want to save it.
   // It records the data in UMA stats.
-  void RecordSessionUpdateHistogramData(NotificationType type,
+  void RecordSessionUpdateHistogramData(int type,
     base::TimeTicks* last_updated_time);
 
   // Helper methods to record the histogram data
@@ -398,7 +397,7 @@ class SessionService : public BaseSessionService,
   static WindowType WindowTypeForBrowserType(Browser::Type type);
   static Browser::Type BrowserTypeForWindowType(WindowType type);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Maps from session tab id to the range of navigation entries that has
   // been written to disk.

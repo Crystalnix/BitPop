@@ -22,9 +22,13 @@ class ShaderTranslatorTest : public testing::Test {
     ShInitBuiltInResources(&resources);
 
     ASSERT_TRUE(vertex_translator_.Init(
-        SH_VERTEX_SHADER, SH_GLES2_SPEC, &resources, false));
+        SH_VERTEX_SHADER, SH_GLES2_SPEC, &resources,
+        ShaderTranslatorInterface::kGlsl,
+        ShaderTranslatorInterface::kGlslBuiltInFunctionEmulated));
     ASSERT_TRUE(fragment_translator_.Init(
-        SH_FRAGMENT_SHADER, SH_GLES2_SPEC, &resources, false));
+        SH_FRAGMENT_SHADER, SH_GLES2_SPEC, &resources,
+        ShaderTranslatorInterface::kGlsl,
+        ShaderTranslatorInterface::kGlslBuiltInFunctionOriginal));
     // Post-init the results must be empty.
     // Vertex translator results.
     EXPECT_TRUE(vertex_translator_.translated_shader() == NULL);
@@ -144,6 +148,7 @@ TEST_F(ShaderTranslatorTest, GetAttributes) {
   EXPECT_TRUE(iter != attrib_map.end());
   EXPECT_EQ(SH_FLOAT_VEC4, iter->second.type);
   EXPECT_EQ(1, iter->second.size);
+  EXPECT_EQ("vPosition", iter->second.name);
 }
 
 TEST_F(ShaderTranslatorTest, GetUniforms) {
@@ -180,12 +185,34 @@ TEST_F(ShaderTranslatorTest, GetUniforms) {
   EXPECT_TRUE(iter != uniform_map.end());
   EXPECT_EQ(SH_FLOAT_VEC4, iter->second.type);
   EXPECT_EQ(1, iter->second.size);
+  EXPECT_EQ("bar[0].foo.color[0]", iter->second.name);
   // Second uniform.
   iter = uniform_map.find("bar[1].foo.color[0]");
   EXPECT_TRUE(iter != uniform_map.end());
   EXPECT_EQ(SH_FLOAT_VEC4, iter->second.type);
   EXPECT_EQ(1, iter->second.size);
+  EXPECT_EQ("bar[1].foo.color[0]", iter->second.name);
 }
+
+#if defined(OS_MACOSX)
+TEST_F(ShaderTranslatorTest, BuiltInFunctionEmulation) {
+  // This test might become invalid in the future when ANGLE Translator is no
+  // longer emulate dot(float, float) in Mac, or the emulated function name is
+  // no longer webgl_dot_emu.
+  const char* shader =
+      "void main() {\n"
+      "  gl_Position = vec4(dot(1.0, 1.0), 1.0, 1.0, 1.0);\n"
+      "}";
+
+  EXPECT_TRUE(vertex_translator_.Translate(shader));
+  // Info log must be NULL.
+  EXPECT_TRUE(vertex_translator_.info_log() == NULL);
+  // Translated shader must be valid and non-empty.
+  EXPECT_TRUE(vertex_translator_.translated_shader() != NULL);
+  EXPECT_TRUE(strstr(vertex_translator_.translated_shader(),
+                     "webgl_dot_emu") != NULL);
+}
+#endif
 
 }  // namespace gles2
 }  // namespace gpu

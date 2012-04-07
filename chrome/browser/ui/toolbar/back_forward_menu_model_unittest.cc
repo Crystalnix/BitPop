@@ -5,22 +5,25 @@
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 
 #include "base/path_service.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/web_contents.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -52,7 +55,7 @@ class FaviconDelegate : public ui::MenuModelDelegate {
 
 }  // namespace
 
-class BackFwdMenuModelTest : public RenderViewHostTestHarness {
+class BackFwdMenuModelTest : public ChromeRenderViewHostTestHarness {
  public:
   BackFwdMenuModelTest()
       : ui_thread_(BrowserThread::UI, &message_loop_) {
@@ -73,7 +76,7 @@ class BackFwdMenuModelTest : public RenderViewHostTestHarness {
 
   void LoadURLAndUpdateState(const char* url, const char* title) {
     NavigateAndCommit(GURL(url));
-    controller().GetLastCommittedEntry()->set_title(UTF8ToUTF16(title));
+    controller().GetLastCommittedEntry()->SetTitle(UTF8ToUTF16(title));
   }
 
   // Navigate back or forward the given amount and commits the entry (which
@@ -99,17 +102,17 @@ class BackFwdMenuModelTest : public RenderViewHostTestHarness {
     contents()->CommitPendingNavigation();
   }
 
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(BackFwdMenuModelTest, BasicCase) {
   scoped_ptr<BackForwardMenuModel> back_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::BACKWARD_MENU));
-  back_model->set_test_tab_contents(contents());
+  back_model->set_test_web_contents(contents());
 
   scoped_ptr<BackForwardMenuModel> forward_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::FORWARD_MENU));
-  forward_model->set_test_tab_contents(contents());
+  forward_model->set_test_web_contents(contents());
 
   EXPECT_EQ(0, back_model->GetItemCount());
   EXPECT_EQ(0, forward_model->GetItemCount());
@@ -173,11 +176,11 @@ TEST_F(BackFwdMenuModelTest, BasicCase) {
 TEST_F(BackFwdMenuModelTest, MaxItemsTest) {
   scoped_ptr<BackForwardMenuModel> back_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::BACKWARD_MENU));
-  back_model->set_test_tab_contents(contents());
+  back_model->set_test_web_contents(contents());
 
   scoped_ptr<BackForwardMenuModel> forward_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::FORWARD_MENU));
-  forward_model->set_test_tab_contents(contents());
+  forward_model->set_test_web_contents(contents());
 
   // Seed the controller with 32 URLs
   LoadURLAndUpdateState("http://www.a.com/1", "A1");
@@ -255,11 +258,11 @@ TEST_F(BackFwdMenuModelTest, MaxItemsTest) {
 TEST_F(BackFwdMenuModelTest, ChapterStops) {
   scoped_ptr<BackForwardMenuModel> back_model(new BackForwardMenuModel(
     NULL, BackForwardMenuModel::BACKWARD_MENU));
-  back_model->set_test_tab_contents(contents());
+  back_model->set_test_web_contents(contents());
 
   scoped_ptr<BackForwardMenuModel> forward_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::FORWARD_MENU));
-  forward_model->set_test_tab_contents(contents());
+  forward_model->set_test_web_contents(contents());
 
   // Seed the controller with 32 URLs.
   int i = 0;
@@ -343,7 +346,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // Check to see if the chapter stops have the right labels.
   int index = BackForwardMenuModel::kMaxHistoryItems;
   // Empty string indicates item is a separator.
-  EXPECT_EQ(ASCIIToUTF16(""), back_model->GetLabelAt(index++));
+  EXPECT_EQ(string16(), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("F3"), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("E3"), back_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("D3"), back_model->GetLabelAt(index++));
@@ -351,7 +354,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // The menu should only show a maximum of 5 chapter stops.
   EXPECT_EQ(ASCIIToUTF16("B3"), back_model->GetLabelAt(index));
   // Empty string indicates item is a separator.
-  EXPECT_EQ(ASCIIToUTF16(""), back_model->GetLabelAt(index + 1));
+  EXPECT_EQ(string16(), back_model->GetLabelAt(index + 1));
   EXPECT_EQ(back_model->GetShowFullHistoryLabel(),
             back_model->GetLabelAt(index + 2));
 
@@ -369,7 +372,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   EXPECT_EQ(ASCIIToUTF16("A3"), back_model->GetLabelAt(index));
   GoBack();
   // It is now a separator.
-  EXPECT_EQ(ASCIIToUTF16(""), back_model->GetLabelAt(index));
+  EXPECT_EQ(string16(), back_model->GetLabelAt(index));
   // Undo our position change.
   NavigateToOffset(6);
 
@@ -392,7 +395,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // Check to see if the chapter stops have the right labels.
   index = BackForwardMenuModel::kMaxHistoryItems;
   // Empty string indicates item is a separator.
-  EXPECT_EQ(ASCIIToUTF16(""), forward_model->GetLabelAt(index++));
+  EXPECT_EQ(string16(), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("E3"), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("F3"), forward_model->GetLabelAt(index++));
   EXPECT_EQ(ASCIIToUTF16("G3"), forward_model->GetLabelAt(index++));
@@ -400,7 +403,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
   // The menu should only show a maximum of 5 chapter stops.
   EXPECT_EQ(ASCIIToUTF16("I3"), forward_model->GetLabelAt(index));
   // Empty string indicates item is a separator.
-  EXPECT_EQ(ASCIIToUTF16(""), forward_model->GetLabelAt(index + 1));
+  EXPECT_EQ(string16(), forward_model->GetLabelAt(index + 1));
   EXPECT_EQ(forward_model->GetShowFullHistoryLabel(),
       forward_model->GetLabelAt(index + 2));
 
@@ -466,7 +469,7 @@ TEST_F(BackFwdMenuModelTest, ChapterStops) {
 TEST_F(BackFwdMenuModelTest, EscapeLabel) {
   scoped_ptr<BackForwardMenuModel> back_model(new BackForwardMenuModel(
       NULL, BackForwardMenuModel::BACKWARD_MENU));
-  back_model->set_test_tab_contents(contents());
+  back_model->set_test_web_contents(contents());
 
   EXPECT_EQ(0, back_model->GetItemCount());
   EXPECT_FALSE(back_model->ItemHasCommand(1));
@@ -502,7 +505,7 @@ TEST_F(BackFwdMenuModelTest, FaviconLoadTest) {
 
   BackForwardMenuModel back_model(
       &browser, BackForwardMenuModel::BACKWARD_MENU);
-  back_model.set_test_tab_contents(controller().tab_contents());
+  back_model.set_test_web_contents(controller().GetWebContents());
   back_model.SetMenuModelDelegate(&favicon_delegate);
 
   SkBitmap new_icon(CreateBitmap(SK_ColorRED));

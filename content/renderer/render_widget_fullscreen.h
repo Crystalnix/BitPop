@@ -13,16 +13,14 @@
 class RenderWidgetFullscreen : public RenderWidget {
  public:
   // Creates a new RenderWidget.  The opener_id is the routing ID of the
-  // RenderView that this widget lives inside. The render_thread is any
-  // RenderThreadBase implementation, mostly commonly RenderThread::current().
-  static RenderWidgetFullscreen* Create(int32 opener_id,
-                                        RenderThreadBase* render_thread);
+  // RenderView that this widget lives inside.
+  static RenderWidgetFullscreen* Create(int32 opener_id);
 
   virtual void show(WebKit::WebNavigationPolicy);
 
  protected:
   virtual WebKit::WebWidget* CreateWebWidget();
-  RenderWidgetFullscreen(RenderThreadBase* render_thread);
+  RenderWidgetFullscreen();
 
   void Init(int32 opener_id);
 };

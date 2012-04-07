@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -9,11 +9,13 @@
 #ifndef WEBKIT_GLUE_WEBDROPDATA_H_
 #define WEBKIT_GLUE_WEBDROPDATA_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 struct IDataObject;
 
@@ -21,7 +23,7 @@ namespace WebKit {
 class WebDragData;
 }
 
-struct WebDropData {
+struct WEBKIT_GLUE_EXPORT WebDropData {
   // Construct from a WebDragData object.
   explicit WebDropData(const WebKit::WebDragData&);
 
@@ -54,6 +56,8 @@ struct WebDropData {
   // User is dragging data from the webview (e.g., an image).
   string16 file_description_filename;
   std::string file_contents;
+
+  std::map<string16, string16> custom_data;
 
   // Convert to a WebDragData object.
   WebKit::WebDragData ToDragData() const;

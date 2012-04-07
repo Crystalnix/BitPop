@@ -1,12 +1,15 @@
-#!/usr/bin/python
-# Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 # drmemory_analyze.py
 
-''' Given a ThreadSanitizer output file, parses errors and uniques them.'''
+''' Given a Dr. Memory output file, parses errors and uniques them.'''
 
+from collections import defaultdict
+import common
+import hashlib
 import logging
 import optparse
 import os
@@ -15,134 +18,166 @@ import subprocess
 import sys
 import time
 
-class _StackTraceLine(object):
-  def __init__(self, line, address, binary):
-    self.raw_line_ = line
-    self.address = address
-    self.binary = binary
-  def __str__(self):
-    return self.raw_line_
+class DrMemoryError:
+  def __init__(self, report, suppression, testcase):
+    self._report = report
+    self._testcase = testcase
 
-class DrMemoryAnalyze:
+    # Chromium-specific transformations of the suppressions:
+    # Replace 'any_test.exe' and 'chrome.dll' with '*', then remove the
+    # Dr.Memory-generated error ids from the name= lines as they don't
+    # make sense in a multiprocess report.
+    supp_lines = suppression.split("\n")
+    for l in xrange(len(supp_lines)):
+      if supp_lines[l].startswith("name="):
+        supp_lines[l] = "name=<insert_a_suppression_name_here>"
+      if supp_lines[l].startswith("chrome.dll!"):
+        supp_lines[l] = supp_lines[l].replace("chrome.dll!", "*!")
+      bang_index = supp_lines[l].find("!")
+      d_exe_index = supp_lines[l].find(".exe!")
+      if bang_index >= 4 and d_exe_index + 4 == bang_index:
+        supp_lines[l] = "*" + supp_lines[l][bang_index:]
+    self._suppression = "\n".join(supp_lines)
+
+  def __str__(self):
+    output = self._report + "\n"
+    if self._testcase:
+      output += "The report came from the `%s` test.\n" % self._testcase
+    output += "Suppression (error hash=#%016X#):\n" % self.ErrorHash()
+    output += ("  For more info on using suppressions see "
+        "http://dev.chromium.org/developers/how-tos/using-drmemory#TOC-Suppressing-error-reports-from-the-\n")
+    output += "{\n%s\n}\n" % self._suppression
+    return output
+
+  # This is a device-independent hash identifying the suppression.
+  # By printing out this hash we can find duplicate reports between tests and
+  # different shards running on multiple buildbots
+  def ErrorHash(self):
+    return int(hashlib.md5(self._suppression).hexdigest()[:16], 16)
+
+  def __hash__(self):
+    return hash(self._suppression)
+
+  def __eq__(self, rhs):
+    return self._suppression == rhs
+
+
+class DrMemoryAnalyzer:
   ''' Given a set of Dr.Memory output files, parse all the errors out of
   them, unique them and output the results.'''
 
-  def __init__(self, source_dir, files):
-    '''Reads in a set of files.
-
-    Args:
-      source_dir: Path to top of source tree for this build
-      files: A list of filenames.
-    '''
-
-    self.reports = []
-    self.used_suppressions = {}
-    for file in files:
-      self.ParseReportFile(file)
+  def __init__(self):
+    self.known_errors = set()
+    self.error_count = 0;
 
   def ReadLine(self):
     self.line_ = self.cur_fd_.readline()
-    self.stack_trace_line_ = None
 
   def ReadSection(self):
-    FILE_PREFIXES_TO_CUT = [
-        "build\\src\\",
-        "crt_bld\\self_x86\\",
-    ]
-    CUT_STACK_BELOW = ".*testing.*Test.*Run.*"
-
     result = [self.line_]
     self.ReadLine()
-    cnt = 1
     while len(self.line_.strip()) > 0:
-      tmp_line = self.line_
-      match_syscall = re.search("system call (.*)\n", tmp_line)
-      if match_syscall:
-        syscall_name = match_syscall.groups()[0]
-        result.append(" #%2i <sys.call> %s\n" % (cnt, syscall_name))
-        cnt = cnt + 1
-        self.ReadLine() # skip "<system call> line
-        self.ReadLine()
-        continue
-
-      # Dr. Memory sometimes prints adjacent malloc'ed regions next to the
-      # access address in the UNADDRESSABLE ACCESS reports like this:
-      # Note: next higher malloc: <address range>
-      # Note: prev lower malloc:  <address range>
-      match_malloc_info = re.search("Note: .* malloc: 0x.*", tmp_line)
-      if match_malloc_info:
-        result.append(tmp_line)
-        self.ReadLine()
-        continue
-
-      match_binary_fname = re.search("(0x[0-9a-fA-F]+) <.*> (.*)!([^+]*)"
-                                     "(?:\+0x[0-9a-fA-F]+)?\n", tmp_line)
+      result.append(self.line_)
       self.ReadLine()
-      match_src_line = re.search("\s*(.*):([0-9]+)(?:\+0x[0-9a-fA-F]+)?",
-                                 self.line_)
-      if match_src_line:
-        self.ReadLine()
-        if match_binary_fname:
-          pc, binary, fname = match_binary_fname.groups()
-          if re.search(CUT_STACK_BELOW, fname):
-            break
-          report_line = (" #%2i %s %-50s" % (cnt, pc, fname))
-          if not re.search("\.exe$", binary):
-            # Print the DLL name
-            report_line += " " + binary
-          src, lineno = match_src_line.groups()
-          if src != "??":
-            for pat in FILE_PREFIXES_TO_CUT:
-              idx = src.rfind(pat)
-              if idx != -1:
-                src = src[idx+len(pat):]
-            report_line += " " + src
-            if int(lineno) != 0:
-              report_line += ":%i" % int(lineno)
-          result.append(report_line + "\n")
-          cnt = cnt + 1
     return result
 
-  def ParseReportFile(self, filename):
-    self.cur_fd_ = open(filename, 'r')
+  def ParseReportFile(self, filename, testcase):
+    ret = []
 
+    # First, read the generated suppressions file so we can easily lookup a
+    # suppression for a given error.
+    supp_fd = open(filename.replace("results", "suppress"), 'r')
+    generated_suppressions = {}  # Key -> Error #, Value -> Suppression text.
+    for line in supp_fd:
+      # NOTE: this regexp looks fragile. Might break if the generated
+      # suppression format slightly changes.
+      m = re.search("# Suppression for Error #([0-9]+)", line.strip())
+      if not m:
+        continue
+      error_id = int(m.groups()[0])
+      assert error_id not in generated_suppressions
+      # OK, now read the next suppression:
+      cur_supp = ""
+      for supp_line in supp_fd:
+        if supp_line.startswith("#") or supp_line.strip() == "":
+          break
+        cur_supp += supp_line
+      generated_suppressions[error_id] = cur_supp.strip()
+    supp_fd.close()
+
+    self.cur_fd_ = open(filename, 'r')
     while True:
       self.ReadLine()
-      if (self.line_ == ''):
-        break
-      if re.search("Grouping errors that", self.line_):
-        # DrMemory has finished working.
-        break
-      tmp = []
-      match = re.search("^Error #[0-9]+: (.*)", self.line_)
+      if (self.line_ == ''): break
+
+      match = re.search("^Error #([0-9]+): (.*)", self.line_)
       if match:
-        self.line_ = match.groups()[0].strip() + "\n"
-        tmp.extend(self.ReadSection())
-        self.reports.append(tmp)
-      elif self.line_.startswith("ASSERT FAILURE"):
-        self.reports.append(self.line_.strip())
+        error_id = int(match.groups()[0])
+        self.line_ = match.groups()[1].strip() + "\n"
+        report = "".join(self.ReadSection()).strip()
+        suppression = generated_suppressions[error_id]
+        ret.append(DrMemoryError(report, suppression, testcase))
+
+      if re.search("SUPPRESSIONS USED:", self.line_):
+        self.ReadLine()
+        while self.line_.strip() != "":
+          line = self.line_.strip()
+          (count, name) = re.match(" *([0-9]+)x(?: \(leaked .*\))?: (.*)",
+                                   line).groups()
+          count = int(count)
+          self.used_suppressions[name] += count
+          self.ReadLine()
+
+      if self.line_.startswith("ASSERT FAILURE"):
+        ret.append(self.line_.strip())
 
     self.cur_fd_.close()
+    return ret
 
-  def Report(self, check_sanity):
+  def Report(self, filenames, testcase, check_sanity):
     sys.stdout.flush()
-    #TODO(timurrrr): support positive tests / check_sanity==True
+    # TODO(timurrrr): support positive tests / check_sanity==True
+    self.used_suppressions = defaultdict(int)
 
-    if len(self.reports) > 0:
-      logging.error("Found %i error reports" % len(self.reports))
-      for report_list in self.reports:
-        report = ''
-        for line in report_list:
-          report += str(line)
-        logging.error('\n' + report)
-      logging.error("Total: %i error reports" % len(self.reports))
-      return -1
-    logging.info("PASS: No error reports found")
-    return 0
+    to_report = []
+    reports_for_this_test = set()
+    for f in filenames:
+      cur_reports = self.ParseReportFile(f, testcase)
 
-if __name__ == '__main__':
+      # Filter out the reports that were there in previous tests.
+      for r in cur_reports:
+        if r in reports_for_this_test:
+          # A similar report is about to be printed for this test.
+          pass
+        elif r in self.known_errors:
+          # A similar report has already been printed in one of the prev tests.
+          to_report.append("This error was already printed in some "
+                           "other test, see 'hash=#%016X#'" % r.ErrorHash())
+          reports_for_this_test.add(r)
+        else:
+          self.known_errors.add(r)
+          reports_for_this_test.add(r)
+          to_report.append(r)
+
+    common.PrintUsedSuppressionsList(self.used_suppressions)
+
+    if not to_report:
+      logging.info("PASS: No error reports found")
+      return 0
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    logging.info("Found %i error reports" % len(to_report))
+    for report in to_report:
+      self.error_count += 1
+      logging.info("Report #%d\n%s" % (self.error_count, report))
+    logging.info("Total: %i error reports" % len(to_report))
+    sys.stdout.flush()
+    return -1
+
+
+def main():
   '''For testing only. The DrMemoryAnalyze class should be imported instead.'''
-  retcode = 0
   parser = optparse.OptionParser("usage: %prog [options] <files to analyze>")
   parser.add_option("", "--source_dir",
                     help="path to top of source tree for this build"
@@ -153,7 +188,9 @@ if __name__ == '__main__':
     parser.error("no filename specified")
   filenames = args
 
-  analyzer = DrMemoryAnalyze(options.source_dir, filenames)
-  retcode = analyzer.Report(False)
+  logging.getLogger().setLevel(logging.INFO)
+  return DrMemoryAnalyzer().Report(filenames, None, False)
 
-  sys.exit(retcode)
+
+if __name__ == '__main__':
+  sys.exit(main())

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,22 +12,24 @@
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_number_conversions.h"
+#include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/omnibox/location_bar.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 
 ExtensionBrowserTest::ExtensionBrowserTest()
     : loaded_(false),
@@ -41,9 +43,6 @@ ExtensionBrowserTest::ExtensionBrowserTest()
 void ExtensionBrowserTest::SetUpCommandLine(CommandLine* command_line) {
   // This enables DOM automation for tab contentses.
   EnableDOMAutomation();
-
-  // This enables it for extension hosts.
-  ExtensionHost::EnableDOMAutomation();
 
   PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir_);
   test_data_dir_ = test_data_dir_.AppendASCII("extensions");
@@ -59,24 +58,27 @@ void ExtensionBrowserTest::SetUpCommandLine(CommandLine* command_line) {
 #endif
 }
 
-const Extension* ExtensionBrowserTest::LoadExtensionImpl(
+const Extension* ExtensionBrowserTest::LoadExtensionWithOptions(
     const FilePath& path, bool incognito_enabled, bool fileaccess_enabled) {
   ExtensionService* service = browser()->profile()->GetExtensionService();
   {
-    NotificationRegistrar registrar;
-    registrar.Add(this, NotificationType::EXTENSION_LOADED,
-                  NotificationService::AllSources());
-    service->LoadExtension(path);
+    content::NotificationRegistrar registrar;
+    registrar.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                  content::NotificationService::AllSources());
+    scoped_refptr<extensions::UnpackedInstaller> installer(
+        extensions::UnpackedInstaller::Create(service));
+    installer->set_prompt_for_plugins(false);
+    installer->Load(path);
     ui_test_utils::RunMessageLoop();
   }
 
-  // Find the extension by iterating backwards since it is likely last.
+  // Find the loaded extension by its path. See crbug.com/59531 for why
+  // we cannot just use last_loaded_extension_id_.
   FilePath extension_path = path;
   file_util::AbsolutePath(&extension_path);
   const Extension* extension = NULL;
-  for (ExtensionList::const_reverse_iterator iter =
-           service->extensions()->rbegin();
-       iter != service->extensions()->rend(); ++iter) {
+  for (ExtensionSet::const_iterator iter = service->extensions()->begin();
+       iter != service->extensions()->end(); ++iter) {
     if ((*iter)->path() == extension_path) {
       extension = *iter;
       break;
@@ -85,12 +87,45 @@ const Extension* ExtensionBrowserTest::LoadExtensionImpl(
   if (!extension)
     return NULL;
 
+  const std::string extension_id = extension->id();
+
   // The call to OnExtensionInstalled ensures the other extension prefs
   // are set up with the defaults.
   service->extension_prefs()->OnExtensionInstalled(
-      extension, Extension::ENABLED);
-  service->SetIsIncognitoEnabled(extension->id(), incognito_enabled);
-  service->SetAllowFileAccess(extension, fileaccess_enabled);
+      extension, Extension::ENABLED, false,
+      StringOrdinal::CreateInitialOrdinal());
+
+  // Toggling incognito or file access will reload the extension, so wait for
+  // the reload and grab the new extension instance. The default state is
+  // incognito disabled and file access enabled, so we don't wait in those
+  // cases.
+  {
+    ui_test_utils::WindowedNotificationObserver load_signal(
+        chrome::NOTIFICATION_EXTENSION_LOADED,
+        content::Source<Profile>(browser()->profile()));
+    CHECK(!service->IsIncognitoEnabled(extension_id));
+
+    if (incognito_enabled) {
+      service->SetIsIncognitoEnabled(extension_id, incognito_enabled);
+      load_signal.Wait();
+      extension = service->GetExtensionById(extension_id, false);
+      CHECK(extension) << extension_id << " not found after reloading.";
+    }
+  }
+
+  {
+    ui_test_utils::WindowedNotificationObserver load_signal(
+        chrome::NOTIFICATION_EXTENSION_LOADED,
+        content::Source<Profile>(browser()->profile()));
+    CHECK(service->AllowFileAccess(extension));
+
+    if (!fileaccess_enabled) {
+      service->SetAllowFileAccess(extension, fileaccess_enabled);
+      load_signal.Wait();
+      extension = service->GetExtensionById(extension_id, false);
+      CHECK(extension) << extension_id << " not found after reloading.";
+    }
+  }
 
   if (!WaitForExtensionHostsToLoad())
     return NULL;
@@ -99,36 +134,29 @@ const Extension* ExtensionBrowserTest::LoadExtensionImpl(
 }
 
 const Extension* ExtensionBrowserTest::LoadExtension(const FilePath& path) {
-  return LoadExtensionImpl(path, false, true);
+  return LoadExtensionWithOptions(path, false, true);
 }
 
 const Extension* ExtensionBrowserTest::LoadExtensionIncognito(
     const FilePath& path) {
-  return LoadExtensionImpl(path, true, true);
+  return LoadExtensionWithOptions(path, true, true);
 }
 
-const Extension* ExtensionBrowserTest::LoadExtensionNoFileAccess(
+const Extension* ExtensionBrowserTest::LoadExtensionAsComponent(
     const FilePath& path) {
-  return LoadExtensionImpl(path, false, false);
-}
-
-const Extension* ExtensionBrowserTest::LoadExtensionIncognitoNoFileAccess(
-    const FilePath& path) {
-  return LoadExtensionImpl(path, true, false);
-}
-
-bool ExtensionBrowserTest::LoadExtensionAsComponent(const FilePath& path) {
   ExtensionService* service = browser()->profile()->GetExtensionService();
 
   std::string manifest;
   if (!file_util::ReadFileToString(path.Append(Extension::kManifestFilename),
                                    &manifest))
-    return false;
+    return NULL;
 
-  service->LoadComponentExtension(
-      ExtensionService::ComponentExtensionInfo(manifest, path));
-
-  return true;
+  const Extension* extension =
+      service->component_loader()->Add(manifest, path);
+  if (!extension)
+    return NULL;
+  last_loaded_extension_id_ = extension->id();
+  return extension;
 }
 
 FilePath ExtensionBrowserTest::PackExtension(const FilePath& dir_path) {
@@ -144,17 +172,32 @@ FilePath ExtensionBrowserTest::PackExtension(const FilePath& dir_path) {
     return FilePath();
   }
 
+  return PackExtensionWithOptions(dir_path, crx_path, FilePath(), pem_path);
+}
+
+FilePath ExtensionBrowserTest::PackExtensionWithOptions(
+    const FilePath& dir_path,
+    const FilePath& crx_path,
+    const FilePath& pem_path,
+    const FilePath& pem_out_path) {
   if (!file_util::PathExists(dir_path)) {
     ADD_FAILURE() << "Extension dir not found: " << dir_path.value();
+    return FilePath();
+  }
+
+  if (!file_util::PathExists(pem_path) && pem_out_path.empty()) {
+    ADD_FAILURE() << "Must specify a PEM file or PEM output path";
     return FilePath();
   }
 
   scoped_ptr<ExtensionCreator> creator(new ExtensionCreator());
   if (!creator->Run(dir_path,
                     crx_path,
-                    FilePath(),  // no existing pem, use empty path
-                    pem_path)) {
-    ADD_FAILURE() << "ExtensionCreator::Run() failed.";
+                    pem_path,
+                    pem_out_path,
+                    ExtensionCreator::kOverwriteCRX)) {
+    ADD_FAILURE() << "ExtensionCreator::Run() failed: "
+                  << creator->error_message();
     return FilePath();
   }
 
@@ -172,13 +215,13 @@ class MockAbortExtensionInstallUI : public ExtensionInstallUI {
 
   // Simulate a user abort on an extension installation.
   virtual void ConfirmInstall(Delegate* delegate, const Extension* extension) {
-    delegate->InstallUIAbort();
+    delegate->InstallUIAbort(true);
     MessageLoopForUI::current()->Quit();
   }
 
   virtual void OnInstallSuccess(const Extension* extension, SkBitmap* icon) {}
 
-  virtual void OnInstallFailure(const std::string& error) {}
+  virtual void OnInstallFailure(const string16& error) {}
 };
 
 class MockAutoConfirmExtensionInstallUI : public ExtensionInstallUI {
@@ -192,32 +235,35 @@ class MockAutoConfirmExtensionInstallUI : public ExtensionInstallUI {
   }
 };
 
-bool ExtensionBrowserTest::InstallOrUpdateExtension(const std::string& id,
-                                                    const FilePath& path,
-                                                    InstallUIType ui_type,
-                                                    int expected_change) {
-  return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-                                  browser()->profile());
+const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
+    const FilePath& path,
+    int expected_change) {
+  return InstallOrUpdateExtension("", path, INSTALL_UI_TYPE_NONE,
+                                  expected_change, browser()->profile(),
+                                  true);
 }
 
-bool ExtensionBrowserTest::InstallOrUpdateExtension(const std::string& id,
-                                                    const FilePath& path,
-                                                    InstallUIType ui_type,
-                                                    int expected_change,
-                                                    Profile* profile) {
+const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
+    const std::string& id,
+    const FilePath& path,
+    InstallUIType ui_type,
+    int expected_change) {
+  return InstallOrUpdateExtension(id, path, ui_type, expected_change,
+                                  browser()->profile(), false);
+}
+
+const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
+    const std::string& id,
+    const FilePath& path,
+    InstallUIType ui_type,
+    int expected_change,
+    Profile* profile,
+    bool from_webstore) {
   ExtensionService* service = profile->GetExtensionService();
   service->set_show_extensions_prompts(false);
   size_t num_before = service->extensions()->size();
 
   {
-    NotificationRegistrar registrar;
-    registrar.Add(this, NotificationType::EXTENSION_LOADED,
-                  NotificationService::AllSources());
-    registrar.Add(this, NotificationType::EXTENSION_UPDATE_DISABLED,
-                  NotificationService::AllSources());
-    registrar.Add(this, NotificationType::EXTENSION_INSTALL_ERROR,
-                  NotificationService::AllSources());
-
     ExtensionInstallUI* install_ui = NULL;
     if (ui_type == INSTALL_UI_TYPE_CANCEL)
       install_ui = new MockAbortExtensionInstallUI();
@@ -233,49 +279,59 @@ bool ExtensionBrowserTest::InstallOrUpdateExtension(const std::string& id,
       crx_path = PackExtension(path);
     }
     if (crx_path.empty())
-      return false;
+      return NULL;
 
     scoped_refptr<CrxInstaller> installer(
-        service->MakeCrxInstaller(install_ui));
+        CrxInstaller::Create(service, install_ui));
     installer->set_expected_id(id);
+    installer->set_is_gallery_install(from_webstore);
+
+    content::NotificationRegistrar registrar;
+    registrar.Add(this, chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+                  content::Source<CrxInstaller>(installer.get()));
+
     installer->InstallCrx(crx_path);
 
     ui_test_utils::RunMessageLoop();
   }
 
   size_t num_after = service->extensions()->size();
-  if (num_after != (num_before + expected_change)) {
+  EXPECT_EQ(num_before + expected_change, num_after);
+  if (num_before + expected_change != num_after) {
     VLOG(1) << "Num extensions before: " << base::IntToString(num_before)
             << " num after: " << base::IntToString(num_after)
             << " Installed extensions follow:";
 
-    for (size_t i = 0; i < service->extensions()->size(); ++i)
-      VLOG(1) << "  " << (*service->extensions())[i]->id();
+    for (ExtensionSet::const_iterator it = service->extensions()->begin();
+         it != service->extensions()->end(); ++it)
+      VLOG(1) << "  " << (*it)->id();
 
     VLOG(1) << "Errors follow:";
-    const std::vector<std::string>* errors =
+    const std::vector<string16>* errors =
         ExtensionErrorReporter::GetInstance()->GetErrors();
-    for (std::vector<std::string>::const_iterator iter = errors->begin();
+    for (std::vector<string16>::const_iterator iter = errors->begin();
          iter != errors->end(); ++iter)
       VLOG(1) << *iter;
 
-    return false;
+    return NULL;
   }
 
-  return WaitForExtensionHostsToLoad();
+  if (!WaitForExtensionHostsToLoad())
+    return NULL;
+  return service->GetExtensionById(last_loaded_extension_id_, false);
 }
 
 void ExtensionBrowserTest::ReloadExtension(const std::string& extension_id) {
   ExtensionService* service = browser()->profile()->GetExtensionService();
   service->ReloadExtension(extension_id);
   ui_test_utils::RegisterAndWait(this,
-                                 NotificationType::EXTENSION_LOADED,
-                                 NotificationService::AllSources());
+                                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                                 content::NotificationService::AllSources());
 }
 
 void ExtensionBrowserTest::UnloadExtension(const std::string& extension_id) {
   ExtensionService* service = browser()->profile()->GetExtensionService();
-  service->UnloadExtension(extension_id, UnloadedExtensionInfo::DISABLE);
+  service->UnloadExtension(extension_id, extension_misc::UNLOAD_REASON_DISABLE);
 }
 
 void ExtensionBrowserTest::UninstallExtension(const std::string& extension_id) {
@@ -299,8 +355,8 @@ bool ExtensionBrowserTest::WaitForPageActionCountChangeTo(int count) {
   if (location_bar->PageActionCount() != count) {
     target_page_action_count_ = count;
     ui_test_utils::RegisterAndWait(this,
-        NotificationType::EXTENSION_PAGE_ACTION_COUNT_CHANGED,
-        NotificationService::AllSources());
+        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED,
+        content::NotificationService::AllSources());
   }
   return location_bar->PageActionCount() == count;
 }
@@ -311,17 +367,17 @@ bool ExtensionBrowserTest::WaitForPageActionVisibilityChangeTo(int count) {
   if (location_bar->PageActionVisibleCount() != count) {
     target_visible_page_action_count_ = count;
     ui_test_utils::RegisterAndWait(this,
-        NotificationType::EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-        NotificationService::AllSources());
+        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+        content::NotificationService::AllSources());
   }
   return location_bar->PageActionVisibleCount() == count;
 }
 
 bool ExtensionBrowserTest::WaitForExtensionHostsToLoad() {
   // Wait for all the extension hosts that exist to finish loading.
-  NotificationRegistrar registrar;
-  registrar.Add(this, NotificationType::EXTENSION_HOST_DID_STOP_LOADING,
-                NotificationService::AllSources());
+  content::NotificationRegistrar registrar;
+  registrar.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                content::NotificationService::AllSources());
 
   ExtensionProcessManager* manager =
         browser()->profile()->GetExtensionProcessManager();
@@ -343,22 +399,23 @@ bool ExtensionBrowserTest::WaitForExtensionHostsToLoad() {
 
 bool ExtensionBrowserTest::WaitForExtensionInstall() {
   int before = extension_installs_observed_;
-  ui_test_utils::RegisterAndWait(this, NotificationType::EXTENSION_INSTALLED,
-                                 NotificationService::AllSources());
+  ui_test_utils::RegisterAndWait(this,
+                                 chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                                 content::NotificationService::AllSources());
   return extension_installs_observed_ == (before + 1);
 }
 
 bool ExtensionBrowserTest::WaitForExtensionInstallError() {
   int before = extension_installs_observed_;
   ui_test_utils::RegisterAndWait(this,
-                                 NotificationType::EXTENSION_INSTALL_ERROR,
-                                 NotificationService::AllSources());
+                                 chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
+                                 content::NotificationService::AllSources());
   return extension_installs_observed_ == before;
 }
 
 void ExtensionBrowserTest::WaitForExtensionLoad() {
-  ui_test_utils::RegisterAndWait(this, NotificationType::EXTENSION_LOADED,
-                                 NotificationService::AllSources());
+  ui_test_utils::RegisterAndWait(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                                 content::NotificationService::AllSources());
   WaitForExtensionHostsToLoad();
 }
 
@@ -370,54 +427,59 @@ bool ExtensionBrowserTest::WaitForExtensionCrash(
     // The extension is already unloaded, presumably due to a crash.
     return true;
   }
-  ui_test_utils::RegisterAndWait(this,
-                                 NotificationType::EXTENSION_PROCESS_TERMINATED,
-                                 NotificationService::AllSources());
+  ui_test_utils::RegisterAndWait(
+      this, chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
+      content::NotificationService::AllSources());
   return (service->GetExtensionById(extension_id, true) == NULL);
 }
 
-void ExtensionBrowserTest::Observe(NotificationType type,
-                                   const NotificationSource& source,
-                                   const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::EXTENSION_LOADED:
-      last_loaded_extension_id_ = Details<const Extension>(details).ptr()->id();
+void ExtensionBrowserTest::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_LOADED:
+      last_loaded_extension_id_ =
+          content::Details<const Extension>(details).ptr()->id();
       VLOG(1) << "Got EXTENSION_LOADED notification.";
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_UPDATE_DISABLED:
-      VLOG(1) << "Got EXTENSION_UPDATE_DISABLED notification.";
+    case chrome::NOTIFICATION_CRX_INSTALLER_DONE:
+      VLOG(1) << "Got CRX_INSTALLER_DONE notification.";
+      {
+        const Extension* extension =
+            content::Details<const Extension>(details).ptr();
+        if (extension)
+          last_loaded_extension_id_ = extension->id();
+        else
+          last_loaded_extension_id_ = "";
+      }
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_HOST_DID_STOP_LOADING:
+    case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING:
       VLOG(1) << "Got EXTENSION_HOST_DID_STOP_LOADING notification.";
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_INSTALLED:
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED:
       VLOG(1) << "Got EXTENSION_INSTALLED notification.";
       ++extension_installs_observed_;
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_INSTALL_ERROR:
+    case chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR:
       VLOG(1) << "Got EXTENSION_INSTALL_ERROR notification.";
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_PROCESS_CREATED:
-      VLOG(1) << "Got EXTENSION_PROCESS_CREATED notification.";
-      MessageLoopForUI::current()->Quit();
-      break;
-
-    case NotificationType::EXTENSION_PROCESS_TERMINATED:
+    case chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED:
       VLOG(1) << "Got EXTENSION_PROCESS_TERMINATED notification.";
       MessageLoopForUI::current()->Quit();
       break;
 
-    case NotificationType::EXTENSION_PAGE_ACTION_COUNT_CHANGED: {
+    case chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_COUNT_CHANGED: {
       LocationBarTesting* location_bar =
           browser()->window()->GetLocationBar()->GetLocationBarForTesting();
       VLOG(1) << "Got EXTENSION_PAGE_ACTION_COUNT_CHANGED notification. Number "
@@ -430,7 +492,7 @@ void ExtensionBrowserTest::Observe(NotificationType type,
       break;
     }
 
-    case NotificationType::EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED: {
+    case chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED: {
       LocationBarTesting* location_bar =
           browser()->window()->GetLocationBar()->GetLocationBarForTesting();
       VLOG(1) << "Got EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED notification. "

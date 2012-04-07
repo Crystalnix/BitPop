@@ -1,46 +1,67 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/automation/automation_json_requests.h"
 
+#include "base/basictypes.h"
 #include "base/file_path.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/values.h"
+#include "base/format_macros.h"
 #include "base/json/json_reader.h"
+#include "base/json/json_value_serializer.h"
 #include "base/json/json_writer.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/stringprintf.h"
 #include "base/test/test_timeouts.h"
+#include "base/time.h"
+#include "base/values.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/test/automation/automation_proxy.h"
-#include "content/common/json_value_serializer.h"
+
+using automation::Error;
+using automation::ErrorCode;
+using base::DictionaryValue;
+using base::ListValue;
 
 namespace {
 
 bool SendAutomationJSONRequest(AutomationMessageSender* sender,
                                const DictionaryValue& request_dict,
                                DictionaryValue* reply_dict,
-                               std::string* error_msg) {
+                               Error* error) {
   std::string request, reply;
   base::JSONWriter::Write(&request_dict, false, &request);
+  std::string command;
+  request_dict.GetString("command", &command);
+  LOG(INFO) << "Sending '" << command << "' command.";
+
+  base::Time before_sending = base::Time::Now();
   bool success = false;
-  if (!SendAutomationJSONRequest(sender, request,
-          TestTimeouts::action_max_timeout_ms(), &reply, &success))
+  if (!SendAutomationJSONRequestWithDefaultTimeout(
+          sender, request, &reply, &success)) {
+    *error = Error(base::StringPrintf(
+        "Chrome did not respond to '%s'. Elapsed time was %" PRId64 " ms.",
+        command.c_str(),
+        (base::Time::Now() - before_sending).InMilliseconds()));
+    LOG(INFO) << error->message();
     return false;
+  }
   scoped_ptr<Value> value(base::JSONReader::Read(reply, true));
   if (!value.get() || !value->IsType(Value::TYPE_DICTIONARY)) {
-    std::string command;
-    request_dict.GetString("command", &command);
+    *error = Error("JSON request did not return a dictionary");
     LOG(ERROR) << "JSON request did not return dict: " << command << "\n";
     return false;
   }
   DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
   if (!success) {
-    std::string command, error;
-    request_dict.GetString("command", &command);
-    dict->GetString("error", &error);
-    *error_msg = error;
-    LOG(ERROR) << "JSON request failed: " << command << "\n"
-               << "    with error: " << error;
+    std::string error_msg;
+    dict->GetString("error", &error_msg);
+    int int_code = automation::kUnknownError;
+    dict->GetInteger("code", &int_code);
+    ErrorCode code = static_cast<ErrorCode>(int_code);
+    *error = Error(code, error_msg);
+    LOG(INFO) << "JSON request failed: " << command << "\n"
+              << "    with error: " << error_msg;
     return false;
   }
   reply_dict->MergeDictionary(dict);
@@ -60,6 +81,122 @@ WebKeyEvent::WebKeyEvent(automation::KeyEventTypes type,
       modified_text(modified_text),
       modifiers(modifiers) {}
 
+WebMouseEvent::WebMouseEvent(automation::MouseEventType type,
+                             automation::MouseButton button,
+                             int x,
+                             int y,
+                             int click_count,
+                             int modifiers)
+    : type(type),
+      button(button),
+      x(x),
+      y(y),
+      click_count(click_count),
+      modifiers(modifiers) {}
+
+// static
+WebViewId WebViewId::ForView(const AutomationId& view_id) {
+  WebViewId id;
+  id.old_style_ = false;
+  id.id_ = view_id;
+  return id;
+}
+
+// static
+WebViewId WebViewId::ForOldStyleTab(int tab_id) {
+  WebViewId id;
+  id.old_style_ = true;
+  id.tab_id_ = tab_id;
+  return id;
+}
+
+WebViewId::WebViewId() : old_style_(true) {}
+
+void WebViewId::UpdateDictionary(DictionaryValue* dict,
+                                 const std::string& view_id_key) const {
+  if (old_style_) {
+    dict->SetInteger("id", tab_id_);
+  } else {
+    dict->Set(view_id_key, id_.ToValue());
+  }
+}
+
+bool WebViewId::IsValid() const {
+  if (old_style_)
+    return tab_id_ != 0;
+  else
+    return id_.is_valid();
+}
+
+AutomationId WebViewId::GetId() const {
+  if (old_style_)
+    return AutomationId(AutomationId::kTypeTab, base::IntToString(tab_id_));
+  else
+    return id_;
+}
+
+bool WebViewId::IsTab() const {
+  return old_style_ || id_.type() == AutomationId::kTypeTab;
+}
+
+int WebViewId::tab_id() const {
+  return tab_id_;
+}
+
+bool WebViewId::old_style() const {
+  return old_style_;
+}
+
+// static
+WebViewLocator WebViewLocator::ForIndexPair(int browser_index, int tab_index) {
+  WebViewLocator locator;
+  locator.type_ = kTypeIndexPair;
+  locator.locator_.index_pair.browser_index = browser_index;
+  locator.locator_.index_pair.tab_index = tab_index;
+  return locator;
+}
+
+// static
+WebViewLocator WebViewLocator::ForViewId(const AutomationId& view_id) {
+  WebViewLocator locator;
+  locator.type_ = kTypeViewId;
+  locator.locator_.view_id = view_id;
+  return locator;
+}
+
+WebViewLocator::WebViewLocator() {}
+
+WebViewLocator::~WebViewLocator() {}
+
+void WebViewLocator::UpdateDictionary(
+    DictionaryValue* dict, const std::string& view_id_key) const {
+  if (type_ == kTypeIndexPair) {
+    dict->SetInteger("windex", locator_.index_pair.browser_index);
+    dict->SetInteger("tab_index", locator_.index_pair.tab_index);
+  } else if (type_ == kTypeViewId) {
+    dict->Set(view_id_key, locator_.view_id.ToValue());
+  }
+}
+
+int WebViewLocator::browser_index() const {
+  return locator_.index_pair.browser_index;
+}
+
+int WebViewLocator::tab_index() const {
+  return locator_.index_pair.tab_index;
+}
+
+WebViewLocator::Locator::Locator() {}
+
+WebViewLocator::Locator::~Locator() {}
+
+WebViewInfo::WebViewInfo(const WebViewId& view_id,
+                         const std::string& extension_id)
+    : view_id(view_id),
+      extension_id(extension_id) {}
+
+WebViewInfo::~WebViewInfo() {}
+
 bool SendAutomationJSONRequest(AutomationMessageSender* sender,
                                const std::string& request,
                                int timeout_ms,
@@ -69,17 +206,26 @@ bool SendAutomationJSONRequest(AutomationMessageSender* sender,
       -1, request, reply, success), timeout_ms);
 }
 
+bool SendAutomationJSONRequestWithDefaultTimeout(
+    AutomationMessageSender* sender,
+    const std::string& request,
+    std::string* reply,
+    bool* success) {
+  return sender->Send(new AutomationMsg_SendJSONRequest(
+      -1, request, reply, success));
+}
+
 bool SendGetIndicesFromTabIdJSONRequest(
     AutomationMessageSender* sender,
     int tab_id,
     int* browser_index,
     int* tab_index,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue request_dict;
   request_dict.SetString("command", "GetIndicesFromTab");
   request_dict.SetInteger("tab_id", tab_id);
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, request_dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, request_dict, &reply_dict, error))
     return false;
   if (!reply_dict.GetInteger("windex", browser_index))
     return false;
@@ -93,12 +239,12 @@ bool SendGetIndicesFromTabHandleJSONRequest(
     int tab_handle,
     int* browser_index,
     int* tab_index,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue request_dict;
   request_dict.SetString("command", "GetIndicesFromTab");
   request_dict.SetInteger("tab_handle", tab_handle);
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, request_dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, request_dict, &reply_dict, error))
     return false;
   if (!reply_dict.GetInteger("windex", browser_index))
     return false;
@@ -109,20 +255,18 @@ bool SendGetIndicesFromTabHandleJSONRequest(
 
 bool SendNavigateToURLJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    const GURL& url,
+    const WebViewLocator& locator,
+    const std::string& url,
     int navigation_count,
     AutomationMsg_NavigationResponseValues* nav_response,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "NavigateToURL");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
-  dict.SetString("url", url.possibly_invalid_spec());
+  locator.UpdateDictionary(&dict, "auto_id");
+  dict.SetString("url", url);
   dict.SetInteger("navigation_count", navigation_count);
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   int response = 0;
   if (!reply_dict.GetInteger("result", &response))
@@ -133,20 +277,18 @@ bool SendNavigateToURLJSONRequest(
 
 bool SendExecuteJavascriptJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     const std::string& frame_xpath,
     const std::string& javascript,
     Value** result,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "ExecuteJavascript");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetString("frame_xpath", frame_xpath);
   dict.SetString("javascript", javascript);
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
 
   std::string json;
@@ -171,101 +313,61 @@ bool SendExecuteJavascriptJSONRequest(
 
 bool SendGoForwardJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* error_msg) {
+    const WebViewLocator& locator,
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GoForward");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendGoBackJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* error_msg) {
+    const WebViewLocator& locator,
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GoBack");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendReloadJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* error_msg) {
+    const WebViewLocator& locator,
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "Reload");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendCaptureEntirePageJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     const FilePath& path,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "CaptureEntirePage");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetString("path", path.value());
   DictionaryValue reply_dict;
 
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
-}
-
-bool SendGetTabURLJSONRequest(
-    AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* url,
-    std::string* error_msg) {
-  DictionaryValue dict;
-  dict.SetString("command", "GetTabURL");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
-  DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
-    return false;
-  return reply_dict.GetString("url", url);
-}
-
-bool SendGetTabTitleJSONRequest(
-    AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* tab_title,
-    std::string* error_msg) {
-  DictionaryValue dict;
-  dict.SetString("command", "GetTabTitle");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
-  DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
-    return false;
-  return reply_dict.GetString("title", tab_title);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendGetCookiesJSONRequest(
     AutomationMessageSender* sender,
     const std::string& url,
     ListValue** cookies,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GetCookies");
   dict.SetString("url", url);
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   Value* cookies_unscoped_value;
   if (!reply_dict.Remove("cookies", &cookies_unscoped_value))
@@ -277,250 +379,234 @@ bool SendGetCookiesJSONRequest(
   return true;
 }
 
-bool SendGetCookiesJSONRequestDeprecated(
-    AutomationMessageSender* sender,
-    int browser_index,
-    const std::string& url,
-    std::string* cookies) {
-  DictionaryValue dict;
-  dict.SetString("command", "GetCookies");
-  dict.SetInteger("windex", browser_index);
-  dict.SetString("url", url);
-  DictionaryValue reply_dict;
-  std::string error_msg;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, &error_msg))
-    return false;
-  return reply_dict.GetString("cookies", cookies);
-}
-
 bool SendDeleteCookieJSONRequest(
     AutomationMessageSender* sender,
     const std::string& url,
     const std::string& cookie_name,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "DeleteCookie");
   dict.SetString("url", url);
   dict.SetString("name", cookie_name);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
-}
-
-bool SendDeleteCookieJSONRequestDeprecated(
-    AutomationMessageSender* sender,
-    int browser_index,
-    const std::string& url,
-    const std::string& cookie_name) {
-  DictionaryValue dict;
-  dict.SetString("command", "DeleteCookie");
-  dict.SetInteger("windex", browser_index);
-  dict.SetString("url", url);
-  dict.SetString("name", cookie_name);
-  DictionaryValue reply_dict;
-  std::string error_msg;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, &error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendSetCookieJSONRequest(
     AutomationMessageSender* sender,
     const std::string& url,
     DictionaryValue* cookie_dict,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "SetCookie");
   dict.SetString("url", url);
   dict.Set("cookie", cookie_dict->DeepCopy());
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
-}
-
-bool SendSetCookieJSONRequestDeprecated(
-    AutomationMessageSender* sender,
-    int browser_index,
-    const std::string& url,
-    const std::string& cookie) {
-  DictionaryValue dict;
-  dict.SetString("command", "SetCookie");
-  dict.SetInteger("windex", browser_index);
-  dict.SetString("url", url);
-  dict.SetString("cookie", cookie);
-  DictionaryValue reply_dict;
-  std::string error_msg;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, &error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendGetTabIdsJSONRequest(
     AutomationMessageSender* sender,
-    std::vector<int>* tab_ids,
-    std::string* error_msg) {
+    std::vector<WebViewInfo>* views,
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GetTabIds");
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   ListValue* id_list;
-  if (!reply_dict.GetList("ids", &id_list)) {
-    LOG(ERROR) << "Returned 'ids' key is missing or invalid";
+  if (reply_dict.GetList("ids", &id_list)) {
+    for (size_t i = 0; i < id_list->GetSize(); ++i) {
+      int id;
+      if (!id_list->GetInteger(i, &id)) {
+        *error = Error("Returned id in 'tab_ids' is not an integer");
+        return false;
+      }
+      views->push_back(WebViewInfo(
+          WebViewId::ForOldStyleTab(id), std::string()));
+    }
+  }
+  return true;
+}
+
+bool SendGetWebViewsJSONRequest(
+    AutomationMessageSender* sender,
+    std::vector<WebViewInfo>* views,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "GetViews");
+  DictionaryValue reply_dict;
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  ListValue* views_list;
+  if (!reply_dict.GetList("views", &views_list)) {
+    *error = Error("Returned 'views' key is missing or invalid");
     return false;
   }
-  std::vector<int> temp_ids;
-  for (size_t i = 0; i < id_list->GetSize(); ++i) {
-    int id;
-    if (!id_list->GetInteger(i, &id)) {
-      LOG(ERROR) << "Returned 'ids' key contains non-integer values";
+  for (size_t i = 0; i < views_list->GetSize(); ++i) {
+    DictionaryValue* view_dict;
+    if (!views_list->GetDictionary(i, &view_dict)) {
+      *error = Error("Returned 'views' key contains non-dictionary values");
       return false;
     }
-    temp_ids.push_back(id);
+    AutomationId view_id;
+    std::string error_msg;
+    if (!AutomationId::FromValueInDictionary(
+            view_dict, "auto_id", &view_id, &error_msg)) {
+      *error = Error(error_msg);
+      return false;
+    }
+    std::string extension_id;
+    view_dict->GetString("extension_id", &extension_id);
+    views->push_back(WebViewInfo(
+        WebViewId::ForView(view_id), extension_id));
   }
-  *tab_ids = temp_ids;
   return true;
 }
 
 bool SendIsTabIdValidJSONRequest(
     AutomationMessageSender* sender,
-    int tab_id,
+    const WebViewId& view_id,
     bool* is_valid,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "IsTabIdValid");
-  dict.SetInteger("id", tab_id);
+  view_id.UpdateDictionary(&dict, "tab_id");
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   return reply_dict.GetBoolean("is_valid", is_valid);
 }
 
-bool SendCloseTabJSONRequest(
+bool SendDoesAutomationObjectExistJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
-    std::string* error_msg) {
+    const WebViewId& view_id,
+    bool* does_exist,
+    Error* error) {
   DictionaryValue dict;
-  dict.SetString("command", "CloseTab");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  dict.SetString("command", "DoesAutomationObjectExist");
+  view_id.UpdateDictionary(&dict, "auto_id");
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  return reply_dict.GetBoolean("does_exist", does_exist);
 }
 
-bool SendMouseMoveJSONRequest(
+bool SendCloseViewJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "CloseTab");
+  locator.UpdateDictionary(&dict, "auto_id");
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendMouseMoveJSONRequestDeprecated(
+    AutomationMessageSender* sender,
+    const WebViewLocator& locator,
     int x,
     int y,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseMove");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("x", x);
   dict.SetInteger("y", y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendMouseClickJSONRequest(
+bool SendMouseClickJSONRequestDeprecated(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     automation::MouseButton button,
     int x,
     int y,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseClick");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("button", button);
   dict.SetInteger("x", x);
   dict.SetInteger("y", y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendMouseDragJSONRequest(
+bool SendMouseDragJSONRequestDeprecated(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     int start_x,
     int start_y,
     int end_x,
     int end_y,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseDrag");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("start_x", start_x);
   dict.SetInteger("start_y", start_y);
   dict.SetInteger("end_x", end_x);
   dict.SetInteger("end_y", end_y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendMouseButtonDownJSONRequest(
+bool SendMouseButtonDownJSONRequestDeprecated(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     int x,
     int y,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseButtonDown");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("x", x);
   dict.SetInteger("y", y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendMouseButtonUpJSONRequest(
+bool SendMouseButtonUpJSONRequestDeprecated(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     int x,
     int y,
-    std::string* error_msg)  {
+    Error* error)  {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseButtonUp");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("x", x);
   dict.SetInteger("y", y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendMouseDoubleClickJSONRequest(
+bool SendMouseDoubleClickJSONRequestDeprecated(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     int x,
     int y,
-    std::string* error_msg)  {
+    Error* error)  {
   DictionaryValue dict;
   dict.SetString("command", "WebkitMouseDoubleClick");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("x", x);
   dict.SetInteger("y", y);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendWebKeyEventJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     const WebKeyEvent& key_event,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "SendWebkitKeyEvent");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("type", key_event.type);
   dict.SetInteger("nativeKeyCode", key_event.key_code);
   dict.SetInteger("windowsKeyCode", key_event.key_code);
@@ -529,34 +615,93 @@ bool SendWebKeyEventJSONRequest(
   dict.SetInteger("modifiers", key_event.modifiers);
   dict.SetBoolean("isSystemKey", false);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendNativeKeyEventJSONRequest(
     AutomationMessageSender* sender,
-    int browser_index,
-    int tab_index,
+    const WebViewLocator& locator,
     ui::KeyboardCode key_code,
     int modifiers,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "SendOSLevelKeyEventToTab");
-  dict.SetInteger("windex", browser_index);
-  dict.SetInteger("tab_index", tab_index);
+  locator.UpdateDictionary(&dict, "auto_id");
   dict.SetInteger("keyCode", key_code);
   dict.SetInteger("modifiers", modifiers);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendWebMouseEventJSONRequest(
+    AutomationMessageSender* sender,
+    const WebViewLocator& locator,
+    const WebMouseEvent& mouse_event,
+    automation::Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "ProcessWebMouseEvent");
+  locator.UpdateDictionary(&dict, "auto_id");
+  dict.SetInteger("type", mouse_event.type);
+  dict.SetInteger("button", mouse_event.button);
+  dict.SetInteger("x", mouse_event.x);
+  dict.SetInteger("y", mouse_event.y);
+  dict.SetInteger("click_count", mouse_event.click_count);
+  dict.SetInteger("modifiers", mouse_event.modifiers);
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendDragAndDropFilePathsJSONRequest(
+    AutomationMessageSender* sender,
+    const WebViewLocator& locator,
+    int x,
+    int y,
+    const std::vector<FilePath::StringType>& paths,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "DragAndDropFilePaths");
+  locator.UpdateDictionary(&dict, "auto_id");
+  dict.SetInteger("x", x);
+  dict.SetInteger("y", y);
+
+  ListValue* list_value = new ListValue();
+  for (size_t path_index = 0; path_index < paths.size(); ++path_index) {
+    list_value->Append(Value::CreateStringValue(paths[path_index]));
+  }
+  dict.Set("paths", list_value);
+
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendSetViewBoundsJSONRequest(
+    AutomationMessageSender* sender,
+    const WebViewId& id,
+    int x,
+    int y,
+    int width,
+    int height,
+    automation::Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "SetViewBounds");
+  id.UpdateDictionary(&dict, "auto_id");
+  dict.SetInteger("bounds.x", x);
+  dict.SetInteger("bounds.y", y);
+  dict.SetInteger("bounds.width", width);
+  dict.SetInteger("bounds.height", height);
+
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendGetAppModalDialogMessageJSONRequest(
     AutomationMessageSender* sender,
     std::string* message,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GetAppModalDialogMessage");
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   return reply_dict.GetString("message", message);
 }
@@ -564,43 +709,182 @@ bool SendGetAppModalDialogMessageJSONRequest(
 bool SendAcceptOrDismissAppModalDialogJSONRequest(
     AutomationMessageSender* sender,
     bool accept,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "AcceptOrDismissAppModalDialog");
   dict.SetBoolean("accept", accept);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendAcceptPromptAppModalDialogJSONRequest(
     AutomationMessageSender* sender,
     const std::string& prompt_text,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "AcceptOrDismissAppModalDialog");
   dict.SetBoolean("accept", true);
   dict.SetString("prompt_text", prompt_text);
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
-bool SendWaitForAllTabsToStopLoadingJSONRequest(
+bool SendWaitForAllViewsToStopLoadingJSONRequest(
     AutomationMessageSender* sender,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "WaitForAllTabsToStopLoading");
   DictionaryValue reply_dict;
-  return SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg);
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }
 
 bool SendGetChromeDriverAutomationVersion(
     AutomationMessageSender* sender,
     int* version,
-    std::string* error_msg) {
+    Error* error) {
   DictionaryValue dict;
   dict.SetString("command", "GetChromeDriverAutomationVersion");
   DictionaryValue reply_dict;
-  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error_msg))
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
     return false;
   return reply_dict.GetInteger("version", version);
+}
+
+bool SendInstallExtensionJSONRequest(
+    AutomationMessageSender* sender,
+    const FilePath& path,
+    bool with_ui,
+    std::string* extension_id,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "InstallExtension");
+  dict.SetString("path", path.value());
+  dict.SetBoolean("with_ui", with_ui);
+  DictionaryValue reply_dict;
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  if (!reply_dict.GetString("id", extension_id)) {
+    *error = Error("Missing or invalid 'id'");
+    return false;
+  }
+  return true;
+}
+
+bool SendGetExtensionsInfoJSONRequest(
+    AutomationMessageSender* sender,
+    ListValue* extensions_list,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "GetExtensionsInfo");
+  DictionaryValue reply_dict;
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  ListValue* extensions_list_swap;
+  if (!reply_dict.GetList("extensions", &extensions_list_swap)) {
+    *error = Error("Missing or invalid 'extensions'");
+    return false;
+  }
+  extensions_list->Swap(extensions_list_swap);
+  return true;
+}
+
+bool SendIsPageActionVisibleJSONRequest(
+    AutomationMessageSender* sender,
+    const WebViewId& tab_id,
+    const std::string& extension_id,
+    bool* is_visible,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "IsPageActionVisible");
+  tab_id.UpdateDictionary(&dict, "auto_id");
+  dict.SetString("extension_id", extension_id);
+  DictionaryValue reply_dict;
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  if (!reply_dict.GetBoolean("is_visible", is_visible)) {
+    *error = Error("Missing or invalid 'is_visible'");
+    return false;
+  }
+  return true;
+}
+
+bool SendSetExtensionStateJSONRequest(
+    AutomationMessageSender* sender,
+    const std::string& extension_id,
+    bool enable,
+    bool allow_in_incognito,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "SetExtensionStateById");
+  dict.SetString("id", extension_id);
+  dict.SetBoolean("enable", enable);
+  dict.SetBoolean("allow_in_incognito", allow_in_incognito);
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendClickExtensionButtonJSONRequest(
+    AutomationMessageSender* sender,
+    const std::string& extension_id,
+    bool browser_action,
+    Error* error) {
+  DictionaryValue dict;
+  if (browser_action)
+    dict.SetString("command", "TriggerBrowserActionById");
+  else
+    dict.SetString("command", "TriggerPageActionById");
+  dict.SetString("id", extension_id);
+  dict.SetInteger("windex", 0);
+  dict.SetInteger("tab_index", 0);
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendUninstallExtensionJSONRequest(
+    AutomationMessageSender* sender,
+    const std::string& extension_id,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "UninstallExtensionById");
+  dict.SetString("id", extension_id);
+  DictionaryValue reply_dict;
+  if (!SendAutomationJSONRequest(sender, dict, &reply_dict, error))
+    return false;
+  bool success;
+  if (!reply_dict.GetBoolean("success", &success)) {
+    *error = Error("Missing or invalid 'success'");
+    return false;
+  }
+  if (!success) {
+    *error = Error("Extension uninstall not permitted");
+    return false;
+  }
+  return true;
+}
+
+bool SendSetLocalStatePreferenceJSONRequest(
+    AutomationMessageSender* sender,
+    const std::string& pref,
+    base::Value* value,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "SetLocalStatePrefs");
+  dict.SetString("path", pref);
+  dict.Set("value", value);
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
+}
+
+bool SendSetPreferenceJSONRequest(
+    AutomationMessageSender* sender,
+    const std::string& pref,
+    base::Value* value,
+    Error* error) {
+  DictionaryValue dict;
+  dict.SetString("command", "SetPrefs");
+  dict.SetInteger("windex", 0);
+  dict.SetString("path", pref);
+  dict.Set("value", value);
+  DictionaryValue reply_dict;
+  return SendAutomationJSONRequest(sender, dict, &reply_dict, error);
 }

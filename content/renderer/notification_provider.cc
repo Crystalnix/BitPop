@@ -1,19 +1,17 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/renderer/notification_provider.h"
 
 #include "base/string_util.h"
-#include "base/task.h"
 #include "content/common/desktop_notification_messages.h"
 #include "content/common/view_messages.h"
-#include "content/renderer/render_thread.h"
-#include "content/renderer/render_view.h"
+#include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPermissionCallback.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebDocument;
@@ -24,8 +22,8 @@ using WebKit::WebSecurityOrigin;
 using WebKit::WebString;
 using WebKit::WebURL;
 
-NotificationProvider::NotificationProvider(RenderView* render_view)
-    : RenderViewObserver(render_view) {
+NotificationProvider::NotificationProvider(RenderViewImpl* render_view)
+    : content::RenderViewObserver(render_view) {
 }
 
 NotificationProvider::~NotificationProvider() {
@@ -58,11 +56,11 @@ void NotificationProvider::objectDestroyed(
 }
 
 WebNotificationPresenter::Permission NotificationProvider::checkPermission(
-    const WebURL& url) {
+    const WebSecurityOrigin& origin) {
   int permission;
   Send(new DesktopNotificationHostMsg_CheckPermission(
           routing_id(),
-          url,
+          GURL(origin.toString()),
           &permission));
   return static_cast<WebNotificationPresenter::Permission>(permission);
 }
@@ -71,7 +69,7 @@ void NotificationProvider::requestPermission(
     const WebSecurityOrigin& origin,
     WebNotificationPermissionCallback* callback) {
   // We only request permission in response to a user gesture.
-  if (!render_view()->webview()->mainFrame()->isProcessingUserGesture())
+      if (!render_view()->GetWebView()->mainFrame()->isProcessingUserGesture())
     return;
 
   int id = manager_.RegisterPermissionRequest(callback);
@@ -101,9 +99,9 @@ bool NotificationProvider::OnMessageReceived(const IPC::Message& message) {
 bool NotificationProvider::ShowHTML(const WebNotification& notification,
                                     int id) {
   DCHECK(notification.isHTML());
-  DesktopNotificationHostMsg_Show_Params params;
-  params.origin =
-      GURL(render_view()->webview()->mainFrame()->url()).GetOrigin();
+  content::ShowDesktopNotificationHostMsgParams params;
+  WebDocument document = render_view()->GetWebView()->mainFrame()->document();
+  params.origin = GURL(document.securityOrigin().toString());
   params.is_html = true;
   params.contents_url = notification.url();
   params.notification_id = id;
@@ -114,10 +112,10 @@ bool NotificationProvider::ShowHTML(const WebNotification& notification,
 bool NotificationProvider::ShowText(const WebNotification& notification,
                                     int id) {
   DCHECK(!notification.isHTML());
-  DesktopNotificationHostMsg_Show_Params params;
+  content::ShowDesktopNotificationHostMsgParams params;
   params.is_html = false;
-  params.origin = GURL(
-      render_view()->webview()->mainFrame()->url()).GetOrigin();
+  WebDocument document = render_view()->GetWebView()->mainFrame()->document();
+  params.origin = GURL(document.securityOrigin().toString());
   params.icon_url = notification.iconURL();
   params.title = notification.title();
   params.body = notification.body();

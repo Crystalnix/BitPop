@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,12 @@
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
 #include "ui/base/text/text_elider.h"
+
+using content::OpenURLParams;
+using content::Referrer;
+using content::UserMetricsAction;
 
 namespace {
 
@@ -28,18 +32,18 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 
 + (NSString*)menuTitleForNode:(const BookmarkNode*)node {
   NSFont* nsfont = [NSFont menuBarFontOfSize:0];  // 0 means "default"
-  gfx::Font font(base::SysNSStringToUTF16([nsfont fontName]),
+  gfx::Font font(base::SysNSStringToUTF8([nsfont fontName]),
                  static_cast<int>([nsfont pointSize]));
   string16 title = ui::ElideText(node->GetTitle(),
                                  font,
                                  kMaximumMenuPixelsWide,
-                                 false);
+                                 ui::ELIDE_AT_END);
   return base::SysUTF16ToNSString(title);
 }
 
 + (NSString*)tooltipForNode:(const BookmarkNode*)node {
   NSString* title = base::SysUTF16ToNSString(node->GetTitle());
-  std::string url_string = node->GetURL().possibly_invalid_spec();
+  std::string url_string = node->url().possibly_invalid_spec();
   NSString* url = [NSString stringWithUTF8String:url_string.c_str()];
   if ([title length] == 0)
     return url;
@@ -61,7 +65,8 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 }
 
 - (void)dealloc {
-  [[self menu] setDelegate:nil];
+  if ([[self menu] delegate] == self)
+    [[self menu] setDelegate:nil];
   [super dealloc];
 }
 
@@ -92,8 +97,10 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
     browser = Browser::Create(bridge_->GetProfile());
   WindowOpenDisposition disposition =
       event_utils::WindowOpenDispositionFromNSEvent([NSApp currentEvent]);
-  browser->OpenURL(node->GetURL(), GURL(), disposition,
-                   PageTransition::AUTO_BOOKMARK);
+  OpenURLParams params(
+      node->url(), Referrer(), disposition,
+      content::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+  browser->OpenURL(params);
 }
 
 // Open sites under BookmarkNode with the specified disposition.
@@ -115,15 +122,14 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
   bookmark_utils::OpenAll(NULL, browser->profile(), browser, node,
                           disposition);
 
-  const char* metrics_action = NULL;
   if (disposition == NEW_FOREGROUND_TAB) {
-    metrics_action = "OpenAllBookmarks";
+    content::RecordAction(UserMetricsAction("OpenAllBookmarks"));
   } else if (disposition == NEW_WINDOW) {
-    metrics_action = "OpenAllBookmarksNewWindow";
+    content::RecordAction(UserMetricsAction("OpenAllBookmarksNewWindow"));
   } else {
-    metrics_action = "OpenAllBookmarksIncognitoWindow";
+    content::RecordAction(
+        UserMetricsAction("OpenAllBookmarksIncognitoWindow"));
   }
-  UserMetrics::RecordAction(UserMetricsAction(metrics_action));
 }
 
 - (IBAction)openBookmarkMenuItem:(id)sender {
@@ -150,4 +156,3 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 }
 
 @end  // BookmarkMenuCocoaController
-

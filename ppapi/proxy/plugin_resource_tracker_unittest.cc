@@ -10,7 +10,7 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/ppapi_proxy_test.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 namespace {
@@ -37,11 +37,6 @@ class PluginResourceTrackerTest : public PluginProxyTest {
  public:
   PluginResourceTrackerTest() {}
   ~PluginResourceTrackerTest() {}
-
-  PluginResourceTracker& tracker() { return tracker_; }
-
- private:
-  PluginResourceTracker tracker_;
 };
 
 TEST_F(PluginResourceTrackerTest, PluginResourceForHostResource) {
@@ -51,24 +46,23 @@ TEST_F(PluginResourceTrackerTest, PluginResourceForHostResource) {
   serialized.SetHostResource(pp_instance(), host_resource);
 
   // When we haven't added an object, the return value should be 0.
-  EXPECT_EQ(0, tracker().PluginResourceForHostResource(serialized));
+  EXPECT_EQ(0, resource_tracker().PluginResourceForHostResource(serialized));
 
   EXPECT_EQ(0, TrackedMockResource::tracked_alive_count);
   TrackedMockResource* object = new TrackedMockResource(serialized);
   EXPECT_EQ(1, TrackedMockResource::tracked_alive_count);
-  PP_Resource plugin_resource =
-      tracker().AddResource(linked_ptr<PluginResource>(object));
+  PP_Resource plugin_resource = object->GetReference();
 
   // Now that the object has been added, the return value should be the plugin
   // resource ID we already got.
   EXPECT_EQ(plugin_resource,
-            tracker().PluginResourceForHostResource(serialized));
+            resource_tracker().PluginResourceForHostResource(serialized));
 
   // Releasing the resource should have freed it.
-  tracker().ReleaseResource(plugin_resource);
+  resource_tracker().ReleaseResource(plugin_resource);
   EXPECT_EQ(0, TrackedMockResource::tracked_alive_count);
-  EXPECT_EQ(0, tracker().PluginResourceForHostResource(serialized));
+  EXPECT_EQ(0, resource_tracker().PluginResourceForHostResource(serialized));
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

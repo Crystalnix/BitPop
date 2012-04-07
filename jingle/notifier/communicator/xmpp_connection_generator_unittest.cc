@@ -5,6 +5,7 @@
 #include "jingle/notifier/communicator/xmpp_connection_generator.h"
 
 #include "base/basictypes.h"
+#include "base/message_loop.h"
 #include "jingle/notifier/communicator/connection_options.h"
 #include "jingle/notifier/communicator/connection_settings.h"
 #include "net/base/host_port_pair.h"
@@ -65,6 +66,8 @@ TEST_F(XmppConnectionGeneratorTest, DnsFailure) {
 }
 
 TEST_F(XmppConnectionGeneratorTest, DnsFailureSynchronous) {
+  MessageLoop message_loop;
+
   EXPECT_CALL(delegate_, OnNewSettings(_)).Times(0);
   EXPECT_CALL(delegate_, OnExhaustedSettings(_, _)).Times(1);
 
@@ -90,6 +93,8 @@ TEST_F(XmppConnectionGeneratorTest, ConnectionFailure) {
 }
 
 TEST_F(XmppConnectionGeneratorTest, ConnectionFailureSynchronous) {
+  MessageLoop message_loop;
+
   EXPECT_CALL(delegate_, OnNewSettings(_)).
       Times(5).
       WillRepeatedly(

@@ -11,12 +11,14 @@
 #include "base/path_service.h"
 #include "base/values.h"
 #import "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/browser_test_helper.h"
-#import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_installed_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "third_party/ocmock/gtest_support.h"
+#import "third_party/ocmock/OCMock/OCMock.h"
 #include "webkit/glue/image_decoder.h"
 
 // ExtensionInstalledBubbleController with removePageActionPreview overridden
@@ -39,19 +41,14 @@
 
 namespace keys = extension_manifest_keys;
 
-class ExtensionInstalledBubbleControllerTest : public CocoaTest {
+class ExtensionInstalledBubbleControllerTest : public CocoaProfileTest {
 
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    browser_ = helper_.browser();
-    window_ = helper_.CreateBrowserWindow()->GetNativeHandle();
+    CocoaProfileTest::SetUp();
+    ASSERT_TRUE(browser());
+    window_ = CreateBrowserWindow()->GetNativeHandle();
     icon_ = LoadTestIcon();
-  }
-
-  virtual void TearDown() {
-    helper_.CloseBrowserWindow();
-    CocoaTest::TearDown();
   }
 
   // Load test icon from extension test directory.
@@ -104,14 +101,8 @@ class ExtensionInstalledBubbleControllerTest : public CocoaTest {
                              Extension::STRICT_ERROR_CHECKS, &error);
   }
 
-  // Allows us to create the window and browser for testing.
-  BrowserTestHelper helper_;
-
   // Required to initialize the extension installed bubble.
-  NSWindow* window_;  // weak, owned by BrowserTestHelper.
-
-  // Required to initialize the extension installed bubble.
-  Browser* browser_;  // weak, owned by BrowserTestHelper.
+  NSWindow* window_;  // weak, owned by CocoaProfileTest.
 
   // Skeleton extension to be tested; reinitialized for each test.
   scoped_refptr<Extension> extension_;
@@ -127,7 +118,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, PageActionTest) {
       [[ExtensionInstalledBubbleControllerForTest alloc]
           initWithParentWindow:window_
                      extension:extension_.get()
-                       browser:browser_
+                       browser:browser()
                           icon:icon_];
   EXPECT_TRUE(controller);
 
@@ -170,7 +161,7 @@ TEST_F(ExtensionInstalledBubbleControllerTest, BrowserActionTest) {
       [[ExtensionInstalledBubbleControllerForTest alloc]
           initWithParentWindow:window_
                      extension:extension_.get()
-                       browser:browser_
+                       browser:browser()
                           icon:icon_];
   EXPECT_TRUE(controller);
 
@@ -199,4 +190,38 @@ TEST_F(ExtensionInstalledBubbleControllerTest, BrowserActionTest) {
                 extension_installed_bubble::kInnerVerticalMargin);
 
   [controller close];
+}
+
+TEST_F(ExtensionInstalledBubbleControllerTest, ParentClose) {
+  extension_ = CreateExtension(extension_installed_bubble::kBrowserAction);
+  ExtensionInstalledBubbleControllerForTest* controller =
+      [[ExtensionInstalledBubbleControllerForTest alloc]
+          initWithParentWindow:window_
+                     extension:extension_.get()
+                       browser:browser()
+                          icon:icon_];
+  EXPECT_TRUE(controller);
+
+  // Bring up the window and disable close animation.
+  [controller showWindow:nil];
+  NSWindow* bubbleWindow = [controller window];
+  ASSERT_TRUE([bubbleWindow isKindOfClass:[InfoBubbleWindow class]]);
+  [static_cast<InfoBubbleWindow*>(bubbleWindow) setDelayOnClose:NO];
+
+  // Observe whether the bubble window closes.
+  NSString* notification = NSWindowWillCloseNotification;
+  id observer = [OCMockObject observerMock];
+  [[observer expect] notificationWithName:notification object:bubbleWindow];
+  [[NSNotificationCenter defaultCenter]
+    addMockObserver:observer name:notification object:bubbleWindow];
+
+  // The bubble window goes from visible to not-visible.
+  EXPECT_TRUE([bubbleWindow isVisible]);
+  [window_ close];
+  EXPECT_FALSE([bubbleWindow isVisible]);
+
+  [[NSNotificationCenter defaultCenter] removeObserver:observer];
+
+  // Check that the appropriate notification was received.
+  EXPECT_OCMOCK_VERIFY(observer);
 }

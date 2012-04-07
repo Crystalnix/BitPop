@@ -13,28 +13,16 @@
 #include "ui/gfx/gl/gl_surface_osmesa.h"
 #include "ui/gfx/gl/gl_surface_stub.h"
 
+#if defined(USE_AURA)
+#include "ui/gfx/gl/gl_surface_nsview.h"
+#endif
+
 namespace gfx {
 
-bool GLSurface::InitializeOneOff() {
-  static bool initialized = false;
-  if (initialized)
-    return true;
-
-  static const GLImplementation kAllowedGLImplementations[] = {
-    kGLImplementationDesktopGL,
-    kGLImplementationOSMesaGL
-  };
-
-  if (!InitializeRequestedGLBindings(
-           kAllowedGLImplementations,
-           kAllowedGLImplementations + arraysize(kAllowedGLImplementations),
-           kGLImplementationDesktopGL)) {
-    LOG(ERROR) << "InitializeRequestedGLBindings failed.";
-    return false;
-  }
-
+bool GLSurface::InitializeOneOffInternal() {
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
+    case kGLImplementationAppleGL:
       if (!GLSurfaceCGL::InitializeOneOff()) {
         LOG(ERROR) << "GLSurfaceCGL::InitializeOneOff failed.";
         return false;
@@ -43,27 +31,20 @@ bool GLSurface::InitializeOneOff() {
     default:
       break;
   }
-
-  initialized = true;
   return true;
 }
 
-// TODO(apatrick): support ViewGLSurface on mac.
-#if 0
 scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
+    bool software,
     gfx::PluginWindowHandle window) {
-  switch (GetGLImplementation()) {
-    case kGLImplementationOSMesaGL: {
-      scoped_refptr<GLSurface> surface(
-          new NativeViewGLSurfaceOSMesa(window));
-      if (!surface->Initialize())
-        return NULL;
+#if defined(USE_AURA)
+  if (software)
+    return NULL;
 
-      return surface;
-    }
-    case kGLImplementationDesktopGL: {
-      scoped_refptr<GLSurface> surface(new NativeViewGLSurfaceCGL(
-          window));
+  switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+    case kGLImplementationAppleGL: {
+      scoped_refptr<GLSurface> surface(new GLSurfaceNSView(window));
       if (!surface->Initialize())
         return NULL;
 
@@ -75,11 +56,17 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
       NOTREACHED();
       return NULL;
   }
-}
+#else
+  return CreateOffscreenGLSurface(software, gfx::Size(1,1));
 #endif
+}
 
 scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
+    bool software,
     const gfx::Size& size) {
+  if (software)
+    return NULL;
+
   switch (GetGLImplementation()) {
     case kGLImplementationOSMesaGL: {
       scoped_refptr<GLSurface> surface(new GLSurfaceOSMesa(OSMESA_RGBA,
@@ -89,8 +76,9 @@ scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
 
       return surface;
     }
-    case kGLImplementationDesktopGL: {
-      scoped_refptr<GLSurface> surface(new PbufferGLSurfaceCGL(size));
+    case kGLImplementationDesktopGL:
+    case kGLImplementationAppleGL: {
+      scoped_refptr<GLSurface> surface(new NoOpGLSurfaceCGL(size));
       if (!surface->Initialize())
         return NULL;
 

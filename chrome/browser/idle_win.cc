@@ -10,9 +10,11 @@
 static bool IsScreensaverRunning();
 static bool IsWorkstationLocked();
 
-IdleState CalculateIdleState(unsigned int idle_threshold) {
-  if (IsScreensaverRunning() || IsWorkstationLocked())
-    return IDLE_STATE_LOCKED;
+void CalculateIdleState(unsigned int idle_threshold, IdleCallback notify) {
+  if (CheckIdleStateIsLocked()) {
+    notify.Run(IDLE_STATE_LOCKED);
+    return;
+  }
 
   LASTINPUTINFO last_input_info = {0};
   last_input_info.cbSize = sizeof(LASTINPUTINFO);
@@ -36,8 +38,9 @@ IdleState CalculateIdleState(unsigned int idle_threshold) {
   }
 
   if (current_idle_time >= idle_threshold)
-    return IDLE_STATE_IDLE;
-  return IDLE_STATE_ACTIVE;
+    notify.Run(IDLE_STATE_IDLE);
+  else
+    notify.Run(IDLE_STATE_ACTIVE);
 }
 
 bool IsScreensaverRunning() {
@@ -63,4 +66,8 @@ bool IsWorkstationLocked() {
     ::CloseDesktop(input_desk);
   }
   return is_locked;
+}
+
+bool CheckIdleStateIsLocked() {
+  return IsWorkstationLocked() || IsScreensaverRunning();
 }

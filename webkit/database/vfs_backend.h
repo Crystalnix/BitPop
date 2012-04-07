@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,11 +15,6 @@ namespace webkit_database {
 
 class VfsBackend {
  public:
-  static void GetFileHandleForProcess(base::ProcessHandle process_handle,
-                                      const base::PlatformFile& file_handle,
-                                      base::PlatformFile* target_handle,
-                                      bool close_source_handle);
-
   static void OpenFile(const FilePath& file_path,
                        int desired_flags,
                        base::PlatformFile* file_handle);
@@ -35,8 +30,6 @@ class VfsBackend {
   static int64 GetFileSize(const FilePath& file_path);
 
   // Used to make decisions in the DatabaseDispatcherHost.
-  static bool FileTypeIsMainDB(int desired_flags);
-  static bool FileTypeIsJournal(int desired_flags);
   static bool OpenTypeIsReadWrite(int desired_flags);
 
  private:

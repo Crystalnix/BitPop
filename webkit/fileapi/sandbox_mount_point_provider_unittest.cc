@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,11 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
@@ -19,41 +20,40 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/fileapi/file_system_context.h"
+#include "webkit/fileapi/file_system_mount_point_provider.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/mock_file_system_options.h"
+#include "webkit/quota/mock_special_storage_policy.h"
 
 namespace fileapi {
-
-class MockFileSystemPathManager : public FileSystemPathManager {
- public:
-  MockFileSystemPathManager(const FilePath& profile_path)
-      : FileSystemPathManager(base::MessageLoopProxy::CreateForCurrentThread(),
-                              profile_path, NULL, false, true) {}
-};
 
 class SandboxMountPointProviderOriginEnumeratorTest : public testing::Test {
  public:
   void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-    path_manager_.reset(new MockFileSystemPathManager(data_dir_.path()));
+    sandbox_provider_.reset(
+        new SandboxMountPointProvider(
+          base::MessageLoopProxy::current(),
+          data_dir_.path(),
+          CreateAllowFileAccessOptions()));
   }
 
   SandboxMountPointProvider::OriginEnumerator* CreateEnumerator() const {
-    return path_manager_->sandbox_provider()->CreateOriginEnumerator();
+    return sandbox_provider_->CreateOriginEnumerator();
   }
 
  protected:
   void CreateOriginTypeDirectory(const GURL& origin,
                                  fileapi::FileSystemType type) {
-    FilePath target = path_manager_->sandbox_provider()->
+    FilePath target = sandbox_provider_->
         GetBaseDirectoryForOriginAndType(origin, type, true);
     ASSERT_TRUE(!target.empty());
     ASSERT_TRUE(file_util::DirectoryExists(target));
   }
 
   ScopedTempDir data_dir_;
-  scoped_ptr<FileSystemPathManager> path_manager_;
+  scoped_ptr<SandboxMountPointProvider> sandbox_provider_;
 };
 
 TEST_F(SandboxMountPointProviderOriginEnumeratorTest, Empty) {
@@ -127,71 +127,44 @@ const MigrationTestCaseRecord kMigrationTestRecords[] = {
   { GURL("file:///"), false, true },
 };
 
-class TestSpecialStoragePolicy : public quota::SpecialStoragePolicy {
- public:
-  TestSpecialStoragePolicy(bool unlimited_quota)
-      : unlimited_quota_(unlimited_quota) {}
-
-  virtual bool IsStorageProtected(const GURL& origin) {
-    return false;
-  }
-
-  virtual bool IsStorageUnlimited(const GURL& origin) {
-    return unlimited_quota_;
-  }
-
-  virtual bool IsFileHandler(const std::string& extension_id) {
-    return true;
-  }
-
- private:
-  bool unlimited_quota_;
-};
-
 }  // anonymous namespace
 
 class SandboxMountPointProviderMigrationTest : public testing::Test {
  public:
   SandboxMountPointProviderMigrationTest() :
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   }
 
   void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-    path_manager_ = new MockFileSystemPathManager(data_dir_.path());
-
+    scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy =
+        new quota::MockSpecialStoragePolicy;
+    special_storage_policy->SetAllUnlimited(true);
     file_system_context_ = new FileSystemContext(
-        base::MessageLoopProxy::CreateForCurrentThread(),
-        base::MessageLoopProxy::CreateForCurrentThread(),
-        new TestSpecialStoragePolicy(true /* unlimited quota */),
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current(),
+        special_storage_policy,
         NULL,
         data_dir_.path(),
-        false,  // incognito
-        true,  // allow_file_access_from_files
-        true,  // unlimited quota
-        path_manager_);
-  }
-
-  FileSystemPathManager* path_manager() {
-    return path_manager_;
+        CreateAllowFileAccessOptions());
   }
 
   SandboxMountPointProvider* sandbox_provider() {
-    return path_manager()->sandbox_provider();
+    return file_system_context_->sandbox_provider();
   }
 
   FileSystemFileUtil* file_util() {
-    return sandbox_provider()->GetFileSystemFileUtil();
+    return sandbox_provider()->GetFileUtil();
   }
 
-  void OnGetRootPath(bool success, const FilePath& unused,
-                     const std::string& unused_also) {
-    EXPECT_FALSE(success);  // We told it not to create.
+  void OnValidate(base::PlatformFileError result) {
+    EXPECT_NE(base::PLATFORM_FILE_OK, result);  // We told it not to create.
   }
 
-  FileSystemPathManager::GetRootPathCallback* GetRootPathCallback() {
-    return callback_factory_.NewCallback(
-        &SandboxMountPointProviderMigrationTest::OnGetRootPath);
+  FileSystemMountPointProvider::ValidateFileSystemCallback
+  GetValidateCallback() {
+    return base::Bind(&SandboxMountPointProviderMigrationTest::OnValidate,
+                      weak_factory_.GetWeakPtr());
   }
 
   void EnsureFileExists(const FilePath& path) {
@@ -235,7 +208,7 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
   std::string URLAndTypeToSeedString(const GURL& origin_url,
     fileapi::FileSystemType type) {
     return GetOriginIdentifierFromURL(origin_url) +
-        FileSystemPathManager::GetFileSystemTypeString(type);
+        GetFileSystemTypeString(type);
   }
 
   void ValidateDataInNewFileSystem(
@@ -304,25 +277,23 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
     std::set<GURL> origins;
     std::string host = "the host with the most";
     int64 delta = 0;
-    scoped_ptr<FileSystemPathManager::GetRootPathCallback> callback;
 
     // We want to make sure that all the public methods of
     // SandboxMountPointProvider which might access the filesystem will cause a
     // migration if one is needed.
     switch (method) {
     case 0:
-      callback.reset(GetRootPathCallback());
-      sandbox_provider()->ValidateFileSystemRootAndGetURL(
-          origin_url, type, create, callback.release());
+      sandbox_provider()->ValidateFileSystemRoot(
+          origin_url, type, create, GetValidateCallback());
       MessageLoop::current()->RunAllPending();
       break;
     case 1:
-      sandbox_provider()->ValidateFileSystemRootAndGetPathOnFileThread(
+      sandbox_provider()->GetFileSystemRootPathOnFileThread(
           origin_url, type, FilePath(), create);
       break;
     case 2:
-      sandbox_provider()->GetBaseDirectoryForOrigin(
-          origin_url, create);
+      sandbox_provider()->GetBaseDirectoryForOriginAndType(
+          origin_url, type, create);
       break;
     case 3:
       sandbox_provider()->DeleteOriginDataOnFileThread(
@@ -376,10 +347,8 @@ class SandboxMountPointProviderMigrationTest : public testing::Test {
 
  protected:
   ScopedTempDir data_dir_;
-  FileSystemPathManager* path_manager_;
   scoped_refptr<FileSystemContext> file_system_context_;
-  base::ScopedCallbackFactory<SandboxMountPointProviderMigrationTest>
-      callback_factory_;
+  base::WeakPtrFactory<SandboxMountPointProviderMigrationTest> weak_factory_;
 };
 
 TEST_F(SandboxMountPointProviderMigrationTest, TestMigrateViaMethod0) {

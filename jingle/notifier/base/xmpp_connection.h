@@ -9,6 +9,7 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -16,16 +17,12 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "talk/base/sigslot.h"
 #include "talk/xmpp/xmppengine.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
 
 namespace buzz {
 class PreXmppAuth;
 class XmlElement;
 class XmppClientSettings;
-}  // namespace
-
-namespace talk_base {
-class Task;
+class XmppTaskParentInterface;
 }  // namespace
 
 namespace notifier {
@@ -42,7 +39,8 @@ class XmppConnection : public sigslot::has_slots<> {
     // Called (at most once) when a connection has been established.
     // |base_task| can be used by the client as the parent of any Task
     // it creates as long as it is valid (i.e., non-NULL).
-    virtual void OnConnect(base::WeakPtr<talk_base::Task> base_task) = 0;
+    virtual void OnConnect(
+        base::WeakPtr<buzz::XmppTaskParentInterface> base_task) = 0;
 
     // Called if an error has occurred (either before or after a call
     // to OnConnect()).  No calls to the delegate will be made after
@@ -93,6 +91,7 @@ class XmppConnection : public sigslot::has_slots<> {
   FRIEND_TEST(XmppConnectionTest, Connect);
   FRIEND_TEST(XmppConnectionTest, MultipleConnect);
   FRIEND_TEST(XmppConnectionTest, ConnectThenError);
+  FRIEND_TEST(XmppConnectionTest, TasksDontRunAfterXmppConnectionDestructor);
 
   DISALLOW_COPY_AND_ASSIGN(XmppConnection);
 };

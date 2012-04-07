@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include <string>
 
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
 
 class GURL;
 
@@ -30,13 +30,8 @@ class AuthResponseHandler {
   // the next step, sets |catcher| to get called back when that fetcher is done.
   // Starts the fetch and returns the fetcher, so the the caller can handle
   // the object lifetime.
-  virtual URLFetcher* Handle(const std::string& to_process,
-                             URLFetcher::Delegate* catcher) = 0;
-
-  // The URLs for different calls in the Google Accounts programmatic login API.
-  static const char kClientLoginUrl[];
-  static const char kIssueAuthTokenUrl[];
-  static const char kTokenAuthUrl[];
+  virtual content::URLFetcher* Handle(const std::string& to_process,
+                                      content::URLFetcherDelegate* catcher) = 0;
 };
 
 }  // namespace chromeos

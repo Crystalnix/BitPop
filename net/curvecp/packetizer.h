@@ -7,7 +7,7 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/curvecp/connection_key.h"
 
@@ -34,7 +34,7 @@ class Packetizer {
   virtual int SendMessage(ConnectionKey key,
                           const char* data,
                           size_t length,
-                          CompletionCallback* callback) = 0;
+                          const CompletionCallback& callback) = 0;
 
   // Close an existing connection.
   virtual void Close(ConnectionKey key) = 0;

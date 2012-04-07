@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -22,14 +22,16 @@
       'difference_estimator.h',
       'disassembler.cc',
       'disassembler.h',
+      'disassembler_elf_32_x86.cc',
+      'disassembler_elf_32_x86.h',
+      'disassembler_win32_x86.cc',
+      'disassembler_win32_x86.h',
       'encoded_program.cc',
       'encoded_program.h',
       'ensemble.cc',
       'ensemble.h',
       'ensemble_apply.cc',
       'ensemble_create.cc',
-      'image_info.cc',
-      'image_info.h',
       'memory_allocator.cc',
       'memory_allocator.h',
       'region.h',
@@ -37,8 +39,10 @@
       'simple_delta.h',
       'streams.cc',
       'streams.h',
-      'win32_x86_generator.h',
-      'win32_x86_patcher.h',
+      'types_elf.h',
+      'types_win_pe.h',
+      'patch_generator_x86_32.h',
+      'patcher_x86_32.h',
     ],
   },
   'targets': [
@@ -49,7 +53,6 @@
         '../base/base.gyp:base',
         '../third_party/lzma_sdk/lzma_sdk.gyp:lzma_sdk',
       ],
-      'msvs_guid': '9A72A362-E617-4205-B9F2-43C6FB280FA1',
       'sources': [
         '<@(courgette_lib_sources)'
       ],
@@ -57,7 +60,6 @@
     {
       'target_name': 'courgette',
       'type': 'executable',
-      'msvs_guid': '4EA8CE12-9C6F-45E5-9D08-720383FE3685',
       'sources': [
         'courgette_tool.cc',
       ],
@@ -74,7 +76,6 @@
     {
       'target_name': 'courgette_minimal_tool',
       'type': 'executable',
-      'msvs_guid': 'EB79415F-2F17-4BDC-AADD-4CA4C2D21B73',
       'sources': [
         'courgette_minimal_tool.cc',
       ],
@@ -86,16 +87,20 @@
     {
       'target_name': 'courgette_unittests',
       'type': 'executable',
-      'msvs_guid': '24309F1A-4035-46F9-A3D8-F47DC4BCC2B8',
       'sources': [
         'adjustment_method_unittest.cc',
         'bsdiff_memory_unittest.cc',
+        'base_test_unittest.cc',
+        'base_test_unittest.h',
         'difference_estimator_unittest.cc',
+        'disassembler_elf_32_x86_unittest.cc',
+        'disassembler_win32_x86_unittest.cc',
         'encoded_program_unittest.cc',
         'encode_decode_unittest.cc',
-        'image_info_unittest.cc',
+        'ensemble_unittest.cc',
         'run_all_unittests.cc',
         'streams_unittest.cc',
+        'versioning_unittest.cc',
         'third_party/paged_array_unittest.cc'
       ],
       'dependencies': [
@@ -120,8 +125,9 @@
     {
       'target_name': 'courgette_fuzz',
       'type': 'executable',
-      'msvs_guid': '57C27529-8CA9-4FC3-9C02-DA05B172F785',
       'sources': [
+        'base_test_unittest.cc',
+        'base_test_unittest.h',
         'encoded_program_fuzz_unittest.cc',
        ],
       'dependencies': [
@@ -183,9 +189,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

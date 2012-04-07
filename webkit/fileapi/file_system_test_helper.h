@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,6 @@ class FileSystemContext;
 class FileSystemFileUtil;
 class FileSystemOperation;
 class FileSystemOperationContext;
-class FileSystemPathManager;
 
 // Filesystem test helper class that encapsulates test environment for
 // a given {origin, type} pair.
@@ -43,11 +42,10 @@ class FileSystemTestOriginHelper {
   // If you want to use more than one FileSystemTestOriginHelper in a single
   // base directory, they have to share a context, so that they don't have
   // multiple databases fighting over the lock to the origin directory [deep
-  // down inside ObfuscatedFileSystemFileUtil].
+  // down inside ObfuscatedFileUtil].
   void SetUp(FileSystemContext* file_system_context,
-      FileSystemFileUtil* file_util);
+             FileSystemFileUtil* file_util);
   void SetUp(const FilePath& base_dir,
-             bool incognito_mode,
              bool unlimited_quota,
              quota::QuotaManagerProxy* quota_manager_proxy,
              FileSystemFileUtil* file_util);
@@ -60,6 +58,9 @@ class FileSystemTestOriginHelper {
   FilePath GetUsageCachePath() const;
 
   int64 GetCachedOriginUsage() const;
+  bool RevokeUsageCache() const;
+
+  // This doesn't work with OFSFU.
   int64 ComputeCurrentOriginUsage() const;
 
   FileSystemOperation* NewOperation(

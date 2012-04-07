@@ -6,7 +6,8 @@
 
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/omnibox/location_bar_util.h"
 #include "chrome/browser/ui/views/location_bar/keyword_hint_view.h"
@@ -55,20 +56,21 @@ void SelectedKeywordView::SetKeyword(const string16& keyword) {
   if (keyword.empty())
     return;
   DCHECK(profile_);
-  if (!profile_->GetTemplateURLModel())
+  TemplateURLService* model =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!model)
     return;
 
   bool is_extension_keyword;
-  const string16 short_name = profile_->GetTemplateURLModel()->
-      GetKeywordShortName(keyword, &is_extension_keyword);
+  const string16 short_name = model->GetKeywordShortName(keyword,
+                                                         &is_extension_keyword);
   int message_id = is_extension_keyword ?
       IDS_OMNIBOX_EXTENSION_KEYWORD_TEXT : IDS_OMNIBOX_KEYWORD_TEXT;
-  full_label_.SetText(UTF16ToWide(
-      l10n_util::GetStringFUTF16(message_id, short_name)));
+  full_label_.SetText(
+      l10n_util::GetStringFUTF16(message_id, short_name));
   const std::wstring min_string(
       location_bar_util::CalculateMinString(UTF16ToWide(short_name)));
   partial_label_.SetText(min_string.empty() ?
       full_label_.GetText() :
-      UTF16ToWide(l10n_util::GetStringFUTF16(message_id,
-                                             WideToUTF16(min_string))));
+      l10n_util::GetStringFUTF16(message_id, WideToUTF16(min_string)));
 }

@@ -1,9 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import os
+import subprocess
 
 import pyauto_functional  # Must be imported before pyauto
 import pyauto
@@ -14,11 +15,13 @@ class ChromeosLogin(pyauto.PyUITest):
 
   assert os.geteuid() == 0, 'Need to run this test as root'
 
-  def tearDown(self):
-    # All test will start with logging in, we need to reset to being logged out
-    if self.GetLoginInfo()['is_logged_in']:
-      self.Logout()
-    pyauto.PyUITest.tearDown(self)
+  def setUp(self):
+    # We want a clean session_manager instance for every run,
+    # so restart session_manager now.
+    assert self.WaitForSessionManagerRestart(
+        lambda: subprocess.call(['pkill', 'session_manager'])), \
+        'Timed out waiting for session_manager to start.'
+    pyauto.PyUITest.setUp(self)
 
   def _ValidCredentials(self, account_type='test_google_account'):
     """Obtains a valid username and password from a data file.
@@ -26,10 +29,7 @@ class ChromeosLogin(pyauto.PyUITest):
     Returns:
       A dictionary with the keys 'username' and 'password'
     """
-    credentials_file = os.path.join(pyauto.PyUITest.DataDir(),
-                                   'pyauto_private', 'private_tests_info.txt')
-    assert os.path.exists(credentials_file), 'Credentials file does not exist.'
-    return pyauto.PyUITest.EvalDataFrom(credentials_file)[account_type]
+    return self.GetPrivateInfo()[account_type]
 
   def testGoodLogin(self):
     """Test that login is successful with valid credentials."""
@@ -108,16 +108,6 @@ class ChromeosLogin(pyauto.PyUITest):
     self.Login(credentials['username'], credentials['password'])
     login_info = self.GetLoginInfo()
     self.assertTrue(login_info['is_logged_in'], msg='Login failed.')
-
-  def testNoLoginForNonTransitionedDomainAccount(self):
-    """Test that login is successful with valid credentials for a domain."""
-    credentials = \
-      self._ValidCredentials(account_type='test_domain_account_non_transistion')
-    self.Login(credentials['username'], credentials['password'])
-    login_info = self.GetLoginInfo()
-    self.assertFalse(login_info['is_logged_in'], msg='Login succeeded for a '
-                     'non-transistioned account, this account should have not '
-                     'been able to login.')
 
   def testCachedCredentials(self):
     """Test that we can login without connectivity if we have so before."""

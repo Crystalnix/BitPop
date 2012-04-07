@@ -18,7 +18,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/thumbnail_score.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -123,6 +123,7 @@ TEST_F(ThumbnailDatabaseTest, GetFaviconAfterMigrationToTopSites) {
   base::Time time = base::Time::Now();
   db.SetFavicon(id, favicon, time);
   EXPECT_TRUE(db.RenameAndDropThumbnails(file_name_, new_file_name_));
+  EXPECT_TRUE(db.IsLatestVersion());
 
   base::Time time_out;
   std::vector<unsigned char> favicon_out;
@@ -286,6 +287,34 @@ TEST_F(ThumbnailDatabaseTest, UpgradeToVersion4) {
   EXPECT_EQ(id, icon_mapping.icon_id);
 }
 
+TEST_F(ThumbnailDatabaseTest, UpgradeToVersion5) {
+  ThumbnailDatabase db;
+  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_, NULL, NULL));
+  db.BeginTransaction();
+
+  const char* name = "favicons";
+  std::string sql;
+  sql.append("DROP TABLE IF EXISTS ");
+  sql.append(name);
+  EXPECT_TRUE(db.db_.Execute(sql.c_str()));
+
+  sql.resize(0);
+  sql.append("CREATE TABLE ");
+  sql.append(name);
+  sql.append("("
+             "id INTEGER PRIMARY KEY,"
+             "url LONGVARCHAR NOT NULL,"
+             "last_updated INTEGER DEFAULT 0,"
+             "image_data BLOB,"
+             "icon_type INTEGER DEFAULT 1)");
+  ASSERT_TRUE(db.db_.Execute(sql.c_str()));
+
+  ASSERT_TRUE(db.UpgradeToVersion5());
+
+  sql = "SELECT sizes FROM favicons";
+  EXPECT_TRUE(db.db_.Execute(sql.c_str()));
+}
+
 TEST_F(ThumbnailDatabaseTest, TemporayIconMapping) {
   ThumbnailDatabase db;
 
@@ -403,6 +432,68 @@ TEST_F(ThumbnailDatabaseTest, HasMappingFor) {
   EXPECT_FALSE(db.HasMappingFor(id1));
   EXPECT_FALSE(db.HasMappingFor(id2));
   EXPECT_FALSE(db.HasMappingFor(id3));
+}
+
+TEST_F(ThumbnailDatabaseTest, CloneIconMapping) {
+  ThumbnailDatabase db;
+  ASSERT_EQ(sql::INIT_OK, db.Init(file_name_, NULL, NULL));
+  db.BeginTransaction();
+
+  std::vector<unsigned char> data(blob1, blob1 + sizeof(blob1));
+  scoped_refptr<RefCountedBytes> favicon(new RefCountedBytes(data));
+
+  // Add a favicon which will have icon_mappings
+  FaviconID id1 = db.AddFavicon(GURL("http://google.com"), FAVICON);
+  EXPECT_NE(0, id1);
+  base::Time time = base::Time::Now();
+  db.SetFavicon(id1, favicon, time);
+
+  // Add another type of favicon
+  FaviconID id2 = db.AddFavicon(GURL("http://www.google.com/icon"), TOUCH_ICON);
+  EXPECT_NE(0, id2);
+  time = base::Time::Now();
+  db.SetFavicon(id2, favicon, time);
+
+  // Add 3rd favicon
+  FaviconID id3 = db.AddFavicon(GURL("http://www.google.com/icon"), TOUCH_ICON);
+  EXPECT_NE(0, id3);
+  time = base::Time::Now();
+  db.SetFavicon(id3, favicon, time);
+
+  GURL page1_url("http://page1.com");
+  EXPECT_TRUE(db.AddIconMapping(page1_url, id1));
+  EXPECT_TRUE(db.AddIconMapping(page1_url, id2));
+
+  GURL page2_url("http://page2.com");
+  EXPECT_TRUE(db.AddIconMapping(page2_url, id3));
+
+  // Test we do nothing with existing mappings.
+  std::vector<IconMapping> icon_mapping;
+  EXPECT_TRUE(db.GetIconMappingsForPageURL(page2_url, &icon_mapping));
+  ASSERT_EQ(1U, icon_mapping.size());
+
+  EXPECT_TRUE(db.CloneIconMapping(page1_url, page2_url));
+
+  icon_mapping.clear();
+  EXPECT_TRUE(db.GetIconMappingsForPageURL(page2_url, &icon_mapping));
+  ASSERT_EQ(1U, icon_mapping.size());
+  EXPECT_EQ(page2_url, icon_mapping[0].page_url);
+  EXPECT_EQ(id3, icon_mapping[0].icon_id);
+
+  // Test we clone if the new page has no mappings.
+  GURL page3_url("http://page3.com");
+  EXPECT_TRUE(db.CloneIconMapping(page1_url, page3_url));
+
+  icon_mapping.clear();
+  EXPECT_TRUE(db.GetIconMappingsForPageURL(page3_url, &icon_mapping));
+
+  ASSERT_EQ(2U, icon_mapping.size());
+  if (icon_mapping[0].icon_id == id2)
+    std::swap(icon_mapping[0], icon_mapping[1]);
+  EXPECT_EQ(page3_url, icon_mapping[0].page_url);
+  EXPECT_EQ(id1, icon_mapping[0].icon_id);
+  EXPECT_EQ(page3_url, icon_mapping[1].page_url);
+  EXPECT_EQ(id2, icon_mapping[1].icon_id);
 }
 
 TEST_F(IconMappingMigrationTest, TestIconMappingMigration) {

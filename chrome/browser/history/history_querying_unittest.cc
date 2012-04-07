@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -76,8 +77,10 @@ class HistoryQueryTest : public testing::Test {
   void QueryHistory(const std::string& text_query,
                     const QueryOptions& options,
                     QueryResults* results) {
-    history_->QueryHistory(UTF8ToUTF16(text_query), options, &consumer_,
-        NewCallback(this, &HistoryQueryTest::QueryHistoryComplete));
+    history_->QueryHistory(
+        UTF8ToUTF16(text_query), options, &consumer_,
+        base::Bind(&HistoryQueryTest::QueryHistoryComplete,
+                   base::Unretained(this)));
     MessageLoop::current()->Run();  // Will go until ...Complete calls Quit.
     results->Swap(&last_query_results_);
   }
@@ -109,7 +112,7 @@ class HistoryQueryTest : public testing::Test {
       GURL url(test_entries[i].url);
 
       history_->AddPage(url, test_entries[i].time, id_scope, page_id, GURL(),
-                        PageTransition::LINK, history::RedirectList(),
+                        content::PAGE_TRANSITION_LINK, history::RedirectList(),
                         history::SOURCE_BROWSED, false);
       history_->SetPageTitle(url, UTF8ToUTF16(test_entries[i].title));
       history_->SetPageContents(url, UTF8ToUTF16(test_entries[i].body));
@@ -118,7 +121,7 @@ class HistoryQueryTest : public testing::Test {
 
   virtual void TearDown() {
     if (history_.get()) {
-      history_->SetOnBackendDestroyTask(new MessageLoop::QuitTask);
+      history_->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
       history_->Cleanup();
       history_ = NULL;
       MessageLoop::current()->Run();  // Wait for the other thread.

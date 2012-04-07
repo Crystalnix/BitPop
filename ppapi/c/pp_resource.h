@@ -1,7 +1,10 @@
-/* Copyright (c) 2010 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From pp_resource.idl modified Sat Jul 16 16:50:26 2011. */
+
 #ifndef PPAPI_C_PP_RESOURCE_H_
 #define PPAPI_C_PP_RESOURCE_H_
 
@@ -10,15 +13,15 @@
 
 /**
  * @file
- * This file defines the PP_Resource type which represents data associated with
- * the module.
+ * This file defines the <code>PP_Resource</code> type which represents data
+ * associated with the module.
  */
+
 
 /**
  * @addtogroup Typedefs
  * @{
  */
-
 /**
  * This typdef represents an opaque handle assigned by the browser to the
  * resource. The handle is guaranteed never to be 0 for a valid resource, so a
@@ -29,9 +32,10 @@
  * the DOM, a resource has no meaning or visibility outside of the module
  * interface.
  *
- * Resources are reference counted. Use AddRefResource and ReleaseResource in
- * ppb_core.h to manage the reference count of a resource. The data will be
- * automatically destroyed when the internal reference count reaches 0.
+ * Resources are reference counted. Use <code>AddRefResource()</code>
+ * and <code>ReleaseResource()</code> in <code>ppb_core.h</code> to manage the
+ * reference count of a resource. The data will be automatically destroyed when
+ * the internal reference count reaches 0.
  */
 typedef int32_t PP_Resource;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_Resource, 4);

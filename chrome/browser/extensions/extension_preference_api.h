@@ -10,18 +10,22 @@
 
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "content/common/notification_observer.h"
+#include "content/public/browser/notification_observer.h"
 
-class ExtensionPreferenceEventRouter : public NotificationObserver {
+namespace base {
+class Value;
+}
+
+class ExtensionPreferenceEventRouter : public content::NotificationObserver {
  public:
   explicit ExtensionPreferenceEventRouter(Profile* profile);
   virtual ~ExtensionPreferenceEventRouter();
 
  private:
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   void OnPrefChanged(PrefService* pref_service, const std::string& pref_key);
 
@@ -39,8 +43,6 @@ class ExtensionPreferenceEventRouter : public NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(ExtensionPreferenceEventRouter);
 };
 
-class Value;
-
 class PrefTransformerInterface {
  public:
   virtual ~PrefTransformerInterface() {}
@@ -51,35 +53,37 @@ class PrefTransformerInterface {
   // |error| and returns NULL otherwise. |bad_message| is passed to simulate
   // the behavior of EXTENSION_FUNCTION_VALIDATE. It is never NULL.
   // The ownership of the returned value is passed to the caller.
-  virtual Value* ExtensionToBrowserPref(const Value* extension_pref,
-                                        std::string* error,
-                                        bool* bad_message) = 0;
+  virtual base::Value* ExtensionToBrowserPref(
+      const base::Value* extension_pref,
+      std::string* error,
+      bool* bad_message) = 0;
 
   // Converts the representation of the preference as stored in the browser
   // into a representation that is used by the extension.
   // Returns the extension representation in case of success or NULL otherwise.
   // The ownership of the returned value is passed to the caller.
-  virtual Value* BrowserToExtensionPref(const Value* browser_pref) = 0;
+  virtual base::Value* BrowserToExtensionPref(
+      const base::Value* browser_pref) = 0;
 };
 
 class GetPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~GetPreferenceFunction();
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.get")
 };
 
 class SetPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~SetPreferenceFunction();
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.set")
 };
 
 class ClearPreferenceFunction : public SyncExtensionFunction {
  public:
   virtual ~ClearPreferenceFunction();
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION_NAME("types.ChromeSetting.clear")
 };
 

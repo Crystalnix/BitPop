@@ -1,14 +1,17 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "gpu/demos/framework/window.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
-#include "gpu/command_buffer/service/command_buffer_service.h"
-#include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/client/transfer_buffer.h"
+#include "gpu/command_buffer/service/context_group.h"
 #include "gpu/demos/framework/demo.h"
 #include "gpu/demos/framework/demo_factory.h"
 
@@ -17,6 +20,7 @@ using gpu::CommandBufferService;
 using gpu::GpuScheduler;
 using gpu::gles2::GLES2CmdHelper;
 using gpu::gles2::GLES2Implementation;
+using gpu::TransferBuffer;
 
 namespace {
 const int32 kCommandBufferSize = 1024 * 1024;
@@ -32,6 +36,9 @@ Window::Window()
 }
 
 Window::~Window() {
+  if (decoder_.get()) {
+    decoder_->Destroy();
+  }
 }
 
 bool Window::Init(int width, int height) {
@@ -41,7 +48,7 @@ bool Window::Init(int width, int height) {
   if (!CreateRenderContext(PluginWindow(window_handle_)))
     return false;
 
-  demo_->InitWindowSize(width, height);
+  demo_->Resize(width, height);
   return demo_->InitGL();
 }
 
@@ -50,46 +57,73 @@ void Window::OnPaint() {
   ::gles2::GetGLContext()->SwapBuffers();
 }
 
-// TODO(apatrick): It looks like all the resources allocated here leak. We
-// should fix that if we want to use this Window class for anything beyond this
-// simple use case.
 bool Window::CreateRenderContext(gfx::PluginWindowHandle hwnd) {
-  scoped_ptr<CommandBufferService> command_buffer(new CommandBufferService);
-  if (!command_buffer->Initialize(kCommandBufferSize)) {
+  command_buffer_.reset(new CommandBufferService);
+  if (!command_buffer_->Initialize()) {
     return false;
   }
 
-  GpuScheduler* gpu_scheduler(
-      new GpuScheduler(command_buffer.get(), NULL, NULL));
-  if (!gpu_scheduler->Initialize(hwnd, gfx::Size(),
-                                 gpu::gles2::DisallowedExtensions(),
-                                 NULL, std::vector<int32>(),
-                                 NULL, 0)) {
+  gpu::gles2::ContextGroup::Ref group(new gpu::gles2::ContextGroup(true));
+
+  decoder_.reset(gpu::gles2::GLES2Decoder::Create(group.get()));
+  if (!decoder_.get())
+    return false;
+
+  gpu_scheduler_.reset(new gpu::GpuScheduler(command_buffer_.get(),
+                                             decoder_.get(),
+                                             NULL));
+
+  decoder_->set_engine(gpu_scheduler_.get());
+
+  surface_ = gfx::GLSurface::CreateViewGLSurface(false, hwnd);
+  if (!surface_.get())
+    return false;
+
+  context_ = gfx::GLContext::CreateGLContext(
+      NULL, surface_.get(), gfx::PreferDiscreteGpu);
+  if (!context_.get())
+    return false;
+
+  std::vector<int32> attribs;
+  if (!decoder_->Initialize(surface_.get(),
+                            context_.get(),
+                            gfx::Size(),
+                            gpu::gles2::DisallowedFeatures(),
+                            NULL,
+                            attribs)) {
     return false;
   }
 
-  command_buffer->SetPutOffsetChangeCallback(
-      NewCallback(gpu_scheduler, &GpuScheduler::PutChanged));
+  command_buffer_->SetPutOffsetChangeCallback(
+      base::Bind(&GpuScheduler::PutChanged,
+                 base::Unretained(gpu_scheduler_.get())));
+  command_buffer_->SetGetBufferChangeCallback(
+      base::Bind(&GpuScheduler::SetGetBuffer,
+                 base::Unretained(gpu_scheduler_.get())));
 
-  GLES2CmdHelper* helper = new GLES2CmdHelper(command_buffer.get());
-  if (!helper->Initialize(kCommandBufferSize)) {
-    // TODO(alokp): cleanup.
+  gles2_cmd_helper_.reset(new GLES2CmdHelper(command_buffer_.get()));
+  if (!gles2_cmd_helper_->Initialize(kCommandBufferSize))
     return false;
-  }
 
-  int32 transfer_buffer_id =
-      command_buffer->CreateTransferBuffer(kTransferBufferSize, -1);
-  Buffer transfer_buffer =
-      command_buffer->GetTransferBuffer(transfer_buffer_id);
-  if (transfer_buffer.ptr == NULL) return false;
+  transfer_buffer_.reset(new gpu::TransferBuffer(gles2_cmd_helper_.get()));
 
   ::gles2::Initialize();
-  ::gles2::SetGLContext(new GLES2Implementation(helper,
-                                                transfer_buffer.size,
-                                                transfer_buffer.ptr,
-                                                transfer_buffer_id,
-                                                false));
-  return command_buffer.release() != NULL;
+  GLES2Implementation* gles2_implementation = new GLES2Implementation(
+      gles2_cmd_helper_.get(),
+      transfer_buffer_.get(),
+      false,
+      true);
+
+  ::gles2::SetGLContext(gles2_implementation);
+
+  if (!gles2_implementation->Initialize(
+      kTransferBufferSize,
+      kTransferBufferSize,
+      kTransferBufferSize)) {
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace demos

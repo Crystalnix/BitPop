@@ -6,6 +6,10 @@
 
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/compiler_specific.h"
+#include "jingle/glue/thread_wrapper.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -20,8 +24,6 @@ class FakeSocket;
 }  // namespace
 }  // namespace jingle_glue
 
-DISABLE_RUNNABLE_METHOD_REFCOUNT(jingle_glue::FakeSocket);
-
 namespace jingle_glue {
 
 namespace {
@@ -35,25 +37,65 @@ const int kMessageSize = 1024;
 const int kMessages = 100;
 const int kTestDataSize = kMessages * kMessageSize;
 
+class RateLimiter {
+ public:
+  virtual ~RateLimiter() { };
+  // Returns true if the new packet needs to be dropped, false otherwise.
+  virtual bool DropNextPacket() = 0;
+};
+
+class LeakyBucket : public RateLimiter {
+ public:
+  // |rate| is in drops per second.
+  LeakyBucket(double volume, double rate)
+      : volume_(volume),
+        rate_(rate),
+        level_(0.0),
+        last_update_(base::TimeTicks::HighResNow()) {
+  }
+
+  virtual ~LeakyBucket() { }
+
+  virtual bool DropNextPacket() OVERRIDE {
+    base::TimeTicks now = base::TimeTicks::HighResNow();
+    double interval = (now - last_update_).InSecondsF();
+    last_update_ = now;
+    level_ = level_ + 1.0 - interval * rate_;
+    if (level_ > volume_) {
+      level_ = volume_;
+      return true;
+    } else if (level_ < 0.0) {
+      level_ = 0.0;
+    }
+    return false;
+  }
+
+ private:
+  double volume_;
+  double rate_;
+  double level_;
+  base::TimeTicks last_update_;
+};
+
 class FakeSocket : public net::Socket {
  public:
   FakeSocket()
-      : read_callback_(NULL),
-        loss_rate_(0.0) {
+      : rate_limiter_(NULL),
+        latency_ms_(0) {
   }
   virtual ~FakeSocket() { }
 
   void AppendInputPacket(const std::vector<char>& data) {
-    if ((static_cast<double>(rand()) / RAND_MAX) < loss_rate_)
+    if (rate_limiter_ && rate_limiter_->DropNextPacket())
       return;  // Lose the packet.
 
-    if (read_callback_) {
+    if (!read_callback_.is_null()) {
       int size = std::min(read_buffer_size_, static_cast<int>(data.size()));
       memcpy(read_buffer_->data(), &data[0], data.size());
-      net::CompletionCallback* cb = read_callback_;
-      read_callback_ = NULL;
+      net::CompletionCallback cb = read_callback_;
+      read_callback_.Reset();
       read_buffer_ = NULL;
-      cb->Run(size);
+      cb.Run(size);
     } else {
       incoming_packets_.push_back(data);
     }
@@ -63,12 +105,16 @@ class FakeSocket : public net::Socket {
     peer_socket_ = peer_socket;
   }
 
-  void set_loss_rate(double value) { loss_rate_ = value; };
+  void set_rate_limiter(RateLimiter* rate_limiter) {
+    rate_limiter_ = rate_limiter;
+  };
+
+  void set_latency(int latency_ms) { latency_ms_ = latency_ms; };
 
   // net::Socket interface.
   virtual int Read(net::IOBuffer* buf, int buf_len,
-                   net::CompletionCallback* callback) {
-    CHECK(!read_callback_);
+                   const net::CompletionCallback& callback) {
+    CHECK(read_callback_.is_null());
     CHECK(buf);
 
     if (incoming_packets_.size() > 0) {
@@ -87,12 +133,15 @@ class FakeSocket : public net::Socket {
   }
 
   virtual int Write(net::IOBuffer* buf, int buf_len,
-                    net::CompletionCallback* callback) OVERRIDE {
+                    const net::CompletionCallback& callback) OVERRIDE {
     DCHECK(buf);
     if (peer_socket_) {
-      MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-          peer_socket_, &FakeSocket::AppendInputPacket,
-          std::vector<char>(buf->data(), buf->data() + buf_len)));
+      MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&FakeSocket::AppendInputPacket,
+                     base::Unretained(peer_socket_),
+                     std::vector<char>(buf->data(), buf->data() + buf_len)),
+          latency_ms_);
     }
 
     return buf_len;
@@ -110,12 +159,13 @@ class FakeSocket : public net::Socket {
  private:
   scoped_refptr<net::IOBuffer> read_buffer_;
   int read_buffer_size_;
-  net::CompletionCallback* read_callback_;
+  net::CompletionCallback read_callback_;
 
   std::deque<std::vector<char> > incoming_packets_;
 
   FakeSocket* peer_socket_;
-  double loss_rate_;
+  RateLimiter* rate_limiter_;
+  int latency_ms_;
 };
 
 class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
@@ -127,10 +177,6 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
         host_socket_(host_socket),
         client_socket_(client_socket),
         done_(false),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            write_cb_(this, &TCPChannelTester::OnWritten)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            read_cb_(this, &TCPChannelTester::OnRead)),
         write_errors_(0),
         read_errors_(0) {
   }
@@ -139,7 +185,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
 
   void Start() {
     message_loop_->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &TCPChannelTester::DoStart));
+        FROM_HERE, base::Bind(&TCPChannelTester::DoStart, this));
   }
 
   void CheckResults() {
@@ -158,7 +204,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
  protected:
   void Done() {
     done_ = true;
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   void DoStart() {
@@ -185,8 +231,9 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
 
       int bytes_to_write = std::min(output_buffer_->BytesRemaining(),
                                     kMessageSize);
-      result = client_socket_->Write(output_buffer_, bytes_to_write,
-                                     &write_cb_);
+      result = client_socket_->Write(
+          output_buffer_, bytes_to_write,
+          base::Bind(&TCPChannelTester::OnWritten, base::Unretained(this)));
       HandleWriteResult(result);
     }
   }
@@ -211,7 +258,9 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
     while (result > 0) {
       input_buffer_->set_offset(input_buffer_->capacity() - kMessageSize);
 
-      result = host_socket_->Read(input_buffer_, kMessageSize, &read_cb_);
+      result = host_socket_->Read(input_buffer_, kMessageSize,
+                                  base::Bind(&TCPChannelTester::OnRead,
+                                             base::Unretained(this)));
       HandleReadResult(result);
     };
   }
@@ -245,8 +294,6 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
   scoped_refptr<net::DrainableIOBuffer> output_buffer_;
   scoped_refptr<net::GrowableIOBuffer> input_buffer_;
 
-  net::CompletionCallbackImpl<TCPChannelTester> write_cb_;
-  net::CompletionCallbackImpl<TCPChannelTester> read_cb_;
   int write_errors_;
   int read_errors_;
 };
@@ -254,6 +301,8 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
 class PseudoTcpAdapterTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
+    JingleThreadWrapper::EnsureForCurrentThread();
+
     host_socket_ = new FakeSocket();
     client_socket_ = new FakeSocket();
 
@@ -273,11 +322,18 @@ class PseudoTcpAdapterTest : public testing::Test {
 };
 
 TEST_F(PseudoTcpAdapterTest, DataTransfer) {
-  TestCompletionCallback host_connect_cb;
-  TestCompletionCallback client_connect_cb;
+  net::TestCompletionCallback host_connect_cb;
+  net::TestCompletionCallback client_connect_cb;
 
-  host_pseudotcp_->Connect(&host_connect_cb);
-  client_pseudotcp_->Connect(&client_connect_cb);
+  int rv1 = host_pseudotcp_->Connect(host_connect_cb.callback());
+  int rv2 = client_pseudotcp_->Connect(client_connect_cb.callback());
+
+  if (rv1 == net::ERR_IO_PENDING)
+    rv1 = host_connect_cb.WaitForResult();
+  if (rv2 == net::ERR_IO_PENDING)
+    rv2 = client_connect_cb.WaitForResult();
+  ASSERT_EQ(net::OK, rv1);
+  ASSERT_EQ(net::OK, rv2);
 
   scoped_refptr<TCPChannelTester> tester =
       new TCPChannelTester(&message_loop_, host_pseudotcp_.get(),
@@ -288,15 +344,31 @@ TEST_F(PseudoTcpAdapterTest, DataTransfer) {
   tester->CheckResults();
 }
 
-TEST_F(PseudoTcpAdapterTest, LossyChannel) {
-  host_socket_->set_loss_rate(0.1);
-  client_socket_->set_loss_rate(0.1);
+TEST_F(PseudoTcpAdapterTest, LimitedChannel) {
+  const int kLatencyMs = 20;
+  const int kPacketsPerSecond = 400;
+  const int kBurstPackets = 10;
 
-  TestCompletionCallback host_connect_cb;
-  TestCompletionCallback client_connect_cb;
+  LeakyBucket host_limiter(kBurstPackets, kPacketsPerSecond);
+  host_socket_->set_latency(kLatencyMs);
+  host_socket_->set_rate_limiter(&host_limiter);
 
-  host_pseudotcp_->Connect(&host_connect_cb);
-  client_pseudotcp_->Connect(&client_connect_cb);
+  LeakyBucket client_limiter(kBurstPackets, kPacketsPerSecond);
+  host_socket_->set_latency(kLatencyMs);
+  client_socket_->set_rate_limiter(&client_limiter);
+
+  net::TestCompletionCallback host_connect_cb;
+  net::TestCompletionCallback client_connect_cb;
+
+  int rv1 = host_pseudotcp_->Connect(host_connect_cb.callback());
+  int rv2 = client_pseudotcp_->Connect(client_connect_cb.callback());
+
+  if (rv1 == net::ERR_IO_PENDING)
+    rv1 = host_connect_cb.WaitForResult();
+  if (rv2 == net::ERR_IO_PENDING)
+    rv2 = client_connect_cb.WaitForResult();
+  ASSERT_EQ(net::OK, rv1);
+  ASSERT_EQ(net::OK, rv2);
 
   scoped_refptr<TCPChannelTester> tester =
       new TCPChannelTester(&message_loop_, host_pseudotcp_.get(),
@@ -314,7 +386,7 @@ class DeleteOnConnected {
       : message_loop_(message_loop), adapter_(adapter) {}
   void OnConnected(int error) {
     adapter_->reset();
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
   MessageLoop* message_loop_;
   scoped_ptr<PseudoTcpAdapter>* adapter_;
@@ -324,13 +396,12 @@ TEST_F(PseudoTcpAdapterTest, DeleteOnConnected) {
   // This test verifies that deleting the adapter mid-callback doesn't lead
   // to deleted structures being touched as the stack unrolls, so the failure
   // mode is a crash rather than a normal test failure.
-  TestCompletionCallback client_connect_cb;
+  net::TestCompletionCallback client_connect_cb;
   DeleteOnConnected host_delete(&message_loop_, &host_pseudotcp_);
-  net::CompletionCallbackImpl<DeleteOnConnected>
-      host_connect_cb(&host_delete, &DeleteOnConnected::OnConnected);
 
-  host_pseudotcp_->Connect(&host_connect_cb);
-  client_pseudotcp_->Connect(&client_connect_cb);
+  host_pseudotcp_->Connect(base::Bind(&DeleteOnConnected::OnConnected,
+                                      base::Unretained(&host_delete)));
+  client_pseudotcp_->Connect(client_connect_cb.callback());
   message_loop_.Run();
 
   ASSERT_EQ(NULL, host_pseudotcp_.get());

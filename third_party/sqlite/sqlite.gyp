@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -42,7 +42,7 @@
           },
         }],
         ['os_posix == 1 and OS != "mac" and use_system_sqlite', {
-          'type': 'settings',
+          'type': 'none',
           'direct_dependent_settings': {
             'cflags': [
               # This next command produces no output but it it will fail (and
@@ -67,7 +67,6 @@
         }, { # else: os_posix == 1 or OS == "mac" or ! use_system_sqlite
           'product_name': 'sqlite3',
           'type': 'static_library',
-          'msvs_guid': '6EAD4A4B-2BBC-4974-8E45-BB5C16CC2AC9',
           'sources': [
             'amalgamation/sqlite3.h',
             'amalgamation/sqlite3.c',
@@ -119,6 +118,20 @@
                 '-Wno-pointer-to-int-cast',
               ],
             }],
+            ['clang==1', {
+              'xcode_settings': {
+                'WARNING_CFLAGS': [
+                  # sqlite does `if (*a++ && *b++);` in a non-buggy way.
+                  '-Wno-empty-body',
+                  # sqlite has some `unsigned < 0` checks.
+                  '-Wno-tautological-compare',
+                ],
+              },
+              'cflags': [
+                '-Wno-empty-body',
+                '-Wno-tautological-compare',
+              ],
+            }],
           ],
         }],
       ],
@@ -146,9 +159,3 @@
     },]
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

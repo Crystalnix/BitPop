@@ -5,14 +5,15 @@
 #include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/sync/glue/http_bridge.h"
-#include "chrome/test/test_url_request_context_getter.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/test_url_fetcher_factory.h"
+#include "chrome/test/base/test_url_request_context_getter.h"
+#include "content/test/test_browser_thread.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "net/test/test_server.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using browser_sync::HttpBridge;
+using content::BrowserThread;
 
 namespace {
 // TODO(timsteele): Should use PathService here. See Chromium Issue 3113.
@@ -28,16 +29,16 @@ class HttpBridgeTest : public testing::Test {
   }
 
   virtual void SetUp() {
-    base::Thread::Options options;
-    options.message_loop_type = MessageLoop::TYPE_IO;
-    io_thread_.StartWithOptions(options);
+    io_thread_.StartIOThread();
   }
 
   virtual void TearDown() {
-    io_thread_loop()->ReleaseSoon(FROM_HERE,
-        fake_default_request_context_getter_);
+    if (fake_default_request_context_getter_) {
+      GetIOThreadLoop()->ReleaseSoon(FROM_HERE,
+          fake_default_request_context_getter_);
+      fake_default_request_context_getter_ = NULL;
+    }
     io_thread_.Stop();
-    fake_default_request_context_getter_ = NULL;
   }
 
   HttpBridge* BuildBridge() {
@@ -66,10 +67,12 @@ class HttpBridgeTest : public testing::Test {
               http_bridge->GetRequestContextGetter()->
                   GetURLRequestContext()->
                   http_transaction_factory()->GetSession());
-    main_message_loop->PostTask(FROM_HERE, new MessageLoop::QuitTask);
+    main_message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
-  MessageLoop* io_thread_loop() { return io_thread_.message_loop(); }
+  MessageLoop* GetIOThreadLoop() {
+    return io_thread_.DeprecatedGetThreadObject()->message_loop();
+  }
 
   // Note this is lazy created, so don't call this before your bridge.
   TestURLRequestContextGetter* GetTestRequestContextGetter() {
@@ -84,17 +87,8 @@ class HttpBridgeTest : public testing::Test {
   TestURLRequestContextGetter* fake_default_request_context_getter_;
 
   // Separate thread for IO used by the HttpBridge.
-  BrowserThread io_thread_;
+  content::TestBrowserThread io_thread_;
   MessageLoop loop_;
-};
-
-class DummyURLFetcher : public TestURLFetcher {
- public:
-  DummyURLFetcher() : TestURLFetcher(0, GURL(), POST, NULL) {}
-
-  net::HttpResponseHeaders* response_headers() const {
-    return NULL;
-  }
 };
 
 // An HttpBridge that doesn't actually make network requests and just calls
@@ -110,28 +104,30 @@ class ShuntedHttpBridge : public HttpBridge {
                    test_(test), never_finishes_(never_finishes) { }
  protected:
   virtual void MakeAsynchronousPost() {
-    ASSERT_TRUE(MessageLoop::current() == test_->io_thread_loop());
+    ASSERT_TRUE(MessageLoop::current() == test_->GetIOThreadLoop());
     if (never_finishes_)
       return;
 
     // We don't actually want to make a request for this test, so just callback
     // as if it completed.
-    test_->io_thread_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &ShuntedHttpBridge::CallOnURLFetchComplete));
+    test_->GetIOThreadLoop()->PostTask(FROM_HERE,
+        base::Bind(&ShuntedHttpBridge::CallOnURLFetchComplete, this));
   }
  private:
   ~ShuntedHttpBridge() {}
 
   void CallOnURLFetchComplete() {
-    ASSERT_TRUE(MessageLoop::current() == test_->io_thread_loop());
+    ASSERT_TRUE(MessageLoop::current() == test_->GetIOThreadLoop());
     // We return no cookies and a dummy content response.
     net::ResponseCookies cookies;
 
     std::string response_content = "success!";
-    DummyURLFetcher fetcher;
-    OnURLFetchComplete(&fetcher, GURL("www.google.com"),
-                       net::URLRequestStatus(),
-                       200, cookies, response_content);
+    TestURLFetcher fetcher(0, GURL(), NULL);
+    fetcher.set_url(GURL("www.google.com"));
+    fetcher.set_response_code(200);
+    fetcher.set_cookies(cookies);
+    fetcher.SetResponseString(response_content);
+    OnURLFetchComplete(&fetcher);
   }
   HttpBridgeTest* test_;
   bool never_finishes_;
@@ -142,8 +138,8 @@ TEST_F(HttpBridgeTest, TestUsesSameHttpNetworkSession) {
   // URLRequestContextGetter::GetURLRequestContext on the IO thread.
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(&HttpBridgeTest::TestSameHttpNetworkSession,
-                          MessageLoop::current(), this));
+      base::Bind(&HttpBridgeTest::TestSameHttpNetworkSession,
+                 MessageLoop::current(), this));
   MessageLoop::current()->Run();
 }
 
@@ -284,8 +280,8 @@ TEST_F(HttpBridgeTest, Abort) {
   int os_error = 0;
   int response_code = 0;
 
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, NewRunnableFunction(
-                          &HttpBridgeTest::Abort, http_bridge));
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                          base::Bind(&HttpBridgeTest::Abort, http_bridge));
   bool success = http_bridge->MakeSynchronousPost(&os_error, &response_code);
   EXPECT_FALSE(success);
   EXPECT_EQ(net::ERR_ABORTED, os_error);

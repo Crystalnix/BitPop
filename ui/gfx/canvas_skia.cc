@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,12 @@
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/brush.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
 #if defined(OS_WIN)
@@ -47,6 +49,40 @@ namespace gfx {
 ////////////////////////////////////////////////////////////////////////////////
 // CanvasSkia, public:
 
+CanvasSkia::CanvasSkia(const gfx::Size& size, bool is_opaque)
+    : owned_canvas_(new skia::PlatformCanvas(size.width(), size.height(),
+                                             is_opaque)),
+      canvas_(owned_canvas_.get()) {
+}
+
+CanvasSkia::CanvasSkia(const SkBitmap& bitmap, bool is_opaque)
+    : owned_canvas_(new skia::PlatformCanvas(bitmap.width(), bitmap.height(),
+                                             is_opaque)),
+      canvas_(owned_canvas_.get()) {
+  DrawBitmapInt(bitmap, 0, 0);
+}
+
+CanvasSkia::CanvasSkia()
+    : owned_canvas_(new skia::PlatformCanvas()),
+      canvas_(owned_canvas_.get()) {
+}
+
+CanvasSkia::CanvasSkia(SkCanvas* canvas)
+    : owned_canvas_(),
+      canvas_(canvas) {
+  DCHECK(canvas);
+}
+
+CanvasSkia::~CanvasSkia() {
+}
+
+// static
+int CanvasSkia::GetStringWidth(const string16& text, const gfx::Font& font) {
+  int width = 0, height = 0;
+  CanvasSkia::SizeStringInt(text, font, &width, &height, Canvas::NO_ELLIPSIS);
+  return width;
+}
+
 // static
 int CanvasSkia::DefaultCanvasTextAlignment() {
   if (!base::i18n::IsRTL())
@@ -55,7 +91,7 @@ int CanvasSkia::DefaultCanvasTextAlignment() {
 }
 
 SkBitmap CanvasSkia::ExtractBitmap() const {
-  const SkBitmap& device_bitmap = getDevice()->accessBitmap(false);
+  const SkBitmap& device_bitmap = canvas_->getDevice()->accessBitmap(false);
 
   // Make a bitmap to return, and a canvas to draw into it. We don't just want
   // to call extractSubset or the copy constructor, since we want an actual copy
@@ -69,11 +105,11 @@ SkBitmap CanvasSkia::ExtractBitmap() const {
 // CanvasSkia, Canvas implementation:
 
 void CanvasSkia::Save() {
-  save();
+  canvas_->save();
 }
 
 void CanvasSkia::SaveLayerAlpha(uint8 alpha) {
-  saveLayerAlpha(NULL, alpha);
+  canvas_->saveLayerAlpha(NULL, alpha);
 }
 
 
@@ -83,58 +119,54 @@ void CanvasSkia::SaveLayerAlpha(uint8 alpha, const gfx::Rect& layer_bounds) {
              SkIntToScalar(layer_bounds.y()),
              SkIntToScalar(layer_bounds.right()),
              SkIntToScalar(layer_bounds.bottom()));
-  saveLayerAlpha(&bounds, alpha);
+  canvas_->saveLayerAlpha(&bounds, alpha);
 }
 
 void CanvasSkia::Restore() {
-  restore();
+  canvas_->restore();
 }
 
-bool CanvasSkia::ClipRectInt(int x, int y, int w, int h) {
-  SkRect new_clip;
-  new_clip.set(SkIntToScalar(x), SkIntToScalar(y),
-               SkIntToScalar(x + w), SkIntToScalar(y + h));
-  return clipRect(new_clip);
+bool CanvasSkia::ClipRect(const gfx::Rect& rect) {
+  return canvas_->clipRect(gfx::RectToSkRect(rect));
 }
 
-void CanvasSkia::TranslateInt(int x, int y) {
-  translate(SkIntToScalar(x), SkIntToScalar(y));
+void CanvasSkia::Translate(const gfx::Point& point) {
+  canvas_->translate(SkIntToScalar(point.x()), SkIntToScalar(point.y()));
 }
 
-void CanvasSkia::ScaleInt(int x, int y) {
-  scale(SkIntToScalar(x), SkIntToScalar(y));
+void CanvasSkia::Scale(int x_scale, int y_scale) {
+  canvas_->scale(SkIntToScalar(x_scale), SkIntToScalar(y_scale));
 }
 
-void CanvasSkia::FillRectInt(const SkColor& color, int x, int y, int w, int h) {
-  FillRectInt(color, x, y, w, h, SkXfermode::kSrcOver_Mode);
+void CanvasSkia::FillRect(const SkColor& color, const gfx::Rect& rect) {
+  FillRect(color, rect, SkXfermode::kSrcOver_Mode);
 }
 
-void CanvasSkia::FillRectInt(const SkColor& color,
-                             int x, int y, int w, int h,
-                             SkXfermode::Mode mode) {
+void CanvasSkia::FillRect(const SkColor& color,
+                          const gfx::Rect& rect,
+                          SkXfermode::Mode mode) {
   SkPaint paint;
   paint.setColor(color);
   paint.setStyle(SkPaint::kFill_Style);
   paint.setXfermodeMode(mode);
-  DrawRectInt(x, y, w, h, paint);
+  DrawRect(rect, paint);
 }
 
-void CanvasSkia::FillRectInt(const gfx::Brush* brush,
-                             int x, int y, int w, int h) {
+void CanvasSkia::FillRect(const gfx::Brush* brush, const gfx::Rect& rect) {
   const SkiaShader* shader = static_cast<const SkiaShader*>(brush);
   SkPaint paint;
   paint.setShader(shader->shader());
   // TODO(beng): set shader transform to match canvas transform.
-  DrawRectInt(x, y, w, h, paint);
+  DrawRect(rect, paint);
 }
 
-void CanvasSkia::DrawRectInt(const SkColor& color, int x, int y, int w, int h) {
-  DrawRectInt(color, x, y, w, h, SkXfermode::kSrcOver_Mode);
+void CanvasSkia::DrawRect(const gfx::Rect& rect, const SkColor& color) {
+  DrawRect(rect, color, SkXfermode::kSrcOver_Mode);
 }
 
-void CanvasSkia::DrawRectInt(const SkColor& color,
-                             int x, int y, int w, int h,
-                             SkXfermode::Mode mode) {
+void CanvasSkia::DrawRect(const gfx::Rect& rect,
+                          const SkColor& color,
+                          SkXfermode::Mode mode) {
   SkPaint paint;
   paint.setColor(color);
   paint.setStyle(SkPaint::kStroke_Style);
@@ -144,12 +176,11 @@ void CanvasSkia::DrawRectInt(const SkColor& color,
   paint.setStrokeWidth(SkIntToScalar(0));
   paint.setXfermodeMode(mode);
 
-  DrawRectInt(x, y, w, h, paint);
+  DrawRect(rect, paint);
 }
 
-void CanvasSkia::DrawRectInt(int x, int y, int w, int h, const SkPaint& paint) {
-  SkIRect rc = { x, y, x + w, y + h };
-  drawIRect(rc, paint);
+void CanvasSkia::DrawRect(const gfx::Rect& rect, const SkPaint& paint) {
+  canvas_->drawIRect(RectToSkIRect(rect), paint);
 }
 
 void CanvasSkia::DrawLineInt(const SkColor& color,
@@ -158,11 +189,11 @@ void CanvasSkia::DrawLineInt(const SkColor& color,
   SkPaint paint;
   paint.setColor(color);
   paint.setStrokeWidth(SkIntToScalar(1));
-  drawLine(SkIntToScalar(x1), SkIntToScalar(y1), SkIntToScalar(x2),
-           SkIntToScalar(y2), paint);
+  canvas_->drawLine(SkIntToScalar(x1), SkIntToScalar(y1), SkIntToScalar(x2),
+                    SkIntToScalar(y2), paint);
 }
 
-void CanvasSkia::DrawFocusRect(int x, int y, int width, int height) {
+void CanvasSkia::DrawFocusRect(const gfx::Rect& rect) {
   // Create a 2D bitmap containing alternating on/off pixels - we do this
   // so that you never get two pixels of the same color around the edges
   // of the focus rect (this may mean that opposing edges of the rect may
@@ -187,8 +218,6 @@ void CanvasSkia::DrawFocusRect(int x, int y, int width, int height) {
     }
   }
 
-  // First the horizontal lines.
-
   // Make a shader for the bitmap with an origin of the box we'll draw. This
   // shader is refcounted and will have an initial refcount of 1.
   SkShader* shader = SkShader::CreateBitmapShader(
@@ -200,20 +229,22 @@ void CanvasSkia::DrawFocusRect(int x, int y, int width, int height) {
   paint.setShader(shader);
   shader->unref();
 
-  DrawRectInt(x, y, width, 1, paint);
-  DrawRectInt(x, y + height - 1, width, 1, paint);
-  DrawRectInt(x, y, 1, height, paint);
-  DrawRectInt(x + width - 1, y, 1, height, paint);
+  DrawRect(gfx::Rect(rect.x(), rect.y(), rect.width(), 1), paint);
+  DrawRect(gfx::Rect(rect.x(), rect.y() + rect.height() - 1, rect.width(), 1),
+           paint);
+  DrawRect(gfx::Rect(rect.x(), rect.y(), 1, rect.height()), paint);
+  DrawRect(gfx::Rect(rect.x() + rect.width() - 1, rect.y(), 1, rect.height()),
+           paint);
 }
 
 void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap, int x, int y) {
-  drawBitmap(bitmap, SkIntToScalar(x), SkIntToScalar(y));
+  canvas_->drawBitmap(bitmap, SkIntToScalar(x), SkIntToScalar(y));
 }
 
 void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap,
                                int x, int y,
                                const SkPaint& paint) {
-  drawBitmap(bitmap, SkIntToScalar(x), SkIntToScalar(y), &paint);
+  canvas_->drawBitmap(bitmap, SkIntToScalar(x), SkIntToScalar(y), &paint);
 }
 
 void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap,
@@ -249,7 +280,7 @@ void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap,
     // Workaround for apparent bug in Skia that causes image to occasionally
     // shift.
     SkIRect src_rect = { src_x, src_y, src_x + src_w, src_y + src_h };
-    drawBitmapRect(bitmap, &src_rect, dest_rect, &paint);
+    canvas_->drawBitmapRect(bitmap, &src_rect, dest_rect, &paint);
     return;
   }
 
@@ -275,7 +306,7 @@ void CanvasSkia::DrawBitmapInt(const SkBitmap& bitmap,
   shader->unref();
 
   // The rect will be filled by the bitmap.
-  drawRect(dest_rect, p);
+  canvas_->drawRect(dest_rect, p);
 }
 
 void CanvasSkia::DrawStringInt(const string16& text,
@@ -316,23 +347,24 @@ void CanvasSkia::TileImageInt(const SkBitmap& bitmap,
   // CreateBitmapShader returns a Shader with a reference count of one, we
   // need to unref after paint takes ownership of the shader.
   shader->unref();
-  save();
-  translate(SkIntToScalar(dest_x - src_x), SkIntToScalar(dest_y - src_y));
-  ClipRectInt(src_x, src_y, w, h);
-  drawPaint(paint);
-  restore();
+  canvas_->save();
+  canvas_->translate(SkIntToScalar(dest_x - src_x),
+                     SkIntToScalar(dest_y - src_y));
+  ClipRect(gfx::Rect(src_x, src_y, w, h));
+  canvas_->drawPaint(paint);
+  canvas_->restore();
 }
 
 gfx::NativeDrawingContext CanvasSkia::BeginPlatformPaint() {
-  return skia::BeginPlatformPaint(this);
+  return skia::BeginPlatformPaint(canvas_);
 }
 
 void CanvasSkia::EndPlatformPaint() {
-  skia::EndPlatformPaint(this);
+  skia::EndPlatformPaint(canvas_);
 }
 
 void CanvasSkia::Transform(const ui::Transform& transform) {
-  concat(transform.matrix());
+  canvas_->concat(transform.matrix());
 }
 
 CanvasSkia* CanvasSkia::AsCanvasSkia() {
@@ -343,12 +375,20 @@ const CanvasSkia* CanvasSkia::AsCanvasSkia() const {
   return this;
 }
 
+SkCanvas* CanvasSkia::GetSkCanvas() {
+  return canvas_;
+}
+
+const SkCanvas* CanvasSkia::GetSkCanvas() const {
+  return canvas_;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // CanvasSkia, private:
 
 bool CanvasSkia::IntersectsClipRectInt(int x, int y, int w, int h) {
   SkRect clip;
-  return getClipBounds(&clip) &&
+  return canvas_->getClipBounds(&clip) &&
       clip.intersect(SkIntToScalar(x), SkIntToScalar(y), SkIntToScalar(x + w),
                      SkIntToScalar(y + h));
 }
@@ -360,11 +400,11 @@ Canvas* Canvas::CreateCanvas() {
   return new CanvasSkia;
 }
 
-Canvas* Canvas::CreateCanvas(int width, int height, bool is_opaque) {
-  return new CanvasSkia(width, height, is_opaque);
+Canvas* Canvas::CreateCanvas(const gfx::Size& size, bool is_opaque) {
+  return new CanvasSkia(size, is_opaque);
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 // TODO(beng): move to canvas_win.cc, etc.
 class CanvasPaintWin : public CanvasSkiaPaint, public CanvasPaint {
  public:
@@ -386,7 +426,7 @@ class CanvasPaintWin : public CanvasSkiaPaint, public CanvasPaint {
 #endif
 
 CanvasPaint* CanvasPaint::CreateCanvasPaint(gfx::NativeView view) {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   return new CanvasPaintWin(view);
 #else
   return NULL;

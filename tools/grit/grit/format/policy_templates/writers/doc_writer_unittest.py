@@ -41,7 +41,7 @@ class DocWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'app_name': 'Chrome',
         'frame_name': 'Chrome Frame',
         'os_name': 'Chrome OS',
-        'win_reg_key_name': 'MockKey',
+        'win_reg_mandatory_key_name': 'MockKey',
       })
     self.writer.messages = {
       'doc_back_to_top': {'text': '_test_back_to_top'},
@@ -52,6 +52,7 @@ class DocWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       },
       'doc_example_value': {'text': '_test_example_value'},
       'doc_feature_dynamic_refresh': {'text': '_test_feature_dynamic_refresh'},
+      'doc_feature_can_be_recommended': {'text': '_test_feature_recommended'},
       'doc_intro': {'text': '_test_intro'},
       'doc_mac_linux_pref_name': {'text': '_test_mac_linux_pref_name'},
       'doc_note': {'text': '_test_note'},
@@ -196,16 +197,22 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
   def testAddFeatures(self):
     # Test if the list of features of a policy is handled correctly.
     policy = {
-      'features': {'spaceship_docking': 0, 'dynamic_refresh': 1}
+      'features': {
+        'spaceship_docking': False,
+        'dynamic_refresh': True,
+        'can_be_recommended': True,
+      }
     }
     self.writer._FEATURE_MAP = {
+      'can_be_recommended': 'Can Be Recommended',
+      'dynamic_refresh': 'Dynamic Refresh',
       'spaceship_docking': 'Spaceship Docking',
-      'dynamic_refresh': 'Dynamic Refresh'
     }
     self.writer._AddFeatures(self.doc_root, policy)
     self.assertEquals(
         self.doc_root.toxml(),
         '<root>'
+          'Can Be Recommended: _test_supported, '
           'Dynamic Refresh: _test_supported, '
           'Spaceship Docking: _test_not_supported'
         '</root>')
@@ -335,7 +342,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         'since_version': '8',
         'until_version': '',
       }],
-      'features': {'dynamic_refresh': 0},
+      'features': {'dynamic_refresh': False},
       'example_value': False
     }
     self.writer.messages['doc_since_version'] = {'text': '...$6...'}
@@ -422,7 +429,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         'since_version': '7',
         'until_version': '',
       }],
-      'features': {'dynamic_refresh': 0},
+      'features': {'dynamic_refresh': False},
       'example_value': False
     }
     self.writer.messages['doc_since_version'] = {'text': '..$6..'}

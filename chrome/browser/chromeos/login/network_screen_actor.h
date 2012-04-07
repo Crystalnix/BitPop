@@ -6,10 +6,9 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_NETWORK_SCREEN_ACTOR_H_
 #pragma once
 
-namespace chromeos {
+#include "base/string16.h"
 
-class HelpAppLauncher;
-class NetworkSelectionView;
+namespace chromeos {
 
 // Interface for dependency injection between NetworkScreen and its actual
 // representation, either views based or WebUI. Owned by NetworkScreen.
@@ -48,12 +47,6 @@ class NetworkScreenActor {
 
   // Sets whether continue control is enabled.
   virtual void EnableContinue(bool enabled) = 0;
-
-  // Returns if continue control is enabled.
-  virtual bool IsContinueEnabled() const = 0;
-
-  // Returns true if we're in the connecting state.
-  virtual bool IsConnecting() const = 0;
 };
 
 }  // namespace chromeos

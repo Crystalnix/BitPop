@@ -1,17 +1,32 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'conditions': [
+      ['inside_chromium_build==0', {
+        'webkit_src_dir': '../../../../..',
+      },{
+        'webkit_src_dir': '../../third_party/WebKit',
+      }],
+      ],
+    },
   'targets': [
     {
       'target_name': 'blob',
-      'type': 'static_library',
-      'msvs_guid': '02567509-F7CA-4E84-8524-4F72DA2D3111',
+      'type': '<(component)',
+      'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
-        '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:base_i18n',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
         '<(DEPTH)/net/net.gyp:net',
+        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
+      ],
+      'defines': [
+        'BLOB_IMPLEMENTATION'
       ],
       'sources': [
         'blob_data.cc',
@@ -31,6 +46,13 @@
         ['inside_chromium_build==0', {
           'dependencies': [
             '<(DEPTH)/webkit/support/setup_third_party.gyp:third_party_headers',
+          ],
+        }],
+        # TODO(dpranke): Figure out why this works at all and/or get
+        # rid of it.
+        ['OS=="win" and component == "shared_library"', {
+          'dependencies': [
+            '<(DEPTH)/webkit/support/webkit_support.gyp:glue',
           ],
         }],
       ],

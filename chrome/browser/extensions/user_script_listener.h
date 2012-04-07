@@ -8,10 +8,15 @@
 
 #include <list>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "content/browser/renderer_host/resource_queue.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+
+namespace content {
+struct GlobalRequestID;
+}
 
 namespace net {
 class URLRequest;
@@ -19,7 +24,6 @@ class URLRequest;
 
 class Extension;
 class URLPattern;
-struct GlobalRequestID;
 
 // This class handles delaying of resource loads that depend on unloaded user
 // scripts. For each request that comes in, we check if it depends on a user
@@ -27,60 +31,60 @@ struct GlobalRequestID;
 // request.
 //
 // This class lives mostly on the IO thread. It listens on the UI thread for
-// updates to loaded extensions.  It will delete itself on the UI thread after
+// updates to loaded extensions. It will delete itself on the UI thread after
 // WillShutdownResourceQueue is called (on the IO thread).
 class UserScriptListener
     : public base::RefCountedThreadSafe<UserScriptListener>,
       public ResourceQueueDelegate,
-      public NotificationObserver {
+      public content::NotificationObserver {
  public:
   UserScriptListener();
 
+ private:
   // ResourceQueueDelegate:
-  virtual void Initialize(ResourceQueue* resource_queue);
+  virtual void Initialize(ResourceQueue* resource_queue) OVERRIDE;
   virtual bool ShouldDelayRequest(
       net::URLRequest* request,
       const ResourceDispatcherHostRequestInfo& request_info,
-      const GlobalRequestID& request_id);
-  virtual void WillShutdownResourceQueue();
+      const content::GlobalRequestID& request_id) OVERRIDE;
+  virtual void WillShutdownResourceQueue() OVERRIDE;
 
- private:
   friend class base::RefCountedThreadSafe<UserScriptListener>;
 
   typedef std::list<URLPattern> URLPatterns;
 
   virtual ~UserScriptListener();
 
+  // Update user_scripts_ready_ based on the status of all profiles. On a
+  // transition from false to true, we resume all delayed requests.
+  void CheckIfAllUserScriptsReady();
+
   // Resume any requests that we delayed in order to wait for user scripts.
-  void StartDelayedRequests();
+  void UserScriptsReady(void* profile_id);
+
+  // Clean up per-profile information related to the given profile.
+  void ProfileDestroyed(void* profile_id);
 
   // Appends new url patterns to our list, also setting user_scripts_ready_
   // to false.
-  void AppendNewURLPatterns(const URLPatterns& new_patterns);
+  void AppendNewURLPatterns(void* profile_id, const URLPatterns& new_patterns);
 
   // Replaces our url pattern list. This is only used when patterns have been
   // deleted, so user_scripts_ready_ remains unchanged.
-  void ReplaceURLPatterns(const URLPatterns& patterns);
+  void ReplaceURLPatterns(void* profile_id, const URLPatterns& patterns);
 
   // Cleanup on UI thread.
   void Cleanup();
 
   ResourceQueue* resource_queue_;
 
-  // A list of every request that we delayed. Will be flushed when user scripts
-  // are ready.
-  typedef std::list<GlobalRequestID> DelayedRequests;
-  DelayedRequests delayed_request_ids_;
-
-  // TODO(mpcomplete): the rest of this stuff should really be per-profile, but
-  // the complexity doesn't seem worth it at this point.
-
-  // True if the user scripts contained in |url_patterns_| are ready for
-  // injection.
+  // True if all user scripts from all profiles are ready.
   bool user_scripts_ready_;
 
-  // A list of URL patterns that have will have user scripts applied to them.
-  URLPatterns url_patterns_;
+  // Per-profile bookkeeping so we know when all user scripts are ready.
+  struct ProfileData;
+  typedef std::map<void*, ProfileData> ProfileDataMap;
+  ProfileDataMap profile_data_;
 
   // --- UI thread:
 
@@ -88,12 +92,12 @@ class UserScriptListener
   // return it.
   void CollectURLPatterns(const Extension* extension, URLPatterns* patterns);
 
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(UserScriptListener);
 };

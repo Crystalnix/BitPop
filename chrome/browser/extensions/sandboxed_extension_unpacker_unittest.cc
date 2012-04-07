@@ -1,18 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/file_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
+#include "base/values.h"
 #include "chrome/browser/extensions/sandboxed_extension_unpacker.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_unpacker.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -20,6 +23,7 @@
 namespace errors = extension_manifest_errors;
 namespace keys = extension_manifest_keys;
 
+using content::BrowserThread;
 using testing::_;
 using testing::Invoke;
 
@@ -46,7 +50,7 @@ class MockSandboxedExtensionUnpackerClient
                     const Extension* extension));
 
   MOCK_METHOD1(OnUnpackFailure,
-               void(const std::string& error));
+               void(const string16& error));
 
   void DelegateToFake() {
     ON_CALL(*this, OnUnpackSuccess(_, _, _, _))
@@ -58,7 +62,8 @@ class SandboxedExtensionUnpackerTest : public testing::Test {
  public:
   virtual void SetUp() {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    file_thread_.reset(new BrowserThread(BrowserThread::FILE, &loop_));
+    file_thread_.reset(new content::TestBrowserThread(BrowserThread::FILE,
+                                                      &loop_));
     // It will delete itself.
     client_ = new MockSandboxedExtensionUnpackerClient;
     client_->DelegateToFake();
@@ -87,7 +92,8 @@ class SandboxedExtensionUnpackerTest : public testing::Test {
         "Original path: " << original_path.value() <<
         ", Crx path: " << crx_path.value();
 
-    unpacker_.reset(new ExtensionUnpacker(crx_path));
+    unpacker_.reset(new ExtensionUnpacker(
+        crx_path, std::string(), Extension::INTERNAL, Extension::NO_FLAGS));
 
     // Build a temp area where the extension will be unpacked.
     temp_path_ =
@@ -95,7 +101,8 @@ class SandboxedExtensionUnpackerTest : public testing::Test {
     ASSERT_TRUE(file_util::CreateDirectory(temp_path_));
 
     sandboxed_unpacker_ =
-        new SandboxedExtensionUnpacker(crx_path, NULL, client_);
+        new SandboxedExtensionUnpacker(crx_path, NULL, Extension::INTERNAL,
+                                       Extension::NO_FLAGS, client_);
 
     // Hack since SandboxedExtensionUnpacker gets its background thread id from
     // the Start call, but we don't call it here.
@@ -126,8 +133,8 @@ class SandboxedExtensionUnpackerTest : public testing::Test {
 
   bool TempFilesRemoved() {
     // Check that temporary files were cleaned up.
-    file_util::FileEnumerator::FILE_TYPE files_and_dirs =
-      static_cast<file_util::FileEnumerator::FILE_TYPE>(
+    file_util::FileEnumerator::FileType files_and_dirs =
+      static_cast<file_util::FileEnumerator::FileType>(
         file_util::FileEnumerator::DIRECTORIES |
         file_util::FileEnumerator::FILES);
 
@@ -155,7 +162,7 @@ class SandboxedExtensionUnpackerTest : public testing::Test {
   scoped_ptr<ExtensionUnpacker> unpacker_;
   scoped_refptr<SandboxedExtensionUnpacker> sandboxed_unpacker_;
   MessageLoop loop_;
-  scoped_ptr<BrowserThread> file_thread_;
+  scoped_ptr<content::TestBrowserThread> file_thread_;
 };
 
 TEST_F(SandboxedExtensionUnpackerTest, NoCatalogsSuccess) {

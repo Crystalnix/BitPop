@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -240,6 +240,47 @@ TEST_F(IPCChannelTest, ChannelTest) {
   base::CloseProcessHandle(process_handle);
 }
 
+#if defined(OS_WIN)
+TEST_F(IPCChannelTest, ChannelTestExistingPipe) {
+  MyChannelListener channel_listener;
+  // Setup IPC channel with existing pipe. Specify name in Chrome format.
+  std::string name("\\\\.\\pipe\\chrome.");
+  name.append(kTestClientChannel);
+  const DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
+                          FILE_FLAG_FIRST_PIPE_INSTANCE;
+  HANDLE pipe = CreateNamedPipeA(name.c_str(),
+                                 open_mode,
+                                 PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
+                                 1,
+                                 4096,
+                                 4096,
+                                 5000,
+                                 NULL);
+  IPC::Channel chan(IPC::ChannelHandle(pipe), IPC::Channel::MODE_SERVER,
+                    &channel_listener);
+  // Channel will duplicate the handle.
+  CloseHandle(pipe);
+  ASSERT_TRUE(chan.Connect());
+
+  channel_listener.Init(&chan);
+
+  base::ProcessHandle process_handle = SpawnChild(TEST_CLIENT, &chan);
+  ASSERT_TRUE(process_handle);
+
+  Send(&chan, "hello from parent");
+
+  // Run message loop.
+  MessageLoop::current()->Run();
+
+  // Close Channel so client gets its OnChannelError() callback fired.
+  chan.Close();
+
+  // Cleanup child process.
+  EXPECT_TRUE(base::WaitForSingleProcess(process_handle, 5000));
+  base::CloseProcessHandle(process_handle);
+}
+#endif  // defined (OS_WIN)
+
 TEST_F(IPCChannelTest, ChannelProxyTest) {
   MyChannelListener channel_listener;
 
@@ -288,11 +329,11 @@ TEST_F(IPCChannelTest, ChannelProxyTest) {
 
 class ChannelListenerWithOnConnectedSend : public IPC::Channel::Listener {
  public:
-  virtual void OnChannelConnected(int32 peer_pid) {
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
     SendNextMessage();
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) {
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     IPC::MessageIterator iter(message);
 
     iter.NextInt();
@@ -303,7 +344,7 @@ class ChannelListenerWithOnConnectedSend : public IPC::Channel::Listener {
     return true;
   }
 
-  virtual void OnChannelError() {
+  virtual void OnChannelError() OVERRIDE {
     // There is a race when closing the channel so the last message may be lost.
     EXPECT_LE(messages_left_, 1);
     MessageLoop::current()->Quit();
@@ -501,7 +542,7 @@ TEST_F(IPCChannelTest, Performance) {
   HANDLE process = SpawnChild(TEST_REFLECTOR, &chan);
   ASSERT_TRUE(process);
 
-  PlatformThread::Sleep(1000);
+  PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
 
   PerfTimeLogger logger("IPC_Perf");
 

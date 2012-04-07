@@ -4,20 +4,22 @@
 
 #include "chrome/browser/password_manager/password_store.h"
 
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/stl_util-inl.h"
-#include "base/task.h"
+#include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_store_consumer.h"
-#include "content/browser/browser_thread.h"
-#include "webkit/glue/password_form.h"
+#include "content/public/browser/browser_thread.h"
+#include "webkit/forms/password_form.h"
 
+using content::BrowserThread;
 using std::vector;
-using webkit_glue::PasswordForm;
+using webkit::forms::PasswordForm;
 
-PasswordStore::GetLoginsRequest::GetLoginsRequest(GetLoginsCallback* callback)
+PasswordStore::GetLoginsRequest::GetLoginsRequest(
+    const GetLoginsCallback& callback)
     : CancelableRequest1<GetLoginsCallback,
-                         std::vector<webkit_glue::PasswordForm*> >(callback) {
+                         std::vector<PasswordForm*> >(callback) {
 }
 
 PasswordStore::GetLoginsRequest::~GetLoginsRequest() {
@@ -38,30 +40,26 @@ void PasswordStore::Shutdown() {
 }
 
 void PasswordStore::AddLogin(const PasswordForm& form) {
-  Task* task = NewRunnableMethod(this, &PasswordStore::AddLoginImpl, form);
-  ScheduleTask(
-      NewRunnableMethod(this, &PasswordStore::WrapModificationTask, task));
+  ScheduleTask(base::Bind(&PasswordStore::WrapModificationTask, this,
+      base::Closure(base::Bind(&PasswordStore::AddLoginImpl, this, form))));
 }
 
 void PasswordStore::UpdateLogin(const PasswordForm& form) {
-  Task* task = NewRunnableMethod(this, &PasswordStore::UpdateLoginImpl, form);
-  ScheduleTask(
-      NewRunnableMethod(this, &PasswordStore::WrapModificationTask, task));
+  ScheduleTask(base::Bind(&PasswordStore::WrapModificationTask, this,
+      base::Closure(base::Bind(&PasswordStore::UpdateLoginImpl, this, form))));
 }
 
 void PasswordStore::RemoveLogin(const PasswordForm& form) {
-  Task* task = NewRunnableMethod(this, &PasswordStore::RemoveLoginImpl, form);
-  ScheduleTask(
-      NewRunnableMethod(this, &PasswordStore::WrapModificationTask, task));
+  ScheduleTask(base::Bind(&PasswordStore::WrapModificationTask, this,
+      base::Closure(base::Bind(&PasswordStore::RemoveLoginImpl, this, form))));
 }
 
 void PasswordStore::RemoveLoginsCreatedBetween(const base::Time& delete_begin,
                                                const base::Time& delete_end) {
-  Task* task = NewRunnableMethod(this,
-                                 &PasswordStore::RemoveLoginsCreatedBetweenImpl,
-                                 delete_begin, delete_end);
-  ScheduleTask(
-      NewRunnableMethod(this, &PasswordStore::WrapModificationTask, task));
+  ScheduleTask(base::Bind(&PasswordStore::WrapModificationTask, this,
+      base::Closure(
+          base::Bind(&PasswordStore::RemoveLoginsCreatedBetweenImpl, this,
+                     delete_begin, delete_end))));
 }
 
 CancelableRequestProvider::Handle PasswordStore::GetLogins(
@@ -80,7 +78,7 @@ CancelableRequestProvider::Handle PasswordStore::GetBlacklistLogins(
 }
 
 void PasswordStore::ReportMetrics() {
-  ScheduleTask(NewRunnableMethod(this, &PasswordStore::ReportMetricsImpl));
+  ScheduleTask(base::Bind(&PasswordStore::ReportMetricsImpl, this));
 }
 
 void PasswordStore::AddObserver(Observer* observer) {
@@ -94,27 +92,26 @@ void PasswordStore::RemoveObserver(Observer* observer) {
 PasswordStore::~PasswordStore() {}
 
 PasswordStore::GetLoginsRequest* PasswordStore::NewGetLoginsRequest(
-    GetLoginsCallback* callback) {
+    const GetLoginsCallback& callback) {
   return new GetLoginsRequest(callback);
 }
 
-void PasswordStore::ScheduleTask(Task* task) {
+void PasswordStore::ScheduleTask(const base::Closure& task) {
   BrowserThread::PostTask(BrowserThread::DB, FROM_HERE, task);
 }
 
 void PasswordStore::ForwardLoginsResult(GetLoginsRequest* request) {
-  request->ForwardResult(GetLoginsRequest::TupleType(request->handle(),
-                                                     request->value));
+  request->ForwardResult(request->handle(), request->value);
 }
 
 template<typename BackendFunc>
 CancelableRequestProvider::Handle PasswordStore::Schedule(
     BackendFunc func, PasswordStoreConsumer* consumer) {
   scoped_refptr<GetLoginsRequest> request(NewGetLoginsRequest(
-      NewCallback(consumer,
-                  &PasswordStoreConsumer::OnPasswordStoreRequestDone)));
+      base::Bind(&PasswordStoreConsumer::OnPasswordStoreRequestDone,
+                 base::Unretained(consumer))));
   AddRequest(request, consumer->cancelable_consumer());
-  ScheduleTask(NewRunnableMethod(this, func, request));
+  ScheduleTask(base::Bind(func, this, request));
   return request->handle();
 }
 
@@ -122,22 +119,18 @@ template<typename BackendFunc, typename ArgA>
 CancelableRequestProvider::Handle PasswordStore::Schedule(
     BackendFunc func, PasswordStoreConsumer* consumer, const ArgA& a) {
   scoped_refptr<GetLoginsRequest> request(NewGetLoginsRequest(
-      NewCallback(consumer,
-                  &PasswordStoreConsumer::OnPasswordStoreRequestDone)));
+      base::Bind(&PasswordStoreConsumer::OnPasswordStoreRequestDone,
+                 base::Unretained(consumer))));
   AddRequest(request, consumer->cancelable_consumer());
-  ScheduleTask(NewRunnableMethod(this, func, request, a));
+  ScheduleTask(base::Bind(func, this, request, a));
   return request->handle();
 }
 
-void PasswordStore::WrapModificationTask(Task* task) {
+void PasswordStore::WrapModificationTask(base::Closure task) {
 #if !defined(OS_MACOSX)
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
 #endif  // !defined(OS_MACOSX)
-
-  DCHECK(task);
-  task->Run();
-  delete task;
-
+  task.Run();
   PostNotifyLoginsChanged();
 }
 
@@ -148,7 +141,7 @@ void PasswordStore::PostNotifyLoginsChanged() {
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &PasswordStore::NotifyLoginsChanged));
+      base::Bind(&PasswordStore::NotifyLoginsChanged, this));
 }
 
 void PasswordStore::NotifyLoginsChanged() {

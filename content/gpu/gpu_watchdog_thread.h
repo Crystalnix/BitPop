@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "content/common/gpu/gpu_watchdog.h"
@@ -27,11 +27,11 @@ class GpuWatchdogThread : public base::Thread,
   void PostAcknowledge();
 
   // Implement GpuWatchdog.
-  virtual void CheckArmed();
+  virtual void CheckArmed() OVERRIDE;
 
  protected:
-  virtual void Init();
-  virtual void CleanUp();
+  virtual void Init() OVERRIDE;
+  virtual void CleanUp() OVERRIDE;
 
  private:
 
@@ -52,25 +52,24 @@ class GpuWatchdogThread : public base::Thread,
 
   void OnAcknowledge();
   void OnCheck();
-  void DeliberatelyCrashingToRecoverFromHang();
+  void DeliberatelyTerminateToRecoverFromHang();
   void Disable();
 
-  int64 GetWatchedThreadTime();
+  base::TimeDelta GetWatchedThreadTime();
 
   MessageLoop* watched_message_loop_;
-  int timeout_;
+  base::TimeDelta timeout_;
   volatile bool armed_;
   GpuWatchdogTaskObserver task_observer_;
 
 #if defined(OS_WIN)
   void* watched_thread_handle_;
-  int64 arm_cpu_time_;
+  base::TimeDelta arm_cpu_time_;
 #endif
 
   base::Time arm_absolute_time_;
 
-  typedef ScopedRunnableMethodFactory<GpuWatchdogThread> MethodFactory;
-  scoped_ptr<MethodFactory> method_factory_;
+  base::WeakPtrFactory<GpuWatchdogThread> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuWatchdogThread);
 };

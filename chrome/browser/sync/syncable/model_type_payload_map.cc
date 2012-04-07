@@ -4,24 +4,34 @@
 
 #include "chrome/browser/sync/syncable/model_type_payload_map.h"
 
-#include "chrome/browser/sync/engine/model_safe_worker.h"
+#include <vector>
 
+#include "base/json/json_writer.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 
 using browser_sync::ModelSafeRoutingInfo;
 namespace syncable {
 
-ModelTypePayloadMap ModelTypePayloadMapFromBitSet(
-    const syncable::ModelTypeBitSet& types,
+ModelTypePayloadMap ModelTypePayloadMapFromEnumSet(
+    syncable::ModelTypeSet types,
     const std::string& payload) {
   ModelTypePayloadMap types_with_payloads;
-  for (size_t i = syncable::FIRST_REAL_MODEL_TYPE;
-       i < types.size(); ++i) {
-    if (types[i]) {
-      types_with_payloads[syncable::ModelTypeFromInt(i)] = payload;
-    }
+  for (syncable::ModelTypeSet::Iterator it = types.First();
+       it.Good(); it.Inc()) {
+    types_with_payloads[it.Get()] = payload;
   }
   return types_with_payloads;
+}
+
+ModelTypeSet ModelTypePayloadMapToEnumSet(
+    const ModelTypePayloadMap& payload_map) {
+  ModelTypeSet types;
+  for (ModelTypePayloadMap::const_iterator it = payload_map.begin();
+       it != payload_map.end(); ++it) {
+    types.Put(it->first);
+  }
+  return types;
 }
 
 ModelTypePayloadMap ModelTypePayloadMapFromRoutingInfo(
@@ -33,6 +43,15 @@ ModelTypePayloadMap ModelTypePayloadMapFromRoutingInfo(
     types_with_payloads[i->first] = payload;
   }
   return types_with_payloads;
+}
+
+std::string ModelTypePayloadMapToString(
+    const ModelTypePayloadMap& type_payloads) {
+  scoped_ptr<DictionaryValue> value(
+      ModelTypePayloadMapToValue(type_payloads));
+  std::string json;
+  base::JSONWriter::Write(value.get(), false, &json);
+  return json;
 }
 
 DictionaryValue* ModelTypePayloadMapToValue(

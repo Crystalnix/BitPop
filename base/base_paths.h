@@ -19,7 +19,7 @@
 
 namespace base {
 
-enum {
+enum BasePathKey {
   PATH_START = 0,
 
   DIR_CURRENT,  // current directory
@@ -39,6 +39,9 @@ enum {
                 // browser cache can be a subdirectory.
                 // This is $XDG_CACHE_HOME on Linux and
                 // ~/Library/Caches on Mac.
+#endif
+#if defined(OS_ANDROID)
+  DIR_ANDROID_APP_DATA,  // Directory where to put android app's data.
 #endif
 
   PATH_END

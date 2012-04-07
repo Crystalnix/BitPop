@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,8 +80,6 @@ void ChromeFrameTestWithWebServer::CloseAllBrowsers() {
   // instances, so make really sure browsers are dead.
   base::KillProcesses(chrome_frame_test::kIEImageName, 0, NULL);
   base::KillProcesses(chrome_frame_test::kIEBrokerImageName, 0, NULL);
-  base::KillProcesses(chrome_frame_test::kFirefoxImageName, 0, NULL);
-  base::KillProcesses(chrome_frame_test::kSafariImageName, 0, NULL);
 
   // Endeavour to only kill off Chrome Frame derived Chrome processes.
   KillAllNamedProcessesWithArgument(
@@ -117,22 +115,18 @@ void ChromeFrameTestWithWebServer::SetUp() {
   CFInstance_src_path = chrome_frame_source_path.AppendASCII("CFInstance.js");
   CFInstance_path_ = test_file_path_.AppendASCII("CFInstance.js");
 
-  file_util::CopyFileW(CFInstance_src_path, CFInstance_path_);
+  ASSERT_TRUE(file_util::CopyFile(CFInstance_src_path, CFInstance_path_));
 
   CFInstall_src_path = chrome_frame_source_path.AppendASCII("CFInstall.js");
   CFInstall_path_ = test_file_path_.AppendASCII("CFInstall.js");
 
-  file_util::CopyFileW(CFInstall_src_path, CFInstall_path_);
+  ASSERT_TRUE(file_util::CopyFile(CFInstall_src_path, CFInstall_path_));
 
   server_mock_.ExpectAndServeAnyRequests(CFInvocation(CFInvocation::NONE));
   server_mock_.set_expected_result("OK");
 }
 
 void ChromeFrameTestWithWebServer::TearDown() {
-  // Make sure that the Firefox privilege mode is never forced either on or off
-  // after the test completes.
-  DeleteConfigValue(kEnableFirefoxPrivilegeMode);
-
   CloseBrowser();
   CloseAllBrowsers();
   file_util::Delete(CFInstall_path_, false);
@@ -152,12 +146,6 @@ bool ChromeFrameTestWithWebServer::LaunchBrowser(BrowserKind browser,
   browser_ = browser;
   if (browser == IE) {
     browser_handle_.Set(chrome_frame_test::LaunchIE(url));
-  } else if (browser == FIREFOX) {
-    browser_handle_.Set(chrome_frame_test::LaunchFirefox(url));
-  } else if (browser == OPERA) {
-    browser_handle_.Set(chrome_frame_test::LaunchOpera(url));
-  } else if (browser == SAFARI) {
-    browser_handle_.Set(chrome_frame_test::LaunchSafari(url));
   } else if (browser == CHROME) {
     browser_handle_.Set(chrome_frame_test::LaunchChrome(url));
   } else {
@@ -228,38 +216,13 @@ void ChromeFrameTestWithWebServer::SimpleBrowserTestExpectedResult(
 
 void ChromeFrameTestWithWebServer::SimpleBrowserTest(BrowserKind browser,
     const wchar_t* page) {
-  if (browser == FIREFOX &&
-      base::win::GetVersion() == base::win::VERSION_WIN7) {
-    LOG(INFO) << "Not running Firefox tests on Windows 7";
-    return;
-  }
   SimpleBrowserTestExpectedResult(browser, page, "OK");
-}
-
-void ChromeFrameTestWithWebServer::OptionalBrowserTest(BrowserKind browser,
-    const wchar_t* page) {
-  DCHECK(browser != CHROME) << "Chrome tests shouldn't be optional";
-  if (!LaunchBrowser(browser, page)) {
-    LOG(ERROR) << "Failed to launch browser " << ToString(browser);
-  } else {
-    server_mock_.ExpectAndHandlePostedResult(CFInvocation(CFInvocation::NONE),
-                                             kPostedResultSubstring);
-    WaitForTestToComplete(TestTimeouts::action_max_timeout_ms());
-    ASSERT_EQ("OK", server_mock_.posted_result());
-  }
 }
 
 void ChromeFrameTestWithWebServer::VersionTest(BrowserKind browser,
     const wchar_t* page) {
-  if (browser == FIREFOX &&
-      base::win::GetVersion() == base::win::VERSION_WIN7) {
-    LOG(INFO) << "Not running Firefox tests on Windows 7";
-    return;
-  }
-
   FilePath plugin_path;
   PathService::Get(base::DIR_MODULE, &plugin_path);
-  plugin_path = plugin_path.AppendASCII("servers");
   plugin_path = plugin_path.Append(kChromeFrameDllName);
 
   static FileVersionInfo* version_info =
@@ -336,7 +299,7 @@ void MockWebServer::HandlePostedResponse(
   posted_result_ = request.content();
   if (posted_result_ == expected_result_) {
     MessageLoop::current()->PostDelayedTask(FROM_HERE,
-                                            new MessageLoop::QuitTask,
+                                            MessageLoop::QuitClosure(),
                                             100);
   }
   connection->Send("HTTP/1.1 200 OK\r\n", "");
@@ -410,14 +373,6 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_PostMessageBasic) {
   SimpleBrowserTest(IE, kPostMessageBasicPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_PostMessageBasic) {
-  SimpleBrowserTest(FIREFOX, kPostMessageBasicPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_PostMessageBasic) {
-  OptionalBrowserTest(OPERA, kPostMessageBasicPage);
-}
-
 TEST_F(ChromeFrameTestWithWebServer, FullTabIE_MIMEFilterBasic) {
   const wchar_t kMIMEFilterBasicPage[] =
       L"chrome_frame_mime_filter_test.html";
@@ -435,27 +390,11 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_Resize) {
   SimpleBrowserTest(IE, L"chrome_frame_resize.html");
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_Resize) {
-  SimpleBrowserTest(FIREFOX, L"chrome_frame_resize.html");
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_Resize) {
-  OptionalBrowserTest(OPERA, L"chrome_frame_resize.html");
-}
-
 const wchar_t kNavigateURLAbsolutePage[] =
     L"navigateurl_absolute_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_NavigateURLAbsolute) {
   SimpleBrowserTest(IE, kNavigateURLAbsolutePage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_NavigateURLAbsolute) {
-  SimpleBrowserTest(FIREFOX, kNavigateURLAbsolutePage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_NavigateURLAbsolute) {
-  OptionalBrowserTest(OPERA, kNavigateURLAbsolutePage);
 }
 
 const wchar_t kNavigateURLRelativePage[] =
@@ -465,45 +404,10 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_NavigateURLRelative) {
   SimpleBrowserTest(IE, kNavigateURLRelativePage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_NavigateURLRelative) {
-  SimpleBrowserTest(FIREFOX, kNavigateURLRelativePage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_NavigateURLRelative) {
-  OptionalBrowserTest(OPERA, kNavigateURLRelativePage);
-}
-
 const wchar_t kNavigateSimpleObjectFocus[] = L"simple_object_focus.html";
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_ObjectFocus) {
-  SimpleBrowserTest(FIREFOX, kNavigateSimpleObjectFocus);
-}
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_ObjectFocus) {
   SimpleBrowserTest(IE, kNavigateSimpleObjectFocus);
-}
-
-// TODO(ananta)
-// Rewrite this test for opera.
-TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeOpera_ObjectFocus) {
-  if (!LaunchBrowser(OPERA, kNavigateSimpleObjectFocus)) {
-    LOG(ERROR) << "Failed to launch browser " << ToString(OPERA);
-  } else {
-    ASSERT_TRUE(WaitForOnLoad(TestTimeouts::action_max_timeout_ms()));
-    server_mock_.ExpectAndHandlePostedResult(CFInvocation(CFInvocation::NONE),
-                                             kPostedResultSubstring);
-    BringBrowserToTop();
-    // Tab through a couple of times.  Once should be enough in theory
-    // but in practice activating the browser can take a few milliseconds more.
-    bool ok;
-    for (int i = 0;
-         i < 5 && (ok = (server_mock_.posted_result() == "OK")) == false;
-         ++i) {
-      Sleep(300);
-      simulate_input::SendMnemonic(VK_TAB, simulate_input::NONE, false, false);
-    }
-    ASSERT_TRUE(ok);
-  }
 }
 
 const wchar_t kiframeBasicPage[] = L"iframe_basic_host.html";
@@ -512,26 +416,10 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_iframeBasic) {
   SimpleBrowserTest(IE, kiframeBasicPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_iframeBasic) {
-  SimpleBrowserTest(FIREFOX, kiframeBasicPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_iframeBasic) {
-  OptionalBrowserTest(OPERA, kiframeBasicPage);
-}
-
 const wchar_t kSrcPropertyTestPage[] = L"src_property_host.html";
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_SrcProperty) {
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_SrcProperty) {
   SimpleBrowserTest(IE, kSrcPropertyTestPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_SrcProperty) {
-  SimpleBrowserTest(FIREFOX, kSrcPropertyTestPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_SrcProperty) {
-  OptionalBrowserTest(OPERA, kSrcPropertyTestPage);
 }
 
 const wchar_t kCFInstanceBasicTestPage[] = L"CFInstance_basic_host.html";
@@ -540,33 +428,16 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceBasic) {
   SimpleBrowserTest(IE, kCFInstanceBasicTestPage);
 }
 
-// http://crbug.com/37085
-TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeFF_CFInstanceBasic) {
-  SimpleBrowserTest(FIREFOX, kCFInstanceBasicTestPage);
-}
-
 const wchar_t kCFISingletonPage[] = L"CFInstance_singleton_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceSingleton) {
   SimpleBrowserTest(IE, kCFISingletonPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceSingleton) {
-  SimpleBrowserTest(FIREFOX, kCFISingletonPage);
-}
-
 const wchar_t kCFIDelayPage[] = L"CFInstance_delay_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeIE_CFInstanceDelay) {
   SimpleBrowserTest(IE, kCFIDelayPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeFF_CFInstanceDelay) {
-  SimpleBrowserTest(FIREFOX, kCFIDelayPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeOpera_CFInstanceDelay) {
-  OptionalBrowserTest(OPERA, kCFIDelayPage);
 }
 
 const wchar_t kCFIFallbackPage[] = L"CFInstance_fallback_host.html";
@@ -576,26 +447,10 @@ TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_CFInstanceFallback) {
   SimpleBrowserTest(IE, kCFIFallbackPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceFallback) {
-  SimpleBrowserTest(FIREFOX, kCFIFallbackPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_CFInstanceFallback) {
-  OptionalBrowserTest(OPERA, kCFIFallbackPage);
-}
-
 const wchar_t kCFINoSrcPage[] = L"CFInstance_no_src_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceNoSrc) {
   SimpleBrowserTest(IE, kCFINoSrcPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceNoSrc) {
-  SimpleBrowserTest(FIREFOX, kCFINoSrcPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_CFInstanceNoSrc) {
-  OptionalBrowserTest(OPERA, kCFINoSrcPage);
 }
 
 const wchar_t kCFIIfrOnLoadPage[] = L"CFInstance_iframe_onload_host.html";
@@ -606,26 +461,10 @@ TEST_F(ChromeFrameTestWithWebServer,
   SimpleBrowserTest(IE, kCFIIfrOnLoadPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceIfrOnLoad) {
-  SimpleBrowserTest(FIREFOX, kCFIIfrOnLoadPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_CFInstanceIfrOnLoad) {
-  OptionalBrowserTest(OPERA, kCFIIfrOnLoadPage);
-}
-
 const wchar_t kCFIZeroSizePage[] = L"CFInstance_zero_size_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceZeroSize) {
   SimpleBrowserTest(IE, kCFIZeroSizePage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceZeroSize) {
-  SimpleBrowserTest(FIREFOX, kCFIZeroSizePage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_CFInstanceZeroSize) {
-  OptionalBrowserTest(OPERA, kCFIZeroSizePage);
 }
 
 const wchar_t kCFIIfrPostPage[] = L"CFInstance_iframe_post_host.html";
@@ -635,22 +474,8 @@ TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeIE_CFInstanceIfrPost) {
   SimpleBrowserTest(IE, kCFIIfrPostPage);
 }
 
-// Flakes out on the bots, http://crbug.com/26372
-TEST_F(ChromeFrameTestWithWebServer,
-       FLAKY_WidgetModeFF_CFInstanceIfrPost) {
-  SimpleBrowserTest(FIREFOX, kCFIIfrPostPage);
-}
-
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeChrome_CFInstanceIfrPost) {
   SimpleBrowserTest(CHROME, kCFIIfrPostPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeSafari_CFInstanceIfrPost) {
-  OptionalBrowserTest(SAFARI, kCFIIfrPostPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_CFInstanceIfrPost) {
-  OptionalBrowserTest(OPERA, kCFIIfrPostPage);
 }
 
 const wchar_t kCFIPostPage[] = L"CFInstance_post_host.html";
@@ -664,21 +489,8 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstancePost) {
 }
 
 // This test randomly fails on the ChromeFrame builder.
-// Bug http://code.google.com/p/chromium/issues/detail?id=31532
-TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeFF_CFInstancePost) {
-  SimpleBrowserTest(FIREFOX, kCFIPostPage);
-}
-
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeChrome_CFInstancePost) {
   SimpleBrowserTest(CHROME, kCFIPostPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeSafari_CFInstancePost) {
-  OptionalBrowserTest(SAFARI, kCFIPostPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeOpera_CFInstancePost) {
-  OptionalBrowserTest(OPERA, kCFIPostPage);
 }
 
 const wchar_t kCFIRPCPage[] = L"CFInstance_rpc_host.html";
@@ -691,22 +503,8 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceRPC) {
   SimpleBrowserTest(IE, kCFIRPCPage);
 }
 
-// This test randomly fails on the ChromeFrame builder.
-// Bug http://code.google.com/p/chromium/issues/detail?id=31532
-TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeFF_CFInstanceRPC) {
-  SimpleBrowserTest(FIREFOX, kCFIRPCPage);
-}
-
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeChrome_CFInstanceRPC) {
   SimpleBrowserTest(CHROME, kCFIRPCPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeSafari_CFInstanceRPC) {
-  OptionalBrowserTest(SAFARI, kCFIRPCPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, DISABLED_WidgetModeOpera_CFInstanceRPC) {
-  OptionalBrowserTest(OPERA, kCFIRPCPage);
 }
 
 const wchar_t kCFIRPCInternalPage[] =
@@ -720,17 +518,8 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceRPCInternal) {
   SimpleBrowserTest(IE, kCFIRPCInternalPage);
 }
 
-// http://code.google.com/p/chromium/issues/detail?id=37204
-TEST_F(ChromeFrameTestWithWebServer, FLAKY_WidgetModeFF_CFInstanceRPCInternal) {
-  SimpleBrowserTest(FIREFOX, kCFIRPCInternalPage);
-}
-
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeChrome_CFInstanceRPCInternal) {
   SimpleBrowserTest(CHROME, kCFIRPCInternalPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeSafari_CFInstanceRPCInternal) {
-  OptionalBrowserTest(SAFARI, kCFIRPCInternalPage);
 }
 
 const wchar_t kCFIDefaultCtorPage[] =
@@ -738,10 +527,6 @@ const wchar_t kCFIDefaultCtorPage[] =
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_CFInstanceDefaultCtor) {
   SimpleBrowserTest(IE, kCFIDefaultCtorPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_CFInstanceDefaultCtor) {
-  SimpleBrowserTest(FIREFOX, kCFIDefaultCtorPage);
 }
 
 const wchar_t kCFInstallBasicTestPage[] = L"CFInstall_basic.html";
@@ -794,31 +579,10 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_CFHttpHeaderFrameSet) {
   SimpleBrowserTest(IE, kFullTabHttpHeaderPageFrameset);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_InitializeHidden) {
-  SimpleBrowserTest(FIREFOX, kInitializeHiddenPage);
-}
-
-// Disabled due to a problem with Opera.
-// http://b/issue?id=1708275
-TEST_F(ChromeFrameTestWithWebServer,
-       DISABLED_WidgetModeOpera_InitializeHidden) {
-  OptionalBrowserTest(OPERA, kInitializeHiddenPage);
-}
-
-const wchar_t kInHeadPage[] = L"in_head.html";
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_InHead) {
-  SimpleBrowserTest(FIREFOX, kInHeadPage);
-}
-
 const wchar_t kVersionPage[] = L"version.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_Version) {
   VersionTest(IE, kVersionPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_Version) {
-  VersionTest(FIREFOX, kVersionPage);
 }
 
 const wchar_t kEventListenerPage[] = L"event_listener.html";
@@ -827,26 +591,10 @@ TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_EventListener) {
   SimpleBrowserTest(IE, kEventListenerPage);
 }
 
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_EventListener) {
-  SimpleBrowserTest(FIREFOX, kEventListenerPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_EventListener) {
-  OptionalBrowserTest(OPERA, kEventListenerPage);
-}
-
 const wchar_t kPrivilegedApisPage[] = L"privileged_apis_host.html";
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_PrivilegedApis) {
   SimpleBrowserTest(IE, kPrivilegedApisPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeFF_PrivilegedApis) {
-  SimpleBrowserTest(FIREFOX, kPrivilegedApisPage);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, WidgetModeOpera_PrivilegedApis) {
-  OptionalBrowserTest(OPERA, kPrivilegedApisPage);
 }
 
 const wchar_t kMetaTagPage[] = L"meta_tag.html";
@@ -927,13 +675,6 @@ const wchar_t kMultipleCFInstancesTestUrl[] =
 
 TEST_F(ChromeFrameTestWithWebServer, WidgetModeIE_MultipleCFInstances) {
   SimpleBrowserTest(IE, kMultipleCFInstancesTestUrl);
-}
-
-// TODO(ananta)
-// Disabled until I figure out why this does not work on Firefox.
-TEST_F(ChromeFrameTestWithWebServer,
-       DISABLED_WidgetModeFF_MultipleCFInstances) {
-  SimpleBrowserTest(FIREFOX, kMultipleCFInstancesTestUrl);
 }
 
 const wchar_t kXHRHeaderTestUrl[] =
@@ -1037,12 +778,9 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_XHRConditionalHeaderTest) {
 const wchar_t kWindowCloseTestUrl[] =
     L"window_close.html";
 
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_WindowClose) {
+// http://code.google.com/p/chromium/issues/detail?id=111074
+TEST_F(ChromeFrameTestWithWebServer, FLAKY_FullTabModeIE_WindowClose) {
   SimpleBrowserTest(IE, kWindowCloseTestUrl);
-}
-
-TEST_F(ChromeFrameTestWithWebServer, FullTabModeFF_WindowClose) {
-  SimpleBrowserTest(FIREFOX, kWindowCloseTestUrl);
 }
 
 std::string GetHeaderValue(const std::string& headers,
@@ -1095,7 +833,7 @@ class UaTemplateFileResponse : public test_server::FileResponse {
     return content_.length();
   }
 
-  virtual void WriteContents(ListenSocket* socket) const {
+  virtual void WriteContents(net::ListenSocket* socket) const {
     DCHECK(content_.length());
     socket->Send(content_.c_str(), content_.length(), false);
     request_id_++;
@@ -1221,7 +959,7 @@ TEST_F(ChromeFrameTestWithWebServer, FullTabModeIE_TestDownloadFromForm) {
       return match;
     }
 
-    virtual void WriteContents(ListenSocket* socket) const {
+    virtual void WriteContents(net::ListenSocket* socket) const {
       if (is_post_) {
         socket->Send(kText, sizeof(kText) - 1, false);
       } else {

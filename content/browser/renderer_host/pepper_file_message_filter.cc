@@ -9,17 +9,19 @@
 #include "base/file_util.h"
 #include "base/platform_file.h"
 #include "base/process_util.h"
-#include "chrome/browser/profiles/profile.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/child_process_security_policy.h"
-#include "content/browser/renderer_host/browser_render_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/pepper_file_messages.h"
+#include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_platform_file.h"
 #include "webkit/plugins/ppapi/file_path.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
+
+using content::BrowserThread;
 
 // Used to check if the renderer has permission for the requested operation.
 // TODO(viettrungluu): Verify these. They don't necessarily quite make sense,
@@ -35,10 +37,12 @@ const int kWritePermissions = base::PLATFORM_FILE_OPEN |
                               base::PLATFORM_FILE_EXCLUSIVE_WRITE |
                               base::PLATFORM_FILE_WRITE_ATTRIBUTES;
 
-PepperFileMessageFilter::PepperFileMessageFilter(int child_id,
-                                                 Profile* profile)
-    : child_id_(child_id) {
-  pepper_path_ = profile->GetPath().Append(FILE_PATH_LITERAL("Pepper Data"));
+PepperFileMessageFilter::PepperFileMessageFilter(
+    int child_id, content::BrowserContext* browser_context)
+        : child_id_(child_id),
+          channel_(NULL) {
+  pepper_path_ =
+      browser_context->GetPath().Append(FILE_PATH_LITERAL("Pepper Data"));
 }
 
 PepperFileMessageFilter::~PepperFileMessageFilter() {
@@ -88,7 +92,8 @@ void PepperFileMessageFilter::OnOpenFile(
   base::PlatformFile file_handle = base::CreatePlatformFile(
       full_path, flags, NULL, error);
 
-  if (*error != base::PLATFORM_FILE_OK) {
+  if (*error != base::PLATFORM_FILE_OK ||
+      file_handle == base::kInvalidPlatformFileValue) {
     *file = IPC::InvalidPlatformFileForTransit();
     return;
   }
@@ -195,7 +200,7 @@ void PepperFileMessageFilter::OnGetDirContents(
 
   file_util::FileEnumerator enumerator(
       full_path, false,
-      static_cast<file_util::FileEnumerator::FILE_TYPE>(
+      static_cast<file_util::FileEnumerator::FileType>(
           file_util::FileEnumerator::FILES |
           file_util::FileEnumerator::DIRECTORIES |
           file_util::FileEnumerator::INCLUDE_DOT_DOT));
@@ -218,16 +223,10 @@ FilePath PepperFileMessageFilter::ValidateAndConvertPepperFilePath(
   FilePath file_path;  // Empty path returned on error.
   switch(pepper_path.domain()) {
     case webkit::ppapi::PepperFilePath::DOMAIN_ABSOLUTE:
-// TODO(viettrungluu): This could be dangerous if not 100% right, so let's be
-// conservative and only enable it when requested.
-#if defined(ENABLE_FLAPPER_HACKS)
       if (pepper_path.path().IsAbsolute() &&
           ChildProcessSecurityPolicy::GetInstance()->HasPermissionsForFile(
               child_id(), pepper_path.path(), flags))
         file_path = pepper_path.path();
-#else
-      NOTIMPLEMENTED();
-#endif  // ENABLE_FLAPPER_HACKS
       break;
     case webkit::ppapi::PepperFilePath::DOMAIN_MODULE_LOCAL:
       if (!pepper_path.path().IsAbsolute() &&

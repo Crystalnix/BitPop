@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class FileBasedPolicyProvider : public AsynchronousPolicyProvider {
     virtual ~ProviderDelegate();
 
     // AsynchronousPolicyProvider::Delegate implementation:
-    virtual DictionaryValue* Load() = 0;
+    virtual PolicyMap* Load() = 0;
 
     // Gets the last modification timestamp for the policy information from the
     // filesystem. Returns base::Time() if the information is not present, in

@@ -10,10 +10,11 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 
 namespace views {
-class WindowDelegate;
+class WidgetDelegate;
 }
 
 namespace chromeos {
@@ -27,10 +28,10 @@ class NetworkLoginObserver : public NetworkLibrary::NetworkManagerObserver {
 
   typedef std::map<std::string, bool> NetworkFailureMap;
  private:
-  void CreateModalPopup(views::WindowDelegate* view);
+  void CreateModalPopup(views::WidgetDelegate* view);
 
   // NetworkLibrary::NetworkManagerObserver implementation.
-  virtual void OnNetworkManagerChanged(NetworkLibrary* obj);
+  virtual void OnNetworkManagerChanged(NetworkLibrary* obj) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkLoginObserver);
 };

@@ -1,18 +1,25 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/importer/external_process_importer_client.h"
 
+#include "base/bind.h"
+#include "base/string_number_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
+#include "chrome/browser/importer/firefox_importer_utils.h"
 #include "chrome/browser/importer/importer_host.h"
 #include "chrome/browser/importer/in_process_importer_bridge.h"
-#include "chrome/browser/importer/profile_import_process_host.h"
+#include "chrome/browser/importer/profile_import_process_messages.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/search_engines/template_url_service.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
+#include "content/public/browser/browser_thread.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
+
+using content::BrowserThread;
 
 ExternalProcessImporterClient::ExternalProcessImporterClient(
     ExternalProcessImporterHost* importer_host,
@@ -23,7 +30,6 @@ ExternalProcessImporterClient::ExternalProcessImporterClient(
       total_history_rows_count_(0),
       total_favicons_count_(0),
       process_importer_host_(importer_host),
-      profile_import_process_host_(NULL),
       source_profile_(source_profile),
       items_(items),
       bridge_(bridge),
@@ -37,12 +43,13 @@ ExternalProcessImporterClient::~ExternalProcessImporterClient() {
 }
 
 void ExternalProcessImporterClient::CancelImportProcessOnIOThread() {
-  profile_import_process_host_->CancelProfileImportProcess();
+  utility_process_host_->Send(new ProfileImportProcessMsg_CancelImport());
 }
 
 void ExternalProcessImporterClient::NotifyItemFinishedOnIOThread(
     importer::ImportItem import_item) {
-  profile_import_process_host_->ReportImportItemFinished(import_item);
+  utility_process_host_->Send(
+      new ProfileImportProcessMsg_ReportImportItemFinished(import_item));
 }
 
 void ExternalProcessImporterClient::Cleanup() {
@@ -60,18 +67,49 @@ void ExternalProcessImporterClient::Start() {
   CHECK(BrowserThread::GetCurrentThreadIdentifier(&thread_id));
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this,
-          &ExternalProcessImporterClient::StartProcessOnIOThread,
-          thread_id));
+      base::Bind(&ExternalProcessImporterClient::StartProcessOnIOThread,
+                 this,
+                 thread_id));
 }
 
 void ExternalProcessImporterClient::StartProcessOnIOThread(
     BrowserThread::ID thread_id) {
-  profile_import_process_host_ =
-      new ProfileImportProcessHost(this, thread_id);
-  profile_import_process_host_->StartProfileImportProcess(source_profile_,
-                                                          items_);
+  utility_process_host_ =
+      (new UtilityProcessHost(this, thread_id))->AsWeakPtr();
+  utility_process_host_->set_no_sandbox(true);
+
+#if defined(OS_MACOSX)
+  base::environment_vector env;
+  std::string dylib_path = GetFirefoxDylibPath().value();
+  if (!dylib_path.empty())
+    env.push_back(std::make_pair("DYLD_FALLBACK_LIBRARY_PATH", dylib_path));
+  utility_process_host_->set_env(env);
+#endif
+
+  // Dictionary of all localized strings that could be needed by the importer
+  // in the external process.
+  DictionaryValue localized_strings;
+  localized_strings.SetString(
+      base::IntToString(IDS_BOOKMARK_GROUP_FROM_FIREFOX),
+      l10n_util::GetStringUTF8(IDS_BOOKMARK_GROUP_FROM_FIREFOX));
+  localized_strings.SetString(
+      base::IntToString(IDS_BOOKMARK_GROUP_FROM_SAFARI),
+      l10n_util::GetStringUTF8(IDS_BOOKMARK_GROUP_FROM_SAFARI));
+  localized_strings.SetString(
+      base::IntToString(IDS_IMPORT_FROM_FIREFOX),
+      l10n_util::GetStringUTF8(IDS_IMPORT_FROM_FIREFOX));
+  localized_strings.SetString(
+      base::IntToString(IDS_IMPORT_FROM_GOOGLE_TOOLBAR),
+      l10n_util::GetStringUTF8(IDS_IMPORT_FROM_GOOGLE_TOOLBAR));
+  localized_strings.SetString(
+      base::IntToString(IDS_IMPORT_FROM_SAFARI),
+      l10n_util::GetStringUTF8(IDS_IMPORT_FROM_SAFARI));
+  localized_strings.SetString(
+      base::IntToString(IDS_BOOKMARK_BAR_FOLDER_NAME),
+      l10n_util::GetStringUTF8(IDS_BOOKMARK_BAR_FOLDER_NAME));
+
+  utility_process_host_->Send(new ProfileImportProcessMsg_StartImport(
+      source_profile_, items_, localized_strings));
 }
 
 void ExternalProcessImporterClient::Cancel() {
@@ -79,11 +117,12 @@ void ExternalProcessImporterClient::Cancel() {
     return;
 
   cancelled_ = true;
-  if (profile_import_process_host_) {
+  if (utility_process_host_) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(this,
-            &ExternalProcessImporterClient::CancelImportProcessOnIOThread));
+        base::Bind(
+            &ExternalProcessImporterClient::CancelImportProcessOnIOThread,
+            this));
   }
   Release();
 }
@@ -93,6 +132,43 @@ void ExternalProcessImporterClient::OnProcessCrashed(int exit_code) {
     return;
 
   process_importer_host_->Cancel();
+}
+
+bool ExternalProcessImporterClient::OnMessageReceived(
+    const IPC::Message& message) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP(ExternalProcessImporterClient, message)
+    // Notification messages about the state of the import process.
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_Import_Started,
+                        OnImportStart)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_Import_Finished,
+                        OnImportFinished)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_ImportItem_Started,
+                        OnImportItemStart)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_ImportItem_Finished,
+                        OnImportItemFinished)
+    // Data messages containing items to be written to the user profile.
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyHistoryImportStart,
+                        OnHistoryImportStart)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyHistoryImportGroup,
+                        OnHistoryImportGroup)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyHomePageImportReady,
+                        OnHomePageImportReady)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyBookmarksImportStart,
+                        OnBookmarksImportStart)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyBookmarksImportGroup,
+                        OnBookmarksImportGroup)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyFaviconsImportStart,
+                        OnFaviconsImportStart)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyFaviconsImportGroup,
+                        OnFaviconsImportGroup)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyPasswordFormReady,
+                        OnPasswordFormImportReady)
+    IPC_MESSAGE_HANDLER(ProfileImportProcessHostMsg_NotifyKeywordsReady,
+                        OnKeywordsImportReady)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
 }
 
 void ExternalProcessImporterClient::OnImportStart() {
@@ -128,9 +204,9 @@ void ExternalProcessImporterClient::OnImportItemFinished(int item_data) {
   bridge_->NotifyItemEnded(import_item);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this,
-          &ExternalProcessImporterClient::NotifyItemFinishedOnIOThread,
-          import_item));
+      base::Bind(&ExternalProcessImporterClient::NotifyItemFinishedOnIOThread,
+                 this,
+                 import_item));
 }
 
 void ExternalProcessImporterClient::OnHistoryImportStart(
@@ -208,7 +284,7 @@ void ExternalProcessImporterClient::OnFaviconsImportGroup(
 }
 
 void ExternalProcessImporterClient::OnPasswordFormImportReady(
-    const webkit_glue::PasswordForm& form) {
+    const webkit::forms::PasswordForm& form) {
   if (cancelled_)
     return;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@ namespace media {
 
 class FFmpegURLProtocol;
 
-class AudioFileReader {
+class MEDIA_EXPORT AudioFileReader {
  public:
   // Audio file data will be read using the given protocol.
   // The AudioFileReader does not take ownership of |protocol| and
@@ -52,26 +52,6 @@ class AudioFileReader {
   AVCodec* codec_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioFileReader);
-};
-
-class InMemoryDataReader : public FFmpegURLProtocol {
- public:
-  // Ownership of |data| is not taken, instead it simply maintains
-  // a weak reference.
-  InMemoryDataReader(const char* data, int64 size);
-
-  virtual int Read(int size, uint8* data);
-  virtual bool GetPosition(int64* position_out);
-  virtual bool SetPosition(int64 position);
-  virtual bool GetSize(int64* size_out);
-  virtual bool IsStreaming();
-
- private:
-  const char* data_;
-  int64 size_;
-  int64 position_;
-
-  DISALLOW_COPY_AND_ASSIGN(InMemoryDataReader);
 };
 
 }  // namespace media

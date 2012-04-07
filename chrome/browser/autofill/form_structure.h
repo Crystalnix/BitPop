@@ -9,12 +9,13 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/glue/form_data.h"
+
 
 enum RequestMethod {
   GET,
@@ -29,15 +30,26 @@ enum UploadRequired {
 
 class AutofillMetrics;
 
+namespace base {
+class TimeTicks;
+}
+
 namespace buzz {
 class XmlElement;
+}
+
+namespace webkit {
+namespace forms {
+struct FormData;
+struct FormDataPredictions;
+}
 }
 
 // FormStructure stores a single HTML form together with the values entered
 // in the fields along with additional information needed by Autofill.
 class FormStructure {
  public:
-  explicit FormStructure(const webkit_glue::FormData& form);
+  explicit FormStructure(const webkit::forms::FormData& form);
   virtual ~FormStructure();
 
   // Runs several heuristics against the form fields to determine their possible
@@ -54,7 +66,7 @@ class FormStructure {
   // with 2, 4, and 3 fields. The returned XML would have type info for 9
   // fields, first two of which would be for the first form, next 4 for the
   // second, and the rest is for the third.
-  static bool EncodeQueryRequest(const ScopedVector<FormStructure>& forms,
+  static bool EncodeQueryRequest(const std::vector<FormStructure*>& forms,
                                  std::vector<std::string>* encoded_signatures,
                                  std::string* encoded_xml);
 
@@ -62,8 +74,13 @@ class FormStructure {
   // same as the one passed to EncodeQueryRequest when constructing the query.
   static void ParseQueryResponse(const std::string& response_xml,
                                  const std::vector<FormStructure*>& forms,
-                                 UploadRequired* upload_required,
                                  const AutofillMetrics& metric_logger);
+
+  // Fills |forms| with the details from the given |form_structures| and their
+  // fields' predicted types.
+  static void GetFieldTypePredictions(
+      const std::vector<FormStructure*>& form_structures,
+      std::vector<webkit::forms::FormDataPredictions>* forms);
 
   // The unique signature for this form, composed of the target url domain,
   // the form name, and the form field names in a 64-bit hash.
@@ -85,18 +102,26 @@ class FormStructure {
   // |require_method_post| is true.
   bool ShouldBeParsed(bool require_method_post) const;
 
+  // Returns true if we should query the crowdsourcing server to determine this
+  // form's field types.  If the form includes author-specified types, this will
+  // return false.
+  bool ShouldBeCrowdsourced() const;
+
   // Sets the field types and experiment id to be those set for |cached_form|.
   void UpdateFromCache(const FormStructure& cached_form);
 
   // Logs quality metrics for |this|, which should be a user-submitted form.
   // This method should only be called after the possible field types have been
-  // set for each field.
-  void LogQualityMetrics(const AutofillMetrics& metric_logger) const;
-
-  // Sets the possible types for the field at |index|.
-  void set_possible_types(size_t index, const FieldTypeSet& types);
+  // set for each field.  |interaction_time| should be a timestamp corresponding
+  // to the user's first interaction with the form.  |submission_time| should be
+  // a timestamp corresponding to the form's submission.
+  void LogQualityMetrics(const AutofillMetrics& metric_logger,
+                         const base::TimeTicks& load_time,
+                         const base::TimeTicks& interaction_time,
+                         const base::TimeTicks& submission_time) const;
 
   const AutofillField* field(size_t index) const;
+  AutofillField* field(size_t index);
   size_t field_count() const;
 
   // Returns the number of fields that are able to be autofilled.
@@ -112,17 +137,16 @@ class FormStructure {
 
   const GURL& source_url() const { return source_url_; }
 
+  UploadRequired upload_required() const { return upload_required_; }
+
   virtual std::string server_experiment_id() const;
 
-  bool operator==(const webkit_glue::FormData& form) const;
-  bool operator!=(const webkit_glue::FormData& form) const;
-
- protected:
-  // For tests.
-  ScopedVector<AutofillField>* fields() { return &fields_; }
+  bool operator==(const webkit::forms::FormData& form) const;
+  bool operator!=(const webkit::forms::FormData& form) const;
 
  private:
   friend class FormStructureTest;
+  FRIEND_TEST_ALL_PREFIXES(AutofillDownloadTest, QueryAndUploadTest);
   // 64-bit hash of the string - used in FormSignature and unit-tests.
   static std::string Hash64Bit(const std::string& str);
 
@@ -135,6 +159,23 @@ class FormStructure {
   // it is a query or upload.
   bool EncodeFormRequest(EncodeRequestType request_type,
                          buzz::XmlElement* encompassing_xml_element) const;
+
+  // Classifies each field in |fields_| based upon its |autocompletetype|
+  // attribute, if the attribute is available.  The association is stored into
+  // |map|.  Fills |found_attribute| with |true| if the attribute is available
+  // (and non-empty) for at least one field.  Fills |found_sections| with |true|
+  // if the attribute specifies a section for at least one field.
+  void ParseAutocompletetypeAttributes(bool* found_attribute,
+                                       bool* found_sections);
+
+  // Classifies each field in |fields_| into a logical section.
+  // Sections are identified by the heuristic that a logical section should not
+  // include multiple fields of the same autofill type (with some exceptions, as
+  // described in the implementation).  Sections are furthermore distinguished
+  // as either credit card or non-credit card sections.
+  // If |has_author_specified_sections| is true, only the second pass --
+  // distinguishing credit card sections from non-credit card ones -- is made.
+  void IdentifySections(bool has_author_specified_sections);
 
   // The name of the form.
   string16 form_name_;
@@ -156,12 +197,20 @@ class FormStructure {
   // character. E.g.: "&form_input1_name&form_input2_name&...&form_inputN_name"
   std::string form_signature_field_names_;
 
+  // Whether the server expects us to always upload, never upload, or default
+  // to the stored upload rates.
+  UploadRequired upload_required_;
+
   // The server experiment corresponding to the server types returned for this
   // form.
   std::string server_experiment_id_;
 
   // GET or POST.
   RequestMethod method_;
+
+  // Whether the form includes any field types explicitly specified by the site
+  // author, via the |autocompletetype| attribute.
+  bool has_author_specified_types_;
 
   DISALLOW_COPY_AND_ASSIGN(FormStructure);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,45 +7,55 @@
 
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/thunk/ppb_flash_clipboard_api.h"
 
-struct PPB_Flash_Clipboard;
-
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class SerializedVarReceiveInput;
 class SerializedVarReturnValue;
 
-class PPB_Flash_Clipboard_Proxy : public InterfaceProxy {
+class PPB_Flash_Clipboard_Proxy
+    : public InterfaceProxy,
+      public thunk::PPB_Flash_Clipboard_FunctionAPI {
  public:
-  PPB_Flash_Clipboard_Proxy(Dispatcher* dispatcher,
-                            const void* target_interface);
+  PPB_Flash_Clipboard_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Flash_Clipboard_Proxy();
 
-  static const Info* GetInfo();
+  // FunctionGroupBase overrides.
+  thunk::PPB_Flash_Clipboard_FunctionAPI* AsPPB_Flash_Clipboard_FunctionAPI()
+      OVERRIDE;
 
-  const PPB_Flash_Clipboard* ppb_flash_clipboard_target() const {
-    return reinterpret_cast<const PPB_Flash_Clipboard*>(target_interface());
-  }
+  // PPB_Flash_Clipboard_FunctionAPI implementation.
+  virtual PP_Bool IsFormatAvailable(PP_Instance instance,
+                                    PP_Flash_Clipboard_Type clipboard_type,
+                                    PP_Flash_Clipboard_Format format) OVERRIDE;
+  virtual PP_Var ReadPlainText(PP_Instance instance,
+                               PP_Flash_Clipboard_Type clipboard_type) OVERRIDE;
+  virtual int32_t WritePlainText(PP_Instance instance,
+                                 PP_Flash_Clipboard_Type clipboard_type,
+                                 const PP_Var& text) OVERRIDE;
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
+  static const ApiID kApiID = API_ID_PPB_FLASH_CLIPBOARD;
+
  private:
   // Message handlers.
-  void OnMsgIsFormatAvailable(PP_Instance instance_id,
+  void OnMsgIsFormatAvailable(PP_Instance instance,
                               int clipboard_type,
                               int format,
                               bool* result);
-  void OnMsgReadPlainText(PP_Instance instance_id,
+  void OnMsgReadPlainText(PP_Instance instance,
                           int clipboard_type,
                           SerializedVarReturnValue result);
-  void OnMsgWritePlainText(PP_Instance instance_id,
+  void OnMsgWritePlainText(PP_Instance instance,
                            int clipboard_type,
                            SerializedVarReceiveInput text);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_FLASH_CLIPBOARD_PROXY_H_

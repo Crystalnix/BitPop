@@ -12,12 +12,14 @@
 
 #include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/cpp/completion_callback.h"
+#include "ppapi/c/pp_macros.h"
+#include "ppapi/cpp/dev/transport_dev.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
-#include "ppapi/cpp/dev/transport_dev.h"
+#include "ppapi/cpp/var.h"
 #include "ppapi/tests/test_utils.h"
 #include "ppapi/tests/testing_instance.h"
+#include "ppapi/utility/completion_callback_factory.h"
 
 REGISTER_TEST_CASE(Transport);
 
@@ -34,12 +36,12 @@ const int kReadBufferSize = 65536;
 
 class StreamReader {
  public:
-  explicit StreamReader(pp::Transport_Dev* transport,
-                        int expected_size,
-                        pp::CompletionCallback done_callback)
+  StreamReader(pp::Transport_Dev* transport,
+               int expected_size,
+               pp::CompletionCallback done_callback)
       : expected_size_(expected_size),
         done_callback_(done_callback),
-        ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)),
+        PP_ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)),
         transport_(transport),
         received_size_(0) {
     Read();
@@ -54,7 +56,7 @@ class StreamReader {
       buffer_.resize(kReadBufferSize);
       int result = transport_->Recv(
           &buffer_[0], buffer_.size(),
-          callback_factory_.NewCallback(&StreamReader::OnReadFinished));
+          callback_factory_.NewOptionalCallback(&StreamReader::OnReadFinished));
       if (result > 0)
         DidFinishRead(result);
       else
@@ -95,27 +97,33 @@ class StreamReader {
 
 }  // namespace
 
+TestTransport::~TestTransport() {
+  delete transport1_;
+  delete transport2_;
+}
+
 bool TestTransport::Init() {
-  transport_interface_ = reinterpret_cast<PPB_Transport_Dev const*>(
+  transport_interface_ = static_cast<const PPB_Transport_Dev*>(
       pp::Module::Get()->GetBrowserInterface(PPB_TRANSPORT_DEV_INTERFACE));
-  return transport_interface_ && InitTestingInterface();
+  return transport_interface_ && CheckTestingInterface();
 }
 
-void TestTransport::RunTest() {
-  RUN_TEST(Create);
-  RUN_TEST(Connect);
-  RUN_TEST(SendDataUdp);
-  RUN_TEST(SendDataTcp);
-  RUN_TEST(ConnectAndCloseUdp);
-  RUN_TEST(ConnectAndCloseTcp);
+void TestTransport::RunTests(const std::string& filter) {
+  RUN_TEST(Create, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(Connect, filter);
+  RUN_TEST(SetProperty, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(SendDataUdp, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(SendDataTcp, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(ConnectAndCloseUdp, filter);
+  RUN_TEST_FORCEASYNC_AND_NOT(ConnectAndCloseTcp, filter);
 }
 
-std::string TestTransport::InitTargets(const char* proto) {
-  transport1_.reset(new pp::Transport_Dev(instance_, kTestChannelName, proto));
-  transport2_.reset(new pp::Transport_Dev(instance_, kTestChannelName, proto));
+std::string TestTransport::InitTargets(PP_TransportType type) {
+  transport1_ = new pp::Transport_Dev(instance_, kTestChannelName, type);
+  transport2_ = new pp::Transport_Dev(instance_, kTestChannelName, type);
 
-  ASSERT_TRUE(transport1_.get() != NULL);
-  ASSERT_TRUE(transport2_.get() != NULL);
+  ASSERT_NE(NULL, transport1_);
+  ASSERT_NE(NULL, transport2_);
 
   PASS();
 }
@@ -142,6 +150,7 @@ std::string TestTransport::Connect() {
   ASSERT_EQ(transport1_->ReceiveRemoteAddress(address2), PP_OK);
   ASSERT_EQ(transport2_->ReceiveRemoteAddress(address1), PP_OK);
 
+
   ASSERT_EQ(connect_cb1.WaitForResult(), PP_OK);
   ASSERT_EQ(connect_cb2.WaitForResult(), PP_OK);
 
@@ -152,22 +161,76 @@ std::string TestTransport::Connect() {
 }
 
 std::string TestTransport::Clean() {
-  transport1_.reset();
-  transport2_.reset();
+  delete transport1_;
+  transport1_ = NULL;
+  delete transport2_;
+  transport2_ = NULL;
 
   PASS();
 }
 
 std::string TestTransport::TestCreate() {
-  RUN_SUBTEST(InitTargets("udp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_DATAGRAM));
 
   Clean();
 
   PASS();
 }
 
+std::string TestTransport::TestSetProperty() {
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_STREAM));
+
+  // Try settings STUN and Relay properties.
+  ASSERT_EQ(transport1_->SetProperty(
+      PP_TRANSPORTPROPERTY_STUN_SERVER,
+      pp::Var("stun.example.com:19302")), PP_OK);
+
+  ASSERT_EQ(transport1_->SetProperty(
+      PP_TRANSPORTPROPERTY_RELAY_SERVER,
+      pp::Var("ralay.example.com:80")), PP_OK);
+
+  ASSERT_EQ(transport1_->SetProperty(
+      PP_TRANSPORTPROPERTY_RELAY_USERNAME,
+      pp::Var("USERNAME")), PP_OK);
+  ASSERT_EQ(transport1_->SetProperty(
+      PP_TRANSPORTPROPERTY_RELAY_PASSWORD,
+      pp::Var("PASSWORD")), PP_OK);
+
+  // Try changing TCP window size.
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_RECEIVE_WINDOW,
+                                     pp::Var(65536)), PP_OK);
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_RECEIVE_WINDOW,
+                                     pp::Var(10000000)), PP_ERROR_BADARGUMENT);
+
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_SEND_WINDOW,
+                                     pp::Var(65536)), PP_OK);
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_SEND_WINDOW,
+                                     pp::Var(10000000)), PP_ERROR_BADARGUMENT);
+
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_NO_DELAY,
+                                     pp::Var(true)), PP_OK);
+
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_ACK_DELAY,
+                                     pp::Var(10)), PP_OK);
+  ASSERT_EQ(transport1_->SetProperty(PP_TRANSPORTPROPERTY_TCP_ACK_DELAY,
+                                     pp::Var(10000)), PP_ERROR_BADARGUMENT);
+
+  TestCompletionCallback connect_cb(instance_->pp_instance());
+  ASSERT_EQ(transport1_->Connect(connect_cb), PP_OK_COMPLETIONPENDING);
+
+  // SetProperty() should fail after we've connected.
+  ASSERT_EQ(transport1_->SetProperty(
+      PP_TRANSPORTPROPERTY_STUN_SERVER,
+      pp::Var("stun.example.com:31323")), PP_ERROR_FAILED);
+
+  Clean();
+  ASSERT_EQ(connect_cb.WaitForResult(), PP_ERROR_ABORTED);
+
+  PASS();
+}
+
 std::string TestTransport::TestConnect() {
-  RUN_SUBTEST(InitTargets("udp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_DATAGRAM));
   RUN_SUBTEST(Connect());
 
   Clean();
@@ -178,7 +241,7 @@ std::string TestTransport::TestConnect() {
 // Creating datagram connection and try sending data over it. Verify
 // that at least some packets are received (some packets may be lost).
 std::string TestTransport::TestSendDataUdp() {
-  RUN_SUBTEST(InitTargets("udp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_DATAGRAM));
   RUN_SUBTEST(Connect());
 
   const int kNumPackets = 100;
@@ -186,8 +249,7 @@ std::string TestTransport::TestSendDataUdp() {
   const int kUdpWaitTimeMs = 1000;  // 1 second.
 
   TestCompletionCallback done_cb(instance_->pp_instance());
-  StreamReader reader(transport1_.get(), kSendBufferSize * kNumPackets,
-                      done_cb);
+  StreamReader reader(transport1_, kSendBufferSize * kNumPackets, done_cb);
 
   std::map<int, std::vector<char> > sent_packets;
   for (int i = 0; i < kNumPackets; ++i) {
@@ -198,16 +260,22 @@ std::string TestTransport::TestSendDataUdp() {
     // Put packet index in the beginning.
     memcpy(&send_buffer[0], &i, sizeof(i));
 
-    TestCompletionCallback send_cb(instance_->pp_instance());
-    ASSERT_EQ(
-        transport2_->Send(&send_buffer[0], send_buffer.size(), send_cb),
-        static_cast<int>(send_buffer.size()));
+    TestCompletionCallback send_cb(instance_->pp_instance(), force_async_);
+    int32_t result = transport2_->Send(&send_buffer[0], send_buffer.size(),
+                                       send_cb);
+    if (force_async_) {
+      ASSERT_EQ(result, PP_OK_COMPLETIONPENDING);
+      ASSERT_EQ(send_cb.WaitForResult(), static_cast<int>(send_buffer.size()));
+    } else {
+      ASSERT_EQ(result, static_cast<int>(send_buffer.size()));
+    }
     sent_packets[i] = send_buffer;
   }
 
   // Limit waiting time.
-  pp::Module::Get()->core()->CallOnMainThread(kUdpWaitTimeMs, done_cb);
-  ASSERT_EQ(done_cb.WaitForResult(), PP_OK);
+  TestCompletionCallback timeout_cb(instance_->pp_instance());
+  pp::Module::Get()->core()->CallOnMainThread(kUdpWaitTimeMs, timeout_cb);
+  ASSERT_EQ(timeout_cb.WaitForResult(), PP_OK);
 
   ASSERT_TRUE(reader.errors().size() == 0);
   ASSERT_TRUE(reader.received().size() > 0);
@@ -226,15 +294,13 @@ std::string TestTransport::TestSendDataUdp() {
 // Creating reliable (TCP-like) connection and try sending data over
 // it. Verify that all data is received correctly.
 std::string TestTransport::TestSendDataTcp() {
-  RUN_SUBTEST(InitTargets("tcp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_STREAM));
   RUN_SUBTEST(Connect());
 
   const int kTcpSendSize = 100000;
-  const int kTimeoutMs = 20000;  // 20 seconds.
 
   TestCompletionCallback done_cb(instance_->pp_instance());
-  StreamReader reader(transport1_.get(), kTcpSendSize,
-                      done_cb);
+  StreamReader reader(transport1_, kTcpSendSize, done_cb);
 
   std::vector<char> send_buffer(kTcpSendSize);
   for (size_t j = 0; j < send_buffer.size(); ++j) {
@@ -243,17 +309,17 @@ std::string TestTransport::TestSendDataTcp() {
 
   int pos = 0;
   while (pos < static_cast<int>(send_buffer.size())) {
-    TestCompletionCallback send_cb(instance_->pp_instance());
+    TestCompletionCallback send_cb(instance_->pp_instance(), force_async_);
     int result = transport2_->Send(
         &send_buffer[0] + pos, send_buffer.size() - pos, send_cb);
+    if (force_async_)
+      ASSERT_EQ(result, PP_OK_COMPLETIONPENDING);
     if (result == PP_OK_COMPLETIONPENDING)
       result = send_cb.WaitForResult();
     ASSERT_TRUE(result > 0);
     pos += result;
   }
 
-  // Limit waiting time.
-  pp::Module::Get()->core()->CallOnMainThread(kTimeoutMs, done_cb);
   ASSERT_EQ(done_cb.WaitForResult(), PP_OK);
 
   ASSERT_TRUE(reader.errors().size() == 0);
@@ -271,7 +337,7 @@ std::string TestTransport::TestSendDataTcp() {
 }
 
 std::string TestTransport::TestConnectAndCloseUdp() {
-  RUN_SUBTEST(InitTargets("udp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_DATAGRAM));
   RUN_SUBTEST(Connect());
 
   std::vector<char> recv_buffer(kReadBufferSize);
@@ -292,7 +358,7 @@ std::string TestTransport::TestConnectAndCloseUdp() {
 }
 
 std::string TestTransport::TestConnectAndCloseTcp() {
-  RUN_SUBTEST(InitTargets("tcp"));
+  RUN_SUBTEST(InitTargets(PP_TRANSPORTTYPE_STREAM));
   RUN_SUBTEST(Connect());
 
   std::vector<char> recv_buffer(kReadBufferSize);

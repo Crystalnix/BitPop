@@ -11,17 +11,17 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
-#include "content/browser/cancelable_request.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Browser;
 class GURL;
-class TabContents;
-struct ViewHostMsg_FrameNavigate_Params;
 
 namespace content {
+class WebContents;
+struct FrameNavigateParams;
 struct LoadCommittedDetails;
 }
 
@@ -30,7 +30,7 @@ struct LoadCommittedDetails;
 //
 // TODO: if we end up keeping this (moving it out of about:flags) then we
 // should persist the start of the redirect chain in the navigation entry.
-class TabFinder : public NotificationObserver {
+class TabFinder : public content::NotificationObserver {
  public:
   // Returns the TabFinder, or NULL if TabFinder is not enabled.
   static TabFinder* GetInstance();
@@ -41,58 +41,53 @@ class TabFinder : public NotificationObserver {
   // Returns the tab that matches the specified url. If a tab is found the
   // browser containing the tab is set in |existing_browser|. This searches
   // in |browser| first before checking any other browsers.
-  TabContents* FindTab(Browser* browser,
-                       const GURL& url,
-                       Browser** existing_browser);
+  content::WebContents* FindTab(Browser* browser,
+                                const GURL& url,
+                                Browser** existing_browser);
 
-  // NotificationObserver overrides:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver overrides:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<TabFinder>;
 
-  class TabContentsObserverImpl;
+  class WebContentsObserverImpl;
 
-  typedef std::map<TabContents*, GURL> TabContentsToURLMap;
-  typedef std::set<TabContentsObserverImpl*> TabContentsObservers;
+  typedef std::map<content::WebContents*, GURL> WebContentsToURLMap;
+  typedef std::set<WebContentsObserverImpl*> WebContentsObservers;
 
   TabFinder();
   virtual ~TabFinder();
 
-  void Init();
-
-  // Forwarded from TabContentsObserverImpl.
-  void DidNavigateAnyFramePostCommit(
-      TabContents* source,
+  // Forwarded from WebContentsObserverImpl.
+  void DidNavigateAnyFrame(
+      content::WebContents* source,
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
+      const content::FrameNavigateParams& params);
 
   // Returns true if the tab's current url is |url|, or the start of the
   // redirect chain for the tab is |url|.
-  bool TabMatchesURL(TabContents* tab_contents, const GURL& url);
+  bool TabMatchesURL(content::WebContents* web_contents, const GURL& url);
 
   // Returns the first tab in the specified browser that matches the specified
   // url.  Returns NULL if there are no tabs matching the specified url.
-  TabContents* FindTabInBrowser(Browser* browser, const GURL& url);
+  content::WebContents* FindTabInBrowser(Browser* browser, const GURL& url);
 
   // If we're not currently tracking |tab| this creates a
-  // TabContentsObserverImpl to listen for navigations.
-  void TrackTab(TabContents* tab);
+  // WebContentsObserverImpl to listen for navigations.
+  void TrackTab(content::WebContents* tab);
 
-  // Queries all the tabs in |browser| for the start of the redirect chain.
-  void TrackBrowser(Browser* browser);
-
-  // Invoked when a TabContents is being destroyed.
-  void TabDestroyed(TabContentsObserverImpl* observer);
+  // Invoked when a WebContents is being destroyed.
+  void TabDestroyed(WebContentsObserverImpl* observer);
 
   // Cancels any pending requests for the specified tabs redirect chain.
-  void CancelRequestsFor(TabContents* tab_contents);
+  void CancelRequestsFor(content::WebContents* web_contents);
 
-  // Starts the fetch for the redirect chain of the specified TabContents.
+  // Starts the fetch for the redirect chain of the specified WebContents.
   // QueryRedirectsToComplete is invoked when the redirect chain is retrieved.
-  void FetchRedirectStart(TabContents* tab);
+  void FetchRedirectStart(content::WebContents* tab);
 
   // Callback when we get the redirect list for a tab.
   void QueryRedirectsToComplete(CancelableRequestProvider::Handle handle,
@@ -100,14 +95,14 @@ class TabFinder : public NotificationObserver {
                                 bool success,
                                 history::RedirectList* redirects);
 
-  // Maps from TabContents to the start of the redirect chain.
-  TabContentsToURLMap tab_contents_to_url_;
+  // Maps from WebContents to the start of the redirect chain.
+  WebContentsToURLMap web_contents_to_url_;
 
-  CancelableRequestConsumerTSimple<TabContents*> callback_consumer_;
+  CancelableRequestConsumerTSimple<content::WebContents*> callback_consumer_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
-  TabContentsObservers tab_contents_observers_;
+  WebContentsObservers tab_contents_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(TabFinder);
 };

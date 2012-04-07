@@ -6,11 +6,25 @@
 
 // Multiply-included message file, hence no include guard.
 #include "base/shared_memory.h"
-#include "content/common/resource_response.h"
+#include "content/public/common/common_param_traits.h"
+#include "content/public/common/resource_response.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/upload_data.h"
 
 #define IPC_MESSAGE_START ResourceMsgStart
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
+
+IPC_STRUCT_TRAITS_BEGIN(content::ResourceResponseHead)
+  IPC_STRUCT_TRAITS_PARENT(webkit_glue::ResourceResponseInfo)
+  IPC_STRUCT_TRAITS_MEMBER(status)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::SyncLoadResult)
+  IPC_STRUCT_TRAITS_PARENT(content::ResourceResponseHead)
+  IPC_STRUCT_TRAITS_MEMBER(final_url)
+  IPC_STRUCT_TRAITS_MEMBER(data)
+IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(webkit_glue::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(request_time)
@@ -35,17 +49,6 @@ IPC_STRUCT_TRAITS_BEGIN(webkit_glue::ResourceResponseInfo)
   IPC_STRUCT_TRAITS_MEMBER(socket_address)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(ResourceResponseHead)
-  IPC_STRUCT_TRAITS_PARENT(webkit_glue::ResourceResponseInfo)
-  IPC_STRUCT_TRAITS_MEMBER(status)
-IPC_STRUCT_TRAITS_END()
-
-IPC_STRUCT_TRAITS_BEGIN(SyncLoadResult)
-  IPC_STRUCT_TRAITS_PARENT(ResourceResponseHead)
-  IPC_STRUCT_TRAITS_MEMBER(final_url)
-  IPC_STRUCT_TRAITS_MEMBER(data)
-IPC_STRUCT_TRAITS_END()
-
 // Parameters for a resource request.
 IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
   // The request method: GET, POST, etc.
@@ -63,6 +66,9 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
 
   // The referrer to use (may be empty).
   IPC_STRUCT_MEMBER(GURL, referrer)
+
+  // The referrer policy to use.
+  IPC_STRUCT_MEMBER(WebKit::WebReferrerPolicy, referrer_policy)
 
   // Additional HTTP request headers.
   IPC_STRUCT_MEMBER(std::string, headers)
@@ -92,6 +98,29 @@ IPC_STRUCT_BEGIN(ResourceHostMsg_Request)
 
   // True if the request was user initiated.
   IPC_STRUCT_MEMBER(bool, has_user_gesture)
+
+  // True if |frame_id| is the main frame of a RenderView.
+  IPC_STRUCT_MEMBER(bool, is_main_frame)
+
+  // Identifies the frame within the RenderView that sent the request.
+  // -1 if unknown / invalid.
+  IPC_STRUCT_MEMBER(int64, frame_id)
+
+  // True if |parent_frame_id| is the main frame of a RenderView.
+  IPC_STRUCT_MEMBER(bool, parent_is_main_frame)
+
+  // Identifies the parent frame of the frame that sent the request.
+  // -1 if unknown / invalid.
+  IPC_STRUCT_MEMBER(int64, parent_frame_id)
+
+  IPC_STRUCT_MEMBER(content::PageTransition, transition_type)
+
+  // The following two members identify a previous request that has been
+  // created before this navigation has been transferred to a new render view.
+  // This serves the purpose of recycling the old request.
+  // Unless this refers to a transferred navigation, these values are -1 and -1.
+  IPC_STRUCT_MEMBER(int, transferred_request_child_id)
+  IPC_STRUCT_MEMBER(int, transferred_request_request_id)
 IPC_STRUCT_END()
 
 // Resource messages sent from the browser to the renderer.
@@ -99,7 +128,7 @@ IPC_STRUCT_END()
 // Sent when the headers are available for a resource request.
 IPC_MESSAGE_ROUTED2(ResourceMsg_ReceivedResponse,
                     int /* request_id */,
-                    ResourceResponseHead)
+                    content::ResourceResponseHead)
 
 // Sent when cached metadata from a resource request is ready.
 IPC_MESSAGE_ROUTED2(ResourceMsg_ReceivedCachedMetadata,
@@ -118,7 +147,7 @@ IPC_MESSAGE_ROUTED3(ResourceMsg_UploadProgress,
 IPC_MESSAGE_ROUTED3(ResourceMsg_ReceivedRedirect,
                     int /* request_id */,
                     GURL /* new_url */,
-                    ResourceResponseHead)
+                    content::ResourceResponseHead)
 
 // Sent when some data from a resource request is ready. The handle should
 // already be mapped into the process that receives this message.
@@ -140,7 +169,7 @@ IPC_MESSAGE_ROUTED4(ResourceMsg_RequestComplete,
                     int /* request_id */,
                     net::URLRequestStatus /* status */,
                     std::string /* security info */,
-                    base::Time /* completion_time */)
+                    base::TimeTicks /* completion_time */)
 
 // Resource messages sent from the renderer to the browser.
 
@@ -153,6 +182,13 @@ IPC_MESSAGE_ROUTED2(ResourceHostMsg_RequestResource,
 IPC_MESSAGE_ROUTED1(ResourceHostMsg_CancelRequest,
                     int /* request_id */)
 
+// Sets a new routing id for the resource request with the ID given as the
+// parameter. This happens when a pending request is transferred to another
+// page.
+IPC_MESSAGE_CONTROL2(ResourceHostMsg_TransferRequestToNewPage,
+                     int /* new routing_id */,
+                     int /* request_id */)
+
 // Follows a redirect that occured for the resource request with the ID given
 // as the parameter.
 IPC_MESSAGE_ROUTED3(ResourceHostMsg_FollowRedirect,
@@ -164,7 +200,7 @@ IPC_MESSAGE_ROUTED3(ResourceHostMsg_FollowRedirect,
 IPC_SYNC_MESSAGE_ROUTED2_1(ResourceHostMsg_SyncLoad,
                            int /* request_id */,
                            ResourceHostMsg_Request,
-                           SyncLoadResult)
+                           content::SyncLoadResult)
 
 // Sent when the renderer process is done processing a DataReceived
 // message.

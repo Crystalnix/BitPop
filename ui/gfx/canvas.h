@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,16 @@
 #include <string>
 
 #include "base/string16.h"
-// TODO(beng): remove this include when we no longer depend on SkTypes.
-#include "skia/ext/platform_canvas.h"
+// TODO(beng): remove these includes when we no longer depend on SkTypes.
+#include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkXfermode.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+class SkCanvas;
 
 namespace ui {
 class Transform;
-
-typedef unsigned int TextureID;
 }
 
 namespace gfx {
@@ -26,9 +28,10 @@ class CanvasSkia;
 class Font;
 class Point;
 class Rect;
+class Size;
 
 // TODO(beng): documentation.
-class Canvas {
+class UI_EXPORT Canvas {
  public:
   // Specifies the alignment for text rendered with the DrawStringInt method.
   enum {
@@ -66,6 +69,10 @@ class Canvas {
     // installed) don't support these characters. Thus, this flag should be
     // used to render text using RTL directionality when the locale is LTR.
     FORCE_RTL_DIRECTIONALITY = 2048,
+
+    // Similar to FORCE_RTL_DIRECTIONALITY, but left-to-right.
+    // See FORCE_RTL_DIRECTIONALITY for details.
+    FORCE_LTR_DIRECTIONALITY = 4096,
   };
 
   virtual ~Canvas() {}
@@ -74,7 +81,7 @@ class Canvas {
   static Canvas* CreateCanvas();
 
   // Creates a canvas with the specified size.
-  static Canvas* CreateCanvas(int width, int height, bool is_opaque);
+  static Canvas* CreateCanvas(const gfx::Size& size, bool is_opaque);
 
   // Saves a copy of the drawing state onto a stack, operating on this copy
   // until a balanced call to Restore() is made.
@@ -91,51 +98,41 @@ class Canvas {
   // call Restore() more times than Save*().
   virtual void Restore() = 0;
 
-  // Wrapper function that takes integer arguments.
   // Returns true if the clip is non-empty.
-  // See clipRect for specifics.
-  virtual bool ClipRectInt(int x, int y, int w, int h) = 0;
+  virtual bool ClipRect(const gfx::Rect& rect) = 0;
 
-  // Wrapper function that takes integer arguments.
-  // See translate() for specifics.
-  virtual void TranslateInt(int x, int y) = 0;
+  virtual void Translate(const gfx::Point& point) = 0;
 
-  // Wrapper function that takes integer arguments.
-  // See scale() for specifics.
-  virtual void ScaleInt(int x, int y) = 0;
+  virtual void Scale(int x_scale, int y_scale) = 0;
 
   // Fills the specified region with the specified color using a transfer
   // mode of SkXfermode::kSrcOver_Mode.
-  virtual void FillRectInt(const SkColor& color,
-                           int x, int y, int w, int h) = 0;
+  virtual void FillRect(const SkColor& color, const gfx::Rect& rect) = 0;
 
-  // Fills the specified region with the specified color and mode
-  virtual void FillRectInt(const SkColor& color,
-                           int x, int y, int w, int h,
-                           SkXfermode::Mode mode) = 0;
+  // Fills the specified region with the specified color and mode.
+  virtual void FillRect(const SkColor& color,
+                        const gfx::Rect& rect,
+                        SkXfermode::Mode mode) = 0;
 
   // Fills the specified region with the specified brush.
-  virtual void FillRectInt(const gfx::Brush* brush,
-                           int x, int y, int w, int h) = 0;
+  virtual void FillRect(const gfx::Brush* brush, const gfx::Rect& rect) = 0;
 
   // Draws a single pixel rect in the specified region with the specified
   // color, using a transfer mode of SkXfermode::kSrcOver_Mode.
   //
   // NOTE: if you need a single pixel line, use DrawLineInt.
-  virtual void DrawRectInt(const SkColor& color,
-                           int x, int y, int w, int h) = 0;
+  virtual void DrawRect(const gfx::Rect& rect, const SkColor& color) = 0;
 
   // Draws a single pixel rect in the specified region with the specified
   // color and transfer mode.
   //
   // NOTE: if you need a single pixel line, use DrawLineInt.
-  virtual void DrawRectInt(const SkColor& color,
-                           int x, int y, int w, int h,
-                           SkXfermode::Mode mode) = 0;
+  virtual void DrawRect(const gfx::Rect& rect,
+                        const SkColor& color,
+                        SkXfermode::Mode mode) = 0;
 
   // Draws the given rectangle with the given paint's parameters.
-  virtual void DrawRectInt(int x, int y, int w, int h,
-                           const SkPaint& paint) = 0;
+  virtual void DrawRect(const gfx::Rect& rect, const SkPaint& paint) = 0;
 
   // Draws a single pixel line with the specified color.
   virtual void DrawLineInt(const SkColor& color,
@@ -178,8 +175,8 @@ class Canvas {
   // Draws text with the specified color, font and location. The text is
   // aligned to the left, vertically centered, clipped to the region. If the
   // text is too big, it is truncated and '...' is added to the end.
-  virtual void DrawStringInt(const string16& text, const
-                             gfx::Font& font,
+  virtual void DrawStringInt(const string16& text,
+                             const gfx::Font& font,
                              const SkColor& color,
                              int x, int y, int w, int h) = 0;
   virtual void DrawStringInt(const string16& text,
@@ -197,7 +194,7 @@ class Canvas {
                              int flags) = 0;
 
   // Draws a dotted gray rectangle used for focus purposes.
-  virtual void DrawFocusRect(int x, int y, int width, int height) = 0;
+  virtual void DrawFocusRect(const gfx::Rect& rect) = 0;
 
   // Tiles the image in the specified region.
   virtual void TileImageInt(const SkBitmap& bitmap,
@@ -217,17 +214,16 @@ class Canvas {
   // Apply transformation on the canvas.
   virtual void Transform(const ui::Transform& transform) = 0;
 
-  // Create a texture ID that can be used for accelerated drawing.
-  virtual ui::TextureID GetTextureID() = 0;
-
   // TODO(beng): remove this once we don't need to use any skia-specific methods
   //             through this interface.
   // A quick and dirty way to obtain the underlying SkCanvas.
   virtual CanvasSkia* AsCanvasSkia();
   virtual const CanvasSkia* AsCanvasSkia() const;
+  virtual SkCanvas* GetSkCanvas();
+  virtual const SkCanvas* GetSkCanvas() const;
 };
 
-class CanvasPaint {
+class UI_EXPORT CanvasPaint {
  public:
   virtual ~CanvasPaint() {}
 
@@ -245,6 +241,6 @@ class CanvasPaint {
   virtual Canvas* AsCanvas() = 0;
 };
 
-}  // namespace gfx;
+}  // namespace gfx
 
 #endif  // UI_GFX_CANVAS_H_

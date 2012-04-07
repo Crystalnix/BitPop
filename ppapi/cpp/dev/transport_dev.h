@@ -16,9 +16,10 @@ class Var;
 
 class Transport_Dev : public Resource {
  public:
-  Transport_Dev(Instance* instance, const char* name, const char* proto);
+  Transport_Dev(Instance* instance, const char* name, PP_TransportType type);
 
   bool IsWritable();
+  int32_t SetProperty(PP_TransportProperty property, const Var& value);
   int32_t Connect(const CompletionCallback& cc);
   int32_t GetNextAddress(pp::Var* address, const CompletionCallback& cc);
   int32_t ReceiveRemoteAddress(const pp::Var& address);

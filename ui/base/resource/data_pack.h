@@ -14,13 +14,11 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string_piece.h"
+#include "ui/base/ui_export.h"
 
 class FilePath;
 class RefCountedStaticMemory;
-
-namespace base {
-class StringPiece;
-}
 
 namespace file_util {
 class MemoryMappedFile;
@@ -28,8 +26,15 @@ class MemoryMappedFile;
 
 namespace ui {
 
-class DataPack {
+class UI_EXPORT DataPack {
  public:
+  // What type of encoding the text resources use.
+  enum TextEncodingType {
+    BINARY,
+    UTF8,
+    UTF16
+  };
+
   DataPack();
   ~DataPack();
 
@@ -39,16 +44,23 @@ class DataPack {
   // Get resource by id |resource_id|, filling in |data|.
   // The data is owned by the DataPack object and should not be modified.
   // Returns false if the resource id isn't found.
-  bool GetStringPiece(uint32 resource_id, base::StringPiece* data) const;
+  bool GetStringPiece(uint16 resource_id, base::StringPiece* data) const;
 
   // Like GetStringPiece(), but returns a reference to memory. This interface
   // is used for image data, while the StringPiece interface is usually used
   // for localization strings.
-  RefCountedStaticMemory* GetStaticMemory(uint32 resource_id) const;
+  RefCountedStaticMemory* GetStaticMemory(uint16 resource_id) const;
 
-  // Writes a pack file containing |resources| to |path|.
+  // Writes a pack file containing |resources| to |path|. If there are any
+  // text resources to be written, their encoding must already agree to the
+  // |textEncodingType| specified. If no text resources are present, please
+  // indicate BINARY.
   static bool WritePack(const FilePath& path,
-                        const std::map<uint32, base::StringPiece>& resources);
+                        const std::map<uint16, base::StringPiece>& resources,
+                        TextEncodingType textEncodingType);
+
+  // Get the encoding type of text resources.
+  TextEncodingType GetTextEncodingType() const { return text_encoding_type_; }
 
  private:
   // The memory-mapped data.
@@ -56,6 +68,9 @@ class DataPack {
 
   // Number of resources in the data.
   size_t resource_count_;
+
+  // Type of encoding for text resources.
+  TextEncodingType text_encoding_type_;
 
   DISALLOW_COPY_AND_ASSIGN(DataPack);
 };

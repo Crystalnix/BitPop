@@ -21,7 +21,7 @@ class BookmarkMenuBridge;
 @interface BookmarkMenuCocoaController : NSObject<NSMenuDelegate> {
  @private
   BookmarkMenuBridge* bridge_;  // weak; owns me
-  NSMenu* menu_;
+  NSMenu *menu_;
 }
 
 // The Bookmarks menu

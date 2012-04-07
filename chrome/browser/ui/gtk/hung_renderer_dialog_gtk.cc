@@ -11,20 +11,25 @@
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/logging_chrome.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/result_codes.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::WebContents;
 
 namespace {
 
@@ -32,10 +37,35 @@ namespace {
 class HungRendererDialogGtk {
  public:
   HungRendererDialogGtk();
-  void ShowForTabContents(TabContents* hung_contents);
-  void EndForTabContents(TabContents* hung_contents);
+  ~HungRendererDialogGtk() {}
+  void ShowForWebContents(WebContents* hung_contents);
+  void Hide();
+  void EndForWebContents(WebContents* hung_contents);
 
  private:
+  // Dismiss the panel if |contents_| is closed or its renderer exits.
+  class WebContentsObserverImpl : public content::WebContentsObserver {
+   public:
+    WebContentsObserverImpl(HungRendererDialogGtk* dialog,
+                            WebContents* contents)
+        : content::WebContentsObserver(contents),
+          dialog_(dialog) {
+    }
+
+    // content::WebContentsObserver overrides:
+    virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE {
+      dialog_->Hide();
+    }
+    virtual void WebContentsDestroyed(WebContents* tab) OVERRIDE {
+      dialog_->Hide();
+    }
+
+   private:
+    HungRendererDialogGtk* dialog_;  // weak
+
+    DISALLOW_COPY_AND_ASSIGN(WebContentsObserverImpl);
+  };
+
   // The GtkTreeView column ids.
   enum {
     COL_FAVICON,
@@ -50,7 +80,8 @@ class HungRendererDialogGtk {
 
   GtkDialog* dialog_;
   GtkListStore* model_;
-  TabContents* contents_;
+  WebContents* contents_;
+  scoped_ptr<WebContentsObserverImpl> contents_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(HungRendererDialogGtk);
 };
@@ -98,21 +129,21 @@ void HungRendererDialogGtk::Init() {
   // |                                   |
   // |         kill button    wait button|
   // ·-----------------------------------·
-  GtkWidget* contents_vbox = dialog_->vbox;
-  gtk_box_set_spacing(GTK_BOX(contents_vbox), gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(dialog_);
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
 
   GtkWidget* hbox = gtk_hbox_new(FALSE, 12);
-  gtk_box_pack_start(GTK_BOX(contents_vbox), hbox, TRUE, TRUE, 0);
+  gtk_box_pack_start(GTK_BOX(content_area), hbox, TRUE, TRUE, 0);
 
   // Wrap the icon in a vbox so it stays top aligned.
   GtkWidget* icon_vbox = gtk_vbox_new(FALSE, 0);
   gtk_box_pack_start(GTK_BOX(hbox), icon_vbox, FALSE, FALSE, 0);
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   GdkPixbuf* icon_pixbuf = rb.GetNativeImageNamed(IDR_FROZEN_TAB_ICON);
   GtkWidget* icon = gtk_image_new_from_pixbuf(icon_pixbuf);
   gtk_box_pack_start(GTK_BOX(icon_vbox), icon, FALSE, FALSE, 0);
 
-  GtkWidget* vbox = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* vbox = gtk_vbox_new(FALSE, ui::kControlSpacing);
   gtk_box_pack_start(GTK_BOX(hbox), vbox, TRUE, TRUE, 0);
 
   GtkWidget* text = gtk_label_new(
@@ -145,19 +176,20 @@ void HungRendererDialogGtk::Init() {
   gtk_container_add(GTK_CONTAINER(scroll_list), tree_view);
 }
 
-void HungRendererDialogGtk::ShowForTabContents(TabContents* hung_contents) {
+void HungRendererDialogGtk::ShowForWebContents(WebContents* hung_contents) {
   DCHECK(hung_contents && dialog_);
   contents_ = hung_contents;
+  contents_observer_.reset(new WebContentsObserverImpl(this, contents_));
   gtk_list_store_clear(model_);
 
   GtkTreeIter tree_iter;
   for (TabContentsIterator it; !it.done(); ++it) {
-    if (it->tab_contents()->GetRenderProcessHost() ==
+    if (it->web_contents()->GetRenderProcessHost() ==
         hung_contents->GetRenderProcessHost()) {
       gtk_list_store_append(model_, &tree_iter);
-      std::string title = UTF16ToUTF8(it->tab_contents()->GetTitle());
+      std::string title = UTF16ToUTF8(it->web_contents()->GetTitle());
       if (title.empty())
-        title = UTF16ToUTF8(TabContentsWrapper::GetDefaultTitle());
+        title = UTF16ToUTF8(CoreTabHelper::GetDefaultTitle());
       SkBitmap favicon = it->favicon_tab_helper()->GetFavicon();
 
       GdkPixbuf* pixbuf = NULL;
@@ -174,13 +206,18 @@ void HungRendererDialogGtk::ShowForTabContents(TabContents* hung_contents) {
   gtk_util::ShowDialog(GTK_WIDGET(dialog_));
 }
 
-void HungRendererDialogGtk::EndForTabContents(TabContents* contents) {
+void HungRendererDialogGtk::Hide() {
+  gtk_widget_hide(GTK_WIDGET(dialog_));
+  // Since we're closing, we no longer need this WebContents.
+  contents_observer_.reset();
+  contents_ = NULL;
+}
+
+void HungRendererDialogGtk::EndForWebContents(WebContents* contents) {
   DCHECK(contents);
   if (contents_ && contents_->GetRenderProcessHost() ==
       contents->GetRenderProcessHost()) {
-    gtk_widget_hide(GTK_WIDGET(dialog_));
-    // Since we're closing, we no longer need this TabContents.
-    contents_ = NULL;
+    Hide();
   }
 }
 
@@ -193,15 +230,15 @@ void HungRendererDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
       // Kill the process.
       if (contents_ && contents_->GetRenderProcessHost()) {
         base::KillProcess(contents_->GetRenderProcessHost()->GetHandle(),
-                          ResultCodes::HUNG, false);
+                          content::RESULT_CODE_HUNG, false);
       }
       break;
 
     case GTK_RESPONSE_OK:
     case GTK_RESPONSE_DELETE_EVENT:
       // Start waiting again for responsiveness.
-      if (contents_ && contents_->render_view_host())
-        contents_->render_view_host()->RestartHangMonitorTimeout();
+      if (contents_ && contents_->GetRenderViewHost())
+        contents_->GetRenderViewHost()->RestartHangMonitorTimeout();
       break;
     default:
       NOTREACHED();
@@ -216,17 +253,17 @@ void HungRendererDialogGtk::OnResponse(GtkWidget* dialog, int response_id) {
 
 namespace browser {
 
-void ShowHungRendererDialog(TabContents* contents) {
+void ShowNativeHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed()) {
     if (!g_instance)
       g_instance = new HungRendererDialogGtk();
-    g_instance->ShowForTabContents(contents);
+    g_instance->ShowForWebContents(contents);
   }
 }
 
-void HideHungRendererDialog(TabContents* contents) {
+void HideNativeHungRendererDialog(WebContents* contents) {
   if (!logging::DialogsAreSuppressed() && g_instance)
-    g_instance->EndForTabContents(contents);
+    g_instance->EndForWebContents(contents);
 }
 
 }  // namespace browser

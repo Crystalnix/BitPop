@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,51 +9,47 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/proxy/host_resource.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/shared_impl/host_resource.h"
 
-struct PPB_URLResponseInfo;
+namespace ppapi {
 
-namespace pp {
+struct PPB_FileRef_CreateInfo;
+
 namespace proxy {
 
-struct PPBFileRef_CreateInfo;
 class SerializedVarReturnValue;
 
 class PPB_URLResponseInfo_Proxy : public InterfaceProxy {
  public:
-  PPB_URLResponseInfo_Proxy(Dispatcher* dispatcher,
-                            const void* target_interface);
+  PPB_URLResponseInfo_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_URLResponseInfo_Proxy();
-
-  static const Info* GetInfo();
 
   // URLResponseInfo objects are actually created and returned by the
   // URLLoader. This function allows the URLLoader to convert a new
   // HostResource representing a response info to a properly tracked
-  // URLReponseInfo PluginResource. Returns the plugin resource ID for the
+  // URLReponseInfo Resource. Returns the plugin resource ID for the
   // new resource.
-  static PP_Resource CreateResponseForResource(const HostResource& resource);
-
-  const PPB_URLResponseInfo* ppb_url_response_info_target() const {
-    return static_cast<const PPB_URLResponseInfo*>(target_interface());
-  }
+  static PP_Resource CreateResponseForResource(
+      const ppapi::HostResource& resource);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
+  static const ApiID kApiID = API_ID_PPB_URL_RESPONSE_INFO;
+
  private:
   // Message handlers.
-  void OnMsgGetProperty(HostResource response,
+  void OnMsgGetProperty(const ppapi::HostResource& response,
                         int32_t property,
                         SerializedVarReturnValue result);
-  void OnMsgGetBodyAsFileRef(HostResource response,
-                             PPBFileRef_CreateInfo* result);
+  void OnMsgGetBodyAsFileRef(const ppapi::HostResource& response,
+                             PPB_FileRef_CreateInfo* result);
 
   DISALLOW_COPY_AND_ASSIGN(PPB_URLResponseInfo_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_URL_RESPONSE_INFO_PROXY_H_

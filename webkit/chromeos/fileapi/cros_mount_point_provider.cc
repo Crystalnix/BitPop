@@ -1,23 +1,25 @@
-  // Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/chromeos/fileapi/cros_mount_point_provider.h"
 
 #include "base/logging.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "base/utf_string_conversions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/chromeos/fileapi/file_access_permissions.h"
-#include "webkit/fileapi/file_system_path_manager.h"
+#include "webkit/fileapi/file_system_callback_dispatcher.h"
+#include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_util.h"
+#include "webkit/fileapi/native_file_util.h"
 #include "webkit/glue/webkit_glue.h"
 
 namespace chromeos {
@@ -32,13 +34,16 @@ const char kChromeUIScheme[] = "chrome";
 // Top level file system elements exposed in FileAPI in ChromeOS:
 FixedExposedPaths fixed_exposed_paths[] = {
     {"/home/chronos/user/", "Downloads"},
-    {"/",                   "media"},
+    {"/media",              "archive"},
+    {"/media",              "removable"},
 };
 
 CrosMountPointProvider::CrosMountPointProvider(
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy)
     : special_storage_policy_(special_storage_policy),
-      file_access_permissions_(new FileAccessPermissions()) {
+      file_access_permissions_(new FileAccessPermissions()),
+      local_file_util_(
+          new fileapi::LocalFileUtil(new fileapi::NativeFileUtil())) {
   for (size_t i = 0; i < arraysize(fixed_exposed_paths); i++) {
     mount_point_map_.insert(std::pair<std::string, FilePath>(
         std::string(fixed_exposed_paths[i].web_root_path),
@@ -75,21 +80,17 @@ bool CrosMountPointProvider::GetRootForVirtualPath(
   return true;
 }
 
-void CrosMountPointProvider::ValidateFileSystemRootAndGetURL(
+void CrosMountPointProvider::ValidateFileSystemRoot(
     const GURL& origin_url,
     fileapi::FileSystemType type,
     bool create,
-    fileapi::FileSystemPathManager::GetRootPathCallback* callback_ptr) {
+    const ValidateFileSystemCallback& callback) {
+  // Nothing to validate for external filesystem.
   DCHECK(type == fileapi::kFileSystemTypeExternal);
-  std::string name(GetOriginIdentifierFromURL(origin_url));
-  name += ':';
-  name += fileapi::kExternalName;
-  FilePath root_path;
-  root_path = FilePath(fileapi::kExternalDir);
-  callback_ptr->Run(true, root_path, name);
+  callback.Run(base::PLATFORM_FILE_OK);
 }
 
-FilePath CrosMountPointProvider::ValidateFileSystemRootAndGetPathOnFileThread(
+FilePath CrosMountPointProvider::GetFileSystemRootPathOnFileThread(
     const GURL& origin_url,
     fileapi::FileSystemType type,
     const FilePath& virtual_path,
@@ -100,11 +101,6 @@ FilePath CrosMountPointProvider::ValidateFileSystemRootAndGetPathOnFileThread(
     return FilePath();
 
   return root_path;
-}
-
-// TODO(zelidrag): Share this code with SandboxMountPointProvider impl.
-bool CrosMountPointProvider::IsRestrictedFileName(const FilePath& path) const {
-  return false;
 }
 
 bool CrosMountPointProvider::IsAccessAllowed(const GURL& origin_url,
@@ -126,8 +122,14 @@ bool CrosMountPointProvider::IsAccessAllowed(const GURL& origin_url,
                                                        virtual_path);
 }
 
+// TODO(zelidrag): Share this code with SandboxMountPointProvider impl.
+bool CrosMountPointProvider::IsRestrictedFileName(const FilePath& path) const {
+  return false;
+}
+
 void CrosMountPointProvider::AddMountPoint(FilePath mount_point) {
   base::AutoLock locker(lock_);
+  mount_point_map_.erase(mount_point.BaseName().value());
   mount_point_map_.insert(std::pair<std::string, FilePath>(
       mount_point.BaseName().value(), mount_point.DirName()));
 }
@@ -173,6 +175,24 @@ std::vector<FilePath> CrosMountPointProvider::GetRootDirectories() const {
   return root_dirs;
 }
 
+fileapi::FileSystemFileUtil* CrosMountPointProvider::GetFileUtil() {
+  return local_file_util_.get();
+}
+
+fileapi::FileSystemOperationInterface*
+CrosMountPointProvider::CreateFileSystemOperation(
+    const GURL& origin_url,
+    fileapi::FileSystemType file_system_type,
+    const FilePath& virtual_path,
+    scoped_ptr<fileapi::FileSystemCallbackDispatcher> dispatcher,
+    base::MessageLoopProxy* file_proxy,
+    fileapi::FileSystemContext* context) const {
+  // TODO(satorux,zel): instantiate appropriate FileSystemOperation that
+  // implements async/remote operations.
+  return new fileapi::FileSystemOperation(
+      dispatcher.Pass(), file_proxy, context);
+}
+
 bool CrosMountPointProvider::GetVirtualPath(const FilePath& filesystem_path,
                                            FilePath* virtual_path) {
   for (MountPointMap::const_iterator iter = mount_point_map_.begin();
@@ -180,7 +200,9 @@ bool CrosMountPointProvider::GetVirtualPath(const FilePath& filesystem_path,
        ++iter) {
     FilePath mount_prefix = iter->second.Append(iter->first);
     *virtual_path = FilePath(iter->first);
-    if (mount_prefix.AppendRelativePath(filesystem_path, virtual_path)) {
+    if (mount_prefix == filesystem_path) {
+      return true;
+    } else if (mount_prefix.AppendRelativePath(filesystem_path, virtual_path)) {
       return true;
     }
   }
@@ -188,4 +210,3 @@ bool CrosMountPointProvider::GetVirtualPath(const FilePath& filesystem_path,
 }
 
 }  // namespace chromeos
-

@@ -11,12 +11,15 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
+
+using content::NavigationEntry;
 
 class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
  protected:
@@ -29,8 +32,8 @@ class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
     return GURL(GetLocationBarText());
   }
 
-  NavigationController* GetNavigationController() const {
-    return &browser()->GetSelectedTabContents()->controller();
+  content::NavigationController* GetNavigationController() const {
+    return &browser()->GetSelectedWebContents()->GetController();
   }
 
   NavigationEntry* GetNavigationEntry() const {
@@ -48,8 +51,9 @@ class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
   void TestExtensionURLOverride(const GURL& url) {
     ui_test_utils::NavigateToURL(browser(), url);
     EXPECT_EQ(url, GetLocationBarTextAsURL());
-    EXPECT_EQ(url, GetNavigationEntry()->virtual_url());
-    EXPECT_TRUE(GetNavigationEntry()->url().SchemeIs(chrome::kExtensionScheme));
+    EXPECT_EQ(url, GetNavigationEntry()->GetVirtualURL());
+    EXPECT_TRUE(
+        GetNavigationEntry()->GetURL().SchemeIs(chrome::kExtensionScheme));
   }
 
   // Navigates to |url| and tests that the location bar is empty while the
@@ -57,7 +61,7 @@ class ExtensionURLRewriteBrowserTest : public ExtensionBrowserTest {
   void TestURLNotShown(const GURL& url) {
     ui_test_utils::NavigateToURL(browser(), url);
     EXPECT_EQ("", GetLocationBarText());
-    EXPECT_EQ(url, GetNavigationEntry()->virtual_url());
+    EXPECT_EQ(url, GetNavigationEntry()->GetVirtualURL());
   }
 };
 
@@ -66,7 +70,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, NewTabPageURL) {
   GURL url(chrome::kChromeUINewTabURL);
   TestURLNotShown(url);
   // Check that the actual URL corresponds to chrome://newtab.
-  EXPECT_EQ(url, GetNavigationEntry()->url());
+  EXPECT_EQ(url, GetNavigationEntry()->GetURL());
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, NewTabPageURLOverride) {
@@ -75,7 +79,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, NewTabPageURLOverride) {
   LoadExtension(GetTestExtensionPath("newtab"));
   TestURLNotShown(GURL(chrome::kChromeUINewTabURL));
   // Check that the internal URL uses the chrome-extension:// scheme.
-  EXPECT_TRUE(GetNavigationEntry()->url().SchemeIs(chrome::kExtensionScheme));
+  EXPECT_TRUE(GetNavigationEntry()->GetURL().SchemeIs(chrome::kExtensionScheme));
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, BookmarksURL) {
@@ -83,6 +87,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, BookmarksURL) {
   // what was entered and the internal URL uses the chrome-extension:// scheme.
   TestExtensionURLOverride(GURL(chrome::kChromeUIBookmarksURL));
 }
+
+#if defined(FILE_MANAGER_EXTENSION)
+IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, FileManagerURL) {
+  // Navigate to chrome://files and check that the location bar URL is
+  // what was entered and the internal URL uses the chrome-extension:// scheme.
+  TestExtensionURLOverride(GURL(chrome::kChromeUIFileManagerURL));
+}
+#endif
 
 IN_PROC_BROWSER_TEST_F(ExtensionURLRewriteBrowserTest, BookmarksURLWithRef) {
   // Navigate to chrome://bookmarks/#1 and check that the location bar URL is

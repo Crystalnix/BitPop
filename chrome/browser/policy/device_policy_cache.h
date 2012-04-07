@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,55 +6,54 @@
 #define CHROME_BROWSER_POLICY_DEVICE_POLICY_CACHE_H_
 #pragma once
 
-#include <string>
-
-#include "base/memory/scoped_callback_factory.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/signed_settings.h"
-#include "chrome/browser/chromeos/login/signed_settings_helper.h"
 #include "chrome/browser/policy/cloud_policy_cache_base.h"
 #include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
 
+namespace chromeos {
+class SignedSettingsHelper;
+}  // namespace chromeos
+
 namespace policy {
 
-class DevicePolicyIdentityStrategy;
+class CloudPolicyDataStore;
 class EnterpriseInstallAttributes;
 class PolicyMap;
 
-namespace em = enterprise_management;
-
 // CloudPolicyCacheBase implementation that persists policy information
 // to ChromeOS' session manager (via SignedSettingsHelper).
-class DevicePolicyCache : public CloudPolicyCacheBase,
-                          public chromeos::SignedSettingsHelper::Callback {
+class DevicePolicyCache : public CloudPolicyCacheBase {
  public:
-  explicit DevicePolicyCache(DevicePolicyIdentityStrategy* identity_strategy,
-                             EnterpriseInstallAttributes* install_attributes);
+  DevicePolicyCache(CloudPolicyDataStore* data_store,
+                    EnterpriseInstallAttributes* install_attributes);
   virtual ~DevicePolicyCache();
 
   // CloudPolicyCacheBase implementation:
   virtual void Load() OVERRIDE;
-  virtual void SetPolicy(const em::PolicyFetchResponse& policy) OVERRIDE;
+  virtual void SetPolicy(
+      const enterprise_management::PolicyFetchResponse& policy) OVERRIDE;
   virtual void SetUnmanaged() OVERRIDE;
 
-  // SignedSettingsHelper::Callback implementation:
-  virtual void OnRetrievePolicyCompleted(
+  void OnRetrievePolicyCompleted(
       chromeos::SignedSettings::ReturnCode code,
-      const em::PolicyFetchResponse& policy) OVERRIDE;
+      const enterprise_management::PolicyFetchResponse& policy);
 
  private:
   friend class DevicePolicyCacheTest;
+  friend class DevicePolicyCacheTestHelper;
 
   // Alternate c'tor allowing tests to mock out the SignedSettingsHelper
   // singleton.
   DevicePolicyCache(
-      DevicePolicyIdentityStrategy* identity_strategy,
+      CloudPolicyDataStore* data_store,
       EnterpriseInstallAttributes* install_attributes,
       chromeos::SignedSettingsHelper* signed_settings_helper);
 
   // CloudPolicyCacheBase implementation:
-  virtual bool DecodePolicyData(const em::PolicyData& policy_data,
-                                PolicyMap* mandatory,
-                                PolicyMap* recommended) OVERRIDE;
+  virtual bool DecodePolicyData(
+      const enterprise_management::PolicyData& policy_data,
+      PolicyMap* policies) OVERRIDE;
 
   void PolicyStoreOpCompleted(chromeos::SignedSettings::ReturnCode code);
 
@@ -62,18 +61,23 @@ class DevicePolicyCache : public CloudPolicyCacheBase,
   // read the registration user if this is the case.
   void CheckImmutableAttributes();
 
-  static void DecodeDevicePolicy(const em::ChromeDeviceSettingsProto& policy,
-                                 PolicyMap* mandatory,
-                                 PolicyMap* recommended);
+  // Tries to install the initial device policy retrieved from signed settings.
+  // Fills in |device_token| if it could be extracted from the loaded protobuf.
+  void InstallInitialPolicy(
+      chromeos::SignedSettings::ReturnCode code,
+      const enterprise_management::PolicyFetchResponse& policy,
+      std::string* device_token);
 
-  DevicePolicyIdentityStrategy* identity_strategy_;
+  static void DecodeDevicePolicy(
+      const enterprise_management::ChromeDeviceSettingsProto& policy,
+      PolicyMap* policies);
+
+  CloudPolicyDataStore* data_store_;
   EnterpriseInstallAttributes* install_attributes_;
 
   chromeos::SignedSettingsHelper* signed_settings_helper_;
 
-  bool starting_up_;
-
-  base::ScopedCallbackFactory<DevicePolicyCache> callback_factory_;
+  base::WeakPtrFactory<DevicePolicyCache> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DevicePolicyCache);
 };

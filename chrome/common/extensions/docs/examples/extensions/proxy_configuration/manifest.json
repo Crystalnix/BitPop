@@ -1,11 +1,11 @@
 {
   "name": "__MSG_extName__",
-  "version": "0.2",
+  "version": "0.4",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "browser_action": {
     "default_icon": "icon16.png",
-    "popup": "popup.html"
+    "default_popup": "popup.html"
   },
   "icons": {
     "16": "icon16.png",
@@ -13,8 +13,15 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
-  "background_page": "background.html",
+  "background": {
+    "scripts": [
+      "proxy_form_controller.js",
+      "proxy_error_handler.js",
+      "background.js"
+    ]
+  },
   "permissions": [
     "proxy"
-  ]
+  ],
+  "manifest_version": 2
 }

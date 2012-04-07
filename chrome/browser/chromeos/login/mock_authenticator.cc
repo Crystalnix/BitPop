@@ -1,34 +1,45 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 
+#include "base/bind.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
+
 namespace chromeos {
 
-bool MockAuthenticator::AuthenticateToLogin(Profile* profile,
+void MockAuthenticator::AuthenticateToLogin(Profile* profile,
                                  const std::string& username,
                                  const std::string& password,
                                  const std::string& login_token,
                                  const std::string& login_captcha) {
   if (expected_username_ == username && expected_password_ == password) {
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &MockAuthenticator::OnLoginSuccess,
-                          GaiaAuthConsumer::ClientLoginResult(), false));
-    return true;
+        base::Bind(&MockAuthenticator::OnLoginSuccess, this,
+                   GaiaAuthConsumer::ClientLoginResult(), false));
   }
   GoogleServiceAuthError error(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &MockAuthenticator::OnLoginFailure,
-                        LoginFailure::FromNetworkAuthFailure(error)));
-  return false;
+      base::Bind(&MockAuthenticator::OnLoginFailure, this,
+                 LoginFailure::FromNetworkAuthFailure(error)));
 }
 
-bool MockAuthenticator::AuthenticateToUnlock(const std::string& username,
+void MockAuthenticator::CompleteLogin(Profile* profile,
+                                      const std::string& username,
+                                      const std::string& password) {
+  CHECK_EQ(expected_username_, username);
+  CHECK_EQ(expected_password_, password);
+  OnLoginSuccess(GaiaAuthConsumer::ClientLoginResult(), false);
+}
+
+void MockAuthenticator::AuthenticateToUnlock(const std::string& username,
                                   const std::string& password) {
-  return AuthenticateToLogin(NULL /* not used */, username, password,
-                             std::string(), std::string());
+  AuthenticateToLogin(NULL /* not used */, username, password,
+                      std::string(), std::string());
 }
 
 void MockAuthenticator::LoginOffTheRecord() {
@@ -43,14 +54,12 @@ void MockAuthenticator::OnLoginSuccess(
   consumer_->OnLoginSuccess(expected_username_,
                             expected_password_,
                             credentials,
-                            request_pending);
+                            request_pending,
+                            false);
 }
 
 void MockAuthenticator::OnLoginFailure(const LoginFailure& failure) {
     consumer_->OnLoginFailure(failure);
-    VLOG(1) << "Posting a QuitTask to UI thread";
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, new MessageLoop::QuitTask);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,15 +73,14 @@ MockLoginUtils::MockLoginUtils(const std::string& expected_username,
 
 MockLoginUtils::~MockLoginUtils() {}
 
-bool MockLoginUtils::ShouldWaitForWifi() {
-  return false;
-}
-
 void MockLoginUtils::PrepareProfile(
     const std::string& username,
+    const std::string& display_email,
     const std::string& password,
     const GaiaAuthConsumer::ClientLoginResult& res,
     bool pending_requests,
+    bool using_oauth,
+    bool has_cookies,
     Delegate* delegate) {
   DCHECK_EQ(expected_username_, username);
   DCHECK_EQ(expected_password_, password);
@@ -80,18 +88,13 @@ void MockLoginUtils::PrepareProfile(
   delegate->OnProfilePrepared(NULL);
 }
 
-Authenticator* MockLoginUtils::CreateAuthenticator(
+void MockLoginUtils::DelegateDeleted(Delegate* delegate) {
+}
+
+scoped_refptr<Authenticator> MockLoginUtils::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
   return new MockAuthenticator(
       consumer, expected_username_, expected_password_);
-}
-
-void MockLoginUtils::SetBackgroundView(BackgroundView* background_view) {
-  background_view_ = background_view;
-}
-
-BackgroundView* MockLoginUtils::GetBackgroundView() {
-  return background_view_;
 }
 
 std::string MockLoginUtils::GetOffTheRecordCommandLine(
@@ -99,6 +102,17 @@ std::string MockLoginUtils::GetOffTheRecordCommandLine(
     const CommandLine& base_command_line,
     CommandLine* command_line) {
   return std::string();
+}
+
+void MockLoginUtils::TransferDefaultCookies(Profile* default_profile,
+                                            Profile* new_profile) {
+}
+
+void MockLoginUtils::TransferDefaultAuthCache(Profile* default_profile,
+                                              Profile* new_profile) {
+}
+
+void MockLoginUtils::StopBackgroundFetchers() {
 }
 
 }  // namespace chromeos

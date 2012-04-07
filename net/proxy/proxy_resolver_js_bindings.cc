@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/proxy/proxy_resolver_js_bindings.h"
 
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/values.h"
@@ -16,10 +17,15 @@
 #include "net/base/sys_addrinfo.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 #include "net/proxy/proxy_resolver_request_context.h"
+#include "net/proxy/sync_host_resolver.h"
 
 namespace net {
 
 namespace {
+
+// TTL for the per-request DNS cache. Applies to both successful and failed
+// DNS resolutions.
+const unsigned kCacheEntryTTLSeconds = 5 * 60;
 
 // Event parameters for a PAC error message (line number + message).
 class ErrorNetlogParams : public NetLog::EventParameters {
@@ -30,7 +36,7 @@ class ErrorNetlogParams : public NetLog::EventParameters {
         message_(message) {
   }
 
-  virtual Value* ToValue() const {
+  virtual Value* ToValue() const OVERRIDE {
     DictionaryValue* dict = new DictionaryValue();
     dict->SetInteger("line_number", line_number_);
     dict->SetString("message", message_);
@@ -50,7 +56,7 @@ class AlertNetlogParams : public NetLog::EventParameters {
   explicit AlertNetlogParams(const string16& message) : message_(message) {
   }
 
-  virtual Value* ToValue() const {
+  virtual Value* ToValue() const OVERRIDE {
     DictionaryValue* dict = new DictionaryValue();
     dict->SetString("message", message_);
     return dict;
@@ -65,7 +71,7 @@ class AlertNetlogParams : public NetLog::EventParameters {
 // ProxyResolverJSBindings implementation.
 class DefaultJSBindings : public ProxyResolverJSBindings {
  public:
-  DefaultJSBindings(HostResolver* host_resolver,
+  DefaultJSBindings(SyncHostResolver* host_resolver,
                     NetLog* net_log,
                     ProxyResolverErrorObserver* error_observer)
       : host_resolver_(host_resolver),
@@ -74,7 +80,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
   }
 
   // Handler for "alert(message)".
-  virtual void Alert(const string16& message) {
+  virtual void Alert(const string16& message) OVERRIDE {
     VLOG(1) << "PAC-alert: " << message;
 
     // Send to the NetLog.
@@ -85,7 +91,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
   // Handler for "myIpAddress()".
   // TODO(eroman): Perhaps enumerate the interfaces directly, using
   // getifaddrs().
-  virtual bool MyIpAddress(std::string* first_ip_address) {
+  virtual bool MyIpAddress(std::string* first_ip_address) OVERRIDE {
     LogEventToCurrentRequest(NetLog::PHASE_BEGIN,
                              NetLog::TYPE_PAC_JAVASCRIPT_MY_IP_ADDRESS,
                              NULL);
@@ -99,7 +105,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
   }
 
   // Handler for "myIpAddressEx()".
-  virtual bool MyIpAddressEx(std::string* ip_address_list) {
+  virtual bool MyIpAddressEx(std::string* ip_address_list) OVERRIDE {
     LogEventToCurrentRequest(NetLog::PHASE_BEGIN,
                              NetLog::TYPE_PAC_JAVASCRIPT_MY_IP_ADDRESS_EX,
                              NULL);
@@ -114,7 +120,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
 
   // Handler for "dnsResolve(host)".
   virtual bool DnsResolve(const std::string& host,
-                          std::string* first_ip_address) {
+                          std::string* first_ip_address) OVERRIDE {
     LogEventToCurrentRequest(NetLog::PHASE_BEGIN,
                              NetLog::TYPE_PAC_JAVASCRIPT_DNS_RESOLVE,
                              NULL);
@@ -129,7 +135,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
 
   // Handler for "dnsResolveEx(host)".
   virtual bool DnsResolveEx(const std::string& host,
-                            std::string* ip_address_list) {
+                            std::string* ip_address_list) OVERRIDE {
     LogEventToCurrentRequest(NetLog::PHASE_BEGIN,
                              NetLog::TYPE_PAC_JAVASCRIPT_DNS_RESOLVE_EX,
                              NULL);
@@ -143,7 +149,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
   }
 
   // Handler for when an error is encountered. |line_number| may be -1.
-  virtual void OnError(int line_number, const string16& message) {
+  virtual void OnError(int line_number, const string16& message) OVERRIDE {
     // Send to the chrome log.
     if (line_number == -1)
       VLOG(1) << "PAC-error: " << message;
@@ -159,7 +165,7 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
       error_observer_->OnPACScriptError(line_number, message);
   }
 
-  virtual void Shutdown() {
+  virtual void Shutdown() OVERRIDE {
     host_resolver_->Shutdown();
   }
 
@@ -255,25 +261,36 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
       }
     }
 
-    // Otherwise ask the resolver.
-    int result = host_resolver_->Resolve(info, address_list, NULL, NULL,
-                                         BoundNetLog());
+    // Otherwise ask the host resolver.
+    const BoundNetLog* net_log = GetNetLogForCurrentRequest();
+    int result = host_resolver_->Resolve(info,
+                                         address_list,
+                                         net_log ? *net_log : BoundNetLog());
 
     // Save the result back to the per-request DNS cache.
     if (host_cache) {
       host_cache->Set(cache_key, result, *address_list,
-                      base::TimeTicks::Now());
+                      base::TimeTicks::Now(),
+                      base::TimeDelta::FromSeconds(kCacheEntryTTLSeconds));
     }
 
     return result;
+  }
+
+  // May return NULL.
+  const BoundNetLog* GetNetLogForCurrentRequest() {
+    if (!current_request_context())
+      return NULL;
+    return current_request_context()->net_log;
   }
 
   void LogEventToCurrentRequest(
       NetLog::EventPhase phase,
       NetLog::EventType type,
       scoped_refptr<NetLog::EventParameters> params) {
-    if (current_request_context() && current_request_context()->net_log)
-      current_request_context()->net_log->AddEntry(type, phase, params);
+    const BoundNetLog* net_log = GetNetLogForCurrentRequest();
+    if (net_log)
+      net_log->AddEntry(type, phase, params);
   }
 
   void LogEventToCurrentRequestAndGlobally(
@@ -292,16 +309,17 @@ class DefaultJSBindings : public ProxyResolverJSBindings {
     }
   }
 
-  HostResolver* const host_resolver_;
+  scoped_ptr<SyncHostResolver> host_resolver_;
   NetLog* net_log_;
   scoped_ptr<ProxyResolverErrorObserver> error_observer_;
+  DISALLOW_COPY_AND_ASSIGN(DefaultJSBindings);
 };
 
 }  // namespace
 
 // static
 ProxyResolverJSBindings* ProxyResolverJSBindings::CreateDefault(
-    HostResolver* host_resolver,
+    SyncHostResolver* host_resolver,
     NetLog* net_log,
     ProxyResolverErrorObserver* error_observer) {
   return new DefaultJSBindings(host_resolver, net_log, error_observer);

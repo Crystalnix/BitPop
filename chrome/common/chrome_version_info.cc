@@ -7,10 +7,12 @@
 #include "base/basictypes.h"
 #include "base/file_version_info.h"
 #include "base/string_util.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "grit/chromium_strings.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace chrome {
 
@@ -34,19 +36,19 @@ bool VersionInfo::is_valid() const {
 std::string VersionInfo::Name() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToASCII(version_info_->product_name());
+  return UTF16ToUTF8(version_info_->product_name());
 }
 
 std::string VersionInfo::Version() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToASCII(version_info_->product_version());
+  return UTF16ToUTF8(version_info_->product_version());
 }
 
 std::string VersionInfo::LastChange() const {
   if (!is_valid())
     return std::string();
-  return UTF16ToASCII(version_info_->last_change());
+  return UTF16ToUTF8(version_info_->last_change());
 }
 
 bool VersionInfo::IsOfficialBuild() const {
@@ -89,11 +91,31 @@ bool VersionInfo::IsOfficialBuild() const {
 
 #endif
 
+std::string VersionInfo::CreateVersionString() const {
+  std::string current_version;
+  if (is_valid()) {
+    current_version += Version();
+#if !defined(GOOGLE_CHROME_BUILD)
+    current_version += " (";
+    current_version += l10n_util::GetStringUTF8(IDS_ABOUT_VERSION_UNOFFICIAL);
+    current_version += " ";
+    current_version += LastChange();
+    current_version += " ";
+    current_version += OSType();
+    current_version += ")";
+#endif
+    std::string modifier = GetVersionStringModifier();
+    if (!modifier.empty())
+      current_version += " " + modifier;
+  }
+  return current_version;
+}
+
 std::string VersionInfo::OSType() const {
 #if defined(OS_WIN)
   return "Windows";
 #elif defined(OS_MACOSX)
-  return "Mac OS";
+  return "Mac OS X";
 #elif defined(OS_CHROMEOS)
   return UTF16ToASCII(l10n_util::GetStringUTF16(IDS_PRODUCT_OS_NAME));
 #elif defined(OS_LINUX)

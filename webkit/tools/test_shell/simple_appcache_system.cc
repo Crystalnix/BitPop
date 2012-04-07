@@ -7,8 +7,9 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/task.h"
 #include "base/synchronization/waitable_event.h"
 #include "webkit/appcache/appcache_interceptor.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
@@ -19,34 +20,6 @@ using WebKit::WebApplicationCacheHostClient;
 using appcache::WebApplicationCacheHostImpl;
 using appcache::AppCacheBackendImpl;
 using appcache::AppCacheInterceptor;
-using appcache::AppCacheThread;
-
-namespace appcache {
-
-// An impl of AppCacheThread we need to provide to the appcache lib.
-
-bool AppCacheThread::PostTask(
-    int id,
-    const tracked_objects::Location& from_here,
-    Task* task) {
-  if (SimpleAppCacheSystem::thread_provider()) {
-    return SimpleAppCacheSystem::thread_provider()->PostTask(
-        id, from_here, task);
-  }
-  scoped_ptr<Task> task_ptr(task);
-  MessageLoop* loop = SimpleAppCacheSystem::GetMessageLoop(id);
-  if (loop)
-    loop->PostTask(from_here, task_ptr.release());
-  return loop ? true : false;
-}
-
-bool AppCacheThread::CurrentlyOn(int id) {
-  if (SimpleAppCacheSystem::thread_provider())
-    return SimpleAppCacheSystem::thread_provider()->CurrentlyOn(id);
-  return MessageLoop::current() == SimpleAppCacheSystem::GetMessageLoop(id);
-}
-
-}  // namespace appcache
 
 // SimpleFrontendProxy --------------------------------------------------------
 // Proxies method calls from the backend IO thread to the frontend UI thread.
@@ -66,9 +39,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread()) {
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnCacheSelected,
-          host_id, info));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnCacheSelected, this, host_id,
+                     info));
     } else if (system_->is_ui_thread()) {
       system_->frontend_impl_.OnCacheSelected(host_id, info);
     } else {
@@ -81,8 +55,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread())
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnStatusChanged, host_ids, status));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnStatusChanged, this, host_ids,
+                     status));
     else if (system_->is_ui_thread())
       system_->frontend_impl_.OnStatusChanged(host_ids, status);
     else
@@ -94,8 +70,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread())
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnEventRaised, host_ids, event_id));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnEventRaised, this, host_ids,
+                     event_id));
     else if (system_->is_ui_thread())
       system_->frontend_impl_.OnEventRaised(host_ids, event_id);
     else
@@ -108,9 +86,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread())
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnProgressEventRaised,
-          host_ids, url, num_total, num_complete));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnProgressEventRaised, this,
+                     host_ids, url, num_total, num_complete));
     else if (system_->is_ui_thread())
       system_->frontend_impl_.OnProgressEventRaised(
           host_ids, url, num_total, num_complete);
@@ -123,9 +102,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread())
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnErrorEventRaised,
-          host_ids, message));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnErrorEventRaised, this, host_ids,
+                     message));
     else if (system_->is_ui_thread())
       system_->frontend_impl_.OnErrorEventRaised(
           host_ids, message);
@@ -139,9 +119,10 @@ class SimpleFrontendProxy
     if (!system_)
       return;
     if (system_->is_io_thread())
-      system_->ui_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleFrontendProxy::OnLogMessage,
-          host_id, log_level, message));
+      system_->ui_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleFrontendProxy::OnLogMessage, this, host_id,
+                     log_level, message));
     else if (system_->is_ui_thread())
       system_->frontend_impl_.OnLogMessage(
           host_id, log_level, message);
@@ -169,18 +150,22 @@ class SimpleBackendProxy
  public:
   explicit SimpleBackendProxy(SimpleAppCacheSystem* appcache_system)
       : system_(appcache_system), event_(true, false) {
-    get_status_callback_.reset(
-        NewCallback(this, &SimpleBackendProxy::GetStatusCallback));
-    start_update_callback_.reset(
-        NewCallback(this, &SimpleBackendProxy::StartUpdateCallback));
-    swap_cache_callback_.reset(
-        NewCallback(this, &SimpleBackendProxy::SwapCacheCallback));
+    get_status_callback_ =
+        base::Bind(&SimpleBackendProxy::GetStatusCallback,
+                   base::Unretained(this));
+    start_update_callback_ =
+        base::Bind(&SimpleBackendProxy::StartUpdateCallback,
+                   base::Unretained(this));
+    swap_cache_callback_=
+        base::Bind(&SimpleBackendProxy::SwapCacheCallback,
+                   base::Unretained(this));
   }
 
   virtual void RegisterHost(int host_id) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::RegisterHost, host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::RegisterHost, this, host_id));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->RegisterHost(host_id);
     } else {
@@ -190,8 +175,9 @@ class SimpleBackendProxy
 
   virtual void UnregisterHost(int host_id) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::UnregisterHost, host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::UnregisterHost, this, host_id));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->UnregisterHost(host_id);
     } else {
@@ -201,9 +187,10 @@ class SimpleBackendProxy
 
   virtual void SetSpawningHostId(int host_id, int spawning_host_id) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::SetSpawningHostId,
-          host_id, spawning_host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::SetSpawningHostId, this, host_id,
+                     spawning_host_id));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->SetSpawningHostId(host_id, spawning_host_id);
     } else {
@@ -216,9 +203,11 @@ class SimpleBackendProxy
                            const int64 cache_document_was_loaded_from,
                            const GURL& manifest_url) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::SelectCache, host_id, document_url,
-              cache_document_was_loaded_from, manifest_url));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::SelectCache, this, host_id,
+                     document_url, cache_document_was_loaded_from,
+                     manifest_url));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->SelectCache(host_id, document_url,
                                           cache_document_was_loaded_from,
@@ -232,9 +221,10 @@ class SimpleBackendProxy
       int host_id,
       std::vector<appcache::AppCacheResourceInfo>* resource_infos) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::GetResourceList,
-          host_id, resource_infos));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::GetResourceList, this, host_id,
+                     resource_infos));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->GetResourceList(host_id, resource_infos);
     } else {
@@ -258,9 +248,10 @@ class SimpleBackendProxy
   virtual void MarkAsForeignEntry(int host_id, const GURL& document_url,
                                   int64 cache_document_was_loaded_from) {
     if (system_->is_ui_thread()) {
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::MarkAsForeignEntry, host_id, document_url,
-          cache_document_was_loaded_from));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&SimpleBackendProxy::MarkAsForeignEntry, this, host_id,
+                     document_url, cache_document_was_loaded_from));
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->MarkAsForeignEntry(
                                   host_id, document_url,
@@ -274,12 +265,14 @@ class SimpleBackendProxy
     if (system_->is_ui_thread()) {
       status_result_ = appcache::UNCACHED;
       event_.Reset();
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::GetStatus, host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+              base::Bind(base::IgnoreResult(&SimpleBackendProxy::GetStatus),
+                         this, host_id));
       event_.Wait();
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->GetStatusWithCallback(
-          host_id, get_status_callback_.get(), NULL);
+          host_id, get_status_callback_, NULL);
     } else {
       NOTREACHED();
     }
@@ -290,12 +283,14 @@ class SimpleBackendProxy
     if (system_->is_ui_thread()) {
       bool_result_ = false;
       event_.Reset();
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::StartUpdate, host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(base::IgnoreResult(&SimpleBackendProxy::StartUpdate),
+                     this, host_id));
       event_.Wait();
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->StartUpdateWithCallback(
-          host_id, start_update_callback_.get(), NULL);
+          host_id, start_update_callback_, NULL);
     } else {
       NOTREACHED();
     }
@@ -306,12 +301,14 @@ class SimpleBackendProxy
     if (system_->is_ui_thread()) {
       bool_result_ = false;
       event_.Reset();
-      system_->io_message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SimpleBackendProxy::SwapCache, host_id));
+      system_->io_message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(base::IgnoreResult(&SimpleBackendProxy::SwapCache),
+                     this, host_id));
       event_.Wait();
     } else if (system_->is_io_thread()) {
       system_->backend_impl_->SwapCacheWithCallback(
-          host_id, swap_cache_callback_.get(), NULL);
+          host_id, swap_cache_callback_, NULL);
     } else {
       NOTREACHED();
     }
@@ -346,9 +343,9 @@ class SimpleBackendProxy
   base::WaitableEvent event_;
   bool bool_result_;
   appcache::Status status_result_;
-  scoped_ptr<appcache::GetStatusCallback> get_status_callback_;
-  scoped_ptr<appcache::StartUpdateCallback> start_update_callback_;
-  scoped_ptr<appcache::SwapCacheCallback> swap_cache_callback_;
+  appcache::GetStatusCallback get_status_callback_;
+  appcache::StartUpdateCallback start_update_callback_;
+  appcache::SwapCacheCallback swap_cache_callback_;
 };
 
 
@@ -366,8 +363,7 @@ SimpleAppCacheSystem::SimpleAppCacheSystem()
           backend_proxy_(new SimpleBackendProxy(this))),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           frontend_proxy_(new SimpleFrontendProxy(this))),
-      backend_impl_(NULL), service_(NULL), db_thread_("AppCacheDBThread"),
-      thread_provider_(NULL) {
+      backend_impl_(NULL), service_(NULL), db_thread_("AppCacheDBThread") {
   DCHECK(!instance_);
   instance_ = this;
 }
@@ -385,15 +381,14 @@ SimpleAppCacheSystem::~SimpleAppCacheSystem() {
     // We pump a task thru the db thread to ensure any tasks previously
     // scheduled on that thread have been performed prior to return.
     base::WaitableEvent event(false, false);
-    db_thread_.message_loop()->PostTask(FROM_HERE,
-        NewRunnableFunction(&SignalEvent, &event));
+    db_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&SignalEvent, &event));
     event.Wait();
   }
 }
 
 void SimpleAppCacheSystem::InitOnUIThread(const FilePath& cache_directory) {
   DCHECK(!ui_message_loop_);
-  AppCacheThread::Init(DB_THREAD_ID, IO_THREAD_ID);
   ui_message_loop_ = MessageLoop::current();
   cache_directory_ = cache_directory;
 }
@@ -413,6 +408,7 @@ void SimpleAppCacheSystem::InitOnIOThread(
   service_ = new appcache::AppCacheService(NULL);
   backend_impl_ = new appcache::AppCacheBackendImpl();
   service_->Initialize(cache_directory_,
+                       db_thread_.message_loop_proxy(),
                        SimpleResourceLoaderBridge::GetCacheThread());
   service_->set_request_context(request_context);
   backend_impl_->Initialize(service_, frontend_proxy_.get(), kSingleProcessId);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,26 +8,29 @@
 
 #include "content/gpu/gpu_watchdog_thread.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
+#include "base/process_util.h"
+#include "base/process.h"
 #include "build/build_config.h"
+#include "content/public/common/result_codes.h"
 
 namespace {
-const int64 kCheckPeriod = 2000;
-
-void DoNothing() {
-}
-}
+const int64 kCheckPeriodMs = 2000;
+}  // namespace
 
 GpuWatchdogThread::GpuWatchdogThread(int timeout)
     : base::Thread("Watchdog"),
       watched_message_loop_(MessageLoop::current()),
-      timeout_(timeout),
+      timeout_(base::TimeDelta::FromMilliseconds(timeout)),
       armed_(false),
 #if defined(OS_WIN)
       watched_thread_handle_(0),
-      arm_cpu_time_(0),
+      arm_cpu_time_(),
 #endif
-      ALLOW_THIS_IN_INITIALIZER_LIST(task_observer_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(task_observer_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK(timeout >= 0);
 
 #if defined(OS_WIN)
@@ -50,7 +53,7 @@ GpuWatchdogThread::GpuWatchdogThread(int timeout)
 GpuWatchdogThread::~GpuWatchdogThread() {
   // Verify that the thread was explicitly stopped. If the thread is stopped
   // implicitly by the destructor, CleanUp() will not be called.
-  DCHECK(!method_factory_.get());
+  DCHECK(!weak_factory_.HasWeakPtrs());
 
 #if defined(OS_WIN)
   CloseHandle(watched_thread_handle_);
@@ -64,21 +67,16 @@ void GpuWatchdogThread::PostAcknowledge() {
   // the method factory. Rely on reference counting instead.
   message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &GpuWatchdogThread::OnAcknowledge));
+      base::Bind(&GpuWatchdogThread::OnAcknowledge, this));
 }
 
 void GpuWatchdogThread::Init() {
-  // The method factory must be created on the watchdog thread.
-  method_factory_.reset(new MethodFactory(this));
-
   // Schedule the first check.
   OnCheck();
 }
 
 void GpuWatchdogThread::CleanUp() {
-  // The method factory must be destroyed on the watchdog thread.
-  method_factory_->RevokeAll();
-  method_factory_.reset();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 GpuWatchdogThread::GpuWatchdogTaskObserver::GpuWatchdogTaskObserver(
@@ -116,18 +114,18 @@ void GpuWatchdogThread::OnAcknowledge() {
     return;
 
   // Revoke any pending hang termination.
-  method_factory_->RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
   armed_ = false;
 
   // The monitored thread has responded. Post a task to check it again.
   message_loop()->PostDelayedTask(
       FROM_HERE,
-      method_factory_->NewRunnableMethod(&GpuWatchdogThread::OnCheck),
-      kCheckPeriod);
+      base::Bind(&GpuWatchdogThread::OnCheck, weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(kCheckPeriodMs));
 }
 
 #if defined(OS_WIN)
-int64 GpuWatchdogThread::GetWatchedThreadTime() {
+base::TimeDelta GpuWatchdogThread::GetWatchedThreadTime() {
   FILETIME creation_time;
   FILETIME exit_time;
   FILETIME user_time;
@@ -154,8 +152,8 @@ int64 GpuWatchdogThread::GetWatchedThreadTime() {
   // returns to user level or where user level code
   // calls into kernel level repeatedly, giving up its quanta before it is
   // tracked, for example a loop that repeatedly Sleeps.
-  return static_cast<int64>(
-      (user_time64.QuadPart + kernel_time64.QuadPart) / 10000);
+  return base::TimeDelta::FromMilliseconds(static_cast<int64>(
+      (user_time64.QuadPart + kernel_time64.QuadPart) / 10000));
 }
 #endif
 
@@ -179,28 +177,30 @@ void GpuWatchdogThread::OnCheck() {
   // also wake up the observer. This simply ensures there is at least one.
   watched_message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableFunction(DoNothing));
+      base::Bind(&base::DoNothing));
 
   // Post a task to the watchdog thread to exit if the monitored thread does
   // not respond in time.
   message_loop()->PostDelayedTask(
       FROM_HERE,
-      method_factory_->NewRunnableMethod(
-          &GpuWatchdogThread::DeliberatelyCrashingToRecoverFromHang),
+      base::Bind(
+          &GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang,
+          weak_factory_.GetWeakPtr()),
       timeout_);
 }
 
 // Use the --disable-gpu-watchdog command line switch to disable this.
-void GpuWatchdogThread::DeliberatelyCrashingToRecoverFromHang() {
+void GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang() {
 #if defined(OS_WIN)
   // Defer termination until a certain amount of CPU time has elapsed on the
   // watched thread.
-  int64 time_since_arm = GetWatchedThreadTime() - arm_cpu_time_;
+  base::TimeDelta time_since_arm = GetWatchedThreadTime() - arm_cpu_time_;
   if (time_since_arm < timeout_) {
     message_loop()->PostDelayedTask(
         FROM_HERE,
-        method_factory_->NewRunnableMethod(
-            &GpuWatchdogThread::DeliberatelyCrashingToRecoverFromHang),
+        base::Bind(
+            &GpuWatchdogThread::DeliberatelyTerminateToRecoverFromHang,
+            weak_factory_.GetWeakPtr()),
         timeout_ - time_since_arm);
     return;
   }
@@ -210,19 +210,17 @@ void GpuWatchdogThread::DeliberatelyCrashingToRecoverFromHang() {
   // the watchdog check. This is to prevent the watchdog thread from terminating
   // when a machine wakes up from sleep or hibernation, which would otherwise
   // appear to be a hang.
-  if ((base::Time::Now() - arm_absolute_time_).InMilliseconds() >
-      timeout_ * 2) {
+  if (base::Time::Now() - arm_absolute_time_ > timeout_ * 2) {
     armed_ = false;
     OnCheck();
     return;
   }
 
-  // Make sure the timeout period is on the stack before crashing.
-  volatile int timeout = timeout_;
-
-  // For minimal developer annoyance, don't keep crashing.
-  static bool crashed = false;
-  if (crashed)
+  // For minimal developer annoyance, don't keep terminating. You need to skip
+  // the call to base::Process::Terminate below in a debugger for this to be
+  // useful.
+  static bool terminated = false;
+  if (terminated)
     return;
 
 #if defined(OS_WIN)
@@ -231,10 +229,10 @@ void GpuWatchdogThread::DeliberatelyCrashingToRecoverFromHang() {
 #endif
 
   LOG(ERROR) << "The GPU process hung. Terminating after "
-             << timeout_ << " ms.";
+             << timeout_.InMilliseconds() << " ms.";
 
-  volatile int* null_pointer = NULL;
-  *null_pointer = timeout;
+  base::Process current_process(base::GetCurrentProcessHandle());
+  current_process.Terminate(content::RESULT_CODE_HUNG);
 
-  crashed = true;
+  terminated = true;
 }

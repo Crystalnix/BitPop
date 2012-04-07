@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,6 +18,7 @@
 #include "crypto/sha2.h"
 #include "chrome/renderer/safe_browsing/features.h"
 #include "chrome/renderer/safe_browsing/mock_feature_extractor_clock.h"
+#include "chrome/renderer/safe_browsing/murmurhash3_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -60,15 +62,17 @@ class PhishingTermFeatureExtractorTest : public ::testing::Test {
     words.insert("\xe4\xbd\xa0\xe5\xa5\xbd");
     words.insert("\xe5\x86\x8d\xe8\xa7\x81");
 
+    static const uint32 kMurmurHash3Seed = 2777808611U;
     for (base::hash_set<std::string>::iterator it = words.begin();
          it != words.end(); ++it) {
-      word_hashes_.insert(crypto::SHA256HashString(*it));
+      word_hashes_.insert(MurmurHash3String(*it, kMurmurHash3Seed));
     }
 
     extractor_.reset(new PhishingTermFeatureExtractor(
         &term_hashes_,
         &word_hashes_,
         3 /* max_words_per_term */,
+        kMurmurHash3Seed,
         &clock_));
   }
 
@@ -79,9 +83,23 @@ class PhishingTermFeatureExtractorTest : public ::testing::Test {
     extractor_->ExtractFeatures(
         page_text,
         features,
-        NewCallback(this, &PhishingTermFeatureExtractorTest::ExtractionDone));
+        base::Bind(&PhishingTermFeatureExtractorTest::ExtractionDone,
+                   base::Unretained(this)));
     msg_loop_.Run();
     return success_;
+  }
+
+  void PartialExtractFeatures(const string16* page_text, FeatureMap* features) {
+    extractor_->ExtractFeatures(
+        page_text,
+        features,
+        base::Bind(&PhishingTermFeatureExtractorTest::ExtractionDone,
+                   base::Unretained(this)));
+    msg_loop_.PostTask(
+        FROM_HERE,
+        base::Bind(&PhishingTermFeatureExtractorTest::QuitExtraction,
+                   base::Unretained(this)));
+    msg_loop_.RunAllPending();
   }
 
   // Completion callback for feature extraction.
@@ -90,11 +108,16 @@ class PhishingTermFeatureExtractorTest : public ::testing::Test {
     msg_loop_.Quit();
   }
 
+  void QuitExtraction() {
+    extractor_->CancelPendingExtraction();
+    msg_loop_.Quit();
+  }
+
   MessageLoop msg_loop_;
   MockFeatureExtractorClock clock_;
   scoped_ptr<PhishingTermFeatureExtractor> extractor_;
   base::hash_set<std::string> term_hashes_;
-  base::hash_set<std::string> word_hashes_;
+  base::hash_set<uint32> word_hashes_;
   bool success_;  // holds the success value from ExtractFeatures
 };
 
@@ -188,7 +211,7 @@ TEST_F(PhishingTermFeatureExtractorTest, Continuation) {
   page_text.append(ASCIIToUTF16("two"));
 
   // Advance the clock 15 ms every 10 words processed, 10 ms between chunks.
-  // Note that this assumes kClockCheckGranularity = 10 and
+  // Note that this assumes kClockCheckGranularity = 5 and
   // kMaxTimePerChunkMs = 20.
   base::TimeTicks now = base::TimeTicks::Now();
   EXPECT_CALL(clock_, Now())
@@ -196,14 +219,20 @@ TEST_F(PhishingTermFeatureExtractorTest, Continuation) {
       .WillOnce(Return(now))
       // Time check at the start of the first chunk of work.
       .WillOnce(Return(now))
-      // Time check after the first 10 words.
+      // Time check after the first 5 words.
+      .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(7)))
+      // Time check after the next 5 words.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(15)))
-      // Time check after the next 10 words.  This is over the chunk
+      // Time check after the next 5 words.
+      .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(19)))
+      // Time check after the next 5 words.  This is over the chunk
       // time limit, so a continuation task will be posted.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(30)))
       // Time check at the start of the second chunk of work.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(40)))
-      // Time check after the next 10 words.
+      // Time check after the next 5 words.
+      .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(47)))
+      // Time check after the next 5 words.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(55)))
       // A final check for the histograms.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(56)));
@@ -229,17 +258,58 @@ TEST_F(PhishingTermFeatureExtractorTest, Continuation) {
       .WillOnce(Return(now))
       // Time check at the start of the first chunk of work.
       .WillOnce(Return(now))
-      // Time check after the first 10 words,
+      // Time check after the first 5 words,
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(300)))
       // Time check at the start of the second chunk of work.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(350)))
-      // Time check after the next 10 words.  This is over the limit.
+      // Time check after the next 5 words.  This is over the limit.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(600)))
       // A final time check for the histograms.
       .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(620)));
 
   features.Clear();
   EXPECT_FALSE(ExtractFeatures(&page_text, &features));
+}
+
+TEST_F(PhishingTermFeatureExtractorTest, PartialExtractionTest) {
+  scoped_ptr<string16> page_text(new string16(ASCIIToUTF16("one ")));
+  for (int i = 0; i < 28; ++i) {
+    page_text->append(ASCIIToUTF16(StringPrintf("%d ", i)));
+  }
+
+  base::TimeTicks now = base::TimeTicks::Now();
+  EXPECT_CALL(clock_, Now())
+      // Time check at the start of extraction.
+      .WillOnce(Return(now))
+      // Time check at the start of the first chunk of work.
+      .WillOnce(Return(now))
+      // Time check after the first 5 words.
+      .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(15)))
+      // Time check after the next 5 words. This should be greater than
+      // kMaxTimePerChunkMs so that we stop and schedule extraction for later.
+      .WillOnce(Return(now + base::TimeDelta::FromMilliseconds(30)));
+
+  FeatureMap features;
+  // Extract first 10 words then stop.
+  PartialExtractFeatures(page_text.get(), &features);
+
+  page_text.reset(new string16());
+  for (int i = 30; i < 58; ++i) {
+    page_text->append(ASCIIToUTF16(StringPrintf("%d ", i)));
+  }
+  page_text->append(ASCIIToUTF16("multi word test "));
+  features.Clear();
+
+  // This part doesn't exercise the extraction timing.
+  EXPECT_CALL(clock_, Now()).WillRepeatedly(Return(base::TimeTicks::Now()));
+
+  // Now extract normally and make sure nothing breaks.
+  EXPECT_TRUE(ExtractFeatures(page_text.get(), &features));
+
+  FeatureMap expected_features;
+  expected_features.AddBooleanFeature(features::kPageTerm +
+                                      std::string("multi word test"));
+  EXPECT_THAT(features.features(), ContainerEq(expected_features.features()));
 }
 
 }  // namespace safe_browsing

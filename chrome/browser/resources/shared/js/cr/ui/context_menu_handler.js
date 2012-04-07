@@ -1,10 +1,9 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('cr.ui', function() {
 
-  const positionPopupAtPoint = cr.ui.positionPopupAtPoint;
   const Menu = cr.ui.Menu;
 
   /**
@@ -95,7 +94,7 @@ cr.define('cr.ui', function() {
         y = e.clientY;
       }
 
-      positionPopupAtPoint(x, y, menu);
+      cr.ui.positionPopupAtPoint(x, y, menu);
     },
 
     /**
@@ -133,6 +132,8 @@ cr.define('cr.ui', function() {
           // keyIdentifier does not report 'Esc' correctly
           if (e.keyCode == 27 /* Esc */) {
             this.hideMenu();
+            e.stopPropagation();
+            e.preventDefault();
 
           // If the menu is visible we let it handle all the keyboard events.
           } else if (this.menu) {
@@ -210,6 +211,18 @@ cr.define('cr.ui', function() {
           return this.getBoundingClientRect();
         };
       }
+    },
+
+    /**
+     * Sets the given contextMenu to the given element. A contextMenu property
+     * would be added if necessary.
+     * @param {!Element} element The element or class to set the contextMenu to.
+     * @param {!cr.ui.Menu} contextMenu The contextMenu property to be set.
+     */
+    setContextMenu: function(element, contextMenu) {
+      if (!element.contextMenu)
+        this.addContextMenuProperty(element);
+      element.contextMenu = contextMenu;
     }
   };
 

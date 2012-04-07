@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,10 @@
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_test_util.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
-#include "chrome/browser/notifications/notifications_prefs_cache.h"
-#include "chrome/test/testing_pref_service.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/render_view_test.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 class DesktopNotificationsTest;
@@ -39,13 +39,13 @@ class MockBalloonCollection : public BalloonCollectionImpl {
 
   // BalloonCollectionImpl overrides
   virtual void Add(const Notification& notification,
-                   Profile* profile);
-  virtual bool HasSpace() const;
+                   Profile* profile) OVERRIDE;
+  virtual bool HasSpace() const OVERRIDE;
   virtual Balloon* MakeBalloon(const Notification& notification,
-                               Profile* profile);
-  virtual void DisplayChanged() {}
-  virtual void OnBalloonClosed(Balloon* source);
-  virtual const BalloonCollection::Balloons& GetActiveBalloons();
+                               Profile* profile) OVERRIDE;
+  virtual void DisplayChanged() OVERRIDE {}
+  virtual void OnBalloonClosed(Balloon* source) OVERRIDE;
+  virtual const BalloonCollection::Balloons& GetActiveBalloons() OVERRIDE;
 
   // Number of balloons being shown.
   std::deque<Balloon*>& balloons() { return balloons_; }
@@ -80,8 +80,8 @@ class DesktopNotificationsTest : public testing::Test {
 
  protected:
   // testing::Test overrides
-  virtual void SetUp();
-  virtual void TearDown();
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
   void AllowOrigin(const GURL& origin) {
     service_->GrantPermission(origin);
@@ -91,17 +91,13 @@ class DesktopNotificationsTest : public testing::Test {
     service_->DenyPermission(origin);
   }
 
-  int HasPermission(const GURL& origin) {
-    return service_->prefs_cache()->HasPermission(origin);
-  }
-
   // Constructs a notification parameter structure for use in tests.
-  DesktopNotificationHostMsg_Show_Params StandardTestNotification();
+  content::ShowDesktopNotificationHostMsgParams StandardTestNotification();
 
   // Create a message loop to allow notifications code to post tasks,
   // and a thread so that notifications code runs on the expected thread.
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 
   // Local state mock.
   TestingPrefService local_state_;
@@ -117,6 +113,11 @@ class DesktopNotificationsTest : public testing::Test {
 
   // Real DesktopNotificationService
   scoped_ptr<DesktopNotificationService> service_;
+
+#if defined(USE_AURA)
+  content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
+      webkit_platform_support_;
+#endif
 
   // Contains the cumulative output of the unit test.
   static std::string log_output_;

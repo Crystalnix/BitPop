@@ -12,15 +12,18 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/file_path.h"
+#include "base/location.h"
+#include "base/pending_task.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "chrome/common/automation_constants.h"
 #include "ipc/ipc_message.h"
 
 class GURL;
 struct AttachExternalTabParams;
 struct AutomationURLRequest;
+struct ContextMenuModel;
 struct MiniContextMenuParams;
 struct NavigationInfo;
 
@@ -63,9 +66,6 @@ class ChromeFrameDelegate {
   virtual ~ChromeFrameDelegate() {}
 };
 
-// Disable refcounting of ChromeFrameDelegate.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ChromeFrameDelegate);
-
 extern UINT kAutomationServerReady;
 extern UINT kMessageFromChromeFrame;
 
@@ -90,7 +90,7 @@ class ChromeFrameDelegateImpl : public ChromeFrameDelegate {
   virtual void OnHostMoved() {}
 
  protected:
-  // Protected methods to be overriden.
+  // Protected methods to be overridden.
   virtual void OnNavigationStateChanged(
       int flags, const NavigationInfo& nav_info) {}
   virtual void OnUpdateTargetUrl(const std::wstring& new_target_url) {}
@@ -105,7 +105,8 @@ class ChromeFrameDelegateImpl : public ChromeFrameDelegate {
   virtual void OnMessageFromChromeFrame(const std::string& message,
                                         const std::string& origin,
                                         const std::string& target) {}
-  virtual void OnHandleContextMenu(HANDLE menu_handle, int align_flags,
+  virtual void OnHandleContextMenu(const ContextMenuModel& context_menu_model,
+                                   int align_flags,
                                    const MiniContextMenuParams& params) {}
   virtual void OnRequestStart(
       int request_id, const AutomationURLRequest& request) {}
@@ -126,7 +127,7 @@ class ChromeFrameDelegateImpl : public ChromeFrameDelegate {
 class TaskMarshaller {  // NOLINT
  public:
   virtual void PostTask(const tracked_objects::Location& from_here,
-                        Task* task) = 0;
+                        const base::Closure& task) = 0;
 };
 
 // T is expected to be something CWindowImpl derived, or at least to have
@@ -135,17 +136,18 @@ template <class T> class TaskMarshallerThroughWindowsMessages
     : public TaskMarshaller {
  public:
   TaskMarshallerThroughWindowsMessages() {}
-  virtual void PostTask(const tracked_objects::Location& from_here,
-                        Task* task) {
-    task->SetBirthPlace(from_here);
+  virtual void PostTask(const tracked_objects::Location& posted_from,
+                        const base::Closure& task) OVERRIDE {
     T* this_ptr = static_cast<T*>(this);
     if (this_ptr->IsWindow()) {
       this_ptr->AddRef();
-      PushTask(task);
-      this_ptr->PostMessage(MSG_EXECUTE_TASK, reinterpret_cast<WPARAM>(task));
+      base::PendingTask* pending_task =
+          new base::PendingTask(posted_from, task);
+      PushTask(pending_task);
+      this_ptr->PostMessage(MSG_EXECUTE_TASK,
+                            reinterpret_cast<WPARAM>(pending_task));
     } else {
       DVLOG(1) << "Dropping MSG_EXECUTE_TASK message for destroyed window.";
-      delete task;
     }
   }
 
@@ -160,7 +162,7 @@ template <class T> class TaskMarshallerThroughWindowsMessages
                                          << pending_tasks_.size()
                                          << " pending tasks";
     while (!pending_tasks_.empty()) {
-      Task* task = pending_tasks_.front();
+      base::PendingTask* task = pending_tasks_.front();
       pending_tasks_.pop();
       delete task;
     }
@@ -174,10 +176,11 @@ template <class T> class TaskMarshallerThroughWindowsMessages
   enum { MSG_EXECUTE_TASK = WM_APP + 6 };
   inline LRESULT ExecuteTask(UINT, WPARAM wparam, LPARAM,
                              BOOL& handled) {  // NOLINT
-    Task* task = reinterpret_cast<Task*>(wparam);
-    if (task && PopTask(task)) {
-      task->Run();
-      delete task;
+    base::PendingTask* pending_task =
+        reinterpret_cast<base::PendingTask*>(wparam);
+    if (pending_task && PopTask(pending_task)) {
+      pending_task->task.Run();
+      delete pending_task;
     }
 
     T* this_ptr = static_cast<T*>(this);
@@ -185,17 +188,17 @@ template <class T> class TaskMarshallerThroughWindowsMessages
     return 0;
   }
 
-  inline void PushTask(Task* task) {
+  inline void PushTask(base::PendingTask* pending_task) {
     base::AutoLock lock(lock_);
-    pending_tasks_.push(task);
+    pending_tasks_.push(pending_task);
   }
 
-  // If the given task is front of the queue, removes the task and returns true,
+  // If |pending_task| is front of the queue, removes the task and returns true,
   // otherwise we assume this is an already destroyed task (but Window message
   // had remained in the thread queue).
-  inline bool PopTask(Task* task) {
+  inline bool PopTask(base::PendingTask* pending_task) {
     base::AutoLock lock(lock_);
-    if (!pending_tasks_.empty() && task == pending_tasks_.front()) {
+    if (!pending_tasks_.empty() && pending_task == pending_tasks_.front()) {
       pending_tasks_.pop();
       return true;
     }
@@ -204,7 +207,7 @@ template <class T> class TaskMarshallerThroughWindowsMessages
   }
 
   base::Lock lock_;
-  std::queue<Task*> pending_tasks_;
+  std::queue<base::PendingTask*> pending_tasks_;
 };
 
 #endif  // CHROME_FRAME_CHROME_FRAME_DELEGATE_H_

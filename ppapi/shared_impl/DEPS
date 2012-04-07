@@ -1,5 +1,6 @@
 include_rules = [
   "+base",
+  "+gpu",
   "+skia",
   "+webkit/glue",
 
@@ -8,4 +9,5 @@ include_rules = [
   "-ipc",
 
   "-ppapi/cpp",
+  "-ppapi/proxy",
 ]

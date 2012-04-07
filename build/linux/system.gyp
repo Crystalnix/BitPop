@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -30,7 +30,8 @@
   'targets': [
     {
       'target_name': 'gtk',
-      'type': 'settings',
+      'type': 'none',
+      'toolsets': ['host', 'target'],
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -46,16 +47,31 @@
               '<!@(<(pkg-config) --libs-only-l gtk+-2.0 gthread-2.0)',
             ],
           },
-      }],
-      [ 'chromeos==1', {
-        'link_settings': {
-          'libraries': [ '-lXtst' ]
-        }
-      }]]
+        }, {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags gtk+-2.0 gthread-2.0)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other gtk+-2.0 gthread-2.0)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l gtk+-2.0 gthread-2.0)',
+            ],
+          },
+        }],
+        ['chromeos==1', {
+          'link_settings': {
+            'libraries': [ '-lXtst' ]
+          }
+        }],
+      ],
     },
     {
       'target_name': 'gtkprint',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -71,11 +87,12 @@
               '<!@(<(pkg-config) --libs-only-l gtk+-unix-print-2.0)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'ssl',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'conditions': [
@@ -86,20 +103,16 @@
             }],
             ['use_openssl==0 and use_system_ssl==0', {
               'dependencies': [
-                '../../net/third_party/nss/ssl.gyp:ssl',
+                '../../net/third_party/nss/ssl.gyp:libssl',
                 '../../third_party/zlib/zlib.gyp:zlib',
               ],
               'direct_dependent_settings': {
-                'cflags': [
+                'include_dirs+': [
                   # We need for our local copies of the libssl3 headers to come
-                  # first, otherwise the code will build, but will fallback to
-                  # the set of features advertised in the system headers.
-                  # Unfortunately, there's no include path that we can filter
-                  # out of $(pkg-config --cflags nss) and GYP include paths
-                  # come after cflags on the command line. So we have these
-                  # bodges:
-                  '-Inet/third_party/nss/ssl',                         # for make
-                  '-ISource/WebKit/chromium/net/third_party/nss/ssl',  # for make in webkit
+                  # before other includes, as we are shadowing system headers.
+                  '<(DEPTH)/net/third_party/nss/ssl',
+                ],
+                'cflags': [
                   '<!@(<(pkg-config) --cflags nss)',
                 ],
               },
@@ -136,7 +149,7 @@
     },
     {
       'target_name': 'freetype2',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -152,11 +165,12 @@
               '<!@(<(pkg-config) --libs-only-l freetype2)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'fontconfig',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -172,11 +186,12 @@
               '<!@(<(pkg-config) --libs-only-l fontconfig)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'gdk',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -192,11 +207,12 @@
               '<!@(<(pkg-config) --libs-only-l gdk-2.0)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'gconf',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['use_gconf==1 and _toolset=="target"', {
           'direct_dependent_settings': {
@@ -215,11 +231,12 @@
               '<!@(<(pkg-config) --libs-only-l gconf-2.0)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'gio',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['use_gio==1 and _toolset=="target"', {
           'direct_dependent_settings': {
@@ -243,18 +260,20 @@
               '<!@(<(pkg-config) --libs-only-l gio-2.0)',
             ],
             'conditions': [
-              ['linux_link_gsettings==0', {
+              ['linux_link_gsettings==0 and OS=="linux"', {
                 'libraries': [
                   '-ldl',
                 ],
               }],
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'x11',
-      'type': 'settings',
+      'type': 'none',
+      'toolsets': ['host', 'target'],
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -264,35 +283,32 @@
           },
           'link_settings': {
             'ldflags': [
-              '<!@(<(pkg-config) --libs-only-L --libs-only-other x11)',
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other x11 xi)',
             ],
             'libraries': [
-              '<!@(<(pkg-config) --libs-only-l x11)',
+              '<!@(<(pkg-config) --libs-only-l x11 xi)',
             ],
           },
-      }],
-      # When XInput2 is available (i.e. inputproto version is 2.0), the
-      # pkg-config command will succeed, so the output will be empty.
-      ['"<!@(<(pkg-config) --atleast-version=2.0 inputproto || echo $?)"==""', {
-        'direct_dependent_settings': {
-          'defines': [
-            'HAVE_XINPUT2',
-          ],
-        },
-        'link_settings': {
-          'ldflags': [
-            '<!@(<(pkg-config) --libs-only-L --libs-only-other xi)',
-          ],
-          'libraries': [
-            '<!@(<(pkg-config) --libs-only-l xi)',
-          ],
-        }
-      }],
+        }, {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags x11)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other x11 xi)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l x11 xi)',
+            ],
+          },
+        }],
       ],
     },
     {
       'target_name': 'xext',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'direct_dependent_settings': {
@@ -308,13 +324,35 @@
               '<!@(<(pkg-config) --libs-only-l xext)',
             ],
           },
-      }]]
+        }],
+      ],
+    },
+    {
+      'target_name': 'xfixes',
+      'type': 'none',
+      'conditions': [
+        ['_toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags xfixes)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other xfixes)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l xfixes)',
+            ],
+          },
+        }],
+      ],
     },
     {
       'target_name': 'libgcrypt',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
-        ['_toolset=="target"', {
+        ['_toolset=="target" and use_cups==1', {
           'direct_dependent_settings': {
             'cflags': [
               '<!@(libgcrypt-config --cflags)',
@@ -325,11 +363,12 @@
               '<!@(libgcrypt-config --libs)',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
       'target_name': 'selinux',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['_toolset=="target"', {
           'link_settings': {
@@ -337,11 +376,12 @@
               '-lselinux',
             ],
           },
-      }]]
+        }],
+      ],
     },
     {
-      'target_name': 'gnome-keyring',
-      'type': 'settings',
+      'target_name': 'gnome_keyring',
+      'type': 'none',
       'conditions': [
         ['use_gnome_keyring==1', {
           'direct_dependent_settings': {
@@ -368,19 +408,74 @@
                 ],
               },
             }, {
-              'link_settings': {
-                'libraries': [
-                  '-ldl',
-                ],
-              },
+              'conditions': [
+                ['OS=="linux"', {
+                 'link_settings': {
+                   'libraries': [
+                     '-ldl',
+                   ],
+                 },
+                }],
+              ],
             }],
           ],
         }],
       ],
     },
     {
+      # The unit tests use a few convenience functions from the GNOME
+      # Keyring library directly. We ignore linux_link_gnome_keyring and
+      # link directly in this version of the target to allow this.
+      # *** Do not use this target in the main binary! ***
+      'target_name': 'gnome_keyring_direct',
+      'type': 'none',
+      'conditions': [
+        ['use_gnome_keyring==1', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags gnome-keyring-1)',
+            ],
+            'defines': [
+              'USE_GNOME_KEYRING',
+            ],
+            'conditions': [
+              ['linux_link_gnome_keyring==0', {
+                'defines': ['DLOPEN_GNOME_KEYRING'],
+              }],
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other gnome-keyring-1)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l gnome-keyring-1)',
+            ],
+          },
+        }],
+      ],
+    },
+    {
+      'target_name': 'dbus',
+      'type': 'none',
+      'direct_dependent_settings': {
+        'cflags': [
+          '<!@(<(pkg-config) --cflags dbus-1)',
+        ],
+      },
+      'link_settings': {
+        'ldflags': [
+          '<!@(<(pkg-config) --libs-only-L --libs-only-other dbus-1)',
+        ],
+        'libraries': [
+          '<!@(<(pkg-config) --libs-only-l dbus-1)',
+        ],
+      },
+    },
+    {
+      # TODO(satorux): Remove this once dbus-glib clients are gone.
       'target_name': 'dbus-glib',
-      'type': 'settings',
+      'type': 'none',
       'direct_dependent_settings': {
         'cflags': [
           '<!@(<(pkg-config) --cflags dbus-glib-1)',
@@ -396,8 +491,85 @@
       },
     },
     {
+      'target_name': 'glib',
+      'type': 'none',
+      'toolsets': ['host', 'target'],
+      'conditions': [
+        ['_toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+          },
+        }, {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l glib-2.0 gobject-2.0 gthread-2.0)',
+            ],
+          },
+        }],
+        ['chromeos==1', {
+          'link_settings': {
+            'libraries': [ '-lXtst' ]
+          }
+        }],
+      ],
+    },
+    {
+      'target_name': 'pangocairo',
+      'type': 'none',
+      'toolsets': ['host', 'target'],
+      'conditions': [
+        ['_toolset=="target"', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags pangocairo)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other pangocairo)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l pangocairo)',
+            ],
+          },
+        }, {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(pkg-config --cflags pangocairo)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(pkg-config --libs-only-L --libs-only-other pangocairo)',
+            ],
+            'libraries': [
+              '<!@(pkg-config --libs-only-l pangocairo)',
+            ],
+          },
+        }],
+      ],
+    },
+    {
       'target_name': 'libresolv',
-      'type': 'settings',
+      'type': 'none',
       'link_settings': {
         'libraries': [
           '-lresolv',
@@ -406,7 +578,7 @@
     },
     {
       'target_name': 'ibus',
-      'type': 'settings',
+      'type': 'none',
       'conditions': [
         ['use_ibus==1', {
           'variables': {
@@ -429,11 +601,51 @@
         }],
       ],
     },
+    {
+      'target_name': 'wayland',
+      'type': 'none',
+      'conditions': [
+        ['use_wayland == 1', {
+          'cflags': [
+            '<!@(<(pkg-config) --cflags cairo wayland-client wayland-egl xkbcommon)',
+          ],
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags cairo wayland-client wayland-egl xkbcommon)',
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other wayland-client wayland-egl xkbcommon)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l wayland-client wayland-egl xkbcommon)',
+            ],
+          },
+        }],
+      ],
+    },
+    {
+      'target_name': 'udev',
+      'type': 'none',
+      'conditions': [
+        # libudev is not available on *BSD
+        ['_toolset=="target" and os_bsd!=1', {
+          'direct_dependent_settings': {
+            'cflags': [
+              '<!@(<(pkg-config) --cflags libudev)'
+            ],
+          },
+          'link_settings': {
+            'ldflags': [
+              '<!@(<(pkg-config) --libs-only-L --libs-only-other libudev)',
+            ],
+            'libraries': [
+              '<!@(<(pkg-config) --libs-only-l libudev)',
+            ],
+          },
+        }],
+      ],
+    },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

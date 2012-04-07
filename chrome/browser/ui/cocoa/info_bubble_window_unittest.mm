@@ -6,7 +6,8 @@
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/info_bubble_window.h"
 
-class InfoBubbleWindowTest : public CocoaTest {};
+class InfoBubbleWindowTest : public CocoaTest {
+};
 
 TEST_F(InfoBubbleWindowTest, Basics) {
   InfoBubbleWindow* window =

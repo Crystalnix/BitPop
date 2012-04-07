@@ -8,54 +8,56 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "ppapi/c/dev/ppb_file_system_dev.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_time.h"
-#include "ppapi/cpp/completion_callback.h"
+#include "ppapi/c/ppb_file_system.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/proxy_non_thread_safe_ref_count.h"
+#include "ppapi/utility/completion_callback_factory.h"
 
-struct PPB_FileSystem_Dev;
-
-namespace pp {
-namespace proxy {
+namespace ppapi {
 
 class HostResource;
 
+namespace proxy {
+
 class PPB_FileSystem_Proxy : public InterfaceProxy {
  public:
-  PPB_FileSystem_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  explicit PPB_FileSystem_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_FileSystem_Proxy();
 
   static const Info* GetInfo();
 
   static PP_Resource CreateProxyResource(PP_Instance instance,
-                                         PP_FileSystemType_Dev type);
+                                         PP_FileSystemType type);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
+
+  static const ApiID kApiID = API_ID_PPB_FILE_SYSTEM;
 
  private:
   // Message handlers.
   void OnMsgCreate(PP_Instance instance,
                    int type,
-                   HostResource* result);
-  void OnMsgOpen(const HostResource& filesystem,
+                   ppapi::HostResource* result);
+  void OnMsgOpen(const ppapi::HostResource& filesystem,
                  int64_t expected_size);
 
-  void OnMsgOpenComplete(const HostResource& filesystem,
+  void OnMsgOpenComplete(const ppapi::HostResource& filesystem,
                          int32_t result);
 
-  void OpenCompleteInHost(int32_t result, const HostResource& host_resource);
+  void OpenCompleteInHost(int32_t result,
+                          const ppapi::HostResource& host_resource);
 
-  CompletionCallbackFactory<PPB_FileSystem_Proxy,
-                            ProxyNonThreadSafeRefCount> callback_factory_;
+  pp::CompletionCallbackFactory<PPB_FileSystem_Proxy,
+                                ProxyNonThreadSafeRefCount> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_FileSystem_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_FILE_SYSTEM_PROXY_H_

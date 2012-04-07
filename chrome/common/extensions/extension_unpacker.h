@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,13 @@
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/tuple.h"
+#include "chrome/common/extensions/extension.h"
 
-class DictionaryValue;
 class SkBitmap;
+
+namespace base {
+class DictionaryValue;
+}
 
 // This class unpacks an extension.  It is designed to be used in a sandboxed
 // child process.  We unpack and parse various bits of the extension, then
@@ -24,7 +28,10 @@ class ExtensionUnpacker {
  public:
   typedef std::vector< Tuple2<SkBitmap, FilePath> > DecodedImages;
 
-  explicit ExtensionUnpacker(const FilePath& extension_path);
+  ExtensionUnpacker(const FilePath& extension_path,
+                    const std::string& extension_id,
+                    Extension::Location location,
+                    int creation_flags);
   ~ExtensionUnpacker();
 
   // Install the extension file at |extension_path|.  Returns true on success.
@@ -51,19 +58,19 @@ class ExtensionUnpacker {
   // |extension_path| is the path to the extension we unpacked that wrote the
   // data. Returns true on success.
   static bool ReadMessageCatalogsFromFile(const FilePath& extension_path,
-                                          DictionaryValue* catalogs);
+                                          base::DictionaryValue* catalogs);
 
-  const std::string& error_message() { return error_message_; }
-  DictionaryValue* parsed_manifest() {
+  const string16& error_message() { return error_message_; }
+  base::DictionaryValue* parsed_manifest() {
     return parsed_manifest_.get();
   }
   const DecodedImages& decoded_images() { return decoded_images_; }
-  DictionaryValue* parsed_catalogs() { return parsed_catalogs_.get(); }
+  base::DictionaryValue* parsed_catalogs() { return parsed_catalogs_.get(); }
 
  private:
   // Parse the manifest.json file inside the extension (not in the header).
   // Caller takes ownership of return value.
-  DictionaryValue* ReadManifest();
+  base::DictionaryValue* ReadManifest();
 
   // Parse all _locales/*/messages.json files inside the extension.
   bool ReadAllMessageCatalogs(const std::string& default_locale);
@@ -82,11 +89,20 @@ class ExtensionUnpacker {
   // The extension to unpack.
   FilePath extension_path_;
 
+  // The extension ID if known.
+  std::string extension_id_;
+
+  // The location to use for the created extension.
+  Extension::Location location_;
+
+  // The creation flags to use with the created extension.
+  int creation_flags_;
+
   // The place we unpacked the extension to.
   FilePath temp_install_dir_;
 
   // The parsed version of the manifest JSON contained in the extension.
-  scoped_ptr<DictionaryValue> parsed_manifest_;
+  scoped_ptr<base::DictionaryValue> parsed_manifest_;
 
   // A list of decoded images and the paths where those images came from.  Paths
   // are relative to the manifest file.
@@ -94,10 +110,10 @@ class ExtensionUnpacker {
 
   // Dictionary of relative paths and catalogs per path. Paths are in the form
   // of _locales/locale, without messages.json base part.
-  scoped_ptr<DictionaryValue> parsed_catalogs_;
+  scoped_ptr<base::DictionaryValue> parsed_catalogs_;
 
   // The last error message that was set.  Empty if there were no errors.
-  std::string error_message_;
+  string16 error_message_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionUnpacker);
 };

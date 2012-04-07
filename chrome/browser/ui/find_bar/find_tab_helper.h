@@ -8,12 +8,12 @@
 
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
+#include "content/public/browser/web_contents_observer.h"
 
 // Per-tab find manager. Handles dealing with the life cycle of find sessions.
-class FindTabHelper : public TabContentsObserver {
+class FindTabHelper : public content::WebContentsObserver {
  public:
-  explicit FindTabHelper(TabContents* tab_contents);
+  explicit FindTabHelper(content::WebContents* web_contents);
   virtual ~FindTabHelper();
 
   // Starts the Find operation by calling StartFinding on the Tab. This function
@@ -58,16 +58,13 @@ class FindTabHelper : public TabContentsObserver {
     return last_search_result_;
   }
 
-  // TabContentsObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void HandleFindReply(int request_id,
+                       int number_of_matches,
+                       const gfx::Rect& selection_rect,
+                       int active_match_ordinal,
+                       bool final_update);
 
  private:
-  void OnFindReply(int request_id,
-                   int number_of_matches,
-                   const gfx::Rect& selection_rect,
-                   int active_match_ordinal,
-                   bool final_update);
-
   // Each time a search request comes in we assign it an id before passing it
   // over the IPC so that when the results come in we can evaluate whether we
   // still care about the results of the search (in some cases we don't because

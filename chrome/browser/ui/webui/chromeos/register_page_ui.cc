@@ -6,7 +6,8 @@
 
 #include <string>
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/string_piece.h"
@@ -17,16 +18,22 @@
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "chrome/browser/chromeos/system_access.h"
+#include "chrome/browser/chromeos/system/runtime_environment.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 #include "chrome/browser/chromeos/version_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
@@ -61,11 +68,6 @@ const char kUndefinedValue[] = "undefined";
 // Otherwise |kUndefinedValue| is returned.
 #if defined(OS_CHROMEOS)
 static std::string GetConnectionType() {
-  if (!chromeos::CrosLibrary::Get()->EnsureLoaded()) {
-    LOG(ERROR) << "CrosLibrary is not loaded.";
-    return kUndefinedValue;
-  }
-
   chromeos::NetworkLibrary* network_lib =
       chromeos::CrosLibrary::Get()->GetNetworkLibrary();
   if (network_lib->ethernet_connected())
@@ -114,12 +116,8 @@ class RegisterPageHandler : public WebUIMessageHandler,
   RegisterPageHandler();
   virtual ~RegisterPageHandler();
 
-  // Init work after Attach.
-  void Init();
-
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
   // Handlers for JS WebUI messages.
@@ -173,15 +171,9 @@ void RegisterPageUIHTMLSource::StartDataRequest(const std::string& path,
     return;
   }
 
-  static const base::StringPiece register_html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
+  scoped_refptr<RefCountedMemory> html_bytes(
+      ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
           IDR_HOST_REGISTRATION_PAGE_HTML));
-
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(register_html.size());
-  std::copy(register_html.begin(),
-            register_html.end(),
-            html_bytes->data.begin());
 
   SendResponse(request_id, html_bytes);
 #else
@@ -201,19 +193,14 @@ RegisterPageHandler::RegisterPageHandler() {
 RegisterPageHandler::~RegisterPageHandler() {
 }
 
-WebUIMessageHandler* RegisterPageHandler::Attach(WebUI* web_ui) {
-  return WebUIMessageHandler::Attach(web_ui);
-}
-
-void RegisterPageHandler::Init() {
-}
-
 void RegisterPageHandler::RegisterMessages() {
 #if defined(OS_CHROMEOS)
-  web_ui_->RegisterMessageCallback(kJsCallbackGetRegistrationUrl,
-      NewCallback(this, &RegisterPageHandler::HandleGetRegistrationUrl));
-  web_ui_->RegisterMessageCallback(kJsCallbackUserInfo,
-      NewCallback(this, &RegisterPageHandler::HandleGetUserInfo));
+  web_ui()->RegisterMessageCallback(kJsCallbackGetRegistrationUrl,
+      base::Bind(&RegisterPageHandler::HandleGetRegistrationUrl,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsCallbackUserInfo,
+      base::Bind(&RegisterPageHandler::HandleGetUserInfo,
+                 base::Unretained(this)));
 #endif
 }
 
@@ -231,7 +218,7 @@ void RegisterPageHandler::HandleGetRegistrationUrl(const ListValue* args) {
       return;
     }
     StringValue url_value(url);
-    web_ui_->CallJavascriptFunction(kJsApiSetRegistrationUrl, url_value);
+    web_ui()->CallJavascriptFunction(kJsApiSetRegistrationUrl, url_value);
   } else {
     SkipRegistration("Startup manifest not defined.");
   }
@@ -240,14 +227,13 @@ void RegisterPageHandler::HandleGetRegistrationUrl(const ListValue* args) {
 
 void RegisterPageHandler::HandleGetUserInfo(const ListValue* args) {
 #if defined(OS_CHROMEOS)
-  if (chromeos::CrosLibrary::Get()->EnsureLoaded()) {
+  if (chromeos::system::runtime_environment::IsRunningOnChromeOS()) {
      version_loader_.GetVersion(
          &version_consumer_,
-         NewCallback(this,
-                     &RegisterPageHandler::OnVersion),
+         base::Bind(&RegisterPageHandler::OnVersion, base::Unretained(this)),
          chromeos::VersionLoader::VERSION_FULL);
   } else {
-    SkipRegistration("CrosLibrary is not loaded.");
+    SkipRegistration("Not running on ChromeOS.");
   }
 #endif
 }
@@ -266,7 +252,7 @@ void RegisterPageHandler::SkipRegistration(const std::string& error_msg) {
   if (chromeos::WizardController::default_controller())
     chromeos::WizardController::default_controller()->SkipRegistration();
   else
-    web_ui_->CallJavascriptFunction(kJsApiSkipRegistration);
+    web_ui()->CallJavascriptFunction(kJsApiSkipRegistration);
 #endif
 }
 
@@ -274,14 +260,16 @@ void RegisterPageHandler::SendUserInfo() {
 #if defined(OS_CHROMEOS)
   DictionaryValue value;
 
-  chromeos::SystemAccess * sys_lib =
-      chromeos::SystemAccess::GetInstance();
+  chromeos::system::StatisticsProvider * provider =
+      chromeos::system::StatisticsProvider::GetInstance();
 
   // Required info.
   std::string system_hwqual;
   std::string serial_number;
-  if (!sys_lib->GetMachineStatistic(kMachineInfoSystemHwqual, &system_hwqual) ||
-      !sys_lib->GetMachineStatistic(kMachineInfoSerialNumber, &serial_number)) {
+  if (!provider->GetMachineStatistic(kMachineInfoSystemHwqual,
+                                     &system_hwqual) ||
+      !provider->GetMachineStatistic(kMachineInfoSerialNumber,
+                                     &serial_number)) {
     SkipRegistration("Failed to get required machine info.");
     return;
   }
@@ -297,7 +285,7 @@ void RegisterPageHandler::SendUserInfo() {
   value.SetString("user_first_name", "");
   value.SetString("user_last_name", "");
 
-  web_ui_->CallJavascriptFunction(kJsApiSetUserInfo, value);
+  web_ui()->CallJavascriptFunction(kJsApiSetUserInfo, value);
 #endif
 }
 
@@ -307,12 +295,13 @@ void RegisterPageHandler::SendUserInfo() {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-RegisterPageUI::RegisterPageUI(TabContents* contents) : WebUI(contents){
+RegisterPageUI::RegisterPageUI(content::WebUI* web_ui)
+    : WebUIController(web_ui) {
   RegisterPageHandler* handler = new RegisterPageHandler();
-  AddMessageHandler((handler)->Attach(this));
-  handler->Init();
+  web_ui->AddMessageHandler(handler);
   RegisterPageUIHTMLSource* html_source = new RegisterPageUIHTMLSource();
 
   // Set up the chrome://register/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(html_source);
 }

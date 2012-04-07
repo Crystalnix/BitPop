@@ -4,6 +4,7 @@
 
 #include "webkit/tools/test_shell/test_shell_devtools_agent.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "grit/webkit_chromium_resources.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
@@ -42,23 +43,11 @@ class WebKitClientMessageLoopImpl
 
 } //  namespace
 
-// static
-void TestShellDevToolsAgent::DispatchMessageLoop() {
-  MessageLoop* current = MessageLoop::current();
-  bool old_state = current->NestableTasksAllowed();
-  current->SetNestableTasksAllowed(true);
-  current->RunAllPending();
-  current->SetNestableTasksAllowed(old_state);
-}
-
 TestShellDevToolsAgent::TestShellDevToolsAgent()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(call_method_factory_(this)),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       dev_tools_client_(NULL) {
   static int dev_tools_agent_counter;
   routing_id_ = ++dev_tools_agent_counter;
-  if (routing_id_ == 1)
-    WebDevToolsAgent::setMessageLoopDispatchHandler(
-        &TestShellDevToolsAgent::DispatchMessageLoop);
 }
 
 TestShellDevToolsAgent::~TestShellDevToolsAgent() {
@@ -90,11 +79,10 @@ WebKit::WebDevToolsAgentClient::WebKitClientMessageLoop*
 }
 
 void TestShellDevToolsAgent::AsyncCall(const TestShellDevToolsCallArgs &args) {
-  MessageLoop::current()->PostDelayedTask(
+  MessageLoop::current()->PostTask(
       FROM_HERE,
-      call_method_factory_.NewRunnableMethod(&TestShellDevToolsAgent::Call,
-                                             args),
-      0);
+      base::Bind(&TestShellDevToolsAgent::Call, weak_factory_.GetWeakPtr(),
+                 args));
 }
 
 void TestShellDevToolsAgent::Call(const TestShellDevToolsCallArgs &args) {
@@ -103,12 +91,6 @@ void TestShellDevToolsAgent::Call(const TestShellDevToolsCallArgs &args) {
     web_agent->dispatchOnInspectorBackend(args.data_);
   if (TestShellDevToolsCallArgs::calls_count() == 1 && dev_tools_client_)
     dev_tools_client_->all_messages_processed();
-}
-
-void TestShellDevToolsAgent::DelayedFrontendLoaded() {
-  WebDevToolsAgent *web_agent = GetWebAgent();
-  if (web_agent)
-    web_agent->frontendLoaded();
 }
 
 WebDevToolsAgent* TestShellDevToolsAgent::GetWebAgent() {
@@ -131,22 +113,6 @@ void TestShellDevToolsAgent::detach() {
   if (web_agent)
     web_agent->detach();
   dev_tools_client_ = NULL;
-}
-
-void TestShellDevToolsAgent::frontendLoaded() {
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      call_method_factory_.NewRunnableMethod(
-          &TestShellDevToolsAgent::DelayedFrontendLoaded),
-      0);
-}
-
-bool TestShellDevToolsAgent::setTimelineProfilingEnabled(bool enabled) {
-  WebDevToolsAgent* agent = GetWebAgent();
-  if (!agent)
-    return false;
-  agent->setTimelineProfilingEnabled(enabled);
-  return true;
 }
 
 bool TestShellDevToolsAgent::evaluateInWebInspector(

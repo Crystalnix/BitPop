@@ -1,22 +1,8 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/syncable/syncable.h"
-
-#include "build/build_config.h"
-
-#include <sys/stat.h>
-#if defined(OS_POSIX)
-#include <sys/time.h>
-#endif
-#include <sys/types.h>
-#include <time.h>
-#if defined(OS_MACOSX)
-#include <CoreFoundation/CoreFoundation.h>
-#elif defined(OS_WIN)
-#include <shlwapi.h>  // for PathMatchSpec
-#endif
 
 #include <algorithm>
 #include <cstring>
@@ -27,49 +13,110 @@
 #include <set>
 #include <string>
 
-#include "base/hash_tables.h"
+#include "base/basictypes.h"
+#include "base/debug/trace_event.h"
+#include "base/compiler_specific.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
+#include "base/hash_tables.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/perftimer.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
-#include "base/stl_util-inl.h"
 #include "base/time.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/sync/engine/syncer.h"
-#include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/protocol/proto_value_conversions.h"
 #include "chrome/browser/sync/protocol/service_constants.h"
 #include "chrome/browser/sync/syncable/directory_backing_store.h"
-#include "chrome/browser/sync/syncable/directory_change_listener.h"
+#include "chrome/browser/sync/syncable/directory_change_delegate.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/syncable/syncable-inl.h"
 #include "chrome/browser/sync/syncable/syncable_changes_version.h"
 #include "chrome/browser/sync/syncable/syncable_columns.h"
 #include "chrome/browser/sync/syncable/syncable_enum_conversions.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
+#include "chrome/browser/sync/syncable/transaction_observer.h"
+#include "chrome/browser/sync/util/logging.h"
+#include "chrome/common/chrome_constants.h"
 #include "net/base/escape.h"
 
 namespace {
+
 enum InvariantCheckLevel {
   OFF = 0,
   VERIFY_IN_MEMORY = 1,
   FULL_DB_VERIFICATION = 2
 };
 
-static const InvariantCheckLevel kInvariantCheckLevel = VERIFY_IN_MEMORY;
+const InvariantCheckLevel kInvariantCheckLevel = VERIFY_IN_MEMORY;
 
 // Max number of milliseconds to spend checking syncable entry invariants
-static const int kInvariantCheckMaxMs = 50;
+const int kInvariantCheckMaxMs = 50;
+
+// This function checks to see if the given list of Metahandles has any nodes
+// whose PREV_ID, PARENT_ID or NEXT_ID values refer to ID values that do not
+// actually exist.  Returns true on success.
+//
+// This function is "Unsafe" because it does not attempt to acquire any locks
+// that may be protecting this list that gets passed in.  The caller is
+// responsible for ensuring that no one modifies this list while the function is
+// running.
+bool VerifyReferenceIntegrityUnsafe(const syncable::MetahandlesIndex &index) {
+  TRACE_EVENT0("sync", "SyncDatabaseIntegrityCheck");
+  using namespace syncable;
+  typedef base::hash_set<std::string> IdsSet;
+
+  IdsSet ids_set;
+  bool is_ok = true;
+
+  for (MetahandlesIndex::const_iterator it = index.begin();
+       it != index.end(); ++it) {
+    EntryKernel* entry = *it;
+    bool is_duplicate_id = !(ids_set.insert(entry->ref(ID).value()).second);
+    is_ok = is_ok && !is_duplicate_id;
+  }
+
+  IdsSet::iterator end = ids_set.end();
+  for (MetahandlesIndex::const_iterator it = index.begin();
+       it != index.end(); ++it) {
+    EntryKernel* entry = *it;
+    bool prev_exists = (ids_set.find(entry->ref(PREV_ID).value()) != end);
+    bool parent_exists = (ids_set.find(entry->ref(PARENT_ID).value()) != end);
+    bool next_exists = (ids_set.find(entry->ref(NEXT_ID).value()) != end);
+    is_ok = is_ok && prev_exists && parent_exists && next_exists;
+  }
+  return is_ok;
+}
+
 }  // namespace
 
-using browser_sync::SyncerUtil;
 using std::string;
-
+using browser_sync::UnrecoverableErrorHandler;
 
 namespace syncable {
+
+namespace {
+
+// Function to handle runtime failures on syncable code. Rather than crashing,
+// if the |condition| is false the following will happen:
+// 1. Sets unrecoverable error on transaction.
+// 2. Returns false.
+bool SyncAssert(bool condition,
+                const tracked_objects::Location& location,
+                const char* msg,
+                BaseTransaction* trans) {
+  if (!condition) {
+    trans->OnUnrecoverableError(location, msg);
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
 
 #define ENUM_CASE(x) case x: return #x; break
 
@@ -87,35 +134,59 @@ std::string WriterTagToString(WriterTag writer_tag) {
   return "";
 }
 
-ListValue* OriginalEntriesToValue(const OriginalEntries& original_entries) {
-  ListValue* list = new ListValue();
-  for (OriginalEntries::const_iterator it = original_entries.begin();
-       it != original_entries.end();
-       ++it) {
-    list->Append(it->ToValue());
-  }
-  return list;
-}
-
 #undef ENUM_CASE
 
-int64 Now() {
-#if defined(OS_WIN)
-  FILETIME filetime;
-  SYSTEMTIME systime;
-  GetSystemTime(&systime);
-  SystemTimeToFileTime(&systime, &filetime);
-  // MSDN recommends converting via memcpy like this.
-  LARGE_INTEGER n;
-  memcpy(&n, &filetime, sizeof(filetime));
-  return n.QuadPart;
-#elif defined(OS_POSIX)
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return static_cast<int64>(tv.tv_sec);
-#else
-#error NEED OS SPECIFIC Now() implementation
-#endif
+WriteTransactionInfo::WriteTransactionInfo(
+    int64 id,
+    tracked_objects::Location location,
+    WriterTag writer,
+    ImmutableEntryKernelMutationMap mutations)
+    : id(id),
+      location_string(location.ToString()),
+      writer(writer),
+      mutations(mutations) {}
+
+WriteTransactionInfo::WriteTransactionInfo()
+    : id(-1), writer(INVALID) {}
+
+WriteTransactionInfo::~WriteTransactionInfo() {}
+
+base::DictionaryValue* WriteTransactionInfo::ToValue(
+    size_t max_mutations_size) const {
+  DictionaryValue* dict = new DictionaryValue();
+  dict->SetString("id", base::Int64ToString(id));
+  dict->SetString("location", location_string);
+  dict->SetString("writer", WriterTagToString(writer));
+  Value* mutations_value = NULL;
+  const size_t mutations_size = mutations.Get().size();
+  if (mutations_size <= max_mutations_size) {
+    mutations_value = EntryKernelMutationMapToValue(mutations.Get());
+  } else {
+    mutations_value =
+        Value::CreateStringValue(
+            base::Uint64ToString(static_cast<uint64>(mutations_size)) +
+            " mutations");
+  }
+  dict->Set("mutations", mutations_value);
+  return dict;
+}
+
+DictionaryValue* EntryKernelMutationToValue(
+    const EntryKernelMutation& mutation) {
+  DictionaryValue* dict = new DictionaryValue();
+  dict->Set("original", mutation.original.ToValue());
+  dict->Set("mutated", mutation.mutated.ToValue());
+  return dict;
+}
+
+ListValue* EntryKernelMutationMapToValue(
+    const EntryKernelMutationMap& mutations) {
+  ListValue* list = new ListValue();
+  for (EntryKernelMutationMap::const_iterator it = mutations.begin();
+       it != mutations.end(); ++it) {
+    list->Append(EntryKernelMutationToValue(it->second));
+  }
+  return list;
 }
 
 namespace {
@@ -139,6 +210,8 @@ class ScopedIndexUpdater {
         index_(index) {
     // First call to ShouldInclude happens before the field is updated.
     if (Indexer::ShouldInclude(entry_)) {
+      // TODO(lipalani): Replace this CHECK with |SyncAssert| by refactorting
+      // this class into a function.
       CHECK(index_->erase(entry_));
     }
   }
@@ -146,6 +219,8 @@ class ScopedIndexUpdater {
   ~ScopedIndexUpdater() {
     // Second call to ShouldInclude happens after the field is updated.
     if (Indexer::ShouldInclude(entry_)) {
+      // TODO(lipalani): Replace this CHECK with |SyncAssert| by refactorting
+      // this class into a function.
       CHECK(index_->insert(entry_).second);
     }
   }
@@ -202,10 +277,57 @@ bool ParentIdAndHandleIndexer::ShouldInclude(const EntryKernel* a) {
 // EntryKernel
 
 EntryKernel::EntryKernel() : dirty_(false) {
-  memset(int64_fields, 0, sizeof(int64_fields));
+  // Everything else should already be default-initialized.
+  for (int i = INT64_FIELDS_BEGIN; i < INT64_FIELDS_END; ++i) {
+    int64_fields[i] = 0;
+  }
 }
 
 EntryKernel::~EntryKernel() {}
+
+syncable::ModelType EntryKernel::GetServerModelType() const {
+  ModelType specifics_type = GetModelTypeFromSpecifics(ref(SERVER_SPECIFICS));
+  if (specifics_type != UNSPECIFIED)
+    return specifics_type;
+  if (ref(ID).IsRoot())
+    return TOP_LEVEL_FOLDER;
+  // Loose check for server-created top-level folders that aren't
+  // bound to a particular model type.
+  if (!ref(UNIQUE_SERVER_TAG).empty() && ref(SERVER_IS_DIR))
+    return TOP_LEVEL_FOLDER;
+
+  return UNSPECIFIED;
+}
+
+bool EntryKernel::ContainsString(const std::string& lowercase_query) const {
+  // TODO(lipalani) - figure out what to do if the node is encrypted.
+  const sync_pb::EntitySpecifics& specifics = ref(SPECIFICS);
+  std::string temp;
+  // The protobuf serialized string contains the original strings. So
+  // we will just serialize it and search it.
+  specifics.SerializeToString(&temp);
+
+  // Now convert to lower case.
+  StringToLowerASCII(&temp);
+
+  if (temp.find(lowercase_query) != std::string::npos)
+    return true;
+
+  // Now go through all the string fields to see if the value is there.
+  for (int i = STRING_FIELDS_BEGIN; i < STRING_FIELDS_END; ++i) {
+    if (StringToLowerASCII(ref(static_cast<StringField>(i))).find(
+            lowercase_query) != std::string::npos)
+      return true;
+  }
+
+  for (int i = ID_FIELDS_BEGIN; i < ID_FIELDS_END; ++i) {
+    const Id& id = ref(static_cast<IdField>(i));
+    if (id.ContainsStringCaseInsensitive(lowercase_query)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 namespace {
 
@@ -234,6 +356,10 @@ StringValue* Int64ToValue(int64 i) {
   return Value::CreateStringValue(base::Int64ToString(i));
 }
 
+StringValue* TimeToValue(const base::Time& t) {
+  return Value::CreateStringValue(browser_sync::GetTimeDebugString(t));
+}
+
 StringValue* IdToValue(const Id& id) {
   return id.ToValue();
 }
@@ -243,6 +369,7 @@ StringValue* IdToValue(const Id& id) {
 DictionaryValue* EntryKernel::ToValue() const {
   DictionaryValue* kernel_info = new DictionaryValue();
   kernel_info->SetBoolean("isDirty", is_dirty());
+  kernel_info->Set("serverModelType", ModelTypeToValue(GetServerModelType()));
 
   // Int64 fields.
   SetFieldValues(*this, kernel_info,
@@ -254,6 +381,11 @@ DictionaryValue* EntryKernel::ToValue() const {
   SetFieldValues(*this, kernel_info,
                  &GetInt64FieldString, &Int64ToValue,
                  BASE_VERSION + 1, INT64_FIELDS_END - 1);
+
+  // Time fields.
+  SetFieldValues(*this, kernel_info,
+                 &GetTimeFieldString, &TimeToValue,
+                 TIME_FIELDS_BEGIN, TIME_FIELDS_END - 1);
 
   // ID fields.
   SetFieldValues(*this, kernel_info,
@@ -297,9 +429,14 @@ DictionaryValue* EntryKernel::ToValue() const {
 ///////////////////////////////////////////////////////////////////////////
 // Directory
 
-void Directory::init_kernel(const std::string& name) {
-  DCHECK(kernel_ == NULL);
-  kernel_ = new Kernel(FilePath(), name, KernelLoadInfo());
+void Directory::InitKernelForTest(
+    const std::string& name,
+    DirectoryChangeDelegate* delegate,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer) {
+  DCHECK(!kernel_);
+  kernel_ =  new Kernel(FilePath(), name, KernelLoadInfo(),
+                        delegate, transaction_observer);
 }
 
 Directory::PersistedKernelInfo::PersistedKernelInfo()
@@ -307,9 +444,6 @@ Directory::PersistedKernelInfo::PersistedKernelInfo()
   for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
     reset_download_progress(ModelTypeFromInt(i));
   }
-  autofill_migration_state = NOT_DETERMINED;
-  memset(&autofill_migration_debug_info, 0,
-         sizeof(autofill_migration_debug_info));
 }
 
 Directory::PersistedKernelInfo::~PersistedKernelInfo() {}
@@ -328,25 +462,30 @@ Directory::SaveChangesSnapshot::SaveChangesSnapshot()
 
 Directory::SaveChangesSnapshot::~SaveChangesSnapshot() {}
 
-Directory::Kernel::Kernel(const FilePath& db_path,
-                          const string& name,
-                          const KernelLoadInfo& info)
+Directory::Kernel::Kernel(
+    const FilePath& db_path, const string& name,
+    const KernelLoadInfo& info, DirectoryChangeDelegate* delegate,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer)
     : db_path(db_path),
       refcount(1),
+      next_write_transaction_id(0),
       name(name),
       metahandles_index(new Directory::MetahandlesIndex),
       ids_index(new Directory::IdsIndex),
       parent_id_child_index(new Directory::ParentIdChildIndex),
       client_tag_index(new Directory::ClientTagIndex),
-      unapplied_update_metahandles(new MetahandleSet),
       unsynced_metahandles(new MetahandleSet),
       dirty_metahandles(new MetahandleSet),
       metahandles_to_purge(new MetahandleSet),
-      channel(new Directory::Channel(syncable::DIRECTORY_DESTROYED)),
       info_status(Directory::KERNEL_SHARE_INFO_VALID),
       persisted_info(info.kernel_info),
       cache_guid(info.cache_guid),
-      next_metahandle(info.max_metahandle + 1) {
+      next_metahandle(info.max_metahandle + 1),
+      delegate(delegate),
+      transaction_observer(transaction_observer) {
+  DCHECK(delegate);
+  DCHECK(transaction_observer.IsInitialized());
 }
 
 void Directory::Kernel::AddRef() {
@@ -358,38 +497,9 @@ void Directory::Kernel::Release() {
     delete this;
 }
 
-void Directory::Kernel::AddChangeListener(
-    DirectoryChangeListener* listener) {
-  base::AutoLock lock(change_listeners_lock_);
-  change_listeners_.AddObserver(listener);
-}
-
-void Directory::Kernel::RemoveChangeListener(
-    DirectoryChangeListener* listener) {
-  base::AutoLock lock(change_listeners_lock_);
-  change_listeners_.RemoveObserver(listener);
-}
-
-// Note: it is possible that a listener will remove itself after we
-// have made a copy, but before the copy is consumed. This could
-// theoretically result in accessing a garbage pointer, but can only
-// occur when an about:sync window is closed in the middle of a
-// notification.  See crbug.com/85481.
-void Directory::Kernel::CopyChangeListeners(
-    ObserverList<DirectoryChangeListener>* change_listeners) {
-  DCHECK_EQ(0U, change_listeners->size());
-  base::AutoLock lock(change_listeners_lock_);
-  ObserverListBase<DirectoryChangeListener>::Iterator it(change_listeners_);
-  DirectoryChangeListener* obs;
-  while ((obs = it.GetNext()) != NULL)
-    change_listeners->AddObserver(obs);
-}
-
 Directory::Kernel::~Kernel() {
   CHECK_EQ(0, refcount);
-  delete channel;
   delete unsynced_metahandles;
-  delete unapplied_update_metahandles;
   delete dirty_metahandles;
   delete metahandles_to_purge;
   delete parent_id_child_index;
@@ -399,15 +509,24 @@ Directory::Kernel::~Kernel() {
   delete metahandles_index;
 }
 
-Directory::Directory() : kernel_(NULL), store_(NULL) {
+Directory::Directory(UnrecoverableErrorHandler* unrecoverable_error_handler)
+    : kernel_(NULL),
+      store_(NULL),
+      unrecoverable_error_handler_(unrecoverable_error_handler),
+      unrecoverable_error_set_(false) {
 }
 
 Directory::~Directory() {
   Close();
 }
 
-DirOpenResult Directory::Open(const FilePath& file_path, const string& name) {
-  const DirOpenResult result = OpenImpl(file_path, name);
+DirOpenResult Directory::Open(
+    const FilePath& file_path, const string& name,
+    DirectoryChangeDelegate* delegate,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer) {
+  const DirOpenResult result =
+      OpenImpl(file_path, name, delegate, transaction_observer);
   if (OPENED != result)
     Close();
   return result;
@@ -421,10 +540,13 @@ void Directory::InitializeIndices() {
         kernel_->parent_id_child_index);
     InitializeIndexEntry<IdIndexer>(entry, kernel_->ids_index);
     InitializeIndexEntry<ClientTagIndexer>(entry, kernel_->client_tag_index);
+    const int64 metahandle = entry->ref(META_HANDLE);
     if (entry->ref(IS_UNSYNCED))
-      kernel_->unsynced_metahandles->insert(entry->ref(META_HANDLE));
-    if (entry->ref(IS_UNAPPLIED_UPDATE))
-      kernel_->unapplied_update_metahandles->insert(entry->ref(META_HANDLE));
+      kernel_->unsynced_metahandles->insert(metahandle);
+    if (entry->ref(IS_UNAPPLIED_UPDATE)) {
+      const ModelType type = entry->GetServerModelType();
+      kernel_->unapplied_update_metahandles[type].insert(metahandle);
+    }
     DCHECK(!entry->is_dirty());
   }
 }
@@ -434,8 +556,13 @@ DirectoryBackingStore* Directory::CreateBackingStore(
   return new DirectoryBackingStore(dir_name, backing_filepath);
 }
 
-DirOpenResult Directory::OpenImpl(const FilePath& file_path,
-                                  const string& name) {
+DirOpenResult Directory::OpenImpl(
+    const FilePath& file_path,
+    const string& name,
+    DirectoryChangeDelegate* delegate,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer) {
+  TRACE_EVENT0("sync", "SyncDatabaseOpen");
   DCHECK_EQ(static_cast<DirectoryBackingStore*>(NULL), store_);
   FilePath db_path(file_path);
   file_util::AbsolutePath(&db_path);
@@ -449,7 +576,10 @@ DirOpenResult Directory::OpenImpl(const FilePath& file_path,
   if (OPENED != result)
     return result;
 
-  kernel_ = new Kernel(db_path, name, info);
+  if (!VerifyReferenceIntegrityUnsafe(metas_bucket))
+    return FAILED_LOGICAL_CORRUPTION;
+
+  kernel_ = new Kernel(db_path, name, info, delegate, transaction_observer);
   kernel_->metahandles_index->swap(metas_bucket);
   InitializeIndices();
   return OPENED;
@@ -467,6 +597,16 @@ void Directory::Close() {
     kernel_ = NULL;
   }
 }
+
+void Directory::OnUnrecoverableError(const BaseTransaction* trans,
+                                     const tracked_objects::Location& location,
+                                     const std::string & message) {
+  DCHECK(trans != NULL);
+  unrecoverable_error_set_ = true;
+  unrecoverable_error_handler_->OnUnrecoverableError(location,
+                                                     message);
+}
+
 
 EntryKernel* Directory::GetEntryById(const Id& id) {
   ScopedKernelLock lock(this);
@@ -533,63 +673,85 @@ EntryKernel* Directory::GetEntryByHandle(int64 metahandle,
   return NULL;
 }
 
-void Directory::GetChildHandles(BaseTransaction* trans, const Id& parent_id,
-                                Directory::ChildHandles* result) {
-  CHECK(this == trans->directory());
+bool Directory::GetChildHandlesById(
+    BaseTransaction* trans, const Id& parent_id,
+    Directory::ChildHandles* result) {
+  if (!SyncAssert(this == trans->directory(), FROM_HERE,
+                  "Directories don't match", trans))
+    return false;
   result->clear();
-  {
-    ScopedKernelLock lock(this);
 
-    typedef ParentIdChildIndex::iterator iterator;
-    for (iterator i = GetParentChildIndexLowerBound(lock, parent_id),
-                end = GetParentChildIndexUpperBound(lock, parent_id);
-         i != end; ++i) {
-      DCHECK_EQ(parent_id, (*i)->ref(PARENT_ID));
-      result->push_back((*i)->ref(META_HANDLE));
-    }
-  }
+  ScopedKernelLock lock(this);
+  AppendChildHandles(lock, parent_id, result);
+  return true;
+}
+
+bool Directory::GetChildHandlesByHandle(
+    BaseTransaction* trans, int64 handle,
+    Directory::ChildHandles* result) {
+  if (!SyncAssert(this == trans->directory(), FROM_HERE,
+                  "Directories don't match", trans))
+    return false;
+
+  result->clear();
+
+  ScopedKernelLock lock(this);
+  EntryKernel* kernel = GetEntryByHandle(handle, &lock);
+  if (!kernel)
+    return true;
+
+  AppendChildHandles(lock, kernel->ref(ID), result);
+  return true;
 }
 
 EntryKernel* Directory::GetRootEntry() {
   return GetEntryById(Id());
 }
 
-void ZeroFields(EntryKernel* entry, int first_field) {
-  int i = first_field;
-  // Note that bitset<> constructor sets all bits to zero, and strings
-  // initialize to empty.
-  for ( ; i < INT64_FIELDS_END; ++i)
-    entry->put(static_cast<Int64Field>(i), 0);
-  for ( ; i < ID_FIELDS_END; ++i)
-    entry->mutable_ref(static_cast<IdField>(i)).Clear();
-  for ( ; i < BIT_FIELDS_END; ++i)
-    entry->put(static_cast<BitField>(i), false);
-  if (i < PROTO_FIELDS_END)
-    i = PROTO_FIELDS_END;
-  entry->clear_dirty(NULL);
-}
-
-void Directory::InsertEntry(EntryKernel* entry) {
+bool Directory::InsertEntry(WriteTransaction* trans, EntryKernel* entry) {
   ScopedKernelLock lock(this);
-  InsertEntry(entry, &lock);
+  return InsertEntry(trans, entry, &lock);
 }
 
-void Directory::InsertEntry(EntryKernel* entry, ScopedKernelLock* lock) {
+bool Directory::InsertEntry(WriteTransaction* trans,
+                            EntryKernel* entry,
+                            ScopedKernelLock* lock) {
   DCHECK(NULL != lock);
-  CHECK(NULL != entry);
+  if (!SyncAssert(NULL != entry, FROM_HERE, "Entry is null", trans))
+    return false;
+
   static const char error[] = "Entry already in memory index.";
-  CHECK(kernel_->metahandles_index->insert(entry).second) << error;
+  if (!SyncAssert(kernel_->metahandles_index->insert(entry).second,
+                  FROM_HERE,
+                  error,
+                  trans))
+    return false;
 
   if (!entry->ref(IS_DEL)) {
-    CHECK(kernel_->parent_id_child_index->insert(entry).second) << error;
+    if (!SyncAssert(kernel_->parent_id_child_index->insert(entry).second,
+                    FROM_HERE,
+                    error,
+                    trans)) {
+      return false;
+    }
   }
-  CHECK(kernel_->ids_index->insert(entry).second) << error;
+  if (!SyncAssert(kernel_->ids_index->insert(entry).second,
+                  FROM_HERE,
+                  error,
+                  trans))
+    return false;
 
   // Should NEVER be created with a client tag.
-  CHECK(entry->ref(UNIQUE_CLIENT_TAG).empty());
+  if (!SyncAssert(entry->ref(UNIQUE_CLIENT_TAG).empty(), FROM_HERE,
+                  "Client should be empty", trans))
+    return false;
+
+  return true;
 }
 
-bool Directory::ReindexId(EntryKernel* const entry, const Id& new_id) {
+bool Directory::ReindexId(WriteTransaction* trans,
+                         EntryKernel* const entry,
+                         const Id& new_id) {
   ScopedKernelLock lock(this);
   if (NULL != GetEntryById(new_id, &lock))
     return false;
@@ -604,7 +766,8 @@ bool Directory::ReindexId(EntryKernel* const entry, const Id& new_id) {
   return true;
 }
 
-void Directory::ReindexParentId(EntryKernel* const entry,
+bool Directory::ReindexParentId(WriteTransaction* trans,
+                                EntryKernel* const entry,
                                 const Id& new_parent_id) {
   ScopedKernelLock lock(this);
 
@@ -614,6 +777,12 @@ void Directory::ReindexParentId(EntryKernel* const entry,
         kernel_->parent_id_child_index);
     entry->put(PARENT_ID, new_parent_id);
   }
+  return true;
+}
+
+bool Directory::unrecoverable_error_set(const BaseTransaction* trans) const {
+  DCHECK(trans != NULL);
+  return unrecoverable_error_set_;
 }
 
 void Directory::ClearDirtyMetahandles() {
@@ -621,28 +790,45 @@ void Directory::ClearDirtyMetahandles() {
   kernel_->dirty_metahandles->clear();
 }
 
-bool Directory::SafeToPurgeFromMemory(const EntryKernel* const entry) const {
+bool Directory::SafeToPurgeFromMemory(WriteTransaction* trans,
+                                      const EntryKernel* const entry) const {
   bool safe = entry->ref(IS_DEL) && !entry->is_dirty() &&
       !entry->ref(SYNCING) && !entry->ref(IS_UNAPPLIED_UPDATE) &&
       !entry->ref(IS_UNSYNCED);
 
   if (safe) {
     int64 handle = entry->ref(META_HANDLE);
-    CHECK_EQ(kernel_->dirty_metahandles->count(handle), 0U);
+    const ModelType type = entry->GetServerModelType();
+    if (!SyncAssert(kernel_->dirty_metahandles->count(handle) == 0U,
+                    FROM_HERE,
+                    "Dirty metahandles should be empty", trans))
+      return false;
     // TODO(tim): Bug 49278.
-    CHECK(!kernel_->unsynced_metahandles->count(handle));
-    CHECK(!kernel_->unapplied_update_metahandles->count(handle));
+    if (!SyncAssert(!kernel_->unsynced_metahandles->count(handle),
+                    FROM_HERE,
+                    "Unsynced handles should be empty",
+                    trans))
+      return false;
+    if (!SyncAssert(!kernel_->unapplied_update_metahandles[type].count(handle),
+                    FROM_HERE,
+                    "Unapplied metahandles should be empty",
+                    trans))
+      return false;
   }
 
   return safe;
 }
 
 void Directory::TakeSnapshotForSaveChanges(SaveChangesSnapshot* snapshot) {
-  ReadTransaction trans(this, __FILE__, __LINE__);
+  ReadTransaction trans(FROM_HERE, this);
   ScopedKernelLock lock(this);
+
+  // If there is an unrecoverable error then just bail out.
+  if (unrecoverable_error_set(&trans))
+    return;
+
   // Deep copy dirty entries from kernel_->metahandles_index into snapshot and
   // clear dirty flags.
-
   for (MetahandleSet::const_iterator i = kernel_->dirty_metahandles->begin();
        i != kernel_->dirty_metahandles->end(); ++i) {
     EntryKernel* entry = GetEntryByHandle(*i, &lock);
@@ -688,31 +874,31 @@ bool Directory::SaveChanges() {
 
   // Handle success or failure.
   if (success)
-    VacuumAfterSaveChanges(snapshot);
+    success = VacuumAfterSaveChanges(snapshot);
   else
     HandleSaveChangesFailure(snapshot);
   return success;
 }
 
-void Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
+bool Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
+  if (snapshot.dirty_metas.empty())
+    return true;
+
   // Need a write transaction as we are about to permanently purge entries.
-  WriteTransaction trans(this, VACUUM_AFTER_SAVE, __FILE__, __LINE__);
+  WriteTransaction trans(FROM_HERE, VACUUM_AFTER_SAVE, this);
   ScopedKernelLock lock(this);
-  kernel_->flushed_metahandles.Push(0);  // Begin flush marker
   // Now drop everything we can out of memory.
-  for (OriginalEntries::const_iterator i = snapshot.dirty_metas.begin();
+  for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
     kernel_->needle.put(META_HANDLE, i->ref(META_HANDLE));
     MetahandlesIndex::iterator found =
         kernel_->metahandles_index->find(&kernel_->needle);
     EntryKernel* entry = (found == kernel_->metahandles_index->end() ?
                           NULL : *found);
-    if (entry && SafeToPurgeFromMemory(entry)) {
+    if (entry && SafeToPurgeFromMemory(&trans, entry)) {
       // We now drop deleted metahandles that are up to date on both the client
       // and the server.
       size_t num_erased = 0;
-      int64 handle = entry->ref(META_HANDLE);
-      kernel_->flushed_metahandles.Push(handle);
       num_erased = kernel_->ids_index->erase(entry);
       DCHECK_EQ(1u, num_erased);
       num_erased = kernel_->metahandles_index->erase(entry);
@@ -721,23 +907,25 @@ void Directory::VacuumAfterSaveChanges(const SaveChangesSnapshot& snapshot) {
       // Might not be in it
       num_erased = kernel_->client_tag_index->erase(entry);
       DCHECK_EQ(entry->ref(UNIQUE_CLIENT_TAG).empty(), !num_erased);
-      CHECK(!kernel_->parent_id_child_index->count(entry));
+      if (!SyncAssert(!kernel_->parent_id_child_index->count(entry),
+                      FROM_HERE,
+                      "Deleted entry still present",
+                      (&trans)))
+        return false;
       delete entry;
     }
+    if (trans.unrecoverable_error_set())
+      return false;
   }
+  return true;
 }
 
-void Directory::PurgeEntriesWithTypeIn(const std::set<ModelType>& types) {
-  if (types.count(UNSPECIFIED) != 0U || types.count(TOP_LEVEL_FOLDER) != 0U) {
-    NOTREACHED() << "Don't support purging unspecified or top level entries.";
-    return;
-  }
-
-  if (types.empty())
+void Directory::PurgeEntriesWithTypeIn(ModelTypeSet types) {
+  if (types.Empty())
     return;
 
   {
-    WriteTransaction trans(this, PURGE_ENTRIES, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, PURGE_ENTRIES, this);
     {
       ScopedKernelLock lock(this);
       MetahandlesIndex::iterator it = kernel_->metahandles_index->begin();
@@ -749,8 +937,11 @@ void Directory::PurgeEntriesWithTypeIn(const std::set<ModelType>& types) {
         ModelType server_type = GetModelTypeFromSpecifics(server_specifics);
 
         // Note the dance around incrementing |it|, since we sometimes erase().
-        if (types.count(local_type) > 0 || types.count(server_type) > 0) {
-          UnlinkEntryFromOrder(*it, NULL, &lock);
+        if ((IsRealDataType(local_type) && types.Has(local_type)) ||
+            (IsRealDataType(server_type) && types.Has(server_type))) {
+          if (!UnlinkEntryFromOrder(*it, NULL, &lock))
+            return;
+
           int64 handle = (*it)->ref(META_HANDLE);
           kernel_->metahandles_to_purge->insert(handle);
 
@@ -762,7 +953,8 @@ void Directory::PurgeEntriesWithTypeIn(const std::set<ModelType>& types) {
           DCHECK_EQ(entry->ref(UNIQUE_CLIENT_TAG).empty(), !num_erased);
           num_erased = kernel_->unsynced_metahandles->erase(handle);
           DCHECK_EQ(entry->ref(IS_UNSYNCED), num_erased > 0);
-          num_erased = kernel_->unapplied_update_metahandles->erase(handle);
+          num_erased =
+              kernel_->unapplied_update_metahandles[server_type].erase(handle);
           DCHECK_EQ(entry->ref(IS_UNAPPLIED_UPDATE), num_erased > 0);
           num_erased = kernel_->parent_id_child_index->erase(entry);
           DCHECK_EQ(entry->ref(IS_DEL), !num_erased);
@@ -774,10 +966,10 @@ void Directory::PurgeEntriesWithTypeIn(const std::set<ModelType>& types) {
       }
 
       // Ensure meta tracking for these data types reflects the deleted state.
-      for (std::set<ModelType>::const_iterator it = types.begin();
-           it != types.end(); ++it) {
-        set_initial_sync_ended_for_type_unsafe(*it, false);
-        kernel_->persisted_info.reset_download_progress(*it);
+      for (syncable::ModelTypeSet::Iterator it = types.First();
+           it.Good(); it.Inc()) {
+        set_initial_sync_ended_for_type_unsafe(it.Get(), false);
+        kernel_->persisted_info.reset_download_progress(it.Get());
       }
     }
   }
@@ -792,7 +984,7 @@ void Directory::HandleSaveChangesFailure(const SaveChangesSnapshot& snapshot) {
   // cause lost data, if no other changes are made to the in-memory entries
   // that would cause the dirty bit to get set again. Setting the bit ensures
   // that SaveChanges will at least try again later.
-  for (OriginalEntries::const_iterator i = snapshot.dirty_metas.begin();
+  for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
        i != snapshot.dirty_metas.end(); ++i) {
     kernel_->needle.put(META_HANDLE, i->ref(META_HANDLE));
     MetahandlesIndex::iterator found =
@@ -837,18 +1029,7 @@ void Directory::SetDownloadProgress(
 
 bool Directory::initial_sync_ended_for_type(ModelType type) const {
   ScopedKernelLock lock(this);
-  return kernel_->persisted_info.initial_sync_ended[type];
-}
-
-AutofillMigrationState Directory::get_autofill_migration_state() const {
-  ScopedKernelLock lock(this);
-  return kernel_->persisted_info.autofill_migration_state;
-}
-
-AutofillMigrationDebugInfo
-    Directory::get_autofill_migration_debug_info() const {
-  ScopedKernelLock lock(this);
-  return kernel_->persisted_info.autofill_migration_debug_info;
+  return kernel_->persisted_info.initial_sync_ended.Has(type);
 }
 
 template <class T> void Directory::TestAndSet(
@@ -859,56 +1040,6 @@ template <class T> void Directory::TestAndSet(
   }
 }
 
-void Directory::set_autofill_migration_state_debug_info(
-    AutofillMigrationDebugInfo::PropertyToSet property_to_set,
-    const AutofillMigrationDebugInfo& info) {
-
-  ScopedKernelLock lock(this);
-  switch (property_to_set) {
-    case AutofillMigrationDebugInfo::MIGRATION_TIME: {
-      syncable::AutofillMigrationDebugInfo&
-        debug_info = kernel_->persisted_info.autofill_migration_debug_info;
-      TestAndSet<int64>(
-          &debug_info.autofill_migration_time,
-          &info.autofill_migration_time);
-      break;
-    }
-    case AutofillMigrationDebugInfo::ENTRIES_ADDED: {
-      AutofillMigrationDebugInfo& debug_info =
-        kernel_->persisted_info.autofill_migration_debug_info;
-      TestAndSet<int>(
-          &debug_info.autofill_entries_added_during_migration,
-          &info.autofill_entries_added_during_migration);
-      break;
-    }
-    case AutofillMigrationDebugInfo::PROFILES_ADDED: {
-      AutofillMigrationDebugInfo& debug_info =
-        kernel_->persisted_info.autofill_migration_debug_info;
-      TestAndSet<int>(
-          &debug_info.autofill_profile_added_during_migration,
-          &info.autofill_profile_added_during_migration);
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-}
-
-void Directory::set_autofill_migration_state(AutofillMigrationState state) {
-  ScopedKernelLock lock(this);
-  if (state == kernel_->persisted_info.autofill_migration_state) {
-    return;
-  }
-  kernel_->persisted_info.autofill_migration_state = state;
-  if (state == MIGRATED) {
-    syncable::AutofillMigrationDebugInfo& debug_info =
-        kernel_->persisted_info.autofill_migration_debug_info;
-    debug_info.autofill_migration_time =
-        base::Time::Now().ToInternalValue();
-  }
-  kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
-}
-
 void Directory::set_initial_sync_ended_for_type(ModelType type, bool x) {
   ScopedKernelLock lock(this);
   set_initial_sync_ended_for_type_unsafe(type, x);
@@ -916,9 +1047,13 @@ void Directory::set_initial_sync_ended_for_type(ModelType type, bool x) {
 
 void Directory::set_initial_sync_ended_for_type_unsafe(ModelType type,
                                                        bool x) {
-  if (kernel_->persisted_info.initial_sync_ended[type] == x)
+  if (kernel_->persisted_info.initial_sync_ended.Has(type) == x)
     return;
-  kernel_->persisted_info.initial_sync_ended.set(type, x);
+  if (x) {
+    kernel_->persisted_info.initial_sync_ended.Put(type);
+  } else {
+    kernel_->persisted_info.initial_sync_ended.Remove(type);
+  }
   kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
@@ -943,10 +1078,9 @@ void Directory::set_store_birthday(const string& store_birthday) {
   kernel_->info_status = KERNEL_SHARE_INFO_DIRTY;
 }
 
-std::string Directory::GetAndClearNotificationState() {
+std::string Directory::GetNotificationState() const {
   ScopedKernelLock lock(this);
   std::string notification_state = kernel_->persisted_info.notification_state;
-  SetNotificationStateUnsafe(std::string());
   return notification_state;
 }
 
@@ -972,6 +1106,15 @@ void Directory::GetAllMetaHandles(BaseTransaction* trans,
   }
 }
 
+void Directory::GetAllEntryKernels(BaseTransaction* trans,
+                                   std::vector<const EntryKernel*>* result) {
+  result->clear();
+  ScopedKernelLock lock(this);
+  result->insert(result->end(),
+                 kernel_->metahandles_index->begin(),
+                 kernel_->metahandles_index->end());
+}
+
 void Directory::GetUnsyncedMetaHandles(BaseTransaction* trans,
                                        UnsyncedMetaHandles* result) {
   result->clear();
@@ -985,13 +1128,33 @@ int64 Directory::unsynced_entity_count() const {
   return kernel_->unsynced_metahandles->size();
 }
 
-void Directory::GetUnappliedUpdateMetaHandles(BaseTransaction* trans,
+FullModelTypeSet Directory::GetServerTypesWithUnappliedUpdates(
+    BaseTransaction* trans) const {
+  syncable::FullModelTypeSet server_types;
+  ScopedKernelLock lock(this);
+  for (int i = UNSPECIFIED; i < MODEL_TYPE_COUNT; ++i) {
+    const ModelType type = ModelTypeFromInt(i);
+    if (!kernel_->unapplied_update_metahandles[type].empty()) {
+      server_types.Put(type);
+    }
+  }
+  return server_types;
+}
+
+void Directory::GetUnappliedUpdateMetaHandles(
+    BaseTransaction* trans,
+    FullModelTypeSet server_types,
     UnappliedUpdateMetaHandles* result) {
   result->clear();
   ScopedKernelLock lock(this);
-  copy(kernel_->unapplied_update_metahandles->begin(),
-       kernel_->unapplied_update_metahandles->end(),
-       back_inserter(*result));
+  for (int i = UNSPECIFIED; i < MODEL_TYPE_COUNT; ++i) {
+    const ModelType type = ModelTypeFromInt(i);
+    if (server_types.Has(type)) {
+      std::copy(kernel_->unapplied_update_metahandles[type].begin(),
+                kernel_->unapplied_update_metahandles[type].end(),
+                back_inserter(*result));
+    }
+  }
 }
 
 
@@ -1012,28 +1175,28 @@ class FullScanFilter : public IdFilter {
 class SomeIdsFilter : public IdFilter {
  public:
   virtual bool ShouldConsider(const Id& id) const {
-    return binary_search(ids_.begin(), ids_.end(), id);
+    return std::binary_search(ids_.begin(), ids_.end(), id);
   }
   std::vector<Id> ids_;
 };
 
-void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
-                                    const OriginalEntries* originals) {
+bool Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
+                                    const EntryKernelMutationMap& mutations) {
   MetahandleSet handles;
   SomeIdsFilter filter;
-  filter.ids_.reserve(originals->size());
-  for (OriginalEntries::const_iterator i = originals->begin(),
-         end = originals->end(); i != end; ++i) {
-    Entry e(trans, GET_BY_HANDLE, i->ref(META_HANDLE));
-    CHECK(e.good());
-    filter.ids_.push_back(e.Get(ID));
-    handles.insert(i->ref(META_HANDLE));
+  filter.ids_.reserve(mutations.size());
+  for (EntryKernelMutationMap::const_iterator it = mutations.begin(),
+         end = mutations.end(); it != end; ++it) {
+    filter.ids_.push_back(it->second.mutated.ref(ID));
+    handles.insert(it->first);
   }
   std::sort(filter.ids_.begin(), filter.ids_.end());
-  CheckTreeInvariants(trans, handles, filter);
+  if (!CheckTreeInvariants(trans, handles, filter))
+    return false;
+  return true;
 }
 
-void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
+bool Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
                                     bool full_scan) {
   // TODO(timsteele):  This is called every time a WriteTransaction finishes.
   // The performance hit is substantial given that we now examine every single
@@ -1042,21 +1205,25 @@ void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
   GetAllMetaHandles(trans, &handles);
   if (full_scan) {
     FullScanFilter fullfilter;
-    CheckTreeInvariants(trans, handles, fullfilter);
+    if (!CheckTreeInvariants(trans, handles, fullfilter))
+      return false;
   } else {
     SomeIdsFilter filter;
     MetahandleSet::iterator i;
     for (i = handles.begin() ; i != handles.end() ; ++i) {
       Entry e(trans, GET_BY_HANDLE, *i);
-      CHECK(e.good());
+      if (!SyncAssert(e.good(), FROM_HERE, "Entry is bad", trans))
+        return false;
       filter.ids_.push_back(e.Get(ID));
     }
-    sort(filter.ids_.begin(), filter.ids_.end());
-    CheckTreeInvariants(trans, handles, filter);
+    std::sort(filter.ids_.begin(), filter.ids_.end());
+    if (!CheckTreeInvariants(trans, handles, filter))
+      return false;
   }
+  return true;
 }
 
-void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
+bool Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
                                     const MetahandleSet& handles,
                                     const IdFilter& idfilter) {
   const int64 max_ms = kInvariantCheckMaxMs;
@@ -1066,33 +1233,64 @@ void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
   for (i = handles.begin() ; i != handles.end() ; ++i) {
     int64 metahandle = *i;
     Entry e(trans, GET_BY_HANDLE, metahandle);
-    CHECK(e.good());
+    if (!SyncAssert(e.good(), FROM_HERE, "Entry is bad", trans))
+      return false;
     syncable::Id id = e.Get(ID);
     syncable::Id parentid = e.Get(PARENT_ID);
 
     if (id.IsRoot()) {
-      CHECK(e.Get(IS_DIR)) << e;
-      CHECK(parentid.IsRoot()) << e;
-      CHECK(!e.Get(IS_UNSYNCED)) << e;
+      if (!SyncAssert(e.Get(IS_DIR), FROM_HERE,
+                      "Entry should be a directory",
+                      trans))
+        return false;
+      if (!SyncAssert(parentid.IsRoot(), FROM_HERE,
+                      "Entry should be root",
+                      trans))
+         return false;
+      if (!SyncAssert(!e.Get(IS_UNSYNCED), FROM_HERE,
+                      "Entry should be sycned",
+                      trans))
+         return false;
       ++entries_done;
       continue;
     }
 
     if (!e.Get(IS_DEL)) {
-      CHECK(id != parentid) << e;
-      CHECK(!e.Get(NON_UNIQUE_NAME).empty()) << e;
+      if (!SyncAssert(id != parentid, FROM_HERE,
+                      "Id should be different from parent id.",
+                      trans))
+         return false;
+      if (!SyncAssert(!e.Get(NON_UNIQUE_NAME).empty(), FROM_HERE,
+                      "Non unique name should not be empty.",
+                      trans))
+        return false;
       int safety_count = handles.size() + 1;
       while (!parentid.IsRoot()) {
         if (!idfilter.ShouldConsider(parentid))
           break;
         Entry parent(trans, GET_BY_ID, parentid);
-        CHECK(parent.good()) << e;
-        CHECK(parent.Get(IS_DIR)) << parent << e;
-        CHECK(!parent.Get(IS_DEL)) << parent << e;
-        CHECK(handles.end() != handles.find(parent.Get(META_HANDLE)))
-            << e << parent;
+        if (!SyncAssert(parent.good(), FROM_HERE,
+                        "Parent entry is not valid.",
+                        trans))
+          return false;
+        if (!SyncAssert(parent.Get(IS_DIR), FROM_HERE,
+                        "Parent should be a directory",
+                        trans))
+          return false;
+        if (!SyncAssert(!parent.Get(IS_DEL), FROM_HERE,
+                        "Parent should not have been marked for deletion.",
+                        trans))
+          return false;
+        if (!SyncAssert(handles.end() != handles.find(parent.Get(META_HANDLE)),
+                        FROM_HERE,
+                        "Parent should be in the index.",
+                        trans))
+          return false;
         parentid = parent.Get(PARENT_ID);
-        CHECK_GE(--safety_count, 0) << e << parent;
+        if (!SyncAssert(--safety_count > 0, FROM_HERE,
+                        "Count should be greater than zero.",
+                        trans))
+          return false;
       }
     }
     int64 base_version = e.Get(BASE_VERSION);
@@ -1103,53 +1301,69 @@ void Directory::CheckTreeInvariants(syncable::BaseTransaction* trans,
         // Must be a new item, or a de-duplicated unique client tag
         // that was created both locally and remotely.
         if (!using_unique_client_tag) {
-          CHECK(e.Get(IS_DEL)) << e;
+          if (!SyncAssert(e.Get(IS_DEL), FROM_HERE,
+                          "The entry should not have been deleted.",
+                          trans))
+            return false;
         }
         // It came from the server, so it must have a server ID.
-        CHECK(id.ServerKnows()) << e;
+        if (!SyncAssert(id.ServerKnows(), FROM_HERE,
+                        "The id should be from a server.",
+                        trans))
+          return false;
       } else {
         if (e.Get(IS_DIR)) {
           // TODO(chron): Implement this mode if clients ever need it.
           // For now, you can't combine a client tag and a directory.
-          CHECK(!using_unique_client_tag) << e;
+          if (!SyncAssert(!using_unique_client_tag, FROM_HERE,
+                          "Directory cannot have a client tag.",
+                          trans))
+            return false;
         }
         // Should be an uncomitted item, or a successfully deleted one.
         if (!e.Get(IS_DEL)) {
-          CHECK(e.Get(IS_UNSYNCED)) << e;
+          if (!SyncAssert(e.Get(IS_UNSYNCED), FROM_HERE,
+                          "The item should be unsynced.",
+                          trans))
+            return false;
         }
         // If the next check failed, it would imply that an item exists
         // on the server, isn't waiting for application locally, but either
         // is an unsynced create or a sucessful delete in the local copy.
         // Either way, that's a mismatch.
-        CHECK_EQ(0, server_version) << e;
+        if (!SyncAssert(0 == server_version, FROM_HERE,
+                        "Server version should be zero.",
+                        trans))
+          return false;
         // Items that aren't using the unique client tag should have a zero
         // base version only if they have a local ID.  Items with unique client
         // tags are allowed to use the zero base version for undeletion and
         // de-duplication; the unique client tag trumps the server ID.
         if (!using_unique_client_tag) {
-          CHECK(!id.ServerKnows()) << e;
+          if (!SyncAssert(!id.ServerKnows(), FROM_HERE,
+                          "Should be a client only id.",
+                          trans))
+            return false;
         }
       }
     } else {
-      CHECK(id.ServerKnows());
+      if (!SyncAssert(id.ServerKnows(),
+                      FROM_HERE,
+                      "Should be a server id.",
+                      trans))
+        return false;
     }
     ++entries_done;
     int64 elapsed_ms = check_timer.Elapsed().InMilliseconds();
     if (elapsed_ms > max_ms) {
-      VLOG(1) << "Cutting Invariant check short after " << elapsed_ms
-              << "ms. Processed " << entries_done << "/" << handles.size()
-              << " entries";
-      return;
+      DVLOG(1) << "Cutting Invariant check short after " << elapsed_ms
+               << "ms. Processed " << entries_done << "/" << handles.size()
+               << " entries";
+      return true;
     }
+
   }
-}
-
-void Directory::AddChangeListener(DirectoryChangeListener* listener) {
-  kernel_->AddChangeListener(listener);
-}
-
-void Directory::RemoveChangeListener(DirectoryChangeListener* listener) {
-  kernel_->RemoveChangeListener(listener);
+  return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1163,172 +1377,213 @@ ScopedKernelLock::ScopedKernelLock(const Directory* dir)
 // Transactions
 
 void BaseTransaction::Lock() {
-  base::TimeTicks start_time = base::TimeTicks::Now();
+  TRACE_EVENT2("sync_lock_contention", "AcquireLock",
+               "src_file", from_here_.file_name(),
+               "src_func", from_here_.function_name());
 
   dirkernel_->transaction_mutex.Acquire();
+}
 
-  time_acquired_ = base::TimeTicks::Now();
-  const base::TimeDelta elapsed = time_acquired_ - start_time;
-  if (LOG_IS_ON(INFO) &&
-      (1 <= logging::GetVlogLevelHelper(
-          source_file_, ::strlen(source_file_))) &&
-      (elapsed.InMilliseconds() > 200)) {
-    logging::LogMessage(source_file_, line_, logging::LOG_INFO).stream()
-      << name_ << " transaction waited "
-      << elapsed.InSecondsF() << " seconds.";
+void BaseTransaction::Unlock() {
+  dirkernel_->transaction_mutex.Release();
+}
+
+void BaseTransaction::OnUnrecoverableError(
+    const tracked_objects::Location& location,
+    const std::string& message) {
+  unrecoverable_error_set_ = true;
+  unrecoverable_error_location_ = location;
+  unrecoverable_error_msg_ = message;
+
+  // Note: We dont call the Directory's OnUnrecoverableError method right
+  // away. Instead we wait to unwind the stack and in the destructor of the
+  // transaction we would call the OnUnrecoverableError method.
+
+  // TODO(lipalani): Add this for other platforms as well.
+#if defined(OS_WIN)
+  // Get the breakpad pointer from chrome.exe
+  typedef void (__cdecl *DumpProcessFunction)();
+  DumpProcessFunction DumpProcess = reinterpret_cast<DumpProcessFunction>(
+      ::GetProcAddress(::GetModuleHandle(
+                       chrome::kBrowserProcessExecutableName),
+                       "DumpProcessWithoutCrash"));
+  if (DumpProcess)
+    DumpProcess();
+#endif  // OS_WIN
+}
+
+bool BaseTransaction::unrecoverable_error_set() const {
+  return unrecoverable_error_set_;
+}
+
+void BaseTransaction::HandleUnrecoverableErrorIfSet() {
+  if (unrecoverable_error_set_) {
+    directory()->OnUnrecoverableError(this,
+        unrecoverable_error_location_,
+        unrecoverable_error_msg_);
   }
 }
 
-BaseTransaction::BaseTransaction(Directory* directory, const char* name,
-    const char* source_file, int line, WriterTag writer)
-  : directory_(directory), dirkernel_(directory->kernel_), name_(name),
-    source_file_(source_file), line_(line), writer_(writer) {
+BaseTransaction::BaseTransaction(const tracked_objects::Location& from_here,
+                                 const char* name,
+                                 WriterTag writer,
+                                 Directory* directory)
+    : from_here_(from_here), name_(name), writer_(writer),
+      directory_(directory), dirkernel_(directory->kernel_),
+      unrecoverable_error_set_(false) {
+  // TODO(lipalani): Don't issue a good transaction if the directory has
+  // unrecoverable error set. And the callers have to check trans.good before
+  // proceeding.
+  TRACE_EVENT_BEGIN2("sync", name_,
+                     "src_file", from_here_.file_name(),
+                     "src_func", from_here_.function_name());
+}
+
+BaseTransaction::~BaseTransaction() {
+  TRACE_EVENT_END0("sync", name_);
+}
+
+ReadTransaction::ReadTransaction(const tracked_objects::Location& location,
+                                 Directory* directory)
+    : BaseTransaction(location, "ReadTransaction", INVALID, directory) {
   Lock();
 }
 
-BaseTransaction::BaseTransaction(Directory* directory)
-    : directory_(directory),
-      dirkernel_(NULL),
-      name_(NULL),
-      source_file_(NULL),
-      line_(0),
-      writer_(INVALID) {
-}
-
-BaseTransaction::~BaseTransaction() {}
-
-void BaseTransaction::UnlockAndLog(OriginalEntries* entries) {
-  // Work while trasnaction mutex is held
-  ModelTypeBitSet models_with_changes;
-  if (!NotifyTransactionChangingAndEnding(entries, &models_with_changes))
-    return;
-
-  // Work after mutex is relased.
-  NotifyTransactionComplete(models_with_changes);
-}
-
-bool BaseTransaction::NotifyTransactionChangingAndEnding(
-    OriginalEntries* entries,
-    ModelTypeBitSet* models_with_changes) {
-  dirkernel_->transaction_mutex.AssertAcquired();
-
-  scoped_ptr<OriginalEntries> originals(entries);
-  const base::TimeDelta elapsed = base::TimeTicks::Now() - time_acquired_;
-  if (LOG_IS_ON(INFO) &&
-      (1 <= logging::GetVlogLevelHelper(
-          source_file_, ::strlen(source_file_))) &&
-      (elapsed.InMilliseconds() > 50)) {
-    logging::LogMessage(source_file_, line_, logging::LOG_INFO).stream()
-        << name_ << " transaction completed in " << elapsed.InSecondsF()
-        << " seconds.";
-  }
-
-  ObserverList<DirectoryChangeListener> change_listeners;
-  dirkernel_->CopyChangeListeners(&change_listeners);
-
-  if (NULL == originals.get() || originals->empty() ||
-      (change_listeners.size() == 0)) {
-    dirkernel_->transaction_mutex.Release();
-    return false;
-  }
-
-  if (writer_ == syncable::SYNCAPI) {
-    FOR_EACH_OBSERVER(DirectoryChangeListener,
-                      change_listeners,
-                      HandleCalculateChangesChangeEventFromSyncApi(
-                          *originals.get(),
-                          writer_,
-                          this));
-  } else {
-    FOR_EACH_OBSERVER(DirectoryChangeListener,
-                      change_listeners,
-                      HandleCalculateChangesChangeEventFromSyncer(
-                          *originals.get(),
-                          writer_,
-                          this));
-  }
-
-  // Set |*models_with_changes| to the union of the return values of
-  // the HandleTransactionEndingChangeEvent call to each
-  // DirectoryChangeListener.
-  {
-    ObserverList<DirectoryChangeListener>::Iterator it(change_listeners);
-    DirectoryChangeListener* obs = NULL;
-    while ((obs = it.GetNext()) != NULL) {
-      *models_with_changes |= obs->HandleTransactionEndingChangeEvent(this);
-    }
-  };
-
-  // Release the transaction. Note, once the transaction is released this thread
-  // can be interrupted by another that was waiting for the transaction,
-  // resulting in this code possibly being interrupted with another thread
-  // performing following the same code path. From this point foward, only
-  // local state can be touched.
-  dirkernel_->transaction_mutex.Release();
-  return true;
-}
-
-void BaseTransaction::NotifyTransactionComplete(
-    ModelTypeBitSet models_with_changes) {
-  ObserverList<DirectoryChangeListener> change_listeners;
-  dirkernel_->CopyChangeListeners(&change_listeners);
-  FOR_EACH_OBSERVER(DirectoryChangeListener,
-                    change_listeners,
-                    HandleTransactionCompleteChangeEvent(
-                        models_with_changes));
-}
-
-ReadTransaction::ReadTransaction(Directory* directory, const char* file,
-                                 int line)
-  : BaseTransaction(directory, "Read", file, line, INVALID) {
-}
-
-ReadTransaction::ReadTransaction(const ScopedDirLookup& scoped_dir,
-                                 const char* file, int line)
-  : BaseTransaction(scoped_dir.operator -> (), "Read", file, line, INVALID) {
+ReadTransaction::ReadTransaction(const tracked_objects::Location& location,
+                                 const ScopedDirLookup& scoped_dir)
+    : BaseTransaction(location, "ReadTransaction",
+                      INVALID, scoped_dir.operator->()) {
+  Lock();
 }
 
 ReadTransaction::~ReadTransaction() {
-  UnlockAndLog(NULL);
+  HandleUnrecoverableErrorIfSet();
+  Unlock();
 }
 
-WriteTransaction::WriteTransaction(Directory* directory, WriterTag writer,
-                                   const char* file, int line)
-  : BaseTransaction(directory, "Write", file, line, writer),
-    originals_(new OriginalEntries) {
+WriteTransaction::WriteTransaction(const tracked_objects::Location& location,
+                                   WriterTag writer, Directory* directory)
+    : BaseTransaction(location, "WriteTransaction", writer, directory) {
+  Lock();
 }
 
-WriteTransaction::WriteTransaction(const ScopedDirLookup& scoped_dir,
-                                   WriterTag writer, const char* file, int line)
-  : BaseTransaction(scoped_dir.operator -> (), "Write", file, line, writer),
-    originals_(new OriginalEntries) {
+WriteTransaction::WriteTransaction(const tracked_objects::Location& location,
+                                   WriterTag writer,
+                                   const ScopedDirLookup& scoped_dir)
+    : BaseTransaction(location, "WriteTransaction",
+                      writer, scoped_dir.operator->()) {
+  Lock();
 }
 
-WriteTransaction::WriteTransaction(Directory *directory)
-    : BaseTransaction(directory),
-      originals_(new OriginalEntries) {
-}
-
-void WriteTransaction::SaveOriginal(EntryKernel* entry) {
-  if (NULL == entry)
+void WriteTransaction::SaveOriginal(const EntryKernel* entry) {
+  if (!entry) {
     return;
-  OriginalEntries::iterator i = originals_->lower_bound(*entry);
-  if (i == originals_->end() ||
-      i->ref(META_HANDLE) != entry->ref(META_HANDLE)) {
-    originals_->insert(i, *entry);
   }
+  // Insert only if it's not already there.
+  const int64 handle = entry->ref(META_HANDLE);
+  EntryKernelMutationMap::iterator it = mutations_.lower_bound(handle);
+  if (it == mutations_.end() || it->first != handle) {
+    EntryKernelMutation mutation;
+    mutation.original = *entry;
+    ignore_result(mutations_.insert(it, std::make_pair(handle, mutation)));
+  }
+}
+
+ImmutableEntryKernelMutationMap WriteTransaction::RecordMutations() {
+  dirkernel_->transaction_mutex.AssertAcquired();
+  for (syncable::EntryKernelMutationMap::iterator it = mutations_.begin();
+       it != mutations_.end();) {
+    EntryKernel* kernel = directory()->GetEntryByHandle(it->first);
+    if (!kernel) {
+      NOTREACHED();
+      continue;
+    }
+    if (kernel->is_dirty()) {
+      it->second.mutated = *kernel;
+      ++it;
+    } else {
+      DCHECK(!it->second.original.is_dirty());
+      // Not actually mutated, so erase from |mutations_|.
+      mutations_.erase(it++);
+    }
+  }
+  return ImmutableEntryKernelMutationMap(&mutations_);
+}
+
+void WriteTransaction::UnlockAndNotify(
+    const ImmutableEntryKernelMutationMap& mutations) {
+  // Work while transaction mutex is held.
+  ModelTypeSet models_with_changes;
+  bool has_mutations = !mutations.Get().empty();
+  if (has_mutations) {
+    models_with_changes = NotifyTransactionChangingAndEnding(mutations);
+  }
+  Unlock();
+
+  // Work after mutex is relased.
+  if (has_mutations) {
+    NotifyTransactionComplete(models_with_changes);
+  }
+}
+
+ModelTypeSet WriteTransaction::NotifyTransactionChangingAndEnding(
+    const ImmutableEntryKernelMutationMap& mutations) {
+  dirkernel_->transaction_mutex.AssertAcquired();
+  DCHECK(!mutations.Get().empty());
+
+  WriteTransactionInfo write_transaction_info(
+      dirkernel_->next_write_transaction_id, from_here_, writer_, mutations);
+  ++dirkernel_->next_write_transaction_id;
+
+  ImmutableWriteTransactionInfo immutable_write_transaction_info(
+      &write_transaction_info);
+  DirectoryChangeDelegate* const delegate = dirkernel_->delegate;
+  if (writer_ == syncable::SYNCAPI) {
+    delegate->HandleCalculateChangesChangeEventFromSyncApi(
+        immutable_write_transaction_info, this);
+  } else {
+    delegate->HandleCalculateChangesChangeEventFromSyncer(
+        immutable_write_transaction_info, this);
+  }
+
+  ModelTypeSet models_with_changes =
+      delegate->HandleTransactionEndingChangeEvent(
+          immutable_write_transaction_info, this);
+
+  dirkernel_->transaction_observer.Call(FROM_HERE,
+      &TransactionObserver::OnTransactionWrite,
+      immutable_write_transaction_info, models_with_changes);
+
+  return models_with_changes;
+}
+
+void WriteTransaction::NotifyTransactionComplete(
+    ModelTypeSet models_with_changes) {
+  dirkernel_->delegate->HandleTransactionCompleteChangeEvent(
+      models_with_changes);
 }
 
 WriteTransaction::~WriteTransaction() {
-  if (OFF != kInvariantCheckLevel) {
-    const bool full_scan = (FULL_DB_VERIFICATION == kInvariantCheckLevel);
-    if (full_scan)
-      directory()->CheckTreeInvariants(this, full_scan);
-    else
-      directory()->CheckTreeInvariants(this, originals_);
+  const ImmutableEntryKernelMutationMap& mutations = RecordMutations();
+
+  if (!unrecoverable_error_set_) {
+    if (OFF != kInvariantCheckLevel) {
+      const bool full_scan = (FULL_DB_VERIFICATION == kInvariantCheckLevel);
+      if (full_scan)
+        directory()->CheckTreeInvariants(this, full_scan);
+      else
+        directory()->CheckTreeInvariants(this, mutations.Get());
+    }
   }
 
-  UnlockAndLog(originals_);
+  // |CheckTreeInvariants| could have thrown an unrecoverable error.
+  if (unrecoverable_error_set_) {
+    HandleUnrecoverableErrorIfSet();
+    Unlock();
+    return;
+  }
+
+  UnlockAndNotify(mutations);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1367,12 +1622,8 @@ DictionaryValue* Entry::ToValue() const {
   entry_info->SetBoolean("good", good());
   if (good()) {
     entry_info->Set("kernel", kernel_->ToValue());
-    entry_info->Set("serverModelType",
-                    ModelTypeToValue(GetServerModelTypeHelper()));
     entry_info->Set("modelType",
                     ModelTypeToValue(GetModelType()));
-    entry_info->SetBoolean("shouldMaintainPosition",
-                           ShouldMaintainPosition());
     entry_info->SetBoolean("existsOnClientBecauseNameIsNonEmpty",
                            ExistsOnClientBecauseNameIsNonEmpty());
     entry_info->SetBoolean("isRoot", IsRoot());
@@ -1386,7 +1637,7 @@ const string& Entry::Get(StringField field) const {
 }
 
 syncable::ModelType Entry::GetServerModelType() const {
-  ModelType specifics_type = GetServerModelTypeHelper();
+  ModelType specifics_type = kernel_->GetServerModelType();
   if (specifics_type != UNSPECIFIED)
     return specifics_type;
 
@@ -1399,20 +1650,6 @@ syncable::ModelType Entry::GetServerModelType() const {
   DCHECK(Get(SERVER_IS_DEL));
   // Note: can't enforce !Get(ID).ServerKnows() here because that could
   // actually happen if we hit AttemptReuniteLostCommitResponses.
-  return UNSPECIFIED;
-}
-
-syncable::ModelType Entry::GetServerModelTypeHelper() const {
-  ModelType specifics_type = GetModelTypeFromSpecifics(Get(SERVER_SPECIFICS));
-  if (specifics_type != UNSPECIFIED)
-    return specifics_type;
-  if (IsRoot())
-    return TOP_LEVEL_FOLDER;
-  // Loose check for server-created top-level folders that aren't
-  // bound to a particular model type.
-  if (!Get(UNIQUE_SERVER_TAG).empty() && Get(SERVER_IS_DIR))
-    return TOP_LEVEL_FOLDER;
-
   return UNSPECIFIED;
 }
 
@@ -1443,43 +1680,53 @@ MutableEntry::MutableEntry(WriteTransaction* trans, Create,
 
 void MutableEntry::Init(WriteTransaction* trans, const Id& parent_id,
                         const string& name) {
-  kernel_ = new EntryKernel;
-  ZeroFields(kernel_, BEGIN_FIELDS);
-  kernel_->put(ID, trans->directory_->NextId());
-  kernel_->put(META_HANDLE, trans->directory_->NextMetahandle());
-  kernel_->mark_dirty(trans->directory_->kernel_->dirty_metahandles);
-  kernel_->put(PARENT_ID, parent_id);
-  kernel_->put(NON_UNIQUE_NAME, name);
-  const int64 now = Now();
-  kernel_->put(CTIME, now);
-  kernel_->put(MTIME, now);
+  scoped_ptr<EntryKernel> kernel(new EntryKernel);
+  kernel_ = NULL;
+
+  kernel->put(ID, trans->directory_->NextId());
+  kernel->put(META_HANDLE, trans->directory_->NextMetahandle());
+  kernel->mark_dirty(trans->directory_->kernel_->dirty_metahandles);
+  kernel->put(PARENT_ID, parent_id);
+  kernel->put(NON_UNIQUE_NAME, name);
+  const base::Time& now = base::Time::Now();
+  kernel->put(CTIME, now);
+  kernel->put(MTIME, now);
   // We match the database defaults here
-  kernel_->put(BASE_VERSION, CHANGES_VERSION);
-  trans->directory()->InsertEntry(kernel_);
+  kernel->put(BASE_VERSION, CHANGES_VERSION);
+  if (!trans->directory()->InsertEntry(trans, kernel.get())) {
+    return; // We failed inserting, nothing more to do.
+  }
   // Because this entry is new, it was originally deleted.
-  kernel_->put(IS_DEL, true);
-  trans->SaveOriginal(kernel_);
-  kernel_->put(IS_DEL, false);
+  kernel->put(IS_DEL, true);
+  trans->SaveOriginal(kernel.get());
+  kernel->put(IS_DEL, false);
+
+  // Now swap the pointers.
+  kernel_ = kernel.release();
 }
 
 MutableEntry::MutableEntry(WriteTransaction* trans, CreateNewUpdateItem,
                            const Id& id)
     : Entry(trans), write_transaction_(trans) {
   Entry same_id(trans, GET_BY_ID, id);
+  kernel_ = NULL;
   if (same_id.good()) {
-    kernel_ = NULL;  // already have an item with this ID.
-    return;
+    return;  // already have an item with this ID.
   }
-  kernel_ = new EntryKernel;
-  ZeroFields(kernel_, BEGIN_FIELDS);
-  kernel_->put(ID, id);
-  kernel_->put(META_HANDLE, trans->directory_->NextMetahandle());
-  kernel_->mark_dirty(trans->directory_->kernel_->dirty_metahandles);
-  kernel_->put(IS_DEL, true);
+  scoped_ptr<EntryKernel> kernel(new EntryKernel());
+
+  kernel->put(ID, id);
+  kernel->put(META_HANDLE, trans->directory_->NextMetahandle());
+  kernel->mark_dirty(trans->directory_->kernel_->dirty_metahandles);
+  kernel->put(IS_DEL, true);
   // We match the database defaults here
-  kernel_->put(BASE_VERSION, CHANGES_VERSION);
-  trans->directory()->InsertEntry(kernel_);
-  trans->SaveOriginal(kernel_);
+  kernel->put(BASE_VERSION, CHANGES_VERSION);
+  if (!trans->directory()->InsertEntry(trans, kernel.get())) {
+    return;  // Failed inserting.
+  }
+  trans->SaveOriginal(kernel.get());
+
+  kernel_ = kernel.release();
 }
 
 MutableEntry::MutableEntry(WriteTransaction* trans, GetById, const Id& id)
@@ -1510,8 +1757,11 @@ bool MutableEntry::PutIsDel(bool is_del) {
   if (is_del == kernel_->ref(IS_DEL)) {
     return true;
   }
-  if (is_del)
-    UnlinkFromOrder();
+  if (is_del) {
+    if (!UnlinkFromOrder()) {
+      return false;
+    }
+  }
 
   {
     ScopedKernelLock lock(dir());
@@ -1525,7 +1775,11 @@ bool MutableEntry::PutIsDel(bool is_del) {
   }
 
   if (!is_del)
-    PutPredecessor(Id());  // Restores position to the 0th index.
+    // Restores position to the 0th index.
+    if (!PutPredecessor(Id())) {
+      // TODO(lipalani) : Propagate the error to caller. crbug.com/100444.
+      NOTREACHED();
+    }
 
   return true;
 }
@@ -1546,15 +1800,28 @@ bool MutableEntry::Put(Int64Field field, const int64& value) {
   return true;
 }
 
+bool MutableEntry::Put(TimeField field, const base::Time& value) {
+  DCHECK(kernel_);
+  if (kernel_->ref(field) != value) {
+    kernel_->put(field, value);
+    kernel_->mark_dirty(dir()->kernel_->dirty_metahandles);
+  }
+  return true;
+}
+
 bool MutableEntry::Put(IdField field, const Id& value) {
   DCHECK(kernel_);
   if (kernel_->ref(field) != value) {
     if (ID == field) {
-      if (!dir()->ReindexId(kernel_, value))
+      if (!dir()->ReindexId(write_transaction(), kernel_, value))
         return false;
     } else if (PARENT_ID == field) {
       PutParentIdPropertyOnly(value);  // Makes sibling order inconsistent.
-      PutPredecessor(Id());  // Fixes up the sibling order inconsistency.
+      // Fixes up the sibling order inconsistency.
+      if (!PutPredecessor(Id())) {
+        // TODO(lipalani) : Propagate the error to caller. crbug.com/100444.
+        NOTREACHED();
+      }
     } else {
       kernel_->put(field, value);
     }
@@ -1564,7 +1831,7 @@ bool MutableEntry::Put(IdField field, const Id& value) {
 }
 
 void MutableEntry::PutParentIdPropertyOnly(const Id& parent_id) {
-  dir()->ReindexParentId(kernel_, parent_id);
+  dir()->ReindexParentId(write_transaction(), kernel_, parent_id);
   kernel_->mark_dirty(dir()->kernel_->dirty_metahandles);
 }
 
@@ -1587,8 +1854,32 @@ bool MutableEntry::Put(ProtoField field,
   // TODO(ncarter): This is unfortunately heavyweight.  Can we do
   // better?
   if (kernel_->ref(field).SerializeAsString() != value.SerializeAsString()) {
+    const bool update_unapplied_updates_index =
+        (field == SERVER_SPECIFICS) && kernel_->ref(IS_UNAPPLIED_UPDATE);
+    if (update_unapplied_updates_index) {
+      // Remove ourselves from unapplied_update_metahandles with our
+      // old server type.
+      const syncable::ModelType old_server_type =
+          kernel_->GetServerModelType();
+      const int64 metahandle = kernel_->ref(META_HANDLE);
+      size_t erase_count =
+          dir()->kernel_->unapplied_update_metahandles[old_server_type]
+          .erase(metahandle);
+      DCHECK_EQ(erase_count, 1u);
+    }
+
     kernel_->put(field, value);
     kernel_->mark_dirty(dir()->kernel_->dirty_metahandles);
+
+    if (update_unapplied_updates_index) {
+      // Add ourselves back into unapplied_update_metahandles with our
+      // new server type.
+      const syncable::ModelType new_server_type =
+          kernel_->GetServerModelType();
+      const int64 metahandle = kernel_->ref(META_HANDLE);
+      dir()->kernel_->unapplied_update_metahandles[new_server_type]
+          .insert(metahandle);
+    }
   }
   return true;
 }
@@ -1651,31 +1942,52 @@ bool MutableEntry::Put(IndexedBitField field, bool value) {
   DCHECK(kernel_);
   if (kernel_->ref(field) != value) {
     MetahandleSet* index;
-    if (IS_UNSYNCED == field)
+    if (IS_UNSYNCED == field) {
       index = dir()->kernel_->unsynced_metahandles;
-    else
-      index = dir()->kernel_->unapplied_update_metahandles;
+    } else {
+      // Use kernel_->GetServerModelType() instead of
+      // GetServerModelType() as we may trigger some DCHECKs in the
+      // latter.
+      index =
+          &dir()->kernel_->unapplied_update_metahandles[
+              kernel_->GetServerModelType()];
+    }
 
     ScopedKernelLock lock(dir());
-    if (value)
-      CHECK(index->insert(kernel_->ref(META_HANDLE)).second);
-    else
-      CHECK_EQ(1U, index->erase(kernel_->ref(META_HANDLE)));
+    if (value) {
+      if (!SyncAssert(index->insert(kernel_->ref(META_HANDLE)).second,
+                      FROM_HERE,
+                      "Could not insert",
+                      write_transaction())) {
+        return false;
+      }
+    } else {
+      if (!SyncAssert(1U == index->erase(kernel_->ref(META_HANDLE)),
+                      FROM_HERE,
+                      "Entry Not succesfully erased",
+                      write_transaction())) {
+        return false;
+      }
+    }
     kernel_->put(field, value);
     kernel_->mark_dirty(dir()->kernel_->dirty_metahandles);
   }
   return true;
 }
 
-void MutableEntry::UnlinkFromOrder() {
+bool MutableEntry::UnlinkFromOrder() {
   ScopedKernelLock lock(dir());
-  dir()->UnlinkEntryFromOrder(kernel_, write_transaction(), &lock);
+  return dir()->UnlinkEntryFromOrder(kernel_, write_transaction(), &lock);
 }
 
-void Directory::UnlinkEntryFromOrder(EntryKernel* entry,
+bool Directory::UnlinkEntryFromOrder(EntryKernel* entry,
                                      WriteTransaction* trans,
                                      ScopedKernelLock* lock) {
-  CHECK(!trans || this == trans->directory());
+  if (!SyncAssert(!trans || this == trans->directory(),
+                  FROM_HERE,
+                  "Transaction not pointing to the right directory",
+                  trans))
+    return false;
   Id old_previous = entry->ref(PREV_ID);
   Id old_next = entry->ref(NEXT_ID);
 
@@ -1688,11 +2000,21 @@ void Directory::UnlinkEntryFromOrder(EntryKernel* entry,
       // Note previous == next doesn't imply previous == next == Get(ID). We
       // could have prev==next=="c-XX" and Get(ID)=="sX..." if an item was added
       // and deleted before receiving the server ID in the commit response.
-      CHECK((old_next == entry->ref(ID)) || !old_next.ServerKnows());
-      return;  // Done if we were already self-looped (hence unlinked).
+      if (!SyncAssert(
+               (old_next == entry->ref(ID)) || !old_next.ServerKnows(),
+               FROM_HERE,
+               "Encounteered inconsistent entry while deleting",
+               trans)) {
+        return false;
+      }
+      return true;  // Done if we were already self-looped (hence unlinked).
     }
     EntryKernel* previous_entry = GetEntryById(old_previous, lock);
-    CHECK(previous_entry);
+    if (!SyncAssert(previous_entry != NULL,
+                    FROM_HERE,
+                    "Could not find previous entry",
+                    trans))
+      return false;
     if (trans)
       trans->SaveOriginal(previous_entry);
     previous_entry->put(NEXT_ID, old_next);
@@ -1701,16 +2023,22 @@ void Directory::UnlinkEntryFromOrder(EntryKernel* entry,
 
   if (!old_next.IsRoot()) {
     EntryKernel* next_entry = GetEntryById(old_next, lock);
-    CHECK(next_entry);
+    if (!SyncAssert(next_entry != NULL,
+                    FROM_HERE,
+                    "Could not find next entry",
+                    trans))
+      return false;
     if (trans)
       trans->SaveOriginal(next_entry);
     next_entry->put(PREV_ID, old_previous);
     next_entry->mark_dirty(kernel_->dirty_metahandles);
   }
+  return true;
 }
 
 bool MutableEntry::PutPredecessor(const Id& predecessor_id) {
-  UnlinkFromOrder();
+  if (!UnlinkFromOrder())
+    return false;
 
   if (Get(IS_DEL)) {
     DCHECK(predecessor_id.IsNull());
@@ -1731,18 +2059,28 @@ bool MutableEntry::PutPredecessor(const Id& predecessor_id) {
   Id successor_id;
   if (!predecessor_id.IsRoot()) {
     MutableEntry predecessor(write_transaction(), GET_BY_ID, predecessor_id);
-    CHECK(predecessor.good());
+    if (!predecessor.good()) {
+      LOG(ERROR) << "Predecessor is not good : "
+                 << predecessor_id.GetServerId();
+      return false;
+    }
     if (predecessor.Get(PARENT_ID) != Get(PARENT_ID))
       return false;
     successor_id = predecessor.Get(NEXT_ID);
     predecessor.Put(NEXT_ID, Get(ID));
   } else {
     syncable::Directory* dir = trans()->directory();
-    successor_id = dir->GetFirstChildId(trans(), Get(PARENT_ID));
+    if (!dir->GetFirstChildId(trans(), Get(PARENT_ID), &successor_id)) {
+      return false;
+    }
   }
   if (!successor_id.IsRoot()) {
     MutableEntry successor(write_transaction(), GET_BY_ID, successor_id);
-    CHECK(successor.good());
+    if (!successor.good()) {
+      LOG(ERROR) << "Successor is not good: "
+                 << successor_id.GetServerId();
+      return false;
+    }
     if (successor.Get(PARENT_ID) != Get(PARENT_ID))
       return false;
     successor.Put(PREV_ID, Get(ID));
@@ -1782,64 +2120,57 @@ Id Directory::NextId() {
   return Id::CreateFromClientString(base::Int64ToString(result));
 }
 
-Id Directory::GetFirstChildId(BaseTransaction* trans,
-                              const Id& parent_id) {
+bool Directory::HasChildren(BaseTransaction* trans, const Id& id) {
   ScopedKernelLock lock(this);
-  // We can use the server positional ordering as a hint because it's generally
-  // in sync with the local (linked-list) positional ordering, and we have an
-  // index on it.
-  ParentIdChildIndex::iterator candidate =
-      GetParentChildIndexLowerBound(lock, parent_id);
-  ParentIdChildIndex::iterator end_range =
-      GetParentChildIndexUpperBound(lock, parent_id);
-  for (; candidate != end_range; ++candidate) {
-    EntryKernel* entry = *candidate;
-    // Filter out self-looped items, which are temporarily not in the child
-    // ordering.
-    if (entry->ref(PREV_ID).IsRoot() ||
-        entry->ref(PREV_ID) != entry->ref(NEXT_ID)) {
-      // Walk to the front of the list; the server position ordering
-      // is commonly identical to the linked-list ordering, but pending
-      // unsynced or unapplied items may diverge.
-      while (!entry->ref(PREV_ID).IsRoot()) {
-        entry = GetEntryById(entry->ref(PREV_ID), &lock);
-      }
-      return entry->ref(ID);
-    }
-  }
-  // There were no children in the linked list.
-  return Id();
+  return (GetPossibleFirstChild(lock, id) != NULL);
 }
 
-Id Directory::GetLastChildId(BaseTransaction* trans,
-                             const Id& parent_id) {
+bool Directory::GetFirstChildId(BaseTransaction* trans,
+                                const Id& parent_id,
+                                Id* first_child_id) {
   ScopedKernelLock lock(this);
-  // We can use the server positional ordering as a hint because it's generally
-  // in sync with the local (linked-list) positional ordering, and we have an
-  // index on it.
-  ParentIdChildIndex::iterator begin_range =
-      GetParentChildIndexLowerBound(lock, parent_id);
-  ParentIdChildIndex::iterator candidate =
-      GetParentChildIndexUpperBound(lock, parent_id);
+  EntryKernel* entry = GetPossibleFirstChild(lock, parent_id);
+  if (!entry) {
+    *first_child_id = Id();
+    return true;
+  }
 
-  while (begin_range != candidate) {
-    --candidate;
-    EntryKernel* entry = *candidate;
-
-    // Filter out self-looped items, which are temporarily not in the child
-    // ordering.
-    if (entry->ref(NEXT_ID).IsRoot() ||
-        entry->ref(NEXT_ID) != entry->ref(PREV_ID)) {
-      // Walk to the back of the list; the server position ordering
-      // is commonly identical to the linked-list ordering, but pending
-      // unsynced or unapplied items may diverge.
-      while (!entry->ref(NEXT_ID).IsRoot())
-        entry = GetEntryById(entry->ref(NEXT_ID), &lock);
-      return entry->ref(ID);
+  // Walk to the front of the list; the server position ordering
+  // is commonly identical to the linked-list ordering, but pending
+  // unsynced or unapplied items may diverge.
+  while (!entry->ref(PREV_ID).IsRoot()) {
+    entry = GetEntryById(entry->ref(PREV_ID), &lock);
+    if (!entry) {
+      *first_child_id = Id();
+      return false;
     }
   }
-  // There were no children in the linked list.
-  return Id();
+  *first_child_id = entry->ref(ID);
+  return true;
+}
+
+bool Directory::GetLastChildIdForTest(
+    BaseTransaction* trans, const Id& parent_id, Id* last_child_id) {
+  ScopedKernelLock lock(this);
+  EntryKernel* entry = GetPossibleLastChildForTest(lock, parent_id);
+  if (!entry) {
+    *last_child_id = Id();
+    return true;
+  }
+
+  // Walk to the back of the list; the server position ordering
+  // is commonly identical to the linked-list ordering, but pending
+  // unsynced or unapplied items may diverge.
+  while (!entry->ref(NEXT_ID).IsRoot()) {
+    entry = GetEntryById(entry->ref(NEXT_ID), &lock);
+    if (!entry) {
+      *last_child_id = Id();
+      return false;
+    }
+  }
+
+  *last_child_id = entry->ref(ID);
+  return true;
 }
 
 Id Directory::ComputePrevIdFromServerPosition(
@@ -1897,18 +2228,24 @@ bool IsLegalNewParent(BaseTransaction* trans, const Id& entry_id,
     if (entry_id == ancestor_id)
       return false;
     Entry new_parent(trans, GET_BY_ID, ancestor_id);
-    CHECK(new_parent.good());
+    if (!SyncAssert(new_parent.good(),
+                    FROM_HERE,
+                    "Invalid new parent",
+                    trans))
+      return false;
     ancestor_id = new_parent.Get(PARENT_ID);
   }
   return true;
 }
 
 // This function sets only the flags needed to get this entry to sync.
-void MarkForSyncing(syncable::MutableEntry* e) {
+bool MarkForSyncing(syncable::MutableEntry* e) {
   DCHECK_NE(static_cast<MutableEntry*>(NULL), e);
   DCHECK(!e->IsRoot()) << "We shouldn't mark a permanent object for syncing.";
-  e->Put(IS_UNSYNCED, true);
+  if (!(e->Put(IS_UNSYNCED, true)))
+    return false;
   e->Put(SYNCING, false);
+  return true;
 }
 
 std::ostream& operator<<(std::ostream& os, const Entry& entry) {
@@ -1917,6 +2254,11 @@ std::ostream& operator<<(std::ostream& os, const Entry& entry) {
   for (i = BEGIN_FIELDS; i < INT64_FIELDS_END; ++i) {
     os << g_metas_columns[i].name << ": "
        << kernel->ref(static_cast<Int64Field>(i)) << ", ";
+  }
+  for ( ; i < TIME_FIELDS_END; ++i) {
+    os << g_metas_columns[i].name << ": "
+       << browser_sync::GetTimeDebugString(
+           kernel->ref(static_cast<TimeField>(i))) << ", ";
   }
   for ( ; i < ID_FIELDS_END; ++i) {
     os << g_metas_columns[i].name << ": "
@@ -1933,8 +2275,8 @@ std::ostream& operator<<(std::ostream& os, const Entry& entry) {
   }
   for ( ; i < PROTO_FIELDS_END; ++i) {
     os << g_metas_columns[i].name << ": "
-       << EscapePath(
-           kernel->ref(static_cast<ProtoField>(i)).SerializeAsString())
+       << net::EscapePath(
+              kernel->ref(static_cast<ProtoField>(i)).SerializeAsString())
        << ", ";
   }
   os << "TempFlags: ";
@@ -1973,7 +2315,6 @@ Directory::GetParentChildIndexLowerBound(const ScopedKernelLock& lock,
       Id::GetLeastIdForLexicographicComparison());
 }
 
-
 Directory::ParentIdChildIndex::iterator
 Directory::GetParentChildIndexUpperBound(const ScopedKernelLock& lock,
                                          const Id& parent_id) {
@@ -1981,6 +2322,66 @@ Directory::GetParentChildIndexUpperBound(const ScopedKernelLock& lock,
   // bound of |++parent_id|'s range.
   return GetParentChildIndexLowerBound(lock,
       parent_id.GetLexicographicSuccessor());
+}
+
+void Directory::AppendChildHandles(const ScopedKernelLock& lock,
+                                   const Id& parent_id,
+                                   Directory::ChildHandles* result) {
+  typedef ParentIdChildIndex::iterator iterator;
+  CHECK(result);
+  for (iterator i = GetParentChildIndexLowerBound(lock, parent_id),
+           end = GetParentChildIndexUpperBound(lock, parent_id);
+       i != end; ++i) {
+    DCHECK_EQ(parent_id, (*i)->ref(PARENT_ID));
+    result->push_back((*i)->ref(META_HANDLE));
+  }
+}
+
+EntryKernel* Directory::GetPossibleFirstChild(
+    const ScopedKernelLock& lock, const Id& parent_id) {
+  // We can use the server positional ordering as a hint because it's generally
+  // in sync with the local (linked-list) positional ordering, and we have an
+  // index on it.
+  ParentIdChildIndex::iterator candidate =
+      GetParentChildIndexLowerBound(lock, parent_id);
+  ParentIdChildIndex::iterator end_range =
+      GetParentChildIndexUpperBound(lock, parent_id);
+  for (; candidate != end_range; ++candidate) {
+    EntryKernel* entry = *candidate;
+    // Filter out self-looped items, which are temporarily not in the child
+    // ordering.
+    if (entry->ref(PREV_ID).IsRoot() ||
+        entry->ref(PREV_ID) != entry->ref(NEXT_ID)) {
+      return entry;
+    }
+  }
+  // There were no children in the linked list.
+  return NULL;
+}
+
+EntryKernel* Directory::GetPossibleLastChildForTest(
+    const ScopedKernelLock& lock, const Id& parent_id) {
+  // We can use the server positional ordering as a hint because it's generally
+  // in sync with the local (linked-list) positional ordering, and we have an
+  // index on it.
+  ParentIdChildIndex::iterator begin_range =
+      GetParentChildIndexLowerBound(lock, parent_id);
+  ParentIdChildIndex::iterator candidate =
+      GetParentChildIndexUpperBound(lock, parent_id);
+
+  while (begin_range != candidate) {
+    --candidate;
+    EntryKernel* entry = *candidate;
+
+    // Filter out self-looped items, which are temporarily not in the child
+    // ordering.
+    if (entry->ref(NEXT_ID).IsRoot() ||
+        entry->ref(NEXT_ID) != entry->ref(PREV_ID)) {
+      return entry;
+    }
+  }
+  // There were no children in the linked list.
+  return NULL;
 }
 
 }  // namespace syncable

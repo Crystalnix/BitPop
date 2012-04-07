@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,34 +7,37 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/download_manager.h"
+#include "chrome/browser/chrome_page_zoom.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_proxy_service.h"
+#include "chrome/browser/printing/cloud_print/cloud_print_proxy_service_factory.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_setup_flow.h"
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/service/service_process_control.h"
-#include "chrome/browser/service/service_process_control_manager.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/browser/ui/webui/options/options_managed_banner_handler.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
+#include "content/public/common/page_zoom.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if !defined(OS_CHROMEOS)
@@ -42,13 +45,24 @@
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
 #endif
 
+using content::DownloadManager;
+using content::OpenURLParams;
+using content::Referrer;
+using content::UserMetricsAction;
+
 AdvancedOptionsHandler::AdvancedOptionsHandler() {
-#if (defined(GOOGLE_CHROME_BUILD) && defined(OS_WIN)) || defined(OS_MACOSX)
-  cloud_print_proxy_ui_enabled_ = true;
-#elif !defined(OS_CHROMEOS)
-  cloud_print_proxy_ui_enabled_ =
+
+#if(!defined(GOOGLE_CHROME_BUILD) && defined(OS_WIN))
+  // On Windows, we need the PDF plugin which is only guaranteed to exist on
+  // Google Chrome builds. Use a command-line switch for Windows non-Google
+  //  Chrome builds.
+  cloud_print_connector_ui_enabled_ =
       CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableCloudPrintProxy);
+      switches::kEnableCloudPrintProxy);
+#elif(!defined(OS_CHROMEOS))
+  // Always enabled for Mac, Linux and Google Chrome Windows builds.
+  // Never enabled for Chrome OS, we don't even need to indicate it.
+  cloud_print_connector_ui_enabled_ = true;
 #endif
 }
 
@@ -84,18 +98,16 @@ void AdvancedOptionsHandler::GetLocalizedValues(
       IDS_OPTIONS_CERTIFICATES_MANAGE_BUTTON },
     { "proxiesLabel",
       IDS_OPTIONS_PROXIES_LABEL },
+#if !defined(OS_CHROMEOS)
     { "proxiesConfigureButton",
       IDS_OPTIONS_PROXIES_CONFIGURE_BUTTON },
+#endif
     { "safeBrowsingEnableProtection",
       IDS_OPTIONS_SAFEBROWSING_ENABLEPROTECTION },
     { "sslGroupDescription",
       IDS_OPTIONS_SSL_GROUP_DESCRIPTION },
     { "sslCheckRevocation",
       IDS_OPTIONS_SSL_CHECKREVOCATION },
-    { "sslUseSSL3",
-      IDS_OPTIONS_SSL_USESSL3 },
-    { "sslUseTLS1",
-      IDS_OPTIONS_SSL_USETLS1 },
     { "networkPredictionEnabledDescription",
       IDS_NETWORK_PREDICTION_ENABLED_DESCRIPTION },
     { "privacyContentSettingsButton",
@@ -110,7 +122,7 @@ void AdvancedOptionsHandler::GetLocalizedValues(
       IDS_OPTIONS_TABS_TO_LINKS_PREF },
     { "fontSettingsInfo",
       IDS_OPTIONS_FONTSETTINGS_INFO },
-    { "defaultZoomLevelLabel",
+    { "defaultZoomFactorLabel",
       IDS_OPTIONS_DEFAULT_ZOOM_LEVEL_LABEL },
     { "defaultFontSizeLabel",
       IDS_OPTIONS_DEFAULT_FONT_SIZE_LABEL },
@@ -148,21 +160,13 @@ void AdvancedOptionsHandler::GetLocalizedValues(
       IDS_OPTIONS_IMPROVE_BROWSING_EXPERIENCE },
     { "disableWebServices",
       IDS_OPTIONS_DISABLE_WEB_SERVICES },
-    { "cloudPrintOptionsStaticLabel",
-      IDS_CLOUD_PRINT_SETUP_DIALOG_TITLE },
-    { "cloudPrintProxyEnabledManageButton",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_MANAGE_BUTTON },
     { "advancedSectionTitleCloudPrint",
-      IDS_OPTIONS_ADVANCED_SECTION_TITLE_CLOUD_PRINT },
+      IDS_GOOGLE_CLOUD_PRINT },
 #if !defined(OS_CHROMEOS)
-    { "cloudPrintProxyDisabledLabel",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_DISABLED_LABEL },
-    { "cloudPrintProxyDisabledButton",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_DISABLED_BUTTON },
-    { "cloudPrintProxyEnabledButton",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_BUTTON },
-    { "cloudPrintProxyEnablingButton",
-      IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLING_BUTTON },
+    { "cloudPrintConnectorEnabledManageButton",
+      IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_MANAGE_BUTTON},
+    { "cloudPrintConnectorEnablingButton",
+      IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLING_BUTTON },
 #endif
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
     { "advancedSectionTitleBackground",
@@ -173,63 +177,84 @@ void AdvancedOptionsHandler::GetLocalizedValues(
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
+  RegisterCloudPrintStrings(localized_strings);
   RegisterTitle(localized_strings, "advancedPage",
                 IDS_OPTIONS_ADVANCED_TAB_LABEL);
 
   localized_strings->SetString("privacyLearnMoreURL",
-      google_util::AppendGoogleLocaleParam(
-          GURL(chrome::kPrivacyLearnMoreURL)).spec());
+                               chrome::kPrivacyLearnMoreURL);
+
+#if defined(OS_CHROMEOS)
+  localized_strings->SetString("cloudPrintLearnMoreURL",
+                               chrome::kCloudPrintLearnMoreURL);
+#endif
+}
+
+void AdvancedOptionsHandler::RegisterCloudPrintStrings(
+    DictionaryValue* localized_strings) {
+#if defined(OS_CHROMEOS)
+  localized_strings->SetString("cloudPrintChromeosOptionLabel",
+      l10n_util::GetStringFUTF16(
+      IDS_CLOUD_PRINT_CHROMEOS_OPTION_LABEL,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+  localized_strings->SetString("cloudPrintChromeosOptionButton",
+      l10n_util::GetStringFUTF16(
+      IDS_CLOUD_PRINT_CHROMEOS_OPTION_BUTTON,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+#else
+  localized_strings->SetString("cloudPrintConnectorDisabledLabel",
+      l10n_util::GetStringFUTF16(
+      IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+  localized_strings->SetString("cloudPrintConnectorDisabledButton",
+      l10n_util::GetStringFUTF16(
+      IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_BUTTON,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+  localized_strings->SetString("cloudPrintConnectorEnabledButton",
+      l10n_util::GetStringFUTF16(
+      IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_BUTTON,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+#endif
 }
 
 void AdvancedOptionsHandler::Initialize() {
-  DCHECK(web_ui_);
+  DCHECK(web_ui());
   SetupMetricsReportingCheckbox();
   SetupMetricsReportingSettingVisibility();
-  SetupFontSizeLabel();
-  SetupDownloadLocationPath();
-  SetupPromptForDownload();
+  SetupFontSizeSelector();
+  SetupPageZoomSelector();
   SetupAutoOpenFileTypesDisabledAttribute();
   SetupProxySettingsSection();
   SetupSSLConfigSettings();
 #if !defined(OS_CHROMEOS)
-  if (cloud_print_proxy_ui_enabled_) {
-    SetupCloudPrintProxySection();
+  if (cloud_print_connector_ui_enabled_) {
+    SetupCloudPrintConnectorSection();
     RefreshCloudPrintStatusFromService();
   } else {
-    RemoveCloudPrintProxySection();
+    RemoveCloudPrintConnectorSection();
   }
 #endif
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
   SetupBackgroundModeSettings();
 #endif
 
-  banner_handler_.reset(
-      new OptionsManagedBannerHandler(web_ui_,
-                                      ASCIIToUTF16("AdvancedOptions"),
-                                      OPTIONS_PAGE_ADVANCED));
 }
 
-WebUIMessageHandler* AdvancedOptionsHandler::Attach(WebUI* web_ui) {
-  // Call through to superclass.
-  WebUIMessageHandler* handler = OptionsPageUIHandler::Attach(web_ui);
-
+void AdvancedOptionsHandler::RegisterMessages() {
   // Register for preferences that we need to observe manually.  These have
   // special behaviors that aren't handled by the standard prefs UI.
-  DCHECK(web_ui_);
-  PrefService* prefs = web_ui_->GetProfile()->GetPrefs();
+  PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
 #if !defined(OS_CHROMEOS)
   enable_metrics_recording_.Init(prefs::kMetricsReportingEnabled,
                                  g_browser_process->local_state(), this);
-  cloud_print_proxy_email_.Init(prefs::kCloudPrintEmail, prefs, this);
-  cloud_print_proxy_enabled_.Init(prefs::kCloudPrintProxyEnabled, prefs, this);
+  cloud_print_connector_email_.Init(prefs::kCloudPrintEmail, prefs, this);
+  cloud_print_connector_enabled_.Init(prefs::kCloudPrintProxyEnabled,
+                                      prefs,
+                                      this);
 #endif
 
   rev_checking_enabled_.Init(prefs::kCertRevocationCheckingEnabled,
                              g_browser_process->local_state(), this);
-  ssl3_enabled_.Init(prefs::kSSL3Enabled, g_browser_process->local_state(),
-                     this);
-  tls1_enabled_.Init(prefs::kTLS1Enabled, g_browser_process->local_state(),
-                     this);
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
   background_mode_enabled_.Init(prefs::kBackgroundModeEnabled,
@@ -237,98 +262,85 @@ WebUIMessageHandler* AdvancedOptionsHandler::Attach(WebUI* web_ui) {
                                 this);
 #endif
 
-  default_download_location_.Init(prefs::kDownloadDefaultDirectory,
-                                  prefs, this);
-  ask_for_save_location_.Init(prefs::kPromptForDownload, prefs, this);
-  allow_file_selection_dialogs_.Init(prefs::kAllowFileSelectionDialogs,
-                                     g_browser_process->local_state(), this);
   auto_open_files_.Init(prefs::kDownloadExtensionsToOpen, prefs, this);
-  default_font_size_.Init(prefs::kWebKitDefaultFontSize, prefs, this);
+  default_font_size_.Init(prefs::kWebKitGlobalDefaultFontSize, prefs, this);
+  default_zoom_level_.Init(prefs::kDefaultZoomLevel, prefs, this);
+#if !defined(OS_CHROMEOS)
   proxy_prefs_.reset(
       PrefSetObserver::CreateProxyPrefSetObserver(prefs, this));
+#endif  // !defined(OS_CHROMEOS)
 
-  // Return result from the superclass.
-  return handler;
-}
-
-void AdvancedOptionsHandler::RegisterMessages() {
   // Setup handlers specific to this panel.
-  DCHECK(web_ui_);
-  web_ui_->RegisterMessageCallback("selectDownloadLocation",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleSelectDownloadLocation));
-  web_ui_->RegisterMessageCallback("promptForDownloadAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandlePromptForDownload));
-  web_ui_->RegisterMessageCallback("autoOpenFileTypesAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleAutoOpenButton));
-  web_ui_->RegisterMessageCallback("defaultFontSizeAction",
-      NewCallback(this, &AdvancedOptionsHandler::HandleDefaultFontSize));
+  web_ui()->RegisterMessageCallback("selectDownloadLocation",
+      base::Bind(&AdvancedOptionsHandler::HandleSelectDownloadLocation,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("autoOpenFileTypesAction",
+      base::Bind(&AdvancedOptionsHandler::HandleAutoOpenButton,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("defaultFontSizeAction",
+      base::Bind(&AdvancedOptionsHandler::HandleDefaultFontSize,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("defaultZoomFactorAction",
+      base::Bind(&AdvancedOptionsHandler::HandleDefaultZoomFactor,
+                 base::Unretained(this)));
 #if !defined(OS_CHROMEOS)
-  web_ui_->RegisterMessageCallback("metricsReportingCheckboxAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleMetricsReportingCheckbox));
+  web_ui()->RegisterMessageCallback("metricsReportingCheckboxAction",
+      base::Bind(&AdvancedOptionsHandler::HandleMetricsReportingCheckbox,
+                 base::Unretained(this)));
 #endif
 #if !defined(USE_NSS) && !defined(USE_OPENSSL)
-  web_ui_->RegisterMessageCallback("showManageSSLCertificates",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::ShowManageSSLCertificates));
+  web_ui()->RegisterMessageCallback("showManageSSLCertificates",
+      base::Bind(&AdvancedOptionsHandler::ShowManageSSLCertificates,
+                 base::Unretained(this)));
 #endif
-  web_ui_->RegisterMessageCallback("showCloudPrintManagePage",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::ShowCloudPrintManagePage));
+  web_ui()->RegisterMessageCallback("showCloudPrintManagePage",
+      base::Bind(&AdvancedOptionsHandler::ShowCloudPrintManagePage,
+                 base::Unretained(this)));
 #if !defined(OS_CHROMEOS)
-  if (cloud_print_proxy_ui_enabled_) {
-    web_ui_->RegisterMessageCallback("showCloudPrintSetupDialog",
-        NewCallback(this,
-                    &AdvancedOptionsHandler::ShowCloudPrintSetupDialog));
-    web_ui_->RegisterMessageCallback("disableCloudPrintProxy",
-        NewCallback(this,
-                    &AdvancedOptionsHandler::HandleDisableCloudPrintProxy));
+  if (cloud_print_connector_ui_enabled_) {
+    web_ui()->RegisterMessageCallback("showCloudPrintSetupDialog",
+        base::Bind(&AdvancedOptionsHandler::ShowCloudPrintSetupDialog,
+                   base::Unretained(this)));
+    web_ui()->RegisterMessageCallback("disableCloudPrintConnector",
+        base::Bind(&AdvancedOptionsHandler::HandleDisableCloudPrintConnector,
+                   base::Unretained(this)));
   }
-  web_ui_->RegisterMessageCallback("showNetworkProxySettings",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::ShowNetworkProxySettings));
+  web_ui()->RegisterMessageCallback("showNetworkProxySettings",
+      base::Bind(&AdvancedOptionsHandler::ShowNetworkProxySettings,
+                 base::Unretained(this)));
 #endif
-  web_ui_->RegisterMessageCallback("checkRevocationCheckboxAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleCheckRevocationCheckbox));
-  web_ui_->RegisterMessageCallback("useSSL3CheckboxAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleUseSSL3Checkbox));
-  web_ui_->RegisterMessageCallback("useTLS1CheckboxAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleUseTLS1Checkbox));
+  web_ui()->RegisterMessageCallback("checkRevocationCheckboxAction",
+      base::Bind(&AdvancedOptionsHandler::HandleCheckRevocationCheckbox,
+                 base::Unretained(this)));
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
-  web_ui_->RegisterMessageCallback("backgroundModeAction",
-      NewCallback(this,
-                  &AdvancedOptionsHandler::HandleBackgroundModeCheckbox));
+  web_ui()->RegisterMessageCallback("backgroundModeAction",
+      base::Bind(&AdvancedOptionsHandler::HandleBackgroundModeCheckbox,
+                 base::Unretained(this)));
 #endif
 }
 
-void AdvancedOptionsHandler::Observe(NotificationType type,
-                                     const NotificationSource& source,
-                                     const NotificationDetails& details) {
-  if (type == NotificationType::PREF_CHANGED) {
-    std::string* pref_name = Details<std::string>(details).ptr();
-    if ((*pref_name == prefs::kDownloadDefaultDirectory) ||
-        (*pref_name == prefs::kPromptForDownload) ||
-        (*pref_name == prefs::kAllowFileSelectionDialogs)) {
-      SetupDownloadLocationPath();
-      SetupPromptForDownload();
-    } else if (*pref_name == prefs::kDownloadExtensionsToOpen) {
+void AdvancedOptionsHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_PREF_CHANGED) {
+    std::string* pref_name = content::Details<std::string>(details).ptr();
+    if (*pref_name == prefs::kDownloadExtensionsToOpen) {
       SetupAutoOpenFileTypesDisabledAttribute();
+#if !defined(OS_CHROMEOS)
     } else if (proxy_prefs_->IsObserved(*pref_name)) {
       SetupProxySettingsSection();
+#endif  // !defined(OS_CHROMEOS)
     } else if ((*pref_name == prefs::kCloudPrintEmail) ||
                (*pref_name == prefs::kCloudPrintProxyEnabled)) {
 #if !defined(OS_CHROMEOS)
-      if (cloud_print_proxy_ui_enabled_)
-        SetupCloudPrintProxySection();
+      if (cloud_print_connector_ui_enabled_)
+        SetupCloudPrintConnectorSection();
 #endif
-    } else if (*pref_name == prefs::kWebKitDefaultFontSize) {
-      SetupFontSizeLabel();
+    } else if (*pref_name == prefs::kWebKitGlobalDefaultFontSize) {
+      SetupFontSizeSelector();
+    } else if (*pref_name == prefs::kDefaultZoomLevel) {
+      SetupPageZoomSelector();
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
     } else if (*pref_name == prefs::kBackgroundModeEnabled) {
       SetupBackgroundModeSettings();
@@ -339,41 +351,36 @@ void AdvancedOptionsHandler::Observe(NotificationType type,
 
 void AdvancedOptionsHandler::HandleSelectDownloadLocation(
     const ListValue* args) {
-  PrefService* pref_service = web_ui_->GetProfile()->GetPrefs();
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   select_folder_dialog_ = SelectFileDialog::Create(this);
   select_folder_dialog_->SelectFile(
       SelectFileDialog::SELECT_FOLDER,
       l10n_util::GetStringUTF16(IDS_OPTIONS_DOWNLOADLOCATION_BROWSE_TITLE),
       pref_service->GetFilePath(prefs::kDownloadDefaultDirectory),
-      NULL, 0, FILE_PATH_LITERAL(""), web_ui_->tab_contents(),
-      web_ui_->tab_contents()->view()->GetTopLevelNativeWindow(), NULL);
-}
-
-void AdvancedOptionsHandler::HandlePromptForDownload(
-    const ListValue* args) {
-  std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
-  ask_for_save_location_.SetValue(checked_str == "true");
+      NULL, 0, FILE_PATH_LITERAL(""), web_ui()->GetWebContents(),
+      web_ui()->GetWebContents()->GetView()->GetTopLevelNativeWindow(), NULL);
 }
 
 void AdvancedOptionsHandler::FileSelected(const FilePath& path, int index,
                                           void* params) {
-  UserMetricsRecordAction(UserMetricsAction("Options_SetDownloadDirectory"));
-  default_download_location_.SetValue(path);
-  SetupDownloadLocationPath();
+  content::RecordAction(UserMetricsAction("Options_SetDownloadDirectory"));
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
+  pref_service->SetFilePath(prefs::kDownloadDefaultDirectory, path);
 }
 
 void AdvancedOptionsHandler::OnCloudPrintSetupClosed() {
 #if !defined(OS_CHROMEOS)
-  if (cloud_print_proxy_ui_enabled_)
-    SetupCloudPrintProxySection();
+  if (cloud_print_connector_ui_enabled_)
+    SetupCloudPrintConnectorSection();
 #endif
 }
 
 void AdvancedOptionsHandler::HandleAutoOpenButton(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_ResetAutoOpenFiles"));
-  DownloadManager* manager = web_ui_->GetProfile()->GetDownloadManager();
+  content::RecordAction(UserMetricsAction("Options_ResetAutoOpenFiles"));
+  DownloadManager* manager =
+      web_ui()->GetWebContents()->GetBrowserContext()->GetDownloadManager();
   if (manager)
-    manager->download_prefs()->ResetAutoOpen();
+    DownloadPrefs::FromDownloadManager(manager)->ResetAutoOpen();
 }
 
 void AdvancedOptionsHandler::HandleMetricsReportingCheckbox(
@@ -381,9 +388,9 @@ void AdvancedOptionsHandler::HandleMetricsReportingCheckbox(
 #if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
   std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
   bool enabled = checked_str == "true";
-  UserMetricsRecordAction(
+  content::RecordAction(
       enabled ?
-          UserMetricsAction("Options_MetricsReportingCheckbox_Enable") :
+      UserMetricsAction("Options_MetricsReportingCheckbox_Enable") :
           UserMetricsAction("Options_MetricsReportingCheckbox_Disable"));
   bool is_enabled = OptionsUtil::ResolveMetricsReportingEnabled(enabled);
   enable_metrics_recording_.SetValue(is_enabled);
@@ -396,8 +403,16 @@ void AdvancedOptionsHandler::HandleDefaultFontSize(const ListValue* args) {
   if (ExtractIntegerValue(args, &font_size)) {
     if (font_size > 0) {
       default_font_size_.SetValue(font_size);
-      SetupFontSizeLabel();
+      SetupFontSizeSelector();
     }
+  }
+}
+
+void AdvancedOptionsHandler::HandleDefaultZoomFactor(const ListValue* args) {
+  double zoom_factor;
+  if (ExtractDoubleValue(args, &zoom_factor)) {
+    default_zoom_level_.SetValue(
+        WebKit::WebView::zoomFactorToZoomLevel(zoom_factor));
   }
 }
 
@@ -405,29 +420,11 @@ void AdvancedOptionsHandler::HandleCheckRevocationCheckbox(
     const ListValue* args) {
   std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
   bool enabled = checked_str == "true";
-  std::string metric =
-      (enabled ? "Options_CheckCertRevocation_Enable"
-               : "Options_CheckCertRevocation_Disable");
-  UserMetricsRecordAction(UserMetricsAction(metric.c_str()));
+  content::RecordAction(
+      enabled ?
+      UserMetricsAction("Options_CheckCertRevocation_Enable") :
+          UserMetricsAction("Options_CheckCertRevocation_Disable"));
   rev_checking_enabled_.SetValue(enabled);
-}
-
-void AdvancedOptionsHandler::HandleUseSSL3Checkbox(const ListValue* args) {
-  std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
-  bool enabled = checked_str == "true";
-  std::string metric =
-      (enabled ? "Options_SSL3_Enable" : "Options_SSL3_Disable");
-  UserMetricsRecordAction(UserMetricsAction(metric.c_str()));
-  ssl3_enabled_.SetValue(enabled);
-}
-
-void AdvancedOptionsHandler::HandleUseTLS1Checkbox(const ListValue* args) {
-  std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
-  bool enabled = checked_str == "true";
-  std::string metric =
-      (enabled ? "Options_TLS1_Enable" : "Options_TLS1_Disable");
-  UserMetricsRecordAction(UserMetricsAction(metric.c_str()));
-  tls1_enabled_.SetValue(enabled);
 }
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -435,110 +432,121 @@ void AdvancedOptionsHandler::HandleBackgroundModeCheckbox(
     const ListValue* args) {
   std::string checked_str = UTF16ToUTF8(ExtractStringValue(args));
   bool enabled = checked_str == "true";
-  std::string metric = enabled ? "Options_BackgroundMode_Enable" :
-                                 "Options_BackgroundMode_Disable";
-  UserMetricsRecordAction(UserMetricsAction(metric.c_str()));
+  content::RecordAction(enabled ?
+                        UserMetricsAction("Options_BackgroundMode_Enable") :
+      UserMetricsAction("Options_BackgroundMode_Disable"));
   background_mode_enabled_.SetValue(enabled);
 }
 
 void AdvancedOptionsHandler::SetupBackgroundModeSettings() {
-    FundamentalValue checked(background_mode_enabled_.GetValue());
-    web_ui_->CallJavascriptFunction(
+    base::FundamentalValue checked(background_mode_enabled_.GetValue());
+    web_ui()->CallJavascriptFunction(
         "options.AdvancedOptions.SetBackgroundModeCheckboxState", checked);
 }
 #endif
 
 #if !defined(OS_CHROMEOS)
 void AdvancedOptionsHandler::ShowNetworkProxySettings(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_ShowProxySettings"));
-  AdvancedOptionsUtilities::ShowNetworkProxySettings(web_ui_->tab_contents());
+  content::RecordAction(UserMetricsAction("Options_ShowProxySettings"));
+  AdvancedOptionsUtilities::ShowNetworkProxySettings(
+      web_ui()->GetWebContents());
 }
 #endif
 
 #if !defined(USE_NSS) && !defined(USE_OPENSSL)
 void AdvancedOptionsHandler::ShowManageSSLCertificates(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_ManageSSLCertificates"));
-  AdvancedOptionsUtilities::ShowManageSSLCertificates(web_ui_->tab_contents());
+  content::RecordAction(UserMetricsAction("Options_ManageSSLCertificates"));
+  AdvancedOptionsUtilities::ShowManageSSLCertificates(
+      web_ui()->GetWebContents());
 }
 #endif
 
 void AdvancedOptionsHandler::ShowCloudPrintManagePage(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_ManageCloudPrinters"));
+  content::RecordAction(UserMetricsAction("Options_ManageCloudPrinters"));
   // Open a new tab in the current window for the management page.
-  web_ui_->tab_contents()->OpenURL(
-      CloudPrintURL(web_ui_->GetProfile()).GetCloudPrintServiceManageURL(),
-      GURL(), NEW_FOREGROUND_TAB, PageTransition::LINK);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  OpenURLParams params(
+      CloudPrintURL(profile).GetCloudPrintServiceManageURL(), Referrer(),
+      NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK, false);
+  web_ui()->GetWebContents()->OpenURL(params);
 }
 
 #if !defined(OS_CHROMEOS)
 void AdvancedOptionsHandler::ShowCloudPrintSetupDialog(const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_EnableCloudPrintProxy"));
-  cloud_print_setup_handler_.reset(new CloudPrintSetupHandler(this));
-  CloudPrintSetupFlow::OpenDialog(
-      web_ui_->GetProfile(), cloud_print_setup_handler_->AsWeakPtr(),
-      web_ui_->tab_contents()->GetMessageBoxRootWindow());
+  content::RecordAction(UserMetricsAction("Options_EnableCloudPrintProxy"));
+  // Open the connector enable page in the current tab.
+  Profile* profile = Profile::FromWebUI(web_ui());
+  OpenURLParams params(
+      CloudPrintURL(profile).GetCloudPrintServiceEnableURL(
+          CloudPrintProxyServiceFactory::GetForProfile(profile)->proxy_id()),
+      Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_LINK, false);
+  web_ui()->GetWebContents()->OpenURL(params);
 }
 
-void AdvancedOptionsHandler::HandleDisableCloudPrintProxy(
+void AdvancedOptionsHandler::HandleDisableCloudPrintConnector(
     const ListValue* args) {
-  UserMetricsRecordAction(UserMetricsAction("Options_DisableCloudPrintProxy"));
-  web_ui_->GetProfile()->GetCloudPrintProxyService()->DisableForUser();
+  content::RecordAction(
+      UserMetricsAction("Options_DisableCloudPrintProxy"));
+  CloudPrintProxyServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()))->
+      DisableForUser();
 }
 
 void AdvancedOptionsHandler::RefreshCloudPrintStatusFromService() {
-  DCHECK(web_ui_);
-  if (cloud_print_proxy_ui_enabled_)
-    web_ui_->GetProfile()->GetCloudPrintProxyService()->
+  if (cloud_print_connector_ui_enabled_)
+    CloudPrintProxyServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()))->
         RefreshStatusFromService();
 }
 
-void AdvancedOptionsHandler::SetupCloudPrintProxySection() {
-  if (NULL == web_ui_->GetProfile()->GetCloudPrintProxyService()) {
-    cloud_print_proxy_ui_enabled_ = false;
-    RemoveCloudPrintProxySection();
+void AdvancedOptionsHandler::SetupCloudPrintConnectorSection() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  if (!CloudPrintProxyServiceFactory::GetForProfile(profile)) {
+    cloud_print_connector_ui_enabled_ = false;
+    RemoveCloudPrintConnectorSection();
     return;
   }
 
-  bool cloud_print_proxy_allowed =
-      !cloud_print_proxy_enabled_.IsManaged() ||
-      cloud_print_proxy_enabled_.GetValue();
-  FundamentalValue allowed(cloud_print_proxy_allowed);
+  bool cloud_print_connector_allowed =
+      !cloud_print_connector_enabled_.IsManaged() ||
+      cloud_print_connector_enabled_.GetValue();
+  base::FundamentalValue allowed(cloud_print_connector_allowed);
 
   std::string email;
-  if (web_ui_->GetProfile()->GetPrefs()->HasPrefPath(prefs::kCloudPrintEmail) &&
-      cloud_print_proxy_allowed) {
-    email = web_ui_->GetProfile()->GetPrefs()->GetString(
-        prefs::kCloudPrintEmail);
+  if (profile->GetPrefs()->HasPrefPath(prefs::kCloudPrintEmail) &&
+      cloud_print_connector_allowed) {
+    email = profile->GetPrefs()->GetString(prefs::kCloudPrintEmail);
   }
-  FundamentalValue disabled(email.empty());
+  base::FundamentalValue disabled(email.empty());
 
   string16 label_str;
   if (email.empty()) {
-    label_str = l10n_util::GetStringUTF16(
-        IDS_OPTIONS_CLOUD_PRINT_PROXY_DISABLED_LABEL);
+    label_str = l10n_util::GetStringFUTF16(
+        IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_DISABLED_LABEL,
+        l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT));
   } else {
     label_str = l10n_util::GetStringFUTF16(
-        IDS_OPTIONS_CLOUD_PRINT_PROXY_ENABLED_LABEL, UTF8ToUTF16(email));
+        IDS_OPTIONS_CLOUD_PRINT_CONNECTOR_ENABLED_LABEL,
+        l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT),
+        UTF8ToUTF16(email));
   }
   StringValue label(label_str);
 
-  web_ui_->CallJavascriptFunction(
-      "options.AdvancedOptions.SetupCloudPrintProxySection",
+  web_ui()->CallJavascriptFunction(
+      "options.AdvancedOptions.SetupCloudPrintConnectorSection",
       disabled, label, allowed);
 }
 
-void AdvancedOptionsHandler::RemoveCloudPrintProxySection() {
-  web_ui_->CallJavascriptFunction(
-      "options.AdvancedOptions.RemoveCloudPrintProxySection");
+void AdvancedOptionsHandler::RemoveCloudPrintConnectorSection() {
+  web_ui()->CallJavascriptFunction(
+      "options.AdvancedOptions.RemoveCloudPrintConnectorSection");
 }
 
 #endif
 
 void AdvancedOptionsHandler::SetupMetricsReportingCheckbox() {
 #if defined(GOOGLE_CHROME_BUILD) && !defined(OS_CHROMEOS)
-  FundamentalValue checked(enable_metrics_recording_.GetValue());
-  FundamentalValue disabled(enable_metrics_recording_.IsManaged());
-  web_ui_->CallJavascriptFunction(
+  base::FundamentalValue checked(enable_metrics_recording_.GetValue());
+  base::FundamentalValue disabled(enable_metrics_recording_.IsManaged());
+  web_ui()->CallJavascriptFunction(
       "options.AdvancedOptions.SetMetricsReportingCheckboxState", checked,
       disabled);
 #endif
@@ -548,63 +556,79 @@ void AdvancedOptionsHandler::SetupMetricsReportingSettingVisibility() {
 #if defined(GOOGLE_CHROME_BUILD) && defined(OS_CHROMEOS)
   // Don't show the reporting setting if we are in the guest mode.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
-    FundamentalValue visible(false);
-    web_ui_->CallJavascriptFunction(
+    base::FundamentalValue visible(false);
+    web_ui()->CallJavascriptFunction(
         "options.AdvancedOptions.SetMetricsReportingSettingVisibility",
         visible);
   }
 #endif
 }
 
-void AdvancedOptionsHandler::SetupFontSizeLabel() {
+void AdvancedOptionsHandler::SetupFontSizeSelector() {
   // We're only interested in integer values, so convert to int.
-  FundamentalValue font_size(default_font_size_.GetValue());
-  web_ui_->CallJavascriptFunction(
+  base::FundamentalValue font_size(default_font_size_.GetValue());
+  web_ui()->CallJavascriptFunction(
       "options.AdvancedOptions.SetFontSize", font_size);
 }
 
-void AdvancedOptionsHandler::SetupDownloadLocationPath() {
-  StringValue value(default_download_location_.GetValue().value());
-  // In case allow_file_selection_dialogs_ is false, we will not display any
-  // file-selection dialogs but show an InfoBar. That is why we can disable
-  // the DownloadLocationPath-Chooser right-away.
-  FundamentalValue disabled(default_download_location_.IsManaged() ||
-                            !allow_file_selection_dialogs_.GetValue());
-  web_ui_->CallJavascriptFunction(
-      "options.AdvancedOptions.SetDownloadLocationPath", value, disabled);
-}
+void AdvancedOptionsHandler::SetupPageZoomSelector() {
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
+  double default_zoom_level = pref_service->GetDouble(prefs::kDefaultZoomLevel);
+  double default_zoom_factor =
+      WebKit::WebView::zoomLevelToZoomFactor(default_zoom_level);
 
-void AdvancedOptionsHandler::SetupPromptForDownload() {
-  FundamentalValue checked(ask_for_save_location_.GetValue());
-  // If either the DownloadDirectory is managed or if file-selection dialogs are
-  // disallowed then |ask_for_save_location_| must currently be false and cannot
-  // be changed.
-  FundamentalValue disabled(default_download_location_.IsManaged() ||
-                            !allow_file_selection_dialogs_.GetValue());
-  web_ui_->CallJavascriptFunction(
-      "options.AdvancedOptions.SetPromptForDownload", checked, disabled);
+  // Generate a vector of zoom factors from an array of known presets along with
+  // the default factor added if necessary.
+  std::vector<double> zoom_factors =
+      chrome_page_zoom::PresetZoomFactors(default_zoom_factor);
+
+  // Iterate through the zoom factors and and build the contents of the
+  // selector that will be sent to the javascript handler.
+  // Each item in the list has the following parameters:
+  // 1. Title (string).
+  // 2. Value (double).
+  // 3. Is selected? (bool).
+  ListValue zoom_factors_value;
+  for (std::vector<double>::const_iterator i = zoom_factors.begin();
+       i != zoom_factors.end(); ++i) {
+    ListValue* option = new ListValue();
+    double factor = *i;
+    int percent = static_cast<int>(factor * 100 + 0.5);
+    option->Append(Value::CreateStringValue(
+        l10n_util::GetStringFUTF16Int(IDS_ZOOM_PERCENT, percent)));
+    option->Append(Value::CreateDoubleValue(factor));
+    bool selected = content::ZoomValuesEqual(factor, default_zoom_factor);
+    option->Append(Value::CreateBooleanValue(selected));
+    zoom_factors_value.Append(option);
+  }
+
+  web_ui()->CallJavascriptFunction(
+      "options.AdvancedOptions.SetupPageZoomSelector", zoom_factors_value);
 }
 
 void AdvancedOptionsHandler::SetupAutoOpenFileTypesDisabledAttribute() {
   // Set the enabled state for the AutoOpenFileTypesResetToDefault button.
   // We enable the button if the user has any auto-open file types registered.
-  DownloadManager* manager = web_ui_->GetProfile()->GetDownloadManager();
-  bool disabled = !(manager && manager->download_prefs()->IsAutoOpenUsed());
-  FundamentalValue value(disabled);
-  web_ui_->CallJavascriptFunction(
+  DownloadManager* manager =
+      web_ui()->GetWebContents()->GetBrowserContext()->GetDownloadManager();
+  bool disabled = !(manager &&
+      DownloadPrefs::FromDownloadManager(manager)->IsAutoOpenUsed());
+  base::FundamentalValue value(disabled);
+  web_ui()->CallJavascriptFunction(
       "options.AdvancedOptions.SetAutoOpenFileTypesDisabledAttribute", value);
 }
 
 void AdvancedOptionsHandler::SetupProxySettingsSection() {
+#if !defined(OS_CHROMEOS)
   // Disable the button if proxy settings are managed by a sysadmin or
   // overridden by an extension.
-  PrefService* pref_service = web_ui_->GetProfile()->GetPrefs();
+  PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   const PrefService::Preference* proxy_config =
       pref_service->FindPreference(prefs::kProxy);
   bool is_extension_controlled = (proxy_config &&
                                   proxy_config->IsExtensionControlled());
 
-  FundamentalValue disabled(proxy_prefs_->IsManaged() ||
+  base::FundamentalValue disabled(proxy_prefs_->IsManaged() ||
                             is_extension_controlled);
 
   // Get the appropriate info string to describe the button.
@@ -617,28 +641,17 @@ void AdvancedOptionsHandler::SetupProxySettingsSection() {
   }
   StringValue label(label_str);
 
-  web_ui_->CallJavascriptFunction(
+  web_ui()->CallJavascriptFunction(
       "options.AdvancedOptions.SetupProxySettingsSection", disabled, label);
+#endif  // !defined(OS_CHROMEOS)
 }
 
 void AdvancedOptionsHandler::SetupSSLConfigSettings() {
   {
-    FundamentalValue checked(rev_checking_enabled_.GetValue());
-    FundamentalValue disabled(rev_checking_enabled_.IsManaged());
-    web_ui_->CallJavascriptFunction(
+    base::FundamentalValue checked(rev_checking_enabled_.GetValue());
+    base::FundamentalValue disabled(rev_checking_enabled_.IsManaged());
+    web_ui()->CallJavascriptFunction(
         "options.AdvancedOptions.SetCheckRevocationCheckboxState", checked,
         disabled);
-  }
-  {
-    FundamentalValue checked(ssl3_enabled_.GetValue());
-    FundamentalValue disabled(ssl3_enabled_.IsManaged());
-    web_ui_->CallJavascriptFunction(
-        "options.AdvancedOptions.SetUseSSL3CheckboxState", checked, disabled);
-  }
-  {
-    FundamentalValue checked(tls1_enabled_.GetValue());
-    FundamentalValue disabled(tls1_enabled_.IsManaged());
-    web_ui_->CallJavascriptFunction(
-        "options.AdvancedOptions.SetUseTLS1CheckboxState", checked, disabled);
   }
 }

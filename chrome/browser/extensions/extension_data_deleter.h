@@ -6,9 +6,11 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_DATA_DELETER_H_
 #pragma once
 
+#include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_helpers.h"
 #include "base/string16.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 
 namespace webkit_database {
@@ -19,32 +21,41 @@ namespace fileapi {
 class FileSystemContext;
 }
 
-class Profile;
-class WebKitContext;
-
 namespace net {
 class URLRequestContextGetter;
 }
+
+class ChromeAppCacheService;
+class Profile;
+class WebKitContext;
 
 // A helper class that takes care of removing local storage, databases and
 // cookies for a given extension. This is used by
 // ExtensionService::ClearExtensionData() upon uninstalling an extension.
 class ExtensionDataDeleter
-  : public base::RefCountedThreadSafe<ExtensionDataDeleter,
-                                      BrowserThread::DeleteOnUIThread> {
+  : public base::RefCountedThreadSafe<
+        ExtensionDataDeleter, content::BrowserThread::DeleteOnUIThread> {
  public:
-  ExtensionDataDeleter(Profile* profile, const GURL& extension_url);
-
-  // Start removing data. The extension should not be running when this is
+  // Starts removing data. The extension should not be running when this is
   // called. Cookies are deleted on the current thread, local storage and
-  // databases are deleted asynchronously on the webkit and file threads,
-  // respectively. This function must be called from the UI thread.
-  void StartDeleting();
+  // databases/settings are deleted asynchronously on the webkit and file
+  // threads, respectively. This function must be called from the UI thread.
+  static void StartDeleting(
+      Profile* profile,
+      const std::string& extension_id,
+      const GURL& storage_origin,
+      bool is_storage_isolated);
 
  private:
-  friend struct BrowserThread::DeleteOnThread<BrowserThread::UI>;
-  friend class DeleteTask<ExtensionDataDeleter>;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<ExtensionDataDeleter>;
 
+  ExtensionDataDeleter(
+      Profile* profile,
+      const std::string& extension_id,
+      const GURL& storage_origin,
+      bool is_storage_isolated);
   ~ExtensionDataDeleter();
 
   // Deletes the cookies for the extension. May only be called on the io
@@ -67,14 +78,21 @@ class ExtensionDataDeleter
   // file thread.
   void DeleteFileSystemOnFileThread();
 
+  // Deletes appcache files for the extension. May only be called on the IO
+  // thread.
+  void DeleteAppcachesOnIOThread();
+
+  // The ID of the extension being deleted.
+  const std::string extension_id_;
+
   // The database context for deleting the database.
   scoped_refptr<webkit_database::DatabaseTracker> database_tracker_;
 
-  // Provides access to the extension request context.
+  // Provides access to the request context.
   scoped_refptr<net::URLRequestContextGetter> extension_request_context_;
 
-  // The URL of the extension we're removing data for.
-  GURL extension_url_;
+  // The origin of the extension/app for which we're going to clear data.
+  GURL storage_origin_;
 
   // The security origin identifier for which we're deleting stuff.
   string16 origin_id_;
@@ -83,6 +101,12 @@ class ExtensionDataDeleter
   scoped_refptr<WebKitContext> webkit_context_;
 
   scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+
+  scoped_refptr<ChromeAppCacheService> appcache_service_;
+
+  // If non-empty, the extension we're deleting is an isolated app, and this
+  // is its directory which we should delete.
+  FilePath isolated_app_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDataDeleter);
 };

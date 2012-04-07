@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,10 +10,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
@@ -70,9 +71,9 @@ class Worker : public Channel::Listener, public Message::Sender {
   // destruction.
   virtual ~Worker() {
     WaitableEvent listener_done(false, false), ipc_done(false, false);
-    ListenerThread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &Worker::OnListenerThreadShutdown1, &listener_done,
-        &ipc_done));
+    ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&Worker::OnListenerThreadShutdown1, this,
+                              &listener_done, &ipc_done));
     listener_done.Wait();
     ipc_done.Wait();
     ipc_thread_.Stop();
@@ -92,8 +93,8 @@ class Worker : public Channel::Listener, public Message::Sender {
   }
   void Start() {
     StartThread(&listener_thread_, MessageLoop::TYPE_DEFAULT);
-    ListenerThread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &Worker::OnStart));
+    ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&Worker::OnStart, this));
   }
   void OverrideThread(base::Thread* overrided_thread) {
     DCHECK(overrided_thread_ == NULL);
@@ -119,6 +120,7 @@ class Worker : public Channel::Listener, public Message::Sender {
     DCHECK_EQ(answer, (succeed ? 10 : 0));
     return result;
   }
+  const std::string& channel_name() { return channel_name_; }
   Channel::Mode mode() { return mode_; }
   WaitableEvent* done_event() { return done_.get(); }
   WaitableEvent* shutdown_event() { return &shutdown_event_; }
@@ -155,6 +157,12 @@ class Worker : public Channel::Listener, public Message::Sender {
     NOTREACHED();
   }
 
+  virtual SyncChannel* CreateChannel() {
+    return new SyncChannel(
+        channel_name_, mode_, this, ipc_thread_.message_loop_proxy(), true,
+        &shutdown_event_);
+  }
+
   base::Thread* ListenerThread() {
     return overrided_thread_ ? overrided_thread_ : &listener_thread_;
   }
@@ -166,9 +174,7 @@ class Worker : public Channel::Listener, public Message::Sender {
   void OnStart() {
     // Link ipc_thread_, listener_thread_ and channel_ altogether.
     StartThread(&ipc_thread_, MessageLoop::TYPE_IO);
-    channel_.reset(new SyncChannel(
-        channel_name_, mode_, this, ipc_thread_.message_loop_proxy(), true,
-        &shutdown_event_));
+    channel_.reset(CreateChannel());
     channel_created_->Signal();
     Run();
   }
@@ -180,8 +186,9 @@ class Worker : public Channel::Listener, public Message::Sender {
 
     MessageLoop::current()->RunAllPending();
 
-    ipc_thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &Worker::OnIPCThreadShutdown, listener_event, ipc_event));
+    ipc_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&Worker::OnIPCThreadShutdown, this,
+                              listener_event, ipc_event));
   }
 
   void OnIPCThreadShutdown(WaitableEvent* listener_event,
@@ -189,8 +196,9 @@ class Worker : public Channel::Listener, public Message::Sender {
     MessageLoop::current()->RunAllPending();
     ipc_event->Signal();
 
-    listener_thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &Worker::OnListenerThreadShutdown2, listener_event));
+    listener_thread_.message_loop()->PostTask(
+        FROM_HERE, base::Bind(&Worker::OnListenerThreadShutdown2, this,
+                              listener_event));
   }
 
   void OnListenerThreadShutdown2(WaitableEvent* listener_event) {
@@ -308,6 +316,74 @@ TEST_F(IPCSyncChannelTest, Simple) {
 
 namespace {
 
+// Worker classes which override how the sync channel is created to use the
+// two-step initialization (calling the lightweight constructor and then
+// ChannelProxy::Init separately) process.
+class TwoStepServer : public Worker {
+ public:
+  explicit TwoStepServer(bool create_pipe_now)
+      : Worker(Channel::MODE_SERVER, "simpler_server"),
+        create_pipe_now_(create_pipe_now) { }
+
+  void Run() {
+    SendAnswerToLife(false, base::kNoTimeout, true);
+    Done();
+  }
+
+  virtual SyncChannel* CreateChannel() {
+    SyncChannel* channel = new SyncChannel(
+        this, ipc_thread().message_loop_proxy(), shutdown_event());
+    channel->Init(channel_name(), mode(), create_pipe_now_);
+    return channel;
+  }
+
+  bool create_pipe_now_;
+};
+
+class TwoStepClient : public Worker {
+ public:
+  TwoStepClient(bool create_pipe_now)
+      : Worker(Channel::MODE_CLIENT, "simple_client"),
+        create_pipe_now_(create_pipe_now) { }
+
+  void OnAnswer(int* answer) {
+    *answer = 42;
+    Done();
+  }
+
+  virtual SyncChannel* CreateChannel() {
+    SyncChannel* channel = new SyncChannel(
+        this, ipc_thread().message_loop_proxy(), shutdown_event());
+    channel->Init(channel_name(), mode(), create_pipe_now_);
+    return channel;
+  }
+
+  bool create_pipe_now_;
+};
+
+void TwoStep(bool create_server_pipe_now, bool create_client_pipe_now) {
+  std::vector<Worker*> workers;
+  workers.push_back(new TwoStepServer(create_server_pipe_now));
+  workers.push_back(new TwoStepClient(create_client_pipe_now));
+  RunTest(workers);
+}
+
+}  // namespace
+
+// Tests basic two-step initialization, where you call the lightweight
+// constructor then Init.
+TEST_F(IPCSyncChannelTest, TwoStepInitialization) {
+  TwoStep(false, false);
+  TwoStep(false, true);
+  TwoStep(true, false);
+  TwoStep(true, true);
+}
+
+
+//-----------------------------------------------------------------------------
+
+namespace {
+
 class DelayClient : public Worker {
  public:
   DelayClient() : Worker(Channel::MODE_CLIENT, "delay_client") { }
@@ -340,7 +416,7 @@ namespace {
 
 class NoHangServer : public Worker {
  public:
-  explicit NoHangServer(WaitableEvent* got_first_reply, bool pump_during_send)
+  NoHangServer(WaitableEvent* got_first_reply, bool pump_during_send)
       : Worker(Channel::MODE_SERVER, "no_hang_server"),
         got_first_reply_(got_first_reply),
         pump_during_send_(pump_during_send) { }
@@ -475,11 +551,10 @@ namespace {
 
 class RecursiveServer : public Worker {
  public:
-  explicit RecursiveServer(
-    bool expected_send_result, bool pump_first, bool pump_second)
-    : Worker(Channel::MODE_SERVER, "recursive_server"),
-      expected_send_result_(expected_send_result),
-      pump_first_(pump_first), pump_second_(pump_second)  { }
+  RecursiveServer(bool expected_send_result, bool pump_first, bool pump_second)
+      : Worker(Channel::MODE_SERVER, "recursive_server"),
+        expected_send_result_(expected_send_result),
+        pump_first_(pump_first), pump_second_(pump_second) {}
   void Run() {
     SendDouble(pump_first_, expected_send_result_);
     Done();
@@ -495,9 +570,9 @@ class RecursiveServer : public Worker {
 
 class RecursiveClient : public Worker {
  public:
-  explicit RecursiveClient(bool pump_during_send, bool close_channel)
-    : Worker(Channel::MODE_CLIENT, "recursive_client"),
-      pump_during_send_(pump_during_send), close_channel_(close_channel) { }
+  RecursiveClient(bool pump_during_send, bool close_channel)
+      : Worker(Channel::MODE_CLIENT, "recursive_client"),
+        pump_during_send_(pump_during_send), close_channel_(close_channel) {}
 
   void OnDoubleDelay(int in, Message* reply_msg) {
     SendDouble(pump_during_send_, !close_channel_);
@@ -806,59 +881,6 @@ TEST_F(IPCSyncChannelTest, QueuedReply) {
 
 namespace {
 
-void DropAssert(const std::string&) {}
-
-class BadServer : public Worker {
- public:
-  explicit BadServer(bool pump_during_send)
-    : Worker(Channel::MODE_SERVER, "simpler_server"),
-      pump_during_send_(pump_during_send) { }
-  void Run() {
-    int answer = 0;
-
-    SyncMessage* msg = new SyncMessage(
-        MSG_ROUTING_CONTROL, SyncChannelTestMsg_Double::ID,
-        Message::PRIORITY_NORMAL, NULL);
-    if (pump_during_send_)
-      msg->EnableMessagePumping();
-
-    // Temporarily ignore asserts so that the assertion in
-    // ipc_message_utils doesn't cause termination.
-    logging::SetLogAssertHandler(&DropAssert);
-    bool result = Send(msg);
-    logging::SetLogAssertHandler(NULL);
-    DCHECK(!result);
-
-    // Need to send another message to get the client to call Done().
-    result = Send(new SyncChannelTestMsg_AnswerToLife(&answer));
-    DCHECK(result);
-    DCHECK_EQ(answer, 42);
-
-    Done();
-  }
-
-  bool pump_during_send_;
-};
-
-void BadMessage(bool pump_during_send) {
-  std::vector<Worker*> workers;
-  workers.push_back(new BadServer(pump_during_send));
-  workers.push_back(new SimpleClient());
-  RunTest(workers);
-}
-
-}  // namespace
-
-// Tests that if a message is not serialized correctly, the Send() will fail.
-TEST_F(IPCSyncChannelTest, BadMessage) {
-  BadMessage(false);
-  BadMessage(true);
-}
-
-//-----------------------------------------------------------------------------
-
-namespace {
-
 class ChattyClient : public Worker {
  public:
   ChattyClient() :
@@ -1010,26 +1032,17 @@ TEST_F(IPCSyncChannelTest, DISABLED_SendWithTimeoutMixedOKAndTimeout) {
 
 namespace {
 
-class NestedTask : public Task {
- public:
-  explicit NestedTask(Worker* server) : server_(server) { }
-  void Run() {
-    // Sleep a bit so that we wake up after the reply has been received.
-    base::PlatformThread::Sleep(250);
-    server_->SendAnswerToLife(true, base::kNoTimeout, true);
-  }
+void NestedCallback(Worker* server) {
+  // Sleep a bit so that we wake up after the reply has been received.
+  base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(250));
+  server->SendAnswerToLife(true, base::kNoTimeout, true);
+}
 
-  Worker* server_;
-};
+bool timeout_occurred = false;
 
-static bool timeout_occured = false;
-
-class TimeoutTask : public Task {
- public:
-  void Run() {
-    timeout_occured = true;
-  }
-};
+void TimeoutCallback() {
+  timeout_occurred = true;
+}
 
 class DoneEventRaceServer : public Worker {
  public:
@@ -1037,14 +1050,16 @@ class DoneEventRaceServer : public Worker {
       : Worker(Channel::MODE_SERVER, "done_event_race_server") { }
 
   void Run() {
-    MessageLoop::current()->PostTask(FROM_HERE, new NestedTask(this));
-    MessageLoop::current()->PostDelayedTask(FROM_HERE, new TimeoutTask(), 9000);
+    MessageLoop::current()->PostTask(FROM_HERE,
+                                     base::Bind(&NestedCallback, this));
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, base::Bind(&TimeoutCallback), 9000);
     // Even though we have a timeout on the Send, it will succeed since for this
     // bug, the reply message comes back and is deserialized, however the done
     // event wasn't set.  So we indirectly use the timeout task to notice if a
     // timeout occurred.
     SendAnswerToLife(true, 10000, true);
-    DCHECK(!timeout_occured);
+    DCHECK(!timeout_occurred);
     Done();
   }
 };
@@ -1078,8 +1093,9 @@ class TestSyncMessageFilter : public SyncMessageFilter {
 
   virtual void OnFilterAdded(Channel* channel) {
     SyncMessageFilter::OnFilterAdded(channel);
-    thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &TestSyncMessageFilter::SendMessageOnHelperThread));
+    thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&TestSyncMessageFilter::SendMessageOnHelperThread, this));
   }
 
   void SendMessageOnHelperThread() {
@@ -1119,8 +1135,9 @@ class ServerSendAfterClose : public Worker {
   }
 
   bool SendDummy() {
-    ListenerThread()->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &ServerSendAfterClose::Send, new SyncChannelTestMsg_NoArgs));
+    ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(base::IgnoreResult(&ServerSendAfterClose::Send),
+                              this, new SyncChannelTestMsg_NoArgs));
     return true;
   }
 
@@ -1184,8 +1201,8 @@ class RestrictedDispatchServer : public Worker {
     Send(msg);
     // Signal the event after the message has been sent on the channel, on the
     // IPC thread.
-    ipc_thread().message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &RestrictedDispatchServer::OnPingSent));
+    ipc_thread().message_loop()->PostTask(
+        FROM_HERE, base::Bind(&RestrictedDispatchServer::OnPingSent, this));
   }
 
   base::Thread* ListenerThread() { return Worker::ListenerThread(); }
@@ -1240,8 +1257,8 @@ class RestrictedDispatchClient : public Worker {
     // send a message on that same channel.
     channel()->SetRestrictDispatchToSameChannel(true);
 
-    server_->ListenerThread()->message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(server_, &RestrictedDispatchServer::OnDoPing, 1));
+    server_->ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&RestrictedDispatchServer::OnDoPing, server_, 1));
     sent_ping_event_->Wait();
     Send(new SyncChannelTestMsg_NoArgs);
     if (ping_ == 1)
@@ -1253,8 +1270,8 @@ class RestrictedDispatchClient : public Worker {
         "non_restricted_channel", Channel::MODE_CLIENT, this,
         ipc_thread().message_loop_proxy(), true, shutdown_event()));
 
-    server_->ListenerThread()->message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(server_, &RestrictedDispatchServer::OnDoPing, 2));
+    server_->ListenerThread()->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&RestrictedDispatchServer::OnDoPing, server_, 2));
     sent_ping_event_->Wait();
     // Check that the incoming message is *not* dispatched when sending on the
     // non restricted channel.
@@ -1315,6 +1332,264 @@ TEST_F(IPCSyncChannelTest, RestrictedDispatch) {
       new RestrictedDispatchClient(&sent_ping_event, server, &success));
   RunTest(workers);
   EXPECT_EQ(3, success);
+}
+
+//-----------------------------------------------------------------------------
+
+// This test case inspired by crbug.com/108491
+// We create two servers that use the same ListenerThread but have
+// SetRestrictDispatchToSameChannel set to true.
+// We create clients, then use some specific WaitableEvent wait/signalling to
+// ensure that messages get dispatched in a way that causes a deadlock due to
+// a nested dispatch and an eligible message in a higher-level dispatch's
+// delayed_queue. Specifically, we start with client1 about so send an
+// unblocking message to server1, while the shared listener thread for the
+// servers server1 and server2 is about to send a non-unblocking message to
+// client1. At the same time, client2 will be about to send an unblocking
+// message to server2. Server1 will handle the client1->server1 message by
+// telling server2 to send a non-unblocking message to client2.
+// What should happen is that the send to server2 should find the pending,
+// same-context client2->server2 message to dispatch, causing client2 to
+// unblock then handle the server2->client2 message, so that the shared
+// servers' listener thread can then respond to the client1->server1 message.
+// Then client1 can handle the non-unblocking server1->client1 message.
+// The old code would end up in a state where the server2->client2 message is
+// sent, but the client2->server2 message (which is eligible for dispatch, and
+// which is what client2 is waiting for) is stashed in a local delayed_queue
+// that has server1's channel context, causing a deadlock.
+// WaitableEvents in the events array are used to:
+//   event 0: indicate to client1 that server listener is in OnDoServerTask
+//   event 1: indicate to client1 that client2 listener is in OnDoClient2Task
+//   event 2: indicate to server1 that client2 listener is in OnDoClient2Task
+//   event 3: indicate to client2 that server listener is in OnDoServerTask
+
+namespace {
+
+class RestrictedDispatchDeadlockServer : public Worker {
+ public:
+  RestrictedDispatchDeadlockServer(int server_num,
+                                   WaitableEvent* server_ready_event,
+                                   WaitableEvent** events,
+                                   RestrictedDispatchDeadlockServer* peer)
+      : Worker(server_num == 1 ? "channel1" : "channel2", Channel::MODE_SERVER),
+        server_num_(server_num),
+        server_ready_event_(server_ready_event),
+        events_(events),
+        peer_(peer),
+        client_kicked_(false) { }
+
+  void OnDoServerTask() {
+    events_[3]->Signal();
+    events_[2]->Wait();
+    events_[0]->Signal();
+    SendMessageToClient();
+  }
+
+  void Run() {
+    channel()->SetRestrictDispatchToSameChannel(true);
+    server_ready_event_->Signal();
+  }
+
+  base::Thread* ListenerThread() { return Worker::ListenerThread(); }
+
+ private:
+  bool OnMessageReceived(const Message& message) {
+    IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockServer, message)
+     IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
+     IPC_MESSAGE_HANDLER(SyncChannelTestMsg_Done, Done)
+    IPC_END_MESSAGE_MAP()
+    return true;
+  }
+
+  void OnNoArgs() {
+    if (server_num_ == 1) {
+      DCHECK(peer_ != NULL);
+      peer_->SendMessageToClient();
+    }
+  }
+
+  void SendMessageToClient() {
+    Message* msg = new SyncChannelTestMsg_NoArgs;
+    msg->set_unblock(false);
+    DCHECK(!msg->should_unblock());
+    Send(msg);
+  }
+
+  int server_num_;
+  WaitableEvent* server_ready_event_;
+  WaitableEvent** events_;
+  RestrictedDispatchDeadlockServer* peer_;
+  bool client_kicked_;
+};
+
+class RestrictedDispatchDeadlockClient2 : public Worker {
+ public:
+  RestrictedDispatchDeadlockClient2(RestrictedDispatchDeadlockServer* server,
+                                    WaitableEvent* server_ready_event,
+                                    WaitableEvent** events)
+      : Worker("channel2", Channel::MODE_CLIENT),
+        server_(server),
+        server_ready_event_(server_ready_event),
+        events_(events),
+        received_msg_(false),
+        received_noarg_reply_(false),
+        done_issued_(false) {}
+
+  void Run() {
+    server_ready_event_->Wait();
+  }
+
+  void OnDoClient2Task() {
+    events_[3]->Wait();
+    events_[1]->Signal();
+    events_[2]->Signal();
+    DCHECK(received_msg_ == false);
+
+    Message* message = new SyncChannelTestMsg_NoArgs;
+    message->set_unblock(true);
+    Send(message);
+    received_noarg_reply_ = true;
+  }
+
+  base::Thread* ListenerThread() { return Worker::ListenerThread(); }
+ private:
+  bool OnMessageReceived(const Message& message) {
+    IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockClient2, message)
+     IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
+    IPC_END_MESSAGE_MAP()
+    return true;
+  }
+
+  void OnNoArgs() {
+    received_msg_ = true;
+    PossiblyDone();
+  }
+
+  void PossiblyDone() {
+    if (received_noarg_reply_ && received_msg_) {
+      DCHECK(done_issued_ == false);
+      done_issued_ = true;
+      Send(new SyncChannelTestMsg_Done);
+      Done();
+    }
+  }
+
+  RestrictedDispatchDeadlockServer* server_;
+  WaitableEvent* server_ready_event_;
+  WaitableEvent** events_;
+  bool received_msg_;
+  bool received_noarg_reply_;
+  bool done_issued_;
+};
+
+class RestrictedDispatchDeadlockClient1 : public Worker {
+ public:
+  RestrictedDispatchDeadlockClient1(RestrictedDispatchDeadlockServer* server,
+                                    RestrictedDispatchDeadlockClient2* peer,
+                                    WaitableEvent* server_ready_event,
+                                    WaitableEvent** events)
+      : Worker("channel1", Channel::MODE_CLIENT),
+        server_(server),
+        peer_(peer),
+        server_ready_event_(server_ready_event),
+        events_(events),
+        received_msg_(false),
+        received_noarg_reply_(false),
+        done_issued_(false) {}
+
+  void Run() {
+    server_ready_event_->Wait();
+    server_->ListenerThread()->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&RestrictedDispatchDeadlockServer::OnDoServerTask, server_));
+    peer_->ListenerThread()->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&RestrictedDispatchDeadlockClient2::OnDoClient2Task, peer_));
+    events_[0]->Wait();
+    events_[1]->Wait();
+    DCHECK(received_msg_ == false);
+
+    Message* message = new SyncChannelTestMsg_NoArgs;
+    message->set_unblock(true);
+    Send(message);
+    received_noarg_reply_ = true;
+    PossiblyDone();
+  }
+
+  base::Thread* ListenerThread() { return Worker::ListenerThread(); }
+ private:
+  bool OnMessageReceived(const Message& message) {
+    IPC_BEGIN_MESSAGE_MAP(RestrictedDispatchDeadlockClient1, message)
+     IPC_MESSAGE_HANDLER(SyncChannelTestMsg_NoArgs, OnNoArgs)
+    IPC_END_MESSAGE_MAP()
+    return true;
+  }
+
+  void OnNoArgs() {
+    received_msg_ = true;
+    PossiblyDone();
+  }
+
+  void PossiblyDone() {
+    if (received_noarg_reply_ && received_msg_) {
+      DCHECK(done_issued_ == false);
+      done_issued_ = true;
+      Send(new SyncChannelTestMsg_Done);
+      Done();
+    }
+  }
+
+  RestrictedDispatchDeadlockServer* server_;
+  RestrictedDispatchDeadlockClient2* peer_;
+  WaitableEvent* server_ready_event_;
+  WaitableEvent** events_;
+  bool received_msg_;
+  bool received_noarg_reply_;
+  bool done_issued_;
+};
+
+}  // namespace
+
+TEST_F(IPCSyncChannelTest, RestrictedDispatchDeadlock) {
+  std::vector<Worker*> workers;
+
+  // A shared worker thread so that server1 and server2 run on one thread.
+  base::Thread worker_thread("RestrictedDispatchDeadlock");
+  ASSERT_TRUE(worker_thread.Start());
+
+  WaitableEvent server1_ready(false, false);
+  WaitableEvent server2_ready(false, false);
+
+  WaitableEvent event0(false, false);
+  WaitableEvent event1(false, false);
+  WaitableEvent event2(false, false);
+  WaitableEvent event3(false, false);
+  WaitableEvent* events[4] = {&event0, &event1, &event2, &event3};
+
+  RestrictedDispatchDeadlockServer* server1;
+  RestrictedDispatchDeadlockServer* server2;
+  RestrictedDispatchDeadlockClient1* client1;
+  RestrictedDispatchDeadlockClient2* client2;
+
+  server2 = new RestrictedDispatchDeadlockServer(2, &server2_ready, events,
+                                                 NULL);
+  server2->OverrideThread(&worker_thread);
+  workers.push_back(server2);
+
+  client2 = new RestrictedDispatchDeadlockClient2(server2, &server2_ready,
+                                                  events);
+  workers.push_back(client2);
+
+  server1 = new RestrictedDispatchDeadlockServer(1, &server1_ready, events,
+                                                 server2);
+  server1->OverrideThread(&worker_thread);
+  workers.push_back(server1);
+
+  client1 = new RestrictedDispatchDeadlockClient1(server1, client2,
+                                                  &server1_ready, events);
+  workers.push_back(client1);
+
+  RunTest(workers);
 }
 
 }  // namespace IPC

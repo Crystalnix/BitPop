@@ -4,10 +4,11 @@
 
 #include "chrome/browser/extensions/execute_code_in_tab_function.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_tabs_module.h"
 #include "chrome/browser/extensions/extension_tabs_module_constants.h"
 #include "chrome/browser/extensions/file_reader.h"
@@ -17,17 +18,20 @@
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_error_utils.h"
+#include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/common/extensions/extension_l10n_util.h"
+#include "chrome/common/extensions/extension_message_bundle.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/web_contents.h"
+
+using content::BrowserThread;
 
 namespace keys = extension_tabs_module_constants;
 
 ExecuteCodeInTabFunction::ExecuteCodeInTabFunction()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(registrar_(this)),
-      execute_tab_id_(-1),
+    : execute_tab_id_(-1),
       all_frames_(false) {
 }
 
@@ -83,7 +87,7 @@ bool ExecuteCodeInTabFunction::RunImpl() {
   CHECK(browser);
   CHECK(contents);
   if (!GetExtension()->CanExecuteScriptOnPage(
-          contents->tab_contents()->GetURL(), NULL, &error_)) {
+          contents->web_contents()->GetURL(), NULL, &error_)) {
     return false;
   }
 
@@ -116,15 +120,60 @@ bool ExecuteCodeInTabFunction::RunImpl() {
   }
 
   scoped_refptr<FileReader> file_reader(new FileReader(
-      resource_, NewCallback(this, &ExecuteCodeInTabFunction::DidLoadFile)));
+      resource_, base::Bind(&ExecuteCodeInTabFunction::DidLoadFile, this)));
   file_reader->Start();
-  AddRef();  // Keep us alive until DidLoadFile is called.
 
   return true;
 }
 
 void ExecuteCodeInTabFunction::DidLoadFile(bool success,
                                            const std::string& data) {
+  std::string function_name = name();
+  const Extension* extension = GetExtension();
+
+  // Check if the file is CSS and needs localization.
+  if (success &&
+      function_name == TabsInsertCSSFunction::function_name() &&
+      extension != NULL &&
+      data.find(ExtensionMessageBundle::kMessageBegin) != std::string::npos) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(&ExecuteCodeInTabFunction::LocalizeCSS, this,
+                   data,
+                   extension->id(),
+                   extension->path(),
+                   extension->default_locale()));
+  } else {
+    DidLoadAndLocalizeFile(success, data);
+  }
+}
+
+void ExecuteCodeInTabFunction::LocalizeCSS(
+    const std::string& data,
+    const std::string& extension_id,
+    const FilePath& extension_path,
+    const std::string& extension_default_locale) {
+  scoped_ptr<SubstitutionMap> localization_messages(
+      extension_file_util::LoadExtensionMessageBundleSubstitutionMap(
+          extension_path, extension_id, extension_default_locale));
+
+  // We need to do message replacement on the data, so it has to be mutable.
+  std::string css_data = data;
+  std::string error;
+  ExtensionMessageBundle::ReplaceMessagesWithExternalDictionary(
+      *localization_messages, &css_data, &error);
+
+  // Call back DidLoadAndLocalizeFile on the UI thread. The success parameter
+  // is always true, because if loading had failed, we wouldn't have had
+  // anything to localize.
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&ExecuteCodeInTabFunction::DidLoadAndLocalizeFile, this,
+                 true, css_data));
+}
+
+void ExecuteCodeInTabFunction::DidLoadAndLocalizeFile(bool success,
+                                                      const std::string& data) {
   if (success) {
     Execute(data);
   } else {
@@ -139,7 +188,6 @@ void ExecuteCodeInTabFunction::DidLoadFile(bool success,
 #endif  // OS_WIN
     SendResponse(false);
   }
-  Release();  // Balance the AddRef taken in RunImpl
 }
 
 bool ExecuteCodeInTabFunction::Execute(const std::string& code_string) {
@@ -176,10 +224,11 @@ bool ExecuteCodeInTabFunction::Execute(const std::string& code_string) {
   params.code = code_string;
   params.all_frames = all_frames_;
   params.in_main_world = false;
-  contents->render_view_host()->Send(new ExtensionMsg_ExecuteCode(
-      contents->render_view_host()->routing_id(), params));
+  contents->web_contents()->GetRenderViewHost()->Send(
+      new ExtensionMsg_ExecuteCode(
+          contents->web_contents()->GetRenderViewHost()->routing_id(), params));
 
-  registrar_.Observe(contents->tab_contents());
+  Observe(contents->web_contents());
   AddRef();  // balanced in OnExecuteCodeFinished()
   return true;
 }
@@ -215,6 +264,6 @@ void ExecuteCodeInTabFunction::OnExecuteCodeFinished(int request_id,
 
   SendResponse(success);
 
-  registrar_.Observe(NULL);
+  Observe(NULL);
   Release();  // balanced in Execute()
 }

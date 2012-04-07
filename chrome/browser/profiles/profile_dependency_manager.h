@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 
 #ifndef NDEBUG
 #include <set>
+#include <string>
 #endif
 
 class Profile;
@@ -31,6 +32,13 @@ class ProfileDependencyManager {
   void AddEdge(ProfileKeyedServiceFactory* depended,
                ProfileKeyedServiceFactory* dependee);
 
+  // Called by each Profile to alert us of its creation. Several services want
+  // to be started when a profile is created. Testing configuration is also
+  // done at this time. (If you want your ProfileKeyedService to be started
+  // with the Profile, override ProfileKeyedServiceFactory::
+  // ServiceIsCreatedWithProfile() to return true.)
+  void CreateProfileServices(Profile* profile, bool is_testing_profile);
+
   // Called by each Profile to alert us that we should destroy services
   // associated with it.
   //
@@ -44,11 +52,6 @@ class ProfileDependencyManager {
   void DestroyProfileServices(Profile* profile);
 
 #ifndef NDEBUG
-  // Unmark |profile| as dead. This exists because of unit tests, which will
-  // often have similar stack structures. 0xWhatever might be created, go out
-  // of scope, and then a new Profile object might be created at 0xWhatever.
-  void ProfileNowExists(Profile* profile);
-
   // Debugging assertion called as part of GetServiceForProfile in debug
   // mode. This will NOTREACHED() whenever the user is trying to access a stale
   // Profile*.
@@ -67,15 +70,27 @@ class ProfileDependencyManager {
   ProfileDependencyManager();
   virtual ~ProfileDependencyManager();
 
+  // Ensures that all the factories have been created before building the
+  // dependency graph.
+  void AssertFactoriesBuilt();
+
   // Using the dependency graph defined in |edges_|, fills |destruction_order_|
   // so that Observe() can notify each ProfileKeyedServiceFactory in order.
-  void BuildDestructionOrder();
+  void BuildDestructionOrder(Profile* profile);
+
+#ifndef NDEBUG
+  // Creates a dot file with our dependency information.
+  std::string DumpGraphvizDependency();
+#endif
 
   std::vector<ProfileKeyedServiceFactory*> all_components_;
 
   EdgeMap edges_;
 
   std::vector<ProfileKeyedServiceFactory*> destruction_order_;
+
+  // Whether AssertFactoriesBuilt has been done.
+  bool built_factories_;
 
 #ifndef NDEBUG
   // A list of profile objects that have gone through the Shutdown()

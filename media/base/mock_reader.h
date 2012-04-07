@@ -8,7 +8,6 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/filters.h"
 
@@ -17,8 +16,8 @@ namespace media {
 // Ref counted object so we can create callbacks for asynchronous Read()
 // methods for any filter type.
 template <class FilterType, class BufferType>
-class MockReader :
-    public base::RefCountedThreadSafe<MockReader<FilterType, BufferType> > {
+class MockReader
+    : public base::RefCountedThreadSafe<MockReader<FilterType, BufferType> > {
  public:
   MockReader()
       : called_(false),
@@ -50,7 +49,7 @@ class MockReader :
   bool expecting_call() { return expecting_call_; }
 
  private:
-  void OnReadComplete(BufferType* buffer) {
+  void OnReadComplete(const scoped_refptr<BufferType>& buffer) {
     DCHECK(!called_);
     DCHECK(expecting_call_);
     expecting_call_ = false;

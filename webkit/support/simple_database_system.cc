@@ -1,10 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/support/simple_database_system.h"
 
 #include "base/auto_reset.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
@@ -13,7 +15,7 @@
 #include "base/utf_string_conversions.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDatabase.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/database/database_util.h"
 #include "webkit/database/vfs_backend.h"
 
@@ -36,7 +38,8 @@ SimpleDatabaseSystem::SimpleDatabaseSystem()
   DCHECK(!instance_);
   instance_ = this;
   CHECK(temp_dir_.CreateUniqueTempDir());
-  db_tracker_ = new DatabaseTracker(temp_dir_.path(), false, NULL, NULL, NULL);
+  db_tracker_ =
+      new DatabaseTracker(temp_dir_.path(), false, false, NULL, NULL, NULL);
   db_tracker_->AddObserver(this);
   db_thread_.Start();
   db_thread_proxy_ = db_thread_.message_loop_proxy();
@@ -44,9 +47,10 @@ SimpleDatabaseSystem::SimpleDatabaseSystem()
 
 SimpleDatabaseSystem::~SimpleDatabaseSystem() {
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::ThreadCleanup,
-                        &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::ThreadCleanup,
+                 base::Unretained(this), &done_event));
   done_event.Wait();
   instance_ = NULL;
 }
@@ -55,37 +59,44 @@ void SimpleDatabaseSystem::databaseOpened(const WebKit::WebDatabase& database) {
   string16 origin_identifier = database.securityOrigin().databaseIdentifier();
   string16 database_name = database.name();
   open_connections_->AddOpenConnection(origin_identifier, database_name);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::DatabaseOpened,
-                        origin_identifier,
-                        database_name, database.displayName(),
-                        database.estimatedSize()));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::DatabaseOpened,
+                 base::Unretained(this),
+                 origin_identifier,
+                 database_name, database.displayName(),
+                 database.estimatedSize()));
 }
 
 void SimpleDatabaseSystem::databaseModified(
     const WebKit::WebDatabase& database) {
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::DatabaseModified,
-                        database.securityOrigin().databaseIdentifier(),
-                        database.name()));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::DatabaseModified,
+                 base::Unretained(this),
+                 database.securityOrigin().databaseIdentifier(),
+                 database.name()));
 }
 
 void SimpleDatabaseSystem::databaseClosed(const WebKit::WebDatabase& database) {
   string16 origin_identifier = database.securityOrigin().databaseIdentifier();
   string16 database_name = database.name();
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::DatabaseClosed,
-                        origin_identifier, database_name));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::DatabaseClosed,
+                 base::Unretained(this), origin_identifier, database_name));
 }
 
 base::PlatformFile SimpleDatabaseSystem::OpenFile(
     const string16& vfs_file_name, int desired_flags) {
   base::PlatformFile result = base::kInvalidPlatformFileValue;
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::VfsOpenFile,
-                        vfs_file_name, desired_flags,
-                        &result, &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::VfsOpenFile,
+                 base::Unretained(this),
+                 vfs_file_name, desired_flags,
+                 &result, &done_event));
   done_event.Wait();
   return result;
 }
@@ -94,10 +105,12 @@ int SimpleDatabaseSystem::DeleteFile(
     const string16& vfs_file_name, bool sync_dir) {
   int result = SQLITE_OK;
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::VfsDeleteFile,
-                        vfs_file_name, sync_dir,
-                        &result, &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::VfsDeleteFile,
+                 base::Unretained(this),
+                 vfs_file_name, sync_dir,
+                 &result, &done_event));
   done_event.Wait();
   return result;
 }
@@ -105,9 +118,10 @@ int SimpleDatabaseSystem::DeleteFile(
 uint32 SimpleDatabaseSystem::GetFileAttributes(const string16& vfs_file_name) {
   uint32 result = 0;
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::VfsGetFileAttributes,
-                        vfs_file_name, &result, &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::VfsGetFileAttributes,
+                 base::Unretained(this), vfs_file_name, &result, &done_event));
   done_event.Wait();
   return result;
 }
@@ -115,9 +129,10 @@ uint32 SimpleDatabaseSystem::GetFileAttributes(const string16& vfs_file_name) {
 int64 SimpleDatabaseSystem::GetFileSize(const string16& vfs_file_name) {
   int64 result = 0;
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::VfsGetFileSize,
-                        vfs_file_name, &result, &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::VfsGetFileSize,
+                 base::Unretained(this), vfs_file_name, &result, &done_event));
   done_event.Wait();
   return result;
 }
@@ -126,24 +141,28 @@ int64 SimpleDatabaseSystem::GetSpaceAvailable(
     const string16& origin_identifier) {
   int64 result = 0;
   base::WaitableEvent done_event(false, false);
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::VfsGetSpaceAvailable,
-                        origin_identifier, &result, &done_event));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::VfsGetSpaceAvailable,
+                 base::Unretained(this), origin_identifier,
+                 &result, &done_event));
   done_event.Wait();
   return result;
 }
 
 void SimpleDatabaseSystem::ClearAllDatabases() {
   open_connections_->WaitForAllDatabasesToClose();
-  db_thread_proxy_->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SimpleDatabaseSystem::ResetTracker));
+  db_thread_proxy_->PostTask(
+      FROM_HERE,
+      base::Bind(&SimpleDatabaseSystem::ResetTracker, base::Unretained(this)));
 }
 
 void SimpleDatabaseSystem::SetDatabaseQuota(int64 quota) {
   if (!db_thread_proxy_->BelongsToCurrentThread()) {
-    db_thread_proxy_->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &SimpleDatabaseSystem::SetDatabaseQuota,
-                          quota));
+    db_thread_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&SimpleDatabaseSystem::SetDatabaseQuota,
+                   base::Unretained(this), quota));
     return;
   }
   quota_per_origin_ = quota;
@@ -227,7 +246,9 @@ void SimpleDatabaseSystem::VfsDeleteFile(
     *result = VfsBackend::DeleteFile(file_name, sync_dir);
   } while ((++num_retries < kNumDeleteRetries) &&
            (*result == SQLITE_IOERR_DELETE) &&
-           (base::PlatformThread::Sleep(10), 1));
+           (base::PlatformThread::Sleep(
+               base::TimeDelta::FromMilliseconds(10)),
+            1));
 
   done_event->Signal();
 }

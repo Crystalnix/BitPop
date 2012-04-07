@@ -7,9 +7,12 @@
 #include "base/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
-#include "chrome/test/webdriver/web_element_id.h"
+#include "chrome/test/webdriver/webdriver_element_id.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_session.h"
+#include "chrome/test/webdriver/webdriver_util.h"
+
+using base::Value;
 
 namespace webdriver {
 
@@ -25,8 +28,8 @@ bool WindowHandleCommand::DoesGet() {
 }
 
 void WindowHandleCommand::ExecuteGet(Response* const response) {
-  response->SetValue(new StringValue(
-      base::IntToString(session_->current_target().window_id)));
+  response->SetValue(Value::CreateStringValue(
+      WebViewIdToString(session_->current_target().view_id)));
 }
 
 WindowHandlesCommand::WindowHandlesCommand(
@@ -41,15 +44,19 @@ bool WindowHandlesCommand::DoesGet() {
 }
 
 void WindowHandlesCommand::ExecuteGet(Response* const response) {
-  std::vector<int> window_ids;
-  Error* error = session_->GetWindowIds(&window_ids);
+  std::vector<WebViewInfo> views;
+  Error* error = session_->GetViews(&views);
   if (error) {
     response->SetError(error);
     return;
   }
-  ListValue* id_list = new ListValue();
-  for (size_t i = 0; i < window_ids.size(); ++i)
-    id_list->Append(new StringValue(base::IntToString(window_ids[i])));
+  base::ListValue* id_list = new base::ListValue();
+  for (size_t i = 0; i < views.size(); ++i) {
+    if (!views[i].view_id.IsTab())
+      continue;
+    id_list->Append(Value::CreateStringValue(
+        WebViewIdToString(views[i].view_id)));
+  }
   response->SetValue(id_list);
 }
 
@@ -76,7 +83,7 @@ void WindowCommand::ExecutePost(Response* const response) {
     return;
   }
 
-  Error* error = session_->SwitchToWindow(name);
+  Error* error = session_->SwitchToView(name);
   if (error)
     response->SetError(error);
 }
@@ -85,6 +92,10 @@ void WindowCommand::ExecuteDelete(Response* const response) {
   Error* error = session_->CloseWindow();
   if (error)
     response->SetError(error);
+}
+
+bool WindowCommand::ShouldRunPreAndPostCommandHandlers() {
+  return false;
 }
 
 SwitchFrameCommand::SwitchFrameCommand(
@@ -101,7 +112,7 @@ bool SwitchFrameCommand::DoesPost() {
 void SwitchFrameCommand::ExecutePost(Response* const response) {
   std::string id;
   int index = 0;
-  WebElementId element;
+  ElementId element;
   Error* error = NULL;
   if (GetStringParameter("id", &id)) {
     error = session_->SwitchToFrameWithNameOrId(id);
@@ -121,12 +132,12 @@ void SwitchFrameCommand::ExecutePost(Response* const response) {
 }
 
 bool SwitchFrameCommand::GetWebElementParameter(const std::string& key,
-                                                WebElementId* out) const {
+                                                ElementId* out) const {
   DictionaryValue* value;
   if (!GetDictionaryParameter(key, &value))
     return false;
 
-  WebElementId id(value);
+  ElementId id(value);
   if (!id.is_valid())
     return false;
 

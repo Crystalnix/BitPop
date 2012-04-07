@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,44 @@
 #import <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 
-#include "app/mac/nsimage_cache.h"
 #include "base/logging.h"
+#include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebImage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "ui/gfx/mac/nsimage_cache.h"
+
+#if WEBKIT_USING_SKIA
+#include "skia/ext/skia_utils_mac.h"
+#endif
 
 using WebKit::WebCursorInfo;
 using WebKit::WebImage;
 using WebKit::WebSize;
+
+// Declare symbols that are part of the 10.6 SDK.
+#if !defined(MAC_OS_X_VERSION_10_6) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
+
+@interface NSCursor (SnowLeopardSDKDeclarations)
++ (NSCursor*)contextualMenuCursor;
++ (NSCursor*)dragCopyCursor;
++ (NSCursor*)operationNotAllowedCursor;
+@end
+
+#endif  // MAC_OS_X_VERSION_10_6
+
+// Declare symbols that are part of the 10.7 SDK.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+
+@interface NSCursor (LionSDKDeclarations)
++ (NSCursor*)IBeamCursorForVerticalLayout;
+@end
+
+#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -26,20 +53,23 @@ namespace {
 NSCursor* LoadCursor(const char* name, int x, int y) {
   NSString* file_name = [NSString stringWithUTF8String:name];
   DCHECK(file_name);
-  NSImage* cursor_image = app::mac::GetCachedImageWithName(file_name);
+  NSImage* cursor_image = gfx::GetCachedImageWithName(file_name);
   DCHECK(cursor_image);
   return [[[NSCursor alloc] initWithImage:cursor_image
                                   hotSpot:NSMakePoint(x, y)] autorelease];
 }
 
+// TODO(avi): When Skia becomes default, fold this function into the remaining
+// caller, InitFromCursor().
 CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
                                        const gfx::Size& custom_size) {
-  // This is safe since we're not going to draw into the context we're creating.
-  // The settings here match SetCustomData() below; keep in sync.
   // If the data is missing, leave the backing transparent.
   void* data = NULL;
-  if (!custom_data.empty())
+  if (!custom_data.empty()) {
+    // This is safe since we're not going to draw into the context we're
+    // creating.
     data = const_cast<char*>(&custom_data[0]);
+  }
 
   // If the size is empty, use a 1x1 transparent image.
   gfx::Size size = custom_size;
@@ -50,6 +80,7 @@ CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
 
   base::mac::ScopedCFTypeRef<CGColorSpaceRef> cg_color(
       CGColorSpaceCreateDeviceRGB());
+  // The settings here match SetCustomData() below; keep in sync.
   base::mac::ScopedCFTypeRef<CGContextRef> context(
       CGBitmapContextCreate(data,
                             size.width(),
@@ -65,34 +96,72 @@ CGImageRef CreateCGImageFromCustomData(const std::vector<char>& custom_data,
 NSCursor* CreateCustomCursor(const std::vector<char>& custom_data,
                              const gfx::Size& custom_size,
                              const gfx::Point& hotspot) {
+#if WEBKIT_USING_SKIA
+  // If the data is missing, leave the backing transparent.
+  void* data = NULL;
+  size_t data_size = 0;
+  if (!custom_data.empty()) {
+    // This is safe since we're not going to draw into the context we're
+    // creating.
+    data = const_cast<char*>(&custom_data[0]);
+    data_size = custom_data.size();
+  }
+
+  // If the size is empty, use a 1x1 transparent image.
+  gfx::Size size = custom_size;
+  if (size.IsEmpty()) {
+    size.SetSize(1, 1);
+    data = NULL;
+  }
+
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, size.width(), size.height());
+  bitmap.allocPixels();
+  if (data)
+    memcpy(bitmap.getAddr32(0, 0), data, data_size);
+  else
+    bitmap.eraseARGB(0, 0, 0, 0);
+  NSImage* cursor_image = gfx::SkBitmapToNSImage(bitmap);
+#else
   base::mac::ScopedCFTypeRef<CGImageRef> cg_image(
       CreateCGImageFromCustomData(custom_data, custom_size));
 
   scoped_nsobject<NSBitmapImageRep> ns_bitmap(
       [[NSBitmapImageRep alloc] initWithCGImage:cg_image.get()]);
-  NSImage* cursor_image = [[NSImage alloc] init];
+  scoped_nsobject<NSImage> cursor_image([[NSImage alloc] init]);
   DCHECK(cursor_image);
   [cursor_image addRepresentation:ns_bitmap];
+#endif  // WEBKIT_USING_SKIA
 
   NSCursor* cursor = [[NSCursor alloc] initWithImage:cursor_image
                                              hotSpot:NSMakePoint(hotspot.x(),
                                                                  hotspot.y())];
-  [cursor_image release];
 
   return [cursor autorelease];
 }
 
 }  // namespace
 
-// We're matching Safari's cursor choices; see platform/mac/CursorMac.mm
-NSCursor* WebCursor::GetCursor() const {
+// We're (mostly) matching Safari's cursor choices; see
+// platform/mac/CursorMac.mm . Note that Safari uses some magic in wkCursor to
+// access private system cursors. A sample implementation using the same
+// technique can be found attached to http://crbug.com/92892 . However, it's not
+// clear that accessing system cursors this way is enough of a gain to risk
+// using SPIs. Until the benefits more clearly outweigh the risks, API is all
+// that will be used.
+gfx::NativeCursor WebCursor::GetNativeCursor() {
   switch (type_) {
     case WebCursorInfo::TypePointer:
       return [NSCursor arrowCursor];
     case WebCursorInfo::TypeCross:
-      return LoadCursor("crossHairCursor", 11, 11);
+      return [NSCursor crosshairCursor];
     case WebCursorInfo::TypeHand:
-      return LoadCursor("linkCursor", 6, 1);
+      // If >= 10.7, the pointingHandCursor has a shadow so use it. Otherwise
+      // use the custom one.
+      if (base::mac::IsOSLionOrLater())
+        return [NSCursor pointingHandCursor];
+      else
+        return LoadCursor("linkCursor", 6, 1);
     case WebCursorInfo::TypeIBeam:
       return [NSCursor IBeamCursor];
     case WebCursorInfo::TypeWait:
@@ -139,11 +208,19 @@ NSCursor* WebCursor::GetCursor() const {
     case WebCursorInfo::TypeMove:
       return LoadCursor("moveCursor", 7, 7);
     case WebCursorInfo::TypeVerticalText:
-      return LoadCursor("verticalTextCursor", 7, 7);
+      // IBeamCursorForVerticalLayout is >= 10.7.
+      if ([NSCursor respondsToSelector:@selector(IBeamCursorForVerticalLayout)])
+        return [NSCursor IBeamCursorForVerticalLayout];
+      else
+        return LoadCursor("verticalTextCursor", 7, 7);
     case WebCursorInfo::TypeCell:
       return LoadCursor("cellCursor", 7, 7);
     case WebCursorInfo::TypeContextMenu:
-      return LoadCursor("contextMenuCursor", 3, 2);
+      // contextualMenuCursor is >= 10.6.
+      if ([NSCursor respondsToSelector:@selector(contextualMenuCursor)])
+        return [NSCursor contextualMenuCursor];
+      else
+        return LoadCursor("contextMenuCursor", 3, 2);
     case WebCursorInfo::TypeAlias:
       return LoadCursor("aliasCursor", 11, 3);
     case WebCursorInfo::TypeProgress:
@@ -151,11 +228,17 @@ NSCursor* WebCursor::GetCursor() const {
     case WebCursorInfo::TypeNoDrop:
       return LoadCursor("noDropCursor", 3, 1);
     case WebCursorInfo::TypeCopy:
-      return LoadCursor("copyCursor", 3, 2);
+      // dragCopyCursor is >= 10.6.
+      if ([NSCursor respondsToSelector:@selector(dragCopyCursor)])
+        return [NSCursor dragCopyCursor];
+      else
+        return LoadCursor("copyCursor", 3, 2);
     case WebCursorInfo::TypeNone:
       return LoadCursor("noneCursor", 7, 7);
     case WebCursorInfo::TypeNotAllowed:
-      return LoadCursor("notAllowedCursor", 11, 11);
+      // Docs say that operationNotAllowedCursor is >= 10.6, and it's not in the
+      // 10.5 SDK, but later SDKs note that it really is available on 10.5.
+     return [NSCursor operationNotAllowedCursor];
     case WebCursorInfo::TypeZoomIn:
       return LoadCursor("zoomInCursor", 7, 7);
     case WebCursorInfo::TypeZoomOut:
@@ -169,10 +252,6 @@ NSCursor* WebCursor::GetCursor() const {
   }
   NOTREACHED();
   return nil;
-}
-
-gfx::NativeCursor WebCursor::GetNativeCursor() {
-  return GetCursor();
 }
 
 void WebCursor::InitFromThemeCursor(ThemeCursor cursor) {
@@ -284,7 +363,13 @@ void WebCursor::InitFromCursor(const Cursor* cursor) {
   WebKit::WebCursorInfo cursor_info;
   cursor_info.type = WebCursorInfo::TypeCustom;
   cursor_info.hotSpot = WebKit::WebPoint(cursor->hotSpot.h, cursor->hotSpot.v);
+#if WEBKIT_USING_SKIA
+  // TODO(avi): build the cursor image in Skia directly rather than going via
+  // this roundabout path.
+  cursor_info.customImage = gfx::CGImageToSkBitmap(cg_image.get());
+#else
   cursor_info.customImage = cg_image.get();
+#endif
 
   InitFromCursorInfo(cursor_info);
 }
@@ -316,6 +401,18 @@ void WebCursor::InitFromNSCursor(NSCursor* cursor) {
     cursor_info.type = WebCursorInfo::TypeGrab;
   } else if ([cursor isEqual:[NSCursor closedHandCursor]]) {
     cursor_info.type = WebCursorInfo::TypeGrabbing;
+  } else if ([cursor isEqual:[NSCursor operationNotAllowedCursor]]) {
+    cursor_info.type = WebCursorInfo::TypeNotAllowed;
+  } else if ([NSCursor respondsToSelector:@selector(dragCopyCursor)] &&
+             [cursor isEqual:[NSCursor dragCopyCursor]]) {
+    cursor_info.type = WebCursorInfo::TypeCopy;
+  } else if ([NSCursor respondsToSelector:@selector(contextualMenuCursor)] &&
+             [cursor isEqual:[NSCursor contextualMenuCursor]]) {
+    cursor_info.type = WebCursorInfo::TypeContextMenu;
+  } else if (
+      [NSCursor respondsToSelector:@selector(IBeamCursorForVerticalLayout)] &&
+      [cursor isEqual:[NSCursor IBeamCursorForVerticalLayout]]) {
+    cursor_info.type = WebCursorInfo::TypeVerticalText;
   } else {
     // Also handles the [NSCursor disappearingItemCursor] case. Quick-and-dirty
     // image conversion; TODO(avi): do better.
@@ -332,7 +429,11 @@ void WebCursor::InitFromNSCursor(NSCursor* cursor) {
       cursor_info.type = WebCursorInfo::TypeCustom;
       NSPoint hot_spot = [cursor hotSpot];
       cursor_info.hotSpot = WebKit::WebPoint(hot_spot.x, hot_spot.y);
+#if WEBKIT_USING_SKIA
+      cursor_info.customImage = gfx::CGImageToSkBitmap(cg_image);
+#else
       cursor_info.customImage = cg_image;
+#endif
     } else {
       cursor_info.type = WebCursorInfo::TypePointer;
     }
@@ -382,7 +483,7 @@ void WebCursor::ImageFromCustomData(WebImage* image) const {
       CreateCGImageFromCustomData(custom_data_, custom_size_));
   *image = cg_image.get();
 }
-#endif
+#endif  // !WEBKIT_USING_SKIA
 
 void WebCursor::InitPlatformData() {
   return;

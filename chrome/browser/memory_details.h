@@ -11,12 +11,30 @@
 #include "base/memory/ref_counted.h"
 #include "base/process_util.h"
 #include "base/string16.h"
-#include "content/common/child_process_info.h"
+#include "content/public/common/process_type.h"
 
 // We collect data about each browser process.  A browser may
 // have multiple processes (of course!).  Even IE has multiple
 // processes these days.
 struct ProcessMemoryInformation {
+  // NOTE: Do not remove or reorder the elements in this enum, and only add new
+  // items at the end. We depend on these specific values in a histogram.
+  enum RendererProcessType {
+    RENDERER_UNKNOWN = 0,
+    RENDERER_NORMAL,
+    RENDERER_CHROME,        // WebUI (chrome:// URL)
+    RENDERER_EXTENSION,     // chrome-extension://
+    RENDERER_DEVTOOLS,      // Web inspector
+    RENDERER_INTERSTITIAL,  // malware/phishing interstitial
+    RENDERER_NOTIFICATION,  // HTML notification bubble
+    RENDERER_BACKGROUND_APP // hosted app background page
+  };
+
+  static std::string GetRendererTypeNameInEnglish(RendererProcessType type);
+  static std::string GetFullTypeNameInEnglish(
+      content::ProcessType type,
+      RendererProcessType rtype);
+
   ProcessMemoryInformation();
   ~ProcessMemoryInformation();
 
@@ -37,9 +55,9 @@ struct ProcessMemoryInformation {
   // results.
   bool is_diagnostics;
   // If this is a child process of Chrome, what type (i.e. plugin) it is.
-  ChildProcessInfo::ProcessType type;
+  content::ProcessType type;
   // If this is a renderer process, what type it is.
-  ChildProcessInfo::RendererProcessType renderer_type;
+  RendererProcessType renderer_type;
   // A collection of titles used, i.e. for a tab it'll show all the page titles.
   std::vector<string16> titles;
 };

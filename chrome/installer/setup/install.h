@@ -15,9 +15,7 @@
 #include "chrome/installer/util/product.h"
 #include "chrome/installer/util/util_constants.h"
 
-class DictionaryValue;
 class FilePath;
-class WorkItemList;
 
 namespace installer {
 

@@ -90,6 +90,7 @@ class ScopedTempDirectory {
     DCHECK(!directory_.empty());
     return directory_;
   }
+
  private:
   FilePath directory_;
   DISALLOW_COPY_AND_ASSIGN(ScopedTempDirectory);
@@ -195,7 +196,10 @@ bool RunProcessAndWait(const wchar_t* exe_path, const std::wstring& cmdline,
                        int* exit_code) {
   bool result = true;
   base::ProcessHandle process;
-  if (base::LaunchApp(cmdline, true, true, &process)) {
+  base::LaunchOptions options;
+  options.wait = true;
+  options.start_hidden = true;
+  if (base::LaunchProcess(cmdline, options, &process)) {
     if (exit_code) {
       if (!GetExitCodeProcess(process,
                               reinterpret_cast<DWORD*>(exit_code))) {
@@ -333,7 +337,22 @@ bool UpdateVersionIfMatch(const FilePath& image_file,
       (base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
        base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_READ |
        base::PLATFORM_FILE_EXCLUSIVE_WRITE), NULL, NULL));
-  if (image_handle.Get() != INVALID_HANDLE_VALUE) {
+  // It turns out that the underlying CreateFile can fail due to unhelpful
+  // security software locking the newly created DLL. So add a few brief
+  // retries to help tests that use this pass on machines thusly encumbered.
+  int retries = 3;
+  while (!image_handle.IsValid() && retries-- > 0) {
+    LOG(WARNING) << "Failed to open \"" << image_file.value() << "\"."
+                 << " Retrying " << retries << " more times.";
+    Sleep(1000);
+    image_handle.Set(base::CreatePlatformFile(
+      image_file,
+      (base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
+       base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_READ |
+       base::PLATFORM_FILE_EXCLUSIVE_WRITE), NULL, NULL));
+  }
+
+  if (image_handle.IsValid()) {
     MappedFile image_mapping;
     if (image_mapping.Initialize(image_handle)) {
       base::win::PEImageAsData image(

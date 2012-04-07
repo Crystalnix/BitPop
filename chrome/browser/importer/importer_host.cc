@@ -4,6 +4,7 @@
 
 #include "chrome/browser/importer/importer_host.h"
 
+#include "base/bind.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/browser_process.h"
@@ -14,12 +15,16 @@
 #include "chrome/browser/importer/importer_type.h"
 #include "chrome/browser/importer/in_process_importer_bridge.h"
 #include "chrome/browser/importer/toolbar_importer_utils.h"
+#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -28,13 +33,14 @@
 #include "ui/base/message_box_win.h"
 #endif
 
+using content::BrowserThread;
+
 ImporterHost::ImporterHost()
     : profile_(NULL),
-      task_(NULL),
-      importer_(NULL),
       waiting_for_bookmarkbar_model_(false),
       installed_bookmark_observer_(false),
       is_source_readable_(true),
+      importer_(NULL),
       headless_(false),
       parent_window_(NULL),
       observer_(NULL) {
@@ -60,10 +66,9 @@ void ImporterHost::OnImportLockDialogEnd(bool is_continue) {
       ShowWarningDialog();
     }
   } else {
-    // User chose to skip the import process. We should delete
-    // the task and notify the ImporterHost to finish.
-    delete task_;
-    task_ = NULL;
+    // User chose to skip the import process. We should reset the |task_| and
+    // notify the ImporterHost to finish.
+    task_ = base::Closure();
     importer_ = NULL;
     NotifyImportEnded();
   }
@@ -103,8 +108,21 @@ void ImporterHost::StartImportSettings(
     bool first_run) {
   // We really only support importing from one host at a time.
   DCHECK(!profile_);
+  DCHECK(target_profile);
 
   profile_ = target_profile;
+  PrefService* user_prefs = profile_->GetPrefs();
+
+  // Make sure only items that were not disabled by policy are imported.
+  if (!user_prefs->GetBoolean(prefs::kImportHistory))
+    items &= ~importer::HISTORY;
+  if (!user_prefs->GetBoolean(prefs::kImportSearchEngine))
+    items &= ~importer::SEARCH_ENGINES;
+  if (!user_prefs->GetBoolean(prefs::kImportBookmarks))
+    items &= ~importer::FAVORITES;
+  if (!user_prefs->GetBoolean(prefs::kImportSavedPasswords))
+    items &= ~importer::PASSWORDS;
+
   // Preserves the observer and creates a task, since we do async import so that
   // it doesn't block the UI. When the import is complete, observer will be
   // notified.
@@ -120,38 +138,49 @@ void ImporterHost::StartImportSettings(
 
   scoped_refptr<InProcessImporterBridge> bridge(
       new InProcessImporterBridge(writer_.get(), this));
-  task_ = NewRunnableMethod(
-      importer_, &Importer::StartImport, source_profile, items, bridge);
+  task_ = base::Bind(
+      &Importer::StartImport, importer_, source_profile, items, bridge);
 
   CheckForFirefoxLock(source_profile, items, first_run);
 
 #if defined(OS_WIN)
   // For google toolbar import, we need the user to log in and store their GAIA
   // credentials.
-  if (source_profile.importer_type == importer::GOOGLE_TOOLBAR5) {
-    if (!toolbar_importer_utils::IsGoogleGAIACookieInstalled()) {
-      ui::MessageBox(
-          NULL,
-          UTF16ToWide(l10n_util::GetStringUTF16(
-              IDS_IMPORTER_GOOGLE_LOGIN_TEXT)).c_str(),
-          L"",
-          MB_OK | MB_TOPMOST);
-
-      GURL url("https://www.google.com/accounts/ServiceLogin");
-      BrowserList::GetLastActive()->AddSelectedTabWithURL(
-          url, PageTransition::TYPED);
-
-      MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &ImporterHost::OnImportLockDialogEnd, false));
-
-      is_source_readable_ = false;
-    }
+  if (source_profile.importer_type == importer::TYPE_GOOGLE_TOOLBAR5) {
+    toolbar_importer_utils::IsGoogleGAIACookieInstalled(
+        base::Bind(&ImporterHost::OnGoogleGAIACookieChecked, this), profile_);
+    is_source_readable_ = false;
   }
 #endif
 
   CheckForLoadedModels(items);
   AddRef();
   InvokeTaskIfDone();
+}
+
+void ImporterHost::OnGoogleGAIACookieChecked(bool result) {
+#if defined(OS_WIN)
+  if (!result) {
+    ui::MessageBox(
+        NULL,
+        UTF16ToWide(l10n_util::GetStringUTF16(
+            IDS_IMPORTER_GOOGLE_LOGIN_TEXT)).c_str(),
+        L"",
+        MB_OK | MB_TOPMOST);
+
+    GURL url("https://www.google.com/accounts/ServiceLogin");
+    DCHECK(profile_);
+    Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
+    if (browser)
+      browser->AddSelectedTabWithURL(url, content::PAGE_TRANSITION_TYPED);
+
+    MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+        &ImporterHost::OnImportLockDialogEnd, this, false));
+  } else {
+    is_source_readable_ = true;
+    InvokeTaskIfDone();
+  }
+#endif
 }
 
 void ImporterHost::Cancel() {
@@ -164,8 +193,7 @@ ImporterHost::~ImporterHost() {
     importer_->Release();
 
   if (installed_bookmark_observer_) {
-    DCHECK(profile_);  // Only way for waiting_for_bookmarkbar_model_ to be true
-                       // is if we have a profile.
+    DCHECK(profile_);
     profile_->GetBookmarkModel()->RemoveObserver(this);
   }
 }
@@ -174,8 +202,8 @@ void ImporterHost::CheckForFirefoxLock(
     const importer::SourceProfile& source_profile,
     uint16 items,
     bool first_run) {
-  if (source_profile.importer_type == importer::FIREFOX2 ||
-      source_profile.importer_type == importer::FIREFOX3) {
+  if (source_profile.importer_type == importer::TYPE_FIREFOX2 ||
+      source_profile.importer_type == importer::TYPE_FIREFOX3) {
     DCHECK(!firefox_lock_.get());
     firefox_lock_.reset(new FirefoxProfileLock(source_profile.source_path));
     if (!firefox_lock_->HasAcquired()) {
@@ -188,6 +216,9 @@ void ImporterHost::CheckForFirefoxLock(
 }
 
 void ImporterHost::CheckForLoadedModels(uint16 items) {
+  // A target profile must be loaded by StartImportSettings().
+  DCHECK(profile_);
+
   // BookmarkModel should be loaded before adding IE favorites. So we observe
   // the BookmarkModel if needed, and start the task after it has been loaded.
   if ((items & importer::FAVORITES) && !writer_->BookmarkModelIsLoaded()) {
@@ -196,14 +227,15 @@ void ImporterHost::CheckForLoadedModels(uint16 items) {
     installed_bookmark_observer_ = true;
   }
 
-  // Observes the TemplateURLModel if needed to import search engines from the
+  // Observes the TemplateURLService if needed to import search engines from the
   // other browser. We also check to see if we're importing bookmarks because
   // we can import bookmark keywords from Firefox as search engines.
   if ((items & importer::SEARCH_ENGINES) || (items & importer::FAVORITES)) {
-    if (!writer_->TemplateURLModelIsLoaded()) {
-      TemplateURLModel* model = profile_->GetTemplateURLModel();
-      registrar_.Add(this, NotificationType::TEMPLATE_URL_MODEL_LOADED,
-                     Source<TemplateURLModel>(model));
+    if (!writer_->TemplateURLServiceIsLoaded()) {
+      TemplateURLService* model =
+          TemplateURLServiceFactory::GetForProfile(profile_);
+      registrar_.Add(this, chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
+                     content::Source<TemplateURLService>(model));
       model->Load();
     }
   }
@@ -216,7 +248,7 @@ void ImporterHost::InvokeTaskIfDone() {
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE, task_);
 }
 
-void ImporterHost::Loaded(BookmarkModel* model) {
+void ImporterHost::Loaded(BookmarkModel* model, bool ids_reassigned) {
   DCHECK(model->IsLoaded());
   model->RemoveObserver(this);
   waiting_for_bookmarkbar_model_ = false;
@@ -232,10 +264,10 @@ void ImporterHost::BookmarkModelBeingDeleted(BookmarkModel* model) {
 void ImporterHost::BookmarkModelChanged() {
 }
 
-void ImporterHost::Observe(NotificationType type,
-                           const NotificationSource& source,
-                           const NotificationDetails& details) {
-  DCHECK(type == NotificationType::TEMPLATE_URL_MODEL_LOADED);
+void ImporterHost::Observe(int type,
+                           const content::NotificationSource& source,
+                           const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED);
   registrar_.RemoveAll();
   InvokeTaskIfDone();
 }

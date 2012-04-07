@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,29 +6,23 @@
 #define CHROME_BROWSER_UI_VIEWS_FRAME_OPAQUE_BROWSER_FRAME_VIEW_H_
 #pragma once
 
-#include "base/scoped_ptr.h"
-#include "chrome/browser/prefs/pref_member.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
 #include "chrome/browser/ui/views/tab_icon_view.h"
-#include "views/controls/button/button.h"
-#include "views/window/non_client_view.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/window/non_client_view.h"
 
 class BrowserView;
-namespace gfx {
-class Font;
-}
-class ProfileMenuButton;
-class ProfileMenuModel;
-class ProfileTagView;
-class TabContents;
 namespace views {
 class ImageButton;
-class ImageView;
+class FrameBackground;
 }
 
 class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
-                               public NotificationObserver,
+                               public content::NotificationObserver,
                                public views::ButtonListener,
                                public TabIconView::TabIconViewModel {
  public:
@@ -43,7 +37,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
  protected:
-  BrowserView* browser_view() const { return browser_view_; }
   views::ImageButton* minimize_button() const { return minimize_button_; }
   views::ImageButton* maximize_button() const { return maximize_button_; }
   views::ImageButton* restore_button() const { return restore_button_; }
@@ -56,24 +49,20 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
 
   // Returns the height of the entire nonclient top border, including the window
   // frame, any title area, and any connected client edge.  If |restored| is
-  // true, acts as if the window is restored regardless of the real mode.  If
-  // |ignore_vertical_tabs| is true, acts as if vertical tabs are off regardless
-  // of the real state.
-  int NonClientTopBorderHeight(bool restored, bool ignore_vertical_tabs) const;
+  // true, acts as if the window is restored regardless of the real mode.
+  int NonClientTopBorderHeight(bool restored) const;
 
   // Allows a subclass to tweak the frame. Chromeos uses this to support
   // drawing themes correctly. |theme_offset| is used to adjust the y offset
   // of the theme frame bitmap, so they start at the right location.
-  // |left_corner| and |right_corner| will be used on the left and right of
-  // the tabstrip area as opposed to the theme frame.
+  // |theme_frame| will be used as theme frame bitmap. |left_corner| and
+  // |right_corner| will be used on the left and right of the tabstrip area
+  // as opposed to the theme frame.
   virtual void ModifyMaximizedFramePainting(
       int* theme_offset,
+      SkBitmap** theme_frame,
       SkBitmap** left_corner,
       SkBitmap** right_corner);
-
-  // Expose these to subclasses.
-  BrowserFrame* frame() { return frame_; }
-  BrowserView* browser_view() { return browser_view_; }
 
   // Overridden from views::NonClientFrameView:
   virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
@@ -82,7 +71,6 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
   virtual void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask)
       OVERRIDE;
-  virtual void EnableClose(bool enable) OVERRIDE;
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
 
@@ -101,10 +89,10 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   virtual SkBitmap GetFaviconForTabIconView() OVERRIDE;
 
  protected:
-  // NotificationObserver implementation:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver implementation:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // Returns the thickness of the border that makes up the window frame edges.
@@ -144,29 +132,27 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   void PaintMaximizedFrameBorder(gfx::Canvas* canvas);
   void PaintTitleBar(gfx::Canvas* canvas);
   void PaintToolbarBackground(gfx::Canvas* canvas);
-  void PaintOTRAvatar(gfx::Canvas* canvas);
   void PaintRestoredClientEdge(gfx::Canvas* canvas);
+
+  // Compute aspects of the frame needed to paint the frame background.
+  SkColor GetFrameColor() const;
+  SkBitmap* GetFrameBitmap() const;
+  SkBitmap* GetFrameOverlayBitmap() const;
+  int GetTopAreaHeight() const;
 
   // Layout various sub-components of this view.
   void LayoutWindowControls();
   void LayoutTitleBar();
-  void LayoutOTRAvatar();
-  void LayoutProfileTag();
+  void LayoutAvatar();
 
   // Returns the bounds of the client area for the specified view size.
   gfx::Rect CalculateClientAreaBounds(int width, int height) const;
 
-  // Receive notifications when the user's Google services user name changes.
-  void RegisterLoginNotifications();
-
-  // Returns true if the ProfileButton has been created.
-  bool show_profile_button() const { return profile_button_.get() != NULL; }
-
   // The layout rect of the title, if visible.
   gfx::Rect title_bounds_;
 
-  // The layout rect of the OTR avatar icon, if visible.
-  gfx::Rect otr_avatar_bounds_;
+  // The layout rect of the avatar icon, if visible.
+  gfx::Rect avatar_bounds_;
 
   // Window controls.
   views::ImageButton* minimize_button_;
@@ -177,23 +163,13 @@ class OpaqueBrowserFrameView : public BrowserNonClientFrameView,
   // The Window icon.
   TabIconView* window_icon_;
 
-  // The frame that hosts this view.
-  BrowserFrame* frame_;
-
-  // The BrowserView hosted within this View.
-  BrowserView* browser_view_;
-
   // The bounds of the ClientView.
   gfx::Rect client_view_bounds_;
 
-  // Menu button that displays user's name and multi-profile menu.
-  scoped_ptr<ProfileMenuButton> profile_button_;
+  content::NotificationRegistrar registrar_;
 
-  // Image tag displayed on frame beneath profile_button_.
-  scoped_ptr<ProfileTagView> profile_tag_;
-
-  // The Google services user name associated with this BrowserView's profile.
-  StringPrefMember username_pref_;
+  // Background painter for the window frame.
+  scoped_ptr<views::FrameBackground> frame_background_;
 
   DISALLOW_COPY_AND_ASSIGN(OpaqueBrowserFrameView);
 };

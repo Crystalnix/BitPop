@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
@@ -19,7 +20,8 @@ namespace history {
 class StarredURLDatabaseTest : public testing::Test,
                                public StarredURLDatabase {
  public:
-  StarredURLDatabaseTest() {
+  StarredURLDatabaseTest()
+      : StarredURLDatabase(&db_) {
   }
 
   void AddPage(const GURL& url) {
@@ -65,7 +67,7 @@ class StarredURLDatabaseTest : public testing::Test,
 
  private:
   // Test setup.
-  void SetUp() {
+  virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     db_file_ = temp_dir_.path().AppendASCII("VisitTest.db");
     file_util::Delete(db_file_, false);
@@ -85,13 +87,8 @@ class StarredURLDatabaseTest : public testing::Test,
     CreateMainURLIndex();
     EnsureStarredIntegrity();
   }
-  void TearDown() {
+  virtual void TearDown() OVERRIDE {
     db_.Close();
-  }
-
-  // Provided for URL/StarredURLDatabase.
-  virtual sql::Connection& GetDB() {
-    return db_;
   }
 
   ScopedTempDir temp_dir_;
@@ -119,7 +116,7 @@ TEST_F(StarredURLDatabaseTest, FixOrphanedFolder) {
 
   // Make sure the folder was moved to the bookmark bar folder.
   ASSERT_TRUE(GetStarredEntry(g_entry.id, &g_entry));
-  ASSERT_EQ(HistoryService::kBookmarkBarID, g_entry.parent_folder_id);
+  ASSERT_EQ(kBookmarkBarID, g_entry.parent_folder_id);
   ASSERT_EQ(0, g_entry.visual_order);
 }
 
@@ -147,10 +144,10 @@ TEST_F(StarredURLDatabaseTest, FixOrphanedBookmarks) {
   // Make sure the entries were moved to the bookmark bar and the visual order
   // order was updated appropriately.
   ASSERT_TRUE(GetStarredEntry(entry1.id, &entry1));
-  ASSERT_EQ(HistoryService::kBookmarkBarID, entry1.parent_folder_id);
+  ASSERT_EQ(kBookmarkBarID, entry1.parent_folder_id);
 
   ASSERT_TRUE(GetStarredEntry(entry2.id, &entry2));
-  ASSERT_EQ(HistoryService::kBookmarkBarID, entry2.parent_folder_id);
+  ASSERT_EQ(kBookmarkBarID, entry2.parent_folder_id);
   ASSERT_TRUE((entry1.visual_order == 0 && entry2.visual_order == 1) ||
               (entry1.visual_order == 1 && entry2.visual_order == 0));
 }
@@ -173,7 +170,7 @@ TEST_F(StarredURLDatabaseTest, FixFolderCycleDepth0) {
   // Make sure the folder were moved to the bookmark bar and the visual order
   // order was updated appropriately.
   ASSERT_TRUE(GetStarredEntry(entry1.id, &entry1));
-  ASSERT_EQ(HistoryService::kBookmarkBarID, entry1.parent_folder_id);
+  ASSERT_EQ(kBookmarkBarID, entry1.parent_folder_id);
   ASSERT_EQ(0, entry1.visual_order);
 }
 
@@ -203,7 +200,7 @@ TEST_F(StarredURLDatabaseTest, FixFolderCycleDepth1) {
   // breaks the cycle.
   ASSERT_TRUE(GetStarredEntry(entry1.id, &entry1));
   ASSERT_TRUE(GetStarredEntry(entry2.id, &entry2));
-  ASSERT_EQ(HistoryService::kBookmarkBarID, entry1.parent_folder_id);
+  ASSERT_EQ(kBookmarkBarID, entry1.parent_folder_id);
   ASSERT_EQ(100, entry2.parent_folder_id);
   ASSERT_EQ(0, entry1.visual_order);
   ASSERT_EQ(0, entry2.visual_order);
@@ -215,14 +212,14 @@ TEST_F(StarredURLDatabaseTest, FixVisualOrder) {
   // Star two urls.
   StarredEntry entry1;
   entry1.url = GURL("http://google.com/1");
-  entry1.parent_folder_id = HistoryService::kBookmarkBarID;
+  entry1.parent_folder_id = kBookmarkBarID;
   entry1.visual_order = 5;
   CreateStarredEntry(&entry1);
 
   // Add url2 and star it.
   StarredEntry entry2;
   entry2.url = GURL("http://google.com/2");
-  entry2.parent_folder_id = HistoryService::kBookmarkBarID;
+  entry2.parent_folder_id = kBookmarkBarID;
   entry2.visual_order = 10;
   CreateStarredEntry(&entry2);
 
@@ -248,7 +245,7 @@ TEST_F(StarredURLDatabaseTest, FixDuplicateFolderIDs) {
   StarredEntry entry1;
   entry1.type = StarredEntry::USER_FOLDER;
   entry1.folder_id = 10;
-  entry1.parent_folder_id = HistoryService::kBookmarkBarID;
+  entry1.parent_folder_id = kBookmarkBarID;
   CreateStarredEntry(&entry1);
   StarredEntry entry2 = entry1;
   CreateStarredEntry(&entry2);
@@ -269,7 +266,7 @@ TEST_F(StarredURLDatabaseTest, RemoveStarredEntriesWithEmptyURL) {
   StarredEntry entry;
   entry.url = GURL("http://google.com");
   entry.title = UTF8ToUTF16("FOO");
-  entry.parent_folder_id = HistoryService::kBookmarkBarID;
+  entry.parent_folder_id = kBookmarkBarID;
 
   ASSERT_NE(0, CreateStarredEntry(&entry));
 

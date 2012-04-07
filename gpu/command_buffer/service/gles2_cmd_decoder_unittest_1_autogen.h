@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This file is auto-generated. DO NOT EDIT!
+// This file is auto-generated from
+// gpu/command_buffer/build_gles2_cmd_buffer.py
+// DO NOT EDIT!
 
 // It is included by gles2_cmd_decoder_unittest_1.cc
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_DECODER_UNITTEST_1_AUTOGEN_H_
@@ -326,10 +328,9 @@ TEST_F(GLES2DecoderTest1, ClearStencilValidArgs) {
 }
 
 TEST_F(GLES2DecoderTest1, ColorMaskValidArgs) {
-  EXPECT_CALL(*gl_, ColorMask(1, 2, 3, 4));
   SpecializedSetup<ColorMask, 0>(true);
   ColorMask cmd;
-  cmd.Init(1, 2, 3, 4);
+  cmd.Init(true, true, true, true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
@@ -642,10 +643,9 @@ TEST_F(GLES2DecoderTest1, DepthFuncValidArgs) {
 }
 
 TEST_F(GLES2DecoderTest1, DepthMaskValidArgs) {
-  EXPECT_CALL(*gl_, DepthMask(1));
   SpecializedSetup<DepthMask, 0>(true);
   DepthMask cmd;
-  cmd.Init(1);
+  cmd.Init(true);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
@@ -704,6 +704,7 @@ TEST_F(GLES2DecoderTest1, DisableVertexAttribArrayValidArgs) {
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 // TODO(gman): DrawArrays
+
 // TODO(gman): DrawElements
 
 
@@ -877,23 +878,23 @@ TEST_F(GLES2DecoderTest1, GenBuffersInvalidArgs) {
 TEST_F(GLES2DecoderTest1, GenBuffersImmediateValidArgs) {
   EXPECT_CALL(*gl_, GenBuffersARB(1, _))
       .WillOnce(SetArgumentPointee<1>(kNewServiceId));
-  GenBuffersImmediate& cmd = *GetImmediateAs<GenBuffersImmediate>();
+  GenBuffersImmediate* cmd = GetImmediateAs<GenBuffersImmediate>();
   GLuint temp = kNewClientId;
   SpecializedSetup<GenBuffersImmediate, 0>(true);
-  cmd.Init(1, &temp);
+  cmd->Init(1, &temp);
   EXPECT_EQ(error::kNoError,
-            ExecuteImmediateCmd(cmd, sizeof(temp)));
+            ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(GetBufferInfo(kNewClientId) != NULL);
 }
 
 TEST_F(GLES2DecoderTest1, GenBuffersImmediateInvalidArgs) {
   EXPECT_CALL(*gl_, GenBuffersARB(_, _)).Times(0);
-  GenBuffersImmediate& cmd = *GetImmediateAs<GenBuffersImmediate>();
+  GenBuffersImmediate* cmd = GetImmediateAs<GenBuffersImmediate>();
   SpecializedSetup<GenBuffersImmediate, 0>(false);
-  cmd.Init(1, &client_buffer_id_);
+  cmd->Init(1, &client_buffer_id_);
   EXPECT_EQ(error::kInvalidArguments,
-            ExecuteImmediateCmd(cmd, sizeof(&client_buffer_id_)));
+            ExecuteImmediateCmd(*cmd, sizeof(&client_buffer_id_)));
 }
 
 TEST_F(GLES2DecoderTest1, GenerateMipmapValidArgs) {
@@ -947,23 +948,23 @@ TEST_F(GLES2DecoderTest1, GenFramebuffersInvalidArgs) {
 TEST_F(GLES2DecoderTest1, GenFramebuffersImmediateValidArgs) {
   EXPECT_CALL(*gl_, GenFramebuffersEXT(1, _))
       .WillOnce(SetArgumentPointee<1>(kNewServiceId));
-  GenFramebuffersImmediate& cmd = *GetImmediateAs<GenFramebuffersImmediate>();
+  GenFramebuffersImmediate* cmd = GetImmediateAs<GenFramebuffersImmediate>();
   GLuint temp = kNewClientId;
   SpecializedSetup<GenFramebuffersImmediate, 0>(true);
-  cmd.Init(1, &temp);
+  cmd->Init(1, &temp);
   EXPECT_EQ(error::kNoError,
-            ExecuteImmediateCmd(cmd, sizeof(temp)));
+            ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(GetFramebufferInfo(kNewClientId) != NULL);
 }
 
 TEST_F(GLES2DecoderTest1, GenFramebuffersImmediateInvalidArgs) {
   EXPECT_CALL(*gl_, GenFramebuffersEXT(_, _)).Times(0);
-  GenFramebuffersImmediate& cmd = *GetImmediateAs<GenFramebuffersImmediate>();
+  GenFramebuffersImmediate* cmd = GetImmediateAs<GenFramebuffersImmediate>();
   SpecializedSetup<GenFramebuffersImmediate, 0>(false);
-  cmd.Init(1, &client_framebuffer_id_);
+  cmd->Init(1, &client_framebuffer_id_);
   EXPECT_EQ(error::kInvalidArguments,
-            ExecuteImmediateCmd(cmd, sizeof(&client_framebuffer_id_)));
+            ExecuteImmediateCmd(*cmd, sizeof(&client_framebuffer_id_)));
 }
 
 TEST_F(GLES2DecoderTest1, GenRenderbuffersValidArgs) {
@@ -990,25 +991,23 @@ TEST_F(GLES2DecoderTest1, GenRenderbuffersInvalidArgs) {
 TEST_F(GLES2DecoderTest1, GenRenderbuffersImmediateValidArgs) {
   EXPECT_CALL(*gl_, GenRenderbuffersEXT(1, _))
       .WillOnce(SetArgumentPointee<1>(kNewServiceId));
-  GenRenderbuffersImmediate& cmd =
-      *GetImmediateAs<GenRenderbuffersImmediate>();
+  GenRenderbuffersImmediate* cmd = GetImmediateAs<GenRenderbuffersImmediate>();
   GLuint temp = kNewClientId;
   SpecializedSetup<GenRenderbuffersImmediate, 0>(true);
-  cmd.Init(1, &temp);
+  cmd->Init(1, &temp);
   EXPECT_EQ(error::kNoError,
-            ExecuteImmediateCmd(cmd, sizeof(temp)));
+            ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(GetRenderbufferInfo(kNewClientId) != NULL);
 }
 
 TEST_F(GLES2DecoderTest1, GenRenderbuffersImmediateInvalidArgs) {
   EXPECT_CALL(*gl_, GenRenderbuffersEXT(_, _)).Times(0);
-  GenRenderbuffersImmediate& cmd =
-      *GetImmediateAs<GenRenderbuffersImmediate>();
+  GenRenderbuffersImmediate* cmd = GetImmediateAs<GenRenderbuffersImmediate>();
   SpecializedSetup<GenRenderbuffersImmediate, 0>(false);
-  cmd.Init(1, &client_renderbuffer_id_);
+  cmd->Init(1, &client_renderbuffer_id_);
   EXPECT_EQ(error::kInvalidArguments,
-            ExecuteImmediateCmd(cmd, sizeof(&client_renderbuffer_id_)));
+            ExecuteImmediateCmd(*cmd, sizeof(&client_renderbuffer_id_)));
 }
 
 TEST_F(GLES2DecoderTest1, GenTexturesValidArgs) {
@@ -1035,23 +1034,23 @@ TEST_F(GLES2DecoderTest1, GenTexturesInvalidArgs) {
 TEST_F(GLES2DecoderTest1, GenTexturesImmediateValidArgs) {
   EXPECT_CALL(*gl_, GenTextures(1, _))
       .WillOnce(SetArgumentPointee<1>(kNewServiceId));
-  GenTexturesImmediate& cmd = *GetImmediateAs<GenTexturesImmediate>();
+  GenTexturesImmediate* cmd = GetImmediateAs<GenTexturesImmediate>();
   GLuint temp = kNewClientId;
   SpecializedSetup<GenTexturesImmediate, 0>(true);
-  cmd.Init(1, &temp);
+  cmd->Init(1, &temp);
   EXPECT_EQ(error::kNoError,
-            ExecuteImmediateCmd(cmd, sizeof(temp)));
+            ExecuteImmediateCmd(*cmd, sizeof(temp)));
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
   EXPECT_TRUE(GetTextureInfo(kNewClientId) != NULL);
 }
 
 TEST_F(GLES2DecoderTest1, GenTexturesImmediateInvalidArgs) {
   EXPECT_CALL(*gl_, GenTextures(_, _)).Times(0);
-  GenTexturesImmediate& cmd = *GetImmediateAs<GenTexturesImmediate>();
+  GenTexturesImmediate* cmd = GetImmediateAs<GenTexturesImmediate>();
   SpecializedSetup<GenTexturesImmediate, 0>(false);
-  cmd.Init(1, &client_texture_id_);
+  cmd->Init(1, &client_texture_id_);
   EXPECT_EQ(error::kInvalidArguments,
-            ExecuteImmediateCmd(cmd, sizeof(&client_texture_id_)));
+            ExecuteImmediateCmd(*cmd, sizeof(&client_texture_id_)));
 }
 // TODO(gman): GetActiveAttrib
 

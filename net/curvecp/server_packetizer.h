@@ -8,6 +8,7 @@
 
 #include <map>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/completion_callback.h"
 #include "net/base/ip_endpoint.h"
@@ -37,10 +38,10 @@ class ServerPacketizer : public base::RefCounted<ServerPacketizer>,
   virtual int SendMessage(ConnectionKey key,
                           const char* data,
                           size_t length,
-                          CompletionCallback* callback);
-  virtual void Close(ConnectionKey key);
-  virtual int GetPeerAddress(IPEndPoint* endpoint) const;
-  virtual int max_message_payload() const;
+                          const CompletionCallback& callback) OVERRIDE;
+  virtual void Close(ConnectionKey key) OVERRIDE;
+  virtual int GetPeerAddress(IPEndPoint* endpoint) const OVERRIDE;
+  virtual int max_message_payload() const OVERRIDE;
 
  private:
   enum State {
@@ -85,9 +86,6 @@ class ServerPacketizer : public base::RefCounted<ServerPacketizer>,
   ConnectionMap connection_map_;
   // The listener map tracks active message listeners known to the packetizer.
   ListenerMap listener_map_;
-
-  CompletionCallbackImpl<ServerPacketizer> read_callback_;
-  CompletionCallbackImpl<ServerPacketizer> write_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerPacketizer);
 };

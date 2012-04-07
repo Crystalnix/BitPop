@@ -5,7 +5,8 @@
 #include "content/browser/resource_context.h"
 
 #include "base/logging.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/plugin_process_host.h"
+#include "content/public/browser/browser_thread.h"
 #include "webkit/database/database_tracker.h"
 
 namespace content {
@@ -16,11 +17,22 @@ ResourceContext::ResourceContext()
       appcache_service_(NULL),
       database_tracker_(NULL),
       file_system_context_(NULL),
-      blob_storage_context_(NULL) {
+      blob_storage_context_(NULL),
+      quota_manager_(NULL),
+      host_zoom_map_(NULL),
+      media_observer_(NULL),
+      media_stream_manager_(NULL),
+      audio_manager_(NULL) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-ResourceContext::~ResourceContext() {}
+ResourceContext::~ResourceContext() {
+  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
+    // Band-aid for http://crbug.com/94704 until we change plug-in channel
+    // requests to be owned by the ResourceContext.
+    PluginProcessHost::CancelPendingRequestsForResourceContext(this);
+  }
+}
 
 void* ResourceContext::GetUserData(const void* key) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -131,29 +143,39 @@ void ResourceContext::set_host_zoom_map(HostZoomMap* host_zoom_map) {
   host_zoom_map_ = host_zoom_map;
 }
 
-const ExtensionInfoMap* ResourceContext::extension_info_map() const {
+MediaObserver* ResourceContext::media_observer() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   EnsureInitialized();
-  return extension_info_map_;
+  return media_observer_;
 }
 
-void ResourceContext::set_extension_info_map(
-    ExtensionInfoMap* extension_info_map) {
+void ResourceContext::set_media_observer(MediaObserver* media_observer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  extension_info_map_ = extension_info_map;
+  media_observer_ = media_observer;
 }
 
-const base::WeakPtr<prerender::PrerenderManager>&
-ResourceContext::prerender_manager() const {
+media_stream::MediaStreamManager*
+ResourceContext::media_stream_manager() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   EnsureInitialized();
-  return prerender_manager_;
+  return media_stream_manager_;
 }
 
-void ResourceContext::set_prerender_manager(
-    const base::WeakPtr<prerender::PrerenderManager>& prerender_manager) {
+void ResourceContext::set_media_stream_manager(
+    media_stream::MediaStreamManager* media_stream_manager) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  prerender_manager_ = prerender_manager;
+  media_stream_manager_ = media_stream_manager;
+}
+
+AudioManager* ResourceContext::audio_manager() const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  EnsureInitialized();
+  return audio_manager_;
+}
+
+void ResourceContext::set_audio_manager(AudioManager* audio_manager) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  audio_manager_ = audio_manager;
 }
 
 }  // namespace content

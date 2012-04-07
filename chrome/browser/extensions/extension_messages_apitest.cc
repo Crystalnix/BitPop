@@ -5,53 +5,55 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_event_router.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "googleurl/src/gurl.h"
 
 namespace {
 
-class MessageSender : public NotificationObserver {
+class MessageSender : public content::NotificationObserver {
  public:
   MessageSender() {
-    registrar_.Add(this, NotificationType::EXTENSION_HOST_DID_STOP_LOADING,
-                   NotificationService::AllSources());
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                   content::NotificationService::AllSources());
   }
 
  private:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
     ExtensionEventRouter* event_router =
-        Source<Profile>(source).ptr()->GetExtensionEventRouter();
+        content::Source<Profile>(source).ptr()->GetExtensionEventRouter();
 
     // Sends four messages to the extension. All but the third message sent
     // from the origin http://b.com/ are supposed to arrive.
     event_router->DispatchEventToRenderers("test.onMessage",
         "[{\"lastMessage\":false,\"data\":\"no restriction\"}]",
-        Source<Profile>(source).ptr(),
+        content::Source<Profile>(source).ptr(),
         GURL());
     event_router->DispatchEventToRenderers("test.onMessage",
         "[{\"lastMessage\":false,\"data\":\"http://a.com/\"}]",
-        Source<Profile>(source).ptr(),
+        content::Source<Profile>(source).ptr(),
         GURL("http://a.com/"));
     event_router->DispatchEventToRenderers("test.onMessage",
         "[{\"lastMessage\":false,\"data\":\"http://b.com/\"}]",
-        Source<Profile>(source).ptr(),
+        content::Source<Profile>(source).ptr(),
         GURL("http://b.com/"));
     event_router->DispatchEventToRenderers("test.onMessage",
         "[{\"lastMessage\":true,\"data\":\"last message\"}]",
-        Source<Profile>(source).ptr(),
+        content::Source<Profile>(source).ptr(),
         GURL());
   }
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 }  // namespace
 
 // Tests that message passing between extensions and content scripts works.
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, Messaging) {
+// Flaky on the trybots. See http://crbug.com/96725.
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, FLAKY_Messaging) {
   ASSERT_TRUE(StartTestServer());
   ASSERT_TRUE(RunExtensionTest("messaging/connect")) << message_;
 }

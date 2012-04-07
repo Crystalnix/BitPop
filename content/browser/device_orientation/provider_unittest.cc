@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include "base/message_loop.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "content/browser/device_orientation/data_fetcher.h"
 #include "content/browser/device_orientation/orientation.h"
 #include "content/browser/device_orientation/provider.h"
@@ -22,6 +21,8 @@ class UpdateChecker : public Provider::Observer {
   explicit UpdateChecker(int* expectations_count_ptr)
       : expectations_count_ptr_(expectations_count_ptr) {
   }
+
+  virtual ~UpdateChecker() {}
 
   // From Provider::Observer.
   virtual void OnOrientationUpdate(const Orientation& orientation) {
@@ -43,7 +44,7 @@ class UpdateChecker : public Provider::Observer {
     --(*expectations_count_ptr_);
 
     if (*expectations_count_ptr_ == 0) {
-      MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+      MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     }
   }
 
@@ -246,7 +247,16 @@ TEST_F(DeviceOrientationProviderTest, MultipleObserversPushTest) {
   provider_->RemoveObserver(checker_c.get());
 }
 
-TEST_F(DeviceOrientationProviderTest, ObserverNotRemoved) {
+#if defined(OS_LINUX)
+// Flakily DCHECKs on Linux. See crbug.com/104950.
+#define MAYBE_ObserverNotRemoved DISABLED_ObserverNotRemoved
+#elif defined(OS_WIN)
+// FLAKY on Win. See crbug.com/104950.
+#define MAYBE_ObserverNotRemoved FLAKY_ObserverNotRemoved
+#else
+#define MAYBE_ObserverNotRemoved ObserverNotRemoved
+#endif
+TEST_F(DeviceOrientationProviderTest, MAYBE_ObserverNotRemoved) {
   scoped_refptr<MockOrientationFactory> orientation_factory(
       new MockOrientationFactory());
   Init(MockOrientationFactory::CreateDataFetcher);
@@ -266,7 +276,13 @@ TEST_F(DeviceOrientationProviderTest, ObserverNotRemoved) {
   // Note that checker is not removed. This should not be a problem.
 }
 
-TEST_F(DeviceOrientationProviderTest, StartFailing) {
+#if defined(OS_WIN)
+// FLAKY on Win. See crbug.com/104950.
+#define MAYBE_StartFailing FLAKY_StartFailing
+#else
+#define MAYBE_StartFailing StartFailing
+#endif
+TEST_F(DeviceOrientationProviderTest, MAYBE_StartFailing) {
   scoped_refptr<MockOrientationFactory> orientation_factory(
       new MockOrientationFactory());
   Init(MockOrientationFactory::CreateDataFetcher);

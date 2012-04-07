@@ -42,63 +42,50 @@
 #include <map>
 #include <string>
 
+#include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
 
-// Singly-included section.
-#ifndef CONTENT_COMMON_DEVTOOLS_MESSAGES_H_
-#define CONTENT_COMMON_DEVTOOLS_MESSAGES_H_
-
-typedef std::map<std::string, std::string> DevToolsRuntimeProperties;
-
-#endif  // CONTENT_COMMON_DEVTOOLS_MESSAGES_H_
+#undef IPC_MESSAGE_EXPORT
+#define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 #define IPC_MESSAGE_START DevToolsMsgStart
 
 // These are messages sent from DevToolsAgent to DevToolsClient through the
 // browser.
 // WebKit-level transport.
-IPC_MESSAGE_CONTROL1(DevToolsClientMsg_DispatchOnInspectorFrontend,
-                     std::string /* message */)
-
-// Legacy debugger output message.
-IPC_MESSAGE_CONTROL1(DevToolsClientMsg_DebuggerOutput,
-                     std::string /* message */)
-
+IPC_MESSAGE_ROUTED1(DevToolsClientMsg_DispatchOnInspectorFrontend,
+                    std::string /* message */)
 
 //-----------------------------------------------------------------------------
 // These are messages sent from DevToolsClient to DevToolsAgent through the
 // browser.
 // Tells agent that there is a client host connected to it.
-IPC_MESSAGE_CONTROL1(DevToolsAgentMsg_Attach,
-                     DevToolsRuntimeProperties /* properties */)
+IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_Attach)
+
+// Tells agent that a client host was disconnected from another agent and
+// connected to this one.
+IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_Reattach,
+                    std::string /* agent_state */)
 
 // Tells agent that there is no longer a client host connected to it.
-IPC_MESSAGE_CONTROL0(DevToolsAgentMsg_Detach)
-
-// Tells agent that the front-end has been loaded
-IPC_MESSAGE_CONTROL0(DevToolsAgentMsg_FrontendLoaded)
+IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_Detach)
 
 // WebKit-level transport.
-IPC_MESSAGE_CONTROL1(DevToolsAgentMsg_DispatchOnInspectorBackend,
-                     std::string /* message */)
-
-// WebKit-level transport for messages from WorkerInspectorController to
-// InspectorController.
-IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_DispatchMessageFromWorker,
+IPC_MESSAGE_ROUTED1(DevToolsAgentMsg_DispatchOnInspectorBackend,
                     std::string /* message */)
 
-// Send debugger command to the debugger agent. Debugger commands should
-// be handled on IO thread(while all other devtools messages are handled in
-// the render thread) to allow executing the commands when v8 is on a
-// breakpoint.
-IPC_MESSAGE_CONTROL1(DevToolsAgentMsg_DebuggerCommand,
-                     std::string  /* command */)
-
 // Inspect element with the given coordinates.
-IPC_MESSAGE_CONTROL2(DevToolsAgentMsg_InspectElement,
-                     int /* x */,
-                     int /* y */)
+IPC_MESSAGE_ROUTED2(DevToolsAgentMsg_InspectElement,
+                    int /* x */,
+                    int /* y */)
 
+// Notifies worker devtools agent that it should pause worker context
+// when it starts and wait until either DevTools client is attached or
+// explicit resume notification is received.
+IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_PauseWorkerContextOnStart)
+
+// Worker DevTools agent should resume worker execution.
+IPC_MESSAGE_ROUTED0(DevToolsAgentMsg_ResumeWorkerContext)
 
 //-----------------------------------------------------------------------------
 // These are messages sent from the browser to the renderer.
@@ -113,21 +100,16 @@ IPC_MESSAGE_ROUTED0(DevToolsMsg_SetupDevToolsClient)
 //-----------------------------------------------------------------------------
 // These are messages sent from the renderer to the browser.
 
-// Wraps an IPC message that's destined to the DevToolsClient on
-// DevToolsAgent->browser hop.
-IPC_MESSAGE_ROUTED1(DevToolsHostMsg_ForwardToClient,
-                    IPC::Message /* one of DevToolsClientMsg_XXX types */)
-
-// Wraps an IPC message that's destined to the DevToolsAgent on
-// DevToolsClient->browser hop.
-IPC_MESSAGE_ROUTED1(DevToolsHostMsg_ForwardToAgent,
-                    IPC::Message /* one of DevToolsAgentMsg_XXX types */)
-
 // Activates (brings to the front) corresponding dev tools window.
 IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ActivateWindow)
 
 // Closes dev tools window that is inspecting current render_view_host.
 IPC_MESSAGE_ROUTED0(DevToolsHostMsg_CloseWindow)
+
+// Moves the corresponding dev tools window by the specified offset.
+IPC_MESSAGE_ROUTED2(DevToolsHostMsg_MoveWindow,
+                    int /* x */,
+                    int /* y */)
 
 // Attaches dev tools window that is inspecting current render_view_host.
 IPC_MESSAGE_ROUTED0(DevToolsHostMsg_RequestDockWindow)
@@ -135,23 +117,31 @@ IPC_MESSAGE_ROUTED0(DevToolsHostMsg_RequestDockWindow)
 // Detaches dev tools window that is inspecting current render_view_host.
 IPC_MESSAGE_ROUTED0(DevToolsHostMsg_RequestUndockWindow)
 
+// Specifies side for devtools to dock to.
+IPC_MESSAGE_ROUTED1(DevToolsHostMsg_RequestSetDockSide,
+                    std::string /* side */)
+
+// Opens given URL in the new tab.
+IPC_MESSAGE_ROUTED1(DevToolsHostMsg_OpenInNewTab,
+                    std::string /* url */)
+
 // Shows Save As dialog for content.
 IPC_MESSAGE_ROUTED2(DevToolsHostMsg_SaveAs,
                     std::string /* file_name */,
                     std::string /* content */)
 
-// Updates runtime features store in devtools manager in order to support
+// Updates agent runtime state stored in devtools manager in order to support
 // cross-navigation instrumentation.
-IPC_MESSAGE_ROUTED2(DevToolsHostMsg_RuntimePropertyChanged,
-                    std::string /* name */,
-                    std::string /* value */)
+IPC_MESSAGE_ROUTED1(DevToolsHostMsg_SaveAgentRuntimeState,
+                    std::string /* state */)
+
+// Clears browser cache.
+IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCache)
+
+// Clears browser cookies.
+IPC_MESSAGE_ROUTED0(DevToolsHostMsg_ClearBrowserCookies)
 
 
 //-----------------------------------------------------------------------------
 // These are messages sent from the inspected page renderer to the worker
 // renderer.
-
-IPC_MESSAGE_ROUTED0(WorkerDevToolsAgentMsg_Attach)
-IPC_MESSAGE_ROUTED0(WorkerDevToolsAgentMsg_Detach)
-IPC_MESSAGE_ROUTED1(WorkerDevToolsAgentMsg_DispatchOnInspectorBackend,
-                    std::string /* message */)

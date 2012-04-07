@@ -13,7 +13,7 @@
 #include "ui/base/resource/resource_bundle.h"
 
 ThumbnailSource::ThumbnailSource(Profile* profile)
-    : DataSource(chrome::kChromeUIThumbnailPath, MessageLoop::current()),
+    : DataSource(chrome::kChromeUIThumbnailHost, MessageLoop::current()),
       // Set TopSites now as Profile isn't thread safe.
       top_sites_(profile->GetTopSites()) {
 }
@@ -24,7 +24,7 @@ ThumbnailSource::~ThumbnailSource() {
 void ThumbnailSource::StartDataRequest(const std::string& path,
                                        bool is_incognito,
                                        int request_id) {
-  scoped_refptr<RefCountedBytes> data;
+  scoped_refptr<RefCountedMemory> data;
   if (top_sites_->GetPageThumbnail(GURL(path), &data)) {
     // We have the thumbnail.
     SendResponse(request_id, data.get());
@@ -46,11 +46,5 @@ MessageLoop* ThumbnailSource::MessageLoopForRequestPath(
 }
 
 void ThumbnailSource::SendDefaultThumbnail(int request_id) {
-  // Use placeholder thumbnail.
-  if (!default_thumbnail_.get()) {
-    default_thumbnail_ =
-        ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-            IDR_DEFAULT_THUMBNAIL);
-  }
   SendResponse(request_id, default_thumbnail_);
 }

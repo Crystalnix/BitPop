@@ -5,9 +5,9 @@
 #include "content/browser/renderer_host/backing_store_win.h"
 
 #include "base/command_line.h"
-#include "chrome/common/chrome_switches.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host.h"
+#include "content/public/common/content_switches.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/surface/transport_dib.h"
@@ -114,10 +114,13 @@ size_t BackingStoreWin::MemorySize() {
 }
 
 void BackingStoreWin::PaintToBackingStore(
-    RenderProcessHost* process,
+    content::RenderProcessHost* process,
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const base::Closure& completion_callback,
+    bool* scheduled_completion_callback) {
+  *scheduled_completion_callback = false;
   if (!backing_store_dib_) {
     backing_store_dib_ = CreateDIB(hdc_, size().width(),
                                    size().height(), color_depth_);

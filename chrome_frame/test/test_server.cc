@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,10 @@
 #include <objbase.h>
 #include <urlmon.h>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/string_number_conversions.h"
+#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
@@ -48,8 +50,8 @@ void Request::ParseHeaders(const std::string& headers) {
   while (it.GetNext()) {
     if (LowerCaseEqualsASCII(it.name(), "content-length")) {
       int int_content_length;
-      base::StringToInt(it.values_begin(),
-                        it.values_end(),
+      base::StringToInt(base::StringPiece(it.values_begin(),
+                                          it.values_end()),
                         &int_content_length);
       content_length_ = int_content_length;
       break;
@@ -97,7 +99,7 @@ bool FileResponse::GetContentType(std::string* content_type) const {
   return content_type->length() > 0;
 }
 
-void FileResponse::WriteContents(ListenSocket* socket) const {
+void FileResponse::WriteContents(net::ListenSocket* socket) const {
   DCHECK(file_.get());
   if (file_.get()) {
     socket->Send(reinterpret_cast<const char*>(file_->data()),
@@ -130,7 +132,7 @@ SimpleWebServer::SimpleWebServer(int port) {
   CHECK(MessageLoop::current()) << "SimpleWebServer requires a message loop";
   net::EnsureWinsockInit();
   AddResponse(&quit_);
-  server_ = ListenSocket::Listen("127.0.0.1", port, this);
+  server_ = net::ListenSocket::Listen("127.0.0.1", port, this);
   DCHECK(server_.get() != NULL);
 }
 
@@ -165,7 +167,8 @@ Response* SimpleWebServer::FindResponse(const Request& request) const {
   return NULL;
 }
 
-Connection* SimpleWebServer::FindConnection(const ListenSocket* socket) const {
+Connection* SimpleWebServer::FindConnection(
+    const net::ListenSocket* socket) const {
   ConnectionList::const_iterator it;
   for (it = connections_.begin(); it != connections_.end(); it++) {
     if ((*it)->IsSame(socket)) {
@@ -175,12 +178,12 @@ Connection* SimpleWebServer::FindConnection(const ListenSocket* socket) const {
   return NULL;
 }
 
-void SimpleWebServer::DidAccept(ListenSocket* server,
-                                ListenSocket* connection) {
+void SimpleWebServer::DidAccept(net::ListenSocket* server,
+                                net::ListenSocket* connection) {
   connections_.push_back(new Connection(connection));
 }
 
-void SimpleWebServer::DidRead(ListenSocket* connection,
+void SimpleWebServer::DidRead(net::ListenSocket* connection,
                               const char* data,
                               int len) {
   Connection* c = FindConnection(connection);
@@ -217,7 +220,7 @@ void SimpleWebServer::DidRead(ListenSocket* connection,
   }
 }
 
-void SimpleWebServer::DidClose(ListenSocket* sock) {
+void SimpleWebServer::DidClose(net::ListenSocket* sock) {
   // To keep the historical list of connections reasonably tidy, we delete
   // 404's when the connection ends.
   Connection* c = FindConnection(sock);
@@ -233,7 +236,7 @@ HTTPTestServer::HTTPTestServer(int port, const std::wstring& address,
                                FilePath root_dir)
     : port_(port), address_(address), root_dir_(root_dir) {
   net::EnsureWinsockInit();
-  server_ = ListenSocket::Listen(WideToUTF8(address), port, this);
+  server_ = net::ListenSocket::Listen(WideToUTF8(address), port, this);
 }
 
 HTTPTestServer::~HTTPTestServer() {
@@ -241,7 +244,7 @@ HTTPTestServer::~HTTPTestServer() {
 }
 
 std::list<scoped_refptr<ConfigurableConnection>>::iterator
-HTTPTestServer::FindConnection(const ListenSocket* socket) {
+HTTPTestServer::FindConnection(const net::ListenSocket* socket) {
   ConnectionList::iterator it;
   for (it = connection_list_.begin(); it != connection_list_.end(); ++it) {
     if ((*it)->socket_ == socket) {
@@ -253,18 +256,19 @@ HTTPTestServer::FindConnection(const ListenSocket* socket) {
 }
 
 scoped_refptr<ConfigurableConnection> HTTPTestServer::ConnectionFromSocket(
-    const ListenSocket* socket) {
+    const net::ListenSocket* socket) {
   ConnectionList::iterator it = FindConnection(socket);
   if (it != connection_list_.end())
     return *it;
   return NULL;
 }
 
-void HTTPTestServer::DidAccept(ListenSocket* server, ListenSocket* socket) {
+void HTTPTestServer::DidAccept(net::ListenSocket* server,
+                               net::ListenSocket* socket) {
   connection_list_.push_back(new ConfigurableConnection(socket));
 }
 
-void HTTPTestServer::DidRead(ListenSocket* socket,
+void HTTPTestServer::DidRead(net::ListenSocket* socket,
                              const char* data,
                              int len) {
   scoped_refptr<ConfigurableConnection> connection =
@@ -273,6 +277,8 @@ void HTTPTestServer::DidRead(ListenSocket* socket,
     std::string str(data, len);
     connection->r_.OnDataReceived(str);
     if (connection->r_.AllContentReceived()) {
+      VLOG(1) << __FUNCTION__ << ": " << connection->r_.method() << " "
+              << connection->r_.path();
       std::wstring path = UTF8ToWide(connection->r_.path());
       if (LowerCaseEqualsASCII(connection->r_.method(), "post"))
         this->Post(connection, path, connection->r_);
@@ -282,7 +288,7 @@ void HTTPTestServer::DidRead(ListenSocket* socket,
   }
 }
 
-void HTTPTestServer::DidClose(ListenSocket* socket) {
+void HTTPTestServer::DidClose(net::ListenSocket* socket) {
   ConnectionList::iterator it = FindConnection(socket);
   DCHECK(it != connection_list_.end());
   connection_list_.erase(it);
@@ -322,8 +328,9 @@ void ConfigurableConnection::SendChunk() {
 
   cur_pos_ += bytes_to_send;
   if (cur_pos_ < size) {
-    MessageLoop::current()->PostDelayedTask(FROM_HERE, NewRunnableMethod(this,
-        &ConfigurableConnection::SendChunk), options_.timeout_);
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE, base::Bind(&ConfigurableConnection::SendChunk, this),
+        options_.timeout_);
   } else {
     socket_ = 0;  // close the connection.
   }
@@ -369,9 +376,9 @@ void ConfigurableConnection::SendWithOptions(const std::string& headers,
     data_.append("\r\n");
   }
 
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      NewRunnableMethod(this, &ConfigurableConnection::SendChunk),
-                        options.timeout_);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, base::Bind(&ConfigurableConnection::SendChunk, this),
+      options.timeout_);
 }
 
 }  // namespace test_server

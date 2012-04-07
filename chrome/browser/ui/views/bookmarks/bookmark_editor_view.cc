@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_editor_view.h"
+
+#include <string>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
@@ -21,39 +23,38 @@
 #include "grit/locale_settings.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/background.h"
-#include "views/controls/button/native_button.h"
-#include "views/controls/label.h"
-#include "views/controls/menu/menu_2.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/focus/focus_manager.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/menu/menu_2.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/controls/tree/tree_view.h"
+#include "ui/views/focus/focus_manager.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
-using views::Button;
-using views::ColumnSet;
 using views::GridLayout;
-using views::Label;
-using views::NativeButton;
-using views::Textfield;
+
+namespace {
 
 // Background color of text field when URL is invalid.
-static const SkColor kErrorColor = SkColorSetRGB(0xFF, 0xBC, 0xBC);
+const SkColor kErrorColor = SkColorSetRGB(0xFF, 0xBC, 0xBC);
 
 // Preferred width of the tree.
-static const int kTreeWidth = 300;
+const int kTreeWidth = 300;
 
 // ID for various children.
-static const int kNewFolderButtonID = 1002;
+const int kNewFolderButtonID = 1002;
+
+}  // namespace
 
 // static
-void BookmarkEditor::Show(HWND parent_hwnd,
-                          Profile* profile,
-                          const BookmarkNode* parent,
-                          const EditDetails& details,
-                          Configuration configuration) {
+void BookmarkEditor::ShowNative(gfx::NativeWindow parent_hwnd,
+                                Profile* profile,
+                                const BookmarkNode* parent,
+                                const EditDetails& details,
+                                Configuration configuration) {
   DCHECK(profile);
   BookmarkEditorView* editor =
       new BookmarkEditorView(profile, parent, details, configuration);
@@ -69,6 +70,7 @@ BookmarkEditorView::BookmarkEditorView(
       tree_view_(NULL),
       new_folder_button_(NULL),
       url_label_(NULL),
+      url_tf_(NULL),
       title_label_(NULL),
       parent_(parent),
       details_(details),
@@ -86,9 +88,14 @@ BookmarkEditorView::~BookmarkEditorView() {
   bb_model_->RemoveObserver(this);
 }
 
-bool BookmarkEditorView::IsDialogButtonEnabled(
-    MessageBoxFlags::DialogButton button) const {
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK) {
+string16 BookmarkEditorView::GetDialogButtonLabel(
+      ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK)
+    return l10n_util::GetStringUTF16(IDS_SAVE);
+  return string16();
+}
+bool BookmarkEditorView::IsDialogButtonEnabled(ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK) {
     if (details_.type == EditDetails::NEW_FOLDER)
       return !title_tf_.text().empty();
 
@@ -98,23 +105,25 @@ bool BookmarkEditorView::IsDialogButtonEnabled(
   return true;
 }
 
-bool BookmarkEditorView::IsModal() const {
-  return true;
+ui::ModalType BookmarkEditorView::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
 bool BookmarkEditorView::CanResize() const {
   return true;
 }
 
-std::wstring BookmarkEditorView::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOMARK_EDITOR_TITLE));
+string16 BookmarkEditorView::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_TITLE);
 }
 
 bool BookmarkEditorView::Accept() {
-  if (!IsDialogButtonEnabled(MessageBoxFlags::DIALOGBUTTON_OK)) {
-    // The url is invalid, focus the url field.
-    url_tf_.SelectAll();
-    url_tf_.RequestFocus();
+  if (!IsDialogButtonEnabled(ui::DIALOG_BUTTON_OK)) {
+    if (details_.type != EditDetails::NEW_FOLDER) {
+      // The url is invalid, focus the url field.
+      url_tf_->SelectAll();
+      url_tf_->RequestFocus();
+    }
     return false;
   }
   // Otherwise save changes and close the dialog box.
@@ -122,8 +131,7 @@ bool BookmarkEditorView::Accept() {
   return true;
 }
 
-bool BookmarkEditorView::AreAcceleratorsEnabled(
-    MessageBoxFlags::DialogButton button) {
+bool BookmarkEditorView::AreAcceleratorsEnabled(ui::DialogButton button) {
   return !show_tree_ || !tree_view_->GetEditingNode();
 }
 
@@ -152,7 +160,7 @@ gfx::Size BookmarkEditorView::GetPreferredSize() {
   if (!show_tree_)
     return views::View::GetPreferredSize();
 
-  return gfx::Size(views::Window::GetLocalizedContentsSize(
+  return gfx::Size(views::Widget::GetLocalizedContentsSize(
       IDS_EDITBOOKMARK_DIALOG_WIDTH_CHARS,
       IDS_EDITBOOKMARK_DIALOG_HEIGHT_LINES));
 }
@@ -181,15 +189,15 @@ bool BookmarkEditorView::CanEdit(views::TreeView* tree_view,
   return (bb_node->parent() && bb_node->parent()->parent());
 }
 
-void BookmarkEditorView::ContentsChanged(Textfield* sender,
-                                         const std::wstring& new_contents) {
+void BookmarkEditorView::ContentsChanged(views::Textfield* sender,
+                                         const string16& new_contents) {
   UserInputChanged();
 }
 
-void BookmarkEditorView::ButtonPressed(
-    Button* sender, const views::Event& event) {
+void BookmarkEditorView::ButtonPressed(views::Button* sender,
+                                       const views::Event& event) {
   DCHECK(sender);
-  switch (sender->GetID()) {
+  switch (sender->id()) {
     case kNewFolderButtonID:
       NewFolder();
       break;
@@ -204,7 +212,16 @@ bool BookmarkEditorView::IsCommandIdChecked(int command_id) const {
 }
 
 bool BookmarkEditorView::IsCommandIdEnabled(int command_id) const {
-  return (command_id != IDS_EDIT || !running_menu_for_root_);
+  switch (command_id) {
+    case IDS_EDIT:
+    case IDS_DELETE:
+      return !running_menu_for_root_;
+    case IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM:
+      return true;
+    default:
+      NOTREACHED();
+      return false;
+  }
 }
 
 bool BookmarkEditorView::GetAcceleratorForCommandId(
@@ -217,18 +234,33 @@ void BookmarkEditorView::ExecuteCommand(int command_id) {
   DCHECK(tree_view_->GetSelectedNode());
   if (command_id == IDS_EDIT) {
     tree_view_->StartEditing(tree_view_->GetSelectedNode());
+  } else if (command_id == IDS_DELETE) {
+    EditorNode* node = tree_model_->AsNode(tree_view_->GetSelectedNode());
+    if (!node)
+      return;
+    if (node->value != 0) {
+      const BookmarkNode* b_node = bb_model_->GetNodeByID(node->value);
+      if (!b_node->empty() &&
+          !bookmark_utils::ConfirmDeleteBookmarkNode(b_node,
+            GetWidget()->GetNativeWindow())) {
+        // The folder is not empty and the user didn't confirm.
+        return;
+      }
+      deletes_.push_back(node->value);
+    }
+    tree_model_->Remove(node->parent(), node);
   } else {
-    DCHECK(command_id == IDS_BOOMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
+    DCHECK(command_id == IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
     NewFolder();
   }
 }
 
-void BookmarkEditorView::Show(HWND parent_hwnd) {
-  views::Window::CreateChromeWindow(parent_hwnd, gfx::Rect(), this);
+void BookmarkEditorView::Show(gfx::NativeWindow parent_hwnd) {
+  views::Widget::CreateWindowWithParent(this, parent_hwnd);
   UserInputChanged();
   if (show_tree_ && bb_model_->IsLoaded())
     ExpandAndSelect();
-  window()->Show();
+  GetWidget()->Show();
   // Select all the text in the name Textfield.
   title_tf_.SelectAll();
   // Give focus to the name Textfield.
@@ -236,8 +268,8 @@ void BookmarkEditorView::Show(HWND parent_hwnd) {
 }
 
 void BookmarkEditorView::Close() {
-  DCHECK(window());
-  window()->Close();
+  DCHECK(GetWidget());
+  GetWidget()->Close();
 }
 
 void BookmarkEditorView::ShowContextMenuForView(View* source,
@@ -249,15 +281,20 @@ void BookmarkEditorView::ShowContextMenuForView(View* source,
   running_menu_for_root_ =
       (tree_model_->GetParent(tree_view_->GetSelectedNode()) ==
        tree_model_->GetRoot());
+#if defined(USE_AURA)
+  NOTIMPLEMENTED();
+#else
   if (!context_menu_contents_.get()) {
     context_menu_contents_.reset(new ui::SimpleMenuModel(this));
     context_menu_contents_->AddItemWithStringId(IDS_EDIT, IDS_EDIT);
+    context_menu_contents_->AddItemWithStringId(IDS_DELETE, IDS_DELETE);
     context_menu_contents_->AddItemWithStringId(
-        IDS_BOOMARK_EDITOR_NEW_FOLDER_MENU_ITEM,
-        IDS_BOOMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
+        IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM,
+        IDS_BOOKMARK_EDITOR_NEW_FOLDER_MENU_ITEM);
     context_menu_.reset(new views::Menu2(context_menu_contents_.get()));
   }
   context_menu_->RunContextMenuAt(p);
+#endif
 }
 
 void BookmarkEditorView::Init() {
@@ -265,53 +302,38 @@ void BookmarkEditorView::Init() {
   DCHECK(bb_model_);
   bb_model_->AddObserver(this);
 
-  url_tf_.set_parent_owned(false);
   title_tf_.set_parent_owned(false);
 
-  std::wstring title;
-  if (details_.type == EditDetails::EXISTING_NODE)
+  string16 title;
+  GURL url;
+  if (details_.type == EditDetails::EXISTING_NODE) {
     title = details_.existing_node->GetTitle();
-  else if (details_.type == EditDetails::NEW_FOLDER)
-    title = UTF16ToWide(
-        l10n_util::GetStringUTF16(IDS_BOOMARK_EDITOR_NEW_FOLDER_NAME));
+    url = details_.existing_node->url();
+  } else if (details_.type == EditDetails::NEW_FOLDER) {
+    title = l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NEW_FOLDER_NAME);
+  } else if (details_.type == EditDetails::NEW_URL) {
+    bookmark_utils::GetURLAndTitleToBookmarkFromCurrentTab(profile_,
+        &url, &title);
+  }
   title_tf_.SetText(title);
   title_tf_.SetController(this);
 
   title_label_ = new views::Label(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOMARK_EDITOR_NAME_LABEL)));
-  title_tf_.SetAccessibleName(WideToUTF16Hack(title_label_->GetText()));
-
-  string16 url_text;
-  if (details_.type == EditDetails::EXISTING_NODE) {
-    std::string languages = profile_
-        ? profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)
-        : std::string();
-    // Because this gets parsed by FixupURL(), it's safe to omit the scheme or
-    // trailing slash, and unescape most characters, but we need to not drop any
-    // username/password, or unescape anything that changes the meaning.
-    url_text = net::FormatUrl(details_.existing_node->GetURL(), languages,
-        net::kFormatUrlOmitAll & ~net::kFormatUrlOmitUsernamePassword,
-        UnescapeRule::SPACES, NULL, NULL, NULL);
-  }
-  url_tf_.SetText(UTF16ToWide(url_text));
-  url_tf_.SetController(this);
-
-  url_label_ = new views::Label(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOMARK_EDITOR_URL_LABEL)));
-  url_tf_.SetAccessibleName(WideToUTF16Hack(url_label_->GetText()));
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NAME_LABEL));
+  title_tf_.SetAccessibleName(title_label_->GetText());
 
   if (show_tree_) {
     tree_view_ = new views::TreeView();
-    new_folder_button_.reset(new views::NativeButton(
+    tree_view_->set_lines_at_root(true);
+    new_folder_button_.reset(new views::NativeTextButton(
         this,
-        UTF16ToWide(l10n_util::GetStringUTF16(
-            IDS_BOOMARK_EDITOR_NEW_FOLDER_BUTTON))));
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NEW_FOLDER_BUTTON)));
     new_folder_button_->set_parent_owned(false);
-    tree_view_->SetContextMenuController(this);
+    tree_view_->set_context_menu_controller(this);
 
     tree_view_->SetRootShown(false);
     new_folder_button_->SetEnabled(false);
-    new_folder_button_->SetID(kNewFolderButtonID);
+    new_folder_button_->set_id(kNewFolderButtonID);
   }
 
   // Yummy layout code.
@@ -322,7 +344,7 @@ void BookmarkEditorView::Init() {
   const int single_column_view_set_id = 1;
   const int buttons_column_set_id = 2;
 
-  ColumnSet* column_set = layout->AddColumnSet(labels_column_set_id);
+  views::ColumnSet* column_set = layout->AddColumnSet(labels_column_set_id);
   column_set->AddColumn(GridLayout::LEADING, GridLayout::CENTER, 0,
                         GridLayout::USE_PREF, 0, 0);
   column_set->AddPaddingColumn(0, views::kRelatedControlHorizontalSpacing);
@@ -350,17 +372,35 @@ void BookmarkEditorView::Init() {
   layout->AddView(&title_tf_);
 
   if (details_.type != EditDetails::NEW_FOLDER) {
+    url_label_ = new views::Label(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_URL_LABEL));
+
+    std::string languages =
+        profile_ ? profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)
+                 : std::string();
+    // Because this gets parsed by FixupURL(), it's safe to omit the scheme or
+    // trailing slash, and unescape most characters, but we need to not drop any
+    // username/password, or unescape anything that changes the meaning.
+    string16 url_text = net::FormatUrl(url, languages,
+        net::kFormatUrlOmitAll & ~net::kFormatUrlOmitUsernamePassword,
+        net::UnescapeRule::SPACES, NULL, NULL, NULL);
+
+    url_tf_ = new views::Textfield;
+    url_tf_->SetText(url_text);
+    url_tf_->SetController(this);
+    url_tf_->SetAccessibleName(url_label_->GetText());
+
     layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
 
     layout->StartRow(0, labels_column_set_id);
     layout->AddView(url_label_);
-    layout->AddView(&url_tf_);
+    layout->AddView(url_tf_);
   }
 
   if (show_tree_) {
     layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
     layout->StartRow(1, single_column_view_set_id);
-    layout->AddView(tree_view_);
+    layout->AddView(tree_view_->CreateParentIfNecessary());
   }
 
   layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
@@ -391,7 +431,7 @@ void BookmarkEditorView::BookmarkNodeRemoved(BookmarkModel* model,
        details_.existing_node->HasAncestor(node)) ||
       (parent_ && parent_->HasAncestor(node))) {
     // The node, or its parent was removed. Close the dialog.
-    window()->Close();
+    GetWidget()->Close();
   } else {
     Reset();
   }
@@ -421,25 +461,32 @@ void BookmarkEditorView::Reset() {
   tree_view_->SetModel(tree_model_.get());
   tree_view_->SetController(this);
 
+#if !defined(USE_AURA)
   context_menu_.reset();
+#endif
 
   if (parent())
     ExpandAndSelect();
 }
+
 GURL BookmarkEditorView::GetInputURL() const {
-  return URLFixerUpper::FixupURL(UTF16ToUTF8(url_tf_.text()), std::string());
+  if (details_.type == EditDetails::NEW_FOLDER)
+    return GURL();
+  return URLFixerUpper::FixupURL(UTF16ToUTF8(url_tf_->text()), std::string());
 }
 
-std::wstring BookmarkEditorView::GetInputTitle() const {
+string16 BookmarkEditorView::GetInputTitle() const {
   return title_tf_.text();
 }
 
 void BookmarkEditorView::UserInputChanged() {
-  const GURL url(GetInputURL());
-  if (!url.is_valid())
-    url_tf_.SetBackgroundColor(kErrorColor);
-  else
-    url_tf_.UseDefaultBackgroundColor();
+  if (details_.type != EditDetails::NEW_FOLDER) {
+    const GURL url(GetInputURL());
+    if (!url.is_valid())
+      url_tf_->SetBackgroundColor(kErrorColor);
+    else
+      url_tf_->UseDefaultBackgroundColor();
+  }
   GetDialogClientView()->UpdateDialogButtons();
 }
 
@@ -457,17 +504,23 @@ void BookmarkEditorView::NewFolder() {
 
 BookmarkEditorView::EditorNode* BookmarkEditorView::AddNewFolder(
     EditorNode* parent) {
-  EditorNode* new_node = new EditorNode();
-  new_node->set_title(
-      l10n_util::GetStringUTF16(IDS_BOOMARK_EDITOR_NEW_FOLDER_NAME));
-  new_node->value = 0;
-  // new_node is now owned by parent.
+  EditorNode* new_node = new EditorNode(
+      l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_NEW_FOLDER_NAME), 0);
+  // |new_node| is now owned by |parent|.
   tree_model_->Add(parent, new_node, parent->child_count());
   return new_node;
 }
 
 void BookmarkEditorView::ExpandAndSelect() {
-  tree_view_->ExpandAll();
+  BookmarkExpandedStateTracker::Nodes expanded_nodes =
+      bb_model_->expanded_state_tracker()->GetExpandedNodes();
+  for (BookmarkExpandedStateTracker::Nodes::const_iterator i =
+       expanded_nodes.begin(); i != expanded_nodes.end(); ++i) {
+    EditorNode* editor_node =
+        FindNodeWithID(tree_model_->GetRoot(), (*i)->id());
+    if (editor_node)
+      tree_view_->Expand(editor_node);
+  }
 
   const BookmarkNode* to_select = parent_;
   if (details_.type == EditDetails::EXISTING_NODE)
@@ -482,15 +535,14 @@ void BookmarkEditorView::ExpandAndSelect() {
 }
 
 BookmarkEditorView::EditorNode* BookmarkEditorView::CreateRootNode() {
-  EditorNode* root_node = new EditorNode(std::wstring(), 0);
+  EditorNode* root_node = new EditorNode(string16(), 0);
   const BookmarkNode* bb_root_node = bb_model_->root_node();
   CreateNodes(bb_root_node, root_node);
   DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 3);
   DCHECK(bb_root_node->GetChild(0)->type() == BookmarkNode::BOOKMARK_BAR);
   DCHECK(bb_root_node->GetChild(1)->type() == BookmarkNode::OTHER_NODE);
-  if (root_node->child_count() == 3) {
-    DCHECK(bb_root_node->GetChild(2)->type() == BookmarkNode::SYNCED);
-  }
+  if (root_node->child_count() == 3)
+    DCHECK(bb_root_node->GetChild(2)->type() == BookmarkNode::MOBILE);
   return root_node;
 }
 
@@ -499,9 +551,8 @@ void BookmarkEditorView::CreateNodes(const BookmarkNode* bb_node,
   for (int i = 0; i < bb_node->child_count(); ++i) {
     const BookmarkNode* child_bb_node = bb_node->GetChild(i);
     if (child_bb_node->IsVisible() && child_bb_node->is_folder()) {
-      EditorNode* new_b_node =
-          new EditorNode(WideToUTF16(child_bb_node->GetTitle()),
-                                     child_bb_node->id());
+      EditorNode* new_b_node = new EditorNode(child_bb_node->GetTitle(),
+                                              child_bb_node->id());
       b_node->Add(new_b_node, b_node->child_count());
       CreateNodes(child_bb_node, new_b_node);
     }
@@ -542,7 +593,7 @@ void BookmarkEditorView::ApplyEdits(EditorNode* parent) {
   bb_model_->RemoveObserver(this);
 
   GURL new_url(GetInputURL());
-  string16 new_title(WideToUTF16Hack(GetInputTitle()));
+  string16 new_title(GetInputTitle());
 
   if (!show_tree_) {
     bookmark_utils::ApplyEditsWithNoFolderChange(
@@ -557,6 +608,14 @@ void BookmarkEditorView::ApplyEdits(EditorNode* parent) {
 
   bookmark_utils::ApplyEditsWithPossibleFolderChange(
       bb_model_, new_parent, details_, new_title, new_url);
+
+  BookmarkExpandedStateTracker::Nodes expanded_nodes;
+  UpdateExpandedNodes(tree_model_->GetRoot(), &expanded_nodes);
+  bb_model_->expanded_state_tracker()->SetExpandedNodes(expanded_nodes);
+
+  // Remove the folders that were removed. This has to be done after all the
+  // other changes have been committed.
+  bookmark_utils::DeleteBookmarkFolders(bb_model_, deletes_);
 }
 
 void BookmarkEditorView::ApplyNameChangesAndCreateNewFolders(
@@ -573,6 +632,7 @@ void BookmarkEditorView::ApplyNameChangesAndCreateNewFolders(
       // New folder.
       child_bb_node = bb_model_->AddFolder(bb_node,
           bb_node->child_count(), child_b_node->GetTitle());
+      child_b_node->value = child_bb_node->id();
     } else {
       // Existing node, reset the title (BookmarkModel ignores changes if the
       // title is the same).
@@ -589,4 +649,16 @@ void BookmarkEditorView::ApplyNameChangesAndCreateNewFolders(
     ApplyNameChangesAndCreateNewFolders(child_bb_node, child_b_node,
                                         parent_b_node, parent_bb_node);
   }
+}
+
+void BookmarkEditorView::UpdateExpandedNodes(
+    EditorNode* editor_node,
+    BookmarkExpandedStateTracker::Nodes* expanded_nodes) {
+  if (!tree_view_->IsExpanded(editor_node))
+    return;
+
+  if (editor_node->value != 0)  // The root is 0
+    expanded_nodes->insert(bb_model_->GetNodeByID(editor_node->value));
+  for (int i = 0; i < editor_node->child_count(); ++i)
+    UpdateExpandedNodes(editor_node->GetChild(i), expanded_nodes);
 }

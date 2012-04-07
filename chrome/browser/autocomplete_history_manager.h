@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,31 +8,35 @@
 
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
+#include "content/public/browser/web_contents_observer.h"
 
-namespace webkit_glue {
+namespace webkit {
+namespace forms {
 struct FormData;
-}  // namespace webkit_glue
+}
+}
 
+class AutofillExternalDelegate;
 class Profile;
-class TabContents;
 
 // Per-tab Autocomplete history manager. Handles receiving form data from the
 // renderer and the storing and retrieving of form data through WebDataService.
-class AutocompleteHistoryManager : public TabContentsObserver,
+class AutocompleteHistoryManager : public content::WebContentsObserver,
                                    public WebDataServiceConsumer {
  public:
-  explicit AutocompleteHistoryManager(TabContents* tab_contents);
+  explicit AutocompleteHistoryManager(content::WebContents* web_contents);
   virtual ~AutocompleteHistoryManager();
 
-  // TabContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  // content::WebContentsObserver implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // WebDataServiceConsumer implementation.
-  virtual void OnWebDataServiceRequestDone(WebDataService::Handle h,
-                                           const WDTypedResult* result);
+  virtual void OnWebDataServiceRequestDone(
+      WebDataService::Handle h,
+      const WDTypedResult* result) OVERRIDE;
 
   // Pass-through functions that are called by AutofillManager, after it has
   // dispatched a message.
@@ -44,19 +48,30 @@ class AutocompleteHistoryManager : public TabContentsObserver,
       const std::vector<string16>& autofill_labels,
       const std::vector<string16>& autofill_icons,
       const std::vector<int>& autofill_unique_ids);
-  void OnFormSubmitted(const webkit_glue::FormData& form);
+  void OnFormSubmitted(const webkit::forms::FormData& form);
+
+  // Sets our external delegate.
+  void SetExternalDelegate(AutofillExternalDelegate* delegate);
 
  protected:
   friend class AutocompleteHistoryManagerTest;
   friend class AutofillManagerTest;
+  FRIEND_TEST_ALL_PREFIXES(AutocompleteHistoryManagerTest, ExternalDelegate);
+  FRIEND_TEST_ALL_PREFIXES(AutofillManagerTest,
+                           TestTabContentsWithExternalDelegate);
 
   // For tests.
-  AutocompleteHistoryManager(TabContents* tab_contents,
+  AutocompleteHistoryManager(content::WebContents* web_contents,
                              Profile* profile,
                              WebDataService* wds);
 
   void SendSuggestions(const std::vector<string16>* suggestions);
   void CancelPendingQuery();
+
+  // Exposed for testing.
+  AutofillExternalDelegate* external_delegate() {
+    return external_delegate_;
+  }
 
  private:
   void OnRemoveAutocompleteEntry(const string16& name, const string16& value);
@@ -75,6 +90,10 @@ class AutocompleteHistoryManager : public TabContentsObserver,
   std::vector<string16> autofill_labels_;
   std::vector<string16> autofill_icons_;
   std::vector<int> autofill_unique_ids_;
+
+  // Delegate to perform external processing (display, selection) on
+  // our behalf.  Weak.
+  AutofillExternalDelegate* external_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(AutocompleteHistoryManager);
 };

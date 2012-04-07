@@ -9,11 +9,12 @@
 #include <map>
 #include <utility>
 
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/models/menu_model.h"
-#include "views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/menu/menu_delegate.h"
 
 class BookmarkMenuDelegate;
 class Browser;
@@ -21,15 +22,17 @@ class Browser;
 namespace views {
 class MenuButton;
 class MenuItemView;
+class MenuRunner;
 class View;
 }  // namespace views
 
 // WrenchMenu adapts the WrenchMenuModel to view's menu related classes.
-class WrenchMenu : public base::RefCounted<WrenchMenu>,
-                   public views::MenuDelegate,
-                   public BaseBookmarkModelObserver {
+class WrenchMenu : public views::MenuDelegate,
+                   public BaseBookmarkModelObserver,
+                   public content::NotificationObserver {
  public:
   explicit WrenchMenu(Browser* browser);
+  virtual ~WrenchMenu();
 
   void Init(ui::MenuModel* model);
 
@@ -37,7 +40,7 @@ class WrenchMenu : public base::RefCounted<WrenchMenu>,
   void RunMenu(views::MenuButton* host);
 
   // MenuDelegate overrides:
-  virtual std::wstring GetTooltipText(int id, const gfx::Point& p) OVERRIDE;
+  virtual string16 GetTooltipText(int id, const gfx::Point& p) const OVERRIDE;
   virtual bool IsTriggerableEvent(views::MenuItemView* menu,
                                   const views::MouseEvent& e) OVERRIDE;
   virtual bool GetDropFormats(
@@ -65,22 +68,23 @@ class WrenchMenu : public base::RefCounted<WrenchMenu>,
   virtual bool IsItemChecked(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id, int mouse_event_flags) OVERRIDE;
-  virtual bool GetAccelerator(int id, views::Accelerator* accelerator) OVERRIDE;
+  virtual bool GetAccelerator(int id, ui::Accelerator* accelerator) OVERRIDE;
   virtual void WillShowMenu(views::MenuItemView* menu) OVERRIDE;
 
   // BaseBookmarkModelObserver overrides:
   virtual void BookmarkModelChanged() OVERRIDE;
 
- private:
-  friend class base::RefCounted<WrenchMenu>;
+  // content::NotificationObserver overrides:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
+ private:
   class CutCopyPasteView;
   class ZoomView;
 
   typedef std::pair<ui::MenuModel*,int> Entry;
   typedef std::map<int,Entry> IDToEntry;
-
-  virtual ~WrenchMenu();
 
   // Populates |parent| with all the child menus in |model|. Recursively invokes
   // |PopulateMenu| for any submenu. |next_id| is incremented for every menu
@@ -110,8 +114,10 @@ class WrenchMenu : public base::RefCounted<WrenchMenu>,
     return bookmark_menu_delegate_.get() && id >= first_bookmark_command_id_;
   }
 
-  // The views menu.
-  scoped_ptr<views::MenuItemView> root_;
+  // The views menu. Owned by |menu_runner_|.
+  views::MenuItemView* root_;
+
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   // Maps from the ID as understood by MenuItemView to the model/index pair the
   // item came from.
@@ -135,6 +141,8 @@ class WrenchMenu : public base::RefCounted<WrenchMenu>,
 
   // ID to use for the items representing bookmarks in the bookmark menu.
   int first_bookmark_command_id_;
+
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WrenchMenu);
 };

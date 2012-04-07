@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/install_util.h"
@@ -13,6 +14,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 using base::win::RegKey;
+using registry_util::RegistryOverrideManager;
 using ::testing::_;
 using ::testing::Return;
 using ::testing::StrEq;
@@ -41,9 +43,9 @@ TEST_F(InstallUtilTest, MakeUninstallCommand) {
     InstallUtil::MakeUninstallCommand(param.first, param.second, &command_line);
     EXPECT_EQ(param.first, command_line.GetProgram().value());
     if (param.second.empty()) {
-      EXPECT_EQ(0U, command_line.GetSwitchCount());
+      EXPECT_TRUE(command_line.GetSwitches().empty());
     } else {
-      EXPECT_EQ(2U, command_line.GetSwitchCount());
+      EXPECT_EQ(2U, command_line.GetSwitches().size());
       EXPECT_TRUE(command_line.HasSwitch("do-something"));
       EXPECT_TRUE(command_line.HasSwitch("silly"));
     }
@@ -69,14 +71,15 @@ TEST_F(InstallUtilTest, GetCurrentDate) {
   }
 }
 
-TEST_F(InstallUtilTest, UpdateInstallerStage) {
+TEST_F(InstallUtilTest, UpdateInstallerStageAP) {
   const bool system_level = false;
   const HKEY root = system_level ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   std::wstring state_key_path(L"PhonyClientState");
 
   // Update the stage when there's no "ap" value.
   {
-    TempRegKeyOverride override(root, L"root_inst_res");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
     RegKey(root, state_key_path.c_str(), KEY_SET_VALUE);
     InstallUtil::UpdateInstallerStage(system_level, state_key_path,
                                       installer::BUILDING);
@@ -86,11 +89,11 @@ TEST_F(InstallUtilTest, UpdateInstallerStage) {
                   .ReadValue(google_update::kRegApField, &value));
     EXPECT_EQ(L"-stage:building", value);
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 
   // Update the stage when there is an "ap" value.
   {
-    TempRegKeyOverride override(root, L"root_inst_res");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
     RegKey(root, state_key_path.c_str(), KEY_SET_VALUE)
         .WriteValue(google_update::kRegApField, L"2.0-dev");
     InstallUtil::UpdateInstallerStage(system_level, state_key_path,
@@ -101,11 +104,11 @@ TEST_F(InstallUtilTest, UpdateInstallerStage) {
                   .ReadValue(google_update::kRegApField, &value));
     EXPECT_EQ(L"2.0-dev-stage:building", value);
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 
   // Clear the stage.
   {
-    TempRegKeyOverride override(root, L"root_inst_res");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
     RegKey(root, state_key_path.c_str(), KEY_SET_VALUE)
       .WriteValue(google_update::kRegApField, L"2.0-dev-stage:building");
     InstallUtil::UpdateInstallerStage(system_level, state_key_path,
@@ -116,7 +119,57 @@ TEST_F(InstallUtilTest, UpdateInstallerStage) {
                   .ReadValue(google_update::kRegApField, &value));
     EXPECT_EQ(L"2.0-dev", value);
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
+}
+
+TEST_F(InstallUtilTest, UpdateInstallerStage) {
+  const bool system_level = false;
+  const HKEY root = system_level ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+  std::wstring state_key_path(L"PhonyClientState");
+
+  // Update the stage when there's no "InstallerExtraCode1" value.
+  {
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
+    RegKey(root, state_key_path.c_str(), KEY_SET_VALUE)
+        .DeleteValue(installer::kInstallerExtraCode1);
+    InstallUtil::UpdateInstallerStage(system_level, state_key_path,
+                                      installer::BUILDING);
+    DWORD value;
+    EXPECT_EQ(ERROR_SUCCESS,
+              RegKey(root, state_key_path.c_str(), KEY_QUERY_VALUE)
+                  .ReadValueDW(installer::kInstallerExtraCode1, &value));
+    EXPECT_EQ(static_cast<DWORD>(installer::BUILDING), value);
+  }
+
+  // Update the stage when there is an "InstallerExtraCode1" value.
+  {
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
+    RegKey(root, state_key_path.c_str(), KEY_SET_VALUE)
+        .WriteValue(installer::kInstallerExtraCode1,
+                    static_cast<DWORD>(installer::UNPACKING));
+    InstallUtil::UpdateInstallerStage(system_level, state_key_path,
+                                      installer::BUILDING);
+    DWORD value;
+    EXPECT_EQ(ERROR_SUCCESS,
+              RegKey(root, state_key_path.c_str(), KEY_QUERY_VALUE)
+                  .ReadValueDW(installer::kInstallerExtraCode1, &value));
+    EXPECT_EQ(static_cast<DWORD>(installer::BUILDING), value);
+  }
+
+  // Clear the stage.
+  {
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_inst_res");
+    RegKey(root, state_key_path.c_str(), KEY_SET_VALUE)
+        .WriteValue(installer::kInstallerExtraCode1, static_cast<DWORD>(5));
+    InstallUtil::UpdateInstallerStage(system_level, state_key_path,
+                                      installer::NO_STAGE);
+    DWORD value;
+    EXPECT_EQ(ERROR_FILE_NOT_FOUND,
+              RegKey(root, state_key_path.c_str(), KEY_QUERY_VALUE)
+                  .ReadValueDW(installer::kInstallerExtraCode1, &value));
+  }
 }
 
 TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
@@ -128,7 +181,8 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
   const wchar_t value[] = L"hi mom";
 
   {
-    TempRegKeyOverride override(root, L"root_key");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_key");
     // Nothing to delete if the keys aren't even there.
     {
       MockRegistryValuePredicate pred;
@@ -136,8 +190,10 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
       EXPECT_CALL(pred, Evaluate(_)).Times(0);
       ASSERT_FALSE(RegKey(root, parent_key_path.c_str(),
                           KEY_QUERY_VALUE).Valid());
-      EXPECT_TRUE(InstallUtil::DeleteRegistryKeyIf(
-          root, parent_key_path, child_key_path, value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryKeyIf(root, parent_key_path,
+                                                 child_key_path, value_name,
+                                                 pred));
       EXPECT_FALSE(RegKey(root, parent_key_path.c_str(),
                           KEY_QUERY_VALUE).Valid());
     }
@@ -148,8 +204,10 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
 
       EXPECT_CALL(pred, Evaluate(_)).Times(0);
       ASSERT_TRUE(RegKey(root, parent_key_path.c_str(), KEY_SET_VALUE).Valid());
-      EXPECT_TRUE(InstallUtil::DeleteRegistryKeyIf(
-          root, parent_key_path, child_key_path, value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryKeyIf(root, parent_key_path,
+                                                 child_key_path, value_name,
+                                                 pred));
       EXPECT_TRUE(RegKey(root, parent_key_path.c_str(),
                          KEY_QUERY_VALUE).Valid());
     }
@@ -160,8 +218,10 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
 
       EXPECT_CALL(pred, Evaluate(_)).Times(0);
       ASSERT_TRUE(RegKey(root, child_key_path.c_str(), KEY_SET_VALUE).Valid());
-      EXPECT_TRUE(InstallUtil::DeleteRegistryKeyIf(
-          root, parent_key_path, child_key_path, value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryKeyIf(root, parent_key_path,
+                                                 child_key_path, value_name,
+                                                 pred));
       EXPECT_TRUE(RegKey(root, parent_key_path.c_str(),
                          KEY_QUERY_VALUE).Valid());
     }
@@ -174,8 +234,10 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
       ASSERT_EQ(ERROR_SUCCESS,
                 RegKey(root, child_key_path.c_str(),
                        KEY_SET_VALUE).WriteValue(value_name, L"foosball!"));
-      EXPECT_TRUE(InstallUtil::DeleteRegistryKeyIf(
-          root, parent_key_path, child_key_path, value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryKeyIf(root, parent_key_path,
+                                                 child_key_path, value_name,
+                                                 pred));
       EXPECT_TRUE(RegKey(root, parent_key_path.c_str(),
                          KEY_QUERY_VALUE).Valid());
     }
@@ -188,13 +250,14 @@ TEST_F(InstallUtilTest, DeleteRegistryKeyIf) {
       ASSERT_EQ(ERROR_SUCCESS,
                 RegKey(root, child_key_path.c_str(),
                        KEY_SET_VALUE).WriteValue(value_name, value));
-      EXPECT_TRUE(InstallUtil::DeleteRegistryKeyIf(
-          root, parent_key_path, child_key_path, value_name, pred));
+      EXPECT_EQ(InstallUtil::DELETED,
+                InstallUtil::DeleteRegistryKeyIf(root, parent_key_path,
+                                                 child_key_path, value_name,
+                                                 pred));
       EXPECT_FALSE(RegKey(root, parent_key_path.c_str(),
                           KEY_QUERY_VALUE).Valid());
     }
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 }
 
 TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
@@ -204,15 +267,17 @@ TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
   const wchar_t value[] = L"hi mom";
 
   {
-    TempRegKeyOverride override(root, L"root_key");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_key");
     // Nothing to delete if the key isn't even there.
     {
       MockRegistryValuePredicate pred;
 
       EXPECT_CALL(pred, Evaluate(_)).Times(0);
       ASSERT_FALSE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
-      EXPECT_TRUE(InstallUtil::DeleteRegistryValueIf(
-          root, key_path.c_str(), value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryValueIf(root, key_path.c_str(),
+                                                   value_name, pred));
       EXPECT_FALSE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
     }
 
@@ -222,8 +287,9 @@ TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
 
       EXPECT_CALL(pred, Evaluate(_)).Times(0);
       ASSERT_TRUE(RegKey(root, key_path.c_str(), KEY_SET_VALUE).Valid());
-      EXPECT_TRUE(InstallUtil::DeleteRegistryValueIf(
-          root, key_path.c_str(), value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryValueIf(root, key_path.c_str(),
+                                                   value_name, pred));
       EXPECT_TRUE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
     }
 
@@ -235,11 +301,12 @@ TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
       ASSERT_EQ(ERROR_SUCCESS,
                 RegKey(root, key_path.c_str(),
                        KEY_SET_VALUE).WriteValue(value_name, L"foosball!"));
-      EXPECT_TRUE(InstallUtil::DeleteRegistryValueIf(
-          root, key_path.c_str(), value_name, pred));
+      EXPECT_EQ(InstallUtil::NOT_FOUND,
+                InstallUtil::DeleteRegistryValueIf(root, key_path.c_str(),
+                                                   value_name, pred));
       EXPECT_TRUE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
       EXPECT_TRUE(RegKey(root, key_path.c_str(),
-                         KEY_QUERY_VALUE).ValueExists(value_name));
+                         KEY_QUERY_VALUE).HasValue(value_name));
     }
 
     // Value exists, and matches: delete.
@@ -250,17 +317,18 @@ TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
       ASSERT_EQ(ERROR_SUCCESS,
                 RegKey(root, key_path.c_str(),
                        KEY_SET_VALUE).WriteValue(value_name, value));
-      EXPECT_TRUE(InstallUtil::DeleteRegistryValueIf(
-          root, key_path.c_str(), value_name, pred));
+      EXPECT_EQ(InstallUtil::DELETED,
+                InstallUtil::DeleteRegistryValueIf(root, key_path.c_str(),
+                                                   value_name, pred));
       EXPECT_TRUE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
       EXPECT_FALSE(RegKey(root, key_path.c_str(),
-                          KEY_QUERY_VALUE).ValueExists(value_name));
+                          KEY_QUERY_VALUE).HasValue(value_name));
     }
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 
   {
-    TempRegKeyOverride override(root, L"root_key");
+    RegistryOverrideManager override_manager;
+    override_manager.OverrideRegistry(root, L"root_key");
     // Default value matches: delete.
     {
       MockRegistryValuePredicate pred;
@@ -269,14 +337,14 @@ TEST_F(InstallUtilTest, DeleteRegistryValueIf) {
       ASSERT_EQ(ERROR_SUCCESS,
                 RegKey(root, key_path.c_str(),
                        KEY_SET_VALUE).WriteValue(L"", value));
-      EXPECT_TRUE(InstallUtil::DeleteRegistryValueIf(
-          root, key_path.c_str(), L"", pred));
+      EXPECT_EQ(InstallUtil::DELETED,
+                InstallUtil::DeleteRegistryValueIf(root, key_path.c_str(), L"",
+                                                   pred));
       EXPECT_TRUE(RegKey(root, key_path.c_str(), KEY_QUERY_VALUE).Valid());
       EXPECT_FALSE(RegKey(root, key_path.c_str(),
-                          KEY_QUERY_VALUE).ValueExists(L""));
+                          KEY_QUERY_VALUE).HasValue(L""));
     }
   }
-  TempRegKeyOverride::DeleteAllTempKeys();
 }
 
 TEST_F(InstallUtilTest, ValueEquals) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,19 +6,32 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
+#include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/test/test_browser_thread.h"
 
-typedef TabContentsWrapperTestHarness FindBackendTest;
+using content::BrowserThread;
+
+class FindBackendTest : public TabContentsWrapperTestHarness {
+ public:
+  FindBackendTest()
+      : TabContentsWrapperTestHarness(),
+        browser_thread_(BrowserThread::UI, &message_loop_) {}
+
+ private:
+  content::TestBrowserThread browser_thread_;
+};
 
 namespace {
 
 string16 FindPrepopulateText(TabContents* contents) {
-  return FindBarState::GetLastPrepopulateText(contents->profile());
+  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
+  return FindBarStateFactory::GetLastPrepopulateText(profile);
 }
 
 }  // end namespace
@@ -32,7 +45,7 @@ TEST_F(FindBackendTest, InternalState) {
   EXPECT_EQ(string16(), find_tab_helper->find_text());
 
   // Get another TabContents object ready.
-  TestTabContents* contents2 = new TestTabContents(profile_.get(), NULL);
+  TestTabContents* contents2 = new TestTabContents(profile(), NULL);
   TabContentsWrapper wrapper2(contents2);
   FindTabHelper* find_tab_helper2 = wrapper2.find_tab_helper();
 

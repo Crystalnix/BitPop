@@ -1,4 +1,4 @@
-// Copyright (c) 2008-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "webkit/glue/webkit_glue.h"
@@ -41,7 +41,7 @@ WebWidgetHost* WebWidgetHost::Create(NSView* parent_view,
   host->view_ = [[NSView alloc] initWithFrame:content_rect];
   [parent_view addSubview:host->view_];
 
-  // app::win::SetWindowUserData(host->hwnd_, host);
+  // ui::SetWindowUserData(host->hwnd_, host);
 
   host->webwidget_ = WebPopupMenu::create(client);
   host->webwidget_->resize(WebSize(content_rect.size.width,
@@ -150,12 +150,12 @@ WebWidgetHost::WebWidgetHost()
       webwidget_(NULL),
       scroll_dx_(0),
       scroll_dy_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   set_painting(false);
 }
 
 WebWidgetHost::~WebWidgetHost() {
-  // app::win::SetWindowUserData(hwnd_, 0);
+  // ui::SetWindowUserData(hwnd_, 0);
 
   webwidget_->close();
 }
@@ -184,7 +184,7 @@ void WebWidgetHost::Paint() {
       [NSGraphicsContext graphicsContextWithGraphicsPort:bitmap_context
                                                  flipped:YES]];
 
-  webwidget_->animate();
+  webwidget_->animate(0.0);
 
   // This may result in more invalidation
   webwidget_->layout();

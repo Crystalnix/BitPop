@@ -11,14 +11,10 @@
 #include "base/basictypes.h"
 
 namespace views {
-class Button;
-class Textfield;
 class Widget;
 }  // namespace views
 
 namespace chromeos {
-
-class ScreenLocker;
 
 namespace test {
 
@@ -26,38 +22,32 @@ namespace test {
 // of ScreenLocker class. Used to implement unit tests.
 class ScreenLockerTester {
  public:
+  ScreenLockerTester();
+  virtual ~ScreenLockerTester();
+
   // Returns true if the screen is locked.
-  bool IsLocked();
+  virtual bool IsLocked();
 
   // Injects MockAuthenticate that uses given |user| and |password|.
-  void InjectMockAuthenticator(const std::string& user,
-                               const std::string& password);
+  virtual void InjectMockAuthenticator(const std::string& user,
+                                       const std::string& password);
 
   // Sets the password text.
-  void SetPassword(const std::string& password);
+  virtual void SetPassword(const std::string& password) = 0;
 
   // Gets the password text.
-  std::string GetPassword() const;
+  virtual std::string GetPassword() = 0;
 
   // Emulates entring a password.
-  void EnterPassword(const std::string& password);
+  virtual void EnterPassword(const std::string& password) = 0;
 
   // Emulates the ready message from window manager.
-  void EmulateWindowManagerReady();
+  virtual void EmulateWindowManagerReady() = 0;
 
   // Returns the widget for screen locker window.
-  views::Widget* GetWidget() const;
+  virtual views::Widget* GetWidget() const = 0;
 
-  views::Widget* GetChildWidget() const;
-
- private:
-  friend class chromeos::ScreenLocker;
-
-  ScreenLockerTester() {}
-
-  views::Textfield* GetPasswordField() const;
-
-  DISALLOW_COPY_AND_ASSIGN(ScreenLockerTester);
+  virtual views::Widget* GetChildWidget() const = 0;
 };
 
 }  // namespace test

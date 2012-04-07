@@ -6,14 +6,11 @@
 #define CHROME_BROWSER_HISTORY_TOP_SITES_CACHE_H_
 #pragma once
 
-#include <algorithm>
 #include <map>
-#include <string>
+#include <utility>
 
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/history/history_types.h"
-
-class RefCountedBytes;
 
 namespace history {
 
@@ -31,19 +28,15 @@ class TopSitesCache {
   void SetThumbnails(const URLToImagesMap& images);
   const URLToImagesMap& images() const { return images_; }
 
-  // Set a thumbnail.
-  void SetPageThumbnail(const GURL& url,
-                        RefCountedBytes* thumbnail,
-                        const ThumbnailScore& score);
-
   // Returns the thumbnail as an Image for the specified url. This adds an entry
   // for |url| if one has not yet been added.
   Images* GetImage(const GURL& url);
 
   // Fetches the thumbnail for the specified url. Returns true if there is a
-  // thumbnail for the specified url.
+  // thumbnail for the specified url. It is possible for a URL to be in TopSites
+  // but not have an thumbnail.
   bool GetPageThumbnail(const GURL& url,
-                        scoped_refptr<RefCountedBytes>* bytes);
+                        scoped_refptr<RefCountedMemory>* bytes);
 
   // Fetches the thumbnail score for the specified url. Returns true if
   // there is a thumbnail score for the specified url.
@@ -57,9 +50,6 @@ class TopSitesCache {
 
   // Returns the index into |top_sites_| for |url|.
   size_t GetURLIndex(const GURL& url);
-
-  // Removes any thumbnails that are no longer referenced by the top sites.
-  void RemoveUnreferencedThumbnails();
 
  private:
   // The entries in CanonicalURLs, see CanonicalURLs for details. The second

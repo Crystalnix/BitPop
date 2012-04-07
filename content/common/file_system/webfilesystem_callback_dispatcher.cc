@@ -12,9 +12,9 @@
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystem.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebFileSystem.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebFileInfo;
@@ -60,8 +60,7 @@ void WebFileSystemCallbackDispatcher::DidReadDirectory(
 
 void WebFileSystemCallbackDispatcher::DidOpenFileSystem(
     const std::string& name, const GURL& root) {
-  callbacks_->didOpenFileSystem(
-      UTF8ToUTF16(name), UTF8ToUTF16(root.spec()));
+  callbacks_->didOpenFileSystem(UTF8ToUTF16(name), root);
 }
 
 void WebFileSystemCallbackDispatcher::DidFail(

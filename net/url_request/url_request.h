@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,29 +15,69 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/auth.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
+#include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
 
-namespace base {
-class Time;
-}  // namespace base
-
 class FilePath;
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+class AutoUpdateInterceptor;
+class ChildProcessSecurityPolicyTest;
+class ComponentUpdateInterceptor;
+class ResourceDispatcherHostTest;
+class TestAutomationProvider;
+class URLRequestAutomationJob;
+class UserScriptListenerTest;
+class NetworkDelayListenerTest;
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace appcache {
+class AppCacheInterceptor;
+class AppCacheRequestHandlerTest;
+class AppCacheURLRequestJobTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace fileapi {
+class FileSystemDirURLRequestJobTest;
+class FileSystemOperationWriteTest;
+class FileSystemURLRequestJobTest;
+class FileWriterDelegateTest;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace policy {
+class CannedResponseInterceptor;
+}
+
+// Temporary layering violation to allow existing users of a deprecated
+// interface.
+namespace webkit_blob {
+class BlobURLRequestJobTest;
+}
 
 namespace net {
 
+class CookieList;
 class CookieOptions;
 class HostPortPair;
 class IOBuffer;
 class SSLCertRequestInfo;
+class SSLInfo;
 class UploadData;
 class URLRequestContext;
 class URLRequestJob;
@@ -59,7 +99,7 @@ typedef std::vector<std::string> ResponseCookies;
 //
 // NOTE: All usage of all instances of this class should be on the same thread.
 //
-class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
+class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // Callback function implemented by protocol handlers to create new jobs.
   // The factory may return NULL to indicate an error, which will cause other
@@ -86,7 +126,7 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // This class handles network interception.  Use with
   // (Un)RegisterRequestInterceptor.
-  class NET_API Interceptor {
+  class NET_EXPORT Interceptor {
   public:
     virtual ~Interceptor() {}
 
@@ -115,6 +155,43 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     virtual URLRequestJob* MaybeInterceptResponse(URLRequest* request);
   };
 
+  // Deprecated interfaces in net::URLRequest. They have been moved to
+  // URLRequest's private section to prevent new uses. Existing uses are
+  // explicitly friended here and should be removed over time.
+  class NET_EXPORT Deprecated {
+   private:
+    // TODO(willchan): Kill off these friend declarations.
+    friend class ::AutoUpdateInterceptor;
+    friend class ::ChildProcessSecurityPolicyTest;
+    friend class ::ComponentUpdateInterceptor;
+    friend class ::ResourceDispatcherHostTest;
+    friend class ::TestAutomationProvider;
+    friend class ::UserScriptListenerTest;
+    friend class ::NetworkDelayListenerTest;
+    friend class ::URLRequestAutomationJob;
+    friend class TestInterceptor;
+    friend class URLRequestFilter;
+    friend class appcache::AppCacheInterceptor;
+    friend class appcache::AppCacheRequestHandlerTest;
+    friend class appcache::AppCacheURLRequestJobTest;
+    friend class fileapi::FileSystemDirURLRequestJobTest;
+    friend class fileapi::FileSystemOperationWriteTest;
+    friend class fileapi::FileSystemURLRequestJobTest;
+    friend class fileapi::FileWriterDelegateTest;
+    friend class policy::CannedResponseInterceptor;
+    friend class webkit_blob::BlobURLRequestJobTest;
+
+    // Use URLRequestJobFactory::ProtocolHandler instead.
+    static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
+                                                    ProtocolFactory* factory);
+
+    // Use URLRequestJobFactory::Interceptor instead.
+    static void RegisterRequestInterceptor(Interceptor* interceptor);
+    static void UnregisterRequestInterceptor(Interceptor* interceptor);
+
+    DISALLOW_IMPLICIT_CONSTRUCTORS(Deprecated);
+  };
+
   // The delegate's methods are called from the message loop of the thread
   // on which the request's Start() method is called. See above for the
   // ordering of callbacks.
@@ -138,7 +215,7 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // if an error occurred, or if the IO is just pending.  When Read() returns
   // true with zero bytes read, it indicates the end of the response.
   //
-  class NET_API Delegate {
+  class NET_EXPORT Delegate {
    public:
     virtual ~Delegate() {}
 
@@ -185,21 +262,26 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     // safe thing and Cancel() the request or decide to proceed by calling
     // ContinueDespiteLastError().  cert_error is a ERR_* error code
     // indicating what's wrong with the certificate.
+    // If |fatal| is true then the host in question demands a higher level
+    // of security (due e.g. to HTTP Strict Transport Security, user
+    // preference, or built-in policy). In this case, errors must not be
+    // bypassable by the user.
     virtual void OnSSLCertificateError(URLRequest* request,
-                                       int cert_error,
-                                       X509Certificate* cert);
+                                       const SSLInfo& ssl_info,
+                                       bool fatal);
 
     // Called when reading cookies to allow the delegate to block access to the
     // cookie. This method will never be invoked when LOAD_DO_NOT_SEND_COOKIES
     // is specified.
-    virtual bool CanGetCookies(URLRequest* request);
+    virtual bool CanGetCookies(const URLRequest* request,
+                               const CookieList& cookie_list) const;
 
     // Called when a cookie is set to allow the delegate to block access to the
     // cookie. This method will never be invoked when LOAD_DO_NOT_SAVE_COOKIES
     // is specified.
-    virtual bool CanSetCookie(URLRequest* request,
+    virtual bool CanSetCookie(const URLRequest* request,
                               const std::string& cookie_line,
-                              CookieOptions* options);
+                              CookieOptions* options) const;
 
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
@@ -233,27 +315,6 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // delete the object if it is changed or the request is destroyed.
   UserData* GetUserData(const void* key) const;
   void SetUserData(const void* key, UserData* data);
-
-  // Registers a new protocol handler for the given scheme. If the scheme is
-  // already handled, this will overwrite the given factory. To delete the
-  // protocol factory, use NULL for the factory BUT this WILL NOT put back
-  // any previously registered protocol factory. It will have returned
-  // the previously registered factory (or NULL if none is registered) when
-  // the scheme was first registered so that the caller can manually put it
-  // back if desired.
-  //
-  // The scheme must be all-lowercase ASCII. See the ProtocolFactory
-  // declaration for its requirements.
-  //
-  // The registered protocol factory may return NULL, which will cause the
-  // regular "built-in" protocol factory to be used.
-  //
-  static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
-                                                  ProtocolFactory* factory);
-
-  // Registers or unregisters a network interception class.
-  static void RegisterRequestInterceptor(Interceptor* interceptor);
-  static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
   // Returns true if the scheme can be handled by URLRequest. False otherwise.
   static bool IsHandledProtocol(const std::string& scheme);
@@ -306,10 +367,9 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // Returns the referrer header with potential username and password removed.
   GURL GetSanitizedReferrer() const;
 
-  // The delegate of the request.  This value may be changed at any time,
+  // Sets the delegate of the request.  This value may be changed at any time,
   // and it is permissible for it to be null.
-  Delegate* delegate() const { return delegate_; }
-  void set_delegate(Delegate* delegate) { delegate_ = delegate; }
+  void set_delegate(Delegate* delegate);
 
   // The data comprising the request message body is specified as a sequence of
   // data segments and/or files containing data to upload.  These methods may
@@ -319,18 +379,7 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // appropriate value before calling Start().
   //
   // When uploading data, bytes_len must be non-zero.
-  // When uploading a file range, length must be non-zero. If length
-  // exceeds the end-of-file, the upload is clipped at end-of-file. If the
-  // expected modification time is provided (non-zero), it will be used to
-  // check if the underlying file has been changed or not. The granularity of
-  // the time comparison is 1 second since time_t precision is used in WebKit.
   void AppendBytesToUpload(const char* bytes, int bytes_len);  // takes a copy
-  void AppendFileRangeToUpload(const FilePath& file_path,
-                               uint64 offset, uint64 length,
-                               const base::Time& expected_modification_time);
-  void AppendFileToUpload(const FilePath& file_path) {
-    AppendFileRangeToUpload(file_path, 0, kuint64max, base::Time());
-  }
 
   // Indicates that the request body should be sent using chunked transfer
   // encoding. This method may only be called before Start() is called.
@@ -370,8 +419,13 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     return extra_request_headers_;
   }
 
-  // Returns the current load state for the request.
-  LoadState GetLoadState() const;
+  // Returns the current load state for the request. |param| is an optional
+  // parameter describing details related to the load state. Not all load states
+  // have a parameter.
+  LoadStateWithParam GetLoadState() const;
+  void SetLoadStateParam(const string16& param) {
+    load_state_param_ = param;
+  }
 
   // Returns the current upload progress in bytes.
   uint64 GetUploadProgress() const;
@@ -389,6 +443,9 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // the response status line.  Restrictions on GetResponseHeaders apply.
   void GetAllResponseHeaders(std::string* headers);
 
+  // The time when |this| was constructed.
+  base::TimeTicks creation_time() const { return creation_time_; }
+
   // The time at which the returned response was requested.  For cached
   // responses, this is the last time the cache entry was validated.
   const base::Time& request_time() const {
@@ -403,18 +460,6 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // Indicate if this response was fetched from disk cache.
   bool was_cached() const { return response_info_.was_cached; }
-
-  // True if response could use alternate protocol. However, browser will
-  // ignore the alternate protocol if spdy is not enabled.
-  bool was_fetched_via_spdy() const {
-    return response_info_.was_fetched_via_spdy;
-  }
-
-  // Returns true if the URLRequest was delivered after NPN is negotiated,
-  // using either SPDY or HTTP.
-  bool was_npn_negotiated() const {
-    return response_info_.was_npn_negotiated;
-  }
 
   // Returns true if the URLRequest was delivered through a proxy.
   bool was_fetched_via_proxy() const {
@@ -482,15 +527,15 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // during the call to Cancel itself.
   void Cancel();
 
-  // Cancels the request and sets the error to |os_error| (see net_error_list.h
+  // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values).
-  void SimulateError(int os_error);
+  void SimulateError(int error);
 
-  // Cancels the request and sets the error to |os_error| (see net_error_list.h
+  // Cancels the request and sets the error to |error| (see net_error_list.h
   // for values) and attaches |ssl_info| as the SSLInfo for that request.  This
   // is useful to attach a certificate and certificate error to a canceled
   // request.
-  void SimulateSSLError(int os_error, const SSLInfo& ssl_info);
+  void SimulateSSLError(int error, const SSLInfo& ssl_info);
 
   // Read initiates an asynchronous read from the response, and must only
   // be called after the OnResponseStarted callback is received with a
@@ -531,7 +576,7 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // OnAuthRequired() callback (and only then).
   // SetAuth will reissue the request with the given credentials.
   // CancelAuth will give up and display the error page.
-  void SetAuth(const string16& username, const string16& password);
+  void SetAuth(const AuthCredentials& credentials);
   void CancelAuth();
 
   // This method can be called after the user selects a client certificate to
@@ -545,8 +590,8 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   void ContinueDespiteLastError();
 
   // Used to specify the context (cookie store, cache) for this request.
-  URLRequestContext* context() const;
-  void set_context(URLRequestContext* context);
+  const URLRequestContext* context() const;
+  void set_context(const URLRequestContext* context);
 
   const BoundNetLog& net_log() const { return net_log_; }
 
@@ -561,9 +606,9 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
     priority_ = priority;
   }
 
-#ifdef UNIT_TEST
+  // This method is intended only for unit tests, but it is being used by
+  // unit tests outside of net :(.
   URLRequestJob* job() { return job_; }
-#endif
 
  protected:
   // Allow the URLRequestJob class to control the is_pending() flag.
@@ -577,11 +622,7 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   int Redirect(const GURL& location, int http_status_code);
 
   // Called by URLRequestJob to allow interception when a redirect occurs.
-  void ReceivedRedirect(const GURL& location, bool* defer_redirect);
-
-  // Called by URLRequestJob to allow interception when the final response
-  // occurs.
-  void ResponseStarted();
+  void NotifyReceivedRedirect(const GURL& location, bool* defer_redirect);
 
   // Allow an interceptor's URLRequestJob to restart this request.
   // Should only be called if the original job has not started a response.
@@ -589,7 +630,29 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
  private:
   friend class URLRequestJob;
+
   typedef std::map<const void*, linked_ptr<UserData> > UserDataMap;
+
+  // Registers a new protocol handler for the given scheme. If the scheme is
+  // already handled, this will overwrite the given factory. To delete the
+  // protocol factory, use NULL for the factory BUT this WILL NOT put back
+  // any previously registered protocol factory. It will have returned
+  // the previously registered factory (or NULL if none is registered) when
+  // the scheme was first registered so that the caller can manually put it
+  // back if desired.
+  //
+  // The scheme must be all-lowercase ASCII. See the ProtocolFactory
+  // declaration for its requirements.
+  //
+  // The registered protocol factory may return NULL, which will cause the
+  // regular "built-in" protocol factory to be used.
+  //
+  static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
+                                                  ProtocolFactory* factory);
+
+  // Registers or unregisters a network interception class.
+  static void RegisterRequestInterceptor(Interceptor* interceptor);
+  static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
   // Resumes or blocks a request paused by the NetworkDelegate::OnBeforeRequest
   // handler. If |blocked| is true, the request is blocked and an error page is
@@ -612,12 +675,40 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
 
   // Cancels the request and set the error and ssl info for this request to the
   // passed values.
-  void DoCancel(int os_error, const SSLInfo& ssl_info);
+  void DoCancel(int error, const SSLInfo& ssl_info);
+
+  // Notifies the network delegate that the request has been completed.
+  // This does not imply a successful completion. Also a canceled request is
+  // considered completed.
+  void NotifyRequestCompleted();
+
+  // Called by URLRequestJob to allow interception when the final response
+  // occurs.
+  void NotifyResponseStarted();
+
+  bool has_delegate() const { return delegate_ != NULL; }
+
+  // These functions delegate to |delegate_| and may only be used if
+  // |delegate_| is not NULL. See URLRequest::Delegate for the meaning
+  // of these functions.
+  void NotifyAuthRequired(AuthChallengeInfo* auth_info);
+  void NotifyAuthRequiredComplete(NetworkDelegate::AuthRequiredResponse result);
+  void NotifyCertificateRequested(SSLCertRequestInfo* cert_request_info);
+  void NotifySSLCertificateError(const SSLInfo& ssl_info, bool fatal);
+  bool CanGetCookies(const CookieList& cookie_list) const;
+  bool CanSetCookie(const std::string& cookie_line,
+                    CookieOptions* options) const;
+  void NotifyReadCompleted(int bytes_read);
+
+  // Called when the delegate blocks or unblocks this request when intercepting
+  // certain requests.
+  void SetBlockedOnDelegate();
+  void SetUnblockedOnDelegate();
 
   // Contextual information used for this request (can be NULL). This contains
   // most of the dependencies which are shared between requests (disk cache,
   // cookie store, socket pool, etc.)
-  scoped_refptr<URLRequestContext> context_;
+  scoped_refptr<const URLRequestContext> context_;
 
   // Tracks the time spent in various load states throughout this request.
   BoundNetLog net_log_;
@@ -633,6 +724,8 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   int load_flags_;  // Flags indicating the request type for the load;
                     // expected values are LOAD_* enums above.
 
+  // Never access methods of the |delegate_| directly. Always use the
+  // Notify... methods for this.
   Delegate* delegate_;
 
   // Current error status of the job. When no error has been encountered, this
@@ -663,14 +756,42 @@ class NET_API URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe) {
   // this to determine which URLRequest to allocate sockets to first.
   RequestPriority priority_;
 
+  // TODO(battre): The only consumer of the identifier_ is currently the
+  // web request API. We need to match identifiers of requests between the
+  // web request API and the web navigation API. As the URLRequest does not
+  // exist when the web navigation API is triggered, the tracking probably
+  // needs to be done outside of the URLRequest anyway. Therefore, this
+  // identifier should be deleted here. http://crbug.com/89321
   // A globally unique identifier for this request.
   const uint64 identifier_;
+
+  // True if this request is blocked waiting for the network delegate to resume
+  // it.
+  bool blocked_on_delegate_;
+
+  // An optional parameter that provides additional information about the load
+  // state. Only used with the LOAD_STATE_WAITING_FOR_DELEGATE state.
+  string16 load_state_param_;
 
   base::debug::LeakTracker<URLRequest> leak_tracker_;
 
   // Callback passed to the network delegate to notify us when a blocked request
   // is ready to be resumed or canceled.
-  CompletionCallbackImpl<URLRequest> before_request_callback_;
+  CompletionCallback before_request_callback_;
+
+  // Safe-guard to ensure that we do not send multiple "I am completed"
+  // messages to network delegate.
+  // TODO(battre): Remove this. http://crbug.com/89049
+  bool has_notified_completion_;
+
+  // Authentication data used by the NetworkDelegate for this request,
+  // if one is present. |auth_credentials_| may be filled in when calling
+  // |NotifyAuthRequired| on the NetworkDelegate. |auth_info_| holds
+  // the authentication challenge being handled by |NotifyAuthRequired|.
+  AuthCredentials auth_credentials_;
+  scoped_refptr<AuthChallengeInfo> auth_info_;
+
+  base::TimeTicks creation_time_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

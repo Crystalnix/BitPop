@@ -9,36 +9,34 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_bookmark_manager_api.h"
+#include "chrome/browser/bookmarks/bookmark_manager_extension_api.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_controller.h"
 
-class GURL;
-class ListValue;
 class PrefService;
 class Profile;
-class RenderViewHost;
-class TabContents;
 
 // This class implements WebUI for extensions and allows extensions to put UI in
 // the main tab contents area. For example, each extension can specify an
 // "options_page", and that page is displayed in the tab contents area and is
 // hosted by this class.
-class ExtensionWebUI : public WebUI {
+class ExtensionWebUI : public content::WebUIController {
  public:
   static const char kExtensionURLOverrides[];
 
-  explicit ExtensionWebUI(TabContents* tab_contents, const GURL& url);
+  ExtensionWebUI(content::WebUI* web_ui, const GURL& url);
 
   virtual ~ExtensionWebUI();
 
-  virtual ExtensionBookmarkManagerEventRouter*
-      extension_bookmark_manager_event_router();
+  virtual BookmarkManagerExtensionEventRouter*
+      bookmark_manager_extension_event_router();
 
   // BrowserURLHandler
-  static bool HandleChromeURLOverride(GURL* url, Profile* profile);
-  static bool HandleChromeURLOverrideReverse(GURL* url, Profile* profile);
+  static bool HandleChromeURLOverride(GURL* url,
+                                      content::BrowserContext* browser_context);
+  static bool HandleChromeURLOverrideReverse(
+      GURL* url, content::BrowserContext* browser_context);
 
   // Register and unregister a dictionary of one or more overrides.
   // Page names are the keys, and chrome-extension: URLs are the values.
@@ -49,7 +47,7 @@ class ExtensionWebUI : public WebUI {
       const Extension::URLOverrideMap& overrides);
   static void UnregisterChromeURLOverride(const std::string& page,
                                           Profile* profile,
-                                          Value* override);
+                                          base::Value* override);
 
   // Called from BrowserPrefs
   static void RegisterUserPrefs(PrefService* prefs);
@@ -64,13 +62,13 @@ class ExtensionWebUI : public WebUI {
   // ensure that something takes its place.
   static void UnregisterAndReplaceOverride(const std::string& page,
                                            Profile* profile,
-                                           ListValue* list,
-                                           Value* override);
+                                           base::ListValue* list,
+                                           base::Value* override);
 
   // TODO(aa): This seems out of place. Why is it not with the event routers for
   // the other extension APIs?
-  scoped_ptr<ExtensionBookmarkManagerEventRouter>
-      extension_bookmark_manager_event_router_;
+  scoped_ptr<BookmarkManagerExtensionEventRouter>
+      bookmark_manager_extension_event_router_;
 
   // The URL this WebUI was created for.
   GURL url_;

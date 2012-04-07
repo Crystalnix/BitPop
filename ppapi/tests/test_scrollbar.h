@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,8 @@ class TestScrollbar : public TestCase,
   TestScrollbar(TestingInstance* instance);
 
   // TestCase implementation.
-  virtual void RunTest();
+  virtual bool Init();
+  virtual void RunTests(const std::string& filter);
 
  private:
   std::string TestHandleEvent();
@@ -25,6 +26,8 @@ class TestScrollbar : public TestCase,
                                 const pp::Rect& dirty_rect);
   virtual void ScrollbarValueChanged(pp::Scrollbar_Dev scrollbar,
                                      uint32_t value);
+  virtual void ScrollbarOverlayChanged(pp::Scrollbar_Dev scrollbar,
+                                       bool type);
 
   pp::Scrollbar_Dev scrollbar_;
   bool scrollbar_value_changed_;

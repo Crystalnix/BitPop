@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -86,6 +86,7 @@ class ShortcutsTest(pyauto.PyUITest):
 
   def testClearBrowsingDataShortcut(self):
     """Verify clear browsing data shortcut."""
+    self.NavigateToURL(self.GetFileURLForDataPath('title2.html'))
     self.ApplyAccelerator(pyauto.IDC_CLEAR_BROWSING_DATA)
     self.assertEquals(2, self.GetTabCount())
     self.assertTrue(re.search('clearBrowserData',
@@ -95,7 +96,7 @@ class ShortcutsTest(pyauto.PyUITest):
         self.ExecuteJavascript(
         'var element = document.getElementById("clearBrowserDataOverlay");'
         'if(element) window.domAutomationController.send(element.nodeName);'
-        'else window.domAutomationController.send(0)', 0, 1),
+        'else window.domAutomationController.send("")', 1),
         expect_retval='DIV'), msg='Could not find the DOM UI window element.')
 
   def testViewSourceShortcut(self):

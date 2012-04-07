@@ -7,6 +7,7 @@
 #include "base/message_loop_proxy.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "base/values.h"
 #include "chrome/service/cloud_print/cloud_print_url_fetcher.h"
 #include "chrome/service/service_process.h"
 #include "googleurl/src/gurl.h"
@@ -45,7 +46,7 @@ class TestURLRequestContextGetter : public net::URLRequestContextGetter {
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
 
  private:
-  ~TestURLRequestContextGetter() {
+  virtual ~TestURLRequestContextGetter() {
     g_request_context_getter_instances--;
   }
 
@@ -76,15 +77,20 @@ class CloudPrintURLFetcherTest : public testing::Test,
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
       const net::ResponseCookies& cookies,
       const std::string& data);
 
-  virtual void OnRequestAuthError() {
+  virtual CloudPrintURLFetcher::ResponseAction OnRequestAuthError() {
     ADD_FAILURE();
+    return CloudPrintURLFetcher::STOP_PROCESSING;
+  }
+
+  virtual std::string GetAuthHeader() {
+    return std::string();
   }
 
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy() {
@@ -95,7 +101,7 @@ class CloudPrintURLFetcherTest : public testing::Test,
   virtual void SetUp() {
     testing::Test::SetUp();
 
-    io_message_loop_proxy_ = base::MessageLoopProxy::CreateForCurrentThread();
+    io_message_loop_proxy_ = base::MessageLoopProxy::current();
   }
 
   virtual void TearDown() {
@@ -124,7 +130,7 @@ class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
       : handle_raw_response_(false), handle_raw_data_(false) { }
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawResponse(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const net::URLRequestStatus& status,
       int response_code,
@@ -132,12 +138,12 @@ class CloudPrintURLFetcherBasicTest : public CloudPrintURLFetcherTest {
       const std::string& data);
 
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
   virtual CloudPrintURLFetcher::ResponseAction HandleJSONData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       DictionaryValue* json_data,
       bool succeeded);
@@ -161,7 +167,7 @@ class CloudPrintURLFetcherOverloadTest : public CloudPrintURLFetcherTest {
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
@@ -177,7 +183,7 @@ class CloudPrintURLFetcherRetryBackoffTest : public CloudPrintURLFetcherTest {
 
   // CloudPrintURLFetcher::Delegate
   virtual CloudPrintURLFetcher::ResponseAction HandleRawData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       const std::string& data);
 
@@ -197,7 +203,7 @@ void CloudPrintURLFetcherTest::CreateFetcher(const GURL& url, int max_retries) {
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherTest::HandleRawResponse(
-    const URLFetcher* source,
+    const content::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
@@ -211,7 +217,7 @@ CloudPrintURLFetcherTest::HandleRawResponse(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleRawResponse(
-    const URLFetcher* source,
+    const content::URLFetcher* source,
     const GURL& url,
     const net::URLRequestStatus& status,
     int response_code,
@@ -224,7 +230,7 @@ CloudPrintURLFetcherBasicTest::HandleRawResponse(
   if (handle_raw_response_) {
     // If the current message loop is not the IO loop, it will be shut down when
     // the main loop returns and this thread subsequently goes out of scope.
-    io_message_loop_proxy()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     return CloudPrintURLFetcher::STOP_PROCESSING;
   }
   return CloudPrintURLFetcher::CONTINUE_PROCESSING;
@@ -232,13 +238,13 @@ CloudPrintURLFetcherBasicTest::HandleRawResponse(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleRawData(
-    const URLFetcher* source,
+    const content::URLFetcher* source,
     const GURL& url,
     const std::string& data) {
   // We should never get here if we returned true in HandleRawResponse
   EXPECT_FALSE(handle_raw_response_);
   if (handle_raw_data_) {
-    io_message_loop_proxy()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     return CloudPrintURLFetcher::STOP_PROCESSING;
   }
   return CloudPrintURLFetcher::CONTINUE_PROCESSING;
@@ -246,21 +252,22 @@ CloudPrintURLFetcherBasicTest::HandleRawData(
 
 CloudPrintURLFetcher::ResponseAction
 CloudPrintURLFetcherBasicTest::HandleJSONData(
-    const URLFetcher* source,
+    const content::URLFetcher* source,
     const GURL& url,
     DictionaryValue* json_data,
     bool succeeded) {
   // We should never get here if we returned true in one of the above methods.
   EXPECT_FALSE(handle_raw_response_);
   EXPECT_FALSE(handle_raw_data_);
-  io_message_loop_proxy()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }
 
 CloudPrintURLFetcher::ResponseAction
-CloudPrintURLFetcherOverloadTest::HandleRawData(const URLFetcher* source,
-                                                const GURL& url,
-                                                const std::string& data) {
+CloudPrintURLFetcherOverloadTest::HandleRawData(
+    const content::URLFetcher* source,
+    const GURL& url,
+    const std::string& data) {
   const TimeDelta one_second = TimeDelta::FromMilliseconds(1000);
   response_count_++;
   if (response_count_ < 20) {
@@ -272,15 +279,16 @@ CloudPrintURLFetcherOverloadTest::HandleRawData(const URLFetcher* source,
     // We have already sent 20 requests continuously. And we expect that
     // it takes more than 1 second due to the overload protection settings.
     EXPECT_TRUE(Time::Now() - start_time_ >= one_second);
-    io_message_loop_proxy()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }
 
 CloudPrintURLFetcher::ResponseAction
-CloudPrintURLFetcherRetryBackoffTest::HandleRawData(const URLFetcher* source,
-                                                    const GURL& url,
-                                                    const std::string& data) {
+CloudPrintURLFetcherRetryBackoffTest::HandleRawData(
+    const content::URLFetcher* source,
+    const GURL& url,
+    const std::string& data) {
   response_count_++;
   // First attempt + 11 retries = 12 total responses.
   EXPECT_LE(response_count_, 12);
@@ -290,7 +298,7 @@ CloudPrintURLFetcherRetryBackoffTest::HandleRawData(const URLFetcher* source,
 void CloudPrintURLFetcherRetryBackoffTest::OnRequestGiveUp() {
   // It takes more than 200 ms to finish all 11 requests.
   EXPECT_TRUE(Time::Now() - start_time_ >= TimeDelta::FromMilliseconds(200));
-  io_message_loop_proxy()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  io_message_loop_proxy()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=60426

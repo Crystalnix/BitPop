@@ -7,19 +7,19 @@
 #pragma once
 
 #include "net/base/completion_callback.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
 class IOBuffer;
 
 // Represents a read/write socket.
-class NET_API Socket {
+class NET_EXPORT Socket {
  public:
   virtual ~Socket() {}
 
-  // Reads data, up to buf_len bytes, from the socket.  The number of bytes read
-  // is returned, or an error is returned upon failure.
+  // Reads data, up to |buf_len| bytes, from the socket.  The number of bytes
+  // read is returned, or an error is returned upon failure.
   // ERR_SOCKET_NOT_CONNECTED should be returned if the socket is not currently
   // connected.  Zero is returned once to indicate end-of-file; the return value
   // of subsequent calls is undefined, and may be OS dependent.  ERR_IO_PENDING
@@ -30,10 +30,10 @@ class NET_API Socket {
   // closed.  If the socket is Disconnected before the read completes, the
   // callback will not be invoked.
   virtual int Read(IOBuffer* buf, int buf_len,
-                   CompletionCallback* callback) = 0;
+                   const CompletionCallback& callback) = 0;
 
-  // Writes data, up to buf_len bytes, to the socket.  Note: only part of the
-  // data may be written!  The number of bytes written is returned, or an error
+  // Writes data, up to |buf_len| bytes, to the socket.  Note: data may be
+  // written partially.  The number of bytes written is returned, or an error
   // is returned upon failure.  ERR_SOCKET_NOT_CONNECTED should be returned if
   // the socket is not currently connected.  The return value when the
   // connection is closed is undefined, and may be OS dependent.  ERR_IO_PENDING
@@ -45,15 +45,15 @@ class NET_API Socket {
   // of the actual buffer that is written to the socket.  If the socket is
   // Disconnected before the write completes, the callback will not be invoked.
   virtual int Write(IOBuffer* buf, int buf_len,
-                    CompletionCallback* callback) = 0;
+                    const CompletionCallback& callback) = 0;
 
   // Set the receive buffer size (in bytes) for the socket.
-  // Note: changing this value can effect the TCP window size on some platforms.
+  // Note: changing this value can affect the TCP window size on some platforms.
   // Returns true on success, or false on failure.
   virtual bool SetReceiveBufferSize(int32 size) = 0;
 
   // Set the send buffer size (in bytes) for the socket.
-  // Note: changing this value can effect the TCP window size on some platforms.
+  // Note: changing this value can affect the TCP window size on some platforms.
   // Returns true on success, or false on failure.
   virtual bool SetSendBufferSize(int32 size) = 0;
 };

@@ -8,21 +8,15 @@
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/login/background_view.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/network_selection_view.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
-#include "chrome/browser/chromeos/login/views_network_screen_actor.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/controls/menu/menu_2.h"
-#include "views/window/window.h"
-
 
 namespace {
 
@@ -77,10 +71,8 @@ void NetworkScreen::OnNetworkManagerChanged(NetworkLibrary* network_lib) {
 // NetworkScreen, public:
 
 void NetworkScreen::Refresh() {
-  if (CrosLibrary::Get()->EnsureLoaded()) {
-    SubscribeNetworkNotification();
-    OnNetworkManagerChanged(chromeos::CrosLibrary::Get()->GetNetworkLibrary());
-  }
+  SubscribeNetworkNotification();
+  OnNetworkManagerChanged(chromeos::CrosLibrary::Get()->GetNetworkLibrary());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -138,7 +130,7 @@ void NetworkScreen::OnConnectionTimeout() {
 }
 
 void NetworkScreen::UpdateStatus(NetworkLibrary* network) {
-  if (!actor_.get() || !network)
+  if (!actor_ || !network)
     return;
 
   if (network->Connected())
@@ -173,7 +165,8 @@ void NetworkScreen::StopWaitingForConnection(const string16& network_id) {
 void NetworkScreen::WaitForConnection(const string16& network_id) {
   if (network_id_ != network_id || !connection_timer_.IsRunning()) {
     connection_timer_.Stop();
-    connection_timer_.Start(base::TimeDelta::FromSeconds(kConnectionTimeoutSec),
+    connection_timer_.Start(FROM_HERE,
+                            base::TimeDelta::FromSeconds(kConnectionTimeoutSec),
                             this,
                             &NetworkScreen::OnConnectionTimeout);
   }

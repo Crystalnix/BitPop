@@ -8,11 +8,9 @@
 
 #include <string>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/gtest_prod_util.h"
-#include "content/browser/cancelable_request.h"
-
-class FilePath;
+#include "chrome/browser/cancelable_request.h"
 
 namespace chromeos {
 
@@ -43,21 +41,21 @@ class VersionLoader : public CancelableRequestProvider {
   };
 
   // Signature
-  typedef Callback2<Handle, std::string>::Type GetVersionCallback;
+  typedef base::Callback<void(Handle, std::string)> GetVersionCallback;
   typedef CancelableRequest<GetVersionCallback> GetVersionRequest;
 
-  typedef Callback2<Handle, std::string>::Type GetFirmwareCallback;
+  typedef base::Callback<void(Handle, std::string)> GetFirmwareCallback;
   typedef CancelableRequest<GetFirmwareCallback> GetFirmwareRequest;
 
   // Asynchronously requests the version.
   // If |full_version| is true version string with extra info is extracted,
   // otherwise it's in short format x.x.xx.x.
   Handle GetVersion(CancelableRequestConsumerBase* consumer,
-                    GetVersionCallback* callback,
+                    const GetVersionCallback& callback,
                     VersionFormat format);
 
   Handle GetFirmware(CancelableRequestConsumerBase* consumer,
-                     GetFirmwareCallback* callback);
+                     const GetFirmwareCallback& callback);
 
   // Parse the version information as a Chrome platfrom, not Chrome OS
   // TODO(rkc): Change this and everywhere it is used once we switch Chrome OS
@@ -78,7 +76,7 @@ class VersionLoader : public CancelableRequestProvider {
   // and extract the version.
   class Backend : public base::RefCountedThreadSafe<Backend> {
    public:
-    Backend() : parse_as_platform_(false) {}
+    Backend() {}
 
     // Calls ParseVersion to get the version # and notifies request.
     // This is invoked on the file thread.
@@ -90,12 +88,8 @@ class VersionLoader : public CancelableRequestProvider {
     // This is invoked on the file thread.
     void GetFirmware(scoped_refptr<GetFirmwareRequest> request);
 
-    void set_parse_as_platform(bool value) { parse_as_platform_ = value; }
-
    private:
     friend class base::RefCountedThreadSafe<Backend>;
-
-    bool parse_as_platform_;
 
     ~Backend() {}
 

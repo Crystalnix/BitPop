@@ -4,12 +4,13 @@
 
 #include "chrome/browser/ui/views/location_bar/icon_label_bubble_view.h"
 
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
 
 // Amount of padding at the edges of the bubble.
 static const int kBubbleOuterPadding = LocationBarView::kEdgeItemPadding -
@@ -24,12 +25,14 @@ IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
     : background_painter_(background_images),
       is_extension_icon_(false) {
   image_ = new views::ImageView();
-  AddChildView(image_);
   image_->SetImage(
       ResourceBundle::GetSharedInstance().GetBitmapNamed(contained_image));
+  AddChildView(image_);
+
   label_ = new views::Label();
+  label_->SetAutoColorReadabilityEnabled(false);
+  label_->SetEnabledColor(color);
   AddChildView(label_);
-  label_->SetColor(color);
 }
 
 IconLabelBubbleView::~IconLabelBubbleView() {
@@ -39,7 +42,7 @@ void IconLabelBubbleView::SetFont(const gfx::Font& font) {
   label_->SetFont(font);
 }
 
-void IconLabelBubbleView::SetLabel(const std::wstring& label) {
+void IconLabelBubbleView::SetLabel(const string16& label) {
   label_->SetText(label);
 }
 

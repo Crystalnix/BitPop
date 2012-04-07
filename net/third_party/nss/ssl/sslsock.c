@@ -186,6 +186,9 @@ static sslOptions ssl_defaults = {
     PR_FALSE,   /* requireSafeNegotiation */
     PR_FALSE,   /* enableFalseStart   */
     PR_FALSE,   /* enableOCSPStapling */
+    PR_FALSE,   /* enableCachedInfo */
+    PR_FALSE,   /* enableOBCerts */
+    PR_FALSE,   /* encryptClientCerts */
 };
 
 sslSessionIDLookupFunc  ssl_sid_lookup;
@@ -743,12 +746,20 @@ SSL_OptionSet(PRFileDesc *fd, PRInt32 which, PRBool on)
 	ss->opt.enableFalseStart = on;
 	break;
 
-      case SSL_ENABLE_SNAP_START:
-	ss->opt.enableSnapStart = on;
-	break;
-
       case SSL_ENABLE_OCSP_STAPLING:
 	ss->opt.enableOCSPStapling = on;
+	break;
+
+      case SSL_ENABLE_CACHED_INFO:
+	ss->opt.enableCachedInfo = on;
+	break;
+
+      case SSL_ENABLE_OB_CERTS:
+	ss->opt.enableOBCerts = on;
+	break;
+
+      case SSL_ENCRYPT_CLIENT_CERTS:
+	ss->opt.encryptClientCerts = on;
 	break;
 
       default:
@@ -815,8 +826,11 @@ SSL_OptionGet(PRFileDesc *fd, PRInt32 which, PRBool *pOn)
     case SSL_REQUIRE_SAFE_NEGOTIATION: 
                                   on = ss->opt.requireSafeNegotiation; break;
     case SSL_ENABLE_FALSE_START:  on = ss->opt.enableFalseStart;   break;
-    case SSL_ENABLE_SNAP_START:   on = ss->opt.enableSnapStart;    break;
     case SSL_ENABLE_OCSP_STAPLING: on = ss->opt.enableOCSPStapling; break;
+    case SSL_ENABLE_CACHED_INFO:  on = ss->opt.enableCachedInfo;   break;
+    case SSL_ENABLE_OB_CERTS:     on = ss->opt.enableOBCerts;      break;
+    case SSL_ENCRYPT_CLIENT_CERTS:
+                                  on = ss->opt.encryptClientCerts; break;
 
     default:
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -868,10 +882,13 @@ SSL_OptionGetDefault(PRInt32 which, PRBool *pOn)
                                   on = ssl_defaults.requireSafeNegotiation; 
 				  break;
     case SSL_ENABLE_FALSE_START:  on = ssl_defaults.enableFalseStart;   break;
-    case SSL_ENABLE_SNAP_START:   on = ssl_defaults.enableSnapStart;   break;
     case SSL_ENABLE_OCSP_STAPLING:
 	on = ssl_defaults.enableOCSPStapling;
 	break;
+    case SSL_ENABLE_CACHED_INFO:  on = ssl_defaults.enableCachedInfo;   break;
+    case SSL_ENABLE_OB_CERTS:     on = ssl_defaults.enableOBCerts;      break;
+    case SSL_ENCRYPT_CLIENT_CERTS:
+                                  on = ssl_defaults.encryptClientCerts; break;
 
     default:
 	PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -1019,12 +1036,20 @@ SSL_OptionSetDefault(PRInt32 which, PRBool on)
 	ssl_defaults.enableFalseStart = on;
 	break;
 
-      case SSL_ENABLE_SNAP_START:
-	ssl_defaults.enableSnapStart = on;
-	break;
-
       case SSL_ENABLE_OCSP_STAPLING:
 	ssl_defaults.enableOCSPStapling = on;
+	break;
+
+      case SSL_ENABLE_CACHED_INFO:
+	ssl_defaults.enableCachedInfo = on;
+	break;
+
+      case SSL_ENABLE_OB_CERTS:
+	ssl_defaults.enableOBCerts = on;
+	break;
+
+      case SSL_ENCRYPT_CLIENT_CERTS:
+	ssl_defaults.encryptClientCerts = on;
 	break;
 
       default:
@@ -1298,17 +1323,86 @@ SSL_ImportFD(PRFileDesc *model, PRFileDesc *fd)
     return fd;
 }
 
-/* SSL_SetNextProtoNego sets the list of supported protocols for the given
- * socket. The list is a series of 8-bit, length prefixed strings. */
 SECStatus
-SSL_SetNextProtoNego(PRFileDesc *fd, const unsigned char *data,
-		     unsigned short length)
-{
+SSL_SetNextProtoCallback(PRFileDesc *fd,
+                         SSLNextProtoCallback callback,
+                         void *arg) {
     sslSocket *ss = ssl_FindSocket(fd);
 
     if (!ss) {
 	SSL_DBG(("%d: SSL[%d]: bad socket in SSL_SetNextProtoNego", SSL_GETPID(),
 		fd));
+	PORT_SetError(SEC_ERROR_INVALID_ARGS);
+	return SECFailure;
+    }
+
+    ssl_GetSSL3HandshakeLock(ss);
+    ss->nextProtoCallback = callback;
+    ss->nextProtoArg = arg;
+    ssl_ReleaseSSL3HandshakeLock(ss);
+    return SECSuccess;
+}
+
+/* NextProtoStandardCallback is set as an NPN callback for the case when the
+ * user of the sockets wants the standard selection algorithm. */
+static SECStatus
+NextProtoStandardCallback(void *arg,
+			  PRFileDesc *fd,
+			  const unsigned char *protos,
+			  unsigned int protos_len,
+			  unsigned char *protoOut,
+			  unsigned int *protoOutLen)
+{
+    unsigned int i, j;
+    const unsigned char *result;
+
+    sslSocket *ss = ssl_FindSocket(fd);
+    PORT_Assert(ss);
+
+    if (protos_len == 0) {
+	/* The server supports the extension, but doesn't have any protocols
+	 * configured. In this case we request our favoured protocol. */
+	goto pick_first;
+    }
+
+    /* For each protocol in server preference, see if we support it. */
+    for (i = 0; i < protos_len; ) {
+	for (j = 0; j < ss->opt.nextProtoNego.len; ) {
+	    if (protos[i] == ss->opt.nextProtoNego.data[j] &&
+		memcmp(&protos[i+1], &ss->opt.nextProtoNego.data[j+1],
+		       protos[i]) == 0) {
+		/* We found a match. */
+		ss->ssl3.nextProtoState = SSL_NEXT_PROTO_NEGOTIATED;
+		result = &protos[i];
+		goto found;
+	    }
+	    j += (unsigned int)ss->opt.nextProtoNego.data[j] + 1;
+	}
+	i += (unsigned int)protos[i] + 1;
+    }
+
+pick_first:
+    ss->ssl3.nextProtoState = SSL_NEXT_PROTO_NO_OVERLAP;
+    result = ss->opt.nextProtoNego.data;
+
+found:
+    memcpy(protoOut, result + 1, result[0]);
+    *protoOutLen = result[0];
+    return SECSuccess;
+}
+
+SECStatus
+SSL_SetNextProtoNego(PRFileDesc *fd, const unsigned char *data,
+		     unsigned int length)
+{
+    SECStatus rv;
+
+    sslSocket *ss = ssl_FindSocket(fd);
+
+    if (!ss) {
+	SSL_DBG(("%d: SSL[%d]: bad socket in SSL_SetNextProtoNego",
+		 SSL_GETPID(), fd));
+	PORT_SetError(SEC_ERROR_INVALID_ARGS);
 	return SECFailure;
     }
 
@@ -1328,18 +1422,9 @@ SSL_SetNextProtoNego(PRFileDesc *fd, const unsigned char *data,
     ss->opt.nextProtoNego.type = siBuffer;
     ssl_ReleaseSSL3HandshakeLock(ss);
 
-    return SECSuccess;
+    return SSL_SetNextProtoCallback(fd, NextProtoStandardCallback, NULL);
 }
 
-/* SSL_GetNextProto reads the resulting Next Protocol Negotiation result for
- * the given socket. It's only valid to call this once the handshake has
- * completed.
- *
- * state is set to one of the SSL_NEXT_PROTO_* constants. The negotiated
- * protocol, if any, is written into buf, which must be at least buf_len
- * bytes long. If the negotiated protocol is longer than this, it is truncated.
- * The number of bytes copied is written into length.
- */
 SECStatus
 SSL_GetNextProto(PRFileDesc *fd, int *state, unsigned char *buf,
 		 unsigned int *length, unsigned int buf_len)
@@ -1514,6 +1599,34 @@ SSL_GetStapledOCSPResponse(PRFileDesc *fd, unsigned char *out_data,
     ssl_Release1stHandshakeLock(ss);
 
     return SECSuccess;
+}
+
+SECStatus
+SSL_HandshakeResumedSession(PRFileDesc *fd, PRBool *handshake_resumed) {
+    sslSocket *ss = ssl_FindSocket(fd);
+
+    if (!ss) {
+	SSL_DBG(("%d: SSL[%d]: bad socket in SSL_HandshakeResumedSession",
+		 SSL_GETPID(), fd));
+	return SECFailure;
+    }
+
+    *handshake_resumed = ss->ssl3.hs.isResuming;
+    return SECSuccess;
+}
+
+const SECItem *
+SSL_GetRequestedClientCertificateTypes(PRFileDesc *fd)
+{
+  sslSocket *ss = ssl_FindSocket(fd);
+
+  if (!ss) {
+      SSL_DBG(("%d: SSL[%d]: bad socket in "
+               "SSL_GetRequestedClientCertificateTypes", SSL_GETPID(), fd));
+      return NULL;
+  }
+
+  return ss->requestedCertTypes;
 }
 
 /************************************************************************/
@@ -2500,6 +2613,7 @@ ssl_NewSocket(PRBool makeLocks)
 	    sc->serverKeyPair   = NULL;
 	    sc->serverKeyBits   = 0;
 	}
+	ss->requestedCertTypes = NULL;
 	ss->stepDownKeyPair    = NULL;
 	ss->dbHandle           = CERT_GetDefaultCertDB();
 
@@ -2540,4 +2654,3 @@ loser:
     }
     return ss;
 }
-

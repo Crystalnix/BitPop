@@ -7,17 +7,19 @@
 #include "base/metrics/histogram.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_factory.h"
+#include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+
+using content::BrowserThread;
 
 namespace browser_sync {
 
 BookmarkDataTypeController::BookmarkDataTypeController(
-    ProfileSyncFactory* profile_sync_factory,
+    ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
     : FrontendDataTypeController(profile_sync_factory,
@@ -37,8 +39,8 @@ bool BookmarkDataTypeController::StartModels() {
   }
 
   // Add an observer and continue when the bookmarks model is loaded.
-  registrar_.Add(this, NotificationType::BOOKMARK_MODEL_LOADED,
-                 Source<Profile>(sync_service_->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED,
+                 content::Source<Profile>(sync_service_->profile()));
   return false;  // Don't continue Start.
 }
 
@@ -47,11 +49,12 @@ void BookmarkDataTypeController::CleanUpState() {
   registrar_.RemoveAll();
 }
 
-void BookmarkDataTypeController::Observe(NotificationType type,
-                                         const NotificationSource& source,
-                                         const NotificationDetails& details) {
+void BookmarkDataTypeController::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(NotificationType::BOOKMARK_MODEL_LOADED, type.value);
+  DCHECK_EQ(chrome::NOTIFICATION_BOOKMARK_MODEL_LOADED, type);
   registrar_.RemoveAll();
   DCHECK_EQ(state_, MODEL_STARTING);
   state_ = ASSOCIATING;
@@ -63,8 +66,9 @@ syncable::ModelType BookmarkDataTypeController::type() const {
 }
 
 void BookmarkDataTypeController::CreateSyncComponents() {
-  ProfileSyncFactory::SyncComponents sync_components = profile_sync_factory_->
-      CreateBookmarkSyncComponents(sync_service_, this);
+  ProfileSyncComponentsFactory::SyncComponents sync_components =
+      profile_sync_factory_->CreateBookmarkSyncComponents(sync_service_,
+                                                          this);
   set_model_associator(sync_components.model_associator);
   set_change_processor(sync_components.change_processor);
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "chrome/browser/autofill/autofill_metrics.h"
 #include "chrome/browser/autofill/autofill_xml_parser.h"
@@ -18,17 +18,19 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/common/url_fetcher.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlparser.h"
 
-#define AUTO_FILL_QUERY_SERVER_REQUEST_URL \
-    "http://toolbarqueries.clients.google.com:80/tbproxy/af/query"
-#define AUTO_FILL_UPLOAD_SERVER_REQUEST_URL \
-    "http://toolbarqueries.clients.google.com:80/tbproxy/af/upload"
-#define AUTO_FILL_QUERY_SERVER_NAME_START_IN_HEADER "GFE/"
-
 namespace {
+const char kAutofillQueryServerRequestUrl[] =
+    "https://clients1.google.com/tbproxy/af/query";
+const char kAutofillUploadServerRequestUrl[] =
+    "https://clients1.google.com/tbproxy/af/upload";
+const char kAutofillQueryServerNameStartInHeader[] = "GFE/";
+
 const size_t kMaxFormCacheSize = 16;
 };
 
@@ -37,23 +39,22 @@ struct AutofillDownloadManager::FormRequestData {
   AutofillRequestType request_type;
 };
 
-AutofillDownloadManager::AutofillDownloadManager(Profile* profile)
+AutofillDownloadManager::AutofillDownloadManager(Profile* profile,
+                                                 Observer* observer)
     : profile_(profile),
-      observer_(NULL),
+      observer_(observer),
       max_form_cache_size_(kMaxFormCacheSize),
       next_query_request_(base::Time::Now()),
       next_upload_request_(base::Time::Now()),
       positive_upload_rate_(0),
       negative_upload_rate_(0),
       fetcher_id_for_unittest_(0) {
-  // |profile_| could be NULL in some unit-tests.
-  if (profile_) {
-    PrefService* preferences = profile_->GetPrefs();
-    positive_upload_rate_ =
-        preferences->GetDouble(prefs::kAutofillPositiveUploadRate);
-    negative_upload_rate_ =
-        preferences->GetDouble(prefs::kAutofillNegativeUploadRate);
-  }
+  DCHECK(observer_);
+  PrefService* preferences = profile_->GetPrefs();
+  positive_upload_rate_ =
+      preferences->GetDouble(prefs::kAutofillPositiveUploadRate);
+  negative_upload_rate_ =
+      preferences->GetDouble(prefs::kAutofillNegativeUploadRate);
 }
 
 AutofillDownloadManager::~AutofillDownloadManager() {
@@ -61,18 +62,8 @@ AutofillDownloadManager::~AutofillDownloadManager() {
                                       url_fetchers_.end());
 }
 
-void AutofillDownloadManager::SetObserver(
-    AutofillDownloadManager::Observer *observer) {
-  if (observer) {
-    DCHECK(!observer_);
-    observer_ = observer;
-  } else {
-    observer_ = NULL;
-  }
-}
-
 bool AutofillDownloadManager::StartQueryRequest(
-    const ScopedVector<FormStructure>& forms,
+    const std::vector<FormStructure*>& forms,
     const AutofillMetrics& metric_logger) {
   if (next_query_request_ > base::Time::Now()) {
     // We are in back-off mode: do not do the request.
@@ -90,10 +81,9 @@ bool AutofillDownloadManager::StartQueryRequest(
 
   std::string query_data;
   if (CheckCacheForQueryRequest(request_data.form_signatures, &query_data)) {
-    VLOG(1) << "AutofillDownloadManager: query request has been retrieved from"
-            << "the cache";
-    if (observer_)
-      observer_->OnLoadedAutofillHeuristics(query_data);
+    DVLOG(1) << "AutofillDownloadManager: query request has been retrieved from"
+             << "the cache";
+    observer_->OnLoadedServerPredictions(query_data);
     return true;
   }
 
@@ -106,15 +96,17 @@ bool AutofillDownloadManager::StartUploadRequest(
     const FieldTypeSet& available_field_types) {
   if (next_upload_request_ > base::Time::Now()) {
     // We are in back-off mode: do not do the request.
-    VLOG(1) << "AutofillDownloadManager: Upload request is throttled.";
+    DVLOG(1) << "AutofillDownloadManager: Upload request is throttled.";
     return false;
   }
 
   // Flip a coin to see if we should upload this form.
   double upload_rate = form_was_autofilled ? GetPositiveUploadRate() :
                                              GetNegativeUploadRate();
-  if (base::RandDouble() > upload_rate) {
-    VLOG(1) << "AutofillDownloadManager: Upload request is ignored.";
+  if (form.upload_required() == UPLOAD_NOT_REQUIRED ||
+      (form.upload_required() == USE_UPLOAD_RATES &&
+       base::RandDouble() > upload_rate)) {
+    DVLOG(1) << "AutofillDownloadManager: Upload request is ignored.";
     // If we ever need notification that upload was skipped, add it here.
     return false;
   }
@@ -131,25 +123,6 @@ bool AutofillDownloadManager::StartUploadRequest(
   return StartRequest(form_xml, request_data);
 }
 
-bool AutofillDownloadManager::CancelRequest(
-    const std::string& form_signature,
-    AutofillDownloadManager::AutofillRequestType request_type) {
-  for (std::map<URLFetcher *, FormRequestData>::iterator it =
-       url_fetchers_.begin();
-       it != url_fetchers_.end();
-       ++it) {
-    if (std::find(it->second.form_signatures.begin(),
-        it->second.form_signatures.end(), form_signature) !=
-        it->second.form_signatures.end() &&
-        it->second.request_type == request_type) {
-      delete it->first;
-      url_fetchers_.erase(it);
-      return true;
-    }
-  }
-  return false;
-}
-
 double AutofillDownloadManager::GetPositiveUploadRate() const {
   return positive_upload_rate_;
 }
@@ -164,7 +137,6 @@ void AutofillDownloadManager::SetPositiveUploadRate(double rate) {
   positive_upload_rate_ = rate;
   DCHECK_GE(rate, 0.0);
   DCHECK_LE(rate, 1.0);
-  DCHECK(profile_);
   PrefService* preferences = profile_->GetPrefs();
   preferences->SetDouble(prefs::kAutofillPositiveUploadRate, rate);
 }
@@ -175,7 +147,6 @@ void AutofillDownloadManager::SetNegativeUploadRate(double rate) {
   negative_upload_rate_ = rate;
   DCHECK_GE(rate, 0.0);
   DCHECK_LE(rate, 1.0);
-  DCHECK(profile_);
   PrefService* preferences = profile_->GetPrefs();
   preferences->SetDouble(prefs::kAutofillNegativeUploadRate, rate);
 }
@@ -183,31 +154,24 @@ void AutofillDownloadManager::SetNegativeUploadRate(double rate) {
 bool AutofillDownloadManager::StartRequest(
     const std::string& form_xml,
     const FormRequestData& request_data) {
-  net::URLRequestContextGetter* request_context =
-      Profile::GetDefaultRequestContext();
-  // Check if default request context is NULL: this very rarely happens,
-  // I think, this could happen only if user opens chrome with some pages
-  // loading the forms immediately; I cannot reproduce this even in that
-  // scenario, but bug 74492 shows it happened at least once. In that case bail
-  // out and fall back on our own heuristics.
-  if (!request_context)
-    return false;
+  net::URLRequestContextGetter* request_context = profile_->GetRequestContext();
+  DCHECK(request_context);
   std::string request_url;
   if (request_data.request_type == AutofillDownloadManager::REQUEST_QUERY)
-    request_url = AUTO_FILL_QUERY_SERVER_REQUEST_URL;
+    request_url = kAutofillQueryServerRequestUrl;
   else
-    request_url = AUTO_FILL_UPLOAD_SERVER_REQUEST_URL;
+    request_url = kAutofillUploadServerRequestUrl;
 
   // Id is ignored for regular chrome, in unit test id's for fake fetcher
   // factory will be 0, 1, 2, ...
-  URLFetcher *fetcher = URLFetcher::Create(fetcher_id_for_unittest_++,
-                                           GURL(request_url),
-                                           URLFetcher::POST,
-                                           this);
+  content::URLFetcher* fetcher = content::URLFetcher::Create(
+      fetcher_id_for_unittest_++, GURL(request_url), content::URLFetcher::POST,
+      this);
   url_fetchers_[fetcher] = request_data;
-  fetcher->set_automatically_retry_on_5xx(false);
-  fetcher->set_request_context(request_context);
-  fetcher->set_upload_data("text/plain", form_xml);
+  fetcher->SetAutomaticallyRetryOn5xx(false);
+  fetcher->SetRequestContext(request_context);
+  fetcher->SetUploadData("text/plain", form_xml);
+  fetcher->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
   fetcher->Start();
   return true;
 }
@@ -267,14 +231,9 @@ std::string AutofillDownloadManager::GetCombinedSignature(
 }
 
 void AutofillDownloadManager::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const net::ResponseCookies& cookies,
-    const std::string& data) {
-  std::map<URLFetcher *, FormRequestData>::iterator it =
-      url_fetchers_.find(const_cast<URLFetcher*>(source));
+    const content::URLFetcher* source) {
+  std::map<content::URLFetcher *, FormRequestData>::iterator it =
+      url_fetchers_.find(const_cast<content::URLFetcher*>(source));
   if (it == url_fetchers_.end()) {
     // Looks like crash on Mac is possibly caused with callback entering here
     // with unknown fetcher when network is refreshed.
@@ -289,15 +248,15 @@ void AutofillDownloadManager::OnURLFetchComplete(
   const int kHttpServiceUnavailable = 503;
 
   CHECK(it->second.form_signatures.size());
-  if (response_code != kHttpResponseOk) {
+  if (source->GetResponseCode() != kHttpResponseOk) {
     bool back_off = false;
     std::string server_header;
-    switch (response_code) {
+    switch (source->GetResponseCode()) {
       case kHttpBadGateway:
-        if (!source->response_headers()->EnumerateHeader(NULL, "server",
-                                                         &server_header) ||
+        if (!source->GetResponseHeaders()->EnumerateHeader(NULL, "server",
+                                                           &server_header) ||
             StartsWithASCII(server_header.c_str(),
-                            AUTO_FILL_QUERY_SERVER_NAME_START_IN_HEADER,
+                            kAutofillQueryServerNameStartInHeader,
                             false) != 0)
           break;
         // Bad gateway was received from Autofill servers. Fall through to back
@@ -309,7 +268,7 @@ void AutofillDownloadManager::OnURLFetchComplete(
     }
 
     if (back_off) {
-      base::Time back_off_time(base::Time::Now() + source->backoff_delay());
+      base::Time back_off_time(base::Time::Now() + source->GetBackoffDelay());
       if (it->second.request_type == AutofillDownloadManager::REQUEST_QUERY) {
         next_query_request_ = back_off_time;
       } else {
@@ -317,34 +276,33 @@ void AutofillDownloadManager::OnURLFetchComplete(
       }
     }
 
-    LOG(WARNING) << "AutofillDownloadManager: " << type_of_request
-                 << " request has failed with response " << response_code;
-    if (observer_) {
-      observer_->OnHeuristicsRequestError(it->second.form_signatures[0],
-                                          it->second.request_type,
-                                          response_code);
-    }
+    DVLOG(1) << "AutofillDownloadManager: " << type_of_request
+             << " request has failed with response "
+             << source->GetResponseCode();
+    observer_->OnServerRequestError(it->second.form_signatures[0],
+                                    it->second.request_type,
+                                    source->GetResponseCode());
   } else {
-    VLOG(1) << "AutofillDownloadManager: " << type_of_request
-            << " request has succeeded";
+    DVLOG(1) << "AutofillDownloadManager: " << type_of_request
+             << " request has succeeded";
+    std::string response_body;
+    source->GetResponseAsString(&response_body);
     if (it->second.request_type == AutofillDownloadManager::REQUEST_QUERY) {
-      CacheQueryRequest(it->second.form_signatures, data);
-      if (observer_)
-        observer_->OnLoadedAutofillHeuristics(data);
+      CacheQueryRequest(it->second.form_signatures, response_body);
+      observer_->OnLoadedServerPredictions(response_body);
     } else {
       double new_positive_upload_rate = 0;
       double new_negative_upload_rate = 0;
       AutofillUploadXmlParser parse_handler(&new_positive_upload_rate,
                                             &new_negative_upload_rate);
       buzz::XmlParser parser(&parse_handler);
-      parser.Parse(data.data(), data.length(), true);
+      parser.Parse(response_body.data(), response_body.length(), true);
       if (parse_handler.succeeded()) {
         SetPositiveUploadRate(new_positive_upload_rate);
         SetNegativeUploadRate(new_negative_upload_rate);
       }
 
-      if (observer_)
-        observer_->OnUploadedAutofillHeuristics(it->second.form_signatures[0]);
+      observer_->OnUploadedPossibleFieldTypes();
     }
   }
   delete it->first;

@@ -12,10 +12,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "net/base/cookie_options.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 class GURL;
 
@@ -25,12 +26,12 @@ class CookieMonster;
 
 // An interface for storing and retrieving cookies. Implementations need to
 // be thread safe as its methods can be accessed from IO as well as UI threads.
-class NET_API CookieStore : public base::RefCountedThreadSafe<CookieStore> {
+class NET_EXPORT CookieStore : public base::RefCountedThreadSafe<CookieStore> {
  public:
   // This struct contains additional consumer-specific information that might
   // be stored with cookies; currently just MAC information, see:
   // http://tools.ietf.org/html/draft-ietf-oauth-v2-http-mac
-  struct NET_API CookieInfo {
+  struct NET_EXPORT CookieInfo {
     CookieInfo();
     ~CookieInfo();
 
@@ -46,52 +47,60 @@ class NET_API CookieStore : public base::RefCountedThreadSafe<CookieStore> {
     std::string mac_algorithm;
   };
 
+  // Callback definitions.
+  typedef base::Callback <void(
+      const std::string& cookie_line,
+      const std::vector<CookieInfo>& cookie_infos)> GetCookieInfoCallback;
+  typedef base::Callback<void(const std::string& cookie)>
+      GetCookiesCallback;
+  typedef base::Callback<void(bool success)> SetCookiesCallback;
+  typedef base::Callback<void(int num_deleted)> DeleteCallback;
+
+
   // Sets a single cookie.  Expects a cookie line, like "a=1; domain=b.com".
-  virtual bool SetCookieWithOptions(const GURL& url,
-                                    const std::string& cookie_line,
-                                    const CookieOptions& options) = 0;
+  //
+  // Fails either if the cookie is invalid or if this is a non-HTTPONLY cookie
+  // and it would overwrite an existing HTTPONLY cookie.
+  // Returns true if the cookie is successfully set.
+  virtual void SetCookieWithOptionsAsync(
+      const GURL& url,
+      const std::string& cookie_line,
+      const CookieOptions& options,
+      const SetCookiesCallback& callback) = 0;
 
   // TODO(???): what if the total size of all the cookies >4k, can we have a
   // header that big or do we need multiple Cookie: headers?
-  // Note: Some sites, such as Facebook, occationally use Cookie headers >4k.
+  // Note: Some sites, such as Facebook, occasionally use Cookie headers >4k.
   //
   // Simple interface, gets a cookie string "a=b; c=d" for the given URL.
   // Use options to access httponly cookies.
-  virtual std::string GetCookiesWithOptions(const GURL& url,
-                                            const CookieOptions& options) = 0;
+  virtual void GetCookiesWithOptionsAsync(
+      const GURL& url, const CookieOptions& options,
+      const GetCookiesCallback& callback) = 0;
 
   // This function is similar to GetCookiesWithOptions same functionality as
-  // GetCookiesWithOptions except that it additionaly provides detailed
+  // GetCookiesWithOptions except that it additionally provides detailed
   // information about the cookie contained in the cookie line.  See |struct
   // CookieInfo| above for details.
-  virtual void GetCookiesWithInfo(const GURL& url,
-                                  const CookieOptions& options,
-                                  std::string* cookie_line,
-                                  std::vector<CookieInfo>* cookie_info) = 0;
+  virtual void GetCookiesWithInfoAsync(
+      const GURL& url,
+      const CookieOptions& options,
+      const GetCookieInfoCallback& callback) = 0;
 
   // Deletes the passed in cookie for the specified URL.
-  virtual void DeleteCookie(const GURL& url,
-                            const std::string& cookie_name) = 0;
+  virtual void DeleteCookieAsync(const GURL& url,
+                                 const std::string& cookie_name,
+                                 const base::Closure& callback) = 0;
+
+  // Deletes all of the cookies that have a creation_date greater than or equal
+  // to |delete_begin| and less than |delete_end|
+  // Returns the number of cookies that have been deleted.
+  virtual void DeleteAllCreatedBetweenAsync(const base::Time& delete_begin,
+                                            const base::Time& delete_end,
+                                            const DeleteCallback& callback) = 0;
 
   // Returns the underlying CookieMonster.
   virtual CookieMonster* GetCookieMonster() = 0;
-
-
-  // --------------------------------------------------------------------------
-  // Helpers to make the above interface simpler for some cases.
-
-  // Sets a cookie for the given URL using default options.
-  bool SetCookie(const GURL& url, const std::string& cookie_line);
-
-  // Gets cookies for the given URL using default options.
-  std::string GetCookies(const GURL& url);
-
-  // Sets a vector of response cookie values for the same URL.
-  void SetCookiesWithOptions(const GURL& url,
-                             const std::vector<std::string>& cookie_lines,
-                             const CookieOptions& options);
-  void SetCookies(const GURL& url,
-                  const std::vector<std::string>& cookie_lines);
 
  protected:
   friend class base::RefCountedThreadSafe<CookieStore>;

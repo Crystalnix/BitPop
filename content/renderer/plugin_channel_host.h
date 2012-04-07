@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #pragma once
 
 #include "base/hash_tables.h"
-#include "content/plugin/plugin_channel_base.h"
+#include "content/common/np_channel_base.h"
 #include "ipc/ipc_channel_handle.h"
 
 class IsListeningFilter;
@@ -15,30 +15,34 @@ class NPObjectBase;
 
 // Encapsulates an IPC channel between the renderer and one plugin process.
 // On the plugin side there's a corresponding PluginChannel.
-class PluginChannelHost : public PluginChannelBase {
+class PluginChannelHost : public NPChannelBase {
  public:
   static PluginChannelHost* GetPluginChannelHost(
       const IPC::ChannelHandle& channel_handle,
       base::MessageLoopProxy* ipc_message_loop);
 
   virtual bool Init(base::MessageLoopProxy* ipc_message_loop,
-                    bool create_pipe_now);
+                    bool create_pipe_now,
+                    base::WaitableEvent* shutdown_event) OVERRIDE;
 
-  virtual int GenerateRouteID();
+  virtual int GenerateRouteID() OVERRIDE;
 
   void AddRoute(int route_id, IPC::Channel::Listener* listener,
                 NPObjectBase* npobject);
   void RemoveRoute(int route_id);
 
+  // NPChannelBase override:
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+
   // IPC::Channel::Listener override
-  virtual void OnChannelError();
+  virtual void OnChannelError() OVERRIDE;
 
   static void SetListening(bool flag);
 
   static bool IsListening();
 
   static void Broadcast(IPC::Message* message) {
-    PluginChannelBase::Broadcast(message);
+    NPChannelBase::Broadcast(message);
   }
 
   bool expecting_shutdown() { return expecting_shutdown_; }
@@ -48,11 +52,11 @@ class PluginChannelHost : public PluginChannelBase {
   PluginChannelHost();
   virtual ~PluginChannelHost();
 
-  static PluginChannelBase* ClassFactory() { return new PluginChannelHost(); }
+  static NPChannelBase* ClassFactory() { return new PluginChannelHost(); }
 
-  virtual bool OnControlMessageReceived(const IPC::Message& message);
+  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
   void OnSetException(const std::string& message);
-  void OnPluginShuttingDown(const IPC::Message& message);
+  void OnPluginShuttingDown();
 
   // Keep track of all the registered WebPluginDelegeProxies to
   // inform about OnChannelError

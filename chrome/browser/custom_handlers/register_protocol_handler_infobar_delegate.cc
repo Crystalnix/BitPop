@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,29 +6,28 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "chrome/common/url_constants.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using content::OpenURLParams;
+using content::Referrer;
+using content::UserMetricsAction;
+
 RegisterProtocolHandlerInfoBarDelegate::RegisterProtocolHandlerInfoBarDelegate(
-    TabContents* tab_contents,
+    InfoBarTabHelper* infobar_helper,
     ProtocolHandlerRegistry* registry,
-    ProtocolHandler handler)
-    : ConfirmInfoBarDelegate(tab_contents),
-      tab_contents_(tab_contents),
+    const ProtocolHandler& handler)
+    : ConfirmInfoBarDelegate(infobar_helper),
       registry_(registry),
       handler_(handler) {
 }
 
-bool RegisterProtocolHandlerInfoBarDelegate::ShouldExpire(
-    const content::LoadCommittedDetails& details) const {
-  // The user has submitted a form, causing the page to navigate elsewhere. We
-  // don't want the infobar to be expired at this point, because the user won't
-  // get a chance to answer the question.
-  return false;
-}
-
 InfoBarDelegate::Type
-    RegisterProtocolHandlerInfoBarDelegate::GetInfoBarType() const {
+RegisterProtocolHandlerInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
@@ -37,10 +36,19 @@ string16 RegisterProtocolHandlerInfoBarDelegate::GetMessageText() const {
   return !old_handler.IsEmpty() ?
       l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
           handler_.title(), UTF8ToUTF16(handler_.url().host()),
-          UTF8ToUTF16(handler_.protocol()), old_handler.title()) :
+          GetProtocolName(handler_), old_handler.title()) :
       l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
           handler_.title(), UTF8ToUTF16(handler_.url().host()),
-          UTF8ToUTF16(handler_.protocol()));
+          GetProtocolName(handler_));
+}
+
+string16 RegisterProtocolHandlerInfoBarDelegate::GetProtocolName(
+    const ProtocolHandler& handler) const {
+  if (handler.protocol() == "mailto")
+    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_MAILTO_NAME);
+  if (handler.protocol() == "webcal")
+    return l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_WEBCAL_NAME);
+  return UTF8ToUTF16(handler.protocol());
 }
 
 string16 RegisterProtocolHandlerInfoBarDelegate::GetButtonLabel(
@@ -51,22 +59,50 @@ string16 RegisterProtocolHandlerInfoBarDelegate::GetButtonLabel(
       l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_DENY);
 }
 
+bool RegisterProtocolHandlerInfoBarDelegate::NeedElevation(
+    InfoBarButton button) const {
+  return button == BUTTON_OK;
+}
+
 bool RegisterProtocolHandlerInfoBarDelegate::Accept() {
+  content::RecordAction(
+      UserMetricsAction("RegisterProtocolHandler.Infobar_Accept"));
   registry_->OnAcceptRegisterProtocolHandler(handler_);
   return true;
 }
 
 bool RegisterProtocolHandlerInfoBarDelegate::Cancel() {
-  registry_->OnDenyRegisterProtocolHandler(handler_);
+  content::RecordAction(
+      UserMetricsAction("RegisterProtocolHandler.InfoBar_Deny"));
+  registry_->OnIgnoreRegisterProtocolHandler(handler_);
   return true;
 }
 
-string16 RegisterProtocolHandlerInfoBarDelegate::GetLinkText() {
-  // TODO(koz): Make this a 'learn more' link.
-  return string16();
+string16 RegisterProtocolHandlerInfoBarDelegate::GetLinkText() const {
+  return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
 bool RegisterProtocolHandlerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
+  content::RecordAction(
+      UserMetricsAction("RegisterProtocolHandler.InfoBar_LearnMore"));
+  OpenURLParams params(
+      GURL(chrome::kLearnMoreRegisterProtocolHandlerURL),
+      Referrer(),
+      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+      content::PAGE_TRANSITION_LINK,
+      false);
+  owner()->web_contents()->OpenURL(params);
   return false;
+}
+
+bool RegisterProtocolHandlerInfoBarDelegate::IsReplacedBy(
+    RegisterProtocolHandlerInfoBarDelegate* delegate) {
+  return handler_.IsEquivalent(delegate->handler_);
+}
+
+RegisterProtocolHandlerInfoBarDelegate*
+    RegisterProtocolHandlerInfoBarDelegate::
+        AsRegisterProtocolHandlerInfoBarDelegate() {
+  return this;
 }

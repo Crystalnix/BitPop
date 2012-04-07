@@ -1,11 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/common/swapped_out_messages.h"
 
-#include "content/common/content_client.h"
 #include "content/common/view_messages.h"
+#include "content/public/common/content_client.h"
 
 namespace content {
 
@@ -43,6 +43,8 @@ bool SwappedOutMessages::CanHandleWhileSwappedOut(
   // We drop most other messages that arrive from a swapped out renderer.
   // However, some are important (e.g., ACKs) for keeping the browser and
   // renderer state consistent in case we later return to the renderer.
+  // Note that synchronous messages that are not handled will receive an
+  // error reply instead, to avoid leaving the renderer in a stuck state.
   switch (msg.type()) {
     // Sends an ACK.
     case ViewHostMsg_ShowView::ID:
@@ -60,14 +62,11 @@ bool SwappedOutMessages::CanHandleWhileSwappedOut(
     case ViewHostMsg_Close::ID:
     // Sends an ACK.
     case ViewHostMsg_RequestMove::ID:
-    // Suppresses dialog and sends an ACK.
-    case ViewHostMsg_RunJavaScriptMessage::ID:
-    // Suppresses dialog and sends an ACK.
-    case ViewHostMsg_RunBeforeUnloadConfirm::ID:
     // Sends an ACK.
     case ViewHostMsg_AccessibilityNotifications::ID:
 #if defined(USE_X11)
-    // Synchronous message when leaving a page with plugin.
+    // Synchronous message when leaving a page with plugin.  In this case,
+    // we want to destroy the plugin rather than return an error message.
     case ViewHostMsg_DestroyPluginContainer::ID:
 #endif
       return true;

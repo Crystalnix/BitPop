@@ -5,10 +5,10 @@
 #include "chrome/browser/first_run/first_run_import_observer.h"
 
 #include "base/message_loop.h"
-#include "content/common/result_codes.h"
+#include "content/public/common/result_codes.h"
 
 FirstRunImportObserver::FirstRunImportObserver()
-    : loop_running_(false), import_result_(ResultCodes::NORMAL_EXIT) {
+    : loop_running_(false), import_result_(content::RESULT_CODE_NORMAL_EXIT) {
 }
 
 FirstRunImportObserver::~FirstRunImportObserver() {
@@ -25,6 +25,6 @@ void FirstRunImportObserver::Finish() {
 }
 
 void FirstRunImportObserver::ImportCompleted() {
-  import_result_ = ResultCodes::NORMAL_EXIT;
+  import_result_ = content::RESULT_CODE_NORMAL_EXIT;
   Finish();
 }

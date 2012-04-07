@@ -1,9 +1,9 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
-#include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#import "base/memory/scoped_nsobject.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/download/download_shelf_mac.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -45,27 +45,26 @@
 
 namespace {
 
-class DownloadShelfMacTest : public CocoaTest {
+class DownloadShelfMacTest : public CocoaProfileTest {
 
   virtual void SetUp() {
-    CocoaTest::SetUp();
+    CocoaProfileTest::SetUp();
     shelf_controller_.reset([[FakeDownloadShelfController alloc] init]);
   }
 
  protected:
   scoped_nsobject<FakeDownloadShelfController> shelf_controller_;
-  BrowserTestHelper browser_helper_;
 };
 
 TEST_F(DownloadShelfMacTest, CreationDoesNotCallShow) {
   // Also make sure the DownloadShelfMacTest constructor doesn't crash.
-  DownloadShelfMac shelf(browser_helper_.browser(),
+  DownloadShelfMac shelf(browser(),
       (DownloadShelfController*)shelf_controller_.get());
   EXPECT_EQ(0, shelf_controller_.get()->callCountShow);
 }
 
 TEST_F(DownloadShelfMacTest, ForwardsShow) {
-  DownloadShelfMac shelf(browser_helper_.browser(),
+  DownloadShelfMac shelf(browser(),
       (DownloadShelfController*)shelf_controller_.get());
   EXPECT_EQ(0, shelf_controller_.get()->callCountShow);
   shelf.Show();
@@ -73,7 +72,7 @@ TEST_F(DownloadShelfMacTest, ForwardsShow) {
 }
 
 TEST_F(DownloadShelfMacTest, ForwardsHide) {
-  DownloadShelfMac shelf(browser_helper_.browser(),
+  DownloadShelfMac shelf(browser(),
       (DownloadShelfController*)shelf_controller_.get());
   EXPECT_EQ(0, shelf_controller_.get()->callCountHide);
   shelf.Close();
@@ -81,7 +80,7 @@ TEST_F(DownloadShelfMacTest, ForwardsHide) {
 }
 
 TEST_F(DownloadShelfMacTest, ForwardsIsShowing) {
-  DownloadShelfMac shelf(browser_helper_.browser(),
+  DownloadShelfMac shelf(browser(),
       (DownloadShelfController*)shelf_controller_.get());
   EXPECT_EQ(0, shelf_controller_.get()->callCountIsVisible);
   shelf.IsShowing();

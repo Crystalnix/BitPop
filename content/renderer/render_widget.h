@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,20 @@
 #define CONTENT_RENDERER_RENDER_WIDGET_H_
 #pragma once
 
+#include <deque>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
+#include "content/common/content_export.h"
 #include "content/renderer/paint_aggregator.h"
 #include "ipc/ipc_channel.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCompositionUnderline.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidgetClient.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -27,24 +30,29 @@
 #include "ui/gfx/surface/transport_dib.h"
 #include "webkit/glue/webcursor.h"
 
-class RenderThreadBase;
-
-namespace gfx {
-class Point;
-}
+struct ViewHostMsg_UpdateRect_Params;
+class ViewHostMsg_UpdateRect;
 
 namespace IPC {
 class SyncMessage;
+}
+
+namespace WebKit {
+class WebMouseEvent;
+class WebTouchEvent;
+class WebWidget;
+}
+
+namespace gfx {
+class Point;
 }
 
 namespace skia {
 class PlatformCanvas;
 }
 
-namespace WebKit {
-class WebMouseEvent;
-class WebWidget;
-struct WebPopupMenuInfo;
+namespace ui {
+class Range;
 }
 
 namespace webkit {
@@ -59,16 +67,15 @@ class PluginInstance;
 
 // RenderWidget provides a communication bridge between a WebWidget and
 // a RenderWidgetHost, the latter of which lives in a different process.
-class RenderWidget : public IPC::Channel::Listener,
-                     public IPC::Message::Sender,
-                     virtual public WebKit::WebWidgetClient,
-                     public base::RefCounted<RenderWidget> {
+class CONTENT_EXPORT RenderWidget
+    : public IPC::Channel::Listener,
+      public IPC::Message::Sender,
+      NON_EXPORTED_BASE(virtual public WebKit::WebWidgetClient),
+      public base::RefCounted<RenderWidget> {
  public:
   // Creates a new RenderWidget.  The opener_id is the routing ID of the
-  // RenderView that this widget lives inside. The render_thread is any
-  // RenderThreadBase implementation, mostly commonly RenderThread::current().
+  // RenderView that this widget lives inside.
   static RenderWidget* Create(int32 opener_id,
-                              RenderThreadBase* render_thread,
                               WebKit::WebPopupType popup_type);
 
   // Creates a WebWidget based on the popup type.
@@ -77,10 +84,6 @@ class RenderWidget : public IPC::Channel::Listener,
   // The compositing surface assigned by the RenderWidgetHost
   // (or RenderViewHost). Will be gfx::kNullPluginWindow if not assigned yet,
   // in which case we should not create any GPU command buffers with it.
-  gfx::PluginWindowHandle compositing_surface() const {
-    return compositing_surface_;
-  }
-
   // The routing ID assigned by the RenderProcess. Will be MSG_ROUTING_NONE if
   // not yet assigned a view ID, in which case, the process MUST NOT send
   // messages with this ID to the parent.
@@ -88,22 +91,33 @@ class RenderWidget : public IPC::Channel::Listener,
     return routing_id_;
   }
 
+  int32 surface_id() const {
+    return surface_id_;
+  }
+
   // May return NULL when the window is closing.
   WebKit::WebWidget* webwidget() const { return webwidget_; }
+
   gfx::NativeViewId host_window() const { return host_window_; }
   gfx::Size size() const { return size_; }
   bool has_focus() const { return has_focus_; }
+  bool is_fullscreen() const { return is_fullscreen_; }
+  bool is_hidden() const { return is_hidden_; }
 
   // IPC::Channel::Listener
-  virtual bool OnMessageReceived(const IPC::Message& msg);
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   // IPC::Message::Sender
-  virtual bool Send(IPC::Message* msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
 
   // WebKit::WebWidgetClient
   virtual void didInvalidateRect(const WebKit::WebRect&);
   virtual void didScrollRect(int dx, int dy, const WebKit::WebRect& clipRect);
-  virtual void didActivateAcceleratedCompositing(bool active);
+  virtual void didAutoResize(const WebKit::WebSize& new_size);
+  virtual void didActivateCompositor(int compositorIdentifier);
+  virtual void didDeactivateCompositor();
+  virtual void didCommitAndDrawCompositorFrame();
+  virtual void didCompleteSwapBuffers();
   virtual void scheduleComposite();
   virtual void scheduleAnimation();
   virtual void didFocus();
@@ -113,6 +127,8 @@ class RenderWidget : public IPC::Channel::Listener,
   virtual void show(WebKit::WebNavigationPolicy);
   virtual void runModal() {}
   virtual WebKit::WebRect windowRect();
+  virtual void setToolTipText(const WebKit::WebString& text,
+                              WebKit::WebTextDirection hint);
   virtual void setWindowRect(const WebKit::WebRect&);
   virtual WebKit::WebRect windowResizerRect();
   virtual WebKit::WebRect rootWindowRect();
@@ -130,6 +146,10 @@ class RenderWidget : public IPC::Channel::Listener,
   // Close the underlying WebWidget.
   virtual void Close();
 
+  float filtered_time_per_frame() const {
+    return filtered_time_per_frame_;
+  }
+
  protected:
   // Friend RefCounted so that the dtor can be non-public. Using this class
   // without ref-counting is an error.
@@ -137,8 +157,7 @@ class RenderWidget : public IPC::Channel::Listener,
   // For unit tests.
   friend class RenderWidgetTest;
 
-  RenderWidget(RenderThreadBase* render_thread,
-               WebKit::WebPopupType popup_type);
+  explicit RenderWidget(WebKit::WebPopupType popup_type);
   virtual ~RenderWidget();
 
   // Initializes this view with the given opener.  CompleteInit must be called
@@ -151,8 +170,7 @@ class RenderWidget : public IPC::Channel::Listener,
               IPC::SyncMessage* create_widget_message);
 
   // Finishes creation of a pending view started with Init.
-  void CompleteInit(gfx::NativeViewId parent,
-                    gfx::PluginWindowHandle compositing_surface);
+  void CompleteInit(gfx::NativeViewId parent);
 
   // Sets whether this RenderWidget has been swapped out to be displayed by
   // a RenderWidget in a different process.  If so, no new IPC messages will be
@@ -169,6 +187,7 @@ class RenderWidget : public IPC::Channel::Listener,
   // Paints a border at the given rect for debugging purposes.
   void PaintDebugBorder(const gfx::Rect& rect, skia::PlatformCanvas* canvas);
 
+  bool IsRenderingVSynced();
   void AnimationCallback();
   void AnimateIfNeeded();
   void InvalidationCallback();
@@ -184,10 +203,11 @@ class RenderWidget : public IPC::Channel::Listener,
 
   // RenderWidget IPC message handlers
   void OnClose();
-  void OnCreatingNewAck(gfx::NativeViewId parent,
-                        gfx::PluginWindowHandle compositing_surface);
+  void OnCreatingNewAck(gfx::NativeViewId parent);
   virtual void OnResize(const gfx::Size& new_size,
-                        const gfx::Rect& resizer_rect);
+                        const gfx::Rect& resizer_rect,
+                        bool is_fullscreen);
+  void OnChangeResizeRect(const gfx::Rect& resizer_rect);
   virtual void OnWasHidden();
   virtual void OnWasRestored(bool needs_repainting);
   virtual void OnWasSwappedOut();
@@ -204,7 +224,8 @@ class RenderWidget : public IPC::Channel::Listener,
       const std::vector<WebKit::WebCompositionUnderline>& underlines,
       int selection_start,
       int selection_end);
-  virtual void OnImeConfirmComposition(const string16& text);
+  virtual void OnImeConfirmComposition(
+      const string16& text, const ui::Range& replacement_range);
   void OnMsgPaintAtSize(const TransportDIB::Handle& dib_id,
                         int tag,
                         const gfx::Size& page_size,
@@ -213,10 +234,14 @@ class RenderWidget : public IPC::Channel::Listener,
   void OnSetTextDirection(WebKit::WebTextDirection direction);
   void OnGetFPS();
 
-  // Override point to notify derived classes that a paint has happened.
-  // DidInitiatePaint happens when we've generated a new bitmap and sent it to
-  // the browser. DidFlushPaint happens once we've received the ACK that the
-  // screen has actually been updated.
+  // Override points to notify derived classes that a paint has happened.
+  // WillInitiatePaint happens when we're about to generate a new bitmap and
+  // send it to the browser. DidInitiatePaint happens when that has completed,
+  // and subsequent rendering won't affect the painted content. DidFlushPaint
+  // happens once we've received the ACK that the screen has been updated.
+  // For a given paint operation, these overrides will always be called in the
+  // order WillInitiatePaint, DidInitiatePaint, DidFlushPaint.
+  virtual void WillInitiatePaint() {}
   virtual void DidInitiatePaint() {}
   virtual void DidFlushPaint() {}
 
@@ -258,12 +283,8 @@ class RenderWidget : public IPC::Channel::Listener,
   // state.
   void SetHidden(bool hidden);
 
-  bool is_hidden() const { return is_hidden_; }
-
-  // True if an UpdateRect_ACK message is pending.
-  bool update_reply_pending() const {
-    return update_reply_pending_;
-  }
+  void WillToggleFullscreen();
+  void DidToggleFullscreen();
 
   bool next_paint_is_resize_ack() const;
   bool next_paint_is_restore_ack() const;
@@ -271,13 +292,18 @@ class RenderWidget : public IPC::Channel::Listener,
   void set_next_paint_is_restore_ack();
   void set_next_paint_is_repaint_ack();
 
-  // Checks if the input method state and caret position have been changed.
+  // Checks if the text input state and compose inline mode have been changed.
   // If they are changed, the new value will be sent to the browser process.
-  void UpdateInputMethod();
+  void UpdateTextInputState();
+
+  // Checks if the selection bounds have been changed. If they are changed,
+  // the new value will be sent to the browser process.
+  void UpdateSelectionBounds();
 
   // Override point to obtain that the current input method state and caret
   // position.
   virtual ui::TextInputType GetTextInputType();
+  virtual void GetSelectionBounds(gfx::Rect* start, gfx::Rect* end);
 
   // Override point to obtain that the current input method state about
   // composition text.
@@ -299,13 +325,29 @@ class RenderWidget : public IPC::Channel::Listener,
   // just handled.
   virtual void DidHandleKeyEvent() {}
 
+  // Called by OnHandleInputEvent() to notify subclasses that a mouse event is
+  // about to be handled.
+  // Returns true if no further handling is needed. In that case, the event
+  // won't be sent to WebKit or trigger DidHandleMouseEvent().
+  virtual bool WillHandleMouseEvent(const WebKit::WebMouseEvent& event);
+
   // Called by OnHandleInputEvent() to notify subclasses that a mouse event was
   // just handled.
   virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
 
+  // Called by OnHandleInputEvent() to notify subclasses that a touch event was
+  // just handled.
+  virtual void DidHandleTouchEvent(const WebKit::WebTouchEvent& event) {}
+
+  // Should return true if the underlying WebWidget is responsible for
+  // the scheduling of compositing requests.
+  virtual bool WebWidgetHandlesCompositorScheduling() const;
+
   // Routing ID that allows us to communicate to the parent browser process
   // RenderWidgetHost. When MSG_ROUTING_NONE, no messages may be sent.
   int32 routing_id_;
+
+  int32 surface_id_;
 
   // We are responsible for destroying this object via its Close method.
   WebKit::WebWidget* webwidget_;
@@ -318,9 +360,6 @@ class RenderWidget : public IPC::Channel::Listener,
   // This ID may refer to an invalid view if that view is closed before this
   // view is.
   int32 opener_id_;
-
-  // The thread that does our IPC.
-  RenderThreadBase* render_thread_;
 
   // The position where this view should be initially shown.
   gfx::Rect initial_pos_;
@@ -374,6 +413,9 @@ class RenderWidget : public IPC::Channel::Listener,
   // Indicates that we shouldn't bother generated paint events.
   bool is_hidden_;
 
+  // Indicates that we are in fullscreen mode.
+  bool is_fullscreen_;
+
   // Indicates that we should be repainted when restored.  This flag is set to
   // true if we receive an invalidation / scroll event from webkit while our
   // is_hidden_ flag is set to true.  This is used to force a repaint once we
@@ -405,8 +447,9 @@ class RenderWidget : public IPC::Channel::Listener,
   // Stores the current type of composition text rendering of |webwidget_|.
   bool can_compose_inline_;
 
-  // Stores the current caret bounds of input focus.
-  WebKit::WebRect caret_bounds_;
+  // Stores the current selection bounds.
+  gfx::Rect selection_start_rect_;
+  gfx::Rect selection_end_rect_;
 
   // The kind of popup this widget represents, NONE if not a popup.
   WebKit::WebPopupType popup_type_;
@@ -432,16 +475,24 @@ class RenderWidget : public IPC::Channel::Listener,
   // compositor.
   bool is_accelerated_compositing_active_;
 
-  // Handle to a surface that is drawn to when accelerated compositing is
-  // active.
-  gfx::PluginWindowHandle compositing_surface_;
-
   base::Time animation_floor_time_;
   bool animation_update_pending_;
   bool animation_task_posted_;
   bool invalidation_task_posted_;
 
+  bool has_disable_gpu_vsync_switch_;
   base::TimeTicks last_do_deferred_update_time_;
+
+  // UpdateRect parameters for the current compositing pass. This is used to
+  // pass state between DoDeferredUpdate and OnSwapBuffersPosted.
+  scoped_ptr<ViewHostMsg_UpdateRect_Params> pending_update_params_;
+
+  // Queue of UpdateRect messages corresponding to a SwapBuffers. We want to
+  // delay sending of UpdateRect until the corresponding SwapBuffers has been
+  // executed. Since we can have several in flight, we need to keep them in a
+  // queue. Note: some SwapBuffers may not correspond to an update, in which
+  // case NULL is added to the queue.
+  std::deque<ViewHostMsg_UpdateRect*> updates_pending_swap_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidget);
 };

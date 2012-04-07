@@ -4,8 +4,8 @@
 
 #include "chrome/browser/chromeos/customization_document.h"
 
-#include "base/time.h"
-#include "chrome/browser/chromeos/mock_system_access.h"
+#include "chrome/browser/chromeos/system/mock_statistics_provider.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -66,43 +66,6 @@ const char kGoodServicesManifest[] =
     "      \"support_page\": \"http://mario/global\","
     "    },"
     "  },"
-    "  \"carrier_deals\" : {"
-    "    \"Carrier (country)\" : {"
-    "      \"deal_locale\" : \"en-US\","
-    "      \"top_up_url\" : \"http://www.carrier.com/\","
-    "      \"notification_count\" : 1,\n"
-    "      \"expire_date\" : \"31/12/12 0:00\","
-    "      \"localized_content\" : {"
-    "        \"en-US\" : {"
-    "          \"notification_text\" : \"3G connectivity : Carrier.\","
-    "        },"
-    "        \"default\" : {"
-    "          \"notification_text\" : \"default_text.\","
-    "        },"
-    "      },"
-    "    },"
-    "  },"
-    "}";
-
-const char kOldDealServicesManifest[] =
-    "{"
-    "  \"version\": \"1.0\","
-    "  \"carrier_deals\" : {"
-    "    \"Carrier (country)\" : {"
-    "      \"deal_locale\" : \"en-US\","
-    "      \"top_up_url\" : \"http://www.carrier.com/\","
-    "      \"notification_count\" : 1,"
-    "      \"expire_date\" : \"01/01/01 0:00\","
-    "      \"localized_content\" : {"
-    "        \"en-US\" : {"
-    "          \"notification_text\" : \"en-US text.\","
-    "        },"
-    "        \"default\" : {"
-    "          \"notification_text\" : \"default_text.\","
-    "        },"
-    "      },"
-    "    },"
-    "  },"
     "}";
 
 }  // anonymous namespace
@@ -116,14 +79,14 @@ using ::testing::Return;
 using ::testing::SetArgumentPointee;
 
 TEST(StartupCustomizationDocumentTest, Basic) {
-  MockSystemAccess mock_system_access;
-  EXPECT_CALL(mock_system_access, GetMachineStatistic(_, NotNull()))
+  system::MockStatisticsProvider mock_statistics_provider;
+  EXPECT_CALL(mock_statistics_provider, GetMachineStatistic(_, NotNull()))
       .WillRepeatedly(Return(false));
-  EXPECT_CALL(mock_system_access,
+  EXPECT_CALL(mock_statistics_provider,
       GetMachineStatistic(std::string("hardware_class"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("Mario 12345")),
                           Return(true)));
-  StartupCustomizationDocument customization(&mock_system_access,
+  StartupCustomizationDocument customization(&mock_statistics_provider,
                                              kGoodStartupManifest);
   EXPECT_EQ("ru-RU", customization.initial_locale());
   EXPECT_EQ("Europe/Moscow", customization.initial_timezone());
@@ -146,24 +109,24 @@ TEST(StartupCustomizationDocumentTest, Basic) {
 }
 
 TEST(StartupCustomizationDocumentTest, VPD) {
-  MockSystemAccess mock_system_access;
-  EXPECT_CALL(mock_system_access,
+  system::MockStatisticsProvider mock_statistics_provider;
+  EXPECT_CALL(mock_statistics_provider,
       GetMachineStatistic(std::string("hardware_class"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("Mario 12345")),
                           Return(true)));
-  EXPECT_CALL(mock_system_access,
+  EXPECT_CALL(mock_statistics_provider,
       GetMachineStatistic(std::string("initial_locale"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("ja")),
                           Return(true)));
-  EXPECT_CALL(mock_system_access,
+  EXPECT_CALL(mock_statistics_provider,
       GetMachineStatistic(std::string("initial_timezone"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("Asia/Tokyo")),
                           Return(true)));
-  EXPECT_CALL(mock_system_access,
+  EXPECT_CALL(mock_statistics_provider,
       GetMachineStatistic(std::string("keyboard_layout"), NotNull()))
           .WillOnce(DoAll(SetArgumentPointee<1>(std::string("mozc-jp")),
                           Return(true)));
-  StartupCustomizationDocument customization(&mock_system_access,
+  StartupCustomizationDocument customization(&mock_statistics_provider,
                                              kGoodStartupManifest);
   EXPECT_TRUE(customization.IsReady());
   EXPECT_EQ("ja", customization.initial_locale());
@@ -172,13 +135,14 @@ TEST(StartupCustomizationDocumentTest, VPD) {
 }
 
 TEST(StartupCustomizationDocumentTest, BadManifest) {
-  MockSystemAccess mock_system_access;
-  StartupCustomizationDocument customization(&mock_system_access, kBadManifest);
+  system::MockStatisticsProvider mock_statistics_provider;
+  StartupCustomizationDocument customization(&mock_statistics_provider,
+                                             kBadManifest);
   EXPECT_FALSE(customization.IsReady());
 }
 
 TEST(ServicesCustomizationDocumentTest, Basic) {
-  ServicesCustomizationDocument customization(kGoodServicesManifest, "en-US");
+  ServicesCustomizationDocument customization(kGoodServicesManifest);
   EXPECT_TRUE(customization.IsReady());
 
   EXPECT_EQ("http://mario/promo",
@@ -191,62 +155,11 @@ TEST(ServicesCustomizationDocumentTest, Basic) {
   EXPECT_EQ("http://mario/us", customization.GetSupportPage("en-US"));
   EXPECT_EQ("http://mario/ru", customization.GetSupportPage("ru-RU"));
   EXPECT_EQ("http://mario/global", customization.GetSupportPage("ja"));
-
-  const ServicesCustomizationDocument::CarrierDeal* deal;
-  deal = customization.GetCarrierDeal("Carrier (country)", true);
-  EXPECT_TRUE(deal != NULL);
-  EXPECT_EQ("en-US", deal->deal_locale());
-  EXPECT_EQ("http://www.carrier.com/", deal->top_up_url());
-  EXPECT_EQ(1, deal->notification_count());
-  EXPECT_EQ("3G connectivity : Carrier.",
-            deal->GetLocalizedString("en-US", "notification_text"));
-  EXPECT_EQ("default_text.",
-            deal->GetLocalizedString("en", "notification_text"));
-
-  base::Time reference_time;
-  base::Time::FromString(L"31/12/12 0:00", &reference_time);
-  EXPECT_EQ(reference_time, deal->expire_date());
-}
-
-TEST(ServicesCustomizationDocumentTest, OldDeal) {
-  ServicesCustomizationDocument customization(kOldDealServicesManifest,
-                                              "en-US");
-  EXPECT_TRUE(customization.IsReady());
-
-  const ServicesCustomizationDocument::CarrierDeal* deal;
-  // TODO(nkostylev): Pass fixed time instead of relying on Time::Now().
-  deal = customization.GetCarrierDeal("Carrier (country)", true);
-  EXPECT_TRUE(deal == NULL);
-}
-
-TEST(ServicesCustomizationDocumentTest, DealOtherLocale) {
-  ServicesCustomizationDocument customization(kGoodServicesManifest,
-                                              "en-GB");
-  EXPECT_TRUE(customization.IsReady());
-
-  const ServicesCustomizationDocument::CarrierDeal* deal;
-  deal = customization.GetCarrierDeal("Carrier (country)", true);
-  EXPECT_TRUE(deal == NULL);
 }
 
 TEST(ServicesCustomizationDocumentTest, BadManifest) {
-  ServicesCustomizationDocument customization(kBadManifest, "en-US");
+  ServicesCustomizationDocument customization(kBadManifest);
   EXPECT_FALSE(customization.IsReady());
-}
-
-TEST(ServicesCustomizationDocumentTest, NoDealRestrictions) {
-  ServicesCustomizationDocument customization_oth_locale(kGoodServicesManifest,
-                                                         "en-GB");
-  EXPECT_TRUE(customization_oth_locale.IsReady());
-  const ServicesCustomizationDocument::CarrierDeal* deal;
-  deal = customization_oth_locale.GetCarrierDeal("Carrier (country)", false);
-  EXPECT_TRUE(deal != NULL);
-
-  ServicesCustomizationDocument customization_old_deal(kOldDealServicesManifest,
-                                                       "en-US");
-  EXPECT_TRUE(customization_old_deal.IsReady());
-  deal = customization_old_deal.GetCarrierDeal("Carrier (country)", false);
-  EXPECT_TRUE(deal != NULL);
 }
 
 }  // namespace chromeos

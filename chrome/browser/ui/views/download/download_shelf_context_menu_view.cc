@@ -6,31 +6,40 @@
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
+#include "content/public/browser/download_item.h"
 #include "ui/gfx/point.h"
-#include "views/controls/menu/menu_2.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_model_adapter.h"
+#include "ui/views/controls/menu/menu_runner.h"
 
 DownloadShelfContextMenuView::DownloadShelfContextMenuView(
     BaseDownloadItemModel* model)
     : DownloadShelfContextMenu(model) {
-    DCHECK(model);
 }
 
 DownloadShelfContextMenuView::~DownloadShelfContextMenuView() {}
 
-void DownloadShelfContextMenuView::Run(const gfx::Point& point) {
-  menu_.reset(new views::Menu2(GetMenuModel()));
+void DownloadShelfContextMenuView::Run(views::Widget* parent_widget,
+                                       const gfx::Rect& rect) {
+  views::MenuModelAdapter menu_model_adapter(GetMenuModel());
+  menu_runner_.reset(new views::MenuRunner(menu_model_adapter.CreateMenu()));
 
   // The menu's alignment is determined based on the UI layout.
-  views::Menu2::Alignment alignment;
+  views::MenuItemView::AnchorPosition position;
   if (base::i18n::IsRTL())
-    alignment = views::Menu2::ALIGN_TOPRIGHT;
+    position = views::MenuItemView::TOPRIGHT;
   else
-    alignment = views::Menu2::ALIGN_TOPLEFT;
-  menu_->RunMenuAt(point, alignment);
-}
+    position = views::MenuItemView::TOPLEFT;
 
-void DownloadShelfContextMenuView::Stop() {
-  set_download_item(NULL);
+  // The return value of RunMenuAt indicates whether the MenuRunner was deleted
+  // while running the menu, which indicates that the containing view may have
+  // been deleted. We ignore the return value because our caller already assumes
+  // that the view could be deleted by the time we return from here.
+  ignore_result(menu_runner_->RunMenuAt(
+      parent_widget,
+      NULL,
+      rect,
+      position,
+      views::MenuRunner::HAS_MNEMONICS));
 }

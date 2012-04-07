@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,15 @@
 #include "base/win/wrapped_window_proc.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extensions_startup.h"
-#include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/simple_message_box.h"
 #include "chrome/browser/ui/browser_init.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/common/result_codes.h"
+#include "chrome/installer/util/wmi.h"
+#include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -38,15 +39,65 @@ BOOL CALLBACK BrowserWindowEnumeration(HWND window, LPARAM param) {
   return !*result;
 }
 
+// This function thunks to the object's version of the windowproc, taking in
+// consideration that there are several messages being dispatched before
+// WM_NCCREATE which we let windows handle.
+LRESULT CALLBACK ThunkWndProc(HWND hwnd, UINT message,
+                              WPARAM wparam, LPARAM lparam) {
+  ProcessSingleton* singleton =
+      reinterpret_cast<ProcessSingleton*>(ui::GetWindowUserData(hwnd));
+  if (message == WM_NCCREATE) {
+    CREATESTRUCT* cs = reinterpret_cast<CREATESTRUCT*>(lparam);
+    singleton = reinterpret_cast<ProcessSingleton*>(cs->lpCreateParams);
+    CHECK(singleton);
+    ui::SetWindowUserData(hwnd, singleton);
+  } else if (!singleton) {
+    return ::DefWindowProc(hwnd, message, wparam, lparam);
+  }
+  return singleton->WndProc(hwnd, message, wparam, lparam);
+}
+
 }  // namespace
+
+// Microsoft's Softricity virtualization breaks the sandbox processes.
+// So, if we detect the Softricity DLL we use WMI Win32_Process.Create to
+// break out of the virtualization environment.
+// http://code.google.com/p/chromium/issues/detail?id=43650
+bool ProcessSingleton::EscapeVirtualization(const FilePath& user_data_dir) {
+  if (::GetModuleHandle(L"sftldr_wow64.dll") ||
+      ::GetModuleHandle(L"sftldr.dll")) {
+    int process_id;
+    if (!installer::WMIProcess::Launch(GetCommandLineW(), &process_id))
+      return false;
+    is_virtualized_ = true;
+    // The new window was spawned from WMI, and won't be in the foreground.
+    // So, first we sleep while the new chrome.exe instance starts (because
+    // WaitForInputIdle doesn't work here). Then we poll for up to two more
+    // seconds and make the window foreground if we find it (or we give up).
+    HWND hwnd = 0;
+    ::Sleep(90);
+    for (int tries = 200; tries; --tries) {
+      hwnd = FindWindowEx(HWND_MESSAGE, NULL, chrome::kMessageWindowClass,
+                          user_data_dir.value().c_str());
+      if (hwnd) {
+        ::SetForegroundWindow(hwnd);
+        break;
+      }
+      ::Sleep(10);
+    }
+    return true;
+  }
+  return false;
+}
 
 // Look for a Chrome instance that uses the same profile directory.
 ProcessSingleton::ProcessSingleton(const FilePath& user_data_dir)
-    : window_(NULL), locked_(false), foreground_window_(NULL) {
+    : window_(NULL), locked_(false), foreground_window_(NULL),
+    is_virtualized_(false) {
   remote_window_ = FindWindowEx(HWND_MESSAGE, NULL,
                                 chrome::kMessageWindowClass,
                                 user_data_dir.value().c_str());
-  if (!remote_window_) {
+  if (!remote_window_ && !EscapeVirtualization(user_data_dir)) {
     // Make sure we will be the one and only process creating the window.
     // We use a named Mutex since we are protecting against multi-process
     // access. As documented, it's clearer to NOT request ownership on creation
@@ -78,13 +129,15 @@ ProcessSingleton::ProcessSingleton(const FilePath& user_data_dir)
 
 ProcessSingleton::~ProcessSingleton() {
   if (window_) {
-    DestroyWindow(window_);
-    UnregisterClass(chrome::kMessageWindowClass, GetModuleHandle(NULL));
+    ::DestroyWindow(window_);
+    ::UnregisterClass(chrome::kMessageWindowClass, GetModuleHandle(NULL));
   }
 }
 
 ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcess() {
-  if (!remote_window_)
+  if (is_virtualized_)
+    return PROCESS_NOTIFIED;  // We already spawned the process in this case.
+  else if (!remote_window_)
     return PROCESS_NONE;
 
   // Found another window, send our command line to it
@@ -144,18 +197,16 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcess() {
 
   // If there is a visible browser window, ask the user before killing it.
   if (visible_window) {
-    std::wstring text =
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_BROWSER_HUNGBROWSER_MESSAGE));
-    std::wstring caption =
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
-    if (!platform_util::SimpleYesNoBox(NULL, caption, text)) {
+    string16 text = l10n_util::GetStringUTF16(IDS_BROWSER_HUNGBROWSER_MESSAGE);
+    string16 caption = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+    if (!browser::ShowYesNoBox(NULL, caption, text)) {
       // The user denied. Quit silently.
       return PROCESS_NOTIFIED;
     }
   }
 
   // Time to take action. Kill the browser process.
-  base::KillProcessById(process_id, ResultCodes::HUNG, true);
+  base::KillProcessById(process_id, content::RESULT_CODE_HUNG, true);
   remote_window_ = NULL;
   return PROCESS_NONE;
 }
@@ -175,15 +226,19 @@ bool ProcessSingleton::Create() {
   if (window_)
     return true;
 
-  HINSTANCE hinst = GetModuleHandle(NULL);
+  HINSTANCE hinst = 0;
+  if (!::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                            reinterpret_cast<char*>(&ThunkWndProc),
+                            &hinst)) {
+    NOTREACHED();
+  }
 
   WNDCLASSEX wc = {0};
   wc.cbSize = sizeof(wc);
-  wc.lpfnWndProc =
-      base::win::WrappedWindowProc<ProcessSingleton::WndProcStatic>;
+  wc.lpfnWndProc = base::win::WrappedWindowProc<ThunkWndProc>;
   wc.hInstance = hinst;
   wc.lpszClassName = chrome::kMessageWindowClass;
-  ATOM clazz = RegisterClassEx(&wc);
+  ATOM clazz = ::RegisterClassEx(&wc);
   DCHECK(clazz);
 
   FilePath user_data_dir;
@@ -191,11 +246,10 @@ bool ProcessSingleton::Create() {
 
   // Set the window's title to the path of our user data directory so other
   // Chrome instances can decide if they should forward to us or not.
-  window_ = CreateWindow(chrome::kMessageWindowClass,
-                         user_data_dir.value().c_str(),
-                         0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, 0);
-  ui::CheckWindowCreated(window_);
-  ui::SetWindowUserData(window_, this);
+  window_ = ::CreateWindow(MAKEINTATOM(clazz),
+                           user_data_dir.value().c_str(),
+                           0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, this);
+  CHECK(window_);
   return true;
 }
 
@@ -206,9 +260,13 @@ LRESULT ProcessSingleton::OnCopyData(HWND hwnd, const COPYDATASTRUCT* cds) {
   // If locked, it means we are not ready to process this message because
   // we are probably in a first run critical phase.
   if (locked_) {
+#if defined(USE_AURA)
+    NOTIMPLEMENTED();
+#else
     // Attempt to place ourselves in the foreground / flash the task bar.
     if (IsWindow(foreground_window_))
       SetForegroundWindow(foreground_window_);
+#endif
     return TRUE;
   }
 
@@ -274,18 +332,22 @@ LRESULT ProcessSingleton::OnCopyData(HWND hwnd, const COPYDATASTRUCT* cds) {
     PrefService* prefs = g_browser_process->local_state();
     DCHECK(prefs);
 
-    Profile* profile = ProfileManager::GetDefaultProfile();
-    if (!profile) {
-      // We should only be able to get here if the profile already exists and
-      // has been created.
-      NOTREACHED();
-      return TRUE;
-    }
-
     // Handle the --uninstall-extension startup action. This needs to done here
     // in the process that is running with the target profile, otherwise the
     // uninstall will fail to unload and remove all components.
     if (parsed_command_line.HasSwitch(switches::kUninstallExtension)) {
+      // The uninstall extension switch can't be combined with the profile
+      // directory switch.
+      DCHECK(!parsed_command_line.HasSwitch(switches::kProfileDirectory));
+
+      Profile* profile = ProfileManager::GetLastUsedProfile();
+      if (!profile) {
+        // We should only be able to get here if the profile already exists and
+        // has been created.
+        NOTREACHED();
+        return TRUE;
+      }
+
       ExtensionsStartupUtil ext_startup_util;
       ext_startup_util.UninstallExtension(parsed_command_line, profile);
       return TRUE;
@@ -293,15 +355,14 @@ LRESULT ProcessSingleton::OnCopyData(HWND hwnd, const COPYDATASTRUCT* cds) {
 
     // Run the browser startup sequence again, with the command line of the
     // signalling process.
-    BrowserInit::ProcessCommandLine(parsed_command_line, cur_dir, false,
-                                    profile, NULL);
+    BrowserInit::ProcessCommandLineAlreadyRunning(parsed_command_line, cur_dir);
     return TRUE;
   }
   return TRUE;
 }
 
-LRESULT CALLBACK ProcessSingleton::WndProc(HWND hwnd, UINT message,
-                                           WPARAM wparam, LPARAM lparam) {
+LRESULT ProcessSingleton::WndProc(HWND hwnd, UINT message,
+                                  WPARAM wparam, LPARAM lparam) {
   switch (message) {
     case WM_COPYDATA:
       return OnCopyData(reinterpret_cast<HWND>(wparam),

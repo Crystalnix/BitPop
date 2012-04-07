@@ -7,7 +7,6 @@
     {
       'target_name': 'bspatch',
       'type': 'static_library',
-      'msvs_guid': 'D7ED06E8-6138-4CE3-A906-5EF1D9C804E0',
       'dependencies': [
         '../lzma_sdk/lzma_sdk.gyp:lzma_sdk',
       ],
@@ -26,9 +25,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

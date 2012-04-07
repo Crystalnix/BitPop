@@ -15,10 +15,12 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "chrome/browser/importer/importer.h"
 #include "chrome/browser/importer/profile_writer.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "net/url_request/url_request_context_getter.h"
 
 class ImporterBridge;
 class XmlReader;
@@ -29,7 +31,7 @@ class XmlReader;
 // Toolbar5Importer should not have StartImport called more than once. Futher
 // if StartImport is called, then the class must not be destroyed until it has
 // either completed or Toolbar5Importer->Cancel() has been called.
-class Toolbar5Importer : public URLFetcher::Delegate, public Importer {
+class Toolbar5Importer : public content::URLFetcherDelegate, public Importer {
  public:
   Toolbar5Importer();
 
@@ -44,15 +46,10 @@ class Toolbar5Importer : public URLFetcher::Delegate, public Importer {
   // Importer view call this method when the user clicks the cancel button
   // in the tabbed options UI.  We need to post a message to our loop
   // to cancel network retrieval.
-  virtual void Cancel();
+  virtual void Cancel() OVERRIDE;
 
-  // URLFetcher::Delegate method called back from the URLFetcher object.
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // content::URLFetcherDelegate method called back from the URLFetcher object.
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(Toolbar5ImporterTest, BookmarkParse);
@@ -158,8 +155,11 @@ class Toolbar5Importer : public URLFetcher::Delegate, public Importer {
 
   // The fetchers need to be available to cancel the network call on user cancel
   // hence they are stored as member variables.
-  URLFetcher* token_fetcher_;
-  URLFetcher* data_fetcher_;
+  content::URLFetcher* token_fetcher_;
+  content::URLFetcher* data_fetcher_;
+
+  // Used to get correct login data for the toolbar server.
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
 
   DISALLOW_COPY_AND_ASSIGN(Toolbar5Importer);
 };

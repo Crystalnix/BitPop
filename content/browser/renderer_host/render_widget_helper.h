@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RENDER_WIDGET_HELPER_H_
 #pragma once
 
+#include <deque>
 #include <map>
 
 #include "base/atomic_sequence_num.h"
@@ -14,8 +15,9 @@
 #include "base/process.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "content/common/window_container_type.h"
+#include "content/public/common/window_container_type.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/surface/transport_dib.h"
 
 namespace IPC {
@@ -117,7 +119,6 @@ class RenderWidgetHelper
   TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
 #endif
 
-
   // IO THREAD ONLY -----------------------------------------------------------
 
   // Called on the IO thread when a UpdateRect message is received.
@@ -125,11 +126,13 @@ class RenderWidgetHelper
 
   void CreateNewWindow(const ViewHostMsg_CreateWindow_Params& params,
                        base::ProcessHandle render_process,
-                       int* route_id);
+                       int* route_id,
+                       int* surface_id);
   void CreateNewWidget(int opener_id,
                        WebKit::WebPopupType popup_type,
-                       int* route_id);
-  void CreateNewFullscreenWidget(int opener_id, int* route_id);
+                       int* route_id,
+                       int* surface_id);
+  void CreateNewFullscreenWidget(int opener_id, int* route_id, int* surface_id);
 
 #if defined(OS_MACOSX)
   // Called on the IO thread to handle the allocation of a TransportDIB.  If
@@ -152,8 +155,9 @@ class RenderWidgetHelper
   friend class UpdateMsgProxy;
   friend class base::RefCountedThreadSafe<RenderWidgetHelper>;
 
-  // Map from render_widget_id to live PaintMsgProxy instance.
-  typedef base::hash_map<int, UpdateMsgProxy*> UpdateMsgProxyMap;
+  typedef std::deque<UpdateMsgProxy*> UpdateMsgProxyQueue;
+  // Map from render_widget_id to a queue of live PaintMsgProxy instances.
+  typedef base::hash_map<int, UpdateMsgProxyQueue > UpdateMsgProxyMap;
 
   ~RenderWidgetHelper();
 

@@ -11,10 +11,12 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/rounded_rect_painter.h"
+#include "chrome/browser/profiles/profile.h"
 #include "content/browser/child_process_security_policy.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/webui/web_ui.h"
-#include "content/common/bindings_policy.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/common/bindings_policy.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ipc/ipc_message.h"
@@ -22,15 +24,15 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "views/background.h"
-#include "views/border.h"
-#include "views/controls/label.h"
-#include "views/controls/throbber.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/throbber.h"
 
 using base::TimeDelta;
+using content::SiteInstance;
 using views::Label;
 using views::View;
-using webkit_glue::FormData;
 
 namespace chromeos {
 
@@ -48,52 +50,11 @@ const int kStopDelayMs = 500;
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
-// WizardWebPageViewTabContents, public:
-
-WizardWebPageViewTabContents::WizardWebPageViewTabContents(
-    Profile* profile,
-    SiteInstance* site_instance,
-    WebPageDelegate* page_delegate)
-      : TabContents(profile, site_instance, MSG_ROUTING_NONE, NULL, NULL),
-        page_delegate_(page_delegate) {
-  }
-
-void WizardWebPageViewTabContents::DidFailProvisionalLoadWithError(
-      RenderViewHost* render_view_host,
-      bool is_main_frame,
-      int error_code,
-      const GURL& url,
-      bool showing_repost_interstitial) {
-  LOG(ERROR) << "Page load failed. URL = " << url << ", error: " << error_code;
-  page_delegate_->OnPageLoadFailed(url.spec());
-}
-
-void WizardWebPageViewTabContents::DidDisplayInsecureContent() {
-  LOG(ERROR) << "Page load failed: did display insecure content";
-  page_delegate_->OnPageLoadFailed("Displayed insecure content");
-}
-
-void WizardWebPageViewTabContents::DidRunInsecureContent(
-    const std::string& security_origin) {
-  LOG(ERROR) << "Page load failed: did run insecure content";
-  page_delegate_->OnPageLoadFailed(security_origin);
-}
-
-void WizardWebPageViewTabContents::DocumentLoadedInFrame(
-    long long /*frame_id*/) {
-  page_delegate_->OnPageLoaded();
-}
-
-void WizardWebPageViewTabContents::DidFinishLoad(
-    long long /*frame_id*/) {
-}
-
-///////////////////////////////////////////////////////////////////////////////
 // WebPageDomView, public:
 
-void WebPageDomView::SetTabContentsDelegate(
-    TabContentsDelegate* delegate) {
-  tab_contents_->set_delegate(delegate);
+void WebPageDomView::SetWebContentsDelegate(
+    content::WebContentsDelegate* delegate) {
+  dom_contents_->web_contents()->SetDelegate(delegate);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -117,13 +78,14 @@ void WebPageView::Init() {
 
   connecting_label_ = new views::Label();
   connecting_label_->SetText(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_LOAD_STATE_CONNECTING)));
+      l10n_util::GetStringUTF16(IDS_LOAD_STATE_CONNECTING));
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
   connecting_label_->SetFont(rb.GetFont(ResourceBundle::MediumFont));
   connecting_label_->SetVisible(false);
-  AddChildView(connecting_label_ );
+  AddChildView(connecting_label_);
 
-  start_timer_.Start(TimeDelta::FromMilliseconds(kStartDelayMs),
+  start_timer_.Start(FROM_HERE,
+                     TimeDelta::FromMilliseconds(kStartDelayMs),
                      this,
                      &WebPageView::ShowWaitingControls);
 }
@@ -137,20 +99,17 @@ void WebPageView::LoadURL(const GURL& url) {
   dom_view()->LoadURL(url);
 }
 
-void WebPageView::SetTabContentsDelegate(
-    TabContentsDelegate* delegate) {
-  dom_view()->SetTabContentsDelegate(delegate);
-}
-
-void WebPageView::SetWebPageDelegate(WebPageDelegate* delegate) {
-  dom_view()->set_web_page_delegate(delegate);
+void WebPageView::SetWebContentsDelegate(
+    content::WebContentsDelegate* delegate) {
+  dom_view()->SetWebContentsDelegate(delegate);
 }
 
 void WebPageView::ShowPageContent() {
   // TODO(nkostylev): Show throbber as an overlay until page has been rendered.
   start_timer_.Stop();
   if (!stop_timer_.IsRunning()) {
-    stop_timer_.Start(TimeDelta::FromMilliseconds(kStopDelayMs),
+    stop_timer_.Start(FROM_HERE,
+                      TimeDelta::FromMilliseconds(kStopDelayMs),
                       this,
                       &WebPageView::ShowRenderedPage);
   }

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,7 @@
 namespace remoting {
 namespace protocol {
 
-const int kDefaultStreamVersion = 1;
-
-namespace {
-const int kDefaultWidth = 800;
-const int kDefaultHeight = 600;
-}  // namespace
+const int kDefaultStreamVersion = 2;
 
 ChannelConfig::ChannelConfig() {
   Reset();
@@ -36,60 +31,18 @@ void ChannelConfig::Reset() {
   codec = CODEC_UNDEFINED;
 }
 
-ScreenResolution::ScreenResolution()
-    : width(kDefaultWidth),
-      height(kDefaultHeight) {
-}
-
-ScreenResolution::ScreenResolution(int width, int height)
-    : width(width),
-      height(height) {
-}
-
-bool ScreenResolution::IsValid() const {
-  return width > 0 && height > 0;
-}
-
-SessionConfig::SessionConfig() { }
-
-SessionConfig::SessionConfig(const SessionConfig& config)
-    : control_config_(config.control_config_),
-      event_config_(config.event_config_),
-      video_config_(config.video_config_),
-      initial_resolution_(config.initial_resolution_) {
-}
-
-SessionConfig::~SessionConfig() { }
-
-void SessionConfig::SetControlConfig(const ChannelConfig& control_config) {
-  control_config_ = control_config;
-}
-void SessionConfig::SetEventConfig(const ChannelConfig& event_config) {
-  event_config_ = event_config;
-}
-void SessionConfig::SetVideoConfig(const ChannelConfig& video_config) {
-  video_config_ = video_config;
-}
-void SessionConfig::SetInitialResolution(const ScreenResolution& resolution) {
-  initial_resolution_ = resolution;
-}
-
-SessionConfig* SessionConfig::Clone() const {
-  return new SessionConfig(*this);
-}
-
 // static
-SessionConfig* SessionConfig::CreateDefault() {
-  SessionConfig* result = new SessionConfig();
-  result->SetControlConfig(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                                         kDefaultStreamVersion,
-                                         ChannelConfig::CODEC_UNDEFINED));
-  result->SetEventConfig(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                                       kDefaultStreamVersion,
-                                       ChannelConfig::CODEC_UNDEFINED));
-  result->SetVideoConfig(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                                       kDefaultStreamVersion,
-                                       ChannelConfig::CODEC_ZIP));
+SessionConfig SessionConfig::GetDefault() {
+  SessionConfig result;
+  result.set_control_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
+                                          kDefaultStreamVersion,
+                                          ChannelConfig::CODEC_UNDEFINED));
+  result.set_event_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
+                                        kDefaultStreamVersion,
+                                        ChannelConfig::CODEC_UNDEFINED));
+  result.set_video_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
+                                        kDefaultStreamVersion,
+                                        ChannelConfig::CODEC_VP8));
   return result;
 }
 
@@ -99,63 +52,54 @@ CandidateSessionConfig::CandidateSessionConfig(
     const CandidateSessionConfig& config)
     : control_configs_(config.control_configs_),
       event_configs_(config.event_configs_),
-      video_configs_(config.video_configs_),
-      initial_resolution_(config.initial_resolution_) {
+      video_configs_(config.video_configs_) {
 }
 
 CandidateSessionConfig::~CandidateSessionConfig() { }
 
-SessionConfig* CandidateSessionConfig::Select(
+bool CandidateSessionConfig::Select(
     const CandidateSessionConfig* client_config,
-    bool force_host_resolution) {
+    SessionConfig* result) {
   ChannelConfig control_config;
   ChannelConfig event_config;
   ChannelConfig video_config;
+
   if (!SelectCommonChannelConfig(
           control_configs_, client_config->control_configs_, &control_config) ||
       !SelectCommonChannelConfig(
           event_configs_, client_config->event_configs_, &event_config) ||
       !SelectCommonChannelConfig(
           video_configs_, client_config->video_configs_, &video_config)) {
-    return NULL;
+    return false;
   }
 
-  SessionConfig* result = SessionConfig::CreateDefault();
-  result->SetControlConfig(control_config);
-  result->SetEventConfig(event_config);
-  result->SetVideoConfig(video_config);
+  result->set_control_config(control_config);
+  result->set_event_config(event_config);
+  result->set_video_config(video_config);
 
-  if (force_host_resolution) {
-    result->SetInitialResolution(initial_resolution());
-  } else {
-    result->SetInitialResolution(client_config->initial_resolution());
-  }
-
-  return result;
+  return true;
 }
 
 bool CandidateSessionConfig::IsSupported(
-    const SessionConfig* config) const {
+    const SessionConfig& config) const {
   return
-      IsChannelConfigSupported(control_configs_, config->control_config()) &&
-      IsChannelConfigSupported(event_configs_, config->event_config()) &&
-      IsChannelConfigSupported(video_configs_, config->video_config()) &&
-      config->initial_resolution().IsValid();
+      IsChannelConfigSupported(control_configs_, config.control_config()) &&
+      IsChannelConfigSupported(event_configs_, config.event_config()) &&
+      IsChannelConfigSupported(video_configs_, config.video_config());
 }
 
-SessionConfig* CandidateSessionConfig::GetFinalConfig() const {
+bool CandidateSessionConfig::GetFinalConfig(SessionConfig* result) const {
   if (control_configs_.size() != 1 ||
       event_configs_.size() != 1 ||
       video_configs_.size() != 1) {
-    return NULL;
+    return false;
   }
 
-  SessionConfig* result = SessionConfig::CreateDefault();
-  result->SetControlConfig(control_configs_.front());
-  result->SetEventConfig(event_configs_.front());
-  result->SetVideoConfig(video_configs_.front());
-  result->SetInitialResolution(initial_resolution_);
-  return result;
+  result->set_control_config(control_configs_.front());
+  result->set_event_config(event_configs_.front());
+  result->set_video_config(video_configs_.front());
+
+  return true;
 }
 
 // static
@@ -182,29 +126,28 @@ bool CandidateSessionConfig::IsChannelConfigSupported(
   return std::find(vector.begin(), vector.end(), value) != vector.end();
 }
 
-CandidateSessionConfig* CandidateSessionConfig::Clone() const {
-  return new CandidateSessionConfig(*this);
+scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::Clone() const {
+  return scoped_ptr<CandidateSessionConfig>(new CandidateSessionConfig(*this));
 }
 
 // static
-CandidateSessionConfig* CandidateSessionConfig::CreateEmpty() {
-  return new CandidateSessionConfig();
+scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateEmpty() {
+  return scoped_ptr<CandidateSessionConfig>(new CandidateSessionConfig());
 }
 
 // static
-CandidateSessionConfig* CandidateSessionConfig::CreateFrom(
-    const SessionConfig* config) {
-  CandidateSessionConfig* result = CreateEmpty();
-  result->mutable_control_configs()->push_back(config->control_config());
-  result->mutable_event_configs()->push_back(config->event_config());
-  result->mutable_video_configs()->push_back(config->video_config());
-  *result->mutable_initial_resolution() = (config->initial_resolution());
-  return result;
+scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateFrom(
+    const SessionConfig& config) {
+  scoped_ptr<CandidateSessionConfig> result = CreateEmpty();
+  result->mutable_control_configs()->push_back(config.control_config());
+  result->mutable_event_configs()->push_back(config.event_config());
+  result->mutable_video_configs()->push_back(config.video_config());
+  return result.Pass();
 }
 
 // static
-CandidateSessionConfig* CandidateSessionConfig::CreateDefault() {
-  CandidateSessionConfig* result = CreateEmpty();
+scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateDefault() {
+  scoped_ptr<CandidateSessionConfig> result = CreateEmpty();
   result->mutable_control_configs()->push_back(
       ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
                     kDefaultStreamVersion,
@@ -213,20 +156,11 @@ CandidateSessionConfig* CandidateSessionConfig::CreateDefault() {
       ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
                     kDefaultStreamVersion,
                     ChannelConfig::CODEC_UNDEFINED));
-
   result->mutable_video_configs()->push_back(
       ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
                     kDefaultStreamVersion,
                     ChannelConfig::CODEC_VP8));
-  result->mutable_video_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_ZIP));
-  result->mutable_video_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_SRTP,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_VP8));
-  return result;
+  return result.Pass();
 }
 
 }  // namespace protocol

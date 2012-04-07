@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/renderer/extensions/user_script_idle_scheduler.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_messages.h"
@@ -11,9 +12,10 @@
 #include "chrome/renderer/extensions/extension_groups.h"
 #include "chrome/renderer/extensions/extension_helper.h"
 #include "chrome/renderer/extensions/user_script_slave.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 namespace {
@@ -22,13 +24,14 @@ namespace {
 const int kUserScriptIdleTimeoutMs = 200;
 }
 
+using WebKit::WebDocument;
 using WebKit::WebFrame;
 using WebKit::WebString;
 using WebKit::WebView;
 
 UserScriptIdleScheduler::UserScriptIdleScheduler(
     WebFrame* frame, ExtensionDispatcher* extension_dispatcher)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       frame_(frame),
       has_run_(false),
       extension_dispatcher_(extension_dispatcher) {
@@ -50,22 +53,24 @@ void UserScriptIdleScheduler::ExecuteCode(
 }
 
 void UserScriptIdleScheduler::DidFinishDocumentLoad() {
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(&UserScriptIdleScheduler::MaybeRun),
-      kUserScriptIdleTimeoutMs);
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE, base::Bind(&UserScriptIdleScheduler::MaybeRun,
+                            weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromMilliseconds(kUserScriptIdleTimeoutMs));
 }
 
 void UserScriptIdleScheduler::DidFinishLoad() {
   // Ensure that running scripts does not keep any progress UI running.
-  MessageLoop::current()->PostTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(&UserScriptIdleScheduler::MaybeRun));
+  MessageLoop::current()->PostTask(
+      FROM_HERE, base::Bind(&UserScriptIdleScheduler::MaybeRun,
+                            weak_factory_.GetWeakPtr()));
 }
 
 void UserScriptIdleScheduler::DidStartProvisionalLoad() {
   // The frame is navigating, so reset the state since we'll want to inject
   // scripts once the load finishes.
   has_run_ = false;
-  method_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
   while (!pending_code_execution_queue_.empty())
     pending_code_execution_queue_.pop();
 }
@@ -95,13 +100,14 @@ void UserScriptIdleScheduler::ExecuteCodeImpl(
     const ExtensionMsg_ExecuteCode_Params& params) {
   const Extension* extension = extension_dispatcher_->extensions()->GetByID(
       params.extension_id);
-  RenderView* render_view = RenderView::FromWebView(frame_->view());
+  content::RenderView* render_view =
+      content::RenderView::FromWebView(frame_->view());
 
   // Since extension info is sent separately from user script info, they can
   // be out of sync. We just ignore this situation.
   if (!extension) {
     render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-        render_view->routing_id(), params.request_id, true, ""));
+        render_view->GetRoutingId(), params.request_id, true, ""));
     return;
   }
 
@@ -124,15 +130,16 @@ void UserScriptIdleScheduler::ExecuteCodeImpl(
       //
       // For child frames, we just skip ones the extension doesn't have access
       // to and carry on.
-      if (!extension->CanExecuteScriptOnPage(frame->url(), NULL, NULL)) {
+      if (!extension->CanExecuteScriptOnPage(frame->document().url(),
+                                             NULL, NULL)) {
         if (frame->parent()) {
           continue;
         } else {
           render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-              render_view->routing_id(), params.request_id, false,
+              render_view->GetRoutingId(), params.request_id, false,
               ExtensionErrorUtils::FormatErrorMessage(
                   extension_manifest_errors::kCannotAccessPage,
-                  frame->url().spec())));
+                  frame->document().url().spec())));
           return;
         }
       }
@@ -143,18 +150,21 @@ void UserScriptIdleScheduler::ExecuteCodeImpl(
       } else {
         std::vector<WebScriptSource> sources;
         sources.push_back(source);
-        UserScriptSlave::InsertInitExtensionCode(&sources, params.extension_id);
         frame->executeScriptInIsolatedWorld(
-            UserScriptSlave::GetIsolatedWorldId(extension, frame),
+            extension_dispatcher_->user_script_slave()->
+                GetIsolatedWorldIdForExtension(extension, frame),
             &sources.front(), sources.size(), EXTENSION_GROUP_CONTENT_SCRIPTS);
       }
     } else {
-      frame->insertStyleText(WebString::fromUTF8(params.code), WebString());
+      frame->document().insertUserStyleSheet(
+          WebString::fromUTF8(params.code),
+          // Author level is consistent with WebView::addUserStyleSheet.
+          WebDocument::UserStyleAuthorLevel);
     }
   }
 
   render_view->Send(new ExtensionHostMsg_ExecuteCodeFinished(
-      render_view->routing_id(), params.request_id, true, ""));
+      render_view->GetRoutingId(), params.request_id, true, ""));
 }
 
 bool UserScriptIdleScheduler::GetAllChildFrames(

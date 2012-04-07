@@ -18,31 +18,14 @@
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
+
+using ::ppapi::thunk::PPB_ImageData_API;
 
 namespace webkit {
 namespace ppapi {
 
-namespace {
-
-int32_t GetSharedMemory(PP_Resource resource,
-                        int* handle,
-                        uint32_t* byte_count) {
-  scoped_refptr<PPB_ImageData_Impl> image_data(
-      Resource::GetAs<PPB_ImageData_Impl>(resource));
-  if (image_data) {
-    *handle = image_data->GetSharedMemoryHandle(byte_count);
-    return PP_OK;
-  }
-  return PP_ERROR_BADRESOURCE;
-}
-
-const PPB_ImageDataTrusted ppb_imagedata_trusted = {
-  &GetSharedMemory,
-};
-
-}  // namespace
-
-PPB_ImageData_Impl::PPB_ImageData_Impl(PluginInstance* instance)
+PPB_ImageData_Impl::PPB_ImageData_Impl(PP_Instance instance)
     : Resource(instance),
       format_(PP_IMAGEDATAFORMAT_BGRA_PREMUL),
       width_(0),
@@ -53,20 +36,17 @@ PPB_ImageData_Impl::~PPB_ImageData_Impl() {
 }
 
 // static
-const PPB_ImageData* PPB_ImageData_Impl::GetInterface() {
-  return ::ppapi::thunk::GetPPB_ImageData_Thunk();
+PP_Resource PPB_ImageData_Impl::Create(PP_Instance instance,
+                                       PP_ImageDataFormat format,
+                                       const PP_Size& size,
+                                       PP_Bool init_to_zero) {
+  scoped_refptr<PPB_ImageData_Impl> data(new PPB_ImageData_Impl(instance));
+  if (!data->Init(format, size.width, size.height, !!init_to_zero))
+    return 0;
+  return data->GetReference();
 }
 
-// static
-const PPB_ImageDataTrusted* PPB_ImageData_Impl::GetTrustedInterface() {
-  return &ppb_imagedata_trusted;
-}
-
-::ppapi::thunk::PPB_ImageData_API* PPB_ImageData_Impl::AsPPB_ImageData_API() {
-  return this;
-}
-
-PPB_ImageData_Impl* PPB_ImageData_Impl::AsPPB_ImageData_Impl() {
+PPB_ImageData_API* PPB_ImageData_Impl::AsPPB_ImageData_API() {
   return this;
 }
 
@@ -79,12 +59,15 @@ bool PPB_ImageData_Impl::Init(PP_ImageDataFormat format,
     return false;  // Only support this one format for now.
   if (width <= 0 || height <= 0)
     return false;
-  if (static_cast<int64>(width) * static_cast<int64>(height) >=
+  if (static_cast<int64>(width) * static_cast<int64>(height) * 4 >=
       std::numeric_limits<int32>::max())
     return false;  // Prevent overflow of signed 32-bit ints.
 
-  platform_image_.reset(
-      instance()->delegate()->CreateImage2D(width, height));
+  PluginDelegate* plugin_delegate = ResourceHelper::GetPluginDelegate(this);
+  if (!plugin_delegate)
+    return false;
+
+  platform_image_.reset(plugin_delegate->CreateImage2D(width, height));
   format_ = format;
   width_ = width;
   height_ = height;
@@ -122,8 +105,14 @@ void PPB_ImageData_Impl::Unmap() {
   // in the future to save some memory.
 }
 
-int PPB_ImageData_Impl::GetSharedMemoryHandle(uint32* byte_count) const {
-  return platform_image_->GetSharedMemoryHandle(byte_count);
+int32_t PPB_ImageData_Impl::GetSharedMemory(int* handle,
+                                            uint32_t* byte_count) {
+  *handle = platform_image_->GetSharedMemoryHandle(byte_count);
+  return PP_OK;
+}
+
+skia::PlatformCanvas* PPB_ImageData_Impl::GetPlatformCanvas() {
+  return mapped_canvas_.get();
 }
 
 const SkBitmap* PPB_ImageData_Impl::GetMappedBitmap() const {

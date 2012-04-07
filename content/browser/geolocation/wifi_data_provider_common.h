@@ -10,10 +10,11 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "content/browser/geolocation/device_data_provider.h"
+#include "content/common/content_export.h"
 
 // Converts a MAC address stored as an array of uint8 to a string.
 string16 MacAddressAsString16(const uint8 mac_as_int[6]);
@@ -64,7 +65,7 @@ class GenericPollingPolicy : public PollingPolicyInterface {
 // both of which will be create & accessed in the worker thread (only).
 // Also designed this way to promotes ease of testing the cross-platform
 // behavior w.r.t. polling & threading.
-class WifiDataProviderCommon
+class CONTENT_EXPORT WifiDataProviderCommon
     : public WifiDataProviderImplBase,
       private base::Thread {
  public:
@@ -80,9 +81,9 @@ class WifiDataProviderCommon
   WifiDataProviderCommon();
 
   // WifiDataProviderImplBase implementation
-  virtual bool StartDataProvider();
-  virtual void StopDataProvider();
-  virtual bool GetData(WifiData* data);
+  virtual bool StartDataProvider() OVERRIDE;
+  virtual void StopDataProvider() OVERRIDE;
+  virtual bool GetData(WifiData* data) OVERRIDE;
 
  protected:
   virtual ~WifiDataProviderCommon();
@@ -95,8 +96,8 @@ class WifiDataProviderCommon
 
  private:
   // Thread implementation
-  virtual void Init();
-  virtual void CleanUp();
+  virtual void Init() OVERRIDE;
+  virtual void CleanUp() OVERRIDE;
 
   // Task which run in the child thread.
   void DoWifiScanTask();
@@ -118,7 +119,7 @@ class WifiDataProviderCommon
   scoped_ptr<PollingPolicyInterface> polling_policy_;
 
   // Holder for the tasks which run on the thread; takes care of cleanup.
-  ScopedRunnableMethodFactory<WifiDataProviderCommon> task_factory_;
+  base::WeakPtrFactory<WifiDataProviderCommon> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WifiDataProviderCommon);
 };

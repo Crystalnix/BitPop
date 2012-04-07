@@ -6,8 +6,9 @@
 #define NET_FTP_FTP_NETWORK_LAYER_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/ftp/ftp_transaction_factory.h"
 
 namespace net {
@@ -15,7 +16,7 @@ namespace net {
 class FtpNetworkSession;
 class HostResolver;
 
-class NET_API FtpNetworkLayer : public FtpTransactionFactory {
+class NET_EXPORT FtpNetworkLayer : public FtpTransactionFactory {
  public:
   explicit FtpNetworkLayer(HostResolver* host_resolver);
   virtual ~FtpNetworkLayer();
@@ -23,8 +24,8 @@ class NET_API FtpNetworkLayer : public FtpTransactionFactory {
   static FtpTransactionFactory* CreateFactory(HostResolver* host_resolver);
 
   // FtpTransactionFactory methods:
-  virtual FtpTransaction* CreateTransaction();
-  virtual void Suspend(bool suspend);
+  virtual FtpTransaction* CreateTransaction() OVERRIDE;
+  virtual void Suspend(bool suspend) OVERRIDE;
 
  private:
   scoped_refptr<FtpNetworkSession> session_;

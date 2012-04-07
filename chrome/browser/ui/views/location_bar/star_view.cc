@@ -18,7 +18,7 @@
 
 StarView::StarView(CommandUpdater* command_updater)
     : command_updater_(command_updater) {
-  SetID(VIEW_ID_STAR_BUTTON);
+  set_id(VIEW_ID_STAR_BUTTON);
   SetToggled(false);
   set_accessibility_focusable(true);
 }
@@ -27,8 +27,8 @@ StarView::~StarView() {
 }
 
 void StarView::SetToggled(bool on) {
-  SetTooltipText(UTF16ToWide(l10n_util::GetStringUTF16(
-      on ? IDS_TOOLTIP_STARRED : IDS_TOOLTIP_STAR)));
+  SetTooltipText(l10n_util::GetStringUTF16(
+      on ? IDS_TOOLTIP_STARRED : IDS_TOOLTIP_STAR));
   SetImage(ResourceBundle::GetSharedInstance().GetBitmapNamed(
       on ? IDR_STAR_LIT : IDR_STAR));
 }
@@ -38,7 +38,7 @@ void StarView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
 }
 
-bool StarView::GetTooltipText(const gfx::Point& p, std::wstring* tooltip) {
+bool StarView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
   // Don't show tooltip to distract user if BookmarkBubbleView is showing.
   if (browser::IsBookmarkBubbleViewShowing())
     return false;
@@ -53,7 +53,7 @@ bool StarView::OnMousePressed(const views::MouseEvent& event) {
 }
 
 void StarView::OnMouseReleased(const views::MouseEvent& event) {
-  if (HitTest(event.location()))
+  if (event.IsOnlyLeftMouseButton() && HitTest(event.location()))
     command_updater_->ExecuteCommand(IDC_BOOKMARK_PAGE);
 }
 
@@ -63,16 +63,5 @@ bool StarView::OnKeyPressed(const views::KeyEvent& event) {
     command_updater_->ExecuteCommand(IDC_BOOKMARK_PAGE);
     return true;
   }
-  return false;
-}
-
-void StarView::BubbleClosing(Bubble* bubble, bool closed_by_escape) {
-}
-
-bool StarView::CloseOnEscape() {
-  return true;
-}
-
-bool StarView::FadeInOnShow() {
   return false;
 }

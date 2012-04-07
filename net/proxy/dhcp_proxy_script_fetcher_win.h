@@ -11,6 +11,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/message_loop_proxy.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time.h"
 #include "base/timer.h"
@@ -22,8 +23,9 @@ class DhcpProxyScriptAdapterFetcher;
 class URLRequestContext;
 
 // Windows-specific implementation.
-class NET_TEST DhcpProxyScriptFetcherWin
+class NET_EXPORT_PRIVATE DhcpProxyScriptFetcherWin
     : public DhcpProxyScriptFetcher,
+      public base::SupportsWeakPtr<DhcpProxyScriptFetcherWin>,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // Creates a DhcpProxyScriptFetcherWin that issues requests through
@@ -33,7 +35,8 @@ class NET_TEST DhcpProxyScriptFetcherWin
   virtual ~DhcpProxyScriptFetcherWin();
 
   // DhcpProxyScriptFetcher implementation.
-  int Fetch(string16* utf16_text, CompletionCallback* callback) OVERRIDE;
+  int Fetch(string16* utf16_text,
+            const net::CompletionCallback& callback) OVERRIDE;
   void Cancel() OVERRIDE;
   const GURL& GetPacURL() const OVERRIDE;
   std::string GetFetcherName() const OVERRIDE;
@@ -48,15 +51,46 @@ class NET_TEST DhcpProxyScriptFetcherWin
 
   URLRequestContext* url_request_context() const;
 
+  // This inner class encapsulate work done on a worker pool thread.
+  // The class calls GetCandidateAdapterNames, which can take a couple of
+  // hundred milliseconds.
+  class NET_EXPORT_PRIVATE AdapterQuery
+      : public base::RefCountedThreadSafe<AdapterQuery> {
+   public:
+    AdapterQuery();
+    virtual ~AdapterQuery();
+
+    // This is the method that runs on the worker pool thread.
+    void GetCandidateAdapterNames();
+
+    // This set is valid after GetCandidateAdapterNames has
+    // been run. Its lifetime is scoped by this object.
+    const std::set<std::string>& adapter_names() const;
+
+   protected:
+    // Virtual method introduced to allow unit testing.
+    virtual bool ImplGetCandidateAdapterNames(
+        std::set<std::string>* adapter_names);
+
+   private:
+    // This is constructed on the originating thread, then used on the
+    // worker thread, then used again on the originating thread only when
+    // the task has completed on the worker thread. No locking required.
+    std::set<std::string> adapter_names_;
+
+    DISALLOW_COPY_AND_ASSIGN(AdapterQuery);
+  };
+
   // Virtual methods introduced to allow unit testing.
   virtual DhcpProxyScriptAdapterFetcher* ImplCreateAdapterFetcher();
-  virtual bool ImplGetCandidateAdapterNames(
-      std::set<std::string>* adapter_names);
+  virtual AdapterQuery* ImplCreateAdapterQuery();
   virtual int ImplGetMaxWaitMs();
+  virtual void ImplOnGetCandidateAdapterNamesDone() {}
 
  private:
   // Event/state transition handlers
   void CancelImpl();
+  void OnGetCandidateAdapterNamesDone(scoped_refptr<AdapterQuery> query);
   void OnFetcherDone(int result);
   void OnWaitTimer();
   void TransitionToDone();
@@ -73,7 +107,9 @@ class NET_TEST DhcpProxyScriptFetcherWin
   //    it has completed for the fastest adapter, return the PAC file
   //    available for the most preferred network adapter, if any.
   //
-  // The state machine goes from START->NO_RESULTS when it creates
+  // The state machine goes from START->WAIT_ADAPTERS when it starts a
+  // worker thread to get the list of adapters with DHCP enabled.
+  // It then goes from WAIT_ADAPTERS->NO_RESULTS when it creates
   // and starts an DhcpProxyScriptAdapterFetcher for each adapter.  It goes
   // from NO_RESULTS->SOME_RESULTS when it gets the first result; at this
   // point a wait timer is started.  It goes from SOME_RESULTS->DONE in
@@ -88,6 +124,7 @@ class NET_TEST DhcpProxyScriptFetcherWin
   // allowed to be outstanding at any given time.
   enum State {
     STATE_START,
+    STATE_WAIT_ADAPTERS,
     STATE_NO_RESULTS,
     STATE_SOME_RESULTS,
     STATE_DONE,
@@ -102,14 +139,11 @@ class NET_TEST DhcpProxyScriptFetcherWin
   typedef ScopedVector<DhcpProxyScriptAdapterFetcher> FetcherVector;
   FetcherVector fetchers_;
 
-  // Callback invoked when any fetcher completes.
-  CompletionCallbackImpl<DhcpProxyScriptFetcherWin> fetcher_callback_;
-
   // Number of fetchers we are waiting for.
   int num_pending_fetchers_;
 
   // Lets our client know we're done. Not valid in states START or DONE.
-  CompletionCallback* client_callback_;
+  net::CompletionCallback callback_;
 
   // Pointer to string we will write results to. Not valid in states
   // START and DONE.
@@ -121,6 +155,9 @@ class NET_TEST DhcpProxyScriptFetcherWin
   base::OneShotTimer<DhcpProxyScriptFetcherWin> wait_timer_;
 
   scoped_refptr<URLRequestContext> url_request_context_;
+
+  // NULL or the AdapterQuery currently in flight.
+  scoped_refptr<AdapterQuery> last_query_;
 
   // Time |Fetch()| was last called, 0 if never.
   base::TimeTicks fetch_start_time_;

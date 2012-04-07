@@ -1,20 +1,22 @@
-// Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // See header file for description of RendererNetPredictor class
 
-
 #include "chrome/renderer/net/renderer_net_predictor.h"
 
 #include <ctype.h>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "chrome/common/net/predictor_common.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/net/predictor_queue.h"
-#include "content/renderer/render_thread.h"
+#include "content/public/renderer/render_thread.h"
+
+using content::RenderThread;
 
 // The number of hostnames submitted to Browser DNS resolver per call to
 // SubmitHostsnames() (which reads names from our queue).
@@ -22,7 +24,7 @@ static const size_t kMAX_SUBMISSION_PER_TASK = 30;
 
 RendererNetPredictor::RendererNetPredictor()
     : c_string_queue_(1000),
-      ALLOW_THIS_IN_INITIALIZER_LIST(renderer_predictor_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   Reset();
 }
 
@@ -51,10 +53,11 @@ void RendererNetPredictor::Resolve(const char* name, size_t length) {
       DCHECK_EQ(old_size, 0u);
       if (0 != old_size)
         return;  // Overkill safety net: Don't send too many InvokeLater's.
-      renderer_predictor_factory_.RevokeAll();
-      RenderThread::current()->message_loop()->PostDelayedTask(FROM_HERE,
-          renderer_predictor_factory_.NewRunnableMethod(
-              &RendererNetPredictor::SubmitHostnames), 10);
+      weak_factory_.InvalidateWeakPtrs();
+      RenderThread::Get()->GetMessageLoop()->PostDelayedTask(
+          FROM_HERE, base::Bind(&RendererNetPredictor::SubmitHostnames,
+                                weak_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(10));
     }
     return;
   }
@@ -85,10 +88,11 @@ void RendererNetPredictor::SubmitHostnames() {
   // This will help to avoid overloads when a page has a TON of links.
   DnsPrefetchNames(kMAX_SUBMISSION_PER_TASK);
   if (new_name_count_ > 0 || 0 < c_string_queue_.Size()) {
-    renderer_predictor_factory_.RevokeAll();
-    RenderThread::current()->message_loop()->PostDelayedTask(FROM_HERE,
-        renderer_predictor_factory_.NewRunnableMethod(
-            &RendererNetPredictor::SubmitHostnames), 10);
+    weak_factory_.InvalidateWeakPtrs();
+    RenderThread::Get()->GetMessageLoop()->PostDelayedTask(
+        FROM_HERE, base::Bind(&RendererNetPredictor::SubmitHostnames,
+                              weak_factory_.GetWeakPtr()),
+        base::TimeDelta::FromMilliseconds(10));
   } else {
     // TODO(JAR): Should we only clear the map when we navigate, or reload?
     domain_map_.clear();
@@ -142,7 +146,7 @@ void RendererNetPredictor::DnsPrefetchNames(size_t max_count) {
   DCHECK_GE(new_name_count_, names.size());
   new_name_count_ -= names.size();
 
-  RenderThread::current()->Send(new ViewHostMsg_DnsPrefetch(names));
+  RenderThread::Get()->Send(new ChromeViewHostMsg_DnsPrefetch(names));
 }
 
 // is_numeric_ip() checks to see if all characters in name are either numeric,

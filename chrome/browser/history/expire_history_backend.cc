@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
@@ -17,7 +18,7 @@
 #include "chrome/browser/history/text_database.h"
 #include "chrome/browser/history/text_database_manager.h"
 #include "chrome/browser/history/thumbnail_database.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -28,7 +29,17 @@ namespace {
 
 // The number of days by which the expiration threshold is advanced for items
 // that we want to expire early, such as those of AUTO_SUBFRAME transition type.
-const int kEarlyExpirationAdvanceDays = 30;
+//
+// Early expiration stuff is kept around only for edge cases, as subframes
+// don't appear in history and the vast majority of them are ads anyway. The
+// main use case for these is if you're on a site with links to different
+// frames, you'll be able to see those links as visited, and we'll also be
+// able to get redirect information for those URLs.
+//
+// But since these uses are most valuable when you're actually on the site,
+// and because these can take up the bulk of your history, we get a lot of
+// space savings by deleting them quickly.
+const int kEarlyExpirationAdvanceDays = 3;
 
 // Reads all types of visits starting from beginning of time to the given end
 // time. This is the most general reader.
@@ -72,7 +83,7 @@ class AutoSubframeVisitsReader : public ExpiringVisitsReader {
 
     db->GetVisitsInRangeForTransition(begin_time, early_end_time,
                                       max_visits,
-                                      PageTransition::AUTO_SUBFRAME,
+                                      content::PAGE_TRANSITION_AUTO_SUBFRAME,
                                       visits);
     bool more = static_cast<int>(visits->size()) == max_visits;
     if (!more)
@@ -86,22 +97,22 @@ class AutoSubframeVisitsReader : public ExpiringVisitsReader {
 // worth saving (for example, subframe navigations and redirects) and we can
 // just delete it when it gets old.
 bool ShouldArchiveVisit(const VisitRow& visit) {
-  int no_qualifier = PageTransition::StripQualifier(visit.transition);
+  int no_qualifier = content::PageTransitionStripQualifier(visit.transition);
 
   // These types of transitions are always "important" and the user will want
   // to see them.
-  if (no_qualifier == PageTransition::TYPED ||
-      no_qualifier == PageTransition::AUTO_BOOKMARK ||
-      no_qualifier == PageTransition::START_PAGE)
+  if (no_qualifier == content::PAGE_TRANSITION_TYPED ||
+      no_qualifier == content::PAGE_TRANSITION_AUTO_BOOKMARK ||
+      no_qualifier == content::PAGE_TRANSITION_START_PAGE)
     return true;
 
   // Only archive these "less important" transitions when they were the final
   // navigation and not part of a redirect chain.
-  if ((no_qualifier == PageTransition::LINK ||
-       no_qualifier == PageTransition::FORM_SUBMIT ||
-       no_qualifier == PageTransition::KEYWORD ||
-       no_qualifier == PageTransition::GENERATED) &&
-      visit.transition & PageTransition::CHAIN_END)
+  if ((no_qualifier == content::PAGE_TRANSITION_LINK ||
+       no_qualifier == content::PAGE_TRANSITION_FORM_SUBMIT ||
+       no_qualifier == content::PAGE_TRANSITION_KEYWORD ||
+       no_qualifier == content::PAGE_TRANSITION_GENERATED) &&
+      visit.transition & content::PAGE_TRANSITION_CHAIN_END)
     return true;
 
   // The transition types we ignore are AUTO_SUBFRAME and MANUAL_SUBFRAME.
@@ -110,7 +121,7 @@ bool ShouldArchiveVisit(const VisitRow& visit) {
 
 // The number of visits we will expire very time we check for old items. This
 // Prevents us from doing too much work any given time.
-const int kNumExpirePerIteration = 10;
+const int kNumExpirePerIteration = 32;
 
 // The number of seconds between checking for items that should be expired when
 // we think there might be more items to expire. This timeout is used when the
@@ -130,7 +141,7 @@ const int kIndexExpirationDelayMin = 2;
 
 // The number of the most recent months for which we do not want to delete
 // the history index files.
-const int kStoreHistoryIndexesForMonths = 12;
+const int kStoreHistoryIndexesForMonths = 3;
 
 }  // namespace
 
@@ -168,7 +179,7 @@ ExpireHistoryBackend::ExpireHistoryBackend(
       archived_db_(NULL),
       thumb_db_(NULL),
       text_db_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       bookmark_service_(bookmark_service) {
 }
 
@@ -186,34 +197,42 @@ void ExpireHistoryBackend::SetDatabases(HistoryDatabase* main_db,
 }
 
 void ExpireHistoryBackend::DeleteURL(const GURL& url) {
+  DeleteURLs(std::vector<GURL>(1, url));
+}
+
+void ExpireHistoryBackend::DeleteURLs(const std::vector<GURL>& urls) {
   if (!main_db_)
     return;
 
-  URLRow url_row;
-  if (!main_db_->GetRowForURL(url, &url_row))
-    return;  // Nothing to delete.
-
-  // Collect all the visits and delete them. Note that we don't give up if
-  // there are no visits, since the URL could still have an entry that we should
-  // delete.
-  // TODO(brettw): bug 1171148: We should also delete from the archived DB.
-  VisitVector visits;
-  main_db_->GetVisitsForURL(url_row.id(), &visits);
-
   DeleteDependencies dependencies;
-  DeleteVisitRelatedInfo(visits, &dependencies);
+  for (std::vector<GURL>::const_iterator url = urls.begin(); url != urls.end();
+       ++url) {
+    URLRow url_row;
+    if (!main_db_->GetRowForURL(*url, &url_row))
+      continue;  // Nothing to delete.
 
-  // We skip ExpireURLsForVisits (since we are deleting from the URL, and not
-  // starting with visits in a given time range). We therefore need to call the
-  // deletion and favicon update functions manually.
+    // Collect all the visits and delete them. Note that we don't give
+    // up if there are no visits, since the URL could still have an
+    // entry that we should delete.  TODO(brettw): bug 1171148: We
+    // should also delete from the archived DB.
+    VisitVector visits;
+    main_db_->GetVisitsForURL(url_row.id(), &visits);
 
-  BookmarkService* bookmark_service = GetBookmarkService();
-  bool is_bookmarked =
-      (bookmark_service && bookmark_service->IsBookmarked(url));
+    DeleteVisitRelatedInfo(visits, &dependencies);
 
-  DeleteOneURL(url_row, is_bookmarked, &dependencies);
-  if (!is_bookmarked)
-    DeleteFaviconsIfPossible(dependencies.affected_favicons);
+    // We skip ExpireURLsForVisits (since we are deleting from the
+    // URL, and not starting with visits in a given time range). We
+    // therefore need to call the deletion and favicon update
+    // functions manually.
+
+    BookmarkService* bookmark_service = GetBookmarkService();
+    bool is_bookmarked =
+        (bookmark_service && bookmark_service->IsBookmarked(*url));
+
+    DeleteOneURL(url_row, is_bookmarked, &dependencies);
+  }
+
+  DeleteFaviconsIfPossible(dependencies.affected_favicons);
 
   if (text_db_)
     text_db_->OptimizeChangedDatabases(dependencies.text_db_changes);
@@ -247,6 +266,10 @@ void ExpireHistoryBackend::ExpireHistoryBetween(
         visits.push_back(*visit);
     }
   }
+  ExpireVisits(visits);
+}
+
+void ExpireHistoryBackend::ExpireVisits(const VisitVector& visits) {
   if (visits.empty())
     return;
 
@@ -336,14 +359,10 @@ void ExpireHistoryBackend::BroadcastDeleteNotifications(
     // determine if they care whether anything was deleted).
     URLsDeletedDetails* deleted_details = new URLsDeletedDetails;
     deleted_details->all_history = false;
-    std::vector<URLRow> typed_urls_changed;  // Collect this for later.
-    for (size_t i = 0; i < dependencies->deleted_urls.size(); i++) {
+    for (size_t i = 0; i < dependencies->deleted_urls.size(); i++)
       deleted_details->urls.insert(dependencies->deleted_urls[i].url());
-      if (dependencies->deleted_urls[i].typed_count() > 0)
-        typed_urls_changed.push_back(dependencies->deleted_urls[i]);
-    }
-    delegate_->BroadcastNotifications(NotificationType::HISTORY_URLS_DELETED,
-                                      deleted_details);
+    delegate_->BroadcastNotifications(
+        chrome::NOTIFICATION_HISTORY_URLS_DELETED, deleted_details);
   }
 }
 
@@ -451,15 +470,17 @@ void ExpireHistoryBackend::ExpireURLsForVisits(
   std::map<URLID, ChangedURL> changed_urls;
   for (size_t i = 0; i < visits.size(); i++) {
     ChangedURL& cur = changed_urls[visits[i].url_id];
-    cur.visit_count++;
     // NOTE: This code must stay in sync with HistoryBackend::AddPageVisit().
     // TODO(pkasting): http://b/1148304 We shouldn't be marking so many URLs as
-    // typed, which would eliminate the need for this code.
-    PageTransition::Type transition =
-        PageTransition::StripQualifier(visits[i].transition);
-    if ((transition == PageTransition::TYPED &&
-         !PageTransition::IsRedirect(visits[i].transition)) ||
-        transition == PageTransition::KEYWORD_GENERATED)
+    // typed, which would help eliminate the need for this code (we still would
+    // need to handle RELOAD transitions specially, though).
+    content::PageTransition transition =
+        content::PageTransitionStripQualifier(visits[i].transition);
+    if (transition != content::PAGE_TRANSITION_RELOAD)
+      cur.visit_count++;
+    if ((transition == content::PAGE_TRANSITION_TYPED &&
+        !content::PageTransitionIsRedirect(visits[i].transition)) ||
+        transition == content::PAGE_TRANSITION_KEYWORD_GENERATED)
       cur.typed_count++;
   }
 
@@ -567,8 +588,11 @@ void ExpireHistoryBackend::ScheduleArchive() {
     delay = TimeDelta::FromSeconds(kExpirationDelaySec);
   }
 
-  MessageLoop::current()->PostDelayedTask(FROM_HERE, factory_.NewRunnableMethod(
-          &ExpireHistoryBackend::DoArchiveIteration), delay.InMilliseconds());
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ExpireHistoryBackend::DoArchiveIteration,
+                 weak_factory_.GetWeakPtr()),
+      delay);
 }
 
 void ExpireHistoryBackend::DoArchiveIteration() {
@@ -660,9 +684,10 @@ void ExpireHistoryBackend::ScheduleExpireHistoryIndexFiles() {
 
   TimeDelta delay = TimeDelta::FromMinutes(kIndexExpirationDelayMin);
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, factory_.NewRunnableMethod(
-          &ExpireHistoryBackend::DoExpireHistoryIndexFiles),
-      delay.InMilliseconds());
+      FROM_HERE,
+      base::Bind(&ExpireHistoryBackend::DoExpireHistoryIndexFiles,
+                 weak_factory_.GetWeakPtr()),
+      delay);
 }
 
 void ExpireHistoryBackend::DoExpireHistoryIndexFiles() {

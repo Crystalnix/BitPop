@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,18 +8,22 @@
 
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_event_router.h"
-#include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/common/notification_service.h"
-#include "ui/base/l10n/l10n_util.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "ui/base/text/text_elider.h"
 #include "ui/gfx/favicon_size.h"
 #include "webkit/glue/context_menu.h"
+
+using content::WebContents;
 
 ExtensionMenuItem::ExtensionMenuItem(const Id& id,
                                      const std::string& title,
@@ -75,7 +79,7 @@ string16 ExtensionMenuItem::TitleWithReplacement(
   ReplaceSubstringsAfterOffset(&result, 0, ASCIIToUTF16("%s"), selection);
 
   if (result.length() > max_length)
-    result = l10n_util::TruncateString(result, max_length);
+    result = ui::TruncateString(result, max_length);
   return result;
 }
 
@@ -91,12 +95,9 @@ void ExtensionMenuItem::AddChild(ExtensionMenuItem* item) {
   children_.push_back(item);
 }
 
-const int ExtensionMenuManager::kAllowedSchemes =
-    URLPattern::SCHEME_HTTP | URLPattern::SCHEME_HTTPS;
-
-ExtensionMenuManager::ExtensionMenuManager() {
-  registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-                 NotificationService::AllSources());
+ExtensionMenuManager::ExtensionMenuManager(Profile* profile) {
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(profile));
 }
 
 ExtensionMenuManager::~ExtensionMenuManager() {
@@ -138,8 +139,12 @@ bool ExtensionMenuManager::AddContextItem(const Extension* extension,
   context_items_[extension_id].push_back(item);
   items_by_id_[item->id()] = item;
 
-  if (item->type() == ExtensionMenuItem::RADIO && item->checked())
-    RadioItemSelected(item);
+  if (item->type() == ExtensionMenuItem::RADIO) {
+    if (item->checked())
+      RadioItemSelected(item);
+    else
+      SanitizeRadioList(context_items_[extension_id]);
+  }
 
   // If this is the first item for this extension, start loading its icon.
   if (first_item)
@@ -157,6 +162,10 @@ bool ExtensionMenuManager::AddChildItem(const ExtensionMenuItem::Id& parent_id,
     return false;
   parent->AddChild(child);
   items_by_id_[child->id()] = child;
+
+  if (child->type() == ExtensionMenuItem::RADIO)
+    SanitizeRadioList(parent->children());
+
   return true;
 }
 
@@ -200,6 +209,7 @@ bool ExtensionMenuManager::ChangeParent(
     ExtensionMenuItem* taken =
       old_parent->ReleaseChild(child_id, false /* non-recursive search*/);
     DCHECK(taken == child);
+    SanitizeRadioList(old_parent->children());
   } else {
     // This is a top-level item, so we need to pull it out of our list of
     // top-level items.
@@ -216,13 +226,16 @@ bool ExtensionMenuManager::ChangeParent(
       return false;
     }
     list.erase(j);
+    SanitizeRadioList(list);
   }
 
   if (new_parent) {
     new_parent->AddChild(child);
+    SanitizeRadioList(new_parent->children());
   } else {
     context_items_[child->extension_id()].push_back(child);
     child->parent_id_.reset(NULL);
+    SanitizeRadioList(context_items_[child->extension_id()]);
   }
   return true;
 }
@@ -253,6 +266,7 @@ bool ExtensionMenuManager::RemoveContextMenuItem(
       delete *j;
       list.erase(j);
       result = true;
+      SanitizeRadioList(list);
       break;
     } else {
       // See if the item to remove was found as a descendant of the current
@@ -261,6 +275,7 @@ bool ExtensionMenuManager::RemoveContextMenuItem(
       if (child) {
         items_removed = child->RemoveAllDescendants();
         items_removed.insert(id);
+        SanitizeRadioList(GetItemById(*child->parent_id())->children());
         delete child;
         result = true;
         break;
@@ -374,7 +389,7 @@ static void AddURLProperty(DictionaryValue* dictionary,
 
 void ExtensionMenuManager::ExecuteCommand(
     Profile* profile,
-    TabContents* tab_contents,
+    WebContents* web_contents,
     const ContextMenuParams& params,
     const ExtensionMenuItem::Id& menuItemId) {
   ExtensionEventRouter* event_router = profile->GetExtensionEventRouter();
@@ -421,8 +436,8 @@ void ExtensionMenuManager::ExecuteCommand(
   args.Append(properties);
 
   // Add the tab info to the argument list.
-  if (tab_contents) {
-    args.Append(ExtensionTabUtil::CreateTabValue(tab_contents));
+  if (web_contents) {
+    args.Append(ExtensionTabUtil::CreateTabValue(web_contents));
   } else {
     args.Append(new DictionaryValue());
   }
@@ -448,16 +463,72 @@ void ExtensionMenuManager::ExecuteCommand(
       item->extension_id(), event_name, json_args, profile, GURL());
 }
 
-void ExtensionMenuManager::Observe(NotificationType type,
-                                   const NotificationSource& source,
-                                   const NotificationDetails& details) {
-  // Remove menu items for disabled/uninstalled extensions.
-  if (type != NotificationType::EXTENSION_UNLOADED) {
-    NOTREACHED();
-    return;
+void ExtensionMenuManager::SanitizeRadioList(
+    const ExtensionMenuItem::List& item_list) {
+  ExtensionMenuItem::List::const_iterator i = item_list.begin();
+  while (i != item_list.end()) {
+    if ((*i)->type() != ExtensionMenuItem::RADIO) {
+      ++i;
+      break;
+    }
+
+    // Uncheck any checked radio items in the run, and at the end reset
+    // the appropriate one to checked. If no check radio items were found,
+    // then check the first radio item in the run.
+    ExtensionMenuItem::List::const_iterator last_checked = item_list.end();
+    ExtensionMenuItem::List::const_iterator radio_run_iter;
+    for (radio_run_iter = i; radio_run_iter != item_list.end();
+        ++radio_run_iter) {
+      if ((*radio_run_iter)->type() != ExtensionMenuItem::RADIO) {
+        break;
+      }
+
+      if ((*radio_run_iter)->checked()) {
+        last_checked = radio_run_iter;
+        (*radio_run_iter)->SetChecked(false);
+      }
+    }
+
+    if (last_checked != item_list.end())
+      (*last_checked)->SetChecked(true);
+    else
+      (*i)->SetChecked(true);
+
+    i = radio_run_iter;
   }
+}
+
+bool ExtensionMenuManager::ItemUpdated(const ExtensionMenuItem::Id& id) {
+  if (!ContainsKey(items_by_id_, id))
+    return false;
+
+  ExtensionMenuItem* menu_item = GetItemById(id);
+  DCHECK(menu_item);
+
+  if (menu_item->parent_id()) {
+    SanitizeRadioList(GetItemById(*menu_item->parent_id())->children());
+  } else {
+    std::string extension_id = menu_item->extension_id();
+    MenuItemMap::iterator i = context_items_.find(extension_id);
+    if (i == context_items_.end()) {
+      NOTREACHED();
+      return false;
+    }
+    SanitizeRadioList(i->second);
+  }
+
+  return true;
+}
+
+void ExtensionMenuManager::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
+
+  // Remove menu items for disabled/uninstalled extensions.
   const Extension* extension =
-      Details<UnloadedExtensionInfo>(details)->extension;
+      content::Details<UnloadedExtensionInfo>(details)->extension;
   if (ContainsKey(context_items_, extension->id())) {
     RemoveAllContextItems(extension->id());
   }
@@ -466,12 +537,6 @@ void ExtensionMenuManager::Observe(NotificationType type,
 const SkBitmap& ExtensionMenuManager::GetIconForExtension(
     const std::string& extension_id) {
   return icon_manager_.GetIcon(extension_id);
-}
-
-// static
-bool ExtensionMenuManager::HasAllowedScheme(const GURL& url) {
-  URLPattern pattern(kAllowedSchemes);
-  return pattern.SetScheme(url.scheme());
 }
 
 ExtensionMenuItem::Id::Id()

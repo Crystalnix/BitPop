@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,6 +10,7 @@
 #include "base/string_util.h"
 #include "base/string_tokenizer.h"
 #include "base/stringprintf.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome_frame/utils.h"
 #include "net/base/net_util.h"
 #include "webkit/glue/user_agent.h"
@@ -378,7 +379,14 @@ const char* GetChromeUserAgent() {
     _pAtlModule->m_csStaticDataInitAndTypeInfo.Lock();
     if (!g_chrome_user_agent[0]) {
       std::string ua;
-      webkit_glue::BuildUserAgent(false, &ua);
+
+      chrome::VersionInfo version_info;
+      std::string product("Chrome/");
+      product += version_info.is_valid() ? version_info.Version()
+                                         : "0.0.0.0";
+
+      ua = webkit_glue::BuildUserAgentFromProduct(product);
+
       DCHECK(ua.length() < arraysize(g_chrome_user_agent));
       lstrcpynA(g_chrome_user_agent, ua.c_str(),
                 arraysize(g_chrome_user_agent) - 1);

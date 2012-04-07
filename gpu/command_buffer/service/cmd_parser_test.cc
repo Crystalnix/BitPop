@@ -48,12 +48,10 @@ class CommandParserTest : public testing::Test {
     size_t command_buffer_size = entry_count *
                                  sizeof(CommandBufferEntry);  // NOLINT
     DCHECK_LE(command_buffer_size, shm_size);
-    return new CommandParser(buffer(),
-                             shm_size,
-                             0,
-                             command_buffer_size,
-                             0,
-                             api_mock());
+    CommandParser* parser = new CommandParser(api_mock());
+
+    parser->SetBuffer(buffer(), shm_size, 0, command_buffer_size);
+    return parser;
   }
 
   unsigned int buffer_entry_count() { return 20; }
@@ -288,28 +286,34 @@ TEST_F(CommandParserTest, TestError) {
   Mock::VerifyAndClearExpectations(api_mock());
 }
 
-TEST_F(CommandParserTest, TestWaiting) {
-  const unsigned int kNumEntries = 5;
-  scoped_ptr<CommandParser> parser(MakeParser(kNumEntries));
+TEST_F(CommandParserTest, SetBuffer) {
+  scoped_ptr<CommandParser> parser(MakeParser(3));
   CommandBufferOffset put = parser->put();
   CommandHeader header;
 
-  // Generate a command with size 1.
-  header.size = 1;
-  header.command = 3;
+  // add a single command, no args
+  header.size = 2;
+  header.command = 123;
   buffer()[put++].value_header = header;
+  buffer()[put++].value_int32 = 456;
+
+  CommandBufferEntry param_array[1];
+  param_array[0].value_int32 = 456;
 
   parser->set_put(put);
-  // A command that returns kWaiting should not advance the get pointer.
-  AddDoCommandExpect(error::kWaiting, 3, 0, NULL);
-  EXPECT_EQ(error::kWaiting, parser->ProcessAllCommands());
-  EXPECT_EQ(0, parser->get());
-  Mock::VerifyAndClearExpectations(api_mock());
-  // Not waiting should advance the get pointer.
-  AddDoCommandExpect(error::kNoError, 3, 0, NULL);
+  AddDoCommandExpect(error::kNoError, 123, 1, param_array);
   EXPECT_EQ(error::kNoError, parser->ProcessAllCommands());
-  EXPECT_EQ(put, parser->get());
+  // We should have advanced 2 entries
+  EXPECT_EQ(2, parser->get());
   Mock::VerifyAndClearExpectations(api_mock());
+
+  scoped_array<CommandBufferEntry> buffer2(new CommandBufferEntry[2]);
+  parser->SetBuffer(
+      buffer2.get(), sizeof(CommandBufferEntry) * 2, 0,
+      sizeof(CommandBufferEntry) * 2);
+  // The put and get should have reset to 0.
+  EXPECT_EQ(0, parser->get());
+  EXPECT_EQ(0, parser->put());
 }
 
 }  // namespace gpu

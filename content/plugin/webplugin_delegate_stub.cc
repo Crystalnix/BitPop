@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,17 @@
 
 #include "build/build_config.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
-#include "content/common/content_client.h"
-#include "content/common/content_switches.h"
+#include "base/string_number_conversions.h"
+#include "content/common/npobject_stub.h"
 #include "content/common/plugin_messages.h"
-#include "content/plugin/npobject_stub.h"
 #include "content/plugin/plugin_channel.h"
 #include "content/plugin/plugin_thread.h"
 #include "content/plugin/webplugin_proxy.h"
+#include "content/public/common/content_client.h"
+#include "content/public/common/content_constants.h"
+#include "content/public/common/content_switches.h"
 #include "third_party/npapi/bindings/npapi.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "skia/ext/platform_device.h"
@@ -27,25 +30,14 @@ using WebKit::WebCursorInfo;
 using webkit::npapi::WebPlugin;
 using webkit::npapi::WebPluginResourceClient;
 
-class FinishDestructionTask : public Task {
- public:
-  FinishDestructionTask(webkit::npapi::WebPluginDelegateImpl* delegate,
-                        WebPlugin* webplugin)
-      : delegate_(delegate), webplugin_(webplugin) {
-  }
+void FinishDestructionCallback(webkit::npapi::WebPluginDelegateImpl* delegate,
+                               WebPlugin* webplugin) {
+  // WebPlugin must outlive WebPluginDelegate.
+  if (delegate)
+    delegate->PluginDestroyed();
 
-  void Run() {
-    // WebPlugin must outlive WebPluginDelegate.
-    if (delegate_)
-      delegate_->PluginDestroyed();
-
-    delete webplugin_;
-  }
-
- private:
-  webkit::npapi::WebPluginDelegateImpl* delegate_;
-  webkit::npapi::WebPlugin* webplugin_;
-};
+  delete webplugin;
+}
 
 WebPluginDelegateStub::WebPluginDelegateStub(
     const std::string& mime_type, int instance_id, PluginChannel* channel) :
@@ -66,7 +58,7 @@ WebPluginDelegateStub::~WebPluginDelegateStub() {
     // The delegate or an npobject is in the callstack, so don't delete it
     // right away.
     MessageLoop::current()->PostNonNestableTask(FROM_HERE,
-        new FinishDestructionTask(delegate_, webplugin_));
+        base::Bind(&FinishDestructionCallback, delegate_, webplugin_));
   } else {
     // Safe to delete right away.
     if (delegate_)
@@ -102,11 +94,18 @@ bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginMsg_DidPaint, OnDidPaint)
     IPC_MESSAGE_HANDLER(PluginMsg_GetPluginScriptableObject,
                         OnGetPluginScriptableObject)
+    IPC_MESSAGE_HANDLER(PluginMsg_GetFormValue, OnGetFormValue)
     IPC_MESSAGE_HANDLER(PluginMsg_UpdateGeometry, OnUpdateGeometry)
     IPC_MESSAGE_HANDLER(PluginMsg_UpdateGeometrySync, OnUpdateGeometry)
     IPC_MESSAGE_HANDLER(PluginMsg_SendJavaScriptStream,
                         OnSendJavaScriptStream)
     IPC_MESSAGE_HANDLER(PluginMsg_SetContentAreaFocus, OnSetContentAreaFocus)
+#if defined(OS_WIN) && !defined(USE_AURA)
+    IPC_MESSAGE_HANDLER(PluginMsg_ImeCompositionUpdated,
+                        OnImeCompositionUpdated)
+    IPC_MESSAGE_HANDLER(PluginMsg_ImeCompositionCompleted,
+                        OnImeCompositionCompleted)
+#endif
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(PluginMsg_SetWindowFocus, OnSetWindowFocus)
     IPC_MESSAGE_HANDLER(PluginMsg_ContainerHidden, OnContainerHidden)
@@ -121,7 +120,6 @@ bool WebPluginDelegateStub::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(PluginMsg_DidFinishManualLoading,
                         OnDidFinishManualLoading)
     IPC_MESSAGE_HANDLER(PluginMsg_DidManualLoadFail, OnDidManualLoadFail)
-    IPC_MESSAGE_HANDLER(PluginMsg_InstallMissingPlugin, OnInstallMissingPlugin)
     IPC_MESSAGE_HANDLER(PluginMsg_HandleURLRequestReply,
                         OnHandleURLRequestReply)
     IPC_MESSAGE_HANDLER(PluginMsg_HTTPRangeRequestReply,
@@ -160,7 +158,9 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
       command_line.GetSwitchValuePath(switches::kPluginPath);
 
   gfx::PluginWindowHandle parent = gfx::kNullPluginWindow;
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+  // Nothing.
+#elif defined(OS_WIN)
   parent = gfx::NativeViewFromId(params.containing_window);
 #elif defined(OS_LINUX)
   // This code is disabled, See issue 17110.
@@ -178,9 +178,12 @@ void WebPluginDelegateStub::OnInit(const PluginMsg_Init_Params& params,
       path, mime_type_, parent);
   if (delegate_) {
     webplugin_->set_delegate(delegate_);
+    std::vector<std::string> arg_names = params.arg_names;
+    std::vector<std::string> arg_values = params.arg_values;
+
     *result = delegate_->Initialize(params.url,
-                                    params.arg_names,
-                                    params.arg_values,
+                                    arg_names,
+                                    arg_values,
                                     webplugin_,
                                     params.load_manually);
   }
@@ -242,6 +245,10 @@ void WebPluginDelegateStub::OnDidFinishLoadWithReason(
 
 void WebPluginDelegateStub::OnSetFocus(bool focused) {
   delegate_->SetFocus(focused);
+#if defined(OS_WIN) && !defined(USE_AURA)
+  if (focused)
+    webplugin_->UpdateIMEStatus();
+#endif
 }
 
 void WebPluginDelegateStub::OnHandleInputEvent(
@@ -265,13 +272,9 @@ void WebPluginDelegateStub::OnUpdateGeometry(
     const PluginMsg_UpdateGeometry_Param& param) {
   webplugin_->UpdateGeometry(
       param.window_rect, param.clip_rect,
-      param.windowless_buffer, param.background_buffer,
-      param.transparent
-#if defined(OS_MACOSX)
-      ,
-      param.ack_key
-#endif
-      );
+      param.windowless_buffer0, param.windowless_buffer1,
+      param.windowless_buffer_index, param.background_buffer,
+      param.transparent);
 }
 
 void WebPluginDelegateStub::OnGetPluginScriptableObject(int* route_id) {
@@ -292,6 +295,13 @@ void WebPluginDelegateStub::OnGetPluginScriptableObject(int* route_id) {
   WebBindings::releaseObject(object);
 }
 
+void WebPluginDelegateStub::OnGetFormValue(string16* value, bool* success) {
+  *success = false;
+  if (!delegate_)
+    return;
+  *success = delegate_->GetFormValue(value);
+}
+
 void WebPluginDelegateStub::OnSendJavaScriptStream(const GURL& url,
                                                    const std::string& result,
                                                    bool success,
@@ -303,6 +313,25 @@ void WebPluginDelegateStub::OnSetContentAreaFocus(bool has_focus) {
   if (delegate_)
     delegate_->SetContentAreaHasFocus(has_focus);
 }
+
+#if defined(OS_WIN) && !defined(USE_AURA)
+void WebPluginDelegateStub::OnImeCompositionUpdated(
+    const string16& text,
+    const std::vector<int>& clauses,
+    const std::vector<int>& target,
+    int cursor_position) {
+  if (delegate_)
+    delegate_->ImeCompositionUpdated(text, clauses, target, cursor_position);
+#if defined(OS_WIN) && !defined(USE_AURA)
+  webplugin_->UpdateIMEStatus();
+#endif
+}
+
+void WebPluginDelegateStub::OnImeCompositionCompleted(const string16& text) {
+  if (delegate_)
+    delegate_->ImeCompositionCompleted(text);
+}
+#endif
 
 #if defined(OS_MACOSX)
 void WebPluginDelegateStub::OnSetWindowFocus(bool has_focus) {
@@ -357,10 +386,6 @@ void WebPluginDelegateStub::OnDidFinishManualLoading() {
 
 void WebPluginDelegateStub::OnDidManualLoadFail() {
   delegate_->DidManualLoadFail();
-}
-
-void WebPluginDelegateStub::OnInstallMissingPlugin() {
-  delegate_->InstallMissingPlugin();
 }
 
 void WebPluginDelegateStub::OnHandleURLRequestReply(

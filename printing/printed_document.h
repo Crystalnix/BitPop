@@ -11,16 +11,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/synchronization/lock.h"
-#include "googleurl/src/gurl.h"
 #include "printing/print_settings.h"
 #include "ui/gfx/native_widget_types.h"
 
 class FilePath;
 class MessageLoop;
-
-namespace gfx {
-class Font;
-}
 
 namespace printing {
 
@@ -35,7 +30,8 @@ class PrintingContext;
 // will have write access. Sensible functions are protected by a lock.
 // Warning: Once a page is loaded, it cannot be replaced. Pages may be discarded
 // under low memory conditions.
-class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
+class PRINTING_EXPORT PrintedDocument
+    : public base::RefCountedThreadSafe<PrintedDocument> {
  public:
   // The cookie shall be unique and has a specific relationship with its
   // originating source and settings.
@@ -46,8 +42,7 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
   // Sets a page's data. 0-based. Takes metafile ownership.
   // Note: locks for a short amount of time.
   void SetPage(int page_number, Metafile* metafile, double shrink,
-               const gfx::Size& paper_size, const gfx::Rect& page_rect,
-               bool has_visible_overlays);
+               const gfx::Size& paper_size, const gfx::Rect& page_rect);
 
   // Retrieves a page. If the page is not available right now, it
   // requests to have this page be rendered and returns false.
@@ -56,7 +51,7 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
 
   // Draws the page in the context.
   // Note: locks for a short amount of time in debug only.
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) && !defined(USE_AURA)
   void RenderPrintedPage(const PrintedPage& page,
                          gfx::NativeDrawingContext context) const;
 #elif defined(OS_POSIX)
@@ -94,12 +89,7 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
 
   // Getters. All these items are immutable hence thread-safe.
   const PrintSettings& settings() const { return immutable_.settings_; }
-  const string16& name() const {
-    return immutable_.name_;
-  }
-  const GURL& url() const { return immutable_.url_; }
-  const string16& date() const { return immutable_.date_; }
-  const string16& time() const { return immutable_.time_; }
+  const string16& name() const { return immutable_.name_; }
   int cookie() const { return immutable_.cookie_; }
 
   // Sets a path where to dump printing output files for debugging. If never set
@@ -137,9 +127,6 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
     // The total number of pages in the document.
     int page_count_;
 
-    // Shrink done in comparison to desired_dpi.
-    double shrink_factor;
-
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     // Page number of the first page.
     int first_page;
@@ -154,9 +141,6 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
               int cookie);
     ~Immutable();
 
-    // Sets the document's |date_| and |time_|.
-    void SetDocumentDate();
-
     // Print settings used to generate this document. Immutable.
     PrintSettings settings_;
 
@@ -166,15 +150,6 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
     // Document name. Immutable.
     string16 name_;
 
-    // URL that generated this document. Immutable.
-    GURL url_;
-
-    // The date on which this job started. Immutable.
-    string16 date_;
-
-    // The time at which this job started. Immutable.
-    string16 time_;
-
     // Cookie to uniquely identify this document. It is used to make sure that a
     // PrintedPage is correctly belonging to the PrintedDocument. Since
     // PrintedPage generation is completely asynchronous, it could be easy to
@@ -183,23 +158,6 @@ class PrintedDocument : public base::RefCountedThreadSafe<PrintedDocument> {
     // print settings change.
     int cookie_;
   };
-
-  // Prints the headers and footers for one page in the specified context
-  // according to the current settings.
-  void PrintHeaderFooter(gfx::NativeDrawingContext context,
-                         const PrintedPage& page,
-                         PageOverlays::HorizontalPosition x,
-                         PageOverlays::VerticalPosition y,
-                         const gfx::Font& font) const;
-
-  // Draws the computed |text| into |context| taking into account the bounding
-  // region |bounds|. |bounds| is the position in which to draw |text| and
-  // the minimum area needed to contain |text| which may not be larger than the
-  // header or footer itself.
-  // TODO(jhawkins): string16.
-  void DrawHeaderFooter(gfx::NativeDrawingContext context,
-                        std::wstring text,
-                        gfx::Rect bounds) const;
 
   void DebugDump(const PrintedPage& page);
 

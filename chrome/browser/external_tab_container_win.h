@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,22 +10,22 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/automation/automation_resource_message_filter.h"
+#include "chrome/browser/infobars/infobar_container.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/tab_contents/infobar_container.h"
 #include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
-#include "chrome/browser/ui/download/download_tab_helper_delegate.h"
-#include "chrome/browser/ui/views/frame/browser_bubble_host.h"
 #include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "content/common/navigation_types.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "views/accelerator.h"
-#include "views/widget/native_widget_win.h"
+#include "content/public/browser/navigation_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "ui/base/accelerators/accelerator.h"
+#include "ui/views/widget/native_widget_win.h"
 
 class AutomationProvider;
 class Browser;
@@ -35,6 +35,10 @@ class TabContentsWrapper;
 class RenderViewContextMenuViews;
 struct NavigationInfo;
 
+namespace content {
+class WebIntentsDispatcher;
+}
+
 namespace ui {
 class ViewProp;
 }
@@ -42,24 +46,23 @@ class ViewProp;
 // This class serves as the container window for an external tab.
 // An external tab is a Chrome tab that is meant to displayed in an
 // external process. This class provides the FocusManger needed by the
-// TabContents as well as an implementation of TabContentsDelegate.
-class ExternalTabContainer : public TabContentsDelegate,
-                             public TabContentsObserver,
-                             public DownloadTabHelperDelegate,
-                             public NotificationObserver,
+// TabContents as well as an implementation of content::WebContentsDelegate.
+class ExternalTabContainer : public content::WebContentsDelegate,
+                             public content::WebContentsObserver,
+                             public content::NotificationObserver,
                              public views::NativeWidgetWin,
                              public base::RefCounted<ExternalTabContainer>,
-                             public views::AcceleratorTarget,
+                             public ui::AcceleratorTarget,
                              public InfoBarContainer::Delegate,
-                             public BrowserBubbleHost,
                              public BlockedContentTabHelperDelegate {
  public:
   typedef std::map<uintptr_t, scoped_refptr<ExternalTabContainer> > PendingTabs;
 
   ExternalTabContainer(AutomationProvider* automation,
-      AutomationResourceMessageFilter* filter);
+                       AutomationResourceMessageFilter* filter);
 
-  TabContents* tab_contents() const;
+  content::WebContents* web_contents() const;
+  TabContentsWrapper* tab_contents_wrapper() { return tab_contents_.get(); }
 
   // Temporary hack so we can send notifications back
   void SetTabHandle(int handle);
@@ -115,62 +118,80 @@ class ExternalTabContainer : public TabContentsDelegate,
   // hosts the given tab window.
   static ExternalTabContainer* GetContainerForTab(HWND tab_window);
 
-  // Overridden from TabContentsDelegate:
-  virtual void OpenURLFromTab(TabContents* source,
-                              const GURL& url,
-                              const GURL& referrer,
-                              WindowOpenDisposition disposition,
-                              PageTransition::Type transition);
-  virtual void NavigationStateChanged(const TabContents* source,
-                                      unsigned changed_flags);
-  virtual void AddNewContents(TabContents* source,
-                              TabContents* new_contents,
+  // Overridden from content::WebContentsDelegate:
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
+  virtual void NavigationStateChanged(const content::WebContents* source,
+                                      unsigned changed_flags) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
-                              bool user_gesture);
-  virtual void ActivateContents(TabContents* contents);
-  virtual void DeactivateContents(TabContents* contents);
-  virtual void LoadingStateChanged(TabContents* source);
-  virtual void CloseContents(TabContents* source);
-  virtual void MoveContents(TabContents* source, const gfx::Rect& pos);
-  virtual bool IsPopup(const TabContents* source) const;
-  virtual void UpdateTargetURL(TabContents* source, const GURL& url);
-  virtual void ContentsZoomChange(bool zoom_in);
-  virtual bool IsExternalTabContainer() const;
-  virtual gfx::NativeWindow GetFrameNativeWindow();
-
+                              bool user_gesture) OVERRIDE;
+  virtual void CloseContents(content::WebContents* source) OVERRIDE;
+  virtual void MoveContents(content::WebContents* source,
+                            const gfx::Rect& pos) OVERRIDE;
+  virtual bool IsPopupOrPanel(
+      const content::WebContents* source) const OVERRIDE;
+  virtual void UpdateTargetURL(content::WebContents* source, int32 page_id,
+                               const GURL& url) OVERRIDE;
+  virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
+  virtual gfx::NativeWindow GetFrameNativeWindow() OVERRIDE;
+  virtual void WebContentsCreated(content::WebContents* source_contents,
+                                  int64 source_frame_id,
+                                  const GURL& target_url,
+                                  content::WebContents* new_contents) OVERRIDE;
   virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
-
-  virtual bool TakeFocus(bool reverse);
-
-  virtual bool OnGoToEntryOffset(int offset);
-
-  virtual void ShowPageInfo(Profile* profile,
-                            const GURL& url,
-                            const NavigationEntry::SSLStatus& ssl,
-                            bool show_history);
-
-  // Handles the context menu display operation. This allows external
-  // hosts to customize the menu.
-  virtual bool HandleContextMenu(const ContextMenuParams& params);
-
-  // Executes the context menu command identified by the command
-  // parameter.
-  virtual bool ExecuteContextMenuCommand(int command);
-
-  virtual void BeforeUnloadFired(TabContents* tab,
+                                      bool* is_keyboard_shortcut) OVERRIDE;
+  virtual void HandleKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual bool TakeFocus(bool reverse) OVERRIDE;
+  virtual bool CanDownload(content::WebContents* source,
+                           int request_id) OVERRIDE;
+  virtual bool OnGoToEntryOffset(int offset) OVERRIDE;
+  virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
+  virtual bool ExecuteContextMenuCommand(int command) OVERRIDE;
+  virtual void BeforeUnloadFired(content::WebContents* tab,
                                  bool proceed,
-                                 bool* proceed_to_fire_unload);
-
-  void ShowRepostFormWarningDialog(TabContents* tab_contents);
+                                 bool* proceed_to_fire_unload) OVERRIDE;
+  virtual content::JavaScriptDialogCreator*
+      GetJavaScriptDialogCreator() OVERRIDE;
+  virtual void ShowRepostFormWarningDialog(
+      content::WebContents* source) OVERRIDE;
+  virtual void RunFileChooser(
+      content::WebContents* tab,
+      const content::FileChooserParams& params) OVERRIDE;
+  virtual void EnumerateDirectory(content::WebContents* tab,
+                                  int request_id,
+                                  const FilePath& path) OVERRIDE;
+  virtual void JSOutOfMemory(content::WebContents* tab);
+  virtual void RegisterProtocolHandler(content::WebContents* tab,
+                                       const std::string& protocol,
+                                       const GURL& url,
+                                       const string16& title) OVERRIDE;
+  virtual void RegisterIntentHandler(content::WebContents* tab,
+                                     const string16& action,
+                                     const string16& type,
+                                     const string16& href,
+                                     const string16& title,
+                                     const string16& disposition) OVERRIDE;
+  virtual void WebIntentDispatch(
+      content::WebContents* tab,
+      content::WebIntentsDispatcher* intents_dispatcher) OVERRIDE;
+  virtual void FindReply(content::WebContents* tab,
+                         int request_id,
+                         int number_of_matches,
+                         const gfx::Rect& selection_rect,
+                         int active_match_ordinal,
+                         bool final_update) OVERRIDE;
+  virtual void CrashedPlugin(content::WebContents* tab,
+                             const FilePath& plugin_path) OVERRIDE;
 
   void RegisterRenderViewHost(RenderViewHost* render_view_host);
   void UnregisterRenderViewHost(RenderViewHost* render_view_host);
 
-  // Overridden from TabContentsObserver:
-  // IPC::Channel::Listener implementation.
+  // Overridden from content::WebContentsObserver:
   virtual bool OnMessageReceived(const IPC::Message& message);
 
   // Message handlers
@@ -178,27 +199,19 @@ class ExternalTabContainer : public TabContentsDelegate,
                                       const std::string& origin,
                                       const std::string& target);
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
-
-  // Overridden from DownloadTabHelperDelegate:
-  virtual bool CanDownload(int request_id) OVERRIDE;
-  virtual void OnStartDownload(DownloadItem* download,
-                               TabContentsWrapper* tab) OVERRIDE;
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
 
   // Returns the ExternalTabContainer instance associated with the cookie
   // passed in. It also erases the corresponding reference from the map.
   // Returns NULL if we fail to find the cookie in the map.
   static scoped_refptr<ExternalTabContainer> RemovePendingTab(uintptr_t cookie);
 
-  // Overridden from views::NativeWidgetWin:
-  virtual views::Window* GetContainingWindow() OVERRIDE;
-  virtual const views::Window* GetContainingWindow() const OVERRIDE;
-
-  // Handles the specified |accelerator| being pressed.
-  bool AcceleratorPressed(const views::Accelerator& accelerator);
+  // ui::AcceleratorTarget
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  bool CanHandleAccelerators() const OVERRIDE;
 
   bool pending() const {
     return pending_;
@@ -217,8 +230,6 @@ class ExternalTabContainer : public TabContentsDelegate,
   virtual void InfoBarContainerStateChanged(bool is_animating) OVERRIDE;
   virtual bool DrawInfoBarArrows(int* x) const OVERRIDE;
 
-  virtual void TabContentsCreated(TabContents* new_contents);
-
   void RunUnloadHandlers(IPC::Message* reply_message);
 
   // Overridden from BlockedContentTabHelperDelegate:
@@ -233,7 +244,7 @@ class ExternalTabContainer : public TabContentsDelegate,
   virtual void OnFinalMessage(HWND window);
 
   bool InitNavigationInfo(NavigationInfo* nav_info,
-                          NavigationType::Type nav_type,
+                          content::NavigationType nav_type,
                           int relative_offset);
   void Navigate(const GURL& url, const GURL& referrer);
 
@@ -243,22 +254,6 @@ class ExternalTabContainer : public TabContentsDelegate,
   // pending RenderViewHosts.
   void RegisterRenderViewHostForAutomation(RenderViewHost* render_view_host,
                                            bool pending_view);
-
-  // Top level navigations received for a tab while it is waiting for an ack
-  // from the external host go here. Scenario is a window.open executes on a
-  // page in ChromeFrame. A new TabContents is created and the current
-  // ExternalTabContainer is notified via AddNewContents. At this point we
-  // send off an attach tab request to the host browser. Before the host
-  // browser sends over the ack, we receive a top level URL navigation for the
-  // new tab, which needs to be routed over the correct automation channel.
-  // We receive the automation channel only when the external host acks the
-  // attach tab request.
-  struct PendingTopLevelNavigation {
-    GURL url;
-    GURL referrer;
-    WindowOpenDisposition disposition;
-    PageTransition::Type transition;
-  };
 
   // Helper function for processing keystokes coming back from the renderer
   // process.
@@ -279,9 +274,7 @@ class ExternalTabContainer : public TabContentsDelegate,
   scoped_ptr<TabContentsWrapper> tab_contents_;
   scoped_refptr<AutomationProvider> automation_;
 
-  NotificationRegistrar registrar_;
-
-  TabContentsObserver::Registrar tab_contents_registrar_;
+  content::NotificationRegistrar registrar_;
 
   // A view to handle focus cycling
   TabContentsContainer* tab_contents_container_;
@@ -305,15 +298,12 @@ class ExternalTabContainer : public TabContentsDelegate,
   // whether top level URL requests are to be handled by the automation client.
   bool handle_top_level_requests_;
 
-  // Scoped browser object for this ExternalTabContainer instance.
-  scoped_ptr<Browser> browser_;
-
   // Contains ExternalTabContainers that have not been connected to as yet.
   static base::LazyInstance<PendingTabs> pending_tabs_;
 
   // Allows us to run tasks on the ExternalTabContainer instance which are
   // bound by its lifetime.
-  ScopedRunnableMethodFactory<ExternalTabContainer> external_method_factory_;
+  base::WeakPtrFactory<ExternalTabContainer> weak_factory_;
 
   // The URL request context to be used for this tab. Can be NULL.
   scoped_refptr<ChromeURLRequestContextGetter> request_context_;
@@ -321,11 +311,20 @@ class ExternalTabContainer : public TabContentsDelegate,
   UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   // A mapping between accelerators and commands.
-  std::map<views::Accelerator, int> accelerator_table_;
+  std::map<ui::Accelerator, int> accelerator_table_;
 
+  // Top level navigations received for a tab while it is waiting for an ack
+  // from the external host go here. Scenario is a window.open executes on a
+  // page in ChromeFrame. A new TabContents is created and the current
+  // ExternalTabContainer is notified via AddNewContents. At this point we
+  // send off an attach tab request to the host browser. Before the host
+  // browser sends over the ack, we receive a top level URL navigation for the
+  // new tab, which needs to be routed over the correct automation channel.
+  // We receive the automation channel only when the external host acks the
+  // attach tab request.
   // Contains the list of URL requests which are pending waiting for an ack
   // from the external host.
-  std::vector<PendingTopLevelNavigation> pending_open_url_requests_;
+  std::vector<content::OpenURLParams> pending_open_url_requests_;
 
   // Set to true if the ExternalTabContainer instance is waiting for an ack
   // from the host.
@@ -371,15 +370,14 @@ class TemporaryPopupExternalTabContainer : public ExternalTabContainer {
     return false;
   }
 
-  virtual void Observe(NotificationType type, const NotificationSource& source,
-                       const NotificationDetails& details) {}
+  virtual void Observe(int type, const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {}
 
-  virtual void OpenURLFromTab(TabContents* source, const GURL& url,
-                              const GURL& referrer,
-                              WindowOpenDisposition disposition,
-                              PageTransition::Type transition);
+  virtual content::WebContents* OpenURLFromTab(
+    content::WebContents* source,
+    const content::OpenURLParams& params) OVERRIDE;
 
-  virtual void NavigationStateChanged(const TabContents* source,
+  virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) {
     NOTREACHED();
   }
@@ -388,7 +386,8 @@ class TemporaryPopupExternalTabContainer : public ExternalTabContainer {
     NOTREACHED();
   }
 
-  virtual void UpdateTargetURL(TabContents* source, const GURL& url) {
+  virtual void UpdateTargetURL(content::WebContents* source, int32 page_id,
+                               const GURL& url) {
     NOTREACHED();
   }
 
@@ -408,7 +407,7 @@ class TemporaryPopupExternalTabContainer : public ExternalTabContainer {
     return false;
   }
 
-  virtual void BeforeUnloadFired(TabContents* tab, bool proceed,
+  virtual void BeforeUnloadFired(content::WebContents* tab, bool proceed,
                                  bool* proceed_to_fire_unload) {
     NOTREACHED();
   }

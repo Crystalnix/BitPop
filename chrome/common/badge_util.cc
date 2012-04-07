@@ -11,6 +11,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/size.h"
 
 namespace badge_util {
 
@@ -41,7 +42,7 @@ SkPaint* GetBadgeTextPaintSingleton() {
       ResourceBundle& rb = ResourceBundle::GetSharedInstance();
       const gfx::Font& base_font = rb.GetFont(ResourceBundle::BaseFont);
       typeface = SkTypeface::CreateFromName(
-          UTF16ToUTF8(base_font.GetFontName()).c_str(), SkTypeface::kNormal);
+          base_font.GetFontName().c_str(), SkTypeface::kNormal);
       DCHECK(typeface);
     }
 
@@ -84,7 +85,7 @@ SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
 
   // Render the badge bitmap and overlay into a canvas.
   scoped_ptr<gfx::CanvasSkia> canvas(
-      new gfx::CanvasSkia(badge_width, icon.height(), false));
+      new gfx::CanvasSkia(gfx::Size(badge_width, icon.height()), false));
   canvas->DrawBitmapInt(icon, 0, 0);
 
   // Draw the text overlay centered horizontally and vertically. Skia expects
@@ -92,7 +93,8 @@ SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
   // add 'font_size - 1' to the height.
   SkScalar x = (badge_width - text_width)/2;
   SkScalar y = (icon.height() - font_size)/2 + font_size - 1;
-  canvas->drawText(badge_text.c_str(), badge_text.size(), x, y, *paint);
+  canvas->sk_canvas()->drawText(
+      badge_text.c_str(), badge_text.size(), x, y, *paint);
 
   // Return the generated image.
   return canvas->ExtractBitmap();

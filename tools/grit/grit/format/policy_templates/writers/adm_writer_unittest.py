@@ -55,6 +55,9 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least "Windows 3.11', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -66,9 +69,16 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least "Windows 3.11"
-chromium="Chromium"''')
+chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"''')
     self.CompareOutputs(output, expected_output)
 
   def testMainPolicy(self):
@@ -80,6 +90,7 @@ chromium="Chromium"''')
             'name': 'MainPolicy',
             'type': 'main',
             'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
             'caption': 'Caption of main.',
             'desc': 'Description of main.',
           },
@@ -88,6 +99,9 @@ chromium="Chromium"''')
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.12', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -111,10 +125,29 @@ chromium="Chromium"''')
     END CATEGORY
   END CATEGORY
 
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+      POLICY !!MainPolicy_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!MainPolicy_Explain
+        VALUENAME "MainPolicy"
+        VALUEON NUMERIC 1
+        VALUEOFF NUMERIC 0
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.12"
 google="Google"
 googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome (Recommended)"
 MainPolicy_Policy="Caption of main."
 MainPolicy_Explain="Description of main."''')
     self.CompareOutputs(output, expected_output)
@@ -128,6 +161,7 @@ MainPolicy_Explain="Description of main."''')
             'name': 'StringPolicy',
             'type': 'string',
             'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
             'desc': """Description of group.
 With a newline.""",
             'caption': 'Caption of policy.',
@@ -137,6 +171,9 @@ With a newline.""",
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.13', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -159,9 +196,27 @@ With a newline.""",
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!StringPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!StringPolicy_Explain
+
+      PART !!StringPolicy_Part  EDITTEXT
+        VALUENAME "StringPolicy"
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.13"
 chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
 StringPolicy_Policy="Caption of policy."
 StringPolicy_Explain="Description of group.\\nWith a newline."
 StringPolicy_Part="Caption of policy."
@@ -177,6 +232,7 @@ StringPolicy_Part="Caption of policy."
             'name': 'IntPolicy',
             'type': 'int',
             'caption': 'Caption of policy.',
+            'features': { 'can_be_recommended': True },
             'desc': 'Description of policy.',
             'supported_on': ['chrome.win:8-']
           },
@@ -185,6 +241,9 @@ StringPolicy_Part="Caption of policy."
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.13', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -207,9 +266,27 @@ StringPolicy_Part="Caption of policy."
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!IntPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!IntPolicy_Explain
+
+      PART !!IntPolicy_Part  NUMERIC
+        VALUENAME "IntPolicy"
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.13"
 chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy."
 IntPolicy_Part="Caption of policy."
@@ -238,13 +315,17 @@ IntPolicy_Part="Caption of policy."
             ],
             'desc': 'Description of policy.',
             'caption': 'Caption of policy.',
-            'supported_on': ['chrome.win:8-']
+            'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
           },
         ],
         'placeholders': [],
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.14', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -273,10 +354,34 @@ IntPolicy_Part="Caption of policy."
     END CATEGORY
   END CATEGORY
 
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+      POLICY !!EnumPolicy_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!EnumPolicy_Explain
+
+        PART !!EnumPolicy_Part  DROPDOWNLIST
+          VALUENAME "EnumPolicy"
+          ITEMLIST
+            NAME !!ProxyServerDisabled_DropDown VALUE NUMERIC 0
+            NAME !!ProxyServerAutoDetect_DropDown VALUE NUMERIC 1
+          END ITEMLIST
+        END PART
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.14"
 google="Google"
 googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome (Recommended)"
 EnumPolicy_Policy="Caption of policy."
 EnumPolicy_Explain="Description of policy."
 EnumPolicy_Part="Caption of policy."
@@ -301,13 +406,17 @@ ProxyServerAutoDetect_DropDown="Option2"
               {'name': 'ProxyServerAutoDetect', 'value': 'two',
                'caption': 'Option2'},
             ],
-            'supported_on': ['chrome.win:8-']
+            'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
           },
         ],
         'placeholders': [],
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.14', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -336,10 +445,34 @@ ProxyServerAutoDetect_DropDown="Option2"
     END CATEGORY
   END CATEGORY
 
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+      POLICY !!EnumPolicy_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!EnumPolicy_Explain
+
+        PART !!EnumPolicy_Part  DROPDOWNLIST
+          VALUENAME "EnumPolicy"
+          ITEMLIST
+            NAME !!ProxyServerDisabled_DropDown VALUE "one"
+            NAME !!ProxyServerAutoDetect_DropDown VALUE "two"
+          END ITEMLIST
+        END PART
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.14"
 google="Google"
 googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome (Recommended)"
 EnumPolicy_Policy="Caption of policy."
 EnumPolicy_Explain="Description of policy."
 EnumPolicy_Part="Caption of policy."
@@ -357,6 +490,7 @@ ProxyServerAutoDetect_DropDown="Option2"
             'name': 'ListPolicy',
             'type': 'list',
             'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
             'desc': """Description of list policy.
 With a newline.""",
             'caption': 'Caption of list policy.',
@@ -367,6 +501,9 @@ With a newline.""",
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.15', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         },
       }''')
@@ -390,9 +527,28 @@ With a newline.""",
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!ListPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!ListPolicy_Explain
+
+      PART !!ListPolicy_Part  LISTBOX
+        KEYNAME "Software\\Policies\\Chromium\\Recommended\\ListPolicy"
+        VALUEPREFIX ""
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.15"
 chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline."
 ListPolicy_Part="Label of list policy."
@@ -423,6 +579,9 @@ ListPolicy_Part="Label of list policy."
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.16', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -434,10 +593,77 @@ ListPolicy_Part="Label of list policy."
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.16"
 chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
 ''')
+    self.CompareOutputs(output, expected_output)
+
+  def testNonRecommendedPolicy(self):
+    # Tests a policy that is not recommended, so it should be included.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'MainPolicy',
+            'type': 'main',
+            'supported_on': ['chrome.win:8-'],
+            'caption': 'Caption of main.',
+            'desc': 'Description of main.',
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.12', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        }
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_google_chrome' : '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!google
+    CATEGORY !!googlechrome
+      KEYNAME "Software\\Policies\\Google\\Chrome"
+
+      POLICY !!MainPolicy_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!MainPolicy_Explain
+        VALUENAME "MainPolicy"
+        VALUEON NUMERIC 1
+        VALUEOFF NUMERIC 0
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+    END CATEGORY
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.12"
+google="Google"
+googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome (Recommended)"
+MainPolicy_Policy="Caption of main."
+MainPolicy_Explain="Description of main."''')
     self.CompareOutputs(output, expected_output)
 
   def testPolicyGroup(self):
@@ -454,6 +680,7 @@ chromium="Chromium"
               'name': 'Policy1',
               'type': 'list',
               'supported_on': ['chrome.win:8-'],
+              'features': { 'can_be_recommended': True },
               'caption': 'Caption of policy1.',
               'desc': """Description of policy1.
 With a newline."""
@@ -471,6 +698,9 @@ With a newline."""
         'messages': {
           'win_supported_winxpsp2': {
             'text': 'At least Windows 3.16', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
           }
         }
       }''')
@@ -508,9 +738,31 @@ With a newline."""
 
   END CATEGORY
 
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    CATEGORY !!Group1_Category
+      POLICY !!Policy1_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!Policy1_Explain
+
+        PART !!Policy1_Part  LISTBOX
+          KEYNAME "Software\\Policies\\Chromium\\Recommended\\Policy1"
+          VALUEPREFIX ""
+        END PART
+      END POLICY
+
+    END CATEGORY
+
+  END CATEGORY
+
+
 ''', '''[Strings]
 SUPPORTED_WINXPSP2="At least Windows 3.16"
 chromium="Chromium"
+chromium_recommended="Chromium (Recommended)"
 Group1_Category="Caption of group."
 Policy1_Policy="Caption of policy1."
 Policy1_Explain="Description of policy1.\\nWith a newline."

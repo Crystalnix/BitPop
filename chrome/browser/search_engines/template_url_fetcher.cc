@@ -11,18 +11,22 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_fetcher_callbacks.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/template_url_parser.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "net/base/load_flags.h"
 #include "net/url_request/url_request_status.h"
 
 // RequestDelegate ------------------------------------------------------------
-class TemplateURLFetcher::RequestDelegate : public URLFetcher::Delegate,
-                                            public NotificationObserver {
+class TemplateURLFetcher::RequestDelegate
+    : public content::URLFetcherDelegate,
+      public content::NotificationObserver {
  public:
   // Takes ownership of |callbacks|.
   RequestDelegate(TemplateURLFetcher* fetcher,
@@ -32,20 +36,15 @@ class TemplateURLFetcher::RequestDelegate : public URLFetcher::Delegate,
                   TemplateURLFetcherCallbacks* callbacks,
                   ProviderType provider_type);
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
 
-  // URLFetcher::Delegate:
+  // content::URLFetcherDelegate:
   // If data contains a valid OSDD, a TemplateURL is created and added to
-  // the TemplateURLModel.
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // the TemplateURLService.
+  virtual void OnURLFetchComplete(const content::URLFetcher* source);
 
   // URL of the OSDD.
   GURL url() const { return osdd_url_; }
@@ -59,7 +58,7 @@ class TemplateURLFetcher::RequestDelegate : public URLFetcher::Delegate,
  private:
   void AddSearchProvider();
 
-  URLFetcher url_fetcher_;
+  scoped_ptr<content::URLFetcher> url_fetcher_;
   TemplateURLFetcher* fetcher_;
   scoped_ptr<TemplateURL> template_url_;
   string16 keyword_;
@@ -69,7 +68,7 @@ class TemplateURLFetcher::RequestDelegate : public URLFetcher::Delegate,
   scoped_ptr<TemplateURLFetcherCallbacks> callbacks_;
 
   // Handles registering for our notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(RequestDelegate);
 };
@@ -81,34 +80,36 @@ TemplateURLFetcher::RequestDelegate::RequestDelegate(
     const GURL& favicon_url,
     TemplateURLFetcherCallbacks* callbacks,
     ProviderType provider_type)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(url_fetcher_(osdd_url,
-                                                  URLFetcher::GET, this)),
+    : ALLOW_THIS_IN_INITIALIZER_LIST(url_fetcher_(content::URLFetcher::Create(
+          osdd_url, content::URLFetcher::GET, this))),
       fetcher_(fetcher),
       keyword_(keyword),
       osdd_url_(osdd_url),
       favicon_url_(favicon_url),
       provider_type_(provider_type),
       callbacks_(callbacks) {
-  TemplateURLModel* model = fetcher_->profile()->GetTemplateURLModel();
+  TemplateURLService* model = TemplateURLServiceFactory::GetForProfile(
+      fetcher_->profile());
   DCHECK(model);  // TemplateURLFetcher::ScheduleDownload verifies this.
 
   if (!model->loaded()) {
     // Start the model load and set-up waiting for it.
     registrar_.Add(this,
-                   NotificationType::TEMPLATE_URL_MODEL_LOADED,
-                   Source<TemplateURLModel>(model));
+                   chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED,
+                   content::Source<TemplateURLService>(model));
     model->Load();
   }
 
-  url_fetcher_.set_request_context(fetcher->profile()->GetRequestContext());
-  url_fetcher_.Start();
+  url_fetcher_->SetRequestContext(fetcher->profile()->GetRequestContext());
+  url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SAVE_COOKIES);
+  url_fetcher_->Start();
 }
 
 void TemplateURLFetcher::RequestDelegate::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  DCHECK(type == NotificationType::TEMPLATE_URL_MODEL_LOADED);
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_TEMPLATE_URL_SERVICE_LOADED);
 
   if (!template_url_.get())
     return;
@@ -117,12 +118,7 @@ void TemplateURLFetcher::RequestDelegate::Observe(
 }
 
 void TemplateURLFetcher::RequestDelegate::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const net::ResponseCookies& cookies,
-    const std::string& data) {
+    const content::URLFetcher* source) {
   template_url_.reset(new TemplateURL());
 
   // Validation checks.
@@ -131,8 +127,11 @@ void TemplateURLFetcher::RequestDelegate::OnURLFetchComplete(
   // For other schemes, e.g. when the OSDD file is bundled with an extension,
   // the response_code is not applicable and should be -1. Also, ensure that
   // the returned information results in a valid search URL.
-  if (!status.is_success() ||
-      ((response_code != -1) && (response_code != 200)) ||
+  std::string data;
+  if (!source->GetStatus().is_success() ||
+      ((source->GetResponseCode() != -1) &&
+        (source->GetResponseCode() != 200)) ||
+      !source->GetResponseAsString(&data) ||
       !TemplateURLParser::Parse(
           reinterpret_cast<const unsigned char*>(data.c_str()),
           data.length(),
@@ -145,7 +144,8 @@ void TemplateURLFetcher::RequestDelegate::OnURLFetchComplete(
   }
 
   // Wait for the model to be loaded before adding the provider.
-  TemplateURLModel* model = fetcher_->profile()->GetTemplateURLModel();
+  TemplateURLService* model = TemplateURLServiceFactory::GetForProfile(
+      fetcher_->profile());
   if (!model->loaded())
     return;
   AddSearchProvider();
@@ -160,12 +160,13 @@ void TemplateURLFetcher::RequestDelegate::AddSearchProvider() {
     // it gives wrong result when OSDD is located on third party site that
     // has nothing in common with search engine in OSDD.
     GURL keyword_url(template_url_->url()->url());
-    string16 new_keyword = TemplateURLModel::GenerateKeyword(
+    string16 new_keyword = TemplateURLService::GenerateKeyword(
         keyword_url, false);
     if (!new_keyword.empty())
       keyword_ = new_keyword;
   }
-  TemplateURLModel* model = fetcher_->profile()->GetTemplateURLModel();
+  TemplateURLService* model = TemplateURLServiceFactory::GetForProfile(
+      fetcher_->profile());
   const TemplateURL* existing_url;
   if (keyword_.empty() ||
       !model || !model->loaded() ||
@@ -250,7 +251,7 @@ void TemplateURLFetcher::RequestDelegate::AddSearchProvider() {
 
     case EXPLICIT_DEFAULT_PROVIDER:
       callbacks_->ConfirmSetDefaultSearchProvider(template_url_.release(),
-                                                  model);
+                                                  fetcher_->profile());
       break;
   }
 
@@ -281,7 +282,8 @@ void TemplateURLFetcher::ScheduleDownload(
   if (provider_type == TemplateURLFetcher::AUTODETECTED_PROVIDER &&
       keyword.empty())
     return;
-  TemplateURLModel* url_model = profile()->GetTemplateURLModel();
+  TemplateURLService* url_model =
+      TemplateURLServiceFactory::GetForProfile(profile());
   if (!url_model)
     return;
 

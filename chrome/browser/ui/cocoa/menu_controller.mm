@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,14 @@
 
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
+#import "chrome/browser/ui/cocoa/event_utils.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/accelerators/accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util_mac.h"
-#include "ui/base/models/accelerator_cocoa.h"
 #include "ui/base/models/simple_menu_model.h"
 
 @interface MenuController (Private)
-- (NSMenu*)menuFromModel:(ui::MenuModel*)model;
 - (void)addSeparatorToMenu:(NSMenu*)menu
                    atIndex:(int)index;
 @end
@@ -39,6 +39,16 @@
 }
 
 - (void)dealloc {
+  [menu_ setDelegate:nil];
+
+  // Close the menu if it is still open. This could happen if a tab gets closed
+  // while its context menu is still open.
+  if (isMenuOpen_) {
+    [menu_ cancelTracking];
+    model_->MenuClosed();
+    isMenuOpen_ = NO;
+  }
+
   model_ = NULL;
   [super dealloc];
 }
@@ -59,8 +69,10 @@
     if (model->GetTypeAt(modelIndex) == ui::MenuModel::TYPE_SEPARATOR) {
       [self addSeparatorToMenu:menu atIndex:index];
     } else {
-      [self addItemToMenu:menu atIndex:index fromModel:model
-          modelIndex:modelIndex];
+      [self addItemToMenu:menu
+                  atIndex:index
+                fromModel:model
+               modelIndex:modelIndex];
     }
   }
 
@@ -168,8 +180,10 @@
       static_cast<ui::MenuModel*>(
           [[sender representedObject] pointerValue]);
   DCHECK(model);
-  if (model)
-    model->ActivatedAt(modelIndex);
+  if (model) {
+    int event_flags = event_utils::EventFlagsFromNSEvent([NSApp currentEvent]);
+    model->ActivatedAt(modelIndex, event_flags);
+  }
 }
 
 - (NSMenu*)menu {
@@ -190,11 +204,13 @@
 }
 
 - (void)menuWillOpen:(NSMenu*)menu {
+  isMenuOpen_ = YES;
   model_->MenuWillShow();
 }
 
 - (void)menuDidClose:(NSMenu*)menu {
   model_->MenuClosed();
+  isMenuOpen_ = NO;
 }
 
 @end

@@ -5,14 +5,13 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_controller.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
-#include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
-#include "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
+#include "third_party/ocmock/gtest_support.h"
 
 @interface OCMockObject(PreventRetainCycle)
 - (void)clearRecordersAndExpectations;
@@ -30,21 +29,17 @@
 @end
 
 
-class BookmarkFolderTargetTest : public CocoaTest {
+class BookmarkFolderTargetTest : public CocoaProfileTest {
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    BookmarkModel* model = helper_.profile()->GetBookmarkModel();
-    bmbNode_ = model->GetBookmarkBarNode();
-  }
-  virtual void TearDown() {
-    pool_.Recycle();
-    CocoaTest::TearDown();
+    CocoaProfileTest::SetUp();
+    ASSERT_TRUE(profile());
+
+    BookmarkModel* model = profile()->GetBookmarkModel();
+    bmbNode_ = model->bookmark_bar_node();
   }
 
-  BrowserTestHelper helper_;
   const BookmarkNode* bmbNode_;
-  base::mac::ScopedNSAutoreleasePool pool_;
 };
 
 TEST_F(BookmarkFolderTargetTest, StartWithNothing) {

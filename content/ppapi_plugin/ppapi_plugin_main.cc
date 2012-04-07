@@ -8,13 +8,17 @@
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
 #include "content/common/child_process.h"
-#include "content/common/content_switches.h"
-#include "content/common/main_function_params.h"
 #include "content/ppapi_plugin/ppapi_thread.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/main_function_params.h"
 #include "ppapi/proxy/proxy_module.h"
 
 #if defined(OS_WIN)
 #include "sandbox/src/sandbox.h"
+#endif
+
+#if defined(OS_MACOSX)
+#include "third_party/WebKit/Source/WebKit/mac/WebCoreSupport/WebSystemInterface.h"
 #endif
 
 #if defined(OS_WIN)
@@ -24,11 +28,11 @@ void* g_target_services = 0;
 #endif
 
 // Main function for starting the PPAPI plugin process.
-int PpapiPluginMain(const MainFunctionParams& parameters) {
-  const CommandLine& command_line = parameters.command_line_;
+int PpapiPluginMain(const content::MainFunctionParams& parameters) {
+  const CommandLine& command_line = parameters.command_line;
 
 #if defined(OS_WIN)
-  g_target_services = parameters.sandbox_info_.TargetServices();
+  g_target_services = parameters.sandbox_info->target_services;
 #endif
 
   // If |g_target_services| is not null this process is sandboxed. One side
@@ -41,13 +45,19 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
       ChildProcess::WaitForDebugger("Ppapi");
   }
 
-  MessageLoop main_message_loop(MessageLoop::TYPE_IO);
+#if defined(OS_MACOSX)
+  // TODO(viettrungluu): This is called in different places in processes that
+  // will run WebKit. This is stupid and error-prone.
+  InitWebCoreSystemInterface();
+#endif
+
+  MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
 
   ChildProcess ppapi_process;
   ppapi_process.set_main_thread(new PpapiThread(false));  // Not a broker.
 
-  pp::proxy::ProxyModule::GetInstance()->SetFlashCommandLineArgs(
+  ppapi::proxy::ProxyModule::GetInstance()->SetFlashCommandLineArgs(
       command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
 
   main_message_loop.Run();

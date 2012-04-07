@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <algorithm>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util_proxy.h"
 #include "base/message_loop.h"
@@ -20,8 +21,8 @@
 #include "net/base/net_util.h"
 #include "net/url_request/url_request.h"
 #include "webkit/fileapi/file_system_callback_dispatcher.h"
+#include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_util.h"
 
 using net::URLRequest;
@@ -41,9 +42,12 @@ static FilePath GetRelativePath(const GURL& url) {
 class FileSystemDirURLRequestJob::CallbackDispatcher
     : public FileSystemCallbackDispatcher {
  public:
-  explicit CallbackDispatcher(FileSystemDirURLRequestJob* job)
-      : job_(job) {
-    DCHECK(job_);
+  // An instance of this class must be created by Create()
+  // (so that we do not leak ownership).
+  static scoped_ptr<FileSystemCallbackDispatcher> Create(
+      FileSystemDirURLRequestJob* job) {
+    return scoped_ptr<FileSystemCallbackDispatcher>(
+        new CallbackDispatcher(job));
   }
 
   // fileapi::FileSystemCallbackDispatcher overrides.
@@ -79,6 +83,10 @@ class FileSystemDirURLRequestJob::CallbackDispatcher
   }
 
  private:
+  explicit CallbackDispatcher(FileSystemDirURLRequestJob* job) : job_(job) {
+    DCHECK(job_);
+  }
+
   // TODO(adamk): Get rid of the need for refcounting here by
   // allowing FileSystemOperations to be cancelled.
   scoped_refptr<FileSystemDirURLRequestJob> job_;
@@ -91,8 +99,7 @@ FileSystemDirURLRequestJob::FileSystemDirURLRequestJob(
     : URLRequestJob(request),
       file_system_context_(file_system_context),
       file_thread_proxy_(file_thread_proxy),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(callback_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 FileSystemDirURLRequestJob::~FileSystemDirURLRequestJob() {
@@ -111,15 +118,15 @@ bool FileSystemDirURLRequestJob::ReadRawData(net::IOBuffer* dest, int dest_size,
 }
 
 void FileSystemDirURLRequestJob::Start() {
-  MessageLoop::current()->PostTask(FROM_HERE,
-      method_factory_.NewRunnableMethod(
-          &FileSystemDirURLRequestJob::StartAsync));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&FileSystemDirURLRequestJob::StartAsync,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void FileSystemDirURLRequestJob::Kill() {
   URLRequestJob::Kill();
-  method_factory_.RevokeAll();
-  callback_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 bool FileSystemDirURLRequestJob::GetMimeType(std::string* mime_type) const {
@@ -133,8 +140,15 @@ bool FileSystemDirURLRequestJob::GetCharset(std::string* charset) {
 }
 
 void FileSystemDirURLRequestJob::StartAsync() {
-  if (request_)
-    GetNewOperation()->ReadDirectory(request_->url());
+  if (!request_)
+    return;
+  FileSystemOperationInterface* operation = GetNewOperation(request_->url());
+  if (!operation) {
+    NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
+                                net::ERR_INVALID_URL));
+    return;
+  }
+  operation->ReadDirectory(request_->url());
 }
 
 void FileSystemDirURLRequestJob::DidReadDirectory(
@@ -148,10 +162,10 @@ void FileSystemDirURLRequestJob::DidReadDirectory(
 #if defined(OS_WIN)
     const string16& title = relative_path.value();
 #elif defined(OS_POSIX)
-    const string16& title = WideToUTF16(
-        base::SysNativeMBToWide(relative_path.value()));
+    const string16& title = ASCIIToUTF16("/") +
+        WideToUTF16(base::SysNativeMBToWide(relative_path.value()));
 #endif
-    data_.append(net::GetDirectoryListingHeader(ASCIIToUTF16("/") + title));
+    data_.append(net::GetDirectoryListingHeader(title));
   }
 
   typedef std::vector<base::FileUtilProxy::Entry>::const_iterator EntryIterator;
@@ -162,24 +176,25 @@ void FileSystemDirURLRequestJob::DidReadDirectory(
     const string16& name =
         WideToUTF16(base::SysNativeMBToWide(it->name));
 #endif
-    // TODO(adamk): Add file size?
     data_.append(net::GetDirectoryListingEntry(
-        name, std::string(), it->is_directory, 0, base::Time()));
+        name, std::string(), it->is_directory, it->size,
+        it->last_modified_time));
   }
 
-  if (has_more)
-    GetNewOperation()->ReadDirectory(request_->url());
-  else {
+  if (has_more) {
+    GetNewOperation(request_->url())->ReadDirectory(request_->url());
+  } else {
     set_expected_content_size(data_.size());
     NotifyHeadersComplete();
   }
 }
 
-FileSystemOperation* FileSystemDirURLRequestJob::GetNewOperation() {
-  return new FileSystemOperation(new CallbackDispatcher(this),
-                                 file_thread_proxy_,
-                                 file_system_context_,
-                                 NULL);
+FileSystemOperationInterface*
+FileSystemDirURLRequestJob::GetNewOperation(const GURL& url) {
+  return file_system_context_->CreateFileSystemOperation(
+      url,
+      CallbackDispatcher::Create(this),
+      file_thread_proxy_);
 }
 
 }  // namespace fileapi

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,22 +8,15 @@
 
 #include "skia/ext/bitmap_platform_device.h"
 #include "skia/ext/skia_utils_win.h"
+#include "third_party/skia/include/core/SkTemplates.h"
 #include "third_party/skia/include/core/SkUtils.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
 
 namespace skia {
 
-SkDevice* VectorPlatformDeviceEmfFactory::newDevice(SkCanvas* unused,
-                                                    SkBitmap::Config config,
-                                                    int width, int height,
-                                                    bool isOpaque,
-                                                    bool isForLayer) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return CreateDevice(width, height, isOpaque, NULL);
-}
-
-//static
-PlatformDevice* VectorPlatformDeviceEmfFactory::CreateDevice(
-        int width, int height, bool is_opaque, HANDLE shared_section) {
+// static
+SkDevice* VectorPlatformDeviceEmf::CreateDevice(
+    int width, int height, bool is_opaque, HANDLE shared_section) {
   if (!is_opaque) {
     // TODO(maruel):  http://crbug.com/18382 When restoring a semi-transparent
     // layer, i.e. merging it, we need to rasterize it because GDI doesn't
@@ -46,7 +39,7 @@ PlatformDevice* VectorPlatformDeviceEmfFactory::CreateDevice(
   // SkScalarRound(value) as SkScalarRound(value * 10). Safari is already
   // doing the same for text rendering.
   SkASSERT(shared_section);
-  PlatformDevice* device = VectorPlatformDeviceEmf::create(
+  SkDevice* device = VectorPlatformDeviceEmf::create(
       reinterpret_cast<HDC>(shared_section), width, height);
   return device;
 }
@@ -65,9 +58,7 @@ static void FillBitmapInfoHeader(int width, int height, BITMAPINFOHEADER* hdr) {
   hdr->biClrImportant = 0;
 }
 
-VectorPlatformDeviceEmf* VectorPlatformDeviceEmf::create(HDC dc,
-                                                         int width,
-                                                         int height) {
+SkDevice* VectorPlatformDeviceEmf::create(HDC dc, int width, int height) {
   InitializeDC(dc);
 
   // Link the SkBitmap to the current selected bitmap in the device context.
@@ -102,21 +93,18 @@ VectorPlatformDeviceEmf* VectorPlatformDeviceEmf::create(HDC dc,
 }
 
 VectorPlatformDeviceEmf::VectorPlatformDeviceEmf(HDC dc, const SkBitmap& bitmap)
-    : PlatformDevice(bitmap),
+    : SkDevice(bitmap),
       hdc_(dc),
       previous_brush_(NULL),
       previous_pen_(NULL),
       alpha_blend_used_(false) {
   transform_.reset();
+  SetPlatformDevice(this, this);
 }
 
 VectorPlatformDeviceEmf::~VectorPlatformDeviceEmf() {
   SkASSERT(previous_brush_ == NULL);
   SkASSERT(previous_pen_ == NULL);
-}
-
-SkDeviceFactory* VectorPlatformDeviceEmf::onNewDeviceFactory() {
-  return SkNEW(VectorPlatformDeviceEmfFactory);
 }
 
 HDC VectorPlatformDeviceEmf::BeginPlatformPaint() {
@@ -239,26 +227,27 @@ void VectorPlatformDeviceEmf::drawPath(const SkDraw& draw,
     return;
   }
   HDC dc = BeginPlatformPaint();
-  PlatformDevice::LoadPathToDC(dc, path);
-  switch (paint.getStyle()) {
-    case SkPaint::kFill_Style: {
-      BOOL res = StrokeAndFillPath(dc);
-      SkASSERT(res != 0);
-      break;
+  if (PlatformDevice::LoadPathToDC(dc, path)) {
+    switch (paint.getStyle()) {
+      case SkPaint::kFill_Style: {
+        BOOL res = StrokeAndFillPath(dc);
+        SkASSERT(res != 0);
+        break;
+      }
+      case SkPaint::kStroke_Style: {
+        BOOL res = StrokePath(dc);
+        SkASSERT(res != 0);
+        break;
+      }
+      case SkPaint::kStrokeAndFill_Style: {
+        BOOL res = StrokeAndFillPath(dc);
+        SkASSERT(res != 0);
+        break;
+      }
+      default:
+        SkASSERT(false);
+        break;
     }
-    case SkPaint::kStroke_Style: {
-      BOOL res = StrokePath(dc);
-      SkASSERT(res != 0);
-      break;
-    }
-    case SkPaint::kStrokeAndFill_Style: {
-      BOOL res = StrokeAndFillPath(dc);
-      SkASSERT(res != 0);
-      break;
-    }
-    default:
-      SkASSERT(false);
-      break;
   }
   EndPlatformPaint();
   Cleanup();
@@ -295,14 +284,114 @@ void VectorPlatformDeviceEmf::drawSprite(const SkDraw& draw,
   LoadTransformToDC(hdc_, transform_);
 }
 
+/////////////////////////////////////////////////////////////////////////
+
+static bool gdiCanHandleText(const SkPaint& paint) {
+  return !paint.getShader() &&
+         !paint.getPathEffect() &&
+         (SkPaint::kFill_Style == paint.getStyle()) &&
+         (255 == paint.getAlpha());
+}
+
+class SkGDIFontSetup {
+ public:
+  SkGDIFontSetup() :
+      fHDC(NULL),
+      fNewFont(NULL),
+      fSavedFont(NULL),
+      fSavedTextColor(0),
+      fUseGDI(false) {
+    SkDEBUGCODE(fUseGDIHasBeenCalled = false;)
+  }
+  ~SkGDIFontSetup();
+
+  // can only be called once
+  bool useGDI(HDC hdc, const SkPaint&);
+
+ private:
+  HDC      fHDC;
+  HFONT    fNewFont;
+  HFONT    fSavedFont;
+  COLORREF fSavedTextColor;
+  bool     fUseGDI;
+  SkDEBUGCODE(bool fUseGDIHasBeenCalled;)
+};
+
+bool SkGDIFontSetup::useGDI(HDC hdc, const SkPaint& paint) {
+  SkASSERT(!fUseGDIHasBeenCalled);
+  SkDEBUGCODE(fUseGDIHasBeenCalled = true;)
+
+  fUseGDI = gdiCanHandleText(paint);
+  if (fUseGDI) {
+    fSavedTextColor = GetTextColor(hdc);
+    SetTextColor(hdc, skia::SkColorToCOLORREF(paint.getColor()));
+
+    LOGFONT lf;
+    SkLOGFONTFromTypeface(paint.getTypeface(), &lf);
+    lf.lfHeight = -SkScalarRound(paint.getTextSize());
+    fNewFont = CreateFontIndirect(&lf);
+    fSavedFont = (HFONT)::SelectObject(hdc, fNewFont);
+    fHDC = hdc;
+  }
+  return fUseGDI;
+}
+
+SkGDIFontSetup::~SkGDIFontSetup() {
+  if (fUseGDI) {
+    ::SelectObject(fHDC, fSavedFont);
+    ::DeleteObject(fNewFont);
+    SetTextColor(fHDC, fSavedTextColor);
+  }
+}
+
+static SkScalar getAscent(const SkPaint& paint) {
+  SkPaint::FontMetrics fm;
+  paint.getFontMetrics(&fm);
+  return fm.fAscent;
+}
+
+// return the options int for ExtTextOut. Only valid if the paint's text
+// encoding is not UTF8 (in which case ExtTextOut can't be used).
+static UINT getTextOutOptions(const SkPaint& paint) {
+  if (SkPaint::kGlyphID_TextEncoding == paint.getTextEncoding()) {
+    return ETO_GLYPH_INDEX;
+  } else {
+    SkASSERT(SkPaint::kUTF16_TextEncoding == paint.getTextEncoding());
+    return 0;
+  }
+}
+
 void VectorPlatformDeviceEmf::drawText(const SkDraw& draw,
                                        const void* text,
                                        size_t byteLength,
                                        SkScalar x,
                                        SkScalar y,
                                        const SkPaint& paint) {
-  // This function isn't used in the code. Verify this assumption.
-  SkASSERT(false);
+  SkGDIFontSetup setup;
+  if (SkPaint::kUTF8_TextEncoding != paint.getTextEncoding()
+      && setup.useGDI(hdc_, paint)) {
+    UINT options = getTextOutOptions(paint);
+    UINT count = byteLength >> 1;
+    ExtTextOut(hdc_, SkScalarRound(x), SkScalarRound(y + getAscent(paint)),
+        options, 0, reinterpret_cast<const wchar_t*>(text), count, NULL);
+  } else {
+    SkPath path;
+    paint.getTextPath(text, byteLength, x, y, &path);
+    drawPath(draw, path, paint);
+  }
+}
+
+static size_t size_utf8(const char* text) {
+  return SkUTF8_CountUTF8Bytes(text);
+}
+
+static size_t size_utf16(const char* text) {
+  uint16_t c = *reinterpret_cast<const uint16_t*>(text);
+  return SkUTF16_IsHighSurrogate(c) ? 4 : 2;
+}
+
+static size_t size_glyphid(const char* text) {
+  return 2;
 }
 
 void VectorPlatformDeviceEmf::drawPosText(const SkDraw& draw,
@@ -312,8 +401,46 @@ void VectorPlatformDeviceEmf::drawPosText(const SkDraw& draw,
                                           SkScalar constY,
                                           int scalarsPerPos,
                                           const SkPaint& paint) {
-  // This function isn't used in the code. Verify this assumption.
-  SkASSERT(false);
+  SkGDIFontSetup setup;
+  if (2 == scalarsPerPos
+      && SkPaint::kUTF8_TextEncoding != paint.getTextEncoding()
+      && setup.useGDI(hdc_, paint)) {
+    int startX = SkScalarRound(pos[0]);
+    int startY = SkScalarRound(pos[1] + getAscent(paint));
+    const int count = len >> 1;
+    SkAutoSTMalloc<64, INT> storage(count);
+    INT* advances = storage.get();
+    for (int i = 0; i < count - 1; ++i) {
+      advances[i] = SkScalarRound(pos[2] - pos[0]);
+      pos += 2;
+    }
+    ExtTextOut(hdc_, startX, startY, getTextOutOptions(paint), 0,
+        reinterpret_cast<const wchar_t*>(text), count, advances);
+  } else {
+    size_t (*bytesPerCodePoint)(const char*);
+    switch (paint.getTextEncoding()) {
+    case SkPaint::kUTF8_TextEncoding:
+      bytesPerCodePoint = size_utf8;
+      break;
+    case SkPaint::kUTF16_TextEncoding:
+      bytesPerCodePoint = size_utf16;
+      break;
+    default:
+      SkASSERT(SkPaint::kGlyphID_TextEncoding == paint.getTextEncoding());
+      bytesPerCodePoint = size_glyphid;
+      break;
+    }
+
+    const char* curr = reinterpret_cast<const char*>(text);
+    const char* stop = curr + len;
+    while (curr < stop) {
+      SkScalar y = (1 == scalarsPerPos) ? constY : pos[1];
+      size_t bytes = bytesPerCodePoint(curr);
+      drawText(draw, curr, bytes, pos[0], y, paint);
+      curr += bytes;
+      pos += scalarsPerPos;
+    }
+  }
 }
 
 void VectorPlatformDeviceEmf::drawTextOnPath(const SkDraw& draw,
@@ -421,11 +548,9 @@ bool VectorPlatformDeviceEmf::ApplyPaint(const SkPaint& paint) {
   // The path effect should be processed before arriving here.
   SkASSERT(!paint.getPathEffect());
 
-  // These aren't used in the code. Verify this assumption.
-  SkASSERT(!paint.getColorFilter());
+  // This isn't used in the code. Verify this assumption.
   SkASSERT(!paint.getRasterizer());
   // Reuse code to load Win32 Fonts.
-  SkASSERT(!paint.getTypeface());
   return true;
 }
 
@@ -448,6 +573,13 @@ void VectorPlatformDeviceEmf::LoadClipRegion() {
   SkMatrix t;
   t.reset();
   LoadClippingRegionToDC(hdc_, clip_region_, t);
+}
+
+SkDevice* VectorPlatformDeviceEmf::onCreateCompatibleDevice(
+    SkBitmap::Config config, int width, int height, bool isOpaque,
+    Usage /*usage*/) {
+  SkASSERT(config == SkBitmap::kARGB_8888_Config);
+  return VectorPlatformDeviceEmf::CreateDevice(width, height, isOpaque, NULL);
 }
 
 bool VectorPlatformDeviceEmf::CreateBrush(bool use_brush, COLORREF color) {
@@ -722,7 +854,7 @@ void VectorPlatformDeviceEmf::InternalDrawBitmap(const SkBitmap& bitmap,
     DeleteObject(hbitmap);
     DeleteDC(bitmap_dc);
   } else {
-    BOOL result = StretchDIBits(dc,
+    int nCopied = StretchDIBits(dc,
                                 x, y,  // Destination origin.
                                 src_size_x, src_size_y,
                                 0, 0,  // Source origin.
@@ -731,11 +863,9 @@ void VectorPlatformDeviceEmf::InternalDrawBitmap(const SkBitmap& bitmap,
                                 reinterpret_cast<const BITMAPINFO*>(&hdr),
                                 DIB_RGB_COLORS,
                                 SRCCOPY);
-    SkASSERT(result);
   }
   EndPlatformPaint();
   Cleanup();
 }
 
 }  // namespace skia
-

@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "base/basictypes.h"
+#include "base/string16.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -242,7 +243,7 @@ TEST(StringUtilTest, TrimWhitespace) {
   // Once more, but with a string of whitespace
   output = ASCIIToUTF16("  \r\n");
   EXPECT_EQ(TRIM_ALL, TrimWhitespace(output, TRIM_ALL, &output));
-  EXPECT_EQ(ASCIIToUTF16(""), output);
+  EXPECT_EQ(string16(), output);
 
   std::string output_ascii;
   for (size_t i = 0; i < arraysize(trim_cases_ascii); ++i) {
@@ -327,7 +328,7 @@ TEST(StringUtilTest, ContainsOnlyWhitespaceASCII) {
 }
 
 TEST(StringUtilTest, ContainsOnlyWhitespace) {
-  EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16("")));
+  EXPECT_TRUE(ContainsOnlyWhitespace(string16()));
   EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16(" ")));
   EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16("\t")));
   EXPECT_TRUE(ContainsOnlyWhitespace(ASCIIToUTF16("\t \r \n  ")));
@@ -472,17 +473,17 @@ TEST(StringUtilTest, ToUpperASCII) {
   EXPECT_EQ(L"CC2", upper_w);
 }
 
-static const struct {
-  const wchar_t* src_w;
-  const char*    src_a;
-  const char*    dst;
-} lowercase_cases[] = {
-  {L"FoO", "FoO", "foo"},
-  {L"foo", "foo", "foo"},
-  {L"FOO", "FOO", "foo"},
-};
-
 TEST(StringUtilTest, LowerCaseEqualsASCII) {
+  static const struct {
+    const wchar_t* src_w;
+    const char*    src_a;
+    const char*    dst;
+  } lowercase_cases[] = {
+    { L"FoO", "FoO", "foo" },
+    { L"foo", "foo", "foo" },
+    { L"FOO", "FOO", "foo" },
+  };
+
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(lowercase_cases); ++i) {
     EXPECT_TRUE(LowerCaseEqualsASCII(lowercase_cases[i].src_w,
                                      lowercase_cases[i].dst));
@@ -491,32 +492,10 @@ TEST(StringUtilTest, LowerCaseEqualsASCII) {
   }
 }
 
-TEST(StringUtilTest, GetByteDisplayUnits) {
+TEST(StringUtilTest, FormatBytesUnlocalized) {
   static const struct {
     int64 bytes;
-    DataUnits expected;
-  } cases[] = {
-    {0, DATA_UNITS_BYTE},
-    {512, DATA_UNITS_BYTE},
-    {10*1024, DATA_UNITS_KIBIBYTE},
-    {10*1024*1024, DATA_UNITS_MEBIBYTE},
-    {10LL*1024*1024*1024, DATA_UNITS_GIBIBYTE},
-    {~(1LL<<63), DATA_UNITS_GIBIBYTE},
-#ifdef NDEBUG
-    {-1, DATA_UNITS_BYTE},
-#endif
-  };
-
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i)
-    EXPECT_EQ(cases[i].expected, GetByteDisplayUnits(cases[i].bytes));
-}
-
-TEST(StringUtilTest, FormatBytes) {
-  static const struct {
-    int64 bytes;
-    DataUnits units;
     const char* expected;
-    const char* expected_with_units;
   } cases[] = {
     // Expected behavior: we show one post-decimal digit when we have
     // under two pre-decimal digits, except in cases where it makes no
@@ -524,39 +503,29 @@ TEST(StringUtilTest, FormatBytes) {
     // Since we switch units once we cross the 1000 mark, this keeps
     // the display of file sizes or bytes consistently around three
     // digits.
-    {0, DATA_UNITS_BYTE, "0", "0 B"},
-    {512, DATA_UNITS_BYTE, "512", "512 B"},
-    {512, DATA_UNITS_KIBIBYTE, "0.5", "0.5 kB"},
-    {1024*1024, DATA_UNITS_KIBIBYTE, "1024", "1024 kB"},
-    {1024*1024, DATA_UNITS_MEBIBYTE, "1.0", "1.0 MB"},
-    {1024*1024*1024, DATA_UNITS_GIBIBYTE, "1.0", "1.0 GB"},
-    {10LL*1024*1024*1024, DATA_UNITS_GIBIBYTE, "10.0", "10.0 GB"},
-    {99LL*1024*1024*1024, DATA_UNITS_GIBIBYTE, "99.0", "99.0 GB"},
-    {105LL*1024*1024*1024, DATA_UNITS_GIBIBYTE, "105", "105 GB"},
-    {105LL*1024*1024*1024 + 500LL*1024*1024, DATA_UNITS_GIBIBYTE,
-     "105", "105 GB"},
-    {~(1LL<<63), DATA_UNITS_GIBIBYTE, "8589934592", "8589934592 GB"},
+    {0, "0 B"},
+    {512, "512 B"},
+    {1024*1024, "1.0 MB"},
+    {1024*1024*1024, "1.0 GB"},
+    {10LL*1024*1024*1024, "10.0 GB"},
+    {99LL*1024*1024*1024, "99.0 GB"},
+    {105LL*1024*1024*1024, "105 GB"},
+    {105LL*1024*1024*1024 + 500LL*1024*1024, "105 GB"},
+    {~(1LL<<63), "8192 PB"},
 
-    {99*1024 + 103, DATA_UNITS_KIBIBYTE, "99.1", "99.1 kB"},
-    {1024*1024 + 103, DATA_UNITS_KIBIBYTE, "1024", "1024 kB"},
-    {1024*1024 + 205 * 1024, DATA_UNITS_MEBIBYTE, "1.2", "1.2 MB"},
-    {1024*1024*1024 + (927 * 1024*1024), DATA_UNITS_GIBIBYTE,
-     "1.9", "1.9 GB"},
-    {10LL*1024*1024*1024, DATA_UNITS_GIBIBYTE, "10.0", "10.0 GB"},
-    {100LL*1024*1024*1024, DATA_UNITS_GIBIBYTE, "100", "100 GB"},
-#ifdef NDEBUG
-    {-1, DATA_UNITS_BYTE, "", ""},
-#endif
+    {99*1024 + 103, "99.1 kB"},
+    {1024*1024 + 103, "1.0 MB"},
+    {1024*1024 + 205 * 1024, "1.2 MB"},
+    {1024*1024*1024 + (927 * 1024*1024), "1.9 GB"},
+    {10LL*1024*1024*1024, "10.0 GB"},
+    {100LL*1024*1024*1024, "100 GB"},
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     EXPECT_EQ(ASCIIToUTF16(cases[i].expected),
-              FormatBytes(cases[i].bytes, cases[i].units, false));
-    EXPECT_EQ(ASCIIToUTF16(cases[i].expected_with_units),
-              FormatBytes(cases[i].bytes, cases[i].units, true));
+              FormatBytesUnlocalized(cases[i].bytes));
   }
 }
-
 TEST(StringUtilTest, ReplaceSubstringsAfterOffset) {
   static const struct {
     const char* str;
@@ -864,6 +833,21 @@ TEST(StringUtilTest, GetStringFWithOffsets) {
   offsets.clear();
 }
 
+TEST(StringUtilTest, ReplaceStringPlaceholdersTooFew) {
+  // Test whether replacestringplaceholders works as expected when there
+  // are fewer inputs than outputs.
+  std::vector<string16> subst;
+  subst.push_back(ASCIIToUTF16("9a"));
+  subst.push_back(ASCIIToUTF16("8b"));
+  subst.push_back(ASCIIToUTF16("7c"));
+
+  string16 formatted =
+      ReplaceStringPlaceholders(
+          ASCIIToUTF16("$1a,$2b,$3c,$4d,$5e,$6f,$1g,$2h,$3i"), subst, NULL);
+
+  EXPECT_EQ(formatted, ASCIIToUTF16("9aa,8bb,7cc,d,e,f,9ag,8bh,7ci"));
+}
+
 TEST(StringUtilTest, ReplaceStringPlaceholders) {
   std::vector<string16> subst;
   subst.push_back(ASCIIToUTF16("9a"));
@@ -883,19 +867,30 @@ TEST(StringUtilTest, ReplaceStringPlaceholders) {
   EXPECT_EQ(formatted, ASCIIToUTF16("9aa,8bb,7cc,6dd,5ee,4ff,3gg,2hh,1ii"));
 }
 
-TEST(StringUtilTest, ReplaceStringPlaceholdersTooFew) {
-  // Test whether replacestringplaceholders works as expected when there
-  // are fewer inputs than outputs.
+TEST(StringUtilTest, ReplaceStringPlaceholdersMoreThan9Replacements) {
   std::vector<string16> subst;
   subst.push_back(ASCIIToUTF16("9a"));
   subst.push_back(ASCIIToUTF16("8b"));
   subst.push_back(ASCIIToUTF16("7c"));
+  subst.push_back(ASCIIToUTF16("6d"));
+  subst.push_back(ASCIIToUTF16("5e"));
+  subst.push_back(ASCIIToUTF16("4f"));
+  subst.push_back(ASCIIToUTF16("3g"));
+  subst.push_back(ASCIIToUTF16("2h"));
+  subst.push_back(ASCIIToUTF16("1i"));
+  subst.push_back(ASCIIToUTF16("0j"));
+  subst.push_back(ASCIIToUTF16("-1k"));
+  subst.push_back(ASCIIToUTF16("-2l"));
+  subst.push_back(ASCIIToUTF16("-3m"));
+  subst.push_back(ASCIIToUTF16("-4n"));
 
   string16 formatted =
       ReplaceStringPlaceholders(
-          ASCIIToUTF16("$1a,$2b,$3c,$4d,$5e,$6f,$1g,$2h,$3i"), subst, NULL);
+          ASCIIToUTF16("$1a,$2b,$3c,$4d,$5e,$6f,$7g,$8h,$9i,"
+                       "$10j,$11k,$12l,$13m,$14n,$1"), subst, NULL);
 
-  EXPECT_EQ(formatted, ASCIIToUTF16("9aa,8bb,7cc,d,e,f,9ag,8bh,7ci"));
+  EXPECT_EQ(formatted, ASCIIToUTF16("9aa,8bb,7cc,6dd,5ee,4ff,3gg,2hh,"
+                                    "1ii,0jj,-1kk,-2ll,-3mm,-4nn,9a"));
 }
 
 TEST(StringUtilTest, StdStringReplaceStringPlaceholders) {
@@ -1026,7 +1021,7 @@ TEST(StringUtilTest, LcpyTest) {
 }
 
 TEST(StringUtilTest, WprintfFormatPortabilityTest) {
-  struct TestData {
+  static const struct {
     const wchar_t* input;
     bool portable;
   } cases[] = {
@@ -1052,9 +1047,8 @@ TEST(StringUtilTest, WprintfFormatPortabilityTest) {
     { L"% 10s", false },
     { L"% 10ls", true }
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i)
     EXPECT_EQ(cases[i].portable, base::IsWprintfFormatPortable(cases[i].input));
-  }
 }
 
 TEST(StringUtilTest, RemoveChars) {
@@ -1073,6 +1067,39 @@ TEST(StringUtilTest, RemoveChars) {
   EXPECT_EQ(std::string(), input);
 }
 
+TEST(StringUtilTest, ReplaceChars) {
+  struct TestData {
+    const char* input;
+    const char* replace_chars;
+    const char* replace_with;
+    const char* output;
+    bool result;
+  } cases[] = {
+    { "", "", "", "", false },
+    { "test", "", "", "test", false },
+    { "test", "", "!", "test", false },
+    { "test", "z", "!", "test", false },
+    { "test", "e", "!", "t!st", true },
+    { "test", "e", "!?", "t!?st", true },
+    { "test", "ez", "!", "t!st", true },
+    { "test", "zed", "!?", "t!?st", true },
+    { "test", "t", "!?", "!?es!?", true },
+    { "test", "et", "!>", "!>!>s!>", true },
+    { "test", "zest", "!", "!!!!", true },
+    { "test", "szt", "!", "!e!!", true },
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    std::string output;
+    bool result = ReplaceChars(cases[i].input,
+                               cases[i].replace_chars,
+                               cases[i].replace_with,
+                               &output);
+    EXPECT_EQ(cases[i].result, result);
+    EXPECT_EQ(cases[i].output, output);
+  }
+}
+
 TEST(StringUtilTest, ContainsOnlyChars) {
   // Providing an empty list of characters should return false but for the empty
   // string.
@@ -1084,6 +1111,41 @@ TEST(StringUtilTest, ContainsOnlyChars) {
   EXPECT_TRUE(ContainsOnlyChars("1", "4321"));
   EXPECT_TRUE(ContainsOnlyChars("123", "4321"));
   EXPECT_FALSE(ContainsOnlyChars("123a", "4321"));
+}
+
+class WriteIntoTest : public testing::Test {
+ protected:
+  static void WritesCorrectly(size_t num_chars) {
+    std::string buffer;
+    char kOriginal[] = "supercali";
+    strncpy(WriteInto(&buffer, num_chars + 1), kOriginal, num_chars);
+    // Using std::string(buffer.c_str()) instead of |buffer| truncates the
+    // string at the first \0.
+    EXPECT_EQ(std::string(kOriginal,
+                          std::min(num_chars, arraysize(kOriginal) - 1)),
+              std::string(buffer.c_str()));
+    EXPECT_EQ(num_chars, buffer.size());
+  }
+};
+
+TEST_F(WriteIntoTest, WriteInto) {
+  // Validate that WriteInto reserves enough space and
+  // sizes a string correctly.
+  WritesCorrectly(1);
+  WritesCorrectly(2);
+  WritesCorrectly(5000);
+
+  // Validate that WriteInto doesn't modify other strings
+  // when using a Copy-on-Write implementation.
+  const char kLive[] = "live";
+  const char kDead[] = "dead";
+  const std::string live = kLive;
+  std::string dead = live;
+  strncpy(WriteInto(&dead, 5), kDead, 4);
+  EXPECT_EQ(kDead, dead);
+  EXPECT_EQ(4u, dead.size());
+  EXPECT_EQ(kLive, live);
+  EXPECT_EQ(4u, live.size());
 }
 
 }  // namespace base

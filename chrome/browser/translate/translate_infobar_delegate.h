@@ -7,14 +7,15 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/tab_contents/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/translate/translate_prefs.h"
 #include "chrome/common/translate_errors.h"
 
-class SkBitmap;
+class PrefService;
 class TranslateInfoBarView;
 
 class TranslateInfoBarDelegate : public InfoBarDelegate {
@@ -36,21 +37,24 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   static const size_t kNoIndex;
 
-  // Factory method to create a non-error translate infobar.
-  // The original and target language specified are the ASCII language codes
-  // (ex: en, fr...).
-  // Returns NULL if it failed, typically if |original_language| or
-  // |target_language| is not a supported language.
+  // Factory method to create a non-error translate infobar. |original_language|
+  // and |target_language| must be ASCII language codes (e.g. "en", "fr", etc.)
+  // for languages the TranslateManager supports translating. The lone exception
+  // is when the user initiates translation from the context menu, in which case
+  // it's legal to call this with |type| == TRANSLATING and
+  // |originalLanguage| == kUnknownLanguageCode.
   static TranslateInfoBarDelegate* CreateDelegate(
       Type infobar_type,
-      TabContents* tab_contents,
+      InfoBarTabHelper* infobar_helper,
+      PrefService* prefs,
       const std::string& original_language,
       const std::string& target_language);
 
   // Factory method to create an error translate infobar.
   static TranslateInfoBarDelegate* CreateErrorDelegate(
       TranslateErrors::Type error_type,
-      TabContents* tab_contents,
+      InfoBarTabHelper* infobar_helper,
+      PrefService* prefs,
       const std::string& original_language,
       const std::string& target_language);
 
@@ -64,8 +68,6 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
 
   // Returns the displayable name for the language at |index|.
   string16 GetLanguageDisplayableNameAt(size_t index) const;
-
-  TabContents* tab_contents() const { return tab_contents_; }
 
   Type type() const { return type_; }
 
@@ -151,7 +153,8 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // For testing.
   TranslateInfoBarDelegate(Type infobar_type,
                            TranslateErrors::Type error,
-                           TabContents* tab_contents,
+                           InfoBarTabHelper* infobar_helper,
+                           PrefService* prefs,
                            const std::string& original_language,
                            const std::string& target_language);
   Type type_;
@@ -160,12 +163,12 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   typedef std::pair<std::string, string16> LanguageNamePair;
 
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(TabContentsWrapper* owner) OVERRIDE;
+  virtual InfoBar* CreateInfoBar(InfoBarTabHelper* infobar_helper) OVERRIDE;
   virtual void InfoBarDismissed() OVERRIDE;
   virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual InfoBarDelegate::Type GetInfoBarType() const OVERRIDE;
-   virtual bool ShouldExpire(
-       const content::LoadCommittedDetails& details) const;
+  virtual bool ShouldExpire(
+       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual TranslateInfoBarDelegate* AsTranslateInfoBarDelegate() OVERRIDE;
 
   // Gets the host of the page being translated, or an empty string if no URL is
@@ -175,8 +178,6 @@ class TranslateInfoBarDelegate : public InfoBarDelegate {
   // The type of fading animation if any that should be used when showing this
   // infobar.
   BackgroundAnimationType background_animation_;
-
-  TabContents* tab_contents_;
 
   // The list supported languages for translation.
   // The pair first string is the language ISO code (ex: en, fr...), the second

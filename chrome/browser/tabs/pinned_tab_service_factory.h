@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,6 +31,8 @@ class PinnedTabServiceFactory : public ProfileKeyedServiceFactory {
   // ProfileKeyedServiceFactory:
   virtual ProfileKeyedService* BuildServiceInstanceFor(
       Profile* profile) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithProfile() OVERRIDE;
+  virtual bool ServiceIsNULLWhileTesting() OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_TABS_PINNED_TAB_SERVICE_FACTORY_H_

@@ -4,12 +4,14 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_name_folder_controller.h"
 
-#include "ui/base/l10n/l10n_util.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_model_observer_for_cocoa.h"
 #include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 @implementation BookmarkNameFolderController
@@ -20,7 +22,7 @@
                       node:(const BookmarkNode*)node
                     parent:(const BookmarkNode*)parent
                   newIndex:(int)newIndex {
-  NSString* nibpath = [base::mac::MainAppBundle()
+  NSString* nibpath = [base::mac::FrameworkBundle()
                         pathForResource:@"BookmarkNameFolder"
                         ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibpath owner:self])) {
@@ -36,7 +38,7 @@
       initialName_.reset([base::SysUTF16ToNSString(node_->GetTitle()) retain]);
     } else {
       NSString* newString =
-        l10n_util::GetNSStringWithFixup(IDS_BOOMARK_EDITOR_NEW_FOLDER_NAME);
+        l10n_util::GetNSStringWithFixup(IDS_BOOKMARK_EDITOR_NEW_FOLDER_NAME);
       initialName_.reset([newString retain]);
     }
   }
@@ -68,6 +70,15 @@
 
 - (void)awakeFromNib {
   [nameField_ setStringValue:initialName_.get()];
+
+  // Check if NSTextFieldCell supports the method. This check is in place as
+  // only 10.6 and greater support the setUsesSingleLineMode method.
+  // TODO(kushi.p): Remove this when the project hits a 10.6+ only state.
+  NSTextFieldCell* nameFieldCell_ = [nameField_ cell];
+  if ([nameFieldCell_
+          respondsToSelector:@selector(setUsesSingleLineMode:)]) {
+    [nameFieldCell_ setUsesSingleLineMode:YES];
+  }
 }
 
 - (void)runAsModalSheet {

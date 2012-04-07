@@ -8,33 +8,34 @@
 
 #include "base/logging.h"
 #include "ui/gfx/gl/gl_bindings.h"
-#include "ui/gfx/gl/gl_surface_osmesa.h"
+#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gfx/size.h"
 
 namespace gfx {
 
-GLContextOSMesa::GLContextOSMesa()
-    : context_(NULL) {
+GLContextOSMesa::GLContextOSMesa(GLShareGroup* share_group)
+    : GLContext(share_group),
+      context_(NULL) {
 }
 
 GLContextOSMesa::~GLContextOSMesa() {
   Destroy();
 }
 
-bool GLContextOSMesa::Initialize(GLContext* shared_context,
-                                 GLSurface* compatible_surface) {
+bool GLContextOSMesa::Initialize(
+    GLSurface* compatible_surface, GpuPreference gpu_preference) {
   DCHECK(!context_);
 
-  OSMesaContext shared_handle = NULL;
-  if (shared_context)
-    shared_handle = static_cast<OSMesaContext>(shared_context->GetHandle());
+  OSMesaContext share_handle = static_cast<OSMesaContext>(
+      share_group() ? share_group()->GetHandle() : NULL);
 
-  GLuint format =
-      static_cast<GLSurfaceOSMesa*>(compatible_surface)->GetFormat();
+  GLuint format = compatible_surface->GetFormat();
+  DCHECK_NE(format, (unsigned)0);
   context_ = OSMesaCreateContextExt(format,
-                                    24,  // depth bits
-                                    8,  // stencil bits
+                                    0,  // depth bits
+                                    0,  // stencil bits
                                     0,  // accum bits
-                                    shared_handle);
+                                    share_handle);
   if (!context_) {
     LOG(ERROR) << "OSMesaCreateContextExt failed.";
     return false;
@@ -55,7 +56,7 @@ bool GLContextOSMesa::MakeCurrent(GLSurface* surface) {
 
   gfx::Size size = surface->GetSize();
 
-  if (!OSMesaMakeCurrent(static_cast<OSMesaContext>(context_),
+  if (!OSMesaMakeCurrent(context_,
                          surface->GetHandle(),
                          GL_UNSIGNED_BYTE,
                          size.width(),
@@ -68,6 +69,17 @@ bool GLContextOSMesa::MakeCurrent(GLSurface* surface) {
   // Row 0 is at the top.
   OSMesaPixelStore(OSMESA_Y_UP, 0);
 
+  SetCurrent(this, surface);
+  if (!InitializeExtensionBindings()) {
+    ReleaseCurrent(surface);
+    return false;
+  }
+
+  if (!surface->OnMakeCurrent(this)) {
+    LOG(ERROR) << "Could not make current.";
+    return false;
+  }
+
   return true;
 }
 
@@ -75,12 +87,22 @@ void GLContextOSMesa::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
+  SetCurrent(NULL, NULL);
   OSMesaMakeCurrent(NULL, NULL, GL_UNSIGNED_BYTE, 0, 0);
 }
 
 bool GLContextOSMesa::IsCurrent(GLSurface* surface) {
   DCHECK(context_);
-  if (context_ != OSMesaGetCurrentContext())
+
+  bool native_context_is_current =
+      context_ == OSMesaGetCurrentContext();
+
+  // If our context is current then our notion of which GLContext is
+  // current must be correct. On the other hand, third-party code
+  // using OpenGL might change the current context.
+  DCHECK(!native_context_is_current || (GetCurrent() == this));
+
+  if (!native_context_is_current)
     return false;
 
   if (surface) {

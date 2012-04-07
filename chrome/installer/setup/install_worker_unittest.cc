@@ -20,6 +20,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
+using base::win::RegKey;
 using installer::InstallationState;
 using installer::InstallerState;
 using installer::Product;
@@ -27,13 +28,16 @@ using installer::ProductState;
 
 using ::testing::_;
 using ::testing::AtLeast;
-using ::testing::HasSubstr;
 using ::testing::AtMost;
+using ::testing::Bool;
+using ::testing::Combine;
+using ::testing::HasSubstr;
 using ::testing::Eq;
 using ::testing::Return;
 using ::testing::StrCaseEq;
 using ::testing::StrEq;
 using ::testing::StrictMock;
+using ::testing::Values;
 
 // Mock classes to help with testing
 //------------------------------------------------------------------------------
@@ -42,6 +46,10 @@ class MockWorkItemList : public WorkItemList {
  public:
   MockWorkItemList() {}
 
+  MOCK_METHOD4(AddCopyRegKeyWorkItem, WorkItem* (HKEY,
+                                                 const std::wstring&,
+                                                 const std::wstring&,
+                                                 CopyOverWriteOption));
   MOCK_METHOD5(AddCopyTreeWorkItem, WorkItem*(const std::wstring&,
                                               const std::wstring&,
                                               const std::wstring&,
@@ -93,11 +101,21 @@ class MockProductState : public ProductState {
   void set_version(Version* version) { version_.reset(version); }
   void set_multi_install(bool multi) { multi_install_ = multi; }
   void set_brand(const std::wstring& brand) { brand_ = brand; }
+  void set_eula_accepted(DWORD eula_accepted) {
+    has_eula_accepted_ = true;
+    eula_accepted_ = eula_accepted;
+  }
+  void clear_eula_accepted() { has_eula_accepted_ = false; }
   void set_usagestats(DWORD usagestats) {
     has_usagestats_ = true;
     usagestats_ = usagestats;
   }
   void clear_usagestats() { has_usagestats_ = false; }
+  void set_oem_install(const std::wstring& oem_install) {
+    has_oem_install_ = true;
+    oem_install_ = oem_install;
+  }
+  void clear_oem_install() { has_oem_install_ = false; }
   void SetUninstallProgram(const FilePath& setup_exe) {
     uninstall_command_ = CommandLine(setup_exe);
   }
@@ -166,22 +184,40 @@ class InstallWorkerTest : public testing::Test {
   virtual void TearDown() {
   }
 
+  void MaybeAddBinariesToInstallationState(
+      bool system_level,
+      MockInstallationState* installation_state) {
+    if (installation_state->GetProductState(
+            system_level, BrowserDistribution::CHROME_BINARIES) == NULL) {
+      MockProductState product_state;
+      product_state.set_version(current_version_->Clone());
+      installation_state->SetProductState(system_level,
+                                          BrowserDistribution::CHROME_BINARIES,
+                                          product_state);
+    }
+  }
+
   void AddChromeToInstallationState(
       bool system_level,
       bool multi_install,
       bool with_chrome_frame_ready_mode,
       MockInstallationState* installation_state) {
+    if (multi_install)
+      MaybeAddBinariesToInstallationState(system_level, installation_state);
     MockProductState product_state;
     product_state.set_version(current_version_->Clone());
     product_state.set_multi_install(multi_install);
     product_state.set_brand(L"TEST");
+    product_state.set_eula_accepted(1);
     BrowserDistribution* dist =
         BrowserDistribution::GetSpecificDistribution(
             BrowserDistribution::CHROME_BROWSER);
     FilePath install_path =
         installer::GetChromeInstallPath(system_level, dist);
     product_state.SetUninstallProgram(
-        install_path.Append(installer::kSetupExe));
+      install_path.AppendASCII(current_version_->GetString())
+          .Append(installer::kInstallerDir)
+          .Append(installer::kSetupExe));
     product_state.AddUninstallSwitch(installer::switches::kUninstall);
     if (system_level)
       product_state.AddUninstallSwitch(installer::switches::kSystemLevel);
@@ -205,6 +241,8 @@ class InstallWorkerTest : public testing::Test {
       bool multi_install,
       bool ready_mode,
       MockInstallationState* installation_state) {
+    if (multi_install)
+      MaybeAddBinariesToInstallationState(system_level, installation_state);
     MockProductState product_state;
     product_state.set_version(current_version_->Clone());
     product_state.set_multi_install(multi_install);
@@ -215,7 +253,9 @@ class InstallWorkerTest : public testing::Test {
     FilePath install_path =
         installer::GetChromeInstallPath(system_level, dist);
     product_state.SetUninstallProgram(
-        install_path.Append(installer::kSetupExe));
+      install_path.AppendASCII(current_version_->GetString())
+          .Append(installer::kInstallerDir)
+          .Append(installer::kSetupExe));
     product_state.AddUninstallSwitch(installer::switches::kUninstall);
     product_state.AddUninstallSwitch(installer::switches::kChromeFrame);
     if (system_level)
@@ -382,141 +422,72 @@ namespace {
 const wchar_t elevation_key[] =
     L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\ElevationPolicy\\"
     L"{E0A900DF-9611-4446-86BD-4B1D47E7DB2A}";
-const wchar_t dragdrop_key[] =
-    L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\DragDrop\\"
-    L"{E0A900DF-9611-4446-86BD-4B1D47E7DB2A}";
+const wchar_t old_elevation_key[] =
+    L"SOFTWARE\\Microsoft\\Internet Explorer\\Low Rights\\ElevationPolicy\\"
+    L"{6C288DD7-76FB-4721-B628-56FAC252E199}";
 
 }  // namespace
 
-TEST_F(InstallWorkerTest, ElevationPolicyWorkItems) {
-  const bool system_level = true;
-  const HKEY root = HKEY_LOCAL_MACHINE;
-  const bool multi_install = true;
-  MockWorkItemList work_item_list;
+// A test class for worker functions that manipulate the old IE low rights
+// policies.
+// Parameters:
+// bool : system_level_
+// bool : multi_install_
+class OldIELowRightsTests : public InstallWorkerTest,
+  public ::testing::WithParamInterface<std::tr1::tuple<bool, bool> > {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    InstallWorkerTest::SetUp();
 
-  scoped_ptr<MockInstallationState> installation_state(
-      BuildChromeInstallationState(system_level, multi_install));
+    const ParamType& param = GetParam();
+    system_level_ = std::tr1::get<0>(param);
+    multi_install_ = std::tr1::get<1>(param);
+    root_key_ = system_level_ ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
 
-  scoped_ptr<MockInstallerState> installer_state(
-      BuildChromeInstallerState(system_level, multi_install,
-                                *installation_state,
-                                InstallerState::MULTI_INSTALL));
+    installation_state_.reset(new MockInstallationState());
+    AddChromeFrameToInstallationState(system_level_, multi_install_, false,
+                                      installation_state_.get());
+    installer_state_.reset(BuildBasicInstallerState(
+        system_level_, multi_install_, *installation_state_,
+        multi_install_ ? InstallerState::MULTI_UPDATE :
+            InstallerState::SINGLE_INSTALL_OR_UPDATE));
+    AddChromeFrameToInstallerState(*installation_state_, false,
+                                   installer_state_.get());
+  }
 
-  EXPECT_CALL(work_item_list, AddCreateRegKeyWorkItem(root,
-      StrEq(elevation_key))).Times(1);
+  scoped_ptr<MockInstallationState> installation_state_;
+  scoped_ptr<MockInstallerState> installer_state_;
+  bool system_level_;
+  bool multi_install_;
+  HKEY root_key_;
+};
 
-  EXPECT_CALL(work_item_list, AddCreateRegKeyWorkItem(root,
-      StrEq(dragdrop_key))).Times(1);
+TEST_P(OldIELowRightsTests, AddDeleteOldIELowRightsPolicyWorkItems) {
+  StrictMock<MockWorkItemList> work_item_list;
 
-  EXPECT_CALL(work_item_list, AddSetRegDwordValueWorkItem(root,
-      StrEq(elevation_key), StrEq(L"Policy"), 3, _)).Times(1);
+  EXPECT_CALL(work_item_list,
+              AddDeleteRegKeyWorkItem(root_key_, StrEq(old_elevation_key)))
+      .Times(1);
 
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(root,
-      StrEq(elevation_key), StrEq(L"AppName"),
-      StrEq(installer::kChromeLauncherExe), _)).Times(1);
-
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(root,
-      StrEq(elevation_key), StrEq(L"AppPath"), _, _)).Times(1);
-
-  EXPECT_CALL(work_item_list, AddSetRegDwordValueWorkItem(root,
-      StrEq(dragdrop_key), StrEq(L"Policy"), 3, _)).Times(1);
-
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(root,
-      StrEq(dragdrop_key), StrEq(L"AppName"),
-      StrEq(chrome::kBrowserProcessExecutableName), _)).Times(1);
-
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(root,
-      StrEq(dragdrop_key), StrEq(L"AppPath"), _, _)).Times(1);
-
-  AddElevationPolicyWorkItems(*installation_state.get(),
-                              *installer_state.get(),
-                              *new_version_.get(),
-                              &work_item_list);
+  AddDeleteOldIELowRightsPolicyWorkItems(*installer_state_.get(),
+                                         &work_item_list);
 }
 
-TEST_F(InstallWorkerTest, ElevationPolicyUninstall) {
-  const bool system_level = true;
-  const HKEY root = HKEY_LOCAL_MACHINE;
-  const bool multi_install = true;
-  MockWorkItemList work_item_list;
+TEST_P(OldIELowRightsTests, AddCopyIELowRightsPolicyWorkItems) {
+  StrictMock<MockWorkItemList> work_item_list;
 
-  scoped_ptr<MockInstallationState> installation_state(
-      BuildChromeInstallationState(system_level, multi_install));
+  // The old elevation policy key should only be copied when there's no old
+  // value.
+  EXPECT_CALL(work_item_list,
+              AddCopyRegKeyWorkItem(root_key_, StrEq(elevation_key),
+                                    StrEq(old_elevation_key),
+                                    Eq(WorkItem::IF_NOT_PRESENT))).Times(1);
 
-  scoped_ptr<MockInstallerState> installer_state(
-      BuildChromeInstallerState(system_level, multi_install,
-                                *installation_state,
-                                InstallerState::UNINSTALL));
-
-  EXPECT_CALL(work_item_list, AddDeleteRegKeyWorkItem(root,
-      StrEq(elevation_key))).Times(1);
-  EXPECT_CALL(work_item_list, AddDeleteRegKeyWorkItem(root,
-      StrEq(dragdrop_key))).Times(1);
-
-  AddElevationPolicyWorkItems(*installation_state.get(),
-                              *installer_state.get(),
-                              *new_version_.get(),
-                              &work_item_list);
+  AddCopyIELowRightsPolicyWorkItems(*installer_state_.get(), &work_item_list);
 }
 
-TEST_F(InstallWorkerTest, ElevationPolicySingleNoop) {
-  const bool system_level = true;
-  const bool multi_install = false;  // nothing should be done for single.
-  MockWorkItemList work_item_list;
-
-  scoped_ptr<MockInstallationState> installation_state(
-      BuildChromeInstallationState(system_level, multi_install));
-
-  scoped_ptr<MockInstallerState> installer_state(
-      BuildChromeInstallerState(system_level, multi_install,
-                                *installation_state,
-                                InstallerState::UNINSTALL));
-
-  EXPECT_CALL(work_item_list, AddDeleteRegKeyWorkItem(_, _)).Times(0);
-  EXPECT_CALL(work_item_list, AddCreateRegKeyWorkItem(_, _)).Times(0);
-  EXPECT_CALL(work_item_list, AddSetRegDwordValueWorkItem(_, _, _, _, _))
-      .Times(0);
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(_, _, _, _, _))
-      .Times(0);
-
-  AddElevationPolicyWorkItems(*installation_state.get(),
-                              *installer_state.get(),
-                              *new_version_.get(),
-                              &work_item_list);
-}
-
-TEST_F(InstallWorkerTest, ElevationPolicyExistingSingleCFNoop) {
-  const bool system_level = true;
-  const bool multi_install = true;
-  MockWorkItemList work_item_list;
-
-  scoped_ptr<MockInstallationState> installation_state(
-      BuildChromeInstallationState(system_level, multi_install));
-
-  MockProductState cf_state;
-  cf_state.set_version(current_version_->Clone());
-  cf_state.set_multi_install(false);
-
-  installation_state->SetProductState(system_level,
-      BrowserDistribution::CHROME_FRAME, cf_state);
-
-  scoped_ptr<MockInstallerState> installer_state(
-      BuildChromeInstallerState(system_level, multi_install,
-                                *installation_state,
-                                InstallerState::MULTI_INSTALL));
-
-  EXPECT_CALL(work_item_list, AddDeleteRegKeyWorkItem(_, _)).Times(0);
-  EXPECT_CALL(work_item_list, AddCreateRegKeyWorkItem(_, _)).Times(0);
-  EXPECT_CALL(work_item_list, AddSetRegDwordValueWorkItem(_, _, _, _, _))
-      .Times(0);
-  EXPECT_CALL(work_item_list, AddSetRegStringValueWorkItem(_, _, _, _, _))
-      .Times(0);
-
-  AddElevationPolicyWorkItems(*installation_state.get(),
-                              *installer_state.get(),
-                              *new_version_.get(),
-                              &work_item_list);
-}
+INSTANTIATE_TEST_CASE_P(Variations, OldIELowRightsTests,
+                        Combine(Bool(), Bool()));
 
 TEST_F(InstallWorkerTest, GoogleUpdateWorkItemsTest) {
   const bool system_level = true;
@@ -524,7 +495,7 @@ TEST_F(InstallWorkerTest, GoogleUpdateWorkItemsTest) {
   MockWorkItemList work_item_list;
 
   scoped_ptr<MockInstallationState> installation_state(
-      BuildChromeInstallationState(system_level, multi_install));
+      BuildChromeInstallationState(system_level, false));
 
   MockProductState cf_state;
   cf_state.set_version(current_version_->Clone());
@@ -543,14 +514,22 @@ TEST_F(InstallWorkerTest, GoogleUpdateWorkItemsTest) {
       BrowserDistribution::GetSpecificDistribution(
           BrowserDistribution::CHROME_BINARIES);
   std::wstring multi_app_guid(multi_dist->GetAppGuid());
+  std::wstring multi_client_state_suffix(L"ClientState\\" + multi_app_guid);
   EXPECT_CALL(work_item_list,
-              AddCreateRegKeyWorkItem(_, HasSubstr(multi_app_guid))).Times(1);
+              AddCreateRegKeyWorkItem(_, HasSubstr(multi_client_state_suffix)))
+      .Times(testing::AnyNumber());
+
+  // Expect ClientStateMedium to be created for system-level installs.
+  EXPECT_CALL(work_item_list,
+              AddCreateRegKeyWorkItem(_, HasSubstr(L"ClientStateMedium\\" +
+                                                   multi_app_guid)))
+      .Times(system_level ? 1 : 0);
 
   // Expect to see a set value for the "TEST" brand code in the multi Client
   // State key.
   EXPECT_CALL(work_item_list,
               AddSetRegStringValueWorkItem(_,
-                                           HasSubstr(multi_app_guid),
+                                           HasSubstr(multi_client_state_suffix),
                                            StrEq(google_update::kRegBrandField),
                                            StrEq(L"TEST"),
                                            _)).Times(1);
@@ -560,6 +539,22 @@ TEST_F(InstallWorkerTest, GoogleUpdateWorkItemsTest) {
               AddSetRegStringValueWorkItem(_, _,
                                            StrEq(google_update::kRegApField),
                                            _, _)).Times(testing::AnyNumber());
+
+  // Expect "oeminstall" to be cleared.
+  EXPECT_CALL(work_item_list,
+              AddDeleteRegValueWorkItem(
+                  _,
+                  HasSubstr(multi_client_state_suffix),
+                  StrEq(google_update::kRegOemInstallField))).Times(1);
+
+  // Expect "eulaaccepted" to set.
+  EXPECT_CALL(work_item_list,
+              AddSetRegDwordValueWorkItem(
+                  _,
+                  HasSubstr(multi_client_state_suffix),
+                  StrEq(google_update::kRegEULAAceptedField),
+                  Eq(static_cast<DWORD>(1)),
+                  _)).Times(1);
 
   AddGoogleUpdateWorkItems(*installation_state.get(),
                            *installer_state.get(),
@@ -603,7 +598,7 @@ TEST_F(InstallWorkerTest, AddUsageStatsWorkItems) {
                   HasSubstr(multi_app_guid),
                   StrEq(google_update::kRegUsageStatsField),
                   Eq(static_cast<DWORD>(1)),
-                  _)).Times(1);
+                  Eq(true))).Times(1);
 
   // Expect to see some values cleaned up from Chrome's keys.
   BrowserDistribution* chrome_dist =
@@ -629,7 +624,8 @@ TEST_F(InstallWorkerTest, AddUsageStatsWorkItems) {
 
   AddUsageStatsWorkItems(*installation_state.get(),
                          *installer_state.get(),
-                         &work_item_list);}
+                         &work_item_list);
+}
 
 // The Quick Enable tests only make sense for the Google Chrome build as it
 // interacts with registry values that are specific to Google Update.

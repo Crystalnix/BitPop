@@ -11,6 +11,8 @@ cr.define('bmm', function() {
   const ArrayDataModel = cr.ui.ArrayDataModel;
   const ContextMenuButton = cr.ui.ContextMenuButton;
 
+  var list;
+
   /**
    * Basic array data model for use with bookmarks.
    * @param {!Array.<!BookmarkTreeNode>} items The bookmark items.
@@ -76,6 +78,8 @@ cr.define('bmm', function() {
       // We could add the ContextMenuButton in the BookmarkListItem but it slows
       // down redraws a lot so we do this on mouseovers instead.
       this.addEventListener('mouseover', this.handleMouseOver_.bind(this));
+
+      bmm.list = this;
     },
 
     createItem: function(bookmarkNode) {
@@ -311,7 +315,8 @@ cr.define('bmm', function() {
      * @private
      */
     fixWidth_: function() {
-      if (this.loading_)
+      var list = bmm.list;
+      if (this.loading_ || !list)
         return;
 
       // The width of the list is wrong after its content has changed.
@@ -377,13 +382,12 @@ cr.define('bmm', function() {
 
       this.draggable = true;
 
-      var labelEl = this.ownerDocument.createElement('span');
+      var labelEl = this.ownerDocument.createElement('div');
       labelEl.className = 'label';
       labelEl.textContent = bookmarkNode.title;
 
-      var urlEl = this.ownerDocument.createElement('span');
+      var urlEl = this.ownerDocument.createElement('div');
       urlEl.className = 'url';
-      urlEl.dir = 'ltr';
 
       if (bmm.isFolder(bookmarkNode)) {
         this.className = 'folder';
@@ -496,7 +500,7 @@ cr.define('bmm', function() {
         });
         labelInput.addEventListener('keydown', handleKeydown);
         labelInput.addEventListener('blur', handleBlur);
-        cr.ui.limitInputWidth(labelInput, this, 20);
+        cr.ui.limitInputWidth(labelInput, this, 100);
         labelInput.focus();
         labelInput.select();
 
@@ -506,7 +510,7 @@ cr.define('bmm', function() {
           });
           urlInput.addEventListener('keydown', handleKeydown);
           urlInput.addEventListener('blur', handleBlur);
-          cr.ui.limitInputWidth(urlInput, this, 20);
+          cr.ui.limitInputWidth(urlInput, this, 100);
         }
 
       } else {
@@ -568,6 +572,7 @@ cr.define('bmm', function() {
   };
 
   return {
-    BookmarkList: BookmarkList
+    BookmarkList: BookmarkList,
+    list: list
   };
 });

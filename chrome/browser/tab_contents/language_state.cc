@@ -4,8 +4,11 @@
 
 #include "chrome/browser/tab_contents/language_state.h"
 
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+
+using content::NavigationController;
 
 LanguageState::LanguageState(NavigationController* nav_controller)
     : navigation_controller_(nav_controller),
@@ -24,8 +27,9 @@ void LanguageState::DidNavigate(
   if (in_page_navigation_ || !details.is_main_frame)
     return;  // Don't reset our states, the page has not changed.
 
-  bool reload = details.entry->transition_type() == PageTransition::RELOAD ||
-                details.type == NavigationType::SAME_PAGE;
+  bool reload =
+      details.entry->GetTransitionType() == content::PAGE_TRANSITION_RELOAD ||
+      details.type == content::NAVIGATION_TYPE_SAME_PAGE;
   if (reload) {
     // We might not get a LanguageDetermined notifications on reloads. Make sure
     // to keep the original language and to set current_lang_ so
@@ -67,8 +71,8 @@ std::string LanguageState::AutoTranslateTo() const {
       prev_original_lang_ != prev_current_lang_ &&
       original_lang_ == current_lang_ &&
       navigation_controller_->GetActiveEntry() &&
-      navigation_controller_->GetActiveEntry()->transition_type() ==
-          PageTransition::LINK) {
+      navigation_controller_->GetActiveEntry()->GetTransitionType() ==
+          content::PAGE_TRANSITION_LINK) {
     return prev_current_lang_;
   }
 

@@ -13,10 +13,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/importer/importer_bridge.h"
 #include "chrome/browser/importer/profile_writer.h"
+#include "ipc/ipc_message.h"
 
-class DictionaryValue;
 class GURL;
-class ProfileImportThread;
+
+namespace base {
+class DictionaryValue;
+}
 
 // When the importer is run in an external process, the bridge is effectively
 // split in half by the IPC infrastructure.  The external bridge receives data
@@ -25,8 +28,9 @@ class ProfileImportThread;
 // profile.
 class ExternalProcessImporterBridge : public ImporterBridge {
  public:
-  ExternalProcessImporterBridge(ProfileImportThread* profile_import_thread,
-                                const DictionaryValue& localized_strings);
+  ExternalProcessImporterBridge(
+      const base::DictionaryValue& localized_strings,
+      IPC::Message::Sender* sender);
 
   // Begin ImporterBridge implementation:
   virtual void AddBookmarks(
@@ -50,7 +54,8 @@ class ExternalProcessImporterBridge : public ImporterBridge {
                            int default_keyword_index,
                            bool unique_on_host_and_path) OVERRIDE;
 
-  virtual void SetPasswordForm(const webkit_glue::PasswordForm& form) OVERRIDE;
+  virtual void SetPasswordForm(
+      const webkit::forms::PasswordForm& form) OVERRIDE;
 
   virtual void NotifyStarted() OVERRIDE;
   virtual void NotifyItemStarted(importer::ImportItem item) OVERRIDE;
@@ -63,12 +68,13 @@ class ExternalProcessImporterBridge : public ImporterBridge {
  private:
   virtual ~ExternalProcessImporterBridge();
 
-  // Call back to send data and messages across IPC.
-  ProfileImportThread* const profile_import_thread_;
+  bool Send(IPC::Message* message);
 
   // Holds strings needed by the external importer because the resource
   // bundle isn't available to the external process.
-  scoped_ptr<DictionaryValue> localized_strings_;
+  scoped_ptr<base::DictionaryValue> localized_strings_;
+
+  IPC::Message::Sender* sender_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalProcessImporterBridge);
 };

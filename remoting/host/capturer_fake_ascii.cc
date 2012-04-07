@@ -4,8 +4,6 @@
 
 #include "remoting/host/capturer_fake_ascii.h"
 
-#include "ui/gfx/rect.h"
-
 namespace remoting {
 
 static const int kWidth = 32;
@@ -37,41 +35,39 @@ media::VideoFrame::Format CapturerFakeAscii::pixel_format() const {
   return pixel_format_;
 }
 
-void CapturerFakeAscii::ClearInvalidRects() {
-  helper.ClearInvalidRects();
+void CapturerFakeAscii::ClearInvalidRegion() {
+  helper_.ClearInvalidRegion();
 }
 
-void CapturerFakeAscii::InvalidateRects(const InvalidRects& inval_rects) {
-  helper.InvalidateRects(inval_rects);
+void CapturerFakeAscii::InvalidateRegion(const SkRegion& invalid_region) {
+  helper_.InvalidateRegion(invalid_region);
 }
 
-void CapturerFakeAscii::InvalidateScreen(const gfx::Size& size) {
-  helper.InvalidateScreen(size);
+void CapturerFakeAscii::InvalidateScreen(const SkISize& size) {
+  helper_.InvalidateScreen(size);
 }
 
 void CapturerFakeAscii::InvalidateFullScreen() {
-  helper.InvalidateFullScreen();
+  helper_.InvalidateFullScreen();
 }
 
-void CapturerFakeAscii::CaptureInvalidRects(
-    CaptureCompletedCallback* callback) {
-  scoped_ptr<CaptureCompletedCallback> callback_deleter(callback);
-
+void CapturerFakeAscii::CaptureInvalidRegion(
+    const CaptureCompletedCallback& callback) {
   GenerateImage();
   DataPlanes planes;
   planes.data[0] = buffers_[current_buffer_].get();
   current_buffer_ = (current_buffer_ + 1) % kNumBuffers;
   planes.strides[0] = bytes_per_row_;
   scoped_refptr<CaptureData> capture_data(new CaptureData(
-      planes, gfx::Size(width_, height_), pixel_format_));
+      planes, SkISize::Make(width_, height_), pixel_format_));
 
-  helper.set_size_most_recent(capture_data->size());
+  helper_.set_size_most_recent(capture_data->size());
 
-  callback->Run(capture_data);
+  callback.Run(capture_data);
 }
 
-const gfx::Size& CapturerFakeAscii::size_most_recent() const {
-  return helper.size_most_recent();
+const SkISize& CapturerFakeAscii::size_most_recent() const {
+  return helper_.size_most_recent();
 }
 
 void CapturerFakeAscii::GenerateImage() {

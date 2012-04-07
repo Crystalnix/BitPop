@@ -7,6 +7,9 @@
     'msvs_use_common_release': 0,
     'msvs_use_common_linker_extras': 0,
   },
+  'includes': [
+    '../../build/win_precompile.gypi',
+  ],
   'conditions': [
     ['OS=="win"', {
       'target_defaults': {
@@ -19,12 +22,13 @@
         ],
         'include_dirs': [
           '../..',
-          '<(PRODUCT_DIR)',
           '<(INTERMEDIATE_DIR)',
           '<(SHARED_INTERMEDIATE_DIR)/chrome',
         ],
         'sources': [
           'mini_installer/appid.h',
+          'mini_installer/configuration.cc',
+          'mini_installer/configuration.h',
           'mini_installer/decompress.cc',
           'mini_installer/decompress.h',
           'mini_installer/mini_installer.cc',
@@ -37,6 +41,7 @@
           'mini_installer/mini_string.h',
           'mini_installer/pe_resource.cc',
           'mini_installer/pe_resource.h',
+          '<(INTERMEDIATE_DIR)/packed_files.rc',
         ],
         'msvs_settings': {
           'VCCLCompilerTool': {
@@ -108,6 +113,7 @@
               },
               'VCLinkerTool': {
                 'SubSystem': '2',     # Set /SUBSYSTEM:WINDOWS
+                'Profile': 'false',   # Conflicts with /FIXED
                 'AdditionalOptions': [
                   '/SAFESEH:NO',
                   '/NXCOMPAT',
@@ -169,7 +175,12 @@
         {
           'target_name': 'mini_installer',
           'type': 'executable',
-          'msvs_guid': '24A5AC7C-280B-4899-9153-6BA570A081E7',
+
+          # Disable precompiled headers for this project, to avoid
+          # linker errors when building with VS 2008.
+          'msvs_precompiled_header': '',
+          'msvs_precompiled_source': '',
+
           'sources': [
             'mini_installer/chrome.release',
             'mini_installer/chrome_appid.cc',
@@ -187,11 +198,10 @@
                 '<(PRODUCT_DIR)/chrome.exe',
                 '<(PRODUCT_DIR)/chrome.dll',
                 '<(PRODUCT_DIR)/nacl64.exe',
-                '<(PRODUCT_DIR)/nacl64.dll',
                 '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
                 '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                 '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
-                '<(PRODUCT_DIR)/locales/en-US.dll',
+                '<(PRODUCT_DIR)/locales/en-US.pak',
                 '<(PRODUCT_DIR)/icudt.dll',
               ],
               'outputs': [
@@ -199,13 +209,15 @@
                 '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).7z',
                 '<(PRODUCT_DIR)/<(RULE_INPUT_NAME).packed.7z',
                 '<(PRODUCT_DIR)/setup.ex_',
-                '<(PRODUCT_DIR)/packed_files.txt',
+                '<(INTERMEDIATE_DIR)/packed_files.rc',
               ],
               'action': [
                 'python',
                 '<(create_installer_archive_py_path)',
-                '--output_dir=<(PRODUCT_DIR)',
-                '--input_file=<(RULE_INPUT_PATH)',
+                '--build_dir', '<(PRODUCT_DIR)',
+                '--staging_dir', '<(INTERMEDIATE_DIR)',
+                '--input_file', '<(RULE_INPUT_PATH)',
+                '--resource_file_path', '<(INTERMEDIATE_DIR)/packed_files.rc',
                 # TODO(sgk):  may just use environment variables
                 #'--distribution=$(CHROMIUM_BUILD)',
                 '--distribution=_google_chrome',
@@ -231,9 +243,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

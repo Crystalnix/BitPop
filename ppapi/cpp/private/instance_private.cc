@@ -43,11 +43,9 @@ InstancePrivate::InstancePrivate(PP_Instance instance) : Instance(instance) {
 
 InstancePrivate::~InstancePrivate() {}
 
-#ifdef PPAPI_INSTANCE_REMOVE_SCRIPTING
 Var InstancePrivate::GetInstanceObject() {
   return Var();
 }
-#endif
 
 VarPrivate InstancePrivate::GetWindowObject() {
   if (!has_interface<PPB_Instance_Private>())
@@ -64,8 +62,7 @@ VarPrivate InstancePrivate::GetOwnerElementObject() {
           pp_instance()));
 }
 
-VarPrivate InstancePrivate::ExecuteScript(const VarPrivate& script,
-                                          VarPrivate* exception) {
+VarPrivate InstancePrivate::ExecuteScript(const Var& script, Var* exception) {
   if (!has_interface<PPB_Instance_Private>())
     return VarPrivate();
   return VarPrivate(Var::PassRef(),

@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/speech/speech_input_bubble_controller.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/test/browser_with_test_window_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
+
+using content::BrowserThread;
+using content::WebContents;
 
 class SkBitmap;
 
@@ -25,13 +30,13 @@ class MockSpeechInputBubble : public SpeechInputBubbleBase {
     BUBBLE_TEST_CLICK_TRY_AGAIN,
   };
 
-  MockSpeechInputBubble(TabContents* tab_contents,
+  MockSpeechInputBubble(WebContents* web_contents,
                         Delegate* delegate,
                         const gfx::Rect&)
-      : SpeechInputBubbleBase(tab_contents) {
+      : SpeechInputBubbleBase(web_contents) {
     VLOG(1) << "MockSpeechInputBubble created";
     MessageLoop::current()->PostTask(
-        FROM_HERE, NewRunnableFunction(&InvokeDelegate, delegate));
+        FROM_HERE, base::Bind(&InvokeDelegate, delegate));
   }
 
   static void InvokeDelegate(Delegate* delegate) {
@@ -96,14 +101,14 @@ class SpeechInputBubbleControllerTest
     } else if (button == SpeechInputBubble::BUTTON_TRY_AGAIN) {
       try_again_clicked_ = true;
     }
-    message_loop()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    message_loop()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   virtual void InfoBubbleFocusChanged(int caller_id) {
     VLOG(1) << "Received InfoBubbleFocusChanged";
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     focus_changed_ = true;
-    message_loop()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    message_loop()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   // testing::Test methods.
@@ -130,7 +135,7 @@ class SpeechInputBubbleControllerTest
     }
   }
 
-  static SpeechInputBubble* CreateBubble(TabContents* tab_contents,
+  static SpeechInputBubble* CreateBubble(WebContents* web_contents,
                                          SpeechInputBubble::Delegate* delegate,
                                          const gfx::Rect& element_rect) {
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -138,21 +143,24 @@ class SpeechInputBubbleControllerTest
     // events sent by the bubble and those are handled only when the bubble is
     // active.
     MessageLoop::current()->PostTask(FROM_HERE,
-                                     NewRunnableFunction(&ActivateBubble));
+                                     base::Bind(&ActivateBubble));
 
     // The |tab_contents| parameter would be NULL since the dummy caller id
     // passed to CreateBubble would not have matched any active tab. So get a
-    // real TabContents pointer from the test fixture and pass that, because
+    // real WebContents pointer from the test fixture and pass that, because
     // the bubble controller registers for tab close notifications which need
-    // a valid TabContents.
-    tab_contents = test_fixture_->browser()->GetSelectedTabContents();
-    return new MockSpeechInputBubble(tab_contents, delegate, element_rect);
+    // a valid WebContents.
+    TabContentsWrapper* wrapper =
+        test_fixture_->browser()->GetSelectedTabContentsWrapper();
+    if (wrapper)
+      web_contents = wrapper->web_contents();
+    return new MockSpeechInputBubble(web_contents, delegate, element_rect);
   }
 
  protected:
   // The main thread of the test is marked as the IO thread and we create a new
   // one for the UI thread.
-  BrowserThread io_thread_;
+  content::TestBrowserThread io_thread_;
   bool cancel_clicked_;
   bool try_again_clicked_;
   bool focus_changed_;

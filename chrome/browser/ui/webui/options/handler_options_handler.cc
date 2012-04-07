@@ -6,13 +6,16 @@
 
 #include <vector>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
 
 HandlerOptionsHandler::HandlerOptionsHandler() {
 }
@@ -32,6 +35,8 @@ void HandlerOptionsHandler::GetLocalizedValues(
       { "handlers_site_column_header", IDS_HANDLERS_SITE_COLUMN_HEADER },
       { "handlers_remove_link", IDS_HANDLERS_REMOVE_HANDLER_LINK },
       { "handlers_none_handler", IDS_HANDLERS_NONE_HANDLER },
+      { "handlers_active_heading", IDS_HANDLERS_ACTIVE_HEADING },
+      { "handlers_ignored_heading", IDS_HANDLERS_IGNORED_HEADING },
   };
   RegisterTitle(localized_strings, "handlersPage",
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
@@ -41,47 +46,63 @@ void HandlerOptionsHandler::GetLocalizedValues(
 void HandlerOptionsHandler::Initialize() {
   UpdateHandlerList();
   notification_registrar_.Add(
-      this, NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED,
-      NotificationService::AllSources());
+      this, chrome::NOTIFICATION_PROTOCOL_HANDLER_REGISTRY_CHANGED,
+      content::Source<Profile>(Profile::FromWebUI(web_ui())));
 }
 
 void HandlerOptionsHandler::RegisterMessages() {
-  DCHECK(web_ui_);
-  web_ui_->RegisterMessageCallback("clearDefault",
-      NewCallback(this, &HandlerOptionsHandler::ClearDefault));
-  web_ui_->RegisterMessageCallback("removeHandler",
-      NewCallback(this, &HandlerOptionsHandler::RemoveHandler));
-  web_ui_->RegisterMessageCallback("setHandlersEnabled",
-      NewCallback(this, &HandlerOptionsHandler::SetHandlersEnabled));
-  web_ui_->RegisterMessageCallback("setDefault",
-      NewCallback(this, &HandlerOptionsHandler::SetDefault));
+  web_ui()->RegisterMessageCallback("clearDefault",
+      base::Bind(&HandlerOptionsHandler::ClearDefault,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeHandler",
+      base::Bind(&HandlerOptionsHandler::RemoveHandler,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("setHandlersEnabled",
+      base::Bind(&HandlerOptionsHandler::SetHandlersEnabled,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("setDefault",
+      base::Bind(&HandlerOptionsHandler::SetDefault,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("removeIgnoredHandler",
+      base::Bind(&HandlerOptionsHandler::RemoveIgnoredHandler,
+                 base::Unretained(this)));
 }
 
 ProtocolHandlerRegistry* HandlerOptionsHandler::GetProtocolHandlerRegistry() {
-  DCHECK(web_ui_);
-  return web_ui_->GetProfile()->GetProtocolHandlerRegistry();
+  return Profile::FromWebUI(web_ui())->GetProtocolHandlerRegistry();
 }
 
-DictionaryValue* HandlerOptionsHandler::GetHandlersForProtocol(
-    const std::string& protocol) {
-  ProtocolHandlerRegistry* registry = GetProtocolHandlerRegistry();
-  DictionaryValue* handlers_value = new DictionaryValue();
-  handlers_value->SetString("protocol", protocol);
-  handlers_value->SetInteger("default_handler",
-      registry->GetHandlerIndex(protocol));
-
-  ListValue* handler_list = new ListValue();
-  ProtocolHandlerRegistry::ProtocolHandlerList handlers =
-      registry->GetHandlersFor(protocol);
+static void GetHandlersAsListValue(
+    const ProtocolHandlerRegistry::ProtocolHandlerList& handlers,
+    ListValue* handler_list) {
   ProtocolHandlerRegistry::ProtocolHandlerList::const_iterator handler;
   for (handler = handlers.begin(); handler != handlers.end(); ++handler) {
     ListValue* handlerValue = new ListValue();
+    handlerValue->Append(Value::CreateStringValue(handler->protocol()));
     handlerValue->Append(Value::CreateStringValue(handler->url().spec()));
     handlerValue->Append(Value::CreateStringValue(handler->title()));
     handler_list->Append(handlerValue);
   }
-  handlers_value->Set("handlers", handler_list);
-  return handlers_value;
+}
+
+void HandlerOptionsHandler::GetHandlersForProtocol(
+    const std::string& protocol,
+    DictionaryValue* handlers_value) {
+  ProtocolHandlerRegistry* registry = GetProtocolHandlerRegistry();
+  handlers_value->SetString("protocol", protocol);
+  handlers_value->SetInteger("default_handler",
+      registry->GetHandlerIndex(protocol));
+
+  ListValue* handlers_list = new ListValue();
+  GetHandlersAsListValue(registry->GetHandlersFor(protocol), handlers_list);
+  handlers_value->Set("handlers", handlers_list);
+}
+
+void HandlerOptionsHandler::GetIgnoredHandlers(ListValue* handlers) {
+  ProtocolHandlerRegistry* registry = GetProtocolHandlerRegistry();
+  ProtocolHandlerRegistry::ProtocolHandlerList ignored_handlers =
+      registry->GetIgnoredHandlers();
+  return GetHandlersAsListValue(ignored_handlers, handlers);
 }
 
 void HandlerOptionsHandler::UpdateHandlerList() {
@@ -93,10 +114,16 @@ void HandlerOptionsHandler::UpdateHandlerList() {
   ListValue handlers;
   for (std::vector<std::string>::iterator protocol = protocols.begin();
        protocol != protocols.end(); protocol++) {
-    handlers.Append(GetHandlersForProtocol(*protocol));
+    DictionaryValue* handler_value = new DictionaryValue();
+    GetHandlersForProtocol(*protocol, handler_value);
+    handlers.Append(handler_value);
   }
 
-  web_ui_->CallJavascriptFunction("HandlerOptions.setHandlers", handlers);
+  scoped_ptr<ListValue> ignored_handlers(new ListValue());
+  GetIgnoredHandlers(ignored_handlers.get());
+  web_ui()->CallJavascriptFunction("HandlerOptions.setHandlers", handlers);
+  web_ui()->CallJavascriptFunction("HandlerOptions.setIgnoredHandlers",
+                                   *ignored_handlers);
 #endif // defined(ENABLE_REGISTER_PROTOCOL_HANDLER)
 }
 
@@ -113,6 +140,17 @@ void HandlerOptionsHandler::RemoveHandler(const ListValue* args) {
   // No need to call UpdateHandlerList() - we should receive a notification
   // that the ProtocolHandlerRegistry has changed and we will update the view
   // then.
+}
+
+void HandlerOptionsHandler::RemoveIgnoredHandler(const ListValue* args) {
+  ListValue* list;
+  if (!args->GetList(0, &list)) {
+    NOTREACHED();
+    return;
+  }
+
+  ProtocolHandler handler(ParseHandlerFromArgs(list));
+  GetProtocolHandlerRegistry()->RemoveIgnoredHandler(handler);
 }
 
 void HandlerOptionsHandler::SetHandlersEnabled(const ListValue* args) {
@@ -156,10 +194,11 @@ ProtocolHandler HandlerOptionsHandler::ParseHandlerFromArgs(
                                                 title);
 }
 
-void HandlerOptionsHandler::Observe(NotificationType type,
-                                    const NotificationSource& source,
-                                    const NotificationDetails& details) {
-  if (type == NotificationType::PROTOCOL_HANDLER_REGISTRY_CHANGED)
+void HandlerOptionsHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_PROTOCOL_HANDLER_REGISTRY_CHANGED)
     UpdateHandlerList();
   else
     NOTREACHED();

@@ -4,7 +4,8 @@
 
 #include "chrome/browser/ui/webui/chromeos/system_info_ui.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
@@ -15,14 +16,16 @@
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/syslogs_library.h"
+#include "chrome/browser/chromeos/system/syslogs_provider.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -31,6 +34,9 @@
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 class SystemInfoUIHTMLSource : public ChromeURLDataManager::DataSource {
  public:
@@ -48,7 +54,7 @@ class SystemInfoUIHTMLSource : public ChromeURLDataManager::DataSource {
  private:
   ~SystemInfoUIHTMLSource() {}
 
-  void SyslogsComplete(chromeos::LogDictionaryType* sys_info,
+  void SyslogsComplete(chromeos::system::LogDictionaryType* sys_info,
                        std::string* ignored_content);
 
   CancelableRequestConsumer consumer_;
@@ -68,8 +74,7 @@ class SystemInfoHandler : public WebUIMessageHandler,
   virtual ~SystemInfoHandler();
 
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SystemInfoHandler);
@@ -92,19 +97,20 @@ void SystemInfoUIHTMLSource::StartDataRequest(const std::string& path,
   path_ = path;
   request_id_ = request_id;
 
-  chromeos::SyslogsLibrary* syslogs_lib =
-      chromeos::CrosLibrary::Get()->GetSyslogsLibrary();
-  if (syslogs_lib) {
-    syslogs_lib->RequestSyslogs(
+  chromeos::system::SyslogsProvider* provider =
+      chromeos::system::SyslogsProvider::GetInstance();
+  if (provider) {
+    provider->RequestSyslogs(
         false,  // don't compress.
-        chromeos::SyslogsLibrary::SYSLOGS_SYSINFO,
+        chromeos::system::SyslogsProvider::SYSLOGS_SYSINFO,
         &consumer_,
-        NewCallback(this, &SystemInfoUIHTMLSource::SyslogsComplete));
+        base::Bind(&SystemInfoUIHTMLSource::SyslogsComplete,
+                   base::Unretained(this)));
   }
 }
 
 void SystemInfoUIHTMLSource::SyslogsComplete(
-    chromeos::LogDictionaryType* sys_info,
+    chromeos::system::LogDictionaryType* sys_info,
     std::string* ignored_content) {
   DCHECK(!ignored_content);
 
@@ -127,7 +133,7 @@ void SystemInfoUIHTMLSource::SyslogsComplete(
   if (sys_info) {
      ListValue* details = new ListValue();
      strings.Set("details", details);
-     chromeos::LogDictionaryType::iterator it;
+     chromeos::system::LogDictionaryType::iterator it;
      for (it = sys_info->begin(); it != sys_info->end(); ++it) {
        DictionaryValue* val = new DictionaryValue;
        val->SetString("stat_name", it->first);
@@ -140,14 +146,10 @@ void SystemInfoUIHTMLSource::SyslogsComplete(
   static const base::StringPiece systeminfo_html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_ABOUT_SYS_HTML));
-  const std::string full_html = jstemplate_builder::GetTemplatesHtml(
+  std::string full_html = jstemplate_builder::GetTemplatesHtml(
       systeminfo_html, &strings, "t" /* template root node id */);
 
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id_, html_bytes);
+  SendResponse(request_id_, base::RefCountedString::TakeString(&full_html));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -161,11 +163,6 @@ SystemInfoHandler::SystemInfoHandler() {
 SystemInfoHandler::~SystemInfoHandler() {
 }
 
-WebUIMessageHandler* SystemInfoHandler::Attach(WebUI* web_ui) {
-  // TODO(stevenjb): customize handler attach if needed...
-  return WebUIMessageHandler::Attach(web_ui);
-}
-
 void SystemInfoHandler::RegisterMessages() {
   // TODO(stevenjb): add message registration, callbacks...
 }
@@ -176,11 +173,12 @@ void SystemInfoHandler::RegisterMessages() {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-SystemInfoUI::SystemInfoUI(TabContents* contents) : WebUI(contents) {
+SystemInfoUI::SystemInfoUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   SystemInfoHandler* handler = new SystemInfoHandler();
-  AddMessageHandler((handler)->Attach(this));
+  web_ui->AddMessageHandler(handler);
   SystemInfoUIHTMLSource* html_source = new SystemInfoUIHTMLSource();
 
   // Set up the chrome://system/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(html_source);
 }

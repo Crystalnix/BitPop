@@ -1,19 +1,26 @@
-#!/usr/bin/python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import logging
 import os
 import shutil
-import sys
 
 import pyauto_functional  # Must be imported before pyauto
 import pyauto
 
-
 class PrefsTest(pyauto.PyUITest):
   """TestCase for Preferences."""
+
+  def Debug(self):
+    """Test method for experimentation.
+
+    This method will not run automatically.
+    """
+    while True:
+      raw_input('Interact with the browser and hit <enter> to dump prefs... ')
+      self.pprint(self.GetPrefsInfo().Prefs())
 
   def testSessionRestore(self):
     """Test session restore preference."""
@@ -22,28 +29,16 @@ class PrefsTest(pyauto.PyUITest):
     self.NavigateToURL(url1)
     self.AppendTab(pyauto.GURL(url2))
     num_tabs = self.GetTabCount()
-    # Set pref to restore session on startup
+    # Set pref to restore session on startup.
     self.SetPrefs(pyauto.kRestoreOnStartup, 1)
     logging.debug('Setting %s to 1' % pyauto.kRestoreOnStartup)
     self.RestartBrowser(clear_profile=False)
-    # Verify
     self.assertEqual(self.GetPrefsInfo().Prefs(pyauto.kRestoreOnStartup), 1)
     self.assertEqual(num_tabs, self.GetTabCount())
     self.ActivateTab(0)
     self.assertEqual(url1, self.GetActiveTabURL().spec())
     self.ActivateTab(1)
     self.assertEqual(url2, self.GetActiveTabURL().spec())
-
-  def Debug(self):
-    """Test method for experimentation.
-
-    This method will not run automatically.
-    """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
-    while True:
-      raw_input('Interact with the browser and hit <enter> to dump prefs... ')
-      pp.pprint(self.GetPrefsInfo().Prefs())
 
   def testNavigationStateOnSessionRestore(self):
     """Verify navigation state is preserved on session restore."""
@@ -146,6 +141,9 @@ class PrefsTest(pyauto.PyUITest):
 
     Checks for the geolocation infobar.
     """
+    from webdriver_pages import settings
+    from webdriver_pages.settings import Behaviors, ContentTypes
+    driver = self.NewWebDriver()
     url = self.GetFileURLForPath(os.path.join(  # triggers geolocation
         self.DataDir(), 'geolocation', 'geolocation_on_load.html'))
     self.assertEqual(3,  # default state
@@ -158,8 +156,15 @@ class PrefsTest(pyauto.PyUITest):
     self.assertEqual(2,
         self.GetPrefsInfo().Prefs(pyauto.kGeolocationDefaultContentSetting))
     self.GetBrowserWindow(0).GetTab(0).Reload()
-    self.assertTrue(self.WaitForInfobarCount(0))
-    self.assertFalse(self.GetBrowserInfo()['windows'][0]['tabs'][0]['infobars'])
+    # Fails on Win7/Vista Chromium bots.  crbug.com/89000
+    if ((self.IsWin7() or self.IsWinVista()) and
+        self.GetBrowserInfo()['properties']['branding'] == 'Chromium'):
+      return
+    behavior = driver.execute_async_script(
+        'triggerGeoWithCallback(arguments[arguments.length - 1]);')
+    self.assertEqual(
+        behavior, Behaviors.BLOCK,
+        msg='Behavior is "%s" when it should be BLOCKED.'  % behavior)
 
   def testUnderTheHoodPref(self):
     """Verify the security preferences for Under the Hood.
@@ -177,19 +182,75 @@ class PrefsTest(pyauto.PyUITest):
 
   def testJavaScriptEnableDisable(self):
     """Verify enabling disabling javascript prefs work """
-
     self.assertTrue(
-        self.GetPrefsInfo().Prefs('webkit.webprefs.javascript_enabled'))
+        self.GetPrefsInfo().Prefs(pyauto.kWebKitGlobalJavascriptEnabled))
     url = self.GetFileURLForDataPath(
               os.path.join('javaScriptTitle.html'))
     title1 = 'Title from script javascript enabled'
     self.NavigateToURL(url)
     self.assertEqual(title1, self.GetActiveTabTitle())
-    self.SetPrefs('webkit.webprefs.javascript_enabled', False)
+    self.SetPrefs(pyauto.kWebKitGlobalJavascriptEnabled, False)
     title = 'This is html title'
     self.NavigateToURL(url)
     self.assertEqual(title, self.GetActiveTabTitle())
 
+  def testHaveLocalStatePrefs(self):
+    """Verify that we have some Local State prefs."""
+    self.assertTrue(self.GetLocalStatePrefsInfo())
+
+  def testAllowSelectedGeoTracking(self):
+    """Verify hostname pattern and behavior for allowed tracking."""
+    # Default location tracking option "Ask me".
+    self.SetPrefs(pyauto.kGeolocationDefaultContentSetting, 3)
+    self.NavigateToURL(
+        self.GetHttpURLForDataPath('geolocation', 'geolocation_on_load.html'))
+    self.assertTrue(self.WaitForInfobarCount(1))
+    self.PerformActionOnInfobar('accept', infobar_index=0)  # Allow tracking.
+    # Get the hostname pattern (e.g. http://127.0.0.1:57622).
+    hostname_pattern = (
+        '/'.join(self.GetHttpURLForDataPath('').split('/')[0:3]) + '/')
+    self.assertEqual(
+        {hostname_pattern: {hostname_pattern: 1}},  # Allow the hostname.
+        self.GetPrefsInfo().Prefs(pyauto.kGeolocationContentSettings))
+
+  def testDismissedInfobarSavesNoEntry(self):
+    """Verify dismissing infobar does not save an exception entry."""
+    # Default location tracking option "Ask me".
+    self.SetPrefs(pyauto.kGeolocationDefaultContentSetting, 3)
+    self.NavigateToURL(
+        self.GetFileURLForDataPath('geolocation', 'geolocation_on_load.html'))
+    self.assertTrue(self.WaitForInfobarCount(1))
+    self.PerformActionOnInfobar('dismiss', infobar_index=0)
+    self.assertEqual(
+        {}, self.GetPrefsInfo().Prefs(pyauto.kGeolocationContentSettings))
+
+  def testGeolocationBlockedWhenTrackingDenied(self):
+    """Verify geolocations is blocked when tracking is denied.
+
+    The test verifies the blocked hostname pattern entry on the Geolocations
+    exceptions page.
+    """
+    from webdriver_pages import settings
+    from webdriver_pages.settings import Behaviors, ContentTypes
+    driver = self.NewWebDriver()
+    # Ask for permission when site wants to track.
+    self.SetPrefs(pyauto.kGeolocationDefaultContentSetting, 3)
+    self.NavigateToURL(
+        self.GetHttpURLForDataPath('geolocation', 'geolocation_on_load.html'))
+    self.assertTrue(self.WaitForInfobarCount(1))
+    self.PerformActionOnInfobar('cancel', infobar_index=0)  # Deny tracking.
+    behavior = driver.execute_async_script(
+        'triggerGeoWithCallback(arguments[arguments.length - 1]);')
+    self.assertEqual(
+        behavior, Behaviors.BLOCK,
+        msg='Behavior is "%s" when it should be BLOCKED.'  % behavior)
+    # Get the hostname pattern (e.g. http://127.0.0.1:57622).
+    hostname_pattern = (
+        '/'.join(self.GetHttpURLForDataPath('').split('/')[0:3]) + '/')
+    self.assertEqual(
+        {hostname_pattern: {hostname_pattern: 2}},  # Block the hostname.
+        self.GetPrefsInfo().Prefs(pyauto.kGeolocationContentSettings))
+
+
 if __name__ == '__main__':
   pyauto_functional.Main()
-

@@ -1,38 +1,53 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
+#include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/safe_browsing/client_side_detection_service.h"
+#include "chrome/browser/safe_browsing/download_protection_service.h"
 #include "chrome/browser/safe_browsing/malware_details.h"
 #include "chrome/browser/safe_browsing/protocol_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_blocking_page.h"
 #include "chrome/browser/safe_browsing/safe_browsing_database.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domain.h"
 #include "net/url_request/url_request_context_getter.h"
 
 #if defined(OS_WIN)
 #include "chrome/installer/util/browser_distribution.h"
 #endif
+
+using content::BrowserThread;
+using content::NavigationEntry;
+using content::WebContents;
 
 namespace {
 
@@ -52,14 +67,6 @@ const int64 kDownloadUrlCheckTimeoutMs = 10000;
 
 // Similar to kDownloadUrlCheckTimeoutMs, but for download hash checks.
 const int64 kDownloadHashCheckTimeoutMs = 10000;
-
-// TODO(lzheng): Replace this with Profile* ProfileManager::GetDefaultProfile().
-Profile* GetDefaultProfile() {
-  FilePath user_data_dir;
-  PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  return profile_manager->GetDefaultProfile(user_data_dir);
-}
 
 // Records disposition information about the check.  |hit| should be
 // |true| if there were any prefix hits in |full_hashes|.
@@ -100,7 +107,7 @@ class SafeBrowsingServiceFactoryImpl : public SafeBrowsingServiceFactory {
 };
 
 static base::LazyInstance<SafeBrowsingServiceFactoryImpl>
-    g_safe_browsing_service_factory_impl(base::LINKER_INITIALIZED);
+    g_safe_browsing_service_factory_impl = LAZY_INSTANCE_INITIALIZER;
 
 struct SafeBrowsingService::WhiteListedEntry {
   int render_process_host_id;
@@ -110,9 +117,8 @@ struct SafeBrowsingService::WhiteListedEntry {
 };
 
 SafeBrowsingService::UnsafeResource::UnsafeResource()
-    : resource_type(ResourceType::MAIN_FRAME),
+    : is_subresource(false),
       threat_type(SAFE),
-      client(NULL),
       render_process_host_id(-1),
       render_view_id(-1) {
 }
@@ -125,7 +131,7 @@ SafeBrowsingService::SafeBrowsingCheck::SafeBrowsingCheck()
       need_get_hash(false),
       result(SAFE),
       is_download(false),
-      timeout_task(NULL) {
+      timeout_factory_(NULL) {
 }
 
 SafeBrowsingService::SafeBrowsingCheck::~SafeBrowsingCheck() {}
@@ -163,24 +169,63 @@ SafeBrowsingService::SafeBrowsingService()
       enabled_(false),
       enable_download_protection_(false),
       enable_csd_whitelist_(false),
+      enable_download_whitelist_(false),
       update_in_progress_(false),
       database_update_in_progress_(false),
       closing_database_(false),
       download_urlcheck_timeout_ms_(kDownloadUrlCheckTimeoutMs),
       download_hashcheck_timeout_ms_(kDownloadHashCheckTimeoutMs) {
+#if !defined(OS_CHROMEOS)
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableClientSidePhishingDetection)) {
+    csd_service_.reset(
+        safe_browsing::ClientSideDetectionService::Create(
+            g_browser_process->system_request_context()));
+  }
+  download_service_.reset(new safe_browsing::DownloadProtectionService(
+      this,
+      g_browser_process->system_request_context()));
+#endif
+}
+
+SafeBrowsingService::~SafeBrowsingService() {
+  // Deletes the PrefChangeRegistrars, whose dtors also unregister |this| as an
+  // observer of the preferences.
+  STLDeleteValues(&prefs_map_);
+
+  // We should have already been shut down. If we're still enabled, then the
+  // database isn't going to be closed properly, which could lead to corruption.
+  DCHECK(!enabled_);
 }
 
 void SafeBrowsingService::Initialize() {
-  // Get the profile's preference for SafeBrowsing.
-  PrefService* pref_service = GetDefaultProfile()->GetPrefs();
-  if (pref_service->GetBoolean(prefs::kSafeBrowsingEnabled))
-    Start();
+  // Track the safe browsing preference of existing profiles.
+  // The SafeBrowsingService will be started if any existing profile has the
+  // preference enabled. It will also listen for updates to the preferences.
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (profile_manager) {
+    std::vector<Profile*> profiles = profile_manager->GetLoadedProfiles();
+    for (size_t i = 0; i < profiles.size(); ++i) {
+      if (profiles[i]->IsOffTheRecord())
+        continue;
+      AddPrefService(profiles[i]->GetPrefs());
+    }
+  }
+
+  // Track profile creation and destruction.
+  prefs_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_CREATED,
+                       content::NotificationService::AllSources());
+  prefs_registrar_.Add(this, chrome::NOTIFICATION_PROFILE_DESTROYED,
+                       content::NotificationService::AllSources());
 }
 
 void SafeBrowsingService::ShutDown() {
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::OnIOShutdown));
+  Stop();
+  // The IO thread is going away, so make sure the ClientSideDetectionService
+  // dtor executes now since it may call the dtor of URLFetcher which relies
+  // on it.
+  csd_service_.reset();
+  download_service_.reset();
 }
 
 bool SafeBrowsingService::CanCheckUrl(const GURL& url) const {
@@ -189,18 +234,18 @@ bool SafeBrowsingService::CanCheckUrl(const GURL& url) const {
          url.SchemeIs(chrome::kHttpsScheme);
 }
 
-// Only report SafeBrowsing related stats when UMA is enabled and
-// safe browsing is enabled.
+// Only report SafeBrowsing related stats when UMA is enabled. User must also
+// ensure that safe browsing is enabled from the calling profile.
 bool SafeBrowsingService::CanReportStats() const {
   const MetricsService* metrics = g_browser_process->metrics_service();
-  const PrefService* pref_service = GetDefaultProfile()->GetPrefs();
-  return metrics && metrics->reporting_active() &&
-      pref_service && pref_service->GetBoolean(prefs::kSafeBrowsingEnabled);
+  return metrics && metrics->reporting_active();
 }
 
 // Binhash verification is only enabled for UMA users for now.
 bool SafeBrowsingService::DownloadBinHashNeeded() const {
-  return enable_download_protection_ && CanReportStats();
+  return (enable_download_protection_ && CanReportStats()) ||
+      (download_protection_service() &&
+       download_protection_service()->enabled());
 }
 
 bool SafeBrowsingService::CheckDownloadUrl(const std::vector<GURL>& url_chain,
@@ -216,9 +261,7 @@ bool SafeBrowsingService::CheckDownloadUrl(const std::vector<GURL>& url_chain,
   StartDownloadCheck(
       check,
       client,
-      NewRunnableMethod(this,
-                        &SafeBrowsingService::CheckDownloadUrlOnSBThread,
-                        check),
+      base::Bind(&SafeBrowsingService::CheckDownloadUrlOnSBThread, this, check),
       download_urlcheck_timeout_ms_);
   return false;
 }
@@ -238,9 +281,7 @@ bool SafeBrowsingService::CheckDownloadHash(const std::string& full_hash,
   StartDownloadCheck(
       check,
       client,
-      NewRunnableMethod(this,
-                        &SafeBrowsingService::CheckDownloadHashOnSBThread,
-                        check),
+      base::Bind(&SafeBrowsingService::CheckDownloadHashOnSBThread,this, check),
       download_hashcheck_timeout_ms_);
   return false;
 }
@@ -255,6 +296,23 @@ bool SafeBrowsingService::MatchCsdWhitelistUrl(const GURL& url) {
     return true;
   }
   return database_->ContainsCsdWhitelistedUrl(url);
+}
+
+bool SafeBrowsingService::MatchDownloadWhitelistUrl(const GURL& url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!enabled_ || !enable_download_whitelist_ || !MakeDatabaseAvailable()) {
+    return true;
+  }
+  return database_->ContainsDownloadWhitelistedUrl(url);
+}
+
+bool SafeBrowsingService::MatchDownloadWhitelistString(
+    const std::string& str) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!enabled_ || !enable_download_whitelist_ || !MakeDatabaseAvailable()) {
+    return true;
+  }
+  return database_->ContainsDownloadWhitelistedString(str);
 }
 
 bool SafeBrowsingService::CheckBrowseUrl(const GURL& url,
@@ -303,7 +361,7 @@ bool SafeBrowsingService::CheckBrowseUrl(const GURL& url,
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::OnCheckDone, check));
+      base::Bind(&SafeBrowsingService::OnCheckDone, this, check));
 
   return false;
 }
@@ -335,44 +393,26 @@ void SafeBrowsingService::DisplayBlockingPage(
     const GURL& url,
     const GURL& original_url,
     const std::vector<GURL>& redirect_urls,
-    ResourceType::Type resource_type,
+    bool is_subresource,
     UrlCheckResult result,
-    Client* client,
+    const UrlCheckCallback& callback,
     int render_process_host_id,
     int render_view_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  // Check if the user has already ignored our warning for this render_view
-  // and domain.
-  for (size_t i = 0; i < white_listed_entries_.size(); ++i) {
-    const WhiteListedEntry& entry = white_listed_entries_[i];
-    if (entry.render_process_host_id == render_process_host_id &&
-        entry.render_view_id == render_view_id &&
-        entry.result == result &&
-        entry.domain ==
-        net::RegistryControlledDomainService::GetDomainAndRegistry(url)) {
-      MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &SafeBrowsingService::NotifyClientBlockingComplete,
-          client, true));
-      return;
-    }
-  }
-
   UnsafeResource resource;
   resource.url = url;
   resource.original_url = original_url;
   resource.redirect_urls = redirect_urls;
-  resource.resource_type = resource_type;
+  resource.is_subresource = is_subresource;
   resource.threat_type= result;
-  resource.client = client;
+  resource.callback = callback;
   resource.render_process_host_id = render_process_host_id;
   resource.render_view_id = render_view_id;
 
   // The blocking page must be created from the UI thread.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &SafeBrowsingService::DoDisplayBlockingPage, resource));
+      base::Bind(&SafeBrowsingService::DoDisplayBlockingPage, this, resource));
 }
 
 void SafeBrowsingService::HandleGetHashResults(
@@ -406,16 +446,16 @@ void SafeBrowsingService::HandleChunk(const std::string& list,
                                       SBChunkList* chunks) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(enabled_);
-  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &SafeBrowsingService::HandleChunkForDatabase, list, chunks));
+  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
+      &SafeBrowsingService::HandleChunkForDatabase, this, list, chunks));
 }
 
 void SafeBrowsingService::HandleChunkDelete(
     std::vector<SBChunkDelete>* chunk_deletes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(enabled_);
-  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &SafeBrowsingService::DeleteChunks, chunk_deletes));
+  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
+      &SafeBrowsingService::DeleteChunks, this, chunk_deletes));
 }
 
 void SafeBrowsingService::UpdateStarted() {
@@ -423,8 +463,8 @@ void SafeBrowsingService::UpdateStarted() {
   DCHECK(enabled_);
   DCHECK(!update_in_progress_);
   update_in_progress_ = true;
-  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &SafeBrowsingService::GetAllChunksFromDatabase));
+  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
+      &SafeBrowsingService::GetAllChunksFromDatabase, this));
 }
 
 void SafeBrowsingService::UpdateFinished(bool update_succeeded) {
@@ -433,9 +473,8 @@ void SafeBrowsingService::UpdateFinished(bool update_succeeded) {
   if (update_in_progress_) {
     update_in_progress_ = false;
     safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this,
-                          &SafeBrowsingService::DatabaseUpdateFinished,
-                          update_succeeded));
+      base::Bind(&SafeBrowsingService::DatabaseUpdateFinished,
+                 this, update_succeeded));
   }
 }
 
@@ -450,17 +489,14 @@ void SafeBrowsingService::OnBlockingPageDone(
   for (std::vector<UnsafeResource>::const_iterator iter = resources.begin();
        iter != resources.end(); ++iter) {
     const UnsafeResource& resource = *iter;
-    NotifyClientBlockingComplete(resource.client, proceed);
+    if (!resource.callback.is_null())
+      resource.callback.Run(proceed);
 
     if (proceed) {
-      // Whitelist this domain and warning type for the given tab.
-      WhiteListedEntry entry;
-      entry.render_process_host_id = resource.render_process_host_id;
-      entry.render_view_id = resource.render_view_id;
-      entry.domain = net::RegistryControlledDomainService::GetDomainAndRegistry(
-            resource.url);
-      entry.result = resource.threat_type;
-      white_listed_entries_.push_back(entry);
+      BrowserThread::PostTask(
+          BrowserThread::UI,
+          FROM_HERE,
+          base::Bind(&SafeBrowsingService::UpdateWhitelist, this, resource));
     }
   }
 }
@@ -474,65 +510,21 @@ void SafeBrowsingService::OnNewMacKeys(const std::string& client_key,
   }
 }
 
-void SafeBrowsingService::OnEnable(bool enabled) {
-  if (enabled)
-    Start();
-  else
-    ShutDown();
-}
-
 // static
 void SafeBrowsingService::RegisterPrefs(PrefService* prefs) {
   prefs->RegisterStringPref(prefs::kSafeBrowsingClientKey, "");
   prefs->RegisterStringPref(prefs::kSafeBrowsingWrappedKey, "");
 }
 
-void SafeBrowsingService::CloseDatabase() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  // Cases to avoid:
-  //  * If |closing_database_| is true, continuing will queue up a second
-  //    request, |closing_database_| will be reset after handling the first
-  //    request, and if any functions on the db thread recreate the database, we
-  //    could start using it on the IO thread and then have the second request
-  //    handler delete it out from under us.
-  //  * If |database_| is NULL, then either no creation request is in flight, in
-  //    which case we don't need to do anything, or one is in flight, in which
-  //    case the database will be recreated before our deletion request is
-  //    handled, and could be used on the IO thread in that time period, leading
-  //    to the same problem as above.
-  //  * If |queued_checks_| is non-empty and |database_| is non-NULL, we're
-  //    about to be called back (in DatabaseLoadComplete()).  This will call
-  //    CheckUrl(), which will want the database.  Closing the database here
-  //    would lead to an infinite loop in DatabaseLoadComplete(), and even if it
-  //    didn't, it would be pointless since we'd just want to recreate.
-  //
-  // The first two cases above are handled by checking DatabaseAvailable().
-  if (!DatabaseAvailable() || !queued_checks_.empty())
-    return;
-
-  closing_database_ = true;
-  if (safe_browsing_thread_.get()) {
-    safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &SafeBrowsingService::OnCloseDatabase));
-  }
-}
-
 void SafeBrowsingService::ResetDatabase() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(enabled_);
-  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &SafeBrowsingService::OnResetDatabase));
+  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
+      &SafeBrowsingService::OnResetDatabase, this));
 }
 
 void SafeBrowsingService::LogPauseDelay(base::TimeDelta time) {
   UMA_HISTOGRAM_LONG_TIMES("SB2.Delay", time);
-}
-
-SafeBrowsingService::~SafeBrowsingService() {
-  // We should have already been shut down.  If we're still enabled, then the
-  // database isn't going to be closed properly, which could lead to corruption.
-  DCHECK(!enabled_);
 }
 
 void SafeBrowsingService::OnIOInitialize(
@@ -540,7 +532,17 @@ void SafeBrowsingService::OnIOInitialize(
     const std::string& wrapped_key,
     net::URLRequestContextGetter* request_context_getter) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (enabled_)
+    return;
+  DCHECK(!safe_browsing_thread_.get());
+  safe_browsing_thread_.reset(new base::Thread("Chrome_SafeBrowsingThread"));
+  if (!safe_browsing_thread_->Start())
+    return;
   enabled_ = true;
+
+  registrar_.reset(new content::NotificationRegistrar);
+  registrar_->Add(this, content::NOTIFICATION_PURGE_MEMORY,
+                  content::NotificationService::AllSources());
 
   MakeDatabaseAvailable();
 
@@ -591,6 +593,8 @@ void SafeBrowsingService::OnIOShutdown() {
 
   enabled_ = false;
 
+  registrar_.reset();
+
   // This cancels all in-flight GetHash requests.
   delete protocol_manager_;
   protocol_manager_ = NULL;
@@ -638,8 +642,6 @@ void SafeBrowsingService::OnIOShutdown() {
       check->result = SAFE;
       check->client->OnSafeBrowsingResult(*check);
     }
-    if (check->timeout_task)
-      check->timeout_task->Cancel();
   }
   STLDeleteElements(&checks_);
 
@@ -656,9 +658,41 @@ bool SafeBrowsingService::MakeDatabaseAvailable() {
   DCHECK(enabled_);
   if (DatabaseAvailable())
     return true;
-  safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::GetDatabase));
+  safe_browsing_thread_->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(base::IgnoreResult(&SafeBrowsingService::GetDatabase), this));
   return false;
+}
+
+void SafeBrowsingService::CloseDatabase() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
+  // Cases to avoid:
+  //  * If |closing_database_| is true, continuing will queue up a second
+  //    request, |closing_database_| will be reset after handling the first
+  //    request, and if any functions on the db thread recreate the database, we
+  //    could start using it on the IO thread and then have the second request
+  //    handler delete it out from under us.
+  //  * If |database_| is NULL, then either no creation request is in flight, in
+  //    which case we don't need to do anything, or one is in flight, in which
+  //    case the database will be recreated before our deletion request is
+  //    handled, and could be used on the IO thread in that time period, leading
+  //    to the same problem as above.
+  //  * If |queued_checks_| is non-empty and |database_| is non-NULL, we're
+  //    about to be called back (in DatabaseLoadComplete()).  This will call
+  //    CheckUrl(), which will want the database.  Closing the database here
+  //    would lead to an infinite loop in DatabaseLoadComplete(), and even if it
+  //    didn't, it would be pointless since we'd just want to recreate.
+  //
+  // The first two cases above are handled by checking DatabaseAvailable().
+  if (!DatabaseAvailable() || !queued_checks_.empty())
+    return;
+
+  closing_database_ = true;
+  if (safe_browsing_thread_.get()) {
+    safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
+        base::Bind(&SafeBrowsingService::OnCloseDatabase, this));
+  }
 }
 
 SafeBrowsingDatabase* SafeBrowsingService::GetDatabase() {
@@ -675,7 +709,8 @@ SafeBrowsingDatabase* SafeBrowsingService::GetDatabase() {
 
   SafeBrowsingDatabase* database =
       SafeBrowsingDatabase::Create(enable_download_protection_,
-                                   enable_csd_whitelist_);
+                                   enable_csd_whitelist_,
+                                   enable_download_whitelist_);
 
   database->Init(path);
   {
@@ -687,7 +722,7 @@ SafeBrowsingDatabase* SafeBrowsingService::GetDatabase() {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::DatabaseLoadComplete));
+      base::Bind(&SafeBrowsingService::DatabaseLoadComplete, this));
 
   UMA_HISTOGRAM_TIMES("SB2.DatabaseOpen", base::TimeTicks::Now() - before);
   return database_;
@@ -753,9 +788,8 @@ void SafeBrowsingService::GetAllChunksFromDatabase() {
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this, &SafeBrowsingService::OnGetAllChunksFromDatabase, lists,
-          database_error));
+      base::Bind(&SafeBrowsingService::OnGetAllChunksFromDatabase,
+                 this, lists, database_error));
 }
 
 void SafeBrowsingService::OnGetAllChunksFromDatabase(
@@ -810,7 +844,7 @@ void SafeBrowsingService::HandleChunkForDatabase(
   }
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::OnChunkInserted));
+      base::Bind(&SafeBrowsingService::OnChunkInserted, this));
 }
 
 void SafeBrowsingService::DeleteChunks(
@@ -844,11 +878,6 @@ SafeBrowsingService::UrlCheckResult SafeBrowsingService::GetResultFromListname(
   return SAFE;
 }
 
-void SafeBrowsingService::NotifyClientBlockingComplete(Client* client,
-                                                       bool proceed) {
-  client->OnBlockingPageComplete(proceed);
-}
-
 void SafeBrowsingService::DatabaseUpdateFinished(bool update_succeeded) {
   DCHECK_EQ(MessageLoop::current(), safe_browsing_thread_->message_loop());
   GetDatabase()->UpdateFinished(update_succeeded);
@@ -858,10 +887,6 @@ void SafeBrowsingService::DatabaseUpdateFinished(bool update_succeeded) {
 
 void SafeBrowsingService::Start() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!safe_browsing_thread_.get());
-  safe_browsing_thread_.reset(new base::Thread("Chrome_SafeBrowsingThread"));
-  if (!safe_browsing_thread_->Start())
-    return;
 
   // Retrieve client MAC keys.
   PrefService* local_state = g_browser_process->local_state();
@@ -874,33 +899,41 @@ void SafeBrowsingService::Start() {
       local_state->GetString(prefs::kSafeBrowsingWrappedKey);
   }
 
-  // We will issue network fetches using the default profile's request context.
+  // We will issue network fetches using the system request context.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter(
-      GetDefaultProfile()->GetRequestContext());
+    g_browser_process->system_request_context());
 
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
   enable_download_protection_ =
       !cmdline->HasSwitch(switches::kSbDisableDownloadProtection);
 
   // We only download the csd-whitelist if client-side phishing detection is
-  // enabled and if the user has opted in with stats collection.  Note: we
-  // cannot check whether the metrics_service() object is created because it
-  // may be initialized after this method is called.
+  // enabled.
 #ifdef OS_CHROMEOS
   // Client-side detection is disabled on ChromeOS for now, so don't bother
   // downloading the whitelist.
   enable_csd_whitelist_ = false;
 #else
   enable_csd_whitelist_ =
-      (!cmdline->HasSwitch(switches::kDisableClientSidePhishingDetection) &&
-       local_state && local_state->GetBoolean(prefs::kMetricsReportingEnabled));
+      !cmdline->HasSwitch(switches::kDisableClientSidePhishingDetection);
 #endif
+
+  // TODO(noelutz): remove this boolean variable since it should always be true
+  // if SafeBrowsing is enabled.  Unfortunately, we have no test data for this
+  // list right now.  This means that we need to be able to disable this list
+  // for the SafeBrowsing test to pass.
+  enable_download_whitelist_ = enable_csd_whitelist_;
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this, &SafeBrowsingService::OnIOInitialize, client_key, wrapped_key,
-          request_context_getter));
+      base::Bind(&SafeBrowsingService::OnIOInitialize,
+                 this, client_key, wrapped_key, request_context_getter));
+}
+
+void SafeBrowsingService::Stop() {
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&SafeBrowsingService::OnIOShutdown, this));
 }
 
 void SafeBrowsingService::OnCloseDatabase() {
@@ -988,30 +1021,41 @@ bool SafeBrowsingService::HandleOneCheck(
 
 void SafeBrowsingService::DoDisplayBlockingPage(
     const UnsafeResource& resource) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Check if the user has already ignored our warning for this render_view
+  // and domain.
+  if (IsWhitelisted(resource)) {
+    if (!resource.callback.is_null()) {
+      BrowserThread::PostTask(
+          BrowserThread::IO, FROM_HERE, base::Bind(resource.callback, true));
+    }
+    return;
+  }
+
   // The tab might have been closed.
-  TabContents* wc =
-      tab_util::GetTabContentsByID(resource.render_process_host_id,
+  WebContents* web_contents =
+      tab_util::GetWebContentsByID(resource.render_process_host_id,
                                    resource.render_view_id);
 
-  if (!wc) {
+  if (!web_contents) {
     // The tab is gone and we did not have a chance at showing the interstitial.
-    // Just act as "Don't Proceed" was chosen.
+    // Just act as if "Don't Proceed" were chosen.
     std::vector<UnsafeResource> resources;
     resources.push_back(resource);
     BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this, &SafeBrowsingService::OnBlockingPageDone, resources, false));
+      base::Bind(&SafeBrowsingService::OnBlockingPageDone,
+                 this, resources, false));
     return;
   }
 
-  if (resource.threat_type != SafeBrowsingService::SAFE && CanReportStats()) {
-    GURL page_url = wc->GetURL();
+  if (resource.threat_type != SafeBrowsingService::SAFE &&
+      CanReportStats()) {
+    GURL page_url = web_contents->GetURL();
     GURL referrer_url;
-    NavigationEntry* entry = wc->controller().GetActiveEntry();
+    NavigationEntry* entry = web_contents->GetController().GetActiveEntry();
     if (entry)
-      referrer_url = entry->referrer();
-    bool is_subresource = resource.resource_type != ResourceType::MAIN_FRAME;
+      referrer_url = entry->GetReferrer().url;
 
     // When the malicious url is on the main frame, and resource.original_url
     // is not the same as the resource.url, that means we have a redirect from
@@ -1019,16 +1063,19 @@ void SafeBrowsingService::DoDisplayBlockingPage(
     // Also, at this point, page_url points to the _previous_ page that we
     // were on. We replace page_url with resource.original_url and referrer
     // with page_url.
-    if (!is_subresource &&
+    if (!resource.is_subresource &&
         !resource.original_url.is_empty() &&
         resource.original_url != resource.url) {
       referrer_url = page_url;
       page_url = resource.original_url;
     }
-    ReportSafeBrowsingHit(resource.url, page_url, referrer_url, is_subresource,
-                          resource.threat_type, std::string() /* post_data */);
+    ReportSafeBrowsingHit(resource.url, page_url, referrer_url,
+                          resource.is_subresource, resource.threat_type,
+                          std::string() /* post_data */);
   }
-
+  if (resource.threat_type != SafeBrowsingService::SAFE) {
+    FOR_EACH_OBSERVER(Observer, observer_list_, OnSafeBrowsingHit(resource));
+  }
   SafeBrowsingBlockingPage::ShowBlockingPage(this, resource);
 }
 
@@ -1047,15 +1094,19 @@ void SafeBrowsingService::ReportSafeBrowsingHit(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this,
-          &SafeBrowsingService::ReportSafeBrowsingHitOnIOThread,
-          malicious_url,
-          page_url,
-          referrer_url,
-          is_subresource,
-          threat_type,
-          post_data));
+      base::Bind(&SafeBrowsingService::ReportSafeBrowsingHitOnIOThread, this,
+                 malicious_url, page_url, referrer_url, is_subresource,
+                 threat_type, post_data));
+}
+
+void SafeBrowsingService::AddObserver(Observer* observer) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  observer_list_.AddObserver(observer);
+}
+
+void SafeBrowsingService::RemoveObserver(Observer* observer) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  observer_list_.RemoveObserver(observer);
 }
 
 void SafeBrowsingService::ReportSafeBrowsingHitOnIOThread(
@@ -1098,9 +1149,7 @@ void SafeBrowsingService::CheckDownloadHashOnSBThread(
     check->result = SAFE;
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(this,
-                          &SafeBrowsingService::CheckDownloadHashDone,
-                          check));
+        base::Bind(&SafeBrowsingService::CheckDownloadHashDone, this, check));
     return;
   }
 
@@ -1108,7 +1157,7 @@ void SafeBrowsingService::CheckDownloadHashOnSBThread(
   check->prefix_hits.push_back(check->full_hash->prefix);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::OnCheckDone, check));
+      base::Bind(&SafeBrowsingService::OnCheckDone, this, check));
 }
 
 void SafeBrowsingService::CheckDownloadUrlOnSBThread(SafeBrowsingCheck* check) {
@@ -1122,9 +1171,7 @@ void SafeBrowsingService::CheckDownloadUrlOnSBThread(SafeBrowsingCheck* check) {
     check->result = SAFE;
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(this,
-                          &SafeBrowsingService::CheckDownloadUrlDone,
-                          check));
+        base::Bind(&SafeBrowsingService::CheckDownloadUrlDone, this, check));
     return;
   }
 
@@ -1133,7 +1180,7 @@ void SafeBrowsingService::CheckDownloadUrlOnSBThread(SafeBrowsingCheck* check) {
   check->prefix_hits = prefix_hits;
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SafeBrowsingService::OnCheckDone, check));
+      base::Bind(&SafeBrowsingService::OnCheckDone, this, check));
 }
 
 void SafeBrowsingService::TimeoutCallback(SafeBrowsingCheck* check) {
@@ -1149,7 +1196,6 @@ void SafeBrowsingService::TimeoutCallback(SafeBrowsingCheck* check) {
     check->client->OnSafeBrowsingResult(*check);
     check->client = NULL;
   }
-  check->timeout_task = NULL;
 }
 
 void SafeBrowsingService::CheckDownloadUrlDone(SafeBrowsingCheck* check) {
@@ -1173,26 +1219,142 @@ void SafeBrowsingService::SafeBrowsingCheckDone(SafeBrowsingCheck* check) {
   DCHECK(checks_.find(check) != checks_.end());
   if (check->client)
     check->client->OnSafeBrowsingResult(*check);
-  if (check->timeout_task)
-    check->timeout_task->Cancel();
   checks_.erase(check);
   delete check;
 }
 
 void SafeBrowsingService::StartDownloadCheck(SafeBrowsingCheck* check,
                                              Client* client,
-                                             CancelableTask* task,
+                                             const base::Closure& task,
                                              int64 timeout_ms) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   check->client = client;
   check->result = SAFE;
   check->is_download = true;
-  check->timeout_task =
-      NewRunnableMethod(this, &SafeBrowsingService::TimeoutCallback, check);
+  check->timeout_factory_.reset(
+      new base::WeakPtrFactory<SafeBrowsingService>(this));
   checks_.insert(check);
 
   safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, task);
 
-  MessageLoop::current()->PostDelayedTask(
-      FROM_HERE, check->timeout_task, timeout_ms);
+  MessageLoop::current()->PostDelayedTask(FROM_HERE,
+      base::Bind(&SafeBrowsingService::TimeoutCallback,
+                 check->timeout_factory_->GetWeakPtr(), check),
+      base::TimeDelta::FromMilliseconds(timeout_ms));
+}
+
+void SafeBrowsingService::UpdateWhitelist(const UnsafeResource& resource) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Whitelist this domain and warning type for the given tab.
+  WhiteListedEntry entry;
+  entry.render_process_host_id = resource.render_process_host_id;
+  entry.render_view_id = resource.render_view_id;
+  entry.domain = net::RegistryControlledDomainService::GetDomainAndRegistry(
+      resource.url);
+  entry.result = resource.threat_type;
+  white_listed_entries_.push_back(entry);
+}
+
+void SafeBrowsingService::Observe(int type,
+                                  const content::NotificationSource& source,
+                                  const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_PROFILE_CREATED: {
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+      Profile* profile = content::Source<Profile>(source).ptr();
+      if (!profile->IsOffTheRecord())
+        AddPrefService(profile->GetPrefs());
+      break;
+    }
+    case chrome::NOTIFICATION_PROFILE_DESTROYED: {
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+      Profile* profile = content::Source<Profile>(source).ptr();
+      if (!profile->IsOffTheRecord())
+        RemovePrefService(profile->GetPrefs());
+      break;
+    }
+    case chrome::NOTIFICATION_PREF_CHANGED: {
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+      std::string* pref = content::Details<std::string>(details).ptr();
+      DCHECK(*pref == prefs::kSafeBrowsingEnabled);
+      RefreshState();
+      break;
+    }
+    case content::NOTIFICATION_PURGE_MEMORY:
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+      CloseDatabase();
+      break;
+    default:
+      NOTREACHED();
+  }
+}
+
+bool SafeBrowsingService::IsWhitelisted(const UnsafeResource& resource) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  // Check if the user has already ignored our warning for this render_view
+  // and domain.
+  for (size_t i = 0; i < white_listed_entries_.size(); ++i) {
+    const WhiteListedEntry& entry = white_listed_entries_[i];
+    if (entry.render_process_host_id == resource.render_process_host_id &&
+        entry.render_view_id == resource.render_view_id &&
+        // Threat type must be the same or in the case of phishing they can
+        // either be client-side phishing URL or a SafeBrowsing phishing URL.
+        // If we show one type of phishing warning we don't want to show a
+        // second phishing warning.
+        (entry.result == resource.threat_type ||
+         (entry.result == URL_PHISHING &&
+          resource.threat_type == CLIENT_SIDE_PHISHING_URL) ||
+         (entry.result == CLIENT_SIDE_PHISHING_URL &&
+          resource.threat_type == URL_PHISHING))  &&
+        entry.domain ==
+        net::RegistryControlledDomainService::GetDomainAndRegistry(
+            resource.url)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void SafeBrowsingService::AddPrefService(PrefService* pref_service) {
+  DCHECK(prefs_map_.find(pref_service) == prefs_map_.end());
+  PrefChangeRegistrar* registrar = new PrefChangeRegistrar();
+  registrar->Init(pref_service);
+  registrar->Add(prefs::kSafeBrowsingEnabled, this);
+  prefs_map_[pref_service] = registrar;
+  RefreshState();
+}
+
+void SafeBrowsingService::RemovePrefService(PrefService* pref_service) {
+  if (prefs_map_.find(pref_service) != prefs_map_.end()) {
+    delete prefs_map_[pref_service];
+    prefs_map_.erase(pref_service);
+    RefreshState();
+  } else {
+    NOTREACHED();
+  }
+}
+
+void SafeBrowsingService::RefreshState() {
+  // Check if any profile requires the service to be active.
+  bool enable = false;
+  std::map<PrefService*, PrefChangeRegistrar*>::iterator iter;
+  for (iter = prefs_map_.begin(); iter != prefs_map_.end(); ++iter) {
+    if (iter->first->GetBoolean(prefs::kSafeBrowsingEnabled)) {
+      enable = true;
+      break;
+    }
+  }
+
+  if (enable)
+    Start();
+  else
+    Stop();
+
+  if (csd_service_.get())
+    csd_service_->SetEnabledAndRefreshState(enable);
+  if (download_service_.get()) {
+    download_service_->SetEnabled(
+        enable && !CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kDisableImprovedDownloadProtection));
+  }
 }

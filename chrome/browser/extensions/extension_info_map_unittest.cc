@@ -2,14 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/json/json_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/json_value_serializer.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+
+using content::BrowserThread;
+using WebKit::WebSecurityOrigin;
+using WebKit::WebString;
 
 namespace keys = extension_manifest_keys;
 
@@ -24,8 +30,8 @@ class ExtensionInfoMapTest : public testing::Test {
 
  private:
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread io_thread_;
 };
 
 // Returns a barebones test Extension object with the given name.
@@ -84,9 +90,9 @@ TEST_F(ExtensionInfoMapTest, RefCounting) {
   EXPECT_TRUE(extension3->HasOneRef());
 
   // Add a ref to each extension and give it to the info map.
-  info_map->AddExtension(extension1);
-  info_map->AddExtension(extension2);
-  info_map->AddExtension(extension3);
+  info_map->AddExtension(extension1, base::Time(), false);
+  info_map->AddExtension(extension2, base::Time(), false);
+  info_map->AddExtension(extension3, base::Time(), false);
 
   // Release extension1, and the info map should have the only ref.
   const Extension* weak_extension1 = extension1;
@@ -94,7 +100,8 @@ TEST_F(ExtensionInfoMapTest, RefCounting) {
   EXPECT_TRUE(weak_extension1->HasOneRef());
 
   // Remove extension2, and the extension2 object should have the only ref.
-  info_map->RemoveExtension(extension2->id(), UnloadedExtensionInfo::UNINSTALL);
+  info_map->RemoveExtension(
+      extension2->id(), extension_misc::UNLOAD_REASON_UNINSTALL);
   EXPECT_TRUE(extension2->HasOneRef());
 
   // Delete the info map, and the extension3 object should have the only ref.
@@ -109,18 +116,12 @@ TEST_F(ExtensionInfoMapTest, Properties) {
   scoped_refptr<Extension> extension1(CreateExtension("extension1"));
   scoped_refptr<Extension> extension2(CreateExtension("extension2"));
 
-  info_map->AddExtension(extension1);
-  info_map->AddExtension(extension2);
+  info_map->AddExtension(extension1, base::Time(), false);
+  info_map->AddExtension(extension2, base::Time(), false);
 
-  EXPECT_EQ(extension1->name(),
-            info_map->GetNameForExtension(extension1->id()));
-  EXPECT_EQ(extension2->name(),
-            info_map->GetNameForExtension(extension2->id()));
-
-  EXPECT_EQ(extension1->path().value(),
-            info_map->GetPathForExtension(extension1->id()).value());
-  EXPECT_EQ(extension2->path().value(),
-            info_map->GetPathForExtension(extension2->id()).value());
+  EXPECT_EQ(2u, info_map->extensions().size());
+  EXPECT_EQ(extension1.get(), info_map->extensions().GetByID(extension1->id()));
+  EXPECT_EQ(extension2.get(), info_map->extensions().GetByID(extension2->id()));
 }
 
 // Tests CheckURLAccessToExtensionPermission given both extension and app URLs.
@@ -128,37 +129,51 @@ TEST_F(ExtensionInfoMapTest, CheckPermissions) {
   scoped_refptr<ExtensionInfoMap> info_map(new ExtensionInfoMap());
 
   scoped_refptr<Extension> app(LoadManifest("manifest_tests",
-                                         "valid_app.json"));
+                                            "valid_app.json"));
   scoped_refptr<Extension> extension(LoadManifest("manifest_tests",
-                                               "tabs_extension.json"));
+                                                  "tabs_extension.json"));
 
   GURL app_url("http://www.google.com/mail/foo.html");
+  WebSecurityOrigin app_origin = WebSecurityOrigin::create(
+      GURL("http://www.google.com/mail/foo.html"));
   ASSERT_TRUE(app->is_app());
   ASSERT_TRUE(app->web_extent().MatchesURL(app_url));
 
-  info_map->AddExtension(app);
-  info_map->AddExtension(extension);
+  info_map->AddExtension(app, base::Time(), false);
+  info_map->AddExtension(extension, base::Time(), false);
 
   // The app should have the notifications permission, either from a
   // chrome-extension URL or from its web extent.
-  EXPECT_TRUE(info_map->CheckURLAccessToExtensionPermission(
-      app->GetResourceURL("a.html"), Extension::kNotificationPermission));
-  EXPECT_TRUE(info_map->CheckURLAccessToExtensionPermission(
-      app_url, Extension::kNotificationPermission));
-  EXPECT_FALSE(info_map->CheckURLAccessToExtensionPermission(
-      app_url, Extension::kTabPermission));
+  const Extension* match = info_map->extensions().GetExtensionOrAppByURL(
+      ExtensionURLInfo(app_origin, app->GetResourceURL("a.html")));
+  EXPECT_TRUE(match &&
+      match->HasAPIPermission(ExtensionAPIPermission::kNotification));
+  match = info_map->extensions().GetExtensionOrAppByURL(
+      ExtensionURLInfo(app_origin, app_url));
+  EXPECT_TRUE(match &&
+      match->HasAPIPermission(ExtensionAPIPermission::kNotification));
+  EXPECT_FALSE(match &&
+      match->HasAPIPermission(ExtensionAPIPermission::kTab));
 
   // The extension should have the tabs permission.
-  EXPECT_TRUE(info_map->CheckURLAccessToExtensionPermission(
-      extension->GetResourceURL("a.html"), Extension::kTabPermission));
-  EXPECT_FALSE(info_map->CheckURLAccessToExtensionPermission(
-      extension->GetResourceURL("a.html"), Extension::kNotificationPermission));
+  match = info_map->extensions().GetExtensionOrAppByURL(
+      ExtensionURLInfo(app_origin, extension->GetResourceURL("a.html")));
+  EXPECT_TRUE(match &&
+      match->HasAPIPermission(ExtensionAPIPermission::kTab));
+  EXPECT_FALSE(match &&
+      match->HasAPIPermission(ExtensionAPIPermission::kNotification));
 
   // Random URL should not have any permissions.
-  EXPECT_FALSE(info_map->CheckURLAccessToExtensionPermission(
-      GURL("http://evil.com/a.html"), Extension::kNotificationPermission));
-  EXPECT_FALSE(info_map->CheckURLAccessToExtensionPermission(
-      GURL("http://evil.com/a.html"), Extension::kTabPermission));
+  GURL evil_url("http://evil.com/a.html");
+  match = info_map->extensions().GetExtensionOrAppByURL(
+      ExtensionURLInfo(WebSecurityOrigin::create(evil_url), evil_url));
+  EXPECT_FALSE(match);
+
+  // Sandboxed origins should not have any permissions.
+  match = info_map->extensions().GetExtensionOrAppByURL(ExtensionURLInfo(
+      WebSecurityOrigin::createFromString(WebString::fromUTF8("null")),
+      app_url));
+  EXPECT_FALSE(match);
 }
 
 }  // namespace

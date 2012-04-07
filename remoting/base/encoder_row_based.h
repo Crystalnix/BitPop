@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,11 @@
 
 #include "remoting/base/encoder.h"
 #include "remoting/proto/video.pb.h"
-
-#include "ui/gfx/rect.h"
+#include "third_party/skia/include/core/SkRect.h"
 
 namespace remoting {
 
 class Compressor;
-class UpdateStreamPacket;
 
 // EncoderRowBased implements an Encoder using zlib or verbatim
 // compression. Zlib-based encoder must be created using
@@ -31,9 +29,10 @@ class EncoderRowBased : public Encoder {
 
   virtual ~EncoderRowBased();
 
-  virtual void Encode(scoped_refptr<CaptureData> capture_data,
-                      bool key_frame,
-                      DataAvailableCallback* data_available_callback);
+  virtual void Encode(
+      scoped_refptr<CaptureData> capture_data,
+      bool key_frame,
+      const DataAvailableCallback& data_available_callback) OVERRIDE;
 
  private:
   EncoderRowBased(Compressor* compressor, VideoPacketFormat::Encoding encoding);
@@ -41,10 +40,10 @@ class EncoderRowBased : public Encoder {
                   int packet_size);
 
   // Encode a single dirty rect using compressor.
-  void EncodeRect(const gfx::Rect& rect, bool last);
+  void EncodeRect(const SkIRect& rect, bool last);
 
   // Marks a packet as the first in a series of rectangle updates.
-  void PrepareUpdateStart(const gfx::Rect& rect, VideoPacket* packet);
+  void PrepareUpdateStart(const SkIRect& rect, VideoPacket* packet);
 
   // Retrieves a pointer to the output buffer in |update| used for storing the
   // encoded rectangle data.  Will resize the buffer to |size|.
@@ -59,10 +58,10 @@ class EncoderRowBased : public Encoder {
   scoped_ptr<Compressor> compressor_;
 
   scoped_refptr<CaptureData> capture_data_;
-  scoped_ptr<DataAvailableCallback> callback_;
+  DataAvailableCallback callback_;
 
   // The most recent screen size.
-  gfx::Size screen_size_;
+  SkISize screen_size_;
 
   int packet_size_;
 };

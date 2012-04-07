@@ -114,7 +114,7 @@ hb_utf16_script_run_next(unsigned *num_code_points, HB_ScriptItem *output,
     const HB_Script script = code_point_to_script(cp);
 
     if (script != current_script) {
-      if (current_script == init_script == HB_Script_Inherited) {
+      if (current_script == HB_Script_Inherited && init_script == HB_Script_Inherited) {
         // If we started off as inherited, we take whatever we can find.
         output->script = script;
         current_script = script;
@@ -264,24 +264,7 @@ HB_GetMirroredChar(HB_UChar16 ch) {
 }
 
 void *
-HB_Library_Resolve(const char *library, const char *symbol) {
+HB_Library_Resolve(const char *library, int version, const char *symbol) {
   abort();
   return NULL;
-}
-
-void *
-HB_TextCodecForMib(int mib) {
-  abort();
-  return NULL;
-}
-
-char *
-HB_TextCodec_ConvertFromUnicode(void *codec, const HB_UChar16 *unicode, hb_uint32 length, hb_uint32 *outputLength) {
-  abort();
-  return NULL;
-}
-
-void
-HB_TextCodec_FreeResult(char *v) {
-  abort();
 }

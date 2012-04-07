@@ -7,23 +7,10 @@
 #include "base/sync_socket.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/platform_file.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
-
-namespace {
-
-int32_t PlatformFileToInt(base::PlatformFile handle) {
-#if defined(OS_WIN)
-  return static_cast<int32_t>(reinterpret_cast<intptr_t>(handle));
-#elif defined(OS_POSIX)
-  return handle;
-#else
-  #error Not implemented.
-#endif
-}
-
-}  // namespace
 
 BrokerDispatcher::BrokerDispatcher(base::ProcessHandle remote_process_handle,
                                    PP_ConnectInstance_Func connect_instance)
@@ -57,26 +44,25 @@ bool BrokerDispatcher::OnMessageReceived(const IPC::Message& msg) {
 // Transfers ownership of the handle to the broker module.
 void BrokerDispatcher::OnMsgConnectToPlugin(
     PP_Instance instance,
-    IPC::PlatformFileForTransit handle) {
-  int32_t result = PP_OK;
+    IPC::PlatformFileForTransit handle,
+    int32_t* result) {
   if (handle == IPC::InvalidPlatformFileForTransit()) {
-    result = PP_ERROR_FAILED;
+    *result = PP_ERROR_FAILED;
   } else {
     base::SyncSocket::Handle socket_handle =
         IPC::PlatformFileForTransitToPlatformFile(handle);
 
     if (connect_instance_) {
-      result = connect_instance_(instance, PlatformFileToInt(socket_handle));
+      *result = connect_instance_(instance,
+                                  ppapi::PlatformFileToInt(socket_handle));
     } else {
-      result = PP_ERROR_FAILED;
+      *result = PP_ERROR_FAILED;
       // Close the handle since there is no other owner.
       // The easiest way to clean it up is to just put it in an object
       // and then close them. This failure case is not performance critical.
       base::SyncSocket temp_socket(socket_handle);
     }
   }
-
-  // TODO(ddorwin): Report result via IPC.
 }
 
 BrokerHostDispatcher::BrokerHostDispatcher(
@@ -85,6 +71,7 @@ BrokerHostDispatcher::BrokerHostDispatcher(
 }
 
 void BrokerHostDispatcher::OnChannelError() {
+  DVLOG(1) << "BrokerHostDispatcher::OnChannelError()";
   BrokerDispatcher::OnChannelError();  // Stop using the channel.
 
   // Tell the host about the crash so it can clean up and display notification.
@@ -99,6 +86,7 @@ BrokerSideDispatcher::BrokerSideDispatcher(
 }
 
 void BrokerSideDispatcher::OnChannelError() {
+  DVLOG(1) << "BrokerSideDispatcher::OnChannelError()";
   BrokerDispatcher::OnChannelError();
 
   // The renderer has crashed or exited. This channel and all instances
@@ -110,4 +98,4 @@ void BrokerSideDispatcher::OnChannelError() {
 
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

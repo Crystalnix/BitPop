@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <AudioToolbox/AudioQueue.h>
 #include <AudioToolbox/AudioFormat.h>
 
+#include "base/compiler_specific.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
 
@@ -19,14 +20,14 @@ class PCMQueueInAudioInputStream : public AudioInputStream {
  public:
   // Parameters as per AudioManager::MakeAudioInputStream.
   PCMQueueInAudioInputStream(AudioManagerMac* manager,
-                             AudioParameters params);
+                             const AudioParameters& params);
   virtual ~PCMQueueInAudioInputStream();
 
   // Implementation of AudioInputStream.
-  virtual bool Open();
-  virtual void Start(AudioInputCallback* callback);
-  virtual void Stop();
-  virtual void Close();
+  virtual bool Open() OVERRIDE;
+  virtual void Start(AudioInputCallback* callback) OVERRIDE;
+  virtual void Stop() OVERRIDE;
+  virtual void Close() OVERRIDE;
 
  private:
   // Issue the OnError to |callback_|;
@@ -66,6 +67,8 @@ class PCMQueueInAudioInputStream : public AudioInputStream {
   AudioQueueRef audio_queue_;
   // Size of each of the buffers in |audio_buffers_|
   uint32 buffer_size_bytes_;
+  // True iff Start() has been called successfully.
+  bool started_;
 
   DISALLOW_COPY_AND_ASSIGN(PCMQueueInAudioInputStream);
 };

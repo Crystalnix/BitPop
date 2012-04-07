@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/rand_util.h"
 #include "chrome/browser/sync/notifier/invalidation_util.h"
 #include "chrome/browser/sync/syncable/model_type.h"
+#include "google/cacheinvalidation/v2/invalidation-client.h"
 
 namespace sync_notifier {
 
@@ -19,19 +20,28 @@ RegistrationManager::PendingRegistrationInfo::PendingRegistrationInfo() {}
 RegistrationManager::RegistrationStatus::RegistrationStatus()
     : model_type(syncable::UNSPECIFIED),
       registration_manager(NULL),
-      state(invalidation::RegistrationState_UNREGISTERED) {}
+      enabled(true),
+      state(invalidation::InvalidationListener::UNREGISTERED) {}
 
 RegistrationManager::RegistrationStatus::~RegistrationStatus() {}
 
 void RegistrationManager::RegistrationStatus::DoRegister() {
   DCHECK_NE(model_type, syncable::UNSPECIFIED);
   DCHECK(registration_manager);
+  CHECK(enabled);
   // We might be called explicitly, so stop the timer manually and
   // reset the delay.
   registration_timer.Stop();
   delay = base::TimeDelta();
   registration_manager->DoRegisterType(model_type);
   DCHECK(!last_registration_request.is_null());
+}
+
+void RegistrationManager::RegistrationStatus::Disable() {
+  enabled = false;
+  state = invalidation::InvalidationListener::UNREGISTERED;
+  registration_timer.Stop();
+  delay = base::TimeDelta();
 }
 
 const int RegistrationManager::kInitialRegistrationDelaySeconds = 5;
@@ -60,13 +70,13 @@ RegistrationManager::~RegistrationManager() {
 }
 
 void RegistrationManager::SetRegisteredTypes(
-    const syncable::ModelTypeSet& types) {
+    syncable::ModelTypeSet types) {
   DCHECK(non_thread_safe_.CalledOnValidThread());
 
   for (int i = syncable::FIRST_REAL_MODEL_TYPE;
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     syncable::ModelType model_type = syncable::ModelTypeFromInt(i);
-    if (types.count(model_type) > 0) {
+    if (types.Has(model_type)) {
       if (!IsTypeRegistered(model_type)) {
         TryRegisterType(model_type, false /* is_retry */);
       }
@@ -81,9 +91,13 @@ void RegistrationManager::SetRegisteredTypes(
 void RegistrationManager::MarkRegistrationLost(
     syncable::ModelType model_type) {
   DCHECK(non_thread_safe_.CalledOnValidThread());
-  registration_statuses_[model_type].state =
-      invalidation::RegistrationState_UNREGISTERED;
-  TryRegisterType(model_type, true /* is_retry */);
+  RegistrationStatus* status = &registration_statuses_[model_type];
+  if (!status->enabled) {
+    return;
+  }
+  status->state = invalidation::InvalidationListener::UNREGISTERED;
+  bool is_retry = !status->last_registration_request.is_null();
+  TryRegisterType(model_type, is_retry);
 }
 
 void RegistrationManager::MarkAllRegistrationsLost() {
@@ -97,6 +111,13 @@ void RegistrationManager::MarkAllRegistrationsLost() {
   }
 }
 
+void RegistrationManager::DisableType(syncable::ModelType model_type) {
+  DCHECK(non_thread_safe_.CalledOnValidThread());
+  RegistrationStatus* status = &registration_statuses_[model_type];
+  LOG(INFO) << "Disabling " << syncable::ModelTypeToString(model_type);
+  status->Disable();
+}
+
 syncable::ModelTypeSet RegistrationManager::GetRegisteredTypes() const {
   DCHECK(non_thread_safe_.CalledOnValidThread());
   syncable::ModelTypeSet registered_types;
@@ -104,7 +125,7 @@ syncable::ModelTypeSet RegistrationManager::GetRegisteredTypes() const {
        i < syncable::MODEL_TYPE_COUNT; ++i) {
     syncable::ModelType model_type = syncable::ModelTypeFromInt(i);
     if (IsTypeRegistered(model_type)) {
-      registered_types.insert(model_type);
+      registered_types.Put(model_type);
     }
   }
   return registered_types;
@@ -174,6 +195,10 @@ void RegistrationManager::TryRegisterType(syncable::ModelType model_type,
                                           bool is_retry) {
   DCHECK(non_thread_safe_.CalledOnValidThread());
   RegistrationStatus* status = &registration_statuses_[model_type];
+  if (!status->enabled) {
+    // Disabled, so do nothing.
+    return;
+  }
   status->last_registration_attempt = base::Time::Now();
   if (is_retry) {
     // If we're a retry, we must have tried at least once before.
@@ -186,11 +211,11 @@ void RegistrationManager::TryRegisterType(syncable::ModelType model_type,
     base::TimeDelta delay =
         (status->delay <= base::TimeDelta()) ?
         base::TimeDelta() : status->delay;
-    VLOG(2) << "Registering "
-            << syncable::ModelTypeToString(model_type) << " in "
-            << delay.InMilliseconds() << " ms";
+    DVLOG(2) << "Registering "
+             << syncable::ModelTypeToString(model_type) << " in "
+             << delay.InMilliseconds() << " ms";
     status->registration_timer.Stop();
-    status->registration_timer.Start(
+    status->registration_timer.Start(FROM_HERE,
         delay, status, &RegistrationManager::RegistrationStatus::DoRegister);
     double next_delay_seconds =
         CalculateBackoff(static_cast<double>(status->next_delay.InSeconds()),
@@ -202,12 +227,12 @@ void RegistrationManager::TryRegisterType(syncable::ModelType model_type,
                          kRegistrationDelayMaxJitter);
     status->next_delay =
         base::TimeDelta::FromSeconds(static_cast<int64>(next_delay_seconds));
-    VLOG(2) << "New next delay for "
-            << syncable::ModelTypeToString(model_type) << " is "
-            << status->next_delay.InSeconds() << " seconds";
+    DVLOG(2) << "New next delay for "
+             << syncable::ModelTypeToString(model_type) << " is "
+             << status->next_delay.InSeconds() << " seconds";
   } else {
-    VLOG(2) << "Not a retry -- registering "
-            << syncable::ModelTypeToString(model_type) << " immediately";
+    DVLOG(2) << "Not a retry -- registering "
+             << syncable::ModelTypeToString(model_type) << " immediately";
     status->delay = base::TimeDelta();
     status->next_delay = base::TimeDelta();
     status->DoRegister();
@@ -223,7 +248,7 @@ void RegistrationManager::DoRegisterType(syncable::ModelType model_type) {
   }
   invalidation_client_->Register(object_id);
   RegistrationStatus* status = &registration_statuses_[model_type];
-  status->state = invalidation::RegistrationState_REGISTERED;
+  status->state = invalidation::InvalidationListener::REGISTERED;
   status->last_registration_request = base::Time::Now();
 }
 
@@ -236,14 +261,14 @@ void RegistrationManager::UnregisterType(syncable::ModelType model_type) {
   }
   invalidation_client_->Unregister(object_id);
   RegistrationStatus* status = &registration_statuses_[model_type];
-  status->state = invalidation::RegistrationState_UNREGISTERED;
+  status->state = invalidation::InvalidationListener::UNREGISTERED;
 }
 
 bool RegistrationManager::IsTypeRegistered(
     syncable::ModelType model_type) const {
   DCHECK(non_thread_safe_.CalledOnValidThread());
   return registration_statuses_[model_type].state ==
-      invalidation::RegistrationState_REGISTERED;
+      invalidation::InvalidationListener::REGISTERED;
 }
 
 }  // namespace sync_notifier

@@ -6,7 +6,10 @@
 #define CONTENT_RENDERER_P2P_IPC_SOCKET_FACTORY_H_
 
 #include "base/basictypes.h"
+#include "content/common/content_export.h"
 #include "third_party/libjingle/source/talk/base/packetsocketfactory.h"
+
+namespace content {
 
 class P2PSocketDispatcher;
 
@@ -18,28 +21,31 @@ class P2PSocketDispatcher;
 // created on.
 class IpcPacketSocketFactory : public talk_base::PacketSocketFactory {
  public:
-  explicit IpcPacketSocketFactory(P2PSocketDispatcher* socket_dispatcher);
+  CONTENT_EXPORT explicit IpcPacketSocketFactory(
+      P2PSocketDispatcher* socket_dispatcher);
   virtual ~IpcPacketSocketFactory();
 
   virtual talk_base::AsyncPacketSocket* CreateUdpSocket(
       const talk_base::SocketAddress& local_address,
-      int min_port, int max_port);
+      int min_port, int max_port) OVERRIDE;
   virtual talk_base::AsyncPacketSocket* CreateServerTcpSocket(
       const talk_base::SocketAddress& local_address,
       int min_port,
       int max_port,
-      bool ssl);
+      bool ssl) OVERRIDE;
   virtual talk_base::AsyncPacketSocket* CreateClientTcpSocket(
       const talk_base::SocketAddress& local_address,
       const talk_base::SocketAddress& remote_address,
       const talk_base::ProxyInfo& proxy_info,
       const std::string& user_agent,
-      bool ssl);
+      bool ssl) OVERRIDE;
 
  private:
   P2PSocketDispatcher* socket_dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(IpcPacketSocketFactory);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_RENDERER_P2P_IPC_SOCKET_FACTORY_H_

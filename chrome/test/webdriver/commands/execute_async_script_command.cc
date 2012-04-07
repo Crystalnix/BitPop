@@ -6,8 +6,8 @@
 
 #include "base/values.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_session.h"
 
 namespace webdriver {
 
@@ -41,6 +41,7 @@ void ExecuteAsyncScriptCommand::ExecutePost(Response* const response) {
   Error* error = session_->ExecuteAsyncScript(
       session_->current_target(), script, args, &result);
   if (error) {
+    error->AddDetails("Script execution failed. Script: " + script);
     response->SetError(error);
     return;
   }

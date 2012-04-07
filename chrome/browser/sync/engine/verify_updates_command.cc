@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-//
 
 #include "chrome/browser/sync/engine/verify_updates_command.h"
 
+#include <string>
+
+#include "base/location.h"
 #include "chrome/browser/sync/engine/syncer.h"
 #include "chrome/browser/sync/engine/syncer_proto_util.h"
 #include "chrome/browser/sync/engine/syncer_types.h"
@@ -17,7 +19,6 @@
 namespace browser_sync {
 
 using syncable::ScopedDirLookup;
-using syncable::SyncName;
 using syncable::WriteTransaction;
 
 using syncable::GET_BY_ID;
@@ -26,21 +27,36 @@ using syncable::SYNCER;
 VerifyUpdatesCommand::VerifyUpdatesCommand() {}
 VerifyUpdatesCommand::~VerifyUpdatesCommand() {}
 
-void VerifyUpdatesCommand::ModelChangingExecuteImpl(
+std::set<ModelSafeGroup> VerifyUpdatesCommand::GetGroupsToChange(
+    const sessions::SyncSession& session) const {
+  std::set<ModelSafeGroup> groups_with_updates;
+
+  const GetUpdatesResponse& updates =
+      session.status_controller().updates_response().get_updates();
+  for (int i = 0; i < updates.entries().size(); i++) {
+    groups_with_updates.insert(
+        GetGroupForModelType(syncable::GetModelType(updates.entries(i)),
+                             session.routing_info()));
+  }
+
+  return groups_with_updates;
+}
+
+SyncerError VerifyUpdatesCommand::ModelChangingExecuteImpl(
     sessions::SyncSession* session) {
-  VLOG(1) << "Beginning Update Verification";
+  DVLOG(1) << "Beginning Update Verification";
   ScopedDirLookup dir(session->context()->directory_manager(),
                       session->context()->account_name());
   if (!dir.good()) {
     LOG(ERROR) << "Scoped dir lookup failed!";
-    return;
+    return DIRECTORY_LOOKUP_FAILED;
   }
-  WriteTransaction trans(dir, SYNCER, __FILE__, __LINE__);
-  sessions::StatusController* status = session->status_controller();
+  WriteTransaction trans(FROM_HERE, SYNCER, dir);
+  sessions::StatusController* status = session->mutable_status_controller();
   const GetUpdatesResponse& updates = status->updates_response().get_updates();
   int update_count = updates.entries().size();
 
-  VLOG(1) << update_count << " entries to verify";
+  DVLOG(1) << update_count << " entries to verify";
   for (int i = 0; i < update_count; i++) {
     const SyncEntity& update =
         *reinterpret_cast<const SyncEntity *>(&(updates.entries(i)));
@@ -56,6 +72,8 @@ void VerifyUpdatesCommand::ModelChangingExecuteImpl(
     if (update.deleted())
       status->increment_num_tombstone_updates_downloaded_by(1);
   }
+
+  return SYNCER_OK;
 }
 
 namespace {

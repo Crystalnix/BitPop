@@ -15,6 +15,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 
+#ifdef OS_MACOSX
+#include "chrome/browser/first_run/first_run.h"
+#include "chrome/browser/ui/cocoa/window_restore_utils.h"
+#endif
+
 namespace {
 
 // For historical reasons the enum and value registered in the prefs don't line
@@ -45,9 +50,23 @@ SessionStartupPref::Type PrefValueToType(int pref_value) {
 
 // static
 void SessionStartupPref::RegisterUserPrefs(PrefService* prefs) {
+  SessionStartupPref::Type type = browser_defaults::kDefaultSessionStartupType;
+
+#ifdef OS_MACOSX
+  // During first run the calling code relies on |DEFAULT| session preference
+  // value to avoid session restore.  That is respected here.
+  if (!first_run::IsChromeFirstRun()) {
+    // |DEFAULT| really means "Don't restore".  The actual default value could
+    // change, so explicitly set both.
+    if (restore_utils::IsWindowRestoreEnabled())
+      type = SessionStartupPref::LAST;
+    else
+      type = SessionStartupPref::DEFAULT;
+  }
+#endif
+
   prefs->RegisterIntegerPref(prefs::kRestoreOnStartup,
-                             TypeToPrefValue(
-                                 browser_defaults::kDefaultSessionStartupType),
+                             TypeToPrefValue(type),
                              PrefService::SYNCABLE_PREF);
   prefs->RegisterListPref(prefs::kURLsToRestoreOnStartup,
                           PrefService::SYNCABLE_PREF);

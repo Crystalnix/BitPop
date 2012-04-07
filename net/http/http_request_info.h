@@ -9,14 +9,14 @@
 #include <string>
 #include "base/memory/ref_counted.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_data.h"
 #include "net/http/http_request_headers.h"
 
 namespace net {
 
-struct NET_API HttpRequestInfo {
+struct NET_EXPORT HttpRequestInfo {
   enum RequestMotivation{
     // TODO(mbelshe): move these into Client Socket.
     PRECONNECT_MOTIVATED,  // Request was motivated by a prefetch.
@@ -32,9 +32,6 @@ struct NET_API HttpRequestInfo {
 
   // The requested URL.
   GURL url;
-
-  // The referring URL (if any).
-  GURL referrer;
 
   // The method to use (GET, POST, etc.).
   std::string method;

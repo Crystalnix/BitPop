@@ -5,11 +5,16 @@
 #include "chrome/browser/sync/glue/theme_model_associator.h"
 
 #include "base/basictypes.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/sync/engine/syncapi.h"
+#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
 #include "chrome/browser/sync/glue/theme_util.h"
+#include "chrome/browser/sync/internal_api/read_node.h"
+#include "chrome/browser/sync/internal_api/read_transaction.h"
+#include "chrome/browser/sync/internal_api/write_node.h"
+#include "chrome/browser/sync/internal_api/write_transaction.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/protocol/theme_specifics.pb.h"
 
@@ -34,11 +39,11 @@ ThemeModelAssociator::ThemeModelAssociator(
 
 ThemeModelAssociator::~ThemeModelAssociator() {}
 
-bool ThemeModelAssociator::AssociateModels() {
-  sync_api::WriteTransaction trans(sync_service_->GetUserShare());
+bool ThemeModelAssociator::AssociateModels(SyncError* error) {
+  sync_api::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
   sync_api::ReadNode root(&trans);
   if (!root.InitByTagLookup(kThemesTag)) {
-    LOG(ERROR) << kNoThemesFolderError;
+    error->Reset(FROM_HERE, kNoThemesFolderError, model_type());
     return false;
   }
 
@@ -61,7 +66,9 @@ bool ThemeModelAssociator::AssociateModels() {
     sync_api::WriteNode node(&trans);
     if (!node.InitUniqueByCreation(syncable::THEMES, root,
                                    kCurrentThemeClientTag)) {
-      LOG(ERROR) << "Could not create current theme node.";
+      error->Reset(FROM_HERE,
+                   "Could not create current theme node.",
+                   model_type());
       return false;
     }
     node.SetIsFolder(false);
@@ -73,7 +80,7 @@ bool ThemeModelAssociator::AssociateModels() {
   return true;
 }
 
-bool ThemeModelAssociator::DisassociateModels() {
+bool ThemeModelAssociator::DisassociateModels(SyncError* error) {
   // We don't maintain any association state, so nothing to do.
   return true;
 }
@@ -81,7 +88,7 @@ bool ThemeModelAssociator::DisassociateModels() {
 bool ThemeModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
   DCHECK(has_nodes);
   *has_nodes = false;
-  sync_api::ReadTransaction trans(sync_service_->GetUserShare());
+  sync_api::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
   sync_api::ReadNode root(&trans);
   if (!root.InitByTagLookup(kThemesTag)) {
     LOG(ERROR) << kNoThemesFolderError;
@@ -89,16 +96,16 @@ bool ThemeModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
   }
   // The sync model has user created nodes iff the themes folder has
   // any children.
-  *has_nodes = root.GetFirstChildId() != sync_api::kInvalidId;
+  *has_nodes = root.HasChildren();
   return true;
 }
 
 bool ThemeModelAssociator::CryptoReadyIfNecessary() {
   // We only access the cryptographer while holding a transaction.
-  sync_api::ReadTransaction trans(sync_service_->GetUserShare());
-  syncable::ModelTypeSet encrypted_types;
-  sync_service_->GetEncryptedDataTypes(&encrypted_types);
-  return encrypted_types.count(syncable::THEMES) == 0 ||
+  sync_api::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
+  const syncable::ModelTypeSet encrypted_types =
+      sync_api::GetEncryptedTypes(&trans);
+  return !encrypted_types.Has(syncable::THEMES) ||
          sync_service_->IsCryptographerReady(&trans);
 }
 

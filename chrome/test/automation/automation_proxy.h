@@ -12,11 +12,11 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/threading/platform_thread.h"
 #include "base/process_util.h"
-#include "base/time.h"
-#include "base/threading/thread.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/platform_thread.h"
+#include "base/threading/thread.h"
+#include "base/time.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/test/automation/automation_handle_tracker.h"
@@ -25,7 +25,7 @@
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sync_channel.h"
-#include "ui/base/message_box_flags.h"
+#include "ui/base/ui_base_types.h"
 #include "ui/gfx/native_widget_types.h"
 
 class BrowserProxy;
@@ -127,11 +127,10 @@ class AutomationProxy : public IPC::Channel::Listener,
   // Returns whether an app modal dialog window is showing right now (i.e., a
   // javascript alert), and what buttons it contains.
   bool GetShowingAppModalDialog(bool* showing_app_modal_dialog,
-      ui::MessageBoxFlags::DialogButton* button) WARN_UNUSED_RESULT;
+                                ui::DialogButton* button) WARN_UNUSED_RESULT;
 
   // Simulates a click on a dialog button. Synchronous.
-  bool ClickAppModalDialogButton(
-      ui::MessageBoxFlags::DialogButton button) WARN_UNUSED_RESULT;
+  bool ClickAppModalDialogButton(ui::DialogButton button) WARN_UNUSED_RESULT;
 
   // Block the thread until a modal dialog is displayed. Returns true on
   // success.
@@ -197,15 +196,16 @@ class AutomationProxy : public IPC::Channel::Listener,
   // sent.
   bool SavePackageShouldPromptUser(bool should_prompt) WARN_UNUSED_RESULT;
 
-  // Installs the extension crx. If |with_ui| is true an install confirmation
+  // Installs the extension. If |with_ui| is true an install confirmation
   // and notification UI is shown, otherwise the install is silent. Returns the
   // ExtensionProxy for the installed extension, or NULL on failure.
   // Note: Overinstalls and downgrades will return NULL.
-  scoped_refptr<ExtensionProxy> InstallExtension(const FilePath& crx_file,
+  scoped_refptr<ExtensionProxy> InstallExtension(const FilePath& extension_path,
                                                  bool with_ui);
 
-  // Asserts that the next extension test result is true.
-  void EnsureExtensionTestResult();
+  // Gets the next extension test result in |result|. Returns false if there
+  // was a problem sending the result querying RPC.
+  bool GetExtensionTestResult(bool* result, std::string* message);
 
   // Resets to the default theme. Returns true on success.
   bool ResetToDefaultTheme();
@@ -222,9 +222,24 @@ class AutomationProxy : public IPC::Channel::Listener,
                             const std::string& password) WARN_UNUSED_RESULT;
 #endif
 
-#if defined(OS_POSIX)
-  base::file_handle_mapping_vector fds_to_map() const;
-#endif
+  // Begin tracing specified categories on the browser instance. Blocks until
+  // browser acknowledges that tracing has begun (or failed if false is
+  // returned). |categories| is a comma-delimited list of category wildcards.
+  // A category can have an optional '-' prefix to make it an excluded category.
+  // Either all categories must be included or all must be excluded.
+  //
+  // Example: BeginTracing("test_MyTest*");
+  // Example: BeginTracing("test_MyTest*,test_OtherStuff");
+  // Example: BeginTracing("-excluded_category1,-excluded_category2");
+  //
+  // See base/event_trace.h for documentation of included and excluded
+  // categories.
+  bool BeginTracing(const std::string& categories) WARN_UNUSED_RESULT;
+
+  // End trace and collect the trace output as a json string.
+  bool EndTracing(std::string* json_trace_output) WARN_UNUSED_RESULT;
+
+  IPC::SyncChannel* channel();
 
   // AutomationMessageSender implementation.
   virtual bool Send(IPC::Message* message) WARN_UNUSED_RESULT;
@@ -272,6 +287,11 @@ class AutomationProxy : public IPC::Channel::Listener,
   void SetChannel(IPC::Channel* channel);
   void ResetChannel();
 
+  // See description above |channel_disconnected_on_failure_|.
+  bool channel_disconnected_on_failure() const {
+    return channel_disconnected_on_failure_;
+  }
+
  protected:
   template <class T> scoped_refptr<T> ProxyObjectFromHandle(int handle);
   void InitializeThread();
@@ -292,9 +312,6 @@ class AutomationProxy : public IPC::Channel::Listener,
   // The version of the automation provider we are communicating with.
   std::string server_version_;
 
-  // Used to guard against multiple hello messages being received.
-  int app_launch_signaled_;
-
   // Whether to perform a version check between the automation proxy and
   // the automation provider at connection time. Defaults to false, you can
   // set this to true if building the automation proxy into a module with
@@ -304,6 +321,9 @@ class AutomationProxy : public IPC::Channel::Listener,
   // If true, the proxy will disconnect the IPC channel on first failure
   // to send an IPC message. This helps avoid long timeouts in tests.
   bool disconnect_on_failure_;
+
+  // Set if disconnect_on_failure_ caused the connection to be dropped.
+  bool channel_disconnected_on_failure_;
 
   // Delay to let the browser execute the command.
   base::TimeDelta action_timeout_;

@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/browser/tab_contents/navigation_controller_impl.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/common/page_transition_types.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/common/page_transition_types.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "webkit/glue/webdropdata.h"
 
@@ -19,7 +19,7 @@ class RenderViewHostTest : public RenderViewHostTestHarness {
 TEST_F(RenderViewHostTest, FilterAbout) {
   rvh()->SendNavigate(1, GURL("about:cache"));
   ASSERT_TRUE(controller().GetActiveEntry());
-  EXPECT_EQ(GURL("about:blank"), controller().GetActiveEntry()->url());
+  EXPECT_EQ(GURL("about:blank"), controller().GetActiveEntry()->GetURL());
 }
 
 // Create a full screen popup RenderWidgetHost and View.
@@ -48,18 +48,19 @@ TEST_F(RenderViewHostTest, ResetUnloadOnReload) {
   //     fires the tab gets closed.
 
   NavigateAndCommit(url1);
-  controller().LoadURL(url2, GURL(), PageTransition::LINK);
+  controller().LoadURL(
+      url2, content::Referrer(), content::PAGE_TRANSITION_LINK, std::string());
   // Simulate the ClosePage call which is normally sent by the net::URLRequest.
   rvh()->ClosePage();
   // Needed so that navigations are not suspended on the RVH.
   rvh()->SendShouldCloseACK(true);
   contents()->Stop();
   controller().Reload(false);
-  EXPECT_FALSE(rvh()->is_waiting_for_unload_ack());
+  EXPECT_FALSE(rvh()->is_waiting_for_unload_ack_for_testing());
 }
 
 class MockDraggingRenderViewHostDelegateView
-    : public RenderViewHostDelegate::View {
+    : public content::RenderViewHostDelegate::View {
  public:
   virtual ~MockDraggingRenderViewHostDelegateView() {}
   virtual void CreateNewWindow(
@@ -92,19 +93,6 @@ class MockDraggingRenderViewHostDelegateView
   virtual void UpdateDragCursor(WebKit::WebDragOperation operation) {}
   virtual void GotFocus() {}
   virtual void TakeFocus(bool reverse) {}
-  virtual void LostCapture() {}
-  virtual void Activate() {}
-  virtual void Deactivate() {}
-  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut) {
-    return false;
-  }
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {}
-  virtual void HandleMouseMove() {}
-  virtual void HandleMouseDown() {}
-  virtual void HandleMouseLeave() {}
-  virtual void HandleMouseUp() {}
-  virtual void HandleMouseActivate() {}
   virtual void UpdatePreferredSize(const gfx::Size& pref_size) {}
 
   GURL drag_url() {
@@ -130,8 +118,8 @@ TEST_F(RenderViewHostTest, StartDragging) {
   drop_data.url = file_url;
   drop_data.html_base_url = file_url;
   rvh()->TestOnMsgStartDragging(drop_data);
-  EXPECT_TRUE(view_delegate.drag_url().is_empty());
-  EXPECT_TRUE(view_delegate.html_base_url().is_empty());
+  EXPECT_EQ(GURL("about:blank"), view_delegate.drag_url());
+  EXPECT_EQ(GURL("about:blank"), view_delegate.html_base_url());
 
   GURL http_url = GURL("http://www.domain.com/index.html");
   drop_data.url = http_url;
@@ -146,10 +134,17 @@ TEST_F(RenderViewHostTest, StartDragging) {
   rvh()->TestOnMsgStartDragging(drop_data);
   EXPECT_EQ(https_url, view_delegate.drag_url());
   EXPECT_EQ(https_url, view_delegate.html_base_url());
+
+  GURL javascript_url = GURL("javascript:alert('I am a bookmarklet')");
+  drop_data.url = javascript_url;
+  drop_data.html_base_url = http_url;
+  rvh()->TestOnMsgStartDragging(drop_data);
+  EXPECT_EQ(javascript_url, view_delegate.drag_url());
+  EXPECT_EQ(http_url, view_delegate.html_base_url());
 }
 
 // The test that follow trigger DCHECKS in debug build.
-#if defined(NDEBUG)
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
 
 // Test that when we fail to de-serialize a message, RenderViewHost calls the
 // ReceivedBadMessage() handler.
@@ -188,4 +183,4 @@ TEST_F(RenderViewHostTest, BadMessageHandlerInputEventAck) {
   EXPECT_EQ(1, process()->bad_msg_count());
 }
 
-#endif  // NDEBUG
+#endif

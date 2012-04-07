@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,11 @@
 #include <set>
 
 #include "base/basictypes.h"
+#include "content/common/content_export.h"
+
+namespace content {
+struct GlobalRequestID;
+}
 
 namespace net {
 class URLRequest;
@@ -17,22 +22,20 @@ class URLRequest;
 
 class ResourceDispatcherHostRequestInfo;
 class ResourceQueue;
-struct GlobalRequestID;
 
 // Makes decisions about delaying or not each net::URLRequest in the queue.
 // All methods are called on the IO thread.
-class ResourceQueueDelegate {
+class CONTENT_EXPORT ResourceQueueDelegate {
  public:
   // Gives the delegate a pointer to the queue object.
   virtual void Initialize(ResourceQueue* resource_queue) = 0;
 
   // Should return true if it wants the |request| to not be started at this
-  // point. To start the delayed request, ResourceQueue::StartDelayedRequest
-  // should be used.
+  // point. Use ResourceQueue::StartDelayedRequests to restart requests.
   virtual bool ShouldDelayRequest(
       net::URLRequest* request,
       const ResourceDispatcherHostRequestInfo& request_info,
-      const GlobalRequestID& request_id) = 0;
+      const content::GlobalRequestID& request_id) = 0;
 
   // Called just before ResourceQueue shutdown. After that, the delegate
   // should not use the ResourceQueue.
@@ -44,7 +47,7 @@ class ResourceQueueDelegate {
 
 // Makes it easy to delay starting URL requests until specified conditions are
 // met.
-class ResourceQueue {
+class CONTENT_EXPORT ResourceQueue {
  public:
   typedef std::set<ResourceQueueDelegate*> DelegateSet;
 
@@ -71,17 +74,17 @@ class ResourceQueue {
 
   // Tells the queue that the net::URLRequest object associated with
   // |request_id| is no longer valid.
-  void RemoveRequest(const GlobalRequestID& request_id);
+  void RemoveRequest(const content::GlobalRequestID& request_id);
 
-  // A delegate should call StartDelayedRequest when it wants to allow the
-  // request to start. If it was the last delegate that demanded the request
-  // to be delayed, the request will be started.
-  void StartDelayedRequest(ResourceQueueDelegate* delegate,
-                           const GlobalRequestID& request_id);
+  // A delegate should call StartDelayedRequests when it wants to allow all
+  // its delayed requests to start. If it was the last delegate that required
+  // a request to be delayed, that request will be started.
+  void StartDelayedRequests(ResourceQueueDelegate* delegate);
 
  private:
-  typedef std::map<GlobalRequestID, net::URLRequest*> RequestMap;
-  typedef std::map<GlobalRequestID, DelegateSet> InterestedDelegatesMap;
+  typedef std::map<content::GlobalRequestID, net::URLRequest*> RequestMap;
+  typedef std::map<content::GlobalRequestID, DelegateSet>
+      InterestedDelegatesMap;
 
   // The registered delegates. Will not change after the queue has been
   // initialized.

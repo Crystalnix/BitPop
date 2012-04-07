@@ -12,11 +12,11 @@
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/profiles/profile.h"
-#include "webkit/glue/password_form_dom_manager.h"
+#include "webkit/forms/password_form_dom_manager.h"
 
 using base::Time;
-using webkit_glue::PasswordForm;
-using webkit_glue::PasswordFormMap;
+using webkit::forms::PasswordForm;
+using webkit::forms::PasswordFormMap;
 
 PasswordFormManager::PasswordFormManager(Profile* profile,
                                          PasswordManager* password_manager,
@@ -293,10 +293,13 @@ void PasswordFormManager::OnRequestDone(int handle,
     return;
   }
 
-  // Proceed to autofill (note that we provide the choices but don't
-  // actually prefill a value if the ACTION paths don't match).
-  bool wait_for_username = observed_form_.action.GetWithEmptyPath() !=
-                           preferred_match_->action.GetWithEmptyPath();
+  // Proceed to autofill.
+  // Note that we provide the choices but don't actually prefill a value if
+  // either: (1) we are in Incognito mode, or (2) the ACTION paths don't match.
+  bool wait_for_username =
+      profile_->IsOffTheRecord() ||
+      observed_form_.action.GetWithEmptyPath() !=
+          preferred_match_->action.GetWithEmptyPath();
   if (wait_for_username)
     manager_action_ = kManagerActionNone;
   else

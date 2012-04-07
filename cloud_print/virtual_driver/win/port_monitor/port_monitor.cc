@@ -22,32 +22,10 @@
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
+#include "cloud_print/virtual_driver/virtual_driver_switches.h"
 #include "cloud_print/virtual_driver/win/port_monitor/spooler_win.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_consts.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_helpers.h"
-
-namespace switches {
-// These constants are duplicated from chrome/common/chrome_switches.cc
-// in order to avoid dependency problems.
-// TODO(abodenha@chromium.org) Reunify them in some sensible manner.
-
-// Used with kCloudPrintFile.  Tells Chrome to delete the file when
-// finished displaying the print dialog.
-const char kCloudPrintDeleteFile[]          = "cloud-print-delete-file";
-
-// Tells chrome to display the cloud print dialog and upload the
-// specified file for printing.
-const char kCloudPrintFile[]                = "cloud-print-file";
-
-// Used with kCloudPrintFile to specify a title for the resulting print
-// job.
-const char kCloudPrintJobTitle[]            = "cloud-print-job-title";
-
-// Specifies the mime type to be used when uploading data from the
-// file referenced by cloud-print-file.
-// Defaults to "application/pdf" if unspecified.
-const char kCloudPrintFileType[]            = "cloud-print-file-type";
-}
 
 namespace cloud_print {
 
@@ -230,10 +208,9 @@ bool LaunchPrintDialog(const string16& xps_path,
   command_line.AppendSwitchNative(switches::kCloudPrintJobTitle,
                                   job_title);
   command_line.AppendSwitch(switches::kCloudPrintDeleteFile);
-  base::LaunchAppAsUser(primary_token_scoped,
-                        command_line.command_line_string(),
-                        false,
-                        NULL);
+  base::LaunchOptions options;
+  options.as_user = primary_token_scoped;
+  base::LaunchProcess(command_line, options, NULL);
   return true;
 }
 
@@ -380,6 +357,16 @@ BOOL WINAPI Monitor2StartDocPort(HANDLE port_handle,
                                  DWORD,
                                  BYTE*) {
   LOG(INFO) << "Monitor2StartDocPort";
+  const wchar_t* kUsageKey = L"dr";
+  // Set appropriate key to 1 to let Omaha record usage.
+  base::win::RegKey key;
+  if (key.Create(HKEY_CURRENT_USER, kKeyLocation,
+                 KEY_SET_VALUE) != ERROR_SUCCESS) {
+    LOG(ERROR) << "Unable to open key to log usage";
+  }
+  if (key.WriteValue(kUsageKey, L"1") != ERROR_SUCCESS) {
+    LOG(ERROR) << "Unable to set usage key";
+  }
   if (port_handle == NULL) {
     LOG(ERROR) << "port_handle should not be NULL.";
     SetLastError(ERROR_INVALID_PARAMETER);

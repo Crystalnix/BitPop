@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,89 +6,78 @@
 #define CHROME_BROWSER_CHROMEOS_STATUS_CLOCK_MENU_BUTTON_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
-#include "chrome/browser/chromeos/cros/power_library.h"
 #include "chrome/browser/chromeos/status/status_area_button.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/prefs/pref_member.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_type.h"
-#include "chrome/browser/chromeos/system_access.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_types.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
 #include "unicode/calendar.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/menu/menu_delegate.h"
-#include "views/controls/menu/view_menu_delegate.h"
 
 namespace views {
-class MenuItemView;
+class MenuRunner;
 }
-
-namespace chromeos {
-
-class StatusAreaHost;
 
 // The clock menu button in the status area.
 // This button shows the current time.
 class ClockMenuButton : public StatusAreaButton,
                         public views::MenuDelegate,
                         public views::ViewMenuDelegate,
-                        public NotificationObserver,
-                        public PowerLibrary::Observer,
-                        public SystemAccess::Observer {
+                        public content::NotificationObserver {
  public:
-  explicit ClockMenuButton(StatusAreaHost* host);
+  explicit ClockMenuButton(StatusAreaButton::Delegate* delegate);
   virtual ~ClockMenuButton();
 
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
   // views::MenuDelegate implementation
-  virtual std::wstring GetLabel(int id) const OVERRIDE;
+  virtual string16 GetLabel(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
 
-  // Overridden from ResumeLibrary::Observer:
-  virtual void PowerChanged(PowerLibrary* obj) {}
-  virtual void SystemResumed();
+  // Initialize PrefChangeRegistrar with the current default profile.
+  void UpdateProfile();
 
-  // Overridden from SystemAccess::Observer:
-  virtual void TimezoneChanged(const icu::TimeZone& timezone);
-
-  // views::View
-  virtual void OnLocaleChanged() OVERRIDE;
-
-  // Updates the time on the menu button. Can be called by host if timezone
-  // changes.
+  // Updates the time on the menu button.
   void UpdateText();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
-
  protected:
-  virtual int horizontal_padding();
+  // StatusAreaButton implementation
+  virtual void SetMenuActive(bool active) OVERRIDE;
+  virtual int horizontal_padding() OVERRIDE;
+
+  // views::View implementation
+  virtual void OnLocaleChanged() OVERRIDE;
+
+  // views::ViewMenuDelegate implementation.
+  virtual void RunMenu(views::View* source, const gfx::Point& pt) OVERRIDE;
 
  private:
-  // views::ViewMenuDelegate implementation.
-  virtual void RunMenu(views::View* source, const gfx::Point& pt);
+  // Sets default use 24hour clock mode.
+  void SetUse24HourClock(bool use_24hour_clock);
 
-  // Create and initialize menu if not already present.
-  void EnsureMenu();
+  // Create menu and return menu runner.
+  views::MenuRunner* CreateMenu();
 
   // Updates text and schedules the timer to fire at the next minute interval.
   void UpdateTextAndSetNextTimer();
 
   base::OneShotTimer<ClockMenuButton> timer_;
+  PrefService* pref_service_;
+  scoped_ptr<PrefChangeRegistrar> registrar_;
 
-  // The clock menu.
-  // NOTE: we use a scoped_ptr here as menu calls into 'this' from the
-  // constructor.
-  scoped_ptr<views::MenuItemView> menu_;
-
-  PrefChangeRegistrar registrar_;
+  // Cached value for use_24hour_clock.
+  bool use_24hour_clock_;
 
   DISALLOW_COPY_AND_ASSIGN(ClockMenuButton);
 };
-
-}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_STATUS_CLOCK_MENU_BUTTON_H_

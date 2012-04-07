@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,6 +9,8 @@
 
 import gdb_helper
 
+from collections import defaultdict
+import hashlib
 import logging
 import optparse
 import os
@@ -24,16 +26,12 @@ import common
 # Global symbol table (yuck)
 TheAddressTable = None
 
-# These are functions (using C++ mangled names) that we look for in stack
-# traces. We don't show stack frames while pretty printing when they are below
-# any of the following:
-_TOP_OF_STACK_POINTS = [
-  # Don't show our testing framework.
-  "testing::Test::Run()",
-  "_ZN7testing4Test3RunEv",
-  # Also don't show the internals of libc/pthread.
-  "start_thread"
-]
+# These are regexps that define functions (using C++ mangled names)
+# we don't want to see in stack traces while pretty printing
+# or generating suppressions.
+# Just stop printing the stack/suppression frames when the current one
+# matches any of these.
+_BORING_CALLERS = common.BoringCallers(mangled=True, use_re_wildcards=True)
 
 def getTextOf(top_node, name):
   ''' Returns all text in all DOM nodes with a certain |name| that are children
@@ -94,9 +92,18 @@ def gatherFrames(node, source_dir):
       SRC_FILE_NAME       : getTextOf(frame, SRC_FILE_NAME),
       SRC_LINE            : getTextOf(frame, SRC_LINE)
     }
-    frames += [frame_dict]
-    if frame_dict[FUNCTION_NAME] in _TOP_OF_STACK_POINTS:
+
+    # Ignore this frame and all the following if it's a "boring" function.
+    enough_frames = False
+    for regexp in _BORING_CALLERS:
+      if re.match("^%s$" % regexp, frame_dict[FUNCTION_NAME]):
+        enough_frames = True
+        break
+    if enough_frames:
       break
+
+    frames += [frame_dict]
+
     global TheAddressTable
     if TheAddressTable != None and frame_dict[SRC_LINE] == "":
       # Try using gdb
@@ -109,7 +116,7 @@ class ValgrindError:
   ValgrindError is immutable and is hashed on its pretty printed output.
   '''
 
-  def __init__(self, source_dir, error_node, commandline):
+  def __init__(self, source_dir, error_node, commandline, testcase):
     ''' Copies all the relevant information out of the DOM and into object
     properties.
 
@@ -117,6 +124,7 @@ class ValgrindError:
       error_node: The <error></error> DOM node we're extracting from.
       source_dir: Prefix that should be stripped from the <dir> node.
       commandline: The command that was run under valgrind
+      testcase: The test case name, if known.
     '''
 
     # Valgrind errors contain one <what><stack> pair, plus an optional
@@ -188,6 +196,8 @@ class ValgrindError:
     self._backtraces = []
     self._suppression = None
     self._commandline = commandline
+    self._testcase = testcase
+    self._additional = []
 
     # Iterate through the nodes, parsing <what|auxwhat><stack> pairs.
     description = None
@@ -198,6 +208,7 @@ class ValgrindError:
       elif node.localName == "xwhat":
         description = getTextOf(node, "text")
       elif node.localName == "stack":
+        assert description
         self._backtraces.append([description, gatherFrames(node, source_dir)])
         description = None
       elif node.localName == "origin":
@@ -208,7 +219,12 @@ class ValgrindError:
         description = None
         stack = None
         frames = None
-      elif node.localName == "suppression":
+      elif description and node.localName != None:
+        # The lastest description has no stack, e.g. "Address 0x28 is unknown"
+        self._additional.append(description)
+        description = None
+
+      if node.localName == "suppression":
         self._suppression = getCDATAOf(node, "rawtext");
 
   def __str__(self):
@@ -251,33 +267,64 @@ class ValgrindError:
           output += " (" + frame[OBJECT_FILE] + ")"
         output += "\n"
 
+    for additional in self._additional:
+      output += additional + "\n"
+
     assert self._suppression != None, "Your Valgrind doesn't generate " \
                                       "suppressions - is it too old?"
 
-    output += "Suppression (error hash=#%016X#):" % \
-        (self.__hash__() & 0xffffffffffffffff)
+    if self._testcase:
+      output += "The report came from the `%s` test.\n" % self._testcase
+    output += "Suppression (error hash=#%016X#):\n" % self.ErrorHash()
+    output += ("  For more info on using suppressions see "
+               "http://dev.chromium.org/developers/tree-sheriffs/sheriff-details-chromium/memory-sheriff#TOC-Suppressing-memory-reports")
+
     # Widen suppression slightly to make portable between mac and linux
+    # TODO(timurrrr): Oops, these transformations should happen
+    # BEFORE calculating the hash!
     supp = self._suppression;
     supp = supp.replace("fun:_Znwj", "fun:_Znw*")
     supp = supp.replace("fun:_Znwm", "fun:_Znw*")
+    supp = supp.replace("fun:_Znaj", "fun:_Zna*")
+    supp = supp.replace("fun:_Znam", "fun:_Zna*")
+
+    # Make suppressions even less platform-dependent.
+    for sz in [1, 2, 4, 8]:
+      supp = supp.replace("Memcheck:Addr%d" % sz, "Memcheck:Unaddressable")
+      supp = supp.replace("Memcheck:Value%d" % sz, "Memcheck:Uninitialized")
+    supp = supp.replace("Memcheck:Cond", "Memcheck:Uninitialized")
+
     # Split into lines so we can enforce length limits
     supplines = supp.split("\n")
+    supp = None  # to avoid re-use
 
     # Truncate at line 26 (VG_MAX_SUPP_CALLERS plus 2 for name and type)
     # or at the first 'boring' caller.
     # (https://bugs.kde.org/show_bug.cgi?id=199468 proposes raising
     # VG_MAX_SUPP_CALLERS, but we're probably fine with it as is.)
-    # TODO(dkegel): add more boring callers
-    newlen = 26;
-    for boring_caller in ["   fun:_ZN11MessageLoop3RunEv",
-                          "   fun:_ZN7testing4Test3RunEv"]:
-      try:
-        newlen = min(newlen, supplines.index(boring_caller))
-      except ValueError:
-        pass
+    newlen = min(26, len(supplines));
+
+    # Drop boring frames and all the following.
+    enough_frames = False
+    for frameno in range(newlen):
+      for boring_caller in _BORING_CALLERS:
+        if re.match("^ +fun:%s$" % boring_caller, supplines[frameno]):
+          newlen = frameno
+          enough_frames = True
+          break
+      if enough_frames:
+        break
     if (len(supplines) > newlen):
       supplines = supplines[0:newlen]
       supplines.append("}")
+
+    for frame in range(len(supplines)):
+      # Replace the always-changing anonymous namespace prefix with "*".
+      m = re.match("( +fun:)_ZN.*_GLOBAL__N_.*\.cc_" +
+                   "[0-9a-fA-F]{8}_[0-9a-fA-F]{8}(.*)",
+                   supplines[frame])
+      if m:
+        supplines[frame] = "*".join(m.groups())
 
     output += "\n".join(supplines) + "\n"
 
@@ -298,21 +345,35 @@ class ValgrindError:
 
     return rep
 
+  # This is a device-independent hash identifying the suppression.
+  # By printing out this hash we can find duplicate reports between tests and
+  # different shards running on multiple buildbots
+  def ErrorHash(self):
+    return int(hashlib.md5(self.UniqueString()).hexdigest()[:16], 16)
+
   def __hash__(self):
     return hash(self.UniqueString())
   def __eq__(self, rhs):
     return self.UniqueString() == rhs
 
-def find_and_truncate(f):
+def log_is_finished(f, force_finish):
   f.seek(0)
+  prev_line = ""
   while True:
     line = f.readline()
     if line == "":
+      if not force_finish:
+        return False
+      # Okay, the log is not finished but we can make it up to be parseable:
+      if prev_line.strip() in ["</error>", "</errorcounts>", "</status>"]:
+        f.write("</valgrindoutput>\n")
+        return True
       return False
     if '</valgrindoutput>' in line:
-      # valgrind often has garbage after </valgrindoutput> upon crash
+      # Valgrind often has garbage after </valgrindoutput> upon crash.
       f.truncate()
       return True
+    prev_line = line
 
 class MemcheckAnalyzer:
   ''' Given a set of Valgrind XML files, parse all the errors out of them,
@@ -360,7 +421,7 @@ class MemcheckAnalyzer:
     self._analyze_start_time = None
 
 
-  def Report(self, files, check_sanity=False):
+  def Report(self, files, testcase, check_sanity=False):
     '''Reads in a set of files and prints Memcheck report.
 
     Args:
@@ -393,7 +454,7 @@ class MemcheckAnalyzer:
     else:
       TheAddressTable = None
     cur_report_errors = set()
-    suppcounts = {}
+    suppcounts = defaultdict(int)
     badfiles = set()
 
     if self._analyze_start_time == None:
@@ -411,8 +472,9 @@ class MemcheckAnalyzer:
       found = False
       running = True
       firstrun = True
+      skip = False
       origsize = os.path.getsize(file)
-      while (running and not found and
+      while (running and not found and not skip and
              (firstrun or
               ((time.time() - start_time) < self.LOG_COMPLETION_TIMEOUT))):
         firstrun = False
@@ -424,10 +486,15 @@ class MemcheckAnalyzer:
                                     stdout=subprocess.PIPE).stdout
           if len(ps_out.readlines()) < 2:
             running = False
-        found = find_and_truncate(f)
+        else:
+          skip = True
+          running = False
+        found = log_is_finished(f, False)
         if not running and not found:
-          logging.warn("Valgrind process PID = %s is not running but "
-                       "its XML log has not been finished correctly." % pid)
+          logging.warn("Valgrind process PID = %s is not running but its "
+                       "XML log has not been finished correctly.\nMake it up"
+                       "by adding some closing tags manually." % pid)
+          found = log_is_finished(f, not running)
         if running and not found:
           time.sleep(1)
       f.close()
@@ -480,14 +547,15 @@ class MemcheckAnalyzer:
           # Ignore "possible" leaks for now by default.
           if (self._show_all_leaks or
               getTextOf(raw_error, "kind") != "Leak_PossiblyLost"):
-            error = ValgrindError(self._source_dir, raw_error, commandline)
+            error = ValgrindError(self._source_dir,
+                                  raw_error, commandline, testcase)
             if error not in cur_report_errors:
               # We haven't seen such errors doing this report yet...
               if error in self._errors:
                 # ... but we saw it in earlier reports, e.g. previous UI test
                 cur_report_errors.add("This error was already printed in "
                                       "some other test, see 'hash=#%016X#'" % \
-                                      (error.__hash__() & 0xffffffffffffffff))
+                                      error.ErrorHash())
               else:
                 # ... and we haven't seen it in other tests as well
                 self._errors.add(error)
@@ -499,10 +567,7 @@ class MemcheckAnalyzer:
           for node in suppcountlist.getElementsByTagName("pair"):
             count = getTextOf(node, "count");
             name = getTextOf(node, "name");
-            if name in suppcounts:
-              suppcounts[name] += int(count)
-            else:
-              suppcounts[name] = int(count)
+            suppcounts[name] += int(count)
 
     if len(badfiles) > 0:
       logging.warn("valgrind didn't finish writing %d files?!" % len(badfiles))
@@ -514,21 +579,7 @@ class MemcheckAnalyzer:
       logging.error("FAIL! Couldn't parse Valgrind output file")
       return -2
 
-    is_sane = False
-    print "-----------------------------------------------------"
-    print "Suppressions used:"
-    print "  count name"
-
-    remaining_sanity_supp = MemcheckAnalyzer.SANITY_TEST_SUPPRESSIONS
-    for (name, count) in sorted(suppcounts.items(),
-                                key=lambda (k,v): (v,k)):
-      print "%7d %s" % (count, name)
-      if name in remaining_sanity_supp and remaining_sanity_supp[name] == count:
-        del remaining_sanity_supp[name]
-    if len(remaining_sanity_supp) == 0:
-      is_sane = True
-    print "-----------------------------------------------------"
-    sys.stdout.flush()
+    common.PrintUsedSuppressionsList(suppcounts)
 
     retcode = 0
     if cur_report_errors:
@@ -543,13 +594,18 @@ class MemcheckAnalyzer:
       retcode = -1
 
     # Report tool's insanity even if there were errors.
-    if check_sanity and not is_sane:
-      logging.error("FAIL! Sanity check failed!")
-      logging.info("The following test errors were not handled: ")
-      for (name, count) in sorted(remaining_sanity_supp.items(),
-                                  key=lambda (k,v): (v,k)):
-        logging.info("%7d %s" % (count, name))
-      retcode = -3
+    if check_sanity:
+      remaining_sanity_supp = MemcheckAnalyzer.SANITY_TEST_SUPPRESSIONS
+      for (name, count) in suppcounts.iteritems():
+        if (name in remaining_sanity_supp and
+            remaining_sanity_supp[name] == count):
+          del remaining_sanity_supp[name]
+      if remaining_sanity_supp:
+        logging.error("FAIL! Sanity check failed!")
+        logging.info("The following test errors were not handled: ")
+        for (name, count) in remaining_sanity_supp.iteritems():
+          logging.info("  * %dx %s" % (count, name))
+        retcode = -3
 
     if retcode != 0:
       return retcode
@@ -557,9 +613,9 @@ class MemcheckAnalyzer:
     logging.info("PASS! No errors found!")
     return 0
 
+
 def _main():
   '''For testing only. The MemcheckAnalyzer class should be imported instead.'''
-  retcode = 0
   parser = optparse.OptionParser("usage: %prog [options] <files to analyze>")
   parser.add_option("", "--source_dir",
                     help="path to top of source tree for this build"
@@ -571,9 +627,8 @@ def _main():
   filenames = args
 
   analyzer = MemcheckAnalyzer(options.source_dir, use_gdb=True)
-  retcode = analyzer.Report(filenames)
+  return analyzer.Report(filenames, None)
 
-  sys.exit(retcode)
 
 if __name__ == "__main__":
-  _main()
+  sys.exit(_main())

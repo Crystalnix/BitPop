@@ -6,6 +6,7 @@
 #define UI_BASE_ANIMATION_ANIMATION_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "ui/base/animation/animation_container_element.h"
@@ -25,7 +26,7 @@ class AnimationDelegate;
 //
 // To subclass override Step, which is invoked as the animation progresses and
 // GetCurrentValue() to return the value appropriate to the animation.
-class Animation : public AnimationContainerElement {
+class UI_EXPORT Animation : public AnimationContainerElement {
  public:
   explicit Animation(base::TimeDelta timer_interval);
   virtual ~Animation();
@@ -81,9 +82,9 @@ class Animation : public AnimationContainerElement {
   AnimationDelegate* delegate() { return delegate_; }
 
   // AnimationContainer::Element overrides
-  virtual void SetStartTime(base::TimeTicks start_time);
+  virtual void SetStartTime(base::TimeTicks start_time) OVERRIDE;
   virtual void Step(base::TimeTicks time_now) = 0;
-  virtual base::TimeDelta GetTimerInterval() const;
+  virtual base::TimeDelta GetTimerInterval() const OVERRIDE;
 
  private:
   // Interval for the animation.

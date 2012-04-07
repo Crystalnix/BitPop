@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,8 @@ cr.define('options', function() {
       options.internet.NetworkElement.decorate($('remembered-list'));
       $('remembered-list').load(templateData.rememberedList);
 
+      this.updatePolicyIndicatorVisibility_();
+
       options.internet.CellularPlanElement.decorate($('planList'));
 
       $('wired-section').hidden = (templateData.wiredList.length == 0);
@@ -68,40 +70,143 @@ cr.define('options', function() {
       });
       $('enable-wifi').addEventListener('click', function(event) {
         event.target.disabled = true;
-        chrome.send('enableWifi', []);
+        chrome.send('enableWifi');
       });
       $('disable-wifi').addEventListener('click', function(event) {
         event.target.disabled = true;
-        chrome.send('disableWifi', []);
+        chrome.send('disableWifi');
       });
       $('enable-cellular').addEventListener('click', function(event) {
         event.target.disabled = true;
-        chrome.send('enableCellular', []);
+        chrome.send('enableCellular');
       });
       $('disable-cellular').addEventListener('click', function(event) {
         event.target.disabled = true;
-        chrome.send('disableCellular', []);
+        chrome.send('disableCellular');
+      });
+      $('change-proxy-button').addEventListener('click', function(event) {
+        OptionsPage.closeOverlay();
+        OptionsPage.showPageByName('proxy', false);
+        chrome.send('coreOptionsUserMetricsAction',
+            ['Options_ShowProxySettings']);
       });
       $('buyplanDetails').addEventListener('click', function(event) {
-        chrome.send('buyDataPlan', []);
+        chrome.send('buyDataPlan');
         OptionsPage.closeOverlay();
       });
-      $('cellularApnClear').addEventListener('click', function(event) {
-        $('cellularApn').value = "";
-        $('cellularApnUsername').value = "";
-        $('cellularApnPassword').value = "";
+      $('viewAccountDetails').addEventListener('click', function(event) {
+        chrome.send('showMorePlanInfo');
+        OptionsPage.closeOverlay();
+      });
+      $('cellularApnUseDefault').addEventListener('click', function(event) {
         var data = $('connectionState').data;
-        chrome.send('setApn', [String(data.servicePath),
-                               String($('cellularApn').value),
-                               String($('cellularApnUsername').value),
-                               String($('cellularApnPassword').value)]);
+        var apnSelector = $('selectApn');
+
+        if (data.userApnIndex != -1) {
+          apnSelector.remove(data.userApnIndex);
+          data.userApnIndex = -1;
+        }
+
+        if (data.providerApnList.value.length > 0) {
+          var iApn = 0;
+          data.apn.apn = data.providerApnList.value[iApn].apn;
+          data.apn.username = data.providerApnList.value[iApn].username;
+          data.apn.password = data.providerApnList.value[iApn].password;
+          chrome.send('setApn', [String(data.servicePath),
+                                 String(data.apn.apn),
+                                 String(data.apn.username),
+                                 String(data.apn.password)]);
+          apnSelector.selectedIndex = iApn;
+          data.selectedApn = iApn;
+        } else {
+          data.apn.apn = '';
+          data.apn.username = '';
+          data.apn.password = '';
+          apnSelector.selectedIndex = -1;
+          data.selectedApn = -1;
+        }
+
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-list-view'),
+          false);
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-details-view'),
+          true);
       });
       $('cellularApnSet').addEventListener('click', function(event) {
+        if ($('cellularApn').value == '')
+          return;
+
         var data = $('connectionState').data;
+        var apnSelector = $('selectApn');
+
+        data.apn.apn = String($('cellularApn').value);
+        data.apn.username = String($('cellularApnUsername').value);
+        data.apn.password = String($('cellularApnPassword').value);
         chrome.send('setApn', [String(data.servicePath),
-                               String($('cellularApn').value),
-                               String($('cellularApnUsername').value),
-                               String($('cellularApnPassword').value)]);
+                                String(data.apn.apn),
+                                String(data.apn.username),
+                                String(data.apn.password)]);
+
+        if (data.userApnIndex != -1) {
+          apnSelector.remove(data.userApnIndex);
+          data.userApnIndex = -1;
+        }
+
+        var option = document.createElement('option');
+        option.textContent = data.apn.apn;
+        option.value = -1;
+        option.selected = true;
+        apnSelector.add(option, apnSelector[apnSelector.length - 1]);
+        data.userApnIndex = apnSelector.length - 2
+        data.selectedApn = data.userApnIndex;
+
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-list-view'),
+          false);
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-details-view'),
+          true);
+      });
+      $('cellularApnCancel').addEventListener('click', function(event) {
+        $('selectApn').selectedIndex = $('connectionState').data.selectedApn;
+
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-list-view'),
+          false);
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-details-view'),
+          true);
+      });
+      $('selectApn').addEventListener('change', function(event) {
+        var data = $('connectionState').data;
+        var apnSelector = $('selectApn');
+        if (apnSelector[apnSelector.selectedIndex].value != -1) {
+          var apnList = data.providerApnList.value;
+          chrome.send('setApn', [String(data.servicePath),
+              String(apnList[apnSelector.selectedIndex].apn),
+              String(apnList[apnSelector.selectedIndex].username),
+              String(apnList[apnSelector.selectedIndex].password)
+          ]);
+          data.selectedApn = apnSelector.selectedIndex;
+        } else if (apnSelector.selectedIndex == data.userApnIndex) {
+          chrome.send('setApn', [String(data.servicePath),
+                                 String(data.apn.apn),
+                                 String(data.apn.username),
+                                 String(data.apn.password)]);
+          data.selectedApn = apnSelector.selectedIndex;
+        } else {
+          $('cellularApn').value = data.apn.apn;
+          $('cellularApnUsername').value = data.apn.username;
+          $('cellularApnPassword').value = data.apn.password;
+
+          InternetOptions.prototype.updateHidden_(
+            cr.doc.querySelectorAll('.apn-list-view'),
+            true);
+          InternetOptions.prototype.updateHidden_(
+            cr.doc.querySelectorAll('.apn-details-view'),
+            false);
+        }
       });
       $('sim-card-lock-enabled').addEventListener('click', function(event) {
         var newValue = $('sim-card-lock-enabled').checked;
@@ -109,7 +214,6 @@ cr.define('options', function() {
         // When PIN will be entered and value changed,
         // we'll update UI to reflect that change.
         $('sim-card-lock-enabled').checked = !newValue;
-        InternetOptions.enableSecurityTab(false);
         chrome.send('setSimCardLock', [newValue]);
       });
       $('change-pin').addEventListener('click', function(event) {
@@ -125,8 +229,17 @@ cr.define('options', function() {
       if (!servicePath || !servicePath.length ||
           !networkType || !networkType.length)
         return;
+      var networkName = params.networkName;
+      if (networkName)
+        options.ProxyOptions.getInstance().setNetworkName(networkName);
       chrome.send('buttonClickCallback',
           [networkType, servicePath, "options"]);
+    },
+
+    updateHidden_: function(elements, hidden) {
+      for (var i = 0, el; el = elements[i]; i++) {
+        el.hidden = hidden;
+      }
     },
 
     /**
@@ -143,10 +256,26 @@ cr.define('options', function() {
       $('vpn-section').hidden = accesslocked;
       $('remembered-section').hidden = accesslocked;
 
-      // Don't change hidden attribute on OptionsPage divs directly beucase it
-      // is used in supporting infrasture now.
+      // Don't change hidden attribute on OptionsPage divs directly because it
+      // is used in supporting infrastructure now.
       if (accesslocked && DetailsInternetPage.getInstance().visible)
         this.closeOverlay();
+    },
+
+    /**
+     * Updates the policy indicator visibility. Space is only allocated for the
+     * policy indicators if there is at least one visible.
+     * @private
+     */
+    updatePolicyIndicatorVisibility_: function() {
+      var page = $('internetPage');
+      if (page.querySelectorAll(
+              '.network-item > .controlled-setting-indicator[controlled-by]')
+              .length) {
+        page.classList.remove('hide-indicators');
+      } else {
+        page.classList.add('hide-indicators');
+      }
     }
   };
 
@@ -190,6 +319,9 @@ cr.define('options', function() {
     var data = $('connectionState').data;
     var servicePath = data.servicePath;
     if (data.type == options.internet.Constants.TYPE_WIFI) {
+      chrome.send('setPreferNetwork',
+                   [String(servicePath),
+                    $('preferNetworkWifi').checked ? "true" : "false"]);
       chrome.send('setAutoConnect',
                   [String(servicePath),
                    $('autoConnectNetworkWifi').checked ? "true" : "false"]);
@@ -198,8 +330,6 @@ cr.define('options', function() {
                   [String(servicePath),
                    $('autoConnectNetworkCellular').checked ? "true" : "false"]);
     }
-    chrome.send('setShared',[String(servicePath),
-         $('sharedNetwork').checked ? "true" : "false"]);
 
     var ipConfigList = $('ipConfigList');
     chrome.send('setIPConfig',[String(servicePath),
@@ -211,29 +341,24 @@ cr.define('options', function() {
     OptionsPage.closeOverlay();
   };
 
-  InternetOptions.enableSecurityTab = function(enabled) {
-    $('sim-card-lock-enabled').disabled = !enabled;
-    $('change-pin').disabled = !enabled;
-  };
-
   InternetOptions.setupAttributes = function(data) {
     var buttons = $('wireless-buttons');
     if (data.wifiEnabled) {
-      $('disable-wifi').disabled = false;
+      $('disable-wifi').disabled = data.wifiBusy;
       $('disable-wifi').hidden = false;
       $('enable-wifi').hidden = true;
     } else {
-      $('enable-wifi').disabled = false;
+      $('enable-wifi').disabled = data.wifiBusy;
       $('enable-wifi').hidden = false;
       $('disable-wifi').hidden = true;
     }
     if (data.cellularAvailable) {
       if (data.cellularEnabled) {
-        $('disable-cellular').disabled = false;
+        $('disable-cellular').disabled = data.cellularBusy;
         $('disable-cellular').hidden = false;
         $('enable-cellular').hidden = true;
       } else {
-        $('enable-cellular').disabled = false;
+        $('enable-cellular').disabled = data.cellularBusy;
         $('enable-cellular').hidden = false;
         $('disable-cellular').hidden = true;
       }
@@ -262,6 +387,8 @@ cr.define('options', function() {
     $('vpn-list').load(data.vpnList);
     $('remembered-list').load(data.rememberedList);
 
+    self.updatePolicyIndicatorVisibility_();
+
     $('wired-section').hidden = (data.wiredList.length == 0);
     $('wireless-section').hidden = (data.wirelessList.length == 0);
     $('vpn-section').hidden = (data.vpnList.length == 0);
@@ -289,11 +416,12 @@ cr.define('options', function() {
 
     $('buyplanDetails').hidden = !data.showBuyButton;
     $('activateDetails').hidden = !data.showActivateButton;
+    $('viewAccountDetails').hidden = !data.showViewAccountButton;
   };
 
-  InternetOptions.updateSecurityTab = function(data) {
-    InternetOptions.enableSecurityTab(true);
-    $('sim-card-lock-enabled').checked = data.requirePin;
+  InternetOptions.updateSecurityTab = function(requirePin) {
+    $('sim-card-lock-enabled').checked = requirePin;
+    $('change-pin').hidden = !requirePin;
   };
 
   InternetOptions.showDetailedInfo = function (data) {
@@ -302,6 +430,7 @@ cr.define('options', function() {
     $('connectionState').data = data;
     $('buyplanDetails').hidden = true;
     $('activateDetails').hidden = true;
+    $('viewAccountDetails').hidden = true;
     $('detailsInternetLogin').hidden = data.connected;
     if (data.type == options.internet.Constants.TYPE_ETHERNET)
       $('detailsInternetDisconnect').hidden = true;
@@ -323,25 +452,31 @@ cr.define('options', function() {
     var inetGateway = '';
     var inetDns = '';
     $('ipTypeDHCP').checked = true;
-    if (data.ipconfigStatic) {
-      inetAddress = data.ipconfigStatic.address;
-      inetSubnetAddress = data.ipconfigStatic.subnetAddress;
-      inetGateway = data.ipconfigStatic.gateway;
-      inetDns = data.ipconfigStatic.dns;
+    if (data.ipconfigStatic.value) {
+      inetAddress = data.ipconfigStatic.value.address;
+      inetSubnetAddress = data.ipconfigStatic.value.subnetAddress;
+      inetGateway = data.ipconfigStatic.value.gateway;
+      inetDns = data.ipconfigStatic.value.dns;
       $('ipTypeStatic').checked = true;
-    } else if (data.ipconfigDHCP) {
-      inetAddress = data.ipconfigDHCP.address;
-      inetSubnetAddress = data.ipconfigDHCP.subnetAddress;
-      inetGateway = data.ipconfigDHCP.gateway;
-      inetDns = data.ipconfigDHCP.dns;
+    } else if (data.ipconfigDHCP.value) {
+      inetAddress = data.ipconfigDHCP.value.address;
+      inetSubnetAddress = data.ipconfigDHCP.value.subnetAddress;
+      inetGateway = data.ipconfigDHCP.value.gateway;
+      inetDns = data.ipconfigDHCP.value.dns;
     }
 
     // Hide the dhcp/static radio if needed.
     $('ipTypeDHCPDiv').hidden = !data.showStaticIPConfig;
     $('ipTypeStaticDiv').hidden = !data.showStaticIPConfig;
 
+    // Hide change-proxy-button and change-proxy-section if not showing proxy.
+    $('change-proxy-button').hidden = !data.showProxy;
+    $('change-proxy-section').hidden = !data.showProxy;
+
     var ipConfigList = $('ipConfigList');
-    ipConfigList.disabled = $('ipTypeDHCP').checked || !data.showStaticIPConfig;
+    ipConfigList.disabled =
+        $('ipTypeDHCP').checked || data.ipconfigStatic.controlledBy ||
+        !data.showStaticIPConfig;
     options.internet.IPConfigList.decorate(ipConfigList);
     ipConfigList.autoExpands = true;
     var model = new ArrayDataModel([]);
@@ -369,11 +504,12 @@ cr.define('options', function() {
 
     $('ipTypeDHCP').addEventListener('click', function(event) {
       // disable ipConfigList and switch back to dhcp values (if any)
-      if (data.ipconfigDHCP) {
-        ipConfigList.dataModel.item(0).value = data.ipconfigDHCP.address;
-        ipConfigList.dataModel.item(1).value = data.ipconfigDHCP.subnetAddress;
-        ipConfigList.dataModel.item(2).value = data.ipconfigDHCP.gateway;
-        ipConfigList.dataModel.item(3).value = data.ipconfigDHCP.dns;
+      if (data.ipconfigDHCP.value) {
+        var config = data.ipconfigDHCP.value;
+        ipConfigList.dataModel.item(0).value = config.address;
+        ipConfigList.dataModel.item(1).value = config.subnetAddress;
+        ipConfigList.dataModel.item(2).value = config.gateway;
+        ipConfigList.dataModel.item(3).value = config.dns;
       }
       ipConfigList.dataModel.updateIndex(0);
       ipConfigList.dataModel.updateIndex(1);
@@ -405,11 +541,13 @@ cr.define('options', function() {
       detailsPage.ethernet = false;
       detailsPage.cellular = false;
       detailsPage.gsm = false;
+      detailsPage.shared = data.shared;
       $('inetSsid').textContent = data.ssid;
-      $('autoConnectNetworkWifi').checked = data.autoConnect;
+      detailsPage.showPreferred = data.showPreferred;
+      $('preferNetworkWifi').checked = data.preferred.value;
+      $('preferNetworkWifi').disabled = !data.remembered;
+      $('autoConnectNetworkWifi').checked = data.autoConnect.value;
       $('autoConnectNetworkWifi').disabled = !data.remembered;
-      $('sharedNetwork').checked = data.shared;
-      $('sharedNetwork').disabled = !data.remembered || !data.shareable;
       detailsPage.password = data.encrypted;
     } else if(data.type == options.internet.Constants.TYPE_CELLULAR) {
       if (!data.gsm)
@@ -453,25 +591,61 @@ cr.define('options', function() {
         $('operatorName').textContent = data.operatorName;
         $('operatorCode').textContent = data.operatorCode;
         $('imsi').textContent = data.imsi;
-        // If there's no custom APN show default APN that is used. These will be
-        // displayed differently when http://crosbug.com/14290 is fixed.
-        // See also http://crosbug.com/p/4058 for context.
-        if (data.apn != '') {
-          $('cellularApn').value = data.apn;
-          $('cellularApnUsername').value = data.apn_username;
-          $('cellularApnPassword').value = data.apn_password;
-        } else {
-          $('cellularApn').value = data.last_good_apn;
-          $('cellularApnUsername').value = data.last_good_apn_username;
-          $('cellularApnPassword').value = data.last_good_apn_password;
+
+        var apnSelector = $('selectApn');
+        // Clear APN lists, keep only last element that "other".
+        while (apnSelector.length != 1)
+          apnSelector.remove(0);
+        var otherOption = apnSelector[0];
+        data.selectedApn = -1;
+        data.userApnIndex = -1;
+        var apnList = data.providerApnList.value;
+        for (var i = 0; i < apnList.length; i++) {
+          var option = document.createElement('option');
+          var name = apnList[i].localizedName;
+          if (name == '' && apnList[i].name != '')
+            name = apnList[i].name;
+          if (name == '')
+            name = apnList[i].apn;
+          else
+            name = name + ' (' + apnList[i].apn + ')';
+          option.textContent = name;
+          option.value = i;
+          if ((data.apn.apn == apnList[i].apn &&
+               data.apn.username == apnList[i].username &&
+               data.apn.password == apnList[i].password) ||
+              (data.apn.apn == '' &&
+               data.lastGoodApn.apn == apnList[i].apn &&
+               data.lastGoodApn.username == apnList[i].username &&
+               data.lastGoodApn.password == apnList[i].password)) {
+            data.selectedApn = i;
+          }
+          // Insert new option before "other" option.
+          apnSelector.add(option, otherOption);
         }
-        $('sim-card-lock-enabled').checked = data.simCardLockEnabled;
-        InternetOptions.enableSecurityTab(true);
+        if (data.selectedApn == -1 && data.apn.apn != '') {
+          var option = document.createElement('option');
+          option.textContent = data.apn.apn;
+          option.value = -1;
+          apnSelector.add(option, otherOption);
+          data.selectedApn = apnSelector.length - 2;
+          data.userApnIndex = data.selectedApn;
+        }
+        apnSelector.selectedIndex = data.selectedApn;
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-list-view'),
+          false);
+        InternetOptions.prototype.updateHidden_(
+          cr.doc.querySelectorAll('.apn-details-view'),
+          true);
+
+        InternetOptions.updateSecurityTab(data.simCardLockEnabled.value);
       }
-      $('autoConnectNetworkCellular').checked = data.autoConnect;
+      $('autoConnectNetworkCellular').checked = data.autoConnect.value;
       $('autoConnectNetworkCellular').disabled = false;
 
       $('buyplanDetails').hidden = !data.showBuyButton;
+      $('viewAccountDetails').hidden = !data.showViewAccountButton;
       $('activateDetails').hidden = !data.showActivateButton;
       if (data.showActivateButton) {
         $('detailsInternetLogin').hidden = true;
@@ -505,9 +679,16 @@ cr.define('options', function() {
       detailsPage.cellular = false;
       detailsPage.gsm = false;
     }
+
+    detailsPage.initializeControlledSettingIndicators(data)
+
     // Don't show page name in address bar and in history to prevent people
     // navigate here by hand and solve issue with page session restore.
     OptionsPage.showPageByName('detailsInternetPage', false);
+  };
+
+  InternetOptions.invalidNetworkSettings = function () {
+    alert(localStrings.getString('invalidNetworkSettings'));
   };
 
   // Export

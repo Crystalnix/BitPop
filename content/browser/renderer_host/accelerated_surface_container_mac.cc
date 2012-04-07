@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@ AcceleratedSurfaceContainerMac::AcceleratedSurfaceContainerMac(
     bool opaque)
     : manager_(manager),
       opaque_(opaque),
-      surface_id_(0),
+      surface_handle_(0),
       width_(0),
       height_(0),
       texture_(0),
@@ -118,21 +118,38 @@ void AcceleratedSurfaceContainerMac::Draw(CGLContextObj context) {
   }
   // If using TransportDIBs, the texture needs to be uploaded every frame.
   if (transport_dib_.get() != NULL) {
-    void* pixel_memory = transport_dib_->memory();
+    unsigned char* pixel_memory =
+        static_cast<unsigned char*>(transport_dib_->memory());
     if (pixel_memory) {
       glBindTexture(target, texture_);
       glPixelStorei(GL_UNPACK_ALIGNMENT, 1);  // Needed for NPOT textures.
-      glTexSubImage2D(target,
-                      0,  // mipmap level 0
-                      0,  // x-offset
-                      0,  // y-offset
-                      width_,
-                      height_,
-                      GL_BGRA,  // The GPU plugin gave us BGRA pixels
-                      GL_UNSIGNED_INT_8_8_8_8_REV,
-                      pixel_memory);
+      if (update_rect_.IsEmpty()) {
+        glTexSubImage2D(target,
+                        0,  // mipmap level 0
+                        0,  // x-offset
+                        0,  // y-offset
+                        width_,
+                        height_,
+                        GL_BGRA,  // The GPU plugin gave us BGRA pixels
+                        GL_UNSIGNED_INT_8_8_8_8_REV,
+                        pixel_memory);
+      } else {
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, width_);
+        glTexSubImage2D(target,
+                        0,  // mipmap level 0
+                        update_rect_.x(),  // x-offset
+                        update_rect_.y(),  // y-offset
+                        update_rect_.width(),
+                        update_rect_.height(),
+                        GL_BGRA,  // The GPU plugin gave us BGRA pixels
+                        GL_UNSIGNED_INT_8_8_8_8_REV,
+                        &pixel_memory[(update_rect_.x() +
+                                       update_rect_.y() * width_) * 4]);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+      }
     }
   }
+  update_rect_ = gfx::Rect();
 
   if (texture_) {
     int texture_width = io_surface_support ? surface_width_ : width_;
@@ -202,25 +219,16 @@ bool AcceleratedSurfaceContainerMac::ShouldBeVisible() const {
   return visible_ && was_painted_to_ && !clip_rect_.IsEmpty();
 }
 
-void AcceleratedSurfaceContainerMac::set_was_painted_to(uint64 surface_id) {
-  if (surface_id && (!surface_ || surface_id != surface_id_)) {
-    // Keep the surface that was most recently painted to around.
-    if (IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize()) {
-      CFTypeRef surface = io_surface_support->IOSurfaceLookup(
-          static_cast<uint32>(surface_id));
-      // Can fail if IOSurface with that ID was already released by the
-      // gpu process or the plugin process. We will get a |set_was_painted_to()|
-      // message with a new surface soon in that case.
-      if (surface) {
-        surface_.reset(surface);
-        surface_id_ = surface_id;
-        surface_width_ = io_surface_support->IOSurfaceGetWidth(surface_);
-        surface_height_ = io_surface_support->IOSurfaceGetHeight(surface_);
-        EnqueueTextureForDeletion();
-      }
-    }
-  }
-  was_painted_to_ = true;
+void AcceleratedSurfaceContainerMac::set_was_painted_to(uint64 surface_handle) {
+  set_was_painted_to_common(surface_handle);
+  update_rect_ = gfx::Rect();
+}
+
+void AcceleratedSurfaceContainerMac::set_was_painted_to(
+   uint64 surface_handle,
+   const gfx::Rect& update_rect) {
+  set_was_painted_to_common(surface_handle);
+  update_rect_ = update_rect_.Union(update_rect);
 }
 
 void AcceleratedSurfaceContainerMac::EnqueueTextureForDeletion() {
@@ -231,3 +239,24 @@ void AcceleratedSurfaceContainerMac::EnqueueTextureForDeletion() {
   }
 }
 
+void AcceleratedSurfaceContainerMac::set_was_painted_to_common(
+    uint64 surface_handle) {
+  if (surface_handle && (!surface_ || surface_handle != surface_handle_)) {
+    // Keep the surface that was most recently painted to around.
+    if (IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize()) {
+      CFTypeRef surface = io_surface_support->IOSurfaceLookup(
+          static_cast<uint32>(surface_handle));
+      // Can fail if IOSurface with that ID was already released by the
+      // gpu process or the plugin process. We will get a |set_was_painted_to()|
+      // message with a new surface soon in that case.
+      if (surface) {
+        surface_.reset(surface);
+        surface_handle_ = surface_handle;
+        surface_width_ = io_surface_support->IOSurfaceGetWidth(surface_);
+        surface_height_ = io_surface_support->IOSurfaceGetHeight(surface_);
+        EnqueueTextureForDeletion();
+      }
+    }
+  }
+  was_painted_to_ = true;
+}

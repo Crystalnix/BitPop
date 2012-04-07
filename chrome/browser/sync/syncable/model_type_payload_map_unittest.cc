@@ -8,7 +8,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/test/values_test_util.h"
+#include "chrome/test/base/values_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncable {
@@ -18,10 +18,19 @@ using test::ExpectDictStringValue;
 
 class ModelTypePayloadMapTest : public testing::Test {};
 
+TEST_F(ModelTypePayloadMapTest, TypePayloadMapToSet) {
+  ModelTypePayloadMap payloads;
+  payloads[BOOKMARKS] = "bookmarkpayload";
+  payloads[APPS] = "";
+
+  const ModelTypeSet types(BOOKMARKS, APPS);
+  EXPECT_TRUE(ModelTypePayloadMapToEnumSet(payloads).Equals(types));
+}
+
 TEST_F(ModelTypePayloadMapTest, TypePayloadMapToValue) {
   ModelTypePayloadMap payloads;
-  payloads[syncable::BOOKMARKS] = "bookmarkpayload";
-  payloads[syncable::APPS] = "";
+  payloads[BOOKMARKS] = "bookmarkpayload";
+  payloads[APPS] = "";
 
   scoped_ptr<DictionaryValue> value(ModelTypePayloadMapToValue(payloads));
   EXPECT_EQ(2u, value->size());

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,8 @@
 #include "ppapi/proxy/interface_proxy.h"
 
 struct PPB_Var_Deprecated;
-struct PPP_Class_Deprecated;
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class SerializedVar;
@@ -28,8 +27,12 @@ class PPP_Class_Proxy : public InterfaceProxy {
  public:
   // PPP_Class isn't a normal interface that you can query for, so this
   // constructor doesn't take an interface pointer.
-  PPP_Class_Proxy(Dispatcher* dispatcher);
+  explicit PPP_Class_Proxy(Dispatcher* dispatcher);
   virtual ~PPP_Class_Proxy();
+
+  // Factory function used for registration (normal code can just use the
+  // constructor).
+  static InterfaceProxy* Create(Dispatcher* dispatcher);
 
   // Creates a proxied object in the browser process. This takes the browser's
   // PPB_Var_Deprecated interface to use to create the object. The class and
@@ -38,6 +41,11 @@ class PPP_Class_Proxy : public InterfaceProxy {
                                     PP_Module module_id,
                                     int64 ppp_class,
                                     int64 class_data);
+
+  static PP_Bool IsInstanceOf(const PPB_Var_Deprecated* ppb_var_impl,
+                              const PP_Var& var,
+                              int64 ppp_class,
+                              int64* ppp_class_data);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -58,7 +66,7 @@ class PPP_Class_Proxy : public InterfaceProxy {
                         SerializedVarReturnValue result);
   void OnMsgEnumerateProperties(
       int64 ppp_class, int64 object,
-      std::vector<pp::proxy::SerializedVar>* props,
+      std::vector<SerializedVar>* props,
       SerializedVarOutParam exception);
   void OnMsgSetProperty(int64 ppp_class, int64 object,
                         SerializedVarReceiveInput property,
@@ -82,6 +90,6 @@ class PPP_Class_Proxy : public InterfaceProxy {
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPP_CLASS_PROXY_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,6 +15,9 @@ option retain_unknown_fields = true;
 package sync_pb;
 
 import "encryption.proto";
+import "sync_enums.proto";
+import "client_commands.proto";
+import "client_debug_info.proto";
 
 // Used for inspecting how long we spent performing operations in different
 // backends. All times must be in millis.
@@ -168,10 +171,15 @@ message SyncEntity {
   }
 
   // Supplies a numeric position for this item, relative to other items with
-  // the same parent.  This value is only meaningful in server-to-client
-  // contexts; to specify a position in a client-to-server commit context,
-  // use |insert_after_item_id|.
-  // Present only in GetUpdatesResponse.
+  // the same parent.
+  //
+  // Present in both GetUpdatesResponse and CommitMessage.
+  //
+  // In a CommitMessage context, server implementations may choose whether
+  // to compute a position based on this field or based on
+  // |insert_after_item_id|.  Clients should set both values so that they
+  // result in a consistent ordering regardless of which choice the server
+  // makes.
   optional int64 position_in_parent = 15;
 
   // Contains the ID of the element (under the same parent) after which this
@@ -180,7 +188,13 @@ message SyncEntity {
   // a relative position for a position change.  In the context of
   // a GetUpdatesMessage, |position_in_parent| is used instead to
   // communicate position.
+  //
   // Present only in CommitMessage.
+  //
+  // This is being deprecated: clients should now explicitly set
+  // an absolute |position_in_parent| value at commit time.  In the
+  // interim, clients should supply both values and continue to honor
+  // the |position_in_parent| value returned in the CommitResponse.
   optional string insert_after_item_id = 16;
 
   // Arbitrary key/value pairs associated with this item.
@@ -290,6 +304,9 @@ message GetUpdatesCallerInfo {
                            // confused with FIRST_UPDATE.
     RECONFIGURATION = 10;  // The client is in configuration mode because the
                            // user opted to sync a different set of datatypes.
+    DATATYPE_REFRESH = 11;    // A datatype has requested a refresh. This is
+                              // typically used when datatype's have custom
+                              // sync UI, e.g. sessions.
   }
 
   required GetUpdatesSource source = 1;
@@ -407,7 +424,7 @@ message ClearUserDataResponse {
 
 message ClientToServerMessage {
   required string share = 1;
-  optional int32 protocol_version = 2 [default = 27];
+  optional int32 protocol_version = 2 [default = 30];
   enum Contents {
     COMMIT = 1;
     GET_UPDATES = 2;
@@ -426,6 +443,11 @@ message ClientToServerMessage {
   // The client sets this if it detects a sync issue. The server will tell it
   // if it should perform a refresh.
   optional bool sync_problem_detected = 8 [default = false];
+
+  // Client side state information for debugging purpose.
+  // This is only sent on the first getupdates of every sync cycle,
+  // as an optimization to save bandwidth.
+  optional DebugInfo debug_info = 10;
 };
 
 message CommitResponse {
@@ -467,6 +489,9 @@ message CommitResponse {
 
     optional string error_message = 9;
 
+    // Last modification time (in java time milliseconds).  Allows the server
+    // to override the client-supplied mtime during a commit operation.
+    optional int64 mtime = 10;
   }
 };
 
@@ -561,16 +586,6 @@ message ThrottleParameters {
   required double observation_window = 5;
 };
 
-// A command from the server instructing the client to update settings or
-// perform some operation.
-message ClientCommand {
-  // Time to wait before sending any requests to the server.
-  optional int32 set_sync_poll_interval = 1;  // in seconds
-  optional int32 set_sync_long_poll_interval = 2;  // in seconds
-
-  optional int32 max_commit_batch_size = 3;
-};
-
 message ClientToServerResponse {
   optional CommitResponse commit = 1;
   optional GetUpdatesResponse get_updates = 2;
@@ -581,40 +596,38 @@ message ClientToServerResponse {
   // none of the other fields (error_code and etc) will be set.
   optional GetUpdatesStreamingResponse stream_data = 11;
 
-  enum ErrorType {
-    SUCCESS            = 0;
-    ACCESS_DENIED      = 1;   // Returned when the user doesn't have access to
-                              // store (instead of HTTP 401).
-    NOT_MY_BIRTHDAY    = 2;   // Returned when the server and client disagree on
-                              // the store birthday.
-    THROTTLED          = 3;   // Returned when the store has exceeded the
-                              // allowed bandwidth utilization.
-    AUTH_EXPIRED       = 4;   // Auth token or cookie has expired.
-    USER_NOT_ACTIVATED = 5;   // User doesn't have the Chrome bit set on that
-                              // Google Account.
-    AUTH_INVALID       = 6;   // Auth token or cookie is otherwise invalid.
-    CLEAR_PENDING      = 7;   // A clear of the user data is pending (e.g.
-                              // initiated by privacy request).  Client should
-                              // come back later.
-    TRANSIENT_ERROR    = 8;   // A transient error occured (eg. backend
-                              // timeout). Client should try again later.
-    MIGRATION_DONE     = 9;   // Migration has finished for one or more data
-                              // types.  Client should clear the cache for
-                              // these data types only and then re-sync with
-                              // a server.
-    UNKNOWN            = 100; // Unknown value. This should never be explicitly
-                              // used; it is the default value when an
-                              // out-of-date client parses a value it doesn't
-                              // recognize.
+  message Error {
+    optional SyncEnums.ErrorType error_type = 1 [default = UNKNOWN];
+    optional string error_description       = 2;
+    optional string url                     = 3;
+    enum Action {
+      UPGRADE_CLIENT              = 0; // Upgrade the client to latest version.
+      CLEAR_USER_DATA_AND_RESYNC  = 1; // Clear user data from dashboard and
+                                       // setup sync again.
+      ENABLE_SYNC_ON_ACCOUNT      = 2; // The administrator needs to enable sync
+                                       // on the account.
+      STOP_AND_RESTART_SYNC       = 3; // Stop sync and set up sync again.
+      DISABLE_SYNC_ON_CLIENT      = 4; // Wipe the client of all sync data and
+                                       // stop syncing.
+      UNKNOWN_ACTION              = 5; // This is the default.
+    }
+    optional Action action              = 4 [default = UNKNOWN_ACTION];
+
+    // Currently only meaningful if |error_type| is throttled. If this field
+    // is absent then the whole client (all datatypes) is throttled.
+    repeated int32 error_data_type_ids = 5;
   }
+
+  optional Error error = 13;
+
   // Up until protocol_version 24, the default was SUCCESS which made it
   // impossible to add new enum values since older clients would parse any
   // out-of-range value as SUCCESS. Starting with 25, unless explicitly set,
   // the error_code will be UNKNOWN so that clients know when they're
   // out-of-date. Note also that when using protocol_version < 25,
   // TRANSIENT_ERROR is not supported. Instead, the server sends back a HTTP
-  // 400 error code.
-  optional ErrorType error_code = 4 [default = UNKNOWN];
+  // 400 error code. This is deprecated now.
+  optional SyncEnums.ErrorType error_code = 4 [default = UNKNOWN];
   optional string error_message = 5;
 
   // Opaque store ID; if it changes, the contents of the client's cache

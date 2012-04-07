@@ -7,9 +7,9 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/ui/ui_layout_test.h"
-#include "chrome/test/ui_test_utils.h"
 #include "net/base/escape.h"
 #include "net/test/test_server.h"
 
@@ -28,6 +28,7 @@ class SearchProviderTest : public UITest {
       const IsSearchProviderTestData& data);
 
   net::TestServer test_server_;
+  GURL search_provider_test_url_;
   bool test_server_started_;
 
  private:
@@ -44,12 +45,13 @@ SearchProviderTest::SearchProviderTest()
   if (!test_server_started_)
     return;
 
-  // Enable the search provider additions.
-  launch_arguments_.AppendSwitch(switches::kEnableSearchProviderApiV2);
-
   // Map all hosts to our local server.
   std::string host_rule("MAP * " + test_server_.host_port_pair().ToString());
   launch_arguments_.AppendSwitchASCII(switches::kHostRules, host_rule);
+
+  // Get the url for the test page.
+  search_provider_test_url_ =
+      test_server_.GetURL("files/is_search_provider_installed.html");
 }
 
 struct IsSearchProviderTestData {
@@ -93,10 +95,8 @@ IsSearchProviderTestData SearchProviderTest::StartIsSearchProviderInstalledTest(
   }
 
   // Go to the test page.
-  GURL local_url =
-      test_server_.GetURL("files/is_search_provider_installed.html");
-  GURL test_url(std::string("http://") + host + local_url.path() +
-                "#" + expected_result);
+  GURL test_url(std::string("http://") + host +
+                search_provider_test_url_.path() + "#" + expected_result);
   EXPECT_TRUE(tab->NavigateToURLAsync(test_url));
 
   // Bundle up information needed to verify the result.
@@ -115,17 +115,23 @@ void SearchProviderTest::FinishIsSearchProviderInstalledTest(
                               TestTimeouts::action_max_timeout_ms());
 
   // Unescapes and normalizes the actual result.
-  std::string value = UnescapeURLComponent(
+  std::string value = net::UnescapeURLComponent(
       escaped_value,
-      UnescapeRule::NORMAL | UnescapeRule::SPACES |
-      UnescapeRule::URL_SPECIAL_CHARS | UnescapeRule::CONTROL_CHARS);
+      net::UnescapeRule::NORMAL | net::UnescapeRule::SPACES |
+      net::UnescapeRule::URL_SPECIAL_CHARS | net::UnescapeRule::CONTROL_CHARS);
   value += "\n";
   ReplaceSubstringsAfterOffset(&value, 0, "\r", "");
   EXPECT_STREQ("1\n", value.c_str());
+  EXPECT_TRUE(data.tab->Close(true));
 }
 
-// http://code.google.com/p/chromium/issues/detail?id=62777
-TEST_F(SearchProviderTest, FLAKY_TestIsSearchProviderInstalled) {
+// Flaky on XP debug. http://crbug.com/62777
+#if defined(OS_WIN)
+#define MAYBE_TestIsSearchProviderInstalled FLAKY_TestIsSearchProviderInstalled
+#else
+#define MAYBE_TestIsSearchProviderInstalled TestIsSearchProviderInstalled
+#endif
+TEST_F(SearchProviderTest, MAYBE_TestIsSearchProviderInstalled) {
   ASSERT_TRUE(test_server_started_);
 
   // Use the default search provider, other installed search provider, and
@@ -172,4 +178,15 @@ TEST_F(SearchProviderTest, FLAKY_TestIsSearchProviderInstalled) {
     FinishIsSearchProviderInstalledTest(test_data[i]);
   }
 #endif
+}
+
+TEST_F(SearchProviderTest, TestIsSearchProviderInstalledWithException) {
+  // Change the url for the test page to one that throws an exception when
+  // toString is called on the argument given to isSearchProviderInstalled.
+  search_provider_test_url_ = test_server_.GetURL(
+      "files/is_search_provider_installed_with_exception.html");
+
+  scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
+  FinishIsSearchProviderInstalledTest(StartIsSearchProviderInstalledTest(
+      browser, "www.google.com", ""));
 }

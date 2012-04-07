@@ -9,7 +9,7 @@
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/mock_keychain_mac.h"
@@ -17,9 +17,10 @@
 #include "chrome/browser/password_manager/password_store_mac.h"
 #include "chrome/browser/password_manager/password_store_mac_internal.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 
-using webkit_glue::PasswordForm;
+using content::BrowserThread;
+using webkit::forms::PasswordForm;
 using testing::_;
 using testing::DoAll;
 using testing::WithArg;
@@ -30,7 +31,7 @@ class MockPasswordStoreConsumer : public PasswordStoreConsumer {
 public:
   MOCK_METHOD2(OnPasswordStoreRequestDone,
                void(CancelableRequestProvider::Handle,
-                    const std::vector<webkit_glue::PasswordForm*>&));
+                    const std::vector<webkit::forms::PasswordForm*>&));
 };
 
 ACTION(STLDeleteElements0) {
@@ -89,9 +90,7 @@ class PasswordStoreMacInternalsTest : public testing::Test {
         "abc", "123", false },
     };
 
-    // Save some extra slots for use by AddInternetPassword.
-    unsigned int capacity = arraysize(test_data) + 3;
-    keychain_ = new MockKeychain(capacity);
+    keychain_ = new MockKeychain();
 
     for (unsigned int i = 0; i < arraysize(test_data); ++i) {
       keychain_->AddTestItem(test_data[i]);
@@ -906,7 +905,7 @@ class PasswordStoreMacTest : public testing::Test {
     FilePath db_file = db_dir_.path().AppendASCII("login.db");
     ASSERT_TRUE(login_db_->Init(db_file));
 
-    keychain_ = new MockKeychain(3);
+    keychain_ = new MockKeychain();
 
     store_ = new PasswordStoreMac(keychain_, login_db_);
     ASSERT_TRUE(store_->Init());
@@ -914,13 +913,13 @@ class PasswordStoreMacTest : public testing::Test {
 
   virtual void TearDown() {
     store_->Shutdown();
-    MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask);
+    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     MessageLoop::current()->Run();
   }
 
  protected:
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 
   MockKeychain* keychain_;  // Owned by store_.
   LoginDatabase* login_db_;  // Owned by store_.

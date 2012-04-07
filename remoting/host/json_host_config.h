@@ -12,9 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "remoting/host/in_memory_host_config.h"
 
-class DictionaryValue;
-class Task;
-
 namespace base {
 class MessageLoopProxy;
 }  // namespace base
@@ -31,7 +28,7 @@ class JsonHostConfig : public InMemoryHostConfig {
   virtual bool Read();
 
   // MutableHostConfig interface.
-  virtual void Save();
+  virtual void Save() OVERRIDE;
 
  private:
   void DoWrite();

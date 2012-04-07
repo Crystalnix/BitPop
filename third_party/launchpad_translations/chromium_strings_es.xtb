@@ -71,7 +71,6 @@
 <translation id="7503101070699687603">Anfitrión para complementos de Chromium</translation>
 <translation id="7641113255207688324">Chromium no es su navegador predeterminado.</translation>
 <translation id="7747138024166251722">El instalador no pudo crear un directorio temporal. Compruebe si tiene espacio libre en disco y permiso para instalar software.</translation>
-<translation id="786596160034915371">Este equipo ya tiene una versión más reciente de Chromium. Si el software no funciona, desinstale Chromium y descárguelo de nuevo.</translation>
 <translation id="8422904359318093226">Chromium se está portando mal</translation>
 <translation id="8453117565092476964">El archivador del instalador está dañado o no es válido. Descargue Chromium de nuevo.</translation>
 <translation id="8621669128220841554">La instalación ha fallado debido a un error no especificado. Descargue Chromium de nuevo.</translation>
@@ -83,7 +82,6 @@
 <translation id="9013262824292842194">Chromium requiere Windows Vista o Windows XP con SP2 o superior.</translation>
 <translation id="911206726377975832">¿Eliminar también sus datos de navegación?</translation>
 <translation id="9191268552238695869">Un administrador ha instalado Chromium en este sistema y está disponible para todos los usuarios. Ahora, la versión de Chromium a nivel de sistema reemplazará su instalación a nivel de usuario.</translation>
-<translation id="980185455267101462">Este equipo ya tiene una versión más reciente de Chromium Frame. Si el software no está funcionando, desinstale Chromium Frame y descárguelo de nuevo.</translation>
 <translation id="985602178874221306">Los autores de Chromium</translation>
 <translation id="7138853919861947730">Chromium puede usar servicios web para mejorar su experiencia de navegación.</translation>
 <translation id="8974095189086268230">Chromium OS es una realidad gracias a <ph name="BEGIN_LINK_CROS_OSS"/>software de código fuente abierto<ph name="END_LINK_CROS_OSS"/> adicional.</translation>
@@ -100,8 +98,11 @@
 <translation id="7278516633989165382">Chromium Frame se ha actualizado. Relance su navegador. Versión Chrome: <ph name="TODO_0001"/>, Versión Chromium Frame: <ph name="TODO_0002"/></translation>
 <translation id="2886012850691518054">Opcional: Ayude a mejorar Chromium mediante el envío automático de estadísticas de uso e informes de errores a Google.</translation>
 <translation id="378917192836375108">Chromiun le permite pulsar un número en la web y llamar con Skype.</translation>
-<translation id="5994107996638824097">Lo sentimos, Chromium no incluye el visor de PDF de Google Chrome, que es necesario para mostrar la previsualización de impresión.</translation>
 <translation id="3296368748942286671">Continuar ejecutando aplicaciones en segundo plano cuando se cierre Chromium</translation>
 <translation id="872034308864968620">Permite a Chromium ejecutarse en segundo plano</translation>
 <translation id="1774152462503052664">Permitir a Chromium ejecutarse en segundo plano</translation>
+<translation id="5211087808649701653">Lanzar el diálogo de impresión nativo</translation>
+<translation id="6714487516757221107">No se ha encontrado una instalación de Chromium o Chromium Frame para actualizar.</translation>
+<translation id="8628626585870903697">Chromium no incluye el visor PDF que se necesita para que funcione la vista previa de impresión.</translation>
+<translation id="3748537968684000502">Está viendo una página segura de Chromium.</translation>
 </translationbundle>

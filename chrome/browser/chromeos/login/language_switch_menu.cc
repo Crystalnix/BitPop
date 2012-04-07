@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,10 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
 #include "chrome/browser/chromeos/language_preferences.h"
+#include "chrome/browser/chromeos/login/language_list.h"
 #include "chrome/browser/chromeos/login/ownership_service.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
 #include "chrome/browser/prefs/pref_service.h"
@@ -19,9 +21,12 @@
 #include "grit/platform_locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/platform_font_gtk.h"
-#include "views/controls/button/menu_button.h"
-#include "views/widget/widget.h"
+#include "ui/gfx/platform_font_pango.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/controls/menu/submenu_view.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -35,9 +40,8 @@ const int kMoreLanguagesSubMenu = 200;
 namespace chromeos {
 
 LanguageSwitchMenu::LanguageSwitchMenu()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(menu_model_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(menu_model_submenu_(this)),
-      menu_alignment_(views::Menu2::ALIGN_TOPRIGHT) {
+    : ALLOW_THIS_IN_INITIALIZER_LIST(menu_(new views::MenuItemView(this))),
+      menu_runner_(new views::MenuRunner(menu_)) {
 }
 
 LanguageSwitchMenu::~LanguageSwitchMenu() {}
@@ -48,25 +52,30 @@ void LanguageSwitchMenu::InitLanguageMenu() {
   language_list_->CopySpecifiedLanguagesUp(kLanguagesTopped);
 
   // Clear older menu items.
-  menu_model_.Clear();
-  menu_model_submenu_.Clear();
+  if (menu_->HasSubmenu()) {
+    const int old_count = menu_->GetSubmenu()->child_count();
+    for (int i = 0; i < old_count; ++i)
+      menu_->RemoveMenuItemAt(0);
+  }
 
   // Fill menu items with updated items.
   for (int line = 0; line != kLanguageMainMenuSize; line++) {
-    menu_model_.AddItem(line, language_list_->GetLanguageNameAt(line));
-  }
-  menu_model_.AddSeparator();
-  menu_model_.AddSubMenuWithStringId(kMoreLanguagesSubMenu,
-                                     IDS_LANGUAGES_MORE,
-                                     &menu_model_submenu_);
-  for (int line = kLanguageMainMenuSize;
-       line != language_list_->get_languages_count(); line++) {
-    menu_model_submenu_.AddItem(
-        line, language_list_->GetLanguageNameAt(line));
+    menu_->AppendMenuItemWithLabel(line,
+                                   language_list_->GetLanguageNameAt(line));
   }
 
-  // Initialize menu here so it appears fast when called.
-  menu_.reset(new views::Menu2(&menu_model_));
+  menu_->AppendSeparator();
+  views::MenuItemView* submenu = menu_->AppendSubMenu(
+      kMoreLanguagesSubMenu,
+      l10n_util::GetStringUTF16(IDS_LANGUAGES_MORE));
+
+  for (int line = kLanguageMainMenuSize;
+       line != language_list_->languages_count(); ++line) {
+    submenu->AppendMenuItemWithLabel(line,
+                                     language_list_->GetLanguageNameAt(line));
+  }
+
+  menu_->ChildrenChanged();
 }
 
 string16 LanguageSwitchMenu::GetCurrentLocaleName() const {
@@ -79,7 +88,8 @@ string16 LanguageSwitchMenu::GetCurrentLocaleName() const {
 
 void LanguageSwitchMenu::SetFirstLevelMenuWidth(int width) {
   DCHECK(menu_ != NULL);
-  menu_->SetMinimumWidth(width);
+
+  menu_->GetSubmenu()->set_minimum_preferred_width(width);
 }
 
 // static
@@ -98,14 +108,20 @@ bool LanguageSwitchMenu::SwitchLanguage(const std::string& locale) {
       // Temporarily allow it until we fix http://crosbug.com/11102
       base::ThreadRestrictions::ScopedAllowIO allow_io;
       // Switch the locale.
-      loaded_locale = ResourceBundle::ReloadSharedInstance(locale);
+      loaded_locale =
+          ResourceBundle::GetSharedInstance().ReloadLocaleResources(locale);
     }
     CHECK(!loaded_locale.empty()) << "Locale could not be found for " << locale;
 
     LoadFontsForCurrentLocale();
+
     // The following line does not seem to affect locale anyhow. Maybe in
     // future..
     g_browser_process->SetApplicationLocale(locale);
+
+    PrefService* prefs = g_browser_process->local_state();
+    prefs->SetString(prefs::kApplicationLocale, locale);
+
     return true;
   }
   return false;
@@ -113,6 +129,7 @@ bool LanguageSwitchMenu::SwitchLanguage(const std::string& locale) {
 
 // static
 void LanguageSwitchMenu::LoadFontsForCurrentLocale() {
+#if defined(TOOLKIT_USES_GTK)
   std::string gtkrc = l10n_util::GetStringUTF8(IDS_LOCALE_GTKRC);
 
   // Read locale-specific gtkrc.  Ideally we'd discard all the previously read
@@ -125,9 +142,13 @@ void LanguageSwitchMenu::LoadFontsForCurrentLocale() {
     gtk_rc_parse_string(gtkrc.c_str());
   else
     gtk_rc_parse("/etc/gtk-2.0/gtkrc");
+#else
+  // TODO(saintlou): Need to figure out an Aura equivalent.
+  NOTIMPLEMENTED();
+#endif
 
   // Switch the font.
-  gfx::PlatformFontGtk::ReloadDefaultFont();
+  gfx::PlatformFontPango::ReloadDefaultFont();
   ResourceBundle::GetSharedInstance().ReloadFonts();
 }
 
@@ -139,9 +160,11 @@ void LanguageSwitchMenu::SwitchLanguageAndEnableKeyboardLayouts(
     // are necessary for the new locale.  Change the current input method
     // to the hardware keyboard layout since the input method currently in
     // use may not be supported by the new locale (3rd parameter).
-    input_method::EnableInputMethods(
+    input_method::InputMethodManager* manager =
+        input_method::InputMethodManager::GetInstance();
+    manager->EnableInputMethods(
         locale, input_method::kKeyboardLayoutsOnly,
-        input_method::GetHardwareInputMethodId());
+        manager->GetInputMethodUtil()->GetHardwareInputMethodId());
   }
 }
 
@@ -151,43 +174,31 @@ void LanguageSwitchMenu::SwitchLanguageAndEnableKeyboardLayouts(
 void LanguageSwitchMenu::RunMenu(views::View* source, const gfx::Point& pt) {
   DCHECK(menu_ != NULL);
   views::MenuButton* button = static_cast<views::MenuButton*>(source);
-  // We align the on left edge of the button for non RTL case.
+
+  // We align on the left edge of the button for non RTL case.
+  // MenuButton passes in pt the lower left corner for RTL and the
+  // lower right corner for non-RTL (with menu_offset applied).
+  const int reverse_offset = button->width() + button->menu_offset().x() * 2;
   gfx::Point new_pt(pt);
-  if (menu_alignment_ == views::Menu2::ALIGN_TOPLEFT) {
-    int reverse_offset = button->width() + button->menu_offset().x() * 2;
-    if (base::i18n::IsRTL()) {
-      new_pt.set_x(pt.x() + reverse_offset);
-    } else {
-      new_pt.set_x(pt.x() - reverse_offset);
-    }
-  }
-  menu_->RunMenuAt(new_pt, menu_alignment_);
+  if (base::i18n::IsRTL())
+    new_pt.set_x(pt.x() + reverse_offset);
+  else
+    new_pt.set_x(pt.x() - reverse_offset);
+
+  if (menu_runner_->RunMenuAt(button->GetWidget(), button,
+          gfx::Rect(new_pt, gfx::Size()), views::MenuItemView::TOPLEFT,
+          views::MenuRunner::HAS_MNEMONICS) == views::MenuRunner::MENU_DELETED)
+    return;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// ui::SimpleMenuModel::Delegate implementation.
-
-bool LanguageSwitchMenu::IsCommandIdChecked(int command_id) const {
-  return false;
-}
-
-bool LanguageSwitchMenu::IsCommandIdEnabled(int command_id) const {
-  return true;
-}
-
-bool LanguageSwitchMenu::GetAcceleratorForCommandId(
-    int command_id, ui::Accelerator* accelerator) {
-  return false;
-}
+// views::MenuDelegate implementation.
 
 void LanguageSwitchMenu::ExecuteCommand(int command_id) {
   const std::string locale = language_list_->GetLocaleFromIndex(command_id);
   // Here, we should enable keyboard layouts associated with the locale so
   // that users can use those keyboard layouts on the login screen.
   SwitchLanguageAndEnableKeyboardLayouts(locale);
-  g_browser_process->local_state()->SetString(
-      prefs::kApplicationLocale, locale);
-  g_browser_process->local_state()->ScheduleSavePersistentPrefs();
   InitLanguageMenu();
 
   // Update all view hierarchies that the locale has changed.

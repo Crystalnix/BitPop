@@ -4,13 +4,15 @@
 
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_instructions_view.h"
 
+#include <algorithm>
+
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/label.h"
-#include "views/controls/link.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
 
 namespace {
 
@@ -26,15 +28,17 @@ BookmarkBarInstructionsView::BookmarkBarInstructionsView(Delegate* delegate)
       baseline_(-1),
       updated_colors_(false) {
   instructions_ = new views::Label(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOKMARKS_NO_ITEMS)));
+      l10n_util::GetStringUTF16(IDS_BOOKMARKS_NO_ITEMS));
+  instructions_->SetAutoColorReadabilityEnabled(false);
   AddChildView(instructions_);
 
   if (browser_defaults::kShowImportOnBookmarkBar) {
     import_link_ = new views::Link(
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_IMPORT_LINK)));
+        l10n_util::GetStringUTF16(IDS_BOOKMARK_BAR_IMPORT_LINK));
     // We don't want the link to alter tab navigation.
-    import_link_->SetFocusable(false);
+    import_link_->set_focusable(false);
     import_link_->set_listener(this);
+    import_link_->SetAutoColorReadabilityEnabled(false);
     AddChildView(import_link_);
   }
 }
@@ -42,7 +46,7 @@ BookmarkBarInstructionsView::BookmarkBarInstructionsView(Delegate* delegate)
 gfx::Size BookmarkBarInstructionsView::GetPreferredSize() {
   int ascent = 0, descent = 0, height = 0, width = 0;
   for (int i = 0; i < child_count(); ++i) {
-    views::View* view = GetChildViewAt(i);
+    views::View* view = child_at(i);
     gfx::Size pref = view->GetPreferredSize();
     int baseline = view->GetBaseline();
     if (baseline != -1) {
@@ -63,7 +67,7 @@ void BookmarkBarInstructionsView::Layout() {
   int remaining_width = width();
   int x = 0;
   for (int i = 0; i < child_count(); ++i) {
-    views::View* view = GetChildViewAt(i);
+    views::View* view = child_at(i);
     gfx::Size pref = view->GetPreferredSize();
     int baseline = view->GetBaseline();
     int y;
@@ -107,7 +111,7 @@ void BookmarkBarInstructionsView::UpdateColors() {
   updated_colors_ = true;
   SkColor text_color =
       theme_provider->GetColor(ThemeService::COLOR_BOOKMARK_TEXT);
-  instructions_->SetColor(text_color);
+  instructions_->SetEnabledColor(text_color);
   if (import_link_)
-    import_link_->SetColor(text_color);
+    import_link_->SetEnabledColor(text_color);
 }

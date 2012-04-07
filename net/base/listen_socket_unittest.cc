@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,12 @@
 #include <fcntl.h>
 #include <sys/types.h>
 
+#include "base/bind.h"
 #include "base/eintr_wrapper.h"
 #include "net/base/net_util.h"
 #include "testing/platform_test.h"
+
+namespace net {
 
 const int ListenSocketTester::kTestPort = 9999;
 
@@ -34,8 +37,7 @@ void ListenSocketTester::SetUp() {
   thread_->StartWithOptions(options);
   loop_ = reinterpret_cast<MessageLoopForIO*>(thread_->message_loop());
 
-  loop_->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &ListenSocketTester::Listen));
+  loop_->PostTask(FROM_HERE, base::Bind(&ListenSocketTester::Listen, this));
 
   // verify Listen succeeded
   NextAction();
@@ -67,8 +69,7 @@ void ListenSocketTester::TearDown() {
   NextAction();
   ASSERT_EQ(ACTION_CLOSE, last_action_.type());
 
-  loop_->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &ListenSocketTester::Shutdown));
+  loop_->PostTask(FROM_HERE, base::Bind(&ListenSocketTester::Shutdown, this));
   NextAction();
   ASSERT_EQ(ACTION_SHUTDOWN, last_action_.type());
 
@@ -156,8 +157,8 @@ void ListenSocketTester::TestClientSendLong() {
 }
 
 void ListenSocketTester::TestServerSend() {
-  loop_->PostTask(FROM_HERE, NewRunnableMethod(
-      this, &ListenSocketTester::SendFromTester));
+  loop_->PostTask(FROM_HERE, base::Bind(
+      &ListenSocketTester::SendFromTester, this));
   NextAction();
   ASSERT_EQ(ACTION_SEND, last_action_.type());
   const int buf_len = 200;
@@ -210,7 +211,6 @@ ListenSocket* ListenSocketTester::DoListen() {
   return ListenSocket::Listen(kLoopback, kTestPort, this);
 }
 
-
 class ListenSocketTest: public PlatformTest {
  public:
   ListenSocketTest() {
@@ -243,3 +243,5 @@ TEST_F(ListenSocketTest, ClientSendLong) {
 TEST_F(ListenSocketTest, ServerSend) {
   tester_->TestServerSend();
 }
+
+}  // namespace net

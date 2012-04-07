@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/stringprintf.h"
@@ -19,22 +20,21 @@
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/extensions/extension_message_bundle.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/json_value_serializer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "unicode/uloc.h"
 
 namespace errors = extension_manifest_errors;
 namespace keys = extension_manifest_keys;
 
-static std::string* GetProcessLocale() {
-  static std::string locale;
-  return &locale;
+static std::string& GetProcessLocale() {
+  CR_DEFINE_STATIC_LOCAL(std::string, locale, ());
+  return locale;
 }
 
 namespace extension_l10n_util {
 
 void SetProcessLocale(const std::string& locale) {
-  *(GetProcessLocale()) = locale;
+  GetProcessLocale() = locale;
 }
 
 std::string GetDefaultLocaleFromManifest(const DictionaryValue& manifest,
@@ -165,8 +165,8 @@ bool AddLocale(const std::set<std::string>& chrome_locales,
   if (chrome_locales.find(locale_name) == chrome_locales.end()) {
     // Warn if there is an extension locale that's not in the Chrome list,
     // but don't fail.
-    LOG(WARNING) << base::StringPrintf("Supplied locale %s is not supported.",
-                                       locale_name.c_str());
+    DLOG(WARNING) << base::StringPrintf("Supplied locale %s is not supported.",
+                                        locale_name.c_str());
     return true;
   }
   // Check if messages file is actually present (but don't check content).
@@ -183,7 +183,7 @@ bool AddLocale(const std::set<std::string>& chrome_locales,
 }
 
 std::string CurrentLocaleOrDefault() {
-  std::string current_locale = l10n_util::NormalizeLocale(*GetProcessLocale());
+  std::string current_locale = l10n_util::NormalizeLocale(GetProcessLocale());
   if (current_locale.empty())
     current_locale = "en";
 
@@ -205,7 +205,7 @@ void GetAllLocales(std::set<std::string>* all_locales) {
 bool GetValidLocales(const FilePath& locale_path,
                      std::set<std::string>* valid_locales,
                      std::string* error) {
-  static std::set<std::string> chrome_locales;
+  std::set<std::string> chrome_locales;
   GetAllLocales(&chrome_locales);
 
   // Enumerate all supplied locales in the extension.

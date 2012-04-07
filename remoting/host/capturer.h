@@ -6,9 +6,9 @@
 #define REMOTING_HOST_CAPTURER_H_
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "remoting/base/capture_data.h"
-#include "remoting/base/types.h"
+#include "third_party/skia/include/core/SkRegion.h"
 
 namespace remoting {
 
@@ -38,12 +38,27 @@ namespace remoting {
 class Capturer {
  public:
   // CaptureCompletedCallback is called when the capturer has completed.
-  typedef Callback1<scoped_refptr<CaptureData> >::Type CaptureCompletedCallback;
+  typedef base::Callback<void(scoped_refptr<CaptureData>)>
+      CaptureCompletedCallback;
 
   virtual ~Capturer() {};
 
   // Create platform-specific capturer.
   static Capturer* Create();
+
+#if defined(OS_LINUX)
+  // Set whether the Capturer should try to use X DAMAGE support if it is
+  // available.  This needs to be called before the Capturer is created.
+  // This is used by the Virtual Me2Me host, since the XDamage extension is
+  // known to work reliably in this case.
+
+  // TODO(lambroslambrou): This currently sets a global flag, referenced during
+  // Capturer::Create().  This is a temporary solution, until the
+  // DesktopEnvironment class is refactored to allow applications to control
+  // the creation of various stubs (including the Capturer) - see
+  // http://crbug.com/104544
+  static void EnableXDamage(bool enable);
+#endif  // defined(OS_LINUX)
 
   // Called when the screen configuration is changed.
   virtual void ScreenConfigurationChanged() = 0;
@@ -51,36 +66,33 @@ class Capturer {
   // Return the pixel format of the screen.
   virtual media::VideoFrame::Format pixel_format() const = 0;
 
-  // Clear out the list of invalid rects.
-  virtual void ClearInvalidRects() = 0;
+  // Clear out the invalid region.
+  virtual void ClearInvalidRegion() = 0;
 
-  // Invalidate the specified screen rects.
-  virtual void InvalidateRects(const InvalidRects& inval_rects) = 0;
+  // Invalidate the specified region.
+  virtual void InvalidateRegion(const SkRegion& invalid_region) = 0;
 
   // Invalidate the entire screen, of a given size.
-  virtual void InvalidateScreen(const gfx::Size& size) = 0;
+  virtual void InvalidateScreen(const SkISize& size) = 0;
 
   // Invalidate the entire screen, using the size of the most recently
   // captured screen.
   virtual void InvalidateFullScreen() = 0;
 
   // Capture the screen data associated with each of the accumulated
-  // rects in |inval_rects|.
-  // This routine will first call CalculateInvalidRects to update the
-  // list of |inval_rects|.
-  // When the capture is complete, |callback| is called.
-  //
-  // If |inval_rects_| is empty, then this does nothing except
-  // call the |callback| routine.
+  // dirty region.
+  // When the capture is complete, |callback| is called even if the dirty region
+  // is empty.
   //
   // It is OK to call this method while another thread is reading
-  // data of the last capture.
+  // data of the previous capture.
   // There can be at most one concurrent read going on when this
   // method is called.
-  virtual void CaptureInvalidRects(CaptureCompletedCallback* callback) = 0;
+  virtual void CaptureInvalidRegion(
+      const CaptureCompletedCallback& callback) = 0;
 
   // Get the size of the most recently captured screen.
-  virtual const gfx::Size& size_most_recent() const = 0;
+  virtual const SkISize& size_most_recent() const = 0;
 };
 
 }  // namespace remoting

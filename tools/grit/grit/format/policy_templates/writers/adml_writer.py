@@ -90,8 +90,7 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
     elif policy_type == 'int':
       textbox_elem = self.AddElement(presentation_elem, 'decimalTextBox',
                                      {'refId': policy_name})
-      label_elem = self.AddElement(textbox_elem, 'label')
-      label_elem.appendChild(self._doc.createTextNode(policy_label))
+      textbox_elem.appendChild(self._doc.createTextNode(policy_label + ':'))
     elif policy_type in ('int-enum', 'string-enum'):
       for item in policy['items']:
         self._AddString(self._string_table_elem, item['name'], item['caption'])
@@ -133,14 +132,25 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
     self._AddString(string_table_elem, self.config['win_supported_os'],
                     self.messages['win_supported_winxpsp2']['text'])
+    recommended_name = '%s (%s)' % \
+        (self.config['app_name'], self.messages['doc_recommended']['text'])
     if build == 'chrome':
-      self._AddString(string_table_elem, self.config['win_category_path'][0],
+      self._AddString(string_table_elem,
+                      self.config['win_mandatory_category_path'][0],
                       'Google')
-      self._AddString(string_table_elem, self.config['win_category_path'][1],
+      self._AddString(string_table_elem,
+                      self.config['win_mandatory_category_path'][1],
                       self.config['app_name'])
+      self._AddString(string_table_elem,
+                      self.config['win_recommended_category_path'][1],
+                      recommended_name)
     elif build == 'chromium':
-      self._AddString(string_table_elem, self.config['win_category_path'][0],
+      self._AddString(string_table_elem,
+                      self.config['win_mandatory_category_path'][0],
                       self.config['app_name'])
+      self._AddString(string_table_elem,
+                      self.config['win_recommended_category_path'][0],
+                      recommended_name)
 
   def BeginTemplate(self):
     dom_impl = minidom.getDOMImplementation('')

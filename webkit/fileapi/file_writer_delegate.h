@@ -6,14 +6,11 @@
 #define WEBKIT_FILEAPI_FILE_WRITER_DELEGATE_H_
 
 #include "base/file_path.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop_proxy.h"
 #include "base/platform_file.h"
-#include "base/task.h"
 #include "base/time.h"
-#include "net/base/completion_callback.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/url_request/url_request.h"
@@ -38,16 +35,20 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
     return file_;
   }
 
-  virtual void OnReceivedRedirect(
-      net::URLRequest* request, const GURL& new_url, bool* defer_redirect);
-  virtual void OnAuthRequired(
-      net::URLRequest* request, net::AuthChallengeInfo* auth_info);
+  virtual void OnReceivedRedirect(net::URLRequest* request,
+                                  const GURL& new_url,
+                                  bool* defer_redirect) OVERRIDE;
+  virtual void OnAuthRequired(net::URLRequest* request,
+                              net::AuthChallengeInfo* auth_info) OVERRIDE;
   virtual void OnCertificateRequested(
-      net::URLRequest* request, net::SSLCertRequestInfo* cert_request_info);
-  virtual void OnSSLCertificateError(
-      net::URLRequest* request, int cert_error, net::X509Certificate* cert);
-  virtual void OnResponseStarted(net::URLRequest* request);
-  virtual void OnReadCompleted(net::URLRequest* request, int bytes_read);
+      net::URLRequest* request,
+      net::SSLCertRequestInfo* cert_request_info) OVERRIDE;
+  virtual void OnSSLCertificateError(net::URLRequest* request,
+                                     const net::SSLInfo& ssl_info,
+                                     bool fatal) OVERRIDE;
+  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
+  virtual void OnReadCompleted(net::URLRequest* request,
+                               int bytes_read) OVERRIDE;
 
  private:
   void OnGetFileInfoAndCallStartUpdate(
@@ -77,9 +78,7 @@ class FileWriterDelegate : public net::URLRequest::Delegate {
   scoped_refptr<net::IOBufferWithSize> io_buffer_;
   scoped_ptr<net::FileStream> file_stream_;
   net::URLRequest* request_;
-  net::CompletionCallbackImpl<FileWriterDelegate> io_callback_;
-  ScopedRunnableMethodFactory<FileWriterDelegate> method_factory_;
-  base::ScopedCallbackFactory<FileWriterDelegate> callback_factory_;
+  base::WeakPtrFactory<FileWriterDelegate> weak_factory_;
 };
 
 }  // namespace fileapi

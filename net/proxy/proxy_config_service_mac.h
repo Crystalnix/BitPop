@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,15 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "net/base/network_config_watcher_mac.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service.h"
+
+class MessageLoop;
 
 namespace net {
 
@@ -25,9 +29,9 @@ class ProxyConfigServiceMac : public ProxyConfigService {
 
  public:
   // ProxyConfigService implementation:
-  virtual void AddObserver(Observer* observer);
-  virtual void RemoveObserver(Observer* observer);
-  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config);
+  virtual void AddObserver(Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(Observer* observer) OVERRIDE;
+  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) OVERRIDE;
 
  private:
   class Helper;
@@ -36,23 +40,25 @@ class ProxyConfigServiceMac : public ProxyConfigService {
   // ProxyConfigServiceMac's public API.
   class Forwarder : public NetworkConfigWatcherMac::Delegate {
    public:
-    explicit Forwarder(ProxyConfigServiceMac* net_config_watcher)
-        : net_config_watcher_(net_config_watcher) {}
+    explicit Forwarder(ProxyConfigServiceMac* proxy_config_service)
+        : proxy_config_service_(proxy_config_service) {}
 
     // NetworkConfigWatcherMac::Delegate implementation:
-    virtual void SetDynamicStoreNotificationKeys(SCDynamicStoreRef store) {
-      net_config_watcher_->SetDynamicStoreNotificationKeys(store);
+    virtual void StartReachabilityNotifications() OVERRIDE {}
+    virtual void SetDynamicStoreNotificationKeys(SCDynamicStoreRef store)
+        OVERRIDE {
+      proxy_config_service_->SetDynamicStoreNotificationKeys(store);
     }
-    virtual void OnNetworkConfigChange(CFArrayRef changed_keys) {
-      net_config_watcher_->OnNetworkConfigChange(changed_keys);
+    virtual void OnNetworkConfigChange(CFArrayRef changed_keys) OVERRIDE {
+      proxy_config_service_->OnNetworkConfigChange(changed_keys);
     }
 
    private:
-    ProxyConfigServiceMac* const net_config_watcher_;
+    ProxyConfigServiceMac* const proxy_config_service_;
     DISALLOW_COPY_AND_ASSIGN(Forwarder);
   };
 
-  // NetworkConfigWatcherMac::Delegate implementation:
+  // Methods directly called by the NetworkConfigWatcherMac::Delegate:
   void SetDynamicStoreNotificationKeys(SCDynamicStoreRef store);
   void OnNetworkConfigChange(CFArrayRef changed_keys);
 
@@ -60,7 +66,7 @@ class ProxyConfigServiceMac : public ProxyConfigService {
   void OnProxyConfigChanged(const ProxyConfig& new_config);
 
   Forwarder forwarder_;
-  const NetworkConfigWatcherMac config_watcher_;
+  scoped_ptr<const NetworkConfigWatcherMac> config_watcher_;
 
   ObserverList<Observer> observers_;
 

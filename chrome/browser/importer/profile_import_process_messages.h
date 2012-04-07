@@ -13,11 +13,11 @@
 #include "chrome/browser/importer/importer_data_types.h"
 #include "chrome/browser/importer/profile_writer.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "content/common/common_param_traits.h"
-#include "content/common/webkit_param_traits.h"
+#include "content/public/common/common_param_traits.h"
+#include "content/public/common/webkit_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_message_utils.h"
-#include "webkit/glue/password_form.h"
+#include "webkit/forms/password_form.h"
 
 #ifndef CHROME_BROWSER_IMPORTER_PROFILE_IMPORT_PROCESS_MESSAGES_H_
 #define CHROME_BROWSER_IMPORTER_PROFILE_IMPORT_PROCESS_MESSAGES_H_
@@ -274,6 +274,7 @@ struct ParamTraits<TemplateURL> {
     WriteParam(m, p.languages());
     WriteParam(m, p.input_encodings());
     WriteParam(m, p.date_created());
+    WriteParam(m, p.last_modified());
     WriteParam(m, p.usage_count());
     WriteParam(m, p.prepopulate_id());
   }
@@ -291,6 +292,7 @@ struct ParamTraits<TemplateURL> {
     std::vector<string16> languages;
     std::vector<std::string> input_encodings;
     base::Time date_created;
+    base::Time last_modified;
     int usage_count;
     int prepopulate_id;
 
@@ -332,6 +334,7 @@ struct ParamTraits<TemplateURL> {
     if (!ReadParam(m, iter, &languages) ||
         !ReadParam(m, iter, &input_encodings) ||
         !ReadParam(m, iter, &date_created) ||
+        !ReadParam(m, iter, &last_modified) ||
         !ReadParam(m, iter, &usage_count) ||
         !ReadParam(m, iter, &prepopulate_id))
       return false;
@@ -355,8 +358,9 @@ struct ParamTraits<TemplateURL> {
     }
     p->set_input_encodings(input_encodings);
     p->set_date_created(date_created);
+    p->set_last_modified(last_modified);
     p->set_usage_count(usage_count);
-    p->set_prepopulate_id(prepopulate_id);
+    p->SetPrepopulateId(prepopulate_id);
     return true;
   }
   static void Log(const param_type& p, std::string* l) {
@@ -427,7 +431,7 @@ IPC_MESSAGE_CONTROL1(ProfileImportProcessHostMsg_NotifyFaviconsImportGroup,
                      std::vector<history::ImportedFaviconUsage>)
 
 IPC_MESSAGE_CONTROL1(ProfileImportProcessHostMsg_NotifyPasswordFormReady,
-                     webkit_glue::PasswordForm)
+                     webkit::forms::PasswordForm)
 
 IPC_MESSAGE_CONTROL3(ProfileImportProcessHostMsg_NotifyKeywordsReady,
                      std::vector<TemplateURL>,

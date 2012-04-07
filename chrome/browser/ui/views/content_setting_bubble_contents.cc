@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,30 +8,36 @@
 #include <gdk/gdk.h>
 #endif
 
+#include <algorithm>
+#include <set>
+#include <string>
+#include <vector>
+
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/plugin_updater.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/content_settings/content_setting_bubble_model.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
-#include "chrome/browser/ui/views/bubble/bubble.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/plugin_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/button/native_button.h"
-#include "views/controls/button/radio_button.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/controls/link.h"
-#include "views/controls/separator.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "webkit/glue/plugins/plugin_list.h"
+#include "ui/views/controls/button/radio_button.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
+#include "ui/views/controls/separator.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include "ui/gfx/gtk_util.h"
+#endif
+
+#if defined(USE_AURA)
+#include "ui/aura/cursor.h"
 #endif
 
 // If we don't clamp the maximum width, then very long URLs and titles can make
@@ -41,6 +47,9 @@ const int kMaxContentsWidth = 500;
 // When we have multiline labels, we should set a minimum width lest we get very
 // narrow bubbles with lots of line-wrapping.
 const int kMinMultiLineContentsWidth = 250;
+
+using content::PluginService;
+using content::WebContents;
 
 class ContentSettingBubbleContents::Favicon : public views::ImageView {
  public:
@@ -86,7 +95,9 @@ void ContentSettingBubbleContents::Favicon::OnMouseReleased(
 
 gfx::NativeCursor ContentSettingBubbleContents::Favicon::GetCursor(
     const views::MouseEvent& event) {
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+  return aura::kCursorHand;
+#elif defined(OS_WIN)
   static HCURSOR g_hand_cursor = LoadCursor(NULL, IDC_HAND);
   return g_hand_cursor;
 #elif defined(TOOLKIT_USES_GTK)
@@ -97,16 +108,18 @@ gfx::NativeCursor ContentSettingBubbleContents::Favicon::GetCursor(
 ContentSettingBubbleContents::ContentSettingBubbleContents(
     ContentSettingBubbleModel* content_setting_bubble_model,
     Profile* profile,
-    TabContents* tab_contents)
-    : content_setting_bubble_model_(content_setting_bubble_model),
+    WebContents* web_contents,
+    views::View* anchor_view,
+    views::BubbleBorder::ArrowLocation arrow_location)
+    : BubbleDelegateView(anchor_view, arrow_location),
+      content_setting_bubble_model_(content_setting_bubble_model),
       profile_(profile),
-      tab_contents_(tab_contents),
-      bubble_(NULL),
+      web_contents_(web_contents),
       custom_link_(NULL),
       manage_link_(NULL),
       close_button_(NULL) {
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                 Source<TabContents>(tab_contents));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<WebContents>(web_contents));
 }
 
 ContentSettingBubbleContents::~ContentSettingBubbleContents() {
@@ -122,61 +135,13 @@ gfx::Size ContentSettingBubbleContents::GetPreferredSize() {
   return preferred_size;
 }
 
-void ContentSettingBubbleContents::ViewHierarchyChanged(bool is_add,
-                                                        View* parent,
-                                                        View* child) {
-  if (is_add && (child == this))
-    InitControlLayout();
+gfx::Rect ContentSettingBubbleContents::GetAnchorRect() {
+  gfx::Rect rect(BubbleDelegateView::GetAnchorRect());
+  rect.Inset(0, anchor_view() ? 5 : 0);
+  return rect;
 }
 
-void ContentSettingBubbleContents::ButtonPressed(views::Button* sender,
-                                                 const views::Event& event) {
-  if (sender == close_button_) {
-    bubble_->set_fade_away_on_close(true);
-    bubble_->Close();  // CAREFUL: This deletes us.
-    return;
-  }
-
-  for (RadioGroup::const_iterator i = radio_group_.begin();
-       i != radio_group_.end(); ++i) {
-    if (sender == *i) {
-      content_setting_bubble_model_->OnRadioClicked(i - radio_group_.begin());
-      return;
-    }
-  }
-  NOTREACHED() << "unknown radio";
-}
-
-void ContentSettingBubbleContents::LinkClicked(views::Link* source,
-                                               int event_flags) {
-  if (source == custom_link_) {
-    content_setting_bubble_model_->OnCustomLinkClicked();
-    bubble_->set_fade_away_on_close(true);
-    bubble_->Close();  // CAREFUL: This deletes us.
-    return;
-  }
-  if (source == manage_link_) {
-    bubble_->set_fade_away_on_close(true);
-    content_setting_bubble_model_->OnManageLinkClicked();
-    // CAREFUL: Showing the settings window activates it, which deactivates the
-    // info bubble, which causes it to close, which deletes us.
-    return;
-  }
-
-  PopupLinks::const_iterator i(popup_links_.find(source));
-  DCHECK(i != popup_links_.end());
-  content_setting_bubble_model_->OnPopupClicked(i->second);
-}
-
-void ContentSettingBubbleContents::Observe(NotificationType type,
-                                           const NotificationSource& source,
-                                           const NotificationDetails& details) {
-  DCHECK(type == NotificationType::TAB_CONTENTS_DESTROYED);
-  DCHECK(source == Source<TabContents>(tab_contents_));
-  tab_contents_ = NULL;
-}
-
-void ContentSettingBubbleContents::InitControlLayout() {
+void ContentSettingBubbleContents::Init() {
   using views::GridLayout;
 
   GridLayout* layout = new views::GridLayout(this);
@@ -192,7 +157,7 @@ void ContentSettingBubbleContents::InitControlLayout() {
   bool bubble_content_empty = true;
 
   if (!bubble_content.title.empty()) {
-    views::Label* title_label = new views::Label(UTF8ToWide(
+    views::Label* title_label = new views::Label(UTF8ToUTF16(
         bubble_content.title));
     layout->StartRow(0, single_column_set_id);
     layout->AddView(title_label);
@@ -205,10 +170,10 @@ void ContentSettingBubbleContents::InitControlLayout() {
       layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
     for (std::set<std::string>::const_iterator it = plugins.begin();
         it != plugins.end(); ++it) {
-      std::wstring name = UTF16ToWide(
-          NPAPI::PluginList::Singleton()->GetPluginGroupName(*it));
+      string16 name =
+          PluginService::GetInstance()->GetPluginGroupName(*it);
       if (name.empty())
-        name = UTF8ToWide(*it);
+        name = UTF8ToUTF16(*it);
       layout->StartRow(0, single_column_set_id);
       layout->AddView(new views::Label(name));
       bubble_content_empty = false;
@@ -234,7 +199,7 @@ void ContentSettingBubbleContents::InitControlLayout() {
         layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
       layout->StartRow(0, popup_column_set_id);
 
-      views::Link* link = new views::Link(UTF8ToWide(i->title));
+      views::Link* link = new views::Link(UTF8ToUTF16(i->title));
       link->set_listener(this);
       link->SetElideInMiddle(true);
       popup_links_[link] = i - bubble_content.popup_items.begin();
@@ -247,14 +212,14 @@ void ContentSettingBubbleContents::InitControlLayout() {
   const ContentSettingBubbleModel::RadioGroup& radio_group =
       bubble_content.radio_group;
   if (!radio_group.radio_items.empty()) {
+    if (!bubble_content_empty)
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
     for (ContentSettingBubbleModel::RadioItems::const_iterator i =
          radio_group.radio_items.begin();
          i != radio_group.radio_items.end(); ++i) {
-      views::RadioButton* radio = new views::RadioButton(UTF8ToWide(*i), 0);
+      views::RadioButton* radio = new views::RadioButton(UTF8ToUTF16(*i), 0);
       radio->set_listener(this);
       radio_group_.push_back(radio);
-      if (!bubble_content_empty)
-        layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
       layout->StartRow(0, single_column_set_id);
       layout->AddView(radio);
       bubble_content_empty = false;
@@ -279,20 +244,20 @@ void ContentSettingBubbleContents::InitControlLayout() {
        bubble_content.domain_lists.begin();
        i != bubble_content.domain_lists.end(); ++i) {
     layout->StartRow(0, single_column_set_id);
-    views::Label* section_title = new views::Label(UTF8ToWide(i->title));
+    views::Label* section_title = new views::Label(UTF8ToUTF16(i->title));
     section_title->SetMultiLine(true);
     section_title->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
     layout->AddView(section_title, 1, 1, GridLayout::FILL, GridLayout::LEADING);
     for (std::set<std::string>::const_iterator j = i->hosts.begin();
          j != i->hosts.end(); ++j) {
       layout->StartRow(0, indented_single_column_set_id);
-      layout->AddView(new views::Label(UTF8ToWide(*j), domain_font));
+      layout->AddView(new views::Label(UTF8ToUTF16(*j), domain_font));
     }
     bubble_content_empty = false;
   }
 
   if (!bubble_content.custom_link.empty()) {
-    custom_link_ = new views::Link(UTF8ToWide(bubble_content.custom_link));
+    custom_link_ = new views::Link(UTF8ToUTF16(bubble_content.custom_link));
     custom_link_->SetEnabled(bubble_content.custom_link_enabled);
     custom_link_->set_listener(this);
     if (!bubble_content_empty)
@@ -321,12 +286,57 @@ void ContentSettingBubbleContents::InitControlLayout() {
                         GridLayout::USE_PREF, 0, 0);
 
   layout->StartRow(0, double_column_set_id);
-  manage_link_ = new views::Link(UTF8ToWide(bubble_content.manage_link));
+  manage_link_ = new views::Link(UTF8ToUTF16(bubble_content.manage_link));
   manage_link_->set_listener(this);
   layout->AddView(manage_link_);
 
-  close_button_ =
-      new views::NativeButton(this,
-                              UTF16ToWide(l10n_util::GetStringUTF16(IDS_DONE)));
+  close_button_ = new views::NativeTextButton(
+      this, l10n_util::GetStringUTF16(IDS_DONE));
   layout->AddView(close_button_);
+}
+
+void ContentSettingBubbleContents::ButtonPressed(views::Button* sender,
+                                                 const views::Event& event) {
+  if (sender == close_button_) {
+    StartFade(false);
+    return;
+  }
+
+  for (RadioGroup::const_iterator i = radio_group_.begin();
+       i != radio_group_.end(); ++i) {
+    if (sender == *i) {
+      content_setting_bubble_model_->OnRadioClicked(i - radio_group_.begin());
+      return;
+    }
+  }
+  NOTREACHED() << "unknown radio";
+}
+
+void ContentSettingBubbleContents::LinkClicked(views::Link* source,
+                                               int event_flags) {
+  if (source == custom_link_) {
+    content_setting_bubble_model_->OnCustomLinkClicked();
+    StartFade(false);
+    return;
+  }
+  if (source == manage_link_) {
+    StartFade(false);
+    content_setting_bubble_model_->OnManageLinkClicked();
+    // CAREFUL: Showing the settings window activates it, which deactivates the
+    // info bubble, which causes it to close, which deletes us.
+    return;
+  }
+
+  PopupLinks::const_iterator i(popup_links_.find(source));
+  DCHECK(i != popup_links_.end());
+  content_setting_bubble_model_->OnPopupClicked(i->second);
+}
+
+void ContentSettingBubbleContents::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
+  DCHECK(source == content::Source<WebContents>(web_contents_));
+  web_contents_ = NULL;
 }

@@ -1,23 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef UI_GFX_PLATFORM_FONT_WIN_
-#define UI_GFX_PLATFORM_FONT_WIN_
+#ifndef UI_GFX_PLATFORM_FONT_WIN_H_
+#define UI_GFX_PLATFORM_FONT_WIN_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/platform_font.h"
 
 namespace gfx {
 
-class PlatformFontWin : public PlatformFont {
+class UI_EXPORT PlatformFontWin : public PlatformFont {
  public:
   PlatformFontWin();
   explicit PlatformFontWin(const Font& other);
   explicit PlatformFontWin(NativeFont native_font);
-  PlatformFontWin(const string16& font_name,
-                  int font_size);
+  PlatformFontWin(const std::string& font_name, int font_size);
 
   // Dialog units to pixels conversion.
   // See http://support.microsoft.com/kb/145994 for details.
@@ -41,16 +42,15 @@ class PlatformFontWin : public PlatformFont {
   static AdjustFontCallback adjust_font_callback;
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const;
-  virtual int GetHeight() const;
-  virtual int GetBaseline() const;
-  virtual int GetAverageCharacterWidth() const;
-  virtual int GetStringWidth(const string16& text) const;
-  virtual int GetExpectedTextWidth(int length) const;
-  virtual int GetStyle() const;
-  virtual string16 GetFontName() const;
-  virtual int GetFontSize() const;
-  virtual NativeFont GetNativeFont() const;
+  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
+  virtual int GetHeight() const OVERRIDE;
+  virtual int GetBaseline() const OVERRIDE;
+  virtual int GetAverageCharacterWidth() const OVERRIDE;
+  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
+  virtual int GetStyle() const OVERRIDE;
+  virtual std::string GetFontName() const OVERRIDE;
+  virtual int GetFontSize() const OVERRIDE;
+  virtual NativeFont GetNativeFont() const OVERRIDE;
 
  private:
   virtual ~PlatformFontWin() {}
@@ -81,7 +81,7 @@ class PlatformFontWin : public PlatformFont {
     int ave_char_width() const { return ave_char_width_; }
     int style() const { return style_; }
     int dlu_base_x() const { return dlu_base_x_; }
-    const string16& font_name() const { return font_name_; }
+    const std::string& font_name() const { return font_name_; }
 
    private:
     friend class  base::RefCounted<HFontRef>;
@@ -95,7 +95,7 @@ class PlatformFontWin : public PlatformFont {
     const int style_;
     // Constants used in converting dialog units to pixels.
     const int dlu_base_x_;
-    string16 font_name_;
+    std::string font_name_;
 
     DISALLOW_COPY_AND_ASSIGN(HFontRef);
   };
@@ -104,7 +104,7 @@ class PlatformFontWin : public PlatformFont {
   void InitWithCopyOfHFONT(HFONT hfont);
 
   // Initializes this object with the specified font name and size.
-  void InitWithFontNameAndSize(const string16& font_name,
+  void InitWithFontNameAndSize(const std::string& font_name,
                                int font_size);
 
   // Returns the base font ref. This should ONLY be invoked on the
@@ -127,5 +127,5 @@ class PlatformFontWin : public PlatformFont {
 
 }  // namespace gfx
 
-#endif  // UI_GFX_PLATFORM_FONT_WIN_
+#endif  // UI_GFX_PLATFORM_FONT_WIN_H_
 

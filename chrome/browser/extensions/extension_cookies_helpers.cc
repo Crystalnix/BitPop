@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,16 +7,20 @@
 #include "chrome/browser/extensions/extension_cookies_helpers.h"
 
 #include "base/logging.h"
+#include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_cookies_api_constants.h"
-#include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/cookie_util.h"
 
 namespace keys = extension_cookies_api_constants;
 
@@ -50,12 +54,18 @@ DictionaryValue* CreateCookieValue(
     const std::string& store_id) {
   DictionaryValue* result = new DictionaryValue();
 
-  result->SetString(keys::kNameKey, cookie.Name());
-  result->SetString(keys::kValueKey, cookie.Value());
+  // A cookie is a raw byte sequence. By explicitly parsing it as UTF8, we
+  // apply error correction, so the string can be safely passed to the
+  // renderer.
+  result->SetString(keys::kNameKey, UTF8ToUTF16(cookie.Name()));
+  result->SetString(keys::kValueKey, UTF8ToUTF16(cookie.Value()));
   result->SetString(keys::kDomainKey, cookie.Domain());
   result->SetBoolean(keys::kHostOnlyKey,
-                     net::CookieMonster::DomainIsHostOnly(cookie.Domain()));
-  result->SetString(keys::kPathKey, cookie.Path());
+                     net::cookie_util::DomainIsHostOnly(cookie.Domain()));
+
+  // A non-UTF8 path is invalid, so we just replace it with an empty string.
+  result->SetString(keys::kPathKey,
+                    IsStringUTF8(cookie.Path()) ? cookie.Path() : "");
   result->SetBoolean(keys::kSecureKey, cookie.IsSecure());
   result->SetBoolean(keys::kHttpOnlyKey, cookie.IsHttpOnly());
   result->SetBoolean(keys::kSessionKey, !cookie.DoesExpire());
@@ -78,15 +88,17 @@ DictionaryValue* CreateCookieStoreValue(Profile* profile,
   return result;
 }
 
-net::CookieList GetCookieListFromStore(
-    net::CookieStore* cookie_store, const GURL& url) {
+void GetCookieListFromStore(
+    net::CookieStore* cookie_store, const GURL& url,
+    const net::CookieMonster::GetCookieListCallback& callback) {
   DCHECK(cookie_store);
   net::CookieMonster* monster = cookie_store->GetCookieMonster();
   if (!url.is_empty()) {
     DCHECK(url.is_valid());
-    return monster->GetAllCookiesForURL(url);
+    monster->GetAllCookiesForURLAsync(url, callback);
+  } else {
+    monster->GetAllCookiesAsync(callback);
   }
-  return monster->GetAllCookies();
 }
 
 GURL GetURLFromCanonicalCookie(
@@ -126,7 +138,7 @@ void AppendToTabIdList(Browser* browser, ListValue* tab_ids) {
   for (int i = 0; i < tab_strip->count(); ++i) {
     tab_ids->Append(Value::CreateIntegerValue(
         ExtensionTabUtil::GetTabId(
-            tab_strip->GetTabContentsAt(i)->tab_contents())));
+            tab_strip->GetTabContentsAt(i)->web_contents())));
   }
 }
 
@@ -168,12 +180,12 @@ bool MatchFilter::MatchesDomain(const std::string& domain) {
   if (!details_->GetString(keys::kDomainKey, &filter_value))
     return false;
   // Add a leading '.' character to the filter domain if it doesn't exist.
-  if (net::CookieMonster::DomainIsHostOnly(filter_value))
+  if (net::cookie_util::DomainIsHostOnly(filter_value))
     filter_value.insert(0, ".");
 
   std::string sub_domain(domain);
   // Strip any leading '.' character from the input cookie domain.
-  if (!net::CookieMonster::DomainIsHostOnly(sub_domain))
+  if (!net::cookie_util::DomainIsHostOnly(sub_domain))
     sub_domain = sub_domain.substr(1);
 
   // Now check whether the domain argument is a subdomain of the filter domain.

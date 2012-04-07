@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "grit/generated_resources.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/base/gtk/gtk_signal_registrar.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/canvas.h"
 
@@ -30,8 +31,10 @@ enum {
 
 }  // namespace
 
-TranslateInfoBarBase::TranslateInfoBarBase(TranslateInfoBarDelegate* delegate)
-    : InfoBar(delegate) {
+TranslateInfoBarBase::TranslateInfoBarBase(InfoBarTabHelper* owner,
+                                           TranslateInfoBarDelegate* delegate)
+    : InfoBarGtk(owner, delegate) {
+  DCHECK(delegate);
   TranslateInfoBarDelegate::BackgroundAnimationType animation =
       delegate->background_animation_type();
   if (animation != TranslateInfoBarDelegate::NONE) {
@@ -61,50 +64,25 @@ void TranslateInfoBarBase::Init() {
   // The options button sits outside the translate_box so that it can be end
   // packed in hbox_.
   GtkWidget* options_menu_button = BuildOptionsMenuButton();
-  g_signal_connect(options_menu_button, "clicked",
-                   G_CALLBACK(&OnOptionsClickedThunk), this);
+  Signals()->Connect(options_menu_button, "clicked",
+                     G_CALLBACK(&OnOptionsClickedThunk), this);
   gtk_widget_show_all(options_menu_button);
   gtk_util::CenterWidgetInHBox(hbox_, options_menu_button, true, 0);
 }
 
 void TranslateInfoBarBase::GetTopColor(InfoBarDelegate::Type type,
-                                       double* r, double* g, double *b) {
+                                       double* r, double* g, double* b) {
   if (background_error_percent_ <= 0) {
-    InfoBar::GetTopColor(InfoBarDelegate::PAGE_ACTION_TYPE, r, g, b);
+    InfoBarGtk::GetTopColor(InfoBarDelegate::PAGE_ACTION_TYPE, r, g, b);
   } else if (background_error_percent_ >= 1) {
-    InfoBar::GetTopColor(InfoBarDelegate::WARNING_TYPE, r, g, b);
+    InfoBarGtk::GetTopColor(InfoBarDelegate::WARNING_TYPE, r, g, b);
   } else {
     double normal_r, normal_g, normal_b;
-    InfoBar::GetTopColor(InfoBarDelegate::PAGE_ACTION_TYPE,
-                         &normal_r, &normal_g, &normal_b);
-
-    double error_r, error_g, error_b;
-    InfoBar::GetTopColor(InfoBarDelegate::WARNING_TYPE,
-                         &error_r, &error_g, &error_b);
-
-    double offset_r = error_r - normal_r;
-    double offset_g = error_g - normal_g;
-    double offset_b = error_b - normal_b;
-
-    *r = normal_r + (background_error_percent_ * offset_r);
-    *g = normal_g + (background_error_percent_ * offset_g);
-    *b = normal_b + (background_error_percent_ * offset_b);
-  }
-}
-
-void TranslateInfoBarBase::GetBottomColor(InfoBarDelegate::Type type,
-                                          double* r, double* g, double *b) {
-  if (background_error_percent_ <= 0) {
-    InfoBar::GetBottomColor(InfoBarDelegate::PAGE_ACTION_TYPE, r, g, b);
-  } else if (background_error_percent_ >= 1) {
-    InfoBar::GetBottomColor(InfoBarDelegate::WARNING_TYPE, r, g, b);
-  } else {
-    double normal_r, normal_g, normal_b;
-    InfoBar::GetBottomColor(InfoBarDelegate::PAGE_ACTION_TYPE,
+    InfoBarGtk::GetTopColor(InfoBarDelegate::PAGE_ACTION_TYPE,
                             &normal_r, &normal_g, &normal_b);
 
     double error_r, error_g, error_b;
-    InfoBar::GetBottomColor(InfoBarDelegate::WARNING_TYPE,
+    InfoBarGtk::GetTopColor(InfoBarDelegate::WARNING_TYPE,
                             &error_r, &error_g, &error_b);
 
     double offset_r = error_r - normal_r;
@@ -117,21 +95,43 @@ void TranslateInfoBarBase::GetBottomColor(InfoBarDelegate::Type type,
   }
 }
 
+void TranslateInfoBarBase::GetBottomColor(InfoBarDelegate::Type type,
+                                          double* r, double* g, double* b) {
+  if (background_error_percent_ <= 0) {
+    InfoBarGtk::GetBottomColor(InfoBarDelegate::PAGE_ACTION_TYPE, r, g, b);
+  } else if (background_error_percent_ >= 1) {
+    InfoBarGtk::GetBottomColor(InfoBarDelegate::WARNING_TYPE, r, g, b);
+  } else {
+    double normal_r, normal_g, normal_b;
+    InfoBarGtk::GetBottomColor(InfoBarDelegate::PAGE_ACTION_TYPE,
+                               &normal_r, &normal_g, &normal_b);
+
+    double error_r, error_g, error_b;
+    InfoBarGtk::GetBottomColor(InfoBarDelegate::WARNING_TYPE,
+                               &error_r, &error_g, &error_b);
+
+    double offset_r = error_r - normal_r;
+    double offset_g = error_g - normal_g;
+    double offset_b = error_b - normal_b;
+
+    *r = normal_r + (background_error_percent_ * offset_r);
+    *g = normal_g + (background_error_percent_ * offset_g);
+    *b = normal_b + (background_error_percent_ * offset_b);
+  }
+}
+
 void TranslateInfoBarBase::AnimationProgressed(const ui::Animation* animation) {
-  DCHECK(animation == background_color_animation_.get());
-  background_error_percent_ = animation->GetCurrentValue();
-  // Queue the info bar widget for redisplay so it repaints its background.
-  gtk_widget_queue_draw(widget());
+  if (animation == background_color_animation_.get()) {
+    background_error_percent_ = animation->GetCurrentValue();
+    // Queue the info bar widget for redisplay so it repaints its background.
+    gtk_widget_queue_draw(widget());
+  } else {
+    InfoBar::AnimationProgressed(animation);
+  }
 }
 
 bool TranslateInfoBarBase::ShowOptionsMenuButton() const {
   return false;
-}
-
-GtkWidget* TranslateInfoBarBase::CreateLabel(const std::string& text) {
-  GtkWidget* label = gtk_label_new(text.c_str());
-  gtk_widget_modify_fg(label, GTK_STATE_NORMAL, &gtk_util::kGdkBlack);
-  return label;
 }
 
 GtkWidget* TranslateInfoBarBase::CreateLanguageCombobox(
@@ -184,7 +184,7 @@ size_t TranslateInfoBarBase::GetLanguageComboboxActiveId(GtkComboBox* combo) {
   return static_cast<size_t>(id);
 }
 
-TranslateInfoBarDelegate* TranslateInfoBarBase::GetDelegate() const {
+TranslateInfoBarDelegate* TranslateInfoBarBase::GetDelegate() {
   return static_cast<TranslateInfoBarDelegate*>(delegate());
 }
 
@@ -210,26 +210,22 @@ GtkWidget* TranslateInfoBarBase::BuildOptionsMenuButton() {
 }
 
 void TranslateInfoBarBase::OnOptionsClicked(GtkWidget* sender) {
-  if (!options_menu_model_.get()) {
-    options_menu_model_.reset(new OptionsMenuModel(GetDelegate()));
-    options_menu_menu_.reset(new MenuGtk(NULL, options_menu_model_.get()));
-  }
-  options_menu_menu_->PopupForWidget(sender, 1, gtk_get_current_event_time());
+  ShowMenuWithModel(sender, NULL, new OptionsMenuModel(GetDelegate()));
 }
 
 // TranslateInfoBarDelegate specific method:
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
+InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
   TranslateInfoBarBase* infobar = NULL;
   switch (type_) {
     case BEFORE_TRANSLATE:
-      infobar = new BeforeTranslateInfoBar(this);
+      infobar = new BeforeTranslateInfoBar(owner, this);
       break;
     case AFTER_TRANSLATE:
-      infobar = new AfterTranslateInfoBar(this);
+      infobar = new AfterTranslateInfoBar(owner, this);
       break;
     case TRANSLATING:
     case TRANSLATION_ERROR:
-      infobar = new TranslateMessageInfoBar(this);
+      infobar = new TranslateMessageInfoBar(owner, this);
       break;
     default:
       NOTREACHED();

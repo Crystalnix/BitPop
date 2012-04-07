@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,20 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/tab_contents/thumbnail_generator.h"
 #include "chrome/common/render_messages.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
 #include "content/browser/renderer_host/backing_store_skia.h"
 #include "content/browser/renderer_host/mock_render_process_host.h"
 #include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/render_view_host_manager.h"
-#include "content/common/notification_service.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 #include "skia/ext/platform_canvas.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/surface/transport_dib.h"
+
+using content::WebContents;
 
 static const int kBitmapWidth = 100;
 static const int kBitmapHeight = 100;
@@ -58,19 +59,19 @@ class ThumbnailGeneratorTest : public testing::Test {
   ThumbnailGeneratorTest() {
     profile_.reset(new TestingProfile());
     process_ = new MockRenderProcessHost(profile_.get());
-    widget_.reset(new RenderWidgetHost(process_, 1));
+    widget_.reset(new RenderWidgetHost(process_, MSG_ROUTING_NONE));
     view_.reset(new TestRenderWidgetHostViewWithBackingStoreSkia(
         widget_.get()));
     // Paiting will be skipped if there's no view.
-    widget_->set_view(view_.get());
+    widget_->SetView(view_.get());
 
     // Need to send out a create notification for the RWH to get hooked. This is
     // a little scary in that we don't have a RenderView, but the only listener
     // will want a RenderWidget, so it works out OK.
-    NotificationService::current()->Notify(
-        NotificationType::RENDER_VIEW_HOST_CREATED_FOR_TAB,
-        Source<RenderViewHostManager>(NULL),
-        Details<RenderViewHost>(reinterpret_cast<RenderViewHost*>(
+    content::NotificationService::current()->Notify(
+        content::NOTIFICATION_RENDER_VIEW_HOST_CREATED_FOR_TAB,
+        content::Source<WebContents>(NULL),
+        content::Details<RenderViewHost>(reinterpret_cast<RenderViewHost*>(
             widget_.get())));
 
     transport_dib_.reset(TransportDIB::Create(kBitmapWidth * kBitmapHeight * 4,
@@ -93,12 +94,6 @@ class ThumbnailGeneratorTest : public testing::Test {
   enum TransportType { TRANSPORT_BLACK, TRANSPORT_WHITE, TRANSPORT_OTHER };
 
   void SendPaint(TransportType type) {
-    ViewHostMsg_UpdateRect_Params params;
-    params.bitmap_rect = gfx::Rect(0, 0, kBitmapWidth, kBitmapHeight);
-    params.view_size = params.bitmap_rect.size();
-    params.copy_rects.push_back(params.bitmap_rect);
-    params.flags = 0;
-
     scoped_ptr<skia::PlatformCanvas> canvas(
         transport_dib_->GetPlatformCanvas(kBitmapWidth, kBitmapHeight));
     switch (type) {
@@ -116,10 +111,8 @@ class ThumbnailGeneratorTest : public testing::Test {
         break;
     }
 
-    params.bitmap = transport_dib_->id();
-
-    ViewHostMsg_UpdateRect msg(1, params);
-    widget_->OnMessageReceived(msg);
+    gfx::Rect rect(0, 0, kBitmapWidth, kBitmapHeight);
+    SimulateUpdateRect(widget_.get(), transport_dib_->id(), rect);
   }
 
   TransportType ClassifyFirstPixel(const SkBitmap& bitmap) {
@@ -183,9 +176,17 @@ TEST_F(ThumbnailGeneratorTest, DiscardBackingStore) {
   // The thumbnail generator should be able to retrieve a thumbnail.
   SkBitmap result = generator_.GetThumbnailForRenderer(widget_.get());
   ASSERT_FALSE(result.isNull());
-  // TODO(satorux): Figure out why valgrind complains about this and fix.
-  // See crbug.com/80458.
-  // EXPECT_EQ(TRANSPORT_BLACK, ClassifyFirstPixel(result));
+  // Valgrind reports MemoryCheck::Cond inside ClassifyFirstPixel(). With
+  // --track-origins=yes, valgrind reports that the uninitialized value
+  // originates from SkBitmap created in BackingStoreSkia's constructor.
+  // However, the bitmap is set properly when we send bitmap data in
+  // SendPaint() using TransportDIB (the test fails if the bitmap does not
+  // starts with 0xFF, 0x00, 0x00, 0x00, which is unlikely to happen by
+  // accident). Valgrind doesn't seem to be able to track data transfer
+  // from TransportDIB probably because the data comes from shared
+  // memory. This can explain why valgrind wrongly reports that the value
+  // in the bitmap is uninitialized. See also crbug.com/80458.
+  EXPECT_EQ(TRANSPORT_BLACK, ClassifyFirstPixel(result));
 
   // Discard the backing store.
   ASSERT_TRUE(BackingStoreManager::ExpireBackingStoreForTest(widget_.get()));
@@ -197,47 +198,52 @@ TEST_F(ThumbnailGeneratorTest, DiscardBackingStore) {
   ASSERT_TRUE(result.isNull());
 }
 
-#endif  // !defined(OS_MAC)
+#endif  // !defined(OS_MACOSX)
 
-TEST(ThumbnailGeneratorSimpleTest, CalculateBoringScore_Empty) {
+typedef testing::Test ThumbnailGeneratorSimpleTest;
+
+TEST_F(ThumbnailGeneratorSimpleTest, CalculateBoringScore_Empty) {
   SkBitmap bitmap;
   EXPECT_DOUBLE_EQ(1.0, ThumbnailGenerator::CalculateBoringScore(&bitmap));
 }
 
-TEST(ThumbnailGeneratorSimpleTest, CalculateBoringScore_SingleColor) {
+TEST_F(ThumbnailGeneratorSimpleTest, CalculateBoringScore_SingleColor) {
   const SkColor kBlack = SkColorSetRGB(0, 0, 0);
   const gfx::Size kSize(20, 10);
-  gfx::CanvasSkia canvas(kSize.width(), kSize.height(), true);
+  gfx::CanvasSkia canvas(kSize, true);
   // Fill all pixesl in black.
-  canvas.FillRectInt(kBlack, 0, 0, kSize.width(), kSize.height());
+  canvas.FillRect(kBlack, gfx::Rect(gfx::Point(), kSize));
 
-  SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
   // The thumbnail should deserve the highest boring score.
   EXPECT_DOUBLE_EQ(1.0, ThumbnailGenerator::CalculateBoringScore(&bitmap));
 }
 
-TEST(ThumbnailGeneratorSimpleTest, CalculateBoringScore_TwoColors) {
+TEST_F(ThumbnailGeneratorSimpleTest, CalculateBoringScore_TwoColors) {
   const SkColor kBlack = SkColorSetRGB(0, 0, 0);
   const SkColor kWhite = SkColorSetRGB(0xFF, 0xFF, 0xFF);
   const gfx::Size kSize(20, 10);
 
-  gfx::CanvasSkia canvas(kSize.width(), kSize.height(), true);
+  gfx::CanvasSkia canvas(kSize, true);
   // Fill all pixesl in black.
-  canvas.FillRectInt(kBlack, 0, 0, kSize.width(), kSize.height());
+  canvas.FillRect(kBlack, gfx::Rect(gfx::Point(), kSize));
   // Fill the left half pixels in white.
-  canvas.FillRectInt(kWhite, 0, 0, kSize.width() / 2, kSize.height());
+  canvas.FillRect(kWhite, gfx::Rect(0, 0, kSize.width() / 2, kSize.height()));
 
-  SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
   ASSERT_EQ(kSize.width(), bitmap.width());
   ASSERT_EQ(kSize.height(), bitmap.height());
   // The thumbnail should be less boring because two colors are used.
   EXPECT_DOUBLE_EQ(0.5, ThumbnailGenerator::CalculateBoringScore(&bitmap));
 }
 
-TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_TallerThanWide) {
+TEST_F(ThumbnailGeneratorSimpleTest, GetClippedBitmap_TallerThanWide) {
   // The input bitmap is vertically long.
-  gfx::CanvasSkia canvas(40, 90, true);
-  const SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  gfx::CanvasSkia canvas(gfx::Size(40, 90), true);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
 
   // The desired size is square.
   ThumbnailGenerator::ClipResult clip_result = ThumbnailGenerator::kNotClipped;
@@ -250,10 +256,11 @@ TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_TallerThanWide) {
   EXPECT_EQ(ThumbnailGenerator::kTallerThanWide, clip_result);
 }
 
-TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_WiderThanTall) {
+TEST_F(ThumbnailGeneratorSimpleTest, GetClippedBitmap_WiderThanTall) {
   // The input bitmap is horizontally long.
-  gfx::CanvasSkia canvas(90, 40, true);
-  const SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  gfx::CanvasSkia canvas(gfx::Size(90, 40), true);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
 
   // The desired size is square.
   ThumbnailGenerator::ClipResult clip_result = ThumbnailGenerator::kNotClipped;
@@ -266,10 +273,11 @@ TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_WiderThanTall) {
   EXPECT_EQ(ThumbnailGenerator::kWiderThanTall, clip_result);
 }
 
-TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_NotClipped) {
+TEST_F(ThumbnailGeneratorSimpleTest, GetClippedBitmap_NotClipped) {
   // The input bitmap is square.
-  gfx::CanvasSkia canvas(40, 40, true);
-  const SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  gfx::CanvasSkia canvas(gfx::Size(40, 40), true);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
 
   // The desired size is square.
   ThumbnailGenerator::ClipResult clip_result = ThumbnailGenerator::kNotClipped;
@@ -282,10 +290,11 @@ TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_NotClipped) {
   EXPECT_EQ(ThumbnailGenerator::kNotClipped, clip_result);
 }
 
-TEST(ThumbnailGeneratorSimpleTest, GetClippedBitmap_NonSquareOutput) {
+TEST_F(ThumbnailGeneratorSimpleTest, GetClippedBitmap_NonSquareOutput) {
   // The input bitmap is square.
-  gfx::CanvasSkia canvas(40, 40, true);
-  const SkBitmap bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
+  gfx::CanvasSkia canvas(gfx::Size(40, 40), true);
+  SkBitmap bitmap =
+      skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
 
   // The desired size is horizontally long.
   ThumbnailGenerator::ClipResult clip_result = ThumbnailGenerator::kNotClipped;
@@ -335,7 +344,7 @@ class MockTopSites : public history::TopSites {
   std::map<std::string, ThumbnailScore> known_url_map_;
 };
 
-TEST(ThumbnailGeneratorSimpleTest, ShouldUpdateThumbnail) {
+TEST_F(ThumbnailGeneratorSimpleTest, ShouldUpdateThumbnail) {
   const GURL kGoodURL("http://www.google.com/");
   const GURL kBadURL("chrome://newtab");
 

@@ -9,13 +9,15 @@
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "webkit/glue/form_data.h"
-#include "webkit/glue/form_field.h"
+#include "webkit/forms/form_data.h"
+#include "webkit/forms/form_field.h"
 
-using webkit_glue::FormData;
+using webkit::forms::FormData;
+using webkit::forms::FormField;
 using WebKit::WebInputElement;
 
-namespace webkit_glue {
+namespace webkit {
+namespace forms {
 
 std::ostream& operator<<(std::ostream& os, const FormData& form) {
   os << UTF16ToUTF8(form.name)
@@ -27,7 +29,7 @@ std::ostream& operator<<(std::ostream& os, const FormData& form) {
      << form.action.spec()
      << " ";
 
-  for (std::vector<webkit_glue::FormField>::const_iterator iter =
+  for (std::vector<webkit::forms::FormField>::const_iterator iter =
            form.fields.begin();
        iter != form.fields.end(); ++iter) {
     os << *iter
@@ -37,6 +39,7 @@ std::ostream& operator<<(std::ostream& os, const FormData& form) {
   return os;
 }
 
+}  // namespace forms
 }  // namespace webkit_glue
 
 class FormStructureTest {
@@ -46,29 +49,26 @@ class FormStructureTest {
   }
 };
 
-namespace {
-
 TEST(FormStructureTest, FieldCount) {
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("username"),
-                                               ASCIIToUTF16("username"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("password"),
-                                               ASCIIToUTF16("password"),
-                                               string16(),
-                                               ASCIIToUTF16("password"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.label = ASCIIToUTF16("username");
+  field.name = ASCIIToUTF16("username");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("password");
+  field.name = ASCIIToUTF16("password");
+  field.form_control_type = ASCIIToUTF16("password");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   FormStructure form_structure(form);
 
   // All fields are counted.
@@ -78,30 +78,28 @@ TEST(FormStructureTest, FieldCount) {
 TEST(FormStructureTest, AutofillCount) {
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("username"),
-                                               ASCIIToUTF16("username"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("password"),
-                                               ASCIIToUTF16("password"),
-                                               string16(),
-                                               ASCIIToUTF16("password"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("state"),
-                                               ASCIIToUTF16("state"),
-                                               string16(),
-                                               ASCIIToUTF16("select-one"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.label = ASCIIToUTF16("username");
+  field.name = ASCIIToUTF16("username");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("password");
+  field.name = ASCIIToUTF16("password");
+  field.form_control_type = ASCIIToUTF16("password");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("state");
+  field.name = ASCIIToUTF16("state");
+  field.form_control_type = ASCIIToUTF16("select-one");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes();
 
@@ -124,52 +122,48 @@ TEST(FormStructureTest, IsAutofillable) {
 
   // We need at least three text fields to be auto-fillable.
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("username"),
-                                               ASCIIToUTF16("username"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("password"),
-                                               ASCIIToUTF16("password"),
-                                               string16(),
-                                               ASCIIToUTF16("password"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.label = ASCIIToUTF16("username");
+  field.name = ASCIIToUTF16("username");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("password");
+  field.name = ASCIIToUTF16("password");
+  field.form_control_type = ASCIIToUTF16("password");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_FALSE(form_structure->IsAutofillable(true));
 
   // We now have three text fields, but only two auto-fillable fields.
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                                               ASCIIToUTF16("firstname"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                                               ASCIIToUTF16("lastname"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("firstname");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("lastname");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_FALSE(form_structure->IsAutofillable(true));
 
   // We now have three auto-fillable fields.
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Email"),
-                                               ASCIIToUTF16("email"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  field.form_control_type = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -196,72 +190,129 @@ TEST(FormStructureTest, IsAutofillable) {
   EXPECT_TRUE(form_structure->IsAutofillable(true));
 }
 
-TEST(FormStructureTest, HeuristicsContactInfo) {
+TEST(FormStructureTest, ShouldBeParsed) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
 
+  // We need at least three text fields to be parseable.
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                                               ASCIIToUTF16("firstname"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                                               ASCIIToUTF16("lastname"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("EMail"),
-                                               ASCIIToUTF16("email"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Phone"),
-                                               ASCIIToUTF16("phone"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Fax"),
-                                               ASCIIToUTF16("fax"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                               ASCIIToUTF16("address"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("City"),
-                                               ASCIIToUTF16("city"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Zip code"),
-                                               ASCIIToUTF16("zipcode"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.label = ASCIIToUTF16("username");
+  field.name = ASCIIToUTF16("username");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  EXPECT_FALSE(form_structure->ShouldBeParsed(true));
+
+  // We now have three text fields, though only two are auto-fillable.
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("firstname");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("lastname");
+  field.form_control_type = ASCIIToUTF16("text");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  EXPECT_TRUE(form_structure->ShouldBeParsed(true));
+
+  // The method must be 'post', though we can intentionally ignore this
+  // criterion for the sake of providing a helpful warning message to the user.
+  form.method = ASCIIToUTF16("get");
+  form_structure.reset(new FormStructure(form));
+  EXPECT_FALSE(form_structure->IsAutofillable(true));
+  EXPECT_TRUE(form_structure->ShouldBeParsed(false));
+
+  // The target cannot include http(s)://*/search...
+  form.method = ASCIIToUTF16("post");
+  form.action = GURL("http://google.com/search?q=hello");
+  form_structure.reset(new FormStructure(form));
+  EXPECT_FALSE(form_structure->ShouldBeParsed(true));
+
+  // But search can be in the URL.
+  form.action = GURL("http://search.com/?q=hello");
+  form_structure.reset(new FormStructure(form));
+  EXPECT_TRUE(form_structure->ShouldBeParsed(true));
+
+  // The form need only have three fields, but at least one must be a text
+  // field.
+  form.fields.clear();
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  field.form_control_type = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("State");
+  field.name = ASCIIToUTF16("state");
+  field.form_control_type = ASCIIToUTF16("select-one");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Country");
+  field.name = ASCIIToUTF16("country");
+  field.form_control_type = ASCIIToUTF16("select-one");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  EXPECT_TRUE(form_structure->ShouldBeParsed(true));
+
+  form.fields[0].form_control_type = ASCIIToUTF16("select-one");
+  form_structure.reset(new FormStructure(form));
+  EXPECT_FALSE(form_structure->ShouldBeParsed(true));
+}
+
+TEST(FormStructureTest, HeuristicsContactInfo) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("firstname");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("lastname");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Phone");
+  field.name = ASCIIToUTF16("phone");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = ASCIIToUTF16("address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City");
+  field.name = ASCIIToUTF16("city");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Zip code");
+  field.name = ASCIIToUTF16("zipcode");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
 
   // Expect the correct number of fields.
-  ASSERT_EQ(9U, form_structure->field_count());
-  ASSERT_EQ(8U, form_structure->autofill_count());
+  ASSERT_EQ(8U, form_structure->field_count());
+  ASSERT_EQ(7U, form_structure->autofill_count());
 
   // First name.
   EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
@@ -272,93 +323,317 @@ TEST(FormStructureTest, HeuristicsContactInfo) {
   // Phone.
   EXPECT_EQ(PHONE_HOME_WHOLE_NUMBER,
       form_structure->field(3)->heuristic_type());
-  // Fax.
-  EXPECT_EQ(PHONE_FAX_WHOLE_NUMBER, form_structure->field(4)->heuristic_type());
   // Address.
-  EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(5)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(4)->heuristic_type());
   // City.
-  EXPECT_EQ(ADDRESS_HOME_CITY, form_structure->field(6)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_CITY, form_structure->field(5)->heuristic_type());
   // Zip.
-  EXPECT_EQ(ADDRESS_HOME_ZIP, form_structure->field(7)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_ZIP, form_structure->field(6)->heuristic_type());
   // Submit.
-  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(8)->heuristic_type());
+  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(7)->heuristic_type());
+}
+
+// Verify that we can correctly process the |autocompletetype| attribute.
+TEST(FormStructureTest, HeuristicsAutocompletetype) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field1");
+  field.autocomplete_type = ASCIIToUTF16("given-name");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field2");
+  field.autocomplete_type = ASCIIToUTF16("surname");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field3");
+  field.autocomplete_type = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_TRUE(form_structure->IsAutofillable(true));
+
+  // Expect the correct number of fields.
+  ASSERT_EQ(3U, form_structure->field_count());
+  ASSERT_EQ(3U, form_structure->autofill_count());
+
+  EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(NAME_LAST, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(EMAIL_ADDRESS, form_structure->field(2)->heuristic_type());
+}
+
+// Verify that we can correctly process the |autocompletetype| attribute for
+// phone number types (especially phone prefixes and suffixes).
+TEST(FormStructureTest, HeuristicsAutocompletetypePhones) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field1");
+  field.autocomplete_type = ASCIIToUTF16("phone-local");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field2");
+  field.autocomplete_type = ASCIIToUTF16("phone-local-prefix");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("field3");
+  field.autocomplete_type = ASCIIToUTF16("phone-local-suffix");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_TRUE(form_structure->IsAutofillable(true));
+
+  // Expect the correct number of fields.
+  ASSERT_EQ(3U, form_structure->field_count());
+  EXPECT_EQ(3U, form_structure->autofill_count());
+
+  EXPECT_EQ(PHONE_HOME_NUMBER, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(AutofillField::IGNORED, form_structure->field(0)->phone_part());
+  EXPECT_EQ(PHONE_HOME_NUMBER, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(AutofillField::PHONE_PREFIX,
+            form_structure->field(1)->phone_part());
+  EXPECT_EQ(PHONE_HOME_NUMBER, form_structure->field(2)->heuristic_type());
+  EXPECT_EQ(AutofillField::PHONE_SUFFIX,
+            form_structure->field(2)->phone_part());
+}
+
+// If at least one field includes the |autocompletetype| attribute, we should
+// not try to apply any other heuristics.
+TEST(FormStructureTest, AutocompletetypeOverridesOtherHeuristics) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  // Start with a regular contact form.
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("firstname");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("lastname");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_TRUE(form_structure->IsAutofillable(true));
+  EXPECT_TRUE(form_structure->ShouldBeCrowdsourced());
+
+  ASSERT_EQ(3U, form_structure->field_count());
+  ASSERT_EQ(3U, form_structure->autofill_count());
+
+  EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(NAME_LAST, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(EMAIL_ADDRESS, form_structure->field(2)->heuristic_type());
+
+  // Now update the first form field to include an 'autocompletetype' attribute.
+  form.fields.front().autocomplete_type = ASCIIToUTF16("x-other");
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_FALSE(form_structure->IsAutofillable(true));
+  EXPECT_FALSE(form_structure->ShouldBeCrowdsourced());
+
+  ASSERT_EQ(3U, form_structure->field_count());
+  ASSERT_EQ(0U, form_structure->autofill_count());
+
+  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(2)->heuristic_type());
+}
+
+// Verify that we can correctly process sections listed in the |autocomplete|
+// attribute.
+TEST(FormStructureTest, HeuristicsAutocompletetypeWithSections) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  // We expect "shipping" and "billing" to be the most common sections.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field1");
+  field.autocomplete_type = ASCIIToUTF16("section-shipping given-name");
+  form.fields.push_back(field);
+
+  // Some field will have no section specified.  These fall into the default
+  // section, with an empty name.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field2");
+  field.autocomplete_type = ASCIIToUTF16("surname");
+  form.fields.push_back(field);
+
+  // We allow arbitrary section names.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field3");
+  field.autocomplete_type = ASCIIToUTF16("section-foo address-line1");
+  form.fields.push_back(field);
+
+  // Specifying "section-" is equivalent to not specifying a section.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field4");
+  field.autocomplete_type = ASCIIToUTF16("section- address-line2");
+  form.fields.push_back(field);
+
+  // We don't do anything clever to try to coalesce sections; it's up to site
+  // authors to avoid typos.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field5");
+  field.autocomplete_type = ASCIIToUTF16("section--shipping locality");
+  form.fields.push_back(field);
+
+  // Credit card fields are implicitly in a separate section from other fields.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field6");
+  field.autocomplete_type = ASCIIToUTF16("section-shipping cc-number");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_TRUE(form_structure->IsAutofillable(true));
+
+  // Expect the correct number of fields.
+  ASSERT_EQ(6U, form_structure->field_count());
+  ASSERT_EQ(6U, form_structure->autofill_count());
+
+  EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("shipping-default"),
+            form_structure->field(0)->section());
+  EXPECT_EQ(NAME_LAST, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("-default"), form_structure->field(1)->section());
+  EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(2)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("foo-default"), form_structure->field(2)->section());
+  EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(3)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("-default"), form_structure->field(3)->section());
+  EXPECT_EQ(ADDRESS_HOME_CITY, form_structure->field(4)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("-shipping-default"),
+            form_structure->field(4)->section());
+  EXPECT_EQ(CREDIT_CARD_NUMBER, form_structure->field(5)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("shipping-cc"), form_structure->field(5)->section());
+}
+
+// Verify that we can correctly process fallback types listed in the
+// |autocompletetype| attribute.
+TEST(FormStructureTest, HeuristicsAutocompletetypeWithFallbacks) {
+  scoped_ptr<FormStructure> form_structure;
+  FormData form;
+  form.method = ASCIIToUTF16("post");
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  // Skip over any sections and "x"-prefixed types.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field1");
+  field.autocomplete_type =
+      ASCIIToUTF16("section-full-name x-given-name-initial given-name");
+  form.fields.push_back(field);
+
+  // Stop processing once we see a known type.
+  field.label = string16();
+  field.name = ASCIIToUTF16("field2");
+  field.autocomplete_type = ASCIIToUTF16("section-full-name surname full-name");
+  form.fields.push_back(field);
+
+  // Skip over unknown types even if they are not prefixed with "x-".
+  field.label = string16();
+  field.name = ASCIIToUTF16("field3");
+  field.autocomplete_type =
+      ASCIIToUTF16("section-shipping mobile-phone-full phone-full");
+  form.fields.push_back(field);
+
+  form_structure.reset(new FormStructure(form));
+  form_structure->DetermineHeuristicTypes();
+  EXPECT_TRUE(form_structure->IsAutofillable(true));
+
+  // Expect the correct number of fields.
+  ASSERT_EQ(3U, form_structure->field_count());
+  ASSERT_EQ(3U, form_structure->autofill_count());
+
+  EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("full-name-default"),
+            form_structure->field(0)->section());
+  EXPECT_EQ(NAME_LAST, form_structure->field(1)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("full-name-default"),
+            form_structure->field(1)->section());
+  EXPECT_EQ(PHONE_HOME_WHOLE_NUMBER,
+            form_structure->field(2)->heuristic_type());
+  EXPECT_EQ(ASCIIToUTF16("shipping-default"),
+            form_structure->field(2)->section());
 }
 
 TEST(FormStructureTest, HeuristicsSample8) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Your First Name:"),
-                             ASCIIToUTF16("bill.first"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Your Last Name:"),
-                             ASCIIToUTF16("bill.last"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Street Address Line 1:"),
-                             ASCIIToUTF16("bill.street1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Street Address Line 2:"),
-                             ASCIIToUTF16("bill.street2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City:"),
-                             ASCIIToUTF16("bill.city"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("State (U.S.):"),
-                             ASCIIToUTF16("bill.state"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Zip/Postal Code:"),
-                             ASCIIToUTF16("BillTo.PostalCode"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Country:"),
-                             ASCIIToUTF16("bill.country"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Phone Number:"),
-                             ASCIIToUTF16("BillTo.Phone"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(string16(),
-                             ASCIIToUTF16("Submit"),
-                             string16(),
-                             ASCIIToUTF16("submit"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Your First Name:");
+  field.name = ASCIIToUTF16("bill.first");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Your Last Name:");
+  field.name = ASCIIToUTF16("bill.last");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Street Address Line 1:");
+  field.name = ASCIIToUTF16("bill.street1");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Street Address Line 2:");
+  field.name = ASCIIToUTF16("bill.street2");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City");
+  field.name = ASCIIToUTF16("bill.city");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("State (U.S.):");
+  field.name = ASCIIToUTF16("bill.state");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Zip/Postal Code:");
+  field.name = ASCIIToUTF16("BillTo.PostalCode");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Country:");
+  field.name = ASCIIToUTF16("bill.country");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Phone Number:");
+  field.name = ASCIIToUTF16("BillTo.Phone");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -392,59 +667,41 @@ TEST(FormStructureTest, HeuristicsSample8) {
 TEST(FormStructureTest, HeuristicsSample6) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("E-mail address"),
-                             ASCIIToUTF16("email"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Full name"),
-                             ASCIIToUTF16("name"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Company"),
-                             ASCIIToUTF16("company"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address"),
-                             ASCIIToUTF16("address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City"),
-                             ASCIIToUTF16("city"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  // TODO(jhawkins): Add state select control.
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Zip Code"),
-                             ASCIIToUTF16("Home.PostalCode"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  // TODO(jhawkins): Phone number.
-  form.fields.push_back(
-      webkit_glue::FormField(string16(),
-                             ASCIIToUTF16("Submit"),
-                             ASCIIToUTF16("continue"),
-                             ASCIIToUTF16("submit"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("E-mail address");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Full name");
+  field.name = ASCIIToUTF16("name");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Company");
+  field.name = ASCIIToUTF16("company");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = ASCIIToUTF16("address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City");
+  field.name = ASCIIToUTF16("city");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Zip Code");
+  field.name = ASCIIToUTF16("Home.PostalCode");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.value = ASCIIToUTF16("continue");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -473,67 +730,49 @@ TEST(FormStructureTest, HeuristicsSample6) {
 TEST(FormStructureTest, HeuristicsLabelsOnly) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("EMail"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Phone"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Fax"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Zip code"),
-                                               string16(),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Phone");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Zip code");
+  field.name = string16();
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
-  ASSERT_EQ(9U, form_structure->field_count());
-  ASSERT_EQ(8U, form_structure->autofill_count());
+  ASSERT_EQ(8U, form_structure->field_count());
+  ASSERT_EQ(7U, form_structure->autofill_count());
 
   // First name.
   EXPECT_EQ(NAME_FIRST, form_structure->field(0)->heuristic_type());
@@ -544,59 +783,49 @@ TEST(FormStructureTest, HeuristicsLabelsOnly) {
   // Phone.
   EXPECT_EQ(PHONE_HOME_WHOLE_NUMBER,
       form_structure->field(3)->heuristic_type());
-  // Fax.
-  EXPECT_EQ(PHONE_FAX_WHOLE_NUMBER, form_structure->field(4)->heuristic_type());
   // Address.
-  EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(5)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_LINE1, form_structure->field(4)->heuristic_type());
   // Address Line 2.
-  EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(6)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_LINE2, form_structure->field(5)->heuristic_type());
   // Zip.
-  EXPECT_EQ(ADDRESS_HOME_ZIP, form_structure->field(7)->heuristic_type());
+  EXPECT_EQ(ADDRESS_HOME_ZIP, form_structure->field(6)->heuristic_type());
   // Submit.
-  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(8)->heuristic_type());
+  EXPECT_EQ(UNKNOWN_TYPE, form_structure->field(7)->heuristic_type());
 }
 
 TEST(FormStructureTest, HeuristicsCreditCardInfo) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Name on Card"),
-                                               ASCIIToUTF16("name on card"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card Number"),
-                                               ASCIIToUTF16("card_number"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Exp Month"),
-                                               ASCIIToUTF16("ccmonth"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Exp Year"),
-                                               ASCIIToUTF16("ccyear"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Verification"),
-                                               ASCIIToUTF16("verification"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Name on Card");
+  field.name = ASCIIToUTF16("name_on_card");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Card Number");
+  field.name = ASCIIToUTF16("card_number");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Exp Month");
+  field.name = ASCIIToUTF16("ccmonth");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Exp Year");
+  field.name = ASCIIToUTF16("ccyear");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Verification");
+  field.name = ASCIIToUTF16("verification");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -621,52 +850,42 @@ TEST(FormStructureTest, HeuristicsCreditCardInfo) {
 TEST(FormStructureTest, HeuristicsCreditCardInfoWithUnknownCardField) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Name on Card"),
-                                               ASCIIToUTF16("name on card"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Name on Card");
+  field.name = ASCIIToUTF16("name_on_card");
+  form.fields.push_back(field);
+
   // This is not a field we know how to process.  But we should skip over it
   // and process the other fields in the card block.
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card Type"),
-                                               ASCIIToUTF16("card_type"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card Number"),
-                                               ASCIIToUTF16("card_number"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Exp Month"),
-                                               ASCIIToUTF16("ccmonth"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Exp Year"),
-                                               ASCIIToUTF16("ccyear"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Verification"),
-                                               ASCIIToUTF16("verification"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(string16(),
-                                               ASCIIToUTF16("Submit"),
-                                               string16(),
-                                               ASCIIToUTF16("submit"),
-                                               0,
-                                               false));
+  field.label = ASCIIToUTF16("Card Type");
+  field.name = ASCIIToUTF16("card_type");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Card Number");
+  field.name = ASCIIToUTF16("card_number");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Exp Month");
+  field.name = ASCIIToUTF16("ccmonth");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Exp Year");
+  field.name = ASCIIToUTF16("ccyear");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Verification");
+  field.name = ASCIIToUTF16("verification");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("Submit");
+  field.form_control_type = ASCIIToUTF16("submit");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -693,36 +912,27 @@ TEST(FormStructureTest, HeuristicsCreditCardInfoWithUnknownCardField) {
 TEST(FormStructureTest, ThreeAddressLines) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line1"),
-                             ASCIIToUTF16("Address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line2"),
-                             ASCIIToUTF16("Address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line3"),
-                             ASCIIToUTF16("Address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City"),
-                             ASCIIToUTF16("city"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Address Line1");
+  field.name = ASCIIToUTF16("Address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line2");
+  field.name = ASCIIToUTF16("Address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line3");
+  field.name = ASCIIToUTF16("Address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City");
+  field.name = ASCIIToUTF16("city");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -744,36 +954,27 @@ TEST(FormStructureTest, ThreeAddressLines) {
 TEST(FormStructureTest, BillingAndShippingAddresses) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line1"),
-                             ASCIIToUTF16("shipping.address.addressLine1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line2"),
-                             ASCIIToUTF16("shipping.address.addressLine2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line1"),
-                             ASCIIToUTF16("billing.address.addressLine1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line2"),
-                             ASCIIToUTF16("billing.address.addressLine2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Address Line1");
+  field.name = ASCIIToUTF16("shipping.address.addressLine1");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line2");
+  field.name = ASCIIToUTF16("shipping.address.addressLine2");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line1");
+  field.name = ASCIIToUTF16("billing.address.addressLine1");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line2");
+  field.name = ASCIIToUTF16("billing.address.addressLine2");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -799,36 +1000,27 @@ TEST(FormStructureTest, BillingAndShippingAddresses) {
 TEST(FormStructureTest, ThreeAddressLinesExpedia) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Street:"),
-                             ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_ads1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Suite or Apt:"),
-                             ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_adap"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Street address second line"),
-                             ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_ads2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City:"),
-                             ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_adct"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Street:");
+  field.name = ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_ads1");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Suite or Apt:");
+  field.name = ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_adap");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Street address second line");
+  field.name = ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_ads2");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City:");
+  field.name = ASCIIToUTF16("FOPIH_RgWebCC_0_IHAddress_adct");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -851,29 +1043,23 @@ TEST(FormStructureTest, ThreeAddressLinesExpedia) {
 TEST(FormStructureTest, TwoAddressLinesEbay) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line1"),
-                             ASCIIToUTF16("address1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Floor number, suite number, etc"),
-                             ASCIIToUTF16("address2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City"),
-                             ASCIIToUTF16("city"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Address Line1");
+  field.name = ASCIIToUTF16("address1");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Floor number, suite number, etc");
+  field.name = ASCIIToUTF16("address2");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City:");
+  field.name = ASCIIToUTF16("city");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -891,29 +1077,23 @@ TEST(FormStructureTest, TwoAddressLinesEbay) {
 TEST(FormStructureTest, HeuristicsStateWithProvince) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line1"),
-                             ASCIIToUTF16("Address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address Line2"),
-                             ASCIIToUTF16("Address"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("State/Province/Region"),
-                             ASCIIToUTF16("State"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Address Line1");
+  field.name = ASCIIToUTF16("Address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address Line2");
+  field.name = ASCIIToUTF16("Address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("State/Province/Region");
+  field.name = ASCIIToUTF16("State");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -932,85 +1112,55 @@ TEST(FormStructureTest, HeuristicsStateWithProvince) {
 TEST(FormStructureTest, HeuristicsWithBilling) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("First Name*:"),
-                             ASCIIToUTF16("editBillingAddress$firstNameBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Last Name*:"),
-                             ASCIIToUTF16("editBillingAddress$lastNameBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Company Name:"),
-                             ASCIIToUTF16("editBillingAddress$companyBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Address*:"),
-                             ASCIIToUTF16("editBillingAddress$addressLine1Box"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Apt/Suite :"),
-                             ASCIIToUTF16("editBillingAddress$addressLine2Box"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("City*:"),
-                             ASCIIToUTF16("editBillingAddress$cityBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("State/Province*:"),
-                             ASCIIToUTF16("editBillingAddress$stateDropDown"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Country*:"),
-                             ASCIIToUTF16("editBillingAddress$countryDropDown"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Postal Code*:"),
-                             ASCIIToUTF16("editBillingAddress$zipCodeBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Phone*:"),
-                             ASCIIToUTF16("editBillingAddress$phoneBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Email Address*:"),
-                             ASCIIToUTF16("email$emailBox"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name*:");
+  field.name = ASCIIToUTF16("editBillingAddress$firstNameBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name*:");
+  field.name = ASCIIToUTF16("editBillingAddress$lastNameBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Company Name:");
+  field.name = ASCIIToUTF16("editBillingAddress$companyBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address*:");
+  field.name = ASCIIToUTF16("editBillingAddress$addressLine1Box");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Apt/Suite :");
+  field.name = ASCIIToUTF16("editBillingAddress$addressLine2Box");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("City*:");
+  field.name = ASCIIToUTF16("editBillingAddress$cityBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("State/Province*:");
+  field.name = ASCIIToUTF16("editBillingAddress$stateDropDown");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Country*:");
+  field.name = ASCIIToUTF16("editBillingAddress$countryDropDown");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Postal Code*:");
+  field.name = ASCIIToUTF16("editBillingAddress$zipCodeBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Phone*:");
+  field.name = ASCIIToUTF16("editBillingAddress$phoneBox");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Email Address*:");
+  field.name = ASCIIToUTF16("email$emailBox");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -1035,38 +1185,33 @@ TEST(FormStructureTest, HeuristicsWithBilling) {
 TEST(FormStructureTest, ThreePartPhoneNumber) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
-
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("Phone:"),
-                             ASCIIToUTF16("dayphone1"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("-"),
-                             ASCIIToUTF16("dayphone2"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             3,  // Size of prefix is 3.
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("-"),
-                             ASCIIToUTF16("dayphone3"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             4,  // Size of suffix is 4. If unlimited size is
-                                 // passed, phone will be parsed as
-                                 // <country code> - <area code> - <phone>.
-                             false));
-  form.fields.push_back(
-      webkit_glue::FormField(ASCIIToUTF16("ext.:"),
-                             ASCIIToUTF16("dayphone4"),
-                             string16(),
-                             ASCIIToUTF16("text"),
-                             0,
-                             false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Phone:");
+  field.name = ASCIIToUTF16("dayphone1");
+  field.max_length = 0;
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("-");
+  field.name = ASCIIToUTF16("dayphone2");
+  field.max_length = 3;  // Size of prefix is 3.
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("-");
+  field.name = ASCIIToUTF16("dayphone3");
+  field.max_length = 4;  // Size of suffix is 4.  If unlimited size is
+                         // passed, phone will be parsed as
+                         // <country code> - <area code> - <phone>.
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("ext.:");
+  field.name = ASCIIToUTF16("dayphone4");
+  field.max_length = 0;
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -1089,36 +1234,30 @@ TEST(FormStructureTest, HeuristicsInfernoCC) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Name on Card"),
-                                               ASCIIToUTF16("name_on_card"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                               ASCIIToUTF16("billing_address"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card Number"),
-                                               ASCIIToUTF16("card_number"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Expiration Date"),
-                                               ASCIIToUTF16("expiration_month"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Expiration Year"),
-                                               ASCIIToUTF16("expiration_year"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Name on Card");
+  field.name = ASCIIToUTF16("name_on_card");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = ASCIIToUTF16("billing_address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Card Number");
+  field.name = ASCIIToUTF16("card_number");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Expiration Date");
+  field.name = ASCIIToUTF16("expiration_month");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Expiration Year");
+  field.name = ASCIIToUTF16("expiration_year");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -1144,42 +1283,34 @@ TEST(FormStructureTest, CVCCodeClash) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card number"),
-                                               ASCIIToUTF16("ccnumber"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First name"),
-                                               ASCIIToUTF16("first_name"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last name"),
-                                               ASCIIToUTF16("last_name"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Expiration date"),
-                                               ASCIIToUTF16("ccexpiresmonth"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16(""),
-                                               ASCIIToUTF16("ccexpiresyear"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("cvc number"),
-                                               ASCIIToUTF16("csc"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Card number");
+  field.name = ASCIIToUTF16("ccnumber");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("First name");
+  field.name = ASCIIToUTF16("first_name");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last name");
+  field.name = ASCIIToUTF16("last_name");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Expiration date");
+  field.name = ASCIIToUTF16("ccexpiresmonth");
+  form.fields.push_back(field);
+
+  field.label = string16();
+  field.name = ASCIIToUTF16("ccexpiresyear");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("cvc number");
+  field.name = ASCIIToUTF16("csc");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
   EXPECT_TRUE(form_structure->IsAutofillable(true));
@@ -1206,36 +1337,30 @@ TEST(FormStructureTest, CVCCodeClash) {
 TEST(FormStructureTest, EncodeQueryRequest) {
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Name on Card"),
-                                               ASCIIToUTF16("name_on_card"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                               ASCIIToUTF16("billing_address"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Card Number"),
-                                               ASCIIToUTF16("card_number"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Expiration Date"),
-                                               ASCIIToUTF16("expiration_month"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Expiration Year"),
-                                               ASCIIToUTF16("expiration_year"),
-                                               string16(),
-                                               ASCIIToUTF16("text"),
-                                               0,
-                                               false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("Name on Card");
+  field.name = ASCIIToUTF16("name_on_card");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = ASCIIToUTF16("billing_address");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Card Number");
+  field.name = ASCIIToUTF16("card_number");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Expiration Date");
+  field.name = ASCIIToUTF16("expiration_month");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Expiration Year");
+  field.name = ASCIIToUTF16("expiration_year");
+  form.fields.push_back(field);
+
   ScopedVector<FormStructure> forms;
   forms.push_back(new FormStructure(form));
   std::vector<std::string> encoded_signatures;
@@ -1248,7 +1373,8 @@ TEST(FormStructureTest, EncodeQueryRequest) {
       "<field signature=\"1917667676\"/><field signature=\"2226358947\"/>"
       "<field signature=\"747221617\"/><field signature=\"4108155786\"/></form>"
       "</autofillquery>";
-  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms, &encoded_signatures,
+  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
+                                                &encoded_signatures,
                                                 &encoded_xml));
   ASSERT_EQ(1U, encoded_signatures.size());
   EXPECT_EQ(kSignature1, encoded_signatures[0]);
@@ -1257,24 +1383,22 @@ TEST(FormStructureTest, EncodeQueryRequest) {
   // Add the same form, only one will be encoded, so EncodeQueryRequest() should
   // return the same data.
   forms.push_back(new FormStructure(form));
-  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms, &encoded_signatures,
+  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
+                                                &encoded_signatures,
                                                 &encoded_xml));
   ASSERT_EQ(1U, encoded_signatures.size());
   EXPECT_EQ(kSignature1, encoded_signatures[0]);
   EXPECT_EQ(kResponse1, encoded_xml);
   // Add 5 address fields - this should be still a valid form.
   for (size_t i = 0; i < 5; ++i) {
-    form.fields.push_back(
-        webkit_glue::FormField(ASCIIToUTF16("Address"),
-                               ASCIIToUTF16("address"),
-                               string16(),
-                               ASCIIToUTF16("text"),
-                               0,
-                               false));
+    field.label = ASCIIToUTF16("Address");
+    field.name = ASCIIToUTF16("address");
+    form.fields.push_back(field);
   }
 
   forms.push_back(new FormStructure(form));
-  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms, &encoded_signatures,
+  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
+                                                &encoded_signatures,
                                                 &encoded_xml));
   ASSERT_EQ(2U, encoded_signatures.size());
   EXPECT_EQ(kSignature1, encoded_signatures[0]);
@@ -1297,17 +1421,14 @@ TEST(FormStructureTest, EncodeQueryRequest) {
   // Add 50 address fields - the form is not valid anymore, but previous ones
   // are. The result should be the same as in previous test.
   for (size_t i = 0; i < 50; ++i) {
-    form.fields.push_back(
-        webkit_glue::FormField(ASCIIToUTF16("Address"),
-                               ASCIIToUTF16("address"),
-                               string16(),
-                               ASCIIToUTF16("text"),
-                               0,
-                               false));
+    field.label = ASCIIToUTF16("Address");
+    field.name = ASCIIToUTF16("address");
+    form.fields.push_back(field);
   }
 
   forms.push_back(new FormStructure(form));
-  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms, &encoded_signatures,
+  ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
+                                                &encoded_signatures,
                                                 &encoded_xml));
   ASSERT_EQ(2U, encoded_signatures.size());
   EXPECT_EQ(kSignature1, encoded_signatures[0]);
@@ -1317,7 +1438,8 @@ TEST(FormStructureTest, EncodeQueryRequest) {
   // Check that we fail if there are only bad form(s).
   ScopedVector<FormStructure> bad_forms;
   bad_forms.push_back(new FormStructure(form));
-  EXPECT_FALSE(FormStructure::EncodeQueryRequest(bad_forms, &encoded_signatures,
+  EXPECT_FALSE(FormStructure::EncodeQueryRequest(bad_forms.get(),
+                                                 &encoded_signatures,
                                                  &encoded_xml));
   EXPECT_EQ(0U, encoded_signatures.size());
   EXPECT_EQ("", encoded_xml);
@@ -1330,59 +1452,47 @@ TEST(FormStructureTest, EncodeUploadRequest) {
   form.method = ASCIIToUTF16("post");
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes();
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                        ASCIIToUTF16("firstname"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("firstname");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(NAME_FIRST);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                        ASCIIToUTF16("lastname"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("lastname");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(NAME_LAST);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("EMail"),
-                        ASCIIToUTF16("email"),
-                        string16(),
-                        ASCIIToUTF16("email"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  field.form_control_type = ASCIIToUTF16("email");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(EMAIL_ADDRESS);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Phone"),
-                        ASCIIToUTF16("phone"),
-                        string16(),
-                        ASCIIToUTF16("number"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Phone");
+  field.name = ASCIIToUTF16("phone");
+  field.form_control_type = ASCIIToUTF16("number");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(PHONE_HOME_WHOLE_NUMBER);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Country"),
-                        ASCIIToUTF16("country"),
-                        string16(),
-                        ASCIIToUTF16("select-one"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Country");
+  field.name = ASCIIToUTF16("country");
+  field.form_control_type = ASCIIToUTF16("select-one");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(ADDRESS_HOME_COUNTRY);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Fax"),
-                        ASCIIToUTF16("fax"),
-                        string16(),
-                        ASCIIToUTF16("tel"),
-                        0,
-                        false));
-  possible_field_types.push_back(FieldTypeSet());
-  possible_field_types.back().insert(PHONE_FAX_WHOLE_NUMBER);
   form_structure.reset(new FormStructure(form));
 
   ASSERT_EQ(form_structure->field_count(), possible_field_types.size());
   for (size_t i = 0; i < form_structure->field_count(); ++i)
-    form_structure->set_possible_types(i, possible_field_types[i]);
+    form_structure->field(i)->set_possible_types(possible_field_types[i]);
 
   FieldTypeSet available_field_types;
   available_field_types.insert(NAME_FIRST);
@@ -1394,46 +1504,41 @@ TEST(FormStructureTest, EncodeUploadRequest) {
   available_field_types.insert(ADDRESS_BILLING_LINE2);
   available_field_types.insert(EMAIL_ADDRESS);
   available_field_types.insert(PHONE_HOME_WHOLE_NUMBER);
-  available_field_types.insert(PHONE_FAX_WHOLE_NUMBER);
 
   std::string encoded_xml;
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                   &encoded_xml));
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
             "<autofillupload clientversion=\"6.1.1715.1442/en (GGLL)\" "
-            "formsignature=\"7641728017676399335\" autofillused=\"false\" "
-            "datapresent=\"144200830e\">"
+            "formsignature=\"8736493185895608956\" autofillused=\"false\" "
+            "datapresent=\"144200030e\">"
             "<field signature=\"3763331450\" autofilltype=\"3\"/>"
             "<field signature=\"3494530716\" autofilltype=\"5\"/>"
             "<field signature=\"1029417091\" autofilltype=\"9\"/>"
             "<field signature=\"466116101\" autofilltype=\"14\"/>"
             "<field signature=\"2799270304\" autofilltype=\"36\"/>"
-            "<field signature=\"1876771436\" autofilltype=\"24\"/>"
             "</autofillupload>",
             encoded_xml);
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, true,
                                                   &encoded_xml));
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
             "<autofillupload clientversion=\"6.1.1715.1442/en (GGLL)\" "
-            "formsignature=\"7641728017676399335\" autofillused=\"true\" "
-            "datapresent=\"144200830e\">"
+            "formsignature=\"8736493185895608956\" autofillused=\"true\" "
+            "datapresent=\"144200030e\">"
             "<field signature=\"3763331450\" autofilltype=\"3\"/>"
             "<field signature=\"3494530716\" autofilltype=\"5\"/>"
             "<field signature=\"1029417091\" autofilltype=\"9\"/>"
             "<field signature=\"466116101\" autofilltype=\"14\"/>"
             "<field signature=\"2799270304\" autofilltype=\"36\"/>"
-            "<field signature=\"1876771436\" autofilltype=\"24\"/>"
             "</autofillupload>",
             encoded_xml);
 
   // Add 2 address fields - this should be still a valid form.
   for (size_t i = 0; i < 2; ++i) {
-    form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                                 ASCIIToUTF16("address"),
-                                                 string16(),
-                                                 ASCIIToUTF16("text"),
-                                                 0,
-                                                 false));
+    field.label = ASCIIToUTF16("Address");
+    field.name = ASCIIToUTF16("address");
+    field.form_control_type = ASCIIToUTF16("text");
+    form.fields.push_back(field);
     possible_field_types.push_back(FieldTypeSet());
     possible_field_types.back().insert(ADDRESS_HOME_LINE1);
     possible_field_types.back().insert(ADDRESS_HOME_LINE2);
@@ -1444,20 +1549,19 @@ TEST(FormStructureTest, EncodeUploadRequest) {
   form_structure.reset(new FormStructure(form));
   ASSERT_EQ(form_structure->field_count(), possible_field_types.size());
   for (size_t i = 0; i < form_structure->field_count(); ++i)
-    form_structure->set_possible_types(i, possible_field_types[i]);
+    form_structure->field(i)->set_possible_types(possible_field_types[i]);
 
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                   &encoded_xml));
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
             "<autofillupload clientversion=\"6.1.1715.1442/en (GGLL)\" "
-            "formsignature=\"12226592129574322128\" autofillused=\"false\" "
-            "datapresent=\"144200830e\">"
+            "formsignature=\"7816485729218079147\" autofillused=\"false\" "
+            "datapresent=\"144200030e\">"
             "<field signature=\"3763331450\" autofilltype=\"3\"/>"
             "<field signature=\"3494530716\" autofilltype=\"5\"/>"
             "<field signature=\"1029417091\" autofilltype=\"9\"/>"
             "<field signature=\"466116101\" autofilltype=\"14\"/>"
             "<field signature=\"2799270304\" autofilltype=\"36\"/>"
-            "<field signature=\"1876771436\" autofilltype=\"24\"/>"
             "<field signature=\"509334676\" autofilltype=\"30\"/>"
             "<field signature=\"509334676\" autofilltype=\"31\"/>"
             "<field signature=\"509334676\" autofilltype=\"37\"/>"
@@ -1471,12 +1575,10 @@ TEST(FormStructureTest, EncodeUploadRequest) {
 
   // Add 50 address fields - now the form is invalid, as it has too many fields.
   for (size_t i = 0; i < 50; ++i) {
-    form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                                                 ASCIIToUTF16("address"),
-                                                 string16(),
-                                                 ASCIIToUTF16("text"),
-                                                 0,
-                                                 false));
+    field.label = ASCIIToUTF16("Address");
+    field.name = ASCIIToUTF16("address");
+    field.form_control_type = ASCIIToUTF16("text");
+    form.fields.push_back(field);
     possible_field_types.push_back(FieldTypeSet());
     possible_field_types.back().insert(ADDRESS_HOME_LINE1);
     possible_field_types.back().insert(ADDRESS_HOME_LINE2);
@@ -1486,7 +1588,7 @@ TEST(FormStructureTest, EncodeUploadRequest) {
   form_structure.reset(new FormStructure(form));
   ASSERT_EQ(form_structure->field_count(), possible_field_types.size());
   for (size_t i = 0; i < form_structure->field_count(); ++i)
-    form_structure->set_possible_types(i, possible_field_types[i]);
+    form_structure->field(i)->set_possible_types(possible_field_types[i]);
   EXPECT_FALSE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                    &encoded_xml));
 }
@@ -1496,31 +1598,28 @@ TEST(FormStructureTest, EncodeUploadRequest) {
 TEST(FormStructureTest, CheckDataPresence) {
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                        ASCIIToUTF16("first"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                        ASCIIToUTF16("last"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("email"),
-                        ASCIIToUTF16("email"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("first");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("last");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("Email");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
 
   FormStructure form_structure(form);
 
   FieldTypeSet unknown_type;
   unknown_type.insert(UNKNOWN_TYPE);
   for (size_t i = 0; i < form_structure.field_count(); ++i)
-    form_structure.set_possible_types(i, unknown_type);
+    form_structure.field(i)->set_possible_types(unknown_type);
 
   // No available types.
   // datapresent should be "" == trimmmed(0x0000000000000000) ==
@@ -1571,8 +1670,8 @@ TEST(FormStructureTest, CheckDataPresence) {
             encoded_xml);
 
   // All supported non-credit card types available.
-  // datapresent should be "1f7e0f8378000008" == trimmmed(0x1f7e0f8378000008) ==
-  //     0b0001111101111110000011111000001101111000000000000000000000001000
+  // datapresent should be "1f7e000378000008" == trimmmed(0x1f7e000378000008) ==
+  //     0b0001111101111110000000000000001101111000000000000000000000001000
   // The set bits are:
   //  3 == NAME_FIRST
   //  4 == NAME_MIDDLE
@@ -1585,11 +1684,6 @@ TEST(FormStructureTest, CheckDataPresence) {
   // 12 == PHONE_HOME_COUNTRY_CODE,
   // 13 == PHONE_HOME_CITY_AND_NUMBER,
   // 14 == PHONE_HOME_WHOLE_NUMBER,
-  // 20 == PHONE_FAX_NUMBER,
-  // 21 == PHONE_FAX_CITY_CODE,
-  // 22 == PHONE_FAX_COUNTRY_CODE,
-  // 23 == PHONE_FAX_CITY_AND_NUMBER,
-  // 24 == PHONE_FAX_WHOLE_NUMBER,
   // 30 == ADDRESS_HOME_LINE1
   // 31 == ADDRESS_HOME_LINE2
   // 33 == ADDRESS_HOME_CITY
@@ -1609,11 +1703,6 @@ TEST(FormStructureTest, CheckDataPresence) {
   available_field_types.insert(PHONE_HOME_COUNTRY_CODE);
   available_field_types.insert(PHONE_HOME_CITY_AND_NUMBER);
   available_field_types.insert(PHONE_HOME_WHOLE_NUMBER);
-  available_field_types.insert(PHONE_FAX_NUMBER);
-  available_field_types.insert(PHONE_FAX_CITY_CODE);
-  available_field_types.insert(PHONE_FAX_COUNTRY_CODE);
-  available_field_types.insert(PHONE_FAX_CITY_AND_NUMBER);
-  available_field_types.insert(PHONE_FAX_WHOLE_NUMBER);
   available_field_types.insert(ADDRESS_HOME_LINE1);
   available_field_types.insert(ADDRESS_HOME_LINE2);
   available_field_types.insert(ADDRESS_HOME_CITY);
@@ -1627,7 +1716,7 @@ TEST(FormStructureTest, CheckDataPresence) {
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
             "<autofillupload clientversion=\"6.1.1715.1442/en (GGLL)\""
             " formsignature=\"6402244543831589061\" autofillused=\"false\""
-            " datapresent=\"1f7e0f8378000008\">"
+            " datapresent=\"1f7e000378000008\">"
             "<field signature=\"1089846351\" autofilltype=\"1\"/>"
             "<field signature=\"2404144663\" autofilltype=\"1\"/>"
             "<field signature=\"420638584\" autofilltype=\"1\"/>"
@@ -1667,8 +1756,8 @@ TEST(FormStructureTest, CheckDataPresence) {
             encoded_xml);
 
   // All supported types available.
-  // datapresent should be "1f7e0f8378001fc8" == trimmmed(0x1f7e0f8378001fc8) ==
-  //     0b0001111101111110000011111000001101111000000000000001111111001000
+  // datapresent should be "1f7e000378001fc8" == trimmmed(0x1f7e000378001fc8) ==
+  //     0b0001111101111110000000000000001101111000000000000001111111001000
   // The set bits are:
   //  3 == NAME_FIRST
   //  4 == NAME_MIDDLE
@@ -1681,11 +1770,6 @@ TEST(FormStructureTest, CheckDataPresence) {
   // 12 == PHONE_HOME_COUNTRY_CODE,
   // 13 == PHONE_HOME_CITY_AND_NUMBER,
   // 14 == PHONE_HOME_WHOLE_NUMBER,
-  // 20 == PHONE_FAX_NUMBER,
-  // 21 == PHONE_FAX_CITY_CODE,
-  // 22 == PHONE_FAX_COUNTRY_CODE,
-  // 23 == PHONE_FAX_CITY_AND_NUMBER,
-  // 24 == PHONE_FAX_WHOLE_NUMBER,
   // 30 == ADDRESS_HOME_LINE1
   // 31 == ADDRESS_HOME_LINE2
   // 33 == ADDRESS_HOME_CITY
@@ -1712,11 +1796,6 @@ TEST(FormStructureTest, CheckDataPresence) {
   available_field_types.insert(PHONE_HOME_COUNTRY_CODE);
   available_field_types.insert(PHONE_HOME_CITY_AND_NUMBER);
   available_field_types.insert(PHONE_HOME_WHOLE_NUMBER);
-  available_field_types.insert(PHONE_FAX_NUMBER);
-  available_field_types.insert(PHONE_FAX_CITY_CODE);
-  available_field_types.insert(PHONE_FAX_COUNTRY_CODE);
-  available_field_types.insert(PHONE_FAX_CITY_AND_NUMBER);
-  available_field_types.insert(PHONE_FAX_WHOLE_NUMBER);
   available_field_types.insert(ADDRESS_HOME_LINE1);
   available_field_types.insert(ADDRESS_HOME_LINE2);
   available_field_types.insert(ADDRESS_HOME_CITY);
@@ -1737,7 +1816,7 @@ TEST(FormStructureTest, CheckDataPresence) {
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
             "<autofillupload clientversion=\"6.1.1715.1442/en (GGLL)\""
             " formsignature=\"6402244543831589061\" autofillused=\"false\""
-            " datapresent=\"1f7e0f8378001fc8\">"
+            " datapresent=\"1f7e000378001fc8\">"
             "<field signature=\"1089846351\" autofilltype=\"1\"/>"
             "<field signature=\"2404144663\" autofilltype=\"1\"/>"
             "<field signature=\"420638584\" autofilltype=\"1\"/>"
@@ -1773,42 +1852,38 @@ TEST(FormStructureTest, CheckMultipleTypes) {
   std::vector<FieldTypeSet> possible_field_types;
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("email"),
-                        ASCIIToUTF16("email"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("email");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(EMAIL_ADDRESS);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                        ASCIIToUTF16("first"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("first");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(NAME_FIRST);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Last Name"),
-                        ASCIIToUTF16("last"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Last Name");
+  field.name = ASCIIToUTF16("last");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(NAME_LAST);
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("Address"),
-                        ASCIIToUTF16("address"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  field.label = ASCIIToUTF16("Address");
+  field.name = ASCIIToUTF16("address");
+  form.fields.push_back(field);
   possible_field_types.push_back(FieldTypeSet());
   possible_field_types.back().insert(ADDRESS_HOME_LINE1);
+
   form_structure.reset(new FormStructure(form));
 
   for (size_t i = 0; i < form_structure->field_count(); ++i)
-    form_structure->set_possible_types(i, possible_field_types[i]);
+    form_structure->field(i)->set_possible_types(possible_field_types[i]);
   std::string encoded_xml;
 
   // Now we matched both fields singularly.
@@ -1826,7 +1901,7 @@ TEST(FormStructureTest, CheckMultipleTypes) {
             encoded_xml);
   // Match third field as both first and last.
   possible_field_types[2].insert(NAME_FIRST);
-  form_structure->set_possible_types(2, possible_field_types[2]);
+  form_structure->field(2)->set_possible_types(possible_field_types[2]);
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                   &encoded_xml));
   EXPECT_EQ("<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
@@ -1841,8 +1916,7 @@ TEST(FormStructureTest, CheckMultipleTypes) {
             "</autofillupload>",
             encoded_xml);
   possible_field_types[3].insert(ADDRESS_HOME_LINE2);
-  form_structure->set_possible_types(
-      form_structure->field_count() - 1,
+  form_structure->field(form_structure->field_count() - 1)->set_possible_types(
       possible_field_types[form_structure->field_count() - 1]);
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                   &encoded_xml));
@@ -1861,8 +1935,7 @@ TEST(FormStructureTest, CheckMultipleTypes) {
   possible_field_types[3].clear();
   possible_field_types[3].insert(ADDRESS_HOME_LINE1);
   possible_field_types[3].insert(COMPANY_NAME);
-  form_structure->set_possible_types(
-      form_structure->field_count() - 1,
+  form_structure->field(form_structure->field_count() - 1)->set_possible_types(
       possible_field_types[form_structure->field_count() - 1]);
   EXPECT_TRUE(form_structure->EncodeUploadRequest(available_field_types, false,
                                                   &encoded_xml));
@@ -1885,18 +1958,18 @@ TEST(FormStructureTest, CheckFormSignature) {
   scoped_ptr<FormStructure> form_structure;
   FormData form;
   form.method = ASCIIToUTF16("post");
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("email"),
-                        ASCIIToUTF16("email"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
-  form.fields.push_back(webkit_glue::FormField(ASCIIToUTF16("First Name"),
-                        ASCIIToUTF16("first"),
-                        string16(),
-                        ASCIIToUTF16("text"),
-                        0,
-                        false));
+
+  FormField field;
+  field.form_control_type = ASCIIToUTF16("text");
+
+  field.label = ASCIIToUTF16("email");
+  field.name = ASCIIToUTF16("email");
+  form.fields.push_back(field);
+
+  field.label = ASCIIToUTF16("First Name");
+  field.name = ASCIIToUTF16("first");
+  form.fields.push_back(field);
+
   form_structure.reset(new FormStructure(form));
 
   EXPECT_EQ(FormStructureTest::Hash64Bit(
@@ -1921,5 +1994,3 @@ TEST(FormStructureTest, CheckFormSignature) {
       std::string("https://login.facebook.com&login_form&email&first")),
       form_structure->FormSignature());
 }
-
-}  // namespace

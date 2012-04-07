@@ -12,7 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -325,8 +325,8 @@ struct ExtensionToMessagesMap {
   ExtensionToL10nMessagesMap messages_map;
 };
 
-static base::LazyInstance<ExtensionToMessagesMap> g_extension_to_messages_map(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<ExtensionToMessagesMap> g_extension_to_messages_map =
+    LAZY_INSTANCE_INITIALIZER;
 
 ExtensionToMessagesMap::ExtensionToMessagesMap() {}
 

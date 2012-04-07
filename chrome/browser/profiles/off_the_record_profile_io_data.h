@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/file_path.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
@@ -16,6 +17,9 @@
 class ChromeURLRequestContext;
 class ChromeURLRequestContextGetter;
 class Profile;
+namespace net {
+class HttpServerPropertiesImpl;
+}  // namespace net
 
 // OffTheRecordProfile owns a OffTheRecordProfileIOData::Handle, which holds a
 // reference to the OffTheRecordProfileIOData. OffTheRecordProfileIOData is
@@ -36,7 +40,12 @@ class OffTheRecordProfileIOData : public ProfileIOData {
     explicit Handle(Profile* profile);
     ~Handle();
 
+    base::Callback<ChromeURLDataManagerBackend*(void)>
+        GetChromeURLDataManagerBackendGetter() const;
     const content::ResourceContext& GetResourceContext() const;
+    // GetResourceContextNoInit() does not call LazyInitialize() so it can be
+    // safely be used during initialization.
+    const content::ResourceContext& GetResourceContextNoInit() const;
     scoped_refptr<ChromeURLRequestContextGetter>
         GetMainRequestContextGetter() const;
     scoped_refptr<ChromeURLRequestContextGetter>
@@ -69,7 +78,7 @@ class OffTheRecordProfileIOData : public ProfileIOData {
         extensions_request_context_getter_;
     mutable ChromeURLRequestContextGetterMap
         app_request_context_getter_map_;
-    const scoped_refptr<OffTheRecordProfileIOData> io_data_;
+    OffTheRecordProfileIOData* const io_data_;
 
     Profile* const profile_;
 
@@ -87,21 +96,24 @@ class OffTheRecordProfileIOData : public ProfileIOData {
   OffTheRecordProfileIOData();
   virtual ~OffTheRecordProfileIOData();
 
-  virtual void LazyInitializeInternal(ProfileParams* profile_params) const;
-  virtual scoped_refptr<RequestContext> InitializeAppRequestContext(
+  static std::string GetSSLSessionCacheShard();
+  virtual void LazyInitializeInternal(
+      ProfileParams* profile_params) const OVERRIDE;
+  virtual scoped_refptr<ChromeURLRequestContext> InitializeAppRequestContext(
       scoped_refptr<ChromeURLRequestContext> main_context,
-      const std::string& app_id) const;
+      const std::string& app_id) const OVERRIDE;
   virtual scoped_refptr<ChromeURLRequestContext>
-      AcquireMediaRequestContext() const;
+      AcquireMediaRequestContext() const OVERRIDE;
   virtual scoped_refptr<ChromeURLRequestContext>
       AcquireIsolatedAppRequestContext(
           scoped_refptr<ChromeURLRequestContext> main_context,
-          const std::string& app_id) const;
+          const std::string& app_id) const OVERRIDE;
+
+  mutable scoped_ptr<net::HttpServerPropertiesImpl> http_server_properties_;
 
   mutable scoped_ptr<net::HttpTransactionFactory> main_http_factory_;
-
-  // One HttpTransactionFactory per isolated app.
-  mutable HttpTransactionFactoryMap app_http_factory_map_;
+  mutable scoped_ptr<net::FtpTransactionFactory> ftp_factory_;
+  static unsigned ssl_session_cache_instance_;  // See GetSSLSessionCacheShard.
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileIOData);
 };

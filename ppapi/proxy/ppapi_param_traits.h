@@ -5,22 +5,27 @@
 #ifndef PPAPI_PROXY_PPAPI_PARAM_TRAITS_H_
 #define PPAPI_PROXY_PPAPI_PARAM_TRAITS_H_
 
+#include <string>
+#include <vector>
+
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_completion_callback.h"
-#include "ppapi/c/pp_input_event.h"
 #include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/shared_impl/ppb_file_ref_shared.h"
 
-struct PP_FileInfo_Dev;
+struct PP_FileInfo;
 struct PP_ObjectProperty;
-struct PP_Flash_Menu;
+struct PP_NetAddress_Private;
 
-namespace pp {
-namespace proxy {
+namespace ppapi {
 
 class HostResource;
-struct PPBFileRef_CreateInfo;
+
+namespace proxy {
+
 struct PPBFlash_DrawGlyphs_Params;
 struct PPBURLLoader_UpdateProgress_Params;
 struct SerializedDirEntry;
@@ -29,7 +34,7 @@ class SerializedFlashMenu;
 class SerializedVar;
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 namespace IPC {
 
@@ -42,18 +47,18 @@ struct ParamTraits<PP_Bool> {
 };
 
 template<>
-struct ParamTraits<PP_FileInfo_Dev> {
-  typedef PP_FileInfo_Dev param_type;
+struct ParamTraits<PP_FileInfo> {
+  typedef PP_FileInfo param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
-template<>
-struct ParamTraits<PP_InputEvent> {
-  typedef PP_InputEvent param_type;
+template <>
+struct PPAPI_PROXY_EXPORT ParamTraits<PP_NetAddress_Private> {
+  typedef PP_NetAddress_Private param_type;
   static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, void** iter, param_type* r);
+  static bool Read(const Message* m, void** iter, param_type* p);
   static void Log(const param_type& p, std::string* l);
 };
 
@@ -66,80 +71,80 @@ struct ParamTraits<PP_ObjectProperty> {
 };
 
 template<>
-struct ParamTraits<pp::proxy::PPBFlash_DrawGlyphs_Params> {
-  typedef pp::proxy::PPBFlash_DrawGlyphs_Params param_type;
+struct ParamTraits<ppapi::proxy::PPBFlash_DrawGlyphs_Params> {
+  typedef ppapi::proxy::PPBFlash_DrawGlyphs_Params param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::PPBFileRef_CreateInfo> {
-  typedef pp::proxy::PPBFileRef_CreateInfo param_type;
+struct ParamTraits<ppapi::PPB_FileRef_CreateInfo> {
+  typedef ppapi::PPB_FileRef_CreateInfo param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::PPBURLLoader_UpdateProgress_Params> {
-  typedef pp::proxy::PPBURLLoader_UpdateProgress_Params param_type;
+struct ParamTraits<ppapi::proxy::PPBURLLoader_UpdateProgress_Params> {
+  typedef ppapi::proxy::PPBURLLoader_UpdateProgress_Params param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::SerializedDirEntry> {
-  typedef pp::proxy::SerializedDirEntry param_type;
+struct ParamTraits<ppapi::proxy::SerializedDirEntry> {
+  typedef ppapi::proxy::SerializedDirEntry param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::SerializedFontDescription> {
-  typedef pp::proxy::SerializedFontDescription param_type;
+struct ParamTraits<ppapi::proxy::SerializedFontDescription> {
+  typedef ppapi::proxy::SerializedFontDescription param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::HostResource> {
-  typedef pp::proxy::HostResource param_type;
+struct ParamTraits<ppapi::HostResource> {
+  typedef ppapi::HostResource param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::SerializedVar> {
-  typedef pp::proxy::SerializedVar param_type;
+struct ParamTraits<ppapi::proxy::SerializedVar> {
+  typedef ppapi::proxy::SerializedVar param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits< std::vector<pp::proxy::SerializedVar> > {
-  typedef std::vector<pp::proxy::SerializedVar> param_type;
+struct ParamTraits< std::vector<ppapi::proxy::SerializedVar> > {
+  typedef std::vector<ppapi::proxy::SerializedVar> param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits< std::vector<pp::proxy::PPBFileRef_CreateInfo> > {
-  typedef std::vector<pp::proxy::PPBFileRef_CreateInfo> param_type;
+struct ParamTraits< std::vector<ppapi::PPB_FileRef_CreateInfo> > {
+  typedef std::vector<ppapi::PPB_FileRef_CreateInfo> param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template<>
-struct ParamTraits<pp::proxy::SerializedFlashMenu> {
-  typedef pp::proxy::SerializedFlashMenu param_type;
+struct ParamTraits<ppapi::proxy::SerializedFlashMenu> {
+  typedef ppapi::proxy::SerializedFlashMenu param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, void** iter, param_type* r);
   static void Log(const param_type& p, std::string* l);

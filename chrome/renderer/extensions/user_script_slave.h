@@ -13,13 +13,14 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_piece.h"
 #include "chrome/common/extensions/user_script.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScriptSource.h"
 
 class Extension;
 class ExtensionSet;
+class GURL;
 
 namespace WebKit {
 class WebFrame;
@@ -30,6 +31,10 @@ using WebKit::WebScriptSource;
 // Manages installed UserScripts for a render process.
 class UserScriptSlave {
  public:
+  // Utility to get the URL we will match against for a frame. If the frame has
+  // committed, this is the commited URL. Otherwise it is the provisional URL.
+  static GURL GetDataSourceURLForFrame(WebKit::WebFrame* frame);
+
   explicit UserScriptSlave(const ExtensionSet* extensions);
   ~UserScriptSlave();
 
@@ -47,13 +52,16 @@ class UserScriptSlave {
   // Gets the isolated world ID to use for the given |extension| in the given
   // |frame|. If no isolated world has been created for that extension,
   // one will be created and initialized.
-  static int GetIsolatedWorldId(const Extension* extension,
-                                WebKit::WebFrame* frame);
+  int GetIsolatedWorldIdForExtension(const Extension* extension,
+                                     WebKit::WebFrame* frame);
 
-  static void RemoveIsolatedWorld(const std::string& extension_id);
+  // Gets the id of the extension running in a given isolated world. If no such
+  // isolated world exists, or no extension is running in it, returns empty
+  // string.
+  std::string GetExtensionIdForIsolatedWorld(int isolated_world_id);
 
-  static void InsertInitExtensionCode(std::vector<WebScriptSource>* sources,
-                                      const std::string& extension_id);
+  void RemoveIsolatedWorld(const std::string& extension_id);
+
  private:
   static void InitializeIsolatedWorld(int isolated_world_id,
                                       const Extension* extension);
@@ -72,7 +80,7 @@ class UserScriptSlave {
   const ExtensionSet* extensions_;
 
   typedef std::map<std::string, int> IsolatedWorldMap;
-  static IsolatedWorldMap isolated_world_ids_;
+  IsolatedWorldMap isolated_world_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(UserScriptSlave);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #pragma once
 
 #include "chrome/browser/notifications/balloon_host.h"
-#include "views/controls/native/native_view_host.h"
+#include "ui/views/controls/native/native_view_host.h"
 
 // BalloonViewHost class is a delegate to the renderer host for the HTML
 // notification.  When initialized it creates a new RenderViewHost and loads
@@ -35,14 +35,7 @@ class BalloonViewHost : public BalloonHost {
   // Initialize the view, parented to |parent|, and show it.
   void Init(gfx::NativeView parent);
 
- protected:
-  virtual void InitRenderWidgetHostView();
-  virtual RenderWidgetHostView* render_widget_host_view() const;
-
  private:
-  // The platform-specific widget host view.  Pointer is owned by the RVH.
-  RenderWidgetHostView* render_widget_host_view_;
-
   // The views-specific host view. Pointer owned by the views hierarchy.
   views::NativeViewHost* native_host_;
 

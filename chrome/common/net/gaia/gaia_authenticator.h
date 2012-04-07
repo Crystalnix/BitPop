@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -34,13 +34,9 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/message_loop.h"
-#include "chrome/common/deprecated/event_sys.h"
 #include "googleurl/src/gurl.h"
 
 namespace gaia {
-
-static const char kGaiaUrl[] =
-    "https://www.google.com:443/accounts/ClientLogin";
 
 // Error codes from Gaia. These will be set correctly for both Gaia V1
 // (/ClientAuth) and V2 (/ClientLogin)
@@ -60,23 +56,6 @@ enum AuthenticationError {
 };
 
 class GaiaAuthenticator;
-
-struct GaiaAuthEvent {
-  enum {
-    GAIA_AUTH_FAILED,
-    GAIA_AUTH_SUCCEEDED,
-    GAIA_AUTHENTICATOR_DESTROYED
-  }
-  what_happened;
-  AuthenticationError error;
-  const GaiaAuthenticator* authenticator;
-
-  // Lets us use GaiaAuthEvent as its own traits type in hookups.
-  typedef GaiaAuthEvent EventType;
-  static inline bool IsChannelShutdownEvent(const GaiaAuthEvent& event) {
-    return event.what_happened == GAIA_AUTHENTICATOR_DESTROYED;
-  }
-};
 
 // GaiaAuthenticator can be used to pass user credentials to Gaia and obtain
 // cookies set by the Gaia servers.
@@ -250,12 +229,6 @@ class GaiaAuthenticator {
     return auth_results_;
   }
 
-  typedef EventChannel<GaiaAuthEvent, base::Lock> Channel;
-
-  inline Channel* channel() const {
-    return channel_;
-  }
-
  private:
   bool IssueAuthToken(AuthResults* results, const std::string& service_id);
 
@@ -278,8 +251,6 @@ class GaiaAuthenticator {
   // simultaneously, the sync code issues auth requests one at a time.
   uint32 request_count_;
 
-  Channel* channel_;
-
   // Used to compute backoff time for next allowed authentication.
   int delay_;  // In seconds.
   // On Windows, time_t is 64-bit by default. Even though we have defined the
@@ -300,4 +271,3 @@ class GaiaAuthenticator {
 
 }  // namespace gaia
 #endif  // CHROME_COMMON_NET_GAIA_GAIA_AUTHENTICATOR_H_
-

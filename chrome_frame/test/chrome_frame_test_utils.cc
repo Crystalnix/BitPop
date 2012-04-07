@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/file_version_info.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
+#include "base/process.h"
 #include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
@@ -45,17 +46,11 @@ const int kCrashServiceStartupTimeoutMs = 500;
 
 const wchar_t kIEImageName[] = L"iexplore.exe";
 const wchar_t kIEBrokerImageName[] = L"ieuser.exe";
-const wchar_t kFirefoxImageName[] = L"firefox.exe";
-const wchar_t kOperaImageName[] = L"opera.exe";
-const wchar_t kSafariImageName[] = L"safari.exe";
 const char kChromeImageName[] = "chrome.exe";
 const wchar_t kIEProfileName[] = L"iexplore";
 const wchar_t kChromeLauncher[] = L"chrome_launcher.exe";
 const int kChromeFrameLongNavigationTimeoutInSeconds = 10;
 const int kChromeFrameVeryLongNavigationTimeoutInSeconds = 30;
-
-const wchar_t TempRegKeyOverride::kTempTestKeyPath[] =
-    L"Software\\Chromium\\TempTestKeys";
 
 // Callback function for EnumThreadWindows.
 BOOL CALLBACK CloseWindowsThreadCallback(HWND hwnd, LPARAM param) {
@@ -162,26 +157,18 @@ base::ProcessHandle LaunchExecutable(const std::wstring& executable,
       LOG(ERROR) << "Failed to find executable: " << executable;
     } else {
       CommandLine cmdline = CommandLine::FromString(path);
-      if (!base::LaunchApp(cmdline, false, false, &process)) {
-        LOG(ERROR) << "LaunchApp failed: " << ::GetLastError();
+      if (!base::LaunchProcess(cmdline, base::LaunchOptions(), &process)) {
+        LOG(ERROR) << "LaunchProcess failed: " << ::GetLastError();
       }
     }
   } else {
     CommandLine cmdline((FilePath(path)));
     cmdline.AppendArgNative(argument);
-    if (!base::LaunchApp(cmdline, false, false, &process)) {
-      LOG(ERROR) << "LaunchApp failed: " << ::GetLastError();
+    if (!base::LaunchProcess(cmdline, base::LaunchOptions(), &process)) {
+      LOG(ERROR) << "LaunchProcess failed: " << ::GetLastError();
     }
   }
   return process;
-}
-
-base::ProcessHandle LaunchFirefox(const std::wstring& url) {
-  return LaunchExecutable(kFirefoxImageName, url);
-}
-
-base::ProcessHandle LaunchSafari(const std::wstring& url) {
-  return LaunchExecutable(kSafariImageName, url);
 }
 
 base::ProcessHandle LaunchChrome(const std::wstring& url) {
@@ -194,18 +181,8 @@ base::ProcessHandle LaunchChrome(const std::wstring& url) {
   cmd.AppendArgNative(url);
 
   base::ProcessHandle process = NULL;
-  base::LaunchApp(cmd, false, false, &process);
+  base::LaunchProcess(cmd, base::LaunchOptions(), &process);
   return process;
-}
-
-base::ProcessHandle LaunchOpera(const std::wstring& url) {
-  // NOTE: For Opera tests to work it must be configured to start up with
-  // a blank page.  There is an command line switch, -nosession, that's supposed
-  // to avoid opening up the previous session, but that switch is not working.
-  // TODO(tommi): Include a special ini file (opera6.ini) for opera and launch
-  //  with our required settings.  This file is by default stored here:
-  // "%USERPROFILE%\Application Data\Opera\Opera\profile\opera6.ini"
-  return LaunchExecutable(kOperaImageName, url);
 }
 
 base::ProcessHandle LaunchIEOnVista(const std::wstring& url) {
@@ -385,13 +362,20 @@ HRESULT LaunchIEAsComServer(IWebBrowser2** web_browser) {
   HRESULT hr = S_OK;
   DWORD cocreate_flags = CLSCTX_LOCAL_SERVER;
   chrome_frame_test::LowIntegrityToken token;
+  base::IntegrityLevel integrity_level = base::INTEGRITY_UNKNOWN;
   // Vista has a bug which manifests itself when a medium integrity process
   // launches a COM server like IE which runs in protected mode due to UAC.
   // This causes the IWebBrowser2 interface which is returned to be useless,
   // i.e it does not receive any events, etc. Our workaround for this is
-  // to impersonate a low integrity token and then launch IE.
+  // to impersonate a low integrity token and then launch IE.  Skip this if the
+  // tests are running at high integrity, since the workaround results in the
+  // medium-integrity broker exiting, and the low-integrity IE is therefore
+  // unable to get chrome_launcher running at medium integrity.
   if (base::win::GetVersion() == base::win::VERSION_VISTA &&
-      GetInstalledIEVersion() == IE_7) {
+      GetInstalledIEVersion() == IE_7 &&
+      base::GetProcessIntegrityLevel(base::Process::Current().handle(),
+                                     &integrity_level) &&
+      integrity_level != base::HIGH_INTEGRITY) {
     // Create medium integrity browser that will launch IE broker.
     base::win::ScopedComPtr<IWebBrowser2> medium_integrity_browser;
     hr = medium_integrity_browser.CreateInstance(CLSID_InternetExplorer, NULL,
@@ -441,6 +425,8 @@ IEVersion GetInstalledIEVersion() {
       return IE_8;
     case '9':
       return IE_9;
+    case '10':
+      return IE_10;
     default:
       break;
   }
@@ -611,8 +597,8 @@ base::ProcessHandle StartCrashService() {
   DVLOG(1) << "Starting crash_service.exe so you know if a test crashes!";
 
   FilePath crash_service_path = exe_dir.AppendASCII("crash_service.exe");
-  if (!base::LaunchApp(crash_service_path.value(), false, false,
-                       &crash_service)) {
+  if (!base::LaunchProcess(crash_service_path.value(), base::LaunchOptions(),
+                           &crash_service)) {
     DLOG(ERROR) << "Couldn't start crash_service.exe";
     return NULL;
   }
@@ -637,40 +623,16 @@ base::ProcessHandle StartCrashService() {
   }
 }
 
-TempRegKeyOverride::TempRegKeyOverride(HKEY override, const wchar_t* temp_name)
-    : override_(override), temp_name_(temp_name) {
-  DCHECK(temp_name && lstrlenW(temp_name));
-  std::wstring key_path(kTempTestKeyPath);
-  key_path += L"\\" + temp_name_;
-  EXPECT_EQ(ERROR_SUCCESS, temp_key_.Create(HKEY_CURRENT_USER, key_path.c_str(),
-                                            KEY_ALL_ACCESS));
-  EXPECT_EQ(ERROR_SUCCESS,
-            ::RegOverridePredefKey(override_, temp_key_.Handle()));
-}
-
-TempRegKeyOverride::~TempRegKeyOverride() {
-  ::RegOverridePredefKey(override_, NULL);
-  // The temp key will be deleted via a call to DeleteAllTempKeys().
-}
-
-// static
-void TempRegKeyOverride::DeleteAllTempKeys() {
-  base::win::RegKey key;
-  if (key.Open(HKEY_CURRENT_USER, L"", KEY_ALL_ACCESS) == ERROR_SUCCESS) {
-    key.DeleteKey(kTempTestKeyPath);
-  }
-}
-
 ScopedVirtualizeHklmAndHkcu::ScopedVirtualizeHklmAndHkcu() {
-  TempRegKeyOverride::DeleteAllTempKeys();
-  hklm_.reset(new TempRegKeyOverride(HKEY_LOCAL_MACHINE, L"hklm_fake"));
-  hkcu_.reset(new TempRegKeyOverride(HKEY_CURRENT_USER, L"hkcu_fake"));
+  override_manager_.OverrideRegistry(HKEY_LOCAL_MACHINE, L"hklm_fake");
+  override_manager_.OverrideRegistry(HKEY_CURRENT_USER, L"hkcu_fake");
 }
 
 ScopedVirtualizeHklmAndHkcu::~ScopedVirtualizeHklmAndHkcu() {
-  hkcu_.reset(NULL);
-  hklm_.reset(NULL);
-  TempRegKeyOverride::DeleteAllTempKeys();
+}
+
+void ScopedVirtualizeHklmAndHkcu::RemoveAllOverrides() {
+  override_manager_.RemoveAllOverrides();
 }
 
 bool KillProcesses(const std::wstring& executable_name, int exit_code,

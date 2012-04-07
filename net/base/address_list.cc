@@ -38,6 +38,9 @@ struct addrinfo* CreateAddrInfo(const IPAddressNumber& address,
           new char[sockaddr_in_size]);
       memset(addr, 0, sockaddr_in_size);
       addr->sin_family = AF_INET;
+#if defined(SIN6_LEN)
+      addr->sin_len = sockaddr_in_size;
+#endif
       memcpy(&addr->sin_addr, &address[0], kIPv4AddressSize);
       ai->ai_addr = reinterpret_cast<struct sockaddr*>(addr);
       break;
@@ -51,6 +54,9 @@ struct addrinfo* CreateAddrInfo(const IPAddressNumber& address,
           new char[sockaddr_in6_size]);
       memset(addr6, 0, sockaddr_in6_size);
       addr6->sin6_family = AF_INET6;
+#if defined(SIN6_LEN)
+      addr6->sin6_len = sockaddr_in6_size;
+#endif
       memcpy(&addr6->sin6_addr, &address[0], kIPv6AddressSize);
       ai->ai_addr = reinterpret_cast<struct sockaddr*>(addr6);
       break;
@@ -105,13 +111,13 @@ AddressList& AddressList::operator=(const AddressList& addresslist) {
 
 // static
 AddressList AddressList::CreateFromIPAddressList(
-    const std::vector<IPAddressNumber>& addresses,
+    const IPAddressList& addresses,
     uint16 port) {
   DCHECK(!addresses.empty());
   struct addrinfo* head = NULL;
   struct addrinfo* next = NULL;
 
-  for (std::vector<IPAddressNumber>::const_iterator it = addresses.begin();
+  for (IPAddressList::const_iterator it = addresses.begin();
        it != addresses.end(); ++it) {
     if (head == NULL) {
       head = next = CreateAddrInfo(*it, false);
@@ -271,6 +277,15 @@ AddressList::Data::~Data() {
     freeaddrinfo(mutable_head);
   else
     FreeCopyOfAddrinfo(mutable_head);
+}
+
+AddressList CreateAddressListUsingPort(const AddressList& src, int port) {
+  if (src.GetPort() == port)
+    return src;
+
+  AddressList out = src;
+  out.SetPort(port);
+  return out;
 }
 
 }  // namespace net

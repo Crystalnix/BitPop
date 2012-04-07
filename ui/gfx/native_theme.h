@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,11 @@
 #define UI_GFX_NATIVE_THEME_H_
 #pragma once
 
-#include "skia/ext/platform_canvas.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+class SkCanvas;
 
 namespace gfx {
 
@@ -16,11 +19,13 @@ class Size;
 
 // This class supports drawing UI controls (like buttons, text fields, lists,
 // comboboxes, etc) that look like the native UI controls of the underlying
-// platform, such as Windows or Linux.
+// platform, such as Windows or Linux. It also supplies default colors for
+// dialog box backgrounds, etc., which are obtained from the system theme where
+// possible.
 //
 // The supported control types are listed in the Part enum.  These parts can be
-// in any state given by the State enum, where the actual definititon of the
-// state is part-specific.
+// in any state given by the State enum, where the actual definition of the
+// state is part-specific. The supported colors are listed in the ColorId enum.
 //
 // Some parts require more information than simply the state in order to be
 // drawn correctly, and this information is given to the Paint() method via the
@@ -29,7 +34,7 @@ class Size;
 //
 // NativeTheme also supports getting the default size of a given part with
 // the GetPartSize() method.
-class NativeTheme {
+class UI_EXPORT NativeTheme {
  public:
   // The part to be painted / sized.
   enum Part {
@@ -209,9 +214,40 @@ class NativeTheme {
                           unsigned active_color,
                           unsigned track_color) const;
 
+  // Colors for GetSystemColor().
+  enum ColorId {
+    // Dialogs
+    kColorId_DialogBackground,
+    // FocusableBorder
+    kColorId_FocusedBorderColor,
+    kColorId_UnfocusedBorderColor,
+    // TextButton
+    kColorId_TextButtonBackgroundColor,
+    kColorId_TextButtonEnabledColor,
+    kColorId_TextButtonDisabledColor,
+    kColorId_TextButtonHighlightColor,
+    kColorId_TextButtonHoverColor,
+    // MenuItem
+    kColorId_EnabledMenuItemForegroundColor,
+    kColorId_DisabledMenuItemForegroundColor,
+    kColorId_FocusedMenuItemBackgroundColor,
+    // Textfield
+    kColorId_TextfieldDefaultColor,
+    kColorId_TextfieldDefaultBackground,
+    kColorId_TextfieldSelectionColor,
+    kColorId_TextfieldSelectionBackgroundFocused,
+    kColorId_TextfieldSelectionBackgroundUnfocused,
+    // TODO(benrg): move other hardcoded colors here.
+  };
+
+  // Return a color from the system theme.
+  virtual SkColor GetSystemColor(ColorId color_id) const = 0;
+
   // Returns a shared instance of the native theme.
-  // The retuned object should not be deleted by the caller.  This function
+  // The returned object should not be deleted by the caller.  This function
   // is not thread safe and should only be called from the UI thread.
+  // Each port of NativeTheme should provide its own implementation of this
+  // function, returning the port's subclass.
   static const NativeTheme* instance();
 
  protected:

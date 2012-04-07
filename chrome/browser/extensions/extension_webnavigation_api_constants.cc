@@ -7,22 +7,25 @@
 namespace extension_webnavigation_api_constants {
 
 const char kErrorKey[] = "error";
+const char kErrorOccurredKey[] = "errorOccurred";
 const char kFrameIdKey[] = "frameId";
-const char kRequestIdKey[] = "requestId";
 const char kSourceTabIdKey[] = "sourceTabId";
-const char kSourceUrlKey[] = "sourceUrl";
+const char kSourceFrameIdKey[] = "sourceFrameId";
 const char kTabIdKey[] = "tabId";
 const char kTimeStampKey[] = "timeStamp";
 const char kTransitionTypeKey[] = "transitionType";
 const char kTransitionQualifiersKey[] = "transitionQualifiers";
 const char kUrlKey[] = "url";
 
-const char kOnBeforeNavigate[] = "experimental.webNavigation.onBeforeNavigate";
-const char kOnBeforeRetarget[] = "experimental.webNavigation.onBeforeRetarget";
-const char kOnCommitted[] = "experimental.webNavigation.onCommitted";
-const char kOnCompleted[] = "experimental.webNavigation.onCompleted";
+const char kOnBeforeNavigate[] = "webNavigation.onBeforeNavigate";
+const char kOnCommitted[] = "webNavigation.onCommitted";
+const char kOnCompleted[] = "webNavigation.onCompleted";
+const char kOnCreatedNavigationTarget[] =
+    "webNavigation.onCreatedNavigationTarget";
 const char kOnDOMContentLoaded[] =
-    "experimental.webNavigation.onDOMContentLoaded";
-const char kOnErrorOccurred[] = "experimental.webNavigation.onErrorOccurred";
+    "webNavigation.onDOMContentLoaded";
+const char kOnErrorOccurred[] = "webNavigation.onErrorOccurred";
+const char kOnReferenceFragmentUpdated[] =
+    "webNavigation.onReferenceFragmentUpdated";
 
 }  // namespace extension_webnavigation_api_constants

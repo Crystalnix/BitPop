@@ -6,16 +6,17 @@
 #define CHROME_BROWSER_PRINTING_PRINTER_QUERY_H_
 #pragma once
 
+#include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/printing/print_job_worker_owner.h"
+#include "printing/print_job_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
-class CancelableTask;
-class DictionaryValue;
 class MessageLoop;
 
 namespace base {
-class Thread;
+class DictionaryValue;
 }
 
 namespace printing {
@@ -33,13 +34,13 @@ class PrinterQuery : public PrintJobWorkerOwner {
 
   PrinterQuery();
 
-  // PrintJobWorkerOwner
+  // PrintJobWorkerOwner implementation.
   virtual void GetSettingsDone(const PrintSettings& new_settings,
-                               PrintingContext::Result result);
-  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner);
-  virtual MessageLoop* message_loop();
-  virtual const PrintSettings& settings() const;
-  virtual int cookie() const;
+                               PrintingContext::Result result) OVERRIDE;
+  virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) OVERRIDE;
+  virtual MessageLoop* message_loop() OVERRIDE;
+  virtual const PrintSettings& settings() const OVERRIDE;
+  virtual int cookie() const OVERRIDE;
 
   // Initializes the printing context. It is fine to call this function multiple
   // times to reinitialize the settings. |parent_view| parameter's window will
@@ -49,12 +50,12 @@ class PrinterQuery : public PrintJobWorkerOwner {
                    gfx::NativeView parent_view,
                    int expected_page_count,
                    bool has_selection,
-                   bool use_overlays,
-                   CancelableTask* callback);
+                   MarginType margin_type,
+                   const base::Closure& callback);
 
   // Updates the current settings with |new_settings| dictionary values.
-  void SetSettings(const DictionaryValue& new_settings,
-                   CancelableTask* callback);
+  void SetSettings(const base::DictionaryValue& new_settings,
+                   const base::Closure& callback);
 
   // Stops the worker thread since the client is done with this object.
   void StopWorker();
@@ -71,8 +72,7 @@ class PrinterQuery : public PrintJobWorkerOwner {
   virtual ~PrinterQuery();
 
   // Lazy create the worker thread. There is one worker thread per print job.
-  // Returns true, if worker thread exists or has been created.
-  bool StartWorker(CancelableTask* callback);
+  void StartWorker(const base::Closure& callback);
 
   // Main message loop reference. Used to send notifications in the right
   // thread.
@@ -95,8 +95,8 @@ class PrinterQuery : public PrintJobWorkerOwner {
   // Results from the last GetSettingsDone() callback.
   PrintingContext::Result last_status_;
 
-  // Task waiting to be executed.
-  scoped_ptr<CancelableTask> callback_;
+  // Callback waiting to be run.
+  base::Closure callback_;
 
   DISALLOW_COPY_AND_ASSIGN(PrinterQuery);
 };

@@ -16,7 +16,6 @@
 
 class CommandLine;
 class FilePath;
-class PrefService;
 
 #if defined(USE_X11)
 namespace base {
@@ -33,6 +32,13 @@ class ShellIntegration {
   // Sets Chrome as the default client application for the given protocol
   // (only for the current user). Returns false if this operation fails.
   static bool SetAsDefaultProtocolClient(const std::string& protocol);
+
+  // Returns true if the running browser can be set as the default browser.
+  static bool CanSetAsDefaultBrowser();
+
+  // Returns true if the running browser can be set as the default client
+  // application for specific protocols.
+  static bool CanSetAsDefaultProtocolClient();
 
   // On Linux, it may not be possible to determine or set the default browser
   // on some desktop environments or configurations. So, we use this enum and
@@ -127,6 +133,10 @@ class ShellIntegration {
   // chrome::kBrowserAppID as app_name.
   static std::wstring GetChromiumAppId(const FilePath& profile_path);
 
+  // Returns the path to the Chromium icon. This is used to specify the icon
+  // to use for the taskbar group on Win 7.
+  static string16 GetChromiumIconPath();
+
   // Migrates existing chrome shortcuts by tagging them with correct app id.
   // see http://crbug.com/28104
   static void MigrateChromiumShortcuts();
@@ -148,6 +158,9 @@ class ShellIntegration {
     virtual ~DefaultWebClientObserver() {}
     // Updates the UI state to reflect the current default browser state.
     virtual void SetDefaultWebClientUIState(DefaultWebClientUIState state) = 0;
+    // Observer classes that return true to OwnedByWorker are automatically
+    // freed by the worker when they are no longer needed.
+    virtual bool IsOwnedByWorker() { return false; }
   };
 
   //  Helper objects that handle checking if Chrome is the default browser
@@ -229,10 +242,10 @@ class ShellIntegration {
     virtual ~DefaultBrowserWorker() {}
 
     // Check if Chrome is the default browser.
-    virtual DefaultWebClientState CheckIsDefault();
+    virtual DefaultWebClientState CheckIsDefault() OVERRIDE;
 
     // Set Chrome as the default browser.
-    virtual void SetAsDefault();
+    virtual void SetAsDefault() OVERRIDE;
 
     DISALLOW_COPY_AND_ASSIGN(DefaultBrowserWorker);
   };
@@ -248,14 +261,15 @@ class ShellIntegration {
 
     const std::string& protocol() const { return protocol_; }
 
-   private:
+   protected:
     virtual ~DefaultProtocolClientWorker() {}
 
+   private:
     // Check is Chrome is the default handler for this protocol.
-    virtual DefaultWebClientState CheckIsDefault();
+    virtual DefaultWebClientState CheckIsDefault() OVERRIDE;
 
     // Set Chrome as the default handler for this protocol.
-    virtual void SetAsDefault();
+    virtual void SetAsDefault() OVERRIDE;
 
     std::string protocol_;
 

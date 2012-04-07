@@ -72,8 +72,7 @@ TEST(ExtensionUserScriptTest, Glob_StringAnywhere) {
 
 TEST(ExtensionUserScriptTest, UrlPattern) {
   URLPattern pattern(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern.Parse("http://*/foo*", URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern.Parse("http://*/foo*"));
 
   UserScript script;
   script.add_url_pattern(pattern);
@@ -87,13 +86,11 @@ TEST(ExtensionUserScriptTest, ExcludeUrlPattern) {
   UserScript script;
 
   URLPattern pattern(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern.Parse("http://*.nytimes.com/*"));
   script.add_url_pattern(pattern);
 
   URLPattern exclude(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            exclude.Parse("*://*/*business*", URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, exclude.Parse("*://*/*business*"));
   script.add_exclude_url_pattern(exclude);
 
   EXPECT_TRUE(script.MatchesURL(GURL("http://www.nytimes.com/health")));
@@ -105,8 +102,7 @@ TEST(ExtensionUserScriptTest, UrlPatternAndIncludeGlobs) {
   UserScript script;
 
   URLPattern pattern(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern.Parse("http://*.nytimes.com/*"));
   script.add_url_pattern(pattern);
 
   script.add_glob("*nytimes.com/???s/*");
@@ -120,8 +116,7 @@ TEST(ExtensionUserScriptTest, UrlPatternAndExcludeGlobs) {
   UserScript script;
 
   URLPattern pattern(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern.Parse("http://*.nytimes.com/*", URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern.Parse("http://*.nytimes.com/*"));
   script.add_url_pattern(pattern);
 
   script.add_exclude_glob("*science*");
@@ -136,9 +131,7 @@ TEST(ExtensionUserScriptTest, UrlPatternGlobInteraction) {
   UserScript script;
 
   URLPattern pattern(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern.Parse("http://www.google.com/*",
-                          URLPattern::PARSE_STRICT));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS,pattern.Parse("http://www.google.com/*"));
   script.add_url_pattern(pattern);
 
   script.add_glob("*bar*");
@@ -166,28 +159,32 @@ TEST(ExtensionUserScriptTest, UrlPatternGlobInteraction) {
 TEST(ExtensionUserScriptTest, Pickle) {
   URLPattern pattern1(kAllSchemes);
   URLPattern pattern2(kAllSchemes);
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern1.Parse("http://*/foo*", URLPattern::PARSE_STRICT));
-  ASSERT_EQ(URLPattern::PARSE_SUCCESS,
-            pattern2.Parse("http://bar/baz*", URLPattern::PARSE_STRICT));
+  URLPattern exclude1(kAllSchemes);
+  URLPattern exclude2(kAllSchemes);
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern1.Parse("http://*/foo*"));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, pattern2.Parse("http://bar/baz*"));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, exclude1.Parse("*://*/*bar"));
+  ASSERT_EQ(URLPattern::PARSE_SUCCESS, exclude2.Parse("https://*/*"));
 
   UserScript script1;
   script1.js_scripts().push_back(UserScript::File(
       FilePath(FILE_PATH_LITERAL("c:\\foo\\")),
       FilePath(FILE_PATH_LITERAL("foo.user.js")),
-      GURL("chrome-user-script:/foo.user.js")));
+      GURL("chrome-extension://abc/foo.user.js")));
   script1.css_scripts().push_back(UserScript::File(
       FilePath(FILE_PATH_LITERAL("c:\\foo\\")),
       FilePath(FILE_PATH_LITERAL("foo.user.css")),
-      GURL("chrome-user-script:/foo.user.css")));
+      GURL("chrome-extension://abc/foo.user.css")));
   script1.css_scripts().push_back(UserScript::File(
       FilePath(FILE_PATH_LITERAL("c:\\foo\\")),
       FilePath(FILE_PATH_LITERAL("foo2.user.css")),
-      GURL("chrome-user-script:/foo2.user.css")));
+      GURL("chrome-extension://abc/foo2.user.css")));
   script1.set_run_location(UserScript::DOCUMENT_START);
 
   script1.add_url_pattern(pattern1);
   script1.add_url_pattern(pattern2);
+  script1.add_exclude_url_pattern(exclude1);
+  script1.add_exclude_url_pattern(exclude2);
 
   Pickle pickle;
   script1.Pickle(&pickle);
@@ -208,11 +205,9 @@ TEST(ExtensionUserScriptTest, Pickle) {
   for (size_t i = 0; i < script1.globs().size(); ++i) {
     EXPECT_EQ(script1.globs()[i], script2.globs()[i]);
   }
-  ASSERT_EQ(script1.url_patterns().size(), script2.url_patterns().size());
-  for (size_t i = 0; i < script1.url_patterns().size(); ++i) {
-    EXPECT_EQ(script1.url_patterns()[i].GetAsString(),
-              script2.url_patterns()[i].GetAsString());
-  }
+
+  ASSERT_EQ(script1.url_patterns(), script2.url_patterns());
+  ASSERT_EQ(script1.exclude_url_patterns(), script2.exclude_url_patterns());
 }
 
 TEST(ExtensionUserScriptTest, Defaults) {

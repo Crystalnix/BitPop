@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,18 +6,24 @@
 
 #include <algorithm>
 
-#include "app/sql/statement.h"
-#include "app/sql/transaction.h"
 #include "chrome/browser/diagnostics/sqlite_diagnostics.h"
-#include "content/common/notification_service.h"
+#include "chrome/browser/webdata/autofill_table.h"
+#include "chrome/browser/webdata/keyword_table.h"
+#include "chrome/browser/webdata/logins_table.h"
+#include "chrome/browser/webdata/token_service_table.h"
+#include "chrome/browser/webdata/web_apps_table.h"
+#include "chrome/browser/webdata/web_intents_table.h"
+#include "content/public/browser/notification_service.h"
+#include "sql/statement.h"
+#include "sql/transaction.h"
 
 namespace {
 
 // Current version number.  Note: when changing the current version number,
 // corresponding changes must happen in the unit tests, and new migration test
 // added.  See |WebDatabaseMigrationTest::kCurrentTestedVersionNumber|.
-const int kCurrentVersionNumber = 37;
-const int kCompatibleVersionNumber = 37;
+const int kCurrentVersionNumber = 44;
+const int kCompatibleVersionNumber = 44;
 
 // Change the version number and possibly the compatibility version of
 // |meta_table_|.
@@ -74,6 +80,10 @@ WebAppsTable* WebDatabase::GetWebAppsTable() {
   return web_apps_table_.get();
 }
 
+WebIntentsTable* WebDatabase::GetWebIntentsTable() {
+  return web_intents_table_.get();
+}
+
 sql::Connection* WebDatabase::GetSQLConnection() {
   return &db_;
 }
@@ -81,8 +91,8 @@ sql::Connection* WebDatabase::GetSQLConnection() {
 sql::InitStatus WebDatabase::Init(const FilePath& db_name) {
   // When running in unit tests, there is already a NotificationService object.
   // Since only one can exist at a time per thread, check first.
-  if (!NotificationService::current())
-    notification_service_.reset(new NotificationService);
+  if (!content::NotificationService::current())
+    notification_service_.reset(content::NotificationService::Create());
 
   // Set the exceptional sqlite error handler.
   db_.set_error_delegate(GetErrorHandlerForWebDb());
@@ -122,11 +132,12 @@ sql::InitStatus WebDatabase::Init(const FilePath& db_name) {
   logins_table_.reset(new LoginsTable(&db_, &meta_table_));
   token_service_table_.reset(new TokenServiceTable(&db_, &meta_table_));
   web_apps_table_.reset(new WebAppsTable(&db_, &meta_table_));
+  web_intents_table_.reset(new WebIntentsTable(&db_, &meta_table_));
 
   // Initialize the tables.
   if (!keyword_table_->Init() || !autofill_table_->Init() ||
       !logins_table_->Init() || !web_apps_table_->Init() ||
-      !token_service_table_->Init()) {
+      !token_service_table_->Init() || !web_intents_table_->Init() ) {
     LOG(WARNING) << "Unable to initialize the web database.";
     return sql::INIT_FAILURE;
   }
@@ -277,6 +288,57 @@ sql::InitStatus WebDatabase::MigrateOldVersionsAsNeeded() {
         return FailedMigrationTo(37);
 
       ChangeVersion(&meta_table_, 37, true);
+      // FALL THROUGH
+
+    case 37:
+      if (!keyword_table_->MigrateToVersion38AddLastModifiedColumn())
+        return FailedMigrationTo(38);
+
+      ChangeVersion(&meta_table_, 38, true);
+      // FALL THROUGH
+
+    case 38:
+      if (!keyword_table_->MigrateToVersion39AddSyncGUIDColumn())
+        return FailedMigrationTo(39);
+
+      ChangeVersion(&meta_table_, 39, true);
+      // FALL THROUGH
+
+    case 39:
+      if (!keyword_table_->MigrateToVersion40AddDefaultSearchProviderBackup())
+        return FailedMigrationTo(40);
+
+      ChangeVersion(&meta_table_, 40, true);
+      // FALL THROUGH
+
+    case 40:
+      if (!keyword_table_->
+              MigrateToVersion41RewriteDefaultSearchProviderBackup())
+        return FailedMigrationTo(41);
+
+      ChangeVersion(&meta_table_, 41, true);
+      // FALL THROUGH
+
+    case 41:
+      if (!keyword_table_->
+              MigrateToVersion42AddFullDefaultSearchProviderBackup())
+        return FailedMigrationTo(42);
+
+      ChangeVersion(&meta_table_, 42, true);
+      // FALL THROUGH
+
+    case 42:
+      if (!keyword_table_->MigrateToVersion43AddKeywordsBackupTable())
+        return FailedMigrationTo(43);
+
+      ChangeVersion(&meta_table_, 43, true);
+      // FALL THROUGH
+
+    case 43:
+      if (!keyword_table_->MigrateToVersion44UpdateKeywordsBackup())
+        return FailedMigrationTo(44);
+
+      ChangeVersion(&meta_table_, 44, true);
       // FALL THROUGH
 
     // Add successive versions here.  Each should set the version number and

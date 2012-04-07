@@ -9,8 +9,7 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_info.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
 #include "skia/ext/platform_canvas.h"
@@ -26,19 +25,6 @@
 // allows acclerated drawing into the layer and lets scrolling and such happen
 // all or mostly on the GPU, which is good for performance.
 
-namespace {
-
-// Returns whether this version of OS X has broken CGLayers, see
-// http://crbug.com/45553 , comments 5 and 6.
-bool NeedsLayerWorkaround() {
-  int32 os_major, os_minor, os_bugfix;
-  base::SysInfo::OperatingSystemVersionNumbers(
-      &os_major, &os_minor, &os_bugfix);
-  return os_major == 10 && os_minor == 5;
-}
-
-}  // namespace
-
 BackingStoreMac::BackingStoreMac(RenderWidgetHost* widget,
                                  const gfx::Size& size)
     : BackingStore(widget, size) {
@@ -53,10 +39,13 @@ BackingStoreMac::~BackingStoreMac() {
 }
 
 void BackingStoreMac::PaintToBackingStore(
-    RenderProcessHost* process,
+    content::RenderProcessHost* process,
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const base::Closure& completion_callback,
+    bool* scheduled_completion_callback) {
+  *scheduled_completion_callback = false;
   DCHECK_NE(static_cast<bool>(cg_layer()), static_cast<bool>(cg_bitmap()));
 
   TransportDIB* dib = process->GetTransportDIB(bitmap);
@@ -155,8 +144,9 @@ void BackingStoreMac::ScrollBackingStore(int dx, int dy,
 
   if ((dx || dy) && abs(dx) < size().width() && abs(dy) < size().height()) {
     if (cg_layer()) {
-      // See http://crbug.com/45553 , comments 5 and 6.
-      static bool needs_layer_workaround = NeedsLayerWorkaround();
+      // Whether this version of OS X has broken CGLayers. See
+      // http://crbug.com/45553 , comments 5 and 6.
+      bool needs_layer_workaround = base::mac::IsOSLeopardOrEarlier();
 
       base::mac::ScopedCFTypeRef<CGLayerRef> new_layer;
       CGContextRef layer;

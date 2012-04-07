@@ -4,60 +4,68 @@
 
 #include "chrome/browser/tabs/tab_finder.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
-#include "content/common/page_transition_types.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/frame_navigate_params.h"
+#include "content/public/common/page_transition_types.h"
 
-class TabFinder::TabContentsObserverImpl : public TabContentsObserver {
+using content::NavigationEntry;
+using content::WebContents;
+
+class TabFinder::WebContentsObserverImpl : public content::WebContentsObserver {
  public:
-  TabContentsObserverImpl(TabContents* tab, TabFinder* finder);
-  virtual ~TabContentsObserverImpl();
+  WebContentsObserverImpl(WebContents* tab, TabFinder* finder);
+  virtual ~WebContentsObserverImpl();
 
-  TabContents* tab_contents() { return TabContentsObserver::tab_contents(); }
+  WebContents* web_contents() {
+    return content::WebContentsObserver::web_contents();
+  }
 
-  // TabContentsObserver overrides:
-  virtual void DidNavigateAnyFramePostCommit(
+  // content::WebContentsObserver overrides:
+  virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
-  virtual void TabContentsDestroyed(TabContents* tab) OVERRIDE;
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void WebContentsDestroyed(WebContents* tab) OVERRIDE;
 
  private:
   TabFinder* finder_;
 
-  DISALLOW_COPY_AND_ASSIGN(TabContentsObserverImpl);
+  DISALLOW_COPY_AND_ASSIGN(WebContentsObserverImpl);
 };
 
-TabFinder::TabContentsObserverImpl::TabContentsObserverImpl(
-    TabContents* tab,
+TabFinder::WebContentsObserverImpl::WebContentsObserverImpl(
+    WebContents* tab,
     TabFinder* finder)
-    : TabContentsObserver(tab),
+    : content::WebContentsObserver(tab),
       finder_(finder) {
 }
 
-TabFinder::TabContentsObserverImpl::~TabContentsObserverImpl() {
+TabFinder::WebContentsObserverImpl::~WebContentsObserverImpl() {
 }
 
-void TabFinder::TabContentsObserverImpl::DidNavigateAnyFramePostCommit(
+void TabFinder::WebContentsObserverImpl::DidNavigateAnyFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
-  finder_->DidNavigateAnyFramePostCommit(tab_contents(), details, params);
+    const content::FrameNavigateParams& params) {
+  finder_->DidNavigateAnyFrame(web_contents(), details, params);
 }
 
-void TabFinder::TabContentsObserverImpl::TabContentsDestroyed(
-    TabContents* tab) {
+void TabFinder::WebContentsObserverImpl::WebContentsDestroyed(
+    WebContents* tab) {
   finder_->TabDestroyed(this);
   delete this;
 }
@@ -73,7 +81,7 @@ bool TabFinder::IsEnabled() {
       switches::kFocusExistingTabOnOpen);
 }
 
-TabContents* TabFinder::FindTab(Browser* browser,
+WebContents* TabFinder::FindTab(Browser* browser,
                                 const GURL& url,
                                 Browser** existing_browser) {
   if (browser->profile()->IsOffTheRecord())
@@ -81,12 +89,12 @@ TabContents* TabFinder::FindTab(Browser* browser,
 
   // If the current tab matches the url, ignore it and let the user reload the
   // existing tab.
-  TabContents* selected_tab = browser->GetSelectedTabContents();
+  WebContents* selected_tab = browser->GetSelectedWebContents();
   if (TabMatchesURL(selected_tab, url))
     return NULL;
 
   // See if the current browser has a tab matching the specified url.
-  TabContents* tab_in_browser = FindTabInBrowser(browser, url);
+  WebContents* tab_in_browser = FindTabInBrowser(browser, url);
   if (tab_in_browser) {
     *existing_browser = browser;
     return tab_in_browser;
@@ -95,7 +103,8 @@ TabContents* TabFinder::FindTab(Browser* browser,
   // Then check other browsers.
   for (BrowserList::const_iterator i = BrowserList::begin();
        i != BrowserList::end(); ++i) {
-    if (!(*i)->profile()->IsOffTheRecord()) {
+    if (!(*i)->profile()->IsOffTheRecord() &&
+         (*i)->profile()->IsSameProfile(browser->profile())) {
       tab_in_browser = FindTabInBrowser(*i, url);
       if (tab_in_browser) {
         *existing_browser = *i;
@@ -107,125 +116,116 @@ TabContents* TabFinder::FindTab(Browser* browser,
   return NULL;
 }
 
-void TabFinder::Observe(NotificationType type,
-                        const NotificationSource& source,
-                        const NotificationDetails& details) {
-  DCHECK_EQ(type.value, NotificationType::TAB_PARENTED);
+void TabFinder::Observe(int type,
+                        const content::NotificationSource& source,
+                        const content::NotificationDetails& details) {
+  DCHECK_EQ(type, content::NOTIFICATION_TAB_PARENTED);
 
   // The tab was added to a browser. Query for its state now.
-  NavigationController* controller =
-      Source<NavigationController>(source).ptr();
-  TrackTab(controller->tab_contents());
+  TabContentsWrapper* tab = content::Source<TabContentsWrapper>(source).ptr();
+  TrackTab(tab->web_contents());
 }
 
 TabFinder::TabFinder() {
-  registrar_.Add(this, NotificationType::TAB_PARENTED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_TAB_PARENTED,
+                 content::NotificationService::AllSources());
 }
 
 TabFinder::~TabFinder() {
   STLDeleteElements(&tab_contents_observers_);
 }
 
-void TabFinder::Init() {
-  for (BrowserList::const_iterator i = BrowserList::begin();
-       i != BrowserList::end(); ++i) {
-    if (!(*i)->profile()->IsOffTheRecord())
-      TrackBrowser(*i);
-  }
-}
-
-void TabFinder::DidNavigateAnyFramePostCommit(
-    TabContents* source,
+void TabFinder::DidNavigateAnyFrame(
+    WebContents* source,
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   CancelRequestsFor(source);
 
-  if (PageTransition::IsRedirect(params.transition)) {
+  if (content::PageTransitionIsRedirect(params.transition)) {
     // If this is a redirect, we need to go to the db to get the start.
     FetchRedirectStart(source);
   } else if (params.redirects.size() > 1 ||
-             params.redirects[0] != details.entry->url()) {
-    tab_contents_to_url_[source] = params.redirects[0];
+             params.redirects[0] != details.entry->GetURL()) {
+    web_contents_to_url_[source] = params.redirects[0];
   }
 }
 
-bool TabFinder::TabMatchesURL(TabContents* tab_contents, const GURL& url) {
+bool TabFinder::TabMatchesURL(WebContents* tab_contents, const GURL& url) {
   if (tab_contents->GetURL() == url)
     return true;
 
-  TabContentsToURLMap::const_iterator i =
-      tab_contents_to_url_.find(tab_contents);
-  return i != tab_contents_to_url_.end() && i->second == url;
+  WebContentsToURLMap::const_iterator i =
+      web_contents_to_url_.find(tab_contents);
+  return i != web_contents_to_url_.end() && i->second == url;
 }
 
-TabContents* TabFinder::FindTabInBrowser(Browser* browser, const GURL& url) {
+WebContents* TabFinder::FindTabInBrowser(Browser* browser, const GURL& url) {
   if (!browser->is_type_tabbed())
     return NULL;
 
   for (int i = 0; i < browser->tab_count(); ++i) {
-    if (TabMatchesURL(browser->GetTabContentsAt(i), url))
-      return browser->GetTabContentsAt(i);
+    if (TabMatchesURL(browser->GetWebContentsAt(i), url))
+      return browser->GetWebContentsAt(i);
   }
   return NULL;
 }
 
-void TabFinder::TrackTab(TabContents* tab) {
-  for (TabContentsObservers::const_iterator i = tab_contents_observers_.begin();
+void TabFinder::TrackTab(WebContents* tab) {
+  for (WebContentsObservers::const_iterator i = tab_contents_observers_.begin();
        i != tab_contents_observers_.end(); ++i) {
-    if ((*i)->tab_contents() == tab) {
+    if ((*i)->web_contents() == tab) {
       // Already tracking the tab.
       return;
     }
   }
-  TabContentsObserverImpl* observer = new TabContentsObserverImpl(tab, this);
+  WebContentsObserverImpl* observer = new WebContentsObserverImpl(tab, this);
   tab_contents_observers_.insert(observer);
   FetchRedirectStart(tab);
 }
 
-void TabFinder::TrackBrowser(Browser* browser) {
-  for (int i = 0; i < browser->tab_count(); ++i)
-    FetchRedirectStart(browser->GetTabContentsAt(i));
-}
-
-void TabFinder::TabDestroyed(TabContentsObserverImpl* observer) {
+void TabFinder::TabDestroyed(WebContentsObserverImpl* observer) {
   DCHECK_GT(tab_contents_observers_.count(observer), 0u);
   tab_contents_observers_.erase(observer);
 }
 
-void TabFinder::CancelRequestsFor(TabContents* tab_contents) {
-  if (tab_contents->profile()->IsOffTheRecord())
+void TabFinder::CancelRequestsFor(WebContents* web_contents) {
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+  if (profile->IsOffTheRecord())
     return;
 
-  tab_contents_to_url_.erase(tab_contents);
+  web_contents_to_url_.erase(web_contents);
 
-  HistoryService* history = tab_contents->profile()->GetHistoryService(
+  HistoryService* history = profile->GetHistoryService(
       Profile::EXPLICIT_ACCESS);
   if (history) {
     CancelableRequestProvider::Handle request_handle;
-    if (callback_consumer_.GetFirstHandleForClientData(tab_contents,
+    if (callback_consumer_.GetFirstHandleForClientData(web_contents,
                                                        &request_handle)) {
       history->CancelRequest(request_handle);
     }
   }
 }
 
-void TabFinder::FetchRedirectStart(TabContents* tab) {
-  if (tab->profile()->IsOffTheRecord())
+void TabFinder::FetchRedirectStart(WebContents* tab) {
+  Profile* profile = Profile::FromBrowserContext(tab->GetBrowserContext());
+  if (profile->IsOffTheRecord())
     return;
 
-  NavigationEntry* committed_entry = tab->controller().GetLastCommittedEntry();
-  if (!committed_entry || committed_entry->url().is_empty())
+  NavigationEntry* committed_entry =
+      tab->GetController().GetLastCommittedEntry();
+  if (!committed_entry || committed_entry->GetURL().is_empty())
     return;
 
-  HistoryService* history =tab->profile()->GetHistoryService(
+  HistoryService* history = profile->GetHistoryService(
       Profile::EXPLICIT_ACCESS);
   if (history) {
     CancelableRequestProvider::Handle request_handle =
         history->QueryRedirectsTo(
-            committed_entry->url(),
+            committed_entry->GetURL(),
             &callback_consumer_,
-            NewCallback(this, &TabFinder::QueryRedirectsToComplete));
+            base::Bind(&TabFinder::QueryRedirectsToComplete,
+                       base::Unretained(this)));
     callback_consumer_.SetClientData(history, request_handle, tab);
   }
 }
@@ -235,9 +235,9 @@ void TabFinder::QueryRedirectsToComplete(HistoryService::Handle handle,
                                          bool success,
                                          history::RedirectList* redirects) {
   if (success && !redirects->empty()) {
-    TabContents* tab_contents =
+    WebContents* web_contents =
         callback_consumer_.GetClientDataForCurrentRequest();
-    DCHECK(tab_contents);
-    tab_contents_to_url_[tab_contents] = redirects->back();
+    DCHECK(web_contents);
+    web_contents_to_url_[web_contents] = redirects->back();
   }
 }

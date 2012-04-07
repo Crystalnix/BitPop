@@ -1,9 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/engine/syncer.h"
 
+#include "base/debug/trace_event.h"
+#include "base/location.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/time.h"
 #include "chrome/browser/sync/engine/apply_updates_command.h"
@@ -20,15 +23,14 @@
 #include "chrome/browser/sync/engine/process_updates_command.h"
 #include "chrome/browser/sync/engine/resolve_conflicts_command.h"
 #include "chrome/browser/sync/engine/store_timestamps_command.h"
-#include "chrome/browser/sync/engine/syncer_end_command.h"
 #include "chrome/browser/sync/engine/syncer_types.h"
-#include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/engine/syncproto.h"
 #include "chrome/browser/sync/engine/verify_updates_command.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/syncable-inl.h"
 #include "chrome/browser/sync/syncable/syncable.h"
 
+using base::Time;
 using base::TimeDelta;
 using sync_pb::ClientCommand;
 using syncable::Blob;
@@ -53,9 +55,34 @@ using sessions::StatusController;
 using sessions::SyncSession;
 using sessions::ConflictProgress;
 
+#define ENUM_CASE(x) case x: return #x
+const char* SyncerStepToString(const SyncerStep step)
+{
+  switch (step) {
+    ENUM_CASE(SYNCER_BEGIN);
+    ENUM_CASE(CLEANUP_DISABLED_TYPES);
+    ENUM_CASE(DOWNLOAD_UPDATES);
+    ENUM_CASE(PROCESS_CLIENT_COMMAND);
+    ENUM_CASE(VERIFY_UPDATES);
+    ENUM_CASE(PROCESS_UPDATES);
+    ENUM_CASE(STORE_TIMESTAMPS);
+    ENUM_CASE(APPLY_UPDATES);
+    ENUM_CASE(BUILD_COMMIT_REQUEST);
+    ENUM_CASE(POST_COMMIT_MESSAGE);
+    ENUM_CASE(PROCESS_COMMIT_RESPONSE);
+    ENUM_CASE(BUILD_AND_PROCESS_CONFLICT_SETS);
+    ENUM_CASE(RESOLVE_CONFLICTS);
+    ENUM_CASE(APPLY_UPDATES_TO_RESOLVE_CONFLICTS);
+    ENUM_CASE(CLEAR_PRIVATE_DATA);
+    ENUM_CASE(SYNCER_END);
+  }
+  NOTREACHED();
+  return "";
+}
+#undef ENUM_CASE
+
 Syncer::Syncer()
-    : early_exit_requested_(false),
-      pre_conflict_resolution_closure_(NULL) {
+    : early_exit_requested_(false) {
 }
 
 Syncer::~Syncer() {}
@@ -71,22 +98,28 @@ void Syncer::RequestEarlyExit() {
 }
 
 void Syncer::SyncShare(sessions::SyncSession* session,
-                       const SyncerStep first_step,
-                       const SyncerStep last_step) {
-  ScopedDirLookup dir(session->context()->directory_manager(),
-                      session->context()->account_name());
-  // The directory must be good here.
-  CHECK(dir.good());
+                       SyncerStep first_step,
+                       SyncerStep last_step) {
+  {
+    ScopedDirLookup dir(session->context()->directory_manager(),
+                        session->context()->account_name());
+    // The directory must be good here.
+    CHECK(dir.good());
+  }
 
   ScopedSessionContextConflictResolver scoped(session->context(),
                                               &resolver_);
+  session->mutable_status_controller()->UpdateStartTime();
   SyncerStep current_step = first_step;
 
   SyncerStep next_step = current_step;
   while (!ExitRequested()) {
+    TRACE_EVENT1("sync", "SyncerStateMachine",
+                 "state", SyncerStepToString(current_step));
+    DVLOG(1) << "Syncer step:" << SyncerStepToString(current_step);
+
     switch (current_step) {
       case SYNCER_BEGIN:
-        VLOG(1) << "Syncer Begin";
         // This isn't perfect, as we can end up bundling extensions activity
         // intended for the next session into the current one.  We could do a
         // test-and-reset as with the source, but note that also falls short if
@@ -98,50 +131,48 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         // for analysis purposes, so Law of Large Numbers FTW.
         session->context()->extensions_monitor()->GetAndClearRecords(
             session->mutable_extensions_activity());
+        session->context()->PruneUnthrottledTypes(base::TimeTicks::Now());
+        session->SendEventNotification(SyncEngineEvent::SYNC_CYCLE_BEGIN);
+
         next_step = CLEANUP_DISABLED_TYPES;
         break;
       case CLEANUP_DISABLED_TYPES: {
-        VLOG(1) << "Cleaning up disabled types";
         CleanupDisabledTypesCommand cleanup;
         cleanup.Execute(session);
         next_step = DOWNLOAD_UPDATES;
         break;
       }
       case DOWNLOAD_UPDATES: {
-        VLOG(1) << "Downloading Updates";
         DownloadUpdatesCommand download_updates;
-        download_updates.Execute(session);
+        session->mutable_status_controller()->set_last_download_updates_result(
+            download_updates.Execute(session));
         next_step = PROCESS_CLIENT_COMMAND;
         break;
       }
       case PROCESS_CLIENT_COMMAND: {
-        VLOG(1) << "Processing Client Command";
         ProcessClientCommand(session);
         next_step = VERIFY_UPDATES;
         break;
       }
       case VERIFY_UPDATES: {
-        VLOG(1) << "Verifying Updates";
         VerifyUpdatesCommand verify_updates;
         verify_updates.Execute(session);
         next_step = PROCESS_UPDATES;
         break;
       }
       case PROCESS_UPDATES: {
-        VLOG(1) << "Processing Updates";
         ProcessUpdatesCommand process_updates;
         process_updates.Execute(session);
         next_step = STORE_TIMESTAMPS;
         break;
       }
       case STORE_TIMESTAMPS: {
-        VLOG(1) << "Storing timestamps";
         StoreTimestampsCommand store_timestamps;
         store_timestamps.Execute(session);
         // We should download all of the updates before attempting to process
         // them.
-        if (session->status_controller()->ServerSaysNothingMoreToDownload() ||
-            !session->status_controller()->download_updates_succeeded()) {
+        if (session->status_controller().ServerSaysNothingMoreToDownload() ||
+            !session->status_controller().download_updates_succeeded()) {
           next_step = APPLY_UPDATES;
         } else {
           next_step = DOWNLOAD_UPDATES;
@@ -149,34 +180,37 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         break;
       }
       case APPLY_UPDATES: {
-        VLOG(1) << "Applying Updates";
         ApplyUpdatesCommand apply_updates;
         apply_updates.Execute(session);
-        next_step = BUILD_COMMIT_REQUEST;
+        if (last_step == APPLY_UPDATES) {
+          // We're in configuration mode, but we still need to run the
+          // SYNCER_END step.
+          last_step = SYNCER_END;
+          next_step = SYNCER_END;
+        } else {
+          next_step = BUILD_COMMIT_REQUEST;
+        }
         break;
       }
       // These two steps are combined since they are executed within the same
       // write transaction.
       case BUILD_COMMIT_REQUEST: {
-        session->status_controller()->set_syncing(true);
-
-        VLOG(1) << "Processing Commit Request";
         ScopedDirLookup dir(session->context()->directory_manager(),
                             session->context()->account_name());
         if (!dir.good()) {
           LOG(ERROR) << "Scoped dir lookup failed!";
           return;
         }
-        WriteTransaction trans(dir, SYNCER, __FILE__, __LINE__);
+        WriteTransaction trans(FROM_HERE, SYNCER, dir);
         sessions::ScopedSetSessionWriteTransaction set_trans(session, &trans);
 
-        VLOG(1) << "Getting the Commit IDs";
+        DVLOG(1) << "Getting the Commit IDs";
         GetCommitIdsCommand get_commit_ids_command(
             session->context()->max_commit_batch_size());
         get_commit_ids_command.Execute(session);
 
-        if (!session->status_controller()->commit_ids().empty()) {
-          VLOG(1) << "Building a commit message";
+        if (!session->status_controller().commit_ids().empty()) {
+          DVLOG(1) << "Building a commit message";
           BuildCommitCommand build_commit_command;
           build_commit_command.Execute(session);
 
@@ -188,40 +222,29 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         break;
       }
       case POST_COMMIT_MESSAGE: {
-        VLOG(1) << "Posting a commit request";
         PostCommitMessageCommand post_commit_command;
-        post_commit_command.Execute(session);
+        session->mutable_status_controller()->set_last_post_commit_result(
+            post_commit_command.Execute(session));
         next_step = PROCESS_COMMIT_RESPONSE;
         break;
       }
       case PROCESS_COMMIT_RESPONSE: {
-        VLOG(1) << "Processing the commit response";
-        session->status_controller()->reset_num_conflicting_commits();
+        session->mutable_status_controller()->reset_num_conflicting_commits();
         ProcessCommitResponseCommand process_response_command;
-        process_response_command.Execute(session);
+        session->mutable_status_controller()->
+            set_last_process_commit_response_result(
+                process_response_command.Execute(session));
         next_step = BUILD_AND_PROCESS_CONFLICT_SETS;
         break;
       }
       case BUILD_AND_PROCESS_CONFLICT_SETS: {
-        VLOG(1) << "Building and Processing Conflict Sets";
         BuildAndProcessConflictSetsCommand build_process_conflict_sets;
         build_process_conflict_sets.Execute(session);
-        if (session->status_controller()->conflict_sets_built())
-          next_step = SYNCER_END;
-        else
-          next_step = RESOLVE_CONFLICTS;
+        next_step = RESOLVE_CONFLICTS;
         break;
       }
       case RESOLVE_CONFLICTS: {
-        VLOG(1) << "Resolving Conflicts";
-
-        // Trigger the pre_conflict_resolution_closure_, which is a testing
-        // hook for the unit tests, if it is non-NULL.
-        if (pre_conflict_resolution_closure_) {
-          pre_conflict_resolution_closure_->Run();
-        }
-
-        StatusController* status = session->status_controller();
+        StatusController* status = session->mutable_status_controller();
         status->reset_conflicts_resolved();
         ResolveConflictsCommand resolve_conflicts_command;
         resolve_conflicts_command.Execute(session);
@@ -235,8 +258,8 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         break;
       }
       case APPLY_UPDATES_TO_RESOLVE_CONFLICTS: {
-        StatusController* status = session->status_controller();
-        VLOG(1) << "Applying updates to resolve conflicts";
+        StatusController* status = session->mutable_status_controller();
+        DVLOG(1) << "Applying updates to resolve conflicts";
         ApplyUpdatesCommand apply_updates;
 
         // We only care to resolve conflicts again if we made progress on the
@@ -247,41 +270,44 @@ void Syncer::SyncShare(sessions::SyncSession* session,
         apply_updates.Execute(session);
         int after_blocking_conflicting_updates =
             status->TotalNumBlockingConflictingItems();
+        // If the following call sets the conflicts_resolved value to true,
+        // SyncSession::HasMoreToSync() will send us into another sync cycle
+        // after this one completes.
+        //
+        // TODO(rlarocque, 109072): Make conflict resolution not require
+        // extra sync cycles/GetUpdates.
         status->update_conflicts_resolved(before_blocking_conflicting_updates >
                                           after_blocking_conflicting_updates);
-        if (status->conflicts_resolved())
-          next_step = RESOLVE_CONFLICTS;
-        else
-          next_step = SYNCER_END;
+        next_step = SYNCER_END;
         break;
       }
       case CLEAR_PRIVATE_DATA: {
-        VLOG(1) << "Clear Private Data";
         ClearDataCommand clear_data_command;
         clear_data_command.Execute(session);
         next_step = SYNCER_END;
         break;
       }
       case SYNCER_END: {
+        session->SendEventNotification(SyncEngineEvent::SYNC_CYCLE_ENDED);
+        next_step = SYNCER_END;
         break;
       }
       default:
         LOG(ERROR) << "Unknown command: " << current_step;
     }
+    DVLOG(2) << "last step: " << SyncerStepToString(last_step) << ", "
+             << "current step: " << SyncerStepToString(current_step) << ", "
+             << "next step: " << SyncerStepToString(next_step) << ", "
+             << "snapshot: " << session->TakeSnapshot().ToString();
     if (last_step == current_step)
       break;
     current_step = next_step;
   }
-
-  VLOG(1) << "Syncer End";
-  SyncerEndCommand syncer_end_command;
-  syncer_end_command.Execute(session);
-  return;
 }
 
 void Syncer::ProcessClientCommand(sessions::SyncSession* session) {
   const ClientToServerResponse& response =
-      session->status_controller()->updates_response();
+      session->status_controller().updates_response();
   if (!response.has_client_command())
     return;
   const ClientCommand& command = response.client_command();
@@ -298,6 +324,11 @@ void Syncer::ProcessClientCommand(sessions::SyncSession* session) {
   if (command.has_set_sync_poll_interval()) {
     session->delegate()->OnReceivedShortPollIntervalUpdate(
         TimeDelta::FromSeconds(command.set_sync_poll_interval()));
+  }
+
+  if (command.has_sessions_commit_delay_seconds()) {
+    session->delegate()->OnReceivedSessionsCommitDelay(
+        TimeDelta::FromSeconds(command.sessions_commit_delay_seconds()));
   }
 }
 
@@ -316,9 +347,9 @@ void CopyServerFields(syncable::Entry* src, syncable::MutableEntry* dest) {
 
 void ClearServerData(syncable::MutableEntry* entry) {
   entry->Put(SERVER_NON_UNIQUE_NAME, "");
-  entry->Put(SERVER_PARENT_ID, syncable::kNullId);
-  entry->Put(SERVER_MTIME, 0);
-  entry->Put(SERVER_CTIME, 0);
+  entry->Put(SERVER_PARENT_ID, syncable::GetNullId());
+  entry->Put(SERVER_MTIME, Time());
+  entry->Put(SERVER_CTIME, Time());
   entry->Put(SERVER_VERSION, 0);
   entry->Put(SERVER_IS_DIR, false);
   entry->Put(SERVER_IS_DEL, false);

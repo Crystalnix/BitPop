@@ -10,16 +10,16 @@
 #include <string>
 
 #include "base/atomicops.h"
-#include "base/observer_list_threadsafe.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "base/string_util.h"
+#include "base/threading/non_thread_safe.h"
+#include "base/threading/thread_checker.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/sync/syncable/syncable_id.h"
-#include "chrome/common/deprecated/event_sys.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
 #include "chrome/common/net/http_return.h"
 
 namespace syncable {
-class WriteTransaction;
 class DirectoryManager;
 }
 
@@ -27,15 +27,9 @@ namespace sync_pb {
 class ClientToServerMessage;
 }
 
-struct RequestTimingInfo;
-
 namespace browser_sync {
 
 class ClientToServerMessage;
-
-// How many connection errors are accepted before network handles are closed
-// and reopened.
-static const int32 kMaxConnectionErrorsBeforeReset = 10;
 
 static const int32 kUnsetResponseCode = -1;
 static const int32 kUnsetContentLength = -1;
@@ -97,11 +91,10 @@ struct HttpResponse {
   // Identifies the type of failure, if any.
   ServerConnectionCode server_status;
 
-  HttpResponse()
-      : response_code(kUnsetResponseCode),
-        content_length(kUnsetContentLength),
-        payload_length(kUnsetPayloadLength),
-        server_status(NONE) {}
+  HttpResponse();
+
+  static const char* GetServerConnectionCodeString(
+      ServerConnectionCode code);
 };
 
 inline bool IsGoodReplyFromServer(HttpResponse::ServerConnectionCode code) {
@@ -127,16 +120,14 @@ class ServerConnectionManager;
 // A helper class that automatically notifies when the status changes.
 // TODO(tim): This class shouldn't be exposed outside of the implementation,
 // bug 35060.
-class ScopedServerStatusWatcher {
+class ScopedServerStatusWatcher : public base::NonThreadSafe {
  public:
   ScopedServerStatusWatcher(ServerConnectionManager* conn_mgr,
                             HttpResponse* response);
-  ~ScopedServerStatusWatcher();
+  virtual ~ScopedServerStatusWatcher();
  private:
   ServerConnectionManager* const conn_mgr_;
   HttpResponse* const response_;
-  // TODO(tim): Should this be Barrier:AtomicIncrement?
-  base::subtle::AtomicWord reset_count_;
   bool server_reachable_;
   DISALLOW_COPY_AND_ASSIGN(ScopedServerStatusWatcher);
 };
@@ -144,27 +135,23 @@ class ScopedServerStatusWatcher {
 // Use this class to interact with the sync server.
 // The ServerConnectionManager currently supports POSTing protocol buffers.
 //
-//  *** This class is thread safe. In fact, you should consider creating only
-//  one instance for every server that you need to talk to.
 class ServerConnectionManager {
  public:
   // buffer_in - will be POSTed
   // buffer_out - string will be overwritten with response
   struct PostBufferParams {
-    const std::string& buffer_in;
-    std::string* buffer_out;
-    HttpResponse* response;
-    RequestTimingInfo* timing_info;
+    std::string buffer_in;
+    std::string buffer_out;
+    HttpResponse response;
   };
 
   // Abstract class providing network-layer functionality to the
   // ServerConnectionManager. Subclasses implement this using an HTTP stack of
   // their choice.
-  class Post {
+  class Connection {
    public:
-    explicit Post(ServerConnectionManager* scm) : scm_(scm), timing_info_(0) {
-    }
-    virtual ~Post() { }
+    explicit Connection(ServerConnectionManager* scm);
+    virtual ~Connection();
 
     // Called to initialize and perform an HTTP POST.
     virtual bool Init(const char* path,
@@ -172,14 +159,13 @@ class ServerConnectionManager {
                       const std::string& payload,
                       HttpResponse* response) = 0;
 
+    // Immediately abandons a pending HTTP POST request and unblocks caller
+    // in Init.
+    virtual void Abort() = 0;
+
     bool ReadBufferResponse(std::string* buffer_out, HttpResponse* response,
                             bool require_response);
     bool ReadDownloadResponse(HttpResponse* response, std::string* buffer_out);
-
-    void set_timing_info(RequestTimingInfo* timing_info) {
-      timing_info_ = timing_info;
-    }
-    RequestTimingInfo* timing_info() { return timing_info_; }
 
    protected:
     std::string MakeConnectionURL(const std::string& sync_server,
@@ -189,7 +175,6 @@ class ServerConnectionManager {
     void GetServerParams(std::string* server,
                          int* server_port,
                          bool* use_ssl) const {
-      base::AutoLock lock(scm_->server_parameters_mutex_);
       server->assign(scm_->sync_server_);
       *server_port = scm_->sync_server_port_;
       *use_ssl = scm_->use_ssl_;
@@ -201,7 +186,6 @@ class ServerConnectionManager {
    private:
     int ReadResponse(void* buffer, int length);
     int ReadResponse(std::string* buffer, int length);
-    RequestTimingInfo* timing_info_;
   };
 
   ServerConnectionManager(const std::string& server,
@@ -215,7 +199,7 @@ class ServerConnectionManager {
   // set auth token in our headers.
   //
   // Returns true if executed successfully.
-  virtual bool PostBufferWithCachedAuth(const PostBufferParams* params,
+  virtual bool PostBufferWithCachedAuth(PostBufferParams* params,
                                         ScopedServerStatusWatcher* watcher);
 
   // Checks the time on the server. Returns false if the request failed. |time|
@@ -232,15 +216,13 @@ class ServerConnectionManager {
   // Updates status and broadcasts events on change.
   bool CheckServerReachable();
 
-  // Signal the shutdown event to notify listeners.
-  virtual void kill();
-
   void AddListener(ServerConnectionEventListener* listener);
   void RemoveListener(ServerConnectionEventListener* listener);
 
   inline std::string user_agent() const { return user_agent_; }
 
   inline HttpResponse::ServerConnectionCode server_status() const {
+    DCHECK(thread_checker_.CalledOnValidThread());
     return server_status_;
   }
 
@@ -251,8 +233,7 @@ class ServerConnectionManager {
   // This changes the server info used by the connection manager. This allows
   // a single client instance to talk to different backing servers. This is
   // typically called during / after authentication so that the server url
-  // can be a function of the user's login id. A side effect of this call is
-  // that ResetConnection is called.
+  // can be a function of the user's login id.
   void SetServerParameters(const std::string& server_url,
                            int port,
                            bool use_ssl);
@@ -264,56 +245,72 @@ class ServerConnectionManager {
 
   std::string GetServerHost() const;
 
-  bool terminate_all_io() const {
-    base::AutoLock lock(terminate_all_io_mutex_);
-    return terminate_all_io_;
-  }
+  // Factory method to create an Connection object we can use for
+  // communication with the server.
+  virtual Connection* MakeConnection();
 
-  // Factory method to create a Post object we can use for communication with
-  // the server.
-  virtual Post* MakePost();
+  // Aborts any active HTTP POST request.
+  // We expect this to get called on a different thread than the valid
+  // ThreadChecker thread, as we want to kill any pending http traffic without
+  // having to wait for the request to complete.
+  void TerminateAllIO();
 
   void set_client_id(const std::string& client_id) {
+    DCHECK(thread_checker_.CalledOnValidThread());
     DCHECK(client_id_.empty());
     client_id_.assign(client_id);
   }
 
-  void set_auth_token(const std::string& auth_token) {
-    // TODO(chron): Consider adding a message loop check here.
-    base::AutoLock lock(auth_token_mutex_);
-    auth_token_.assign(auth_token);
+  // Returns true if the auth token is succesfully set and false otherwise.
+  bool set_auth_token(const std::string& auth_token) {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    if (previously_invalidated_token != auth_token) {
+      auth_token_.assign(auth_token);
+      previously_invalidated_token = std::string();
+      return true;
+    }
+    return false;
+  }
+
+  void InvalidateAndClearAuthToken() {
+    DCHECK(thread_checker_.CalledOnValidThread());
+    // Copy over the token to previous invalid token.
+    if (!auth_token_.empty()) {
+      previously_invalidated_token.assign(auth_token_);
+      auth_token_ = std::string();
+    }
   }
 
   const std::string auth_token() const {
-    base::AutoLock lock(auth_token_mutex_);
+    DCHECK(thread_checker_.CalledOnValidThread());
     return auth_token_;
   }
 
  protected:
   inline std::string proto_sync_path() const {
-    base::AutoLock lock(path_mutex_);
     return proto_sync_path_;
   }
 
   std::string get_time_path() const {
-    base::AutoLock lock(path_mutex_);
     return get_time_path_;
   }
-
-  // Called wherever a failure should be taken as an indication that we may
-  // be experiencing connection difficulties.
-  virtual bool IncrementErrorCount();
 
   // NOTE: Tests rely on this protected function being virtual.
   //
   // Internal PostBuffer base function.
-  virtual bool PostBufferToPath(const PostBufferParams*,
+  virtual bool PostBufferToPath(PostBufferParams*,
                                 const std::string& path,
                                 const std::string& auth_token,
                                 ScopedServerStatusWatcher* watcher);
 
-  // Protects access to sync_server_, sync_server_port_ and use_ssl_:
-  mutable base::Lock server_parameters_mutex_;
+  // Helper to check terminated flags and build a Connection object, installing
+  // it as the |active_connection_|.  If this ServerConnectionManager has been
+  // terminated, this will return NULL.
+  Connection* MakeActiveConnection();
+
+  // Called by Connection objects as they are destroyed to allow the
+  // ServerConnectionManager to cleanup active connections.
+  void OnConnectionDestroyed(Connection* connection);
 
   // The sync_server_ is the server that requests will be made to.
   std::string sync_server_;
@@ -331,37 +328,56 @@ class ServerConnectionManager {
   bool use_ssl_;
 
   // The paths we post to.
-  mutable base::Lock path_mutex_;
   std::string proto_sync_path_;
   std::string get_time_path_;
 
-  mutable base::Lock auth_token_mutex_;
   // The auth token to use in authenticated requests. Set by the AuthWatcher.
   std::string auth_token_;
 
-  base::Lock error_count_mutex_;  // Protects error_count_
-  int error_count_;  // Tracks the number of connection errors.
+  // The previous auth token that is invalid now.
+  std::string previously_invalidated_token;
 
-  scoped_refptr<ObserverListThreadSafe<ServerConnectionEventListener> >
-     listeners_;
+  ObserverList<ServerConnectionEventListener> listeners_;
 
-  // Volatile so various threads can call server_status() without
-  // synchronization.
-  volatile HttpResponse::ServerConnectionCode server_status_;
+  HttpResponse::ServerConnectionCode server_status_;
   bool server_reachable_;
 
-  // A counter that is incremented everytime ResetAuthStatus() is called.
-  volatile base::subtle::AtomicWord reset_count_;
+  base::ThreadChecker thread_checker_;
+
+  // Protects all variables below to allow bailing out of active connections.
+  base::Lock terminate_connection_lock_;
+
+  // If true, we've been told to terminate IO and expect to be destroyed
+  // shortly.  No future network requests will be made.
+  bool terminated_;
+
+  // A non-owning pointer to any active http connection, so that we can abort
+  // it if necessary.
+  Connection* active_connection_;
 
  private:
-  friend class Post;
+  friend class Connection;
   friend class ScopedServerStatusWatcher;
 
-  void NotifyStatusChanged();
-  void ResetConnection();
+  // A class to help deal with cleaning up active Connection objects when (for
+  // ex) multiple early-exits are present in some scope. ScopedConnectionHelper
+  // informs the ServerConnectionManager before the Connection object it takes
+  // ownership of is destroyed.
+  class ScopedConnectionHelper {
+   public:
+    // |manager| must outlive this. Takes ownership of |connection|.
+    ScopedConnectionHelper(ServerConnectionManager* manager,
+                           Connection* connection);
+    ~ScopedConnectionHelper();
+    Connection* get();
+   private:
+    ServerConnectionManager* manager_;
+    scoped_ptr<Connection> connection_;
+    DISALLOW_COPY_AND_ASSIGN(ScopedConnectionHelper);
+  };
 
-  mutable base::Lock terminate_all_io_mutex_;
-  bool terminate_all_io_;  // When set to true, terminate all connections asap.
+  void NotifyStatusChanged();
+
   DISALLOW_COPY_AND_ASSIGN(ServerConnectionManager);
 };
 

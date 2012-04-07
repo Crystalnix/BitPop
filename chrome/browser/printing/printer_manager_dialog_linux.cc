@@ -4,13 +4,16 @@
 
 #include "chrome/browser/printing/printer_manager_dialog.h"
 
+#include "base/bind.h"
 #include "base/environment.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/nix/xdg_util.h"
 #include "base/process_util.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/process_watcher.h"
+#include "content/public/browser/browser_thread.h"
 
 using base::Environment;
+using content::BrowserThread;
 
 namespace {
 
@@ -47,13 +50,12 @@ void DetectAndOpenPrinterConfigDialog() {
 
   std::vector<std::string> argv;
   argv.push_back(command);
-  base::file_handle_mapping_vector no_files;
   base::ProcessHandle handle;
-  if (!base::LaunchApp(argv, no_files, false, &handle)) {
+  if (!base::LaunchProcess(argv, base::LaunchOptions(), &handle)) {
     LOG(ERROR) << "Failed to open printer manager dialog ";
     return;
   }
-  ProcessWatcher::EnsureProcessGetsReaped(handle);
+  base::EnsureProcessGetsReaped(handle);
 }
 
 }  // anonymous namespace
@@ -62,7 +64,7 @@ namespace printing {
 
 void PrinterManagerDialog::ShowPrinterManagerDialog() {
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&DetectAndOpenPrinterConfigDialog));
+                          base::Bind(&DetectAndOpenPrinterConfigDialog));
 }
 
 }  // namespace printing

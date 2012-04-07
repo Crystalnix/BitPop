@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,33 +8,42 @@
 
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
-#include "chrome/browser/download/download_manager.h"
+#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "content/public/browser/download_manager.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 DownloadInProgressDialogGtk::DownloadInProgressDialogGtk(Browser* browser)
     : browser_(browser) {
-  int download_count = browser->profile()->GetDownloadManager()->
-      in_progress_count();
+  int download_count;
+  Browser::DownloadClosePreventionType type =
+      browser_->OkToCloseWithInProgressDownloads(&download_count);
+
+  // This dialog should have been created within the same thread invocation
+  // as the original test that lead to us, so it should always not be ok
+  // to close.
+  DCHECK_NE(Browser::DOWNLOAD_CLOSE_OK, type);
+
+  // TODO(rdsmith): This dialog should be different depending on whether we're
+  // closing the last incognito window of a profile or doing browser shutdown.
+  // See http://crbug.com/88421.
 
   std::string warning_text;
   std::string explanation_text;
   std::string ok_button_text;
   std::string cancel_button_text;
-  string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
   if (download_count == 1) {
     warning_text =
-        l10n_util::GetStringFUTF8(IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_WARNING,
-                                  product_name);
+        l10n_util::GetStringUTF8(IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_WARNING);
     explanation_text =
-        l10n_util::GetStringFUTF8(
-            IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_EXPLANATION,
-            product_name);
+        l10n_util::GetStringUTF8(
+            IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_EXPLANATION);
     ok_button_text = l10n_util::GetStringUTF8(
         IDS_SINGLE_DOWNLOAD_REMOVE_CONFIRM_OK_BUTTON_LABEL);
     cancel_button_text = l10n_util::GetStringUTF8(
@@ -42,11 +51,10 @@ DownloadInProgressDialogGtk::DownloadInProgressDialogGtk(Browser* browser)
   } else {
     warning_text =
         l10n_util::GetStringFUTF8(IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_WARNING,
-                                  product_name,
                                   base::IntToString16(download_count));
     explanation_text =
-        l10n_util::GetStringFUTF8(
-            IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_EXPLANATION, product_name);
+        l10n_util::GetStringUTF8(
+            IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_EXPLANATION);
     ok_button_text = l10n_util::GetStringUTF8(
         IDS_MULTIPLE_DOWNLOADS_REMOVE_CONFIRM_OK_BUTTON_LABEL);
     cancel_button_text = l10n_util::GetStringUTF8(

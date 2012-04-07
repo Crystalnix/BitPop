@@ -10,18 +10,19 @@
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/values.h"
+#include "content/common/net/url_fetcher_impl.h"
+#include "content/public/common/speech_input_result.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
-#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
 const char* const kDefaultSpeechRecognitionUrl =
-    "https://www.google.com/speech-api/v1/recognize?xjerr=1&client=chromium&"
-    "pfilter=2&";
+    "https://www.google.com/speech-api/v1/recognize?xjerr=1&client=chromium&";
+const char* const kStatusString = "status";
 const char* const kHypothesesString = "hypotheses";
 const char* const kUtteranceString = "utterance";
 const char* const kConfidenceString = "confidence";
@@ -31,7 +32,7 @@ const char* const kConfidenceString = "confidence";
 const int kMaxResults = 6;
 
 bool ParseServerResponse(const std::string& response_body,
-                         speech_input::SpeechInputResultArray* result) {
+                         content::SpeechInputResult* result) {
   if (response_body.empty()) {
     LOG(WARNING) << "ParseServerResponse: Response was empty.";
     return false;
@@ -55,18 +56,43 @@ bool ParseServerResponse(const std::string& response_body,
   const DictionaryValue* response_object =
       static_cast<DictionaryValue*>(response_value.get());
 
-  // Get the hypotheses
+  // Get the status.
+  int status;
+  if (!response_object->GetInteger(kStatusString, &status)) {
+    VLOG(1) << "ParseServerResponse: " << kStatusString
+            << " is not a valid integer value.";
+    return false;
+  }
+
+  // Process the status.
+  switch (status) {
+  case content::SPEECH_INPUT_ERROR_NONE:
+  case content::SPEECH_INPUT_ERROR_NO_SPEECH:
+  case content::SPEECH_INPUT_ERROR_NO_MATCH:
+    break;
+
+  default:
+    // Other status codes should not be returned by the server.
+    VLOG(1) << "ParseServerResponse: unexpected status code " << status;
+    return false;
+  }
+
+  result->error = static_cast<content::SpeechInputError>(status);
+
+  // Get the hypotheses.
   Value* hypotheses_value = NULL;
   if (!response_object->Get(kHypothesesString, &hypotheses_value)) {
     VLOG(1) << "ParseServerResponse: Missing hypotheses attribute.";
     return false;
   }
+
   DCHECK(hypotheses_value);
   if (!hypotheses_value->IsType(Value::TYPE_LIST)) {
     VLOG(1) << "ParseServerResponse: Unexpected hypotheses type "
             << hypotheses_value->GetType();
     return false;
   }
+
   const ListValue* hypotheses_list = static_cast<ListValue*>(hypotheses_value);
 
   size_t index = 0;
@@ -95,12 +121,12 @@ bool ParseServerResponse(const std::string& response_body,
     double confidence = 0.0;
     hypothesis_value->GetDouble(kConfidenceString, &confidence);
 
-    result->push_back(speech_input::SpeechInputResultItem(utterance,
-                                                          confidence));
+    result->hypotheses.push_back(content::SpeechInputHypothesis(
+        utterance, confidence));
   }
 
   if (index < hypotheses_list->GetSize()) {
-    result->clear();
+    result->hypotheses.clear();
     return false;
   }
 
@@ -124,6 +150,7 @@ SpeechRecognitionRequest::~SpeechRecognitionRequest() {}
 
 void SpeechRecognitionRequest::Start(const std::string& language,
                                      const std::string& grammar,
+                                     bool filter_profanities,
                                      const std::string& hardware_info,
                                      const std::string& origin_url,
                                      const std::string& content_type) {
@@ -145,29 +172,30 @@ void SpeechRecognitionRequest::Start(const std::string& language,
   }
   if (lang_param.empty())
     lang_param = "en-US";
-  parts.push_back("lang=" + EscapeQueryParamValue(lang_param, true));
+  parts.push_back("lang=" + net::EscapeQueryParamValue(lang_param, true));
 
   if (!grammar.empty())
-    parts.push_back("lm=" + EscapeQueryParamValue(grammar, true));
+    parts.push_back("lm=" + net::EscapeQueryParamValue(grammar, true));
   if (!hardware_info.empty())
-    parts.push_back("xhw=" + EscapeQueryParamValue(hardware_info, true));
+    parts.push_back("xhw=" + net::EscapeQueryParamValue(hardware_info, true));
   parts.push_back("maxresults=" + base::IntToString(kMaxResults));
+  parts.push_back(filter_profanities ? "pfilter=2" : "pfilter=0");
 
   GURL url(std::string(kDefaultSpeechRecognitionUrl) + JoinString(parts, '&'));
 
-  url_fetcher_.reset(URLFetcher::Create(url_fetcher_id_for_tests,
-                                        url,
-                                        URLFetcher::POST,
-                                        this));
-  url_fetcher_->set_chunked_upload(content_type);
-  url_fetcher_->set_request_context(url_context_);
-  url_fetcher_->set_referrer(origin_url);
+  url_fetcher_.reset(URLFetcherImpl::Create(url_fetcher_id_for_tests,
+                                            url,
+                                            URLFetcherImpl::POST,
+                                            this));
+  url_fetcher_->SetChunkedUpload(content_type);
+  url_fetcher_->SetRequestContext(url_context_);
+  url_fetcher_->SetReferrer(origin_url);
 
   // The speech recognition API does not require user identification as part
   // of requests, so we don't send cookies or auth data for these requests to
   // prevent any accidental connection between users who are logged into the
   // domain for other services (e.g. bookmark sync) with the speech requests.
-  url_fetcher_->set_load_flags(
+  url_fetcher_->SetLoadFlags(
       net::LOAD_DO_NOT_SAVE_COOKIES | net::LOAD_DO_NOT_SEND_COOKIES |
       net::LOAD_DO_NOT_SEND_AUTH_DATA);
   url_fetcher_->Start();
@@ -180,22 +208,20 @@ void SpeechRecognitionRequest::UploadAudioChunk(const std::string& audio_data,
 }
 
 void SpeechRecognitionRequest::OnURLFetchComplete(
-    const URLFetcher* source,
-    const GURL& url,
-    const net::URLRequestStatus& status,
-    int response_code,
-    const net::ResponseCookies& cookies,
-    const std::string& data) {
+    const content::URLFetcher* source) {
   DCHECK_EQ(url_fetcher_.get(), source);
 
-  bool error = !status.is_success() || response_code != 200;
-  SpeechInputResultArray result;
-  if (!error)
-    error = !ParseServerResponse(data, &result);
-  url_fetcher_.reset();
+  content::SpeechInputResult result;
+  std::string data;
+  if (!source->GetStatus().is_success() || source->GetResponseCode() != 200 ||
+      !source->GetResponseAsString(&data) ||
+      !ParseServerResponse(data, &result)) {
+    result.error = content::SPEECH_INPUT_ERROR_NETWORK;
+  }
 
   DVLOG(1) << "SpeechRecognitionRequest: Invoking delegate with result.";
-  delegate_->SetRecognitionResult(error, result);
+  url_fetcher_.reset();
+  delegate_->SetRecognitionResult(result);
 }
 
 }  // namespace speech_input

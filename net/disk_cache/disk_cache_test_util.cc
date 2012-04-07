@@ -78,23 +78,9 @@ bool DeleteCache(const FilePath& path) {
   return true;
 }
 
-bool CopyTestCache(const std::string& name) {
-  FilePath path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &path);
-  path = path.AppendASCII("net");
-  path = path.AppendASCII("data");
-  path = path.AppendASCII("cache_tests");
-  path = path.AppendASCII(name);
-
-  FilePath dest = GetCacheFilePath();
-  if (!DeleteCache(dest))
-    return false;
-  return file_util::CopyDirectory(path, dest, false);
-}
-
-bool CheckCacheIntegrity(const FilePath& path, bool new_eviction) {
+bool CheckCacheIntegrity(const FilePath& path, bool new_eviction, uint32 mask) {
   scoped_ptr<disk_cache::BackendImpl> cache(new disk_cache::BackendImpl(
-      path, base::MessageLoopProxy::CreateForCurrentThread(), NULL));
+      path, mask, base::MessageLoopProxy::current(), NULL));
   if (!cache.get())
     return false;
   if (new_eviction)
@@ -105,7 +91,7 @@ bool CheckCacheIntegrity(const FilePath& path, bool new_eviction) {
   return cache->SelfCheck() >= 0;
 }
 
-ScopedTestCache::ScopedTestCache() : path_(GetCacheFilePath()) {
+ScopedTestCache::ScopedTestCache(const FilePath& path) : path_(path) {
   bool result = DeleteCache(path_);
   DCHECK(result);
 }
@@ -122,47 +108,26 @@ ScopedTestCache::~ScopedTestCache() {
 
 // -----------------------------------------------------------------------
 
-volatile int g_cache_tests_received = 0;
-volatile bool g_cache_tests_error = 0;
-
-CallbackTest::CallbackTest(bool reuse) : result_(-1), reuse_(reuse ? 0 : 1) {}
-
-CallbackTest::~CallbackTest() {}
-
-// On the actual callback, increase the number of tests received and check for
-// errors (an unexpected test received)
-void CallbackTest::RunWithParams(const Tuple1<int>& params) {
-  if (reuse_) {
-    DCHECK_EQ(1, reuse_);
-    if (2 == reuse_)
-      g_cache_tests_error = true;
-    reuse_++;
-  }
-
-  result_ = params.a;
-  g_cache_tests_received++;
-}
-
-// -----------------------------------------------------------------------
-
 MessageLoopHelper::MessageLoopHelper()
     : num_callbacks_(0),
       num_iterations_(0),
       last_(0),
-      completed_(false) {
+      completed_(false),
+      callback_reused_error_(false),
+      callbacks_called_(0) {
 }
 
 MessageLoopHelper::~MessageLoopHelper() {
 }
 
 bool MessageLoopHelper::WaitUntilCacheIoFinished(int num_callbacks) {
-  if (num_callbacks == g_cache_tests_received)
+  if (num_callbacks == callbacks_called_)
     return true;
 
   ExpectCallbacks(num_callbacks);
   // Create a recurrent timer of 50 mS.
   if (!timer_.IsRunning())
-    timer_.Start(TimeDelta::FromMilliseconds(50), this,
+    timer_.Start(FROM_HERE, TimeDelta::FromMilliseconds(50), this,
                  &MessageLoopHelper::TimerExpired);
   MessageLoop::current()->Run();
   return completed_;
@@ -171,17 +136,41 @@ bool MessageLoopHelper::WaitUntilCacheIoFinished(int num_callbacks) {
 // Quits the message loop when all callbacks are called or we've been waiting
 // too long for them (2 secs without a callback).
 void MessageLoopHelper::TimerExpired() {
-  CHECK_LE(g_cache_tests_received, num_callbacks_);
-  if (g_cache_tests_received == num_callbacks_) {
+  CHECK_LE(callbacks_called_, num_callbacks_);
+  if (callbacks_called_ == num_callbacks_) {
     completed_ = true;
     MessageLoop::current()->Quit();
   } else {
     // Not finished yet. See if we have to abort.
-    if (last_ == g_cache_tests_received)
+    if (last_ == callbacks_called_)
       num_iterations_++;
     else
-      last_ = g_cache_tests_received;
+      last_ = callbacks_called_;
     if (40 == num_iterations_)
       MessageLoop::current()->Quit();
   }
+}
+
+// -----------------------------------------------------------------------
+
+CallbackTest::CallbackTest(MessageLoopHelper* helper,
+                           bool reuse)
+    : helper_(helper),
+      reuse_(reuse ? 0 : 1) {
+}
+
+CallbackTest::~CallbackTest() {
+}
+
+// On the actual callback, increase the number of tests received and check for
+// errors (an unexpected test received)
+void CallbackTest::Run(int params) {
+  if (reuse_) {
+    DCHECK_EQ(1, reuse_);
+    if (2 == reuse_)
+      helper_->set_callback_reused_error(true);
+    reuse_++;
+  }
+
+  helper_->CallbackWasCalled();
 }

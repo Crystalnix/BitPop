@@ -4,11 +4,16 @@
 
 #include "net/udp/udp_server_socket.h"
 
+#include "net/base/rand_callback.h"
+
 namespace net {
 
 UDPServerSocket::UDPServerSocket(net::NetLog* net_log,
                                  const net::NetLog::Source& source)
-    : socket_(net_log, source) {
+    : socket_(DatagramSocket::DEFAULT_BIND,
+              RandIntCallback(),
+              net_log,
+              source) {
 }
 
 UDPServerSocket::~UDPServerSocket() {
@@ -21,15 +26,23 @@ int UDPServerSocket::Listen(const IPEndPoint& address) {
 int UDPServerSocket::RecvFrom(IOBuffer* buf,
                               int buf_len,
                               IPEndPoint* address,
-                              CompletionCallback* callback) {
+                              const CompletionCallback& callback) {
   return socket_.RecvFrom(buf, buf_len, address, callback);
 }
 
 int UDPServerSocket::SendTo(IOBuffer* buf,
                             int buf_len,
                             const IPEndPoint& address,
-                            CompletionCallback* callback) {
+                            const CompletionCallback& callback) {
   return socket_.SendTo(buf, buf_len, address, callback);
+}
+
+bool UDPServerSocket::SetReceiveBufferSize(int32 size) {
+  return socket_.SetReceiveBufferSize(size);
+}
+
+bool UDPServerSocket::SetSendBufferSize(int32 size) {
+  return socket_.SetSendBufferSize(size);
 }
 
 void UDPServerSocket::Close() {
@@ -44,5 +57,8 @@ int UDPServerSocket::GetLocalAddress(IPEndPoint* address) const {
   return socket_.GetLocalAddress(address);
 }
 
+const BoundNetLog& UDPServerSocket::NetLog() const {
+  return socket_.NetLog();
+}
 
 }  // namespace net

@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/protocol/message_reader.h"
 
-#include "base/message_loop.h"
+#include "base/bind.h"
+#include "base/callback.h"
+#include "base/location.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/socket/socket.h"
@@ -18,12 +20,9 @@ static const int kReadBufferSize = 4096;
 
 MessageReader::MessageReader()
     : socket_(NULL),
-      message_loop_(NULL),
       read_pending_(false),
       pending_messages_(0),
-      closed_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &MessageReader::OnRead)) {
+      closed_(false) {
 }
 
 MessageReader::~MessageReader() {
@@ -31,11 +30,10 @@ MessageReader::~MessageReader() {
 }
 
 void MessageReader::Init(net::Socket* socket,
-                         MessageReceivedCallback* callback) {
-  message_received_callback_.reset(callback);
+                         const MessageReceivedCallback& callback) {
+  message_received_callback_ = callback;
   DCHECK(socket);
   socket_ = socket;
-  message_loop_ = MessageLoop::current();
   DoRead();
 }
 
@@ -45,7 +43,8 @@ void MessageReader::DoRead() {
   while (!closed_ && !read_pending_ && pending_messages_ == 0) {
     read_buffer_ = new net::IOBuffer(kReadBufferSize);
     int result = socket_->Read(
-        read_buffer_, kReadBufferSize, &read_callback_);
+        read_buffer_, kReadBufferSize, base::Bind(&MessageReader::OnRead,
+                                                  base::Unretained(this)));
     HandleReadResult(result);
   }
 }
@@ -92,25 +91,30 @@ void MessageReader::OnDataReceived(net::IOBuffer* data, int data_size) {
 
   pending_messages_ += new_messages.size();
 
+  // TODO(lambroslambrou): MessageLoopProxy::current() will not work from the
+  // plugin thread if this code is compiled into a separate binary.  Fix this.
   for (std::vector<CompoundBuffer*>::iterator it = new_messages.begin();
        it != new_messages.end(); ++it) {
-    message_received_callback_->Run(*it, NewRunnableMethod(
-        this, &MessageReader::OnMessageDone, *it));
+    message_received_callback_.Run(*it, base::Bind(
+        &MessageReader::OnMessageDone, this,
+        *it, base::MessageLoopProxy::current()));
   }
 }
 
-void MessageReader::OnMessageDone(CompoundBuffer* message) {
+void MessageReader::OnMessageDone(
+    CompoundBuffer* message,
+    scoped_refptr<base::MessageLoopProxy> message_loop) {
+  if (!message_loop->BelongsToCurrentThread()) {
+    message_loop->PostTask(
+        FROM_HERE,
+        base::Bind(&MessageReader::OnMessageDone, this, message, message_loop));
+    return;
+  }
   delete message;
   ProcessDoneEvent();
 }
 
 void MessageReader::ProcessDoneEvent() {
-  if (MessageLoop::current() != message_loop_) {
-    message_loop_->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &MessageReader::ProcessDoneEvent));
-    return;
-  }
-
   pending_messages_--;
   DCHECK_GE(pending_messages_, 0);
 

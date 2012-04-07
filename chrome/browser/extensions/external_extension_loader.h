@@ -10,8 +10,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 
-class DictionaryValue;
 class ExternalExtensionProviderImpl;
+
+namespace base {
+class DictionaryValue;
+}
 
 // Base class for gathering a list of external extensions. Subclasses
 // implement loading from registry, JSON file, policy.
@@ -22,7 +25,7 @@ class ExternalExtensionProviderImpl;
 // The sequence of loading the extension list:
 // 1.) StartLoading() - checks if a loading task is already running
 // 2.) Load() - implemented in subclasses
-// 3.) FinishLoading()
+// 3.) LoadFinished()
 // 4.) owner_->SetPrefs()
 class ExternalExtensionLoader
     : public base::RefCountedThreadSafe<ExternalExtensionLoader> {
@@ -62,7 +65,7 @@ class ExternalExtensionLoader
   // this task should invoke |LoadFinished| with a PostTask. This scheme of
   // posting tasks will avoid concurrent access and imply the necessary memory
   // barriers.
-  scoped_ptr<DictionaryValue> prefs_;
+  scoped_ptr<base::DictionaryValue> prefs_;
 
  private:
   friend class base::RefCountedThreadSafe<ExternalExtensionLoader>;

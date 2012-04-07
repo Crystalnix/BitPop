@@ -1,21 +1,28 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/base/keycodes/keyboard_code_conversion_x.h"
 
+#define XK_3270  // for XK_3270_BackTab
 #include <X11/keysym.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/XF86keysym.h>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
+#include "base/stringprintf.h"
+#include "base/utf_string_conversions.h"
 
 namespace ui {
 
 // Get an ui::KeyboardCode from an X keyevent
 KeyboardCode KeyboardCodeFromXKeyEvent(XEvent* xev) {
-  KeySym keysym = XLookupKeysym(&xev->xkey, 0);
-
+  // XLookupKeysym does not take into consideration the state of the lock/shift
+  // etc. keys. So it is necessary to use XLookupString instead.
+  KeySym keysym;
+  XLookupString(&xev->xkey, NULL, 0, &keysym, NULL);
   KeyboardCode keycode = KeyboardCodeFromXKeysym(keysym);
   if (keycode == VKEY_UNKNOWN) {
     keysym = DefaultXKeysymFromHardwareKeycode(xev->xkey.keycode);
@@ -26,9 +33,6 @@ KeyboardCode KeyboardCodeFromXKeyEvent(XEvent* xev) {
 }
 
 KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
-  // Consult GDK key translation (in WindowsKeyCodeForGdkKeyCode) for details
-  // about the following translations.
-
   // TODO(sad): Have |keysym| go through the X map list?
 
   switch (keysym) {
@@ -39,10 +43,13 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
       return VKEY_DELETE;
     case XK_Tab:
     case XK_KP_Tab:
+    case XK_ISO_Left_Tab:
+    case XK_3270_BackTab:
       return VKEY_TAB;
     case XK_Linefeed:
     case XK_Return:
     case XK_KP_Enter:
+    case XK_ISO_Enter:
       return VKEY_RETURN;
     case XK_Clear:
       return VKEY_CLEAR;
@@ -75,6 +82,15 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
       return VKEY_UP;
     case XK_Escape:
       return VKEY_ESCAPE;
+    case XK_Kana_Lock:
+    case XK_Kana_Shift:
+      return VKEY_KANA;
+    case XK_Hangul:
+      return VKEY_HANGUL;
+    case XK_Hangul_Hanja:
+      return VKEY_HANJA;
+    case XK_Kanji:
+      return VKEY_KANJI;
     case XK_A:
     case XK_a:
       return VKEY_A;
@@ -153,26 +169,51 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
     case XK_Z:
     case XK_z:
       return VKEY_Z;
+
     case XK_0:
-      return VKEY_0;
     case XK_1:
-      return VKEY_1;
     case XK_2:
-      return VKEY_2;
     case XK_3:
-      return VKEY_3;
     case XK_4:
-      return VKEY_4;
     case XK_5:
-      return VKEY_5;
     case XK_6:
-      return VKEY_6;
     case XK_7:
-      return VKEY_7;
     case XK_8:
-      return VKEY_8;
     case XK_9:
+      return static_cast<KeyboardCode>(VKEY_0 + (keysym - XK_0));
+
+    case XK_parenright:
+      return VKEY_0;
+    case XK_exclam:
+      return VKEY_1;
+    case XK_at:
+      return VKEY_2;
+    case XK_numbersign:
+      return VKEY_3;
+    case XK_dollar:
+      return VKEY_4;
+    case XK_percent:
+      return VKEY_5;
+    case XK_asciicircum:
+      return VKEY_6;
+    case XK_ampersand:
+      return VKEY_7;
+    case XK_asterisk:
+      return VKEY_8;
+    case XK_parenleft:
       return VKEY_9;
+
+    case XK_KP_0:
+    case XK_KP_1:
+    case XK_KP_2:
+    case XK_KP_3:
+    case XK_KP_4:
+    case XK_KP_5:
+    case XK_KP_6:
+    case XK_KP_7:
+    case XK_KP_8:
+    case XK_KP_9:
+      return static_cast<KeyboardCode>(VKEY_NUMPAD0 + (keysym - XK_KP_0));
 
     case XK_multiply:
     case XK_KP_Multiply:
@@ -248,10 +289,8 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
       return VKEY_INSERT;
     case XK_Help:
       return VKEY_HELP;
-    case XK_Meta_L:
     case XK_Super_L:
       return VKEY_LWIN;
-    case XK_Meta_R:
     case XK_Super_R:
       return VKEY_RWIN;
     case XK_Menu:
@@ -282,11 +321,41 @@ KeyboardCode KeyboardCodeFromXKeysym(unsigned int keysym) {
     case XK_F24:
       return static_cast<KeyboardCode>(VKEY_F1 + (keysym - XK_F1));
 
+#if defined(TOOLKIT_USES_GTK)
+    case XF86XK_HomePage:
+    case XF86XK_Search:
+    case XF86XK_Back:
+    case XF86XK_Forward:
+    case XF86XK_Stop:
+    case XF86XK_Refresh:
+    case XF86XK_Favorites:
+    case XF86XK_History:
+    case XF86XK_OpenURL:
+    case XF86XK_AddFavorite:
+    case XF86XK_Go:
+    case XF86XK_Reload:
+    case XF86XK_ZoomIn:
+    case XF86XK_ZoomOut:
+      // ui::AcceleratorGtk tries to convert the XF86XK_ keysyms on Chrome
+      // startup. It's safe to return VKEY_UNKNOWN here since ui::AcceleratorGtk
+      // also checks a Gdk keysym. http://crbug.com/109843
+      return VKEY_UNKNOWN;
+#endif
+
     // TODO(sad): some keycodes are still missing.
   }
-
-  DLOG(WARNING) << "Unknown keycode: " << keysym;
+  DLOG(WARNING) << "Unknown keysym: " << StringPrintf("0x%x", keysym);
   return VKEY_UNKNOWN;
+}
+
+uint16 GetCharacterFromXEvent(XEvent* xev) {
+  char buf[6];
+  int bytes_written = XLookupString(&xev->xkey, buf, 6, NULL, NULL);
+  DCHECK_LE(bytes_written, 6);
+
+  string16 result;
+  return (bytes_written > 0 && UTF8ToUTF16(buf, bytes_written, &result) &&
+          result.length() == 1) ? result[0] : 0;
 }
 
 unsigned int DefaultXKeysymFromHardwareKeycode(unsigned int hardware_code) {
@@ -374,6 +443,212 @@ unsigned int DefaultXKeysymFromHardwareKeycode(unsigned int hardware_code) {
 
   return hardware_code < arraysize(kHardwareKeycodeMap) ?
       kHardwareKeycodeMap[hardware_code] : 0;
+}
+
+// TODO(jcampan): this method might be incomplete.
+int XKeysymForWindowsKeyCode(KeyboardCode keycode, bool shift) {
+  switch (keycode) {
+    case VKEY_NUMPAD0:
+      return XK_KP_0;
+    case VKEY_NUMPAD1:
+      return XK_KP_1;
+    case VKEY_NUMPAD2:
+      return XK_KP_2;
+    case VKEY_NUMPAD3:
+      return XK_KP_3;
+    case VKEY_NUMPAD4:
+      return XK_KP_4;
+    case VKEY_NUMPAD5:
+      return XK_KP_5;
+    case VKEY_NUMPAD6:
+      return XK_KP_6;
+    case VKEY_NUMPAD7:
+      return XK_KP_7;
+    case VKEY_NUMPAD8:
+      return XK_KP_8;
+    case VKEY_NUMPAD9:
+      return XK_KP_9;
+    case VKEY_MULTIPLY:
+      return XK_KP_Multiply;
+    case VKEY_ADD:
+      return XK_KP_Add;
+    case VKEY_SUBTRACT:
+      return XK_KP_Subtract;
+    case VKEY_DECIMAL:
+      return XK_KP_Decimal;
+    case VKEY_DIVIDE:
+      return XK_KP_Divide;
+
+    case VKEY_BACK:
+      return XK_BackSpace;
+    case VKEY_TAB:
+      return shift ? XK_ISO_Left_Tab : XK_Tab;
+    case VKEY_CLEAR:
+      return XK_Clear;
+    case VKEY_RETURN:
+      return XK_Return;
+    case VKEY_SHIFT:
+      return XK_Shift_L;
+    case VKEY_CONTROL:
+      return XK_Control_L;
+    case VKEY_MENU:
+      return XK_Alt_L;
+    case VKEY_APPS:
+      return XK_Menu;
+
+    case VKEY_PAUSE:
+      return XK_Pause;
+    case VKEY_CAPITAL:
+      return XK_Caps_Lock;
+    case VKEY_KANA:
+      return XK_Kana_Lock;
+    case VKEY_HANJA:
+      return XK_Hangul_Hanja;
+    case VKEY_ESCAPE:
+      return XK_Escape;
+    case VKEY_SPACE:
+      return XK_space;
+    case VKEY_PRIOR:
+      return XK_Page_Up;
+    case VKEY_NEXT:
+      return XK_Page_Down;
+    case VKEY_END:
+      return XK_End;
+    case VKEY_HOME:
+      return XK_Home;
+    case VKEY_LEFT:
+      return XK_Left;
+    case VKEY_UP:
+      return XK_Up;
+    case VKEY_RIGHT:
+      return XK_Right;
+    case VKEY_DOWN:
+      return XK_Down;
+    case VKEY_SELECT:
+      return XK_Select;
+    case VKEY_PRINT:
+      return XK_Print;
+    case VKEY_EXECUTE:
+      return XK_Execute;
+    case VKEY_INSERT:
+      return XK_Insert;
+    case VKEY_DELETE:
+      return XK_Delete;
+    case VKEY_HELP:
+      return XK_Help;
+    case VKEY_0:
+      return shift ? XK_parenright : XK_0;
+    case VKEY_1:
+      return shift ? XK_exclam : XK_1;
+    case VKEY_2:
+      return shift ? XK_at : XK_2;
+    case VKEY_3:
+      return shift ? XK_numbersign : XK_3;
+    case VKEY_4:
+      return shift ? XK_dollar : XK_4;
+    case VKEY_5:
+      return shift ? XK_percent : XK_5;
+    case VKEY_6:
+      return shift ? XK_asciicircum : XK_6;
+    case VKEY_7:
+      return shift ? XK_ampersand : XK_7;
+    case VKEY_8:
+      return shift ? XK_asterisk : XK_8;
+    case VKEY_9:
+      return shift ? XK_parenleft : XK_9;
+
+    case VKEY_A:
+    case VKEY_B:
+    case VKEY_C:
+    case VKEY_D:
+    case VKEY_E:
+    case VKEY_F:
+    case VKEY_G:
+    case VKEY_H:
+    case VKEY_I:
+    case VKEY_J:
+    case VKEY_K:
+    case VKEY_L:
+    case VKEY_M:
+    case VKEY_N:
+    case VKEY_O:
+    case VKEY_P:
+    case VKEY_Q:
+    case VKEY_R:
+    case VKEY_S:
+    case VKEY_T:
+    case VKEY_U:
+    case VKEY_V:
+    case VKEY_W:
+    case VKEY_X:
+    case VKEY_Y:
+    case VKEY_Z:
+      return (shift ? XK_A : XK_a) + (keycode - VKEY_A);
+
+    case VKEY_LWIN:
+      return XK_Super_L;
+    case VKEY_RWIN:
+      return XK_Super_R;
+
+    case VKEY_NUMLOCK:
+      return XK_Num_Lock;
+
+    case VKEY_SCROLL:
+      return XK_Scroll_Lock;
+
+    case VKEY_OEM_1:
+      return shift ? XK_colon : XK_semicolon;
+    case VKEY_OEM_PLUS:
+      return shift ? XK_plus : XK_equal;
+    case VKEY_OEM_COMMA:
+      return shift ? XK_less : XK_comma;
+    case VKEY_OEM_MINUS:
+      return shift ? XK_underscore : XK_minus;
+    case VKEY_OEM_PERIOD:
+      return shift ? XK_greater : XK_period;
+    case VKEY_OEM_2:
+      return shift ? XK_question : XK_slash;
+    case VKEY_OEM_3:
+      return shift ? XK_asciitilde : XK_quoteleft;
+    case VKEY_OEM_4:
+      return shift ? XK_braceleft : XK_bracketleft;
+    case VKEY_OEM_5:
+      return shift ? XK_bar : XK_backslash;
+    case VKEY_OEM_6:
+      return shift ? XK_braceright : XK_bracketright;
+    case VKEY_OEM_7:
+      return shift ? XK_quotedbl : XK_quoteright;
+
+    case VKEY_F1:
+    case VKEY_F2:
+    case VKEY_F3:
+    case VKEY_F4:
+    case VKEY_F5:
+    case VKEY_F6:
+    case VKEY_F7:
+    case VKEY_F8:
+    case VKEY_F9:
+    case VKEY_F10:
+    case VKEY_F11:
+    case VKEY_F12:
+    case VKEY_F13:
+    case VKEY_F14:
+    case VKEY_F15:
+    case VKEY_F16:
+    case VKEY_F17:
+    case VKEY_F18:
+    case VKEY_F19:
+    case VKEY_F20:
+    case VKEY_F21:
+    case VKEY_F22:
+    case VKEY_F23:
+    case VKEY_F24:
+      return XK_F1 + (keycode - VKEY_F1);
+
+    default:
+      LOG(WARNING) << "Unknown keycode:" << keycode;
+      return 0;
+    }
 }
 
 }  // namespace ui

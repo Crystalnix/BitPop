@@ -4,15 +4,28 @@
 
 #include "chrome/browser/printing/print_job.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/message_loop.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer.h"
 #include "chrome/browser/printing/print_job_worker.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
 
 using base::TimeDelta;
+
+namespace {
+
+// Helper function to ensure |owner| is valid until at least |callback| returns.
+void HoldRefCallback(const scoped_refptr<printing::PrintJobWorkerOwner>& owner,
+                     const base::Closure& callback) {
+  callback.Run();
+}
+
+}  // namespace
 
 namespace printing {
 
@@ -59,17 +72,17 @@ void PrintJob::Initialize(PrintJobWorkerOwner* job,
   UpdatePrintedDocument(new_doc);
 
   // Don't forget to register to our own messages.
-  registrar_.Add(this, NotificationType::PRINT_JOB_EVENT,
-                 Source<PrintJob>(this));
+  registrar_.Add(this, chrome::NOTIFICATION_PRINT_JOB_EVENT,
+                 content::Source<PrintJob>(this));
 }
 
-void PrintJob::Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
+void PrintJob::Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
   DCHECK_EQ(ui_message_loop_, MessageLoop::current());
-  switch (type.value) {
-    case NotificationType::PRINT_JOB_EVENT: {
-      OnNotifyPrintJobEvent(*Details<JobEventDetails>(details).ptr());
+  switch (type) {
+    case chrome::NOTIFICATION_PRINT_JOB_EVENT: {
+      OnNotifyPrintJobEvent(*content::Details<JobEventDetails>(details).ptr());
       break;
     }
     default: {
@@ -115,18 +128,21 @@ void PrintJob::StartPrinting() {
     return;
 
   // Real work is done in PrintJobWorker::StartPrinting().
-  worker_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-      worker_.get(), &PrintJobWorker::StartPrinting, document_));
+  worker_->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&HoldRefCallback, make_scoped_refptr(this),
+                 base::Bind(&PrintJobWorker::StartPrinting,
+                            base::Unretained(worker_.get()), document_)));
   // Set the flag right now.
   is_job_pending_ = true;
 
   // Tell everyone!
   scoped_refptr<JobEventDetails> details(
       new JobEventDetails(JobEventDetails::NEW_DOC, document_.get(), NULL));
-  NotificationService::current()->Notify(
-      NotificationType::PRINT_JOB_EVENT,
-      Source<PrintJob>(this),
-      Details<JobEventDetails>(details.get()));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_PRINT_JOB_EVENT,
+      content::Source<PrintJob>(this),
+      content::Details<JobEventDetails>(details.get()));
 }
 
 void PrintJob::Stop() {
@@ -140,8 +156,8 @@ void PrintJob::Stop() {
     ControlledWorkerShutdown();
 
     is_job_pending_ = false;
-    registrar_.Remove(this, NotificationType::PRINT_JOB_EVENT,
-                      Source<PrintJob>(this));
+    registrar_.Remove(this, chrome::NOTIFICATION_PRINT_JOB_EVENT,
+                      content::Source<PrintJob>(this));
   }
   // Flush the cached document.
   UpdatePrintedDocument(NULL);
@@ -165,10 +181,10 @@ void PrintJob::Cancel() {
   // Make sure a Cancel() is broadcast.
   scoped_refptr<JobEventDetails> details(
       new JobEventDetails(JobEventDetails::FAILED, NULL, NULL));
-  NotificationService::current()->Notify(
-      NotificationType::PRINT_JOB_EVENT,
-      Source<PrintJob>(this),
-      Details<JobEventDetails>(details.get()));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_PRINT_JOB_EVENT,
+      content::Source<PrintJob>(this),
+      content::Details<JobEventDetails>(details.get()));
   Stop();
   is_canceling_ = false;
 }
@@ -182,7 +198,7 @@ bool PrintJob::FlushJob(int timeout_ms) {
   // wrong.
   base::OneShotTimer<MessageLoop> quit_task;
   if (timeout_ms) {
-    quit_task.Start(TimeDelta::FromMilliseconds(timeout_ms),
+    quit_task.Start(FROM_HERE, TimeDelta::FromMilliseconds(timeout_ms),
                     MessageLoop::current(), &MessageLoop::Quit);
   }
 
@@ -222,8 +238,11 @@ void PrintJob::UpdatePrintedDocument(PrintedDocument* new_document) {
   if (worker_.get() && worker_->message_loop()) {
     DCHECK(!is_job_pending_);
     // Sync the document with the worker.
-    worker_->message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        worker_.get(), &PrintJobWorker::OnDocumentChanged, document_));
+    worker_->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&HoldRefCallback, make_scoped_refptr(this),
+                   base::Bind(&PrintJobWorker::OnDocumentChanged,
+                              base::Unretained(worker_.get()), document_)));
   }
 }
 
@@ -251,8 +270,8 @@ void PrintJob::OnNotifyPrintJobEvent(const JobEventDetails& event_details) {
     }
     case JobEventDetails::DOC_DONE: {
       // This will call Stop() and broadcast a JOB_DONE message.
-      MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-          this, &PrintJob::OnDocumentDone));
+      MessageLoop::current()->PostTask(
+          FROM_HERE, base::Bind(&PrintJob::OnDocumentDone, this));
       break;
     }
     default: {
@@ -272,10 +291,10 @@ void PrintJob::OnDocumentDone() {
 
   scoped_refptr<JobEventDetails> details(
       new JobEventDetails(JobEventDetails::JOB_DONE, document_.get(), NULL));
-  NotificationService::current()->Notify(
-      NotificationType::PRINT_JOB_EVENT,
-      Source<PrintJob>(this),
-      Details<JobEventDetails>(details.get()));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_PRINT_JOB_EVENT,
+      content::Source<PrintJob>(this),
+      content::Details<JobEventDetails>(details.get()));
 }
 
 void PrintJob::ControlledWorkerShutdown() {
@@ -303,7 +322,7 @@ void PrintJob::ControlledWorkerShutdown() {
   MSG msg;
   HANDLE thread_handle = worker_->thread_handle();
   for (; thread_handle;) {
-    // Note that we don't do any kind of message priorization since we don't
+    // Note that we don't do any kind of message prioritization since we don't
     // execute any pending task or timer.
     DWORD result = MsgWaitForMultipleObjects(1, &thread_handle,
                                              FALSE, INFINITE, QS_ALLINPUT);
@@ -317,7 +336,7 @@ void PrintJob::ControlledWorkerShutdown() {
       // The thread quit.
       break;
     } else {
-      // An error occured. Assume the thread quit.
+      // An error occurred. Assume the thread quit.
       NOTREACHED();
       break;
     }

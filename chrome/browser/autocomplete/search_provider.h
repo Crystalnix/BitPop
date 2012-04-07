@@ -26,10 +26,13 @@
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_id.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
 
 class Profile;
+
+namespace base {
 class Value;
+}
 
 // Autocomplete provider for searches and suggestions from a search engine.
 //
@@ -42,7 +45,7 @@ class Value;
 // comes back, the provider creates and returns matches for the best
 // suggestions.
 class SearchProvider : public AutocompleteProvider,
-                       public URLFetcher::Delegate {
+                       public content::URLFetcherDelegate {
  public:
   SearchProvider(ACProviderListener* listener, Profile* profile);
 
@@ -64,16 +67,11 @@ class SearchProvider : public AutocompleteProvider,
 
   // AutocompleteProvider
   virtual void Start(const AutocompleteInput& input,
-                     bool minimal_changes);
-  virtual void Stop();
+                     bool minimal_changes) OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
-  // URLFetcher::Delegate
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // content::URLFetcherDelegate
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
   // ID used in creating URLFetcher for default provider's suggest results.
   static const int kDefaultProviderURLFetcherID;
@@ -168,6 +166,10 @@ class SearchProvider : public AutocompleteProvider,
   typedef std::vector<NavigationResult> NavigationResults;
   typedef std::vector<history::KeywordSearchTermVisit> HistoryResults;
   typedef std::map<string16, AutocompleteMatch> MatchMap;
+  typedef std::pair<string16, int> ScoredTerm;
+  typedef std::vector<ScoredTerm> ScoredTerms;
+
+  class CompareScoredTerms;
 
   // Called when timer_ expires.
   void Run();
@@ -192,13 +194,13 @@ class SearchProvider : public AutocompleteProvider,
 
   // Creates a URLFetcher requesting suggest results for the specified
   // TemplateURL. Ownership of the returned URLFetchet passes to the caller.
-  URLFetcher* CreateSuggestFetcher(int id,
-                                   const TemplateURL& provider,
-                                   const string16& text);
+  content::URLFetcher* CreateSuggestFetcher(int id,
+                                            const TemplateURL& provider,
+                                            const string16& text);
 
   // Parses the results from the Suggest server and stores up to kMaxMatches of
   // them in server_results_.  Returns whether parsing succeeded.
-  bool ParseSuggestResults(Value* root_val,
+  bool ParseSuggestResults(base::Value* root_val,
                            bool is_keyword,
                            const string16& input_text,
                            SuggestResults* suggest_results);
@@ -221,6 +223,13 @@ class SearchProvider : public AutocompleteProvider,
                               int did_not_accept_suggestion,
                               MatchMap* map);
 
+  // Calculates relevance scores for all |results|.
+  ScoredTerms ScoreHistoryTerms(const HistoryResults& results,
+                                bool base_prevent_inline_autocomplete,
+                                bool input_multiple_words,
+                                const string16& input_text,
+                                bool is_keyword);
+
   // Adds a match for each result in |suggest_results| to |map|. |is_keyword|
   // indicates whether the results correspond to the keyword provider or default
   // provider.
@@ -232,12 +241,13 @@ class SearchProvider : public AutocompleteProvider,
   // Determines the relevance for a particular match.  We use different scoring
   // algorithms for the different types of matches.
   int CalculateRelevanceForWhatYouTyped() const;
-  // |time| is the time at which this query was last seen. |is_keyword| is true
-  // if the search is from the keyword provider. |looks_like_url| is true if the
-  // search term would be treated as a URL if typed into the omnibox.
+  // |time| is the time at which this query was last seen.  |is_keyword|
+  // indicates whether the results correspond to the keyword provider or default
+  // provider. |prevent_inline_autocomplete| is true if we should not inline
+  // autocomplete this query.
   int CalculateRelevanceForHistory(const base::Time& time,
-                                   bool looks_like_url,
-                                   bool is_keyword) const;
+                                   bool is_keyword,
+                                   bool prevent_inline_autocomplete) const;
   // |result_number| is the index of the suggestion in the result set from the
   // server; the best suggestion is suggestion number 0.  |is_keyword| is true
   // if the search is from the keyword provider.
@@ -270,9 +280,6 @@ class SearchProvider : public AutocompleteProvider,
   // Updates the value of |done_| from the internal state.
   void UpdateDone();
 
-  // Updates the description/description_class of the first search match.
-  void UpdateFirstSearchMatchDescription();
-
   // Should we query for suggest results immediately? This is normally false,
   // but may be set to true during testing.
   static bool query_suggest_immediately_;
@@ -299,11 +306,11 @@ class SearchProvider : public AutocompleteProvider,
   base::OneShotTimer<SearchProvider> timer_;
 
   // The fetcher that retrieves suggest results for the keyword from the server.
-  scoped_ptr<URLFetcher> keyword_fetcher_;
+  scoped_ptr<content::URLFetcher> keyword_fetcher_;
 
   // The fetcher that retrieves suggest results for the default engine from the
   // server.
-  scoped_ptr<URLFetcher> default_fetcher_;
+  scoped_ptr<content::URLFetcher> default_fetcher_;
 
   // Suggestions returned by the Suggest server for the input text.
   SuggestResults keyword_suggest_results_;

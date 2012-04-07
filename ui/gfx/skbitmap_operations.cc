@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -149,7 +149,8 @@ SkBitmap SkBitmapOperations::CreateMaskedBitmap(const SkBitmap& rgb,
 
     for (int x = 0; x < masked.width(); ++x) {
       SkColor rgb_pixel = SkUnPreMultiply::PMColorToColor(rgb_row[x]);
-      int alpha = SkAlphaMul(SkColorGetA(rgb_pixel), SkColorGetA(alpha_row[x]));
+      SkColor alpha_pixel = SkUnPreMultiply::PMColorToColor(alpha_row[x]);
+      int alpha = SkAlphaMul(SkColorGetA(rgb_pixel), SkColorGetA(alpha_pixel));
       dst_row[x] = SkColorSetARGB(alpha,
                                   SkAlphaMul(SkColorGetR(rgb_pixel), alpha),
                                   SkAlphaMul(SkColorGetG(rgb_pixel), alpha),
@@ -252,7 +253,7 @@ namespace HSLShift {
 
 // Routine used to process a line; typically specialized for specific kinds of
 // HSL shifts (to optimize).
-typedef void (*LineProcessor)(color_utils::HSL,
+typedef void (*LineProcessor)(const color_utils::HSL&,
                               const SkPMColor*,
                               SkPMColor*,
                               int width);
@@ -267,8 +268,10 @@ enum OperationOnL { kOpLNone = 0, kOpLDec, kOpLInc, kNumLOps };
 const double epsilon = 0.0005;
 
 // Line processor: default/universal (i.e., old-school).
-void LineProcDefault(color_utils::HSL hsl_shift, const SkPMColor* in,
-                     SkPMColor* out, int width) {
+void LineProcDefault(const color_utils::HSL& hsl_shift,
+                     const SkPMColor* in,
+                     SkPMColor* out,
+                     int width) {
   for (int x = 0; x < width; x++) {
     out[x] = SkPreMultiplyColor(color_utils::HSLShift(
         SkUnPreMultiply::PMColorToColor(in[x]), hsl_shift));
@@ -276,8 +279,10 @@ void LineProcDefault(color_utils::HSL hsl_shift, const SkPMColor* in,
 }
 
 // Line processor: no-op (i.e., copy).
-void LineProcCopy(color_utils::HSL hsl_shift, const SkPMColor* in,
-                  SkPMColor* out, int width) {
+void LineProcCopy(const color_utils::HSL& hsl_shift,
+                  const SkPMColor* in,
+                  SkPMColor* out,
+                  int width) {
   DCHECK(hsl_shift.h < 0);
   DCHECK(hsl_shift.s < 0 || fabs(hsl_shift.s - 0.5) < HSLShift::epsilon);
   DCHECK(hsl_shift.l < 0 || fabs(hsl_shift.l - 0.5) < HSLShift::epsilon);
@@ -285,8 +290,10 @@ void LineProcCopy(color_utils::HSL hsl_shift, const SkPMColor* in,
 }
 
 // Line processor: H no-op, S no-op, L decrease.
-void LineProcHnopSnopLdec(color_utils::HSL hsl_shift, const SkPMColor* in,
-                          SkPMColor* out, int width) {
+void LineProcHnopSnopLdec(const color_utils::HSL& hsl_shift,
+                          const SkPMColor* in,
+                          SkPMColor* out,
+                          int width) {
   const uint32_t den = 65536;
 
   DCHECK(hsl_shift.h < 0);
@@ -307,8 +314,10 @@ void LineProcHnopSnopLdec(color_utils::HSL hsl_shift, const SkPMColor* in,
 }
 
 // Line processor: H no-op, S no-op, L increase.
-void LineProcHnopSnopLinc(color_utils::HSL hsl_shift, const SkPMColor* in,
-                          SkPMColor* out, int width) {
+void LineProcHnopSnopLinc(const color_utils::HSL& hsl_shift,
+                          const SkPMColor* in,
+                          SkPMColor* out,
+                          int width) {
   const uint32_t den = 65536;
 
   DCHECK(hsl_shift.h < 0);
@@ -352,8 +361,10 @@ void LineProcHnopSnopLinc(color_utils::HSL hsl_shift, const SkPMColor* in,
 // (Med-Min)/(Max-Min)).
 
 // Line processor: H no-op, S decrease, L no-op.
-void LineProcHnopSdecLnop(color_utils::HSL hsl_shift, const SkPMColor* in,
-                          SkPMColor* out, int width) {
+void LineProcHnopSdecLnop(const color_utils::HSL& hsl_shift,
+                          const SkPMColor* in,
+                          SkPMColor* out,
+                          int width) {
   DCHECK(hsl_shift.h < 0);
   DCHECK(hsl_shift.s >= 0 && hsl_shift.s <= 0.5 - HSLShift::epsilon);
   DCHECK(hsl_shift.l < 0 || fabs(hsl_shift.l - 0.5) < HSLShift::epsilon);
@@ -387,8 +398,10 @@ void LineProcHnopSdecLnop(color_utils::HSL hsl_shift, const SkPMColor* in,
 }
 
 // Line processor: H no-op, S decrease, L decrease.
-void LineProcHnopSdecLdec(color_utils::HSL hsl_shift, const SkPMColor* in,
-                          SkPMColor* out, int width) {
+void LineProcHnopSdecLdec(const color_utils::HSL& hsl_shift,
+                          const SkPMColor* in,
+                          SkPMColor* out,
+                          int width) {
   DCHECK(hsl_shift.h < 0);
   DCHECK(hsl_shift.s >= 0 && hsl_shift.s <= 0.5 - HSLShift::epsilon);
   DCHECK(hsl_shift.l >= 0 && hsl_shift.l <= 0.5 - HSLShift::epsilon);
@@ -424,8 +437,10 @@ void LineProcHnopSdecLdec(color_utils::HSL hsl_shift, const SkPMColor* in,
 }
 
 // Line processor: H no-op, S decrease, L increase.
-void LineProcHnopSdecLinc(color_utils::HSL hsl_shift, const SkPMColor* in,
-                          SkPMColor* out, int width) {
+void LineProcHnopSdecLinc(const color_utils::HSL& hsl_shift,
+                          const SkPMColor* in,
+                          SkPMColor* out,
+                          int width) {
   DCHECK(hsl_shift.h < 0);
   DCHECK(hsl_shift.s >= 0 && hsl_shift.s <= 0.5 - HSLShift::epsilon);
   DCHECK(hsl_shift.l >= 0.5 + HSLShift::epsilon && hsl_shift.l <= 1);
@@ -617,42 +632,44 @@ SkBitmap SkBitmapOperations::DownsampleByTwo(const SkBitmap& bitmap) {
   result.allocPixels();
 
   SkAutoLockPixels lock(bitmap);
+
+  const int resultLastX = result.width() - 1;
+  const int srcLastX = bitmap.width() - 1;
+
   for (int dest_y = 0; dest_y < result.height(); ++dest_y) {
-    for (int dest_x = 0; dest_x < result.width(); ++dest_x) {
+    const int src_y = dest_y << 1;
+    const SkPMColor* SK_RESTRICT cur_src0 = bitmap.getAddr32(0, src_y);
+    const SkPMColor* SK_RESTRICT cur_src1 = cur_src0;
+    if (src_y + 1 < bitmap.height())
+      cur_src1 = bitmap.getAddr32(0, src_y + 1);
+
+    SkPMColor* SK_RESTRICT cur_dst = result.getAddr32(0, dest_y);
+
+    for (int dest_x = 0; dest_x <= resultLastX; ++dest_x) {
       // This code is based on downsampleby2_proc32 in SkBitmap.cpp. It is very
       // clever in that it does two channels at once: alpha and green ("ag")
       // and red and blue ("rb"). Each channel gets averaged across 4 pixels
       // to get the result.
-      int src_x = dest_x << 1;
-      int src_y = dest_y << 1;
-      const SkPMColor* cur_src = bitmap.getAddr32(src_x, src_y);
+      int bump_x = (dest_x << 1) < srcLastX;
       SkPMColor tmp, ag, rb;
 
       // Top left pixel of the 2x2 block.
-      tmp = *cur_src;
+      tmp = cur_src0[0];
       ag = (tmp >> 8) & 0xFF00FF;
       rb = tmp & 0xFF00FF;
-      if (src_x < (bitmap.width() - 1))
-        ++cur_src;
 
       // Top right pixel of the 2x2 block.
-      tmp = *cur_src;
+      tmp = cur_src0[bump_x];
       ag += (tmp >> 8) & 0xFF00FF;
       rb += tmp & 0xFF00FF;
-      if (src_y < (bitmap.height() - 1))
-        cur_src = bitmap.getAddr32(src_x, src_y + 1);
-      else
-        cur_src = bitmap.getAddr32(src_x, src_y);  // Move back to the first.
 
       // Bottom left pixel of the 2x2 block.
-      tmp = *cur_src;
+      tmp = cur_src1[0];
       ag += (tmp >> 8) & 0xFF00FF;
       rb += tmp & 0xFF00FF;
-      if (src_x < (bitmap.width() - 1))
-        ++cur_src;
 
       // Bottom right pixel of the 2x2 block.
-      tmp = *cur_src;
+      tmp = cur_src1[bump_x];
       ag += (tmp >> 8) & 0xFF00FF;
       rb += tmp & 0xFF00FF;
 
@@ -660,8 +677,10 @@ SkBitmap SkBitmapOperations::DownsampleByTwo(const SkBitmap& bitmap) {
       // |ag| has the alpha and green channels shifted right by 8 bits from
       // there they should end up, so shifting left by 6 gives them in the
       // correct position divided by 4.
-      *result.getAddr32(dest_x, dest_y) =
-          ((rb >> 2) & 0xFF00FF) | ((ag << 6) & 0xFF00FF00);
+      *cur_dst++ = ((rb >> 2) & 0xFF00FF) | ((ag << 6) & 0xFF00FF00);
+
+      cur_src0 += 2;
+      cur_src1 += 2;
     }
   }
 
@@ -700,13 +719,13 @@ SkBitmap SkBitmapOperations::UnPreMultiply(const SkBitmap& bitmap) {
 SkBitmap SkBitmapOperations::CreateTransposedBtmap(const SkBitmap& image) {
   DCHECK(image.config() == SkBitmap::kARGB_8888_Config);
 
-  SkAutoLockPixels lock_image(image);
-
   SkBitmap transposed;
   transposed.setConfig(
       SkBitmap::kARGB_8888_Config, image.height(), image.width(), 0);
   transposed.allocPixels();
-  transposed.eraseARGB(0, 0, 0, 0);
+
+  SkAutoLockPixels lock_image(image);
+  SkAutoLockPixels lock_transposed(transposed);
 
   for (int y = 0; y < image.height(); ++y) {
     uint32* image_row = image.getAddr32(0, y);

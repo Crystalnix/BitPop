@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,12 +27,12 @@ struct SizeAllocateData {
 };
 
 void CountVisibleChildren(GtkWidget* child, gpointer userdata) {
-  if (GTK_WIDGET_VISIBLE(child))
+  if (gtk_widget_get_visible(child))
     ++(*reinterpret_cast<int*>(userdata));
 }
 
 void SumChildrenWidthRequisition(GtkWidget* child, gpointer userdata) {
-  if (GTK_WIDGET_VISIBLE(child)) {
+  if (gtk_widget_get_visible(child)) {
     GtkRequisition req;
     gtk_widget_get_child_requisition(child, &req);
     (*reinterpret_cast<int*>(userdata)) += std::max(req.width, 0);
@@ -40,18 +40,19 @@ void SumChildrenWidthRequisition(GtkWidget* child, gpointer userdata) {
 }
 
 void ShowInvisibleChildren(GtkWidget* child, gpointer userdata) {
-  if (!GTK_WIDGET_VISIBLE(child)) {
+  if (!gtk_widget_get_visible(child)) {
     gtk_widget_show(child);
     ++(*reinterpret_cast<int*>(userdata));
   }
 }
 
 void ChildSizeAllocate(GtkWidget* child, gpointer userdata) {
-  if (!GTK_WIDGET_VISIBLE(child))
+  if (!gtk_widget_get_visible(child))
     return;
 
   SizeAllocateData* data = reinterpret_cast<SizeAllocateData*>(userdata);
-  GtkAllocation child_allocation = child->allocation;
+  GtkAllocation child_allocation;
+  gtk_widget_get_allocation(child, &child_allocation);
 
   if (data->homogeneous) {
     // Make sure the child is not overlapped with others' boundary.
@@ -86,7 +87,10 @@ void ChildSizeAllocate(GtkWidget* child, gpointer userdata) {
     }
   }
 
-  if (child_allocation.width != child->allocation.width) {
+  GtkAllocation current_allocation;
+  gtk_widget_get_allocation(child, &current_allocation);
+
+  if (child_allocation.width != current_allocation.width) {
     if (data->box->hide_child_directly || child_allocation.width <= 1)
       gtk_widget_hide(child);
     else
@@ -177,11 +181,14 @@ static void gtk_chrome_shrinkable_hbox_size_allocate(
   gtk_container_foreach(GTK_CONTAINER(widget), SumChildrenWidthRequisition,
                         &children_width_requisition);
 
+  GtkAllocation widget_allocation;
+  gtk_widget_get_allocation(widget, &widget_allocation);
+
   // If we are allocated to more width or some children are removed or shrunk,
   // then we need to show all invisible children before calling parent class's
   // size_allocate method, because the new width may be enough to show those
   // hidden children.
-  if (widget->allocation.width < allocation->width ||
+  if (widget_allocation.width < allocation->width ||
       box->children_width_requisition > children_width_requisition) {
     gtk_container_foreach(GTK_CONTAINER(widget),
                           reinterpret_cast<GtkCallback>(gtk_widget_show), NULL);

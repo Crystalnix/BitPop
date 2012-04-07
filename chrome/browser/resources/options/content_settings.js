@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,33 +45,34 @@ cr.define('options', function() {
         };
       }
 
-      var manageHandlersButton =
-          this.pageDiv.querySelector('#manage-handlers-button');
+      var manageHandlersButton = $('manage-handlers-button');
       if (manageHandlersButton) {
         manageHandlersButton.onclick = function(event) {
           OptionsPage.navigateToPage('handlers');
         };
       }
 
-      // Cookies filter page ---------------------------------------------------
-      $('block-third-party-cookies').onclick = function(event) {
-        chrome.send('setAllowThirdPartyCookies',
-                    [String($('block-third-party-cookies').checked)]);
-      };
+      var manageIntentsButton = $('manage-intents-button');
+      if (manageIntentsButton) {
+        manageIntentsButton.onclick = function(event) {
+          OptionsPage.navigateToPage('intents');
+        };
+      }
 
+      // Cookies filter page ---------------------------------------------------
       $('show-cookies-button').onclick = function(event) {
         chrome.send('coreOptionsUserMetricsAction', ['Options_ShowCookies']);
         OptionsPage.navigateToPage('cookies');
       };
 
-      if (!templateData.enable_click_to_play)
-        $('click_to_play').style.display = 'none';
+      if (!templateData.enable_web_intents && $('intent-section'))
+        $('intent-section').hidden = true;
     },
   };
 
   ContentSettings.updateHandlersEnabledRadios = function(enabled) {
-    var selector = '#handlers-section input[type=radio][value=' +
-        (enabled ? 'allow' : 'block') + ']';
+    var selector = '#content-settings-page input[type=radio][value=' +
+        (enabled ? 'allow' : 'block') + '].handler-radio';
     document.querySelector(selector).checked = true;
   };
 
@@ -86,9 +87,10 @@ cr.define('options', function() {
                              dict[group]['value'] + ']').checked = true;
       var radios = document.querySelectorAll('input[type=radio][name=' +
                                              group + ']');
+      var managedBy = dict[group]['managedBy'];
       for (var i = 0, len = radios.length; i < len; i++) {
-        radios[i].disabled = dict[group]['managed'];
-        radios[i].managed = dict[group]['managed'];
+        radios[i].disabled = (managedBy != 'default');
+        radios[i].controlledBy = managedBy;
       }
     }
     OptionsPage.updateManagedBannerVisibility();
@@ -111,6 +113,10 @@ cr.define('options', function() {
     $('handlers-list').setHandlers(list);
   };
 
+  ContentSettings.setIgnoredHandlers = function(list) {
+    $('ignored-handlers-list').setHandlers(list);
+  };
+
   ContentSettings.setOTRExceptions = function(type, list) {
     var exceptionsList =
         document.querySelector('div[contentType=' + type + ']' +
@@ -118,14 +124,6 @@ cr.define('options', function() {
 
     exceptionsList.parentNode.hidden = false;
     exceptionsList.setExceptions(list);
-  };
-
-  /**
-   * Sets the initial value for the Third Party Cookies checkbox.
-   * @param {boolean=} block True if we are blocking third party cookies.
-   */
-  ContentSettings.setBlockThirdPartyCookies = function(block) {
-    $('block-third-party-cookies').checked = block;
   };
 
   /**

@@ -1,15 +1,16 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_
-#define NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_
+#ifndef NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_H_
+#define NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_H_
 
 #include <map>
 #include <string>
 #include <vector>
 
-#include "net/spdy/spdy_framer.h"
+#include "base/compiler_specific.h"
+#include "net/spdy/buffered_spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/tools/flip_server/balsa_headers.h"
 #include "net/tools/flip_server/balsa_visitor_interface.h"
@@ -19,11 +20,10 @@
 
 namespace net {
 
-class BalsaFrame;
 class FlipAcceptor;
 class MemoryCache;
 
-class SpdySM : public spdy::SpdyFramerVisitorInterface,
+class SpdySM : public spdy::BufferedSpdyFramerVisitorInterface,
                public SMInterface {
  public:
   SpdySM(SMConnection* connection,
@@ -34,7 +34,7 @@ class SpdySM : public spdy::SpdyFramerVisitorInterface,
   virtual ~SpdySM();
 
   virtual void InitSMInterface(SMInterface* sm_http_interface,
-                               int32 server_idx) {}
+                               int32 server_idx) OVERRIDE {}
 
   virtual void InitSMConnection(SMConnectionPoolInterface* connection_pool,
                                 SMInterface* sm_interface,
@@ -43,7 +43,7 @@ class SpdySM : public spdy::SpdyFramerVisitorInterface,
                                 std::string server_ip,
                                 std::string server_port,
                                 std::string remote_ip,
-                                bool use_ssl);
+                                bool use_ssl) OVERRIDE;
 
   static bool disable_data_compression() { return disable_data_compression_; }
   static void set_disable_data_compression(bool value) {
@@ -51,50 +51,69 @@ class SpdySM : public spdy::SpdyFramerVisitorInterface,
   }
 
  private:
-  virtual void set_is_request() {}
-  virtual void OnError(spdy::SpdyFramer* framer) {}
+  virtual void set_is_request() OVERRIDE {}
+  virtual void OnError(spdy::SpdyFramer* framer) OVERRIDE {}
   SMInterface* NewConnectionInterface();
   SMInterface* FindOrMakeNewSMConnectionInterface(std::string server_ip,
                                                   std::string server_port);
   int SpdyHandleNewStream(const spdy::SpdyControlFrame* frame,
-                          std::string &http_data,
-                          bool *is_https_scheme);
+                          std::string& http_data,
+                          bool* is_https_scheme);
 
-  // SpdyFramerVisitor interface.
-  virtual void OnControl(const spdy::SpdyControlFrame* frame);
+  // BufferedSpdyFramerVisitorInterface:
+  virtual void OnControl(const spdy::SpdyControlFrame* frame) OVERRIDE;
+  virtual bool OnControlFrameHeaderData(
+      const spdy::SpdyControlFrame* control_frame,
+      const char* header_data,
+      size_t len) OVERRIDE;
+  virtual void OnDataFrameHeader(const spdy::SpdyDataFrame* frame) OVERRIDE;
   virtual void OnStreamFrameData(spdy::SpdyStreamId stream_id,
-                                 const char* data, size_t len);
+                                 const char* data, size_t len) OVERRIDE;
+  virtual bool OnCredentialFrameData(const char* frame_data,
+                                     size_t len) OVERRIDE;
+  virtual void OnSyn(const spdy::SpdySynStreamControlFrame& frame,
+                     const linked_ptr<spdy::SpdyHeaderBlock>& headers) OVERRIDE;
+  virtual void OnSynReply(
+      const spdy::SpdySynReplyControlFrame& frame,
+      const linked_ptr<spdy::SpdyHeaderBlock>& headers) OVERRIDE;
+  virtual void OnHeaders(
+      const spdy::SpdyHeadersControlFrame& frame,
+      const linked_ptr<spdy::SpdyHeaderBlock>& headers) OVERRIDE;
 
  public:
-  virtual size_t ProcessReadInput(const char* data, size_t len);
-  virtual size_t ProcessWriteInput(const char* data, size_t len);
-  virtual bool MessageFullyRead() const;
-  virtual void SetStreamID(uint32 stream_id) {}
-  virtual bool Error() const;
-  virtual const char* ErrorAsString() const;
-  virtual void Reset() {}
-  virtual void ResetForNewInterface(int32 server_idx);
-  virtual void ResetForNewConnection();
+  virtual size_t ProcessReadInput(const char* data, size_t len) OVERRIDE;
+  virtual size_t ProcessWriteInput(const char* data, size_t len) OVERRIDE;
+  virtual bool MessageFullyRead() const OVERRIDE;
+  virtual void SetStreamID(uint32 stream_id) OVERRIDE {}
+  virtual bool Error() const OVERRIDE;
+  virtual const char* ErrorAsString() const OVERRIDE;
+  virtual void Reset() OVERRIDE {}
+  virtual void ResetForNewInterface(int32 server_idx) OVERRIDE;
+  virtual void ResetForNewConnection() OVERRIDE;
   // SMInterface's Cleanup is currently only called by SMConnection after a
   // protocol message as been fully read. Spdy's SMInterface does not need
   // to do any cleanup at this time.
-  // TODO (klindsay) This method is probably not being used properly and
+  // TODO(klindsay) This method is probably not being used properly and
   // some logic review and method renaming is probably in order.
-  virtual void Cleanup() {}
+  virtual void Cleanup() OVERRIDE {}
   // Send a settings frame
-  virtual int PostAcceptHook();
+  virtual int PostAcceptHook() OVERRIDE;
   virtual void NewStream(uint32 stream_id,
                          uint32 priority,
-                         const std::string& filename);
+                         const std::string& filename) OVERRIDE;
   void AddToOutputOrder(const MemCacheIter& mci);
-  virtual void SendEOF(uint32 stream_id);
-  virtual void SendErrorNotFound(uint32 stream_id);
+  virtual void SendEOF(uint32 stream_id) OVERRIDE;
+  virtual void SendErrorNotFound(uint32 stream_id) OVERRIDE;
   void SendOKResponse(uint32 stream_id, std::string* output);
-  virtual size_t SendSynStream(uint32 stream_id, const BalsaHeaders& headers);
-  virtual size_t SendSynReply(uint32 stream_id, const BalsaHeaders& headers);
+  virtual size_t SendSynStream(uint32 stream_id,
+                               const BalsaHeaders& headers) OVERRIDE;
+  virtual size_t SendSynReply(uint32 stream_id,
+                              const BalsaHeaders& headers) OVERRIDE;
   virtual void SendDataFrame(uint32 stream_id, const char* data, int64 len,
-                             uint32 flags, bool compress);
-  spdy::SpdyFramer* spdy_framer() { return spdy_framer_; }
+                             uint32 flags, bool compress) OVERRIDE;
+  spdy::BufferedSpdyFramer* spdy_framer() {
+      return buffered_spdy_framer_;
+  }
 
   static std::string forward_ip_header() { return forward_ip_header_; }
   static void set_forward_ip_header(std::string value) {
@@ -112,10 +131,10 @@ class SpdySM : public spdy::SpdyFramerVisitorInterface,
   void SendDataFrameImpl(uint32 stream_id, const char* data, int64 len,
                          spdy::SpdyDataFlags flags, bool compress);
   void EnqueueDataFrame(DataFrame* df);
-  virtual void GetOutput();
+  virtual void GetOutput() OVERRIDE;
  private:
   uint64 seq_num_;
-  spdy::SpdyFramer* spdy_framer_;
+  spdy::BufferedSpdyFramer* buffered_spdy_framer_;
   bool valid_spdy_session_;  // True if we have seen valid data on this session.
                              // Use this to fail fast when junk is sent to our
                              // port.
@@ -139,5 +158,4 @@ class SpdySM : public spdy::SpdyFramerVisitorInterface,
 
 }  // namespace net
 
-#endif  // NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_
-
+#endif  // NET_TOOLS_FLIP_SERVER_SPDY_INTERFACE_H_

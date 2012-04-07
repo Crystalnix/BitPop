@@ -5,8 +5,13 @@
 #ifndef REMOTING_CLIENT_PLUGIN_PEPPER_XMPP_PROXY_H_
 #define REMOTING_CLIENT_PLUGIN_PEPPER_XMPP_PROXY_H_
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "remoting/jingle_glue/xmpp_proxy.h"
+
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
 
 namespace remoting {
 
@@ -16,7 +21,8 @@ class PepperXmppProxy : public XmppProxy {
  public:
   PepperXmppProxy(
       base::WeakPtr<ChromotingScriptableObject> scriptable_object,
-      MessageLoop* callback_message_loop);
+      base::MessageLoopProxy* plugin_message_loop,
+      base::MessageLoopProxy* callback_message_loop);
 
   // Registered the callback class with this object.
   //
@@ -27,10 +33,11 @@ class PepperXmppProxy : public XmppProxy {
   // create a WeakPtr on, say the pepper thread, and then pass execution of
   // this function callback with the weak pointer bound as a parameter.  That
   // will fail because the WeakPtr will have been created on the wrong thread.
-  virtual void AttachCallback(base::WeakPtr<ResponseCallback> callback);
-  virtual void DetachCallback();
+  virtual void AttachCallback(
+      base::WeakPtr<ResponseCallback> callback) OVERRIDE;
+  virtual void DetachCallback() OVERRIDE;
 
-  virtual void SendIq(const std::string& request_xml);
+  virtual void SendIq(const std::string& request_xml) OVERRIDE;
   virtual void OnIq(const std::string& response_xml);
 
  private:
@@ -38,7 +45,8 @@ class PepperXmppProxy : public XmppProxy {
 
   base::WeakPtr<ChromotingScriptableObject> scriptable_object_;
 
-  MessageLoop* callback_message_loop_;
+  scoped_refptr<base::MessageLoopProxy> plugin_message_loop_;
+  scoped_refptr<base::MessageLoopProxy> callback_message_loop_;
 
   // Must only be access on callback_message_loop_.
   base::WeakPtr<ResponseCallback> callback_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,7 +43,9 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#if defined(TOOLKIT_USES_GTK)
 #include <gdk/gdk.h>
+#endif
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -57,20 +59,22 @@
 
 #include "base/base_paths.h"
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/eintr_wrapper.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
+#include "base/message_loop_helpers.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/safe_strerror_posix.h"
-#include "base/stl_util-inl.h"
-#include "base/stringprintf.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
+#include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
@@ -87,11 +91,13 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::BrowserThread;
 
 const int ProcessSingleton::kTimeoutInSeconds;
 
@@ -311,6 +317,8 @@ void DisplayProfileInUseError(const std::string& lock_path,
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kNoProcessSingletonDialog))
     ProcessSingletonDialog::ShowAndRun(UTF16ToUTF8(error));
+#else
+  NOTIMPLEMENTED();
 #endif
 }
 
@@ -455,7 +463,8 @@ bool ConnectSocket(ScopedSocket* socket,
 class ProcessSingleton::LinuxWatcher
     : public MessageLoopForIO::Watcher,
       public MessageLoop::DestructionObserver,
-      public base::RefCountedThreadSafe<ProcessSingleton::LinuxWatcher> {
+      public base::RefCountedThreadSafe<ProcessSingleton::LinuxWatcher,
+                                        BrowserThread::DeleteOnIOThread> {
  public:
   // A helper class to read message from an established socket.
   class SocketReader : public MessageLoopForIO::Watcher {
@@ -467,11 +476,13 @@ class ProcessSingleton::LinuxWatcher
           ui_message_loop_(ui_message_loop),
           fd_(fd),
           bytes_read_(0) {
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
       // Wait for reads.
       MessageLoopForIO::current()->WatchFileDescriptor(
           fd, true, MessageLoopForIO::WATCH_READ, &fd_reader_, this);
-      timer_.Start(base::TimeDelta::FromSeconds(kTimeoutInSeconds),
-                   this, &SocketReader::OnTimerExpiry);
+      // If we haven't completed in a reasonable amount of time, give up.
+      timer_.Start(FROM_HERE, base::TimeDelta::FromSeconds(kTimeoutInSeconds),
+                   this, &SocketReader::CleanupAndDeleteSelf);
     }
 
     virtual ~SocketReader() {
@@ -490,8 +501,9 @@ class ProcessSingleton::LinuxWatcher
     void FinishWithACK(const char *message, size_t length);
 
    private:
-    // If we haven't completed in a reasonable amount of time, give up.
-    void OnTimerExpiry() {
+    void CleanupAndDeleteSelf() {
+      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+
       parent_->RemoveSocketReader(this);
       // We're deleted beyond this point.
     }
@@ -534,7 +546,7 @@ class ProcessSingleton::LinuxWatcher
   // |reader| is for sending back ACK message.
   void HandleMessage(const std::string& current_dir,
                      const std::vector<std::string>& argv,
-                     SocketReader *reader);
+                     SocketReader* reader);
 
   // MessageLoopForIO::Watcher impl.  These run on the IO thread.
   virtual void OnFileCanReadWithoutBlocking(int fd);
@@ -549,9 +561,11 @@ class ProcessSingleton::LinuxWatcher
   }
 
  private:
-  friend class base::RefCountedThreadSafe<ProcessSingleton::LinuxWatcher>;
+  friend struct BrowserThread::DeleteOnThread<BrowserThread::IO>;
+  friend class base::DeleteHelper<ProcessSingleton::LinuxWatcher>;
 
   virtual ~LinuxWatcher() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     STLDeleteElements(&readers_);
   }
 
@@ -573,6 +587,7 @@ class ProcessSingleton::LinuxWatcher
 };
 
 void ProcessSingleton::LinuxWatcher::OnFileCanReadWithoutBlocking(int fd) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   // Accepting incoming client.
   sockaddr_un from;
   socklen_t from_len = sizeof(from);
@@ -627,15 +642,6 @@ void ProcessSingleton::LinuxWatcher::HandleMessage(
   PrefService* prefs = g_browser_process->local_state();
   DCHECK(prefs);
 
-  Profile* profile = ProfileManager::GetDefaultProfile();
-
-  if (!profile) {
-    // We should only be able to get here if the profile already exists and
-    // has been created.
-    NOTREACHED();
-    return;
-  }
-
   // Ignore the request if the process was passed the --product-version flag.
   // Normally we wouldn't get here if that flag had been passed, but it can
   // happen if it is passed to an older version of chrome. Since newer versions
@@ -647,10 +653,8 @@ void ProcessSingleton::LinuxWatcher::HandleMessage(
   } else {
     // Run the browser startup sequence again, with the command line of the
     // signalling process.
-    FilePath current_dir_file_path(current_dir);
-    BrowserInit::ProcessCommandLine(parsed_command_line, current_dir_file_path,
-                                    false /* not process startup */, profile,
-                                    NULL);
+    BrowserInit::ProcessCommandLineAlreadyRunning(
+        parsed_command_line, FilePath(current_dir));
   }
 
   // Send back "ACK" message to prevent the client process from starting up.
@@ -658,6 +662,7 @@ void ProcessSingleton::LinuxWatcher::HandleMessage(
 }
 
 void ProcessSingleton::LinuxWatcher::RemoveSocketReader(SocketReader* reader) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(reader);
   readers_.erase(reader);
   delete reader;
@@ -669,6 +674,7 @@ void ProcessSingleton::LinuxWatcher::RemoveSocketReader(SocketReader* reader) {
 
 void ProcessSingleton::LinuxWatcher::SocketReader::OnFileCanReadWithoutBlocking(
     int fd) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(fd, fd_);
   while (bytes_read_ < sizeof(buf_)) {
     ssize_t rv = HANDLE_EINTR(
@@ -696,6 +702,7 @@ void ProcessSingleton::LinuxWatcher::SocketReader::OnFileCanReadWithoutBlocking(
   if (bytes_read_ < kMinMessageLength) {
     buf_[bytes_read_] = 0;
     LOG(ERROR) << "Invalid socket message (wrong length):" << buf_;
+    CleanupAndDeleteSelf();
     return;
   }
 
@@ -705,6 +712,7 @@ void ProcessSingleton::LinuxWatcher::SocketReader::OnFileCanReadWithoutBlocking(
 
   if (tokens.size() < 3 || tokens[0] != kStartToken) {
     LOG(ERROR) << "Wrong message format: " << str;
+    CleanupAndDeleteSelf();
     return;
   }
 
@@ -719,9 +727,9 @@ void ProcessSingleton::LinuxWatcher::SocketReader::OnFileCanReadWithoutBlocking(
   tokens.erase(tokens.begin());
 
   // Return to the UI thread to handle opening a new browser tab.
-  ui_message_loop_->PostTask(FROM_HERE, NewRunnableMethod(
-      parent_,
+  ui_message_loop_->PostTask(FROM_HERE, base::Bind(
       &ProcessSingleton::LinuxWatcher::HandleMessage,
+      parent_,
       current_dir,
       tokens,
       this));
@@ -741,8 +749,13 @@ void ProcessSingleton::LinuxWatcher::SocketReader::FinishWithACK(
   if (shutdown(fd_, SHUT_WR) < 0)
     PLOG(ERROR) << "shutdown() failed";
 
-  parent_->RemoveSocketReader(this);
-  // We are deleted beyond this point.
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&ProcessSingleton::LinuxWatcher::RemoveSocketReader,
+                 parent_,
+                 this));
+  // We will be deleted once the posted RemoveSocketReader task runs.
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -822,7 +835,7 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessWithTimeout(
       return PROCESS_NONE;
     }
 
-    base::PlatformThread::Sleep(1000 /* ms */);
+    base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(1));
   }
 
   timeval timeout = {timeout_seconds, 0};
@@ -874,9 +887,11 @@ ProcessSingleton::NotifyResult ProcessSingleton::NotifyOtherProcessWithTimeout(
     // The other process is shutting down, it's safe to start a new process.
     return PROCESS_NONE;
   } else if (strncmp(buf, kACKToken, arraysize(kACKToken) - 1) == 0) {
+#if defined(TOOLKIT_USES_GTK)
     // Notify the window manager that we've started up; if we do not open a
     // window, GTK will not automatically call this for us.
     gdk_notify_startup_complete();
+#endif
     // Assume the other process is handling the request.
     return PROCESS_NOTIFIED;
   }
@@ -970,15 +985,13 @@ bool ProcessSingleton::Create() {
   if (listen(sock, 5) < 0)
     NOTREACHED() << "listen failed: " << safe_strerror(errno);
 
-  // Normally we would use BrowserThread, but the IO thread hasn't started yet.
-  // Using g_browser_process, we start the thread so we can listen on the
-  // socket.
-  MessageLoop* ml = g_browser_process->io_thread()->message_loop();
-  DCHECK(ml);
-  ml->PostTask(FROM_HERE, NewRunnableMethod(
-    watcher_.get(),
-    &ProcessSingleton::LinuxWatcher::StartListening,
-    sock));
+  DCHECK(BrowserThread::IsMessageLoopValid(BrowserThread::IO));
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&ProcessSingleton::LinuxWatcher::StartListening,
+                 watcher_.get(),
+                 sock));
 
   return true;
 }

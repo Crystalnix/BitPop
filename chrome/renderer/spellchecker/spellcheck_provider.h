@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,14 @@
 #include <vector>
 
 #include "base/id_map.h"
-#include "content/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpellCheckClient.h"
 
 class RenderView;
-class SpellCheck;
+
+namespace chrome {
+class ChromeContentRendererClient;
+}
 
 namespace WebKit {
 class WebString;
@@ -23,12 +26,13 @@ struct WebTextCheckingResult;
 
 // This class deals with invoking browser-side spellcheck mechanism
 // which is done asynchronously.
-class SpellCheckProvider : public RenderViewObserver,
+class SpellCheckProvider : public content::RenderViewObserver,
                            public WebKit::WebSpellCheckClient {
  public:
   typedef IDMap<WebKit::WebTextCheckingCompletion> WebTextCheckCompletions;
 
-  SpellCheckProvider(RenderView* render_view, SpellCheck* spellcheck);
+  SpellCheckProvider(content::RenderView* render_view,
+                     chrome::ChromeContentRendererClient* render_client);
   virtual ~SpellCheckProvider();
 
   // Requests async spell and grammar checker to the platform text
@@ -38,10 +42,6 @@ class SpellCheckProvider : public RenderViewObserver,
       int document_tag,
       WebKit::WebTextCheckingCompletion* completion);
 
-  // Check the availability of the platform spellchecker.
-  // Makes this virtual for overriding on the unittest.
-  virtual bool is_using_platform_spelling_engine() const;
-
   // The number of ongoing IPC requests.
   size_t pending_text_request_size() const {
     return text_check_completions_.size();
@@ -50,8 +50,8 @@ class SpellCheckProvider : public RenderViewObserver,
   int document_tag() const { return document_tag_; }
 
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void FocusedNodeChanged(const WebKit::WebNode& node);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void FocusedNodeChanged(const WebKit::WebNode& node) OVERRIDE;
 
  private:
   // WebKit::WebSpellCheckClient implementation.
@@ -59,16 +59,20 @@ class SpellCheckProvider : public RenderViewObserver,
       const WebKit::WebString& text,
       int& offset,
       int& length,
-      WebKit::WebVector<WebKit::WebString>* optional_suggestions);
+      WebKit::WebVector<WebKit::WebString>* optional_suggestions) OVERRIDE;
+  virtual void checkTextOfParagraph(
+      const WebKit::WebString& text,
+      WebKit::WebTextCheckingTypeMask mask,
+      WebKit::WebVector<WebKit::WebTextCheckingResult>* results) OVERRIDE;
   virtual void requestCheckingOfText(
       const WebKit::WebString& text,
-      WebKit::WebTextCheckingCompletion* completion);
+      WebKit::WebTextCheckingCompletion* completion) OVERRIDE;
   virtual WebKit::WebString autoCorrectWord(
-      const WebKit::WebString& misspelled_word);
-  virtual void showSpellingUI(bool show);
-  virtual bool isShowingSpellingUI();
+      const WebKit::WebString& misspelled_word) OVERRIDE;
+  virtual void showSpellingUI(bool show) OVERRIDE;
+  virtual bool isShowingSpellingUI() OVERRIDE;
   virtual void updateSpellingUIWithMisspelledWord(
-      const WebKit::WebString& word);
+      const WebKit::WebString& word) OVERRIDE;
 
   void OnAdvanceToNextMisspelling();
   void OnRespondTextCheck(
@@ -94,8 +98,9 @@ class SpellCheckProvider : public RenderViewObserver,
   // True if the browser is showing the spelling panel for us.
   bool spelling_panel_visible_;
 
-  // Spellcheck implementation for use. Weak reference.
-  SpellCheck* spellcheck_;
+  // The ChromeContentRendererClient used to access the SpellChecker.
+  // Weak reference.
+  chrome::ChromeContentRendererClient* chrome_content_renderer_client_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellCheckProvider);
 };

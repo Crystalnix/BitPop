@@ -8,13 +8,16 @@
 #include <deque>
 #include <map>
 #include <set>
+#include <utility>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/file_path.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop_proxy.h"
-#include "base/task.h"
 #include "webkit/appcache/appcache_database.h"
 #include "webkit/appcache/appcache_disk_cache.h"
+#include "webkit/appcache/appcache_export.h"
 #include "webkit/appcache/appcache_storage.h"
 
 namespace appcache {
@@ -25,33 +28,39 @@ class AppCacheStorageImpl : public AppCacheStorage {
   virtual ~AppCacheStorageImpl();
 
   void Initialize(const FilePath& cache_directory,
+                  base::MessageLoopProxy* db_thread,
                   base::MessageLoopProxy* cache_thread);
   void Disable();
   bool is_disabled() const { return is_disabled_; }
 
   // AppCacheStorage methods, see the base class for doc comments.
-  virtual void GetAllInfo(Delegate* delegate);
-  virtual void LoadCache(int64 id, Delegate* delegate);
-  virtual void LoadOrCreateGroup(const GURL& manifest_url, Delegate* delegate);
-  virtual void StoreGroupAndNewestCache(
-      AppCacheGroup* group, AppCache* newest_cache, Delegate* delegate);
-  virtual void FindResponseForMainRequest(
-      const GURL& url, const GURL& preferred_manifest_url, Delegate* delegate);
+  virtual void GetAllInfo(Delegate* delegate) OVERRIDE;
+  virtual void LoadCache(int64 id, Delegate* delegate) OVERRIDE;
+  virtual void LoadOrCreateGroup(const GURL& manifest_url,
+                                 Delegate* delegate) OVERRIDE;
+  virtual void StoreGroupAndNewestCache(AppCacheGroup* group,
+                                        AppCache* newest_cache,
+                                        Delegate* delegate) OVERRIDE;
+  virtual void FindResponseForMainRequest(const GURL& url,
+                                          const GURL& preferred_manifest_url,
+                                          Delegate* delegate) OVERRIDE;
   virtual void FindResponseForSubRequest(
       AppCache* cache, const GURL& url,
       AppCacheEntry* found_entry, AppCacheEntry* found_fallback_entry,
-      bool* found_network_namespace);
-  virtual void MarkEntryAsForeign(const GURL& entry_url, int64 cache_id);
-  virtual void MakeGroupObsolete(AppCacheGroup* group, Delegate* delegate);
+      bool* found_network_namespace) OVERRIDE;
+  virtual void MarkEntryAsForeign(const GURL& entry_url,
+                                  int64 cache_id) OVERRIDE;
+  virtual void MakeGroupObsolete(AppCacheGroup* group,
+                                 Delegate* delegate) OVERRIDE;
   virtual AppCacheResponseReader* CreateResponseReader(
-      const GURL& manifest_url, int64 response_id);
+      const GURL& manifest_url, int64 group_id, int64 response_id) OVERRIDE;
   virtual AppCacheResponseWriter* CreateResponseWriter(
-      const GURL& manifest_url);
-  virtual void DoomResponses(
-      const GURL& manifest_url, const std::vector<int64>& response_ids);
-  virtual void DeleteResponses(
-      const GURL& manifest_url, const std::vector<int64>& response_ids);
-  virtual void PurgeMemory();
+      const GURL& manifest_url, int64 group_id) OVERRIDE;
+  virtual void DoomResponses(const GURL& manifest_url,
+                             const std::vector<int64>& response_ids) OVERRIDE;
+  virtual void DeleteResponses(const GURL& manifest_url,
+                               const std::vector<int64>& response_ids) OVERRIDE;
+  virtual void PurgeMemory() OVERRIDE;
 
  private:
   friend class AppCacheStorageImplTest;
@@ -80,6 +89,7 @@ class AppCacheStorageImpl : public AppCacheStorage {
   typedef std::map<int64, CacheLoadTask*> PendingCacheLoads;
   typedef std::map<GURL, GroupLoadTask*> PendingGroupLoads;
   typedef std::deque<std::pair<GURL, int64> > PendingForeignMarkings;
+  typedef std::set<StoreGroupAndCacheTask*> PendingQuotaQueries;
 
   bool IsInitTaskComplete() {
     return last_cache_id_ != AppCacheStorage::kUnitializedId;
@@ -90,7 +100,7 @@ class AppCacheStorageImpl : public AppCacheStorage {
   void GetPendingForeignMarkingsForCache(
       int64 cache_id, std::vector<GURL>* urls);
 
-  void ScheduleSimpleTask(Task* task);
+  void ScheduleSimpleTask(const base::Closure& task);
   void RunOnePendingSimpleTask();
 
   void DelayedStartDeletingUnusedResponses();
@@ -105,28 +115,36 @@ class AppCacheStorageImpl : public AppCacheStorage {
   bool FindResponseForMainRequestInGroup(
       AppCacheGroup* group,  const GURL& url, Delegate* delegate);
   void DeliverShortCircuitedFindMainResponse(
-      const GURL& url, AppCacheEntry found_entry,
-      scoped_refptr<AppCacheGroup> group, scoped_refptr<AppCache> newest_cache,
+      const GURL& url,
+      const AppCacheEntry& found_entry,
+      scoped_refptr<AppCacheGroup> group,
+      scoped_refptr<AppCache> newest_cache,
       scoped_refptr<DelegateReference> delegate_ref);
 
-  void CheckPolicyAndCallOnMainResponseFound(
+  void CallOnMainResponseFound(
       DelegateReferenceVector* delegates,
       const GURL& url, const AppCacheEntry& entry,
-      const GURL& fallback_url, const AppCacheEntry& fallback_entry,
-      int64 cache_id, const GURL& manifest_url);
+      const GURL& namespace_entry_url, const AppCacheEntry& fallback_entry,
+      int64 cache_id, int64 group_id, const GURL& manifest_url);
 
-  AppCacheDiskCache* disk_cache();
+  APPCACHE_EXPORT AppCacheDiskCache* disk_cache();
 
   // The directory in which we place files in the file system.
   FilePath cache_directory_;
-  scoped_refptr<base::MessageLoopProxy> cache_thread_;
   bool is_incognito_;
+
+  // This class operates primarily on the IO thread, but schedules
+  // its DatabaseTasks on the db thread. Separately, the disk_cache uses
+  // the cache_thread.
+  scoped_refptr<base::MessageLoopProxy> db_thread_;
+  scoped_refptr<base::MessageLoopProxy> cache_thread_;
 
   // Structures to keep track of DatabaseTasks that are in-flight.
   DatabaseTaskQueue scheduled_database_tasks_;
   PendingCacheLoads pending_cache_loads_;
   PendingGroupLoads pending_group_loads_;
   PendingForeignMarkings pending_foreign_markings_;
+  PendingQuotaQueries pending_quota_queries_;
 
   // Structures to keep track of lazy response deletion.
   std::deque<int64> deletable_response_ids_;
@@ -135,28 +153,21 @@ class AppCacheStorageImpl : public AppCacheStorage {
   bool did_start_deleting_responses_;
   int64 last_deletable_response_rowid_;
 
-  // AppCacheDiskCache async callbacks
-  net::CompletionCallbackImpl<AppCacheStorageImpl> doom_callback_;
-  net::CompletionCallbackImpl<AppCacheStorageImpl> init_callback_;
-
   // Created on the IO thread, but only used on the DB thread.
   AppCacheDatabase* database_;
 
-  // Set if we discover a fatal error like a corrupt sql database or
+  // Set if we discover a fatal error like a corrupt SQL database or
   // disk cache and cannot continue.
   bool is_disabled_;
 
-  // TODO(michaeln): use a disk_cache per group (manifest or group_id).
   scoped_ptr<AppCacheDiskCache> disk_cache_;
 
   // Used to short-circuit certain operations without having to schedule
   // any tasks on the background database thread.
-  std::set<GURL> origins_with_groups_;
-  std::deque<Task*> pending_simple_tasks_;
-  ScopedRunnableMethodFactory<AppCacheStorageImpl> method_factory_;
+  std::deque<base::Closure> pending_simple_tasks_;
+  base::WeakPtrFactory<AppCacheStorageImpl> weak_factory_;
 
-  FRIEND_TEST_ALL_PREFIXES(ChromeAppCacheServiceTest, KeepOnDestruction);
-  FRIEND_TEST_ALL_PREFIXES(ChromeAppCacheServiceTest, RemoveOnDestruction);
+  friend class ChromeAppCacheServiceTest;
 };
 
 }  // namespace appcache

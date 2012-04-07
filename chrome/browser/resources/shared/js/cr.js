@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,10 +29,43 @@ const cr = (function() {
   const isLinux = /Linux/.test(navigator.userAgent);
 
   /**
+   * Whether this uses GTK or not.
+   * @type {boolean}
+   */
+  const isGTK = /GTK/.test(chrome.toolkit);
+
+  /**
    * Whether this uses the views toolkit or not.
    * @type {boolean}
    */
-  const isViews = isWindows || isChromeOS;
+  const isViews = /views/.test(chrome.toolkit);
+
+  /**
+   * Whether this window is optimized for touch-based input.
+   * @type {boolean}
+   */
+  const isTouchOptimized = !!chrome.touchOptimized;
+
+  /**
+   * Sets the os and toolkit attributes in the <html> element so that platform
+   * specific css rules can be applied.
+   */
+  function enablePlatformSpecificCSSRules() {
+    if (isMac)
+      doc.documentElement.setAttribute('os', 'mac');
+    if (isWindows)
+      doc.documentElement.setAttribute('os', 'windows');
+    if (isChromeOS)
+      doc.documentElement.setAttribute('os', 'chromeos');
+    if (isLinux)
+      doc.documentElement.setAttribute('os', 'linux');
+    if (isGTK)
+      doc.documentElement.setAttribute('toolkit', 'gtk');
+    if (isViews)
+      doc.documentElement.setAttribute('toolkit', 'views');
+    if (isTouchOptimized)
+      doc.documentElement.setAttribute('touch-optimized', '');
+  }
 
   /**
    * Builds an object structure for the provided namespace path,
@@ -103,6 +136,16 @@ const cr = (function() {
   }
 
   /**
+   * Converts a camelCase javascript property name to a hyphenated-lower-case
+   * attribute name.
+   * @param {string} jsName The javascript camelCase property name.
+   * @return {string} The equivalent hyphenated-lower-case attribute name.
+   */
+  function getAttributeName(jsName) {
+    return jsName.replace(/([A-Z])/g, '-$1').toLowerCase();
+  }
+
+  /**
    * The kind of property to define in {@code defineProperty}.
    * @enum {number}
    */
@@ -140,12 +183,14 @@ const cr = (function() {
           return this[privateName];
         };
       case PropertyKind.ATTR:
+        var attributeName = getAttributeName(name);
         return function() {
-          return this.getAttribute(name);
+          return this.getAttribute(attributeName);
         };
       case PropertyKind.BOOL_ATTR:
+        var attributeName = getAttributeName(name);
         return function() {
-          return this.hasAttribute(name);
+          return this.hasAttribute(attributeName);
         };
     }
   }
@@ -176,10 +221,14 @@ const cr = (function() {
         };
 
       case PropertyKind.ATTR:
+        var attributeName = getAttributeName(name);
         return function(value) {
-          var oldValue = this[name];
+          var oldValue = this[attributeName];
           if (value !== oldValue) {
-            this.setAttribute(name, value);
+            if (value == undefined)
+              this.removeAttribute(attributeName);
+            else
+              this.setAttribute(attributeName, value);
             if (opt_setHook)
               opt_setHook.call(this, value, oldValue);
             dispatchPropertyChange(this, name, value, oldValue);
@@ -187,13 +236,14 @@ const cr = (function() {
         };
 
       case PropertyKind.BOOL_ATTR:
+        var attributeName = getAttributeName(name);
         return function(value) {
-          var oldValue = this[name];
+          var oldValue = this[attributeName];
           if (value !== oldValue) {
             if (value)
-              this.setAttribute(name, name);
+              this.setAttribute(attributeName, name);
             else
-              this.removeAttribute(name);
+              this.removeAttribute(attributeName);
             if (opt_setHook)
               opt_setHook.call(this, value, oldValue);
             dispatchPropertyChange(this, name, value, oldValue);
@@ -217,13 +267,11 @@ const cr = (function() {
 
     var kind = opt_kind || PropertyKind.JS;
 
-    if (!obj.__lookupGetter__(name)) {
+    if (!obj.__lookupGetter__(name))
       obj.__defineGetter__(name, getGetter(name, kind));
-    }
 
-    if (!obj.__lookupSetter__(name)) {
+    if (!obj.__lookupSetter__(name))
       obj.__defineSetter__(name, getSetter(name, kind, opt_setHook));
-    }
   }
 
   /**
@@ -324,6 +372,8 @@ const cr = (function() {
     isWindows: isWindows,
     isLinux: isLinux,
     isViews: isViews,
+    isTouchOptimized: isTouchOptimized,
+    enablePlatformSpecificCSSRules: enablePlatformSpecificCSSRules,
     define: define,
     defineProperty: defineProperty,
     PropertyKind: PropertyKind,

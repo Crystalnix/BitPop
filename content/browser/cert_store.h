@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,9 @@
 
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "net/base/x509_certificate.h"
 
 // The purpose of the cert store is to provide an easy way to store/retrieve
@@ -24,7 +25,7 @@
 // Note that the cert ids will overflow if we register more than 2^32 - 1 certs
 // in 1 browsing session (which is highly unlikely to happen).
 
-class CertStore : public NotificationObserver {
+class CONTENT_EXPORT CertStore : public content::NotificationObserver {
  public:
   // Returns the singleton instance of the CertStore.
   static CertStore* GetInstance();
@@ -41,16 +42,18 @@ class CertStore : public NotificationObserver {
   // non-NULL, copies it in.
   bool RetrieveCert(int cert_id, scoped_refptr<net::X509Certificate>* cert);
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<CertStore>;
 
   CertStore();
   virtual ~CertStore();
+
+  void RegisterForNotification();
 
   // Remove the specified cert from id_to_cert_ and cert_to_id_.
   // NOTE: the caller (RemoveCertsForRenderProcesHost) must hold cert_lock_.
@@ -64,7 +67,8 @@ class CertStore : public NotificationObserver {
   typedef std::map<net::X509Certificate*, int, net::X509Certificate::LessThan>
       ReverseCertMap;
 
-  NotificationRegistrar registrar_;
+  // Is only used on the UI Thread.
+  content::NotificationRegistrar registrar_;
 
   IDMap process_id_to_cert_id_;
   IDMap cert_id_to_process_id_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,19 @@
 #include "base/shared_memory.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/test/render_view_test.h"
-#include "content/common/native_web_keyboard_event.h"
+#include "content/common/intents_messages.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/native_web_keyboard_event.h"
+#include "content/renderer/render_view_impl.h"
+#include "content/test/render_view_test.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebIntentServiceInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/range/range.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "webkit/glue/web_io_operators.h"
 
@@ -24,31 +28,92 @@ using WebKit::WebString;
 using WebKit::WebTextDirection;
 using WebKit::WebURLError;
 
+class RenderViewImplTest : public content::RenderViewTest {
+ public:
+  RenderViewImpl* view() {
+    return static_cast<RenderViewImpl*>(view_);
+  }
+};
+
 // Test that we get form state change notifications when input fields change.
-TEST_F(RenderViewTest, OnNavStateChanged) {
+TEST_F(RenderViewImplTest, OnNavStateChanged) {
   // Don't want any delay for form state sync changes. This will still post a
   // message so updates will get coalesced, but as soon as we spin the message
   // loop, it will generate an update.
-  view_->set_send_content_state_immediately(true);
+  view()->set_send_content_state_immediately(true);
 
   LoadHTML("<input type=\"text\" id=\"elt_text\"></input>");
 
   // We should NOT have gotten a form state change notification yet.
-  EXPECT_FALSE(render_thread_.sink().GetFirstMessageMatching(
+  EXPECT_FALSE(render_thread_->sink().GetFirstMessageMatching(
       ViewHostMsg_UpdateState::ID));
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   // Change the value of the input. We should have gotten an update state
   // notification. We need to spin the message loop to catch this update.
   ExecuteJavaScript("document.getElementById('elt_text').value = 'foo';");
   ProcessPendingMessages();
-  EXPECT_TRUE(render_thread_.sink().GetUniqueMessageMatching(
+  EXPECT_TRUE(render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID));
+}
+
+// Ensure the RenderViewImpl sends an ACK to a SwapOut request, even if it is
+// already swapped out.  http://crbug.com/93427.
+TEST_F(RenderViewImplTest, SendSwapOutACK) {
+  LoadHTML("<div>Page A</div>");
+  int initial_page_id = view()->GetPageId();
+
+  // Respond to a swap out request.
+  ViewMsg_SwapOut_Params params;
+  params.closing_process_id = 10;
+  params.closing_route_id = 11;
+  params.new_render_process_host_id = 12;
+  params.new_request_id = 13;
+  view()->OnSwapOut(params);
+
+  // Ensure the swap out commits synchronously.
+  EXPECT_NE(initial_page_id, view()->GetPageId());
+
+  // Check for a valid OnSwapOutACK with echoed params.
+  const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_SwapOut_ACK::ID);
+  ASSERT_TRUE(msg);
+  ViewHostMsg_SwapOut_ACK::Param reply_params;
+  ViewHostMsg_SwapOut_ACK::Read(msg, &reply_params);
+  EXPECT_EQ(params.closing_process_id, reply_params.a.closing_process_id);
+  EXPECT_EQ(params.closing_route_id, reply_params.a.closing_route_id);
+  EXPECT_EQ(params.new_render_process_host_id,
+            reply_params.a.new_render_process_host_id);
+  EXPECT_EQ(params.new_request_id, reply_params.a.new_request_id);
+
+  // It is possible to get another swap out request.  Ensure that we send
+  // an ACK, even if we don't have to do anything else.
+  render_thread_->sink().ClearMessages();
+  view()->OnSwapOut(params);
+  const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_SwapOut_ACK::ID);
+  ASSERT_TRUE(msg2);
+
+  // If we navigate back to this RenderView, ensure we don't send a state
+  // update for the swapped out URL.  (http://crbug.com/72235)
+  ViewMsg_Navigate_Params nav_params;
+  nav_params.url = GURL("data:text/html,<div>Page B</div>");
+  nav_params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  nav_params.transition = content::PAGE_TRANSITION_TYPED;
+  nav_params.current_history_list_length = 1;
+  nav_params.current_history_list_offset = 0;
+  nav_params.pending_history_list_offset = 1;
+  nav_params.page_id = -1;
+  view()->OnNavigate(nav_params);
+  ProcessPendingMessages();
+  const IPC::Message* msg3 = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_UpdateState::ID);
+  EXPECT_FALSE(msg3);
 }
 
 // Test that we get the correct UpdateState message when we go back twice
 // quickly without committing.  Regression test for http://crbug.com/58082.
-TEST_F(RenderViewTest, LastCommittedUpdateState) {
+TEST_F(RenderViewImplTest, LastCommittedUpdateState) {
   // Load page A.
   LoadHTML("<div>Page A</div>");
 
@@ -56,20 +121,20 @@ TEST_F(RenderViewTest, LastCommittedUpdateState) {
   LoadHTML("<div>Page B</div>");
 
   // Check for a valid UpdateState message for page A.
-  const IPC::Message* msg_A = render_thread_.sink().GetUniqueMessageMatching(
+  const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
   int page_id_A;
   std::string state_A;
   ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
   EXPECT_EQ(1, page_id_A);
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   // Load page C, which will trigger an UpdateState message for page B.
   LoadHTML("<div>Page C</div>");
 
   // Check for a valid UpdateState for page B.
-  const IPC::Message* msg_B = render_thread_.sink().GetUniqueMessageMatching(
+  const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
   int page_id_B;
@@ -77,13 +142,13 @@ TEST_F(RenderViewTest, LastCommittedUpdateState) {
   ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
   EXPECT_EQ(2, page_id_B);
   EXPECT_NE(state_A, state_B);
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   // Load page D, which will trigger an UpdateState message for page C.
   LoadHTML("<div>Page D</div>");
 
   // Check for a valid UpdateState for page C.
-  const IPC::Message* msg_C = render_thread_.sink().GetUniqueMessageMatching(
+  const IPC::Message* msg_C = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_C);
   int page_id_C;
@@ -91,16 +156,20 @@ TEST_F(RenderViewTest, LastCommittedUpdateState) {
   ViewHostMsg_UpdateState::Read(msg_C, &page_id_C, &state_C);
   EXPECT_EQ(3, page_id_C);
   EXPECT_NE(state_B, state_C);
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   // Go back to C and commit, preparing for our real test.
   ViewMsg_Navigate_Params params_C;
-  params_C.transition = PageTransition::FORWARD_BACK;
+  params_C.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params_C.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_C.current_history_list_length = 4;
+  params_C.current_history_list_offset = 3;
+  params_C.pending_history_list_offset = 2;
   params_C.page_id = 3;
   params_C.state = state_C;
-  view_->OnNavigate(params_C);
+  view()->OnNavigate(params_C);
   ProcessPendingMessages();
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   // Go back twice quickly, such that page B does not have a chance to commit.
   // This leads to two changes to the back/forward list but only one change to
@@ -108,22 +177,30 @@ TEST_F(RenderViewTest, LastCommittedUpdateState) {
 
   // Back to page B (page_id 2), without committing.
   ViewMsg_Navigate_Params params_B;
-  params_B.transition = PageTransition::FORWARD_BACK;
+  params_B.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params_B.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_B.current_history_list_length = 4;
+  params_B.current_history_list_offset = 2;
+  params_B.pending_history_list_offset = 1;
   params_B.page_id = 2;
   params_B.state = state_B;
-  view_->OnNavigate(params_B);
+  view()->OnNavigate(params_B);
 
   // Back to page A (page_id 1) and commit.
   ViewMsg_Navigate_Params params;
-  params.transition = PageTransition::FORWARD_BACK;
+  params.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_B.current_history_list_length = 4;
+  params_B.current_history_list_offset = 2;
+  params_B.pending_history_list_offset = 0;
   params.page_id = 1;
   params.state = state_A;
-  view_->OnNavigate(params);
+  view()->OnNavigate(params);
   ProcessPendingMessages();
 
   // Now ensure that the UpdateState message we receive is consistent
   // and represents page C in both page_id and state.
-  const IPC::Message* msg = render_thread_.sink().GetUniqueMessageMatching(
+  const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg);
   int page_id;
@@ -135,14 +212,139 @@ TEST_F(RenderViewTest, LastCommittedUpdateState) {
   EXPECT_EQ(state_C, state);
 }
 
+// Test that the history_page_ids_ list can reveal when a stale back/forward
+// navigation arrives from the browser and can be ignored.  See
+// http://crbug.com/86758.
+TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
+  // Load page A.
+  LoadHTML("<div>Page A</div>");
+  EXPECT_EQ(1, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(1, view()->history_page_ids_[0]);
+
+  // Load page B, which will trigger an UpdateState message for page A.
+  LoadHTML("<div>Page B</div>");
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(2, view()->history_page_ids_[1]);
+
+  // Check for a valid UpdateState message for page A.
+  const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_UpdateState::ID);
+  ASSERT_TRUE(msg_A);
+  int page_id_A;
+  std::string state_A;
+  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  EXPECT_EQ(1, page_id_A);
+  render_thread_->sink().ClearMessages();
+
+  // Back to page A (page_id 1) and commit.
+  ViewMsg_Navigate_Params params_A;
+  params_A.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params_A.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_A.current_history_list_length = 2;
+  params_A.current_history_list_offset = 1;
+  params_A.pending_history_list_offset = 0;
+  params_A.page_id = 1;
+  params_A.state = state_A;
+  view()->OnNavigate(params_A);
+  ProcessPendingMessages();
+
+  // A new navigation commits, clearing the forward history.
+  LoadHTML("<div>Page C</div>");
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(3, view()->history_page_ids_[1]);
+
+  // The browser then sends a stale navigation to B, which should be ignored.
+  ViewMsg_Navigate_Params params_B;
+  params_B.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params_B.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_B.current_history_list_length = 2;
+  params_B.current_history_list_offset = 0;
+  params_B.pending_history_list_offset = 1;
+  params_B.page_id = 2;
+  params_B.state = state_A;  // Doesn't matter, just has to be present.
+  view()->OnNavigate(params_B);
+
+  // State should be unchanged.
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(3, view()->history_page_ids_[1]);
+}
+
+// Test that we do not ignore navigations after the entry limit is reached,
+// in which case the browser starts dropping entries from the front.  In this
+// case, we'll see a page_id mismatch but the RenderView's id will be older,
+// not newer, than params.page_id.  Use this as a cue that we should update the
+// state and not treat it like a navigation to a cropped forward history item.
+// See http://crbug.com/89798.
+TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
+  // Load page A.
+  LoadHTML("<div>Page A</div>");
+  EXPECT_EQ(1, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(1, view()->history_page_ids_[0]);
+
+  // Load page B, which will trigger an UpdateState message for page A.
+  LoadHTML("<div>Page B</div>");
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(2, view()->history_page_ids_[1]);
+
+  // Check for a valid UpdateState message for page A.
+  const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_UpdateState::ID);
+  ASSERT_TRUE(msg_A);
+  int page_id_A;
+  std::string state_A;
+  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  EXPECT_EQ(1, page_id_A);
+  render_thread_->sink().ClearMessages();
+
+  // Load page C, which will trigger an UpdateState message for page B.
+  LoadHTML("<div>Page C</div>");
+  EXPECT_EQ(3, view()->history_list_length_);
+  EXPECT_EQ(2, view()->history_list_offset_);
+  EXPECT_EQ(3, view()->history_page_ids_[2]);
+
+  // Check for a valid UpdateState message for page B.
+  const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
+      ViewHostMsg_UpdateState::ID);
+  ASSERT_TRUE(msg_B);
+  int page_id_B;
+  std::string state_B;
+  ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
+  EXPECT_EQ(2, page_id_B);
+  render_thread_->sink().ClearMessages();
+
+  // Suppose the browser has limited the number of NavigationEntries to 2.
+  // It has now dropped the first entry, but the renderer isn't notified.
+  // Ensure that going back to page B (page_id 2) at offset 0 is successful.
+  ViewMsg_Navigate_Params params_B;
+  params_B.navigation_type = ViewMsg_Navigate_Type::NORMAL;
+  params_B.transition = content::PAGE_TRANSITION_FORWARD_BACK;
+  params_B.current_history_list_length = 2;
+  params_B.current_history_list_offset = 1;
+  params_B.pending_history_list_offset = 0;
+  params_B.page_id = 2;
+  params_B.state = state_B;
+  view()->OnNavigate(params_B);
+  ProcessPendingMessages();
+
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(2, view()->history_page_ids_[0]);
+}
+
 // Test that our IME backend sends a notification message when the input focus
 // changes.
-TEST_F(RenderViewTest, OnImeStateChanged) {
+TEST_F(RenderViewImplTest, OnImeStateChanged) {
   // Enable our IME backend code.
-  view_->OnSetInputMethodActive(true);
+  view()->OnSetInputMethodActive(true);
 
   // Load an HTML page consisting of two input fields.
-  view_->set_send_content_state_immediately(true);
+  view()->set_send_content_state_immediately(true);
   LoadHTML("<html>"
            "<head>"
            "</head>"
@@ -151,7 +353,7 @@ TEST_F(RenderViewTest, OnImeStateChanged) {
            "<input id=\"test2\" type=\"password\"></input>"
            "</body>"
            "</html>");
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   const int kRepeatCount = 10;
   for (int i = 0; i < kRepeatCount; i++) {
@@ -159,33 +361,32 @@ TEST_F(RenderViewTest, OnImeStateChanged) {
     // activate IMEs.
     ExecuteJavaScript("document.getElementById('test1').focus();");
     ProcessPendingMessages();
-    render_thread_.sink().ClearMessages();
+    render_thread_->sink().ClearMessages();
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to activate IMEs.
-    view_->UpdateInputMethod();
-    const IPC::Message* msg = render_thread_.sink().GetMessageAt(0);
+    view()->UpdateTextInputState();
+    const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_ImeUpdateTextInputState::ID, msg->type());
-    ViewHostMsg_ImeUpdateTextInputState::Param params;
-    ViewHostMsg_ImeUpdateTextInputState::Read(msg, &params);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Param params;
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
     EXPECT_EQ(params.a, ui::TEXT_INPUT_TYPE_TEXT);
     EXPECT_EQ(params.b, true);
-    EXPECT_TRUE(params.c.x() > 0 && params.c.y() > 0);
 
     // Move the input focus to the second <input> element, where we should
     // de-activate IMEs.
     ExecuteJavaScript("document.getElementById('test2').focus();");
     ProcessPendingMessages();
-    render_thread_.sink().ClearMessages();
+    render_thread_->sink().ClearMessages();
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to de-activate IMEs.
-    view_->UpdateInputMethod();
-    msg = render_thread_.sink().GetMessageAt(0);
+    view()->UpdateTextInputState();
+    msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_ImeUpdateTextInputState::ID, msg->type());
-    ViewHostMsg_ImeUpdateTextInputState::Read(msg, &params);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
     EXPECT_EQ(params.a, ui::TEXT_INPUT_TYPE_PASSWORD);
   }
 }
@@ -201,7 +402,7 @@ TEST_F(RenderViewTest, OnImeStateChanged) {
 // cases, this test should not only call IME-related functions in the
 // RenderWidget class, but also call some RenderWidget members, e.g.
 // ExecuteJavaScript(), RenderWidget::OnSetFocus(), etc.
-TEST_F(RenderViewTest, ImeComposition) {
+TEST_F(RenderViewImplTest, ImeComposition) {
   enum ImeCommand {
     IME_INITIALIZE,
     IME_SETINPUTMODE,
@@ -267,8 +468,8 @@ TEST_F(RenderViewTest, ImeComposition) {
         // Load an HTML page consisting of a content-editable <div> element,
         // and move the input focus to the <div> element, where we can use
         // IMEs.
-        view_->OnSetInputMethodActive(ime_message->enable);
-        view_->set_send_content_state_immediately(true);
+        view()->OnSetInputMethodActive(ime_message->enable);
+        view()->set_send_content_state_immediately(true);
         LoadHTML("<html>"
                 "<head>"
                 "</head>"
@@ -281,16 +482,16 @@ TEST_F(RenderViewTest, ImeComposition) {
 
       case IME_SETINPUTMODE:
         // Activate (or deactivate) our IME back-end.
-        view_->OnSetInputMethodActive(ime_message->enable);
+        view()->OnSetInputMethodActive(ime_message->enable);
         break;
 
       case IME_SETFOCUS:
         // Update the window focus.
-        view_->OnSetFocus(ime_message->enable);
+        view()->OnSetFocus(ime_message->enable);
         break;
 
       case IME_SETCOMPOSITION:
-        view_->OnImeSetComposition(
+        view()->OnImeSetComposition(
             WideToUTF16Hack(ime_message->ime_string),
             std::vector<WebKit::WebCompositionUnderline>(),
             ime_message->selection_start,
@@ -298,22 +499,24 @@ TEST_F(RenderViewTest, ImeComposition) {
         break;
 
       case IME_CONFIRMCOMPOSITION:
-        view_->OnImeConfirmComposition(
-            WideToUTF16Hack(ime_message->ime_string));
+        view()->OnImeConfirmComposition(
+            WideToUTF16Hack(ime_message->ime_string),
+            ui::Range::InvalidRange());
         break;
 
       case IME_CANCELCOMPOSITION:
-        view_->OnImeSetComposition(string16(),
-                                std::vector<WebKit::WebCompositionUnderline>(),
-                                0, 0);
+        view()->OnImeSetComposition(
+            string16(),
+            std::vector<WebKit::WebCompositionUnderline>(),
+            0, 0);
         break;
     }
 
     // Update the status of our IME back-end.
     // TODO(hbono): we should verify messages to be sent from the back-end.
-    view_->UpdateInputMethod();
+    view()->UpdateTextInputState();
     ProcessPendingMessages();
-    render_thread_.sink().ClearMessages();
+    render_thread_->sink().ClearMessages();
 
     if (ime_message->result) {
       // Retrieve the content of this page and compare it with the expected
@@ -328,12 +531,12 @@ TEST_F(RenderViewTest, ImeComposition) {
 
 // Test that the RenderView::OnSetTextDirection() function can change the text
 // direction of the selected input element.
-TEST_F(RenderViewTest, OnSetTextDirection) {
+TEST_F(RenderViewImplTest, OnSetTextDirection) {
   // Load an HTML page consisting of a <textarea> element and a <div> element.
   // This test changes the text direction of the <textarea> element, and
   // writes the values of its 'dir' attribute and its 'direction' property to
   // verify that the text direction is changed.
-  view_->set_send_content_state_immediately(true);
+  view()->set_send_content_state_immediately(true);
   LoadHTML("<html>"
            "<head>"
            "</head>"
@@ -342,7 +545,7 @@ TEST_F(RenderViewTest, OnSetTextDirection) {
            "<div id=\"result\" contenteditable=\"true\"></div>"
            "</body>"
            "</html>");
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   static const struct {
     WebTextDirection direction;
@@ -354,7 +557,7 @@ TEST_F(RenderViewTest, OnSetTextDirection) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kTextDirection); ++i) {
     // Set the text direction of the <textarea> element.
     ExecuteJavaScript("document.getElementById('test').focus();");
-    view_->OnSetTextDirection(kTextDirection[i].direction);
+    view()->OnSetTextDirection(kTextDirection[i].direction);
 
     // Write the values of its DOM 'dir' attribute and its CSS 'direction'
     // property to the <div> element.
@@ -376,7 +579,7 @@ TEST_F(RenderViewTest, OnSetTextDirection) {
 
 // Test that we can receive correct DOM events when we send input events
 // through the RenderWidget::OnHandleInputEvent() function.
-TEST_F(RenderViewTest, OnHandleKeyboardEvent) {
+TEST_F(RenderViewImplTest, OnHandleKeyboardEvent) {
 #if !defined(OS_MACOSX)
   // Load an HTML page consisting of one <input> element and three
   // contentediable <div> elements.
@@ -386,7 +589,7 @@ TEST_F(RenderViewTest, OnHandleKeyboardEvent) {
   // TODO(hbono): <http://crbug.com/2215> Our WebKit port set |ev.metaKey| to
   // true when pressing an alt key, i.e. the |ev.metaKey| value is not
   // trustworthy. We will check the |ev.metaKey| value when this issue is fixed.
-  view_->set_send_content_state_immediately(true);
+  view()->set_send_content_state_immediately(true);
   LoadHTML("<html>"
            "<head>"
            "<title></title>"
@@ -417,7 +620,7 @@ TEST_F(RenderViewTest, OnHandleKeyboardEvent) {
            "</body>"
            "</html>");
   ExecuteJavaScript("document.getElementById('test').focus();");
-  render_thread_.sink().ClearMessages();
+  render_thread_->sink().ClearMessages();
 
   static const MockKeyboard::Layout kLayouts[] = {
 #if defined(OS_WIN)
@@ -484,7 +687,7 @@ TEST_F(RenderViewTest, OnHandleKeyboardEvent) {
         // driver is installed in a PC and the driver can assign a Unicode
         // charcter for the given tuple (key-code and modifiers).
         int key_code = kKeyCodes[k];
-        std::wstring char_code;
+        string16 char_code;
         if (SendKeyEvent(layout, key_code, modifiers, &char_code) < 0)
           continue;
 
@@ -524,7 +727,7 @@ TEST_F(RenderViewTest, OnHandleKeyboardEvent) {
 // keyboard events through the RenderWidget::OnHandleInputEvent() function.
 // This test is for preventing regressions caused only when we use non-US
 // keyboards, such as Issue 10846.
-TEST_F(RenderViewTest, InsertCharacters) {
+TEST_F(RenderViewImplTest, InsertCharacters) {
 #if !defined(OS_MACOSX)
   static const struct {
     MockKeyboard::Layout layout;
@@ -667,7 +870,7 @@ TEST_F(RenderViewTest, InsertCharacters) {
     // This <div> element is used by the EditorClientImpl class to insert
     // characters received through the RenderWidget::OnHandleInputEvent()
     // function.
-    view_->set_send_content_state_immediately(true);
+    view()->set_send_content_state_immediately(true);
     LoadHTML("<html>"
              "<head>"
              "<title></title>"
@@ -678,7 +881,7 @@ TEST_F(RenderViewTest, InsertCharacters) {
              "</body>"
              "</html>");
     ExecuteJavaScript("document.getElementById('test').focus();");
-    render_thread_.sink().ClearMessages();
+    render_thread_->sink().ClearMessages();
 
     // For each key code, we send three keyboard events.
     //  * Pressing only the key;
@@ -725,7 +928,7 @@ TEST_F(RenderViewTest, InsertCharacters) {
         // driver is installed in a PC and the driver can assign a Unicode
         // charcter for the given tuple (layout, key-code, and modifiers).
         int key_code = kKeyCodes[k];
-        std::wstring char_code;
+        string16 char_code;
         if (SendKeyEvent(layout, key_code, modifiers, &char_code) < 0)
           continue;
       }
@@ -745,35 +948,222 @@ TEST_F(RenderViewTest, InsertCharacters) {
 }
 
 // Crashy, http://crbug.com/53247.
-TEST_F(RenderViewTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
+TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   GetMainFrame()->enableViewSourceMode(true);
   WebURLError error;
-  error.domain.fromUTF8("test_domain");
+  error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_FILE_NOT_FOUND;
   error.unreachableURL = GURL("http://foo");
   WebFrame* web_frame = GetMainFrame();
   // An error occurred.
-  view_->didFailProvisionalLoad(web_frame, error);
+  view()->didFailProvisionalLoad(web_frame, error);
   // Frame should exit view-source mode.
   EXPECT_FALSE(web_frame->isViewSourceModeEnabled());
 }
 
-TEST_F(RenderViewTest, DidFailProvisionalLoadWithErrorForCancellation) {
+TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   GetMainFrame()->enableViewSourceMode(true);
   WebURLError error;
-  error.domain.fromUTF8("test_domain");
+  error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_ABORTED;
   error.unreachableURL = GURL("http://foo");
   WebFrame* web_frame = GetMainFrame();
   // A cancellation occurred.
-  view_->didFailProvisionalLoad(web_frame, error);
+  view()->didFailProvisionalLoad(web_frame, error);
   // Frame should stay in view-source mode.
   EXPECT_TRUE(web_frame->isViewSourceModeEnabled());
 }
 
 // Regression test for http://crbug.com/41562
-TEST_F(RenderViewTest, UpdateTargetURLWithInvalidURL) {
+TEST_F(RenderViewImplTest, UpdateTargetURLWithInvalidURL) {
   const GURL invalid_gurl("http://");
-  view_->setMouseOverURL(WebKit::WebURL(invalid_gurl));
-  EXPECT_EQ(invalid_gurl, view_->target_url_);
+  view()->setMouseOverURL(WebKit::WebURL(invalid_gurl));
+  EXPECT_EQ(invalid_gurl, view()->target_url_);
+}
+
+TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
+  int expected_page_id = -1;
+
+  // No history to merge and no committed pages.
+  view()->OnSetHistoryLengthAndPrune(0, -1);
+  EXPECT_EQ(0, view()->history_list_length_);
+  EXPECT_EQ(-1, view()->history_list_offset_);
+
+  // History to merge and no committed pages.
+  view()->OnSetHistoryLengthAndPrune(2, -1);
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  ClearHistory();
+
+  // No history to merge and a committed page to be kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
+  EXPECT_EQ(1, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
+  ClearHistory();
+
+  // No history to merge and a committed page to be pruned.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(0, expected_page_id + 1);
+  EXPECT_EQ(0, view()->history_list_length_);
+  EXPECT_EQ(-1, view()->history_list_offset_);
+  ClearHistory();
+
+  // No history to merge and a committed page that the browser was unaware of.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(0, -1);
+  EXPECT_EQ(1, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
+  ClearHistory();
+
+  // History to merge and a committed page to be kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
+  EXPECT_EQ(3, view()->history_list_length_);
+  EXPECT_EQ(2, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
+  ClearHistory();
+
+  // History to merge and a committed page to be pruned.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(2, expected_page_id + 1);
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  ClearHistory();
+
+  // History to merge and a committed page that the browser was unaware of.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->OnSetHistoryLengthAndPrune(2, -1);
+  EXPECT_EQ(3, view()->history_list_length_);
+  EXPECT_EQ(2, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
+  ClearHistory();
+
+  int expected_page_id_2 = -1;
+
+  // No history to merge and two committed pages, both to be kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[1]);
+  ClearHistory();
+
+  // No history to merge and two committed pages, and only the second is kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(0, expected_page_id_2);
+  EXPECT_EQ(1, view()->history_list_length_);
+  EXPECT_EQ(0, view()->history_list_offset_);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[0]);
+  ClearHistory();
+
+  // No history to merge and two committed pages, both of which the browser was
+  // unaware of.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(0, -1);
+  EXPECT_EQ(2, view()->history_list_length_);
+  EXPECT_EQ(1, view()->history_list_offset_);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[0]);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[1]);
+  ClearHistory();
+
+  // History to merge and two committed pages, both to be kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
+  EXPECT_EQ(4, view()->history_list_length_);
+  EXPECT_EQ(3, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[3]);
+  ClearHistory();
+
+  // History to merge and two committed pages, and only the second is kept.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(2, expected_page_id_2);
+  EXPECT_EQ(3, view()->history_list_length_);
+  EXPECT_EQ(2, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[2]);
+  ClearHistory();
+
+  // History to merge and two committed pages, both of which the browser was
+  // unaware of.
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id = view()->page_id_;
+  view()->didCommitProvisionalLoad(GetMainFrame(), true);
+  expected_page_id_2 = view()->page_id_;
+  EXPECT_GT(expected_page_id_2, expected_page_id);
+  view()->OnSetHistoryLengthAndPrune(2, -1);
+  EXPECT_EQ(4, view()->history_list_length_);
+  EXPECT_EQ(3, view()->history_list_offset_);
+  EXPECT_EQ(-1, view()->history_page_ids_[0]);
+  EXPECT_EQ(-1, view()->history_page_ids_[1]);
+  EXPECT_EQ(expected_page_id, view()->history_page_ids_[2]);
+  EXPECT_EQ(expected_page_id_2, view()->history_page_ids_[3]);
+}
+
+TEST_F(RenderViewImplTest, FindTitleForIntentsPage) {
+  view()->set_send_content_state_immediately(true);
+  LoadHTML("<html><head><title>title</title>"
+           "<intent action=\"a\" type=\"t\"></intent></head></html>");
+  WebKit::WebIntentServiceInfo service;
+  service.setAction(ASCIIToUTF16("a"));
+  service.setType(ASCIIToUTF16("t"));
+  view()->registerIntentService(GetMainFrame(), service);
+  ProcessPendingMessages();
+
+  EXPECT_TRUE(render_thread_->sink().GetUniqueMessageMatching(
+      IntentsHostMsg_RegisterIntentService::ID));
+  const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
+      IntentsHostMsg_RegisterIntentService::ID);
+  ASSERT_TRUE(msg);
+  string16 action;
+  string16 type;
+  string16 href;
+  string16 title;
+  string16 disposition;
+  IntentsHostMsg_RegisterIntentService::Read(
+      msg, &action, &type, &href, &title, &disposition);
+  EXPECT_EQ(ASCIIToUTF16("a"), action);
+  EXPECT_EQ(ASCIIToUTF16("t"), type);
+  EXPECT_EQ(ASCIIToUTF16("title"), title);
 }

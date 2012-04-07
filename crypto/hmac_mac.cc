@@ -39,9 +39,15 @@ HMAC::~HMAC() {
   plat_->key_.reserve(0);
 }
 
-bool HMAC::Sign(const std::string& data,
+bool HMAC::Sign(const base::StringPiece& data,
                 unsigned char* digest,
                 int digest_length) const {
+  if (plat_->key_.empty()) {
+    // Init has not been called or has failed.
+    NOTREACHED();
+    return false;
+  }
+
   CCHmacAlgorithm algorithm;
   int algorithm_digest_length;
   switch (hash_alg_) {

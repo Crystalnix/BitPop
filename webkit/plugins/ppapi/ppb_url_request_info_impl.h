@@ -5,101 +5,52 @@
 #ifndef WEBKIT_PLUGINS_PPAPI_PPB_URL_REQUEST_INFO_IMPL_H_
 #define WEBKIT_PLUGINS_PPAPI_PPB_URL_REQUEST_INFO_IMPL_H_
 
-#include <string>
-#include <vector>
-
 #include "base/memory/ref_counted.h"
-#include "ppapi/c/ppb_url_request_info.h"
-#include "webkit/plugins/ppapi/resource.h"
+#include "ppapi/thunk/ppb_url_request_info_api.h"
+#include "ppapi/shared_impl/ppb_url_request_info_shared.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 namespace WebKit {
 class WebFrame;
+class WebHTTPBody;
 class WebURLRequest;
 }
 
 namespace webkit {
 namespace ppapi {
 
-class PPB_FileRef_Impl;
-
-class PPB_URLRequestInfo_Impl : public Resource {
+class WEBKIT_PLUGINS_EXPORT PPB_URLRequestInfo_Impl :
+    public ::ppapi::PPB_URLRequestInfo_Shared {
  public:
-  explicit PPB_URLRequestInfo_Impl(PluginInstance* instance);
+  explicit PPB_URLRequestInfo_Impl(
+      PP_Instance instance,
+      const ::ppapi::PPB_URLRequestInfo_Data& data);
   virtual ~PPB_URLRequestInfo_Impl();
 
-  // Returns a pointer to the interface implementing PPB_URLRequestInfo that is
-  // exposed to the plugin.
-  static const PPB_URLRequestInfo* GetInterface();
-
-  // Resource overrides.
-  virtual PPB_URLRequestInfo_Impl* AsPPB_URLRequestInfo_Impl();
-
-  // PPB_URLRequestInfo implementation.
-  bool SetUndefinedProperty(PP_URLRequestProperty property);
-  bool SetBooleanProperty(PP_URLRequestProperty property, bool value);
-  bool SetIntegerProperty(PP_URLRequestProperty property, int32_t value);
-  bool SetStringProperty(PP_URLRequestProperty property,
-                         const std::string& value);
-  bool AppendDataToBody(const std::string& data);
-  bool AppendFileToBody(PPB_FileRef_Impl* file_ref,
-                        int64_t start_offset,
-                        int64_t number_of_bytes,
-                        PP_Time expected_last_modified_time);
-
-  WebKit::WebURLRequest ToWebURLRequest(WebKit::WebFrame* frame) const;
+  // Creates the WebKit URL request from the current request info. Returns
+  // true on success, false if the request is invalid (in which case *dest may
+  // be partially initialized).
+  bool ToWebURLRequest(WebKit::WebFrame* frame,
+                       WebKit::WebURLRequest* dest);
 
   // Whether universal access is required to use this request.
   bool RequiresUniversalAccess() const;
 
-  bool follow_redirects() { return follow_redirects_; }
-
-  bool record_download_progress() const { return record_download_progress_; }
-  bool record_upload_progress() const { return record_upload_progress_; }
-
-  bool allow_cross_origin_requests() const {
-    return allow_cross_origin_requests_;
-  }
-  bool allow_credentials() const { return allow_credentials_; }
-
-  int32_t prefetch_buffer_upper_threshold() const {
-      return prefetch_buffer_upper_threshold_;
-  }
-  int32_t prefetch_buffer_lower_threshold() const {
-      return prefetch_buffer_lower_threshold_;
-  }
-
  private:
-  struct BodyItem;
-  typedef std::vector<BodyItem> Body;
+  friend class URLRequestInfoTest;
 
-  std::string url_;
-  std::string method_;
-  std::string headers_;
-  Body body_;
+  // Checks that the request data is valid. Returns false on failure. Note that
+  // method and header validation is done by the URL loader when the request is
+  // opened, and any access errors are returned asynchronously.
+  bool ValidateData();
 
-  bool stream_to_file_;
-  bool follow_redirects_;
-  bool record_download_progress_;
-  bool record_upload_progress_;
-
-  // |has_custom_referrer_url_| is set to false if a custom referrer hasn't been
-  // set (or has been set to an Undefined Var) and the default referrer should
-  // be used. (Setting the custom referrer to an empty string indicates that no
-  // referrer header should be generated.)
-  bool has_custom_referrer_url_;
-  std::string custom_referrer_url_;
-
-  bool allow_cross_origin_requests_;
-  bool allow_credentials_;
-
-  // Similar to the custom referrer (above), but for custom content transfer
-  // encoding.
-  bool has_custom_content_transfer_encoding_;
-  std::string custom_content_transfer_encoding_;
-
-  // Specify permitted range for the size of the buffer unconsumed by plugin.
-  int32_t prefetch_buffer_upper_threshold_;
-  int32_t prefetch_buffer_lower_threshold_;
+  // Appends the file ref given the Resource pointer associated with it to the
+  // given HTTP body, returning true on success.
+  bool AppendFileRefToBody(::ppapi::Resource* file_ref_resource,
+                           int64_t start_offset,
+                           int64_t number_of_bytes,
+                           PP_Time expected_last_modified_time,
+                           WebKit::WebHTTPBody *http_body);
 
   DISALLOW_COPY_AND_ASSIGN(PPB_URLRequestInfo_Impl);
 };

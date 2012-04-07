@@ -1,14 +1,17 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/service/service_process_control.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "chrome/common/service_process_util_posix.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "third_party/GTM/Foundation/GTMServiceManagement.h"
+
+using content::BrowserThread;
 
 void ServiceProcessControl::Launcher::DoRun() {
   base::mac::ScopedCFTypeRef<CFDictionaryRef> launchd_plist(
@@ -21,5 +24,5 @@ void ServiceProcessControl::Launcher::DoRun() {
     launched_ = true;
   }
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          NewRunnableMethod(this, &Launcher::Notify));
+                          base::Bind(&Launcher::Notify, this));
 }

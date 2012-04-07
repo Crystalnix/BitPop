@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,11 +8,10 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
+#import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 
 // Common base class for chrome browser windows.  Contains methods relating to
-// theming and hole punching that are shared between framed and fullscreen
-// windows.
+// hole punching that are shared between framed and fullscreen windows.
 @interface ChromeBrowserWindow : ChromeEventProcessingWindow {
  @private
   int underlaySurfaceCount_;

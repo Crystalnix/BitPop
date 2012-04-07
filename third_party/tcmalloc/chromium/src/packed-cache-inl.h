@@ -112,10 +112,11 @@
 #define TCMALLOC_PACKED_CACHE_INL_H_
 
 #include "config.h"
+#include <stddef.h>                     // for size_t
 #ifdef HAVE_STDINT_H
-#include <stdint.h>
+#include <stdint.h>                     // for uintptr_t
 #endif
-#include "base/basictypes.h"  // for COMPILE_ASSERT
+#include "base/basictypes.h"
 #include "internal_logging.h"
 
 // A safe way of doing "(1 << n) - 1" -- without worrying about overflow
@@ -134,7 +135,14 @@ class PackedCache {
  public:
   typedef uintptr_t K;
   typedef size_t V;
+#ifdef TCMALLOC_SMALL_BUT_SLOW
+  // Decrease the size map cache if running in the small memory mode.
   static const int kHashbits = 12;
+#else
+  // We don't want the hash map to occupy 512K memory at Chromium, so
+  // kHashbits is decreased from 16 to 12.
+  static const int kHashbits = 12;
+#endif
   static const int kValuebits = 7;
   static const bool kUseWholeKeys = kKeybits + kValuebits <= 8 * sizeof(T);
 

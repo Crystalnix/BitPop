@@ -23,6 +23,7 @@ void ChildTraceMessageFilter::OnFilterAdded(IPC::Channel* channel) {
       base::Bind(&ChildTraceMessageFilter::OnTraceDataCollected, this));
   base::debug::TraceLog::GetInstance()->SetBufferFullCallback(
       base::Bind(&ChildTraceMessageFilter::OnTraceBufferFull, this));
+  channel_->Send(new ChildProcessHostMsg_ChildSupportsTracing());
 }
 
 void ChildTraceMessageFilter::OnFilterRemoved() {
@@ -44,19 +45,24 @@ bool ChildTraceMessageFilter::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void ChildTraceMessageFilter::OnBeginTracing() {
-  base::debug::TraceLog::GetInstance()->SetEnabled(true);
+void ChildTraceMessageFilter::OnBeginTracing(
+    const std::vector<std::string>& included_categories,
+    const std::vector<std::string>& excluded_categories) {
+  base::debug::TraceLog::GetInstance()->SetEnabled(included_categories,
+                                                   excluded_categories);
 }
 
 void ChildTraceMessageFilter::OnEndTracing() {
-  // SetEnabled(false) may generate a callback to OnTraceDataCollected.
+  // SetDisabled may generate a callback to OnTraceDataCollected.
   // It's important that the last OnTraceDataCollected gets called before
   // EndTracingAck below.
   // We are already on the IO thread, so it is guaranteed that
   // OnTraceDataCollected is not deferred.
-  base::debug::TraceLog::GetInstance()->SetEnabled(false);
+  base::debug::TraceLog::GetInstance()->SetDisabled();
 
-  channel_->Send(new ChildProcessHostMsg_EndTracingAck);
+  std::vector<std::string> categories;
+  base::debug::TraceLog::GetInstance()->GetKnownCategories(&categories);
+  channel_->Send(new ChildProcessHostMsg_EndTracingAck(categories));
 }
 
 void ChildTraceMessageFilter::OnGetTraceBufferPercentFull() {
@@ -67,22 +73,22 @@ void ChildTraceMessageFilter::OnGetTraceBufferPercentFull() {
 
 void ChildTraceMessageFilter::OnTraceDataCollected(
     const scoped_refptr<base::debug::TraceLog::RefCountedString>&
-        json_events_str_ptr) {
+        events_str_ptr) {
   if (MessageLoop::current() != ChildProcess::current()->io_message_loop()) {
     ChildProcess::current()->io_message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &ChildTraceMessageFilter::OnTraceDataCollected,
-                          json_events_str_ptr));
+        base::Bind(&ChildTraceMessageFilter::OnTraceDataCollected, this,
+                   events_str_ptr));
     return;
   }
 
   channel_->Send(new ChildProcessHostMsg_TraceDataCollected(
-    json_events_str_ptr->data));
+    events_str_ptr->data));
 }
 
 void ChildTraceMessageFilter::OnTraceBufferFull() {
   if (MessageLoop::current() != ChildProcess::current()->io_message_loop()) {
     ChildProcess::current()->io_message_loop()->PostTask(FROM_HERE,
-        NewRunnableMethod(this, &ChildTraceMessageFilter::OnTraceBufferFull));
+        base::Bind(&ChildTraceMessageFilter::OnTraceBufferFull, this));
     return;
   }
 

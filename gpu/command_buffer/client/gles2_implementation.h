@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,16 +18,69 @@
 #include "../client/gles2_cmd_helper.h"
 #include "../client/ring_buffer.h"
 
-// TODO(gman): replace with logging code expansion.
-#define GPU_CLIENT_LOG(args)
+#if !defined(NDEBUG) && !defined(__native_client__) && !defined(GLES2_CONFORMANCE_TESTS)  // NOLINT
+  #if defined(GLES2_INLINE_OPTIMIZATION)
+    // TODO(gman): Replace with macros that work with inline optmization.
+    #define GPU_CLIENT_SINGLE_THREAD_CHECK()
+    #define GPU_CLIENT_LOG(args)
+    #define GPU_CLIENT_LOG_CODE_BLOCK(code)
+    #define GPU_CLIENT_DCHECK_CODE_BLOCK(code)
+  #else
+    #include "base/logging.h"
+    #define GPU_CLIENT_SINGLE_THREAD_CHECK() SingleThreadChecker checker(this);
+    #define GPU_CLIENT_LOG(args)  DLOG_IF(INFO, debug_) << args;
+    #define GPU_CLIENT_LOG_CODE_BLOCK(code) code
+    #define GPU_CLIENT_DCHECK_CODE_BLOCK(code) code
+    #define GPU_CLIENT_DEBUG
+  #endif
+#else
+  #define GPU_CLIENT_SINGLE_THREAD_CHECK()
+  #define GPU_CLIENT_LOG(args)
+  #define GPU_CLIENT_LOG_CODE_BLOCK(code)
+  #define GPU_CLIENT_DCHECK_CODE_BLOCK(code)
+#endif
+
+// Check that destination pointers point to initialized memory.
+// When the context is lost, calling GL function has no effect so if destination
+// pointers point to initialized memory it can often lead to crash bugs. eg.
+//
+// GLsizei len;
+// glGetShaderSource(shader, max_size, &len, buffer);
+// std::string src(buffer, buffer + len);  // len can be uninitialized here!!!
+//
+// Because this check is not official GL this check happens only on Chrome code,
+// not Pepper.
+//
+// If it was up to us we'd just always write to the destination but the OpenGL
+// spec defines the behavior of OpenGL functions, not us. :-(
+#if defined(__native_client__) || defined(GLES2_CONFORMANCE_TESTS)
+  #define GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(v)
+  #define GPU_CLIENT_DCHECK(v)
+#elif defined(GPU_DCHECK)
+  #define GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(v) GPU_DCHECK(v)
+  #define GPU_CLIENT_DCHECK(v) GPU_DCHECK(v)
+#elif defined(DCHECK)
+  #define GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(v) DCHECK(v)
+  #define GPU_CLIENT_DCHECK(v) DCHECK(v)
+#else
+  #define GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(v) ASSERT(v)
+  #define GPU_CLIENT_DCHECK(v) ASSERT(v)
+#endif
+
+#define GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION(type, ptr) \
+    GPU_CLIENT_VALIDATE_DESTINATION_INITALIZATION_ASSERT(ptr && \
+        (ptr[0] == static_cast<type>(0) || ptr[0] == static_cast<type>(-1)));
 
 namespace gpu {
 
 class MappedMemoryManager;
+class ScopedTransferBufferPtr;
+class TransferBufferInterface;
 
 namespace gles2 {
 
 class ClientSideBufferHelper;
+class ProgramInfoManager;
 
 // Base class for IdHandlers
 class IdHandlerInterface {
@@ -39,7 +92,7 @@ class IdHandlerInterface {
   virtual void MakeIds(GLuint id_offset, GLsizei n, GLuint* ids) = 0;
 
   // Frees some ids.
-  virtual void FreeIds(GLsizei n, const GLuint* ids) = 0;
+  virtual bool FreeIds(GLsizei n, const GLuint* ids) = 0;
 
   // Marks an id as used for glBind functions. id = 0 does nothing.
   virtual bool MarkAsUsedForBind(GLuint id) = 0;
@@ -53,6 +106,37 @@ class IdHandlerInterface {
 // shared memory and synchronization issues.
 class GLES2Implementation {
  public:
+  // Stores client side cached GL state.
+  struct GLState {
+    GLState()
+        : max_combined_texture_image_units(0),
+          max_cube_map_texture_size(0),
+          max_fragment_uniform_vectors(0),
+          max_renderbuffer_size(0),
+          max_texture_image_units(0),
+          max_texture_size(0),
+          max_varying_vectors(0),
+          max_vertex_attribs(0),
+          max_vertex_texture_image_units(0),
+          max_vertex_uniform_vectors(0),
+          num_compressed_texture_formats(0),
+          num_shader_binary_formats(0) {
+    }
+
+    GLint max_combined_texture_image_units;
+    GLint max_cube_map_texture_size;
+    GLint max_fragment_uniform_vectors;
+    GLint max_renderbuffer_size;
+    GLint max_texture_image_units;
+    GLint max_texture_size;
+    GLint max_varying_vectors;
+    GLint max_vertex_attribs;
+    GLint max_vertex_texture_image_units;
+    GLint max_vertex_uniform_vectors;
+    GLint num_compressed_texture_formats;
+    GLint num_shader_binary_formats;
+  };
+
   // The maxiumum result size from simple GL get commands.
   static const size_t kMaxSizeOfSimpleResult = 16 * sizeof(uint32);  // NOLINT.
 
@@ -74,12 +158,16 @@ class GLES2Implementation {
 
   GLES2Implementation(
       GLES2CmdHelper* helper,
-      size_t transfer_buffer_size,
-      void* transfer_buffer,
-      int32 transfer_buffer_id,
-      bool share_resources);
+      TransferBufferInterface* transfer_buffer,
+      bool share_resources,
+      bool bind_generates_resource);
 
   ~GLES2Implementation();
+
+  bool Initialize(
+      unsigned int starting_transfer_buffer_size,
+      unsigned int min_transfer_buffer_size,
+      unsigned int max_transfer_buffer_size);
 
   // The GLES2CmdHelper being used by this GLES2Implementation. You can use
   // this to issue cmds at a lower level for certain kinds of optimization.
@@ -92,48 +180,44 @@ class GLES2Implementation {
   // this file instead of having to edit some template or the code generator.
   #include "../client/gles2_implementation_autogen.h"
 
-  void BindBuffer(GLenum target, GLuint buffer);
-  void DeleteBuffers(GLsizei n, const GLuint* buffers);
   void DisableVertexAttribArray(GLuint index);
-  void DrawArrays(GLenum mode, GLint first, GLsizei count);
   void EnableVertexAttribArray(GLuint index);
   void GetVertexAttribfv(GLuint index, GLenum pname, GLfloat* params);
   void GetVertexAttribiv(GLuint index, GLenum pname, GLint* params);
 
+  void GetProgramInfoCHROMIUMHelper(GLuint program, std::vector<int8>* result);
+  GLint GetAttribLocationHelper(GLuint program, const char* name);
+  GLint GetUniformLocationHelper(GLuint program, const char* name);
+  bool GetActiveAttribHelper(
+      GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
+      GLint* size, GLenum* type, char* name);
+  bool GetActiveUniformHelper(
+      GLuint program, GLuint index, GLsizei bufsize, GLsizei* length,
+      GLint* size, GLenum* type, char* name);
+
   GLuint MakeTextureId() {
     GLuint id;
-    texture_id_handler_->MakeIds(0, 1, &id);
+    id_handlers_[id_namespaces::kTextures]->MakeIds(0, 1, &id);
     return id;
   }
 
   void FreeTextureId(GLuint id) {
-    texture_id_handler_->FreeIds(1, &id);
+    id_handlers_[id_namespaces::kTextures]->FreeIds(1, &id);
   }
 
+  void SetSharedMemoryChunkSizeMultiple(unsigned int multiple);
+
+  void FreeUnusedSharedMemory();
+  void FreeEverything();
+
  private:
-  // Wraps RingBufferWrapper to provide aligned allocations.
-  class AlignedRingBuffer : public RingBufferWrapper {
-   public:
-    AlignedRingBuffer(RingBuffer::Offset base_offset,
-                      unsigned int size,
-                      CommandBufferHelper *helper,
-                      void *base)
-        : RingBufferWrapper(base_offset, size, helper, base) {
-    }
+  friend class ClientSideBufferHelper;
 
-    static unsigned int RoundToAlignment(unsigned int size) {
-      return (size + kAlignment - 1) & ~(kAlignment - 1);
-    }
-
-    // Overrriden from RingBufferWrapper
-    void *Alloc(unsigned int size) {
-      return RingBufferWrapper::Alloc(RoundToAlignment(size));
-    }
-
-    // Overrriden from RingBufferWrapper
-    template <typename T> T *AllocTyped(unsigned int count) {
-      return static_cast<T *>(Alloc(count * sizeof(T)));
-    }
+  // Used to track whether an extension is available
+  enum ExtensionStatus {
+      kAvailableExtensionStatus,
+      kUnavailableExtensionStatus,
+      kUnknownExtensionStatus
   };
 
   // Base class for mapped resources.
@@ -217,21 +301,42 @@ class GLES2Implementation {
     GLsizeiptr size;
   };
 
-  // Gets the shared memory id for the result buffer.
-  uint32 result_shm_id() const {
-    return transfer_buffer_id_;
-  }
+  struct TextureUnit {
+    TextureUnit()
+        : bound_texture_2d(0),
+          bound_texture_cube_map(0) {
+    }
 
-  // Gets the shared memory offset for the result buffer.
-  uint32 result_shm_offset() const {
-    return result_shm_offset_;
-  }
+    // texture currently bound to this unit's GL_TEXTURE_2D with glBindTexture
+    GLuint bound_texture_2d;
+
+    // texture currently bound to this unit's GL_TEXTURE_CUBE_MAP with
+    // glBindTexture
+    GLuint bound_texture_cube_map;
+  };
+
+  // Checks for single threaded access.
+  class SingleThreadChecker {
+   public:
+    SingleThreadChecker(GLES2Implementation* gles2_implementation);
+    ~SingleThreadChecker();
+
+   private:
+    GLES2Implementation* gles2_implementation_;
+  };
 
   // Gets the value of the result.
   template <typename T>
-  T GetResultAs() const {
-    return static_cast<T>(result_buffer_);
+  T GetResultAs() {
+    return static_cast<T>(GetResultBuffer());
   }
+
+  void* GetResultBuffer();
+  int32 GetResultShmId();
+  uint32 GetResultShmOffset();
+
+  // Lazily determines if GL_ANGLE_pack_reverse_row_order is available
+  bool IsAnglePackReverseRowOrderAvailable();
 
   // Gets the GLError through our wrapper.
   GLenum GetGLError();
@@ -252,7 +357,7 @@ class GLES2Implementation {
   // a transfer buffer to function which is currently managed by this class.
 
   // Gets the contents of a bucket.
-  void GetBucketContents(uint32 bucket_id, std::vector<int8>* data);
+  bool GetBucketContents(uint32 bucket_id, std::vector<int8>* data);
 
   // Sets the contents of a bucket.
   void SetBucketContents(uint32 bucket_id, const void* data, size_t size);
@@ -273,39 +378,90 @@ class GLES2Implementation {
   bool IsRenderbufferReservedId(GLuint id) { return false; }
   bool IsTextureReservedId(GLuint id) { return false; }
 
+  void BindBufferHelper(GLenum target, GLuint texture);
+  void BindFramebufferHelper(GLenum target, GLuint texture);
+  void BindRenderbufferHelper(GLenum target, GLuint texture);
+  void BindTextureHelper(GLenum target, GLuint texture);
+
+  void DeleteBuffersHelper(GLsizei n, const GLuint* buffers);
+  void DeleteFramebuffersHelper(GLsizei n, const GLuint* framebuffers);
+  void DeleteRenderbuffersHelper(GLsizei n, const GLuint* renderbuffers);
+  void DeleteTexturesHelper(GLsizei n, const GLuint* textures);
+  bool DeleteProgramHelper(GLuint program);
+  bool DeleteShaderHelper(GLuint shader);
+
+  void BufferDataHelper(
+      GLenum target, GLsizeiptr size, const void* data, GLenum usage);
+  void BufferSubDataHelper(
+      GLenum target, GLintptr offset, GLsizeiptr size, const void* data);
+  void BufferSubDataHelperImpl(
+      GLenum target, GLintptr offset, GLsizeiptr size, const void* data,
+      ScopedTransferBufferPtr* buffer);
+
   // Helper for GetVertexAttrib
   bool GetVertexAttribHelper(GLuint index, GLenum pname, uint32* param);
 
-  // Asks the service for the max index in an element array buffer.
-  GLsizei GetMaxIndexInElementArrayBuffer(
+  GLuint GetMaxValueInBufferCHROMIUMHelper(
       GLuint buffer_id, GLsizei count, GLenum type, GLuint offset);
 
+  bool CopyRectToBufferFlipped(
+      const void* pixels, GLsizei width, GLsizei height, GLenum format,
+      GLenum type, void* buffer);
   void TexSubImage2DImpl(
       GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
       GLsizei height, GLenum format, GLenum type, const void* pixels,
-      GLboolean internal);
+      GLboolean internal, ScopedTransferBufferPtr* buffer);
+
+  // Helpers for query functions.
+  bool GetHelper(GLenum pname, GLint* params);
+  bool GetBooleanvHelper(GLenum pname, GLboolean* params);
+  bool GetBufferParameterivHelper(GLenum target, GLenum pname, GLint* params);
+  bool GetFloatvHelper(GLenum pname, GLfloat* params);
+  bool GetFramebufferAttachmentParameterivHelper(
+      GLenum target, GLenum attachment, GLenum pname, GLint* params);
+  bool GetIntegervHelper(GLenum pname, GLint* params);
+  bool GetProgramivHelper(GLuint program, GLenum pname, GLint* params);
+  bool GetRenderbufferParameterivHelper(
+      GLenum target, GLenum pname, GLint* params);
+  bool GetShaderivHelper(GLuint shader, GLenum pname, GLint* params);
+  bool GetTexParameterfvHelper(GLenum target, GLenum pname, GLfloat* params);
+  bool GetTexParameterivHelper(GLenum target, GLenum pname, GLint* params);
+  const GLubyte* GetStringHelper(GLenum name);
+
+  bool IsExtensionAvailable(const char* ext);
 
   GLES2Util util_;
   GLES2CmdHelper* helper_;
-  scoped_ptr<IdHandlerInterface> buffer_id_handler_;
-  scoped_ptr<IdHandlerInterface> framebuffer_id_handler_;
-  scoped_ptr<IdHandlerInterface> renderbuffer_id_handler_;
-  scoped_ptr<IdHandlerInterface> program_and_shader_id_handler_;
-  scoped_ptr<IdHandlerInterface> texture_id_handler_;
-  AlignedRingBuffer transfer_buffer_;
-  int transfer_buffer_id_;
-  void* result_buffer_;
-  uint32 result_shm_offset_;
+  TransferBufferInterface* transfer_buffer_;
+  scoped_ptr<IdHandlerInterface> id_handlers_[id_namespaces::kNumIdNamespaces];
   std::string last_error_;
 
   std::queue<int32> swap_buffers_tokens_;
   std::queue<int32> rate_limit_tokens_;
+
+  ExtensionStatus angle_pack_reverse_row_order_status;
+
+  GLState gl_state_;
 
   // pack alignment as last set by glPixelStorei
   GLint pack_alignment_;
 
   // unpack alignment as last set by glPixelStorei
   GLint unpack_alignment_;
+
+  // unpack yflip as last set by glPixelstorei
+  bool unpack_flip_y_;
+
+  // pack reverse row order as last set by glPixelstorei
+  bool pack_reverse_row_order_;
+
+  scoped_array<TextureUnit> texture_units_;
+
+  // 0 to gl_state_.max_combined_texture_image_units.
+  GLuint active_texture_unit_;
+
+  GLuint bound_framebuffer_;
+  GLuint bound_renderbuffer_;
 
   // The currently bound array buffer.
   GLuint bound_array_buffer_id_;
@@ -326,6 +482,17 @@ class GLES2Implementation {
   // Current GL error bits.
   uint32 error_bits_;
 
+  // Whether or not to print debugging info.
+  bool debug_;
+
+  // Whether or not this context is sharing resources.
+  bool sharing_resources_;
+
+  bool bind_generates_resource_;
+
+  // Used to check for single threaded access.
+  int use_count_;
+
   // Map of GLenum to Strings for glGetString.  We need to cache these because
   // the pointer passed back to the client has to remain valid for eternity.
   typedef std::map<uint32, std::set<std::string> > GLStringMap;
@@ -343,8 +510,43 @@ class GLES2Implementation {
 
   scoped_ptr<MappedMemoryManager> mapped_memory_;
 
+  scoped_ptr<ProgramInfoManager> program_info_manager_;
+
   DISALLOW_COPY_AND_ASSIGN(GLES2Implementation);
 };
+
+inline bool GLES2Implementation::GetBufferParameterivHelper(
+    GLenum /* target */, GLenum /* pname */, GLint* /* params */) {
+  return false;
+}
+
+inline bool GLES2Implementation::GetFramebufferAttachmentParameterivHelper(
+    GLenum /* target */,
+    GLenum /* attachment */,
+    GLenum /* pname */,
+    GLint* /* params */) {
+  return false;
+}
+
+inline bool GLES2Implementation::GetRenderbufferParameterivHelper(
+    GLenum /* target */, GLenum /* pname */, GLint* /* params */) {
+  return false;
+}
+
+inline bool GLES2Implementation::GetShaderivHelper(
+    GLuint /* shader */, GLenum /* pname */, GLint* /* params */) {
+  return false;
+}
+
+inline bool GLES2Implementation::GetTexParameterfvHelper(
+    GLenum /* target */, GLenum /* pname */, GLfloat* /* params */) {
+  return false;
+}
+
+inline bool GLES2Implementation::GetTexParameterivHelper(
+    GLenum /* target */, GLenum /* pname */, GLint* /* params */) {
+  return false;
+}
 
 }  // namespace gles2
 }  // namespace gpu

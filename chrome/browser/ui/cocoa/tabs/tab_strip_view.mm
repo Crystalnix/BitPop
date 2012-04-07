@@ -14,8 +14,6 @@
 
 @implementation TabStripView
 
-@synthesize newTabButton = newTabButton_;
-@synthesize profileMenuButton = profileMenuButton_;
 @synthesize dropArrowShown = dropArrowShown_;
 @synthesize dropArrowPosition = dropArrowPosition_;
 
@@ -202,13 +200,41 @@
 
 - (id)accessibilityAttributeValue:(NSString*)attribute {
   if ([attribute isEqual:NSAccessibilityRoleAttribute])
-    return NSAccessibilityGroupRole;
+    return NSAccessibilityTabGroupRole;
+  if ([attribute isEqual:NSAccessibilityTabsAttribute]) {
+    NSMutableArray* tabs = [[[NSMutableArray alloc] init] autorelease];
+    NSArray* children =
+        [self accessibilityAttributeValue:NSAccessibilityChildrenAttribute];
+    for (id child in children) {
+      if ([[child accessibilityAttributeValue:NSAccessibilityRoleAttribute]
+          isEqual:NSAccessibilityRadioButtonRole]) {
+        [tabs addObject:child];
+      }
+    }
+    return tabs;
+  }
 
   return [super accessibilityAttributeValue:attribute];
 }
 
+- (NSArray*)accessibilityAttributeNames {
+  NSMutableArray* attributes =
+      [[super accessibilityAttributeNames] mutableCopy];
+  [attributes addObject:NSAccessibilityTabsAttribute];
+
+  return [attributes autorelease];
+}
+
 - (ViewID)viewID {
   return VIEW_ID_TAB_STRIP;
+}
+
+- (NewTabButton*)getNewTabButton {
+  return newTabButton_;
+}
+
+- (void)setNewTabButton:(NewTabButton*)button {
+  newTabButton_ = button;
 }
 
 @end

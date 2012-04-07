@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/plugins/npapi/plugin_host.h"
 
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -13,24 +14,22 @@
 #include "base/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "net/base/net_util.h"
-#include "third_party/npapi/bindings/npapi_extensions.h"
 #include "third_party/npapi/bindings/npruntime.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/gl/gl_implementation.h"
 #include "ui/gfx/gl/gl_surface.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/plugins/npapi/default_plugin_shared.h"
-#include "webkit/plugins/npapi/npapi_extension_thunk.h"
 #include "webkit/plugins/npapi/plugin_instance.h"
 #include "webkit/plugins/npapi/plugin_lib.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/plugin_stream_url.h"
 #include "webkit/plugins/npapi/webplugin_delegate.h"
-#include "webkit/plugins/npapi/webplugininfo.h"
+#include "webkit/plugins/webplugininfo.h"
 
 #if defined(OS_MACOSX)
-#include "base/sys_info.h"
+#include "base/mac/mac_util.h"
 #endif
 
 using WebKit::WebBindings;
@@ -58,10 +57,7 @@ static PluginInstance* FindInstance(NPP id) {
 // Returns true if the OS supports shared accelerated surfaces via IOSurface.
 // This is true on Snow Leopard and higher.
 static bool SupportsSharingAcceleratedSurfaces() {
-  int32 major, minor, bugfix;
-  base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
-  bool isSnowLeopardOrLater = major > 10 || (major == 10 && minor > 5);
-  if (!isSnowLeopardOrLater)
+  if (base::mac::IsOSLeopardOrEarlier())
     return false;
   // We also need to be running with desktop GL and not the software
   // OSMesa renderer in order to share accelerated surfaces between
@@ -76,9 +72,14 @@ static bool SupportsSharingAcceleratedSurfaces() {
   }
   return (implementation == gfx::kGLImplementationDesktopGL);
 }
-#endif
 
-scoped_refptr<PluginHost> PluginHost::singleton_;
+static bool UsingCompositedCoreAnimationPlugins() {
+  // Temporarily disable composited CA plugins to reduce the
+  // chance of running into issue 117500.
+  return false && !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableCompositedCoreAnimationPlugins);
+}
+#endif
 
 PluginHost::PluginHost() {
   InitializeHostFuncs();
@@ -88,12 +89,13 @@ PluginHost::~PluginHost() {
 }
 
 PluginHost *PluginHost::Singleton() {
-  if (singleton_.get() == NULL) {
-    singleton_ = new PluginHost();
+  CR_DEFINE_STATIC_LOCAL(scoped_refptr<PluginHost>, singleton, ());
+  if (singleton.get() == NULL) {
+    singleton = new PluginHost();
   }
 
-  DCHECK(singleton_.get() != NULL);
-  return singleton_;
+  DCHECK(singleton.get() != NULL);
+  return singleton;
 }
 
 void PluginHost::InitializeHostFuncs() {
@@ -604,7 +606,7 @@ const char* NPN_UserAgent(NPP id) {
   if (id)
     plugin = FindInstance(id);
   if (plugin.get()) {
-    webkit::npapi::WebPluginInfo plugin_info =
+    webkit::WebPluginInfo plugin_info =
         plugin->plugin_lib()->plugin_info();
     if (plugin_info.name == ASCIIToUTF16("Silverlight Plug-In") &&
         StartsWith(plugin_info.version, ASCIIToUTF16("4."), false)) {
@@ -786,28 +788,6 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       rv = NPERR_NO_ERROR;
       break;
     }
-    case webkit::npapi::default_plugin::kMissingPluginStatusStart +
-         webkit::npapi::default_plugin::MISSING_PLUGIN_AVAILABLE:
-    // fall through
-    case webkit::npapi::default_plugin::kMissingPluginStatusStart +
-         webkit::npapi::default_plugin::MISSING_PLUGIN_USER_STARTED_DOWNLOAD: {
-      // This is a hack for the default plugin to send notification to
-      // renderer.  Even though we check if the plugin is the default plugin,
-      // we still need to worry about future standard change that may conflict
-      // with the variable definition, in order to avoid duplicate case clauses
-      // in this big switch statement.
-      scoped_refptr<PluginInstance> plugin(FindInstance(id));
-      if (!plugin.get()) {
-        NOTREACHED();
-        return NPERR_INVALID_INSTANCE_ERROR;
-      }
-      if (plugin->plugin_lib()->plugin_info().path.value() ==
-            webkit::npapi::kDefaultPluginLibraryName) {
-        plugin->webplugin()->OnMissingPluginStatus(variable -
-            webkit::npapi::default_plugin::kMissingPluginStatusStart);
-      }
-      break;
-    }
   #if defined(OS_MACOSX)
     case NPNVpluginDrawingModel: {
       // return the drawing model that was negotiated when we initialized.
@@ -854,8 +834,12 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       break;
     }
     case NPNVsupportsInvalidatingCoreAnimationBool: {
+      // The composited code path for this model only works on 10.6 and higher.
+      // The old direct-to-screen code path supports 10.5.
       NPBool* supports_model = reinterpret_cast<NPBool*>(value);
-      *supports_model = true;
+      bool composited = webkit::npapi::UsingCompositedCoreAnimationPlugins();
+      *supports_model = composited ?
+          webkit::npapi::SupportsSharingAcceleratedSurfaces() : true;
       rv = NPERR_NO_ERROR;
       break;
     }
@@ -867,24 +851,22 @@ NPError NPN_GetValue(NPP id, NPNVariable variable, void* value) {
       rv = NPERR_NO_ERROR;
       break;
     }
+    case NPNVsupportsCompositingCoreAnimationPluginsBool: {
+      NPBool* supports_compositing = reinterpret_cast<NPBool*>(value);
+      *supports_compositing =
+          webkit::npapi::UsingCompositedCoreAnimationPlugins();
+      rv = NPERR_NO_ERROR;
+      break;
+    }
     case NPNVsupportsUpdatedCocoaTextInputBool: {
       // We support the clarifications to the Cocoa IME event spec, but since
       // IME currently only works on 10.6, only answer true there.
       NPBool* supports_update = reinterpret_cast<NPBool*>(value);
-      int32 major, minor, bugfix;
-      base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
-      *supports_update = major > 10 || (major == 10 && minor > 5);
+      *supports_update = base::mac::IsOSSnowLeopardOrLater();
       rv = NPERR_NO_ERROR;
       break;
     }
   #endif  // OS_MACOSX
-    case NPNVPepperExtensions:
-      // Available for any plugin that attempts to get it.
-      // If the plugin is not started in a Pepper implementation, it
-      // will likely fail when it tries to use any of the functions
-      // attached to the extension vector.
-      rv = webkit::npapi::GetPepperExtensionsFunctions(value);
-      break;
     default:
       DVLOG(1) << "NPN_GetValue(" << variable << ") is not implemented yet.";
       break;
@@ -938,7 +920,9 @@ NPError NPN_SetValue(NPP id, NPPVariable variable, void* value) {
     case NPPVpluginDrawingModel: {
       int model = reinterpret_cast<int>(value);
       if (model == NPDrawingModelCoreGraphics ||
-          model == NPDrawingModelInvalidatingCoreAnimation ||
+          (model == NPDrawingModelInvalidatingCoreAnimation &&
+           (webkit::npapi::SupportsSharingAcceleratedSurfaces() ||
+            !webkit::npapi::UsingCompositedCoreAnimationPlugins())) ||
           (model == NPDrawingModelCoreAnimation &&
            webkit::npapi::SupportsSharingAcceleratedSurfaces())) {
         plugin->set_drawing_model(static_cast<NPDrawingModel>(model));
@@ -1020,9 +1004,16 @@ NPError NPN_GetValueForURL(NPP id,
   switch (variable) {
     case NPNURLVProxy: {
       result = "DIRECT";
-      if (!webkit_glue::FindProxyForUrl(GURL((std::string(url))), &result))
+      scoped_refptr<PluginInstance> plugin(FindInstance(id));
+      if (!plugin)
         return NPERR_GENERIC_ERROR;
 
+      WebPlugin* webplugin = plugin->webplugin();
+      if (!webplugin)
+        return NPERR_GENERIC_ERROR;
+
+      if (!webplugin->FindProxyForUrl(GURL(std::string(url)), &result))
+        return NPERR_GENERIC_ERROR;
       break;
     }
     case NPNURLVCookie: {

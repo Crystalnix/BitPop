@@ -6,11 +6,11 @@
 #define CHROME_BROWSER_UI_WEBUI_GPU_INTERNALS_UI_H_
 #pragma once
 
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_controller.h"
 
-class GpuInternalsUI : public WebUI {
+class GpuInternalsUI : public content::WebUIController {
  public:
-  explicit GpuInternalsUI(TabContents* contents);
+  explicit GpuInternalsUI(content::WebUI* web_ui);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GpuInternalsUI);

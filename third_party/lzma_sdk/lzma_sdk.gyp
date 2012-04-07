@@ -48,7 +48,6 @@
       # TODO:  original configuration had /wd4800, add if
       # necessary and delete if not.
       #        '/wd4800',
-      'msvs_guid': 'B84553C8-5676-427B-B3E4-23DDDC4DBC7B',
       'sources': ['<@(lzma_sdk_sources)'],
       'direct_dependent_settings': {
         'defines': [
@@ -92,9 +91,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

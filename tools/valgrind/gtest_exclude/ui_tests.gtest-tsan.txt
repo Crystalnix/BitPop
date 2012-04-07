@@ -18,12 +18,17 @@ ErrorPageTest.DNSError_Basic
 ErrorPageTest.DNSError_GoBack1
 ErrorPageTest.DNSError_GoBack2
 
-# These tests fail due to timeouts under TSan and hang the UI test runner,
-# http://crbug.com/61579
-LocaleTestsDa.TestStart
-LocaleTestsHe.TestStart
-LocaleTestsZhTw.TestStart
+# Fail flakily only under TSan, see http://crbug.com/103020
+DOMStorageTest.LocalStorageLayoutTests
+DOMStorageTest.RootLayoutTests
+DOMStorageTest.SessionStorageLayoutTests
 
-# These tests fail due to timeouts, see http://crbug.com/64619
-OptionsUITest.LoadOptionsByURL
-OptionsUITest.CommandOpensOptionsTab
+# Flaky under TSan and natively, see http://crbug.com/103707
+NPAPITesterBase.GetJavaScriptURL
+NPAPITesterBase.NPObjectIdentity
+NPAPITesterBase.NPObjectProxy
+NPAPITesterBase.PluginThreadAsyncCall
+NPAPITesterBase.ScheduleTimer
+NPAPIVisiblePluginTester.DeletePluginInDeallocate
+NPAPIVisiblePluginTester.GetURLRequestFailWrite
+NPAPIVisiblePluginTester.PluginReferrerTest

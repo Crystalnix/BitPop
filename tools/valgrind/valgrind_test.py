@@ -1,9 +1,6 @@
-#!/usr/bin/python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-
-# valgrind_test.py
 
 """Runs an exe through Valgrind and puts the intermediate files in a
 directory.
@@ -17,19 +14,15 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
-import time
 
 import common
-import subprocess
 
 import drmemory_analyze
 import memcheck_analyze
-import tempfile
 import tsan_analyze
-
-import logging_utils
 
 class BaseTool(object):
   """Abstract class for running Valgrind-, PIN-based and other dynamic
@@ -43,6 +36,14 @@ class BaseTool(object):
     self.temp_dir = tempfile.mkdtemp(prefix="vg_logs_")  # Generated every time
     self.log_dir = self.temp_dir  # overridable by --keep_logs
     self.option_parser_hooks = []
+    # TODO(glider): we may not need some of the env vars on some of the
+    # platforms.
+    self._env = {
+      "G_SLICE" : "always-malloc",
+      "NSS_DISABLE_UNLOAD" : "1",
+      "NSS_DISABLE_ARENA_FREE_LIST" : "1",
+      "GTEST_DEATH_TEST_USE_FORK": "1",
+    }
 
   def ToolName(self):
     raise NotImplementedError, "This method should be implemented " \
@@ -60,9 +61,12 @@ class BaseTool(object):
     # Defines Chromium-specific flags.
     self._parser = optparse.OptionParser("usage: %prog [options] <program to "
                                          "test>")
+    self._parser.disable_interspersed_args()
     self._parser.add_option("-t", "--timeout",
                       dest="timeout", metavar="TIMEOUT", default=10000,
                       help="timeout in seconds for the run (default 10000)")
+    self._parser.add_option("", "--build_dir",
+                            help="the location of the compiler output")
     self._parser.add_option("", "--source_dir",
                             help="path to top of source tree for this build"
                                  "(used to normalize source paths in baseline)")
@@ -151,18 +155,9 @@ class BaseTool(object):
     """ Execute the app to be tested after successful instrumentation.
     Full execution command-line provided by subclassers via proc."""
     logging.info("starting execution...")
-
     proc = self.ToolCommand()
-
-    add_env = {
-      "G_SLICE" : "always-malloc",
-      "NSS_DISABLE_ARENA_FREE_LIST" : "1",
-      "GTEST_DEATH_TEST_USE_FORK" : "1",
-    }
-    for k,v in add_env.iteritems():
-      logging.info("export %s=%s", k, v)
-      os.putenv(k, v)
-
+    for var in self._env:
+      common.PutEnvAndLog(var, self._env[var])
     return common.RunSubprocess(proc, self._timeout)
 
   def RunTestsAndAnalyze(self, check_sanity):
@@ -245,6 +240,10 @@ class ValgrindTool(BaseTool):
                             default=False,
                             help="set BROWSER_WRAPPER rather than "
                                  "running valgrind directly")
+    parser.add_option("", "--indirect_webkit_layout", action="store_true",
+                            default=False,
+                            help="set --wrapper rather than running valgrind "
+                                 "directly.")
     parser.add_option("", "--trace_children", action="store_true",
                             default=False,
                             help="also trace child processes")
@@ -361,8 +360,19 @@ class ValgrindTool(BaseTool):
 
     # The Valgrind command is constructed.
 
+    # Handle --indirect_webkit_layout separately.
+    if self._options.indirect_webkit_layout:
+      # Need to create the wrapper before modifying |proc|.
+      wrapper = self.CreateBrowserWrapper(proc)
+      proc = self._args
+      proc.append("--wrapper")
+      proc.append(wrapper)
+      return proc
+
     if self._options.indirect:
-      self.CreateBrowserWrapper(" ".join(proc), logfilename)
+      wrapper = self.CreateBrowserWrapper(proc)
+      os.putenv("BROWSER_WRAPPER", wrapper)
+      logging.info('export BROWSER_WRAPPER=' + wrapper)
       proc = []
     proc += self._args
     return proc
@@ -371,34 +381,61 @@ class ValgrindTool(BaseTool):
     raise NotImplementedError, "This method should be implemented " \
                                "in the tool-specific subclass"
 
-  def CreateBrowserWrapper(self, command, logfiles):
-    """The program being run invokes Python or something else
-    that can't stand to be valgrinded, and also invokes
-    the Chrome browser.  Set an environment variable to
-    tell the program to prefix the Chrome commandline
-    with a magic wrapper.  Build the magic wrapper here.
+  def CreateBrowserWrapper(self, proc):
+    """The program being run invokes Python or something else that can't stand
+    to be valgrinded, and also invokes the Chrome browser. In this case, use a
+    magic wrapper to only valgrind the Chrome browser. Build the wrapper here.
+    Returns the path to the wrapper. It's up to the caller to use the wrapper
+    appropriately.
     """
+    command = " ".join(proc)
+    # Add the PID of the browser wrapper to the logfile names so we can
+    # separate log files for different UI tests at the analyze stage.
+    command = command.replace("%p", "$$.%p")
+
     (fd, indirect_fname) = tempfile.mkstemp(dir=self.log_dir,
                                             prefix="browser_wrapper.",
                                             text=True)
     f = os.fdopen(fd, "w")
-    f.write("#!/bin/sh\n")
-    f.write('echo "Started Valgrind wrapper for this test, PID=$$"\n')
-    # Add the PID of the browser wrapper to the logfile names so we can
-    # separate log files for different UI tests at the analyze stage.
-    f.write(command.replace("%p", "$$.%p"))
-    f.write(' "$@"\n')
+    f.write('#!/bin/bash\n'
+            'echo "Started Valgrind wrapper for this test, PID=$$"\n')
+
+    # Try to get the test case name by looking at the program arguments.
+    # i.e. Chromium ui_tests and friends pass --test-name arg.
+    f.write('DIR=`dirname $0`\n'
+            'FOUND_TESTNAME=0\n'
+            'TESTNAME_FILE=$DIR/testcase.$$.name\n'
+            'for arg in $@; do\n'
+            '  # TODO(timurrrr): this doesn\'t handle "--test-name Test.Name"\n'
+            '  if [[ "$arg" =~ --test-name=(.*) ]]; then\n'
+            '    echo ${BASH_REMATCH[1]} >$TESTNAME_FILE\n'
+            '    FOUND_TESTNAME=1\n'
+            '  fi\n'
+            'done\n\n')
+
+    f.write('if [ "$FOUND_TESTNAME" = "1" ]; then\n'
+            '    %s "$@"\n'
+            'else\n' % command)
+    # Webkit layout_tests print out the test URL as the first line of stdout.
+    f.write('    %s "$@" | tee $DIR/test.$$.stdout\n'
+            '    EXITCODE=$PIPESTATUS\n'  # $? holds the tee's exit code
+            '    head -n 1 $DIR/test.$$.stdout |\n'
+            '      grep URL |\n'
+            '      sed "s/^.*third_party\/WebKit\/LayoutTests\///" '
+                       '>$TESTNAME_FILE\n'
+            '    exit $EXITCODE\n'
+            'fi\n' % command)
+
     f.close()
     os.chmod(indirect_fname, stat.S_IRUSR|stat.S_IXUSR)
-    os.putenv("BROWSER_WRAPPER", indirect_fname)
-    logging.info('export BROWSER_WRAPPER=' + indirect_fname)
+    return indirect_fname
 
   def CreateAnalyzer(self):
     raise NotImplementedError, "This method should be implemented " \
                                "in the tool-specific subclass"
 
   def GetAnalyzeResults(self, check_sanity=False):
-    # Glob all the files in the "testing.tmp" directory
+    # Glob all the files in the log directory
     filenames = glob.glob(self.log_dir + "/" + self.ToolName() + ".*")
 
     # If we have browser wrapper, the logfiles are named as
@@ -410,21 +447,31 @@ class ValgrindTool(BaseTool):
     analyzer = self.CreateAnalyzer()
     if len(ppids) == 0:
       # Fast path - no browser wrapper was set.
-      return analyzer.Report(filenames, check_sanity)
+      return analyzer.Report(filenames, None, check_sanity)
 
     ret = 0
     for ppid in ppids:
+      testcase_name = None
+      try:
+        f = open(self.log_dir + ("/testcase.%d.name" % ppid))
+        testcase_name = f.read().strip()
+        f.close()
+      except IOError:
+        pass
       print "====================================================="
       print " Below is the report for valgrind wrapper PID=%d." % ppid
-      print " You can find the corresponding test "
-      print " by searching the above log for 'PID=%d'" % ppid
+      if testcase_name:
+        print " It was used while running the `%s` test." % testcase_name
+      else:
+        print " You can find the corresponding test"
+        print " by searching the above log for 'PID=%d'" % ppid
       sys.stdout.flush()
 
       ppid_filenames = [f for f in filenames \
                         if re.search("\.%d\.[0-9]+$" % ppid, f)]
       # check_sanity won't work with browser wrappers
       assert check_sanity == False
-      ret |= analyzer.Report(ppid_filenames)
+      ret |= analyzer.Report(ppid_filenames, testcase_name)
       print "====================================================="
       sys.stdout.flush()
 
@@ -433,9 +480,11 @@ class ValgrindTool(BaseTool):
       print "The Valgrind reports are grouped by test names."
       print "Each test has its PID printed in the log when the test was run"
       print "and at the beginning of its Valgrind report."
+      print "Hint: you can search for the reports by Ctrl+F -> `=#`"
       sys.stdout.flush()
 
     return ret
+
 
 # TODO(timurrrr): Split into a separate file.
 class Memcheck(ValgrindTool):
@@ -496,6 +545,7 @@ class Memcheck(ValgrindTool):
                    "using-valgrind for the info on Memcheck/Valgrind")
     return ret
 
+
 class PinTool(BaseTool):
   """Abstract class for running PIN tools.
 
@@ -529,6 +579,7 @@ class PinTool(BaseTool):
 
     proc += self._args
     return proc
+
 
 class ThreadSanitizerBase(object):
   """ThreadSanitizer
@@ -601,6 +652,8 @@ class ThreadSanitizerBase(object):
     # This should shorten filepaths for functions intercepted in TSan.
     ret += ["--file-prefix-to-cut=scripts/tsan/tsan/"]
 
+    ret += ["--gen-suppressions=true"]
+
     if self.EvalBoolFlag(self._options.hybrid):
       ret += ["--hybrid=yes"] # "no" is the default value for TSAN
 
@@ -616,11 +669,15 @@ class ThreadSanitizerBase(object):
     # --show-pc flag is needed for parsing the error logs on Darwin.
     if platform_suffix == 'mac':
       ret += ["--show-pc=yes"]
+    ret += ["--show-pid=no"]
 
-    # Don't show googletest frames in stacks.
-    ret += ["--cut_stack_below=testing*Test*Run*"]
+    boring_callers = common.BoringCallers(mangled=False, use_re_wildcards=False)
+    # TODO(timurrrr): In fact, we want "starting from .." instead of "below .."
+    for bc in boring_callers:
+      ret += ["--cut_stack_below=%s" % bc]
 
     return ret
+
 
 class ThreadSanitizerPosix(ThreadSanitizerBase, ValgrindTool):
   def ToolSpecificFlags(self):
@@ -640,6 +697,7 @@ class ThreadSanitizerPosix(ThreadSanitizerBase, ValgrindTool):
     if ret != 0:
       logging.info(self.INFO_MESSAGE)
     return ret
+
 
 class ThreadSanitizerWindows(ThreadSanitizerBase, PinTool):
 
@@ -677,7 +735,7 @@ class ThreadSanitizerWindows(ThreadSanitizerBase, PinTool):
   def Analyze(self, check_sanity=False):
     filenames = glob.glob(self.log_dir + "/tsan.*")
     analyzer = tsan_analyze.TsanAnalyzer(self._source_dir)
-    ret = analyzer.Report(filenames, check_sanity)
+    ret = analyzer.Report(filenames, None, check_sanity)
     if ret != 0:
       logging.info(self.INFO_MESSAGE)
     return ret
@@ -687,16 +745,17 @@ class DrMemory(BaseTool):
   """Dr.Memory
   Dynamic memory error detector for Windows.
 
-  http://dynamorio.org/drmemory.html
+  http://dev.chromium.org/developers/how-tos/using-drmemory
   It is not very mature at the moment, some things might not work properly.
   """
 
-  def __init__(self):
+  def __init__(self, handle_uninits_and_leaks):
     super(DrMemory, self).__init__()
+    self.handle_uninits_and_leaks = handle_uninits_and_leaks
     self.RegisterOptionParserHook(DrMemory.ExtendOptionParser)
 
   def ToolName(self):
-    return "DrMemory"
+    return "drmemory"
 
   def ExtendOptionParser(self, parser):
     parser.add_option("", "--suppressions", default=[],
@@ -707,27 +766,25 @@ class DrMemory(BaseTool):
                       help="Monitor python child processes.  If off, neither "
                       "python children nor any children of python children "
                       "will be monitored.")
+    parser.add_option("", "--indirect", action="store_true",
+                      default=False,
+                      help="set BROWSER_WRAPPER rather than "
+                           "running Dr. Memory directly on the harness")
     parser.add_option("", "--use_debug", action="store_true",
                       default=False, dest="use_debug",
                       help="Run Dr. Memory debug build")
-    # TODO(bruening): I want to add --extraops that can take extra
-    # args that are passed through to Dr. Memory, but the
-    # chrome_tests.bat and chrome_tests.py layers combined w/
-    # chrome_tests.py parsing makes it not work out in practice.  We
-    # should change chrome_tests.py to pass all unknown options
-    # through to valgrind_test.py so we don't need to use --tool_flags
-    # and quote it, and ditto w/ valgrind_test.py passing unknown
-    # options through to its tool.
+    parser.add_option("", "--trace_children", action="store_true",
+                            default=True,
+                            help="TODO: default value differs from Valgrind")
 
   def ToolCommand(self):
     """Get the tool command to run."""
-    tool_name = self.ToolName()
-
     # WINHEAP is what Dr. Memory supports as there are issues w/ both
     # jemalloc (http://code.google.com/p/drmemory/issues/detail?id=320) and
     # tcmalloc (http://code.google.com/p/drmemory/issues/detail?id=314)
     add_env = {
       "CHROME_ALLOCATOR" : "WINHEAP",
+      "JSIMD_FORCEMMX"   : "1",  # http://code.google.com/p/drmemory/issues/detail?id=540
     }
     for k,v in add_env.iteritems():
       logging.info("export %s=%s", k, v)
@@ -771,12 +828,13 @@ class DrMemory(BaseTool):
         raise RuntimeError, "Configuring python children failed "
 
     suppression_count = 0
-    for suppression_file in self._options.suppressions:
+    supp_files = self._options.suppressions
+    if self.handle_uninits_and_leaks:
+      supp_files += [s.replace(".txt", "_full.txt") for s in supp_files]
+    for suppression_file in supp_files:
       if os.path.exists(suppression_file):
         suppression_count += 1
-        # DrMemory doesn't support multiple suppressions file... oh well
-        assert suppression_count <= 1
-        proc += ["-suppress", suppression_file]
+        proc += ["-suppress", common.NormalizeWindowsPath(suppression_file)]
 
     if not suppression_count:
       logging.warning("WARNING: NOT USING SUPPRESSIONS!")
@@ -784,33 +842,120 @@ class DrMemory(BaseTool):
     # Un-comment to dump Dr.Memory events on error
     #proc += ["-dr_ops", "-dumpcore_mask 0x8bff"]
 
+    # Un-comment to debug Dr.Memory
+    #proc += ["-dr_ops", "-no_hide -msgbox_mask 15"]
+
     if self._options.use_debug:
       proc += ["-debug"]
 
-    proc += ["-logdir", self.log_dir]
-    proc += ["-batch", "-quiet"]
-    proc += ["-callstack_max_frames", "30"]
-    #proc += ["-no_check_leaks", "-no_count_leaks"]
+    proc += ["-logdir", common.NormalizeWindowsPath(self.log_dir)]
+
+    if self._options.build_dir:
+      # The other case is only possible with -t cmdline.
+      # Anyways, if we omit -symcache_dir the -logdir's value is used which
+      # should be fine.
+      symcache_dir = os.path.join(self._options.build_dir, "drmemory.symcache")
+      if not os.path.exists(symcache_dir):
+        try:
+          os.mkdir(symcache_dir)
+        except OSError:
+          logging.warning("Can't create symcache dir?")
+      if os.path.exists(symcache_dir):
+        proc += ["-symcache_dir", common.NormalizeWindowsPath(symcache_dir)]
+
+    # Use -no_summary to suppress DrMemory's summary and init-time
+    # notifications.  We generate our own with drmemory_analyze.py.
+    proc += ["-batch", "-no_summary"]
+
+    # Un-comment to disable interleaved output.  Will also suppress error
+    # messages normally printed to stderr.
+    #proc += ["-quiet", "-no_results_to_stderr"]
+
+    proc += ["-callstack_max_frames", "40"]
+
+    # make callstacks easier to read
+    proc += ["-callstack_srcfile_prefix",
+             "build\\src,chromium\\src,crt_build\\self_x86"]
+    proc += ["-callstack_modname_hide",
+             "*.exe,chrome.dll"]
+
+    boring_callers = common.BoringCallers(mangled=False, use_re_wildcards=False)
+    # TODO(timurrrr): In fact, we want "starting from .." instead of "below .."
+    proc += ["-callstack_truncate_below", ",".join(boring_callers)]
+
+    if not self.handle_uninits_and_leaks:
+      proc += ["-no_check_uninitialized", "-no_count_leaks"]
+
+    proc += self._tool_flags
 
     # Dr.Memory requires -- to separate tool flags from the executable name.
     proc += ["--"]
 
+    if self._options.indirect:
+      # TODO(timurrrr): reuse for TSan on Windows
+      wrapper_path = os.path.join(self._source_dir,
+                                  "tools", "valgrind", "browser_wrapper_win.py")
+      self.CreateBrowserWrapper(" ".join(["python", wrapper_path] + proc))
+      proc = []
+
     # Note that self._args begins with the name of the exe to be run.
+    self._args[0] = common.NormalizeWindowsPath(self._args[0])
     proc += self._args
     return proc
 
-  def Analyze(self, check_sanity=False):
-    # Glob all the results files in the "testing.tmp" directory
-    filenames = glob.glob(self.log_dir + "/*/results.txt")
+  def CreateBrowserWrapper(self, command):
+    os.putenv("BROWSER_WRAPPER", command)
 
-    analyzer = drmemory_analyze.DrMemoryAnalyze(self._source_dir, filenames)
-    ret = analyzer.Report(check_sanity)
+  def Analyze(self, check_sanity=False):
+    # Use one analyzer for all the log files to avoid printing duplicate reports
+    #
+    # TODO(timurrrr): unify this with Valgrind and other tools when we have
+    # http://code.google.com/p/drmemory/issues/detail?id=684
+    analyzer = drmemory_analyze.DrMemoryAnalyzer()
+
+    ret = 0
+    if not self._options.indirect:
+      filenames = glob.glob(self.log_dir + "/*/results.txt")
+
+      ret = analyzer.Report(filenames, None, check_sanity)
+    else:
+      testcases = glob.glob(self.log_dir + "/testcase.*.logs")
+      # If we have browser wrapper, the per-test logdirs are named as
+      # "testcase.wrapper_PID.name".
+      # Let's extract the list of wrapper_PIDs and name it ppids.
+      # NOTE: ppids may contain '_', i.e. they are not ints!
+      ppids = set([f.split(".")[-2] for f in testcases])
+
+      for ppid in ppids:
+        testcase_name = None
+        try:
+          f = open("%s/testcase.%s.name" % (self.log_dir, ppid))
+          testcase_name = f.read().strip()
+          f.close()
+        except IOError:
+          pass
+        print "====================================================="
+        print " Below is the report for drmemory wrapper PID=%s." % ppid
+        if testcase_name:
+          print " It was used while running the `%s` test." % testcase_name
+        else:
+          # TODO(timurrrr): hm, the PID line is suppressed on Windows...
+          print " You can find the corresponding test"
+          print " by searching the above log for 'PID=%s'" % ppid
+        sys.stdout.flush()
+        ppid_filenames = glob.glob("%s/testcase.%s.logs/*/results.txt" %
+                                   (self.log_dir, ppid))
+        ret |= analyzer.Report(ppid_filenames, testcase_name, False)
+        print "====================================================="
+        sys.stdout.flush()
+
+    logging.info("Please see http://dev.chromium.org/developers/how-tos/"
+                 "using-drmemory for the info on Dr. Memory")
     return ret
 
 
 # RaceVerifier support. See
 # http://code.google.com/p/data-race-test/wiki/RaceVerifier for more details.
-
 class ThreadSanitizerRV1Analyzer(tsan_analyze.TsanAnalyzer):
   """ TsanAnalyzer that saves race reports to a file. """
 
@@ -820,7 +965,7 @@ class ThreadSanitizerRV1Analyzer(tsan_analyze.TsanAnalyzer):
     super(ThreadSanitizerRV1Analyzer, self).__init__(source_dir, use_gdb)
     self.out = open(self.TMP_FILE, "w")
 
-  def Report(self, files, check_sanity=False):
+  def Report(self, files, testcase, check_sanity=False):
     reports = self.GetReports(files)
     for report in reports:
       print >>self.out, report
@@ -855,6 +1000,7 @@ class ThreadSanitizerRV1Mixin(object):
     super(ThreadSanitizerRV1Mixin, self).Cleanup()
     self.analyzer.CloseOutputFile()
 
+
 class ThreadSanitizerRV2Mixin(object):
   """RaceVerifier second pass."""
 
@@ -882,16 +1028,20 @@ class ThreadSanitizerRV2Mixin(object):
 class ThreadSanitizerRV1Posix(ThreadSanitizerRV1Mixin, ThreadSanitizerPosix):
   pass
 
+
 class ThreadSanitizerRV2Posix(ThreadSanitizerRV2Mixin, ThreadSanitizerPosix):
   pass
+
 
 class ThreadSanitizerRV1Windows(ThreadSanitizerRV1Mixin,
                                 ThreadSanitizerWindows):
   pass
 
+
 class ThreadSanitizerRV2Windows(ThreadSanitizerRV2Mixin,
                                 ThreadSanitizerWindows):
   pass
+
 
 class RaceVerifier(object):
   """Runs tests under RaceVerifier/Valgrind."""
@@ -935,6 +1085,94 @@ class RaceVerifier(object):
    return self.Main(args, False)
 
 
+class EmbeddedTool(BaseTool):
+  """Abstract class for tools embedded directly into the test binary.
+  """
+  # TODO(glider): need to override Execute() and support process chaining here.
+
+  def ToolCommand(self):
+    # In the simplest case just the args of the script.
+    return self._args
+
+
+class Asan(EmbeddedTool):
+  """AddressSanitizer, a memory error detector.
+
+  More information at
+  http://dev.chromium.org/developers/testing/addresssanitizer
+  """
+  def __init__(self):
+    super(Asan, self).__init__()
+    self._timeout = 1200
+    if common.IsMac():
+      self._env["DYLD_NO_PIE"] = "1"
+
+
+  def ToolName(self):
+    return "asan"
+
+  def ToolCommand(self):
+    # TODO(glider): use pipes instead of the ugly wrapper here once they
+    # are supported.
+    procs = [os.path.join(self._source_dir, "tools", "valgrind",
+                              "asan", "asan_wrapper.sh")]
+    procs.extend(self._args)
+    return procs
+
+  def Analyze(sels, unused_check_sanity):
+    return 0
+
+
+class TsanGcc(EmbeddedTool):
+  """ThreadSanitizer with compile-time instrumentation done using GCC.
+
+  More information at
+  code.google.com/p/data-race-test/wiki/GccInstrumentation
+  """
+  def __init__(self):
+    super(TsanGcc, self).__init__()
+    self.RegisterOptionParserHook(TsanGcc.ExtendOptionParser)
+
+  def ExtendOptionParser(self, parser):
+    parser.add_option("", "--suppressions", default=[],
+                      action="append",
+                      help="path to TSan suppression file")
+
+  def Setup(self, args):
+    if not super(TsanGcc, self).Setup(args):
+      return False
+    ld_library_paths = []
+    for tail in "lib32", "lib64":
+      ld_library_paths.append(
+          os.path.join(self._source_dir, "third_party",
+                       "compiler-tsan", "gcc-current", tail))
+    # LD_LIBRARY_PATH will be overriden.
+    self._env["LD_LIBRARY_PATH"] = ":".join(ld_library_paths)
+
+    # TODO(glider): this is a temporary solution until Analyze is implemented.
+    env_options = ["--error-exitcode=1"]
+    # TODO(glider): merge this with other TSan suppressions code.
+    suppression_count = 0
+    for suppression_file in self._options.suppressions:
+      if os.path.exists(suppression_file):
+        suppression_count += 1
+        env_options += ["--suppressions=%s" % suppression_file]
+    if not suppression_count:
+      logging.warning("WARNING: NOT USING SUPPRESSIONS!")
+
+    self._env["TSAN_ARGS"] = " ".join(env_options)
+    return True
+
+  def ToolName(self):
+    return "tsan"
+
+  def Analyze(self, unused_check_sanity):
+    # TODO(glider): this should use tsan_analyze.TsanAnalyzer. As a temporary
+    # solution we set the exit code to 1 when a report occurs, because TSan-GCC
+    # does not support the --log-file flag yet.
+    return 0
+
+
 class ToolFactory:
   def Create(self, tool_name):
     if tool_name == "memcheck":
@@ -944,10 +1182,19 @@ class ToolFactory:
         return ThreadSanitizerWindows()
       else:
         return ThreadSanitizerPosix()
-    if tool_name == "drmemory":
-      return DrMemory()
+    if tool_name == "drmemory" or tool_name == "drmemory_light":
+      # TODO(timurrrr): remove support for "drmemory" when buildbots are
+      # switched to drmemory_light OR make drmemory==drmemory_full the default
+      # mode when the tool is mature enough.
+      return DrMemory(False)
+    if tool_name == "drmemory_full":
+      return DrMemory(True)
     if tool_name == "tsan_rv":
       return RaceVerifier()
+    if tool_name == "tsan_gcc":
+      return TsanGcc()
+    if tool_name == "asan":
+      return Asan()
     try:
       platform_name = common.PlatformNames()[0]
     except common.NotImplementedError:
@@ -957,7 +1204,3 @@ class ToolFactory:
 
 def CreateTool(tool):
   return ToolFactory().Create(tool)
-
-if __name__ == '__main__':
-  logging.error(sys.argv[0] + " can not be run from command line")
-  sys.exit(1)

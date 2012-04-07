@@ -11,7 +11,10 @@
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/metrics.h"
+#include "ui/views/metrics.h"
+
+// static
+const char ReloadButton::kViewClassName[] = "browser/ui/views/ReloadButton";
 
 ////////////////////////////////////////////////////////////////////////////////
 // ReloadButton, public:
@@ -57,7 +60,7 @@ void ReloadButton::ChangeMode(Mode mode, bool force) {
     // Go ahead and change to reload after a bit, which allows repeated reloads
     // without moving the mouse.
     if (!stop_to_reload_timer_.IsRunning()) {
-      stop_to_reload_timer_.Start(stop_to_reload_timer_delay_, this,
+      stop_to_reload_timer_.Start(FROM_HERE, stop_to_reload_timer_delay_, this,
                                   &ReloadButton::OnStopToReloadTimer);
     }
   }
@@ -103,7 +106,7 @@ void ReloadButton::ButtonPressed(views::Button* /* button */,
     // here as the browser will do that when it actually starts loading (which
     // may happen synchronously, thus the need to do this before telling the
     // browser to execute the reload command).
-    double_click_timer_.Start(double_click_timer_delay_, this,
+    double_click_timer_.Start(FROM_HERE, double_click_timer_delay_, this,
                               &ReloadButton::OnDoubleClickTimer);
 
     if (browser_)
@@ -121,11 +124,16 @@ void ReloadButton::OnMouseExited(const views::MouseEvent& event) {
     SetState(BS_NORMAL);
 }
 
-bool ReloadButton::GetTooltipText(const gfx::Point& p, std::wstring* tooltip) {
-  int text_id = visible_mode_ == MODE_RELOAD ? IDS_TOOLTIP_RELOAD
-                                             : IDS_TOOLTIP_STOP;
-  tooltip->assign(UTF16ToWide(l10n_util::GetStringUTF16(text_id)));
+bool ReloadButton::GetTooltipText(const gfx::Point& p,
+                                  string16* tooltip) const {
+  int text_id = (visible_mode_ == MODE_RELOAD) ?
+      IDS_TOOLTIP_RELOAD : IDS_TOOLTIP_STOP;
+  tooltip->assign(l10n_util::GetStringUTF16(text_id));
   return true;
+}
+
+std::string ReloadButton::GetClassName() const {
+  return kViewClassName;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -7,7 +7,6 @@
     {
       'target_name': 'google_update',
       'type': 'none',
-      'msvs_guid': '4052059A-D72B-4183-B5C2-9D1B099E9E35',
       'sources': [
         'google_update_idl.idl',
         '<(INTERMEDIATE_DIR)/google_update_idl_i.c',
@@ -22,9 +21,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

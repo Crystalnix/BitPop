@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,11 @@
 #include "base/utf_string_conversions.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/label.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/widget/root_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/root_view.h"
 
 static const int kMessageWidth = 320;
 static const int kTextfieldStackHorizontalSpacing = 30;
@@ -27,11 +27,11 @@ using views::GridLayout;
 
 LoginView::LoginView(const std::wstring& explanation, LoginModel* model)
     : username_field_(new views::Textfield),
-      password_field_(new views::Textfield(views::Textfield::STYLE_PASSWORD)),
-      username_label_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_USERNAME_FIELD)))),
-      password_label_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_PASSWORD_FIELD)))),
+      password_field_(new views::Textfield(views::Textfield::STYLE_OBSCURED)),
+      username_label_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_USERNAME_FIELD))),
+      password_label_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_LOGIN_DIALOG_PASSWORD_FIELD))),
       message_label_(new views::Label(explanation)),
       login_model_(model) {
   message_label_->SetMultiLine(true);

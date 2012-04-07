@@ -19,7 +19,6 @@
         {
           'target_name': 'libjpeg',
           'type': 'static_library',
-          'msvs_guid': '238CE175-76CE-4A25-A676-69D115885601',
           'sources': [
             'jcapimin.c',
             'jcapistd.c',
@@ -90,7 +89,7 @@
       'targets': [
         {
           'target_name': 'libjpeg',
-          'type': 'settings',
+          'type': 'none',
           'direct_dependent_settings': {
             'defines': [
               'USE_SYSTEM_LIBJPEG',
@@ -106,9 +105,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

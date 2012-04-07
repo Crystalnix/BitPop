@@ -23,14 +23,14 @@ class GenericChangeProcessor;
 // provided SyncableService as necessary.
 class SyncableServiceAdapter : public AssociatorInterface {
  public:
-  explicit SyncableServiceAdapter(syncable::ModelType type,
-                                  SyncableService* service,
-                                  GenericChangeProcessor* sync_processor);
+  SyncableServiceAdapter(syncable::ModelType type,
+                         SyncableService* service,
+                         GenericChangeProcessor* sync_processor);
   virtual ~SyncableServiceAdapter();
 
   // AssociatorInterface implementation.
-  virtual bool AssociateModels() OVERRIDE;
-  virtual bool DisassociateModels() OVERRIDE;
+  virtual bool AssociateModels(SyncError* error) OVERRIDE;
+  virtual bool DisassociateModels(SyncError* error) OVERRIDE;
   virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes) OVERRIDE;
   virtual void AbortAssociation() OVERRIDE;
   virtual bool CryptoReadyIfNecessary() OVERRIDE;

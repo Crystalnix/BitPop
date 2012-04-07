@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,20 @@
 #include "base/observer_list.h"
 #include "chrome/browser/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/tabs/tab_strip_selection_model.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/common/page_transition_types.h"
 
-class NavigationController;
 class Profile;
 class TabContents;
 class TabContentsWrapper;
 class TabStripModelDelegate;
 class TabStripModelOrderController;
+
+namespace content {
+class NavigationController;
+class WebContents;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -38,11 +42,11 @@ class TabStripModelOrderController;
 //   if a non-mini tab is added it is forced to be with non-mini tabs. Requests
 //   to move tabs outside the range of the tab type are ignored. For example,
 //   a request to move a mini-tab after non-mini-tabs is ignored.
-//   You'll notice there is no explcit api for making a tab a mini-tab, rather
+//   You'll notice there is no explicit api for making a tab a mini-tab, rather
 //   there are two tab types that are implicitly mini-tabs:
 //   . App. Corresponds to an extension that wants an app tab. App tabs are
 //     identified by TabContentsWrapper::extension_tab_helper()::is_app().
-//     App tabs are always pinneded (you can't unpin them).
+//     App tabs are always pinned (you can't unpin them).
 //   . Pinned. Any tab can be pinned. Non-app tabs whose pinned state is changed
 //     are moved to be with other mini-tabs or non-mini tabs.
 //
@@ -58,7 +62,7 @@ class TabStripModelOrderController;
 //  its bookkeeping when such events happen.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class TabStripModel : public NotificationObserver {
+class TabStripModel : public content::NotificationObserver {
  public:
   // Policy for how new tabs are inserted.
   enum InsertionPolicy {
@@ -74,7 +78,7 @@ class TabStripModel : public NotificationObserver {
     CLOSE_NONE                     = 0,
 
     // Indicates the tab was closed by the user. If true,
-    // TabContents::set_closed_by_user_gesture(true) is invoked.
+    // TabContents::SetClosedByUserGesture(true) is invoked.
     CLOSE_USER_GESTURE             = 1 << 0,
 
     // If true the history is recorded so that the tab can be reopened later.
@@ -201,6 +205,12 @@ class TabStripModel : public NotificationObserver {
   TabContentsWrapper* ReplaceTabContentsAt(int index,
                                            TabContentsWrapper* new_contents);
 
+  // Destroys the TabContents at the specified index, but keeps the tab visible
+  // in the tab strip. Used to free memory in low-memory conditions, especially
+  // on Chrome OS. The tab reloads if the user clicks on it.
+  // Returns an empty TabContentsWrapper, used only for testing.
+  TabContentsWrapper* DiscardTabContentsAt(int index);
+
   // Detaches the TabContents at the specified index from this strip. The
   // TabContents is not destroyed, just removed from display. The caller is
   // responsible for doing something with it (e.g. stuffing it into another
@@ -212,6 +222,10 @@ class TabStripModel : public NotificationObserver {
   // command, false if the tab was activated as a by-product of some other
   // action.
   void ActivateTabAt(int index, bool user_gesture);
+
+  // Adds tab at |index| to the currently selected tabs, without changing the
+  // active tab index.
+  void AddTabAtToSelection(int index);
 
   // Move the TabContents at the specified index to another index. This method
   // does NOT send Detached/Attached notifications, rather it moves the
@@ -241,9 +255,8 @@ class TabStripModel : public NotificationObserver {
   // 1)
   void MoveSelectedTabsTo(int index);
 
-  // Returns the currently selected TabContents, or NULL if there is none.
-  // TODO(sky): rename to GetActiveTabContents.
-  TabContentsWrapper* GetSelectedTabContents() const;
+  // Returns the currently active TabContents, or NULL if there is none.
+  TabContentsWrapper* GetActiveTabContents() const;
 
   // Returns the TabContentsWrapper at the specified index, or NULL if there is
   // none.
@@ -253,17 +266,18 @@ class TabStripModel : public NotificationObserver {
   // TabStripModel::kNoTab if the TabContents is not in this TabStripModel.
   int GetIndexOfTabContents(const TabContentsWrapper* contents) const;
 
-  // Returns the index of the specified TabContents wrapper given its raw
-  // TabContents, or TabStripModel::kNoTab if the TabContents is not in this
+  // Returns the index of the specified WebContents wrapper given its raw
+  // WebContents, or TabStripModel::kNoTab if the TabContents is not in this
   // TabStripModel.  Note: This is only needed in rare cases where the wrapper
-  // is not already present (such as implementing TabContentsDelegate methods,
+  // is not already present (such as implementing WebContentsDelegate methods,
   // which don't know about the wrapper.  Returns NULL if |contents| is not
   // associated with any wrapper in the model.
-  int GetWrapperIndex(const TabContents* contents) const;
+  int GetWrapperIndex(const content::WebContents* contents) const;
 
   // Returns the index of the specified NavigationController, or kNoTab if it is
   // not in this TabStripModel.
-  int GetIndexOfController(const NavigationController* controller) const;
+  int GetIndexOfController(
+      const content::NavigationController* controller) const;
 
   // Notify any observers that the TabContents at the specified index has
   // changed in some way. See TabChangeType for details of |change_type|.
@@ -285,33 +299,42 @@ class TabStripModel : public NotificationObserver {
   bool TabsAreLoading() const;
 
   // Returns the controller controller that opened the TabContents at |index|.
-  NavigationController* GetOpenerOfTabContentsAt(int index);
+  content::NavigationController* GetOpenerOfTabContentsAt(int index);
+
+  // Changes the |opener| of the TabContents at |index|.
+  // Note: |opener| must be in this tab strip.
+  void SetOpenerOfTabContentsAt(
+      int index,
+      content::NavigationController* opener);
 
   // Returns the index of the next TabContents in the sequence of TabContentses
   // spawned by the specified NavigationController after |start_index|.
   // If |use_group| is true, the group property of the tab is used instead of
   // the opener to find the next tab. Under some circumstances the group
   // relationship may exist but the opener may not.
-  int GetIndexOfNextTabContentsOpenedBy(const NavigationController* opener,
-                                        int start_index,
-                                        bool use_group) const;
+  int GetIndexOfNextTabContentsOpenedBy(
+      const content::NavigationController* opener,
+      int start_index,
+      bool use_group) const;
 
   // Returns the index of the first TabContents in the model opened by the
   // specified opener.
-  int GetIndexOfFirstTabContentsOpenedBy(const NavigationController* opener,
-                                         int start_index) const;
+  int GetIndexOfFirstTabContentsOpenedBy(
+      const content::NavigationController* opener,
+      int start_index) const;
 
   // Returns the index of the last TabContents in the model opened by the
   // specified opener, starting at |start_index|.
-  int GetIndexOfLastTabContentsOpenedBy(const NavigationController* opener,
-                                        int start_index) const;
+  int GetIndexOfLastTabContentsOpenedBy(
+      const content::NavigationController* opener,
+      int start_index) const;
 
   // Called by the Browser when a navigation is about to occur in the specified
   // TabContents. Depending on the tab, and the transition type of the
   // navigation, the TabStripModel may adjust its selection and grouping
   // behavior.
   void TabNavigating(TabContentsWrapper* contents,
-                     PageTransition::Type transition);
+                     content::PageTransition transition);
 
   // Forget all Opener relationships that are stored (but _not_ group
   // relationships!) This is to reduce unpredictable tab switching behavior
@@ -352,6 +375,10 @@ class TabStripModel : public NotificationObserver {
 
   // Returns true if the tab at |index| is blocked by a tab modal dialog.
   bool IsTabBlocked(int index) const;
+
+  // Returns true if the TabContents at |index| has been discarded to save
+  // memory.  See DiscardTabContentsAt() for details.
+  bool IsTabDiscarded(int index) const;
 
   // Returns the index of the first tab that is not a mini-tab. This returns
   // |count()| if all of the tabs are mini-tabs, and 0 if none of the tabs are
@@ -394,7 +421,7 @@ class TabStripModel : public NotificationObserver {
   // InsertTabContentsAt to do the actual inertion.
   void AddTabContents(TabContentsWrapper* contents,
                       int index,
-                      PageTransition::Type transition,
+                      content::PageTransition transition,
                       int add_types);
 
   // Closes the selected tabs.
@@ -429,7 +456,6 @@ class TabStripModel : public NotificationObserver {
     CommandRestoreTab,
     CommandTogglePinned,
     CommandBookmarkAllTabs,
-    CommandUseVerticalTabs,
     CommandUseCompactNavigationBar,
     CommandSelectByDomain,
     CommandSelectByOpener,
@@ -439,10 +465,6 @@ class TabStripModel : public NotificationObserver {
   // Returns true if the specified command is enabled. If |context_index| is
   // selected the response applies to all selected tabs.
   bool IsContextMenuCommandEnabled(int context_index,
-                                   ContextMenuCommand command_id) const;
-
-  // Returns true if the specified command is checked.
-  bool IsContextMenuCommandChecked(int context_index,
                                    ContextMenuCommand command_id) const;
 
   // Performs the action associated with the specified command for the given
@@ -461,10 +483,10 @@ class TabStripModel : public NotificationObserver {
   // supplied to |ExecuteContextMenuCommand|.
   bool WillContextMenuPin(int index);
 
-  // Overridden from notificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Convert a ContextMenuCommand into a browser command. Returns true if a
   // corresponding browser command exists, false otherwise.
@@ -515,15 +537,22 @@ class TabStripModel : public NotificationObserver {
 
   TabContentsWrapper* GetContentsAt(int index) const;
 
-  // If the TabContentsWrapper at |to_index| differs from |old_contents|
-  // notifies observers.
-  void NotifyTabSelectedIfChanged(TabContentsWrapper* old_contents,
-                                  int to_index,
-                                  bool user_gesture);
+  // Notifies the observers if the active tab has changed. If |old_contents| is
+  // non-null a TabDeactivated notification is sent right before sending
+  // ActiveTabChanged notification.
+  void NotifyIfActiveTabChanged(TabContentsWrapper* old_contents,
+                                bool user_gesture);
 
-  // Notifies the observers the active tab changed. |old_active_index| gives
-  // the old active index.
-  void NotifyActiveTabChanged(int old_active_index);
+  // Notifies the observers if the active tab or the tab selection has changed.
+  // If |old_contents| is non-null a TabDeactivated notification is sent right
+  // before sending ActiveTabChanged notification. |old_model| is a snapshot of
+  // |selection_model_| before the change.
+  // Note: This function might end up sending 0 to 3 notifications in the
+  // following order: TabDeactivated, ActiveTabChanged, TabSelectionChanged.
+  void NotifyIfActiveOrSelectionChanged(
+      TabContentsWrapper* old_contents,
+      bool user_gesture,
+      const TabStripSelectionModel& old_model);
 
   // Returns the number of New Tab tabs in the TabStripModel.
   int GetNewTabCount() const;
@@ -547,11 +576,12 @@ class TabStripModel : public NotificationObserver {
   // fall back to check the group relationship as well.
   struct TabContentsData;
   static bool OpenerMatches(const TabContentsData* data,
-                            const NavigationController* opener,
+                            const content::NavigationController* opener,
                             bool use_group);
 
   // Sets the group/opener of any tabs that reference |tab| to NULL.
-  void ForgetOpenersAndGroupsReferencing(const NavigationController* tab);
+  void ForgetOpenersAndGroupsReferencing(
+      const content::NavigationController* tab);
 
   // Our delegate.
   TabStripModelDelegate* delegate_;
@@ -565,13 +595,14 @@ class TabStripModel : public NotificationObserver {
         : contents(a_contents),
           reset_group_on_select(false),
           pinned(false),
-          blocked(false) {
+          blocked(false),
+          discarded(false) {
       SetGroup(NULL);
     }
 
     // Create a relationship between this TabContents and other TabContentses.
     // Used to identify which TabContents to select next after one is closed.
-    void SetGroup(NavigationController* a_group) {
+    void SetGroup(content::NavigationController* a_group) {
       group = a_group;
       opener = a_group;
     }
@@ -593,12 +624,12 @@ class TabStripModel : public NotificationObserver {
     // navigation within that tab, the group relationship is lost). This
     // property can safely be used to implement features that depend on a
     // logical group of related tabs.
-    NavigationController* group;
+    content::NavigationController* group;
     // The owner models the same relationship as group, except it is more
     // easily discarded, e.g. when the user switches to a tab not part of the
     // same group. This property is used to determine what tab to select next
     // when one is closed.
-    NavigationController* opener;
+    content::NavigationController* opener;
     // True if our group should be reset the moment selection moves away from
     // this Tab. This is the case for tabs opened in the foreground at the end
     // of the TabStrip while viewing another Tab. If these tabs are closed
@@ -612,6 +643,9 @@ class TabStripModel : public NotificationObserver {
 
     // Is the tab interaction blocked by a modal dialog?
     bool blocked;
+
+    // Has the tab data been discarded to save memory?
+    bool discarded;
   };
 
   // The TabContents data currently hosted within this TabStripModel.
@@ -633,7 +667,7 @@ class TabStripModel : public NotificationObserver {
   TabStripModelObservers observers_;
 
   // A scoped container for notification registries.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   TabStripSelectionModel selection_model_;
 

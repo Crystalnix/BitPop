@@ -13,24 +13,25 @@
 #include "ppapi/c/pp_resource.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
 
 using ::ppapi::thunk::PPB_Buffer_API;
+using ::ppapi::thunk::PPB_BufferTrusted_API;
 
 namespace webkit {
 namespace ppapi {
 
-PPB_Buffer_Impl::PPB_Buffer_Impl(PluginInstance* instance)
-    : Resource(instance), size_(0) {
+PPB_Buffer_Impl::PPB_Buffer_Impl(PP_Instance instance)
+    : Resource(instance),
+      size_(0),
+      map_count_(0) {
 }
 
 PPB_Buffer_Impl::~PPB_Buffer_Impl() {
 }
 
 // static
-PP_Resource PPB_Buffer_Impl::Create(PP_Instance pp_instance, uint32_t size) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(pp_instance);
-  if (!instance)
-    return 0;
+PP_Resource PPB_Buffer_Impl::Create(PP_Instance instance, uint32_t size) {
   scoped_refptr<PPB_Buffer_Impl> buffer(new PPB_Buffer_Impl(instance));
   if (!buffer->Init(size))
     return 0;
@@ -45,12 +46,16 @@ PPB_Buffer_API* PPB_Buffer_Impl::AsPPB_Buffer_API() {
   return this;
 }
 
+PPB_BufferTrusted_API* PPB_Buffer_Impl::AsPPB_BufferTrusted_API() {
+  return this;
+}
+
 bool PPB_Buffer_Impl::Init(uint32_t size) {
-  if (size == 0 || !instance())
+  PluginDelegate* plugin_delegate = ResourceHelper::GetPluginDelegate(this);
+  if (size == 0 || !plugin_delegate)
     return false;
   size_ = size;
-  shared_memory_.reset(
-      instance()->delegate()->CreateAnonymousSharedMemory(size));
+  shared_memory_.reset(plugin_delegate->CreateAnonymousSharedMemory(size));
   return shared_memory_.get() != NULL;
 }
 
@@ -66,13 +71,26 @@ PP_Bool PPB_Buffer_Impl::IsMapped() {
 void* PPB_Buffer_Impl::Map() {
   DCHECK(size_);
   DCHECK(shared_memory_.get());
-  if (!shared_memory_->Map(size_))
-    return NULL;
+  if (map_count_++ == 0)
+    shared_memory_->Map(size_);
   return shared_memory_->memory();
 }
 
 void PPB_Buffer_Impl::Unmap() {
-  shared_memory_->Unmap();
+  if (--map_count_ == 0)
+    shared_memory_->Unmap();
+}
+
+int32_t PPB_Buffer_Impl::GetSharedMemory(int* shm_handle) {
+#if defined(OS_POSIX)
+  *shm_handle = shared_memory_->handle().fd;
+#elif defined(OS_WIN)
+  *shm_handle = reinterpret_cast<int>(
+      shared_memory_->handle());
+#else
+#error "Platform not supported."
+#endif
+  return PP_OK;
 }
 
 BufferAutoMapper::BufferAutoMapper(PPB_Buffer_API* api) : api_(api) {

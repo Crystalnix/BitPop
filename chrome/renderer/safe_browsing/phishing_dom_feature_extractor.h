@@ -13,16 +13,19 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 
 class GURL;
-class RenderView;
 
 namespace WebKit {
 class WebElement;
-class WebFrame;
+}
+
+namespace content {
+class RenderView;
 }
 
 namespace safe_browsing {
@@ -33,14 +36,14 @@ class PhishingDOMFeatureExtractor {
  public:
   // Callback to be run when feature extraction finishes.  The callback
   // argument is true if extraction was successful, false otherwise.
-  typedef Callback1<bool>::Type DoneCallback;
+  typedef base::Callback<void(bool)> DoneCallback;
 
   // Creates a PhishingDOMFeatureExtractor for the specified RenderView.
   // The PhishingDOMFeatureExtrator should be destroyed prior to destroying
   // the RenderView.  |clock| is used for timing feature extractor operations,
   // and may be mocked for testing.  The caller maintains ownership of the
   // clock.
-  PhishingDOMFeatureExtractor(RenderView* render_view,
+  PhishingDOMFeatureExtractor(content::RenderView* render_view,
                               FeatureExtractorClock* clock);
   ~PhishingDOMFeatureExtractor();
 
@@ -51,7 +54,7 @@ class PhishingDOMFeatureExtractor {
   // processing.  Once feature extraction is complete, |done_callback|
   // is run on the current thread.  PhishingDOMFeatureExtractor takes
   // ownership of the callback.
-  void ExtractFeatures(FeatureMap* features, DoneCallback* done_callback);
+  void ExtractFeatures(FeatureMap* features, const DoneCallback& done_callback);
 
   // Cancels any pending feature extraction.  The DoneCallback will not be run.
   // Must be called if there is a feature extraction in progress when the page
@@ -102,9 +105,13 @@ class PhishingDOMFeatureExtractor {
   // Clears all internal feature extraction state.
   void Clear();
 
-  // Called after advancing |cur_frame_| to update the state in
-  // |cur_frame_data_|.  Returns true if the state was updated successfully.
-  bool ResetFrameData();
+  // Called after advancing |cur_document_| to update the state in
+  // |cur_frame_data_|.
+  void ResetFrameData();
+
+  // Returns the next document in frame-traversal order from cur_document_.
+  // If there are no more documents, returns a null WebDocument.
+  WebKit::WebDocument GetNextDocument();
 
   // Given a URL, checks whether the domain is different from the domain of
   // the current frame's URL.  If so, stores the domain in |domain| and returns
@@ -117,19 +124,20 @@ class PhishingDOMFeatureExtractor {
   void InsertFeatures();
 
   // Non-owned pointer to the view that we will extract features from.
-  RenderView* render_view_;
+  content::RenderView* render_view_;
 
   // Non-owned pointer to our clock.
   FeatureExtractorClock* clock_;
 
   // The output parameters from the most recent call to ExtractFeatures().
   FeatureMap* features_;  // The caller keeps ownership of this.
-  scoped_ptr<DoneCallback> done_callback_;
+  DoneCallback done_callback_;
 
-  // Non-owned pointer to the current frame that we are processing.
-  WebKit::WebFrame* cur_frame_;
+  // The current (sub-)document that we are processing.  May be a null document
+  // (isNull()) if we are not currently extracting features.
+  WebKit::WebDocument cur_document_;
 
-  // Stores extra state for |cur_frame_| that will be persisted until we
+  // Stores extra state for |cur_document_| that will be persisted until we
   // advance to the next frame.
   scoped_ptr<FrameData> cur_frame_data_;
 
@@ -137,9 +145,9 @@ class PhishingDOMFeatureExtractor {
   // accumulated across all frames in the RenderView.
   scoped_ptr<PageFeatureState> page_feature_state_;
 
-  // Used to create ExtractFeaturesWithTimeout tasks.
-  // These tasks are revoked if extraction is cancelled.
-  ScopedRunnableMethodFactory<PhishingDOMFeatureExtractor> method_factory_;
+  // Used in scheduling ExtractFeaturesWithTimeout tasks.
+  // These pointers are invalidated if extraction is cancelled.
+  base::WeakPtrFactory<PhishingDOMFeatureExtractor> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PhishingDOMFeatureExtractor);
 };

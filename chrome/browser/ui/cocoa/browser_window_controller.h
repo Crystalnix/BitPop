@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,14 +19,15 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
-#import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
+#import "chrome/browser/ui/cocoa/fullscreen_exit_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_window_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
+#include "ui/gfx/rect.h"
 
-
+@class AvatarButtonController;
 class Browser;
 class BrowserWindow;
 class BrowserWindowCocoa;
@@ -34,26 +35,26 @@ class ConstrainedWindowMac;
 @class DevToolsController;
 @class DownloadShelfController;
 @class FindBarCocoaController;
-@class FullscreenController;
+@class FullscreenWindow;
 @class GTMWindowSheetController;
-@class IncognitoImageView;
 @class InfoBarContainerController;
 class LocationBarViewMac;
+@class PresentationModeController;
 @class PreviewableContentsController;
-@class SidebarController;
 class StatusBubbleMac;
-class TabContents;
 @class TabStripController;
 @class TabStripView;
 @class ToolbarController;
 
+namespace content {
+class WebContents;
+}
 
 @interface BrowserWindowController :
   TabWindowController<NSUserInterfaceValidations,
                       BookmarkBarControllerDelegate,
                       BrowserCommandExecutor,
                       ViewResizer,
-                      TabContentsControllerDelegate,
                       TabStripControllerDelegate> {
  @private
   // The ordering of these members is important as it determines the order in
@@ -70,9 +71,10 @@ class TabContents;
   scoped_nsobject<DownloadShelfController> downloadShelfController_;
   scoped_nsobject<BookmarkBarController> bookmarkBarController_;
   scoped_nsobject<DevToolsController> devToolsController_;
-  scoped_nsobject<SidebarController> sidebarController_;
   scoped_nsobject<PreviewableContentsController> previewableContentsController_;
-  scoped_nsobject<FullscreenController> fullscreenController_;
+  scoped_nsobject<PresentationModeController> presentationModeController_;
+  scoped_nsobject<FullscreenExitBubbleController>
+      fullscreenExitBubbleController_;
 
   // Strong. StatusBubble is a special case of a strong reference that
   // we don't wrap in a scoped_ptr because it is acting the same
@@ -101,25 +103,48 @@ class TabContents;
   CGFloat totalMagnifyGestureAmount_;
   NSInteger currentZoomStepDelta_;
 
-  // The view which shows the incognito badge (NULL if not an incognito window).
-  // Needed to access the view to move it to/from the fullscreen window.
-  scoped_nsobject<IncognitoImageView> incognitoBadge_;
+  // The view controller that manages the incognito badge or the multi-profile
+  // avatar icon. The view is always in the view hierarchy, but will be hidden
+  // unless it's appropriate to show it.
+  scoped_nsobject<AvatarButtonController> avatarButtonController_;
+
+  // The view that shows the presentation mode toggle when in Lion fullscreen
+  // mode.  Nil if not in fullscreen mode or not on Lion.
+  scoped_nsobject<NSButton> presentationModeToggleButton_;
 
   // Lazily created view which draws the background for the floating set of bars
-  // in fullscreen mode (for window types having a floating bar; it remains nil
-  // for those which don't).
+  // in presentation mode (for window types having a floating bar; it remains
+  // nil for those which don't).
   scoped_nsobject<NSView> floatingBarBackingView_;
 
   // Tracks whether the floating bar is above or below the bookmark bar, in
   // terms of z-order.
   BOOL floatingBarAboveBookmarkBar_;
 
-  // The proportion of the floating bar which is shown (in fullscreen mode).
+  // The borderless window used in fullscreen mode.  Lion reuses the original
+  // window in fullscreen mode, so this is always nil on Lion.
+  scoped_nsobject<NSWindow> fullscreenWindow_;
+
+  // Tracks whether presentation mode was entered from fullscreen mode or
+  // directly from normal windowed mode.  Used to determine what to do when
+  // exiting presentation mode.
+  BOOL enteredPresentationModeFromFullscreen_;
+
+  // True between -windowWillEnterFullScreen and -windowDidEnterFullScreen.
+  // Only used on Lion.
+  BOOL enteringFullscreen_;
+
+  // The size of the original (non-fullscreen) window.  This is saved just
+  // before entering fullscreen mode and is only valid when |-isFullscreen|
+  // returns YES.
+  NSRect savedRegularWindowFrame_;
+
+  // The proportion of the floating bar which is shown (in presentation mode).
   CGFloat floatingBarShownFraction_;
 
   // Various UI elements/events may want to ensure that the floating bar is
-  // visible (in fullscreen mode), e.g., because of where the mouse is or where
-  // keyboard focus is. Whenever an object requires bar visibility, it has
+  // visible (in presentation mode), e.g., because of where the mouse is or
+  // where keyboard focus is. Whenever an object requires bar visibility, it has
   // itself added to |barVisibilityLocks_|. When it no longer requires bar
   // visibility, it has itself removed.
   scoped_nsobject<NSMutableSet> barVisibilityLocks_;
@@ -127,6 +152,12 @@ class TabContents;
   // Bar visibility locks and releases only result (when appropriate) in changes
   // in visible state when the following is |YES|.
   BOOL barVisibilityUpdatesEnabled_;
+
+  // When going fullscreen for a tab, we need to store the URL and the
+  // fullscreen type, since we can't show the bubble until
+  // -windowDidEnterFullScreen: gets called.
+  GURL fullscreenUrl_;
+  FullscreenExitBubbleType fullscreenBubbleType_;
 }
 
 // A convenience class method which gets the |BrowserWindowController| for a
@@ -147,6 +178,9 @@ class TabContents;
 // code.
 - (void)destroyBrowser;
 
+// Ensure bounds for the window abide by the minimum window size.
+- (gfx::Rect)enforceMinWindowSize:(gfx::Rect)bounds;
+
 // Access the C++ bridge between the NSWindow and the rest of Chromium.
 - (BrowserWindow*)browserWindow;
 
@@ -165,15 +199,25 @@ class TabContents;
 // Access the C++ bridge object representing the location bar.
 - (LocationBarViewMac*)locationBarBridge;
 
+// Access the Profile object that backs this Browser.
+- (Profile*)profile;
+
+// Access the avatar button controller.
+- (AvatarButtonController*)avatarButtonController;
+
 // Updates the toolbar (and transitively the location bar) with the states of
 // the specified |tab|.  If |shouldRestore| is true, we're switching
 // (back?) to this tab and should restore any previous location bar state
 // (such as user editing) as well.
-- (void)updateToolbarWithContents:(TabContents*)tab
+- (void)updateToolbarWithContents:(content::WebContents*)tab
                shouldRestoreState:(BOOL)shouldRestore;
 
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
+
+// Return the rect, in WebKit coordinates (flipped), of the window's grow box
+// in the coordinate system of the content area of the currently selected tab.
+- (NSRect)selectedTabGrowBoxRect;
 
 // Called to tell the selected tab to update its loading state.
 // |force| is set if the update is due to changing tabs, as opposed to
@@ -193,6 +237,10 @@ class TabContents;
 // window is currently in fullscreen mode).  The frame is returned in Cocoa
 // coordinates (origin in bottom-left).
 - (NSRect)regularWindowFrame;
+
+// Whether or not to show the avatar, which is either the incognito guy or the
+// user's profile avatar.
+- (BOOL)shouldShowAvatar;
 
 - (BOOL)isBookmarkBarVisible;
 
@@ -241,11 +289,10 @@ class TabContents;
 - (BOOL)canAttachConstrainedWindow;
 
 // Shows or hides the docked web inspector depending on |contents|'s state.
-- (void)updateDevToolsForContents:(TabContents*)contents;
+- (void)updateDevToolsForContents:(content::WebContents*)contents;
 
-// Displays the active sidebar linked to the |contents| or hides sidebar UI,
-// if there's no such sidebar.
-- (void)updateSidebarForContents:(TabContents*)contents;
+// Specifies whether devtools should dock to right.
+- (void)setDevToolsDockToRight:(bool)dock_to_right;
 
 // Gets the current theme provider.
 - (ui::ThemeProvider*)themeProvider;
@@ -259,13 +306,8 @@ class TabContents;
 // Return the point to which a bubble window's arrow should point.
 - (NSPoint)bookmarkBubblePoint;
 
-// Call when the user changes the tab strip display mode, enabling or
-// disabling vertical tabs for this browser. Re-flows the contents of the
-// browser.
-- (void)toggleTabStripDisplayMode;
-
 // Shows or hides the Instant preview contents.
-- (void)showInstant:(TabContents*)previewContents;
+- (void)showInstant:(content::WebContents*)previewContents;
 - (void)hideInstant;
 - (void)commitInstant;
 
@@ -283,7 +325,8 @@ class TabContents;
 
 
 // Methods having to do with the window type (normal/popup/app, and whether the
-// window has various features; fullscreen methods are separate).
+// window has various features; fullscreen and presentation mode methods are
+// separate).
 @interface BrowserWindowController(WindowType)
 
 // Determines whether this controller's window supports a given feature (i.e.,
@@ -318,32 +361,57 @@ class TabContents;
 @end  // @interface BrowserWindowController(WindowType)
 
 
-// Methods having to do with fullscreen mode.
+// Methods having to do with fullscreen and presentation mode.
 @interface BrowserWindowController(Fullscreen)
 
-// Enters fullscreen mode.
-- (IBAction)enterFullscreen:(id)sender;
+// Toggles fullscreen mode.  Meant to be called by Lion windows when they enter
+// or exit Lion fullscreen mode.  Must not be called on Snow Leopard or earlier.
+- (void)handleLionToggleFullscreen;
 
-// Enters (or exits) fullscreen mode.
-- (void)setFullscreen:(BOOL)fullscreen;
+// Enters (or exits) fullscreen mode.  This method is safe to call on all OS
+// versions.
+- (void)enterFullscreenForURL:(const GURL&)url
+                   bubbleType:(FullscreenExitBubbleType)bubbleType;
+- (void)exitFullscreen;
 
-// Returns fullscreen state.
+// Updates the contents of the fullscreen exit bubble with |url| and
+// |bubbleType|.
+- (void)updateFullscreenExitBubbleURL:(const GURL&)url
+                           bubbleType:(FullscreenExitBubbleType)bubbleType;
+
+// Returns fullscreen state.  This method is safe to call on all OS versions.
 - (BOOL)isFullscreen;
 
+// Toggles presentation mode without exiting fullscreen mode.  Should only be
+// called by the presentation mode toggle button.  This method should not be
+// called on Snow Leopard or earlier.
+- (void)togglePresentationModeForLionOrLater:(id)sender;
+
+// Enters (or exits) presentation mode.  Also enters fullscreen mode if this
+// window is not already fullscreen.  This method is safe to call on all OS
+// versions.
+- (void)enterPresentationModeForURL:(const GURL&)url
+                         bubbleType:(FullscreenExitBubbleType)bubbleType;
+- (void)exitPresentationMode;
+
+// Returns presentation mode state.  This method is safe to call on all OS
+// versions.
+- (BOOL)inPresentationMode;
+
 // Resizes the fullscreen window to fit the screen it's currently on.  Called by
-// the FullscreenController when there is a change in monitor placement or
+// the PresentationModeController when there is a change in monitor placement or
 // resolution.
 - (void)resizeFullscreenWindow;
 
-// Gets or sets the fraction of the floating bar (fullscreen overlay) that is
-// shown.  0 is completely hidden, 1 is fully shown.
+// Gets or sets the fraction of the floating bar (presentation mode overlay)
+// that is shown.  0 is completely hidden, 1 is fully shown.
 - (CGFloat)floatingBarShownFraction;
 - (void)setFloatingBarShownFraction:(CGFloat)fraction;
 
 // Query/lock/release the requirement that the tab strip/toolbar/attached
 // bookmark bar bar cluster is visible (e.g., when one of its elements has
-// focus). This is required for the floating bar in fullscreen mode, but should
-// also be called when not in fullscreen mode; see the comments for
+// focus). This is required for the floating bar in presentation mode, but
+// should also be called when not in presentation mode; see the comments for
 // |barVisibilityLocks_| for more details. Double locks/releases by the same
 // owner are ignored. If |animate:| is YES, then an animation may be performed,
 // possibly after a small delay if |delay:| is YES. If |animate:| is NO,
@@ -368,11 +436,11 @@ class TabContents;
 
 
 // Methods which are either only for testing, or only public for testing.
-@interface BrowserWindowController(TestingAPI)
+@interface BrowserWindowController (TestingAPI)
 
-// Put the incognito badge on the browser and adjust the tab strip
-// accordingly.
-- (void)installIncognitoBadge;
+// Put the incognito badge or multi-profile avatar on the browser and adjust the
+// tab strip accordingly.
+- (void)installAvatar;
 
 // Allows us to initWithBrowser withOUT taking ownership of the browser.
 - (id)initWithBrowser:(Browser*)browser takeOwnership:(BOOL)ownIt;
@@ -385,7 +453,8 @@ class TabContents;
 // partially offscreen, its height is not adjusted at all.  This function
 // prefers to grow the window down, but will grow up if needed.  Calls to this
 // function should be followed by a call to |layoutSubviews|.
-- (void)adjustWindowHeightBy:(CGFloat)deltaH;
+// Returns if the window height was changed.
+- (BOOL)adjustWindowHeightBy:(CGFloat)deltaH;
 
 // Return an autoreleased NSWindow suitable for fullscreen use.
 - (NSWindow*)createFullscreenWindow;
@@ -398,7 +467,10 @@ class TabContents;
 // |source| rect doesn't fit into |target|.
 - (NSSize)overflowFrom:(NSRect)source
                     to:(NSRect)target;
-@end  // @interface BrowserWindowController(TestingAPI)
+
+// The fullscreen exit bubble controller, or nil if the bubble isn't showing.
+- (FullscreenExitBubbleController*)fullscreenExitBubbleController;
+@end  // @interface BrowserWindowController (TestingAPI)
 
 
 #endif  // CHROME_BROWSER_UI_COCOA_BROWSER_WINDOW_CONTROLLER_H_

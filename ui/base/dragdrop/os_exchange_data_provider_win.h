@@ -12,6 +12,7 @@
 
 #include "base/win/scoped_comptr.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/base/ui_export.h"
 
 namespace ui {
 
@@ -31,6 +32,9 @@ class DataObjectImpl : public DownloadFileObserver,
 
   // Accessors.
   void set_observer(Observer* observer) { observer_ = observer; }
+
+  // Number of known formats.
+  size_t size() const { return contents_.size(); }
 
   // DownloadFileObserver implementation:
   virtual void OnDownloadCompleted(const FilePath& file_path);
@@ -72,6 +76,9 @@ class DataObjectImpl : public DownloadFileObserver,
   virtual ~DataObjectImpl();
 
   void StopDownloads();
+
+  // Removes from contents_ the first data that matches |format|.
+  void RemoveData(const FORMATETC& format);
 
   // Our internal representation of stored data & type info.
   struct StoredDataInfo {
@@ -120,7 +127,7 @@ class DataObjectImpl : public DownloadFileObserver,
   Observer* observer_;
 };
 
-class OSExchangeDataProviderWin : public OSExchangeData::Provider {
+class UI_EXPORT OSExchangeDataProviderWin : public OSExchangeData::Provider {
  public:
   // Returns true if source has plain text that is a valid url.
   static bool HasPlainTextURL(IDataObject* source);

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/format_macros.h"
@@ -15,7 +17,6 @@
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_common_unittest.h"
@@ -106,7 +107,7 @@ class MockEnvironment : public base::Environment {
   }
 
   // Begin base::Environment implementation.
-  virtual bool GetVar(const char* variable_name, std::string* result) {
+  virtual bool GetVar(const char* variable_name, std::string* result) OVERRIDE {
     std::map<std::string, const char**>::iterator it =
         table.find(variable_name);
     if (it != table.end() && *(it->second) != NULL) {
@@ -117,12 +118,13 @@ class MockEnvironment : public base::Environment {
     return false;
   }
 
-  virtual bool SetVar(const char* variable_name, const std::string& new_value) {
+  virtual bool SetVar(const char* variable_name, const std::string& new_value)
+      OVERRIDE {
     ADD_FAILURE();
     return false;
   }
 
-  virtual bool UnSetVar(const char* variable_name) {
+  virtual bool UnSetVar(const char* variable_name) OVERRIDE {
     ADD_FAILURE();
     return false;
   }
@@ -174,25 +176,26 @@ class MockSettingGetter
   }
 
   virtual bool Init(MessageLoop* glib_default_loop,
-                    MessageLoopForIO* file_loop) {
+                    MessageLoopForIO* file_loop) OVERRIDE {
     return true;
   }
 
-  virtual void ShutDown() {}
+  virtual void ShutDown() OVERRIDE {}
 
-  virtual bool SetUpNotifications(ProxyConfigServiceLinux::Delegate* delegate) {
+  virtual bool SetUpNotifications(ProxyConfigServiceLinux::Delegate* delegate)
+      OVERRIDE {
     return true;
   }
 
-  virtual MessageLoop* GetNotificationLoop() {
+  virtual MessageLoop* GetNotificationLoop() OVERRIDE {
     return NULL;
   }
 
-  virtual const char* GetDataSource() {
+  virtual const char* GetDataSource() OVERRIDE {
     return "test";
   }
 
-  virtual bool GetString(StringSetting key, std::string* result) {
+  virtual bool GetString(StringSetting key, std::string* result) OVERRIDE {
     const char* value = strings_table.Get(key);
     if (value) {
       *result = value;
@@ -201,7 +204,7 @@ class MockSettingGetter
     return false;
   }
 
-  virtual bool GetBool(BoolSetting key, bool* result) {
+  virtual bool GetBool(BoolSetting key, bool* result) OVERRIDE {
     BoolSettingValue value = bools_table.Get(key);
     switch (value) {
     case UNSET:
@@ -215,24 +218,24 @@ class MockSettingGetter
     return true;
   }
 
-  virtual bool GetInt(IntSetting key, int* result) {
+  virtual bool GetInt(IntSetting key, int* result) OVERRIDE {
     // We don't bother to distinguish unset keys from 0 values.
     *result = ints_table.Get(key);
     return true;
   }
 
   virtual bool GetStringList(StringListSetting key,
-                             std::vector<std::string>* result) {
+                             std::vector<std::string>* result) OVERRIDE {
     *result = string_lists_table.Get(key);
     // We don't bother to distinguish unset keys from empty lists.
     return !result->empty();
   }
 
-  virtual bool BypassListIsReversed() {
+  virtual bool BypassListIsReversed() OVERRIDE {
     return false;
   }
 
-  virtual bool MatchHostsUsingSuffixMatching() {
+  virtual bool MatchHostsUsingSuffixMatching() OVERRIDE {
     return false;
   }
 
@@ -266,8 +269,8 @@ class SynchConfigGetter {
     io_thread_.StartWithOptions(options);
 
     // Make sure the thread started.
-    io_thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &SynchConfigGetter::Init));
+    io_thread_.message_loop()->PostTask(FROM_HERE,
+        base::Bind(&SynchConfigGetter::Init, base::Unretained(this)));
     Wait();
   }
 
@@ -276,8 +279,8 @@ class SynchConfigGetter {
     // before cleaning up that thread.
     delete config_service_;
     // Clean up the IO thread.
-    io_thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &SynchConfigGetter::Cleanup));
+    io_thread_.message_loop()->PostTask(FROM_HERE,
+        base::Bind(&SynchConfigGetter::CleanUp, base::Unretained(this)));
     Wait();
   }
 
@@ -295,8 +298,9 @@ class SynchConfigGetter {
   // Synchronously gets the proxy config.
   net::ProxyConfigService::ConfigAvailability SyncGetLatestProxyConfig(
       net::ProxyConfig* config) {
-    io_thread_.message_loop()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &SynchConfigGetter::GetLatestConfigOnIOThread));
+    io_thread_.message_loop()->PostTask(FROM_HERE,
+        base::Bind(&SynchConfigGetter::GetLatestConfigOnIOThread,
+                   base::Unretained(this)));
     Wait();
     *config = proxy_config_;
     return get_latest_config_result_;
@@ -317,7 +321,7 @@ class SynchConfigGetter {
   }
 
   // [Runs on |io_thread_|] Signals |event_| on cleanup completion.
-  void Cleanup() {
+  void CleanUp() {
     MessageLoop::current()->RunAllPending();
     event_.Signal();
   }
@@ -340,8 +344,6 @@ class SynchConfigGetter {
   net::ProxyConfigService::ConfigAvailability get_latest_config_result_;
 };
 
-DISABLE_RUNNABLE_METHOD_REFCOUNT(SynchConfigGetter);
-
 namespace net {
 
 // This test fixture is only really needed for the KDEConfigParser test case,
@@ -349,7 +351,7 @@ namespace net {
 // must use the same test fixture class (also "ProxyConfigServiceLinuxTest").
 class ProxyConfigServiceLinuxTest : public PlatformTest {
  protected:
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     PlatformTest::SetUp();
     // Set up a temporary KDE home directory.
     std::string prefix("ProxyConfigServiceLinuxTest_user_home");
@@ -366,7 +368,7 @@ class ProxyConfigServiceLinuxTest : public PlatformTest {
     kioslaverc4_ = kde4_config_.Append(FILE_PATH_LITERAL("kioslaverc"));
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     // Delete the temporary KDE home directory.
     file_util::Delete(user_home_, true);
     PlatformTest::TearDown();

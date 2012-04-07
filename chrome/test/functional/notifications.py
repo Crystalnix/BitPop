@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -33,10 +33,8 @@ class NotificationsTest(pyauto.PyUITest):
       raw_input('Interact with the browser and hit <enter> to dump notification'
                 'state...')
       print '*' * 20
-      import pprint
-      pp = pprint.PrettyPrinter(indent=2)
-      pp.pprint(self.GetActiveNotifications())
-      pp.pprint(self._GetDefaultPermissionSetting())
+      self.pprint(self.GetActiveNotifications())
+      self.pprint(self._GetDefaultPermissionSetting())
 
   def _SetDefaultPermissionSetting(self, setting):
     """Sets the default setting for whether sites are allowed to create
@@ -414,6 +412,8 @@ class NotificationsTest(pyauto.PyUITest):
     self.assertTrue(self.WaitForInfobarCount(1, windex=1))
     self.PerformActionOnInfobar('cancel', 0, windex=1)
 
+    self.CloseBrowserWindow(1)
+    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
     self.NavigateToURL(self.TEST_PAGE_URL, 1, 0)
     self._RequestPermission(windex=1)
     self.assertTrue(self.WaitForInfobarCount(1, windex=1))
@@ -421,6 +421,8 @@ class NotificationsTest(pyauto.PyUITest):
     self._CreateHTMLNotification(self.EMPTY_PAGE_URL, windex=1)
     self.assertEquals(1, len(self.GetActiveNotifications()))
 
+    self.CloseBrowserWindow(1)
+    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
     self.NavigateToURL(self.TEST_PAGE_URL, 1, 0)
     self._RequestPermission(windex=1)
     self.assertTrue(self.WaitForInfobarCount(1, windex=1))
@@ -467,7 +469,7 @@ class NotificationsTest(pyauto.PyUITest):
     """Test a page cannot create a notification to a chrome: url."""
     self._AllowAllOrigins()
     self.NavigateToURL(self.TEST_PAGE_URL)
-    self._CreateHTMLNotification('chrome://extensions/',
+    self._CreateHTMLNotification('chrome://settings',
                                  wait_for_display=False);
     self.assertFalse(self.GetActiveNotifications())
 
@@ -511,18 +513,20 @@ class NotificationsTest(pyauto.PyUITest):
     """Tests that closing a notification leaves the rest
     of the notifications in the correct order.
     """
+    if self.IsWin7():
+      return  # crbug.com/66072
     self._AllowAllOrigins()
     self.NavigateToURL(self.TEST_PAGE_URL)
     self._CreateSimpleNotification('', 'Title1', '')
     self._CreateSimpleNotification('', 'Title2', '')
     self._CreateSimpleNotification('', 'Title3', '')
-    self.assertEquals(3, len(self.GetActiveNotifications()))
-    old_notifications = self.GetActiveNotifications()
+    old_notifications = self.GetAllNotifications()
+    self.assertEquals(3, len(old_notifications))
     self.CloseNotification(1)
-    self.assertEquals(2, len(self.GetActiveNotifications()))
-    new_notifications = self.GetActiveNotifications()
-    self.assertEquals(old_notifications[0], new_notifications[0])
-    self.assertEquals(old_notifications[2], new_notifications[1])
+    new_notifications = self.GetAllNotifications()
+    self.assertEquals(2, len(new_notifications))
+    self.assertEquals(old_notifications[0]['id'], new_notifications[0]['id'])
+    self.assertEquals(old_notifications[2]['id'], new_notifications[1]['id'])
 
   def testNotificationReplacement(self):
     """Test that we can replace a notification using the replaceId."""

@@ -6,22 +6,25 @@
 #define CHROME_BROWSER_EXTENSIONS_THEME_INSTALLED_INFOBAR_DELEGATE_H_
 #pragma once
 
-#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include <string>
 
-class ThemeService;
+#include "base/compiler_specific.h"
+#include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+
 class Extension;
-class Profile;
-class SkBitmap;
-class TabContents;
+class ExtensionService;
+class ThemeService;
 
 // When a user installs a theme, we display it immediately, but provide an
 // infobar allowing them to cancel.
 class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
-                                      public NotificationObserver {
+                                      public content::NotificationObserver {
  public:
-  ThemeInstalledInfoBarDelegate(TabContents* tab_contents,
+  ThemeInstalledInfoBarDelegate(InfoBarTabHelper* infobar_helper,
+                                ExtensionService* extension_service,
+                                ThemeService* theme_service,
                                 const Extension* new_theme,
                                 const std::string& previous_theme_id,
                                 bool previous_using_native_theme);
@@ -36,23 +39,24 @@ class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
   ThemeService* theme_service() { return theme_service_; }
 
   // ConfirmInfoBarDelegate:
-  virtual bool Cancel();
+  virtual bool Cancel() OVERRIDE;
 
  private:
   // ConfirmInfoBarDelegate:
   virtual gfx::Image* GetIcon() const OVERRIDE;
+  virtual Type GetInfoBarType() const OVERRIDE;
   virtual ThemeInstalledInfoBarDelegate*
       AsThemePreviewInfobarDelegate() OVERRIDE;
   virtual string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
   virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  Profile* profile_;
+  ExtensionService* extension_service_;
   ThemeService* theme_service_;
 
   // Name of theme that's just been installed.
@@ -65,11 +69,8 @@ class ThemeInstalledInfoBarDelegate : public ConfirmInfoBarDelegate,
   std::string previous_theme_id_;
   bool previous_using_native_theme_;
 
-  // Tab to which this info bar is associated.
-  TabContents* tab_contents_;
-
   // Registers and unregisters us for notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_THEME_INSTALLED_INFOBAR_DELEGATE_H_

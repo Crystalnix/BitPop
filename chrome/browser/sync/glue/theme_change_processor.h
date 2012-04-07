@@ -7,14 +7,12 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/engine/syncapi.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/change_processor.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_types.h"
 
-class NotificationDetails;
-class NotificationSource;
 class Profile;
 
 namespace browser_sync {
@@ -26,34 +24,34 @@ class UnrecoverableErrorHandler;
 // model, and vice versa. All operations and use of this class are
 // from the UI thread.
 class ThemeChangeProcessor : public ChangeProcessor,
-                             public NotificationObserver {
+                             public content::NotificationObserver {
  public:
   explicit ThemeChangeProcessor(UnrecoverableErrorHandler* error_handler);
   virtual ~ThemeChangeProcessor();
 
-  // NotificationObserver implementation.
+  // content::NotificationObserver implementation.
   // ThemeService -> sync_api model change application.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // ChangeProcessor implementation.
   // sync_api model -> ThemeService change application.
   virtual void ApplyChangesFromSyncModel(
       const sync_api::BaseTransaction* trans,
-      const sync_api::SyncManager::ChangeRecord* changes,
-      int change_count);
+      const sync_api::ImmutableChangeRecordList& changes) OVERRIDE;
 
  protected:
   // ChangeProcessor implementation.
-  virtual void StartImpl(Profile* profile);
-  virtual void StopImpl();
+  virtual void StartImpl(Profile* profile) OVERRIDE;
+  virtual void StopImpl() OVERRIDE;
 
  private:
+  friend class ScopedStopObserving<ThemeChangeProcessor>;
   void StartObserving();
   void StopObserving();
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
   // Profile associated with the ThemeService.  Non-NULL iff |running()| is
   // true.
   Profile* profile_;

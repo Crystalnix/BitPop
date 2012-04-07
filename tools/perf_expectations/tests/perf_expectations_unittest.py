@@ -1,6 +1,5 @@
-#!/usr/bin/python
-#
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +10,7 @@ that simplejson can load it correctly.  It should catch most common
 formatting problems.
 """
 
+import subprocess
 import sys
 import os
 import unittest
@@ -59,28 +59,32 @@ def OnTestsLoad():
     sys.path = old_path
   return True
 
-def LoadData():
-  perf_file = open(PERF_EXPECTATIONS, 'r')
+def LoadJsonFile(filename):
+  f = open(filename, 'r')
   try:
-    perf_data = simplejson.load(perf_file)
+    data = simplejson.load(f)
   except ValueError, e:
-    perf_file.seek(0)
-    print "Error reading %s:\n%s" % (PERF_EXPECTATIONS,
-                                    perf_file.read()[:50]+'...')
+    f.seek(0)
+    print "Error reading %s:\n%s" % (filename,
+                                     f.read()[:50]+'...')
     raise e
-  return perf_data
+  f.close()
+  return data
 
 OnTestsLoad()
 
+CONFIG_JSON = os.path.join(os.path.dirname(sys.argv[0]),
+                           '../chromium_perf_expectations.cfg')
+MAKE_EXPECTATIONS = os.path.join(os.path.dirname(sys.argv[0]),
+                                 '../make_expectations.py')
 PERF_EXPECTATIONS = os.path.join(os.path.dirname(sys.argv[0]),
                                  '../perf_expectations.json')
 
+
 class PerfExpectationsUnittest(unittest.TestCase):
   def testPerfExpectations(self):
-    perf_data = LoadData()
-
     # Test data is dictionary.
-    perf_data = LoadData()
+    perf_data = LoadJsonFile(PERF_EXPECTATIONS)
     if not isinstance(perf_data, dict):
       raise Exception('perf expectations is not a dict')
 
@@ -142,6 +146,22 @@ class PerfExpectationsUnittest(unittest.TestCase):
     if len(bad_keys) > 0:
       msg = "perf expectations keys in bad format, expected a/b/c/d"
       raise Exception("%s: %s" % (msg, bad_keys))
+
+  def testNoUpdatesNeeded(self):
+    p = subprocess.Popen([MAKE_EXPECTATIONS, '-s'], stdout=subprocess.PIPE)
+    p.wait();
+    self.assertEqual(p.returncode, 0,
+        msg='Update expectations first by running ./make_expectations.py')
+
+  def testConfigFile(self):
+    # Test that the config file can be parsed as JSON.
+    config = LoadJsonFile(CONFIG_JSON)
+    # Require the following keys.
+    if 'base_url' not in config:
+      raise Exception('base_url not specified in config file')
+    if 'perf_file' not in config:
+      raise Exception('perf_file not specified in config file')
+
 
 if __name__ == '__main__':
   unittest.main()

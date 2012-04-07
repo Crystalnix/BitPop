@@ -6,11 +6,13 @@
 #define CHROME_BROWSER_UI_TOOLBAR_WRENCH_MENU_MODEL_H_
 #pragma once
 
+#include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/tabs/tab_strip_model_observer.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "ui/base/models/accelerator.h"
+#include "chrome/browser/ui/toolbar/bookmark_sub_menu_model.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/models/simple_menu_model.h"
 
@@ -69,24 +71,12 @@ class ToolsMenuModel : public ui::SimpleMenuModel {
   DISALLOW_COPY_AND_ASSIGN(ToolsMenuModel);
 };
 
-class BookmarkSubMenuModel : public ui::SimpleMenuModel {
- public:
-  BookmarkSubMenuModel(ui::SimpleMenuModel::Delegate* delegate,
-                       Browser* browser);
-  virtual ~BookmarkSubMenuModel();
-
- private:
-  void Build(Browser* browser);
-
-  DISALLOW_COPY_AND_ASSIGN(BookmarkSubMenuModel);
-};
-
 // A menu model that builds the contents of the wrench menu.
 class WrenchMenuModel : public ui::SimpleMenuModel,
                         public ui::SimpleMenuModel::Delegate,
                         public ui::ButtonMenuItemModel::Delegate,
                         public TabStripModelObserver,
-                        public NotificationObserver {
+                        public content::NotificationObserver {
  public:
   WrenchMenuModel(ui::AcceleratorProvider* provider, Browser* browser);
   virtual ~WrenchMenuModel();
@@ -118,13 +108,17 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
                              int index) OVERRIDE;
   virtual void TabStripModelDeleted() OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Getters.
   Browser* browser() const { return browser_; }
+
+  BookmarkSubMenuModel* bookmark_sub_menu_model() const {
+    return bookmark_sub_menu_model_.get();
+  }
 
   // Calculates |zoom_label_| in response to a zoom change.
   void UpdateZoomControls();
@@ -135,6 +129,8 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   WrenchMenuModel();
 
   void Build();
+
+  void AddGlobalErrorMenuItems();
 
   // Adds custom items to the menu. Deprecated in favor of a cross platform
   // model for button items.
@@ -161,7 +157,7 @@ class WrenchMenuModel : public ui::SimpleMenuModel,
   Browser* browser_;  // weak
   TabStripModel* tabstrip_model_; // weak
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(WrenchMenuModel);
 };

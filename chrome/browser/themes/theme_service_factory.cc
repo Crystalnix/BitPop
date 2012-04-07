@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/themes/theme_service.h"
-#include "content/common/notification_service.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -36,8 +35,8 @@ ThemeServiceFactory* ThemeServiceFactory::GetInstance() {
 }
 
 ThemeServiceFactory::ThemeServiceFactory()
-    : ProfileKeyedServiceFactory(
-        ProfileDependencyManager::GetInstance())
+    : ProfileKeyedServiceFactory("ThemeService",
+                                 ProfileDependencyManager::GetInstance())
 {}
 
 ThemeServiceFactory::~ThemeServiceFactory() {}

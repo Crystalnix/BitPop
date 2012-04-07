@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 class Browser;
 class ExtensionHost;
 class RenderViewHost;
-class RenderWidgetHostViewGtk;
 class SkBitmap;
 
 class ExtensionViewGtk {
@@ -54,8 +53,6 @@ class ExtensionViewGtk {
   Browser* browser_;
 
   ExtensionHost* extension_host_;
-
-  RenderWidgetHostViewGtk* render_widget_host_view_;
 
   // The background the view should have once it is initialized. This is set
   // when the view has a custom background, but hasn't been initialized yet.

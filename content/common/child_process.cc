@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,9 @@ ChildProcess::ChildProcess()
   DCHECK(!child_process_);
   child_process_ = this;
 
-  io_thread_.StartWithOptions(base::Thread::Options(MessageLoop::TYPE_IO, 0));
+  // We can't recover from failing to start the IO thread.
+  CHECK(io_thread_.StartWithOptions(
+            base::Thread::Options(MessageLoop::TYPE_IO, 0)));
 }
 
 ChildProcess::~ChildProcess() {
@@ -96,10 +98,10 @@ void ChildProcess::WaitForDebugger(const std::string& label) {
   // TODO(playmobil): In the long term, overriding this flag doesn't seem
   // right, either use our own flag or open a dialog we can use.
   // This is just to ease debugging in the interim.
-  LOG(ERROR) << label
-             << " ("
-             << getpid()
-             << ") paused waiting for debugger to attach @ pid";
+  DLOG(ERROR) << label
+              << " ("
+              << getpid()
+              << ") paused waiting for debugger to attach @ pid";
   // Install a signal handler so that pause can be woken.
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));

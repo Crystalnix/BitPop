@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,14 +16,15 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/in_memory_url_index.h"
+#include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "googleurl/src/url_parse.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
 #include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -32,8 +33,7 @@ using history::InMemoryURLIndex;
 using history::ScoredHistoryMatch;
 using history::ScoredHistoryMatches;
 
-// The initial maximum allowable score for a match which cannot be inlined.
-const int kMaxNonInliningScore = 1199;
+bool HistoryQuickProvider::disabled_ = false;
 
 HistoryQuickProvider::HistoryQuickProvider(ACProviderListener* listener,
                                            Profile* profile)
@@ -45,6 +45,8 @@ HistoryQuickProvider::~HistoryQuickProvider() {}
 void HistoryQuickProvider::Start(const AutocompleteInput& input,
                                  bool minimal_changes) {
   matches_.clear();
+  if (disabled_)
+    return;
 
   // Don't bother with INVALID and FORCED_QUERY.  Also pass when looking for
   // BEST_MATCH and there is no inline autocompletion because none of the HQP
@@ -56,20 +58,6 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
     return;
 
   autocomplete_input_ = input;
-
-  // Do some fixup on the user input before matching against it, so we provide
-  // good results for local file paths, input with spaces, etc.
-  // NOTE: This purposefully doesn't take input.desired_tld() into account; if
-  // it did, then holding "ctrl" would change all the results from the
-  // HistoryQuickProvider provider, not just the What You Typed Result.
-  const string16 fixed_text(FixupUserInput(input));
-  if (fixed_text.empty()) {
-    // Conceivably fixup could result in an empty string (although I don't
-    // have cases where this happens offhand).  We can't do anything with
-    // empty input, so just bail; otherwise we'd crash later.
-    return;
-  }
-  autocomplete_input_.set_text(fixed_text);
 
   // TODO(pkasting): We should just block here until this loads.  Any time
   // someone unloads the history backend, we'll get inconsistent inline
@@ -89,22 +77,13 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   }
 }
 
-// HistoryQuickProvider matches are currently not deletable.
-// TODO(mrossetti): Determine when a match should be deletable.
+// TODO(mrossetti): Implement this function. (Will happen in next CL.)
 void HistoryQuickProvider::DeleteMatch(const AutocompleteMatch& match) {}
 
 void HistoryQuickProvider::DoAutocomplete() {
   // Get the matching URLs from the DB.
   string16 term_string = autocomplete_input_.text();
-  // TODO(mrossetti): Temporary workaround for http://crbug.com/88498.
-  // Just give up after 50 characters.
-  if (term_string.size() > 50)
-    return;
-  term_string = UnescapeURLComponent(term_string,
-      UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
-  history::InMemoryURLIndex::String16Vector terms(
-      InMemoryURLIndex::WordVectorFromString16(term_string, false));
-  ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(terms);
+  ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(term_string);
   if (matches.empty())
     return;
 
@@ -113,7 +92,7 @@ void HistoryQuickProvider::DoAutocomplete() {
   // |max_match_score|. Upon use of |max_match_score| it is decremented.
   // All subsequent matches must be clamped to retain match results ordering.
   int max_match_score = autocomplete_input_.prevent_inline_autocomplete() ?
-      kMaxNonInliningScore : -1;
+      (AutocompleteResult::kLowestDefaultScore - 1) : -1;
   for (ScoredHistoryMatches::const_iterator match_iter = matches.begin();
        match_iter != matches.end(); ++match_iter) {
     const ScoredHistoryMatch& history_match(*match_iter);
@@ -135,30 +114,33 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
   const history::URLRow& info = history_match.url_info;
   int score = CalculateRelevance(history_match, max_match_score);
   AutocompleteMatch match(this, score, !!info.visit_count(),
-                          history_match.url_matches.empty() ?
-                          AutocompleteMatch::HISTORY_URL :
-                          AutocompleteMatch::HISTORY_TITLE);
+      history_match.url_matches.empty() ?
+          AutocompleteMatch::HISTORY_URL : AutocompleteMatch::HISTORY_TITLE);
   match.destination_url = info.url();
   DCHECK(match.destination_url.is_valid());
 
   // Format the URL autocomplete presentation.
   std::vector<size_t> offsets =
-      InMemoryURLIndex::OffsetsFromTermMatches(history_match.url_matches);
-  match.contents =
-      net::FormatUrlWithOffsets(info.url(), languages_, net::kFormatUrlOmitAll,
-                                UnescapeRule::SPACES, NULL, NULL, &offsets);
+      OffsetsFromTermMatches(history_match.url_matches);
+  const net::FormatUrlTypes format_types = net::kFormatUrlOmitAll &
+      ~(!history_match.match_in_scheme ? 0 : net::kFormatUrlOmitHTTP);
+  match.fill_into_edit =
+      AutocompleteInput::FormattedStringWithEquivalentMeaning(info.url(),
+          net::FormatUrlWithOffsets(info.url(), languages_, format_types,
+              net::UnescapeRule::SPACES, NULL, NULL, &offsets));
+  match.contents = net::FormatUrl(info.url(), languages_, format_types,
+              net::UnescapeRule::SPACES, NULL, NULL, NULL);
   history::TermMatches new_matches =
-      InMemoryURLIndex::ReplaceOffsetsInTermMatches(history_match.url_matches,
-                                                    offsets);
+      ReplaceOffsetsInTermMatches(history_match.url_matches, offsets);
   match.contents_class =
       SpansFromTermMatch(new_matches, match.contents.length(), true);
-  match.fill_into_edit = match.contents;
 
   if (prevent_inline_autocomplete || !history_match.can_inline) {
     match.inline_autocomplete_offset = string16::npos;
   } else {
-    match.inline_autocomplete_offset =
-        history_match.input_location + match.fill_into_edit.length();
+    DCHECK(!new_matches.empty());
+    match.inline_autocomplete_offset = new_matches[0].offset +
+        new_matches[0].length;
     DCHECK_LE(match.inline_autocomplete_offset, match.fill_into_edit.length());
   }
 
@@ -182,12 +164,6 @@ history::InMemoryURLIndex* HistoryQuickProvider::GetIndex() {
   return history_service->InMemoryIndex();
 }
 
-void HistoryQuickProvider::SetIndexForTesting(
-    history::InMemoryURLIndex* index) {
-  DCHECK(index);
-  index_for_testing_.reset(index);
-}
-
 // static
 int HistoryQuickProvider::CalculateRelevance(
     const ScoredHistoryMatch& history_match,
@@ -197,7 +173,8 @@ int HistoryQuickProvider::CalculateRelevance(
   // at the beginning of the result's URL and there is exactly one substring
   // match in the URL.
   int score = (history_match.can_inline) ? history_match.raw_score :
-      std::min(kMaxNonInliningScore, history_match.raw_score);
+      std::min(AutocompleteResult::kLowestDefaultScore - 1,
+               history_match.raw_score);
   *max_match_score = ((*max_match_score < 0) ?
       score : std::min(score, *max_match_score)) - 1;
   return *max_match_score + 1;

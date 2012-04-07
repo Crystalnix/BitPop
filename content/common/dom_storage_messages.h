@@ -3,13 +3,16 @@
 // found in the LICENSE file.
 
 // Multiply-included message file, no traditional include guard.
-#include "content/common/common_param_traits.h"
+#include "content/common/dom_storage_common.h"
+#include "content/public/common/common_param_traits.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageArea.h"
 
 #define IPC_MESSAGE_START DOMStorageMsgStart
+
+IPC_ENUM_TRAITS(DOMStorageType)
 
 // Signals a storage event.
 IPC_STRUCT_BEGIN(DOMStorageMsg_Event_Params)

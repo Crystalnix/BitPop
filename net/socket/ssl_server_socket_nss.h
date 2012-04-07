@@ -23,27 +23,43 @@ namespace net {
 
 class SSLServerSocketNSS : public SSLServerSocket {
  public:
-  // This object takes ownership of the following parameters:
-  // |socket| - A socket that is already connected.
-  // |cert| - The certificate to be used by the server.
-  //
-  // The following parameters are copied in the constructor.
-  // |ssl_config| - Options for SSL socket.
-  // |key| - The private key used by the server.
-  SSLServerSocketNSS(Socket* transport_socket,
-                     scoped_refptr<X509Certificate> cert,
+  // See comments on CreateSSLServerSocket for details of how these
+  // parameters are used.
+  SSLServerSocketNSS(StreamSocket* socket,
+                     scoped_refptr<X509Certificate> certificate,
                      crypto::RSAPrivateKey* key,
                      const SSLConfig& ssl_config);
   virtual ~SSLServerSocketNSS();
 
-  // SSLServerSocket implementation.
-  virtual int Accept(CompletionCallback* callback);
+  // SSLServerSocket interface.
+  virtual int Handshake(const CompletionCallback& callback) OVERRIDE;
+  virtual int ExportKeyingMaterial(const base::StringPiece& label,
+                                   const base::StringPiece& context,
+                                   unsigned char *out,
+                                   unsigned int outlen) OVERRIDE;
+
+  // Socket interface (via StreamSocket).
   virtual int Read(IOBuffer* buf, int buf_len,
-                   CompletionCallback* callback);
+                   const CompletionCallback& callback) OVERRIDE;
   virtual int Write(IOBuffer* buf, int buf_len,
-                    CompletionCallback* callback);
-  virtual bool SetReceiveBufferSize(int32 size);
-  virtual bool SetSendBufferSize(int32 size);
+                    const CompletionCallback& callback) OVERRIDE;
+  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+
+  // StreamSocket implementation.
+  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
+  virtual void Disconnect() OVERRIDE;
+  virtual bool IsConnected() const OVERRIDE;
+  virtual bool IsConnectedAndIdle() const OVERRIDE;
+  virtual int GetPeerAddress(AddressList* address) const OVERRIDE;
+  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
+  virtual const BoundNetLog& NetLog() const OVERRIDE;
+  virtual void SetSubresourceSpeculation() OVERRIDE;
+  virtual void SetOmniboxSpeculation() OVERRIDE;
+  virtual bool WasEverUsed() const OVERRIDE;
+  virtual bool UsingTCPFastOpen() const OVERRIDE;
+  virtual int64 NumBytesRead() const OVERRIDE;
+  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
 
  private:
   enum State {
@@ -69,7 +85,7 @@ class SSLServerSocketNSS : public SSLServerSocket {
   int DoReadLoop(int result);
   int DoWriteLoop(int result);
   int DoHandshake();
-  void DoAcceptCallback(int result);
+  void DoHandshakeCallback(int result);
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
 
@@ -82,8 +98,6 @@ class SSLServerSocketNSS : public SSLServerSocket {
   virtual int Init();
 
   // Members used to send and receive buffer.
-  CompletionCallbackImpl<SSLServerSocketNSS> buffer_send_callback_;
-  CompletionCallbackImpl<SSLServerSocketNSS> buffer_recv_callback_;
   bool transport_send_busy_;
   bool transport_recv_busy_;
 
@@ -91,9 +105,9 @@ class SSLServerSocketNSS : public SSLServerSocket {
 
   BoundNetLog net_log_;
 
-  CompletionCallback* user_accept_callback_;
-  CompletionCallback* user_read_callback_;
-  CompletionCallback* user_write_callback_;
+  CompletionCallback user_handshake_callback_;
+  CompletionCallback user_read_callback_;
+  CompletionCallback user_write_callback_;
 
   // Used by Read function.
   scoped_refptr<IOBuffer> user_read_buf_;
@@ -109,12 +123,10 @@ class SSLServerSocketNSS : public SSLServerSocket {
   // Buffers for the network end of the SSL state machine
   memio_Private* nss_bufs_;
 
-  // Socket for sending and receiving data.
-  scoped_ptr<Socket> transport_socket_;
+  // StreamSocket for sending and receiving data.
+  scoped_ptr<StreamSocket> transport_socket_;
 
   // Options for the SSL socket.
-  // TODO(hclam): This memeber is currently not used. Should make use of this
-  // member to configure the socket.
   SSLConfig ssl_config_;
 
   // Certificate for the server.

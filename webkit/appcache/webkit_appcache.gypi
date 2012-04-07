@@ -1,16 +1,33 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'conditions': [
+      ['inside_chromium_build==0', {
+        'webkit_src_dir': '../../../../..',
+      },{
+        'webkit_src_dir': '../../third_party/WebKit',
+      }],
+      ],
+    },
   'targets': [
     {
       'target_name': 'appcache',
-      'type': 'static_library',
-      'msvs_guid': '0B945915-31A7-4A07-A5B5-568D737A39B1',
+      'variables': { 'enable_wexit_time_destructors': 1, },
+      'type': '<(component)',
+      'defines': [
+        'APPCACHE_IMPLEMENTATION',
+      ],
       'dependencies': [
-        '<(DEPTH)/app/app.gyp:app_base',
+        'quota',
+        '<(DEPTH)/base/base.gyp:base_i18n',
+        '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
         '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/sql/sql.gyp:sql',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(webkit_src_dir)/Source/WebKit/chromium/WebKit.gyp:webkit',
       ],
       'sources': [
         # This list contains all .h and .cc in appcache except for test code.
@@ -23,6 +40,7 @@
         'appcache_disk_cache.cc',
         'appcache_disk_cache.h',
         'appcache_entry.h',
+        'appcache_export.h',
         'appcache_frontend_impl.cc',
         'appcache_frontend_impl.h',
         'appcache_group.cc',
@@ -36,6 +54,8 @@
         'appcache_interfaces.cc',
         'appcache_interfaces.h',
         'appcache_policy.h',
+        'appcache_quota_client.cc',
+        'appcache_quota_client.h',
         'appcache_request_handler.cc',
         'appcache_request_handler.h',
         'appcache_response.cc',
@@ -46,8 +66,6 @@
         'appcache_storage.h',
         'appcache_storage_impl.cc',
         'appcache_storage_impl.h',
-        'appcache_thread.cc',
-        'appcache_thread.h',
         'appcache_working_set.cc',
         'appcache_working_set.h',
         'appcache_update_job.cc',

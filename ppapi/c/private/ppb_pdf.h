@@ -65,7 +65,9 @@ typedef enum {
   PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_PRESSED = 39,
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END = 40,
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER = 41,
-  PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED = 42
+  PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED = 42,
+  PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON = 43,
+  PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND = 44
 } PP_ResourceImage;
 
 typedef enum {
@@ -157,6 +159,9 @@ struct PPB_PDF {
 
   // Invoke SaveAs... dialog, similar to the right-click or wrench menu.
   void (*SaveAs)(PP_Instance instance);
+
+  // Invoke Print dialog for plugin.
+  void (*Print)(PP_Instance instance);
 };
 
 #endif  // PPAPI_C_PRIVATE_PPB_PDF_H_

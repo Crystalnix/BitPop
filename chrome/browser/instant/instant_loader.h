@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,21 +6,25 @@
 #define CHROME_BROWSER_INSTANT_INSTANT_LOADER_H_
 #pragma once
 
+#include <string>
+
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/timer.h"
 #include "chrome/browser/instant/instant_commit_type.h"
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/instant_types.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/rect.h"
 
 class InstantLoaderDelegate;
 class InstantLoaderManagerTest;
+class SessionStorageNamespace;
 class TabContents;
 class TabContentsWrapper;
 class TemplateURL;
@@ -35,9 +39,17 @@ class TemplateURL;
 //
 // If the TemplateURLID supplied to the constructor is zero, then the url is
 // loaded as is.
-class InstantLoader : public NotificationObserver {
+class InstantLoader : public content::NotificationObserver {
  public:
-  InstantLoader(InstantLoaderDelegate* delegate, TemplateURLID id);
+  // Header and value set on loads that originate from instant.
+  static const char* const kInstantHeader;
+  static const char* const kInstantHeaderValue;
+
+  // |group| is an identifier suffixed to histograms to distinguish field trial
+  // statistics from regular operation; can be a blank string.
+  InstantLoader(InstantLoaderDelegate* delegate,
+                TemplateURLID id,
+                const std::string& group);
   virtual ~InstantLoader();
 
   // Invoked to load a URL. |tab_contents| is the TabContents the preview is
@@ -46,7 +58,7 @@ class InstantLoader : public NotificationObserver {
   bool Update(TabContentsWrapper* tab_contents,
               const TemplateURL* template_url,
               const GURL& url,
-              PageTransition::Type transition_type,
+              content::PageTransition transition_type,
               const string16& user_text,
               bool verbatim,
               string16* suggested_text);
@@ -62,8 +74,11 @@ class InstantLoader : public NotificationObserver {
 
   // Releases the preview TabContents passing ownership to the caller. This is
   // intended to be called when the preview TabContents is committed. This does
-  // not notify the delegate.
-  TabContentsWrapper* ReleasePreviewContents(InstantCommitType type);
+  // not notify the delegate. |tab_contents| is the underlying tab onto which
+  // the preview will be committed. It can be NULL when the underlying tab is
+  // irrelevant, for example when |type| is INSTANT_COMMIT_DESTROY.
+  TabContentsWrapper* ReleasePreviewContents(InstantCommitType type,
+                                             TabContentsWrapper* tab_contents);
 
   // Calls through to method of same name on delegate.
   bool ShouldCommitInstantOnMouseUp();
@@ -74,17 +89,23 @@ class InstantLoader : public NotificationObserver {
   void MaybeLoadInstantURL(TabContentsWrapper* tab_contents,
                            const TemplateURL* template_url);
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Returns true if the preview NavigationController's TabContents has a
+  // pending NavigationEntry.
+  bool IsNavigationPending() const;
+
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // The preview TabContents; may be null.
   TabContentsWrapper* preview_contents() const {
     return preview_contents_.get();
   }
 
-  // Returns true if the preview TabContents is ready to be shown.
+  // Returns true if the preview TabContents is ready to be shown. A non-instant
+  // loader is ready once the renderer paints, otherwise it isn't ready until we
+  // get a response back from the page.
   bool ready() const { return ready_; }
 
   // Returns true if the current load returned a 200.
@@ -106,6 +127,12 @@ class InstantLoader : public NotificationObserver {
 
   // See description above field.
   const string16& user_text() const { return user_text_; }
+
+  // Are we waiting for the preview page to finish loading and to determine if
+  // it supports instant?
+  bool is_determining_if_page_supports_instant() const {
+    return frame_load_observer_.get() != NULL;
+  }
 
  private:
   friend class InstantLoaderManagerTest;
@@ -137,11 +164,6 @@ class InstantLoader : public NotificationObserver {
   // Returns the bounds of the omnibox in terms of the preview tab contents.
   gfx::Rect GetOmniboxBoundsInTermsOfPreview();
 
-  // Are we waiting for the preview page to finish loading?
-  bool is_waiting_for_load() const {
-    return frame_load_observer_.get() != NULL;
-  }
-
   // Invoked if it the page doesn't really support instant when we thought it
   // did. If |needs_reload| is true, the text changed since the first load and
   // the page needs to be reloaded.
@@ -170,7 +192,7 @@ class InstantLoader : public NotificationObserver {
   // Creates and loads the |template_url|'s instant URL.
   void LoadInstantURL(TabContentsWrapper* tab_contents,
                       const TemplateURL* template_url,
-                      PageTransition::Type transition_type,
+                      content::PageTransition transition_type,
                       const string16& user_text,
                       bool verbatim);
 
@@ -214,19 +236,26 @@ class InstantLoader : public NotificationObserver {
   scoped_ptr<FrameLoadObserver> frame_load_observer_;
 
   // Transition type of the match last passed to Update.
-  PageTransition::Type last_transition_type_;
+  content::PageTransition last_transition_type_;
 
   // Timer used to update the bounds of the omnibox.
   base::OneShotTimer<InstantLoader> update_bounds_timer_;
 
   // Used to get notifications about renderers coming and going.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Last value of verbatim passed to |Update|.
   bool verbatim_;
 
   // True if the page needs to be reloaded.
   bool needs_reload_;
+
+  // See description above constructor.
+  std::string group_;
+
+  // The session storage namespace identifier of the original tab contents that
+  // the preview_contents_ was based upon.
+  scoped_refptr<SessionStorageNamespace> session_storage_namespace_;
 
   DISALLOW_COPY_AND_ASSIGN(InstantLoader);
 };

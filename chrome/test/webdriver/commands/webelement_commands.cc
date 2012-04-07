@@ -1,19 +1,23 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/webdriver/commands/webelement_commands.h"
 
+#include "base/file_util.h"
+#include "base/format_macros.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/string_split.h"
+#include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/third_party/icu/icu_utf.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
+#include "chrome/test/webdriver/webdriver_basic_types.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_session.h"
+#include "chrome/test/webdriver/webdriver_util.h"
 #include "third_party/webdriver/atoms.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
 
 namespace webdriver {
 
@@ -40,7 +44,7 @@ bool WebElementCommand::Init(Response* const response) {
 
   // We cannot verify the ID is valid until we execute the command and
   // inject the ID into the in-page cache.
-  element = WebElementId(path_segments_.at(4));
+  element = ElementId(path_segments_.at(4));
   return true;
 }
 
@@ -65,20 +69,15 @@ void ElementAttributeCommand::ExecuteGet(Response* const response) {
     return;
   }
 
-  std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::GET_ATTRIBUTE);
-
-  ListValue args;
-  args.Append(element.ToValue());
-  args.Append(Value::CreateStringValue(path_segments_.at(6)));
-
-  Value* result = NULL;
-  Error* error = session_->ExecuteScript(script, &args, &result);
+  const std::string key = path_segments_.at(6);
+  Value* value;
+  Error* error = session_->GetAttribute(element, key, &value);
   if (error) {
     response->SetError(error);
     return;
   }
-  response->SetValue(result);
+
+  response->SetValue(value);
 }
 
 ///////////////////// ElementClearCommand ////////////////////
@@ -99,7 +98,7 @@ void ElementClearCommand::ExecutePost(Response* const response) {
   args.Append(element.ToValue());
 
   std::string script = base::StringPrintf(
-      "(%s).apply(null, arguments);", atoms::CLEAR);
+      "(%s).apply(null, arguments);", atoms::asString(atoms::CLEAR).c_str());
 
   Value* result = NULL;
   Error* error = session_->ExecuteScript(script, &args, &result);
@@ -132,7 +131,8 @@ void ElementCssCommand::ExecuteGet(Response* const response) {
   }
 
   std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::GET_EFFECTIVE_STYLE);
+      "return (%s).apply(null, arguments);",
+      atoms::asString(atoms::GET_EFFECTIVE_STYLE).c_str());
 
   ListValue args;
   args.Append(element.ToValue());
@@ -163,7 +163,8 @@ bool ElementDisplayedCommand::DoesGet() {
 void ElementDisplayedCommand::ExecuteGet(Response* const response) {
   bool is_displayed;
   Error* error = session_->IsElementDisplayed(
-      session_->current_target(), element, &is_displayed);
+      session_->current_target(), element, false /* ignore_opacity */,
+      &is_displayed);
   if (error) {
     response->SetError(error);
     return;
@@ -189,7 +190,8 @@ void ElementEnabledCommand::ExecuteGet(Response* const response) {
   args.Append(element.ToValue());
 
   std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::IS_ENABLED);
+      "return (%s).apply(null, arguments);",
+      atoms::asString(atoms::IS_ENABLED).c_str());
 
   Value* result = NULL;
   Error* error = session_->ExecuteScript(script, &args, &result);
@@ -226,7 +228,7 @@ void ElementEqualsCommand::ExecuteGet(Response* const response) {
   ListValue args;
   args.Append(element.ToValue());
 
-  WebElementId other_element(path_segments_.at(6));
+  ElementId other_element(path_segments_.at(6));
   args.Append(other_element.ToValue());
 
   Value* result = NULL;
@@ -253,7 +255,8 @@ bool ElementLocationCommand::DoesGet() {
 
 void ElementLocationCommand::ExecuteGet(Response* const response) {
   std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::GET_LOCATION);
+      "return (%s).apply(null, arguments);",
+      atoms::asString(atoms::GET_LOCATION).c_str());
 
   ListValue args;
   args.Append(element.ToValue());
@@ -281,7 +284,7 @@ bool ElementLocationInViewCommand::DoesGet() {
 }
 
 void ElementLocationInViewCommand::ExecuteGet(Response* const response) {
-  gfx::Point location;
+  Point location;
   Error* error = session_->GetElementLocationInView(element, &location);
   if (error) {
     response->SetError(error);
@@ -307,18 +310,14 @@ bool ElementNameCommand::DoesGet() {
 }
 
 void ElementNameCommand::ExecuteGet(Response* const response) {
-  ListValue args;
-  args.Append(element.ToValue());
-
-  std::string script = "return arguments[0].tagName.toLocaleLowerCase();";
-
-  Value* result = NULL;
-  Error* error = session_->ExecuteScript(script, &args, &result);
+  std::string tag_name;
+  Error* error = session_->GetElementTagName(
+      session_->current_target(), element, &tag_name);
   if (error) {
     response->SetError(error);
     return;
   }
-  response->SetValue(result);
+  response->SetValue(Value::CreateStringValue(tag_name));
 }
 
 ///////////////////// ElementSelectedCommand ////////////////////
@@ -339,36 +338,23 @@ bool ElementSelectedCommand::DoesPost() {
 }
 
 void ElementSelectedCommand::ExecuteGet(Response* const response) {
-  ListValue args;
-  args.Append(element.ToValue());
-
-  std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::IS_SELECTED);
-
-  Value* result = NULL;
-  Error* error = session_->ExecuteScript(script, &args, &result);
+  bool is_selected;
+  Error* error = session_->IsOptionElementSelected(
+      session_->current_target(), element, &is_selected);
   if (error) {
     response->SetError(error);
     return;
   }
-  response->SetValue(result);
+  response->SetValue(Value::CreateBooleanValue(is_selected));
 }
 
 void ElementSelectedCommand::ExecutePost(Response* const response) {
-  ListValue args;
-  args.Append(element.ToValue());
-  args.Append(Value::CreateBooleanValue(true));
-
-  std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::SET_SELECTED);
-
-  Value* result = NULL;
-  Error* error = session_->ExecuteScript(script, &args, &result);
+  Error* error = session_->SetOptionElementSelected(
+      session_->current_target(), element, true);
   if (error) {
     response->SetError(error);
     return;
   }
-  response->SetValue(result);
 }
 
 ///////////////////// ElementSizeCommand ////////////////////
@@ -385,7 +371,7 @@ bool ElementSizeCommand::DoesGet() {
 }
 
 void ElementSizeCommand::ExecuteGet(Response* const response) {
-  gfx::Size size;
+  Size size;
   Error* error = session_->GetElementSize(
       session_->current_target(), element, &size);
   if (error) {
@@ -412,10 +398,8 @@ bool ElementSubmitCommand::DoesPost() {
 }
 
 void ElementSubmitCommand::ExecutePost(Response* const response) {
-  // TODO(jleyba): We need to wait for any post-submit navigation events to
-  // complete before responding to the client.
   std::string script = base::StringPrintf(
-      "(%s).apply(null, arguments);", atoms::SUBMIT);
+      "(%s).apply(null, arguments);", atoms::asString(atoms::SUBMIT).c_str());
 
   ListValue args;
   args.Append(element.ToValue());
@@ -444,7 +428,8 @@ bool ElementToggleCommand::DoesPost() {
 
 void ElementToggleCommand::ExecutePost(Response* const response) {
   std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::TOGGLE);
+      "return (%s).apply(null, arguments);",
+      atoms::asString(atoms::CLICK).c_str());
 
   ListValue args;
   args.Append(element.ToValue());
@@ -498,30 +483,114 @@ void ElementValueCommand::ExecuteGet(Response* const response) {
 }
 
 void ElementValueCommand::ExecutePost(Response* const response) {
-  ListValue* key_list;
-  if (!GetListParameter("value", &key_list)) {
-    response->SetError(new Error(
-        kBadRequest, "Missing or invalid 'value' parameter"));
+  bool is_input = false;
+  Error* error = HasAttributeWithLowerCaseValueASCII("tagName", "input",
+                                                     &is_input);
+  if (error) {
+    response->SetError(error);
     return;
   }
-  // Flatten the given array of strings into one.
-  string16 keys;
-  for (size_t i = 0; i < key_list->GetSize(); ++i) {
-    string16 keys_list_part;
-    key_list->GetString(i, &keys_list_part);
-    for (size_t j = 0; j < keys_list_part.size(); ++j) {
-      if (CBU16_IS_SURROGATE(keys_list_part[j])) {
-        response->SetError(new Error(
-            kBadRequest, "ChromeDriver only supports characters in the BMP"));
-        return;
-      }
-    }
-    keys.append(keys_list_part);
+
+  bool is_file = false;
+  error = HasAttributeWithLowerCaseValueASCII("type", "file", &is_file);
+  if (error) {
+    response->SetError(error);
+    return;
   }
 
-  Error* error = session_->SendKeys(element, keys);
-  if (error)
+  // If the element is a file upload control, set the file paths to the element.
+  // Otherwise send the value to the element as key input.
+  if (is_input && is_file) {
+    error = DragAndDropFilePaths();
+  } else {
+    error = SendKeys();
+  }
+
+  if (error) {
     response->SetError(error);
+    return;
+  }
+}
+
+Error* ElementValueCommand::HasAttributeWithLowerCaseValueASCII(
+    const std::string& key, const std::string& value, bool* result) const {
+  Value* unscoped_value = NULL;
+  Error* error = session_->GetAttribute(element, key, &unscoped_value);
+  scoped_ptr<Value> scoped_value(unscoped_value);
+  if (error)
+    return error;
+
+  std::string actual_value;
+  if (scoped_value->GetAsString(&actual_value)) {
+    *result = LowerCaseEqualsASCII(actual_value, value.c_str());
+  } else {
+    // Note we do not handle converting a number to a string.
+    *result = false;
+  }
+  return NULL;
+}
+
+Error* ElementValueCommand::DragAndDropFilePaths() const {
+  ListValue* path_list;
+  if (!GetListParameter("value", &path_list))
+    return new Error(kBadRequest, "Missing or invalid 'value' parameter");
+
+  // Compress array into single string.
+  FilePath::StringType paths_string;
+  for (size_t i = 0; i < path_list->GetSize(); ++i) {
+    FilePath::StringType path_part;
+    if (!path_list->GetString(i, &path_part)) {
+      return new Error(
+          kBadRequest,
+          "'value' is invalid: " + JsonStringify(path_list));
+    }
+    paths_string.append(path_part);
+  }
+
+  // Separate the string into separate paths, delimited by \n.
+  std::vector<FilePath::StringType> paths;
+  base::SplitString(paths_string, '\n', &paths);
+
+  // Return an error if trying to drop multiple paths on a single file input.
+  bool multiple = false;
+  Error* error = HasAttributeWithLowerCaseValueASCII("multiple", "true",
+                                                     &multiple);
+  if (error)
+    return error;
+  if (!multiple && paths.size() > 1)
+    return new Error(kBadRequest, "The element can not hold multiple files");
+
+  // Check the files exist.
+  for (size_t i = 0; i < paths.size(); ++i) {
+    if (!file_util::PathExists(FilePath(paths[i]))) {
+      return new Error(
+          kBadRequest,
+          base::StringPrintf("'%s' does not exist on the file system",
+              UTF16ToUTF8(FilePath(paths[i]).LossyDisplayName()).c_str()));
+    }
+  }
+
+  Point location;
+  error = session_->GetClickableLocation(element, &location);
+  if (error)
+    return error;
+
+  return session_->DragAndDropFilePaths(location, paths);
+}
+
+Error* ElementValueCommand::SendKeys() const {
+  ListValue* key_list;
+  if (!GetListParameter("value", &key_list)) {
+    return new Error(kBadRequest, "Missing or invalid 'value' parameter");
+  }
+
+  // Flatten the given array of strings into one.
+  string16 keys;
+  Error* error = FlattenStringArray(key_list, &keys);
+  if (error)
+    return error;
+
+  return session_->SendKeys(element, keys);
 }
 
 ///////////////////// ElementTextCommand ////////////////////
@@ -543,7 +612,8 @@ void ElementTextCommand::ExecuteGet(Response* const response) {
   args.Append(element.ToValue());
 
   std::string script = base::StringPrintf(
-      "return (%s).apply(null, arguments);", atoms::GET_TEXT);
+      "return (%s).apply(null, arguments);",
+      atoms::asString(atoms::GET_TEXT).c_str());
 
   Error* error = session_->ExecuteScript(script, &args,
                                          &unscoped_result);

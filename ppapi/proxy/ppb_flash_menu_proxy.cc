@@ -6,117 +6,100 @@
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_flash_menu.h"
+#include "ppapi/proxy/enter_proxy.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/tracked_callback.h"
+#include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/ppb_flash_menu_api.h"
+#include "ppapi/thunk/resource_creation_api.h"
 
-namespace pp {
+using ppapi::thunk::EnterFunctionNoLock;
+using ppapi::thunk::PPB_Flash_Menu_API;
+using ppapi::thunk::ResourceCreationAPI;
+
+namespace ppapi {
 namespace proxy {
 
-class FlashMenu : public PluginResource {
+class FlashMenu : public PPB_Flash_Menu_API, public Resource {
  public:
-  explicit FlashMenu(const HostResource& resource)
-      : PluginResource(resource),
-        callback_(PP_BlockUntilComplete()),
-        selected_id_ptr_(NULL) {
-  }
-
-  virtual ~FlashMenu() {}
+  explicit FlashMenu(const HostResource& resource);
+  virtual ~FlashMenu();
 
   // Resource overrides.
-  virtual FlashMenu* AsFlashMenu() { return this; }
+  virtual PPB_Flash_Menu_API* AsPPB_Flash_Menu_API() OVERRIDE;
 
-  int32_t* selected_id_ptr() const { return selected_id_ptr_; }
-  void set_selected_id_ptr(int32_t* ptr) { selected_id_ptr_ = ptr; }
+  // PPB_Flash_Menu_API implementation.
+  virtual int32_t Show(const PP_Point* location,
+                       int32_t* selected_id,
+                       PP_CompletionCallback callback) OVERRIDE;
 
-  PP_CompletionCallback callback() const { return callback_; }
-  void set_callback(PP_CompletionCallback cb) { callback_ = cb; }
+  void ShowACK(int32_t selected_id, int32_t result);
 
  private:
-  PP_CompletionCallback callback_;
+  scoped_refptr<TrackedCallback> callback_;
   int32_t* selected_id_ptr_;
 
   DISALLOW_COPY_AND_ASSIGN(FlashMenu);
 };
 
-namespace {
-
-PP_Resource Create(PP_Instance instance_id, const PP_Flash_Menu* menu_data) {
-  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
-  if (!dispatcher)
-    return 0;
-
-  HostResource result;
-  pp::proxy::SerializedFlashMenu serialized_menu;
-  if (!serialized_menu.SetPPMenu(menu_data))
-    return 0;
-
-  dispatcher->Send(new PpapiHostMsg_PPBFlashMenu_Create(
-      INTERFACE_ID_PPB_FLASH_MENU, instance_id, serialized_menu, &result));
-  if (result.is_null())
-    return 0;
-
-  linked_ptr<FlashMenu> menu(new FlashMenu(result));
-  return PluginResourceTracker::GetInstance()->AddResource(menu);
+FlashMenu::FlashMenu(const HostResource& resource)
+    : Resource(resource),
+      selected_id_ptr_(NULL) {
 }
 
-PP_Bool IsFlashMenu(PP_Resource resource) {
-  return BoolToPPBool(!!PluginResource::GetAs<FlashMenu>(resource));
+FlashMenu::~FlashMenu() {
 }
 
-int32_t Show(PP_Resource menu_id,
-             const PP_Point* location,
-             int32_t* selected_id,
-             PP_CompletionCallback callback) {
-  FlashMenu* object = PluginResource::GetAs<FlashMenu>(menu_id);
-  if (!object)
-    return PP_ERROR_BADRESOURCE;
-  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(
-      object->instance());
-  if (!dispatcher)
-    return PP_ERROR_FAILED;
+PPB_Flash_Menu_API* FlashMenu::AsPPB_Flash_Menu_API() {
+  return this;
+}
 
-  if (object->callback().func)
+int32_t FlashMenu::Show(const struct PP_Point* location,
+                        int32_t* selected_id,
+                        struct PP_CompletionCallback callback) {
+  if (TrackedCallback::IsPending(callback_))
     return PP_ERROR_INPROGRESS;
 
-  object->set_selected_id_ptr(selected_id);
-  object->set_callback(callback);
+  selected_id_ptr_ = selected_id;
+  callback_ = new TrackedCallback(this, callback);
 
-  dispatcher->Send(new PpapiHostMsg_PPBFlashMenu_Show(
-      INTERFACE_ID_PPB_FLASH_MENU, object->host_resource(), *location));
-
+  PluginDispatcher::GetForResource(this)->Send(
+      new PpapiHostMsg_PPBFlashMenu_Show(
+          API_ID_PPB_FLASH_MENU, host_resource(), *location));
   return PP_OK_COMPLETIONPENDING;
 }
 
-const PPB_Flash_Menu flash_menu_interface = {
-  &Create,
-  &IsFlashMenu,
-  &Show,
-};
-
-InterfaceProxy* CreateFlashMenuProxy(Dispatcher* dispatcher,
-                                     const void* target_interface) {
-  return new PPB_Flash_Menu_Proxy(dispatcher, target_interface);
+void FlashMenu::ShowACK(int32_t selected_id, int32_t result) {
+  *selected_id_ptr_ = selected_id;
+  TrackedCallback::ClearAndRun(&callback_, result);
 }
 
-}  // namespace
-
-PPB_Flash_Menu_Proxy::PPB_Flash_Menu_Proxy(Dispatcher* dispatcher,
-                                           const void* target_interface)
-    : InterfaceProxy(dispatcher, target_interface),
+PPB_Flash_Menu_Proxy::PPB_Flash_Menu_Proxy(Dispatcher* dispatcher)
+    : InterfaceProxy(dispatcher),
       callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 PPB_Flash_Menu_Proxy::~PPB_Flash_Menu_Proxy() {
 }
 
-const InterfaceProxy::Info* PPB_Flash_Menu_Proxy::GetInfo() {
-  static const Info info = {
-    &flash_menu_interface,
-    PPB_FLASH_MENU_INTERFACE,
-    INTERFACE_ID_PPB_FLASH_MENU,
-    true,
-    &CreateFlashMenuProxy,
-  };
-  return &info;
+// static
+PP_Resource PPB_Flash_Menu_Proxy::CreateProxyResource(
+    PP_Instance instance_id,
+    const PP_Flash_Menu* menu_data) {
+  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
+  if (!dispatcher)
+    return 0;
+
+  HostResource result;
+  SerializedFlashMenu serialized_menu;
+  if (!serialized_menu.SetPPMenu(menu_data))
+    return 0;
+
+  dispatcher->Send(new PpapiHostMsg_PPBFlashMenu_Create(
+      API_ID_PPB_FLASH_MENU, instance_id, serialized_menu, &result));
+  if (result.is_null())
+    return 0;
+  return (new FlashMenu(result))->GetReference();
 }
 
 bool PPB_Flash_Menu_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -135,12 +118,15 @@ bool PPB_Flash_Menu_Proxy::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void PPB_Flash_Menu_Proxy::OnMsgCreate(PP_Instance instance_id,
+void PPB_Flash_Menu_Proxy::OnMsgCreate(PP_Instance instance,
                                        const SerializedFlashMenu& menu_data,
                                        HostResource* result) {
-  PP_Resource resource = ppb_flash_menu_target()->Create(instance_id,
-                                                         menu_data.pp_menu());
-  result->SetHostResource(instance_id, resource);
+  thunk::EnterResourceCreation enter(instance);
+  if (enter.succeeded()) {
+    result->SetHostResource(
+        instance,
+        enter.functions()->CreateFlashMenu(instance, menu_data.pp_menu()));
+  }
 }
 
 struct PPB_Flash_Menu_Proxy::ShowRequest {
@@ -152,48 +138,30 @@ void PPB_Flash_Menu_Proxy::OnMsgShow(const HostResource& menu,
                                      const PP_Point& location) {
   ShowRequest* request = new ShowRequest;
   request->menu = menu;
-  CompletionCallback callback = callback_factory_.NewCallback(
-      &PPB_Flash_Menu_Proxy::SendShowACKToPlugin, request);
-  int32_t result = ppb_flash_menu_target()->Show(
-      menu.host_resource(),
-      &location,
-      &request->selected_id,
-      callback.pp_completion_callback());
-  if (result != PP_OK_COMPLETIONPENDING) {
-    // There was some error, so we won't get a callback. We need to now issue
-    // the ACK to the plugin so that it hears about the error. This will also
-    // clean up the data associated with the callback.
-    callback.Run(result);
+
+  EnterHostFromHostResourceForceCallback<PPB_Flash_Menu_API> enter(
+      menu, callback_factory_, &PPB_Flash_Menu_Proxy::SendShowACKToPlugin,
+      request);
+  if (enter.succeeded()) {
+    enter.SetResult(enter.object()->Show(&location, &request->selected_id,
+                                         enter.callback()));
   }
 }
 
 void PPB_Flash_Menu_Proxy::OnMsgShowACK(const HostResource& menu,
                                         int32_t selected_id,
                                         int32_t result) {
-  PP_Resource plugin_resource =
-      PluginResourceTracker::GetInstance()->PluginResourceForHostResource(menu);
-  if (!plugin_resource)
+  EnterPluginFromHostResource<PPB_Flash_Menu_API> enter(menu);
+  if (enter.failed())
     return;
-  FlashMenu* object = PluginResource::GetAs<FlashMenu>(plugin_resource);
-  if (!object) {
-    // The plugin has released the FlashMenu object so don't issue the
-    // callback.
-    return;
-  }
-
-  // Be careful to make the callback NULL before issuing the callback since the
-  // plugin might want to show the menu again from within the callback.
-  PP_CompletionCallback callback = object->callback();
-  object->set_callback(PP_BlockUntilComplete());
-  *(object->selected_id_ptr()) = selected_id;
-  PP_RunCompletionCallback(&callback, result);
+  static_cast<FlashMenu*>(enter.object())->ShowACK(selected_id, result);
 }
 
 void PPB_Flash_Menu_Proxy::SendShowACKToPlugin(
     int32_t result,
     ShowRequest* request) {
   dispatcher()->Send(new PpapiMsg_PPBFlashMenu_ShowACK(
-      INTERFACE_ID_PPB_FLASH_MENU,
+      API_ID_PPB_FLASH_MENU,
       request->menu,
       request->selected_id,
       result));
@@ -201,4 +169,4 @@ void PPB_Flash_Menu_Proxy::SendShowACKToPlugin(
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

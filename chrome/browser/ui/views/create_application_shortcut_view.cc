@@ -1,10 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/create_application_shortcut_view.h"
 
-#include "base/callback.h"
+#include <algorithm>
+
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
@@ -13,30 +16,31 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
-#include "chrome/browser/ui/webui/extension_icon_source.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
-#include "third_party/skia/include/core/SkRect.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "views/controls/button/checkbox.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/checkbox.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -90,7 +94,7 @@ void AppInfoView::Init(const string16& title_text,
   icon_->SetImage(icon);
   icon_->SetImageSize(gfx::Size(kAppIconSize, kAppIconSize));
 
-  title_ = new views::Label(UTF16ToWide(title_text));
+  title_ = new views::Label(title_text);
   title_->SetMultiLine(true);
   title_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
   title_->SetFont(ResourceBundle::GetSharedInstance().GetFont(
@@ -106,10 +110,10 @@ void AppInfoView::Init(const string16& title_text,
 void AppInfoView::PrepareDescriptionLabel(const string16& description) {
   DCHECK(!description.empty());
 
-  static const size_t kMaxLength = 200;
-  static const wchar_t* const kEllipsis = L" ... ";
+  const size_t kMaxLength = 200;
+  const string16 kEllipsis(ASCIIToUTF16(" ... "));
 
-  std::wstring text = UTF16ToWide(description);
+  string16 text = description;
   if (text.length() > kMaxLength) {
     text = text.substr(0, kMaxLength);
     text += kEllipsis;
@@ -149,15 +153,13 @@ void AppInfoView::SetupLayout() {
 
 void AppInfoView::UpdateText(const string16& title,
                              const string16& description) {
-  title_->SetText(UTF16ToWide(title));
+  title_->SetText(title);
   PrepareDescriptionLabel(description);
 
   SetupLayout();
 }
 
 void AppInfoView::UpdateIcon(const SkBitmap& new_icon) {
-  DCHECK(icon_ != NULL);
-
   icon_->SetImage(new_icon);
 }
 
@@ -175,7 +177,7 @@ void AppInfoView::OnPaint(gfx::Canvas* canvas) {
   border_paint.setAntiAlias(true);
   border_paint.setARGB(0xFF, 0xC8, 0xC8, 0xC8);
 
-  canvas->AsCanvasSkia()->drawRoundRect(
+  canvas->GetSkCanvas()->drawRoundRect(
       border_rect, SkIntToScalar(2), SkIntToScalar(2), border_paint);
 
   SkRect inner_rect = {
@@ -188,7 +190,7 @@ void AppInfoView::OnPaint(gfx::Canvas* canvas) {
   SkPaint inner_paint;
   inner_paint.setAntiAlias(true);
   inner_paint.setARGB(0xFF, 0xF8, 0xF8, 0xF8);
-  canvas->AsCanvasSkia()->drawRoundRect(
+  canvas->GetSkCanvas()->drawRoundRect(
       inner_rect, SkDoubleToScalar(1.5), SkDoubleToScalar(1.5), inner_paint);
 }
 
@@ -198,15 +200,17 @@ namespace browser {
 
 void ShowCreateWebAppShortcutsDialog(gfx::NativeWindow parent_window,
                                      TabContentsWrapper* tab_contents) {
-  views::Window::CreateChromeWindow(parent_window, gfx::Rect(),
-      new CreateUrlApplicationShortcutView(tab_contents))->Show();
+  views::Widget::CreateWindowWithParent(
+      new CreateUrlApplicationShortcutView(tab_contents),
+      parent_window)->Show();
 }
 
 void ShowCreateChromeAppShortcutsDialog(gfx::NativeWindow parent_window,
                                         Profile* profile,
                                         const Extension* app) {
-  views::Window::CreateChromeWindow(parent_window, gfx::Rect(),
-      new CreateChromeApplicationShortcutView(profile, app))->Show();
+  views::Widget::CreateWindowWithParent(
+      new CreateChromeApplicationShortcutView(profile, app),
+      parent_window)->Show();
 }
 
 }  // namespace browser
@@ -232,7 +236,12 @@ class CreateUrlApplicationShortcutView::IconDownloadCallbackFunctor {
 };
 
 CreateApplicationShortcutView::CreateApplicationShortcutView(Profile* profile)
-    : profile_(profile) {}
+    : profile_(profile),
+      app_info_(NULL),
+      create_shortcuts_label_(NULL),
+      desktop_check_box_(NULL),
+      menu_check_box_(NULL),
+      quick_launch_check_box_(NULL) {}
 
 CreateApplicationShortcutView::~CreateApplicationShortcutView() {}
 
@@ -241,30 +250,30 @@ void CreateApplicationShortcutView::InitControls() {
   app_info_ = new AppInfoView(shortcut_info_.title, shortcut_info_.description,
                               shortcut_info_.favicon);
   create_shortcuts_label_ = new views::Label(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_LABEL)));
+      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_LABEL));
   create_shortcuts_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
 
-  desktop_check_box_ = AddCheckbox(UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_DESKTOP_CHKBOX)),
+  desktop_check_box_ = AddCheckbox(
+      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_DESKTOP_CHKBOX),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateOnDesktop));
 
   menu_check_box_ = NULL;
   quick_launch_check_box_ = NULL;
 
 #if defined(OS_WIN)
-  menu_check_box_ = AddCheckbox(UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_START_MENU_CHKBOX)),
+  menu_check_box_ = AddCheckbox(
+      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_START_MENU_CHKBOX),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateInAppsMenu));
 
   quick_launch_check_box_ = AddCheckbox(
       (base::win::GetVersion() >= base::win::VERSION_WIN7) ?
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_PIN_TO_TASKBAR_CHKBOX)) :
-        UTF16ToWide(l10n_util::GetStringUTF16(
-            IDS_CREATE_SHORTCUTS_QUICK_LAUNCH_BAR_CHKBOX)),
+        l10n_util::GetStringUTF16(IDS_PIN_TO_TASKBAR_CHKBOX) :
+        l10n_util::GetStringUTF16(
+            IDS_CREATE_SHORTCUTS_QUICK_LAUNCH_BAR_CHKBOX),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateInQuickLaunchBar));
 #elif defined(OS_POSIX)
   menu_check_box_ = AddCheckbox(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_MENU_CHKBOX)),
+      l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_MENU_CHKBOX),
       profile_->GetPrefs()->GetBoolean(prefs::kWebAppCreateInAppsMenu));
 #endif
 
@@ -315,18 +324,16 @@ gfx::Size CreateApplicationShortcutView::GetPreferredSize() {
   return gfx::Size(kDialogWidth, height);
 }
 
-std::wstring CreateApplicationShortcutView::GetDialogButtonLabel(
-    MessageBoxFlags::DialogButton button) const {
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK) {
-    return UTF16ToWide(l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_COMMIT));
-  }
-
-  return std::wstring();
+string16 CreateApplicationShortcutView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK)
+    return l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_COMMIT);
+  return string16();
 }
 
 bool CreateApplicationShortcutView::IsDialogButtonEnabled(
-    MessageBoxFlags::DialogButton button) const {
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK)
+    ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK)
     return desktop_check_box_->checked() ||
            ((menu_check_box_ != NULL) &&
             menu_check_box_->checked()) ||
@@ -344,24 +351,16 @@ bool CreateApplicationShortcutView::CanMaximize() const {
   return false;
 }
 
-bool CreateApplicationShortcutView::IsAlwaysOnTop() const {
-  return false;
+ui::ModalType CreateApplicationShortcutView::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
-bool CreateApplicationShortcutView::HasAlwaysOnTopMenu() const {
-  return false;
-}
-
-bool CreateApplicationShortcutView::IsModal() const {
-  return true;
-}
-
-std::wstring CreateApplicationShortcutView::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_TITLE));
+string16 CreateApplicationShortcutView::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_TITLE);
 }
 
 bool CreateApplicationShortcutView::Accept() {
-  if (!IsDialogButtonEnabled(MessageBoxFlags::DIALOGBUTTON_OK))
+  if (!IsDialogButtonEnabled(ui::DIALOG_BUTTON_OK))
     return false;
 
   shortcut_info_.create_on_desktop = desktop_check_box_->checked();
@@ -377,9 +376,7 @@ bool CreateApplicationShortcutView::Accept() {
   shortcut_info_.create_in_quick_launch_bar = false;
 #endif
 
-  web_app::CreateShortcut(profile_->GetPath(),
-                          shortcut_info_,
-                          NULL);
+  web_app::CreateShortcut(profile_->GetPath(), shortcut_info_);
   return true;
 }
 
@@ -389,7 +386,7 @@ views::View* CreateApplicationShortcutView::GetContentsView() {
 }
 
 views::Checkbox* CreateApplicationShortcutView::AddCheckbox(
-    const std::wstring& text, bool checked) {
+    const string16& text, bool checked) {
   views::Checkbox* checkbox = new views::Checkbox(text);
   checkbox->SetChecked(checked);
   checkbox->set_listener(this);
@@ -439,9 +436,9 @@ bool CreateUrlApplicationShortcutView::Accept() {
     return false;
 
   tab_contents_->extension_tab_helper()->SetAppIcon(shortcut_info_.favicon);
-  if (tab_contents_->tab_contents()->delegate()) {
-    tab_contents_->tab_contents()->delegate()->ConvertContentsToApplication(
-        tab_contents_->tab_contents());
+  if (tab_contents_->web_contents()->GetDelegate()) {
+    tab_contents_->web_contents()->GetDelegate()->ConvertContentsToApplication(
+        tab_contents_->web_contents());
   }
   return true;
 }
@@ -461,7 +458,8 @@ void CreateUrlApplicationShortcutView::FetchIcon() {
       std::max(unprocessed_icons_.back().width,
                unprocessed_icons_.back().height),
       history::FAVICON,
-      NewCallback(pending_download_, &IconDownloadCallbackFunctor::Run));
+      base::Bind(&IconDownloadCallbackFunctor::Run,
+                 base::Unretained(pending_download_)));
 
   unprocessed_icons_.pop_back();
 }
@@ -484,7 +482,6 @@ CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
       CreateApplicationShortcutView(profile),
       app_(app),
       ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)) {
-
   shortcut_info_.extension_id = app_->id();
   shortcut_info_.url = GURL(app_->launch_web_url());
   shortcut_info_.title = UTF8ToUTF16(app_->name());
@@ -509,12 +506,16 @@ CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
         ExtensionIconSet::MATCH_SMALLER);
   }
 
+  InitControls();
+
+  // tracker_.LoadImage() can call OnImageLoaded() before it returns if the
+  // image is cached.  This is very rare.  app_info_ must be initialized
+  // when OnImageLoaded() is called, so we check it here.
+  CHECK(app_info_);
   tracker_.LoadImage(app_,
                      icon_resource,
                      max_size,
                      ImageLoadingTracker::DONT_CACHE);
-
-  InitControls();
 }
 
 CreateChromeApplicationShortcutView::~CreateChromeApplicationShortcutView() {}
@@ -526,5 +527,6 @@ void CreateChromeApplicationShortcutView::OnImageLoaded(
     image = ExtensionIconSource::LoadImageByResourceId(IDR_APP_DEFAULT_ICON);
 
   shortcut_info_.favicon = *image;
+  CHECK(app_info_);
   static_cast<AppInfoView*>(app_info_)->UpdateIcon(shortcut_info_.favicon);
 }

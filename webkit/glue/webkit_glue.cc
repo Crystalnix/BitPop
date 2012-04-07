@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/string_tokenizer.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/synchronization/lock.h"
 #include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
@@ -28,27 +29,29 @@
 #include "skia/ext/skia_utils_mac.h"
 #endif
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDevToolsAgent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGlyphCache.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebImage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #if defined(OS_WIN)
 #include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
 #endif
+#include "v8/include/v8.h"
 #include "webkit/glue/glue_serialize.h"
 #include "webkit/glue/user_agent.h"
-#include "v8/include/v8.h"
 
 using WebKit::WebCanvas;
 using WebKit::WebData;
+using WebKit::WebDevToolsAgent;
 using WebKit::WebElement;
 using WebKit::WebFrame;
 using WebKit::WebGlyphCache;
@@ -79,6 +82,12 @@ bool g_forcefully_terminate_plugin_process = false;
 void SetJavaScriptFlags(const std::string& str) {
 #if WEBKIT_USING_V8
   v8::V8::SetFlagsFromString(str.data(), static_cast<int>(str.size()));
+#endif
+}
+
+void SetDartFlags(const std::string& str) {
+#if WEBKIT_USING_DART
+  WebKit::setDartFlags(str.data(), static_cast<int>(str.size()));
 #endif
 }
 
@@ -212,7 +221,7 @@ static std::string DumpHistoryItem(const WebHistoryItem& item,
     url.replace(0, pos + kLayoutTestsPatternSize, kFileTestPrefix);
   } else if (url.find(kDataUrlPattern) == 0) {
     // URL-escape data URLs to match results upstream.
-    std::string path = EscapePath(url.substr(kDataUrlPatternSize));
+    std::string path = net::EscapePath(url.substr(kDataUrlPatternSize));
     url.replace(kDataUrlPatternSize, url.length(), path);
   }
 
@@ -337,58 +346,130 @@ WebKit::WebFileError PlatformFileErrorToWebFileError(
 
 namespace {
 
-struct UserAgentState {
-  UserAgentState()
-      : user_agent_requested(false),
-        user_agent_is_overridden(false) {
-  }
+class UserAgentState {
+ public:
+  UserAgentState();
+  ~UserAgentState();
 
-  std::string user_agent;
+  void Set(const std::string& user_agent, bool overriding);
+  const std::string& Get(const GURL& url) const;
 
-  // The UA string when we're pretending to be Windows Chrome.
-  std::string mimic_windows_user_agent;
+ private:
+  mutable std::string user_agent_;
+  // The UA string when we're pretending to be Mac Safari or Win Firefox.
+  mutable std::string user_agent_for_spoofing_hack_;
 
-  bool user_agent_requested;
-  bool user_agent_is_overridden;
+  mutable bool user_agent_requested_;
+  bool user_agent_is_overridden_;
+
+  // This object can be accessed from multiple threads, so use a lock around
+  // accesses to the data members.
+  mutable base::Lock lock_;
 };
 
-static base::LazyInstance<UserAgentState> g_user_agent(
-    base::LINKER_INITIALIZED);
-
-void SetUserAgentToDefault() {
-  BuildUserAgent(false, &g_user_agent.Get().user_agent);
+UserAgentState::UserAgentState()
+    : user_agent_requested_(false),
+      user_agent_is_overridden_(false) {
 }
+
+UserAgentState::~UserAgentState() {
+}
+
+void UserAgentState::Set(const std::string& user_agent, bool overriding) {
+  base::AutoLock auto_lock(lock_);
+  if (user_agent == user_agent_) {
+    // We allow the user agent to be set multiple times as long as it
+    // is set to the same value, in order to simplify unit testing
+    // given g_user_agent is a global.
+    return;
+  }
+  DCHECK(!user_agent.empty());
+  DCHECK(!user_agent_requested_) << "Setting the user agent after someone has "
+      "already requested it can result in unexpected behavior.";
+  user_agent_is_overridden_ = overriding;
+  user_agent_ = user_agent;
+}
+
+bool IsMicrosoftSiteThatNeedsSpoofingForSilverlight(const GURL& url) {
+#if defined(OS_MACOSX)
+  // The landing page for updating Silverlight gives a confusing experience
+  // in browsers that Silverlight doesn't officially support; spoof as
+  // Safari to reduce the chance that users won't complete updates.
+  // Should be removed if the sniffing is removed: http://crbug.com/88211
+  if (url.host() == "www.microsoft.com" &&
+      StartsWithASCII(url.path(), "/getsilverlight", false)) {
+    return true;
+  }
+#endif
+  return false;
+}
+
+bool IsYahooSiteThatNeedsSpoofingForSilverlight(const GURL& url) {
+#if defined(OS_MACOSX) || defined(OS_WIN)
+  // The following Yahoo! JAPAN pages erroneously judge that Silverlight does
+  // not support Chromium. Until the pages are fixed, spoof the UA.
+  // http://crbug.com/104426
+  if (url.host() == "headlines.yahoo.co.jp" &&
+      StartsWithASCII(url.path(), "/videonews/", true)) {
+    return true;
+  }
+#endif
+#if defined(OS_MACOSX)
+  if ((url.host() == "downloads.yahoo.co.jp" &&
+      StartsWithASCII(url.path(), "/docs/silverlight/", true)) ||
+      url.host() == "gyao.yahoo.co.jp") {
+    return true;
+  }
+#elif defined(OS_WIN)
+  if ((url.host() == "weather.yahoo.co.jp" &&
+        StartsWithASCII(url.path(), "/weather/zoomradar/", true)) ||
+      url.host() == "promotion.shopping.yahoo.co.jp") {
+    return true;
+  }
+#endif
+  return false;
+}
+
+const std::string& UserAgentState::Get(const GURL& url) const {
+  base::AutoLock auto_lock(lock_);
+  user_agent_requested_ = true;
+
+  DCHECK(!user_agent_.empty());
+
+  // Workarounds for sites that use misguided UA sniffing.
+  if (!user_agent_is_overridden_) {
+    if (IsMicrosoftSiteThatNeedsSpoofingForSilverlight(url) ||
+        IsYahooSiteThatNeedsSpoofingForSilverlight(url)) {
+      if (user_agent_for_spoofing_hack_.empty()) {
+#if defined(OS_MACOSX)
+        user_agent_for_spoofing_hack_ =
+            BuildUserAgentFromProduct("Version/5.1.1 Safari/534.51.22");
+#elif defined(OS_WIN)
+        // Pretend to be Firefox. Silverlight doesn't support Win Safari.
+        base::StringAppendF(
+            &user_agent_for_spoofing_hack_,
+            "Mozilla/5.0 (%s) Gecko/20100101 Firefox/8.0",
+            webkit_glue::BuildOSCpuInfo().c_str());
+#endif
+      }
+      DCHECK(!user_agent_for_spoofing_hack_.empty());
+      return user_agent_for_spoofing_hack_;
+    }
+  }
+
+  return user_agent_;
+}
+
+base::LazyInstance<UserAgentState> g_user_agent = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
-void SetUserAgent(const std::string& new_user_agent) {
-  // If you combine this with the previous line, the function only works the
-  // first time.
-  DCHECK(!g_user_agent.Get().user_agent_requested) <<
-      "Setting the user agent after someone has "
-      "already requested it can result in unexpected behavior.";
-  g_user_agent.Get().user_agent_is_overridden = true;
-  g_user_agent.Get().user_agent = new_user_agent;
+void SetUserAgent(const std::string& user_agent, bool overriding) {
+  g_user_agent.Get().Set(user_agent, overriding);
 }
 
 const std::string& GetUserAgent(const GURL& url) {
-  if (g_user_agent.Get().user_agent.empty())
-    SetUserAgentToDefault();
-  g_user_agent.Get().user_agent_requested = true;
-  if (!g_user_agent.Get().user_agent_is_overridden) {
-    // Workarounds for sites that use misguided UA sniffing.
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-    if (MatchPattern(url.host(), "*.mail.yahoo.com")) {
-      // mail.yahoo.com is ok with Windows Chrome but not Linux Chrome.
-      // http://bugs.chromium.org/11136
-      // TODO(evanm): remove this if Yahoo fixes their sniffing.
-      if (g_user_agent.Get().mimic_windows_user_agent.empty())
-        BuildUserAgent(true, &g_user_agent.Get().mimic_windows_user_agent);
-      return g_user_agent.Get().mimic_windows_user_agent;
-    }
-#endif
-  }
-  return g_user_agent.Get().user_agent;
+  return g_user_agent.Get().Get(url);
 }
 
 void SetForcefullyTerminatePluginProcess(bool value) {
@@ -412,6 +493,15 @@ WebCanvas* ToWebCanvas(skia::PlatformCanvas* canvas) {
 
 int GetGlyphPageCount() {
   return WebGlyphCache::pageCount();
+}
+
+std::string GetInspectorProtocolVersion() {
+  return WebDevToolsAgent::inspectorProtocolVersion().utf8();
+}
+
+bool IsInspectorProtocolVersionSupported(const std::string& version) {
+  return WebDevToolsAgent::supportsInspectorProtocolVersion(
+      WebString::fromUTF8(version));
 }
 
 } // namespace webkit_glue

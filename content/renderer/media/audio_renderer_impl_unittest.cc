@@ -2,9 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/message_loop.h"
 #include "base/process_util.h"
-#include "content/common/audio_messages.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/test/test_timeouts.h"
+#include "base/time.h"
+#include "content/common/child_process.h"
+#include "content/common/child_thread.h"
 #include "content/renderer/media/audio_renderer_impl.h"
+#include "content/renderer/mock_content_renderer_client.h"
+#include "content/renderer/render_process.h"
+#include "content/renderer/render_thread_impl.h"
+#include "ipc/ipc_channel.h"
 #include "media/base/data_buffer.h"
 #include "media/base/mock_callback.h"
 #include "media/base/mock_filter_host.h"
@@ -13,121 +24,164 @@
 
 using ::testing::Return;
 
-class AudioRendererImplTest : public ::testing::Test {
+namespace {
+// This class is a mock of the child process singleton which is needed
+// to be able to create a RenderThread object.
+class MockRenderProcess : public RenderProcess {
  public:
-  static const int kRouteId = 0;
-  static const int kSize = 1024;
+  MockRenderProcess() {}
+  virtual ~MockRenderProcess() {}
 
-  AudioRendererImplTest() {
-    message_loop_.reset(new MessageLoop(MessageLoop::TYPE_IO));
+  // RenderProcess implementation.
+  virtual skia::PlatformCanvas* GetDrawingCanvas(TransportDIB** memory,
+      const gfx::Rect& rect) { return NULL; }
+  virtual void ReleaseTransportDIB(TransportDIB* memory) {}
+  virtual bool UseInProcessPlugins() const { return false; }
+  virtual bool HasInitializedMediaLibrary() const { return false; }
 
-    // TODO(scherkus): use gmock with AudioMessageFilter to verify
-    // AudioRendererImpl calls or doesn't call Send().
-    filter_ = new AudioMessageFilter(kRouteId);
-    filter_->message_loop_ = message_loop_.get();
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockRenderProcess);
+};
+}
 
-    // Create temporary shared memory.
-    CHECK(shared_mem_.CreateAnonymous(kSize));
+// This callback can be posted on the IO thread and will signal an event when
+// done. The caller can then wait for this signal to ensure that no
+// additional tasks remain in the task queue.
+void WaitCallback(base::WaitableEvent* event) {
+  event->Signal();
+}
+
+// Class we would be testing.
+class TestAudioRendererImpl : public AudioRendererImpl {
+ public:
+  explicit TestAudioRendererImpl(media::AudioRendererSink* sink)
+      : AudioRendererImpl(sink) {
+  }
+};
+
+class AudioRendererImplTest
+    : public ::testing::Test,
+      public IPC::Channel::Listener {
+ public:
+  // IPC::Channel::Listener implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) {
+      NOTIMPLEMENTED();
+      return true;
+  }
+
+  static const int kSize;
+
+  AudioRendererImplTest() {}
+  virtual ~AudioRendererImplTest() {}
+
+  virtual void SetUp() {
+    // This part sets up a RenderThread environment to ensure that
+    // RenderThread::current() (<=> TLS pointer) is valid.
+    // Main parts are inspired by the RenderViewFakeResourcesTest.
+    // Note that, the IPC part is not utilized in this test.
+    content::GetContentClient()->set_renderer(&mock_content_renderer_client_);
+
+    static const char kThreadName[] = "RenderThread";
+    channel_.reset(new IPC::Channel(kThreadName,
+        IPC::Channel::MODE_SERVER, this));
+    ASSERT_TRUE(channel_->Connect());
+
+    mock_process_.reset(new MockRenderProcess);
+    render_thread_ = new RenderThreadImpl(kThreadName);
+    mock_process_->set_main_thread(render_thread_);
 
     // Setup expectations for initialization.
     decoder_ = new media::MockAudioDecoder();
 
-    ON_CALL(*decoder_, config())
-        .WillByDefault(Return(media::AudioDecoderConfig(16,
-                                                        CHANNEL_LAYOUT_MONO,
-                                                        44100)));
+    EXPECT_CALL(*decoder_, bits_per_channel())
+        .WillRepeatedly(Return(16));
+    EXPECT_CALL(*decoder_, channel_layout())
+        .WillRepeatedly(Return(CHANNEL_LAYOUT_MONO));
+    EXPECT_CALL(*decoder_, samples_per_second())
+        .WillRepeatedly(Return(44100));
 
-    // Create and initialize audio renderer.
-    renderer_ = new AudioRendererImpl(filter_);
-    renderer_->set_host(&host_);
-    renderer_->Initialize(decoder_, media::NewExpectedCallback());
+    // Create a sink for the audio renderer.
+    scoped_refptr<media::AudioRendererSink> default_sink =
+        new AudioDevice();
 
-    // Run pending tasks and simulate responding with a created audio stream.
-    message_loop_->RunAllPending();
+    // Create and initialize the audio renderer.
+    renderer_ = new TestAudioRendererImpl(default_sink.get());
+    renderer_->Initialize(decoder_, media::NewExpectedClosure(),
+                          NewUnderflowClosure());
 
-    // Duplicate the shared memory handle so both the test and the callee can
-    // close their copy.
-    base::SharedMemoryHandle duplicated_handle;
-    EXPECT_TRUE(shared_mem_.ShareToProcess(base::GetCurrentProcessHandle(),
-                                           &duplicated_handle));
-
-    renderer_->OnCreated(duplicated_handle, kSize);
+    // We need an event to verify that all tasks are done before leaving
+    // our tests.
+    event_.reset(new base::WaitableEvent(false, false));
   }
 
-  virtual ~AudioRendererImplTest() {
+  virtual void TearDown() {
+    mock_process_.reset();
+  }
+
+  MOCK_METHOD0(OnUnderflow, void());
+
+  base::Closure NewUnderflowClosure() {
+    return base::Bind(&AudioRendererImplTest::OnUnderflow,
+                      base::Unretained(this));
   }
 
  protected:
-  // Fixtures.
-  scoped_ptr<MessageLoop> message_loop_;
-  scoped_refptr<AudioMessageFilter> filter_;
-  base::SharedMemory shared_mem_;
-  media::MockFilterHost host_;
+  // Posts a final task to the IO message loop and waits for completion.
+  void WaitForIOThreadCompletion() {
+    ChildProcess::current()->io_message_loop()->PostTask(
+        FROM_HERE, base::Bind(&WaitCallback, base::Unretained(event_.get())));
+    EXPECT_TRUE(event_->TimedWait(
+        base::TimeDelta::FromMilliseconds(TestTimeouts::action_timeout_ms())));
+  }
+
+  MessageLoopForIO message_loop_;
+  content::MockContentRendererClient mock_content_renderer_client_;
+  scoped_ptr<IPC::Channel> channel_;
+  RenderThreadImpl* render_thread_;  // owned by mock_process_
+  scoped_ptr<MockRenderProcess> mock_process_;
   scoped_refptr<media::MockAudioDecoder> decoder_;
   scoped_refptr<AudioRendererImpl> renderer_;
+  scoped_ptr<base::WaitableEvent> event_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AudioRendererImplTest);
 };
 
-TEST_F(AudioRendererImplTest, SetPlaybackRate) {
-  // Execute SetPlaybackRate() codepath to create an IPC message.
+const int AudioRendererImplTest::kSize = 1024;
 
-  // Toggle play/pause to generate some IPC messages.
+TEST_F(AudioRendererImplTest, SetPlaybackRate) {
+  // Execute SetPlaybackRate() codepath by toggling play/pause.
+  // These methods will be called on the pipeline thread but calling from
+  // here is fine for this test. Tasks will be posted internally on
+  // the IO thread.
   renderer_->SetPlaybackRate(0.0f);
   renderer_->SetPlaybackRate(1.0f);
   renderer_->SetPlaybackRate(0.0f);
 
-  renderer_->Stop(media::NewExpectedCallback());
-  message_loop_->RunAllPending();
+  renderer_->Stop(media::NewExpectedClosure());
+  WaitForIOThreadCompletion();
 }
 
 TEST_F(AudioRendererImplTest, SetVolume) {
-  // Execute SetVolume() codepath to create an IPC message.
+  // Execute SetVolume() codepath.
+  // This method will be called on the pipeline thread IRL.
+  // Tasks will be posted internally on the IO thread.
   renderer_->SetVolume(0.5f);
-  renderer_->Stop(media::NewExpectedCallback());
-  message_loop_->RunAllPending();
+
+  renderer_->Stop(media::NewExpectedClosure());
+  WaitForIOThreadCompletion();
 }
 
-TEST_F(AudioRendererImplTest, Stop) {
-  // Execute Stop() codepath to create an IPC message.
-  renderer_->Stop(media::NewExpectedCallback());
-  message_loop_->RunAllPending();
-
-  // Run AudioMessageFilter::Delegate methods, which can be executed after being
-  // stopped.  AudioRendererImpl shouldn't create any messages.
-  renderer_->OnRequestPacket(AudioBuffersState(kSize, 0));
-  renderer_->OnStateChanged(kAudioStreamError);
-  renderer_->OnStateChanged(kAudioStreamPlaying);
-  renderer_->OnStateChanged(kAudioStreamPaused);
-  renderer_->OnCreated(shared_mem_.handle(), kSize);
-  renderer_->OnVolume(0.5);
-
-  // It's possible that the upstream decoder replies right after being stopped.
-  scoped_refptr<media::Buffer> buffer(new media::DataBuffer(kSize));
-  renderer_->ConsumeAudioSamples(buffer);
-}
-
-TEST_F(AudioRendererImplTest, DestroyedMessageLoop_SetPlaybackRate) {
-  // Kill the message loop and verify SetPlaybackRate() still works.
-  message_loop_.reset();
-  renderer_->SetPlaybackRate(0.0f);
+TEST_F(AudioRendererImplTest, UpdateEarliestEndTime) {
   renderer_->SetPlaybackRate(1.0f);
-  renderer_->SetPlaybackRate(0.0f);
-  renderer_->Stop(media::NewExpectedCallback());
-}
-
-TEST_F(AudioRendererImplTest, DestroyedMessageLoop_SetVolume) {
-  // Kill the message loop and verify SetVolume() still works.
-  message_loop_.reset();
-  renderer_->SetVolume(0.5f);
-  renderer_->Stop(media::NewExpectedCallback());
-}
-
-TEST_F(AudioRendererImplTest, DestroyedMessageLoop_ConsumeAudioSamples) {
-  // Kill the message loop and verify OnReadComplete() still works.
-  message_loop_.reset();
-  scoped_refptr<media::Buffer> buffer(new media::DataBuffer(kSize));
-  renderer_->ConsumeAudioSamples(buffer);
-  renderer_->Stop(media::NewExpectedCallback());
+  WaitForIOThreadCompletion();
+  base::Time time_now = base::Time();  // Null time by default.
+  renderer_->set_earliest_end_time(time_now);
+  renderer_->UpdateEarliestEndTime(renderer_->bytes_per_second(),
+                                   base::TimeDelta::FromMilliseconds(100),
+                                   time_now);
+  int time_delta = (renderer_->earliest_end_time() - time_now).InMilliseconds();
+  EXPECT_EQ(1100, time_delta);
+  renderer_->Stop(media::NewExpectedClosure());
+  WaitForIOThreadCompletion();
 }

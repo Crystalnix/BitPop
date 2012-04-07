@@ -4,24 +4,25 @@
 
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 
-#include "base/command_line.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::WebContents;
 
 class ContentSettingBlockedImageModel : public ContentSettingImageModel {
  public:
   explicit ContentSettingBlockedImageModel(
       ContentSettingsType content_settings_type);
 
-  virtual void UpdateFromTabContents(TabContents* tab_contents);
+  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
 
  private:
   static const int kAccessedIconIDs[];
@@ -36,21 +37,14 @@ class ContentSettingGeolocationImageModel : public ContentSettingImageModel {
  public:
   ContentSettingGeolocationImageModel();
 
-  virtual void UpdateFromTabContents(TabContents* tab_contents) OVERRIDE;
+  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
 };
 
 class ContentSettingNotificationsImageModel : public ContentSettingImageModel {
  public:
   ContentSettingNotificationsImageModel();
 
-  virtual void UpdateFromTabContents(TabContents* tab_contents) OVERRIDE;
-};
-
-class ContentSettingPrerenderImageModel : public ContentSettingImageModel {
- public:
-  ContentSettingPrerenderImageModel();
-
-  virtual void UpdateFromTabContents(TabContents* tab_contents) OVERRIDE;
+  virtual void UpdateFromWebContents(WebContents* web_contents) OVERRIDE;
 };
 
 const int ContentSettingBlockedImageModel::kBlockedIconIDs[] = {
@@ -107,10 +101,10 @@ ContentSettingBlockedImageModel::ContentSettingBlockedImageModel(
     : ContentSettingImageModel(content_settings_type) {
 }
 
-void ContentSettingBlockedImageModel::UpdateFromTabContents(
-    TabContents* tab_contents) {
+void ContentSettingBlockedImageModel::UpdateFromWebContents(
+    WebContents* web_contents) {
   set_visible(false);
-  if (!tab_contents)
+  if (!web_contents)
     return;
 
   const int* icon_ids = kBlockedIconIDs;
@@ -118,13 +112,13 @@ void ContentSettingBlockedImageModel::UpdateFromTabContents(
   const int* explanatory_string_ids = kBlockedExplanatoryTextIDs;
   // If a content type is blocked by default and was accessed, display the
   // accessed icon.
-  TabSpecificContentSettings* content_settings =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents)->
-          content_settings();
+  TabContentsWrapper* wrapper =
+      TabContentsWrapper::GetCurrentWrapperForContents(web_contents);
+  TabSpecificContentSettings* content_settings = wrapper->content_settings();
   if (!content_settings->IsContentBlocked(get_content_settings_type())) {
     if (!content_settings->IsContentAccessed(get_content_settings_type()) ||
-        (tab_contents->profile()->GetHostContentSettingsMap()->
-            GetDefaultContentSetting(get_content_settings_type()) !=
+        (wrapper->profile()->GetHostContentSettingsMap()->
+            GetDefaultContentSetting(get_content_settings_type(), NULL) !=
                 CONTENT_SETTING_BLOCK))
       return;
     icon_ids = kAccessedIconIDs;
@@ -143,13 +137,13 @@ ContentSettingGeolocationImageModel::ContentSettingGeolocationImageModel()
     : ContentSettingImageModel(CONTENT_SETTINGS_TYPE_GEOLOCATION) {
 }
 
-void ContentSettingGeolocationImageModel::UpdateFromTabContents(
-    TabContents* tab_contents) {
+void ContentSettingGeolocationImageModel::UpdateFromWebContents(
+    WebContents* web_contents) {
   set_visible(false);
-  if (!tab_contents)
+  if (!web_contents)
     return;
   TabSpecificContentSettings* content_settings =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab_contents)->
+      TabContentsWrapper::GetCurrentWrapperForContents(web_contents)->
           content_settings();
   const GeolocationSettingsState& settings_state = content_settings->
       geolocation_settings_state();
@@ -173,31 +167,10 @@ ContentSettingNotificationsImageModel::ContentSettingNotificationsImageModel()
     : ContentSettingImageModel(CONTENT_SETTINGS_TYPE_NOTIFICATIONS) {
 }
 
-void ContentSettingNotificationsImageModel::UpdateFromTabContents(
-    TabContents* tab_contents) {
+void ContentSettingNotificationsImageModel::UpdateFromWebContents(
+    WebContents* web_contents) {
   // Notifications do not have a bubble.
   set_visible(false);
-}
-
-ContentSettingPrerenderImageModel::ContentSettingPrerenderImageModel()
-    : ContentSettingImageModel(CONTENT_SETTINGS_TYPE_PRERENDER) {
-  set_tooltip(l10n_util::GetStringUTF8(IDS_PRERENDER_SUCCEED_TOOLTIP));
-  set_icon(IDR_PRERENDER_SUCCEED_ICON);
-}
-
-void ContentSettingPrerenderImageModel::UpdateFromTabContents(
-    TabContents* tab_contents) {
-  bool visibility = false;
-  if (prerender::PrerenderManager::GetMode() ==
-      prerender::PrerenderManager::PRERENDER_MODE_ENABLED) {
-    if (tab_contents) {
-      prerender::PrerenderManager* pm =
-          tab_contents->profile()->GetPrerenderManager();
-      if (pm && pm->IsTabContentsPrerendered(tab_contents))
-        visibility = true;
-    }
-  }
-  set_visible(visibility);
 }
 
 ContentSettingImageModel::ContentSettingImageModel(
@@ -217,8 +190,6 @@ ContentSettingImageModel*
       return new ContentSettingGeolocationImageModel();
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
       return new ContentSettingNotificationsImageModel();
-    case CONTENT_SETTINGS_TYPE_PRERENDER:
-      return new ContentSettingPrerenderImageModel();
     default:
       return new ContentSettingBlockedImageModel(content_settings_type);
   }

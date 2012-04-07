@@ -8,12 +8,13 @@
 #include <map>
 #include <set>
 
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
-#include "testing/gtest/include/gtest/gtest_prod.h"
+#include "webkit/appcache/appcache_export.h"
 #include "webkit/appcache/appcache_interfaces.h"
 #include "webkit/appcache/appcache_storage.h"
 
@@ -35,10 +36,11 @@ class SpecialStoragePolicy;
 namespace appcache {
 
 class AppCacheBackendImpl;
+class AppCacheQuotaClient;
 class AppCachePolicy;
 
 // Refcounted container to avoid copying the collection in callbacks.
-struct AppCacheInfoCollection
+struct APPCACHE_EXPORT AppCacheInfoCollection
     : public base::RefCountedThreadSafe<AppCacheInfoCollection> {
   AppCacheInfoCollection();
   virtual ~AppCacheInfoCollection();
@@ -49,13 +51,14 @@ struct AppCacheInfoCollection
 // Class that manages the application cache service. Sends notifications
 // to many frontends.  One instance per user-profile. Each instance has
 // exclusive access to it's cache_directory on disk.
-class AppCacheService {
+class APPCACHE_EXPORT AppCacheService {
  public:
   // If not using quota management, the proxy may be NULL.
   explicit AppCacheService(quota::QuotaManagerProxy* quota_manager_proxy);
   virtual ~AppCacheService();
 
   void Initialize(const FilePath& cache_directory,
+                  base::MessageLoopProxy* db_thread,
                   base::MessageLoopProxy* cache_thread);
 
   // Purges any memory not needed.
@@ -67,14 +70,15 @@ class AppCacheService {
   // Determines if a request for 'url' can be satisfied while offline.
   // This method always completes asynchronously.
   void CanHandleMainResourceOffline(const GURL& url,
-                                    net::CompletionCallback* callback);
+                                    const GURL& first_party,
+                                    const net::CompletionCallback& callback);
 
   // Populates 'collection' with info about all of the appcaches stored
   // within the service, 'callback' is invoked upon completion. The service
   // acquires a reference to the 'collection' until until completion.
   // This method always completes asynchronously.
   void GetAllAppCacheInfo(AppCacheInfoCollection* collection,
-                          net::CompletionCallback* callback);
+                          const net::CompletionCallback& callback);
 
   // Deletes the group identified by 'manifest_url', 'callback' is
   // invoked upon completion. Upon completion, the cache group and
@@ -82,7 +86,18 @@ class AppCacheService {
   // subresource loads for pages associated with a deleted group
   // will fail. This method always completes asynchronously.
   void DeleteAppCacheGroup(const GURL& manifest_url,
-                           net::CompletionCallback* callback);
+                           const net::CompletionCallback& callback);
+
+  // Deletes all appcaches for the origin, 'callback' is invoked upon
+  // completion. This method always completes asynchronously.
+  // (virtual for unit testing)
+  virtual void DeleteAppCachesForOrigin(
+      const GURL& origin, const net::CompletionCallback& callback);
+
+  // Checks the integrity of 'response_id' by reading the headers and data.
+  // If it cannot be read, the cache group for 'manifest_url' is deleted.
+  void CheckAppCacheResponse(const GURL& manifest_url_, int64 cache_id,
+                             int64 response_id);
 
   // Context for use during cache updates, should only be accessed
   // on the IO thread. We do NOT add a reference to the request context,
@@ -110,6 +125,10 @@ class AppCacheService {
     return quota_manager_proxy_.get();
   }
 
+  AppCacheQuotaClient* quota_client() const {
+    return quota_client_;
+  }
+
   // Each child process in chrome uses a distinct backend instance.
   // See chrome/browser/AppCacheDispatcherHost.
   void RegisterBackend(AppCacheBackendImpl* backend_impl);
@@ -121,23 +140,46 @@ class AppCacheService {
 
   AppCacheStorage* storage() const { return storage_.get(); }
 
+  bool clear_local_state_on_exit() const { return clear_local_state_on_exit_; }
+  void set_clear_local_state_on_exit(bool clear_local_state_on_exit) {
+    clear_local_state_on_exit_ = clear_local_state_on_exit; }
+
+  bool save_session_state() const { return save_session_state_; }
+  // If |save_session_state| is true, disables the exit-time deletion for all
+  // data (also session-only data).
+  void set_save_session_state(bool save_session_state) {
+    save_session_state_ = save_session_state;
+  }
+
  protected:
+  friend class AppCacheStorageImplTest;
+  friend class AppCacheServiceTest;
+
   class AsyncHelper;
+  class NewAsyncHelper;
   class CanHandleOfflineHelper;
   class DeleteHelper;
+  class DeleteOriginHelper;
   class GetInfoHelper;
+  class CheckResponseHelper;
 
   typedef std::set<AsyncHelper*> PendingAsyncHelpers;
+  typedef std::set<NewAsyncHelper*> PendingNewAsyncHelpers;
   typedef std::map<int, AppCacheBackendImpl*> BackendMap;
 
   AppCachePolicy* appcache_policy_;
+  AppCacheQuotaClient* quota_client_;
   scoped_ptr<AppCacheStorage> storage_;
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
   PendingAsyncHelpers pending_helpers_;
+  PendingNewAsyncHelpers pending_new_helpers_;
   BackendMap backends_;  // One 'backend' per child process.
   // Context for use during cache updates.
   net::URLRequestContext* request_context_;
+  bool clear_local_state_on_exit_;
+  // If true, nothing (not even session-only data) should be deleted on exit.
+  bool save_session_state_;
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheService);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,45 +9,45 @@
 
 #include "base/basictypes.h"
 #include "base/id_map.h"
-#include "content/browser/browser_message_filter.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "webkit/fileapi/file_system_types.h"
 
+class FilePath;
 class GURL;
-class Profile;
-class Receiver;
-class RenderMessageFilter;
 
 namespace base {
 class Time;
 }
 
-namespace content {
-class ResourceContext;
-}
-
 namespace fileapi {
 class FileSystemContext;
-class FileSystemOperation;
+class FileSystemOperationInterface;
 }
 
 namespace net {
 class URLRequestContext;
+class URLRequestContextGetter;
 }  // namespace net
 
-class FileSystemDispatcherHost : public BrowserMessageFilter {
+class FileSystemDispatcherHost : public content::BrowserMessageFilter {
  public:
-  // Used by the renderer.
-  explicit FileSystemDispatcherHost(
-      const content::ResourceContext* resource_context);
-  // Used by the worker, since it has the context handy already.
-  FileSystemDispatcherHost(net::URLRequestContext* request_context,
-                           fileapi::FileSystemContext* file_system_context);
+  // Used by the renderer process host on the UI thread.
+  FileSystemDispatcherHost(
+      net::URLRequestContextGetter* request_context_getter,
+      fileapi::FileSystemContext* file_system_context);
+  // Used by the worker process host on the IO thread.
+  FileSystemDispatcherHost(
+      net::URLRequestContext* request_context,
+      fileapi::FileSystemContext* file_system_context);
   virtual ~FileSystemDispatcherHost();
 
-  // BrowserMessageFilter implementation.
-  virtual void OnChannelConnected(int32 peer_pid);
+  // content::BrowserMessageFilter implementation.
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
   void UnregisterOperation(int request_id);
 
@@ -83,19 +83,25 @@ class FileSystemDispatcherHost : public BrowserMessageFilter {
                    const base::Time& last_modified_time);
   void OnCancel(int request_id, int request_to_cancel);
   void OnOpenFile(int request_id, const GURL& path, int file_flags);
+  void OnWillUpdate(const GURL& path);
+  void OnDidUpdate(const GURL& path, int64 delta);
+  void OnSyncGetPlatformPath(const GURL& path,
+                             FilePath* platform_path);
 
-  // Creates a new FileSystemOperation.
-  fileapi::FileSystemOperation* GetNewOperation(int request_id);
+  // Creates a new FileSystemOperationInterface based on |target_path|.
+  fileapi::FileSystemOperationInterface* GetNewOperation(
+      const GURL& target_path,
+      int request_id);
 
   fileapi::FileSystemContext* context_;
 
   // Keeps ongoing file system operations.
-  typedef IDMap<fileapi::FileSystemOperation> OperationsMap;
+  typedef IDMap<fileapi::FileSystemOperationInterface> OperationsMap;
   OperationsMap operations_;
 
-  // This holds the ResourceContext until Init() can be called from the
+  // The getter holds the context until Init() can be called from the
   // IO thread, which will extract the net::URLRequestContext from it.
-  const content::ResourceContext* resource_context_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   net::URLRequestContext* request_context_;
 
   DISALLOW_COPY_AND_ASSIGN(FileSystemDispatcherHost);

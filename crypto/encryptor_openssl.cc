@@ -52,7 +52,9 @@ Encryptor::Encryptor()
 Encryptor::~Encryptor() {
 }
 
-bool Encryptor::Init(SymmetricKey* key, Mode mode, const std::string& iv) {
+bool Encryptor::Init(SymmetricKey* key,
+                     Mode mode,
+                     const base::StringPiece& iv) {
   DCHECK(key);
   DCHECK_EQ(CBC, mode);
 
@@ -65,26 +67,30 @@ bool Encryptor::Init(SymmetricKey* key, Mode mode, const std::string& iv) {
 
   key_ = key;
   mode_ = mode;
-  iv_ = iv;
+  iv.CopyToString(&iv_);
   return true;
 }
 
-bool Encryptor::Encrypt(const std::string& plaintext, std::string* ciphertext) {
+bool Encryptor::Encrypt(const base::StringPiece& plaintext,
+                        std::string* ciphertext) {
+  CHECK(!plaintext.empty() || (mode_ == CBC));
   return Crypt(true, plaintext, ciphertext);
 }
 
-bool Encryptor::Decrypt(const std::string& ciphertext, std::string* plaintext) {
+bool Encryptor::Decrypt(const base::StringPiece& ciphertext,
+                        std::string* plaintext) {
+  CHECK(!ciphertext.empty());
   return Crypt(false, ciphertext, plaintext);
 }
 
 bool Encryptor::Crypt(bool do_encrypt,
-                      const std::string& input,
+                      const base::StringPiece& input,
                       std::string* output) {
   DCHECK(key_);  // Must call Init() before En/De-crypt.
   // Work on the result in a local variable, and then only transfer it to
   // |output| on success to ensure no partial data is returned.
   std::string result;
-  output->swap(result);
+  output->clear();
 
   const EVP_CIPHER* cipher = GetCipherForKey(key_);
   DCHECK(cipher);  // Already handled in Init();
@@ -102,6 +108,8 @@ bool Encryptor::Crypt(bool do_encrypt,
 
   // When encrypting, add another block size of space to allow for any padding.
   const size_t output_size = input.size() + (do_encrypt ? iv_.size() : 0);
+  CHECK_GT(output_size, 0u);
+  CHECK_GT(output_size + 1, input.size());
   uint8* out_ptr = reinterpret_cast<uint8*>(WriteInto(&result,
                                                       output_size + 1));
   int out_len;

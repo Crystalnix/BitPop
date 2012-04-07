@@ -10,18 +10,21 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/threading/non_thread_safe.h"
+#include "net/base/address_list_net_log_param.h"
 #include "net/base/completion_callback.h"
+#include "net/base/rand_callback.h"
+#include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_log.h"
-#include "net/socket/stream_socket.h"
+#include "net/udp/datagram_socket.h"
 
 namespace net {
 
-class BoundNetLog;
-
 class UDPSocketLibevent : public base::NonThreadSafe {
  public:
-  UDPSocketLibevent(net::NetLog* net_log,
+  UDPSocketLibevent(DatagramSocket::BindType bind_type,
+                    const RandIntCallback& rand_int_cb,
+                    net::NetLog* net_log,
                     const net::NetLog::Source& source);
   virtual ~UDPSocketLibevent();
 
@@ -51,12 +54,12 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   // Read from the socket.
   // Only usable from the client-side of a UDP socket, after the socket
   // has been connected.
-  int Read(IOBuffer* buf, int buf_len, CompletionCallback* callback);
+  int Read(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
   // Write to the socket.
   // Only usable from the client-side of a UDP socket, after the socket
   // has been connected.
-  int Write(IOBuffer* buf, int buf_len, CompletionCallback* callback);
+  int Write(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
   // Read from a socket and receive sender address information.
   // |buf| is the buffer to read data into.
@@ -74,7 +77,7 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   int RecvFrom(IOBuffer* buf,
                int buf_len,
                IPEndPoint* address,
-               CompletionCallback* callback);
+               const CompletionCallback& callback);
 
   // Send to a socket with a particular destination.
   // |buf| is the buffer to send
@@ -88,10 +91,18 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   int SendTo(IOBuffer* buf,
              int buf_len,
              const IPEndPoint& address,
-             CompletionCallback* callback);
+             const CompletionCallback& callback);
+
+  // Set the receive buffer size (in bytes) for the socket.
+  bool SetReceiveBufferSize(int32 size);
+
+  // Set the send buffer size (in bytes) for the socket.
+  bool SetSendBufferSize(int32 size);
 
   // Returns true if the socket is already connected or bound.
   bool is_connected() const { return socket_ != kInvalidSocket; }
+
+  const BoundNetLog& NetLog() const { return net_log_; }
 
  private:
   static const int kInvalidSocket = -1;
@@ -102,12 +113,12 @@ class UDPSocketLibevent : public base::NonThreadSafe {
 
     // MessageLoopForIO::Watcher methods
 
-    virtual void OnFileCanReadWithoutBlocking(int /* fd */) {
-      if (socket_->read_callback_)
+    virtual void OnFileCanReadWithoutBlocking(int /* fd */) OVERRIDE {
+      if (!socket_->read_callback_.is_null())
         socket_->DidCompleteRead();
     }
 
-    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) {}
+    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) OVERRIDE {}
 
    private:
     UDPSocketLibevent* const socket_;
@@ -121,10 +132,10 @@ class UDPSocketLibevent : public base::NonThreadSafe {
 
     // MessageLoopForIO::Watcher methods
 
-    virtual void OnFileCanReadWithoutBlocking(int /* fd */) {}
+    virtual void OnFileCanReadWithoutBlocking(int /* fd */) OVERRIDE {}
 
-    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) {
-      if (socket_->write_callback_)
+    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) OVERRIDE {
+      if (!socket_->write_callback_.is_null())
         socket_->DidCompleteWrite();
     }
 
@@ -139,6 +150,14 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   void DidCompleteRead();
   void DidCompleteWrite();
 
+  // Handles stats and logging. |result| is the number of bytes transferred, on
+  // success, or the net error code on failure. On success, LogRead takes in a
+  // sockaddr and its length, which are mandatory, while LogWrite takes in an
+  // optional IPEndPoint.
+  void LogRead(int result, const char* bytes, socklen_t addr_len,
+               const sockaddr* addr) const;
+  void LogWrite(int result, const char* bytes, const IPEndPoint* address) const;
+
   // Returns the OS error code (or 0 on success).
   int CreateSocket(const IPEndPoint& address);
 
@@ -148,12 +167,23 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   int SendToOrWrite(IOBuffer* buf,
                     int buf_len,
                     const IPEndPoint* address,
-                    CompletionCallback* callback);
+                    const CompletionCallback& callback);
 
+  int InternalConnect(const IPEndPoint& address);
   int InternalRecvFrom(IOBuffer* buf, int buf_len, IPEndPoint* address);
   int InternalSendTo(IOBuffer* buf, int buf_len, const IPEndPoint* address);
 
+  int DoBind(const IPEndPoint& address);
+  int RandomBind(const IPEndPoint& address);
+
   int socket_;
+
+  // How to do source port binding, used only when UDPSocket is part of
+  // UDPClientSocket, since UDPServerSocket provides Bind.
+  DatagramSocket::BindType bind_type_;
+
+  // PRNG function for generating port numbers.
+  RandIntCallback rand_int_cb_;
 
   // These are mutable since they're just cached copies to make
   // GetPeerAddress/GetLocalAddress smarter.
@@ -179,10 +209,10 @@ class UDPSocketLibevent : public base::NonThreadSafe {
   scoped_ptr<IPEndPoint> send_to_address_;
 
   // External callback; called when read is complete.
-  CompletionCallback* read_callback_;
+  CompletionCallback read_callback_;
 
   // External callback; called when write is complete.
-  CompletionCallback* write_callback_;
+  CompletionCallback write_callback_;
 
   BoundNetLog net_log_;
 

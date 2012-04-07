@@ -18,20 +18,21 @@ class ChildTraceMessageFilter : public IPC::ChannelProxy::MessageFilter {
   virtual ~ChildTraceMessageFilter();
 
   // IPC::ChannelProxy::MessageFilter implementation.
-  virtual void OnFilterAdded(IPC::Channel* channel);
-  virtual void OnFilterRemoved();
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterRemoved() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   // Message handlers.
-  void OnBeginTracing();
+  void OnBeginTracing(const std::vector<std::string>& included_categories,
+                      const std::vector<std::string>& excluded_categories);
   void OnEndTracing();
   void OnGetTraceBufferPercentFull();
 
   // Callback from trace subsystem.
   void OnTraceDataCollected(
       const scoped_refptr<base::debug::TraceLog::RefCountedString>&
-          json_events_str_ptr);
+          events_str_ptr);
   void OnTraceBufferFull();
 
   IPC::Channel* channel_;

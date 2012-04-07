@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,13 +15,17 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityPolicy.h"
 #include "ui/gfx/gl/gl_bindings_skia_in_process.h"
 #include "v8/include/v8.h"
+#include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/plugins/webplugininfo.h"
+#include "webkit/tools/test_shell/simple_socket_stream_bridge.h"
 #include "webkit/tools/test_shell/test_shell.h"
 
 #if defined(OS_WIN)
 #include "webkit/tools/test_shell/test_shell_webthemeengine.h"
 #endif
 
-TestShellWebKitInit::TestShellWebKitInit(bool layout_test_mode) {
+TestShellWebKitInit::TestShellWebKitInit(bool layout_test_mode)
+    : real_clipboard_(&clipboard_client_) {
   v8::V8::SetCounterFunction(base::StatsTable::FindLocation);
 
   WebKit::initialize(this);
@@ -129,7 +133,8 @@ bool TestShellWebKitInit::sandboxEnabled() {
   return true;
 }
 
-WebKit::WebKitClient::FileHandle TestShellWebKitInit::databaseOpenFile(
+WebKit::WebKitPlatformSupport::FileHandle
+TestShellWebKitInit::databaseOpenFile(
     const WebKit::WebString& vfs_file_name, int desired_flags) {
   return SimpleDatabaseSystem::GetInstance()->OpenFile(
       vfs_file_name, desired_flags);
@@ -193,7 +198,7 @@ WebKit::WebData TestShellWebKitInit::loadResource(const char* name) {
         "\x82";
     return WebKit::WebData(red_square, arraysize(red_square));
   }
-  return webkit_glue::WebKitClientImpl::loadResource(name);
+  return webkit_glue::WebKitPlatformSupportImpl::loadResource(name);
 }
 
 WebKit::WebString TestShellWebKitInit::queryLocalizedString(
@@ -222,7 +227,7 @@ WebKit::WebString TestShellWebKitInit::queryLocalizedString(
     case WebKit::WebLocalizedString::ValidationStepMismatch:
       return ASCIIToUTF16("step mismatch");
     default:
-      return WebKitClientImpl::queryLocalizedString(name);
+      return WebKitPlatformSupportImpl::queryLocalizedString(name);
   }
 }
 
@@ -232,7 +237,7 @@ WebKit::WebString TestShellWebKitInit::queryLocalizedString(
     return ASCIIToUTF16("range underflow");
   if (name == WebKit::WebLocalizedString::ValidationRangeOverflow)
     return ASCIIToUTF16("range overflow");
-  return WebKitClientImpl::queryLocalizedString(name, value);
+  return WebKitPlatformSupportImpl::queryLocalizedString(name, value);
 }
 
 WebKit::WebString TestShellWebKitInit::queryLocalizedString(
@@ -243,7 +248,7 @@ WebKit::WebString TestShellWebKitInit::queryLocalizedString(
     return ASCIIToUTF16("too long");
   if (name == WebKit::WebLocalizedString::ValidationStepMismatch)
     return ASCIIToUTF16("step mismatch");
-  return WebKitClientImpl::queryLocalizedString(name, value1, value2);
+  return WebKitPlatformSupportImpl::queryLocalizedString(name, value1, value2);
 }
 
 WebKit::WebString TestShellWebKitInit::defaultLocale() {
@@ -296,6 +301,52 @@ TestShellWebKitInit::sharedWorkerRepository() {
 }
 
 WebKit::WebGraphicsContext3D* TestShellWebKitInit::createGraphicsContext3D() {
-  gfx::BindSkiaToInProcessGL();
-  return new webkit::gpu::WebGraphicsContext3DInProcessImpl();
+  return new webkit::gpu::WebGraphicsContext3DInProcessImpl(
+      gfx::kNullPluginWindow, NULL);
+}
+
+WebKit::WebGraphicsContext3D*
+TestShellWebKitInit::createOffscreenGraphicsContext3D(
+    const WebKit::WebGraphicsContext3D::Attributes& attributes) {
+  scoped_ptr<WebGraphicsContext3D> context(
+      new webkit::gpu::WebGraphicsContext3DInProcessImpl(
+          gfx::kNullPluginWindow, NULL));
+  if (!context->initialize(attributes, NULL, false))
+    return NULL;
+  return context.release();
+}
+
+void TestShellWebKitInit::GetPlugins(
+    bool refresh, std::vector<webkit::WebPluginInfo>* plugins) {
+  if (refresh)
+    webkit::npapi::PluginList::Singleton()->RefreshPlugins();
+  webkit::npapi::PluginList::Singleton()->GetPlugins(plugins);
+  // Don't load the forked TestNetscapePlugIn in the chromium code, use
+  // the copy in webkit.org's repository instead.
+  const FilePath::StringType kPluginBlackList[] = {
+    FILE_PATH_LITERAL("npapi_layout_test_plugin.dll"),
+    FILE_PATH_LITERAL("WebKitTestNetscapePlugIn.plugin"),
+    FILE_PATH_LITERAL("libnpapi_layout_test_plugin.so"),
+  };
+  for (int i = plugins->size() - 1; i >= 0; --i) {
+    webkit::WebPluginInfo plugin_info = plugins->at(i);
+    for (size_t j = 0; j < arraysize(kPluginBlackList); ++j) {
+      if (plugin_info.path.BaseName() == FilePath(kPluginBlackList[j])) {
+        plugins->erase(plugins->begin() + i);
+      }
+    }
+  }
+}
+
+webkit_glue::ResourceLoaderBridge*
+TestShellWebKitInit::CreateResourceLoader(
+    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
+  return SimpleResourceLoaderBridge::Create(request_info);
+}
+
+webkit_glue::WebSocketStreamHandleBridge*
+TestShellWebKitInit::CreateWebSocketBridge(
+    WebKit::WebSocketStreamHandle* handle,
+    webkit_glue::WebSocketStreamHandleDelegate* delegate) {
+  return SimpleSocketStreamBridge::Create(handle, delegate);
 }

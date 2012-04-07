@@ -8,22 +8,22 @@
 
 #import <Cocoa/Cocoa.h>
 #include <map>
+#include <vector>
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_nsobject.h"
+#include "chrome/browser/cancelable_request.h"
 #import "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
-#include "content/browser/cancelable_request.h"
-#include "content/common/notification_observer.h"
+#import "chrome/browser/ui/cocoa/main_menu_item.h"
+#include "content/public/browser/notification_observer.h"
 
-class NavigationEntry;
 class NotificationRegistrar;
 class PageUsageData;
 class Profile;
-class TabNavigationEntry;
 class TabRestoreService;
 @class HistoryMenuCocoaController;
 
@@ -31,7 +31,7 @@ namespace {
 
 class HistoryMenuBridgeTest;
 
-}
+}  // namespace
 
 // C++ bridge for the history menu; one per AppController (means there
 // is only one). This class observes various data sources, namely the
@@ -55,8 +55,9 @@ class HistoryMenuBridgeTest;
 // unlike the typical ownership model, this bridge owns its controller. The
 // controller is very thin and only exists to interact with Cocoa, but this
 // class does the bulk of the work.
-class HistoryMenuBridge : public NotificationObserver,
-                          public TabRestoreServiceObserver {
+class HistoryMenuBridge : public content::NotificationObserver,
+                          public TabRestoreServiceObserver,
+                          public MainMenuItem {
  public:
   // This is a generalization of the data we store in the history menu because
   // we pull things from different sources with different data types.
@@ -111,26 +112,30 @@ class HistoryMenuBridge : public NotificationObserver,
   // history menu items are hooked directly up to their target, they do not need
   // to have the global IDC view tags.
   enum Tags {
-    kMostVisitedSeparator = 400,  // Separator before most visited section.
-    kMostVisitedTitle = 401,  // Title of the most visited section.
-    kMostVisited = 420,  // Used for all entries in the most visited section.
-    kRecentlyClosedSeparator = 440,  // Item before recently closed section.
-    kRecentlyClosedTitle = 441,  // Title of recently closed section.
-    kRecentlyClosed = 460,  // Used for items in the recently closed section.
-    kShowFullSeparator = 480  // Separator after the recently closed section.
+    kRecentlyClosedSeparator = 400,  // Item before recently closed section.
+    kRecentlyClosedTitle = 401,  // Title of recently closed section.
+    kRecentlyClosed = 420,  // Used for items in the recently closed section.
+    kVisitedSeparator = 440,  // Separator before visited section.
+    kVisitedTitle = 441,  // Title of the visited section.
+    kVisited = 460,  // Used for all entries in the visited section.
+    kShowFullSeparator = 480  // Separator after the visited section.
   };
 
   explicit HistoryMenuBridge(Profile* profile);
   virtual ~HistoryMenuBridge();
 
-  // Overriden from NotificationObserver.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // For TabRestoreServiceObserver
-  virtual void TabRestoreServiceChanged(TabRestoreService* service);
-  virtual void TabRestoreServiceDestroyed(TabRestoreService* service);
+  // TabRestoreServiceObserver:
+  virtual void TabRestoreServiceChanged(TabRestoreService* service) OVERRIDE;
+  virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
+
+  // MainMenuItem:
+  virtual void ResetMenu() OVERRIDE;
+  virtual void BuildMenu() OVERRIDE;
 
   // Looks up an NSMenuItem in the |menu_item_map_| and returns the
   // corresponding HistoryItem.
@@ -172,7 +177,7 @@ class HistoryMenuBridge : public NotificationObserver,
   // Callback method for when HistoryService query results are ready with the
   // most recently-visited sites.
   void OnVisitedHistoryResults(CancelableRequestProvider::Handle handle,
-                               std::vector<PageUsageData*>* results);
+                               history::QueryResults* results);
 
   // Creates a HistoryItem* for the given tab entry. Caller takes ownership of
   // the result and must delete it when finished.
@@ -203,7 +208,7 @@ class HistoryMenuBridge : public NotificationObserver,
   HistoryService* history_service_;  // weak
   TabRestoreService* tab_restore_service_;  // weak
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   CancelableRequestConsumer cancelable_request_consumer_;
 
   // Mapping of NSMenuItems to HistoryItems. This owns the HistoryItems until

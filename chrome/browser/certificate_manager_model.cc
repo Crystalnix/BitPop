@@ -1,10 +1,10 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/certificate_manager_model.h"
 
-#include "base/callback_old.h"
+#include "base/bind.h"
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
@@ -13,6 +13,14 @@
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
 #include "net/base/x509_certificate.h"
+
+#if defined(OS_CHROMEOS)
+#include <cert.h>
+
+#include "crypto/nss_util.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
+#endif
 
 CertificateManagerModel::CertificateManagerModel(Observer* observer)
     : observer_(observer) {
@@ -30,8 +38,8 @@ void CertificateManagerModel::Refresh() {
       modules,
       browser::kCryptoModulePasswordListCerts,
       "",  // unused.
-      NewCallback(this,
-                  &CertificateManagerModel::RefreshSlotsUnlocked));
+      base::Bind(&CertificateManagerModel::RefreshSlotsUnlocked,
+                 base::Unretained(this)));
 }
 
 void CertificateManagerModel::RefreshSlotsUnlocked() {
@@ -70,6 +78,18 @@ string16 CertificateManagerModel::GetColumnText(
     case COL_SUBJECT_NAME:
       rv = UTF8ToUTF16(
           x509_certificate_model::GetCertNameOrNickname(cert.os_cert_handle()));
+
+#if defined(OS_CHROMEOS)
+      // TODO(xiyuan): Put this into a column when we have js tree-table.
+      if (crypto::IsTPMTokenReady() &&
+          cert.os_cert_handle()->slot ==
+            cert_db().GetPrivateModule()->os_module_handle()) {
+        rv = l10n_util::GetStringFUTF16(
+            IDS_CERT_MANAGER_HARDWARE_BACKED_KEY_FORMAT,
+            rv,
+            l10n_util::GetStringUTF16(IDS_CERT_MANAGER_HARDWARE_BACKED));
+      }
+#endif
       break;
     case COL_CERTIFICATE_STORE:
       rv = UTF8ToUTF16(
@@ -95,7 +115,7 @@ int CertificateManagerModel::ImportFromPKCS12(net::CryptoModule* module,
                                               const string16& password,
                                               bool is_extractable) {
   int result = cert_db_.ImportFromPKCS12(module, data, password,
-                                         is_extractable);
+                                         is_extractable, NULL);
   if (result == net::OK)
     Refresh();
   return result;
@@ -103,7 +123,7 @@ int CertificateManagerModel::ImportFromPKCS12(net::CryptoModule* module,
 
 bool CertificateManagerModel::ImportCACerts(
     const net::CertificateList& certificates,
-    unsigned int trust_bits,
+    net::CertDatabase::TrustBits trust_bits,
     net::CertDatabase::ImportCertFailureList* not_imported) {
   bool result = cert_db_.ImportCACerts(certificates, trust_bits, not_imported);
   if (result && not_imported->size() != certificates.size())
@@ -120,9 +140,10 @@ bool CertificateManagerModel::ImportServerCert(
   return result;
 }
 
-bool CertificateManagerModel::SetCertTrust(const net::X509Certificate* cert,
-                                           net::CertType type,
-                                           unsigned int trust_bits) {
+bool CertificateManagerModel::SetCertTrust(
+    const net::X509Certificate* cert,
+    net::CertType type,
+    net::CertDatabase::TrustBits trust_bits) {
   return cert_db_.SetCertTrust(cert, type, trust_bits);
 }
 

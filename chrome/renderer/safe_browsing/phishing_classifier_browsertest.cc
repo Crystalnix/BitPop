@@ -11,15 +11,17 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/safe_browsing/client_model.pb.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
-#include "chrome/renderer/safe_browsing/client_model.pb.h"
 #include "chrome/renderer/safe_browsing/features.h"
 #include "chrome/renderer/safe_browsing/mock_feature_extractor_clock.h"
-#include "chrome/renderer/safe_browsing/render_view_fake_resources_test.h"
+#include "chrome/renderer/safe_browsing/murmurhash3_util.h"
 #include "chrome/renderer/safe_browsing/scorer.h"
+#include "content/test/render_view_fake_resources_test.h"
 #include "crypto/sha2.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -72,13 +74,14 @@ class PhishingClassifierTest : public RenderViewFakeResourcesTest {
     rule->set_weight(1.0);
 
     model.add_page_term(3);
-    model.add_page_word(3);
+    model.set_murmur_hash_seed(2777808611U);
+    model.add_page_word(MurmurHash3String("login", model.murmur_hash_seed()));
     model.set_max_words_per_term(1);
 
     clock_ = new MockFeatureExtractorClock;
     scorer_.reset(Scorer::Create(model.SerializeAsString()));
     ASSERT_TRUE(scorer_.get());
-    classifier_.reset(new PhishingClassifier(view_, clock_));
+    classifier_.reset(new PhishingClassifier(view(), clock_));
   }
 
   virtual void TearDown() {
@@ -97,7 +100,8 @@ class PhishingClassifierTest : public RenderViewFakeResourcesTest {
 
     classifier_->BeginClassification(
         page_text,
-        NewCallback(this, &PhishingClassifierTest::ClassificationFinished));
+        base::Bind(&PhishingClassifierTest::ClassificationFinished,
+                   base::Unretained(this)));
     message_loop_.Run();
 
     *phishy_score = verdict_.client_score();
@@ -189,6 +193,19 @@ TEST_F(PhishingClassifierTest, TestClassification) {
   EXPECT_FALSE(RunPhishingClassifier(&page_text, &phishy_score, &features));
   EXPECT_EQ(0U, features.features().size());
   EXPECT_EQ(PhishingClassifier::kInvalidScore, phishy_score);
+}
+
+TEST_F(PhishingClassifierTest, DisableDetection) {
+  // No scorer yet, so the classifier is not ready.
+  EXPECT_FALSE(classifier_->is_ready());
+
+  // Now set the scorer.
+  classifier_->set_phishing_scorer(scorer_.get());
+  EXPECT_TRUE(classifier_->is_ready());
+
+  // Set a NULL scorer, which turns detection back off.
+  classifier_->set_phishing_scorer(NULL);
+  EXPECT_FALSE(classifier_->is_ready());
 }
 
 }  // namespace safe_browsing

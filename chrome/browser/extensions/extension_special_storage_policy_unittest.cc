@@ -2,11 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/message_loop.h"
 #include "base/values.h"
+#include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
+#include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace keys = extension_manifest_keys;
 
@@ -118,7 +126,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, EmptyPolicy) {
   const GURL kExtensionUrl("chrome-extension://bar");
 
   scoped_refptr<ExtensionSpecialStoragePolicy> policy(
-      new ExtensionSpecialStoragePolicy);
+      new ExtensionSpecialStoragePolicy(NULL));
 
   ASSERT_FALSE(policy->IsStorageUnlimited(kHttpUrl));
   ASSERT_FALSE(policy->IsStorageUnlimited(kHttpUrl));  // test cached result
@@ -133,7 +141,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, EmptyPolicy) {
 TEST_F(ExtensionSpecialStoragePolicyTest, AppWithProtectedStorage) {
   scoped_refptr<Extension> extension(CreateProtectedApp());
   scoped_refptr<ExtensionSpecialStoragePolicy> policy(
-      new ExtensionSpecialStoragePolicy);
+      new ExtensionSpecialStoragePolicy(NULL));
   policy->GrantRightsForExtension(extension);
   EXPECT_FALSE(policy->IsStorageUnlimited(extension->url()));
   EXPECT_FALSE(policy->IsStorageUnlimited(GURL("http://explicit/")));
@@ -152,7 +160,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, AppWithProtectedStorage) {
 TEST_F(ExtensionSpecialStoragePolicyTest, AppWithUnlimitedStorage) {
   scoped_refptr<Extension> extension(CreateUnlimitedApp());
   scoped_refptr<ExtensionSpecialStoragePolicy> policy(
-      new ExtensionSpecialStoragePolicy);
+      new ExtensionSpecialStoragePolicy(NULL));
   policy->GrantRightsForExtension(extension);
   EXPECT_TRUE(policy->IsStorageProtected(GURL("http://explicit/")));
   EXPECT_TRUE(policy->IsStorageProtected(GURL("http://explicit:6000/")));
@@ -181,7 +189,7 @@ TEST_F(ExtensionSpecialStoragePolicyTest, OverlappingApps) {
   scoped_refptr<Extension> protected_app(CreateProtectedApp());
   scoped_refptr<Extension> unlimited_app(CreateUnlimitedApp());
   scoped_refptr<ExtensionSpecialStoragePolicy> policy(
-      new ExtensionSpecialStoragePolicy);
+      new ExtensionSpecialStoragePolicy(NULL));
   policy->GrantRightsForExtension(protected_app);
   policy->GrantRightsForExtension(unlimited_app);
 
@@ -209,4 +217,39 @@ TEST_F(ExtensionSpecialStoragePolicyTest, OverlappingApps) {
   EXPECT_FALSE(policy->IsStorageProtected(GURL("http://explicit/")));
   EXPECT_FALSE(policy->IsStorageProtected(GURL("http://foo.wildcards/")));
   EXPECT_FALSE(policy->IsStorageProtected(GURL("https://bar.wildcards/")));
+}
+
+TEST_F(ExtensionSpecialStoragePolicyTest, HasSessionOnlyOrigins) {
+  MessageLoop message_loop;
+  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+
+  TestingProfile profile;
+  CookieSettings* cookie_settings = CookieSettings::GetForProfile(&profile);
+  scoped_refptr<ExtensionSpecialStoragePolicy> policy(
+      new ExtensionSpecialStoragePolicy(cookie_settings));
+
+  EXPECT_FALSE(policy->HasSessionOnlyOrigins());
+
+  // The default setting can be session-only.
+  cookie_settings->SetDefaultCookieSetting(CONTENT_SETTING_SESSION_ONLY);
+  EXPECT_TRUE(policy->HasSessionOnlyOrigins());
+
+  cookie_settings->SetDefaultCookieSetting(CONTENT_SETTING_ALLOW);
+  EXPECT_FALSE(policy->HasSessionOnlyOrigins());
+
+  // Or the session-onlyness can affect individual origins.
+  ContentSettingsPattern pattern =
+      ContentSettingsPattern::FromString("pattern.com");
+
+  cookie_settings->SetCookieSetting(pattern,
+                                    ContentSettingsPattern::Wildcard(),
+                                    CONTENT_SETTING_SESSION_ONLY);
+
+  EXPECT_TRUE(policy->HasSessionOnlyOrigins());
+
+  // Clearing an origin-specific rule.
+  cookie_settings->ResetCookieSetting(pattern,
+                                      ContentSettingsPattern::Wildcard());
+
+  EXPECT_FALSE(policy->HasSessionOnlyOrigins());
 }

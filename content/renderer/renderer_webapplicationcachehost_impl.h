@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,24 @@
 
 #include "webkit/appcache/web_application_cache_host_impl.h"
 
-class RenderView;
+class RenderViewImpl;
 
 class RendererWebApplicationCacheHostImpl
     : public appcache::WebApplicationCacheHostImpl {
  public:
   RendererWebApplicationCacheHostImpl(
-      RenderView* render_view,
+      RenderViewImpl* render_view,
       WebKit::WebApplicationCacheHostClient* client,
       appcache::AppCacheBackend* backend);
 
   // appcache::WebApplicationCacheHostImpl methods.
   virtual void OnLogMessage(appcache::LogLevel log_level,
-                            const std::string& message);
-  virtual void OnContentBlocked(const GURL& manifest_url);
-  virtual void OnCacheSelected(const appcache::AppCacheInfo& info);
+                            const std::string& message) OVERRIDE;
+  virtual void OnContentBlocked(const GURL& manifest_url) OVERRIDE;
+  virtual void OnCacheSelected(const appcache::AppCacheInfo& info) OVERRIDE;
 
  private:
-  RenderView* GetRenderView();
+  RenderViewImpl* GetRenderView();
 
   bool content_blocked_;
   int routing_id_;

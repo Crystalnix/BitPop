@@ -4,7 +4,7 @@
 
 #include "webkit/appcache/appcache_backend_impl.h"
 
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "webkit/appcache/appcache.h"
 #include "webkit/appcache/appcache_group.h"
 #include "webkit/appcache/appcache_service.h"
@@ -110,7 +110,7 @@ bool AppCacheBackendImpl::MarkAsForeignEntry(
 }
 
 bool AppCacheBackendImpl::GetStatusWithCallback(
-    int host_id, GetStatusCallback* callback, void* callback_param) {
+    int host_id, const GetStatusCallback& callback, void* callback_param) {
   AppCacheHost* host = GetHost(host_id);
   if (!host)
     return false;
@@ -120,7 +120,7 @@ bool AppCacheBackendImpl::GetStatusWithCallback(
 }
 
 bool AppCacheBackendImpl::StartUpdateWithCallback(
-    int host_id, StartUpdateCallback* callback, void* callback_param) {
+    int host_id, const StartUpdateCallback& callback, void* callback_param) {
   AppCacheHost* host = GetHost(host_id);
   if (!host)
     return false;
@@ -130,7 +130,7 @@ bool AppCacheBackendImpl::StartUpdateWithCallback(
 }
 
 bool AppCacheBackendImpl::SwapCacheWithCallback(
-    int host_id, SwapCacheCallback* callback, void* callback_param) {
+    int host_id, const SwapCacheCallback& callback, void* callback_param) {
   AppCacheHost* host = GetHost(host_id);
   if (!host)
     return false;

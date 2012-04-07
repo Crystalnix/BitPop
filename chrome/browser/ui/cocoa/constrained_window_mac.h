@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,17 +8,16 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "content/browser/tab_contents/constrained_window.h"
-
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_nsobject.h"
+#include "chrome/browser/ui/constrained_window.h"
 
 @class BrowserWindowController;
 @class GTMWindowSheetController;
 @class NSView;
 @class NSWindow;
-class TabContents;
+class TabContentsWrapper;
 
 // Base class for constrained dialog delegates. Never inherit from this
 // directly.
@@ -69,8 +68,10 @@ class ConstrainedWindowMacDelegateSystemSheet
   virtual NSArray* GetSheetParameters(id delegate, SEL didEndSelector);
 
  private:
+  friend class TabModalConfirmDialogTest;
+
   virtual void RunSheet(GTMWindowSheetController* sheetController,
-                        NSView* view);
+                        NSView* view) OVERRIDE;
   scoped_nsobject<id> systemSheet_;
   scoped_nsobject<id> delegate_;
   SEL didEndSelector_;
@@ -93,7 +94,7 @@ class ConstrainedWindowMacDelegateCustomSheet
 
  private:
   virtual void RunSheet(GTMWindowSheetController* sheetController,
-                        NSView* view);
+                        NSView* view) OVERRIDE;
   scoped_nsobject<NSWindow> customSheet_;
   scoped_nsobject<id> delegate_;
   SEL didEndSelector_;
@@ -109,14 +110,16 @@ class ConstrainedWindowMacDelegateCustomSheet
 //    deleted.
 class ConstrainedWindowMac : public ConstrainedWindow {
  public:
+  ConstrainedWindowMac(TabContentsWrapper* wrapper,
+                       ConstrainedWindowMacDelegate* delegate);
   virtual ~ConstrainedWindowMac();
 
   // Overridden from ConstrainedWindow:
-  virtual void ShowConstrainedWindow();
-  virtual void CloseConstrainedWindow();
+  virtual void ShowConstrainedWindow() OVERRIDE;
+  virtual void CloseConstrainedWindow() OVERRIDE;
 
-  // Returns the TabContents that constrains this Constrained Window.
-  TabContents* owner() const { return owner_; }
+  // Returns the TabContentsWrapper that constrains this Constrained Window.
+  TabContentsWrapper* owner() const { return wrapper_; }
 
   // Returns the window's delegate.
   ConstrainedWindowMacDelegate* delegate() { return delegate_; }
@@ -127,11 +130,8 @@ class ConstrainedWindowMac : public ConstrainedWindow {
  private:
   friend class ConstrainedWindow;
 
-  ConstrainedWindowMac(TabContents* owner,
-                       ConstrainedWindowMacDelegate* delegate);
-
-  // The TabContents that owns and constrains this ConstrainedWindow.
-  TabContents* owner_;
+  // The TabContentsWrapper that owns and constrains this ConstrainedWindow.
+  TabContentsWrapper* wrapper_;
 
   // Delegate that provides the contents of this constrained window.
   ConstrainedWindowMacDelegate* delegate_;
@@ -141,6 +141,9 @@ class ConstrainedWindowMac : public ConstrainedWindow {
 
   // Stores if |ShowConstrainedWindow()| was called.
   bool should_be_visible_;
+
+  // True when CloseConstrainedWindow has been called.
+  bool closing_;
 
   DISALLOW_COPY_AND_ASSIGN(ConstrainedWindowMac);
 };

@@ -1,58 +1,67 @@
-#!/usr/bin/python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-'''python %prog [options] platform template
+'''python %prog [options] platform chromium_os_flag template
 
 platform specifies which platform source is being generated for
-  and can be one of (win, mac, linux).
+  and can be one of (win, mac, linux)
+chromium_os_flag should be 1 if this is a Chromium OS build
 template is the path to a .json policy template file.'''
 
 from __future__ import with_statement
 from optparse import OptionParser
-import sys;
+import sys
 
 
-CHROME_SUBKEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome';
-CHROMIUM_SUBKEY = 'SOFTWARE\\\\Policies\\\\Chromium';
+CHROME_MANDATORY_SUBKEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
+CHROME_RECOMMENDED_SUBKEY = CHROME_MANDATORY_SUBKEY + '\\\\Recommended'
+CHROMIUM_MANDATORY_SUBKEY = 'SOFTWARE\\\\Policies\\\\Chromium'
+CHROMIUM_RECOMMENDED_SUBKEY = CHROMIUM_MANDATORY_SUBKEY + '\\\\Recommended'
+
+TYPE_MAP = {
+  'dict': 'TYPE_DICTIONARY',
+  'int': 'TYPE_INTEGER',
+  'int-enum': 'TYPE_INTEGER',
+  'list': 'TYPE_LIST',
+  'main': 'TYPE_BOOLEAN',
+  'string': 'TYPE_STRING',
+  'string-enum': 'TYPE_STRING',
+}
 
 
 def main():
-  parser = OptionParser(usage=__doc__);
-  parser.add_option("--pch", "--policy-constants-header", dest="header_path",
-                    help="generate header file of policy constants",
-                    metavar="FILE");
-  parser.add_option("--pcc", "--policy-constants-source", dest="source_path",
-                    help="generate source file of policy constants",
-                    metavar="FILE");
-  parser.add_option("--pth", "--policy-type-header", dest="type_path",
-                    help="generate header file for policy type enumeration",
-                    metavar="FILE");
-  parser.add_option("--ppb", "--policy-protobuf", dest="proto_path",
-                    help="generate cloud policy protobuf file",
-                    metavar="FILE");
-  parser.add_option("--ppd", "--protobuf-decoder", dest="decoder_path",
-                    help="generate C++ code decoding the policy protobuf",
-                    metavar="FILE");
+  parser = OptionParser(usage=__doc__)
+  parser.add_option('--pch', '--policy-constants-header', dest='header_path',
+                    help='generate header file of policy constants',
+                    metavar='FILE')
+  parser.add_option('--pcc', '--policy-constants-source', dest='source_path',
+                    help='generate source file of policy constants',
+                    metavar='FILE')
+  parser.add_option('--ppb', '--policy-protobuf', dest='proto_path',
+                    help='generate cloud policy protobuf file',
+                    metavar='FILE')
+  parser.add_option('--ppd', '--protobuf-decoder', dest='decoder_path',
+                    help='generate C++ code decoding the policy protobuf',
+                    metavar='FILE')
 
-  (opts, args) = parser.parse_args();
+  (opts, args) = parser.parse_args()
 
-  if len(args) < 2 or len(args) > 2:
-    print "exactly one platform and input file must be specified."
+  if len(args) != 3:
+    print 'exactly platform, chromium_os flag and input file must be specified.'
     parser.print_help()
-    sys.exit(2)
-  template_file_contents = _LoadJSONFile(args[1]);
+    return 2
+  template_file_contents = _LoadJSONFile(args[2])
   if opts.header_path is not None:
-    _WritePolicyConstantHeader(template_file_contents, args, opts);
+    _WritePolicyConstantHeader(template_file_contents, args, opts)
   if opts.source_path is not None:
-    _WritePolicyConstantSource(template_file_contents, args, opts);
-  if opts.type_path is not None:
-    _WritePolicyTypeEnumerationHeader(template_file_contents, args, opts);
+    _WritePolicyConstantSource(template_file_contents, args, opts)
   if opts.proto_path is not None:
     _WriteProtobuf(template_file_contents, args, opts.proto_path)
   if opts.decoder_path is not None:
     _WriteProtobufParser(template_file_contents, args, opts.decoder_path)
+  return 0
 
 
 #------------------ shared helpers ---------------------------------#
@@ -64,37 +73,96 @@ def _OutputGeneratedWarningForC(f, template_file_path):
             '//\n\n')
 
 
-def _GetPolicyNameList(template_file_contents):
-  policy_names = [];
+# Returns a tuple with details about the given policy:
+# (name, type, list_of_platforms, is_deprecated, is_device_policy)
+def _GetPolicyDetails(policy):
+  name = policy['name']
+  if not TYPE_MAP.has_key(policy['type']):
+    print 'Unknown policy type for %s: %s' % (name, policy['type'])
+    sys.exit(3)
+  vtype = TYPE_MAP[policy['type']]
+  # platforms is a list of 'chrome', 'chrome_os' and/or 'chrome_frame'.
+  platforms = [ x.split(':')[0] for x in policy['supported_on'] ]
+  is_deprecated = policy.get('deprecated', False)
+  return (name, vtype, platforms, is_deprecated)
+
+
+def _GetPolicyList(template_file_contents):
+  policies = []
   for policy in template_file_contents['policy_definitions']:
     if policy['type'] == 'group':
       for sub_policy in policy['policies']:
-        policy_names.append(sub_policy['name'])
+        policies.append(_GetPolicyDetails(sub_policy))
     else:
-      policy_names.append(policy['name'])
-  policy_names.sort()
-  return policy_names
+      policies.append(_GetPolicyDetails(policy))
+  # Tuples are sorted in lexicographical order, which will sort by policy name
+  # in this case.
+  policies.sort()
+  return policies
+
+
+def _GetPolicyNameList(template_file_contents):
+  return [name for (name, _, _, _) in _GetPolicyList(template_file_contents)]
+
+
+def _GetChromePolicyList(template_file_contents):
+  return [(name, platforms, vtype) for (name, vtype, platforms, _)
+                                   in _GetPolicyList(template_file_contents)]
+
+
+def _GetDeprecatedPolicyList(template_file_contents):
+  return [name for (name, _, _, is_deprecated)
+               in _GetPolicyList(template_file_contents)
+               if is_deprecated]
 
 
 def _LoadJSONFile(json_file):
-  with open(json_file, "r") as f:
+  with open(json_file, 'r') as f:
     text = f.read()
   return eval(text)
 
 
 #------------------ policy constants header ------------------------#
 def _WritePolicyConstantHeader(template_file_contents, args, opts):
-  platform = args[0];
-  with open(opts.header_path, "w") as f:
-    _OutputGeneratedWarningForC(f, args[1])
+  os = args[0]
+  with open(opts.header_path, 'w') as f:
+    _OutputGeneratedWarningForC(f, args[2])
+
     f.write('#ifndef CHROME_COMMON_POLICY_CONSTANTS_H_\n'
             '#define CHROME_COMMON_POLICY_CONSTANTS_H_\n'
             '#pragma once\n'
             '\n'
+            '#include <string>\n'
+            '\n'
+            '#include "base/values.h"\n'
+            '\n'
             'namespace policy {\n\n')
-    if platform == "win":
-      f.write('// The windows registry path where policy configuration '
-              'resides.\nextern const wchar_t kRegistrySubKey[];\n\n')
+
+    if os == 'win':
+      f.write('// The windows registry path where mandatory policy '
+              'configuration resides.\n'
+              'extern const wchar_t kRegistryMandatorySubKey[];\n'
+              '// The windows registry path where recommended policy '
+              'configuration resides.\n'
+              'extern const wchar_t kRegistryRecommendedSubKey[];\n\n')
+
+    f.write('// Lists policy types mapped to their names and expected types.\n'
+            '// Used to initialize ConfigurationPolicyProviders.\n'
+            'struct PolicyDefinitionList {\n'
+            '  struct Entry {\n'
+            '    const char* name;\n'
+            '    base::Value::Type value_type;\n'
+            '  };\n'
+            '\n'
+            '  const Entry* begin;\n'
+            '  const Entry* end;\n'
+            '};\n'
+            '\n'
+            '// Returns true if the given policy is deprecated.\n'
+            'bool IsDeprecatedPolicy(const std::string& policy);\n'
+            '\n'
+            '// Returns the default policy definition list for Chrome.\n'
+            'const PolicyDefinitionList* GetChromePolicyDefinitionList();\n\n')
     f.write('// Key names for the policy settings.\n'
             'namespace key {\n\n')
     for policy_name in _GetPolicyNameList(template_file_contents):
@@ -106,44 +174,77 @@ def _WritePolicyConstantHeader(template_file_contents, args, opts):
 
 #------------------ policy constants source ------------------------#
 def _WritePolicyConstantSource(template_file_contents, args, opts):
-  platform = args[0];
-  with open(opts.source_path, "w") as f:
-    _OutputGeneratedWarningForC(f, args[1])
-    f.write('#include "policy/policy_constants.h"\n'
+  os = args[0]
+  is_chromium_os = args[1] == '1'
+  platform = None
+  platform_wildcard = None
+  if is_chromium_os:
+    platform = 'chrome_os'
+  else:
+    platform = 'chrome.' + os.lower()
+    platform_wildcard = 'chrome.*'
+  with open(opts.source_path, 'w') as f:
+    _OutputGeneratedWarningForC(f, args[2])
+
+    f.write('#include "base/basictypes.h"\n'
+            '#include "base/logging.h"\n'
+            '#include "policy/policy_constants.h"\n'
             '\n'
-            'namespace policy {\n'
-            '\n')
-    if platform == "win":
+            'namespace policy {\n\n')
+
+    f.write('namespace {\n\n')
+
+    f.write('const PolicyDefinitionList::Entry kEntries[] = {\n')
+    policy_list = _GetChromePolicyList(template_file_contents)
+    for (name, platforms, vtype) in policy_list:
+      if (platform in platforms) or (platform_wildcard in platforms):
+        f.write('  { key::k%s, Value::%s },\n' % (name, vtype))
+    f.write('};\n\n')
+
+    f.write('const PolicyDefinitionList kChromePolicyList = {\n'
+            '  kEntries,\n'
+            '  kEntries + arraysize(kEntries),\n'
+            '};\n\n')
+
+    f.write('// List of deprecated policies.\n'
+            'const char* kDeprecatedPolicyList[] = {\n')
+    for name in _GetDeprecatedPolicyList(template_file_contents):
+      f.write('  key::k%s,\n' % name)
+    f.write('};\n\n')
+
+    f.write('}  // namespace\n\n')
+
+    if os == 'win':
       f.write('#if defined(GOOGLE_CHROME_BUILD)\n'
-              'const wchar_t kRegistrySubKey[] = '
-              'L"' + CHROME_SUBKEY + '";\n'
+              'const wchar_t kRegistryMandatorySubKey[] = '
+              'L"' + CHROME_MANDATORY_SUBKEY + '";\n'
+              'const wchar_t kRegistryRecommendedSubKey[] = '
+              'L"' + CHROME_RECOMMENDED_SUBKEY + '";\n'
               '#else\n'
-              'const wchar_t kRegistrySubKey[] = '
-              'L"' + CHROMIUM_SUBKEY + '";\n'
+              'const wchar_t kRegistryMandatorySubKey[] = '
+              'L"' + CHROMIUM_MANDATORY_SUBKEY + '";\n'
+              'const wchar_t kRegistryRecommendedSubKey[] = '
+              'L"' + CHROMIUM_RECOMMENDED_SUBKEY + '";\n'
               '#endif\n\n')
+
+    f.write('bool IsDeprecatedPolicy(const std::string& policy) {\n'
+            '  for (size_t i = 0; i < arraysize(kDeprecatedPolicyList);'
+              ' ++i) {\n'
+            '    if (policy == kDeprecatedPolicyList[i])\n'
+            '      return true;\n'
+            '  }\n'
+            '  return false;\n'
+            '}\n'
+            '\n'
+            'const PolicyDefinitionList* GetChromePolicyDefinitionList() {\n'
+            '  return &kChromePolicyList;\n'
+            '}\n\n')
+
     f.write('namespace key {\n\n')
     for policy_name in _GetPolicyNameList(template_file_contents):
       f.write('const char k%s[] = "%s";\n' % (policy_name, policy_name))
     f.write('\n}  // namespace key\n\n'
             '}  // namespace policy\n')
-
-
-#------------------ policy type enumeration header -----------------#
-def _WritePolicyTypeEnumerationHeader(template_file_contents, args, opts):
-  with open(opts.type_path, "w") as f:
-    _OutputGeneratedWarningForC(f, args[1])
-    f.write('#ifndef CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_TYPE_H_\n'
-            '#define CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_TYPE_H_\n'
-            '#pragma once\n'
-            '\n'
-            'namespace policy {\n'
-            '\n'
-            'enum ConfigurationPolicyType {\n')
-    for policy_name in _GetPolicyNameList(template_file_contents):
-      f.write('  kPolicy' + policy_name + ",\n");
-    f.write('};\n\n'
-            '}  // namespace policy\n\n'
-            '#endif  // CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_TYPE_H_\n')
 
 
 #------------------ policy protobuf --------------------------------#
@@ -164,6 +265,8 @@ message PolicyOptions {
     MANDATORY = 0;
     // The user may choose to override the given settings.
     RECOMMENDED = 1;
+    // No policy value is present and the policy should be ignored.
+    UNSET = 2;
   }
   optional PolicyMode mode = 1 [default = MANDATORY];
 }
@@ -171,13 +274,16 @@ message PolicyOptions {
 '''
 
 
+# TODO(joaodasilva): introduce a message to represent dictionary values.
+# Mapping 'dict' to 'string' for now. http://crbug.com/108997
 PROTOBUF_TYPE = {
-  'main': 'bool',
-  'string': 'string',
-  'string-enum': 'string',
+  'dict': 'string',
   'int': 'int64',
   'int-enum': 'int64',
   'list': 'StringList',
+  'main': 'bool',
+  'string': 'string',
+  'string-enum': 'string',
 }
 
 
@@ -199,7 +305,7 @@ def _WritePolicyProto(file, policy, fields):
 
 def _WriteProtobuf(template_file_contents, args, outfilepath):
   with open(outfilepath, 'w') as f:
-    _OutputGeneratedWarningForC(f, args[1])
+    _OutputGeneratedWarningForC(f, args[2])
     f.write(PROTO_HEAD)
 
     fields = []
@@ -221,15 +327,13 @@ def _WriteProtobuf(template_file_contents, args, outfilepath):
 #------------------ protobuf decoder -------------------------------#
 CPP_HEAD = '''
 #include <limits>
-#include <map>
 #include <string>
 
 #include "base/logging.h"
 #include "base/values.h"
-#include "chrome/browser/policy/configuration_policy_provider.h"
 #include "chrome/browser/policy/policy_map.h"
 #include "chrome/browser/policy/proto/cloud_policy.pb.h"
-#include "policy/configuration_policy_type.h"
+#include "policy/policy_constants.h"
 
 using google::protobuf::RepeatedPtrField;
 
@@ -258,10 +362,7 @@ ListValue* DecodeStringList(const em::StringList& string_list) {
   return list_value;
 }
 
-void DecodePolicy(const em::CloudPolicySettings& policy,
-                  PolicyMap* mandatory, PolicyMap* recommended) {
-  DCHECK(mandatory);
-  DCHECK(recommended);
+void DecodePolicy(const em::CloudPolicySettings& policy, PolicyMap* map) {
 '''
 
 
@@ -271,15 +372,18 @@ CPP_FOOT = '''}
 '''
 
 
-def _CreateValue(type):
+def _CreateValue(type, arg):
   if type == 'main':
-    return "Value::CreateBooleanValue"
+    return "Value::CreateBooleanValue(%s)" % arg
   elif type in ('int', 'int-enum'):
-    return "DecodeIntegerValue"
+    return "DecodeIntegerValue(%s)" % arg
   elif type in ('string', 'string-enum'):
-    return "Value::CreateStringValue"
+    return "Value::CreateStringValue(%s)" % arg
   elif type == 'list':
-    return "DecodeStringList"
+    return "DecodeStringList(%s)" % arg
+  elif type == 'dict':
+    # TODO(joaodasilva): decode 'dict' types. http://crbug.com/108997
+    return "new DictionaryValue()"
   else:
     raise NotImplementedError()
 
@@ -288,34 +392,44 @@ def _WritePolicyCode(file, policy):
   if policy.get('device_only', False):
     return
   membername = policy['name'].lower()
-  proto_type = "%sProto" % policy['name']
-  proto_name = "%s_proto" % membername
+  proto_type = '%sProto' % policy['name']
+  proto_name = '%s_proto' % membername
   file.write('  if (policy.has_%s()) {\n' % membername)
   file.write('    const em::%s& %s = policy.%s();\n' %
              (proto_type, proto_name, membername))
   file.write('    if (%s.has_%s()) {\n' % (proto_name, membername))
-  file.write('      Value* value = %s(%s.%s());\n' %
-             (_CreateValue(policy['type']), proto_name, membername))
-  file.write('      PolicyMap* destination = mandatory;\n'
+  file.write('      PolicyLevel level = POLICY_LEVEL_MANDATORY;\n'
+             '      bool do_set = true;\n'
              '      if (%s.has_policy_options()) {\n'
+             '        do_set = false;\n'
              '        switch(%s.policy_options().mode()) {\n' %
-              (proto_name, proto_name))
-  file.write('          case em::PolicyOptions::RECOMMENDED:\n'
-             '            destination = recommended;\n'
+             (proto_name, proto_name))
+  file.write('          case em::PolicyOptions::MANDATORY:\n'
+             '            do_set = true;\n'
+             '            level = POLICY_LEVEL_MANDATORY;\n'
              '            break;\n'
-             '          case em::PolicyOptions::MANDATORY:\n'
+             '          case em::PolicyOptions::RECOMMENDED:\n'
+             '            do_set = true;\n'
+             '            level = POLICY_LEVEL_RECOMMENDED;\n'
+             '            break;\n'
+             '          case em::PolicyOptions::UNSET:\n'
              '            break;\n'
              '        }\n'
              '      }\n'
-             '      destination->Set(kPolicy%s, value);\n' %
-              policy['name'])
-  file.write('    }\n'
+             '      if (do_set) {\n')
+  file.write('        Value* value = %s;\n' %
+             (_CreateValue(policy['type'],
+                           '%s.%s()' % (proto_name, membername))))
+  file.write('        map->Set(key::k%s, level, POLICY_SCOPE_USER, value);\n' %
+             policy['name'])
+  file.write('      }\n'
+             '    }\n'
              '  }\n')
 
 
 def _WriteProtobufParser(template_file_contents, args, outfilepath):
   with open(outfilepath, 'w') as f:
-    _OutputGeneratedWarningForC(f, args[1])
+    _OutputGeneratedWarningForC(f, args[2])
     f.write(CPP_HEAD)
     for policy in template_file_contents['policy_definitions']:
       if policy['type'] == 'group':
@@ -326,6 +440,5 @@ def _WriteProtobufParser(template_file_contents, args, outfilepath):
     f.write(CPP_FOOT)
 
 
-#------------------ main() -----------------------------------------#
 if __name__ == '__main__':
-  main();
+  sys.exit(main())

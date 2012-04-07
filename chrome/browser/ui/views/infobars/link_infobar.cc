@@ -4,20 +4,21 @@
 
 #include "chrome/browser/ui/views/infobars/link_infobar.h"
 
+#include "base/logging.h"
 #include "chrome/browser/tab_contents/link_infobar_delegate.h"
 #include "chrome/browser/ui/views/event_utils.h"
-#include "views/controls/label.h"
-#include "views/controls/link.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
 
 // LinkInfoBarDelegate --------------------------------------------------------
 
-InfoBar* LinkInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
+InfoBar* LinkInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
   return new LinkInfoBar(owner, this);
 }
 
 // LinkInfoBar ----------------------------------------------------------------
 
-LinkInfoBar::LinkInfoBar(TabContentsWrapper* owner,
+LinkInfoBar::LinkInfoBar(InfoBarTabHelper* owner,
                          LinkInfoBarDelegate* delegate)
     : InfoBarView(owner, delegate),
       label_1_(NULL),
@@ -58,8 +59,7 @@ void LinkInfoBar::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
     label_1_ = CreateLabel(message_text.substr(0, offset));
     AddChildView(label_1_);
 
-    link_ = CreateLink(delegate->GetLinkText(), this,
-                       background()->get_color());
+    link_ = CreateLink(delegate->GetLinkText(), this);
     AddChildView(link_);
 
     label_2_ = CreateLabel(message_text.substr(offset));
@@ -72,11 +72,13 @@ void LinkInfoBar::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
 }
 
 void LinkInfoBar::LinkClicked(views::Link* source, int event_flags) {
+  if (!owned())
+    return;  // We're closing; don't call anything, it might access the owner.
   DCHECK(link_ != NULL);
   DCHECK_EQ(link_, source);
   if (GetDelegate()->LinkClicked(
       event_utils::DispositionFromEventFlags(event_flags)))
-    RemoveInfoBar();
+    RemoveSelf();
 }
 
 LinkInfoBarDelegate* LinkInfoBar::GetDelegate() {

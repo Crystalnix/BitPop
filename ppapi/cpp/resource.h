@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,41 +7,73 @@
 
 #include "ppapi/c/pp_resource.h"
 
+/// @file
+/// This file defines a <code>Resource</code> type representing data associated
+/// with the module.
 namespace pp {
 
-// Base class for refcounted plugin resources.
+/// A reference counted module resource.
 class Resource {
  public:
+
+  /// The default constructor.
   Resource();
+
+  /// A constructor for copying a resource.
+  ///
+  /// @param[in] other A <code>Resource</code>.
   Resource(const Resource& other);
 
+  /// Destructor.
   virtual ~Resource();
 
+  /// This function assigns one <code>Resource</code> to another
+  /// <code>Resource</code>.
+  ///
+  /// @param[in] other A Resource.
+  ///
+  /// @return A Resource containing the assigned Resource.
   Resource& operator=(const Resource& other);
 
-  // Returns true if the given resource is invalid or uninitialized.
+  /// This functions determines if this resource is invalid or
+  /// uninitialized.
+  ///
+  /// @return true if this resource is invalid or uninitialized.
   bool is_null() const { return !pp_resource_; }
 
   PP_Resource pp_resource() const { return pp_resource_; }
 
-  // Releases ownership of the PP_Resource and returns it to the caller.
-  // Note the the reference count on the resource is unchanged and the caller
-  // needs to release the resource.
+  /// This function releases ownership of this resource and returns it to the
+  /// caller.
+  ///
+  /// Note that the reference count on the resource is unchanged and the caller
+  /// needs to release the resource.
+  ///
+  /// @return The detached <code>PP_Resource</code>.
   PP_Resource detach();
 
  protected:
-  // This constructor is used when we've gotten a PP_Resource as a return value
-  // that we need to addref.
+  /// A constructor used when a <code>PP_Resource</code> is provided as a
+  /// return value whose reference count we need to increment.
+  ///
+  /// @param[in] resource A <code>PP_Resource</code> corresponding to a
+  /// resource.
   explicit Resource(PP_Resource resource);
 
-  // Called by derived class' constructors to initialize this Resource with
-  // a PP_Resource that has already been AddRef'ed. It also assumes this object
-  // has no current resource.
-  //
-  // The intended usage is that the derived class constructor will call the
-  // default Resource constructor, then make a call to create a resource. It
-  // then wants to assign the new resource (which, since it was returned by the
-  // browser, is already AddRef'ed).
+  /// PassRefFromConstructor is called by derived class' constructors to
+  /// initialize this <code>Resource</code> with a <code>PP_Resource</code>
+  /// that has already had its reference count incremented by
+  /// <code>Core::AddRefResource</code>. It also assumes this object has no
+  /// current resource.
+  ///
+  /// The intended usage of this function that the derived class constructor
+  /// will call the default <code>Resource</code> constructor, then make a call
+  /// to create a resource. It then wants to assign the new resource (which,
+  /// since it was returned by the browser, already had its reference count
+  /// increased).
+  ///
+  /// @param[in] resource A <code>PP_Resource</code> corresponding to a
+  /// resource.
   void PassRefFromConstructor(PP_Resource resource);
 
  private:

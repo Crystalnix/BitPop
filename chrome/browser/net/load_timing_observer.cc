@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,15 @@
 
 #include "base/time.h"
 #include "chrome/browser/net/chrome_net_log.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/resource_response.h"
+#include "content/public/common/resource_response.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_netlog_params.h"
 
 using base::Time;
 using base::TimeTicks;
+using content::BrowserThread;
 using webkit_glue::ResourceLoaderBridge;
 using webkit_glue::ResourceLoadTimingInfo;
 
@@ -62,7 +63,7 @@ LoadTimingObserver::HTTPStreamJobRecord::HTTPStreamJobRecord()
 }
 
 LoadTimingObserver::LoadTimingObserver()
-    : ThreadSafeObserver(net::NetLog::LOG_BASIC),
+    : ThreadSafeObserverImpl(net::NetLog::LOG_BASIC),
       last_connect_job_id_(net::NetLog::Source::kInvalidId) {
 }
 
@@ -98,8 +99,9 @@ void LoadTimingObserver::OnAddEntry(net::NetLog::EventType type,
 }
 
 // static
-void LoadTimingObserver::PopulateTimingInfo(net::URLRequest* request,
-                                            ResourceResponse* response) {
+void LoadTimingObserver::PopulateTimingInfo(
+    net::URLRequest* request,
+    content::ResourceResponse* response) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   if (!(request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING))
     return;
@@ -114,9 +116,9 @@ void LoadTimingObserver::PopulateTimingInfo(net::URLRequest* request,
   LoadTimingObserver::URLRequestRecord* record =
       observer->GetURLRequestRecord(source_id);
   if (record) {
-    response->response_head.connection_id = record->socket_log_id;
-    response->response_head.connection_reused = record->socket_reused;
-    response->response_head.load_timing = record->timing;
+    response->connection_id = record->socket_log_id;
+    response->connection_reused = record->socket_reused;
+    response->load_timing = record->timing;
   }
 }
 
@@ -150,6 +152,8 @@ void LoadTimingObserver::OnAddURLRequestEntry(
 
       URLRequestRecord& record = url_request_to_record_[source.id];
       record.base_ticks = time;
+      record.timing = ResourceLoadTimingInfo();
+      record.timing.base_ticks = time;
       record.timing.base_time = TimeTicksToTime(time);
     }
     return;
@@ -206,9 +210,9 @@ void LoadTimingObserver::OnAddURLRequestEntry(
       break;
     case net::NetLog::TYPE_HTTP_TRANSACTION_READ_HEADERS:
       if (is_begin)
-        timing.receive_headers_start =  TimeTicksToOffset(time, record);
+        timing.receive_headers_start = TimeTicksToOffset(time, record);
       else if (is_end)
-        timing.receive_headers_end =  TimeTicksToOffset(time, record);
+        timing.receive_headers_end = TimeTicksToOffset(time, record);
       break;
     default:
       break;

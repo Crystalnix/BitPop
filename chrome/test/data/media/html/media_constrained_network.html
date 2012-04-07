@@ -1,0 +1,70 @@
+<!-- Used by media_constrained_network_perf to record perf metrics. -->
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <title>Constrained Video Test</title>
+  </head>
+
+  <body>
+    <video controls/>
+  </body>
+
+  <script type="text/javascript">
+    var video = document.querySelector('video');
+
+    // Tracks time when page load completes and src= is set.
+    var loadTime;
+
+    // Tracks time when playback starts.
+    var startTime;
+
+    // Metrics to record.  See media_constrained_network_perf for more details.
+    // Use -1 to indicate that we haven't recorded these values yet.  The PyAuto
+    // controller will poll for these values until they are each >= 0.
+    var epp = -1, ttp = -1;
+
+    // Video play progress to calculate percentage of video played.
+    var vpp = -1;
+
+    // String to indicate if error or abort events happen.
+    var errorMsg = '';
+
+    video.addEventListener('playing', function(event) {
+      startTime = new Date().getTime();
+      ttp = Math.max(0, startTime - loadTime);
+    }, false);
+
+    video.addEventListener('ended', setEPP, false);
+    video.addEventListener('error', logEvent, false);
+    video.addEventListener('abort', logEvent, false);
+
+    function logEvent(evt) {
+      errorMsg += evt.target + ' ' + evt.type + ' event fired.\n';
+    }
+
+    function setEPP() {
+      playTime = new Date().getTime() - startTime;
+      durMs = video.duration * 1000;
+
+      epp = Math.max(0, (playTime - durMs) * 100 / durMs);
+    }
+
+    function calculateProgress() {
+      if (!isNaN(video.duration))
+        vpp = (video.currentTime / video.duration) * 100;
+
+      if (window.domAutomationController)
+        window.domAutomationController.send(vpp);
+    }
+
+    // Called by the PyAuto controller to initiate testing.
+    function startTest(src) {
+      loadTime = new Date().getTime();
+      video.src = src
+      video.play();
+
+      if (window.domAutomationController)
+        window.domAutomationController.send(true);
+    }
+  </script>
+</html>

@@ -1,16 +1,17 @@
-Index: mozilla/security/nss/lib/ssl/ssl3con.c
-===================================================================
-RCS file: /cvsroot/mozilla/security/nss/lib/ssl/ssl3con.c,v
-retrieving revision 1.136
-diff -u -p -u -8 -r1.136 ssl3con.c
---- mozilla/security/nss/lib/ssl/ssl3con.c	17 Feb 2010 02:29:07 -0000	1.136
-+++ mozilla/security/nss/lib/ssl/ssl3con.c	27 Feb 2010 02:55:21 -0000
-@@ -3863,19 +3863,19 @@ ssl3_SendClientHello(sslSocket *ss)
-     }
- 
-     /* how many suites does our PKCS11 support (regardless of policy)? */
-     num_suites = ssl3_config_match_init(ss);
-     if (!num_suites)
+From 552c8d41b9ac9d55c8f1a861d81fc070a2a72aba Mon Sep 17 00:00:00 2001
+From: Adam Langley <agl@chromium.org>
+Date: Mon, 3 Oct 2011 12:20:10 -0400
+Subject: [PATCH] renegoscsv.patch
+
+---
+ mozilla/security/nss/lib/ssl/ssl3con.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/mozilla/security/nss/lib/ssl/ssl3con.c b/mozilla/security/nss/lib/ssl/ssl3con.c
+index e0cb4e9..455a532 100644
+--- a/mozilla/security/nss/lib/ssl/ssl3con.c
++++ b/mozilla/security/nss/lib/ssl/ssl3con.c
+@@ -3874,9 +3874,9 @@ ssl3_SendClientHello(sslSocket *ss)
      	return SECFailure;	/* ssl3_config_match_init has set error code. */
  
      /* HACK for SCSV in SSL 3.0.  On initial handshake, prepend SCSV,
@@ -22,8 +23,3 @@ diff -u -p -u -8 -r1.136 ssl3con.c
  	/* Must set this before calling Hello Extension Senders, 
  	 * to suppress sending of empty RI extension.
  	 */
- 	ss->ssl3.hs.sendingSCSV = PR_TRUE;
-     }
- 
-     if (isTLS || (ss->firstHsDone && ss->peerRequestedProtection)) {
- 	PRUint32 maxBytes = 65535; /* 2^16 - 1 */

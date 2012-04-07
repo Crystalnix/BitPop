@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #endif
 
 #include "base/basictypes.h"
-#include "views/events/event.h"
-#include "views/view_constants.h"
+#include "ui/views/events/event.h"
+#include "ui/views/view_constants.h"
 
 BookmarkDropInfo::BookmarkDropInfo(gfx::NativeWindow wnd, int top_margin)
     : source_operations_(0),
@@ -30,7 +30,7 @@ void BookmarkDropInfo::Update(const views::DropTargetEvent& event) {
   is_control_down_ = event.IsControlDown();
   last_y_ = event.y();
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   RECT client_rect;
   GetClientRect(wnd_, &client_rect);
   bool scroll_down = (last_y_ >= client_rect.bottom - views::kAutoscrollSize);
@@ -42,7 +42,7 @@ void BookmarkDropInfo::Update(const views::DropTargetEvent& event) {
   scroll_up_ = (last_y_ <= top_margin_ + views::kAutoscrollSize);
   if (scroll_up_ || scroll_down) {
     if (!scroll_timer_.IsRunning()) {
-      scroll_timer_.Start(
+      scroll_timer_.Start(FROM_HERE,
           base::TimeDelta::FromMilliseconds(views::kAutoscrollRowTimerMS),
           this,
           &BookmarkDropInfo::Scroll);
@@ -53,7 +53,7 @@ void BookmarkDropInfo::Update(const views::DropTargetEvent& event) {
 }
 
 void BookmarkDropInfo::Scroll() {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   SendMessage(wnd_, WM_VSCROLL, scroll_up_ ? SB_LINEUP : SB_LINEDOWN, NULL);
   Scrolled();
 #else

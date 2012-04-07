@@ -1,5 +1,4 @@
-#!/usr/bin/python2.4
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,17 +15,23 @@ import pickle
 import random
 import sys
 import threading
+import time
 import urlparse
 
+import app_notification_specifics_pb2
+import app_setting_specifics_pb2
 import app_specifics_pb2
 import autofill_specifics_pb2
 import bookmark_specifics_pb2
+import extension_setting_specifics_pb2
 import extension_specifics_pb2
 import nigori_specifics_pb2
 import password_specifics_pb2
 import preference_specifics_pb2
+import search_engine_specifics_pb2
 import session_specifics_pb2
 import sync_pb2
+import sync_enums_pb2
 import theme_specifics_pb2
 import typed_url_specifics_pb2
 
@@ -37,6 +42,8 @@ import typed_url_specifics_pb2
 ALL_TYPES = (
     TOP_LEVEL,  # The type of the 'Google Chrome' folder.
     APPS,
+    APP_NOTIFICATION,
+    APP_SETTINGS,
     AUTOFILL,
     AUTOFILL_PROFILE,
     BOOKMARK,
@@ -44,9 +51,11 @@ ALL_TYPES = (
     NIGORI,
     PASSWORD,
     PREFERENCE,
+    SEARCH_ENGINE,
     SESSION,
     THEME,
-    TYPED_URL) = range(12)
+    TYPED_URL,
+    EXTENSION_SETTINGS) = range(16)
 
 # Well-known server tag of the top level 'Google Chrome' folder.
 TOP_LEVEL_FOLDER_TAG = 'google_chrome'
@@ -54,14 +63,18 @@ TOP_LEVEL_FOLDER_TAG = 'google_chrome'
 # Given a sync type from ALL_TYPES, find the extension token corresponding
 # to that datatype.  Note that TOP_LEVEL has no such token.
 SYNC_TYPE_TO_EXTENSION = {
+    APP_NOTIFICATION: app_notification_specifics_pb2.app_notification,
+    APP_SETTINGS: app_setting_specifics_pb2.app_setting,
     APPS: app_specifics_pb2.app,
     AUTOFILL: autofill_specifics_pb2.autofill,
     AUTOFILL_PROFILE: autofill_specifics_pb2.autofill_profile,
     BOOKMARK: bookmark_specifics_pb2.bookmark,
+    EXTENSION_SETTINGS: extension_setting_specifics_pb2.extension_setting,
     EXTENSIONS: extension_specifics_pb2.extension,
     NIGORI: nigori_specifics_pb2.nigori,
     PASSWORD: password_specifics_pb2.password,
     PREFERENCE: preference_specifics_pb2.preference,
+    SEARCH_ENGINE: search_engine_specifics_pb2.search_engine,
     SESSION: session_specifics_pb2.session,
     THEME: theme_specifics_pb2.theme,
     TYPED_URL: typed_url_specifics_pb2.typed_url,
@@ -70,6 +83,9 @@ SYNC_TYPE_TO_EXTENSION = {
 # The parent ID used to indicate a top-level node.
 ROOT_ID = '0'
 
+# Unix time epoch in struct_time format. The tuple corresponds to UTC Wednesday
+# Jan 1 1970, 00:00:00, non-dst.
+UNIX_TIME_EPOCH = (1970, 1, 1, 0, 0, 0, 3, 1, 0)
 
 class Error(Exception):
   """Error class for this module."""
@@ -96,6 +112,14 @@ class MigrationDoneError(Error):
 
 class StoreBirthdayError(Error):
   """The client sent a birthday that doesn't correspond to this server."""
+
+
+class TransientError(Error):
+  """The client would be sent a transient error."""
+
+
+class SyncInducedError(Error):
+  """The client would be sent an error."""
 
 
 def GetEntryType(entry):
@@ -377,10 +401,18 @@ class SyncDataModel(object):
                     parent_tag='google_chrome', sync_type=AUTOFILL),
       PermanentItem('google_chrome_autofill_profiles', name='Autofill Profiles',
                     parent_tag='google_chrome', sync_type=AUTOFILL_PROFILE),
+      PermanentItem('google_chrome_app_settings',
+                    name='App Settings',
+                    parent_tag='google_chrome', sync_type=APP_SETTINGS),
+      PermanentItem('google_chrome_extension_settings',
+                    name='Extension Settings',
+                    parent_tag='google_chrome', sync_type=EXTENSION_SETTINGS),
       PermanentItem('google_chrome_extensions', name='Extensions',
                     parent_tag='google_chrome', sync_type=EXTENSIONS),
       PermanentItem('google_chrome_passwords', name='Passwords',
                     parent_tag='google_chrome', sync_type=PASSWORD),
+      PermanentItem('google_chrome_search_engines', name='Search Engines',
+                    parent_tag='google_chrome', sync_type=SEARCH_ENGINE),
       PermanentItem('google_chrome_sessions', name='Sessions',
                     parent_tag='google_chrome', sync_type=SESSION),
       PermanentItem('google_chrome_themes', name='Themes',
@@ -391,6 +423,8 @@ class SyncDataModel(object):
                     parent_tag='google_chrome', sync_type=NIGORI),
       PermanentItem('google_chrome_apps', name='Apps',
                     parent_tag='google_chrome', sync_type=APPS),
+      PermanentItem('google_chrome_app_notifications', name='App Notifications',
+                    parent_tag='google_chrome', sync_type=APP_NOTIFICATION),
       ]
 
   def __init__(self):
@@ -402,10 +436,11 @@ class SyncDataModel(object):
     # SyncEntity protocol buffer.
     self._entries = {}
 
-    # TODO(nick): uuid.uuid1() is better, but python 2.5 only.
-    self.store_birthday = '%0.30f' % random.random()
+    self.ResetStoreBirthday()
 
     self.migration_history = MigrationHistory()
+
+    self.induced_error = sync_pb2.ClientToServerResponse.Error()
 
   def _SaveEntry(self, entry):
     """Insert or update an entry in the change log, and give it a new version.
@@ -431,6 +466,9 @@ class SyncDataModel(object):
       entry.originator_client_item_id = base_entry.originator_client_item_id
 
     self._entries[entry.id_string] = copy.deepcopy(entry)
+    # Store the current time since the Unix epoch in milliseconds.
+    self._entries[entry.id_string].mtime = (int((time.mktime(time.gmtime()) -
+        time.mktime(UNIX_TIME_EPOCH))*1000))
 
   def _ServerTagToId(self, tag):
     """Determine the server ID from a server-unique tag.
@@ -495,66 +533,26 @@ class SyncDataModel(object):
     migration_version_string, separator, inner_id = remainder.partition('^')
     return (int(datatype_string), int(migration_version_string), inner_id)
 
-  def _WritePosition(self, entry, parent_id, prev_id=None):
-    """Convert from a relative position into an absolute, numeric position.
+  def _WritePosition(self, entry, parent_id):
+    """Ensure the entry has an absolute, numeric position and parent_id.
 
-    Clients specify positions using the predecessor-based references; the
-    server stores and reports item positions using sparse integer values.
-    This method converts from the former to the latter.
+    Historically, clients would specify positions using the predecessor-based
+    references in the insert_after_item_id field; starting July 2011, this
+    was changed and Chrome now sends up the absolute position.  The server
+    must store a position_in_parent value and must not maintain
+    insert_after_item_id.
 
     Args:
-      entry: The entry for which to compute a position.  Its ID field are
+      entry: The entry for which to write a position.  Its ID field are
         assumed to be server IDs.  This entry will have its parent_id_string
         and position_in_parent fields updated; its insert_after_item_id field
         will be cleared.
       parent_id: The ID of the entry intended as the new parent.
-      prev_id: The ID of the entry intended as the new predecessor.  If this
-        is None, or an ID of an object which is not a child of the new parent,
-        the entry will be positioned at the end (right) of the ordering.  If
-        the empty ID (''), this will be positioned at the front (left) of the
-        ordering.  Otherwise, the entry will be given a position_in_parent
-        value placing it just after (to the right of) the new predecessor.
     """
-    preferred_gap = 2 ** 20
-
-    def ExtendRange(current_limit_entry, sign_multiplier):
-      """Compute values at the beginning or end."""
-      if current_limit_entry.id_string == entry.id_string:
-        step = 0
-      else:
-        step = sign_multiplier * preferred_gap
-      return current_limit_entry.position_in_parent + step
-
-    siblings = [x for x in self._entries.values()
-                if x.parent_id_string == parent_id and not x.deleted]
-    siblings = sorted(siblings, key=operator.attrgetter('position_in_parent'))
-    if prev_id == entry.id_string:
-      prev_id = ''
-    if not siblings:
-      # First item in this container; start in the middle.
-      entry.position_in_parent = 0
-    elif not prev_id:
-      # A special value in the protocol.  Insert at first position.
-      entry.position_in_parent = ExtendRange(siblings[0], -1)
-    else:
-      # Handle mid-insertion; consider items along with their successors.
-      for item, successor in zip(siblings, siblings[1:]):
-        if item.id_string != prev_id:
-          continue
-        elif successor.id_string == entry.id_string:
-          # We're already in place; don't change anything.
-          entry.position_in_parent = successor.position_in_parent
-        else:
-          # Interpolate new position between the previous item and its
-          # existing successor.
-          entry.position_in_parent = (item.position_in_parent * 7 +
-                                      successor.position_in_parent) / 8
-        break
-      else:
-        # Insert at end. Includes the case where prev_id is None.
-        entry.position_in_parent = ExtendRange(siblings[-1], +1)
 
     entry.parent_id_string = parent_id
+    if not entry.HasField('position_in_parent'):
+      entry.position_in_parent = 1337  # A debuggable, distinctive default.
     entry.ClearField('insert_after_item_id')
 
   def _ItemExists(self, id_string):
@@ -594,6 +592,15 @@ class SyncDataModel(object):
     for spec in self._PERMANENT_ITEM_SPECS:
       if spec.sync_type in requested_types:
         self._CreatePermanentItem(spec)
+
+  def ResetStoreBirthday(self):
+    """Resets the store birthday to a random value."""
+    # TODO(nick): uuid.uuid1() is better, but python 2.5 only.
+    self.store_birthday = '%0.30f' % random.random()
+
+  def StoreBirthday(self):
+    """Gets the store birthday."""
+    return self.store_birthday
 
   def GetChanges(self, sieve):
     """Get entries which have changed, oldest first.
@@ -842,19 +849,13 @@ class SyncDataModel(object):
       entry = MakeTombstone(entry.id_string)
     else:
       # Comments in sync.proto detail how the representation of positional
-      # ordering works: the 'insert_after_item_id' field specifies a
-      # predecessor during Commit operations, but the 'position_in_parent'
-      # field provides an absolute ordering in GetUpdates contexts.  Here
-      # we convert from the former to the latter.  Specifically, we'll
-      # generate a numeric position placing the item just after the object
-      # identified by 'insert_after_item_id', and then clear the
-      # 'insert_after_item_id' field so that it's not sent back to the client
-      # during later GetUpdates requests.
-      if entry.HasField('insert_after_item_id'):
-        self._WritePosition(entry, entry.parent_id_string,
-                            entry.insert_after_item_id)
-      else:
-        self._WritePosition(entry, entry.parent_id_string)
+      # ordering works: either the 'insert_after_item_id' field or the
+      # 'position_in_parent' field may determine the sibling order during
+      # Commit operations.  The 'position_in_parent' field provides an absolute
+      # ordering in GetUpdates contexts.  Here we assume the client will
+      # always send a valid position_in_parent (this is the newer style), and
+      # we ignore insert_after_item_id (an older style).
+      self._WritePosition(entry, entry.parent_id_string)
 
     # Preserve the originator info, which the client is not required to send
     # when updating.
@@ -892,6 +893,29 @@ class SyncDataModel(object):
             entry.parent_id_string)
       self._entries[entry.id_string] = entry
 
+  def TriggerSyncTabs(self):
+    """Set the 'sync_tabs' field to this account's nigori node.
+
+    If the field is not currently set, will write a new nigori node entry
+    with the field set. Else does nothing.
+    """
+
+    nigori_tag = "google_chrome_nigori"
+    nigori_original = self._entries.get(self._ServerTagToId(nigori_tag))
+    if (nigori_original.specifics.Extensions[nigori_specifics_pb2.nigori].
+        sync_tabs):
+      return
+    nigori_new = copy.deepcopy(nigori_original)
+    nigori_new.specifics.Extensions[nigori_specifics_pb2.nigori].sync_tabs = (
+        True)
+    self._SaveEntry(nigori_new)
+
+  def SetInducedError(self, error):
+    self.induced_error = error
+
+  def GetInducedError(self):
+    return self.induced_error
+
 
 class TestServer(object):
   """An object to handle requests for one (and only one) Chrome Sync account.
@@ -910,6 +934,7 @@ class TestServer(object):
     self.clients = {}
     self.client_name_generator = ('+' * times + chr(c)
         for times in xrange(0, sys.maxint) for c in xrange(ord('A'), ord('Z')))
+    self.transient_error = False
 
   def GetShortClientName(self, query):
     parsed = cgi.parse_qs(query[query.find('?')+1:])
@@ -925,8 +950,19 @@ class TestServer(object):
     """Raises StoreBirthdayError if the request's birthday is a mismatch."""
     if not request.HasField('store_birthday'):
       return
-    if self.account.store_birthday != request.store_birthday:
+    if self.account.StoreBirthday() != request.store_birthday:
       raise StoreBirthdayError
+
+  def CheckTransientError(self):
+    """Raises TransientError if transient_error variable is set."""
+    if self.transient_error:
+      raise TransientError
+
+  def CheckSendError(self):
+     """Raises SyncInducedError if needed."""
+     if (self.account.induced_error.error_type !=
+         sync_enums_pb2.SyncEnums.UNKNOWN):
+       raise SyncInducedError
 
   def HandleMigrate(self, path):
     query = urlparse.urlparse(path)[4]
@@ -949,6 +985,58 @@ class TestServer(object):
       self.account_lock.release()
     return (code, '<html><title>Migration: %d</title><H1>%d %s</H1></html>' %
                 (code, code, response))
+
+  def HandleSetInducedError(self, path):
+     query = urlparse.urlparse(path)[4]
+     self.account_lock.acquire()
+     code = 200;
+     response = 'Success'
+     error = sync_pb2.ClientToServerResponse.Error()
+     try:
+       error_type = urlparse.parse_qs(query)['error']
+       action = urlparse.parse_qs(query)['action']
+       error.error_type = int(error_type[0])
+       error.action = int(action[0])
+       try:
+         error.url = (urlparse.parse_qs(query)['url'])[0]
+       except KeyError:
+         error.url = ''
+       try:
+         error.error_description =(
+         (urlparse.parse_qs(query)['error_description'])[0])
+       except KeyError:
+         error.error_description = ''
+       self.account.SetInducedError(error)
+       response = ('Error = %d, action = %d, url = %s, description = %s' %
+                   (error.error_type, error.action,
+                    error.url,
+                    error.error_description))
+     except error:
+       response = 'Could not parse url'
+       code = 400
+     finally:
+       self.account_lock.release()
+     return (code, '<html><title>SetError: %d</title><H1>%d %s</H1></html>' %
+                (code, code, response))
+
+  def HandleCreateBirthdayError(self):
+    self.account.ResetStoreBirthday()
+    return (
+        200,
+        '<html><title>Birthday error</title><H1>Birthday error</H1></html>')
+
+  def HandleSetTransientError(self):
+    self.transient_error = True
+    return (
+        200,
+        '<html><title>Transient error</title><H1>Transient error</H1></html>')
+
+  def HandleSetSyncTabs(self):
+    """Set the 'sync_tab' field of the nigori node for this account."""
+    self.account.TriggerSyncTabs()
+    return (
+        200,
+        '<html><title>Sync Tabs</title><H1>Sync Tabs</H1></html>')
 
   def HandleCommand(self, query, raw_request):
     """Decode and handle a sync command from a raw input of bytes.
@@ -975,9 +1063,11 @@ class TestServer(object):
       contents = request.message_contents
 
       response = sync_pb2.ClientToServerResponse()
-      response.error_code = sync_pb2.ClientToServerResponse.SUCCESS
+      response.error_code = sync_enums_pb2.SyncEnums.SUCCESS
       self.CheckStoreBirthday(request)
       response.store_birthday = self.account.store_birthday
+      self.CheckTransientError();
+      self.CheckSendError();
 
       print_context('->')
 
@@ -999,21 +1089,38 @@ class TestServer(object):
         print 'Unrecognizable sync request!'
         return (400, None)  # Bad request.
       return (200, response.SerializeToString())
-    except MigrationDoneError as error:
+    except MigrationDoneError, error:
       print_context('<-')
       print 'MIGRATION_DONE: <%s>' % (ShortDatatypeListSummary(error.datatypes))
       response = sync_pb2.ClientToServerResponse()
       response.store_birthday = self.account.store_birthday
-      response.error_code = sync_pb2.ClientToServerResponse.MIGRATION_DONE
+      response.error_code = sync_enums_pb2.SyncEnums.MIGRATION_DONE
       response.migrated_data_type_id[:] = [
           SyncTypeToProtocolDataTypeId(x) for x in error.datatypes]
       return (200, response.SerializeToString())
-    except StoreBirthdayError as error:
+    except StoreBirthdayError, error:
       print_context('<-')
       print 'NOT_MY_BIRTHDAY'
       response = sync_pb2.ClientToServerResponse()
       response.store_birthday = self.account.store_birthday
-      response.error_code = sync_pb2.ClientToServerResponse.NOT_MY_BIRTHDAY
+      response.error_code = sync_enums_pb2.SyncEnums.NOT_MY_BIRTHDAY
+      return (200, response.SerializeToString())
+    except TransientError, error:
+      ### This is deprecated now. Would be removed once test cases are removed.
+      print_context('<-')
+      print 'TRANSIENT_ERROR'
+      response.store_birthday = self.account.store_birthday
+      response.error_code = sync_enums_pb2.SyncEnums.TRANSIENT_ERROR
+      return (200, response.SerializeToString())
+    except SyncInducedError, error:
+      print_context('<-')
+      print 'INDUCED_ERROR'
+      response.store_birthday = self.account.store_birthday
+      error = self.account.GetInducedError()
+      response.error.error_type = error.error_type
+      response.error.url = error.url
+      response.error.error_description = error.error_description
+      response.error.action = error.action
       return (200, response.SerializeToString())
     finally:
       self.account_lock.release()

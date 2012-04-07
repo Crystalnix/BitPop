@@ -7,24 +7,55 @@ cr.define('options', function() {
   var Preferences = options.Preferences;
 
   /**
-   * Helper function update element's state from pref change event.
+   * Allows an element to be disabled for several reasons.
+   * The element is disabled if at least one reason is true, and the reasons
+   * can be set separately.
+   * @private
+   * @param {!HTMLElement} el The element to update.
+   * @param {string} reason The reason for disabling the element.
+   * @param {boolean} disabled Whether the element should be disabled or enabled
+   * for the given |reason|.
+   */
+  function updateDisabledState_(el, reason, disabled) {
+    if (!el.disabledReasons)
+      el.disabledReasons = {};
+    if (el.disabled && (Object.keys(el.disabledReasons).length == 0)) {
+      // The element has been previously disabled without a reason, so we add
+      // one to keep it disabled.
+      el.disabledReasons['other'] = true;
+    }
+    if (!el.disabled) {
+      // If the element is not disabled, there should be no reason, except for
+      // 'other'.
+      delete el.disabledReasons['other'];
+      if (Object.keys(el.disabledReasons).length > 0)
+        console.error("Element is not disabled but should be");
+    }
+    if (disabled) {
+      el.disabledReasons[reason] = true;
+    } else {
+      delete el.disabledReasons[reason];
+    }
+    el.disabled = Object.keys(el.disabledReasons).length > 0;
+  }
+
+  /**
+   * Helper function to update element's state from pref change event.
    * @private
    * @param {!HTMLElement} el The element to update.
    * @param {!Event} event The pref change event.
    */
   function updateElementState_(el, event) {
-    el.managed = event.value && event.value['managed'] != undefined ?
-        event.value['managed'] : false;
+    el.controlledBy = null;
 
-    // Managed UI elements can only be disabled as a result of being
-    // managed. They cannot be enabled as a result of a pref being
-    // unmanaged.
-    if (el.managed)
-      el.disabled = true;
+    if (!event.value)
+      return;
 
-    // Disable UI elements if backend says so.
-    if (!el.disabled && event.value && event.value['disabled'])
-      el.disabled = true;
+    updateDisabledState_(el, 'notUserModifiable', event.value.disabled);
+
+    el.controlledBy = event.value['controlledBy'];
+
+    OptionsPage.updateManagedBannerVisibility();
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -67,6 +98,8 @@ cr.define('options', function() {
       this.addEventListener(
           'change',
           function(e) {
+            if (self.customChangeHandler(e))
+              return;
             var value = self.inverted_pref ? !self.checked : self.checked;
             switch(self.valueType) {
               case 'number':
@@ -88,6 +121,24 @@ cr.define('options', function() {
     initializeValueType: function(valueType) {
       this.valueType = valueType || 'boolean';
     },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
+
+    /**
+     * This method is called first while processing an onchange event. If it
+     * returns false, regular onchange processing continues (setting the
+     * associated pref, etc). If it returns true, the rest of the onchange is
+     * not performed. I.e., this works like stopPropagation or cancelBubble.
+     * @param {Event} event Change event.
+     */
+    customChangeHandler: function(event) {
+      return false;
+    },
   };
 
   /**
@@ -95,6 +146,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefCheckbox, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefCheckbox, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -147,6 +205,13 @@ cr.define('options', function() {
             }
           });
     },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /**
@@ -154,6 +219,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefRadio, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefRadio, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -192,7 +264,14 @@ cr.define('options', function() {
               Preferences.setIntegerPref(self.pref, self.value, self.metric);
             }
           });
-    }
+    },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /**
@@ -200,6 +279,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefNumeric, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefNumeric, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -231,7 +317,14 @@ cr.define('options', function() {
               Preferences.setIntegerPref(self.pref, self.value, self.metric);
             }
           });
-    }
+    },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /////////////////////////////////////////////////////////////////////////////
@@ -339,6 +432,13 @@ cr.define('options', function() {
      */
     notifyChange: function(el, value) {
     },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /**
@@ -346,6 +446,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefRange, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefRange, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -429,6 +536,13 @@ cr.define('options', function() {
             }
           });
     },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /**
@@ -436,6 +550,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefSelect, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefSelect, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -484,6 +605,9 @@ cr.define('options', function() {
               case 'double':
                 Preferences.setDoublePref(self.pref, self.value, self.metric);
                 break;
+              case 'url':
+                Preferences.setURLPref(self.pref, self.value, self.metric);
+                break;
               default:
                 Preferences.setStringPref(self.pref, self.value, self.metric);
                 break;
@@ -495,7 +619,14 @@ cr.define('options', function() {
             if (document.activeElement == self)
               self.blur();
           });
-    }
+    },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
   };
 
   /**
@@ -503,6 +634,13 @@ cr.define('options', function() {
    * @type {string}
    */
   cr.defineProperty(PrefTextField, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefTextField, 'controlledBy', cr.PropertyKind.ATTR);
 
   /**
    * The user metric string.
@@ -516,6 +654,60 @@ cr.define('options', function() {
    */
   cr.defineProperty(PrefTextField, 'dataType', cr.PropertyKind.ATTR);
 
+  /////////////////////////////////////////////////////////////////////////////
+  // PrefButton class:
+
+  // Define a constructor that uses a button element as its underlying element.
+  var PrefButton = cr.ui.define('button');
+
+  PrefButton.prototype = {
+    // Set up the prototype chain
+    __proto__: HTMLButtonElement.prototype,
+
+    /**
+    * Initialization function for the cr.ui framework.
+    */
+    decorate: function() {
+      var self = this;
+
+      // Listen to pref changes. This element behaves like a normal button and
+      // doesn't affect the underlying preference; it just becomes disabled
+      // when the preference is managed, and its value is false.
+      // This is useful for buttons that should be disabled when the underlying
+      // boolean preference is set to false by a policy or extension.
+      Preferences.getInstance().addEventListener(this.pref,
+          function(event) {
+            var e = {
+              value: {
+                'disabled': event.value['disabled'] && !event.value['value'],
+                'controlledBy': event.value['controlledBy']
+              }
+            };
+            updateElementState_(self, e);
+          });
+    },
+
+    /**
+     * See |updateDisabledState_| above.
+     */
+    setDisabled: function(reason, disabled) {
+      updateDisabledState_(this, reason, disabled);
+    },
+  };
+
+  /**
+   * The preference name.
+   * @type {string}
+   */
+  cr.defineProperty(PrefButton, 'pref', cr.PropertyKind.ATTR);
+
+  /**
+   * Whether the preference is controlled by something else than the user's
+   * settings (either 'policy' or 'extension').
+   * @type {string}
+   */
+  cr.defineProperty(PrefButton, 'controlledBy', cr.PropertyKind.ATTR);
+
   // Export
   return {
     PrefCheckbox: PrefCheckbox,
@@ -524,7 +716,8 @@ cr.define('options', function() {
     PrefRadio: PrefRadio,
     PrefRange: PrefRange,
     PrefSelect: PrefSelect,
-    PrefTextField: PrefTextField
+    PrefTextField: PrefTextField,
+    PrefButton: PrefButton
   };
 
 });

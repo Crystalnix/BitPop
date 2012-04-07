@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,14 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/process.h"
-#include "base/task.h"
-#include "chrome/common/metrics_helpers.h"
-#include "content/renderer/render_process_observer.h"
+#include "chrome/common/metrics/histogram_sender.h"
+#include "content/public/renderer/render_process_observer.h"
 
 class RendererHistogramSnapshots : public HistogramSender,
-                                   public RenderProcessObserver {
+                                   public content::RenderProcessObserver {
  public:
   RendererHistogramSnapshots();
   virtual ~RendererHistogramSnapshots();
@@ -28,7 +28,7 @@ class RendererHistogramSnapshots : public HistogramSender,
 
  private:
   // RenderProcessObserver implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& message);
+  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void OnGetRendererHistograms(int sequence_number);
 
@@ -40,16 +40,15 @@ class RendererHistogramSnapshots : public HistogramSender,
   // Send only a delta to what we have already sent.
   void UploadAllHistrograms(int sequence_number);
 
-  ScopedRunnableMethodFactory<RendererHistogramSnapshots>
-      renderer_histogram_snapshots_factory_;
+  base::WeakPtrFactory<RendererHistogramSnapshots> weak_factory_;
 
   // HistogramSender interface (override) methods.
   virtual void TransmitHistogramDelta(
       const base::Histogram& histogram,
-      const base::Histogram::SampleSet& snapshot);
-  virtual void InconsistencyDetected(int problem);
-  virtual void UniqueInconsistencyDetected(int problem);
-  virtual void SnapshotProblemResolved(int amount);
+      const base::Histogram::SampleSet& snapshot) OVERRIDE;
+  virtual void InconsistencyDetected(int problem) OVERRIDE;
+  virtual void UniqueInconsistencyDetected(int problem) OVERRIDE;
+  virtual void SnapshotProblemResolved(int amount) OVERRIDE;
 
   // Collection of histograms to send to the browser.
   HistogramPickledList pickled_histograms_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,9 +23,13 @@ Buffer_Dev::Buffer_Dev() : data_(NULL), size_(0) {
 }
 
 Buffer_Dev::Buffer_Dev(const Buffer_Dev& other)
-    : Resource(other),
-      data_(other.data_),
-      size_(other.size_) {
+    : Resource(other) {
+  Init();
+}
+
+Buffer_Dev::Buffer_Dev(PP_Resource resource)
+    : Resource(resource) {
+  Init();
 }
 
 Buffer_Dev::Buffer_Dev(Instance* instance, uint32_t size)
@@ -36,10 +40,25 @@ Buffer_Dev::Buffer_Dev(Instance* instance, uint32_t size)
 
   PassRefFromConstructor(get_interface<PPB_Buffer_Dev>()->Create(
       instance->pp_instance(), size));
+  Init();
+}
+
+Buffer_Dev::~Buffer_Dev() {
+  get_interface<PPB_Buffer_Dev>()->Unmap(pp_resource());
+}
+
+Buffer_Dev& Buffer_Dev::operator=(const Buffer_Dev& rhs) {
+  Resource::operator=(rhs);
+  Init();
+  return *this;
+}
+
+void Buffer_Dev::Init() {
   if (!get_interface<PPB_Buffer_Dev>()->Describe(pp_resource(), &size_) ||
-      !(data_ = get_interface<PPB_Buffer_Dev>()->Map(pp_resource())))
-    *this = Buffer_Dev();
+      !(data_ = get_interface<PPB_Buffer_Dev>()->Map(pp_resource()))) {
+    data_ = NULL;
+    size_ = 0;
+  }
 }
 
 }  // namespace pp
-

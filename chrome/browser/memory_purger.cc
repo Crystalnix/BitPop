@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,25 +6,26 @@
 
 #include <set>
 
+#include "base/bind.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/common/render_messages.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
 #include "content/browser/renderer_host/backing_store_manager.h"
-#include "content/browser/renderer_host/render_process_host.h"
-#include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_process_host.h"
 #include "net/proxy/proxy_resolver.h"
 #include "net/proxy/proxy_service.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "third_party/tcmalloc/chromium/src/google/malloc_extension.h"
-#include "v8/include/v8.h"
+
+using content::BrowserThread;
 
 // PurgeMemoryHelper -----------------------------------------------------------
 
@@ -34,8 +35,7 @@
 class PurgeMemoryIOHelper
     : public base::RefCountedThreadSafe<PurgeMemoryIOHelper> {
  public:
-  explicit PurgeMemoryIOHelper(SafeBrowsingService* safe_browsing_service)
-      : safe_browsing_service_(safe_browsing_service) {
+  PurgeMemoryIOHelper() {
   }
 
   void AddRequestContextGetter(
@@ -48,7 +48,6 @@ class PurgeMemoryIOHelper
   typedef std::set<RequestContextGetter> RequestContextGetters;
 
   RequestContextGetters request_context_getters_;
-  scoped_refptr<SafeBrowsingService> safe_browsing_service_;
 
   DISALLOW_COPY_AND_ASSIGN(PurgeMemoryIOHelper);
 };
@@ -66,15 +65,11 @@ void PurgeMemoryIOHelper::PurgeMemoryOnIOThread() {
        i != request_context_getters_.end(); ++i)
     (*i)->GetURLRequestContext()->proxy_service()->PurgeMemory();
 
-  // Close the Safe Browsing database, freeing memory used to cache sqlite as
-  // well as a number of in-memory structures.
-  safe_browsing_service_->CloseDatabase();
-
-  // The appcache service listens for this notification.
-  NotificationService::current()->Notify(
-      NotificationType::PURGE_MEMORY,
-      Source<void>(NULL),
-      NotificationService::NoDetails());
+  // The appcache and safe browsing services listen for this notification.
+  content::NotificationService::current()->Notify(
+      content::NOTIFICATION_PURGE_MEMORY,
+      content::Source<void>(NULL),
+      content::NotificationService::NoDetails());
 }
 
 // -----------------------------------------------------------------------------
@@ -96,8 +91,7 @@ void MemoryPurger::PurgeBrowser() {
 
   // Per-profile cleanup.
   scoped_refptr<PurgeMemoryIOHelper> purge_memory_io_helper(
-      new PurgeMemoryIOHelper(g_browser_process->resource_dispatcher_host()->
-          safe_browsing_service()));
+      new PurgeMemoryIOHelper());
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   std::vector<Profile*> profiles(profile_manager->GetLoadedProfiles());
   for (size_t i = 0; i < profiles.size(); ++i) {
@@ -127,9 +121,10 @@ void MemoryPurger::PurgeBrowser() {
     profiles[i]->GetWebKitContext()->PurgeMemory();
   }
 
-  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(purge_memory_io_helper.get(),
-                        &PurgeMemoryIOHelper::PurgeMemoryOnIOThread));
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&PurgeMemoryIOHelper::PurgeMemoryOnIOThread,
+                 purge_memory_io_helper.get()));
 
   // TODO(pkasting):
   // * Purge AppCache memory.  Not yet implemented sufficiently.
@@ -152,13 +147,14 @@ void MemoryPurger::PurgeRenderers() {
   // Concern: Telling a bunch of renderer processes to destroy their data may
   // cause them to page everything in to do it, which could take a lot of time/
   // cause jank.
-  for (RenderProcessHost::iterator i(RenderProcessHost::AllHostsIterator());
+  for (content::RenderProcessHost::iterator i(
+          content::RenderProcessHost::AllHostsIterator());
        !i.IsAtEnd(); i.Advance())
     PurgeRendererForHost(i.GetCurrentValue());
 }
 
 // static
-void MemoryPurger::PurgeRendererForHost(RenderProcessHost* host) {
+void MemoryPurger::PurgeRendererForHost(content::RenderProcessHost* host) {
   // Direct the renderer to free everything it can.
-  host->Send(new ViewMsg_PurgeMemory());
+  host->Send(new ChromeViewMsg_PurgeMemory());
 }

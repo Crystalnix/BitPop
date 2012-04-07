@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,7 +78,7 @@ class MimeUtil : public PlatformMimeUtil {
   StrictMappings strict_format_map_;
 };  // class MimeUtil
 
-static base::LazyInstance<MimeUtil> g_mime_util(base::LINKER_INITIALIZED);
+static base::LazyInstance<MimeUtil> g_mime_util = LAZY_INSTANCE_INITIALIZER;
 
 struct MimeInfo {
   const char* mime_type;
@@ -102,7 +102,8 @@ static const MimeInfo primary_mappings[] = {
   { "audio/webm", "webm" },
   { "audio/wav", "wav" },
   { "application/xhtml+xml", "xhtml,xht" },
-  { "application/x-chrome-extension", "crx" }
+  { "application/x-chrome-extension", "crx" },
+  { "multipart/related", "mhtml,mht" }
 };
 
 static const MimeInfo secondary_mappings[] = {
@@ -111,6 +112,7 @@ static const MimeInfo secondary_mappings[] = {
   { "application/pdf", "pdf" },
   { "application/postscript", "ps,eps,ai" },
   { "application/x-javascript", "js" },
+  { "application/x-woff", "woff" },
   { "image/bmp", "bmp" },
   { "image/x-icon", "ico" },
   { "image/jpeg", "jfif,pjpeg,pjp" },
@@ -125,7 +127,8 @@ static const MimeInfo secondary_mappings[] = {
   { "text/xml", "xsl,xbl" },
   { "application/vnd.mozilla.xul+xml", "xul" },
   { "application/x-shockwave-flash", "swf,swl" },
-  { "multipart/related", "mht,mhtml" }
+  { "application/pkcs7-mime", "p7m,p7c,p7z" },
+  { "application/pkcs7-signature", "p7s" }
 };
 
 static const char* FindMimeType(const MimeInfo* mappings,
@@ -225,10 +228,14 @@ static const char* const supported_image_types[] = {
 // A list of media types: http://en.wikipedia.org/wiki/Internet_media_type
 // A comprehensive mime type list: http://plugindoc.mozdev.org/winmime.php
 static const char* const supported_media_types[] = {
+#if defined(ENABLE_MEDIA_TYPE_OGG)
   // Ogg.
   "video/ogg",
   "audio/ogg",
   "application/ogg",
+#endif
+
+  // WebM.
   "video/webm",
   "audio/webm",
   "audio/wav",
@@ -252,15 +259,20 @@ static const char* const supported_media_types[] = {
 //
 // Refer to http://wiki.whatwg.org/wiki/Video_type_parameters#Browser_Support
 // for more information.
+//
+// The codecs for WAV are integers as defined in Appendix A of RFC2361:
+// http://tools.ietf.org/html/rfc2361
 static const char* const supported_media_codecs[] = {
 #if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
   "avc1",
   "mp4a",
 #endif
+#if defined(ENABLE_MEDIA_CODEC_THEORA)
   "theora",
+#endif
   "vorbis",
   "vp8",
-  "1"  // PCM for WAV.
+  "1"  // WAVE_FORMAT_PCM.
 };
 
 // Note: does not include javascript types list (see supported_javascript_types)

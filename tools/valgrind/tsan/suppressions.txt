@@ -1,187 +1,205 @@
+# There are a few kinds of suppressions in this file.
+# 1. third party stuff we have no control over
+#
+# 2. intentional unit test errors, or stuff that is somehow a false positive
+# in our own code, or stuff that is so trivial it's not worth fixing
+#
+# 3. Suppressions for real chromium bugs that are not yet fixed.
+# These should all be in chromium's bug tracking system (but a few aren't yet).
+# Periodically we should sweep this file and the bug tracker clean by
+# running overnight and removing outdated bugs/suppressions.
+#-----------------------------------------------------------------------
+
+# 1. third party stuff we have no control over
 ############################
-# Real races in Chromium
+# 1.1 Benign races in libc
+
+# A benign race inside the implementation of internal libc mutex
 {
-  bug_23433
+  Benign races in __lll_*lock_*_private
   ThreadSanitizer:Race
-  fun:*logging*SetMinLogLevel*
+  fun:__lll_*lock_*_private
 }
 
+# Benign races below thread-safe time-conversion functions
 {
-  bug_24419
+  fun:__tz*
   ThreadSanitizer:Race
-  fun:*BrowserProcessImpl*nspector*iles*
+  fun:__tz*
 }
-
 {
-  bug_37496
+  fun:tzset*
   ThreadSanitizer:Race
   ...
-  fun:*browser_sync*SyncShareIntercept*Observe*
+  fun:tzset*
 }
 
+# Benign race in thread-safe function
 {
-  bug_41314
+  fun:mkstemp*
   ThreadSanitizer:Race
   ...
-  fun:base::LaunchApp*
-  fun:ChildProcessLauncher::Context::LaunchInternal*
+  fun:mkstemp*
 }
 
+# We already ignore memory accesses inside ld
+# but we also need to ignore accesses below it.
 {
-  bug_46642a
-  ThreadSanitizer:Race
-  fun:*media*PipelineImpl*InitializeTask*
-}
-
-{
-  bug_46642b
-  ThreadSanitizer:Race
-  fun:*media*PipelineImpl*GetCurrentTime*
-}
-
-{
-  bug_57266a
+  fun:_dl_close
   ThreadSanitizer:Race
   ...
-  fun:*vp8*_*
+  fun:_dl_close
 }
 
+# fprintf is thread-safe. The benign races happen on the internal lock.
 {
-  bug_57266b
+  Benign race below fprintf (1)
   ThreadSanitizer:Race
   ...
-  obj:*libffmpegsumo.*
-  fun:ThreadSanitizerStartThread
-}
-
-{
-  bug_64075a
-  ThreadSanitizer:Race
-  fun:disk_cache::EntryImpl::GetDataSize*
-  fun:net::HttpCache::Transaction::*
-}
-
-{
-  bug_64075b
-  ThreadSanitizer:Race
-  fun:disk_cache::EntryImpl::UpdateSize*
+  fun:buffered_vfprintf
   ...
-  fun:disk_cache::EntryImpl::WriteDataImpl*
+  fun:fprintf
 }
-
 {
-  bug_66994a
+  Benign race below fprintf (2)
   ThreadSanitizer:Race
-  fun:HistoryURLProvider::Stop*
-  ...
-  fun:AutocompleteController::St*
+  fun:new_do_write
+  fun:vfprintf
 }
 
 {
-  bug_66994b
+  fun:timegm
   ThreadSanitizer:Race
   ...
-  fun:HistoryURLProvider::ExecuteWithDB*
+  fun:timegm
 }
 
 {
-  bug_67957
-  ThreadSanitizer:Race
-  fun:Replace_memcpy
-  fun:memcpy
-  fun:Serialize*
-  fun:UserScriptMaster::ScriptReloader::RunScan*
-}
-
-{
-  bug_72169a
-  ThreadSanitizer:Race
-  fun:base::Thread::ThreadMain*
-}
-
-{
-  bug_72169b
-  ThreadSanitizer:Race
-  fun:base::Thread::message_loop*
-  ...
-  fun:*::InotifyReader::OnInotifyEvent*
-}
-
-{
-  bug_72548
+  fun:mktime
   ThreadSanitizer:Race
   ...
-  fun:JSC::Yarr::Interpreter::*Disjunction*
-  fun:JSC::Yarr::Interpreter::interpret*
-  fun:JSC::Yarr::interpret*
+  fun:mktime
 }
 
 {
-  bug_72913
+  Benign race in nss (PR_EnterMonitor)
   ThreadSanitizer:Race
+  fun:PR_EnterMonitor
+}
+
+# (Looks same as the one above)
+{
+  bug_84244
+  ThreadSanitizer:Race
+  fun:PR_ExitMonitor
   ...
-  fun:ObserverListBase*
-  ...
-  fun:sync_api::SyncManager::SyncInternal::*
-}
-
-{
-  bug_82279
-  ThreadSanitizer:Race
-  fun:ObserverListBase::Iterator::Iterator
-  fun:syncable::BaseTransaction::NotifyTransactionChangingAndEnding
-}
-
-{
-  bug_83564
-  ThreadSanitizer:Race
-  fun:base::Thread::message_loop
-  fun:BrowserThread::IsMessageLoopValid
-  fun:ThreadWatcherList::StartWatchingAll
+  fun:nss*
 }
 
 ############################
-# Benign races in Chromium
+# 1.2 Benign races in ICU
 {
-  bug_61179 [benign race on tracked_objects::Births]
+  Two writes, same value (ICU gGlobalMutex, gMutexesInUse)
   ThreadSanitizer:Race
-  fun:tracked_objects::Births::*Birth*
+  ...
+  fun:umtx_init_46
 }
 
 {
-  bug_62694 [benign races in Histogram in CookieMonster]
+  Two writes, same value (ICU gHeapInUse)
   ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:net::CookieMonster::*
+  fun:uprv_malloc_46
 }
 
 {
-  bug_64185a [probably-benign races in Histogram in skia::ImageOperations]
+  Two writes, same value (ICU gLibCleanupFunctions[UCLN_UPLUG])
   ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:skia::ImageOperations::*
+  fun:ucln_registerCleanup_46
+  fun:uplug_init_46
+  fun:u_init_46
 }
 
+# Reading a pointer to a mutex being initialized in a concurrent thread.
 {
-  bug_64185b [probably-benign races in Histogram in skia::ImageOperations]
+  A benign race in umtx_lock_46
   ThreadSanitizer:Race
-  ...
-  fun:base::Histogram::*
-  fun:HistogramSynchronizer::DeserializeHistogramList*
-}
-
-{
-  bug_71634
-  ThreadSanitizer:Race
-  fun:gdk_x_error
-  ...
-  fun:ui::GetWindowGeometry*
+  fun:umtx_lock_46
 }
 
 ############################
-# Real races in third_party
+# 1.3 Benign races in SQLLite
+# TODO(timurrr|oshima): following four suppressions could be obsolete.
+{
+  Two writes, same value (SQLLite pthreadMutexAlloc)
+  ThreadSanitizer:Race
+  ...
+  fun:pthreadMutexAlloc
+  fun:sqlite3MutexAlloc
+}
+
+{
+  Two writes, same value 2 (SQLLite pthreadMutexAlloc)
+  ThreadSanitizer:Race
+  fun:pthreadMutexAlloc
+  ...
+  fun:openDatabase
+}
+
+{
+  Two writes, same value (under sqlite3Malloc)
+  ThreadSanitizer:Race
+  ...
+  fun:sqlite3Malloc*
+}
+
+{
+  Two writes, same value (sqlite3_initialize)
+  ThreadSanitizer:Race
+  fun:sqlite3_initialize
+  fun:openDatabase
+}
+
+{
+  bug_84094_a  (Could be benign. See bug for details)
+  ThreadSanitizer:Race
+  ...
+  fun:pcache1Fetch
+  fun:sqlite3PcacheFetch
+}
+
+{
+  bug_84094_b (Could be benign. See bug for details)
+  ThreadSanitizer:Race
+  fun:sqlite3StatusSet
+  fun:pcache1Alloc
+}
+
+{
+  bug_84094_c (Could be benign. See bug for details)
+  ThreadSanitizer:Race
+  ...
+  fun:pcache1Unpin
+  fun:pcacheUnpin
+  fun:sqlite3PcacheMakeClean
+  fun:sqlite3PcacheCleanAll
+}
+
+############################
+# 1.4 Real races in third_party
+{
+  Nvidia GL driver destroys an invalid lock
+  ThreadSanitizer:InvalidLock
+  fun:pthread_mutex_destroy
+  obj:*nvidia*/libGL.so.*
+}
+
+# http://code.google.com/p/v8/issues/detail?id=361
+{
+  V8: race on Locker::active_
+  ThreadSanitizer:Race
+  fun:v8::Locker::*
+}
+
 {
   bug_23244 (libevent)
   ThreadSanitizer:Race
@@ -211,30 +229,6 @@
 }
 
 {
-  bug_40244
-  ThreadSanitizer:Race
-  fun:*WebDataService*WebDataRequest*Cancel*
-  fun:*WebDataService*
-}
-
-{
-  bug_53192
-  ThreadSanitizer:UnlockNonLocked
-  fun:pthread_mutex_unlock
-  fun:talk_base::CriticalSection::Leave*
-  fun:talk_base::CritScope::~CritScope*
-  fun:talk_base::PosixSignalDeliveryDispatcher::ClearOwner*
-  fun:talk_base::PhysicalSocketServer::~PhysicalSocketServer*
-  fun:scoped_ptr*::~scoped_ptr*
-  fun:talk_base::MessageQueue::~MessageQueue*
-  fun:talk_base::Thread::~Thread*
-  fun:talk_base::ThreadManager::UnwrapCurrentThread*
-  fun:talk_base::ThreadManager::~ThreadManager*
-  fun:__tcf_0
-  fun:exit
-}
-
-{
   bug_70938
   ThreadSanitizer:Race
   ...
@@ -242,44 +236,30 @@
 }
 
 {
-  Nvidia GL driver destroys an invalid lock
-  ThreadSanitizer:InvalidLock
-  fun:pthread_mutex_destroy
-  obj:*nvidia*/libGL.so.*
-}
-
-{
-  bug_84094_a  (Could be benign. See bug for details)
-  ThreadSanitizer:Race
-  ...
-  fun:pcache1AllocPage
-  fun:pcache1Fetch
-  fun:sqlite3PcacheFetch
-}
-
-{
-  bug_84094_b (Could be benign. See bug for details)
-  ThreadSanitizer:Race
-  fun:sqlite3StatusSet
-  fun:pcache1Alloc
-}
-
-{
-  bug_84467_a (Could be benign. See bug for details)
+  bug_84467 (Could be benign. See bug for details)
   ThreadSanitizer:Race
   fun:unixTempFileDir
 }
 
 {
-  bug_84467_b (Could be benign. See bug for details)
+  bug_84726_a
   ThreadSanitizer:Race
-  fun:pcache1Fetch
-  fun:sqlite3PcacheFetch
+  fun:qsort_r
+  fun:qsort
+  fun:_xdg_mime_alias_read_from_file
 }
 
-############################
-# Data races in tests
+{
+  bug_84726_b
+  ThreadSanitizer:Race
+  fun:qsort_r
+  fun:qsort
+  fun:_cairo_bentley_ottmann_tessellate_polygon
+}
 
+# 2. intentional unit test errors, or stuff that is somehow a false positive
+############################
+# 2.1 Data races in tests
 {
   bug_30582
   ThreadSanitizer:Race
@@ -300,8 +280,9 @@
 {
   bug_68481 [test-only race on bool]
   ThreadSanitizer:Race
-  fun:tracked_objects::ThreadData::StartTracking*
-  fun:tracked_objects::TrackedObjectsTest_MinimalStartupShutdown_Test::TestBody*
+  ...
+  fun:tracked_objects::ThreadData::ShutdownSingleThreadedCleanup
+  fun:tracked_objects::TrackedObjectsTest_MinimalStartupShutdown_Test::*
 }
 
 # TODO(timurrrr): bug item
@@ -338,14 +319,6 @@
 
 # TODO(timurrrr): bug item
 {
-  Data race on vfptr in base/thread_unittest
-  ThreadSanitizer:Race
-  ...
-  fun:*ThreadTest_SleepInsideInit*TestBody*
-}
-
-# TODO(timurrrr): bug item
-{
   Data race on bool in chrome/browser/net/url_fetcher_unittest (1)
   ThreadSanitizer:Race
   fun:*URLFetcherCancelTest*TestContextReleased*
@@ -357,180 +330,431 @@
 }
 
 {
-   ThreadSanitizer sanity test (ToolsSanityTest.DataRace).
+  ThreadSanitizer sanity test (ToolsSanityTest.DataRace)
+  ThreadSanitizer:Race
+  fun:*TOOLS_SANITY_TEST_CONCURRENT_THREAD::ThreadMain
+}
+
+{
+  Benign race (or even a false positive) on atomics in ThreadCollisionWarner
+  ThreadSanitizer:Race
+  fun:base::subtle::NoBarrier_Store
+  fun:base::ThreadCollisionWarner::Leave
+}
+
+{
+   bug_100026
    ThreadSanitizer:Race
-   fun:*TOOLS_SANITY_TEST_CONCURRENT_THREAD::ThreadMain
+   ...
+   fun:std::*
+   ...
+   fun:logging::LogMessage::*LogMessage
+   fun:base::PlatformThread::SetThreadPriority
+   fun:base::SimpleThread::SetThreadPriority
+   fun:AudioDevice::Run
+}
+
+############################
+# 2.2 Benign races in Chromium
+{
+  bug_61179 [benign race on tracked_objects::Births]
+  ThreadSanitizer:Race
+  fun:tracked_objects::Births::*Birth*
 }
 
 {
-   Benign race (or even a false positive) on atomics in ThreadCollisionWarner
+  bug_62694 [benign races in Histogram in CookieMonster]
+  ThreadSanitizer:Race
+  ...
+  fun:base::Histogram::*
+  fun:net::CookieMonster::*
+}
+
+{
+  bug_64185a [probably-benign races in Histogram in skia::ImageOperations]
+  ThreadSanitizer:Race
+  ...
+  fun:base::Histogram::*
+  fun:skia::ImageOperations::*
+}
+
+{
+  bug_64185b [probably-benign races in Histogram in skia::ImageOperations]
+  ThreadSanitizer:Race
+  ...
+  fun:base::Histogram::*
+  fun:HistogramSynchronizer::DeserializeHistogramList*
+}
+
+{
+   bug_104776 Benign race to initialize pointer with the same value again.
    ThreadSanitizer:Race
-   fun:base::subtle::NoBarrier_Store
-   fun:base::ThreadCollisionWarner::Leave
+   fun:base::StatisticsRecorder::FindHistogram
+   fun:base::*Histogram::FactoryGet
 }
 
+# 3. Suppressions for real chromium bugs that are not yet fixed.
 ############################
-# Benign races in ICU
+# Real races in Chromium
 {
-  Two writes, same value (ICU gGlobalMutex, gMutexesInUse)
+  bug_23433
+  ThreadSanitizer:Race
+  fun:*logging*SetMinLogLevel*
+}
+
+{
+  bug_24419
+  ThreadSanitizer:Race
+  fun:*BrowserProcessImpl*nspector*iles*
+}
+
+{
+  bug_37496
   ThreadSanitizer:Race
   ...
-  fun:umtx_init_46
+  fun:*browser_sync*SyncShareIntercept*Observe*
 }
 
 {
-  Two writes, same value (ICU gHeapInUse)
-  ThreadSanitizer:Race
-  fun:uprv_malloc_46
-}
-
-{
-  Two writes, same value (ICU gLibCleanupFunctions[UCLN_UPLUG])
-  ThreadSanitizer:Race
-  fun:ucln_registerCleanup_46
-  fun:uplug_init_46
-  fun:u_init_46
-}
-
-# Reading a pointer to a mutex being initialized in a concurrent thread.
-{
-  A benign race in umtx_lock_46
-  ThreadSanitizer:Race
-  fun:umtx_lock_46
-}
-
-############################
-# Benign race in SQLLite
-# TODO(timurrr|oshima): following three suppression could be obsolete.
-{
-  Two writes, same value (SQLLite pthreadMutexAlloc)
+  bug_41314
   ThreadSanitizer:Race
   ...
-  fun:pthreadMutexAlloc
-  fun:sqlite3MutexAlloc
+  fun:base::LaunchApp*
+  fun:ChildProcessLauncher::Context::LaunchInternal*
 }
 
 {
-  Two writes, same value (under sqlite3Malloc)
+  bug_46642a
+  ThreadSanitizer:Race
+  fun:*media*Pipeline*InitializeTask*
+}
+
+{
+  bug_46642b
+  ThreadSanitizer:Race
+  fun:*media*Pipeline*GetCurrentTime*
+}
+
+{
+  bug_57266a
   ThreadSanitizer:Race
   ...
-  fun:sqlite3Malloc*
+  fun:*vp8*_*
 }
 
 {
-  Two writes, same value (sqlite3_initialize)
-  ThreadSanitizer:Race
-  fun:sqlite3_initialize
-  fun:openDatabase
-}
-
-############################
-# Races in V8
-
-# http://code.google.com/p/v8/issues/detail?id=361
-{
-  Race on Locker::active_ in v8
-  ThreadSanitizer:Race
-  fun:v8::Locker::*
-}
-
-############################
-# Benign races in libc
-
-# A benign race inside the implementation of internal libc mutex
-{
-  Benign races in __lll_*lock_*_private
-  ThreadSanitizer:Race
-  fun:__lll_*lock_*_private
-}
-
-# Benign race below thread-safe time-conversion functions
-{
-  fun:__tz*
-  ThreadSanitizer:Race
-  fun:__tz*
-}
-
-# Benign race below thread-safe time-conversion functions
-{
-  fun:tzset*
+  bug_57266b
   ThreadSanitizer:Race
   ...
-  fun:tzset*
+  obj:*libffmpegsumo.*
+  fun:ThreadSanitizerStartThread
 }
 
-# Benign race in thread-safe function
 {
-  fun:mkstemp*
+  bug_57266c
+  ThreadSanitizer:Race
+  fun:thread_encoding_proc
+}
+
+{
+  bug_64075a
+  ThreadSanitizer:Race
+  fun:disk_cache::EntryImpl::GetDataSize*
+  fun:net::HttpCache::Transaction::*
+}
+
+{
+  bug_64075b
+  ThreadSanitizer:Race
+  fun:disk_cache::EntryImpl::UpdateSize*
+  ...
+  fun:disk_cache::EntryImpl::WriteDataImpl*
+}
+
+{
+  bug_67957
+  ThreadSanitizer:Race
+  fun:Replace_memcpy
+  fun:memcpy
+  fun:Serialize
+  fun:UserScriptMaster::ScriptReloader::RunLoad
+}
+
+{
+  bug_72548
   ThreadSanitizer:Race
   ...
-  fun:mkstemp*
+  fun:JSC::Yarr::Interpreter::*Disjunction*
+  fun:JSC::Yarr::Interpreter::interpret*
+  fun:JSC::Yarr::interpret*
 }
 
-# We already ignore memory accesses inside ld
-# but we also need to ignore accesses below it.
 {
-  fun:_dl_close
+  bug_86916
+  ThreadSanitizer:Race
+  fun:loopfilter_frame
+  fun:loopfilter_thread
+}
+
+{
+  bug_89141
+  ThreadSanitizer:Race
+  fun:base::Thread::message_loop
+  fun:content::BrowserThread::IsMessageLoopValid
+  fun:ThreadWatcherList::StartWatching
+  fun:ThreadWatcherList::InitializeAndStartWatching
+}
+{
+  bug_93932_a
   ThreadSanitizer:Race
   ...
-  fun:_dl_close
+  fun:avcodec_close
+  ...
+  fun:media::FFmpegVideoDecoder::*
+  ...
+  fun:media::FFmpegVideoDecode*Test::*
 }
-
-# fprintf is thread-safe. The benign races happen on the internal lock.
 {
-  Benign race below fprintf (1)
+  bug_93932_b
   ThreadSanitizer:Race
   ...
-  fun:buffered_vfprintf
+  fun:ff_thread_decode_frame
+  fun:avcodec_decode_video2
   ...
-  fun:fprintf
+  fun:media::FFmpegVideoDecoder::Decode*
 }
-
 {
-  Benign race below fprintf (2)
+  bug_93932_c
   ThreadSanitizer:Race
-  fun:new_do_write
-  fun:vfprintf
+  fun:Replace_memcpy
+  fun:memcpy
+  fun:media::CopyPlane
+  ...
+  fun:media::FFmpegVideoDecoder::Decode*
 }
-
 {
-  fun:timegm
+  bug_93932_d
+  ThreadSanitizer:Race
+  fun:frame_worker_thread
+}
+{
+  bug_93932_e
+  ThreadSanitizer:Race
+  fun:Replace_memcpy
+  fun:memcpy
+  fun:ff_thread_decode_frame
+  ...
+  fun:media::FFmpegVideoDecoder::Decode*
+}
+{
+  bug_93932_f
+  ThreadSanitizer:Race
+  fun:update_context_from_thread
+  fun:ff_thread_flush
+  ...
+  fun:media::FFmpegVideoDecoder::Flush
+}
+{
+  bug_93932_g
+  ThreadSanitizer:Race
+  fun:frame_thread_free
+  ...
+  fun:avcodec_close
+  ...
+  fun:media::FFmpegVideoDecoder::ReleaseFFmpegResources
+}
+{
+  bug_95509
   ThreadSanitizer:Race
   ...
-  fun:timegm
+  fun:AudioDevice::ShutDownAudioThread
 }
-
 {
-  fun:mktime
+  bug_95509_b
+  ThreadSanitizer:Race
+  fun:base::SyncSocket::Receive
+  fun:AudioDevice::Run
+  fun:base::DelegateSimpleThread::Run
+  fun:base::SimpleThread::ThreadMain
+  fun:base::::ThreadFunc
+}
+{
+  bug_100020
+  ThreadSanitizer:Race
+  fun:linked_ptr_internal::join
+  fun:linked_ptr::copy
+  ...
+  fun:HostContentSettingsMap::GetDefaultContentSetting
+}
+{
+  bug_102327_a
+  ThreadSanitizer:Race
+  fun:tracked_objects::ThreadData::Initialize
+  fun:tracked_objects::ThreadData::InitializeThreadContext
+  fun:base::Thread::ThreadMain
+  fun:base::::ThreadFunc
+}
+{
+  bug_102327_b
   ThreadSanitizer:Race
   ...
-  fun:mktime
+  fun:tracked_objects::ThreadData::TallyABirthIfActive
+  fun:base::PosixDynamicThreadPool::PendingTask::PendingTask
+  fun:base::PosixDynamicThreadPool::WaitForTask
+  fun:base::::WorkerThread::ThreadMain
+  fun:base::::ThreadFunc
 }
-
 {
-  Benign race in nss (PR_EnterMonitor)
+  bug_102327_c
   ThreadSanitizer:Race
-  fun:PR_EnterMonitor
+  fun:tracked_objects::ThreadData::tracking_status
 }
-
 {
-  bug_84244 (Looks same as one above)
+  bug_103711a
   ThreadSanitizer:Race
-  fun:PR_ExitMonitor
+  fun:webrtc::Trace::SetLevelFilter
+}
+{
+  bug_103711b
+  ThreadSanitizer:Race
+  fun:webrtc::TraceImpl::TraceCheck
+}
+{
+  bug_103711c
+  ThreadSanitizer:Race
+  fun:webrtc::ThreadPosix::*
+}
+{
+  bug_103711d
+  ThreadSanitizer:Race
+  fun:webrtc::FileWrapper*::*
   ...
-  fun:nss*
+  fun:webrtc::TraceImpl::StaticInstance
+  fun:webrtc::Trace::ReturnTrace
+  fun:webrtc::voe::SharedData::~SharedData
+  fun:webrtc::VoiceEngineImpl::~VoiceEngineImpl
+  ...
+  fun:webrtc::VoiceEngine::Delete
+  fun:WebRTCAutoDelete::reset
+  ...
+  fun:WebRTCAudioDeviceTest_Construct_Test::TestBody
 }
-
-############################
-# TSan false positives
 {
-  tsanbug_62a
+  bug_103711e
   ThreadSanitizer:Race
-  fun:__memset_sse2
+  ...
+  fun:WebRTCAudioDeviceTest::OnMessageReceived
+  ...
+  fun:IPC::Channel::ChannelImpl::ProcessIncomingMessages
+  fun:IPC::Channel::ChannelImpl::OnFileCanReadWithoutBlocking
+  fun:base::MessagePumpLibevent::FileDescriptorWatcher::OnFileCanReadWithoutBlocking
+  fun:base::MessagePumpLibevent::OnLibeventNotification
+  fun:event_process_active
+  fun:event_base_loop
 }
-
 {
-  tsanbug_62b
+  bug_103711f
   ThreadSanitizer:Race
-  fun:__GI_memcpy
+  fun:webrtc::TracePosix::AddTime
+  fun:webrtc::TraceImpl::AddImpl
+  fun:webrtc::Trace::Add
+  fun:webrtc::ThreadPosix::Run
+}
+{
+  bug_103711g
+  ThreadSanitizer:Race
+  fun:WebRTCAudioDeviceTest::SetUp
+}
+{
+  bug_103711h
+  ThreadSanitizer:Race
+  fun:webrtc::EventWrapper::~EventWrapper
+  fun:webrtc::EventPosix::~EventPosix
+  fun:webrtc::ProcessThreadImpl::~ProcessThreadImpl
+  fun:webrtc::ProcessThread::DestroyProcessThread
+  fun:webrtc::voe::SharedData::~SharedData
+  fun:webrtc::VoiceEngineImpl::~VoiceEngineImpl
+  fun:webrtc::VoiceEngine::Delete
+  fun:WebRTCAutoDelete::reset
+  fun:WebRTCAutoDelete::~WebRTCAutoDelete
+  fun:WebRTCAudioDeviceTest_Construct_Test::TestBody
+}
+{
+   bug_104769
+   ThreadSanitizer:Race
+   fun:timeout_correct
+   fun:event_base_loop
+   fun:base::MessagePumpLibevent::Run
+   fun:MessageLoop::RunInternal
+   fun:MessageLoop::RunHandler
+   fun:MessageLoop::Run
+}
+{
+  bug_104776_maybe_benign
+  ThreadSanitizer:Race
+  fun:base::StatisticsRecorder::StatisticsRecorder
+  fun:BrowserMain
+  fun:::RunNamedProcessTypeMain
+  fun:content::ContentMain
+  fun:ChromeMain
+  fun:main
+}
+{
+  bug_106196
+  ThreadSanitizer:Race
+  fun:tracked_objects::ThreadData::InitializeAndSetTrackingStatus
+  fun:ChildThread::OnSetProfilerStatus
+  fun:DispatchToMethod
+}
+{
+  bug_107181a
+  ThreadSanitizer:Race
+  ...
+  fun:media::AudioRendererBase::SetPlaybackRate
+  fun:AudioRendererImpl::SetPlaybackRate
+  fun:media::CompositeFilter::SetPlaybackRate
+  fun:media::Pipeline::PlaybackRateChangedTask
+  ...
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_107181b
+  ThreadSanitizer:Race
+  fun:media::AudioRendererAlgorithmBase::playback_rate
+  fun:media::AudioRendererBase::GetPlaybackRate
+  fun:AudioRendererImpl::Render
+  fun:AudioDevice::FireRenderCallback
+  fun:AudioDevice::Run
+}
+{
+   bug_107903
+   ThreadSanitizer:Race
+   ...
+   fun:TestProfileSyncService::~TestProfileSyncService
+   fun:scoped_ptr::reset
+   fun:ProfileSyncServiceAutofillTest::TearDown
+}
+{
+  bug_108408
+  ThreadSanitizer:Race
+  fun:base::subtle::RefCountedBase::AddRef
+  fun:base::RefCounted::AddRef
+  fun:net::HttpCache::Transaction::DoCacheWriteData
+  fun:net::HttpCache::Transaction::DoLoop
+  fun:net::HttpCache::Transaction::ReadFromNetwork
+  fun:net::HttpCache::Transaction::Read
+  fun:net::URLRequestHttpJob::ReadRawData
+  fun:net::URLRequestJob::ReadRawDataHelper
+  fun:net::URLRequestJob::Read
+  fun:net::URLRequest::Read
+  fun:ResourceDispatcherHost::Read
+  fun:ResourceDispatcherHost::StartReading
+  fun:ResourceDispatcherHost::ResumeRequest
+  fun:base::internal::RunnableAdapter::Run
+}
+{
+  bug_108411
+  ThreadSanitizer:Race
+  ...
+  fun:pa_rtpoll_run
 }

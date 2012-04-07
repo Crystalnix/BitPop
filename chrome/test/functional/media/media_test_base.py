@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -14,6 +13,7 @@ media_test_runner.py is used for generating these variables
 """
 
 import csv
+import logging
 import os
 import time
 
@@ -38,9 +38,12 @@ class MediaTestBase(pyauto.PyUITest):
   # Default values used for default case.
   DEFAULT_MEDIA_TAG_NAME = 'video'
   DEFAULT_MEDIA_FILENAME = 'bear_silent.ogv'
+  DEFAULT_MEDIA_FILENAME_NICKNAME = 'bear_silent.ogv'
   DEFAULT_PLAYER_HTML_URL_NICKNAME = 'local'
   DEFAULT_NUMBER_OF_RUNS = 3
-  TIMEOUT = 10000
+  # Timing out for checking if video has finished playing (in seconds).
+  # Currently, we do not have videos more than 1 minute.
+  TIMEOUT = 60
   # Instance variables that used across methods.
   number_of_runs = 0
   url = ''
@@ -48,10 +51,8 @@ class MediaTestBase(pyauto.PyUITest):
   times = []
   media_filename = ''
   media_filename_nickname = ''
-  _test_scenarios = []
-  # Used for tracing performance results on PerfBot: can be 't' (tests with
-  # normal build) or 't_ref' (tests with reference build).
-  current_trace_type = 't'
+  whole_test_scenarios = []
+  reference_build = False
 
   def _GetMediaURLAndParameterString(self, media_filename):
     """Get media url and parameter string.
@@ -84,6 +85,13 @@ class MediaTestBase(pyauto.PyUITest):
     # performance.
     if os.getenv(MediaTestEnvNames.ADD_T_PARAMETER_ENV_NAME):
       query_dictionary['t'] = 'dummy'
+    track_file = os.getenv(MediaTestEnvNames.TRACK_FILE_ENV_NAME)
+    if track_file:
+      query_dictionary['track'] = track_file
+    query_dictionary['num_extra'] = (
+      os.getenv(MediaTestEnvNames.N_EXTRA_PLAYERS_ENV_NAME, 0))
+    if os.getenv(MediaTestEnvNames.JERKY_TEST_ENV_NAME):
+      query_dictionary['jerky'] = 'True'
     query_str = '&'.join(
         [k + '=' + str(v) for (k, v) in query_dictionary.items()])
     if player_html_url_nickname == self.DEFAULT_PLAYER_HTML_URL_NICKNAME:
@@ -118,35 +126,29 @@ class MediaTestBase(pyauto.PyUITest):
   def ExecuteTest(self):
     """Test HTML5 Media Tag."""
 
-    def _VideoEnded():
-      """Determine if the video ended.
+    def _VideoEndedOrErrorOut():
+      """Determine if the video ended or there was an error when playing.
 
-      When the video has finished playing, its title is updated by player.html.
+      When the video has finished playing or there is error in playing the
+      video (e.g, the video cannot be found), its title is updated by
+      player.html.
 
       Returns:
-        True if the video has ended.
+        True if the video has ended or an error occurred.
       """
-      return self.GetDOMValue('document.title').strip() == 'END'
+      return (self.GetDOMValue('document.title').strip() == 'END' or
+              'ERROR' in self.GetDOMValue('document.title'))
 
     self.PreAllRunsProcess()
-    test_scenario_filename = os.getenv(
-        MediaTestEnvNames.TEST_SCENARIO_FILE_ENV_NAME, '')
-    test_scenario = os.getenv(
-        MediaTestEnvNames.TEST_SCENARIO_ENV_NAME, '')
-    if test_scenario:
-      # Run test with the same action several times.
-      self._test_scenarios = [test_scenario] * self.number_of_runs
-    if test_scenario_filename:
-      self._test_scenarios = self.ReadTestScenarioFiles(test_scenario_filename)
-      # One run per test scenario.
-      self.number_of_runs = len(self._test_scenarios)
     for run_counter in range(self.number_of_runs):
+      self.run_counter = run_counter
       self.PreEachRunProcess(run_counter)
       url = self.url
-      if self._test_scenarios:
-        url += '&actions=' + self.test_scenarios[run_counter]
+      if self.whole_test_scenarios:
+        url += '&actions=' + self.whole_test_scenarios[run_counter]
+      logging.debug('Navigate to %s', url)
       self.NavigateToURL(url)
-      self.WaitUntil(lambda: _VideoEnded(),
+      self.WaitUntil(lambda: _VideoEndedOrErrorOut(),
                      self.TIMEOUT)
       self.PostEachRunProcess(run_counter)
 
@@ -164,6 +166,9 @@ class MediaTestBase(pyauto.PyUITest):
     """
     self.media_filename = os.getenv(MediaTestEnvNames.MEDIA_FILENAME_ENV_NAME,
                                     self.DEFAULT_MEDIA_FILENAME)
+    self.media_filename_nickname = os.getenv(
+        MediaTestEnvNames.MEDIA_FILENAME_NICKNAME_ENV_NAME,
+        self.DEFAULT_MEDIA_FILENAME_NICKNAME)
     self.remove_first_result = os.getenv(
         MediaTestEnvNames.REMOVE_FIRST_RESULT_ENV_NAME)
     self.number_of_runs = int(os.getenv(MediaTestEnvNames.N_RUNS_ENV_NAME,
@@ -171,6 +176,20 @@ class MediaTestBase(pyauto.PyUITest):
     self.url, self.parameter_str = self._GetMediaURLAndParameterString(
         self.media_filename)
     self.times = []
+    self.reference_build = os.getenv(
+        MediaTestEnvNames.REFERENCE_BUILD_ENV_NAME, False)
+    test_scenario_filename = os.getenv(
+        MediaTestEnvNames.TEST_SCENARIO_FILE_ENV_NAME, '')
+    test_scenario = os.getenv(
+        MediaTestEnvNames.TEST_SCENARIO_ENV_NAME, '')
+    if test_scenario:
+      # Run test with the same action several times.
+      self.whole_test_scenarios = [test_scenario] * self.number_of_runs
+    if test_scenario_filename:
+      self.whole_test_scenarios = (
+          self.ReadTestScenarioFiles(test_scenario_filename))
+      # One run per test scenario.
+      self.number_of_runs = len(self.whole_test_scenarios)
 
   def PostAllRunsProcess(self):
     """A method to execute after all runs.
@@ -188,8 +207,6 @@ class MediaTestBase(pyauto.PyUITest):
       run_counter: counter for each run.
     """
     self.start = time.time()
-    if os.getenv(MediaTestEnvNames.REFERENCE_BUILD_ENV_NAME):
-      self.current_trace_type = 't_ref'
 
   def PostEachRunProcess(self, run_counter):
     """A method to execute after each run.

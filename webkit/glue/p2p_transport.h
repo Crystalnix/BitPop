@@ -6,10 +6,18 @@
 #define WEBKIT_GLUE_P2P_TRANSPORT_H_
 
 #include <string>
+#include <vector>
+
+#include "base/basictypes.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace net {
 class Socket;
 }  // namespace net
+
+namespace WebKit {
+class WebFrame;
+}  // namespace WebKit
 
 namespace webkit_glue {
 
@@ -43,13 +51,51 @@ class P2PTransport {
     virtual void OnError(int error) = 0;
   };
 
+  struct WEBKIT_GLUE_EXPORT Config {
+    Config();
+    ~Config();
+
+    // STUN server address and port.
+    std::string stun_server;
+    int stun_server_port;
+
+    // Relay server address and port.
+    std::string relay_server;
+    int relay_server_port;
+
+    // Relay server username.
+    std::string relay_username;
+
+    // Relay server password.
+    std::string relay_password;
+
+    // When set to true relay is a legacy Google relay (not TURN
+    // compliant).
+    bool legacy_relay;
+
+    // TCP window sizes. Default size is used when set to 0.
+    int tcp_receive_window;
+    int tcp_send_window;
+
+    // Disables Neagle's algorithm when set to true.
+    bool tcp_no_delay;
+
+    // TCP ACK delay.
+    int tcp_ack_delay_ms;
+
+    // Disable TCP-based transport when set to true.
+    bool disable_tcp_transport;
+  };
+
   virtual ~P2PTransport() {}
 
-  // Initialize transport using specified configuration. Returns true
+  // Initialize transport using specified configuration. |web_frame|
+  // is used to make HTTP requests to relay servers. Returns true
   // if initialization succeeded.
-  virtual bool Init(const std::string& name,
+  virtual bool Init(WebKit::WebFrame* web_frame,
+                    const std::string& name,
                     Protocol protocol,
-                    const std::string& config,
+                    const Config& config,
                     EventHandler* event_handler) = 0;
 
   // Add candidate received from the remote peer. Returns false if the

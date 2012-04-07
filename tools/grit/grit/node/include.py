@@ -74,7 +74,7 @@ class IncludeNode(base.Node):
     '''
     return self.FilenameToOpen()
 
-  def GetDataPackPair(self, lang):
+  def GetDataPackPair(self, lang, encoding):
     '''Returns a (id, string) pair that represents the resource id and raw
     bytes of the data.  This is used to generate the data pack data file.
     '''
@@ -90,6 +90,8 @@ class IncludeNode(base.Node):
       data = infile.read()
       infile.close()
 
+    # Include does not care about the encoding, because it only returns binary
+    # data.
     return id, data
 
   def Flatten(self, output_dir):
@@ -112,7 +114,9 @@ class IncludeNode(base.Node):
 
   def GetHtmlResourceFilenames(self):
     """Returns a set of all filenames inlined by this file."""
-    return grit.format.html_inline.GetResourceFilenames(self.FilenameToOpen())
+    allow_external_script = self.attrs['allowexternalscript'] == 'true'
+    return grit.format.html_inline.GetResourceFilenames(self.FilenameToOpen(),
+         allow_external_script=allow_external_script)
 
   # static method
   def Construct(parent, name, type, file, translateable=True,
@@ -136,4 +140,3 @@ class IncludeNode(base.Node):
     node.EndParsing()
     return node
   Construct = staticmethod(Construct)
-

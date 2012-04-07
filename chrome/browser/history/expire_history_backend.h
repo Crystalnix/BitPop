@@ -13,13 +13,12 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time.h"
 #include "chrome/browser/history/history_types.h"
 
 class BookmarkService;
 class GURL;
-class NotificationType;
 class TestingProfile;
 
 namespace history {
@@ -35,7 +34,7 @@ class BroadcastNotificationDelegate {
  public:
   // Schedules a broadcast of the given notification on the application main
   // thread. The details argument will have ownership taken by this function.
-  virtual void BroadcastNotifications(NotificationType type,
+  virtual void BroadcastNotifications(int type,
                                       HistoryDetails* details_deleted) = 0;
 
  protected:
@@ -83,10 +82,17 @@ class ExpireHistoryBackend {
   // Deletes everything associated with a URL.
   void DeleteURL(const GURL& url);
 
+  // Deletes everything associated with each URL in the list.
+  void DeleteURLs(const std::vector<GURL>& url);
+
   // Removes all visits to restrict_urls (or all URLs if empty) in the given
   // time range, updating the URLs accordingly,
   void ExpireHistoryBetween(const std::set<GURL>& restrict_urls,
                             base::Time begin_time, base::Time end_time);
+
+  // Removes the given list of visits, updating the URLs accordingly (similar to
+  // ExpireHistoryBetween(), but affecting a specific set of visits).
+  void ExpireVisits(const VisitVector& visits);
 
   // Archives all visits before and including the given time, updating the URLs
   // accordingly. This function is intended for migrating old databases
@@ -102,7 +108,6 @@ class ExpireHistoryBackend {
   }
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(ExpireHistoryTest, DeleteTextIndexForURL);
   FRIEND_TEST_ALL_PREFIXES(ExpireHistoryTest, DeleteFaviconsIfPossible);
   FRIEND_TEST_ALL_PREFIXES(ExpireHistoryTest, ArchiveSomeOldHistory);
   FRIEND_TEST_ALL_PREFIXES(ExpireHistoryTest, ExpiringVisitsReader);
@@ -110,17 +115,6 @@ class ExpireHistoryBackend {
   friend class ::TestingProfile;
 
   struct DeleteDependencies;
-
-  // Removes the data from the full text index associated with the given URL
-  // string/ID pair. If |update_visits| is set, the visits that reference the
-  // indexed data will be updated to reflect the fact that the indexed data is
-  // gone. Setting this to false is a performance optimization when the caller
-  // knows that the visits will be deleted after the call.
-  //
-  // TODO(brettw) when we have an "archived" history database, this should take
-  // a flag to optionally delete from there. This way it can be used for page
-  // re-indexing as well as for full URL deletion.
-  void DeleteTextIndexForURL(const GURL& url, URLID url_id, bool update_visits);
 
   // Deletes the visit-related stuff for all the visits in the given list, and
   // adds the rows for unique URLs affected to the affected_urls list in
@@ -257,7 +251,7 @@ class ExpireHistoryBackend {
 
   // Used to generate runnable methods to do timers on this class. They will be
   // automatically canceled when this class is deleted.
-  ScopedRunnableMethodFactory<ExpireHistoryBackend> factory_;
+  base::WeakPtrFactory<ExpireHistoryBackend> weak_factory_;
 
   // The threshold for "old" history where we will automatically expire it to
   // the archived database.

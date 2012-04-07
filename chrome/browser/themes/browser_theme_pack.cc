@@ -4,41 +4,47 @@
 
 #include "chrome/browser/themes/browser_theme_pack.h"
 
-#include "base/stl_util-inl.h"
+#include <limits>
+
+#include "base/memory/scoped_ptr.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/themes/theme_service.h"
-#include "content/browser/browser_thread.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "net/base/file_stream.h"
 #include "net/base/net_errors.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/resource/data_pack.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/skbitmap_operations.h"
+
+using content::BrowserThread;
 
 namespace {
 
 // Version number of the current theme pack. We just throw out and rebuild
 // theme packs that aren't int-equal to this.
-const int kThemePackVersion = 15;
+const int kThemePackVersion = 18;
 
 // IDs that are in the DataPack won't clash with the positive integer
-// int32_t. kHeaderID should always have the maximum value because we want the
+// uint16. kHeaderID should always have the maximum value because we want the
 // "header" to be written last. That way we can detect whether the pack was
 // successfully written and ignore and regenerate if it was only partially
 // written (i.e. chrome crashed on a different thread while writing the pack).
-const int kHeaderID = UINT_MAX - 1;
-const int kTintsID = UINT_MAX - 2;
-const int kColorsID = UINT_MAX - 3;
-const int kDisplayPropertiesID = UINT_MAX - 4;
-const int kSourceImagesID = UINT_MAX - 5;
+const int kMaxID = 0x0000FFFF;  // Max unsigned 16-bit int.
+const int kHeaderID = kMaxID - 1;
+const int kTintsID = kMaxID - 2;
+const int kColorsID = kMaxID - 3;
+const int kDisplayPropertiesID = kMaxID - 4;
+const int kSourceImagesID = kMaxID - 5;
 
 // Static size of the tint/color/display property arrays that are mmapped.
 const int kTintArraySize = 6;
@@ -333,7 +339,7 @@ BrowserThemePack* BrowserThemePack::BuildFromExtension(
   DCHECK(extension);
   DCHECK(extension->is_theme());
 
-  BrowserThemePack* pack = new BrowserThemePack;
+  scoped_refptr<BrowserThemePack> pack = new BrowserThemePack;
   pack->BuildHeader(extension);
   pack->BuildTintsFromJSON(extension->GetThemeTints());
   pack->BuildColorsFromJSON(extension->GetThemeColors());
@@ -346,8 +352,10 @@ BrowserThemePack* BrowserThemePack::BuildFromExtension(
                                 &file_paths);
   pack->BuildSourceImagesArray(file_paths);
 
-  if (!pack->LoadRawBitmapsTo(file_paths, &pack->prepared_images_))
+  if (!pack->LoadRawBitmapsTo(file_paths, &pack->prepared_images_)) {
+    delete pack;
     return NULL;
+  }
 
   pack->GenerateFrameImages(&pack->prepared_images_);
 
@@ -358,7 +366,7 @@ BrowserThemePack* BrowserThemePack::BuildFromExtension(
   pack->GenerateTabBackgroundImages(&pack->prepared_images_);
 
   // The BrowserThemePack is now in a consistent state.
-  return pack;
+  return pack.release();
 }
 
 // static
@@ -447,7 +455,7 @@ bool BrowserThemePack::WriteToDisk(FilePath path) const {
   RepackImages(prepared_images_, &reencoded_images);
   AddRawImagesTo(reencoded_images, &resources);
 
-  return ui::DataPack::WritePack(path, resources);
+  return ui::DataPack::WritePack(path, resources, ui::DataPack::BINARY);
 }
 
 bool BrowserThemePack::GetTint(int id, color_utils::HSL* hsl) const {

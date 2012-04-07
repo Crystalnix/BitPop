@@ -15,7 +15,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/string_piece.h"
 #include "base/time.h"
-#include "net/base/net_api.h"
+#include "net/base/cert_type.h"
+#include "net/base/net_export.h"
 #include "net/base/x509_cert_types.h"
 
 #if defined(OS_WIN)
@@ -28,7 +29,7 @@
 #include "base/synchronization/lock.h"
 #elif defined(USE_OPENSSL)
 // Forward declaration; real one in <x509.h>
-struct x509_st;
+typedef struct x509_st X509;
 typedef struct x509_store_st X509_STORE;
 #elif defined(USE_NSS)
 // Forward declaration; real one in <cert.h>
@@ -38,29 +39,32 @@ struct CERTCertificateStr;
 class Pickle;
 
 namespace crypto {
-class StringPiece;
 class RSAPrivateKey;
 }  // namespace crypto
 
 namespace net {
 
+class CRLSet;
 class CertVerifyResult;
 
 typedef std::vector<scoped_refptr<X509Certificate> > CertificateList;
 
-// X509Certificate represents an X.509 certificate used by SSL.
-class NET_API X509Certificate
+// X509Certificate represents a X.509 certificate, which is comprised a
+// particular identity or end-entity certificate, such as an SSL server
+// identity or an SSL client certificate, and zero or more intermediate
+// certificates that may be used to build a path to a root certificate.
+class NET_EXPORT X509Certificate
     : public base::RefCountedThreadSafe<X509Certificate> {
  public:
-  // A handle to the certificate object in the underlying crypto library.
-  // We assume that OSCertHandle is a pointer type on all platforms and
-  // NULL is an invalid OSCertHandle.
+  // An OSCertHandle is a handle to a certificate object in the underlying
+  // crypto library. We assume that OSCertHandle is a pointer type on all
+  // platforms and that NULL represents an invalid OSCertHandle.
 #if defined(OS_WIN)
   typedef PCCERT_CONTEXT OSCertHandle;
 #elif defined(OS_MACOSX)
   typedef SecCertificateRef OSCertHandle;
 #elif defined(USE_OPENSSL)
-  typedef struct x509_st* OSCertHandle;
+  typedef X509* OSCertHandle;
 #elif defined(USE_NSS)
   typedef struct CERTCertificateStr* OSCertHandle;
 #else
@@ -70,22 +74,19 @@ class NET_API X509Certificate
 
   typedef std::vector<OSCertHandle> OSCertHandles;
 
-  // Predicate functor used in maps when X509Certificate is used as the key.
-  class NET_API LessThan {
-   public:
-    bool operator() (X509Certificate* lhs,  X509Certificate* rhs) const;
+  enum PublicKeyType {
+    kPublicKeyTypeUnknown,
+    kPublicKeyTypeRSA,
+    kPublicKeyTypeDSA,
+    kPublicKeyTypeECDSA,
+    kPublicKeyTypeDH,
+    kPublicKeyTypeECDH
   };
 
-  // Where the certificate comes from.  The enumeration constants are
-  // listed in increasing order of preference.
-  enum Source {
-    SOURCE_UNUSED = 0,            // The source_ member is not used.
-    SOURCE_LONE_CERT_IMPORT = 1,  // From importing a certificate without
-                                  // any intermediate CA certificates.
-    SOURCE_FROM_CACHE = 2,        // From the disk cache - which contains
-                                  // intermediate CA certificates, but may be
-                                  // stale.
-    SOURCE_FROM_NETWORK = 3,      // From the network.
+  // Predicate functor used in maps when X509Certificate is used as the key.
+  class NET_EXPORT LessThan {
+   public:
+    bool operator() (X509Certificate* lhs,  X509Certificate* rhs) const;
   };
 
   enum VerifyFlags {
@@ -136,22 +137,16 @@ class NET_API X509Certificate
                   base::Time start_date, base::Time expiration_date);
 
   // Create an X509Certificate from a handle to the certificate object in the
-  // underlying crypto library. |source| specifies where |cert_handle| comes
-  // from.  Given two certificate handles for the same certificate, our
-  // certificate cache prefers the handle from the network because our HTTP
-  // cache isn't caching the corresponding intermediate CA certificates yet
-  // (http://crbug.com/7065).
-  // The returned pointer must be stored in a scoped_refptr<X509Certificate>.
+  // underlying crypto library. The returned pointer must be stored in a
+  // scoped_refptr<X509Certificate>.
   static X509Certificate* CreateFromHandle(OSCertHandle cert_handle,
-                                           Source source,
                                            const OSCertHandles& intermediates);
 
   // Create an X509Certificate from a chain of DER encoded certificates. The
   // first certificate in the chain is the end-entity certificate to which a
   // handle is returned. The other certificates in the chain are intermediate
-  // certificates. See the comment for |CreateFromHandle| about the |source|
-  // argument.
-  // The returned pointer must be stored in a scoped_refptr<X509Certificate>.
+  // certificates. The returned pointer must be stored in a
+  // scoped_refptr<X509Certificate>.
   static X509Certificate* CreateFromDERCertChain(
       const std::vector<base::StringPiece>& der_certs);
 
@@ -160,6 +155,24 @@ class NET_API X509Certificate
   //
   // The returned pointer must be stored in a scoped_refptr<X509Certificate>.
   static X509Certificate* CreateFromBytes(const char* data, int length);
+
+#if defined(USE_NSS)
+  // Create an X509Certificate from the DER-encoded representation.
+  // |nickname| can be NULL if an auto-generated nickname is desired.
+  // Returns NULL on failure.  The returned pointer must be stored in a
+  // scoped_refptr<X509Certificate>.
+  //
+  // This function differs from CreateFromBytes in that it takes a
+  // nickname that will be used when the certificate is imported into PKCS#11.
+  static X509Certificate* CreateFromBytesWithNickname(const char* data,
+                                                      int length,
+                                                      const char* nickname);
+
+  // The default nickname of the certificate, based on the certificate type
+  // passed in.  If this object was created using CreateFromBytesWithNickname,
+  // then this will return the nickname specified upon creation.
+  std::string GetDefaultNickname(CertType type) const;
+#endif
 
   // Create an X509Certificate from the representation stored in the given
   // pickle.  The data for this object is found relative to the given
@@ -224,11 +237,23 @@ class NET_API X509Certificate
   // The fingerprint of this certificate.
   const SHA1Fingerprint& fingerprint() const { return fingerprint_; }
 
+  // The fingerprint of the intermediate CA certificates.
+  const SHA1Fingerprint& ca_fingerprint() const {
+    return ca_fingerprint_;
+  }
+
   // Gets the DNS names in the certificate.  Pursuant to RFC 2818, Section 3.1
   // Server Identity, if the certificate has a subjectAltName extension of
   // type dNSName, this method gets the DNS names in that extension.
   // Otherwise, it gets the common name in the subject field.
   void GetDNSNames(std::vector<std::string>* dns_names) const;
+
+  // Gets the subjectAltName extension field from the certificate, if any.
+  // For future extension; currently this only returns those name types that
+  // are required for HTTP certificate name verification - see VerifyHostname.
+  // Unrequired parameters may be passed as NULL.
+  void GetSubjectAltName(std::vector<std::string>* dns_names,
+                         std::vector<std::string>* ip_addrs) const;
 
   // Convenience method that returns whether this certificate has expired as of
   // now.
@@ -244,12 +269,6 @@ class NET_API X509Certificate
     return intermediate_ca_certs_;
   }
 
-  // Returns true if I already contain the given intermediate cert.
-  bool HasIntermediateCertificate(OSCertHandle cert);
-
-  // Returns true if I already contain all the given intermediate certs.
-  bool HasIntermediateCertificates(const OSCertHandles& certs);
-
 #if defined(OS_MACOSX)
   // Does this certificate's usage allow SSL client authentication?
   bool SupportsSSLClientAuth() const;
@@ -257,15 +276,32 @@ class NET_API X509Certificate
   // Do any of the given issuer names appear in this cert's chain of trust?
   bool IsIssuedBy(const std::vector<CertPrincipal>& valid_issuers);
 
-  // Creates a security policy for SSL client certificates.
-  static OSStatus CreateSSLClientPolicy(SecPolicyRef* outPolicy);
+  // Creates a security policy for certificates used as client certificates
+  // in SSL.
+  // If a policy is successfully created, it will be stored in
+  // |*policy| and ownership transferred to the caller.
+  static OSStatus CreateSSLClientPolicy(SecPolicyRef* policy);
+
+  // Creates a security policy for basic X.509 validation. If the policy is
+  // successfully created, it will be stored in |*policy| and ownership
+  // transferred to the caller.
+  static OSStatus CreateBasicX509Policy(SecPolicyRef* policy);
+
+  // Creates security policies to control revocation checking (OCSP and CRL).
+  // If |enable_revocation_checking| is false, the policies returned will be
+  // explicitly disabled from accessing the network or the cache. This may be
+  // used to override system settings regarding revocation checking.
+  // If the policies are successfully created, they will be appended to
+  // |policies|.
+  static OSStatus CreateRevocationPolicies(bool enable_revocation_checking,
+                                           CFMutableArrayRef policies);
 
   // Adds all available SSL client identity certs to the given vector.
   // |server_domain| is a hint for which domain the cert is to be sent to
   // (a cert previously specified as the default for that domain will be given
   // precedence and returned first in the output vector.)
-  // If valid_issuers is non-empty, only certs that were transitively issued by
-  // one of the given names will be included in the list.
+  // If valid_issuers is non-empty, only certs that were transitively issued
+  // by one of the given names will be included in the list.
   static bool GetSSLClientCertificates(
       const std::string& server_domain,
       const std::vector<CertPrincipal>& valid_issuers,
@@ -273,6 +309,13 @@ class NET_API X509Certificate
 
   // Creates the chain of certs to use for this client identity cert.
   CFArrayRef CreateClientCertificateChain() const;
+
+  // Returns a new CFArrayRef containing this certificate and its intermediate
+  // certificates in the form expected by Security.framework and Keychain
+  // Services, or NULL on failure.
+  // The first item in the array will be this certificate, followed by its
+  // intermediates, if any.
+  CFArrayRef CreateOSCertChainForCert() const;
 #endif
 
 #if defined(OS_WIN)
@@ -284,6 +327,58 @@ class NET_API X509Certificate
   //    this store so that we can close the system store when we finish
   //    searching for client certificates.
   static HCERTSTORE cert_store();
+
+  // Returns a new PCCERT_CONTEXT containing this certificate and its
+  // intermediate certificates, or NULL on failure. The returned
+  // PCCERT_CONTEXT *MUST NOT* be stored in an X509Certificate, as then
+  // os_cert_handle() will not return the correct result. This function is
+  // only necessary if the CERT_CONTEXT.hCertStore member will be accessed or
+  // enumerated, which is generally true for any CryptoAPI functions involving
+  // certificate chains, including validation or certificate display.
+  //
+  // Remarks:
+  // Depending on the CryptoAPI function, Windows may need to access the
+  // HCERTSTORE that the passed-in PCCERT_CONTEXT belongs to, such as to
+  // locate additional intermediates. However, in the current X509Certificate
+  // implementation on Windows, all X509Certificate::OSCertHandles belong to
+  // the same HCERTSTORE - X509Certificate::cert_store(). Since certificates
+  // may be created and accessed on any number of threads, if CryptoAPI is
+  // trying to read this global store while additional certificates are being
+  // added, it may return inconsistent results while enumerating the store.
+  // While the memory accesses themselves are thread-safe, the resultant view
+  // of what is in the store may be altered.
+  //
+  // If OSCertHandles were instead added to a NULL HCERTSTORE, which is valid
+  // in CryptoAPI, then Windows would be unable to locate any of the
+  // intermediates supplied in |intermediate_ca_certs_|, because the
+  // hCertStore will refer to a magic value that indicates "only this
+  // certificate."
+  //
+  // To avoid these problems, a new in-memory HCERTSTORE is created containing
+  // just this certificate and its intermediates. The handle to the version of
+  // this certificate in the new HCERTSTORE is then returned, with the
+  // HCERTSTORE set to be automatically freed when the returned certificate
+  // is freed.
+  //
+  // This function is only needed when the HCERTSTORE of the os_cert_handle()
+  // will be accessed, which is generally only during certificate validation
+  // or display. While the returned PCCERT_CONTEXT and its HCERTSTORE can
+  // safely be used on multiple threads if no further modifications happen, it
+  // is generally preferable for each thread that needs such a context to
+  // obtain its own, rather than risk thread-safety issues by sharing.
+  //
+  // Because of how X509Certificate caching is implemented, attempting to
+  // create an X509Certificate from the returned PCCERT_CONTEXT may result in
+  // the original handle (and thus the originall HCERTSTORE) being returned by
+  // os_cert_handle(). For this reason, the returned PCCERT_CONTEXT *MUST NOT*
+  // be stored in an X509Certificate.
+  PCCERT_CONTEXT CreateOSCertChainForCert() const;
+#endif
+
+#if defined(OS_ANDROID)
+  // |chain_bytes| will contain the chain (including this certificate) encoded
+  // using GetChainDEREncodedBytes below.
+  void GetChainDEREncodedBytes(std::vector<std::string>* chain_bytes) const;
 #endif
 
 #if defined(USE_OPENSSL)
@@ -305,39 +400,75 @@ class NET_API X509Certificate
   // If VERIFY_REV_CHECKING_ENABLED is set in |flags|, certificate revocation
   // checking is performed.  If VERIFY_EV_CERT is set in |flags| too,
   // EV certificate verification is performed.
+  //
+  // |crl_set| points to an optional CRLSet structure which can be used to
+  // avoid revocation checks over the network.
   int Verify(const std::string& hostname,
              int flags,
+             CRLSet* crl_set,
              CertVerifyResult* verify_result) const;
 
   // Verifies that |hostname| matches this certificate.
   // Does not verify that the certificate is valid, only that the certificate
   // matches this host.
   // Returns true if it matches.
-  //
-  // WARNING:  This function may return false negatives (for example, if
-  //           |hostname| is an IP address literal) on some platforms.  Only
-  //           use in cases where some false-positives are acceptible.
   bool VerifyNameMatch(const std::string& hostname) const;
 
-  // This method returns the DER encoded certificate.
-  // If the return value is true then the DER encoded certificate is available.
-  // The content of the DER encoded certificate is written to |encoded|.
-  bool GetDEREncoded(std::string* encoded);
+  // Obtains the DER encoded certificate data for |cert_handle|. On success,
+  // returns true and writes the DER encoded certificate to |*der_encoded|.
+  static bool GetDEREncoded(OSCertHandle cert_handle,
+                            std::string* der_encoded);
 
+  // Returns the PEM encoded data from an OSCertHandle. If the return value is
+  // true, then the PEM encoded certificate is written to |pem_encoded|.
+  static bool GetPEMEncoded(OSCertHandle cert_handle,
+                            std::string* pem_encoded);
+
+  // Encodes the entire certificate chain (this certificate and any
+  // intermediate certificates stored in |intermediate_ca_certs_|) as a series
+  // of PEM encoded strings. Returns true if all certificates were encoded,
+  // storig the result in |*pem_encoded|, with this certificate stored as
+  // the first element.
+  bool GetPEMEncodedChain(std::vector<std::string>* pem_encoded) const;
+
+  // Sets |*size_bits| to be the length of the public key in bits, and sets
+  // |*type| to one of the |PublicKeyType| values. In case of
+  // |kPublicKeyTypeUnknown|, |*size_bits| will be set to 0.
+  static void GetPublicKeyInfo(OSCertHandle cert_handle,
+                               size_t* size_bits,
+                               PublicKeyType* type);
+
+  // Returns the OSCertHandle of this object. Because of caching, this may
+  // differ from the OSCertHandle originally supplied during initialization.
+  // Note: On Windows, CryptoAPI may return unexpected results if this handle
+  // is used across multiple threads. For more details, see
+  // CreateOSCertChainForCert().
   OSCertHandle os_cert_handle() const { return cert_handle_; }
 
   // Returns true if two OSCertHandles refer to identical certificates.
   static bool IsSameOSCert(OSCertHandle a, OSCertHandle b);
 
-  // Creates an OS certificate handle from the BER-encoded representation.
+  // Creates an OS certificate handle from the DER-encoded representation.
   // Returns NULL on failure.
   static OSCertHandle CreateOSCertHandleFromBytes(const char* data,
                                                   int length);
 
+#if defined(USE_NSS)
+  // Creates an OS certificate handle from the DER-encoded representation.
+  // Returns NULL on failure.  Sets the default nickname if |nickname| is
+  // non-NULL.
+  static OSCertHandle CreateOSCertHandleFromBytesWithNickname(
+      const char* data,
+      int length,
+      const char* nickname);
+#endif
+
   // Creates all possible OS certificate handles from |data| encoded in a
   // specific |format|. Returns an empty collection on failure.
   static OSCertHandles CreateOSCertHandlesFromBytes(
-      const char* data, int length, Format format);
+      const char* data,
+      int length,
+      Format format);
 
   // Duplicates (or adds a reference to) an OS certificate handle.
   static OSCertHandle DupOSCertHandle(OSCertHandle cert_handle);
@@ -345,17 +476,27 @@ class NET_API X509Certificate
   // Frees (or releases a reference to) an OS certificate handle.
   static void FreeOSCertHandle(OSCertHandle cert_handle);
 
+  // Calculates the SHA-1 fingerprint of the certificate.  Returns an empty
+  // (all zero) fingerprint on failure.
+  static SHA1Fingerprint CalculateFingerprint(OSCertHandle cert_handle);
+
+  // Calculates the SHA-1 fingerprint of the intermediate CA certificates.
+  // Returns an empty (all zero) fingerprint on failure.
+  static SHA1Fingerprint CalculateCAFingerprint(
+      const OSCertHandles& intermediates);
+
  private:
   friend class base::RefCountedThreadSafe<X509Certificate>;
   friend class TestRootCerts;  // For unit tests
   FRIEND_TEST_ALL_PREFIXES(X509CertificateTest, Cache);
   FRIEND_TEST_ALL_PREFIXES(X509CertificateTest, IntermediateCertificates);
   FRIEND_TEST_ALL_PREFIXES(X509CertificateTest, SerialNumbers);
+  FRIEND_TEST_ALL_PREFIXES(X509CertificateTest, DigiNotarCerts);
   FRIEND_TEST_ALL_PREFIXES(X509CertificateNameVerifyTest, VerifyHostname);
 
   // Construct an X509Certificate from a handle to the certificate object
   // in the underlying crypto library.
-  X509Certificate(OSCertHandle cert_handle, Source source,
+  X509Certificate(OSCertHandle cert_handle,
                   const OSCertHandles& intermediates);
 
   ~X509Certificate();
@@ -371,38 +512,48 @@ class NET_API X509Certificate
 #if defined(OS_MACOSX)
   static bool IsIssuedByKnownRoot(CFArrayRef chain);
 #endif
+#if defined(USE_NSS)
   bool VerifyEV() const;
-
+#endif
 #if defined(USE_OPENSSL)
   // Resets the store returned by cert_store() to default state. Used by
   // TestRootCerts to undo modifications.
   static void ResetCertStore();
 #endif
 
-  // Calculates the SHA-1 fingerprint of the certificate.  Returns an empty
-  // (all zero) fingerprint on failure.
-  static SHA1Fingerprint CalculateFingerprint(OSCertHandle cert_handle);
-
-  // Verifies that |hostname| matches one of the names in |cert_names|, based on
-  // TLS name matching rules, specifically following http://tools.ietf.org/html/draft-saintandre-tls-server-id-check-09#section-4.4.3
-  // The members of |cert_names| must have been extracted from the Subject CN or
-  // SAN fields of a certificate.
-  // WARNING:  This function may return false negatives (for example, if
-  //           |hostname| is an IP address literal) on some platforms.  Only
-  //           use in cases where some false-positives are acceptible.
+  // Verifies that |hostname| matches one of the certificate names or IP
+  // addresses supplied, based on TLS name matching rules - specifically,
+  // following http://tools.ietf.org/html/rfc6125.
+  // |cert_common_name| is the Subject CN, e.g. from X509Certificate::subject().
+  // The members of |cert_san_dns_names| and |cert_san_ipaddrs| must be filled
+  // from the dNSName and iPAddress components of the subject alternative name
+  // extension, if present. Note these IP addresses are NOT ascii-encoded:
+  // they must be 4 or 16 bytes of network-ordered data, for IPv4 and IPv6
+  // addresses, respectively.
   static bool VerifyHostname(const std::string& hostname,
-                             const std::vector<std::string>& cert_names);
+                             const std::string& cert_common_name,
+                             const std::vector<std::string>& cert_san_dns_names,
+                             const std::vector<std::string>& cert_san_ip_addrs);
 
-  // The serial number, DER encoded.
-  // NOTE: keep this method private, used by IsBlacklisted only.  To simplify
-  // IsBlacklisted, we strip the leading 0 byte of a serial number, used to
-  // encode a positive DER INTEGER (a signed type) with a most significant bit
-  // of 1.  Other code must not use this method for general purpose until this
-  // is fixed.
+  // Performs the platform-dependent part of the Verify() method, verifiying
+  // this certificate against the platform's root CA certificates.
+  //
+  // Parameters and return value are as per Verify().
+  int VerifyInternal(const std::string& hostname,
+                     int flags,
+                     CRLSet* crl_set,
+                     CertVerifyResult* verify_result) const;
+
+  // The serial number, DER encoded, possibly including a leading 00 byte.
   const std::string& serial_number() const { return serial_number_; }
 
   // IsBlacklisted returns true if this certificate is explicitly blacklisted.
   bool IsBlacklisted() const;
+
+  // IsPublicKeyBlacklisted returns true iff one of |public_key_hashes| (which
+  // are SHA1 hashes of SubjectPublicKeyInfo structures) is explicitly blocked.
+  static bool IsPublicKeyBlacklisted(
+      const std::vector<SHA1Fingerprint>& public_key_hashes);
 
   // IsSHA1HashInSortedArray returns true iff |hash| is in |array|, a sorted
   // array of SHA1 hashes.
@@ -436,6 +587,9 @@ class NET_API X509Certificate
   // The fingerprint of this certificate.
   SHA1Fingerprint fingerprint_;
 
+  // The fingerprint of the intermediate CA certificates.
+  SHA1Fingerprint ca_fingerprint_;
+
   // The serial number of this certificate, DER encoded.
   std::string serial_number_;
 
@@ -446,14 +600,19 @@ class NET_API X509Certificate
   // that may be needed for chain building.
   OSCertHandles intermediate_ca_certs_;
 
+#if defined(USE_NSS)
+  // This stores any default nickname that has been set on the certificate
+  // at creation time with CreateFromBytesWithNickname.
+  // If this is empty, then GetDefaultNickname will return a generated name
+  // based on the type of the certificate.
+  std::string default_nickname_;
+#endif
+
 #if defined(OS_MACOSX)
   // Blocks multiple threads from verifying the cert simultaneously.
   // (Marked mutable because it's used in a const method.)
   mutable base::Lock verification_lock_;
 #endif
-
-  // Where the certificate comes from.
-  Source source_;
 
   DISALLOW_COPY_AND_ASSIGN(X509Certificate);
 };

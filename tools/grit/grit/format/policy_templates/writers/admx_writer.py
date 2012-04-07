@@ -95,10 +95,11 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       attributes = {'ref': parent_category_name}
       self.AddElement(category_elem, 'parentCategory', attributes)
 
-  def _AddCategories(self, parent, categories):
-    '''Generates the ADMX "categories" element and adds it to the passed parent
-    node. The "categories" element defines the category for the policies defined
-    in this ADMX document. Here is an example of an ADMX "categories" element:
+  def _AddCategories(self, categories):
+    '''Generates the ADMX "categories" element and adds it to the categories
+    main node. The "categories" element defines the category for the policies
+    defined in this ADMX document. Here is an example of an ADMX "categories"
+    element:
 
     <categories>
       <category displayName="$(string.google)" name="google"/>
@@ -108,13 +109,11 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     </categories>
 
     Args:
-      parent: The parent node to which all generated elements are added.
       categories_path: The categories path e.g. ['google', 'googlechrome']. For
         each level in the path a "category" element will be generated. Except
         for the root level, each level refers to its parent. Since the root
         level category has no parent it does not require a parent reference.
     '''
-    self._categories_elem = self.AddElement(parent, 'categories')
     category_name = None
     for category in categories:
       parent_category_name = category_name
@@ -189,7 +188,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       else:
         self.AddElement(value_elem, 'string', {}, value_string)
 
-  def _AddListPolicy(self, parent, name):
+  def _AddListPolicy(self, parent, key, name):
     '''Generates ADMX XML elements for a List-Policy and adds them to the
     passed parent element.
     '''
@@ -198,7 +197,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       # file.
       'id': name + 'Desc',
       'valuePrefix': '',
-      'key': self.config['win_reg_key_name'] + '\\' + name,
+      'key': key + '\\' + name,
     }
     self.AddElement(parent, 'list', attributes)
 
@@ -234,7 +233,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       raise Exception('There is supposed to be only one "elements" node but'
                       ' there are %s.' % str(len(elements_list)))
 
-  def WritePolicy(self, policy):
+  def _WritePolicy(self, policy, name, key, parent):
     '''Generates AMDX elements for a Policy. There are four different policy
     types: Main-Policy, String-Policy, Enum-Policy and List-Policy.
     '''
@@ -243,19 +242,19 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     policy_name = policy['name']
 
     attributes = {
-      'name': policy_name,
+      'name': name,
       'class': self.config['win_group_policy_class'],
       'displayName': self._AdmlString(policy_name),
       'explainText': self._AdmlStringExplain(policy_name),
       'presentation': self._AdmlPresentation(policy_name),
-      'key': self.config['win_reg_key_name'],
+      'key': key,
     }
     # Store the current "policy" AMDX element in self for later use by the
     # WritePolicy method.
     policy_elem = self.AddElement(policies_elem, 'policy',
                                   attributes)
     self.AddElement(policy_elem, 'parentCategory',
-                    {'ref': self._active_policy_group_name})
+                    {'ref': parent})
     self.AddElement(policy_elem, 'supportedOn',
                     {'ref': self.config['win_supported_os']})
     if policy_type == 'main':
@@ -272,31 +271,58 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       self._AddEnumPolicy(parent, policy)
     elif policy_type == 'list':
       parent = self._GetElements(policy_elem)
-      self._AddListPolicy(parent, policy_name)
+      self._AddListPolicy(parent, key, policy_name)
     elif policy_type == 'group':
       pass
     else:
       raise Exception('Unknown policy type %s.' % policy_type)
 
-  def BeginPolicyGroup(self, group):
+  def WritePolicy(self, policy):
+    self._WritePolicy(policy,
+                      policy['name'],
+                      self.config['win_reg_mandatory_key_name'],
+                      self._active_mandatory_policy_group_name)
+
+  def WriteRecommendedPolicy(self, policy):
+    self._WritePolicy(policy,
+                      policy['name'] + '_recommended',
+                      self.config['win_reg_recommended_key_name'],
+                      self._active_recommended_policy_group_name)
+
+  def _BeginPolicyGroup(self, group, name, parent):
     '''Generates ADMX elements for a Policy-Group.
     '''
-    policy_group_name = group['name']
     attributes = {
-      'name': policy_group_name,
-      'displayName': self._AdmlString(policy_group_name + '_group'),
+      'name': name,
+      'displayName': self._AdmlString(group['name'] + '_group'),
     }
     category_elem = self.AddElement(self._categories_elem,
                                     'category',
                                     attributes)
     attributes = {
-      'ref': self.config['win_category_path'][-1],
+      'ref': parent
     }
     self.AddElement(category_elem, 'parentCategory', attributes)
-    self._active_policy_group_name = policy_group_name
+
+  def BeginPolicyGroup(self, group):
+    self._BeginPolicyGroup(group,
+                           group['name'],
+                           self.config['win_mandatory_category_path'][-1])
+    self._active_mandatory_policy_group_name = group['name']
 
   def EndPolicyGroup(self):
-    self._active_policy_group_name = self.config['win_category_path'][-1]
+    self._active_mandatory_policy_group_name = \
+        self.config['win_mandatory_category_path'][-1]
+
+  def BeginRecommendedPolicyGroup(self, group):
+    self._BeginPolicyGroup(group,
+                           group['name'] + '_recommended',
+                           self.config['win_recommended_category_path'][-1])
+    self._active_recommended_policy_group_name = group['name'] + '_recommended'
+
+  def EndRecommendedPolicyGroup(self):
+    self._active_recommended_policy_group_name = \
+        self.config['win_recommended_category_path'][-1]
 
   def BeginTemplate(self):
     '''Generates the skeleton of the ADMX template. An ADMX template contains
@@ -317,11 +343,16 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
                     {'minRequiredRevision' : '1.0'})
     self._AddSupportedOn(policy_definitions_elem,
                          self.config['win_supported_os'])
-    self._AddCategories(policy_definitions_elem,
-                        self.config['win_category_path'])
+    self._categories_elem = self.AddElement(policy_definitions_elem,
+                                            'categories')
+    self._AddCategories(self.config['win_mandatory_category_path'])
+    self._AddCategories(self.config['win_recommended_category_path'])
     self._active_policies_elem = self.AddElement(policy_definitions_elem,
                                                  'policies')
-    self._active_policy_group_name = self.config['win_category_path'][-1]
+    self._active_mandatory_policy_group_name = \
+        self.config['win_mandatory_category_path'][-1]
+    self._active_recommended_policy_group_name = \
+        self.config['win_recommended_category_path'][-1]
 
   def GetTemplateText(self):
     return self.ToPrettyXml(self._doc)

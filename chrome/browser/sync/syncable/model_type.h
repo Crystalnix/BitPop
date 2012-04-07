@@ -10,15 +10,18 @@
 #define CHROME_BROWSER_SYNC_SYNCABLE_MODEL_TYPE_H_
 #pragma once
 
-#include <bitset>
 #include <set>
 #include <string>
 
 #include "base/logging.h"
 #include "base/time.h"
+#include "chrome/browser/sync/util/enum_set.h"
 
+namespace base {
 class ListValue;
 class StringValue;
+class Value;
+}
 
 namespace sync_pb {
 class EntitySpecifics;
@@ -63,18 +66,34 @@ enum ModelType {
   TYPED_URLS,
   // An extension folder or an extension object.
   EXTENSIONS,
-  // An object represeting a set of Nigori keys.
+  // An object representing a set of Nigori keys.
   NIGORI,
+  // An object representing a custom search engine.
+  SEARCH_ENGINES,
   // An object representing a browser session.
   SESSIONS,
   // An app folder or an app object.
   APPS,
+  // An app setting from the extension settings API.
+  APP_SETTINGS,
+  // An extension setting from the extension settings API.
+  EXTENSION_SETTINGS,
+  // App notifications.
+  APP_NOTIFICATIONS,
+  LAST_REAL_MODEL_TYPE = APP_NOTIFICATIONS,
+
+  // If you are adding a new sync datatype that is exposed to the user via the
+  // sync preferences UI, be sure to update the list in
+  // chrome/browser/sync/user_selectable_sync_type.h so that the UMA histograms
+  // for sync include your new type.
 
   MODEL_TYPE_COUNT,
 };
 
-typedef std::bitset<MODEL_TYPE_COUNT> ModelTypeBitSet;
-typedef std::set<ModelType> ModelTypeSet;
+typedef browser_sync::EnumSet<
+  ModelType, FIRST_REAL_MODEL_TYPE, LAST_REAL_MODEL_TYPE> ModelTypeSet;
+typedef browser_sync::EnumSet<
+  ModelType, UNSPECIFIED, LAST_REAL_MODEL_TYPE> FullModelTypeSet;
 
 inline ModelType ModelTypeFromInt(int i) {
   DCHECK_GE(i, 0);
@@ -96,6 +115,10 @@ ModelType GetModelType(const sync_pb::SyncEntity& sync_entity);
 // prefer using GetModelType where possible.
 ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics);
 
+// If this returns false, we shouldn't bother maintaining a position
+// value (sibling ordering) for this item.
+bool ShouldMaintainPosition(ModelType model_type);
+
 // Determine a model type from the field number of its associated
 // EntitySpecifics extension.
 ModelType GetModelTypeFromExtensionFieldNumber(int field_number);
@@ -104,33 +127,29 @@ ModelType GetModelTypeFromExtensionFieldNumber(int field_number);
 // a model type.
 int GetExtensionFieldNumberFromModelType(ModelType model_type);
 
-// Returns a string that represents the name of |model_type|.
-std::string ModelTypeToString(ModelType model_type);
+// TODO(sync): The functions below badly need some cleanup.
+
+// Returns a pointer to a string with application lifetime that represents
+// the name of |model_type|.
+const char* ModelTypeToString(ModelType model_type);
 
 // Handles all model types, and not just real ones.
 //
 // Caller takes ownership of returned value.
-StringValue* ModelTypeToValue(ModelType model_type);
+base::StringValue* ModelTypeToValue(ModelType model_type);
 
-std::string ModelTypeSetToString(const ModelTypeSet& model_types);
+// Converts a Value into a ModelType - complement to ModelTypeToValue().
+ModelType ModelTypeFromValue(const base::Value& value);
 
 // Returns the ModelType corresponding to the name |model_type_string|.
 ModelType ModelTypeFromString(const std::string& model_type_string);
 
-// Converts a string into a model type bitset. If successful, returns true. If
-// failed to parse string, returns false and model_types is unspecified.
-bool ModelTypeBitSetFromString(
-    const std::string& model_type_bitset_string,
-    ModelTypeBitSet* model_types);
-
-// Convert a ModelTypeSet to a ModelTypeBitSet.
-ModelTypeBitSet ModelTypeBitSetFromSet(const ModelTypeSet& set);
+std::string ModelTypeSetToString(ModelTypeSet model_types);
 
 // Caller takes ownership of returned list.
-ListValue* ModelTypeBitSetToValue(const ModelTypeBitSet& model_types);
+base::ListValue* ModelTypeSetToValue(ModelTypeSet model_types);
 
-// Caller takes ownership of returned list.
-ListValue* ModelTypeSetToValue(const ModelTypeSet& model_types);
+ModelTypeSet ModelTypeSetFromValue(const base::ListValue& value);
 
 // Returns a string corresponding to the syncable tag for this datatype.
 std::string ModelTypeToRootTag(ModelType type);
@@ -151,6 +170,9 @@ bool RealModelTypeToNotificationType(ModelType model_type,
 // type and |model_type| was filled in.
 bool NotificationTypeToRealModelType(const std::string& notification_type,
                                      ModelType* model_type);
+
+// Returns true if |model_type| is a real datatype
+bool IsRealDataType(ModelType model_type);
 
 }  // namespace syncable
 

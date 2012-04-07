@@ -14,9 +14,11 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "net/base/net_util.h"
@@ -62,17 +64,18 @@ KeywordProvider::KeywordProvider(ACProviderListener* listener, Profile* profile)
   // Extension suggestions always come from the original profile, since that's
   // where extensions run. We use the input ID to distinguish whether the
   // suggestions are meant for us.
-  registrar_.Add(this, NotificationType::EXTENSION_OMNIBOX_SUGGESTIONS_READY,
-                 Source<Profile>(profile->GetOriginalProfile()));
   registrar_.Add(this,
-                 NotificationType::EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
-                 Source<Profile>(profile->GetOriginalProfile()));
-  registrar_.Add(this, NotificationType::EXTENSION_OMNIBOX_INPUT_ENTERED,
-                 Source<Profile>(profile));
+                 chrome::NOTIFICATION_EXTENSION_OMNIBOX_SUGGESTIONS_READY,
+                 content::Source<Profile>(profile->GetOriginalProfile()));
+  registrar_.Add(
+      this, chrome::NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
+      content::Source<Profile>(profile->GetOriginalProfile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_OMNIBOX_INPUT_ENTERED,
+                 content::Source<Profile>(profile));
 }
 
 KeywordProvider::KeywordProvider(ACProviderListener* listener,
-                                 TemplateURLModel* model)
+                                 TemplateURLService* model)
     : AutocompleteProvider(listener, NULL, "Keyword"),
       model_(model),
       current_input_id_(0) {
@@ -117,7 +120,7 @@ const TemplateURL* KeywordProvider::GetSubstitutingTemplateURLForInput(
 
   // Make sure the model is loaded. This is cheap and quickly bails out if
   // the model is already loaded.
-  TemplateURLModel* model = profile->GetTemplateURLModel();
+  TemplateURLService* model = TemplateURLServiceFactory::GetForProfile(profile);
   DCHECK(model);
   model->Load();
 
@@ -160,7 +163,10 @@ void KeywordProvider::Start(const AutocompleteInput& input,
 
   // Make sure the model is loaded. This is cheap and quickly bails out if
   // the model is already loaded.
-  TemplateURLModel* model = profile_ ? profile_->GetTemplateURLModel() : model_;
+  TemplateURLService* model =
+      profile_ ?
+      TemplateURLServiceFactory::GetForProfile(profile_) :
+      model_;
   DCHECK(model);
   model->Load();
 
@@ -282,7 +288,7 @@ bool KeywordProvider::ExtractKeywordFromInput(const AutocompleteInput& input,
 
   string16 trimmed_input;
   TrimWhitespace(input.text(), TRIM_TRAILING, &trimmed_input);
-  *keyword = TemplateURLModel::CleanUserInputKeyword(
+  *keyword = TemplateURLService::CleanUserInputKeyword(
       SplitKeywordFromInput(trimmed_input, true, remaining_input));
   return !keyword->empty();
 }
@@ -313,6 +319,7 @@ string16 KeywordProvider::SplitKeywordFromInput(
 
 // static
 void KeywordProvider::FillInURLAndContents(
+    Profile* profile,
     const string16& remaining_input,
     const TemplateURL* element,
     AutocompleteMatch* match) {
@@ -348,9 +355,9 @@ void KeywordProvider::FillInURLAndContents(
     // input, but we rely on later canonicalization functions to do more
     // fixup to make the URL valid if necessary.
     DCHECK(element->url()->SupportsReplacement());
-    match->destination_url = GURL(element->url()->ReplaceSearchTerms(
-        *element, remaining_input,
-        TemplateURLRef::NO_SUGGESTIONS_AVAILABLE, string16()));
+    match->destination_url = GURL(element->url()->
+        ReplaceSearchTermsUsingProfile(profile, *element, remaining_input,
+            TemplateURLRef::NO_SUGGESTIONS_AVAILABLE, string16()));
     std::vector<size_t> content_param_offsets;
     match->contents.assign(l10n_util::GetStringFUTF16(message_id,
                                                       element->short_name(),
@@ -382,7 +389,7 @@ int KeywordProvider::CalculateRelevance(AutocompleteInput::Type type,
 }
 
 AutocompleteMatch KeywordProvider::CreateAutocompleteMatch(
-    TemplateURLModel* model,
+    TemplateURLService* model,
     const string16& keyword,
     const AutocompleteInput& input,
     size_t prefix_length,
@@ -424,43 +431,32 @@ AutocompleteMatch KeywordProvider::CreateAutocompleteMatch(
 
   // Create destination URL and popup entry content by substituting user input
   // into keyword templates.
-  FillInURLAndContents(remaining_input, element, &result);
+  FillInURLAndContents(profile_, remaining_input, element, &result);
 
   if (supports_replacement)
     result.template_url = element;
-  result.transition = PageTransition::KEYWORD;
-
-  // Create popup entry description based on the keyword name.
-  if (!element->IsExtensionKeyword()) {
-    result.description.assign(l10n_util::GetStringFUTF16(
-        IDS_AUTOCOMPLETE_KEYWORD_DESCRIPTION, keyword));
-    string16 keyword_desc(
-        l10n_util::GetStringUTF16(IDS_AUTOCOMPLETE_KEYWORD_DESCRIPTION));
-    AutocompleteMatch::ClassifyLocationInString(
-        keyword_desc.find(ASCIIToUTF16("%s")),
-        prefix_length,
-        result.description.length(),
-        ACMatchClassification::DIM,
-        &result.description_class);
-  }
+  result.transition = content::PAGE_TRANSITION_KEYWORD;
 
   return result;
 }
 
-void KeywordProvider::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  TemplateURLModel* model = profile_ ? profile_->GetTemplateURLModel() : model_;
+void KeywordProvider::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  TemplateURLService* model =
+      profile_ ? TemplateURLServiceFactory::GetForProfile(profile_) : model_;
   const AutocompleteInput& input = extension_suggest_last_input_;
 
-  switch (type.value) {
-    case NotificationType::EXTENSION_OMNIBOX_INPUT_ENTERED:
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_OMNIBOX_INPUT_ENTERED:
       // Input has been accepted, so we're done with this input session. Ensure
-      // we don't send the OnInputCancelled event.
+      // we don't send the OnInputCancelled event, or handle any more stray
+      // suggestions_ready events.
       current_keyword_extension_id_.clear();
+      current_input_id_ = 0;
       return;
 
-    case NotificationType::EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED: {
+    case chrome::NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED: {
       // It's possible to change the default suggestion while not in an editing
       // session.
       string16 keyword, remaining_input;
@@ -477,9 +473,9 @@ void KeywordProvider::Observe(NotificationType type,
       return;
     }
 
-    case NotificationType::EXTENSION_OMNIBOX_SUGGESTIONS_READY: {
+    case chrome::NOTIFICATION_EXTENSION_OMNIBOX_SUGGESTIONS_READY: {
       const ExtensionOmniboxSuggestions& suggestions =
-        *Details<ExtensionOmniboxSuggestions>(details).ptr();
+        *content::Details<ExtensionOmniboxSuggestions>(details).ptr();
       if (suggestions.request_id != current_input_id_)
         return;  // This is an old result. Just ignore.
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,12 @@ namespace {
 
 static const char kPPPPrintingInterface[] = PPP_PRINTING_DEV_INTERFACE;
 
-PP_PrintOutputFormat_Dev* QuerySupportedFormats(PP_Instance instance,
-                                                uint32_t* format_count) {
+uint32_t QuerySupportedFormats(PP_Instance instance) {
   void* object =
       pp::Instance::GetPerInstanceObject(instance, kPPPPrintingInterface);
   if (!object)
-    return NULL;
-  return static_cast<Printing_Dev*>(object)->QuerySupportedPrintOutputFormats(
-      format_count);
+    return 0;
+  return static_cast<Printing_Dev*>(object)->QuerySupportedPrintOutputFormats();
 }
 
 int32_t Begin(PP_Instance instance,
@@ -51,11 +49,22 @@ void End(PP_Instance instance) {
     static_cast<Printing_Dev*>(object)->PrintEnd();
 }
 
+PP_Bool IsScalingDisabled(PP_Instance instance) {
+  void* object =
+      pp::Instance::GetPerInstanceObject(instance, kPPPPrintingInterface);
+  if (!object)
+    return PP_FALSE;
+  bool return_value =
+      static_cast<Printing_Dev*>(object)->IsPrintScalingDisabled();
+  return PP_FromBool(return_value);
+}
+
 const PPP_Printing_Dev ppp_printing = {
   &QuerySupportedFormats,
   &Begin,
   &PrintPages,
-  &End
+  &End,
+  &IsScalingDisabled
 };
 
 }  // namespace
@@ -71,4 +80,3 @@ Printing_Dev::~Printing_Dev() {
 }
 
 }  // namespace pp
-

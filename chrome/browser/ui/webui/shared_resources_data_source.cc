@@ -11,12 +11,11 @@
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/shared_resources.h"
 #include "grit/shared_resources_map.h"
 #include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "net/base/mime_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -24,16 +23,18 @@ namespace {
 
 int PathToIDR(const std::string& path) {
   int idr = -1;
-  if (path == "app/resources/folder_closed.png") {
+  if (path == "ui/resources/folder_closed.png") {
     idr = IDR_FOLDER_CLOSED;
-  } else if (path == "app/resources/folder_closed_rtl.png") {
+  } else if (path == "ui/resources/folder_closed_rtl.png") {
     idr = IDR_FOLDER_CLOSED_RTL;
-  } else if (path == "app/resources/folder_open.png") {
+  } else if (path == "ui/resources/folder_open.png") {
     idr = IDR_FOLDER_OPEN;
-  } else if (path == "app/resources/folder_open_rtl.png") {
+  } else if (path == "ui/resources/folder_open_rtl.png") {
     idr = IDR_FOLDER_OPEN_RTL;
-  } else if (path == "app/resources/throbber.png") {
+  } else if (path == "ui/resources/throbber.png") {
     idr = IDR_THROBBER;
+  } else if (path == "fonts/open_sans.woff") {
+    idr = IDR_THIRD_PARTY_FONTS_OPEN_SANS;
   } else {
     // The name of the files in the grd list are prefixed with the following
     // directory:

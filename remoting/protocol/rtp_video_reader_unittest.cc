@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
 #include "base/string_number_conversions.h"
 #include "net/base/io_buffer.h"
 #include "remoting/proto/video.pb.h"
@@ -24,11 +26,10 @@ class RtpVideoReaderTest : public testing::Test,
  public:
   // VideoStub interface.
   virtual void ProcessVideoPacket(const VideoPacket* video_packet,
-                                  Task* done) {
+                                  const base::Closure& done) {
     received_packets_.push_back(VideoPacket());
     received_packets_.back() = *video_packet;
-    done->Run();
-    delete done;
+    done.Run();
   }
 
   virtual int GetPendingPackets() {
@@ -63,10 +64,17 @@ class RtpVideoReaderTest : public testing::Test,
   }
 
   void Reset() {
-    session_ = new FakeSession();
-    reader_.reset(new RtpVideoReader());
-    reader_->Init(session_, this);
+    session_.reset(new FakeSession());
+    reader_.reset(new RtpVideoReader(
+        base::MessageLoopProxy::current()));
+    reader_->Init(session_.get(), this,
+                  base::Bind(&RtpVideoReaderTest::OnReaderInitialized,
+                             base::Unretained(this)));
     received_packets_.clear();
+  }
+
+  void OnReaderInitialized(bool success) {
+    ASSERT_TRUE(success);
   }
 
   void InitData(int size) {
@@ -127,10 +135,11 @@ class RtpVideoReaderTest : public testing::Test,
     }
   }
 
-  scoped_refptr<FakeSession> session_;
+  MessageLoop message_loop_;
+
+  scoped_ptr<FakeSession> session_;
   scoped_ptr<RtpVideoReader> reader_;
 
-  MessageLoop message_loop_;
   vector<char> data_;
   vector<VideoPacket> received_packets_;
 };

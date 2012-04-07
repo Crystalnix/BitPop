@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -21,7 +21,7 @@ class ContentTest(pyauto.PyUITest):
     """String check in local file.
 
        For each local filename, tell the browser to load it as a file
-       UEL from the DataDir.  Ask the browser for the loaded html.
+       URL from the DataDir.  Ask the browser for the loaded html.
        Confirm all strings in have_list are found in it.  Confirm all
        strings in nothave_list are NOT found in it.  Assumes only one
        window/tab is open.
@@ -75,7 +75,7 @@ class ContentTest(pyauto.PyUITest):
     """Confirm about:version contains some expected content."""
     self.NavigateToURL('about:version')
     test_utils.StringContentCheck(self, self.GetTabContents(),
-                                  ['User Agent', 'Command Line'],
+                                  ['WebKit', 'os_version', 'js_version'],
                                   ['odmomfodfm disfnodugdzuoufgbn ifdnf fif'])
 
   def testHttpsPage(self):
@@ -90,16 +90,6 @@ class ContentTest(pyauto.PyUITest):
     html_incognito = self.GetTabContents(0, 1)
     self.assertTrue('Google Search' in html_incognito)
     self.assertTrue('Feeling Lucky' in html_incognito)
-
-  def testTopSitesContent(self):
-    """Test content in TopSites and Verify chrome is not getting blocked by
-       user-agent test by those websites."""
-    topsites_file = os.path.join(self.DataDir(), 'content', 'topsites_content')
-    topsites = self.EvalDataFrom(topsites_file)
-    for (url, name) in topsites.iteritems():
-      self.NavigateToURL(url)
-      html = self.GetTabContents()
-      self.assertTrue(name in html)
 
 
 if __name__ == '__main__':

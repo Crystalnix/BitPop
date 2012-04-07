@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,32 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "content/common/desktop_notification_messages.h"
+#include "content/public/common/show_desktop_notification_params.h"
+
+#if defined(USE_AURA)
+#include "chrome/browser/chromeos/notifications/balloon_collection_impl_aura.h"
+#include "ui/aura/root_window.h"
+#else
+#include "chrome/browser/chromeos/notifications/balloon_collection_impl.h"
+#endif
+
+#if defined(USE_AURA)
+typedef class chromeos::BalloonCollectionImplAura BalloonCollectionImplType;
+#else
+typedef class chromeos::BalloonCollectionImpl BalloonCollectionImplType;
+#endif
+
+using content::BrowserThread;
 
 namespace chromeos {
 
 // static
 std::string DesktopNotificationsTest::log_output_;
 
-class MockNotificationUI : public BalloonCollectionImpl::NotificationUI {
+class BalloonViewImpl;
+
+#if !defined(USE_AURA)
+class MockNotificationUI : public BalloonCollectionImplType::NotificationUI {
  public:
   virtual void Add(Balloon* balloon) {}
   virtual bool Update(Balloon* balloon) { return false; }
@@ -25,31 +43,54 @@ class MockNotificationUI : public BalloonCollectionImpl::NotificationUI {
                                   const gfx::Size& size) {}
   virtual void SetActiveView(BalloonViewImpl* view) {}
 };
+#endif
 
-MockBalloonCollection::MockBalloonCollection() {
-  set_notification_ui(new MockNotificationUI());
-}
+// Test version of the balloon collection which counts the number
+// of notifications that are added to it.
+class MockBalloonCollection : public BalloonCollectionImplType {
+ public:
+  MockBalloonCollection() {
+#if !defined(USE_AURA)
+    set_notification_ui(new MockNotificationUI());
+#endif
+  }
+  virtual ~MockBalloonCollection() {};
 
-MockBalloonCollection::~MockBalloonCollection() {}
+  // BalloonCollectionImplType overrides
+  virtual void Add(const Notification& notification, Profile* profile) OVERRIDE;
+  virtual Balloon* MakeBalloon(const Notification& notification,
+                               Profile* profile) OVERRIDE;
+  virtual void OnBalloonClosed(Balloon* source) OVERRIDE;
+
+  // Number of balloons being shown.
+  std::set<Balloon*>& balloons() { return balloons_; }
+  int count() const { return balloons_.size(); }
+
+ private:
+  std::set<Balloon*> balloons_;
+};
 
 void MockBalloonCollection::Add(const Notification& notification,
                                 Profile* profile) {
   // Swap in a logging proxy for the purpose of logging calls that
   // would be made into javascript, then pass this down to the
   // balloon collection.
+  typedef LoggingNotificationDelegate<DesktopNotificationsTest>
+      LoggingNotificationProxy;
   Notification test_notification(
       notification.origin_url(),
       notification.content_url(),
       notification.display_source(),
       notification.replace_id(),
       new LoggingNotificationProxy(notification.notification_id()));
-  BalloonCollectionImpl::Add(test_notification, profile);
+  BalloonCollectionImplType::Add(test_notification, profile);
 }
 
 Balloon* MockBalloonCollection::MakeBalloon(const Notification& notification,
                                             Profile* profile) {
   // Start with a normal balloon but mock out the view.
-  Balloon* balloon = BalloonCollectionImpl::MakeBalloon(notification, profile);
+  Balloon* balloon =
+      BalloonCollectionImplType::MakeBalloon(notification, profile);
   balloon->set_view(new MockBalloonView(balloon));
   balloons_.insert(balloon);
   return balloon;
@@ -57,19 +98,10 @@ Balloon* MockBalloonCollection::MakeBalloon(const Notification& notification,
 
 void MockBalloonCollection::OnBalloonClosed(Balloon* source) {
   balloons_.erase(source);
-  BalloonCollectionImpl::OnBalloonClosed(source);
+  BalloonCollectionImplType::OnBalloonClosed(source);
 }
 
-int MockBalloonCollection::UppermostVerticalPosition() {
-  int min = 0;
-  std::set<Balloon*>::iterator iter;
-  for (iter = balloons_.begin(); iter != balloons_.end(); ++iter) {
-    int pos = (*iter)->GetPosition().y();
-    if (iter == balloons_.begin() || pos < min)
-      min = pos;
-  }
-  return min;
-}
+// DesktopNotificationsTest
 
 DesktopNotificationsTest::DesktopNotificationsTest()
     : ui_thread_(BrowserThread::UI, &message_loop_) {
@@ -79,12 +111,15 @@ DesktopNotificationsTest::~DesktopNotificationsTest() {
 }
 
 void DesktopNotificationsTest::SetUp() {
+#if defined(USE_AURA)
+  // Make sure a root window has been instantiated.
+  aura::RootWindow::GetInstance();
+#endif
   browser::RegisterLocalState(&local_state_);
   profile_.reset(new TestingProfile());
   balloon_collection_ = new MockBalloonCollection();
-  ui_manager_.reset(new NotificationUIManager(&local_state_));
-  ui_manager_->Initialize(balloon_collection_);
-  balloon_collection_->set_space_change_listener(ui_manager_.get());
+  ui_manager_.reset(NotificationUIManager::Create(&local_state_,
+                                                  balloon_collection_));
   service_.reset(new DesktopNotificationService(profile(), ui_manager_.get()));
   log_output_.clear();
 }
@@ -95,9 +130,9 @@ void DesktopNotificationsTest::TearDown() {
   profile_.reset(NULL);
 }
 
-DesktopNotificationHostMsg_Show_Params
+content::ShowDesktopNotificationHostMsgParams
 DesktopNotificationsTest::StandardTestNotification() {
-  DesktopNotificationHostMsg_Show_Params params;
+  content::ShowDesktopNotificationHostMsgParams params;
   params.notification_id = 0;
   params.origin = GURL("http://www.google.com");
   params.is_html = false;
@@ -109,7 +144,8 @@ DesktopNotificationsTest::StandardTestNotification() {
 }
 
 TEST_F(DesktopNotificationsTest, TestShow) {
-  DesktopNotificationHostMsg_Show_Params params = StandardTestNotification();
+  content::ShowDesktopNotificationHostMsgParams params =
+      StandardTestNotification();
   params.notification_id = 1;
   EXPECT_TRUE(service_->ShowDesktopNotification(
       params, 0, 0, DesktopNotificationService::PageNotification));
@@ -117,7 +153,7 @@ TEST_F(DesktopNotificationsTest, TestShow) {
   MessageLoopForUI::current()->RunAllPending();
   EXPECT_EQ(1, balloon_collection_->count());
 
-  DesktopNotificationHostMsg_Show_Params params2;
+  content::ShowDesktopNotificationHostMsgParams params2;
   params2.origin = GURL("http://www.google.com");
   params2.is_html = true;
   params2.contents_url = GURL("http://www.google.com/notification.html");
@@ -134,7 +170,8 @@ TEST_F(DesktopNotificationsTest, TestShow) {
 }
 
 TEST_F(DesktopNotificationsTest, TestClose) {
-  DesktopNotificationHostMsg_Show_Params params = StandardTestNotification();
+  content::ShowDesktopNotificationHostMsgParams params =
+      StandardTestNotification();
   params.notification_id = 1;
 
   // Request a notification; should open a balloon.
@@ -163,7 +200,8 @@ TEST_F(DesktopNotificationsTest, TestCancel) {
   int route_id = 0;
   int notification_id = 1;
 
-  DesktopNotificationHostMsg_Show_Params params = StandardTestNotification();
+  content::ShowDesktopNotificationHostMsgParams params =
+      StandardTestNotification();
   params.notification_id = notification_id;
 
   // Request a notification; should open a balloon.
@@ -191,10 +229,17 @@ TEST_F(DesktopNotificationsTest, TestManyNotifications) {
   int route_id = 0;
 
   // Request lots of identical notifications.
+#if defined(USE_AURA)
+  // Aura is using the non-chromeos notification system which has a limit
+  // of 4 visible toasts.
+  const int kLotsOfToasts = 4;
+#else
   const int kLotsOfToasts = 20;
+#endif
   for (int id = 1; id <= kLotsOfToasts; ++id) {
     SCOPED_TRACE(base::StringPrintf("Creation loop: id=%d", id));
-    DesktopNotificationHostMsg_Show_Params params = StandardTestNotification();
+    content::ShowDesktopNotificationHostMsgParams params =
+        StandardTestNotification();
     params.notification_id = id;
     EXPECT_TRUE(service_->ShowDesktopNotification(
         params, process_id, route_id,
@@ -255,7 +300,8 @@ TEST_F(DesktopNotificationsTest, TestEarlyDestruction) {
 TEST_F(DesktopNotificationsTest, TestUserInputEscaping) {
   // Create a test script with some HTML; assert that it doesn't get into the
   // data:// URL that's produced for the balloon.
-  DesktopNotificationHostMsg_Show_Params params = StandardTestNotification();
+  content::ShowDesktopNotificationHostMsgParams params =
+      StandardTestNotification();
   params.title = ASCIIToUTF16("<script>window.alert('uh oh');</script>");
   params.body = ASCIIToUTF16("<i>this text is in italics</i>");
   params.notification_id = 1;

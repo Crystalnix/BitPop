@@ -17,6 +17,7 @@
 //
 // * The encoding need not be specified on POSIX systems, although some
 //   POSIX-compliant systems do specify an encoding.  Mac OS X uses UTF-8.
+//   Chrome OS also uses UTF-8.
 //   Linux does not specify an encoding, but in practice, the locale's
 //   character set may be used.
 //
@@ -104,7 +105,7 @@
 #include <string>
 #include <vector>
 
-#include "base/base_api.h"
+#include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/string16.h"
@@ -124,7 +125,7 @@ class Pickle;
 
 // An abstraction to isolate users from the differences between native
 // pathnames on different platforms.
-class BASE_API FilePath {
+class BASE_EXPORT FilePath {
  public:
 #if defined(OS_POSIX)
   // On most platforms, native pathnames are char arrays, and the encoding
@@ -294,6 +295,21 @@ class BASE_API FilePath {
   // known-ASCII filename.
   std::string MaybeAsASCII() const;
 
+  // Return the path as UTF-8.
+  //
+  // This function is *unsafe* as there is no way to tell what encoding is
+  // used in file names on POSIX systems other than Mac and Chrome OS,
+  // although UTF-8 is practically used everywhere these days. To mitigate
+  // the encoding issue, this function internally calls
+  // SysNativeMBToWide() on POSIX systems other than Mac and Chrome OS,
+  // per assumption that the current locale's encoding is used in file
+  // names, but this isn't a perfect solution.
+  //
+  // Once it becomes safe to to stop caring about non-UTF-8 file names,
+  // the SysNativeMBToWide() hack will be removed from the code, along
+  // with "Unsafe" in the function name.
+  std::string AsUTF8Unsafe() const;
+
   // Older Chromium code assumes that paths are always wstrings.
   // This function converts wstrings to FilePaths, and is
   // useful to smooth porting that old code to the FilePath API.
@@ -311,6 +327,16 @@ class BASE_API FilePath {
   //   LossyDisplayName() function, but keep in mind that you can't
   //   ever use the result of that again as a path.
   static FilePath FromWStringHack(const std::wstring& wstring);
+
+  // Returns a FilePath object from a path name in UTF-8. This function
+  // should only be used for cases where you are sure that the input
+  // string is UTF-8.
+  //
+  // Like AsUTF8Unsafe(), this function is unsafe. This function
+  // internally calls SysWideToNativeMB() on POSIX systems other than Mac
+  // and Chrome OS, to mitigate the encoding issue. See the comment at
+  // AsUTF8Unsafe() for details.
+  static FilePath FromUTF8Unsafe(const std::string& utf8);
 
   void WriteToPickle(Pickle* pickle);
   bool ReadFromPickle(Pickle* pickle, void** iter);
@@ -380,8 +406,8 @@ class BASE_API FilePath {
 
 // Provide a hash function so that hash_sets and maps can contain FilePath
 // objects.
+namespace BASE_HASH_NAMESPACE {
 #if defined(COMPILER_GCC)
-namespace __gnu_cxx {
 
 template<>
 struct hash<FilePath> {
@@ -390,15 +416,14 @@ struct hash<FilePath> {
   }
 };
 
-}  // namespace __gnu_cxx
 #elif defined(COMPILER_MSVC)
-namespace stdext {
 
 inline size_t hash_value(const FilePath& f) {
   return hash_value(f.value());
 }
 
-}  // namespace stdext
 #endif  // COMPILER
+
+}  // namespace BASE_HASH_NAMESPACE
 
 #endif  // BASE_FILE_PATH_H_

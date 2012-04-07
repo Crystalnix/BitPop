@@ -1,33 +1,6 @@
-#!/usr/bin/python2.4
-#
-# Copyright 2009, Google Inc.
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are
-# met:
-#
-#        * Redistributions of source code must retain the above copyright
-#    notice, this list of conditions and the following disclaimer.
-#        * Redistributions in binary form must reproduce the above
-#     copyright notice, this list of conditions and the following disclaimer
-#     in the documentation and/or other materials provided with the
-#     distribution.
-#        * Neither the name of Google Inc. nor the names of its
-#     contributors may be used to endorse or promote products derived from
-#     this software without specific prior written permission.
-#
-#     THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-#     "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-#     LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-#     A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-#     OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-#     SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-#     LIMITED TO, PROCUREMENT  OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-#     DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-#     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-#     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-#     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
 
 """Crocodile HTML output."""
 
@@ -140,10 +113,11 @@ COV_TYPE_CLASS = {None: 'missing', 0: 'instr', 1: 'covered', 2: ''}
 class CrocHtml(object):
   """Crocodile HTML output class."""
 
-  def __init__(self, cov, output_root):
+  def __init__(self, cov, output_root, base_url=None):
     """Constructor."""
     self.cov = cov
     self.output_root = output_root
+    self.base_url = base_url
     self.xml_impl = xml.dom.getDOMImplementation()
     self.time_string = 'Coverage information generated %s.' % time.asctime()
 
@@ -160,9 +134,17 @@ class CrocHtml(object):
     f = HtmlFile(self.xml_impl, self.output_root + '/' + filename)
 
     f.head.E('title').Text(title)
-    f.head.E(
-        'link', rel='stylesheet', type='text/css',
-        href='../' * (len(filename.split('/')) - 1) + 'croc.css')
+
+    if self.base_url:
+      css_href = self.base_url + 'croc.css'
+      base_href = self.base_url + os.path.dirname(filename)
+      if not base_href.endswith('/'):
+        base_href += '/'
+      f.head.E('base', href=base_href)
+    else:
+      css_href = '../' * (len(filename.split('/')) - 1) + 'croc.css'
+
+    f.head.E('link', rel='stylesheet', type='text/css', href=css_href)
 
     return f
 
@@ -450,4 +432,3 @@ class CrocHtml(object):
 
     # Write files in root directory
     self.WriteRoot()
-

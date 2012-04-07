@@ -7,10 +7,12 @@
 #pragma once
 
 #include <gtk/gtk.h>
+
 #include <set>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/remove_rows_table_model.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/base/models/tree_model.h"
@@ -111,10 +113,10 @@ class TableAdapter : public ui::TableModelObserver {
                                     gpointer user_data);
 
   // ui::TableModelObserver implementation.
-  virtual void OnModelChanged();
-  virtual void OnItemsChanged(int start, int length);
-  virtual void OnItemsAdded(int start, int length);
-  virtual void OnItemsRemoved(int start, int length);
+  virtual void OnModelChanged() OVERRIDE;
+  virtual void OnItemsChanged(int start, int length) OVERRIDE;
+  virtual void OnItemsAdded(int start, int length) OVERRIDE;
+  virtual void OnItemsRemoved(int start, int length) OVERRIDE;
 
  private:
   // Return whether the row pointed to by |iter| is a group row, i.e. a group
@@ -175,12 +177,13 @@ class TreeAdapter : public ui::TreeModelObserver {
   virtual void TreeNodesAdded(ui::TreeModel* model,
                               ui::TreeModelNode* parent,
                               int start,
-                              int count);
+                              int count) OVERRIDE;
   virtual void TreeNodesRemoved(ui::TreeModel* model,
                                 ui::TreeModelNode* parent,
                                 int start,
-                                int count);
-  virtual void TreeNodeChanged(ui::TreeModel* model, ui::TreeModelNode* node);
+                                int count) OVERRIDE;
+  virtual void TreeNodeChanged(ui::TreeModel* model,
+                               ui::TreeModelNode* node) OVERRIDE;
   // End TreeModelObserver implementation.
 
  private:

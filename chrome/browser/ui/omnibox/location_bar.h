@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,22 +15,22 @@
 #include <string>
 
 #include "base/string16.h"
-#include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/instant/instant_delegate.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class ExtensionAction;
-class InstantController;
 class LocationBarTesting;
 class OmniboxView;
-class TabContents;
-class TabContentsWrapper;
+
+namespace content {
+class WebContents;
+}
 
 class LocationBar {
  public:
-  // Shows the first run information bubble anchored to the location bar.
-  virtual void ShowFirstRunBubble(FirstRun::BubbleType bubble_type) = 0;
+  // Shows the first run bubble anchored to the location bar.
+  virtual void ShowFirstRunBubble() = 0;
 
   // Sets the suggested text to show in the omnibox. This is shown in addition
   // to the current text of the omnibox.
@@ -38,7 +38,7 @@ class LocationBar {
                                 InstantCompleteBehavior behavior) = 0;
 
   // Returns the string of text entered in the location bar.
-  virtual std::wstring GetInputString() const = 0;
+  virtual string16 GetInputString() const = 0;
 
   // Returns the WindowOpenDisposition that should be used to determine where
   // to open a URL entered in the location bar.
@@ -46,7 +46,7 @@ class LocationBar {
 
   // Returns the PageTransition that should be recorded in history when the URL
   // entered in the location bar is loaded.
-  virtual PageTransition::Type GetPageTransition() const = 0;
+  virtual content::PageTransition GetPageTransition() const = 0;
 
   // Accepts the current string of text entered in the location bar.
   virtual void AcceptInput() = 0;
@@ -68,9 +68,9 @@ class LocationBar {
   // extension is unloaded or crashes.
   virtual void InvalidatePageActions() = 0;
 
-  // Saves the state of the location bar to the specified TabContents, so that
+  // Saves the state of the location bar to the specified WebContents, so that
   // it can be restored later. (Done when switching tabs).
-  virtual void SaveStateToContents(TabContents* contents) = 0;
+  virtual void SaveStateToContents(content::WebContents* contents) = 0;
 
   // Reverts the location bar.  The bar's permanent text will be shown.
   virtual void Revert() = 0;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,20 +13,21 @@
 #include "base/memory/scoped_ptr.h"
 #include "media/base/message_loop_factory.h"
 
+class AudioManager;
 template <typename T> struct DefaultSingletonTraits;
-class WtlVideoRenderer;
 
 namespace media {
 
-class PipelineImpl;
+class Pipeline;
+class VideoRendererBase;
 
 class Movie {
  public:
-   // Returns the singleton instance.
+  // Returns the singleton instance.
   static Movie* GetInstance();
 
   // Open a movie.
-  bool Open(const wchar_t* url, WtlVideoRenderer* video_renderer);
+  bool Open(const wchar_t* url, VideoRendererBase* video_renderer);
 
   // Set playback rate.
   void Play(float rate);
@@ -82,8 +83,9 @@ class Movie {
   Movie();
   virtual ~Movie();
 
-  scoped_refptr<PipelineImpl> pipeline_;
+  scoped_refptr<Pipeline> pipeline_;
   scoped_ptr<media::MessageLoopFactory> message_loop_factory_;
+  scoped_refptr<AudioManager> audio_manager_;
 
   bool enable_audio_;
   bool enable_draw_;

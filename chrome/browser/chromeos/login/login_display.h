@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,21 +11,13 @@
 
 #include "base/string16.h"
 #include "chrome/browser/chromeos/login/help_app_launcher.h"
+#include "chrome/browser/chromeos/login/remove_user_delegate.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
 namespace chromeos {
-
-// Delegate to be used while user removing.
-class RemoveUserDelegate {
- public:
-  // Called right before actual user removal process is initiated.
-  virtual void OnBeforeUserRemoved(const std::string& username) = 0;
-
-  // Called right after user removal process has been initiated.
-  virtual void OnUserRemoved(const std::string& username) = 0;
-};
 
 // TODO(nkostylev): Extract interface, create a BaseLoginDisplay class.
 // An abstract class that defines login UI implementation.
@@ -42,8 +34,17 @@ class LoginDisplay : public RemoveUserDelegate {
     // Users decides to sign in into captive portal.
     virtual void FixCaptivePortal() = 0;
 
+    // Sets the displayed email for the next login attempt with |CompleteLogin|.
+    // If it succeeds, user's displayed email value will be updated to |email|.
+    virtual void SetDisplayEmail(const std::string& email) = 0;
+
+    // Complete sign process with specified |username| and |password|.
+    // Used for new users authenticated through an extension.
+    virtual void CompleteLogin(const std::string& username,
+                               const std::string& password) = 0;
+
     // Sign in using |username| and |password| specified.
-    // Used for both known and new users.
+    // Used for both known users only.
     virtual void Login(const std::string& username,
                        const std::string& password) = 0;
 
@@ -64,27 +65,34 @@ class LoginDisplay : public RemoveUserDelegate {
   LoginDisplay(Delegate* delegate, const gfx::Rect& background_bounds);
   virtual ~LoginDisplay();
 
-  // Call for destroying a pointer of type LoginDisplay, since some subclasses
-  // are Singletons
-  virtual void Destroy();
-
   // Initializes login UI with the user pods based on list of known users and
   // guest, new user pods if those are enabled.
-  virtual void Init(const std::vector<UserManager::User>& users,
+  virtual void Init(const UserList& users,
                     bool show_guest,
+                    bool show_users,
                     bool show_new_user) = 0;
 
+  // Notifies the login UI that the preferences defining how to visualize it to
+  // the user have changed and it needs to refresh.
+  virtual void OnPreferencesChanged() = 0;
 
   // Called when user image has been changed.
   // |user| contains updated user.
-  virtual void OnUserImageChanged(UserManager::User* user) = 0;
+  virtual void OnUserImageChanged(const User& user) = 0;
 
   // After this call login display should be ready to be smoothly destroyed
   // (e.g. hide throbber, etc.).
   virtual void OnFadeOut() = 0;
 
+  // Called when user is successfully authenticated.
+  virtual void OnLoginSuccess(const std::string& username) = 0;
+
   // Changes enabled state of the UI.
   virtual void SetUIEnabled(bool is_enabled) = 0;
+
+  // Selects user entry with specified |index|.
+  // Does nothing if current user is already selected.
+  virtual void SelectPod(int index) = 0;
 
   // Displays error with |error_msg_id| specified.
   // |login_attempts| shows number of login attempts made by current user.
@@ -92,6 +100,9 @@ class LoginDisplay : public RemoveUserDelegate {
   virtual void ShowError(int error_msg_id,
                          int login_attempts,
                          HelpAppLauncher::HelpTopic help_topic_id) = 0;
+
+  // Proceed with Gaia flow because password has changed.
+  virtual void ShowGaiaPasswordChanged(const std::string& username) = 0;
 
   gfx::Rect background_bounds() const { return background_bounds_; }
   void set_background_bounds(const gfx::Rect background_bounds){

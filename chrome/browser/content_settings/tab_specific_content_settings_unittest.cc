@@ -3,17 +3,23 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/test/test_browser_thread.h"
 #include "net/base/cookie_monster.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class TabSpecificContentSettingsTest : public RenderViewHostTestHarness {
+using content::BrowserThread;
+
+class TabSpecificContentSettingsTest : public ChromeRenderViewHostTestHarness {
  public:
-  TabSpecificContentSettingsTest() : RenderViewHostTestHarness() {}
+  TabSpecificContentSettingsTest()
+      : browser_thread_(BrowserThread::UI, &message_loop_) {}
 
  private:
+  content::TestBrowserThread browser_thread_;
+
   DISALLOW_COPY_AND_ASSIGN(TabSpecificContentSettingsTest);
 };
 

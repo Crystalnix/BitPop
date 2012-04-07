@@ -6,6 +6,7 @@
 
 #include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
@@ -14,7 +15,9 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/browser.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/notification_service.h"
 
 namespace events {
 const char kOnInputStarted[] = "omnibox.onInputStarted";
@@ -37,10 +40,11 @@ const char kDescriptionStylesType[] = "type";
 const char kDescriptionStylesOffset[] = "offset";
 const char kDescriptionStylesLength[] = "length";
 
-static base::LazyInstance<PropertyAccessor<ExtensionOmniboxSuggestion> >
-    g_extension_omnibox_suggestion_property_accessor(base::LINKER_INITIALIZED);
+static base::LazyInstance<base::PropertyAccessor<ExtensionOmniboxSuggestion> >
+    g_extension_omnibox_suggestion_property_accessor =
+        LAZY_INSTANCE_INITIALIZER;
 
-PropertyAccessor<ExtensionOmniboxSuggestion>& GetPropertyAccessor() {
+base::PropertyAccessor<ExtensionOmniboxSuggestion>& GetPropertyAccessor() {
   return g_extension_omnibox_suggestion_property_accessor.Get();
 }
 
@@ -96,9 +100,10 @@ void ExtensionOmniboxEventRouter::OnInputEntered(
   profile->GetExtensionEventRouter()->DispatchEventToExtension(
       extension_id, events::kOnInputEntered, json_args, profile, GURL());
 
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_OMNIBOX_INPUT_ENTERED,
-      Source<Profile>(profile), NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_OMNIBOX_INPUT_ENTERED,
+      content::Source<Profile>(profile),
+      content::NotificationService::NoDetails());
 }
 
 // static
@@ -137,10 +142,10 @@ bool OmniboxSendSuggestionsFunction::RunImpl() {
     }
   }
 
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_OMNIBOX_SUGGESTIONS_READY,
-      Source<Profile>(profile_),
-      Details<ExtensionOmniboxSuggestions>(&suggestions));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_OMNIBOX_SUGGESTIONS_READY,
+      content::Source<Profile>(profile_->GetOriginalProfile()),
+      content::Details<ExtensionOmniboxSuggestions>(&suggestions));
 
   return true;
 }
@@ -168,10 +173,10 @@ bool OmniboxSetDefaultSuggestionFunction::RunImpl() {
       profile_->GetExtensionService()->GetPropertyBag(GetExtension()),
       suggestion);
 
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
-      Source<Profile>(profile_),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_OMNIBOX_DEFAULT_SUGGESTION_CHANGED,
+      content::Source<Profile>(profile_->GetOriginalProfile()),
+      content::NotificationService::NoDetails());
 
   return true;
 }
@@ -277,11 +282,16 @@ void LaunchAppFromOmnibox(const AutocompleteMatch& match,
   if (!extension)
     return;
 
+  UMA_HISTOGRAM_ENUMERATION(extension_misc::kAppLaunchHistogram,
+                            extension_misc::APP_LAUNCH_OMNIBOX_APP,
+                            extension_misc::APP_LAUNCH_BUCKET_BOUNDARY);
+
   // Look at the preferences to find the right launch container.  If no
   // preference is set, launch as a regular tab.
   extension_misc::LaunchContainer launch_container =
       service->extension_prefs()->GetLaunchContainer(
           extension, ExtensionPrefs::LAUNCH_REGULAR);
 
-  Browser::OpenApplication(profile, extension, launch_container, disposition);
+  Browser::OpenApplication(profile, extension, launch_container, GURL(),
+                           disposition);
 }

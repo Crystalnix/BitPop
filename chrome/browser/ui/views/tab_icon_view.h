@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 #define CHROME_BROWSER_UI_VIEWS_TAB_ICON_VIEW_H_
 #pragma once
 
-#include "views/view.h"
+#include "base/compiler_specific.h"
+#include "ui/views/view.h"
 
 class SkBitmap;
-class TabContents;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -40,8 +40,8 @@ class TabIconView : public views::View {
   void set_is_light(bool is_light) { is_light_ = is_light; }
 
   // Overridden from View
-  virtual void OnPaint(gfx::Canvas* canvas);
-  virtual gfx::Size GetPreferredSize();
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
 
  private:
   void PaintThrobber(gfx::Canvas* canvas);

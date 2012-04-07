@@ -6,10 +6,11 @@
 
 #include <gtk/gtk.h>
 
-#include "base/stl_util-inl.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
@@ -20,22 +21,25 @@
 #include "chrome/browser/ui/gtk/global_menu_bar.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/gtk_util.h"
 
+using content::OpenURLParams;
+
 namespace {
 
 // The maximum number of most visited items to display.
-const unsigned int kMostVisitedCount = 12;
+const unsigned int kMostVisitedCount = 8;
 
 // The number of recently closed items to get.
-const unsigned int kRecentlyClosedCount = 10;
+const unsigned int kRecentlyClosedCount = 8;
 
 // Menus more than this many chars long will get trimmed.
 const int kMaximumMenuWidthInChars = 50;
@@ -57,24 +61,13 @@ struct GlobalHistoryMenu::GetIndexClosure {
 class GlobalHistoryMenu::HistoryItem {
  public:
   HistoryItem()
-      : icon_requested(false),
-        menu_item(NULL),
+      : menu_item(NULL),
         session_id(0) {}
 
   // The title for the menu item.
   string16 title;
   // The URL that will be navigated to if the user selects this item.
   GURL url;
-
-  // If the icon is being requested from the FaviconService, |icon_requested|
-  // will be true and |icon_handle| will be non-NULL. If this is false, then
-  // |icon_handle| will be NULL.
-  bool icon_requested;
-  // The Handle given to us by the FaviconService for the icon fetch request.
-  FaviconService::Handle icon_handle;
-
-  // The icon as a GtkImage for inclusion in a GtkImageMenuItem.
-  OwnedWidgetGtk icon_image;
 
   // A pointer to the menu_item. This is a weak reference in the GTK+ version
   // because the GtkMenu must sink the reference.
@@ -101,7 +94,6 @@ GlobalHistoryMenu::GlobalHistoryMenu(Browser* browser)
     : browser_(browser),
       profile_(browser_->profile()),
       top_sites_(NULL),
-      default_favicon_(NULL),
       tab_restore_service_(NULL) {
 }
 
@@ -124,8 +116,6 @@ void GlobalHistoryMenu::Init(GtkWidget* history_menu,
   g_signal_connect(history_menu_item, "activate",
                    G_CALLBACK(OnMenuActivateThunk), this);
 
-  default_favicon_ = GtkThemeService::GetDefaultFavicon(true);
-
   if (profile_) {
     top_sites_ = profile_->GetTopSites();
     if (top_sites_) {
@@ -133,13 +123,9 @@ void GlobalHistoryMenu::Init(GtkWidget* history_menu,
 
       // Register for notification when TopSites changes so that we can update
       // ourself.
-      registrar_.Add(this, NotificationType::TOP_SITES_CHANGED,
-                     Source<history::TopSites>(top_sites_));
+      registrar_.Add(this, chrome::NOTIFICATION_TOP_SITES_CHANGED,
+                     content::Source<history::TopSites>(top_sites_));
     }
-
-    registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
-                   Source<ThemeService>(
-                       ThemeServiceFactory::GetForProfile(profile_)));
   }
 }
 
@@ -148,7 +134,8 @@ void GlobalHistoryMenu::GetTopSitesData() {
 
   top_sites_->GetMostVisitedURLs(
       &top_sites_consumer_,
-      NewCallback(this, &GlobalHistoryMenu::OnTopSitesReceived));
+      base::Bind(&GlobalHistoryMenu::OnTopSitesReceived,
+                 base::Unretained(this)));
 }
 
 void GlobalHistoryMenu::OnTopSitesReceived(
@@ -168,10 +155,6 @@ void GlobalHistoryMenu::OnTopSitesReceived(
     item->title = visited.title;
     item->url = visited.url;
 
-    // The TopSites system doesn't give us icons; it gives us chrome:// urls
-    // to icons so fetch the icons normally.
-    GetFaviconForHistoryItem(item);
-
     AddHistoryItemToMenu(item,
                          history_menu_.get(),
                          GlobalMenuBar::TAG_MOST_VISITED,
@@ -185,33 +168,14 @@ GlobalHistoryMenu::HistoryItem* GlobalHistoryMenu::HistoryItemForMenuItem(
   return it != menu_item_history_map_.end() ? it->second : NULL;
 }
 
-bool GlobalHistoryMenu::HasValidHistoryItemForTab(
-    const TabRestoreService::Tab& entry) {
-  if (entry.navigations.empty())
-    return false;
-
-  const TabNavigation& current_navigation =
-      entry.navigations.at(entry.current_navigation_index);
-  if (current_navigation.virtual_url() == GURL(chrome::kChromeUINewTabURL))
-    return false;
-
-  return true;
-}
-
 GlobalHistoryMenu::HistoryItem* GlobalHistoryMenu::HistoryItemForTab(
     const TabRestoreService::Tab& entry) {
-  if (!HasValidHistoryItemForTab(entry))
-    return NULL;
-
   const TabNavigation& current_navigation =
       entry.navigations.at(entry.current_navigation_index);
   HistoryItem* item = new HistoryItem();
   item->title = current_navigation.title();
   item->url = current_navigation.virtual_url();
   item->session_id = entry.id;
-
-  // Tab navigations don't come with icons, so we always have to request them.
-  GetFaviconForHistoryItem(item);
 
   return item;
 }
@@ -227,22 +191,14 @@ GtkWidget* GlobalHistoryMenu::AddHistoryItemToMenu(HistoryItem* item,
     title = UTF8ToUTF16(url_string);
   ui::ElideString(title, kMaximumMenuWidthInChars, &title);
 
-  GtkWidget* menu_item = gtk_image_menu_item_new_with_label(
+  GtkWidget* menu_item = gtk_menu_item_new_with_label(
       UTF16ToUTF8(title).c_str());
-  gtk_util::SetAlwaysShowImage(menu_item);
 
   item->menu_item = menu_item;
   gtk_widget_show(menu_item);
   g_object_set_data(G_OBJECT(menu_item), "type-tag", GINT_TO_POINTER(tag));
   g_signal_connect(menu_item, "activate",
                    G_CALLBACK(OnRecentlyClosedItemActivatedThunk), this);
-  if (item->icon_image.get()) {
-    gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(menu_item),
-                                  item->icon_image.get());
-  } else if (!item->tabs.size()) {
-    gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(menu_item),
-                                  gtk_image_new_from_pixbuf(default_favicon_));
-  }
 
   std::string tooltip = gtk_util::BuildTooltipTitleFor(item->title, item->url);
   gtk_widget_set_tooltip_markup(menu_item, tooltip.c_str());
@@ -251,57 +207,6 @@ GtkWidget* GlobalHistoryMenu::AddHistoryItemToMenu(HistoryItem* item,
   gtk_menu_shell_insert(GTK_MENU_SHELL(menu), menu_item, index);
 
   return menu_item;
-}
-
-void GlobalHistoryMenu::GetFaviconForHistoryItem(HistoryItem* item) {
-  FaviconService* service =
-      profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-  FaviconService::Handle handle = service->GetFaviconForURL(
-      item->url,
-      history::FAVICON,
-      &favicon_consumer_,
-      NewCallback(this, &GlobalHistoryMenu::GotFaviconData));
-  favicon_consumer_.SetClientData(service, handle, item);
-  item->icon_handle = handle;
-  item->icon_requested = true;
-}
-
-void GlobalHistoryMenu::GotFaviconData(FaviconService::Handle handle,
-                                       history::FaviconData favicon) {
-  HistoryItem* item =
-      favicon_consumer_.GetClientData(
-          profile_->GetFaviconService(Profile::EXPLICIT_ACCESS), handle);
-  DCHECK(item);
-  item->icon_requested = false;
-  item->icon_handle = static_cast<CancelableRequestProvider::Handle>(NULL);
-
-  SkBitmap icon;
-  if (favicon.is_valid() &&
-      gfx::PNGCodec::Decode(favicon.image_data->front(),
-                            favicon.image_data->size(), &icon)) {
-    GdkPixbuf* pixbuf = gfx::GdkPixbufFromSkBitmap(&icon);
-    if (pixbuf) {
-      item->icon_image.Own(gtk_image_new_from_pixbuf(pixbuf));
-      g_object_unref(pixbuf);
-
-      if (item->menu_item) {
-        gtk_image_menu_item_set_image(
-            GTK_IMAGE_MENU_ITEM(item->menu_item),
-            item->icon_image.get());
-      }
-    }
-  }
-}
-
-void GlobalHistoryMenu::CancelFaviconRequest(HistoryItem* item) {
-  DCHECK(item);
-  if (item->icon_requested) {
-    FaviconService* service =
-        profile_->GetFaviconService(Profile::EXPLICIT_ACCESS);
-    service->CancelRequest(item->icon_handle);
-    item->icon_requested = false;
-    item->icon_handle = static_cast<CancelableRequestProvider::Handle>(NULL);
-  }
 }
 
 int GlobalHistoryMenu::GetIndexOfMenuItemWithTag(GtkWidget* menu, int tag_id) {
@@ -351,7 +256,6 @@ void GlobalHistoryMenu::ClearMenuCallback(GtkWidget* menu_item,
     HistoryItem* item = closure->menu_bar->HistoryItemForMenuItem(menu_item);
 
     if (item) {
-      closure->menu_bar->CancelFaviconRequest(item);
       closure->menu_bar->menu_item_history_map_.erase(menu_item);
       delete item;
     }
@@ -364,17 +268,11 @@ void GlobalHistoryMenu::ClearMenuCallback(GtkWidget* menu_item,
   }
 }
 
-void GlobalHistoryMenu::Observe(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
-  if (type.value == NotificationType::BROWSER_THEME_CHANGED) {
-    // Keeping track of which menu items have the default icon is going an
-    // error-prone pain, so instead just store the new default favicon and
-    // we'll update on the next menu change event.
-    default_favicon_ = GtkThemeService::GetDefaultFavicon(true);
-  } else if (type.value == NotificationType::TOP_SITES_CHANGED) {
-    if (Source<history::TopSites>(source).ptr() == top_sites_)
-      GetTopSitesData();
+void GlobalHistoryMenu::Observe(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_TOP_SITES_CHANGED) {
+    GetTopSitesData();
   } else {
     NOTREACHED();
   }
@@ -403,27 +301,11 @@ void GlobalHistoryMenu::TabRestoreServiceChanged(TabRestoreService* service) {
       if (tabs.empty())
         continue;
 
-      // Check that this window has valid content. Sometimes it is possible for
-      // there to not be any subitems for a given window; if that is the case,
-      // do not add the entry to the main menu.
-      int valid_tab_count = 0;
-      std::vector<TabRestoreService::Tab>::const_iterator it;
-      for (it = tabs.begin(); it != tabs.end(); ++it) {
-        if (HasValidHistoryItemForTab(*it))
-          valid_tab_count++;
-      }
-      if (valid_tab_count == 0)
-        continue;
-
-      // Create the item for the parent/window. Do not set the title yet
-      // because the actual number of items that are in the menu will not be
-      // known until things like the NTP are filtered out, which is done when
-      // the tab items are actually created.
+      // Create the item for the parent/window.
       HistoryItem* item = new HistoryItem();
       item->session_id = entry_win->id;
 
       GtkWidget* submenu = gtk_menu_new();
-
       GtkWidget* restore_item = gtk_menu_item_new_with_label(
           l10n_util::GetStringUTF8(
               IDS_HISTORY_CLOSED_RESTORE_WINDOW_LINUX).c_str());
@@ -446,22 +328,18 @@ void GlobalHistoryMenu::TabRestoreServiceChanged(TabRestoreService* service) {
 
       // Loop over the window's tabs and add them to the submenu.
       int subindex = 2;
-      for (it = tabs.begin(); it != tabs.end(); ++it) {
-        TabRestoreService::Tab tab = *it;
+      std::vector<TabRestoreService::Tab>::const_iterator iter;
+      for (iter = tabs.begin(); iter != tabs.end(); ++iter) {
+        TabRestoreService::Tab tab = *iter;
         HistoryItem* tab_item = HistoryItemForTab(tab);
-        if (tab_item) {
-          item->tabs.push_back(tab_item);
-          AddHistoryItemToMenu(tab_item,
-                               submenu,
-                               GlobalMenuBar::TAG_RECENTLY_CLOSED,
-                               subindex++);
-        }
+        item->tabs.push_back(tab_item);
+        AddHistoryItemToMenu(tab_item,
+                             submenu,
+                             GlobalMenuBar::TAG_RECENTLY_CLOSED,
+                             subindex++);
       }
 
-      // Now that the number of tabs that has been added is known, set the
-      // title of the parent menu item.
-      std::string title =
-          (item->tabs.size() == 1) ?
+      std::string title = item->tabs.size() == 1 ?
           l10n_util::GetStringUTF8(
               IDS_NEW_TAB_RECENTLY_CLOSED_WINDOW_SINGLE) :
           l10n_util::GetStringFUTF8(
@@ -469,9 +347,7 @@ void GlobalHistoryMenu::TabRestoreServiceChanged(TabRestoreService* service) {
               base::IntToString16(item->tabs.size()));
 
       // Create the menu item parent. Unlike mac, it's can't be activated.
-      GtkWidget* parent_item = gtk_image_menu_item_new_with_label(
-          title.c_str());
-      gtk_util::SetAlwaysShowImage(parent_item);
+      GtkWidget* parent_item = gtk_menu_item_new_with_label(title.c_str());
       gtk_widget_show(parent_item);
       g_object_set_data(G_OBJECT(parent_item), "type-tag",
                         GINT_TO_POINTER(GlobalMenuBar::TAG_RECENTLY_CLOSED));
@@ -481,16 +357,13 @@ void GlobalHistoryMenu::TabRestoreServiceChanged(TabRestoreService* service) {
                             index++);
       ++added_count;
     } else if (entry->type == TabRestoreService::TAB) {
-      TabRestoreService::Tab* tab =
-          static_cast<TabRestoreService::Tab*>(entry);
+      TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
       HistoryItem* item = HistoryItemForTab(*tab);
-      if (item) {
-        AddHistoryItemToMenu(item,
-                             history_menu_.get(),
-                             GlobalMenuBar::TAG_RECENTLY_CLOSED,
-                             index++);
-        ++added_count;
-      }
+      AddHistoryItemToMenu(item,
+                           history_menu_.get(),
+                           GlobalMenuBar::TAG_RECENTLY_CLOSED,
+                           index++);
+      ++added_count;
     }
   }
 }
@@ -511,11 +384,11 @@ void GlobalHistoryMenu::OnRecentlyClosedItemActivated(GtkWidget* sender) {
       TabRestoreServiceFactory::GetForProfile(browser_->profile());
   if (item->session_id && service) {
     service->RestoreEntryById(browser_->tab_restore_service_delegate(),
-                              item->session_id, false);
+                              item->session_id, UNKNOWN);
   } else {
     DCHECK(item->url.is_valid());
-    browser_->OpenURL(item->url, GURL(), disposition,
-                      PageTransition::AUTO_BOOKMARK);
+    browser_->OpenURL(OpenURLParams(item->url, content::Referrer(), disposition,
+                      content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
   }
 }
 

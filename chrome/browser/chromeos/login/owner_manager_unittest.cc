@@ -7,17 +7,22 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
 #include "chrome/browser/chromeos/login/mock_owner_key_utils.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "crypto/nss_util.h"
 #include "crypto/rsa_private_key.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
 using ::crypto::RSAPrivateKey;
 using ::testing::DoAll;
 using ::testing::Eq;
@@ -30,52 +35,77 @@ namespace chromeos {
 
 ////////////////////////////////////////////////////////////////////////////////
 // MockKeyLoadObserver
+MockKeyLoadObserver::MockKeyLoadObserver(base::WaitableEvent* e)
+    : success_expected_(false),
+      event_(e),
+      observed_(false) {
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_FAILED,
+      content::NotificationService::AllSources());
+  registrar_.Add(
+      this,
+      chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED,
+      content::NotificationService::AllSources());
+}
 
 MockKeyLoadObserver::~MockKeyLoadObserver() {
   DCHECK(observed_);
 }
 
-void MockKeyLoadObserver::Observe(NotificationType type,
-                                  const NotificationSource& source,
-                                  const NotificationDetails& details) {
+void MockKeyLoadObserver::Observe(int type,
+                                  const content::NotificationSource& source,
+                                  const content::NotificationDetails& details) {
   LOG(INFO) << "Observed key fetch event";
-  if (type == NotificationType::OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED) {
+  if (type == chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED) {
     DCHECK(success_expected_);
     observed_ = true;
-    if (quit_on_observe_)
-      MessageLoop::current()->Quit();
-  } else if (type == NotificationType::OWNER_KEY_FETCH_ATTEMPT_FAILED) {
+    if (event_)
+      event_->Signal();
+  } else if (type == chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_FAILED) {
     DCHECK(!success_expected_);
     observed_ = true;
-    if (quit_on_observe_)
-      MessageLoop::current()->Quit();
+    if (event_)
+      event_->Signal();
   }
+}
+
+void MockKeyLoadObserver::ExpectKeyFetchSuccess(bool should_succeed) {
+  success_expected_ = should_succeed;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // MockKeyUser
+MockKeyUser::MockKeyUser(const OwnerManager::KeyOpCode expected,
+                         base::WaitableEvent* e)
+    : expected_(expected),
+      event_(e) {
+}
 
 void MockKeyUser::OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
                                   const std::vector<uint8>& payload) {
   DCHECK_EQ(expected_, return_code);
-  if (quit_on_callback_)
-    MessageLoop::current()->Quit();
+  if (event_)
+    event_->Signal();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // MockKeyUpdateUser
 
 void MockKeyUpdateUser::OnKeyUpdated() {
-  MessageLoop::current()->Quit();
+  if (event_)
+    event_->Signal();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // MockSigner
 
 MockSigner::MockSigner(const OwnerManager::KeyOpCode expected,
-                       const std::vector<uint8>& sig)
+                       const std::vector<uint8>& sig,
+                       base::WaitableEvent* e)
     : expected_code_(expected),
-      expected_sig_(sig) {
+      expected_sig_(sig),
+      event_(e) {
 }
 
 MockSigner::~MockSigner() {}
@@ -85,13 +115,14 @@ void MockSigner::OnKeyOpComplete(const OwnerManager::KeyOpCode return_code,
   DCHECK_EQ(expected_code_, return_code);
   for (uint32 i = 0; i < payload.size(); ++i)
     DCHECK_EQ(expected_sig_[i], payload[i]);
-  MessageLoop::current()->Quit();
+  if (event_)
+    event_->Signal();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // OwnerManagerTest
 
-class OwnerManagerTest : public ::testing::Test {
+class OwnerManagerTest : public testing::Test {
  public:
   OwnerManagerTest()
       : message_loop_(MessageLoop::TYPE_UI),
@@ -132,8 +163,8 @@ class OwnerManagerTest : public ::testing::Test {
   FilePath tmpfile_;
 
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   std::vector<uint8> fake_public_key_;
   scoped_ptr<RSAPrivateKey> fake_private_key_;
@@ -145,20 +176,20 @@ class OwnerManagerTest : public ::testing::Test {
 TEST_F(OwnerManagerTest, UpdateOwnerKey) {
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
-  MockKeyUpdateUser delegate;
+  base::WaitableEvent event(true, false);
+  MockKeyUpdateUser delegate(&event);
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::UpdateOwnerKey,
-                        BrowserThread::UI,
-                        std::vector<uint8>(),
-                        &delegate));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::UpdateOwnerKey, manager.get(),
+                 BrowserThread::UI, std::vector<uint8>(), &delegate));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, LoadOwnerKeyFail) {
   StartUnowned();
-  MockKeyLoadObserver loader;
+  base::WaitableEvent event(true, false);
+  MockKeyLoadObserver loader(&event);
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
   EXPECT_CALL(*mock_, GetOwnerKeyFilePath())
@@ -169,13 +200,14 @@ TEST_F(OwnerManagerTest, LoadOwnerKeyFail) {
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::LoadOwnerKey));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::LoadOwnerKey, manager.get()));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, AlreadyLoadedOwnerKey) {
-  MockKeyLoadObserver loader;
+  base::WaitableEvent event(true, false);
+  MockKeyLoadObserver loader(&event);
   loader.ExpectKeyFetchSuccess(true);
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
@@ -186,14 +218,14 @@ TEST_F(OwnerManagerTest, AlreadyLoadedOwnerKey) {
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::LoadOwnerKey));
-
-  message_loop_.Run();
+      base::Bind(&OwnerManager::LoadOwnerKey, manager.get()));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, LoadOwnerKey) {
-  MockKeyLoadObserver loader;
+  base::WaitableEvent event(true, false);
+  MockKeyLoadObserver loader(&event);
   loader.ExpectKeyFetchSuccess(true);
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
@@ -206,15 +238,14 @@ TEST_F(OwnerManagerTest, LoadOwnerKey) {
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::LoadOwnerKey));
-
-  message_loop_.Run();
+      base::Bind(&OwnerManager::LoadOwnerKey, manager.get()));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, GetKeyFailDuringVerify) {
   StartUnowned();
-  MockKeyLoadObserver loader;
+  MockKeyLoadObserver loader(NULL);
   loader.ExpectKeyFetchSuccess(false);
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
@@ -224,17 +255,15 @@ TEST_F(OwnerManagerTest, GetKeyFailDuringVerify) {
       .WillOnce(Return(false))
       .RetiresOnSaturation();
 
-  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::KEY_UNAVAILABLE, &event);
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::Verify,
-                        BrowserThread::UI,
-                        std::string(),
-                        std::vector<uint8>(),
-                        &delegate));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::Verify, manager.get(), BrowserThread::UI,
+                 std::string(), std::vector<uint8>(), &delegate));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, AlreadyHaveKeysVerify) {
@@ -250,23 +279,20 @@ TEST_F(OwnerManagerTest, AlreadyHaveKeysVerify) {
       .RetiresOnSaturation();
 
   InjectKeys(manager.get());
-  MockKeyUser delegate(OwnerManager::SUCCESS);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::SUCCESS, &event);
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::Verify,
-                        BrowserThread::UI,
-                        data,
-                        sig,
-                        &delegate));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::Verify, manager.get(), BrowserThread::UI, data,
+                 sig, &delegate));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, GetKeyAndVerify) {
-  MockKeyLoadObserver loader;
+  MockKeyLoadObserver loader(NULL);
   loader.ExpectKeyFetchSuccess(true);
-  loader.SetQuitOnKeyFetch(false);
   scoped_refptr<OwnerManager> manager(new OwnerManager);
 
   std::string data;
@@ -282,17 +308,15 @@ TEST_F(OwnerManagerTest, GetKeyAndVerify) {
       .WillOnce(Return(true))
       .RetiresOnSaturation();
 
-  MockKeyUser delegate(OwnerManager::SUCCESS);
+  base::WaitableEvent event(true, false);
+  MockKeyUser delegate(OwnerManager::SUCCESS, &event);
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::Verify,
-                        BrowserThread::UI,
-                        data,
-                        sig,
-                        &delegate));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::Verify, manager.get(), BrowserThread::UI, data,
+                 sig, &delegate));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 TEST_F(OwnerManagerTest, AlreadyHaveKeysSign) {
@@ -309,16 +333,15 @@ TEST_F(OwnerManagerTest, AlreadyHaveKeysSign) {
       .RetiresOnSaturation();
 
   InjectKeys(manager.get());
-  MockSigner delegate(OwnerManager::SUCCESS, sig);
+  base::WaitableEvent event(true, false);
+  MockSigner delegate(OwnerManager::SUCCESS, sig, &event);
 
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(manager.get(),
-                        &OwnerManager::Sign,
-                        BrowserThread::UI,
-                        data,
-                        &delegate));
-  message_loop_.Run();
+      base::Bind(&OwnerManager::Sign, manager.get(), BrowserThread::UI, data,
+                 &delegate));
+  while (!event.IsSignaled())
+    message_loop_.RunAllPending();
 }
 
 }  // namespace chromeos

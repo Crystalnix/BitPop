@@ -1,24 +1,28 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/ownership_service.h"
 
+#include "base/command_line.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/browser_process.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 
-// We want to use NewRunnableMethod for non-static methods of this class but
-// need to disable reference counting since it is singleton.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(chromeos::OwnershipService);
+using content::BrowserThread;
 
 namespace chromeos {
 
-static base::LazyInstance<OwnershipService> g_ownership_service(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<OwnershipService> g_ownership_service =
+    LAZY_INSTANCE_INITIALIZER;
 
 //  static
 OwnershipService* OwnershipService::GetSharedInstance() {
@@ -28,12 +32,13 @@ OwnershipService* OwnershipService::GetSharedInstance() {
 OwnershipService::OwnershipService()
     : manager_(new OwnerManager),
       utils_(OwnerKeyUtils::Create()),
-      policy_(NULL),
-      ownership_status_(OWNERSHIP_UNKNOWN) {
+      ownership_status_(OWNERSHIP_UNKNOWN),
+      force_ownership_(CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kStubCrosSettings)) {
   notification_registrar_.Add(
       this,
-      NotificationType::OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED,
-      NotificationService::AllSources());
+      chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED,
+      content::NotificationService::AllSources());
 }
 
 OwnershipService::~OwnershipService() {}
@@ -44,29 +49,15 @@ void OwnershipService::Prewarm() {
   if (g_ownership_service == this) {
     // Start getting ownership status.
     BrowserThread::PostTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        NewRunnableMethod(this, &OwnershipService::FetchStatus));
+        BrowserThread::FILE, FROM_HERE,
+        base::Bind(&OwnershipService::FetchStatus, base::Unretained(this)));
   } else {
     // This can happen only for particular test: OwnershipServiceTest. It uses
     // mocks and for that uses OwnershipService not as a regular singleton but
     // as a resurrecting object. This behaviour conflicts with
-    // DISABLE_RUNNABLE_METHOD_REFCOUNT.  So avoid posting task in those
-    // circumstances in order to avoid accessing already deleted object.
+    // base::Unretained().  So avoid posting task in those circumstances
+    // in order to avoid accessing already deleted object.
   }
-}
-
-void OwnershipService::set_cached_policy(const em::PolicyData& pol) {
-  policy_.reset(pol.New());
-  policy_->CheckTypeAndMergeFrom(pol);
-}
-
-bool OwnershipService::has_cached_policy() {
-  return policy_.get();
-}
-
-const em::PolicyData& OwnershipService::cached_policy() {
-  return *(policy_.get());
 }
 
 bool OwnershipService::IsAlreadyOwned() {
@@ -74,6 +65,8 @@ bool OwnershipService::IsAlreadyOwned() {
 }
 
 OwnershipService::Status OwnershipService::GetStatus(bool blocking) {
+  if (force_ownership_)
+    return OWNERSHIP_TAKEN;
   Status status = OWNERSHIP_UNKNOWN;
   bool is_owned = false;
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
@@ -99,7 +92,7 @@ OwnershipService::Status OwnershipService::GetStatus(bool blocking) {
 void OwnershipService::StartLoadOwnerKeyAttempt() {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&TryLoadOwnerKeyAttempt, this));
+      base::Bind(&TryLoadOwnerKeyAttempt, base::Unretained(this)));
 }
 
 void OwnershipService::StartUpdateOwnerKey(const std::vector<uint8>& new_key,
@@ -109,11 +102,8 @@ void OwnershipService::StartUpdateOwnerKey(const std::vector<uint8>& new_key,
     thread_id = BrowserThread::UI;
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&OwnershipService::UpdateOwnerKey,
-                          this,
-                          thread_id,
-                          new_key,
-                          d));
+      base::Bind(&OwnershipService::UpdateOwnerKey, base::Unretained(this),
+                 thread_id, new_key, d));
   return;
 }
 
@@ -124,11 +114,8 @@ void OwnershipService::StartSigningAttempt(const std::string& data,
     thread_id = BrowserThread::UI;
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&OwnershipService::TrySigningAttempt,
-                          this,
-                          thread_id,
-                          data,
-                          d));
+      base::Bind(&OwnershipService::TrySigningAttempt, base::Unretained(this),
+                 thread_id, data, d));
   return;
 }
 
@@ -140,19 +127,15 @@ void OwnershipService::StartVerifyAttempt(const std::string& data,
     thread_id = BrowserThread::UI;
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableFunction(&OwnershipService::TryVerifyAttempt,
-                          this,
-                          thread_id,
-                          data,
-                          signature,
-                          d));
+      base::Bind(&OwnershipService::TryVerifyAttempt, base::Unretained(this),
+                 thread_id, data, signature, d));
   return;
 }
 
-void OwnershipService::Observe(NotificationType type,
-                               const NotificationSource& source,
-                               const NotificationDetails& details) {
-  if (type.value == NotificationType::OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED) {
+void OwnershipService::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_OWNER_KEY_FETCH_ATTEMPT_SUCCEEDED) {
     SetStatus(OWNERSHIP_TAKEN);
     notification_registrar_.RemoveAll();
   } else {
@@ -161,6 +144,8 @@ void OwnershipService::Observe(NotificationType type,
 }
 
 bool OwnershipService::CurrentUserIsOwner() {
+  if (force_ownership_)
+    return true;
   // If this user has the private key associated with the owner's
   // public key, this user is the owner.
   return IsAlreadyOwned() && manager_->EnsurePrivateKey();
@@ -195,7 +180,7 @@ void OwnershipService::TrySigningAttempt(OwnershipService* service,
     LOG(ERROR) << "Device not yet owned";
     BrowserThread::PostTask(
         thread_id, FROM_HERE,
-        NewRunnableFunction(&OwnershipService::FailAttempt, d));
+        base::Bind(&OwnershipService::FailAttempt, d));
     return;
   }
   service->manager()->Sign(thread_id, data, d);
@@ -212,7 +197,7 @@ void OwnershipService::TryVerifyAttempt(OwnershipService* service,
     LOG(ERROR) << "Device not yet owned";
     BrowserThread::PostTask(
         thread_id, FROM_HERE,
-        NewRunnableFunction(&OwnershipService::FailAttempt, d));
+        base::Bind(&OwnershipService::FailAttempt, d));
     return;
   }
   service->manager()->Verify(thread_id, data, signature, d);

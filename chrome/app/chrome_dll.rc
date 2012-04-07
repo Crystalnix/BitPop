@@ -33,7 +33,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 // pick those up in the WM_APPCOMMAND message.
 IDR_MAINFRAME ACCELERATORS
 BEGIN
-    "A",            IDC_AUTOFILL_DEFAULT,       VIRTKEY, CONTROL, SHIFT
+    "P",            IDC_ADVANCED_PRINT,         VIRTKEY, CONTROL, SHIFT
     VK_LEFT,        IDC_BACK,                   VIRTKEY, ALT
     VK_BACK,        IDC_BACK,                   VIRTKEY
     "D",            IDC_BOOKMARK_PAGE,          VIRTKEY, CONTROL
@@ -104,12 +104,15 @@ BEGIN
     "8",            IDC_SELECT_TAB_7,           VIRTKEY, CONTROL
     VK_NUMPAD8,     IDC_SELECT_TAB_7,           VIRTKEY, CONTROL
     "B",            IDC_SHOW_BOOKMARK_BAR,      VIRTKEY, CONTROL, SHIFT
+    "O",            IDC_SHOW_BOOKMARK_MANAGER,  VIRTKEY, CONTROL, SHIFT
     "J",            IDC_SHOW_DOWNLOADS,         VIRTKEY, CONTROL
     "H",            IDC_SHOW_HISTORY,           VIRTKEY, CONTROL
     "F",            IDC_SHOW_APP_MENU,          VIRTKEY, ALT
     "E",            IDC_SHOW_APP_MENU,          VIRTKEY, ALT
+    "M",            IDC_SHOW_AVATAR_MENU,       VIRTKEY, CONTROL, SHIFT
     VK_ESCAPE,      IDC_STOP,                   VIRTKEY
     VK_ESCAPE,      IDC_TASK_MANAGER,           VIRTKEY, SHIFT
+    VK_OEM_PERIOD,  IDC_TOGGLE_SPEECH_INPUT,    VIRTKEY, CONTROL, SHIFT
     "U",            IDC_VIEW_SOURCE,            VIRTKEY, CONTROL
     VK_OEM_MINUS,   IDC_ZOOM_MINUS,             VIRTKEY, CONTROL
     VK_OEM_MINUS,   IDC_ZOOM_MINUS,             VIRTKEY, CONTROL, SHIFT
@@ -244,11 +247,6 @@ END
 /////////////////////////////////////////////////////////////////////////////
 
 #include "installer_util_strings.rc"
-
-// We include these resources because all ICON types need to be in the
-// same .rc file.  See:
-// http://www.technewsgroups.net/group/microsoft.public.dotnet.general/topic2111.aspx
-#include "chrome\\default_plugin\\default_plugin_resources.rc"
 
 #ifndef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////

@@ -12,23 +12,26 @@
 #pragma once
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/ssl_config_service.h"
 #include "net/base/transport_security_state.h"
+#include "net/http/http_server_properties.h"
 #include "net/ftp/ftp_auth_cache.h"
 
 namespace net {
 class CertVerifier;
 class CookieStore;
-class DnsCertProvenanceChecker;
-class DnsRRResolver;
+class FraudulentCertificateReporter;
 class FtpTransactionFactory;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class HttpTransactionFactory;
 class NetworkDelegate;
+class OriginBoundCertService;
 class ProxyService;
 class URLRequest;
 class URLRequestJobFactory;
@@ -37,11 +40,15 @@ class URLRequestJobFactory;
 // instances. Note that URLRequestContext typically does not provide storage for
 // these member variables, since they may be shared. For the ones that aren't
 // shared, URLRequestContextStorage can be helpful in defining their storage.
-class NET_API URLRequestContext
+class NET_EXPORT URLRequestContext
     : public base::RefCountedThreadSafe<URLRequestContext>,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   URLRequestContext();
+
+  base::WeakPtr<URLRequestContext> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
 
   // Copies the state from |other| into this context.
   void CopyFrom(URLRequestContext* other);
@@ -70,19 +77,21 @@ class NET_API URLRequestContext
     cert_verifier_ = cert_verifier;
   }
 
-  DnsRRResolver* dnsrr_resolver() const {
-    return dnsrr_resolver_;
+  OriginBoundCertService* origin_bound_cert_service() const {
+    return origin_bound_cert_service_;
   }
 
-  void set_dnsrr_resolver(DnsRRResolver* dnsrr_resolver) {
-    dnsrr_resolver_ = dnsrr_resolver;
+  void set_origin_bound_cert_service(
+      OriginBoundCertService* origin_bound_cert_service) {
+    origin_bound_cert_service_ = origin_bound_cert_service;
   }
 
-  DnsCertProvenanceChecker* dns_cert_checker() const {
-    return dns_cert_checker_;
+  FraudulentCertificateReporter* fraudulent_certificate_reporter() const {
+    return fraudulent_certificate_reporter_;
   }
-  void set_dns_cert_checker(DnsCertProvenanceChecker* dns_cert_checker) {
-    dns_cert_checker_ = dns_cert_checker;
+  void set_fraudulent_certificate_reporter(
+      FraudulentCertificateReporter* fraudulent_certificate_reporter) {
+    fraudulent_certificate_reporter_ = fraudulent_certificate_reporter;
   }
 
   // Get the proxy service for this context.
@@ -115,7 +124,7 @@ class NET_API URLRequestContext
   }
 
   // Gets the ftp transaction factory for this context.
-  FtpTransactionFactory* ftp_transaction_factory() {
+  FtpTransactionFactory* ftp_transaction_factory() const {
     return ftp_transaction_factory_;
   }
   void set_ftp_transaction_factory(FtpTransactionFactory* factory) {
@@ -126,6 +135,14 @@ class NET_API URLRequestContext
     network_delegate_ = network_delegate;
   }
   NetworkDelegate* network_delegate() const { return network_delegate_; }
+
+  void set_http_server_properties(
+      HttpServerProperties* http_server_properties) {
+    http_server_properties_ = http_server_properties;
+  }
+  HttpServerProperties* http_server_properties() const {
+    return http_server_properties_;
+  }
 
   // Gets the cookie store for this context (may be null, in which case
   // cookies are not stored).
@@ -141,7 +158,7 @@ class NET_API URLRequestContext
   }
 
   // Gets the FTP authentication cache for this context.
-  FtpAuthCache* ftp_auth_cache() { return &ftp_auth_cache_; }
+  FtpAuthCache* ftp_auth_cache() const { return ftp_auth_cache_.get(); }
 
   // Gets the value of 'Accept-Charset' header field.
   const std::string& accept_charset() const { return accept_charset_; }
@@ -178,6 +195,8 @@ class NET_API URLRequestContext
   virtual ~URLRequestContext();
 
  private:
+  base::WeakPtrFactory<URLRequestContext> weak_factory_;
+
   // ---------------------------------------------------------------------------
   // Important: When adding any new members below, consider whether they need to
   // be added to CopyFrom.
@@ -188,15 +207,16 @@ class NET_API URLRequestContext
   NetLog* net_log_;
   HostResolver* host_resolver_;
   CertVerifier* cert_verifier_;
-  DnsRRResolver* dnsrr_resolver_;
-  DnsCertProvenanceChecker* dns_cert_checker_;
+  OriginBoundCertService* origin_bound_cert_service_;
+  FraudulentCertificateReporter* fraudulent_certificate_reporter_;
   HttpAuthHandlerFactory* http_auth_handler_factory_;
   ProxyService* proxy_service_;
   scoped_refptr<SSLConfigService> ssl_config_service_;
   NetworkDelegate* network_delegate_;
+  HttpServerProperties* http_server_properties_;
   scoped_refptr<CookieStore> cookie_store_;
-  scoped_refptr<TransportSecurityState> transport_security_state_;
-  FtpAuthCache ftp_auth_cache_;
+  TransportSecurityState* transport_security_state_;
+  scoped_ptr<FtpAuthCache> ftp_auth_cache_;
   std::string accept_language_;
   std::string accept_charset_;
   // The charset of the referrer where this request comes from. It's not

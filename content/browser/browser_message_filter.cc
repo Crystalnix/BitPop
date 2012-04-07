@@ -1,15 +1,20 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/browser_message_filter.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/process.h"
 #include "base/process_util.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/result_codes.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/common/result_codes.h"
 #include "ipc/ipc_sync_message.h"
+
+using content::BrowserThread;
+using content::UserMetricsAction;
 
 BrowserMessageFilter::BrowserMessageFilter()
     : channel_(NULL), peer_handle_(base::kNullProcessHandle) {
@@ -47,7 +52,8 @@ bool BrowserMessageFilter::Send(IPC::Message* message) {
     BrowserThread::PostTask(
         BrowserThread::IO,
         FROM_HERE,
-        NewRunnableMethod(this, &BrowserMessageFilter::Send, message));
+        base::Bind(base::IgnoreResult(&BrowserMessageFilter::Send), this,
+                   message));
     return true;
   }
 
@@ -73,8 +79,8 @@ bool BrowserMessageFilter::OnMessageReceived(const IPC::Message& message) {
 
   BrowserThread::PostTask(
       thread, FROM_HERE,
-      NewRunnableMethod(
-          this, &BrowserMessageFilter::DispatchMessage, message));
+      base::Bind(base::IgnoreResult(&BrowserMessageFilter::DispatchMessage),
+                 this, message));
   return true;
 }
 
@@ -84,7 +90,7 @@ bool BrowserMessageFilter::DispatchMessage(const IPC::Message& message) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) || rv) <<
       "Must handle messages that were dispatched to another thread!";
   if (!message_was_ok) {
-    UserMetrics::RecordAction(UserMetricsAction("BadMessageTerminate_BMF"));
+    content::RecordAction(UserMetricsAction("BadMessageTerminate_BMF"));
     BadMessageReceived();
   }
 
@@ -92,12 +98,13 @@ bool BrowserMessageFilter::DispatchMessage(const IPC::Message& message) {
 }
 
 void BrowserMessageFilter::BadMessageReceived() {
-  base::KillProcess(peer_handle(), ResultCodes::KILLED_BAD_MESSAGE, false);
+  base::KillProcess(peer_handle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
+                    false);
 }
 
 bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
                                                 IPC::Message::Sender* sender) {
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   // On Windows there's a potential deadlock with sync messsages going in
   // a circle from browser -> plugin -> renderer -> browser.
   // On Linux we can avoid this by avoiding sync messages from browser->plugin.

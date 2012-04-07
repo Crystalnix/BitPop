@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,28 +11,26 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
 #include "base/memory/linked_ptr.h"
 #include "base/timer.h"
 #include "content/browser/renderer_host/backing_store.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class GURL;
 class Profile;
 class RenderWidgetHost;
 class SkBitmap;
-class TabContents;
 
 namespace history {
 class TopSites;
 }
 
-class ThumbnailGenerator : public NotificationObserver,
-                           public TabContentsObserver {
+class ThumbnailGenerator : public content::NotificationObserver,
+                           public content::WebContentsObserver {
  public:
-  typedef Callback1<const SkBitmap&>::Type ThumbnailReadyCallback;
+  typedef base::Callback<void(const SkBitmap&)> ThumbnailReadyCallback;
   // The result of clipping. This can be used to determine if the
   // generated thumbnail is good or not.
   enum ClipResult {
@@ -59,7 +57,7 @@ class ThumbnailGenerator : public NotificationObserver,
   virtual ~ThumbnailGenerator();
 
   // Starts taking thumbnails of the given tab contents.
-  void StartThumbnailing(TabContents* tab_contents);
+  void StartThumbnailing(content::WebContents* web_contents);
 
   // This registers a callback that can receive the resulting SkBitmap
   // from the renderer when it is done rendering it.  This differs
@@ -80,7 +78,7 @@ class ThumbnailGenerator : public NotificationObserver,
   // dimensions, but might not be the exact size requested.
   void AskForSnapshot(RenderWidgetHost* renderer,
                       bool prefer_backing_store,
-                      ThumbnailReadyCallback* callback,
+                      const ThumbnailReadyCallback& callback,
                       gfx::Size page_size,
                       gfx::Size desired_size);
 
@@ -116,16 +114,16 @@ class ThumbnailGenerator : public NotificationObserver,
                                    ClipResult* clip_result);
 
   // Update the thumbnail of the given tab contents if necessary.
-  void UpdateThumbnailIfNecessary(TabContents* tab_contents);
+  void UpdateThumbnailIfNecessary(content::WebContents* webb_contents);
 
   // Returns true if we should update the thumbnail of the given URL.
   static bool ShouldUpdateThumbnail(Profile* profile,
                                     history::TopSites* top_sites,
                                     const GURL& url);
 
-  // TabContentsObserver overrides.
-  virtual void DidStartLoading();
-  virtual void StopNavigation();
+  // content::WebContentsObserver overrides.
+  virtual void DidStartLoading() OVERRIDE;
+  virtual void StopNavigation() OVERRIDE;
 
  private:
   virtual void WidgetDidReceivePaintAtSizeAck(
@@ -133,27 +131,25 @@ class ThumbnailGenerator : public NotificationObserver,
       int tag,
       const gfx::Size& size);
 
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Indicates that the given widget has changed is visibility.
   void WidgetHidden(RenderWidgetHost* widget);
 
-  // Called when the given tab contents are disconnected (either
+  // Called when the given web contents are disconnected (either
   // through being closed, or because the renderer is no longer there).
-  void TabContentsDisconnected(TabContents* contents);
+  void WebContentsDisconnected(content::WebContents* contents);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Map of callback objects by sequence number.
   struct AsyncRequestInfo;
   typedef std::map<int,
                    linked_ptr<AsyncRequestInfo> > ThumbnailCallbackMap;
   ThumbnailCallbackMap callback_map_;
-
-  TabContentsObserver::Registrar tab_contents_observer_registrar_;
 
   bool load_interrupted_;
 

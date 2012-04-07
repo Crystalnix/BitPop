@@ -34,7 +34,7 @@ bool ReadHeader(const std::wstring& name, char* header, int header_size) {
     return false;
   }
 
-  int read = file.Read(header, header_size, NULL);
+  int read = file.Read(header, header_size, net::CompletionCallback());
   if (read != header_size) {
     printf("Unable to read file %ls\n", name.c_str());
     return false;
@@ -257,7 +257,7 @@ void DumpRankings(const disk_cache::RankingsNode& rankings) {
   printf("prev: 0x%x\n", rankings.prev);
   printf("entry: 0x%x\n", rankings.contents);
   printf("dirty: %d\n", rankings.dirty);
-  printf("pointer: 0x%x\n", rankings.dummy);
+  printf("hash: 0x%x\n", rankings.self_hash);
   printf("----------\n\n");
 }
 

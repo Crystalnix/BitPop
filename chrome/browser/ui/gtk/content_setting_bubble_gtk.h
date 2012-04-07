@@ -12,26 +12,29 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "chrome/common/content_settings_types.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
 
 class ContentSettingBubbleModel;
 class Profile;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 // ContentSettingBubbleGtk is used when the user turns on different kinds of
 // content blocking (e.g. "block images"). An icon appears in the location bar,
 // and when clicked, an instance of this class is created specialized for the
 // type of content being blocked.
 class ContentSettingBubbleGtk : public BubbleDelegateGtk,
-                                public NotificationObserver {
+                                public content::NotificationObserver {
  public:
    ContentSettingBubbleGtk(
        GtkWidget* anchor,
        BubbleDelegateGtk* delegate,
        ContentSettingBubbleModel* content_setting_bubble_model,
-       Profile* profile, TabContents* tab_contents);
+       Profile* profile, content::WebContents* web_contents);
   virtual ~ContentSettingBubbleGtk();
 
   // Dismisses the bubble.
@@ -43,10 +46,10 @@ class ContentSettingBubbleGtk : public BubbleDelegateGtk,
   // BubbleDelegateGtk:
   virtual void BubbleClosing(BubbleGtk* bubble, bool closed_by_escape) OVERRIDE;
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Builds the bubble and all the widgets that it displays.
   void BuildBubble();
@@ -66,11 +69,11 @@ class ContentSettingBubbleGtk : public BubbleDelegateGtk,
   // The active profile.
   Profile* profile_;
 
-  // The active tab contents.
-  TabContents* tab_contents_;
+  // The active web contents.
+  content::WebContents* web_contents_;
 
-  // A registrar for listening for TAB_CONTENTS_DESTROYED notifications.
-  NotificationRegistrar registrar_;
+  // A registrar for listening for WEB_CONTENTS_DESTROYED notifications.
+  content::NotificationRegistrar registrar_;
 
   // Pass on delegate messages to this.
   BubbleDelegateGtk* delegate_;

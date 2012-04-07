@@ -4,15 +4,18 @@
 
 #include "chrome/browser/ui/gtk/custom_drag.h"
 
+#include "base/file_path.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
+#include "content/public/browser/download_item.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/gfx/gtk_util.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::DownloadItem;
 
 namespace {
 
@@ -24,7 +27,7 @@ const GdkDragAction kBookmarkDragAction =
 void OnDragDataGetForDownloadItem(GtkSelectionData* selection_data,
                                   guint target_type,
                                   const DownloadItem* download_item) {
-  GURL url = net::FilePathToFileURL(download_item->full_path());
+  GURL url = net::FilePathToFileURL(download_item->GetFullPath());
   ui::WriteURLWithName(selection_data, url,
       UTF8ToUTF16(download_item->GetFileNameToReportUser().value()),
       target_type);

@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,13 +34,18 @@ void OnShutdownStarting(ShutdownType type);
 // Get the current shutdown type.
 ShutdownType GetShutdownType();
 
-// Invoked in two ways:
-// . When the last browser has been deleted and the message loop has finished
-//   running.
-// . When ChromeFrame::EndSession is invoked and we need to do cleanup.
-//   NOTE: in this case the message loop is still running, but will die soon
-//         after this returns.
-void Shutdown();
+// Performs the shutdown tasks that need to be done before
+// BrowserProcess and the various threads go away.
+//
+// Returns true if the session should be restarted.
+bool ShutdownPreThreadsStop();
+
+// Performs the remaining shutdown tasks after all threads but the
+// main thread have been stopped.  This includes deleting g_browser_process.
+//
+// The provided parameter indicates whether a preference to restart
+// the session was present.
+void ShutdownPostThreadsStop(bool restart_last_session);
 
 // Called at startup to create a histogram from our previous shutdown time.
 void ReadLastShutdownInfo();
@@ -66,10 +71,14 @@ void SetTryingToQuit(bool quitting);
 // General accessor.
 bool IsTryingToQuit();
 
-// This is true on X during an END_SESSION, when we can no longer depend
-// on the X server to be running. As a result we don't explicitly close the
-// browser windows, which can lead to conditions which would fail checks.
+// This is true on X during an END_SESSION initiated by X IO Error, when we
+// can no longer depend on the X server to be running. As a result we don't
+// explicitly close the browser windows, which can lead to conditions which
+// would fail checks.
 bool ShuttingDownWithoutClosingBrowsers();
+
+// Sets the ShuttingDownWithoutClosingBrowsers flag.
+void SetShuttingDownWithoutClosingBrowsers(bool without_close);
 
 }  // namespace browser_shutdown
 

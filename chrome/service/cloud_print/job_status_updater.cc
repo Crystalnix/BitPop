@@ -4,9 +4,11 @@
 
 #include "chrome/service/cloud_print/job_status_updater.h"
 
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "base/values.h"
 #include "chrome/common/net/http_return.h"
 #include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
@@ -77,18 +79,28 @@ void JobStatusUpdater::Stop() {
 
 // CloudPrintURLFetcher::Delegate implementation.
 CloudPrintURLFetcher::ResponseAction JobStatusUpdater::HandleJSONData(
-      const URLFetcher* source,
+      const content::URLFetcher* source,
       const GURL& url,
       DictionaryValue* json_data,
       bool succeeded) {
   if (last_job_details_.status == cloud_print::PRINT_JOB_STATUS_COMPLETED) {
     MessageLoop::current()->PostTask(
-        FROM_HERE, NewRunnableMethod(this, &JobStatusUpdater::Stop));
+        FROM_HERE, base::Bind(&JobStatusUpdater::Stop, this));
   }
   return CloudPrintURLFetcher::STOP_PROCESSING;
 }
 
-void JobStatusUpdater::OnRequestAuthError() {
+CloudPrintURLFetcher::ResponseAction JobStatusUpdater::OnRequestAuthError() {
+  // We got an Auth error and have no idea how long it will take to refresh
+  // auth information (may take forever). We'll drop current request and
+  // propagate this error to the upper level. After auth issues will be
+  // resolved, GCP connector will restart.
   if (delegate_)
     delegate_->OnAuthError();
+  return CloudPrintURLFetcher::STOP_PROCESSING;
 }
+
+std::string JobStatusUpdater::GetAuthHeader() {
+  return CloudPrintHelpers::GetCloudPrintAuthHeader();
+}
+

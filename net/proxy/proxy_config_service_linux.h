@@ -9,13 +9,14 @@
 #include <string>
 #include <vector>
 
-#include "base/base_api.h"
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/environment.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/observer_list.h"
+#include "net/base/net_export.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_server.h"
@@ -24,7 +25,7 @@ namespace net {
 
 // Implementation of ProxyConfigService that retrieves the system proxy
 // settings from environment variables, gconf, gsettings, or kioslaverc (KDE).
-class BASE_API ProxyConfigServiceLinux : public ProxyConfigService {
+class NET_EXPORT_PRIVATE ProxyConfigServiceLinux : public ProxyConfigService {
  public:
 
   // Forward declaration of Delegate.
@@ -193,10 +194,11 @@ class BASE_API ProxyConfigServiceLinux : public ProxyConfigService {
     ProxyConfigService::ConfigAvailability GetLatestProxyConfig(
         ProxyConfig* config);
 
-    // Posts a call to OnDestroy() to the UI thread. Called from
-    // ProxyConfigServiceLinux's destructor.
+    // Posts a call to OnDestroy() to the UI or FILE thread, depending on the
+    // setting getter in use. Called from ProxyConfigServiceLinux's destructor.
     void PostDestroyTask();
-    // Safely stops change notifications. Posted to the UI thread.
+    // Safely stops change notifications. Posted to either the UI or FILE
+    // thread, depending on the setting getter in use.
     void OnDestroy();
 
    private:
@@ -286,10 +288,10 @@ class BASE_API ProxyConfigServiceLinux : public ProxyConfigService {
 
   // ProxyConfigService methods:
   // Called from IO thread.
-  virtual void AddObserver(Observer* observer);
-  virtual void RemoveObserver(Observer* observer);
+  virtual void AddObserver(Observer* observer) OVERRIDE;
+  virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual ProxyConfigService::ConfigAvailability GetLatestProxyConfig(
-      ProxyConfig* config);
+      ProxyConfig* config) OVERRIDE;
 
  private:
   scoped_refptr<Delegate> delegate_;

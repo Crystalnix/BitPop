@@ -6,32 +6,36 @@
 
 #include <utility>  // For std::pair.
 
+#include "base/bind.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/content_browser_client.h"
 #include "content/common/chrome_descriptors.h"
-#include "content/common/content_switches.h"
-#include "content/common/process_watcher.h"
-#include "content/common/result_codes.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/result_codes.h"
 
 #if defined(OS_WIN)
 #include "base/file_path.h"
 #include "content/common/sandbox_policy.h"
 #elif defined(OS_MACOSX)
-#include "chrome/browser/mach_broker_mac.h"
+#include "content/browser/mach_broker_mac.h"
 #elif defined(OS_POSIX)
 #include "base/memory/singleton.h"
-#include "content/browser/zygote_host_linux.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
+#include "content/browser/zygote_host_linux.h"
 #endif
 
 #if defined(OS_POSIX)
 #include "base/global_descriptors_posix.h"
 #endif
+
+using content::BrowserThread;
 
 // Having the functionality of ChildProcessLauncher be in an internal
 // ref counted object allows us to automatically terminate the process when the
@@ -42,6 +46,8 @@ class ChildProcessLauncher::Context
   Context()
       : client_(NULL),
         client_thread_id_(BrowserThread::UI),
+        termination_status_(base::TERMINATION_STATUS_NORMAL_TERMINATION),
+        exit_code_(content::RESULT_CODE_NORMAL_EXIT),
         starting_(true),
         terminate_child_on_shutdown_(true)
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -66,9 +72,10 @@ class ChildProcessLauncher::Context
 
     BrowserThread::PostTask(
         BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-        NewRunnableMethod(
-            this,
+        base::Bind(
             &Context::LaunchInternal,
+            make_scoped_refptr(this),
+            client_thread_id_,
 #if defined(OS_WIN)
             exposed_dir,
 #elif defined(OS_POSIX)
@@ -98,7 +105,10 @@ class ChildProcessLauncher::Context
     Terminate();
   }
 
-  void LaunchInternal(
+  static void LaunchInternal(
+      // |this_object| is NOT thread safe. Only use it to post a task back.
+      scoped_refptr<Context> this_object,
+      BrowserThread::ID client_thread_id,
 #if defined(OS_WIN)
       const FilePath& exposed_dir,
 #elif defined(OS_POSIX)
@@ -108,17 +118,21 @@ class ChildProcessLauncher::Context
 #endif
       CommandLine* cmd_line) {
     scoped_ptr<CommandLine> cmd_line_deleter(cmd_line);
+
     base::ProcessHandle handle = base::kNullProcessHandle;
 #if defined(OS_WIN)
     handle = sandbox::StartProcessWithAccess(cmd_line, exposed_dir);
 #elif defined(OS_POSIX)
+    // We need to close the client end of the IPC channel
+    // to reliably detect child termination.
+    file_util::ScopedFD ipcfd_closer(&ipcfd);
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     // On Linux, we need to add some extra file descriptors for crash handling.
     std::string process_type =
         cmd_line->GetSwitchValueASCII(switches::kProcessType);
     int crash_signal_fd =
-        content::GetContentClient()->browser()->GetCrashSignalFD(process_type);
+        content::GetContentClient()->browser()->GetCrashSignalFD(*cmd_line);
     if (use_zygote) {
       base::GlobalDescriptors::Mapping mapping;
       mapping.push_back(std::pair<uint32_t, int>(kPrimaryIPCChannel, ipcfd));
@@ -126,8 +140,9 @@ class ChildProcessLauncher::Context
         mapping.push_back(std::pair<uint32_t, int>(kCrashDumpSignal,
                                                    crash_signal_fd));
       }
-      handle = ZygoteHost::GetInstance()->ForkRenderer(cmd_line->argv(),
-                                                       mapping);
+      handle = ZygoteHost::GetInstance()->ForkRequest(cmd_line->argv(),
+                                                      mapping,
+                                                      process_type);
     } else
     // Fall through to the normal posix case below when we're not zygoting.
 #endif
@@ -152,40 +167,48 @@ class ChildProcessLauncher::Context
       }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
 
-      bool launched = false;
-#if defined(OS_MACOSX)
-      // It is possible for the child process to die immediately after
-      // launching.  To prevent leaking MachBroker map entries in this case,
-      // lock around all of LaunchApp().  If the child dies, the death
-      // notification will be processed by the MachBroker after the call to
-      // AddPlaceholderForPid(), enabling proper cleanup.
-      {  // begin scope for AutoLock
-        MachBroker* broker = MachBroker::GetInstance();
-        base::AutoLock lock(broker->GetLock());
+      // Actually launch the app.
+      base::LaunchOptions options;
+      options.environ = &env;
+      options.fds_to_remap = &fds_to_map;
 
-        // This call to |PrepareForFork()| will start the MachBroker listener
-        // thread, if it is not already running.  Therefore the browser process
-        // will be listening for Mach IPC before LaunchApp() is called.
-        broker->PrepareForFork();
-#endif
-        // Actually launch the app.
-        launched = base::LaunchApp(cmd_line->argv(), env, fds_to_map,
-                                   /* wait= */false, &handle);
 #if defined(OS_MACOSX)
-        if (launched)
+      // Use synchronization to make sure that the MachBroker is ready to
+      // receive a check-in from the new process before the new process
+      // actually tries to check in.
+      base::LaunchSynchronizationHandle synchronization_handle;
+      options.synchronize = &synchronization_handle;
+#endif  // defined(OS_MACOSX)
+
+      bool launched = base::LaunchProcess(*cmd_line, options, &handle);
+
+#if defined(OS_MACOSX)
+      if (launched) {
+        MachBroker* broker = MachBroker::GetInstance();
+        {
+          base::AutoLock lock(broker->GetLock());
+
+          // Make sure the MachBroker is running, and inform it to expect a
+          // check-in from the new process.
+          broker->EnsureRunning();
           broker->AddPlaceholderForPid(handle);
-      }  // end scope for AutoLock
-#endif
+        }
+
+        // Now that the MachBroker is ready, the child may continue.
+        base::LaunchSynchronize(synchronization_handle);
+      }
+#endif  // defined(OS_MACOSX)
+
       if (!launched)
         handle = base::kNullProcessHandle;
     }
 #endif  // else defined(OS_POSIX)
 
     BrowserThread::PostTask(
-        client_thread_id_, FROM_HERE,
-        NewRunnableMethod(
-            this,
-            &ChildProcessLauncher::Context::Notify,
+        client_thread_id, FROM_HERE,
+        base::Bind(
+            &Context::Notify,
+            this_object.get(),
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
             use_zygote,
 #endif
@@ -199,6 +222,9 @@ class ChildProcessLauncher::Context
       base::ProcessHandle handle) {
     starting_ = false;
     process_.set_handle(handle);
+    if (!handle)
+      LOG(ERROR) << "Failed to launch child process";
+
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     zygote_ = zygote;
 #endif
@@ -220,8 +246,8 @@ class ChildProcessLauncher::Context
     // don't this on the UI/IO threads.
     BrowserThread::PostTask(
         BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-        NewRunnableFunction(
-            &ChildProcessLauncher::Context::TerminateInternal,
+        base::Bind(
+            &Context::TerminateInternal,
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
             zygote_,
 #endif
@@ -229,17 +255,11 @@ class ChildProcessLauncher::Context
     process_.set_handle(base::kNullProcessHandle);
   }
 
-  void SetProcessBackgrounded(bool background) {
-    DCHECK(!starting_);
-    process_.SetProcessBackgrounded(background);
+  static void SetProcessBackgrounded(base::ProcessHandle handle,
+                                     bool background) {
+    base::Process process(handle);
+    process.SetProcessBackgrounded(background);
   }
-
-// TODO(apatrick): Remove this ASAP. http://crbog.com/81449 shows that this is
-// called before later calling null. Disable optimization to try and get more
-// information about what happened here.
-#if defined(OS_WIN)
-#pragma optimize("", off)
-#endif
 
   static void TerminateInternal(
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -249,7 +269,7 @@ class ChildProcessLauncher::Context
     base::Process process(handle);
      // Client has gone away, so just kill the process.  Using exit code 0
     // means that UMA won't treat this as a crash.
-    process.Terminate(ResultCodes::NORMAL_EXIT);
+    process.Terminate(content::RESULT_CODE_NORMAL_EXIT);
     // On POSIX, we must additionally reap the child.
 #if defined(OS_POSIX)
 #if !defined(OS_MACOSX)
@@ -260,19 +280,17 @@ class ChildProcessLauncher::Context
     } else
 #endif  // !OS_MACOSX
     {
-      ProcessWatcher::EnsureProcessTerminated(handle);
+      base::EnsureProcessTerminated(handle);
     }
 #endif  // OS_POSIX
     process.Close();
   }
 
-#if defined(OS_WIN)
-#pragma optimize("", on)
-#endif
-
   Client* client_;
   BrowserThread::ID client_thread_id_;
   base::Process process_;
+  base::TerminationStatus termination_status_;
+  int exit_code_;
   bool starting_;
   // Controls whether the child process should be terminated on browser
   // shutdown. Default behavior is to terminate the child.
@@ -322,16 +340,26 @@ base::ProcessHandle ChildProcessLauncher::GetHandle() {
 
 base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
     int* exit_code) {
-  base::TerminationStatus status;
   base::ProcessHandle handle = context_->process_.handle();
+  if (handle == base::kNullProcessHandle) {
+    // Process is already gone, so return the cached termination status.
+    if (exit_code)
+      *exit_code = context_->exit_code_;
+    return context_->termination_status_;
+  }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
   if (context_->zygote_) {
-    status = ZygoteHost::GetInstance()->GetTerminationStatus(handle, exit_code);
+    context_->termination_status_ = ZygoteHost::GetInstance()->
+        GetTerminationStatus(handle, &context_->exit_code_);
   } else
 #endif
   {
-    status = base::GetTerminationStatus(handle, exit_code);
+    context_->termination_status_ =
+        base::GetTerminationStatus(handle, &context_->exit_code_);
   }
+
+  if (exit_code)
+    *exit_code = context_->exit_code_;
 
   // POSIX: If the process crashed, then the kernel closed the socket
   // for it and so the child has already died by the time we get
@@ -339,19 +367,18 @@ base::TerminationStatus ChildProcessLauncher::GetChildTerminationStatus(
   // it'll reap the process.  However, if GetTerminationStatus didn't
   // reap the child (because it was still running), we'll need to
   // Terminate via ProcessWatcher. So we can't close the handle here.
-  if (status != base::TERMINATION_STATUS_STILL_RUNNING)
+  if (context_->termination_status_ != base::TERMINATION_STATUS_STILL_RUNNING)
     context_->process_.Close();
 
-  return status;
+  return context_->termination_status_;
 }
 
 void ChildProcessLauncher::SetProcessBackgrounded(bool background) {
   BrowserThread::PostTask(
       BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-      NewRunnableMethod(
-          context_.get(),
+      base::Bind(
           &ChildProcessLauncher::Context::SetProcessBackgrounded,
-          background));
+          GetHandle(), background));
 }
 
 void ChildProcessLauncher::SetTerminateChildOnShutdown(
@@ -359,4 +386,3 @@ void ChildProcessLauncher::SetTerminateChildOnShutdown(
   if (context_)
     context_->set_terminate_child_on_shutdown(terminate_on_shutdown);
 }
-

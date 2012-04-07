@@ -1,24 +1,48 @@
-/* Copyright (c) 2011 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From dev/ppb_console_dev.idl modified Mon Nov 14 10:36:01 2011. */
+
 #ifndef PPAPI_C_DEV_PPB_CONSOLE_DEV_H_
 #define PPAPI_C_DEV_PPB_CONSOLE_DEV_H_
 
+#include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/pp_macros.h"
+#include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_var.h"
 
 #define PPB_CONSOLE_DEV_INTERFACE_0_1 "PPB_Console(Dev);0.1"
 #define PPB_CONSOLE_DEV_INTERFACE PPB_CONSOLE_DEV_INTERFACE_0_1
 
+/**
+ * @file
+ * This file defines the <code>PPB_Console_Dev</code> interface.
+ */
+
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
 typedef enum {
   PP_LOGLEVEL_TIP = 0,
-  PP_LOGLEVEL_LOG,
-  PP_LOGLEVEL_WARNING,
-  PP_LOGLEVEL_ERROR
+  PP_LOGLEVEL_LOG = 1,
+  PP_LOGLEVEL_WARNING = 2,
+  PP_LOGLEVEL_ERROR = 3
 } PP_LogLevel_Dev;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_LogLevel_Dev, 4);
+/**
+ * @}
+ */
 
-struct PPB_Console_Dev {
+/**
+ * @addtogroup Interfaces
+ * @{
+ */
+struct PPB_Console_Dev_0_1 {
   /**
    * Logs the given message to the JavaScript console associated with the
    * given plugin instance with the given logging level. The name of the plugin
@@ -26,7 +50,6 @@ struct PPB_Console_Dev {
    * The value may be any type of Var.
    */
   void (*Log)(PP_Instance instance, PP_LogLevel_Dev level, struct PP_Var value);
-
   /**
    * Logs a message to the console with the given source information rather
    * than using the internal PPAPI plugin name. The name must be a string var.
@@ -43,4 +66,10 @@ struct PPB_Console_Dev {
                         struct PP_Var value);
 };
 
-#endif  // PPAPI_C_DEV_PPB_CONSOLE_DEV_H_
+typedef struct PPB_Console_Dev_0_1 PPB_Console_Dev;
+/**
+ * @}
+ */
+
+#endif  /* PPAPI_C_DEV_PPB_CONSOLE_DEV_H_ */
+

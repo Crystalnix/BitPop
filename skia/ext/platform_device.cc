@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/logging.h"
 #include "skia/ext/platform_device.h"
 
 #include "third_party/skia/include/core/SkMetaData.h"
@@ -9,8 +10,28 @@
 namespace skia {
 
 namespace {
+
 const char* kDevicePlatformBehaviour = "CrDevicePlatformBehaviour";
+const char* kDraftModeKey = "CrDraftMode";
+
+#if defined(OS_MACOSX) || defined(OS_WIN)
+const char* kIsPreviewMetafileKey = "CrIsPreviewMetafile";
+#endif
+
+void SetBoolMetaData(const SkCanvas& canvas, const char* key,  bool value) {
+  SkMetaData& meta = skia::getMetaData(canvas);
+  meta.setBool(key, value);
 }
+
+bool GetBoolMetaData(const SkCanvas& canvas, const char* key) {
+  bool value;
+  SkMetaData& meta = skia::getMetaData(canvas);
+  if (!meta.findBool(key, &value))
+    value = false;
+  return value;
+}
+
+}  // namespace
 
 void SetPlatformDevice(SkDevice* device, PlatformDevice* platform_behaviour) {
   SkMetaData& meta_data = device->getMetaData();
@@ -27,40 +48,36 @@ PlatformDevice* GetPlatformDevice(SkDevice* device) {
   return NULL;
 }
 
-PlatformSurface BeginPlatformPaint(SkDevice* device) {
-  PlatformDevice* platform_device = GetPlatformDevice(device);
-  if (platform_device)
-    return platform_device->BeginPlatformPaint();
-
-  return 0;
+SkMetaData& getMetaData(const SkCanvas& canvas) {
+  SkDevice* device = canvas.getDevice();
+  DCHECK(device != NULL);
+  return device->getMetaData();
 }
 
-void EndPlatformPaint(SkDevice* device) {
-  PlatformDevice* platform_device = GetPlatformDevice(device);
-  if (platform_device)
-    return platform_device->EndPlatformPaint();
+void SetIsDraftMode(const SkCanvas& canvas, bool draft_mode) {
+  SetBoolMetaData(canvas, kDraftModeKey, draft_mode);
 }
 
-bool IsNativeFontRenderingAllowed(SkDevice* device) {
-  PlatformDevice* platform_device = GetPlatformDevice(device);
-  if (platform_device)
-    return platform_device->IsNativeFontRenderingAllowed();
+bool IsDraftMode(const SkCanvas& canvas) {
+  return GetBoolMetaData(canvas, kDraftModeKey);
+}
 
+#if defined(OS_MACOSX) || defined(OS_WIN)
+void SetIsPreviewMetafile(const SkCanvas& canvas, bool is_preview) {
+  SetBoolMetaData(canvas, kIsPreviewMetafileKey, is_preview);
+}
+
+bool IsPreviewMetafile(const SkCanvas& canvas) {
+  return GetBoolMetaData(canvas, kIsPreviewMetafileKey);
+}
+#endif
+
+bool PlatformDevice::IsNativeFontRenderingAllowed() {
+  return true;
+}
+
+bool PlatformDevice::AlphaBlendUsed() const {
   return false;
 }
 
-void DrawToNativeContext(SkDevice* device, PlatformSurface context,
-                         int x, int y, const PlatformRect* src_rect) {
-  PlatformDevice* platform_device = GetPlatformDevice(device);
-  if (platform_device)
-    platform_device->DrawToNativeContext(context, x, y, src_rect);
-}
-
-void MakeOpaque(SkDevice* device, int x, int y, int width, int height) {
-  PlatformDevice* platform_device = GetPlatformDevice(device);
-  if (platform_device)
-    platform_device->MakeOpaque(x, y, width, height);
-}
-
 }  // namespace skia
-

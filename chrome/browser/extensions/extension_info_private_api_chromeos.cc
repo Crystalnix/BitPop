@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "extension_info_private_api_chromeos.h"
+#include "chrome/browser/extensions/extension_info_private_api_chromeos.h"
 
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
-#include "chrome/browser/chromeos/system_access.h"
+#include "chrome/browser/chromeos/login/wizard_controller.h"
+#include "chrome/browser/chromeos/system/statistics_provider.h"
 
 using chromeos::CrosLibrary;
 using chromeos::NetworkLibrary;
@@ -22,6 +23,9 @@ const char kPropertyHWID[] = "hwid";
 
 // Key which corresponds to the home provider property.
 const char kPropertyHomeProvider[] = "homeProvider";
+
+// Key which corresponds to the initial_locale property.
+const char kPropertyInitialLocale[] = "initialLocale";
 
 }  // namespace
 
@@ -51,15 +55,14 @@ bool GetChromeosInfoFunction::GetValue(const std::string& property_name,
                                        std::string* value) {
   value->clear();
   if (property_name == kPropertyHWID) {
-    chromeos::SystemAccess* system = chromeos::SystemAccess::GetInstance();
-    system->GetMachineStatistic(kHardwareClass, value);
+    chromeos::system::StatisticsProvider* provider =
+        chromeos::system::StatisticsProvider::GetInstance();
+    provider->GetMachineStatistic(kHardwareClass, value);
   } else if (property_name == kPropertyHomeProvider) {
-    if (CrosLibrary::Get()->EnsureLoaded()) {
-      NetworkLibrary* netlib = CrosLibrary::Get()->GetNetworkLibrary();
-      (*value) = netlib->GetCellularHomeCarrierId();
-    } else {
-      LOG(ERROR) << "CrosLibrary can't be loaded.";
-    }
+    NetworkLibrary* netlib = CrosLibrary::Get()->GetNetworkLibrary();
+    (*value) = netlib->GetCellularHomeCarrierId();
+  } else if (property_name == kPropertyInitialLocale) {
+    *value = chromeos::WizardController::GetInitialLocale();
   } else {
     LOG(ERROR) << "Unknown property request: " << property_name;
     return false;

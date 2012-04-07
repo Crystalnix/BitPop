@@ -6,10 +6,25 @@
 
 #include "ui/views/view.h"
 
-namespace ui {
+namespace views {
+
+LayoutManager::~LayoutManager() {
+}
+
+void LayoutManager::Installed(View* host) {
+}
+
+void LayoutManager::Uninstalled(View* host) {
+}
 
 int LayoutManager::GetPreferredHeightForWidth(View* host, int width) {
   return GetPreferredSize(host).height();
 }
 
-}  // namespace ui
+void LayoutManager::ViewAdded(View* host, View* view) {
+}
+
+void LayoutManager::ViewRemoved(View* host, View* view) {
+}
+
+}  // namespace views

@@ -1,7 +1,8 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/google/google_util.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -32,21 +33,19 @@ TEST_F(GoogleUpdateTest, LastRunTime) {
   EXPECT_EQ(0, GoogleUpdateSettings::GetLastRunTime());
 }
 
-TEST_F(GoogleUpdateTest, ShouldShowSearchEngineDialog) {
+#endif  // defined(OS_WIN)
+
+TEST_F(GoogleUpdateTest, IsOrganicFirstRunBrandCodes) {
   // Test some brand codes to ensure that future changes to this method won't
   // go unnoticed.
-  const wchar_t* false_brand1 = L"CHFO";
-  EXPECT_FALSE(GoogleUpdateSettings::IsOrganicFirstRun(
-      false_brand1));
-  const wchar_t* false_brand2 = L"CHMA";
-  EXPECT_FALSE(GoogleUpdateSettings::IsOrganicFirstRun(
-      false_brand2));
-  const wchar_t* good_brand1 = L"EUBA";
-  EXPECT_TRUE(GoogleUpdateSettings::IsOrganicFirstRun(
-      good_brand1));
-  const wchar_t* good_brand2 = L"GGRA";
-  EXPECT_TRUE(GoogleUpdateSettings::IsOrganicFirstRun(
-      good_brand2));
-}
+  EXPECT_FALSE(google_util::IsOrganicFirstRun("CHFO"));
+  EXPECT_FALSE(google_util::IsOrganicFirstRun("CHMA"));
+  EXPECT_TRUE(google_util::IsOrganicFirstRun("EUBA"));
+  EXPECT_TRUE(google_util::IsOrganicFirstRun("GGRA"));
 
-#endif  // defined(OS_WIN)
+#if defined(OS_MACOSX)
+  // An empty brand string on Mac is used for channels other than stable,
+  // which are always organic.
+  EXPECT_TRUE(google_util::IsOrganicFirstRun(""));
+#endif
+}

@@ -9,7 +9,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
-#include "content/common/font_loader_mac.h"
+#include "content/common/mac/font_loader.h"
 #include "content/common/sandbox_mac_unittest_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,48 +17,6 @@ namespace {
 
 using sandboxtest::MacSandboxTest;
 using sandbox::Sandbox;
-
-bool CGFontFromFontContainer(ATSFontContainerRef container, CGFontRef* out) {
-  // Count the number of fonts that were loaded.
-  ItemCount fontCount = 0;
-  OSStatus err = ATSFontFindFromContainer(container, kATSOptionFlagsDefault, 0,
-                    NULL, &fontCount);
-
-  if (err != noErr || fontCount < 1) {
-    return false;
-  }
-
-  // Load font from container.
-  ATSFontRef font_ref_ats = 0;
-  ATSFontFindFromContainer(container, kATSOptionFlagsDefault, 1,
-      &font_ref_ats, NULL);
-
-  if (!font_ref_ats) {
-    return false;
-  }
-
-  // Convert to cgFont.
-  CGFontRef font_ref_cg = CGFontCreateWithPlatformFont(&font_ref_ats);
-
-  if (!font_ref_cg) {
-    return false;
-  }
-
-  *out = font_ref_cg;
-  return true;
-}
-
-class ScopedFontContainer {
- public:
-  explicit ScopedFontContainer(ATSFontContainerRef ref)
-      : container_ref(ref) {}
-
-  ~ScopedFontContainer() {
-    ATSFontDeactivate(container_ref, NULL, kATSOptionFlagsDefault);
-  }
-
-  ATSFontContainerRef container_ref;
-};
 
 class FontLoadingTestCase : public sandboxtest::MacSandboxTestCase {
  public:
@@ -112,19 +70,10 @@ bool FontLoadingTestCase::SandboxedTest() {
     return false;
   }
 
-  ATSFontContainerRef font_container;
-  if (!FontLoader::ATSFontContainerFromBuffer(shmem_handle, font_data_length_,
-          &font_container)) {
-    LOG(ERROR) << "Call to CreateCGFontFromBuffer() failed";
-    return false;
-  }
-
-  // Unload the font container when done.
-  ScopedFontContainer scoped_unloader(font_container);
-
   CGFontRef cg_font_ref;
-  if (!CGFontFromFontContainer(font_container, &cg_font_ref)) {
-    LOG(ERROR) << "CGFontFromFontContainer failed";
+  if (!FontLoader::CGFontRefFromBuffer(shmem_handle, font_data_length_,
+                                       &cg_font_ref)) {
+    LOG(ERROR) << "Call to CreateCGFontFromBuffer() failed";
     return false;
   }
 
@@ -172,7 +121,7 @@ TEST_F(MacSandboxTest, FontLoadingTest) {
   file_util::WriteFileDescriptor(fileno(temp_file),
       static_cast<const char *>(font_data.memory()), font_data_size);
 
-  ASSERT_TRUE(RunTestInSandbox(Sandbox::SANDBOX_TYPE_RENDERER,
+  ASSERT_TRUE(RunTestInSandbox(content::SANDBOX_TYPE_RENDERER,
                   "FontLoadingTestCase", temp_file_path.value().c_str()));
   temp_file_closer.reset();
   ASSERT_TRUE(file_util::Delete(temp_file_path, false));

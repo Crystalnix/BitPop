@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/base/zap.h"
 #include "net/http/des.h"
 #include "net/http/md4.h"
 
@@ -237,20 +238,6 @@ static uint32 ReadUint32(const uint8*& buf) {
 }
 
 //-----------------------------------------------------------------------------
-
-static void ZapBuf(void* buf, size_t buf_len) {
-  memset(buf, 0, buf_len);
-}
-
-// TODO(wtc): Can we implement ZapString as
-// s.replace(0, s.size(), s.size(), '\0)?
-static void ZapString(std::string* s) {
-  ZapBuf(&(*s)[0], s->length());
-}
-
-static void ZapString(string16* s) {
-  ZapBuf(&(*s)[0], s->length() * 2);
-}
 
 // LM_Hash computes the LM hash of the given password.
 //
@@ -555,7 +542,7 @@ static int GenerateType3Msg(const string16& domain,
   uint8 ntlm_hash[NTLM_HASH_LEN];
   if (msg.flags & NTLM_NegotiateNTLM2Key) {
     // compute NTLM2 session response
-    MD5Digest session_hash;
+    base::MD5Digest session_hash;
     uint8 temp[16];
 
     memcpy(lm_resp, rand_8_bytes, 8);
@@ -563,7 +550,7 @@ static int GenerateType3Msg(const string16& domain,
 
     memcpy(temp, msg.challenge, 8);
     memcpy(temp + 8, lm_resp, 8);
-    MD5Sum(temp, 16, &session_hash);
+    base::MD5Sum(temp, 16, &session_hash);
 
     NTLM_Hash(password, ntlm_hash);
     LM_Response(ntlm_hash, session_hash.a, ntlm_resp);
@@ -661,9 +648,7 @@ int HttpAuthHandlerNTLM::InitializeBeforeFirstChallenge() {
 }
 
 HttpAuthHandlerNTLM::~HttpAuthHandlerNTLM() {
-  // Wipe our copy of the password from memory, to reduce the chance of being
-  // written to the paging file on disk.
-  ZapString(&password_);
+  credentials_.Zap();
 }
 
 // static
@@ -703,7 +688,9 @@ int HttpAuthHandlerNTLM::GetNextToken(const void* in_token,
       return ERR_UNEXPECTED;
     uint8 rand_buf[8];
     generate_random_proc_(rand_buf, 8);
-    rv = GenerateType3Msg(domain_, username_, password_, hostname, rand_buf,
+    rv = GenerateType3Msg(domain_,
+                          credentials_.username(), credentials_.password(),
+                          hostname, rand_buf,
                           in_token, in_token_len, out_token, out_token_len);
   } else {
     rv = GenerateType1Msg(out_token, out_token_len);

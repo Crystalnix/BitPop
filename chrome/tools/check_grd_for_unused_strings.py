@@ -1,6 +1,5 @@
-#!/usr/bin/python
-
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -74,7 +73,7 @@ def CheckForUnusedGrdIDsInSources(grd_files, src_dirs):
     return 1
 
   # The regex for deciding what is a source file
-  src_regex = re.compile('\.(([chm])|(mm)|(cc)|(cp)|(cpp)|(xib))$')
+  src_regex = re.compile('\.(([chm])|(mm)|(cc)|(cp)|(cpp)|(xib)|(py))$')
 
   ids_left = all_ids.copy()
 
@@ -111,7 +110,7 @@ def CheckForUnusedGrdIDsInSources(grd_files, src_dirs):
   return 0
 
 
-if __name__ == '__main__':
+def main():
   # script lives in src/chrome/tools
   chrome_tools_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
   src_dir = os.path.dirname(os.path.dirname(chrome_tools_dir))
@@ -142,24 +141,31 @@ if __name__ == '__main__':
       os.path.join(chrome_app_res_dir, 'locale_settings_win.grd'),
       os.path.join(chrome_app_dir, 'theme', 'theme_resources.grd'),
       os.path.join(chrome_dir, 'browser', 'browser_resources.grd'),
+      os.path.join(chrome_dir, 'browser', 'resources', 'shared_resources.grd'),
       os.path.join(chrome_dir, 'common', 'common_resources.grd'),
       os.path.join(chrome_dir, 'renderer', 'renderer_resources.grd'),
-      os.path.join(src_dir, 'app', 'resources', 'app_resources.grd'),
       os.path.join(src_dir, 'ui', 'gfx', 'gfx_resources.grd'),
+      os.path.join(src_dir, 'ui', 'resources', 'ui_resources.grd'),
       os.path.join(ui_base_dir, 'app_locale_settings.grd'),
-      os.path.join(ui_base_dir, 'app_strings.grd'),
+      os.path.join(ui_base_dir, 'ui_strings.grd'),
     ]
 
   # If no source directories were given, default them:
   if len(src_dirs) == 0:
     src_dirs = [
       os.path.join(src_dir, 'app'),
-      os.path.join(src_dir, 'content'),
       os.path.join(src_dir, 'chrome'),
+      os.path.join(src_dir, 'chrome_frame'),
+      os.path.join(src_dir, 'content'),
       os.path.join(src_dir, 'ui'),
       os.path.join(src_dir, 'views'),
       # nsNSSCertHelper.cpp has a bunch of ids
       os.path.join(src_dir, 'third_party', 'mozilla_security_manager'),
+      os.path.join(chrome_dir, 'installer'),
     ]
 
-  sys.exit(CheckForUnusedGrdIDsInSources(grd_files, src_dirs))
+  return CheckForUnusedGrdIDsInSources(grd_files, src_dirs)
+
+
+if __name__ == '__main__':
+  sys.exit(main())

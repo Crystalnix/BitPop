@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,17 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_TAB_HELPER_H_
 #pragma once
 
-#include "content/browser/tab_contents/tab_contents_observer.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/extensions/app_notify_channel_setup.h"
 #include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/browser/extensions/webstore_inline_installer.h"
 #include "chrome/common/web_apps.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class Extension;
+class ExtensionTabHelperDelegate;
 class TabContentsWrapper;
 struct WebApplicationInfo;
 
@@ -21,15 +25,22 @@ struct LoadCommittedDetails;
 }
 
 // Per-tab extension helper. Also handles non-extension apps.
-class ExtensionTabHelper : public TabContentsObserver,
-                           public ExtensionFunctionDispatcher::Delegate,
-                           public ImageLoadingTracker::Observer {
+class ExtensionTabHelper
+    : public content::WebContentsObserver,
+      public ExtensionFunctionDispatcher::Delegate,
+      public ImageLoadingTracker::Observer,
+      public WebstoreInlineInstaller::Delegate,
+      public AppNotifyChannelSetup::Delegate,
+      public base::SupportsWeakPtr<ExtensionTabHelper> {
  public:
   explicit ExtensionTabHelper(TabContentsWrapper* wrapper);
   virtual ~ExtensionTabHelper();
 
   // Copies the internal state from another ExtensionTabHelper.
   void CopyStateFrom(const ExtensionTabHelper& source);
+
+  ExtensionTabHelperDelegate* delegate() const { return delegate_; }
+  void set_delegate(ExtensionTabHelperDelegate* d) { delegate_ = d; }
 
   // Call this after updating a page action to notify clients about the changes.
   void PageActionStateChanged();
@@ -68,30 +79,39 @@ class ExtensionTabHelper : public TabContentsObserver,
   // Extension::EXTENSION_ICON_SMALLISH).
   SkBitmap* GetExtensionAppIcon();
 
-  TabContents* tab_contents() const {
-      return TabContentsObserver::tab_contents();
+  TabContentsWrapper* tab_contents_wrapper() {
+    return wrapper_;
+  }
+
+  content::WebContents* web_contents() const {
+    return content::WebContentsObserver::web_contents();
   }
 
   // Sets a non-extension app icon associated with TabContents and fires an
-  // INVALIDATE_TITLE navigation state change to trigger repaint of title.
+  // INVALIDATE_TYPE_TITLE navigation state change to trigger repaint of title.
   void SetAppIcon(const SkBitmap& app_icon);
 
  private:
-  // TabContentsObserver overrides.
-  virtual void DidNavigateMainFramePostCommit(
+  // content::WebContentsObserver overrides.
+  virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message);
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // ExtensionFunctionDispatcher::Delegate overrides.
-  virtual Browser* GetBrowser();
-  virtual gfx::NativeView GetNativeViewOfHost();
-  virtual gfx::NativeWindow GetCustomFrameNativeWindow();
-  virtual TabContents* GetAssociatedTabContents() const;
+  virtual Browser* GetBrowser() OVERRIDE;
+  virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
 
   // Message handlers.
   void OnDidGetApplicationInfo(int32 page_id, const WebApplicationInfo& info);
   void OnInstallApplication(const WebApplicationInfo& info);
+  void OnInlineWebstoreInstall(int install_id,
+                               const std::string& webstore_item_id,
+                               const GURL& requestor_url);
+  void OnGetAppNotifyChannel(const GURL& requestor_url,
+                             const std::string& client_id,
+                             int return_route_id,
+                             int callback_id);
   void OnRequest(const ExtensionHostMsg_Request_Params& params);
 
   // App extensions related methods:
@@ -102,9 +122,23 @@ class ExtensionTabHelper : public TabContentsObserver,
 
   // ImageLoadingTracker::Observer.
   virtual void OnImageLoaded(SkBitmap* image, const ExtensionResource& resource,
-                             int index);
+                             int index) OVERRIDE;
+
+  // WebstoreInlineInstaller::Delegate.
+  virtual void OnInlineInstallSuccess(int install_id) OVERRIDE;
+  virtual void OnInlineInstallFailure(int install_id,
+                                      const std::string& error) OVERRIDE;
+
+  // AppNotifyChannelSetup::Delegate.
+  virtual void AppNotifyChannelSetupComplete(
+      const std::string& channel_id,
+      const std::string& error,
+      const AppNotifyChannelSetup* setup) OVERRIDE;
 
   // Data for app extensions ---------------------------------------------------
+
+  // Delegate for notifying our owner about stuff. Not owned by us.
+  ExtensionTabHelperDelegate* delegate_;
 
   // If non-null this tab is an app tab and this is the extension the tab was
   // created for.

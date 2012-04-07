@@ -8,19 +8,24 @@
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
 #include "content/browser/tab_contents/title_updated_details.h"
-#include "content/common/notification_service.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/frame_navigate_params.h"
 
-HistoryTabHelper::HistoryTabHelper(TabContents* tab_contents)
-    : TabContentsObserver(tab_contents),
+using content::NavigationEntry;
+using content::WebContents;
+
+HistoryTabHelper::HistoryTabHelper(WebContents* web_contents)
+    : content::WebContentsObserver(web_contents),
       received_page_title_(false) {
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_TITLE_UPDATED,
-                 Source<TabContents>(tab_contents));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED,
+                 content::Source<WebContents>(web_contents));
 }
 
 HistoryTabHelper::~HistoryTabHelper() {
@@ -36,20 +41,20 @@ void HistoryTabHelper::UpdateHistoryForNavigation(
 void HistoryTabHelper::UpdateHistoryPageTitle(const NavigationEntry& entry) {
   HistoryService* hs = GetHistoryService();
   if (hs)
-    hs->SetPageTitle(entry.virtual_url(), entry.title());
+    hs->SetPageTitle(entry.GetVirtualURL(), entry.GetTitleForDisplay(""));
 }
 
 scoped_refptr<history::HistoryAddPageArgs>
 HistoryTabHelper::CreateHistoryAddPageArgs(
     const GURL& virtual_url,
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   scoped_refptr<history::HistoryAddPageArgs> add_page_args(
       new history::HistoryAddPageArgs(
-          params.url, base::Time::Now(), tab_contents(), params.page_id,
-          params.referrer, params.redirects, params.transition,
+          params.url, base::Time::Now(), web_contents(), params.page_id,
+          params.referrer.url, params.redirects, params.transition,
           history::SOURCE_BROWSED, details.did_replace_entry));
-  if (PageTransition::IsMainFrame(params.transition) &&
+  if (content::PageTransitionIsMainFrame(params.transition) &&
       virtual_url != params.url) {
     // Hack on the "virtual" URL so that it will appear in history. For some
     // types of URLs, we will display a magic URL that is different from where
@@ -67,24 +72,24 @@ HistoryTabHelper::CreateHistoryAddPageArgs(
 bool HistoryTabHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(HistoryTabHelper, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_PageContents, OnPageContents)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_Thumbnail, OnThumbnail)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_PageContents, OnPageContents)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_Thumbnail, OnThumbnail)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
 }
 
-void HistoryTabHelper::DidNavigateMainFramePostCommit(
+void HistoryTabHelper::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   // Allow the new page to set the title again.
   received_page_title_ = false;
 }
 
-void HistoryTabHelper::DidNavigateAnyFramePostCommit(
+void HistoryTabHelper::DidNavigateAnyFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   // Update history. Note that this needs to happen after the entry is complete,
   // which WillNavigate[Main,Sub]Frame will do before this function is called.
   if (!params.should_update_history)
@@ -95,20 +100,21 @@ void HistoryTabHelper::DidNavigateAnyFramePostCommit(
   // about: URL to the history db and keep the data: URL hidden. This is what
   // the TabContents' URL getter does.
   scoped_refptr<history::HistoryAddPageArgs> add_page_args(
-      CreateHistoryAddPageArgs(tab_contents()->GetURL(), details, params));
-  if (!tab_contents()->delegate() ||
-      !tab_contents()->delegate()->ShouldAddNavigationToHistory(
+      CreateHistoryAddPageArgs(web_contents()->GetURL(), details, params));
+  if (!web_contents()->GetDelegate() ||
+      !web_contents()->GetDelegate()->ShouldAddNavigationToHistory(
           *add_page_args, details.type))
     return;
 
   UpdateHistoryForNavigation(add_page_args);
 }
 
-void HistoryTabHelper::Observe(NotificationType type,
-                               const NotificationSource& source,
-                               const NotificationDetails& details) {
-  DCHECK(type.value == NotificationType::TAB_CONTENTS_TITLE_UPDATED);
-  TitleUpdatedDetails* title = Details<TitleUpdatedDetails>(details).ptr();
+void HistoryTabHelper::Observe(int type,
+                               const content::NotificationSource& source,
+                               const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_TITLE_UPDATED);
+  TitleUpdatedDetails* title =
+      content::Details<TitleUpdatedDetails>(details).ptr();
 
   if (received_page_title_)
     return;
@@ -143,18 +149,24 @@ void HistoryTabHelper::OnPageContents(const GURL& url,
 void HistoryTabHelper::OnThumbnail(const GURL& url,
                                    const ThumbnailScore& score,
                                    const SkBitmap& bitmap) {
-  if (tab_contents()->profile()->IsOffTheRecord())
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+  if (profile->IsOffTheRecord())
     return;
 
-  // Tell History about this thumbnail
-  history::TopSites* ts = tab_contents()->profile()->GetTopSites();
-  if (ts)
-    ts->SetPageThumbnail(url, bitmap, score);
+  // Tell History about this thumbnail.
+  history::TopSites* ts = profile->GetTopSites();
+  if (ts) {
+    gfx::Image thumbnail(new SkBitmap(bitmap));
+    ts->SetPageThumbnail(url, &thumbnail, score);
+  }
 }
 
 HistoryService* HistoryTabHelper::GetHistoryService() {
-  if (tab_contents()->profile()->IsOffTheRecord())
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
+  if (profile->IsOffTheRecord())
     return NULL;
 
-  return tab_contents()->profile()->GetHistoryService(Profile::IMPLICIT_ACCESS);
+  return profile->GetHistoryService(Profile::IMPLICIT_ACCESS);
 }

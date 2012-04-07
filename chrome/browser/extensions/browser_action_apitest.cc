@@ -12,16 +12,20 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+
+using content::WebContents;
 
 class BrowserActionApiTest : public ExtensionApiTest {
  public:
@@ -35,9 +39,11 @@ class BrowserActionApiTest : public ExtensionApiTest {
 
   bool OpenPopup(int index) {
     ResultCatcher catcher;
+    ui_test_utils::WindowedNotificationObserver popup_observer(
+        content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+        content::NotificationService::AllSources());
     GetBrowserActionsBar().Press(index);
-    ui_test_utils::WaitForNotification(
-        NotificationType::EXTENSION_POPUP_VIEW_READY);
+    popup_observer.Wait();
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
     return GetBrowserActionsBar().HasPopup();
   }
@@ -74,10 +80,10 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, Basic) {
       browser()->profile(), action->extension_id(), browser());
 
   // Verify the command worked.
-  TabContents* tab = browser()->GetSelectedTabContents();
+  WebContents* tab = browser()->GetSelectedWebContents();
   bool result = false;
   ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
-      tab->render_view_host(), L"",
+      tab->GetRenderViewHost(), L"",
       L"setInterval(function(){"
       L"  if(document.body.bgColor == 'red'){"
       L"    window.domAutomationController.send(true)}}, 100)",
@@ -146,13 +152,8 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest,
 }
 
 // http://code.google.com/p/chromium/issues/detail?id=70829
-// Only mac is okay.
-#if !defined(OS_MACOSX)
-#define MAYBE_BrowserActionPopup DISABLED_BrowserActionPopup
-#else
-#define MAYBE_BrowserActionPopup BrowserActionPopup
-#endif
-IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, MAYBE_BrowserActionPopup) {
+// Mac used to be ok, but then mac 10.5 started failing too. =(
+IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_BrowserActionPopup) {
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
       "browser_action/popup")));
   BrowserActionTestUtil actions_bar = GetBrowserActionsBar();
@@ -192,7 +193,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BrowserActionAddPopup) {
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension) << message_;
 
-  int tab_id = ExtensionTabUtil::GetTabId(browser()->GetSelectedTabContents());
+  int tab_id = ExtensionTabUtil::GetTabId(browser()->GetSelectedWebContents());
 
   ExtensionAction* browser_action = extension->browser_action();
   ASSERT_TRUE(browser_action)
@@ -247,7 +248,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, BrowserActionRemovePopup) {
   const Extension* extension = GetSingleLoadedExtension();
   ASSERT_TRUE(extension) << message_;
 
-  int tab_id = ExtensionTabUtil::GetTabId(browser()->GetSelectedTabContents());
+  int tab_id = ExtensionTabUtil::GetTabId(browser()->GetSelectedWebContents());
 
   ExtensionAction* browser_action = extension->browser_action();
   ASSERT_TRUE(browser_action)
@@ -317,12 +318,15 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
 
   const size_t size_before = service->extensions()->size();
 
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
-      "browser_action/basics")));
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
-      "browser_action/popup")));
-  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
-      "browser_action/add_popup")));
+  const Extension* extension_a = LoadExtension(test_data_dir_.AppendASCII(
+      "browser_action/basics"));
+  const Extension* extension_b = LoadExtension(test_data_dir_.AppendASCII(
+      "browser_action/popup"));
+  const Extension* extension_c = LoadExtension(test_data_dir_.AppendASCII(
+      "browser_action/add_popup"));
+  ASSERT_TRUE(extension_a);
+  ASSERT_TRUE(extension_b);
+  ASSERT_TRUE(extension_c);
 
   // Test that there are 3 browser actions in the toolbar.
   ASSERT_EQ(size_before + 3, service->extensions()->size());
@@ -330,18 +334,15 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
 
   // Now enable 2 of the extensions in incognito mode, and test that the browser
   // actions show up.
-  service->extension_prefs()->SetIsIncognitoEnabled(
-      service->extensions()->at(size_before)->id(), true);
-  service->extension_prefs()->SetIsIncognitoEnabled(
-      service->extensions()->at(size_before + 2)->id(), true);
+  service->extension_prefs()->SetIsIncognitoEnabled(extension_a->id(), true);
+  service->extension_prefs()->SetIsIncognitoEnabled(extension_c->id(), true);
 
   Profile* incognito_profile = browser()->profile()->GetOffTheRecordProfile();
   Browser* incognito_browser = Browser::Create(incognito_profile);
   BrowserActionTestUtil incognito_bar(incognito_browser);
 
   // Navigate just to have a tab in this window, otherwise wonky things happen.
-  ui_test_utils::OpenURLOffTheRecord(browser()->profile(),
-                                     GURL(chrome::kChromeUIExtensionsURL));
+  ui_test_utils::OpenURLOffTheRecord(browser()->profile(), GURL("about:blank"));
 
   ASSERT_EQ(2, incognito_bar.NumberOfBrowserActions());
 
@@ -357,8 +358,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
   // regular and incognito mode.
 
   // ABC -> CAB
-  service->toolbar_model()->MoveBrowserAction(
-      service->extensions()->at(size_before + 2), 0);
+  service->toolbar_model()->MoveBrowserAction(extension_c, 0);
 
   EXPECT_EQ(kTooltipC, GetBrowserActionsBar().GetTooltip(0));
   EXPECT_EQ(kTooltipA, GetBrowserActionsBar().GetTooltip(1));
@@ -368,8 +368,7 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
   EXPECT_EQ(kTooltipA, incognito_bar.GetTooltip(1));
 
   // CAB -> CBA
-  service->toolbar_model()->MoveBrowserAction(
-      service->extensions()->at(size_before + 1), 1);
+  service->toolbar_model()->MoveBrowserAction(extension_b, 1);
 
   EXPECT_EQ(kTooltipC, GetBrowserActionsBar().GetTooltip(0));
   EXPECT_EQ(kTooltipB, GetBrowserActionsBar().GetTooltip(1));
@@ -377,4 +376,35 @@ IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, IncognitoDragging) {
 
   EXPECT_EQ(kTooltipC, incognito_bar.GetTooltip(0));
   EXPECT_EQ(kTooltipA, incognito_bar.GetTooltip(1));
+}
+
+// Disabled because of failures (crashes) on ASAN bot.
+// See http://crbug.com/98861.
+IN_PROC_BROWSER_TEST_F(BrowserActionApiTest, DISABLED_CloseBackgroundPage) {
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII(
+      "browser_action/close_background")));
+  const Extension* extension = GetSingleLoadedExtension();
+
+  // There is a background page and a browser action with no badge text.
+  ExtensionProcessManager* manager =
+      browser()->profile()->GetExtensionProcessManager();
+  ASSERT_TRUE(manager->GetBackgroundHostForExtension(extension->id()));
+  ExtensionAction* action = extension->browser_action();
+  ASSERT_EQ("", action->GetBadgeText(ExtensionAction::kDefaultTabId));
+
+  ui_test_utils::WindowedNotificationObserver host_destroyed_observer(
+      chrome::NOTIFICATION_EXTENSION_HOST_DESTROYED,
+      content::NotificationService::AllSources());
+
+  // Click the browser action.
+  browser()->profile()->GetExtensionService()->browser_event_router()->
+      BrowserActionExecuted(
+          browser()->profile(), action->extension_id(), browser());
+
+  // It can take a moment for the background page to actually get destroyed
+  // so we wait for the notification before checking that it's really gone
+  // and the badge text has been set.
+  host_destroyed_observer.Wait();
+  ASSERT_FALSE(manager->GetBackgroundHostForExtension(extension->id()));
+  ASSERT_EQ("X", action->GetBadgeText(ExtensionAction::kDefaultTabId));
 }

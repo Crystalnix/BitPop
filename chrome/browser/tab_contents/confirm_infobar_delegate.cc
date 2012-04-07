@@ -4,7 +4,7 @@
 
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/navigation_details.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -28,7 +28,7 @@ bool ConfirmInfoBarDelegate::Cancel() {
   return true;
 }
 
-string16 ConfirmInfoBarDelegate::GetLinkText() {
+string16 ConfirmInfoBarDelegate::GetLinkText() const {
   return string16();
 }
 
@@ -36,8 +36,8 @@ bool ConfirmInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
   return true;
 }
 
-ConfirmInfoBarDelegate::ConfirmInfoBarDelegate(TabContents* contents)
-    : InfoBarDelegate(contents) {
+ConfirmInfoBarDelegate::ConfirmInfoBarDelegate(InfoBarTabHelper* infobar_helper)
+    : InfoBarDelegate(infobar_helper) {
 }
 
 ConfirmInfoBarDelegate::~ConfirmInfoBarDelegate() {
@@ -48,6 +48,13 @@ bool ConfirmInfoBarDelegate::EqualsDelegate(InfoBarDelegate* delegate) const {
       delegate->AsConfirmInfoBarDelegate();
   return confirm_delegate &&
       (confirm_delegate->GetMessageText() == GetMessageText());
+}
+
+bool ConfirmInfoBarDelegate::ShouldExpire(
+    const content::LoadCommittedDetails& details) const {
+  if (details.did_replace_entry)
+    return false;
+  return InfoBarDelegate::ShouldExpire(details);
 }
 
 ConfirmInfoBarDelegate* ConfirmInfoBarDelegate::AsConfirmInfoBarDelegate() {

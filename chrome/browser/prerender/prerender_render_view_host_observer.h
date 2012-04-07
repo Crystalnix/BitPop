@@ -5,13 +5,11 @@
 #ifndef CHROME_BROWSER_PRERENDER_PRERENDER_RENDER_VIEW_HOST_OBSERVER_H_
 #define CHROME_BROWSER_PRERENDER_PRERENDER_RENDER_VIEW_HOST_OBSERVER_H_
 
-#include "content/browser/renderer_host/render_view_host_observer.h"
-
-#include <string>
 #include <vector>
 
+#include "content/public/browser/render_view_host_observer.h"
+
 struct FaviconURL;
-class GURL;
 class RenderViewHost;
 
 namespace IPC {
@@ -23,12 +21,12 @@ namespace prerender {
 class PrerenderContents;
 
 // Observer for RenderViewHost messages.
-class PrerenderRenderViewHostObserver : public RenderViewHostObserver {
+class PrerenderRenderViewHostObserver : public content::RenderViewHostObserver {
  public:
   PrerenderRenderViewHostObserver(PrerenderContents* prerender_contents,
                                   RenderViewHost* render_view_host);
 
-  virtual void RenderViewHostDestroyed() OVERRIDE;
+  virtual void RenderViewHostDestroyed(RenderViewHost* rvh) OVERRIDE;
 
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual bool Send(IPC::Message* message) OVERRIDE;
@@ -39,18 +37,6 @@ class PrerenderRenderViewHostObserver : public RenderViewHostObserver {
 
  private:
   // Message handlers.
-  void OnJSOutOfMemory();
-  void OnRunJavaScriptMessage(const string16& message,
-                              const string16& default_prompt,
-                              const GURL& frame_url,
-                              const int flags,
-                              bool* did_suppress_message,
-                              string16* prompt_field);
-  void OnRenderViewGone(int status, int exit_code);
-  void OnDidStartProvisionalLoadForFrame(int64 frame_id,
-                                         bool is_main_frame,
-                                         bool has_opener_set,
-                                         const GURL& url);
   void OnUpdateFaviconURL(int32 page_id, const std::vector<FaviconURL>& urls);
   void OnMaybeCancelPrerenderForHTML5Media();
   void OnCancelPrerenderForPrinting();
@@ -59,5 +45,6 @@ class PrerenderRenderViewHostObserver : public RenderViewHostObserver {
   PrerenderContents* prerender_contents_;
 };
 
-}
+}  // namespace prerender
+
 #endif  // CHROME_BROWSER_PRERENDER_PRERENDER_RENDER_VIEW_HOST_OBSERVER_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,6 @@
 #include <string>
 
 #include "chrome/browser/notifications/notification_delegate.h"
-
-class MessageLoop;
-namespace IPC {
-class Message;
-}
 
 // A NotificationObjectProxy stands in for the JavaScript Notification object
 // which corresponds to a notification toast on the desktop.  It can be signaled
@@ -27,11 +22,11 @@ class NotificationObjectProxy
                           int notification_id, bool worker);
 
   // NotificationDelegate implementation.
-  virtual void Display();
-  virtual void Error();
-  virtual void Close(bool by_user);
-  virtual void Click();
-  virtual std::string id() const;
+  virtual void Display() OVERRIDE;
+  virtual void Error() OVERRIDE;
+  virtual void Close(bool by_user) OVERRIDE;
+  virtual void Click() OVERRIDE;
+  virtual std::string id() const OVERRIDE;
 
  protected:
   friend class base::RefCountedThreadSafe<NotificationObjectProxy>;
@@ -39,9 +34,6 @@ class NotificationObjectProxy
   virtual ~NotificationObjectProxy() {}
 
  private:
-  // Called on UI thread to send a message.
-  void Send(IPC::Message* message);
-
   // Callback information to find the JS Notification object where it lives.
   int process_id_;
   int route_id_;

@@ -6,11 +6,13 @@
 
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
 #import "chrome/browser/ui/cocoa/download/download_item_controller.h"
 #include "chrome/browser/ui/cocoa/download/download_util_mac.h"
-#include "ui/gfx/image.h"
+#include "content/public/browser/download_item.h"
+#include "ui/gfx/image/image.h"
+
+using content::DownloadItem;
 
 // DownloadItemMac -------------------------------------------------------------
 
@@ -25,11 +27,11 @@ DownloadItemMac::~DownloadItemMac() {
   icon_consumer_.CancelAllRequests();
 }
 
-void DownloadItemMac::OnDownloadUpdated(DownloadItem* download) {
+void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
   DCHECK_EQ(download, download_model_->download());
 
   if ([item_controller_ isDangerousMode] &&
-      download->safety_state() == DownloadItem::DANGEROUS_BUT_VALIDATED) {
+      download->GetSafetyState() == DownloadItem::DANGEROUS_BUT_VALIDATED) {
     // We have been approved.
     [item_controller_ clearDangerousMode];
   }
@@ -44,16 +46,16 @@ void DownloadItemMac::OnDownloadUpdated(DownloadItem* download) {
     [item_controller_ updateToolTip];
   }
 
-  switch (download->state()) {
+  switch (download->GetState()) {
     case DownloadItem::REMOVING:
       [item_controller_ remove];  // We're deleted now!
       break;
     case DownloadItem::COMPLETE:
-      if (download->auto_opened()) {
+      if (download->GetAutoOpened()) {
         [item_controller_ remove];  // We're deleted now!
         return;
       }
-      download_util::NotifySystemOfDownloadComplete(download->full_path());
+      download_util::NotifySystemOfDownloadComplete(download->GetFullPath());
       // fall through
     case DownloadItem::IN_PROGRESS:
     case DownloadItem::INTERRUPTED:
@@ -65,7 +67,7 @@ void DownloadItemMac::OnDownloadUpdated(DownloadItem* download) {
   }
 }
 
-void DownloadItemMac::OnDownloadOpened(DownloadItem* download) {
+void DownloadItemMac::OnDownloadOpened(content::DownloadItem* download) {
   DCHECK_EQ(download, download_model_->download());
   [item_controller_ downloadWasOpened];
 }
@@ -87,8 +89,8 @@ void DownloadItemMac::LoadIcon() {
 
   // The icon isn't cached, load it asynchronously.
   icon_manager->LoadIcon(file, IconLoader::ALL, &icon_consumer_,
-                         NewCallback(this,
-                                     &DownloadItemMac::OnExtractIconComplete));
+                         base::Bind(&DownloadItemMac::OnExtractIconComplete,
+                                    base::Unretained(this)));
 }
 
 void DownloadItemMac::OnExtractIconComplete(IconManager::Handle handle,

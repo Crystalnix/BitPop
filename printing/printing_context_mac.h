@@ -19,38 +19,52 @@ class NSPrintInfo;
 
 namespace printing {
 
-class PrintingContextMac : public PrintingContext {
+class PRINTING_EXPORT PrintingContextMac : public PrintingContext {
  public:
   explicit PrintingContextMac(const std::string& app_locale);
   virtual ~PrintingContextMac();
 
   // PrintingContext implementation.
-  virtual void AskUserForSettings(gfx::NativeView parent_view,
-                                  int max_pages,
-                                  bool has_selection,
-                                  PrintSettingsCallback* callback);
-  virtual Result UseDefaultSettings();
-  virtual Result UpdatePrintSettings(const DictionaryValue& job_settings,
-                                     const PageRanges& ranges);
-  virtual Result InitWithSettings(const PrintSettings& settings);
-  virtual Result NewDocument(const string16& document_name);
-  virtual Result NewPage();
-  virtual Result PageDone();
-  virtual Result DocumentDone();
-  virtual void Cancel();
-  virtual void ReleaseContext();
-  virtual gfx::NativeDrawingContext context() const;
+  virtual void AskUserForSettings(
+      gfx::NativeView parent_view,
+      int max_pages,
+      bool has_selection,
+      const PrintSettingsCallback& callback) OVERRIDE;
+  virtual Result UseDefaultSettings() OVERRIDE;
+  virtual Result UpdatePrinterSettings(
+      const base::DictionaryValue& job_settings,
+      const PageRanges& ranges) OVERRIDE;
+  virtual Result InitWithSettings(const PrintSettings& settings) OVERRIDE;
+  virtual Result NewDocument(const string16& document_name) OVERRIDE;
+  virtual Result NewPage() OVERRIDE;
+  virtual Result PageDone() OVERRIDE;
+  virtual Result DocumentDone() OVERRIDE;
+  virtual void Cancel() OVERRIDE;
+  virtual void ReleaseContext() OVERRIDE;
+  virtual gfx::NativeDrawingContext context() const OVERRIDE;
 
  private:
-  // Read the settings from the given NSPrintInfo (and cache it for later use).
-  void ParsePrintInfo(NSPrintInfo* print_info);
-
-  // Initializes PrintSettings from native print info object.
+  // Initializes PrintSettings from |print_info_|. This must be called
+  // after changes to |print_info_| in order for the changes to take effect in
+  // printing.
+  // This function ignores the page range information specified in the print
+  // info object and use |ranges| instead.
   void InitPrintSettingsFromPrintInfo(const PageRanges& ranges);
+
+  // Returns the set of page ranges constructed from |print_info_|.
+  PageRanges GetPageRangesFromPrintInfo();
 
   // Updates |print_info_| to use the given printer.
   // Returns true if the printer was set else returns false.
   bool SetPrinter(const std::string& device_name);
+
+  // Updates |print_info_| page format with user default paper information.
+  // Returns true if the paper was set else returns false.
+  bool UpdatePageFormatWithPaperInfo();
+
+  // Sets the print job destination type as preview job.
+  // Returns true if the print job destination type is set.
+  bool SetPrintPreviewJob();
 
   // Sets |copies| in PMPrintSettings.
   // Returns true if the number of copies is set.
@@ -70,7 +84,7 @@ class PrintingContextMac : public PrintingContext {
 
   // Sets output color mode in PMPrintSettings.
   // Returns true if color mode is set.
-  bool SetOutputIsColor(bool color);
+  bool SetOutputColor(int color_mode);
 
   // The native print info object.
   scoped_nsobject<NSPrintInfo> print_info_;

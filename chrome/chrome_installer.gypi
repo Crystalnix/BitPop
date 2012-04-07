@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -13,8 +13,9 @@
         {
           'target_name': 'gcapi_dll',
           'type': 'loadable_module',
-          'msvs_guid': 'B802A2FE-E4E2-4F5A-905A-D5128875C954',
           'dependencies': [
+            'installer_util',
+            '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/google_update/google_update.gyp:google_update',
           ],
           'include_dirs': [
@@ -22,14 +23,16 @@
           ],
           'sources': [
             'installer/gcapi/gcapi.cc',
+            'installer/gcapi/gcapi.def',
             'installer/gcapi/gcapi.h',
           ],
         },
         {
           'target_name': 'gcapi_lib',
           'type': 'static_library',
-          'msvs_guid': 'CD2FD73A-6AAB-4886-B887-760D18E8B635',
           'dependencies': [
+            'installer_util',
+            '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/google_update/google_update.gyp:google_update',
           ],
           'include_dirs': [
@@ -43,15 +46,20 @@
         {
           'target_name': 'gcapi_test',
           'type': 'executable',
-          'msvs_guid': 'B64B396B-8EF1-4B6B-A07E-48D40EB961AB',
           'dependencies': [
+            'common',
             'gcapi_dll',
             'gcapi_lib',
+            'installer_util',
+            '<(DEPTH)/base/base.gyp:base',
+            '<(DEPTH)/base/base.gyp:test_support_base',
+            '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
           'include_dirs': [
             '<(DEPTH)',
           ],
           'sources': [
+            'installer/gcapi/gcapi_last_run_test.cc',
             'installer/gcapi/gcapi_test.cc',
             'installer/gcapi/gcapi_test.rc',
             'installer/gcapi/resource.h',
@@ -60,15 +68,14 @@
         {
           'target_name': 'installer_util_unittests',
           'type': 'executable',
-          'msvs_guid': '903F8C1E-537A-4C9E-97BE-075147CBE769',
           'dependencies': [
             'installer_util',
             'installer_util_strings',
-            '../content/content.gyp:content_common',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/base/base.gyp:base_i18n',
             '<(DEPTH)/base/base.gyp:test_support_base',
             '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
+            '<(DEPTH)/content/content.gyp:content_common',
             '<(DEPTH)/testing/gmock.gyp:gmock',
             '<(DEPTH)/testing/gtest.gyp:gtest',
           ],
@@ -80,6 +87,7 @@
             'installer/setup/setup_constants.cc',
             'installer/util/browser_distribution_unittest.cc',
             'installer/util/channel_info_unittest.cc',
+            'installer/util/copy_reg_key_work_item_unittest.cc',
             'installer/util/copy_tree_work_item_unittest.cc',
             'installer/util/create_dir_work_item_unittest.cc',
             'installer/util/create_reg_key_work_item_unittest.cc',
@@ -100,12 +108,16 @@
             'installer/util/installer_util_unittests.rc',
             'installer/util/installer_util_unittests_resource.h',
             'installer/util/language_selector_unittest.cc',
+            'installer/util/logging_installer_unittest.cc',
             'installer/util/lzma_util_unittest.cc',
             'installer/util/master_preferences_unittest.cc',
             'installer/util/move_tree_work_item_unittest.cc',
             'installer/util/product_unittest.h',
             'installer/util/product_unittest.cc',
             'installer/util/product_state_unittest.cc',
+            'installer/util/registry_key_backup_unittest.cc',
+            'installer/util/registry_test_data.cc',
+            'installer/util/registry_test_data.h',
             'installer/util/run_all_unittests.cc',
             'installer/util/self_cleaning_temp_dir_unittest.cc',
             'installer/util/set_reg_value_work_item_unittest.cc',
@@ -121,7 +133,6 @@
         },
         {
           'target_name': 'installer_util_strings',
-          'msvs_guid': '0026A376-C4F1-4575-A1BA-578C69F07013',
           'type': 'none',
           'rules': [
             {
@@ -160,7 +171,6 @@
         {
           'target_name': 'mini_installer_test',
           'type': 'executable',
-          'msvs_guid': '4B6E199A-034A-49BD-AB93-458DD37E45B1',
           'dependencies': [
             'installer_util',
             'installer_util_strings',
@@ -177,13 +187,15 @@
             '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings/installer_util_strings.rc',
             'installer/util/installation_validation_helper.cc',
             'installer/util/installation_validation_helper.h',
-            'test/mini_installer_test/run_all_unittests.cc',
-            'test/mini_installer_test/chrome_mini_installer.cc',
-            'test/mini_installer_test/chrome_mini_installer.h',
+            'test/mini_installer_test/installer_path_provider.cc',
+            'test/mini_installer_test/installer_path_provider.h',
+            'test/mini_installer_test/installer_test_util.cc',
+            'test/mini_installer_test/installer_test_util.h',
             'test/mini_installer_test/mini_installer_test_constants.cc',
             'test/mini_installer_test/mini_installer_test_constants.h',
-            'test/mini_installer_test/mini_installer_test_util.cc',
-            'test/mini_installer_test/mini_installer_test_util.h',
+            'test/mini_installer_test/run_all_unittests.cc',
+            'test/mini_installer_test/switch_builder.cc',
+            'test/mini_installer_test/switch_builder.h',
             'test/mini_installer_test/test.cc',
           ],
           'msvs_settings': {
@@ -195,15 +207,13 @@
         {
           'target_name': 'setup',
           'type': 'executable',
-          'msvs_guid': '21C76E6E-8B38-44D6-8148-B589C13B9554',
           'dependencies': [
             'installer_util',
             'installer_util_strings',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
-            '<(DEPTH)/build/util/build_util.gyp:lastchange',
+            '<(DEPTH)/build/util/build_util.gyp:lastchange#target',
             '<(DEPTH)/build/util/support/support.gyp:*',
-            '<(DEPTH)/build/win/system.gyp:cygwin',
             '<(DEPTH)/chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '<(DEPTH)/chrome_frame/chrome_frame.gyp:npchrome_frame',
             '<(DEPTH)/breakpad/breakpad.gyp:breakpad_handler',
@@ -326,7 +336,6 @@
         {
           'target_name': 'setup_unittests',
           'type': 'executable',
-          'msvs_guid': 'C0AE4E06-F023-460F-BC14-6302CEAC51F8',
           'dependencies': [
             'installer_util',
             'installer_util_strings',
@@ -346,6 +355,11 @@
           # below into a separate lib and then link both setup.exe and
           # setup_unittests.exe against that.
           'sources': [
+            'installer/mini_installer/appid.h',
+            'installer/mini_installer/chrome_appid.cc',
+            'installer/mini_installer/configuration.cc',
+            'installer/mini_installer/configuration.h',
+            'installer/mini_installer/configuration_test.cc',
             'installer/mini_installer/decompress.cc',
             'installer/mini_installer/decompress.h',
             'installer/mini_installer/decompress_test.cc',
@@ -413,6 +427,9 @@
           '<(PRODUCT_DIR)/xdg-mime',
           '<(PRODUCT_DIR)/xdg-settings',
           '<(PRODUCT_DIR)/locales/en-US.pak',
+          '<(PRODUCT_DIR)/nacl_helper',
+          '<(PRODUCT_DIR)/nacl_helper_bootstrap',
+          '<@(default_apps_list_linux_dest)',
         ],
         'flock_bash': ['flock', '--', '/tmp/linux_package_lock', 'bash'],
         'deb_build': '<(PRODUCT_DIR)/installer/debian/build.sh',
@@ -925,9 +942,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

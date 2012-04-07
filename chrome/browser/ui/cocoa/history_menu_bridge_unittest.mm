@@ -6,19 +6,19 @@
 #include <vector>
 
 #include "base/memory/ref_counted_memory.h"
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
-#include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/history_menu_bridge.h"
-#include "content/browser/cancelable_request.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 
 namespace {
@@ -43,13 +43,13 @@ class MockBridge : public HistoryMenuBridge {
   scoped_nsobject<NSMenu> menu_;
 };
 
-class HistoryMenuBridgeTest : public CocoaTest {
+class HistoryMenuBridgeTest : public CocoaProfileTest {
  public:
 
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    browser_test_helper_.profile()->CreateFaviconService();
-    bridge_.reset(new MockBridge(browser_test_helper_.profile()));
+    CocoaProfileTest::SetUp();
+    profile()->CreateFaviconService();
+    bridge_.reset(new MockBridge(profile()));
   }
 
   // We are a friend of HistoryMenuBridge (and have access to
@@ -94,8 +94,8 @@ class HistoryMenuBridgeTest : public CocoaTest {
     MockTRS::Tab tab;
     tab.current_navigation_index = 0;
     tab.navigations.push_back(
-        TabNavigation(0, url, GURL(), title, std::string(),
-                      PageTransition::LINK));
+        TabNavigation(0, url, content::Referrer(), title, std::string(),
+                      content::PAGE_TRANSITION_LINK));
     return tab;
   }
 
@@ -113,34 +113,33 @@ class HistoryMenuBridgeTest : public CocoaTest {
     return bridge_->favicon_consumer_;
   }
 
-  BrowserTestHelper browser_test_helper_;
   scoped_ptr<MockBridge> bridge_;
 };
 
 // Edge case test for clearing until the end of a menu.
 TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuUntilEnd) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
-  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kMostVisitedTitle);
+  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kVisitedTitle);
 
-  NSInteger tag = HistoryMenuBridge::kMostVisited;
+  NSInteger tag = HistoryMenuBridge::kVisited;
   AddItemToMenu(menu, @"alpha", @selector(openHistoryMenuItem:), tag);
   AddItemToMenu(menu, @"bravo", @selector(openHistoryMenuItem:), tag);
   AddItemToMenu(menu, @"charlie", @selector(openHistoryMenuItem:), tag);
   AddItemToMenu(menu, @"delta", @selector(openHistoryMenuItem:), tag);
 
-  ClearMenuSection(menu, HistoryMenuBridge::kMostVisited);
+  ClearMenuSection(menu, HistoryMenuBridge::kVisited);
 
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"HEADER",
-      [[menu itemWithTag:HistoryMenuBridge::kMostVisitedTitle] title]);
+      [[menu itemWithTag:HistoryMenuBridge::kVisitedTitle] title]);
 }
 
 // Skip menu items that are not hooked up to |-openHistoryMenuItem:|.
 TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuSkipping) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
-  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kMostVisitedTitle);
+  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kVisitedTitle);
 
-  NSInteger tag = HistoryMenuBridge::kMostVisited;
+  NSInteger tag = HistoryMenuBridge::kVisited;
   AddItemToMenu(menu, @"alpha", @selector(openHistoryMenuItem:), tag);
   AddItemToMenu(menu, @"bravo", @selector(openHistoryMenuItem:), tag);
   AddItemToMenu(menu, @"TITLE", NULL, HistoryMenuBridge::kRecentlyClosedTitle);
@@ -150,7 +149,7 @@ TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuSkipping) {
 
   EXPECT_EQ(2, [menu numberOfItems]);
   EXPECT_NSEQ(@"HEADER",
-      [[menu itemWithTag:HistoryMenuBridge::kMostVisitedTitle] title]);
+      [[menu itemWithTag:HistoryMenuBridge::kVisitedTitle] title]);
   EXPECT_NSEQ(@"TITLE",
       [[menu itemAtIndex:1] title]);
 }
@@ -158,13 +157,13 @@ TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuSkipping) {
 // Edge case test for clearing an empty menu.
 TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuEmpty) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
-  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kMostVisited);
+  AddItemToMenu(menu, @"HEADER", NULL, HistoryMenuBridge::kVisited);
 
-  ClearMenuSection(menu, HistoryMenuBridge::kMostVisited);
+  ClearMenuSection(menu, HistoryMenuBridge::kVisited);
 
   EXPECT_EQ(1, [menu numberOfItems]);
   EXPECT_NSEQ(@"HEADER",
-      [[menu itemWithTag:HistoryMenuBridge::kMostVisited] title]);
+      [[menu itemWithTag:HistoryMenuBridge::kVisited] title]);
 }
 
 // Test that AddItemToMenu() properly adds HistoryItem objects as menus.
@@ -210,7 +209,7 @@ TEST_F(HistoryMenuBridgeTest, AddItemToMenu) {
 
 // Test that the menu is created for a set of simple tabs.
 TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabs) {
-  scoped_ptr<MockTRS> trs(new MockTRS(browser_test_helper_.profile()));
+  scoped_ptr<MockTRS> trs(new MockTRS(profile()));
   MockTRS::Entries entries;
 
   MockTRS::Tab tab1 = CreateSessionTab(GURL("http://google.com"),
@@ -246,7 +245,7 @@ TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabs) {
 
 // Test that the menu is created for a mix of windows and tabs.
 TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabsAndWindows) {
-  scoped_ptr<MockTRS> trs(new MockTRS(browser_test_helper_.profile()));
+  scoped_ptr<MockTRS> trs(new MockTRS(profile()));
   MockTRS::Entries entries;
 
   MockTRS::Tab tab1 = CreateSessionTab(GURL("http://google.com"),

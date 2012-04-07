@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,16 +26,18 @@
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "grit/app_resources.h"
 #include "grit/chromium_strings.h"
+#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image/image.h"
 
 #if defined(TOOLKIT_VIEWS)
-#include "views/controls/menu/menu_2.h"
+#include "ui/views/controls/menu/menu_2.h"
 #else
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #endif
@@ -58,6 +60,7 @@ const gint kTaskManagerPurgeMemory = 3;
 enum TaskManagerColumn {
   kTaskManagerIcon,
   kTaskManagerPage,
+  kTaskManagerProfileName,
   kTaskManagerSharedMem,
   kTaskManagerPrivateMem,
   kTaskManagerCPU,
@@ -84,6 +87,8 @@ TaskManagerColumn TaskManagerResourceIDToColumnID(int id) {
   switch (id) {
     case IDS_TASK_MANAGER_PAGE_COLUMN:
       return kTaskManagerPage;
+    case IDS_TASK_MANAGER_PROFILE_NAME_COLUMN:
+      return kTaskManagerProfileName;
     case IDS_TASK_MANAGER_SHARED_MEM_COLUMN:
       return kTaskManagerSharedMem;
     case IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN:
@@ -118,6 +123,8 @@ int TaskManagerColumnIDToResourceID(int id) {
   switch (id) {
     case kTaskManagerPage:
       return IDS_TASK_MANAGER_PAGE_COLUMN;
+    case kTaskManagerProfileName:
+      return IDS_TASK_MANAGER_PROFILE_NAME_COLUMN;
     case kTaskManagerSharedMem:
       return IDS_TASK_MANAGER_SHARED_MEM_COLUMN;
     case kTaskManagerPrivateMem:
@@ -188,7 +195,7 @@ void TreeViewInsertColumnWithPixbuf(GtkWidget* treeview, int resid) {
                                      kTaskManagerBackgroundColor);
   GtkCellRenderer* text_renderer = gtk_cell_renderer_text_new();
   gtk_tree_view_column_pack_start(column, text_renderer, TRUE);
-  gtk_tree_view_column_add_attribute(column, text_renderer, "text", colid);
+  gtk_tree_view_column_add_attribute(column, text_renderer, "markup", colid);
   gtk_tree_view_column_add_attribute(column, text_renderer,
                                      "cell-background-gdk",
                                      kTaskManagerBackgroundColor);
@@ -356,12 +363,20 @@ void TaskManagerGtk::OnModelChanged() {
 
 void TaskManagerGtk::OnItemsChanged(int start, int length) {
   GtkTreeIter iter;
-  gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(process_list_), &iter,
-                                NULL, start);
+  if (!gtk_tree_model_iter_nth_child(GTK_TREE_MODEL(process_list_), &iter,
+                                     NULL, start)) {
+    NOTREACHED() << "Can't get child " << start <<
+        " from GTK_TREE_MODEL(process_list_)";
+  }
 
   for (int i = start; i < start + length; i++) {
     SetRowDataFromModel(i, &iter);
-    gtk_tree_model_iter_next(GTK_TREE_MODEL(process_list_), &iter);
+    if (i != start + length - 1) {
+      if (!gtk_tree_model_iter_next(GTK_TREE_MODEL(process_list_), &iter)) {
+        NOTREACHED() << "Can't get next GtkTreeIter object from process_list_ "
+                        "iterator at position " << i;
+      }
+    }
   }
 }
 
@@ -468,7 +483,8 @@ void TaskManagerGtk::Init() {
   }
 
   gtk_dialog_add_button(GTK_DIALOG(dialog_),
-      l10n_util::GetStringUTF8(IDS_TASK_MANAGER_KILL).c_str(),
+      gfx::ConvertAcceleratorsFromWindowsStyle(
+          l10n_util::GetStringUTF8(IDS_TASK_MANAGER_KILL)).c_str(),
       kTaskManagerResponseKill);
 
   // The response button should not be sensitive when the dialog is first opened
@@ -483,13 +499,13 @@ void TaskManagerGtk::Init() {
 
   // Setting the link widget to secondary positions the button on the left side
   // of the action area (vice versa for RTL layout).
-  gtk_button_box_set_child_secondary(
-      GTK_BUTTON_BOX(GTK_DIALOG(dialog_)->action_area), link, TRUE);
+  GtkWidget* action_area = gtk_dialog_get_action_area(GTK_DIALOG(dialog_));
+  gtk_button_box_set_child_secondary(GTK_BUTTON_BOX(action_area), link, TRUE);
 
   ConnectAccelerators();
 
-  gtk_box_set_spacing(GTK_BOX(GTK_DIALOG(dialog_)->vbox),
-                      gtk_util::kContentAreaSpacing);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_set_spacing(GTK_BOX(content_area), ui::kContentAreaSpacing);
 
   destroy_handler_id_ = g_signal_connect(dialog_, "destroy",
                                          G_CALLBACK(OnDestroyThunk), this);
@@ -586,7 +602,7 @@ void TaskManagerGtk::ConnectAccelerators() {
 void TaskManagerGtk::CreateTaskManagerTreeview() {
   process_list_ = gtk_list_store_new(kTaskManagerColumnCount,
       GDK_TYPE_PIXBUF, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
-      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
+      G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING, G_TYPE_STRING,
       G_TYPE_STRING, G_TYPE_STRING, GDK_TYPE_COLOR);
 
@@ -596,6 +612,9 @@ void TaskManagerGtk::CreateTaskManagerTreeview() {
   gtk_tree_sortable_set_sort_func(GTK_TREE_SORTABLE(process_list_sort_),
                                   kTaskManagerPage,
                                   ComparePage, this, NULL);
+  gtk_tree_sortable_set_sort_func(GTK_TREE_SORTABLE(process_list_sort_),
+                                  kTaskManagerPage,
+                                  CompareProfileName, this, NULL);
   gtk_tree_sortable_set_sort_func(GTK_TREE_SORTABLE(process_list_sort_),
                                   kTaskManagerSharedMem,
                                   CompareSharedMemory, this, NULL);
@@ -636,6 +655,8 @@ void TaskManagerGtk::CreateTaskManagerTreeview() {
 
   // Insert all the columns.
   TreeViewInsertColumnWithPixbuf(treeview_, IDS_TASK_MANAGER_PAGE_COLUMN);
+  TreeViewInsertColumnWithPixbuf(treeview_,
+                                 IDS_TASK_MANAGER_PROFILE_NAME_COLUMN);
   TreeViewInsertColumn(treeview_, IDS_TASK_MANAGER_SHARED_MEM_COLUMN);
   TreeViewInsertColumn(treeview_, IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN);
   TreeViewInsertColumn(treeview_, IDS_TASK_MANAGER_CPU_COLUMN);
@@ -652,6 +673,7 @@ void TaskManagerGtk::CreateTaskManagerTreeview() {
   TreeViewInsertColumn(treeview_, IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN);
 
   // Hide some columns by default.
+  TreeViewColumnSetVisible(treeview_, kTaskManagerProfileName, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerSharedMem, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerProcessID, false);
   TreeViewColumnSetVisible(treeview_, kTaskManagerJavaScriptMemory, false);
@@ -688,6 +710,9 @@ std::string TaskManagerGtk::GetModelText(int row, int col_id) {
   switch (col_id) {
     case IDS_TASK_MANAGER_PAGE_COLUMN:  // Process
       return UTF16ToUTF8(model_->GetResourceTitle(row));
+
+    case IDS_TASK_MANAGER_PROFILE_NAME_COLUMN:  // Profile name
+      return UTF16ToUTF8(model_->GetResourceProfileName(row));
 
     case IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN:  // Memory
       return UTF16ToUTF8(model_->GetResourcePrivateMemory(row));
@@ -734,10 +759,10 @@ std::string TaskManagerGtk::GetModelText(int row, int col_id) {
 GdkPixbuf* TaskManagerGtk::GetModelIcon(int row) {
   SkBitmap icon = model_->GetResourceIcon(row);
   if (icon.pixelRef() ==
-      ResourceBundle::GetSharedInstance().GetBitmapNamed(
+      ui::ResourceBundle::GetSharedInstance().GetBitmapNamed(
           IDR_DEFAULT_FAVICON)->pixelRef()) {
     return static_cast<GdkPixbuf*>(g_object_ref(
-        GtkThemeService::GetDefaultFavicon(true)));
+        GtkThemeService::GetDefaultFavicon(true)->ToGdkPixbuf()));
   }
 
   return gfx::GdkPixbufFromSkBitmap(&icon);
@@ -746,8 +771,11 @@ GdkPixbuf* TaskManagerGtk::GetModelIcon(int row) {
 void TaskManagerGtk::SetRowDataFromModel(int row, GtkTreeIter* iter) {
   GdkPixbuf* icon = GetModelIcon(row);
   std::string page = GetModelText(row, IDS_TASK_MANAGER_PAGE_COLUMN);
-  std::string shared_mem = GetModelText(
-      row, IDS_TASK_MANAGER_SHARED_MEM_COLUMN);
+  std::string profile_name =
+      GetModelText(row, IDS_TASK_MANAGER_PROFILE_NAME_COLUMN);
+  gchar* page_markup = g_markup_escape_text(page.c_str(), page.length());
+  std::string shared_mem =
+      GetModelText(row, IDS_TASK_MANAGER_SHARED_MEM_COLUMN);
   std::string priv_mem = GetModelText(row, IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN);
   std::string cpu = GetModelText(row, IDS_TASK_MANAGER_CPU_COLUMN);
   std::string net = GetModelText(row, IDS_TASK_MANAGER_NET_COLUMN);
@@ -756,38 +784,43 @@ void TaskManagerGtk::SetRowDataFromModel(int row, GtkTreeIter* iter) {
   // Querying the renderer metrics is slow as it has to do IPC, so only do it
   // when the columns are visible.
   std::string javascript_memory;
-  if (TreeViewColumnIsVisible(treeview_, kTaskManagerJavaScriptMemory))
-    javascript_memory = GetModelText(
-        row, IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN);
+  if (TreeViewColumnIsVisible(treeview_, kTaskManagerJavaScriptMemory)) {
+    javascript_memory =
+        GetModelText(row, IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN);
+  }
   std::string wk_img_cache;
-  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreImageCache))
-    wk_img_cache = GetModelText(
-        row, IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN);
+  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreImageCache)) {
+    wk_img_cache =
+        GetModelText(row, IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN);
+  }
   std::string wk_scripts_cache;
-  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreScriptsCache))
-    wk_scripts_cache = GetModelText(
-        row, IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN);
+  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreScriptsCache)) {
+    wk_scripts_cache =
+        GetModelText(row, IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN);
+  }
   std::string wk_css_cache;
-  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreCssCache))
-    wk_css_cache = GetModelText(
-        row, IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN);
+  if (TreeViewColumnIsVisible(treeview_, kTaskManagerWebCoreCssCache)) {
+    wk_css_cache =
+        GetModelText(row, IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN);
+  }
   std::string fps;
   if (TreeViewColumnIsVisible(treeview_, kTaskManagerFPS))
-    fps = GetModelText(
-        row, IDS_TASK_MANAGER_FPS_COLUMN);
+    fps = GetModelText(row, IDS_TASK_MANAGER_FPS_COLUMN);
   std::string sqlite_memory;
-  if (TreeViewColumnIsVisible(treeview_, kTaskManagerSqliteMemoryUsed))
-    sqlite_memory = GetModelText(
-        row, IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN);
+  if (TreeViewColumnIsVisible(treeview_, kTaskManagerSqliteMemoryUsed)) {
+    sqlite_memory =
+        GetModelText(row, IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN);
+  }
 
-  std::string goats = GetModelText(
-      row, IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN);
+  std::string goats =
+      GetModelText(row, IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN);
 
   bool is_background = model_->IsBackgroundResource(row) &&
       highlight_background_resources_;
   gtk_list_store_set(process_list_, iter,
                      kTaskManagerIcon, icon,
-                     kTaskManagerPage, page.c_str(),
+                     kTaskManagerPage, page_markup,
+                     kTaskManagerProfileName, profile_name.c_str(),
                      kTaskManagerSharedMem, shared_mem.c_str(),
                      kTaskManagerPrivateMem, priv_mem.c_str(),
                      kTaskManagerCPU, cpu.c_str(),
@@ -804,6 +837,7 @@ void TaskManagerGtk::SetRowDataFromModel(int row, GtkTreeIter* iter) {
                      is_background ? &kHighlightColor : NULL,
                      -1);
   g_object_unref(icon);
+  g_free(page_markup);
 }
 
 void TaskManagerGtk::KillSelectedProcesses() {

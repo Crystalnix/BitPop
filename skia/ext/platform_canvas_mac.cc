@@ -4,13 +4,15 @@
 
 #include "skia/ext/platform_canvas.h"
 
+#include "base/debug/trace_event.h"
 #include "skia/ext/bitmap_platform_device.h"
 #include "third_party/skia/include/core/SkTypes.h"
 
 namespace skia {
 
 PlatformCanvas::PlatformCanvas(int width, int height, bool is_opaque) {
-  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
+  TRACE_EVENT2("skia", "PlatformCanvas::PlatformCanvas",
+               "width", width, "height", height);
   initialize(width, height, is_opaque);
 }
 
@@ -18,7 +20,8 @@ PlatformCanvas::PlatformCanvas(int width,
                                int height,
                                bool is_opaque,
                                CGContextRef context) {
-  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
+  TRACE_EVENT2("skia", "PlatformCanvas::PlatformCanvas",
+               "width", width, "height", height);
   initialize(context, width, height, is_opaque);
 }
 
@@ -26,7 +29,8 @@ PlatformCanvas::PlatformCanvas(int width,
                                int height,
                                bool is_opaque,
                                uint8_t* data) {
-  setDeviceFactory(SkNEW(BitmapPlatformDeviceFactory))->unref();
+  TRACE_EVENT2("skia", "PlatformCanvas::PlatformCanvas",
+               "width", width, "height", height);
   initialize(width, height, is_opaque, data);
 }
 

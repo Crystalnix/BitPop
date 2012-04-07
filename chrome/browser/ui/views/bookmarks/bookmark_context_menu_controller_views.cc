@@ -7,26 +7,30 @@
 #include "base/compiler_specific.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_editor.h"
-#include "chrome/browser/bookmarks/bookmark_folder_editor_controller.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/browser/user_metrics.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/page_navigator.h"
+#include "content/public/browser/page_navigator.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
+#include "ui/views/widget/widget.h"
+
+using content::PageNavigator;
+using content::UserMetricsAction;
 
 BookmarkContextMenuControllerViews::BookmarkContextMenuControllerViews(
-    gfx::NativeWindow parent_window,
+    views::Widget* parent_widget,
     BookmarkContextMenuControllerViewsDelegate* delegate,
     Profile* profile,
     PageNavigator* navigator,
     const BookmarkNode* parent,
     const std::vector<const BookmarkNode*>& selection)
-    : parent_window_(parent_window),
+    : parent_widget_(parent_widget),
       delegate_(delegate),
       profile_(profile),
       navigator_(navigator),
@@ -46,18 +50,18 @@ BookmarkContextMenuControllerViews::~BookmarkContextMenuControllerViews() {
 void BookmarkContextMenuControllerViews::BuildMenu() {
   if (selection_.size() == 1 && selection_[0]->is_url()) {
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL,
-                                   IDS_BOOMARK_BAR_OPEN_IN_NEW_TAB);
+                                   IDS_BOOKMARK_BAR_OPEN_IN_NEW_TAB);
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW,
-                                   IDS_BOOMARK_BAR_OPEN_IN_NEW_WINDOW);
+                                   IDS_BOOKMARK_BAR_OPEN_IN_NEW_WINDOW);
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO,
-                                   IDS_BOOMARK_BAR_OPEN_INCOGNITO);
+                                   IDS_BOOKMARK_BAR_OPEN_INCOGNITO);
   } else {
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL,
-                                   IDS_BOOMARK_BAR_OPEN_ALL);
+                                   IDS_BOOKMARK_BAR_OPEN_ALL);
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW,
-                                   IDS_BOOMARK_BAR_OPEN_ALL_NEW_WINDOW);
+                                   IDS_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW);
     delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO,
-                                   IDS_BOOMARK_BAR_OPEN_ALL_INCOGNITO);
+                                   IDS_BOOKMARK_BAR_OPEN_ALL_INCOGNITO);
   }
 
   delegate_->AddSeparator();
@@ -80,14 +84,14 @@ void BookmarkContextMenuControllerViews::BuildMenu() {
 
   delegate_->AddSeparator();
   delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_ADD_NEW_BOOKMARK,
-                                 IDS_BOOMARK_BAR_ADD_NEW_BOOKMARK);
+                                 IDS_BOOKMARK_BAR_ADD_NEW_BOOKMARK);
   delegate_->AddItemWithStringId(IDC_BOOKMARK_BAR_NEW_FOLDER,
-                                 IDS_BOOMARK_BAR_NEW_FOLDER);
+                                 IDS_BOOKMARK_BAR_NEW_FOLDER);
 
   delegate_->AddSeparator();
   delegate_->AddItemWithStringId(IDC_BOOKMARK_MANAGER, IDS_BOOKMARK_MANAGER);
   delegate_->AddCheckboxItem(IDC_BOOKMARK_BAR_ALWAYS_SHOW,
-                             IDS_BOOMARK_BAR_ALWAYS_SHOW);
+                             IDS_SHOW_BOOKMARK_BAR);
 }
 
 void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
@@ -100,25 +104,27 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
       WindowOpenDisposition initial_disposition;
       if (id == IDC_BOOKMARK_BAR_OPEN_ALL) {
         initial_disposition = NEW_FOREGROUND_TAB;
-        UserMetrics::RecordAction(
+        content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAll"));
       } else if (id == IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW) {
         initial_disposition = NEW_WINDOW;
-        UserMetrics::RecordAction(
+        content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAllInNewWindow"));
       } else {
         initial_disposition = OFF_THE_RECORD;
-        UserMetrics::RecordAction(
+        content::RecordAction(
             UserMetricsAction("BookmarkBar_ContextMenu_OpenAllIncognito"));
       }
-      bookmark_utils::OpenAll(parent_window_, profile_, navigator_, selection_,
+      bookmark_utils::OpenAll(parent_widget_->GetNativeWindow(),
+                              profile_, navigator_, selection_,
                               initial_disposition);
+      bookmark_utils::RecordBookmarkLaunch(bookmark_utils::LAUNCH_CONTEXT_MENU);
       break;
     }
 
     case IDC_BOOKMARK_BAR_RENAME_FOLDER:
     case IDC_BOOKMARK_BAR_EDIT:
-      UserMetrics::RecordAction(
+      content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_Edit"));
 
       if (selection_.size() != 1) {
@@ -126,19 +132,15 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
         return;
       }
 
-      if (selection_[0]->is_url()) {
-        BookmarkEditor::Show(parent_window_, profile_, parent_,
-                             BookmarkEditor::EditDetails(selection_[0]),
-                             BookmarkEditor::SHOW_TREE);
-      } else {
-        BookmarkFolderEditorController::Show(profile_, parent_window_,
-            selection_[0], -1,
-            BookmarkFolderEditorController::EXISTING_BOOKMARK);
-      }
+      BookmarkEditor::Show(
+          parent_widget_->GetNativeWindow(),
+          profile_,
+          BookmarkEditor::EditDetails::EditNode(selection_[0]),
+          BookmarkEditor::SHOW_TREE);
       break;
 
     case IDC_BOOKMARK_BAR_REMOVE: {
-      UserMetrics::RecordAction(
+      content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_Remove"));
 
       delegate_->WillRemoveBookmarks(selection_);
@@ -152,25 +154,32 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
     }
 
     case IDC_BOOKMARK_BAR_ADD_NEW_BOOKMARK: {
-      UserMetrics::RecordAction(
+      content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_Add"));
 
-      // TODO: this should honor the index from GetParentForNewNodes.
+      int index;
+      const BookmarkNode* parent =
+          bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
       BookmarkEditor::Show(
-          parent_window_, profile_,
-          bookmark_utils::GetParentForNewNodes(parent_, selection_, NULL),
-          BookmarkEditor::EditDetails(), BookmarkEditor::SHOW_TREE);
+          parent_widget_->GetNativeWindow(),
+          profile_,
+          BookmarkEditor::EditDetails::AddNodeInFolder(parent, index),
+          BookmarkEditor::SHOW_TREE);
       break;
     }
 
     case IDC_BOOKMARK_BAR_NEW_FOLDER: {
-      UserMetrics::RecordAction(
+      content::RecordAction(
           UserMetricsAction("BookmarkBar_ContextMenu_NewFolder"));
+
       int index;
       const BookmarkNode* parent =
           bookmark_utils::GetParentForNewNodes(parent_, selection_, &index);
-      BookmarkFolderEditorController::Show(profile_, parent_window_, parent,
-          index, BookmarkFolderEditorController::NEW_BOOKMARK);
+      BookmarkEditor::Show(
+          parent_widget_->GetNativeWindow(),
+          profile_,
+          BookmarkEditor::EditDetails::AddFolder(parent, index),
+          BookmarkEditor::SHOW_TREE);
       break;
     }
 
@@ -178,16 +187,21 @@ void BookmarkContextMenuControllerViews::ExecuteCommand(int id) {
       bookmark_utils::ToggleWhenVisible(profile_);
       break;
 
-    case IDC_BOOKMARK_MANAGER:
-      UserMetrics::RecordAction(UserMetricsAction("ShowBookmarkManager"));
-      {
-        Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
-        if (browser)
-          browser->OpenBookmarkManager();
-        else
-          NOTREACHED();
-      }
+    case IDC_BOOKMARK_MANAGER: {
+      content::RecordAction(UserMetricsAction("ShowBookmarkManager"));
+      Browser* browser = BrowserList::GetLastActiveWithProfile(profile_);
+      if (!browser) NOTREACHED();
+
+      if (selection_.size() != 1)
+        browser->OpenBookmarkManager();
+      else if (selection_[0]->is_folder())
+        browser->OpenBookmarkManagerForNode(selection_[0]->id());
+      else if (parent_)
+        browser->OpenBookmarkManagerForNode(parent_->id());
+      else
+        browser->OpenBookmarkManager();
       break;
+    }
 
     case IDC_CUT:
       delegate_->WillRemoveBookmarks(selection_);
@@ -226,18 +240,23 @@ bool BookmarkContextMenuControllerViews::IsCommandEnabled(int id) const {
        selection_[0]->parent() == model_->root_node());
   bool can_edit =
       profile_->GetPrefs()->GetBoolean(prefs::kEditBookmarksEnabled);
+  IncognitoModePrefs::Availability incognito_avail =
+      IncognitoModePrefs::GetAvailability(profile_->GetPrefs());
   switch (id) {
     case IDC_BOOKMARK_BAR_OPEN_INCOGNITO:
       return !profile_->IsOffTheRecord() &&
-             profile_->GetPrefs()->GetBoolean(prefs::kIncognitoEnabled);
+             incognito_avail != IncognitoModePrefs::DISABLED;
 
     case IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO:
-      return HasURLs() && !profile_->IsOffTheRecord() &&
-             profile_->GetPrefs()->GetBoolean(prefs::kIncognitoEnabled);
+      return HasURLs() &&
+             !profile_->IsOffTheRecord() &&
+             incognito_avail != IncognitoModePrefs::DISABLED;
 
     case IDC_BOOKMARK_BAR_OPEN_ALL:
-    case IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW:
       return HasURLs();
+    case IDC_BOOKMARK_BAR_OPEN_ALL_NEW_WINDOW:
+      return HasURLs() &&
+             incognito_avail != IncognitoModePrefs::FORCED;
 
     case IDC_BOOKMARK_BAR_RENAME_FOLDER:
     case IDC_BOOKMARK_BAR_EDIT:
@@ -253,7 +272,7 @@ bool BookmarkContextMenuControllerViews::IsCommandEnabled(int id) const {
 
     case IDC_BOOKMARK_BAR_ALWAYS_SHOW:
       return !profile_->GetPrefs()->IsManagedPreference(
-          prefs::kEnableBookmarkBar);
+          prefs::kShowBookmarkBar);
 
     case IDC_COPY:
     case IDC_CUT:

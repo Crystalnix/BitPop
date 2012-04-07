@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,25 +46,20 @@ static const int kRecvBufferSize = 4096;
 namespace net {
 
 SSLServerSocket* CreateSSLServerSocket(
-    Socket* socket, X509Certificate* cert, crypto::RSAPrivateKey* key,
+    StreamSocket* socket,
+    X509Certificate* cert,
+    crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config) {
   return new SSLServerSocketNSS(socket, cert, key, ssl_config);
 }
 
 SSLServerSocketNSS::SSLServerSocketNSS(
-    Socket* transport_socket,
+    StreamSocket* transport_socket,
     scoped_refptr<X509Certificate> cert,
     crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(buffer_send_callback_(
-          this, &SSLServerSocketNSS::BufferSendComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(buffer_recv_callback_(
-          this, &SSLServerSocketNSS::BufferRecvComplete)),
-      transport_send_busy_(false),
+    : transport_send_busy_(false),
       transport_recv_busy_(false),
-      user_accept_callback_(NULL),
-      user_read_callback_(NULL),
-      user_write_callback_(NULL),
       nss_fd_(NULL),
       nss_bufs_(NULL),
       transport_socket_(transport_socket),
@@ -90,20 +85,20 @@ SSLServerSocketNSS::~SSLServerSocketNSS() {
   }
 }
 
-int SSLServerSocketNSS::Accept(CompletionCallback* callback) {
-  net_log_.BeginEvent(NetLog::TYPE_SSL_ACCEPT, NULL);
+int SSLServerSocketNSS::Handshake(const CompletionCallback& callback) {
+  net_log_.BeginEvent(NetLog::TYPE_SSL_SERVER_HANDSHAKE, NULL);
 
   int rv = Init();
   if (rv != OK) {
     LOG(ERROR) << "Failed to initialize NSS";
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_ACCEPT, rv);
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_SERVER_HANDSHAKE, rv);
     return rv;
   }
 
   rv = InitializeSSLOptions();
   if (rv != OK) {
     LOG(ERROR) << "Failed to initialize SSL options";
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_ACCEPT, rv);
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_SERVER_HANDSHAKE, rv);
     return rv;
   }
 
@@ -114,20 +109,42 @@ int SSLServerSocketNSS::Accept(CompletionCallback* callback) {
   memio_SetPeerName(nss_fd_, &peername);
 
   GotoState(STATE_HANDSHAKE);
-  rv = DoHandshakeLoop(net::OK);
+  rv = DoHandshakeLoop(OK);
   if (rv == ERR_IO_PENDING) {
-    user_accept_callback_ = callback;
+    user_handshake_callback_ = callback;
   } else {
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_ACCEPT, rv);
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_SERVER_HANDSHAKE, rv);
   }
 
   return rv > OK ? OK : rv;
 }
 
+int SSLServerSocketNSS::ExportKeyingMaterial(const base::StringPiece& label,
+                                             const base::StringPiece& context,
+                                             unsigned char *out,
+                                             unsigned int outlen) {
+  if (!IsConnected())
+    return ERR_SOCKET_NOT_CONNECTED;
+  SECStatus result = SSL_ExportKeyingMaterial(
+      nss_fd_, label.data(), label.size(),
+      reinterpret_cast<const unsigned char*>(context.data()),
+      context.length(), out, outlen);
+  if (result != SECSuccess) {
+    LogFailedNSSFunction(net_log_, "SSL_ExportKeyingMaterial", "");
+    return MapNSSError(PORT_GetError());
+  }
+  return OK;
+}
+
+int SSLServerSocketNSS::Connect(const CompletionCallback& callback) {
+  NOTIMPLEMENTED();
+  return ERR_NOT_IMPLEMENTED;
+}
+
 int SSLServerSocketNSS::Read(IOBuffer* buf, int buf_len,
-                             CompletionCallback* callback) {
-  DCHECK(!user_read_callback_);
-  DCHECK(!user_accept_callback_);
+                             const CompletionCallback& callback) {
+  DCHECK(user_read_callback_.is_null());
+  DCHECK(user_handshake_callback_.is_null());
   DCHECK(!user_read_buf_);
   DCHECK(nss_bufs_);
 
@@ -148,8 +165,8 @@ int SSLServerSocketNSS::Read(IOBuffer* buf, int buf_len,
 }
 
 int SSLServerSocketNSS::Write(IOBuffer* buf, int buf_len,
-                              CompletionCallback* callback) {
-  DCHECK(!user_write_callback_);
+                              const CompletionCallback& callback) {
+  DCHECK(user_write_callback_.is_null());
   DCHECK(!user_write_buf_);
   DCHECK(nss_bufs_);
 
@@ -168,11 +185,63 @@ int SSLServerSocketNSS::Write(IOBuffer* buf, int buf_len,
 }
 
 bool SSLServerSocketNSS::SetReceiveBufferSize(int32 size) {
-  return false;
+  return transport_socket_->SetReceiveBufferSize(size);
 }
 
 bool SSLServerSocketNSS::SetSendBufferSize(int32 size) {
-  return false;
+  return transport_socket_->SetSendBufferSize(size);
+}
+
+bool SSLServerSocketNSS::IsConnected() const {
+  return completed_handshake_;
+}
+
+void SSLServerSocketNSS::Disconnect() {
+  transport_socket_->Disconnect();
+}
+
+bool SSLServerSocketNSS::IsConnectedAndIdle() const {
+  return completed_handshake_ && transport_socket_->IsConnectedAndIdle();
+}
+
+int SSLServerSocketNSS::GetPeerAddress(AddressList* address) const {
+  if (!IsConnected())
+    return ERR_SOCKET_NOT_CONNECTED;
+  return transport_socket_->GetPeerAddress(address);
+}
+
+int SSLServerSocketNSS::GetLocalAddress(IPEndPoint* address) const {
+  if (!IsConnected())
+    return ERR_SOCKET_NOT_CONNECTED;
+  return transport_socket_->GetLocalAddress(address);
+}
+
+const BoundNetLog& SSLServerSocketNSS::NetLog() const {
+  return net_log_;
+}
+
+void SSLServerSocketNSS::SetSubresourceSpeculation() {
+  transport_socket_->SetSubresourceSpeculation();
+}
+
+void SSLServerSocketNSS::SetOmniboxSpeculation() {
+  transport_socket_->SetOmniboxSpeculation();
+}
+
+bool SSLServerSocketNSS::WasEverUsed() const {
+  return transport_socket_->WasEverUsed();
+}
+
+bool SSLServerSocketNSS::UsingTCPFastOpen() const {
+  return transport_socket_->UsingTCPFastOpen();
+}
+
+int64 SSLServerSocketNSS::NumBytesRead() const {
+  return transport_socket_->NumBytesRead();
+}
+
+base::TimeDelta SSLServerSocketNSS::GetConnectTimeMicros() const {
+  return transport_socket_->GetConnectTimeMicros();
 }
 
 int SSLServerSocketNSS::InitializeSSLOptions() {
@@ -281,7 +350,7 @@ int SSLServerSocketNSS::InitializeSSLOptions() {
 
   // Get a certificate of CERTCertificate structure.
   std::string der_string;
-  if (!cert_->GetDEREncoded(&der_string))
+  if (!X509Certificate::GetDEREncoded(cert_->os_cert_handle(), &der_string))
     return ERR_UNEXPECTED;
 
   SECItem der_cert;
@@ -293,6 +362,10 @@ int SSLServerSocketNSS::InitializeSSLOptions() {
   // Parse into a CERTCertificate structure.
   CERTCertificate* cert = CERT_NewTempCertificate(
       CERT_GetDefaultCertDB(), &der_cert, NULL, PR_FALSE, PR_TRUE);
+  if (!cert) {
+    LogFailedNSSFunction(net_log_, "CERT_NewTempCertificate", "");
+    return MapNSSError(PORT_GetError());
+  }
 
   // Get a key of SECKEYPrivateKey* structure.
   std::vector<uint8> key_vector;
@@ -357,12 +430,17 @@ void SSLServerSocketNSS::OnSendComplete(int result) {
     return;
   }
 
-  if (!user_write_buf_ || !completed_handshake_)
+  if (!completed_handshake_)
     return;
 
-  int rv = DoWriteLoop(result);
-  if (rv != ERR_IO_PENDING)
-    DoWriteCallback(rv);
+  if (user_write_buf_) {
+    int rv = DoWriteLoop(result);
+    if (rv != ERR_IO_PENDING)
+      DoWriteCallback(rv);
+  } else {
+    // Ensure that any queued ciphertext is flushed.
+    DoTransportIO();
+  }
 }
 
 void SSLServerSocketNSS::OnRecvComplete(int result) {
@@ -385,9 +463,9 @@ void SSLServerSocketNSS::OnRecvComplete(int result) {
 void SSLServerSocketNSS::OnHandshakeIOComplete(int result) {
   int rv = DoHandshakeLoop(result);
   if (rv != ERR_IO_PENDING) {
-    net_log_.EndEventWithNetErrorCode(net::NetLog::TYPE_SSL_ACCEPT, rv);
-    if (user_accept_callback_)
-      DoAcceptCallback(rv);
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SSL_SERVER_HANDSHAKE, rv);
+    if (!user_handshake_callback_.is_null())
+      DoHandshakeCallback(rv);
   }
 }
 
@@ -409,8 +487,10 @@ int SSLServerSocketNSS::BufferSend(void) {
     scoped_refptr<IOBuffer> send_buffer(new IOBuffer(len));
     memcpy(send_buffer->data(), buf1, len1);
     memcpy(send_buffer->data() + len1, buf2, len2);
-    rv = transport_socket_->Write(send_buffer, len,
-                                  &buffer_send_callback_);
+    rv = transport_socket_->Write(
+        send_buffer, len,
+        base::Bind(&SSLServerSocketNSS::BufferSendComplete,
+                   base::Unretained(this)));
     if (rv == ERR_IO_PENDING) {
       transport_send_busy_ = true;
     } else {
@@ -438,7 +518,10 @@ int SSLServerSocketNSS::BufferRecv(void) {
     rv = ERR_IO_PENDING;
   } else {
     recv_buffer_ = new IOBuffer(nb);
-    rv = transport_socket_->Read(recv_buffer_, nb, &buffer_recv_callback_);
+    rv = transport_socket_->Read(
+        recv_buffer_, nb,
+        base::Bind(&SSLServerSocketNSS::BufferRecvComplete,
+                   base::Unretained(this)));
     if (rv == ERR_IO_PENDING) {
       transport_recv_busy_ = true;
     } else {
@@ -463,14 +546,22 @@ void SSLServerSocketNSS::BufferRecvComplete(int result) {
   OnRecvComplete(result);
 }
 
-// Do network I/O between the given buffer and the given socket.
-// Return true if some I/O performed, false otherwise (error or ERR_IO_PENDING)
+// Do as much network I/O as possible between the buffer and the
+// transport socket. Return true if some I/O performed, false
+// otherwise (error or ERR_IO_PENDING).
 bool SSLServerSocketNSS::DoTransportIO() {
   bool network_moved = false;
   if (nss_bufs_ != NULL) {
-    int nsent = BufferSend();
-    int nreceived = BufferRecv();
-    network_moved = (nsent > 0 || nreceived >= 0);
+    int rv;
+    // Read and write as much data as we can. The loop is neccessary
+    // because Write() may return synchronously.
+    do {
+      rv = BufferSend();
+      if (rv > 0)
+        network_moved = true;
+    } while (rv > 0);
+    if (BufferRecv() >= 0)
+      network_moved = true;
   }
   return network_moved;
 }
@@ -507,7 +598,6 @@ int SSLServerSocketNSS::DoPayloadWrite() {
 }
 
 int SSLServerSocketNSS::DoHandshakeLoop(int last_io_result) {
-  bool network_moved;
   int rv = last_io_result;
   do {
     // Default to STATE_NONE for next state.
@@ -518,12 +608,10 @@ int SSLServerSocketNSS::DoHandshakeLoop(int last_io_result) {
     State state = next_handshake_state_;
     GotoState(STATE_NONE);
     switch (state) {
-      case STATE_NONE:
-        // we're just pumping data between the buffer and the network
-        break;
       case STATE_HANDSHAKE:
         rv = DoHandshake();
         break;
+      case STATE_NONE:
       default:
         rv = ERR_UNEXPECTED;
         LOG(DFATAL) << "unexpected state " << state;
@@ -531,9 +619,14 @@ int SSLServerSocketNSS::DoHandshakeLoop(int last_io_result) {
     }
 
     // Do the actual network I/O
-    network_moved = DoTransportIO();
-  } while ((rv != ERR_IO_PENDING || network_moved) &&
-           next_handshake_state_ != STATE_NONE);
+    bool network_moved = DoTransportIO();
+    if (network_moved && next_handshake_state_ == STATE_HANDSHAKE) {
+      // In general we exit the loop if rv is ERR_IO_PENDING.  In this
+      // special case we keep looping even if rv is ERR_IO_PENDING because
+      // the transport IO may allow DoHandshake to make progress.
+      rv = OK;  // This causes us to stay in the loop.
+    }
+  } while (rv != ERR_IO_PENDING && next_handshake_state_ != STATE_NONE);
   return rv;
 }
 
@@ -586,7 +679,7 @@ int SSLServerSocketNSS::DoWriteLoop(int result) {
 }
 
 int SSLServerSocketNSS::DoHandshake() {
-  int net_error = net::OK;
+  int net_error = OK;
   SECStatus rv = SSL_ForceHandshake(nss_fd_);
 
   if (rv == SECSuccess) {
@@ -609,38 +702,38 @@ int SSLServerSocketNSS::DoHandshake() {
   return net_error;
 }
 
-void SSLServerSocketNSS::DoAcceptCallback(int rv) {
+void SSLServerSocketNSS::DoHandshakeCallback(int rv) {
   DCHECK_NE(rv, ERR_IO_PENDING);
 
-  CompletionCallback* c = user_accept_callback_;
-  user_accept_callback_ = NULL;
-  c->Run(rv > OK ? OK : rv);
+  CompletionCallback c = user_handshake_callback_;
+  user_handshake_callback_.Reset();
+  c.Run(rv > OK ? OK : rv);
 }
 
 void SSLServerSocketNSS::DoReadCallback(int rv) {
   DCHECK(rv != ERR_IO_PENDING);
-  DCHECK(user_read_callback_);
+  DCHECK(!user_read_callback_.is_null());
 
   // Since Run may result in Read being called, clear |user_read_callback_|
   // up front.
-  CompletionCallback* c = user_read_callback_;
-  user_read_callback_ = NULL;
+  CompletionCallback c = user_read_callback_;
+  user_read_callback_.Reset();
   user_read_buf_ = NULL;
   user_read_buf_len_ = 0;
-  c->Run(rv);
+  c.Run(rv);
 }
 
 void SSLServerSocketNSS::DoWriteCallback(int rv) {
   DCHECK(rv != ERR_IO_PENDING);
-  DCHECK(user_write_callback_);
+  DCHECK(!user_write_callback_.is_null());
 
   // Since Run may result in Write being called, clear |user_write_callback_|
   // up front.
-  CompletionCallback* c = user_write_callback_;
-  user_write_callback_ = NULL;
+  CompletionCallback c = user_write_callback_;
+  user_write_callback_.Reset();
   user_write_buf_ = NULL;
   user_write_buf_len_ = 0;
-  c->Run(rv);
+  c.Run(rv);
 }
 
 // static
@@ -672,12 +765,6 @@ int SSLServerSocketNSS::Init() {
   EnsureNSSSSLInit();
   if (!NSS_IsInitialized())
     return ERR_UNEXPECTED;
-#if !defined(OS_MACOSX) && !defined(OS_WIN)
-  // We must call EnsureOCSPInit() here, on the IO thread, to get the IO loop
-  // by MessageLoopForIO::current().
-  // X509Certificate::Verify() runs on a worker thread of CertVerifier.
-  EnsureOCSPInit();
-#endif
 
   return OK;
 }

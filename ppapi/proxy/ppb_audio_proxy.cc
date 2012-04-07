@@ -4,6 +4,7 @@
 
 #include "ppapi/proxy/ppb_audio_proxy.h"
 
+#include "base/compiler_specific.h"
 #include "base/threading/simple_thread.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_audio.h"
@@ -11,23 +12,27 @@
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/proxy/enter_proxy.h"
-#include "ppapi/proxy/interface_id.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
-#include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "ppapi/shared_impl/audio_impl.h"
+#include "ppapi/shared_impl/api_id.h"
+#include "ppapi/shared_impl/platform_file.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/ppb_audio_shared.h"
+#include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_audio_config_api.h"
-#include "ppapi/thunk/ppb_audio_trusted_api.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/resource_creation_api.h"
 #include "ppapi/thunk/thunk.h"
 
-using ::ppapi::thunk::PPB_Audio_API;
+using ppapi::IntToPlatformFile;
+using ppapi::thunk::EnterResourceNoLock;
+using ppapi::thunk::PPB_Audio_API;
+using ppapi::thunk::PPB_AudioConfig_API;
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
-class Audio : public PluginResource, public ppapi::AudioImpl {
+class Audio : public Resource, public PPB_Audio_Shared {
  public:
   Audio(const HostResource& audio_id,
         PP_Resource config_id,
@@ -35,13 +40,17 @@ class Audio : public PluginResource, public ppapi::AudioImpl {
         void* user_data);
   virtual ~Audio();
 
-  // ResourceObjectBase overrides.
+  // Resource overrides.
   virtual PPB_Audio_API* AsPPB_Audio_API();
 
   // PPB_Audio_API implementation.
   virtual PP_Resource GetCurrentConfig() OVERRIDE;
   virtual PP_Bool StartPlayback() OVERRIDE;
   virtual PP_Bool StopPlayback() OVERRIDE;
+  virtual int32_t OpenTrusted(PP_Resource config_id,
+                              PP_CompletionCallback create_callback) OVERRIDE;
+  virtual int32_t GetSyncSocket(int* sync_socket) OVERRIDE;
+  virtual int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) OVERRIDE;
 
  private:
   // Owning reference to the current config object. This isn't actually used,
@@ -55,14 +64,14 @@ Audio::Audio(const HostResource& audio_id,
              PP_Resource config_id,
              PPB_Audio_Callback callback,
              void* user_data)
-    : PluginResource(audio_id),
+    : Resource(audio_id),
       config_(config_id) {
   SetCallback(callback, user_data);
-  PluginResourceTracker::GetInstance()->AddRefResource(config_);
+  PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(config_);
 }
 
 Audio::~Audio() {
-  PluginResourceTracker::GetInstance()->ReleaseResource(config_);
+  PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(config_);
 }
 
 PPB_Audio_API* Audio::AsPPB_Audio_API() {
@@ -71,7 +80,7 @@ PPB_Audio_API* Audio::AsPPB_Audio_API() {
 
 PP_Resource Audio::GetCurrentConfig() {
   // AddRef for the caller.
-  PluginResourceTracker::GetInstance()->AddRefResource(config_);
+  PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(config_);
   return config_;
 }
 
@@ -79,62 +88,41 @@ PP_Bool Audio::StartPlayback() {
   if (playing())
     return PP_TRUE;
   SetStartPlaybackState();
-  PluginDispatcher::GetForInstance(instance())->Send(
+  PluginDispatcher::GetForResource(this)->Send(
       new PpapiHostMsg_PPBAudio_StartOrStop(
-          INTERFACE_ID_PPB_AUDIO, host_resource(), true));
+          API_ID_PPB_AUDIO, host_resource(), true));
   return PP_TRUE;
 }
 
 PP_Bool Audio::StopPlayback() {
   if (!playing())
     return PP_TRUE;
-  PluginDispatcher::GetForInstance(instance())->Send(
+  PluginDispatcher::GetForResource(this)->Send(
       new PpapiHostMsg_PPBAudio_StartOrStop(
-          INTERFACE_ID_PPB_AUDIO, host_resource(), false));
+          API_ID_PPB_AUDIO, host_resource(), false));
   SetStopPlaybackState();
   return PP_TRUE;
 }
 
-namespace {
-
-InterfaceProxy* CreateAudioProxy(Dispatcher* dispatcher,
-                                 const void* target_interface) {
-  return new PPB_Audio_Proxy(dispatcher, target_interface);
+int32_t Audio::OpenTrusted(PP_Resource config_id,
+                           PP_CompletionCallback create_callback) {
+  return PP_ERROR_NOTSUPPORTED;  // Don't proxy the trusted interface.
 }
 
-base::PlatformFile IntToPlatformFile(int32_t handle) {
-  // TODO(piman/brettw): Change trusted interface to return a PP_FileHandle,
-  // those casts are ugly.
-#if defined(OS_WIN)
-  return reinterpret_cast<HANDLE>(static_cast<intptr_t>(handle));
-#elif defined(OS_POSIX)
-  return handle;
-#else
-  #error Not implemented.
-#endif
+int32_t Audio::GetSyncSocket(int* sync_socket) {
+  return PP_ERROR_NOTSUPPORTED;  // Don't proxy the trusted interface.
 }
 
-}  // namespace
+int32_t Audio::GetSharedMemory(int* shm_handle, uint32_t* shm_size) {
+  return PP_ERROR_NOTSUPPORTED;  // Don't proxy the trusted interface.
+}
 
-PPB_Audio_Proxy::PPB_Audio_Proxy(Dispatcher* dispatcher,
-                                 const void* target_interface)
-    : InterfaceProxy(dispatcher, target_interface),
+PPB_Audio_Proxy::PPB_Audio_Proxy(Dispatcher* dispatcher)
+    : InterfaceProxy(dispatcher),
       callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 PPB_Audio_Proxy::~PPB_Audio_Proxy() {
-}
-
-// static
-const InterfaceProxy::Info* PPB_Audio_Proxy::GetInfo() {
-  static const Info info = {
-    ppapi::thunk::GetPPB_Audio_Thunk(),
-    PPB_AUDIO_INTERFACE,
-    INTERFACE_ID_PPB_AUDIO,
-    false,
-    &CreateAudioProxy,
-  };
-  return &info;
 }
 
 // static
@@ -147,22 +135,23 @@ PP_Resource PPB_Audio_Proxy::CreateProxyResource(
   if (!dispatcher)
     return 0;
 
-  ::ppapi::thunk::EnterResourceNoLock< ::ppapi::thunk::PPB_AudioConfig_API>
-      config(config_id, true);
+  EnterResourceNoLock<PPB_AudioConfig_API> config(config_id, true);
   if (config.failed())
+    return 0;
+
+  if (!audio_callback)
     return 0;
 
   HostResource result;
   dispatcher->Send(new PpapiHostMsg_PPBAudio_Create(
-      INTERFACE_ID_PPB_AUDIO, instance_id,
+      API_ID_PPB_AUDIO, instance_id,
       config.object()->GetSampleRate(), config.object()->GetSampleFrameCount(),
       &result));
   if (result.is_null())
     return 0;
 
-  linked_ptr<Audio> object(new Audio(result, config_id,
-                                     audio_callback, user_data));
-  return PluginResourceTracker::GetInstance()->AddResource(object);
+  return (new Audio(result, config_id,
+                    audio_callback, user_data))->GetReference();
 }
 
 bool PPB_Audio_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -182,8 +171,8 @@ void PPB_Audio_Proxy::OnMsgCreate(PP_Instance instance_id,
                                   int32_t sample_rate,
                                   uint32_t sample_frame_count,
                                   HostResource* result) {
-  ::ppapi::thunk::EnterFunction< ::ppapi::thunk::ResourceCreationAPI>
-      resource_creation(instance_id, true);
+  thunk::EnterFunction<thunk::ResourceCreationAPI> resource_creation(
+      instance_id, true);
   if (resource_creation.failed())
     return;
 
@@ -193,39 +182,51 @@ void PPB_Audio_Proxy::OnMsgCreate(PP_Instance instance_id,
       resource_creation.functions()->CreateAudioTrusted(instance_id));
   if (result->is_null())
     return;
-  ::ppapi::thunk::EnterResourceNoLock< ::ppapi::thunk::PPB_AudioTrusted_API>
-      trusted_audio(result->host_resource(), false);
-  if (trusted_audio.failed())
-    return;
+
+  // At this point, we've set the result resource, and this is a sync request.
+  // Anything below this point must issue the AudioChannelConnected callback
+  // to the browser. Since that's an async message, it will be issued back to
+  // the plugin after the Create function returns (which is good because it
+  // would be weird to get a connected message with a failure code for a
+  // resource you haven't finished creating yet).
+  //
+  // The ...ForceCallback class will help ensure the callback is always called.
+  // All error cases must call SetResult on this class.
+  EnterHostFromHostResourceForceCallback<PPB_Audio_API> enter(
+      *result, callback_factory_,
+      &PPB_Audio_Proxy::AudioChannelConnected, *result);
+  if (enter.failed())
+    return;  // When enter fails, it will internally schedule the callback.
 
   // Make an audio config object.
   PP_Resource audio_config_res =
       resource_creation.functions()->CreateAudioConfig(
           instance_id, static_cast<PP_AudioSampleRate>(sample_rate),
           sample_frame_count);
-  if (!audio_config_res)
+  if (!audio_config_res) {
+    enter.SetResult(PP_ERROR_FAILED);
     return;
+  }
 
   // Initiate opening the audio object.
-  CompletionCallback callback = callback_factory_.NewCallback(
-      &PPB_Audio_Proxy::AudioChannelConnected, *result);
-  int32_t open_error = trusted_audio.object()->OpenTrusted(
-      audio_config_res, callback.pp_completion_callback());
-  if (open_error != PP_OK_COMPLETIONPENDING)
-    callback.Run(open_error);
+  enter.SetResult(enter.object()->OpenTrusted(audio_config_res,
+                                              enter.callback()));
 
   // Clean up the temporary audio config resource we made.
   const PPB_Core* core = static_cast<const PPB_Core*>(
-      dispatcher()->GetLocalInterface(PPB_CORE_INTERFACE));
+      dispatcher()->local_get_interface()(PPB_CORE_INTERFACE));
   core->ReleaseResource(audio_config_res);
 }
 
 void PPB_Audio_Proxy::OnMsgStartOrStop(const HostResource& audio_id,
                                        bool play) {
+  EnterHostFromHostResource<PPB_Audio_API> enter(audio_id);
+  if (enter.failed())
+    return;
   if (play)
-    ppb_audio_target()->StartPlayback(audio_id.host_resource());
+    enter.object()->StartPlayback();
   else
-    ppb_audio_target()->StopPlayback(audio_id.host_resource());
+    enter.object()->StopPlayback();
 }
 
 // Processed in the plugin (message from host).
@@ -271,7 +272,7 @@ void PPB_Audio_Proxy::AudioChannelConnected(
   // us, as long as the remote side always closes the handles it receives
   // (in OnMsgNotifyAudioStreamCreated), even in the failure case.
   dispatcher()->Send(new PpapiMsg_PPBAudio_NotifyAudioStreamCreated(
-      INTERFACE_ID_PPB_AUDIO, resource, result_code, socket_handle,
+      API_ID_PPB_AUDIO, resource, result_code, socket_handle,
       shared_memory, shared_memory_length));
 }
 
@@ -280,15 +281,14 @@ int32_t PPB_Audio_Proxy::GetAudioConnectedHandles(
     IPC::PlatformFileForTransit* foreign_socket_handle,
     base::SharedMemoryHandle* foreign_shared_memory_handle,
     uint32_t* shared_memory_length) {
-  // Get the trusted audio interface which will give us the handles.
-  ::ppapi::thunk::EnterResourceNoLock< ::ppapi::thunk::PPB_AudioTrusted_API>
-      trusted_audio(resource.host_resource(), false);
-  if (trusted_audio.failed())
+  // Get the audio interface which will give us the handles.
+  EnterHostFromHostResource<PPB_Audio_API> enter(resource);
+  if (enter.failed())
     return PP_ERROR_NOINTERFACE;
 
   // Get the socket handle for signaling.
   int32_t socket_handle;
-  int32_t result = trusted_audio.object()->GetSyncSocket(&socket_handle);
+  int32_t result = enter.object()->GetSyncSocket(&socket_handle);
   if (result != PP_OK)
     return result;
 
@@ -300,8 +300,8 @@ int32_t PPB_Audio_Proxy::GetAudioConnectedHandles(
 
   // Get the shared memory for the buffer.
   int shared_memory_handle;
-  result = trusted_audio.object()->GetSharedMemory(&shared_memory_handle,
-                                                   shared_memory_length);
+  result = enter.object()->GetSharedMemory(&shared_memory_handle,
+                                           shared_memory_length);
   if (result != PP_OK)
     return result;
 
@@ -315,4 +315,4 @@ int32_t PPB_Audio_Proxy::GetAudioConnectedHandles(
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

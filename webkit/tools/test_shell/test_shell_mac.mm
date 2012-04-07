@@ -15,9 +15,10 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
+#include "base/mac/cocoa_protocols.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/memory/memory_debug.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string16.h"
@@ -38,6 +39,7 @@
 #include "webkit/tools/test_shell/resource.h"
 #include "webkit/tools/test_shell/simple_resource_loader_bridge.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
+#include "webkit/tools/test_shell/test_shell_webkit_init.h"
 #include "webkit/tools/test_shell/test_webview_delegate.h"
 
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -74,7 +76,7 @@ static ui::DataPack* g_resource_data_pack = NULL;
 
 // Define static member variables
 base::LazyInstance <std::map<gfx::NativeWindow, TestShell *> >
-    TestShell::window_map_(base::LINKER_INITIALIZED);
+    TestShell::window_map_ = LAZY_INSTANCE_INITIALIZER;
 
 // Helper method for getting the path to the test shell resources directory.
 FilePath GetResourcesFilePath() {
@@ -95,7 +97,7 @@ FilePath GetResourcesFilePath() {
 
 // Receives notification that the window is closing so that it can start the
 // tear-down process. Is responsible for deleting itself when done.
-@interface WindowDelegate : NSObject {
+@interface WindowDelegate : NSObject<NSWindowDelegate> {
  @private
   TestShellWebView* m_webView;
 }
@@ -212,8 +214,8 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
   // tests. This is a harmless failure for test_shell_tests.
   g_resource_data_pack = new ui::DataPack;
   NSString *resource_path =
-      [base::mac::MainAppBundle() pathForResource:@"test_shell"
-                                          ofType:@"pak"];
+      [base::mac::FrameworkBundle() pathForResource:@"test_shell"
+                                             ofType:@"pak"];
   FilePath resources_pak_path([resource_path fileSystemRepresentation]);
   if (!g_resource_data_pack->Load(resources_pak_path)) {
     LOG(FATAL) << "failed to load test_shell.pak";
@@ -223,7 +225,7 @@ void TestShell::InitializeTestShell(bool layout_test_mode,
 
   // Load the Ahem font, which is used by layout tests.
   const char* ahem_path_c;
-  NSString* ahem_path = [[base::mac::MainAppBundle() resourcePath]
+  NSString* ahem_path = [[base::mac::FrameworkBundle() resourcePath]
       stringByAppendingPathComponent:@"AHEM____.TTF"];
   ahem_path_c = [ahem_path fileSystemRepresentation];
   FSRef ahem_fsref;
@@ -531,7 +533,7 @@ void TestShell::ResizeSubViews() {
 }
 
 void TestShell::LoadURLForFrame(const GURL& url,
-                                const std::wstring& frame_name) {
+                                const string16& frame_name) {
   if (!url.is_valid())
     return;
 
@@ -544,7 +546,7 @@ void TestShell::LoadURLForFrame(const GURL& url,
   }
 
   navigation_controller_->LoadEntry(
-      new TestNavigationEntry(-1, url, std::wstring(), frame_name));
+      new TestNavigationEntry(-1, url, frame_name));
 }
 
 bool TestShell::PromptForSaveFile(const wchar_t* prompt_title,
@@ -604,19 +606,31 @@ base::StringPiece TestShell::ResourceProvider(int key) {
 
 //-----------------------------------------------------------------------------
 
-namespace webkit_glue {
-
-string16 GetLocalizedString(int message_id) {
+string16 TestShellWebKitInit::GetLocalizedString(int message_id) {
   base::StringPiece res;
   if (!g_resource_data_pack->GetStringPiece(message_id, &res)) {
     LOG(FATAL) << "failed to load webkit string with id " << message_id;
   }
 
-  return string16(reinterpret_cast<const char16*>(res.data()),
-                  res.length() / 2);
+  // Data packs hold strings as either UTF8 or UTF16.
+  string16 msg;
+  switch (g_resource_data_pack->GetTextEncodingType()) {
+  case ui::DataPack::UTF8:
+    msg = UTF8ToUTF16(res);
+    break;
+  case ui::DataPack::UTF16:
+    msg = string16(reinterpret_cast<const char16*>(res.data()),
+                   res.length() / 2);
+    break;
+  case ui::DataPack::BINARY:
+    NOTREACHED();
+    break;
+  }
+
+  return msg;
 }
 
-base::StringPiece GetDataResource(int resource_id) {
+base::StringPiece TestShellWebKitInit::GetDataResource(int resource_id) {
   switch (resource_id) {
   case IDR_BROKENIMAGE: {
     // Use webkit's broken image icon (16x16)
@@ -671,6 +685,8 @@ base::StringPiece GetDataResource(int resource_id) {
 
   return base::StringPiece();
 }
+
+namespace webkit_glue {
 
 bool DownloadUrl(const std::string& url, NSWindow* caller_window) {
   return false;

@@ -9,14 +9,12 @@
 #include <string>
 
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "content/browser/webui/web_ui.h"
-
-class Profile;
+#include "content/public/browser/web_ui_controller.h"
 
 // The TabContents used for the keyboard page.
-class KeyboardUI : public WebUI {
+class KeyboardUI : public content::WebUIController {
  public:
-  explicit KeyboardUI(TabContents* manager);
+  explicit KeyboardUI(content::WebUI* web_ui);
   virtual ~KeyboardUI();
 
   class KeyboardHTMLSource : public ChromeURLDataManager::DataSource {
@@ -26,8 +24,8 @@ class KeyboardUI : public WebUI {
     // Overrides from DataSource
     virtual void StartDataRequest(const std::string& path,
                                   bool is_incognito,
-                                  int request_id);
-    virtual std::string GetMimeType(const std::string&) const;
+                                  int request_id) OVERRIDE;
+    virtual std::string GetMimeType(const std::string&) const OVERRIDE;
 
    private:
     virtual ~KeyboardHTMLSource() {}

@@ -6,26 +6,36 @@
 #define CHROME_BROWSER_CHROMEOS_UPGRADE_DETECTOR_CHROMEOS_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/timer.h"
-#include "chrome/browser/chromeos/cros/update_library.h"
+#include "chrome/browser/chromeos/dbus/update_engine_client.h"
 #include "chrome/browser/upgrade_detector.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
 class UpgradeDetectorChromeos : public UpgradeDetector,
-                                public chromeos::UpdateLibrary::Observer {
+                                public chromeos::UpdateEngineClient::Observer {
  public:
   virtual ~UpgradeDetectorChromeos();
 
   static UpgradeDetectorChromeos* GetInstance();
+
+  // Initializes the object. Starts observing changes from the update
+  // engine.
+  void Init();
+
+  // Shuts down the object. Stops observing observe changes from the
+  // update engine.
+  void Shutdown();
 
  private:
   friend struct DefaultSingletonTraits<UpgradeDetectorChromeos>;
 
   UpgradeDetectorChromeos();
 
-  // chromeos::UpdateLibrary::Observer implementation.
-  virtual void UpdateStatusChanged(chromeos::UpdateLibrary* library);
+  // chromeos::UpdateEngineClient::Observer implementation.
+  virtual void UpdateStatusChanged(
+      const chromeos::UpdateEngineClient::Status& status) OVERRIDE;
 
   // The function that sends out a notification (after a certain time has
   // elapsed) that lets the rest of the UI know we should start notifying the
@@ -35,6 +45,7 @@ class UpgradeDetectorChromeos : public UpgradeDetector,
   // After we detect an upgrade we start a recurring timer to see if enough time
   // has passed and we should start notifying the user.
   base::RepeatingTimer<UpgradeDetectorChromeos> upgrade_notification_timer_;
+  bool initialized_;
 };
 
 #endif  // CHROME_BROWSER_CHROMEOS_UPGRADE_DETECTOR_CHROMEOS_H_

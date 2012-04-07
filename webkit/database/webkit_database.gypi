@@ -1,4 +1,4 @@
-# Copyright (c) 2010 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,10 +7,10 @@
     {
       'target_name': 'database',
       'type': 'static_library',
-      'msvs_guid': '1DA00DDD-44E5-4C56-B2CC-414FB0164492',
+      'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
-        '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/sql/sql.gyp:sql',
         '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
         '<(DEPTH)/webkit/support/webkit_support.gyp:quota',
       ],

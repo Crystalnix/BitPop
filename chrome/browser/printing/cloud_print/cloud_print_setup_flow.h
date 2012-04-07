@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,12 +18,16 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/native_widget_types.h"
 
-class GaiaAuthFetcher;
 class CloudPrintServiceProcessHelper;
 class CloudPrintSetupMessageHandler;
-class ServiceProcessControl;
+class GaiaAuthFetcher;
 class GoogleServiceAuthError;
-class Browser;
+class Profile;
+class ServiceProcessControl;
+
+namespace base {
+class DictionaryValue;
+}
 
 // This class is responsible for showing a cloud print setup dialog
 // and perform operations to fill the content of the dialog and handle
@@ -65,23 +69,24 @@ class CloudPrintSetupFlow : public HtmlDialogUIDelegate,
   void Focus();
 
   // HtmlDialogUIDelegate implementation.
-  virtual GURL GetDialogContentURL() const;
+  virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const;
-  virtual void GetDialogSize(gfx::Size* size) const;
-  virtual std::string GetDialogArgs() const;
-  virtual void OnDialogClosed(const std::string& json_retval);
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog);
-  virtual std::wstring GetDialogTitle() const;
-  virtual bool IsDialogModal() const;
-  virtual bool ShouldShowDialogTitle() const;
-  virtual bool HandleContextMenu(const ContextMenuParams& params);
+      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
+  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
+  virtual std::string GetDialogArgs() const OVERRIDE;
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnCloseContents(content::WebContents* source,
+                               bool* out_close_dialog) OVERRIDE;
+  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  virtual bool ShouldShowDialogTitle() const OVERRIDE;
+  virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
 
   // GaiaAuthConsumer implementation.
   virtual void OnClientLoginSuccess(
-      const GaiaAuthConsumer::ClientLoginResult& credentials);
+      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE;
   virtual void OnClientLoginFailure(
-      const GoogleServiceAuthError& error);
+      const GoogleServiceAuthError& error) OVERRIDE;
 
  private:
   friend class CloudPrintServiceProcessHelper;
@@ -94,7 +99,7 @@ class CloudPrintSetupFlow : public HtmlDialogUIDelegate,
   // Called CloudPrintSetupMessageHandler when a DOM is attached. This method
   // is called when the HTML page is fully loaded. We then operate on this
   // WebUI object directly.
-  void Attach(WebUI* web_ui);
+  void Attach(content::WebUI* web_ui);
 
   // Called by CloudPrintSetupMessageHandler when user authentication is
   // registered.
@@ -109,7 +114,7 @@ class CloudPrintSetupFlow : public HtmlDialogUIDelegate,
   void OnUserClickedPrintTestPage();
 
   // The following methods control which iframe is visible.
-  void ShowGaiaLogin(const DictionaryValue& args);
+  void ShowGaiaLogin(const base::DictionaryValue& args);
   void ShowGaiaSuccessAndSettingUp();
   void ShowGaiaFailed(const GoogleServiceAuthError& error);
   void ShowSetupDone();
@@ -119,7 +124,7 @@ class CloudPrintSetupFlow : public HtmlDialogUIDelegate,
   // Pointer to the Web UI. This is provided by CloudPrintSetupMessageHandler
   // when attached. We do not own the pointer, instead WebUI owns it's delegate
   // (us) and controls our lifetime.
-  WebUI* web_ui_;
+  content::WebUI* web_ui_;
 
   // The args to pass to the initial page.
   std::string dialog_start_args_;

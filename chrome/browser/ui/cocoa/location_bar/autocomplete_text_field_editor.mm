@@ -12,6 +12,7 @@
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#import "content/browser/find_pasteboard.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
@@ -108,7 +109,38 @@ BOOL ThePasteboardIsTooDamnBig() {
 - (void)setDelegate:(AutocompleteTextField*)delegate {
   DCHECK(delegate == nil ||
          [delegate isKindOfClass:[AutocompleteTextField class]]);
+
+  // Unregister from any previously registered undo and redo notifications.
+  NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+  [nc removeObserver:self
+                name:NSUndoManagerDidUndoChangeNotification
+              object:nil];
+  [nc removeObserver:self
+                name:NSUndoManagerDidRedoChangeNotification
+              object:nil];
+
+  // Set the delegate.
   [super setDelegate:delegate];
+
+  // Register for undo and redo notifications from the new |delegate|, if it is
+  // non-nil.
+  if ([self delegate]) {
+    NSUndoManager* undo_manager = [self undoManager];
+    [nc addObserver:self
+           selector:@selector(didUndoOrRedo:)
+               name:NSUndoManagerDidUndoChangeNotification
+             object:undo_manager];
+    [nc addObserver:self
+           selector:@selector(didUndoOrRedo:)
+               name:NSUndoManagerDidRedoChangeNotification
+             object:undo_manager];
+  }
+}
+
+- (void)didUndoOrRedo:(NSNotification *)aNotification {
+  AutocompleteTextFieldObserver* observer = [self observer];
+  if (observer)
+    observer->OnDidChange();
 }
 
 // Convenience method for retrieving the observer from the delegate.
@@ -127,6 +159,10 @@ BOOL ThePasteboardIsTooDamnBig() {
   if (observer) {
     observer->OnPaste();
   }
+}
+
+- (void)pasteAndMatchStyle:(id)sender {
+  [self paste:sender];
 }
 
 - (void)pasteAndGo:sender {
@@ -275,23 +311,29 @@ BOOL ThePasteboardIsTooDamnBig() {
 // Prevent control characters from being entered into the Omnibox.
 // This is invoked for keyboard entry, not for pasting.
 - (void)insertText:(id)aString {
-  // This method is documented as received either |NSString| or
-  // |NSAttributedString|.  The autocomplete code will restyle the
-  // results in any case, so simplify by always using |NSString|.
-  if ([aString isKindOfClass:[NSAttributedString class]])
-    aString = [aString string];
-
   // Repeatedly remove control characters.  The loop will only ever
-  // execute at allwhen the user enters control characters (using
+  // execute at all when the user enters control characters (using
   // Ctrl-Alt- or Ctrl-Q).  Making this generally efficient would
   // probably be a loss, since the input always seems to be a single
   // character.
-  NSRange range = [aString rangeOfCharacterFromSet:forbiddenCharacters_];
-  while (range.location != NSNotFound) {
-    aString = [aString stringByReplacingCharactersInRange:range withString:@""];
-    range = [aString rangeOfCharacterFromSet:forbiddenCharacters_];
+  if ([aString isKindOfClass:[NSAttributedString class]]) {
+    NSRange range =
+        [[aString string] rangeOfCharacterFromSet:forbiddenCharacters_];
+    while (range.location != NSNotFound) {
+      aString = [[aString mutableCopy] autorelease];
+      [aString deleteCharactersInRange:range];
+      range = [[aString string] rangeOfCharacterFromSet:forbiddenCharacters_];
+    }
+    DCHECK_EQ(range.length, 0U);
+  } else {
+    NSRange range = [aString rangeOfCharacterFromSet:forbiddenCharacters_];
+    while (range.location != NSNotFound) {
+      aString =
+          [aString stringByReplacingCharactersInRange:range withString:@""];
+      range = [aString rangeOfCharacterFromSet:forbiddenCharacters_];
+    }
+    DCHECK_EQ(range.length, 0U);
   }
-  DCHECK_EQ(range.length, 0U);
 
   // NOTE: If |aString| is empty, this intentionally replaces the
   // selection with empty.  This seems consistent with the case where
@@ -377,10 +419,12 @@ BOOL ThePasteboardIsTooDamnBig() {
 
   AutocompleteTextFieldObserver* observer = [self observer];
   if (observer) {
-    if (!interpretingKeyEvents_)
+    if (!interpretingKeyEvents_ &&
+        ![[self undoManager] isUndoing] && ![[self undoManager] isRedoing]) {
       observer->OnDidChange();
-    else
+    } else if (interpretingKeyEvents_) {
       textChangedByKeyEvents_ = YES;
+    }
   }
 }
 
@@ -398,12 +442,14 @@ BOOL ThePasteboardIsTooDamnBig() {
   }
 
   // If the escape key was pressed and no revert happened and we're in
-  // fullscreen mode, make it resign key.
+  // fullscreen mode, give focus to the web contents, which may dismiss the
+  // overlay.
   if (cmd == @selector(cancelOperation:)) {
     BrowserWindowController* windowController =
         [BrowserWindowController browserWindowControllerForView:self];
     if ([windowController isFullscreen]) {
       [windowController focusTabContents];
+      textChangedByKeyEvents_ = NO;
       return;
     }
   }
@@ -429,6 +475,25 @@ BOOL ThePasteboardIsTooDamnBig() {
     observer->ClosePopup();
 
   [super mouseDown:theEvent];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem*)item {
+  if ([item action] == @selector(copyToFindPboard:))
+    return [self selectedRange].length > 0;
+  return [super validateMenuItem:item];
+}
+
+- (void)copyToFindPboard:(id)sender {
+  NSRange selectedRange = [self selectedRange];
+  if (selectedRange.length == 0)
+    return;
+  NSAttributedString* selection =
+      [self attributedSubstringForProposedRange:selectedRange
+                                    actualRange:NULL];
+  if (!selection)
+    return;
+
+  [[FindPasteboard sharedInstance] setFindText:[selection string]];
 }
 
 @end

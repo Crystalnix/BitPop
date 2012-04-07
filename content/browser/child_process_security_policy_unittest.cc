@@ -2,33 +2,75 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <set>
 #include <string>
 
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/platform_file.h"
 #include "content/browser/child_process_security_policy.h"
+#include "content/browser/mock_content_browser_client.h"
 #include "content/common/test_url_constants.h"
-#include "content/common/url_constants.h"
-#include "net/url_request/url_request.h"
-#include "net/url_request/url_request_test_job.h"
+#include "content/public/common/url_constants.h"
+#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class ChildProcessSecurityPolicyTest : public testing::Test {
- protected:
-  // testing::Test
-  virtual void SetUp() {
-    // In the real world, "chrome:" is a handled scheme.
-    net::URLRequest::RegisterProtocolFactory(chrome::kChromeUIScheme,
-                                             &net::URLRequestTestJob::Factory);
+namespace {
+
+const int kRendererID = 42;
+const int kWorkerRendererID = kRendererID + 1;
+
+class ChildProcessSecurityPolicyTestBrowserClient
+    : public content::MockContentBrowserClient {
+ public:
+  ChildProcessSecurityPolicyTestBrowserClient() {}
+
+  virtual bool IsHandledURL(const GURL& url) {
+    return schemes_.find(url.scheme()) != schemes_.end();
   }
-  virtual void TearDown() {
-    net::URLRequest::RegisterProtocolFactory(chrome::kChromeUIScheme, NULL);
+
+  void ClearSchemes() {
+    schemes_.clear();
   }
+
+  void AddScheme(const std::string& scheme) {
+    schemes_.insert(scheme);
+  }
+
+ private:
+  std::set<std::string> schemes_;
 };
 
-static int kRendererID = 42;
-static int kWorkerRendererID = kRendererID + 1;
+}  // namespace
+
+class ChildProcessSecurityPolicyTest : public testing::Test {
+ public:
+  ChildProcessSecurityPolicyTest() : old_browser_client_(NULL) {
+  }
+
+  virtual void SetUp() {
+    old_browser_client_ = content::GetContentClient()->browser();
+    content::GetContentClient()->set_browser(&test_browser_client_);
+
+    // Claim to always handle chrome:// URLs because the CPSP's notion of
+    // allowing WebUI bindings is hard-wired to this particular scheme.
+    test_browser_client_.AddScheme("chrome");
+  }
+
+  virtual void TearDown() {
+    test_browser_client_.ClearSchemes();
+    content::GetContentClient()->set_browser(old_browser_client_);
+  }
+
+ protected:
+  void RegisterTestScheme(const std::string& scheme) {
+    test_browser_client_.AddScheme(scheme);
+  }
+
+ private:
+  ChildProcessSecurityPolicyTestBrowserClient test_browser_client_;
+  content::ContentBrowserClient* old_browser_client_;
+};
 
 TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
   ChildProcessSecurityPolicy* p = ChildProcessSecurityPolicy::GetInstance();
@@ -38,13 +80,14 @@ TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFtpScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kDataScheme));
   EXPECT_TRUE(p->IsWebSafeScheme("feed"));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kExtensionScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kBlobScheme));
   EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFileSystemScheme));
 
   EXPECT_FALSE(p->IsWebSafeScheme("registered-web-safe-scheme"));
   p->RegisterWebSafeScheme("registered-web-safe-scheme");
   EXPECT_TRUE(p->IsWebSafeScheme("registered-web-safe-scheme"));
+
+  EXPECT_FALSE(p->IsWebSafeScheme(chrome::kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, IsPseudoSchemeTest) {
@@ -57,6 +100,8 @@ TEST_F(ChildProcessSecurityPolicyTest, IsPseudoSchemeTest) {
   EXPECT_FALSE(p->IsPseudoScheme("registered-pseudo-scheme"));
   p->RegisterPseudoScheme("registered-pseudo-scheme");
   EXPECT_TRUE(p->IsPseudoScheme("registered-pseudo-scheme"));
+
+  EXPECT_FALSE(p->IsPseudoScheme(chrome::kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, IsDisabledSchemeTest) {
@@ -87,7 +132,6 @@ TEST_F(ChildProcessSecurityPolicyTest, StandardSchemesTest) {
   EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("data:text/html,<b>Hi</b>")));
   EXPECT_TRUE(p->CanRequestURL(kRendererID,
                                GURL("view-source:http://www.google.com/")));
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("chrome-extension://xy/z")));
   EXPECT_TRUE(p->CanRequestURL(
       kRendererID, GURL("filesystem:http://localhost/temporary/a.gif")));
 
@@ -119,8 +163,9 @@ TEST_F(ChildProcessSecurityPolicyTest, AboutTest) {
   EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL("about:CrASh")));
   EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL("abOuT:cAChe")));
 
-  p->GrantRequestURL(kRendererID, GURL(chrome::kTestMemoryURL));
-  EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL(chrome::kTestMemoryURL)));
+  // These requests for about: pages should be denied.
+  p->GrantRequestURL(kRendererID, GURL(chrome::kTestGpuCleanURL));
+  EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL(chrome::kTestGpuCleanURL)));
 
   p->GrantRequestURL(kRendererID, GURL(chrome::kAboutCrashURL));
   EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL(chrome::kAboutCrashURL)));
@@ -130,6 +175,16 @@ TEST_F(ChildProcessSecurityPolicyTest, AboutTest) {
 
   p->GrantRequestURL(kRendererID, GURL(chrome::kTestHangURL));
   EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL(chrome::kTestHangURL)));
+
+  // These requests for chrome:// pages should be granted.
+  p->GrantRequestURL(kRendererID, GURL(chrome::kTestNewTabURL));
+  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL(chrome::kTestNewTabURL)));
+
+  p->GrantRequestURL(kRendererID, GURL(chrome::kTestHistoryURL));
+  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL(chrome::kTestHistoryURL)));
+
+  p->GrantRequestURL(kRendererID, GURL(chrome::kTestBookmarksURL));
+  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL(chrome::kTestBookmarksURL)));
 
   p->Remove(kRendererID);
 }
@@ -154,9 +209,8 @@ TEST_F(ChildProcessSecurityPolicyTest, RegisterWebSafeSchemeTest) {
   // Currently, "asdf" is destined for ShellExecute, so it is allowed.
   EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("asdf:rockers")));
 
-  // Once we register a ProtocolFactory for "asdf", we default to deny.
-  net::URLRequest::RegisterProtocolFactory("asdf",
-                                           &net::URLRequestTestJob::Factory);
+  // Once we register "asdf", we default to deny.
+  RegisterTestScheme("asdf");
   EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL("asdf:rockers")));
 
   // We can allow new schemes by adding them to the whitelist.
@@ -164,9 +218,6 @@ TEST_F(ChildProcessSecurityPolicyTest, RegisterWebSafeSchemeTest) {
   EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("asdf:rockers")));
 
   // Cleanup.
-  net::URLRequest::RegisterProtocolFactory("asdf", NULL);
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("asdf:rockers")));
-
   p->Remove(kRendererID);
 }
 

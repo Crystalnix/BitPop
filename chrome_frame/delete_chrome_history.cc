@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,13 +74,13 @@ STDMETHODIMP DeleteChromeHistory::DeleteBrowsingHistory(DWORD flags) {
   if (integrity_level == base::LOW_INTEGRITY) {
     return S_OK;
   }
-  if (!InitializeAutomation(GetHostProcessName(false), L"", false, false,
+  if (!InitializeAutomation(GetHostProcessName(false), false, false,
                             GURL(), GURL(), true)) {
     return E_UNEXPECTED;
   }
 
   if (flags & DELETE_BROWSING_HISTORY_COOKIES)
-    remove_mask_ |= BrowsingDataRemover::REMOVE_COOKIES;
+    remove_mask_ |= BrowsingDataRemover::REMOVE_SITE_DATA;
   if (flags & DELETE_BROWSING_HISTORY_TIF)
     remove_mask_ |= BrowsingDataRemover::REMOVE_CACHE;
   if (flags & DELETE_BROWSING_HISTORY_FORMDATA)
@@ -91,7 +91,7 @@ STDMETHODIMP DeleteChromeHistory::DeleteBrowsingHistory(DWORD flags) {
     remove_mask_ |= BrowsingDataRemover::REMOVE_HISTORY;
 
   loop_.PostDelayedTask(FROM_HERE,
-      new MessageLoop::QuitTask, 1000 * 600);
+      MessageLoop::QuitClosure(), 1000 * 600);
   loop_.MessageLoop::Run();
 
   return S_OK;

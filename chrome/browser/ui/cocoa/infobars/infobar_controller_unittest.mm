@@ -7,14 +7,20 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
-#import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/infobars/mock_link_infobar_delegate.h"
+#include "chrome/browser/ui/cocoa/run_loop_testing.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#import "content/public/browser/web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+using content::WebContents;
 
 @interface InfoBarController (ExposedForTesting)
 - (NSString*)labelString;
@@ -31,15 +37,10 @@
 @end
 
 
-// Calls to removeDelegate: normally start an animation, which removes the
-// infobar completely when finished.  For unittesting purposes, we create a mock
-// container which calls close: immediately, rather than kicking off an
-// animation.
 @interface InfoBarContainerTest : NSObject<InfoBarContainer> {
   InfoBarController* controller_;
 }
 - (id)initWithController:(InfoBarController*)controller;
-- (void)removeDelegate:(InfoBarDelegate*)delegate;
 - (void)willRemoveController:(InfoBarController*)controller;
 - (void)removeController:(InfoBarController*)controller;
 @end
@@ -52,16 +53,39 @@
   return self;
 }
 
-- (void)removeDelegate:(InfoBarDelegate*)delegate {
-  [controller_ close];
-}
-
 - (void)willRemoveController:(InfoBarController*)controller {
 }
 
 - (void)removeController:(InfoBarController*)controller {
   DCHECK(controller_ == controller);
   controller_ = nil;
+}
+
+- (BrowserWindowController*)browserWindowController {
+  return nil;
+}
+@end
+
+// Calls to removeSelf normally start an animation, which removes the infobar
+// completely when finished.  For testing purposes, we create a mock controller
+// which calls close: immediately, rather than kicking off an animation.
+@interface TestLinkInfoBarController : LinkInfoBarController
+- (void)removeSelf;
+@end
+
+@implementation TestLinkInfoBarController
+- (void)removeSelf {
+  [self close];
+}
+@end
+
+@interface TestConfirmInfoBarController : ConfirmInfoBarController
+- (void)removeSelf;
+@end
+
+@implementation TestConfirmInfoBarController
+- (void)removeSelf {
+  [self close];
 }
 @end
 
@@ -70,15 +94,19 @@ namespace {
 ///////////////////////////////////////////////////////////////////////////
 // Test fixtures
 
-class LinkInfoBarControllerTest : public CocoaTest,
+class LinkInfoBarControllerTest : public CocoaProfileTest,
                                   public MockLinkInfoBarDelegate::Owner {
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
+    CocoaProfileTest::SetUp();
+    tab_contents_.reset(new TabContentsWrapper(WebContents::Create(
+        profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
+    tab_contents_->infobar_tab_helper()->set_infobars_enabled(false);
 
     delegate_ = new MockLinkInfoBarDelegate(this);
-    controller_.reset(
-        [[LinkInfoBarController alloc] initWithDelegate:delegate_]);
+    controller_.reset([[TestLinkInfoBarController alloc]
+        initWithDelegate:delegate_
+                   owner:tab_contents_.get()->infobar_tab_helper()]);
     container_.reset(
         [[InfoBarContainerTest alloc] initWithController:controller_]);
     [controller_ setContainerController:container_];
@@ -89,7 +117,7 @@ class LinkInfoBarControllerTest : public CocoaTest,
   virtual void TearDown() {
     if (delegate_)
       delete delegate_;
-    CocoaTest::TearDown();
+    CocoaProfileTest::TearDown();
   }
 
  protected:
@@ -106,17 +134,23 @@ class LinkInfoBarControllerTest : public CocoaTest,
     closed_delegate_link_clicked_ = delegate_->link_clicked();
     delegate_ = NULL;
   }
+
+  scoped_ptr<TabContentsWrapper> tab_contents_;
 };
 
-class ConfirmInfoBarControllerTest : public CocoaTest,
+class ConfirmInfoBarControllerTest : public CocoaProfileTest,
                                      public MockConfirmInfoBarDelegate::Owner {
  public:
   virtual void SetUp() {
-    CocoaTest::SetUp();
+    CocoaProfileTest::SetUp();
+    tab_contents_.reset(new TabContentsWrapper(WebContents::Create(
+        profile(), NULL, MSG_ROUTING_NONE, NULL, NULL)));
+    tab_contents_->infobar_tab_helper()->set_infobars_enabled(false);
 
     delegate_ = new MockConfirmInfoBarDelegate(this);
-    controller_.reset(
-        [[ConfirmInfoBarController alloc] initWithDelegate:delegate_]);
+    controller_.reset([[TestConfirmInfoBarController alloc]
+        initWithDelegate:delegate_
+                   owner:tab_contents_.get()->infobar_tab_helper()]);
     container_.reset(
         [[InfoBarContainerTest alloc] initWithController:controller_]);
     [controller_ setContainerController:container_];
@@ -129,7 +163,7 @@ class ConfirmInfoBarControllerTest : public CocoaTest,
   virtual void TearDown() {
     if (delegate_)
       delete delegate_;
-    CocoaTest::TearDown();
+    CocoaProfileTest::TearDown();
   }
 
  protected:
@@ -150,6 +184,8 @@ class ConfirmInfoBarControllerTest : public CocoaTest,
     closed_delegate_link_clicked_ = delegate_->link_clicked();
     delegate_ = NULL;
   }
+
+  scoped_ptr<TabContentsWrapper> tab_contents_;
 };
 
 
@@ -165,7 +201,7 @@ TEST_F(LinkInfoBarControllerTest, ShowAndDismiss) {
   EXPECT_TRUE(delegate_->icon_accessed());
 
   // Check that dismissing the infobar deletes the delegate.
-  [controller_ dismiss:nil];
+  [controller_ removeSelf];
   ASSERT_TRUE(delegate_closed());
   EXPECT_FALSE(closed_delegate_link_clicked_);
 }
@@ -174,6 +210,11 @@ TEST_F(LinkInfoBarControllerTest, ShowAndClickLink) {
   // Check that clicking on the link calls LinkClicked() on the
   // delegate.  It should also close the infobar.
   [controller_ linkClicked];
+
+  // Spin the runloop because the invocation for closing the infobar is done on
+  // a 0-timer delayed selector.
+  chrome::testing::NSRunLoopRunAllPending();
+
   ASSERT_TRUE(delegate_closed());
   EXPECT_TRUE(closed_delegate_link_clicked_);
 }
@@ -207,7 +248,7 @@ TEST_F(ConfirmInfoBarControllerTest, ShowAndDismiss) {
             base::SysNSStringToUTF8([controller_.get() labelString]));
 
   // Check that dismissing the infobar deletes the delegate.
-  [controller_ dismiss:nil];
+  [controller_ removeSelf];
   ASSERT_TRUE(delegate_closed());
   EXPECT_FALSE(closed_delegate_ok_clicked_);
   EXPECT_FALSE(closed_delegate_cancel_clicked_);

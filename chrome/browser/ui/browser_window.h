@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,9 @@
 #define CHROME_BROWSER_UI_BROWSER_WINDOW_H_
 #pragma once
 
+#include "chrome/browser/ui/bookmarks/bookmark_bar.h"
+#include "chrome/browser/ui/fullscreen_exit_bubble_type.h"
 #include "chrome/common/content_settings_types.h"
-#include "content/browser/tab_contents/navigation_entry.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/glue/window_open_disposition.h"
 
@@ -16,29 +17,33 @@ class BrowserWindowTesting;
 class DownloadShelf;
 class FindBar;
 class GURL;
-class HtmlDialogUIDelegate;
 class LocationBar;
-class Panel;
 class Profile;
 class StatusBubble;
 class TabContents;
 class TabContentsWrapper;
 class TemplateURL;
-class TemplateURLModel;
 #if !defined(OS_MACOSX)
 class ToolbarView;
 #endif
 struct NativeWebKeyboardEvent;
 
-namespace gfx {
-class Rect;
+namespace content {
+class WebContents;
+struct SSLStatus;
 }
 
-namespace views {
-class Window;
+namespace gfx {
+class Rect;
+class Size;
 }
 
 class Extension;
+
+enum DevToolsDockSide {
+  DEVTOOLS_DOCK_SIDE_BOTTOM = 0,
+  DEVTOOLS_DOCK_SIDE_RIGHT = 1
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserWindow interface
@@ -50,6 +55,7 @@ class BrowserWindow {
   virtual ~BrowserWindow() {}
 
   // Show the window, or activates it if it's already visible.
+  // Browser::OnWindowDidShow should be called after showing the window.
   virtual void Show() = 0;
 
   // Show the window, but do not activate it. Does nothing if window
@@ -80,7 +86,8 @@ class BrowserWindow {
   virtual bool IsActive() const = 0;
 
   // Flashes the taskbar item associated with this frame.
-  virtual void FlashFrame() = 0;
+  // Set |flash| to true to initiate flashing, false to stop flashing.
+  virtual void FlashFrame(bool flash) = 0;
 
   // Return a platform dependent identifier for this frame. On Windows, this
   // returns an HWND.
@@ -103,17 +110,17 @@ class BrowserWindow {
   // frames may need to refresh their title bar.
   virtual void UpdateTitleBar() = 0;
 
-  // Invoked when the visibility of the bookmark bar.
-  // NOTE: this is NOT sent when the user toggles the visibility of this,
-  // but rather when the user transitions from a page that forces
-  // it to be visibile to one that doesn't have it visible (or
-  // vice-versa).
-  // TODO(sky): see about routing visibility pref changing through here too.
-  virtual void ShelfVisibilityChanged() = 0;
+  // Invoked when the state of the bookmark bar changes. This is only invoked if
+  // the state changes for the current tab, it is not sent when switching tabs.
+  virtual void BookmarkBarStateChanged(
+      BookmarkBar::AnimateChangeType change_type) = 0;
 
   // Inform the frame that the dev tools window for the selected tab has
   // changed.
   virtual void UpdateDevTools() = 0;
+
+  // Requests that the docked dev tools window changes its dock mode.
+  virtual void SetDevToolsDockSide(DevToolsDockSide side) = 0;
 
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false
@@ -136,8 +143,21 @@ class BrowserWindow {
   // Returns true if the frame is maximized (aka zoomed).
   virtual bool IsMaximized() const = 0;
 
+  // Returns true if the frame is minimized.
+  virtual bool IsMinimized() const = 0;
+
+  // Maximizes/minimizes/restores the window.
+  virtual void Maximize() = 0;
+  virtual void Minimize() = 0;
+  virtual void Restore() = 0;
+
   // Accessors for fullscreen mode state.
-  virtual void SetFullscreen(bool fullscreen) = 0;
+  virtual void EnterFullscreen(const GURL& url,
+                               FullscreenExitBubbleType bubble_type) = 0;
+  virtual void ExitFullscreen() = 0;
+  virtual void UpdateFullscreenExitBubbleContent(
+      const GURL& url,
+      FullscreenExitBubbleType bubble_type) = 0;
   virtual bool IsFullscreen() const = 0;
 
   // Returns true if the fullscreen bubble is visible.
@@ -187,6 +207,17 @@ class BrowserWindow {
   // Returns whether the tool bar is visible or not.
   virtual bool IsToolbarVisible() const = 0;
 
+  // Returns the rect where the resize corner should be drawn by the render
+  // widget host view (on top of what the renderer returns). We return an empty
+  // rect to identify that there shouldn't be a resize corner (in the cases
+  // where we take care of it ourselves at the browser level).
+  virtual gfx::Rect GetRootWindowResizerRect() const = 0;
+
+  // Returns whether the window is a panel. This is not always synonomous
+  // with the associated browser having type panel since some environments
+  // may draw popups in panel windows.
+  virtual bool IsPanel() const = 0;
+
   // Tells the frame not to render as inactive until the next activation change.
   // This is required on Windows when dropdown selects are shown to prevent the
   // select from deactivating the browser frame. A stub implementation is
@@ -196,9 +227,9 @@ class BrowserWindow {
   // Shows a confirmation dialog box for setting the default search engine
   // described by |template_url|. Takes ownership of |template_url|.
   virtual void ConfirmSetDefaultSearchProvider(
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       TemplateURL* template_url,
-      TemplateURLModel* template_url_model) {
+      Profile* profile) {
     // TODO(levin): Implement this for non-Windows platforms and make it pure.
     // http://crbug.com/38475
   }
@@ -233,25 +264,14 @@ class BrowserWindow {
   // Returns the DownloadShelf.
   virtual DownloadShelf* GetDownloadShelf() = 0;
 
-  // Shows the repost form confirmation dialog box.
-  virtual void ShowRepostFormWarningDialog(TabContents* tab_contents) = 0;
-
   // Shows the collected cookies dialog box.
-  virtual void ShowCollectedCookiesDialog(TabContents* tab_contents) = 0;
-
-  // Show the bubble that indicates to the user that a theme is being installed.
-  virtual void ShowThemeInstallBubble() = 0;
+  virtual void ShowCollectedCookiesDialog(TabContentsWrapper* tab_contents) = 0;
 
   // Shows the confirmation dialog box warning that the browser is closing with
   // in-progress downloads.
   // This method should call Browser::InProgressDownloadResponse once the user
   // has confirmed.
   virtual void ConfirmBrowserCloseWithPendingDownloads() = 0;
-
-  // Shows a dialog box with HTML content. |parent_window| is the window the
-  // dialog should be opened modal to and is a native window handle.
-  virtual void ShowHTMLDialog(HtmlDialogUIDelegate* delegate,
-                              gfx::NativeWindow parent_window) = 0;
 
   // ThemeService calls this when a user has changed his or her theme,
   // indicating that it's time to redraw everything.
@@ -263,9 +283,9 @@ class BrowserWindow {
   // during infobar animations).
   virtual int GetExtraRenderViewHeight() const = 0;
 
-  // Notification that |tab_contents| got the focus through user action (click
+  // Notification that |contents| got the focus through user action (click
   // on the page).
-  virtual void TabContentsFocused(TabContents* tab_contents) = 0;
+  virtual void WebContentsFocused(content::WebContents* contents) = 0;
 
   // Shows the page info using the specified information.
   // |url| is the url of the page/frame the info applies to, |ssl| is the SSL
@@ -273,7 +293,7 @@ class BrowserWindow {
   // showing how many times that URL has been visited is added to the page info.
   virtual void ShowPageInfo(Profile* profile,
                             const GURL& url,
-                            const NavigationEntry::SSLStatus& ssl,
+                            const content::SSLStatus& ssl,
                             bool show_history) = 0;
 
   // Shows the app menu (for accessibility).
@@ -299,31 +319,29 @@ class BrowserWindow {
   virtual void ShowCreateChromeAppShortcutsDialog(Profile* profile,
                                                   const Extension* app) = 0;
 
-  // Toggles compact navigation bar.
-  virtual void ToggleUseCompactNavigationBar() = 0;
-
   // Clipboard commands applied to the whole browser window.
   virtual void Cut() = 0;
   virtual void Copy() = 0;
   virtual void Paste() = 0;
 
-  // Switches between available tabstrip display modes.
-  virtual void ToggleTabStripMode() = 0;
-
 #if defined(OS_MACOSX)
   // Opens the tabpose view.
   virtual void OpenTabpose() = 0;
-#endif
 
-  // See InstantDelegate for details.
-  virtual void PrepareForInstant() = 0;
+  // Sets the presentation mode for the window.  If the window is not already in
+  // fullscreen, also enters fullscreen mode.
+  virtual void EnterPresentationMode(
+      const GURL& url,
+      FullscreenExitBubbleType bubble_type) = 0;
+  virtual void ExitPresentationMode() = 0;
+  virtual bool InPresentationMode() = 0;
+#endif
 
   // Invoked when instant's tab contents should be shown.
   virtual void ShowInstant(TabContentsWrapper* preview) = 0;
 
   // Invoked when the instant's tab contents should be hidden.
-  // |instant_is_active| indicates if instant is still active.
-  virtual void HideInstant(bool instant_is_active) = 0;
+  virtual void HideInstant() = 0;
 
   // Returns the desired bounds for instant in screen coordinates. Note that if
   // instant isn't currently visible this returns the bounds instant would be
@@ -334,16 +352,35 @@ class BrowserWindow {
   virtual WindowOpenDisposition GetDispositionForPopupBounds(
       const gfx::Rect& bounds) = 0;
 
+  // Construct a FindBar implementation for the |browser|.
+  virtual FindBar* CreateFindBar() = 0;
+
 #if defined(OS_CHROMEOS)
+  // Shows the mobile setup dialog.
+  virtual void ShowMobileSetup() = 0;
+
   // Shows the keyboard overlay dialog box.
   virtual void ShowKeyboardOverlay(gfx::NativeWindow owning_window) = 0;
 #endif
 
+  // Invoked when the preferred size of the contents in current tab has been
+  // changed. We might choose to update the window size to accomodate this
+  // change.
+  // Note that this won't be fired if we change tabs.
+  virtual void UpdatePreferredSize(content::WebContents* web_contents,
+                                   const gfx::Size& pref_size) {}
+
   // Construct a BrowserWindow implementation for the specified |browser|.
   static BrowserWindow* CreateBrowserWindow(Browser* browser);
 
-  // Construct a FindBar implementation for the specified |browser|.
-  static FindBar* CreateFindBar(Browser* browser_window);
+  // Shows the avatar bubble inside |web_contents|. The bubble is positioned
+  // relative to |rect|. |rect| should be in the |web_contents| coordinate
+  // system.
+  virtual void ShowAvatarBubble(content::WebContents* web_contents,
+                                const gfx::Rect& rect) = 0;
+
+  // Shows the avatar bubble on the window frame off of the avatar button.
+  virtual void ShowAvatarBubbleFromAvatarButton() = 0;
 
  protected:
   friend class BrowserList;
@@ -373,9 +410,6 @@ class BrowserWindowTesting {
 
   // Returns the TabContentsContainer.
   virtual views::View* GetTabContentsContainerView() const = 0;
-
-  // Returns the TabContentsContainer.
-  virtual views::View* GetSidebarContainerView() const = 0;
 
   // Returns the ToolbarView.
   virtual ToolbarView* GetToolbarView() const = 0;

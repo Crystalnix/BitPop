@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,9 @@
 
 #include "base/base64.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time.h"
 #include "base/values.h"
-#include "chrome/test/values_test_util.h"
+#include "chrome/test/base/values_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace browser_sync {
@@ -44,8 +45,6 @@ TEST_F(SessionStateTest, SyncSourceInfoToValue) {
 TEST_F(SessionStateTest, SyncerStatusToValue) {
   SyncerStatus status;
   status.invalid_store = true;
-  status.syncer_stuck = false;
-  status.syncing = true;
   status.num_successful_commits = 5;
   status.num_successful_bookmark_commits = 10;
   status.num_updates_downloaded_total = 100;
@@ -54,10 +53,8 @@ TEST_F(SessionStateTest, SyncerStatusToValue) {
   status.num_server_overwrites = 18;
 
   scoped_ptr<DictionaryValue> value(status.ToValue());
-  EXPECT_EQ(9u, value->size());
+  EXPECT_EQ(7u, value->size());
   ExpectDictBooleanValue(status.invalid_store, *value, "invalidStore");
-  ExpectDictBooleanValue(status.syncer_stuck, *value, "syncerStuck");
-  ExpectDictBooleanValue(status.syncing, *value, "syncing");
   ExpectDictIntegerValue(status.num_successful_commits,
                          *value, "numSuccessfulCommits");
   ExpectDictIntegerValue(status.num_successful_bookmark_commits,
@@ -125,11 +122,10 @@ TEST_F(SessionStateTest, SyncSessionSnapshotToValue) {
   const int kNumServerChangesRemaining = 105;
   const bool kIsShareUsable = true;
 
-  syncable::ModelTypeBitSet initial_sync_ended;
-  initial_sync_ended.set(syncable::BOOKMARKS);
-  initial_sync_ended.set(syncable::PREFERENCES);
+  const syncable::ModelTypeSet initial_sync_ended(
+      syncable::BOOKMARKS, syncable::PREFERENCES);
   scoped_ptr<ListValue> expected_initial_sync_ended_value(
-      syncable::ModelTypeBitSetToValue(initial_sync_ended));
+      syncable::ModelTypeSetToValue(initial_sync_ended));
 
   std::string download_progress_markers[syncable::MODEL_TYPE_COUNT];
   download_progress_markers[syncable::BOOKMARKS] = "test";
@@ -160,7 +156,9 @@ TEST_F(SessionStateTest, SyncSessionSnapshotToValue) {
                                kNumConflictingUpdates,
                                kDidCommitItems,
                                source,
-                               0);
+                               0,
+                               base::Time::Now(),
+                               false);
   scoped_ptr<DictionaryValue> value(snapshot.ToValue());
   EXPECT_EQ(14u, value->size());
   ExpectDictDictionaryValue(*expected_syncer_status_value, *value,

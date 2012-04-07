@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -40,9 +39,8 @@ class MemoryTest(pyauto.PyUITest):
   RENDERER_PROCESS_OUTPUT_FILE = 'renderer_process_mem.txt'
 
   # Constants for testExtensionProcessMemoryUsage.
-  EXTENSION_LOCATION = pyauto.FilePath(
-      os.path.abspath(os.path.join(pyauto.PyUITest.DataDir(), 'extensions',
-                                   'google_talk.crx')))
+  EXTENSION_LOCATION = os.path.abspath(os.path.join(
+      pyauto.PyUITest.DataDir(), 'extensions', 'google_talk.crx'))
   EXTENSION_PROCESS_NAME = 'Google Talk'
   EXTENSION_PROCESS_OUTPUT_FILE = 'extension_process_mem.txt'
 
@@ -57,7 +55,7 @@ class MemoryTest(pyauto.PyUITest):
       The integer process identifier (PID) for the specified process, or
       None if the PID cannot be identified.
     """
-    info = self.GetBrowserInfo()['extension_processes']
+    info = self.GetBrowserInfo()['extension_views']
     pid = [x['pid'] for x in info if x['name'] == '%s' % name]
     if pid:
       return pid[0]
@@ -111,7 +109,7 @@ class MemoryTest(pyauto.PyUITest):
     if (self.LOG_TO_OUTPUT_FILE and
         os.path.exists(self.EXTENSION_PROCESS_OUTPUT_FILE)):
       os.remove(self.EXTENSION_PROCESS_OUTPUT_FILE)
-    self.InstallExtension(self.EXTENSION_LOCATION, False)
+    self.InstallExtension(self.EXTENSION_LOCATION)
     # The PID is 0 until the extension has a chance to start up.
     self.WaitUntil(
         lambda: self._GetPidOfExtensionProcessByName(

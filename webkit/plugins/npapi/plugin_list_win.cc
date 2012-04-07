@@ -221,7 +221,7 @@ void GetJavaDirectory(std::set<FilePath>* plugin_dirs) {
   }
 }
 
-bool IsValid32BitImage(FilePath path) {
+bool IsValid32BitImage(const FilePath& path) {
   file_util::MemoryMappedFile plugin_image;
 
   if (!plugin_image.InitializeAsImageSection(path))
@@ -267,9 +267,8 @@ void PluginList::GetPluginDirectories(std::vector<FilePath>* plugin_dirs) {
     plugin_dirs->push_back(*i);
 }
 
-void PluginList::LoadPluginsFromDir(const FilePath &path,
-                                    ScopedVector<PluginGroup>* plugin_groups,
-                                    std::set<FilePath>* visited_plugins) {
+void PluginList::GetPluginsInDir(
+    const FilePath& path, std::vector<FilePath>* plugins) {
   WIN32_FIND_DATA find_file_data;
   HANDLE find_handle;
 
@@ -284,8 +283,7 @@ void PluginList::LoadPluginsFromDir(const FilePath &path,
   do {
     if (!(find_file_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
       FilePath filename = path.Append(find_file_data.cFileName);
-      LoadPlugin(filename, plugin_groups);
-      visited_plugins->insert(filename);
+      plugins->push_back(filename);
     }
   } while (FindNextFile(find_handle, &find_file_data) != 0);
 
@@ -293,9 +291,7 @@ void PluginList::LoadPluginsFromDir(const FilePath &path,
   FindClose(find_handle);
 }
 
-void PluginList::LoadPluginsFromRegistry(
-    ScopedVector<PluginGroup>* plugin_groups,
-    std::set<FilePath>* visited_plugins) {
+void PluginList::GetPluginPathsFromRegistry(std::vector<FilePath>* plugins) {
   std::set<FilePath> plugin_dirs;
 
   GetPluginsInRegistryDirectory(
@@ -305,16 +301,15 @@ void PluginList::LoadPluginsFromRegistry(
 
   for (std::set<FilePath>::iterator i = plugin_dirs.begin();
        i != plugin_dirs.end(); ++i) {
-    LoadPlugin(*i, plugin_groups);
-    visited_plugins->insert(*i);
+    plugins->push_back(*i);
   }
 }
 
 // Returns true if the given plugins share at least one mime type.  This is used
 // to differentiate newer versions of a plugin vs two plugins which happen to
 // have the same filename.
-bool HaveSharedMimeType(const WebPluginInfo& plugin1,
-                        const WebPluginInfo& plugin2) {
+bool HaveSharedMimeType(const webkit::WebPluginInfo& plugin1,
+                        const webkit::WebPluginInfo& plugin2) {
   for (size_t i = 0; i < plugin1.mime_types.size(); ++i) {
     for (size_t j = 0; j < plugin2.mime_types.size(); ++j) {
       if (plugin1.mime_types[i].mime_type == plugin2.mime_types[j].mime_type)
@@ -352,13 +347,13 @@ bool IsNewerVersion(const std::wstring& a, const std::wstring& b) {
   return false;
 }
 
-bool PluginList::ShouldLoadPlugin(const WebPluginInfo& info,
+bool PluginList::ShouldLoadPlugin(const webkit::WebPluginInfo& info,
                                   ScopedVector<PluginGroup>* plugin_groups) {
   // Version check
 
   for (size_t i = 0; i < plugin_groups->size(); ++i) {
-    const std::vector<WebPluginInfo>& plugins =
-        (*plugin_groups)[i]->web_plugins_info();
+    const std::vector<webkit::WebPluginInfo>& plugins =
+        (*plugin_groups)[i]->web_plugin_infos();
     for (size_t j = 0; j < plugins.size(); ++j) {
       std::wstring plugin1 =
           StringToLowerASCII(plugins[j].path.BaseName().value());
@@ -419,8 +414,8 @@ bool PluginList::ShouldLoadPlugin(const WebPluginInfo& info,
       return false;
 
     for (size_t i = 0; i < plugin_groups->size(); ++i) {
-      const std::vector<WebPluginInfo>& plugins =
-          (*plugin_groups)[i]->web_plugins_info();
+      const std::vector<webkit::WebPluginInfo>& plugins =
+          (*plugin_groups)[i]->web_plugin_infos();
       for (size_t j = 0; j < plugins.size(); ++j) {
         if (plugins[j].path.BaseName().value() == kOldWMPPlugin) {
           (*plugin_groups)[i]->RemovePlugin(plugins[j].path);
@@ -430,8 +425,8 @@ bool PluginList::ShouldLoadPlugin(const WebPluginInfo& info,
     }
   } else if (filename == kOldWMPPlugin) {
     for (size_t i = 0; i < plugin_groups->size(); ++i) {
-      const std::vector<WebPluginInfo>& plugins =
-          (*plugin_groups)[i]->web_plugins_info();
+      const std::vector<webkit::WebPluginInfo>& plugins =
+          (*plugin_groups)[i]->web_plugin_infos();
       for (size_t j = 0; j < plugins.size(); ++j) {
         if (plugins[j].path.BaseName().value() == kNewWMPPlugin)
           return false;

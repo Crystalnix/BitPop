@@ -4,17 +4,24 @@
 
 #include "chrome/browser/ui/webui/devtools_ui.h"
 
+#include <string>
+
+#include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager_backend.h"
+#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/devtools_messages.h"
-#include "grit/devtools_resources_map.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/devtools_client_host.h"
+#include "content/public/browser/devtools_http_handler.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
@@ -23,7 +30,7 @@ std::string PathWithoutParams(const std::string& path) {
       .path().substr(1);
 }
 
-}
+}  // namespace
 
 class DevToolsDataSource : public ChromeURLDataManager::DataSource {
  public:
@@ -49,13 +56,9 @@ void DevToolsDataSource::StartDataRequest(const std::string& path,
                                           int request_id) {
   std::string filename = PathWithoutParams(path);
 
-  int resource_id = -1;
-  for (size_t i = 0; i < kDevtoolsResourcesSize; ++i) {
-    if (filename == kDevtoolsResources[i].name) {
-      resource_id = kDevtoolsResources[i].value;
-      break;
-    }
-  }
+
+  int resource_id =
+      content::DevToolsHttpHandler::GetFrontendResourceId(filename);
 
   DLOG_IF(WARNING, -1 == resource_id) << "Unable to find dev tool resource: "
       << filename << ". If you compiled with debug_devtools=1, try running"
@@ -84,24 +87,22 @@ std::string DevToolsDataSource::GetMimeType(const std::string& path) const {
 }
 
 // static
-void DevToolsUI::RegisterDevToolsDataSource() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+void DevToolsUI::RegisterDevToolsDataSource(Profile* profile) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   static bool registered = false;
   if (!registered) {
     DevToolsDataSource* data_source = new DevToolsDataSource();
-    ChromeURLRequestContext* context = static_cast<ChromeURLRequestContext*>(
-        Profile::GetDefaultRequestContext()->GetURLRequestContext());
-    context->chrome_url_data_manager_backend()->AddDataSource(data_source);
+    profile->GetChromeURLDataManager()->AddDataSource(data_source);
     registered = true;
   }
 }
 
-DevToolsUI::DevToolsUI(TabContents* contents) : WebUI(contents) {
+DevToolsUI::DevToolsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   DevToolsDataSource* data_source = new DevToolsDataSource();
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(data_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(data_source);
 }
 
 void DevToolsUI::RenderViewCreated(RenderViewHost* render_view_host) {
-  render_view_host->Send(new DevToolsMsg_SetupDevToolsClient(
-      render_view_host->routing_id()));
+  content::DevToolsClientHost::SetupDevToolsFrontendClient(render_view_host);
 }

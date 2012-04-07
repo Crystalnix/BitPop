@@ -1,19 +1,25 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/policy/configuration_policy_provider_mac.h"
 
+#include "base/file_path.h"
 #include "base/file_util.h"
-#include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/path_service.h"
+#include "base/platform_file.h"
 #include "base/sys_string_conversions.h"
+#include "chrome/browser/policy/policy_map.h"
+#include "chrome/browser/preferences_mac.h"
 #include "chrome/common/chrome_paths.h"
+#include "policy/policy_constants.h"
 
 namespace policy {
 
-static FilePath GetManagedPolicyPath() {
+namespace {
+
+FilePath GetManagedPolicyPath() {
   // This constructs the path to the plist file in which Mac OS X stores the
   // managed preference for the application. This is undocumented and therefore
   // fragile, but if it doesn't work out, FileBasedPolicyLoader has a task that
@@ -34,21 +40,24 @@ static FilePath GetManagedPolicyPath() {
   return path.Append(base::SysCFStringRefToUTF8(bundle_id) + ".plist");
 }
 
+}  // namespace
+
 MacPreferencesPolicyProviderDelegate::MacPreferencesPolicyProviderDelegate(
     MacPreferences* preferences,
-    const ConfigurationPolicyProvider::PolicyDefinitionList* policy_list)
+    const PolicyDefinitionList* policy_list,
+    PolicyLevel level)
     : FileBasedPolicyProvider::ProviderDelegate(GetManagedPolicyPath()),
       policy_list_(policy_list),
-      preferences_(preferences) {
-}
+      preferences_(preferences),
+      level_(level) {}
 
 MacPreferencesPolicyProviderDelegate::~MacPreferencesPolicyProviderDelegate() {}
 
-DictionaryValue* MacPreferencesPolicyProviderDelegate::Load() {
+PolicyMap* MacPreferencesPolicyProviderDelegate::Load() {
   preferences_->AppSynchronize(kCFPreferencesCurrentApplication);
-  DictionaryValue* policy = new DictionaryValue;
+  PolicyMap* policy = new PolicyMap;
 
-  const ConfigurationPolicyProvider::PolicyDefinitionList::Entry* current;
+  const PolicyDefinitionList::Entry* current;
   for (current = policy_list_->begin; current != policy_list_->end; ++current) {
     base::mac::ScopedCFTypeRef<CFStringRef> name(
         base::SysUTF8ToCFStringRef(current->name));
@@ -56,31 +65,34 @@ DictionaryValue* MacPreferencesPolicyProviderDelegate::Load() {
         preferences_->CopyAppValue(name, kCFPreferencesCurrentApplication));
     if (!value.get())
       continue;
-    if (!preferences_->AppValueIsForced(name, kCFPreferencesCurrentApplication))
+    bool forced =
+        preferences_->AppValueIsForced(name, kCFPreferencesCurrentApplication);
+    PolicyLevel level = forced ? POLICY_LEVEL_MANDATORY :
+                                 POLICY_LEVEL_RECOMMENDED;
+    if (level != level_)
       continue;
-
+    Value* policy_value = NULL;
     switch (current->value_type) {
       case Value::TYPE_STRING:
         if (CFGetTypeID(value) == CFStringGetTypeID()) {
-          std::string string_value =
-              base::SysCFStringRefToUTF8((CFStringRef)value.get());
-          policy->SetString(current->name, string_value);
+          policy_value = Value::CreateStringValue(
+              base::SysCFStringRefToUTF8((CFStringRef) value.get()));
         }
         break;
       case Value::TYPE_BOOLEAN:
         if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
-          bool bool_value = CFBooleanGetValue((CFBooleanRef)value.get());
-          policy->SetBoolean(current->name, bool_value);
+          policy_value = Value::CreateBooleanValue(
+              CFBooleanGetValue((CFBooleanRef) value.get()));
         }
         break;
       case Value::TYPE_INTEGER:
         if (CFGetTypeID(value) == CFNumberGetTypeID()) {
           int int_value;
-          bool cast = CFNumberGetValue((CFNumberRef)value.get(),
+          bool cast = CFNumberGetValue((CFNumberRef) value.get(),
                                        kCFNumberIntType,
                                        &int_value);
           if (cast)
-            policy->SetInteger(current->name, int_value);
+            policy_value = Value::CreateIntegerValue(int_value);
         }
         break;
       case Value::TYPE_LIST:
@@ -101,12 +113,18 @@ DictionaryValue* MacPreferencesPolicyProviderDelegate::Load() {
             }
           }
           if (valid_array)
-            policy->Set(current->name, list_value.release());
+            policy_value = list_value.release();
         }
+        break;
+      case Value::TYPE_DICTIONARY:
+        // TODO(joaodasilva): http://crbug.com/108995
         break;
       default:
         NOTREACHED();
     }
+    // TODO(joaodasilva): figure the policy scope.
+    if (policy_value)
+      policy->Set(current->name, level_, POLICY_SCOPE_USER, policy_value);
   }
 
   return policy;
@@ -123,18 +141,22 @@ base::Time MacPreferencesPolicyProviderDelegate::GetLastModification() {
 }
 
 ConfigurationPolicyProviderMac::ConfigurationPolicyProviderMac(
-    const ConfigurationPolicyProvider::PolicyDefinitionList* policy_list)
-    : FileBasedPolicyProvider(policy_list,
+    const PolicyDefinitionList* policy_list,
+    PolicyLevel level)
+    : FileBasedPolicyProvider(
+          policy_list,
           new MacPreferencesPolicyProviderDelegate(new MacPreferences,
-                                                   policy_list)) {
-}
+                                                   policy_list,
+                                                   level)) {}
 
 ConfigurationPolicyProviderMac::ConfigurationPolicyProviderMac(
-    const ConfigurationPolicyProvider::PolicyDefinitionList* policy_list,
+    const PolicyDefinitionList* policy_list,
+    PolicyLevel level,
     MacPreferences* preferences)
-    : FileBasedPolicyProvider(policy_list,
+    : FileBasedPolicyProvider(
+          policy_list,
           new MacPreferencesPolicyProviderDelegate(preferences,
-                                                   policy_list)) {
-}
+                                                   policy_list,
+                                                   level)) {}
 
 }  // namespace policy

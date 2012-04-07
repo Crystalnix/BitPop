@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/webui/html_dialog_tab_contents_delegate.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
@@ -19,6 +20,7 @@
 typedef struct _GtkWidget GtkWidget;
 
 class Browser;
+class HtmlDialogController;
 class Profile;
 class TabContents;
 class TabContentsContainerGtk;
@@ -27,28 +29,41 @@ class TabContentsWrapper;
 class HtmlDialogGtk : public HtmlDialogTabContentsDelegate,
                       public HtmlDialogUIDelegate {
  public:
-  HtmlDialogGtk(Profile* profile, HtmlDialogUIDelegate* delegate,
+  HtmlDialogGtk(Profile* profile,
+                Browser* browser,
+                HtmlDialogUIDelegate* delegate,
                 gfx::NativeWindow parent_window);
   virtual ~HtmlDialogGtk();
 
   // Initializes the contents of the dialog (the DOMView and the callbacks).
   gfx::NativeWindow InitDialog();
 
-  // Overridden from HtmlDialogUI::Delegate:
-  virtual bool IsDialogModal() const;
-  virtual std::wstring GetDialogTitle() const;
-  virtual GURL GetDialogContentURL() const;
+  // Overridden from HtmlDialogUIDelegate:
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const;
-  virtual void GetDialogSize(gfx::Size* size) const;
-  virtual std::string GetDialogArgs() const;
-  virtual void OnDialogClosed(const std::string& json_retval);
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog) { }
-  virtual bool ShouldShowDialogTitle() const;
+      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
+  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
+  virtual std::string GetDialogArgs() const OVERRIDE;
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnCloseContents(content::WebContents* source,
+                               bool* out_close_dialog) OVERRIDE;
+  virtual bool ShouldShowDialogTitle() const OVERRIDE;
 
-  // Overridden from TabContentsDelegate:
-  virtual void MoveContents(TabContents* source, const gfx::Rect& pos);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+  // Overridden from content::WebContentsDelegate:
+  virtual void HandleKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual void CloseContents(content::WebContents* source) OVERRIDE;
+  virtual content::WebContents* OpenURLFromTab(
+      content::WebContents* source,
+      const content::OpenURLParams& params) OVERRIDE;
+  virtual void AddNewContents(content::WebContents* source,
+                              content::WebContents* new_contents,
+                              WindowOpenDisposition disposition,
+                              const gfx::Rect& initial_pos,
+                              bool user_gesture) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
 
  private:
   CHROMEGTK_CALLBACK_1(HtmlDialogGtk, void, OnResponse, int);
@@ -63,6 +78,7 @@ class HtmlDialogGtk : public HtmlDialogTabContentsDelegate,
 
   GtkWidget* dialog_;
 
+  scoped_ptr<HtmlDialogController> dialog_controller_;
   scoped_ptr<TabContentsWrapper> tab_;
   scoped_ptr<TabContentsContainerGtk> tab_contents_container_;
 

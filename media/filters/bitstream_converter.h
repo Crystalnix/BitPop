@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,9 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "media/base/media_export.h"
 
 // FFmpeg types.
 struct AVBitStreamFilterContext;
@@ -22,7 +24,7 @@ struct AVPacket;
 
 namespace media {
 
-class BitstreamConverter {
+class MEDIA_EXPORT BitstreamConverter {
  public:
   BitstreamConverter() {}
   virtual ~BitstreamConverter() {}
@@ -46,14 +48,14 @@ class IdentityBitstreamConverter : public BitstreamConverter {
   IdentityBitstreamConverter() {}
   virtual ~IdentityBitstreamConverter() {}
 
-  virtual bool Initialize();
-  virtual bool ConvertPacket(AVPacket* packet);
+  virtual bool Initialize() OVERRIDE;
+  virtual bool ConvertPacket(AVPacket* packet) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(IdentityBitstreamConverter);
 };
 
-class FFmpegBitstreamConverter : public BitstreamConverter {
+class MEDIA_EXPORT FFmpegBitstreamConverter : public BitstreamConverter {
  public:
   // Creates FFmpegBitstreamConverter based on the FFmpeg bistream filter
   // corresponding to |filter_name|.
@@ -65,15 +67,10 @@ class FFmpegBitstreamConverter : public BitstreamConverter {
                            AVCodecContext* stream_context);
   virtual ~FFmpegBitstreamConverter();
 
-  virtual bool Initialize();
-  virtual bool ConvertPacket(AVPacket* packet);
+  virtual bool Initialize() OVERRIDE;
+  virtual bool ConvertPacket(AVPacket* packet) OVERRIDE;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(BitstreamConverterTest, ConvertPacket_FailedFilter);
-  FRIEND_TEST_ALL_PREFIXES(BitstreamConverterTest, ConvertPacket_Success);
-  FRIEND_TEST_ALL_PREFIXES(BitstreamConverterTest,
-                           ConvertPacket_SuccessInPlace);
-
   std::string filter_name_;
   AVBitStreamFilterContext* stream_filter_;
   AVCodecContext* stream_context_;

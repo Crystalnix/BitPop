@@ -10,8 +10,17 @@
 
 namespace media {
 
+// Returns true if CPU has MMX support.
+bool hasMMX();
+
+// Returns true if CPU has SSE support.
+bool hasSSE();
+
 // Returns true if CPU has SSE2 support.
 bool hasSSE2();
+
+// Returns true if CPU supports SSE2, SSE3, and SSSE3.
+bool hasSSSE3();
 
 }  // namespace media
 

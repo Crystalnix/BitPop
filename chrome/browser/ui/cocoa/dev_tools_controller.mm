@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,47 +15,42 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+
+using content::WebContents;
 
 namespace {
 
-// Default offset of the contents splitter in pixels.
-const int kDefaultContentsSplitOffset = 400;
-
-// Never make the web part of the tab contents smaller than this (needed if the
-// window is only a few pixels high).
-const int kMinWebHeight = 50;
+// Minimal height of devtools pane or content pane when devtools are docked
+// to the browser window.
+const int kMinDevToolsHeight = 50;
+const int kMinDevToolsWidth = 150;
+const int kMinContentsSize = 50;
 
 }  // end namespace
 
 
 @interface DevToolsController (Private)
-- (void)showDevToolsContents:(TabContents*)devToolsContents
+- (void)showDevToolsContents:(WebContents*)devToolsContents
                  withProfile:(Profile*)profile;
-- (void)resizeDevToolsToNewHeight:(CGFloat)height;
+- (void)showDevToolsContainer:(NSView*)container profile:(Profile*)profile;
+- (void)hideDevToolsContainer:(Profile*)profile;
+- (void)resizeDevTools:(CGFloat)size;
 @end
 
 
 @implementation DevToolsController
 
-- (id)initWithDelegate:(id<TabContentsControllerDelegate>)delegate {
+- (id)init {
   if ((self = [super init])) {
     splitView_.reset([[NSSplitView alloc] initWithFrame:NSZeroRect]);
     [splitView_ setDividerStyle:NSSplitViewDividerStyleThin];
     [splitView_ setVertical:NO];
     [splitView_ setAutoresizingMask:NSViewWidthSizable|NSViewHeightSizable];
-    [splitView_ setDelegate:self];
 
-    contentsController_.reset(
-        [[TabContentsController alloc] initWithContents:NULL
-                                               delegate:delegate]);
+    dockToRight_ = NO;
   }
   return self;
-}
-
-- (void)dealloc {
-  [splitView_ setDelegate:nil];
-  [super dealloc];
 }
 
 - (NSView*)view {
@@ -66,92 +61,136 @@ const int kMinWebHeight = 50;
   return splitView_.get();
 }
 
-- (void)updateDevToolsForTabContents:(TabContents*)contents
+- (void)updateDevToolsForWebContents:(WebContents*)contents
                          withProfile:(Profile*)profile {
   // Get current devtools content.
   TabContentsWrapper* devToolsTab = contents ?
       DevToolsWindow::GetDevToolsContents(contents) : NULL;
-  TabContents* devToolsContents = devToolsTab ?
-      devToolsTab->tab_contents() : NULL;
+  WebContents* devToolsContents = devToolsTab ?
+      devToolsTab->web_contents() : NULL;
 
   [self showDevToolsContents:devToolsContents withProfile:profile];
 }
 
-- (void)ensureContentsVisible {
-  [contentsController_ ensureContentsVisible];
-}
-
-- (void)showDevToolsContents:(TabContents*)devToolsContents
-                 withProfile:(Profile*)profile {
-  [contentsController_ ensureContentsSizeDoesNotChange];
+- (void)setDockToRight:(BOOL)dockToRight
+           withProfile:(Profile*)profile {
+  if (dockToRight_ == dockToRight)
+    return;
 
   NSArray* subviews = [splitView_ subviews];
-  if (devToolsContents) {
-    DCHECK_GE([subviews count], 1u);
+  if ([subviews count] == 2) {
+    scoped_nsobject<NSView> devToolsContentsView(
+        [[subviews objectAtIndex:1] retain]);
+    [self hideDevToolsContainer:profile];
+    dockToRight_ = dockToRight;
+    [self showDevToolsContainer:devToolsContentsView profile:profile];
+  } else {
+    dockToRight_ = dockToRight;
+  }
+}
 
+- (void)showDevToolsContents:(WebContents*)devToolsContents
+                 withProfile:(Profile*)profile {
+  NSArray* subviews = [splitView_ subviews];
+  if (devToolsContents) {
     // |devToolsView| is a TabContentsViewCocoa object, whose ViewID was
     // set to VIEW_ID_TAB_CONTAINER initially, so we need to change it to
     // VIEW_ID_DEV_TOOLS_DOCKED here.
-    view_id_util::SetID(
-        devToolsContents->GetNativeView(), VIEW_ID_DEV_TOOLS_DOCKED);
-
-    CGFloat splitOffset = 0;
-    if ([subviews count] == 1) {
-      // Load the default split offset.
-      splitOffset = profile->GetPrefs()->
-          GetInteger(prefs::kDevToolsSplitLocation);
-      if (splitOffset < 0) {
-        // Initial load, set to default value.
-        splitOffset = kDefaultContentsSplitOffset;
-      }
-      [splitView_ addSubview:[contentsController_ view]];
-    } else {
-      DCHECK_EQ([subviews count], 2u);
-      // If devtools are already visible, keep the current size.
-      splitOffset = NSHeight([[subviews objectAtIndex:1] frame]);
-    }
-
-    // Make sure |splitOffset| isn't too large or too small.
-    splitOffset = std::max(static_cast<CGFloat>(kMinWebHeight), splitOffset);
-    splitOffset =
-        std::min(splitOffset, NSHeight([splitView_ frame]) - kMinWebHeight);
-    DCHECK_GE(splitOffset, 0) << "kMinWebHeight needs to be smaller than "
-                              << "smallest available tab contents space.";
-
-    [self resizeDevToolsToNewHeight:splitOffset];
+    NSView* devToolsView = devToolsContents->GetNativeView();
+    view_id_util::SetID(devToolsView, VIEW_ID_DEV_TOOLS_DOCKED);
+    [self showDevToolsContainer:devToolsView profile:profile];
   } else {
     if ([subviews count] > 1) {
-      NSView* oldDevToolsContentsView = [subviews objectAtIndex:1];
-      // Store split offset when hiding devtools window only.
-      int splitOffset = NSHeight([oldDevToolsContentsView frame]);
-
-      profile->GetPrefs()->SetInteger(
-          prefs::kDevToolsSplitLocation, splitOffset);
-      [oldDevToolsContentsView removeFromSuperview];
-      [splitView_ adjustSubviews];
+      [self hideDevToolsContainer:profile];
     }
   }
-
-  [contentsController_ changeTabContents:devToolsContents];
 }
 
-- (void)resizeDevToolsToNewHeight:(CGFloat)height {
+- (void)showDevToolsContainer:(NSView*)container profile:(Profile*)profile {
+  NSArray* subviews = [splitView_ subviews];
+  DCHECK_GE([subviews count], 1u);
+
+  CGFloat splitOffset = 0;
+
+  CGFloat contentSize =
+      dockToRight_ ? NSWidth([splitView_ frame])
+                   : NSHeight([splitView_ frame]);
+
+  if ([subviews count] == 1) {
+    // Load the default split offset.
+    splitOffset = profile->GetPrefs()->
+        GetInteger(prefs::kDevToolsSplitLocation);
+
+    if (splitOffset < 0)
+      splitOffset = contentSize * 1 / 3;
+
+    [splitView_ addSubview:container];
+  } else {
+    DCHECK_EQ([subviews count], 2u);
+    // If devtools are already visible, keep the current size.
+    splitOffset = dockToRight_ ? NSWidth([[subviews objectAtIndex:1] frame])
+                               : NSHeight([[subviews objectAtIndex:1] frame]);
+    [splitView_ replaceSubview:[subviews objectAtIndex:1]
+                          with:container];
+  }
+
+  // Make sure |splitOffset| isn't too large or too small.
+  CGFloat minSize = dockToRight_ ? kMinDevToolsWidth: kMinDevToolsHeight;
+  splitOffset = std::max(minSize, splitOffset);
+  splitOffset = std::min(static_cast<CGFloat>(contentSize - kMinContentsSize),
+                         splitOffset);
+
+  if (splitOffset < 0)
+    splitOffset = contentSize * 1 / 3;
+
+  DCHECK_GE(splitOffset, 0) << "kMinWebHeight needs to be smaller than "
+                            << "smallest available tab contents space.";
+
+  [splitView_ setVertical: dockToRight_];
+  [self resizeDevTools:splitOffset];
+}
+
+- (void)hideDevToolsContainer:(Profile*)profile {
+  NSArray* subviews = [splitView_ subviews];
+  NSView* oldDevToolsContentsView = [subviews objectAtIndex:1];
+
+  // Store split offset when hiding devtools window only.
+  int splitOffset = dockToRight_ ? NSWidth([oldDevToolsContentsView frame])
+                                 : NSHeight([oldDevToolsContentsView frame]);
+  profile->GetPrefs()->SetInteger(
+      prefs::kDevToolsSplitLocation, splitOffset);
+
+  [oldDevToolsContentsView removeFromSuperview];
+  [splitView_ adjustSubviews];
+}
+
+- (void)resizeDevTools:(CGFloat)size {
   NSArray* subviews = [splitView_ subviews];
 
   // It seems as if |-setPosition:ofDividerAtIndex:| should do what's needed,
   // but I can't figure out how to use it. Manually resize web and devtools.
   // TODO(alekseys): either make setPosition:ofDividerAtIndex: work or to add a
   // category on NSSplitView to handle manual resizing.
-  NSView* devToolsView = [subviews objectAtIndex:1];
-  NSRect devToolsFrame = [devToolsView frame];
-  devToolsFrame.size.height = height;
-  [devToolsView setFrame:devToolsFrame];
-
   NSView* webView = [subviews objectAtIndex:0];
   NSRect webFrame = [webView frame];
-  webFrame.size.height =
-      NSHeight([splitView_ frame]) - ([splitView_ dividerThickness] + height);
+  NSView* devToolsView = [subviews objectAtIndex:1];
+  NSRect devToolsFrame = [devToolsView frame];
+
+  if (dockToRight_)
+    devToolsFrame.size.width = size;
+  else
+    devToolsFrame.size.height = size;
+
+  if (dockToRight_) {
+    webFrame.size.width =
+        NSWidth([splitView_ frame]) - ([splitView_ dividerThickness] + size);
+  } else {
+    webFrame.size.height =
+        NSHeight([splitView_ frame]) - ([splitView_ dividerThickness] + size);
+  }
+
   [webView setFrame:webFrame];
+  [devToolsView setFrame:devToolsFrame];
 
   [splitView_ adjustSubviews];
 }

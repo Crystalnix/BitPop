@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/string16.h"
 #include "base/win/registry.h"
@@ -19,6 +20,7 @@
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/autofill/form_group.h"
 #include "chrome/browser/autofill/personal_data_manager.h"
+#include "chrome/browser/autofill/personal_data_manager_observer.h"
 #include "chrome/browser/autofill/phone_number.h"
 #include "chrome/browser/autofill/phone_number_i18n.h"
 #include "chrome/browser/sync/util/data_encryption.h"
@@ -99,9 +101,6 @@ struct {
   { PHONE_HOME_NUMBER,             L"phone_home_number" },
   { PHONE_HOME_CITY_CODE,          L"phone_home_city_code" },
   { PHONE_HOME_COUNTRY_CODE,       L"phone_home_country_code" },
-  { PHONE_FAX_NUMBER,              L"phone_fax_number" },
-  { PHONE_FAX_CITY_CODE,           L"phone_fax_city_code" },
-  { PHONE_FAX_COUNTRY_CODE,        L"phone_fax_country_code" },
   { ADDRESS_HOME_LINE1,            L"address_home_line1" },
   { ADDRESS_HOME_LINE2,            L"address_home_line2" },
   { ADDRESS_HOME_CITY,             L"address_home_city" },
@@ -134,12 +133,11 @@ bool ImportSingleProfile(FormGroup* profile,
   bool has_non_empty_fields = false;
 
   // Phones need to be rebuilt.
-  PhoneNumber::PhoneCombineHelper home(AutofillType::PHONE_HOME);
-  PhoneNumber::PhoneCombineHelper fax(AutofillType::PHONE_FAX);
+  PhoneNumber::PhoneCombineHelper phone;
 
-  for (uint32 value_index = 0; value_index < key->ValueCount(); ++value_index) {
+  for (uint32 i = 0; i < key->GetValueCount(); ++i) {
     std::wstring value_name;
-    if (key->ReadName(value_index, &value_name) != ERROR_SUCCESS)
+    if (key->GetValueNameAt(i, &value_name) != ERROR_SUCCESS)
       continue;
     RegToFieldMap::const_iterator it = reg_to_field.find(value_name);
     if (it == reg_to_field.end())
@@ -147,30 +145,28 @@ bool ImportSingleProfile(FormGroup* profile,
     string16 field_value = ReadAndDecryptValue(key, value_name.c_str());
     if (!field_value.empty()) {
       has_non_empty_fields = true;
-      if (it->second == CREDIT_CARD_NUMBER) {
+      if (it->second == CREDIT_CARD_NUMBER)
         field_value = DecryptCCNumber(field_value);
-      }
-      // We need to store phone data in the variables, before building the whole
-      // number at the end. The rest of the fields are set "as is".
-      if (!home.SetInfo(it->second, field_value) &&
-          !fax.SetInfo(it->second, field_value)) {
+
+      // We need to store phone data in |phone| before building the whole number
+      // at the end. The rest of the fields are set "as is".
+      if (!phone.SetInfo(it->second, field_value))
         profile->SetInfo(it->second, field_value);
-      }
     }
   }
   // Now re-construct the phones if needed.
   string16 constructed_number;
-  if (!home.empty() && home.ParseNumber(std::string("US"), &constructed_number))
-    profile->SetInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
-  if (!fax.empty() && fax.ParseNumber(std::string("US"), &constructed_number))
-    profile->SetInfo(PHONE_FAX_WHOLE_NUMBER, constructed_number);
+  if (!phone.IsEmpty() &&
+      phone.ParseNumber(std::string("US"), &constructed_number)) {
+    profile->SetCanonicalizedInfo(PHONE_HOME_WHOLE_NUMBER, constructed_number);
+  }
 
   return has_non_empty_fields;
 }
 
 // Imports profiles from the IE toolbar and stores them. Asynchronous
 // if PersonalDataManager has not been loaded yet. Deletes itself on completion.
-class AutofillImporter : public PersonalDataManager::Observer {
+class AutofillImporter : public PersonalDataManagerObserver {
  public:
   explicit AutofillImporter(PersonalDataManager* personal_data_manager)
     : personal_data_manager_(personal_data_manager) {
@@ -187,8 +183,8 @@ class AutofillImporter : public PersonalDataManager::Observer {
     return true;
   }
 
-  // PersonalDataManager::Observer methods:
-  virtual void OnPersonalDataChanged() {
+  // PersonalDataManagerObserver:
+  virtual void OnPersonalDataChanged() OVERRIDE {
     for (std::vector<AutofillProfile>::const_iterator iter = profiles_.begin();
          iter != profiles_.end(); ++iter) {
       personal_data_manager_->AddProfile(*iter);

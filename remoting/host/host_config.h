@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,6 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-
-class Task;
 
 namespace remoting {
 
@@ -28,14 +26,16 @@ extern const char kXmppAuthServiceConfigPath[];
 extern const char kHostIdConfigPath[];
 // Readable host name.
 extern const char kHostNameConfigPath[];
+// Hash of the host secret used for authentication.
+extern const char kHostSecretHashConfigPath[];
 // Private keys used for host authentication.
 extern const char kPrivateKeyConfigPath[];
 
 // HostConfig interace provides read-only access to host configuration.
 class HostConfig : public base::RefCountedThreadSafe<HostConfig> {
  public:
-  HostConfig() { };
-  virtual ~HostConfig() { }
+  HostConfig() {}
+  virtual ~HostConfig() {}
 
   virtual bool GetString(const std::string& path, std::string* out_value) = 0;
   virtual bool GetBoolean(const std::string& path, bool* out_value) = 0;
@@ -46,7 +46,7 @@ class HostConfig : public base::RefCountedThreadSafe<HostConfig> {
 // MutableHostConfig extends HostConfig for mutability.
 class MutableHostConfig : public HostConfig {
  public:
-  MutableHostConfig() { };
+  MutableHostConfig() {}
 
   // SetString() updates specified config value. Save() must be called to save
   // the changes on the disk.

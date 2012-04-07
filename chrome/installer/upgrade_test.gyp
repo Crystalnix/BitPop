@@ -11,12 +11,14 @@
     'msvs_use_common_release': 0,
     'msvs_use_common_linker_extras': 0,
   },
+  'includes': [
+    '../../build/win_precompile.gypi',
+  ],
   'conditions': [
     ['OS=="win"', {
       'targets': [
         {
           'target_name': 'alternate_version_generator_lib',
-          'msvs_guid': '66723D46-A641-4182-A321-923FD6335D9B',
           'type': 'static_library',
           'dependencies': [
             '../chrome.gyp:common_constants',
@@ -39,7 +41,6 @@
         },
         {
           'target_name': 'upgrade_test',
-          'msvs_guid': 'BC4D6130-FDAD-47FB-B4FD-FCAF78DCBC3C',
           'type': 'executable',
           'dependencies': [
             'alternate_version_generator_lib',
@@ -65,7 +66,6 @@
         },
         {
           'target_name': 'alternate_version_generator',
-          'msvs_guid': 'E6E6B339-AEC0-44C9-B9D0-E30138108379',
           'type': 'executable',
           'dependencies': [
             'alternate_version_generator_lib',
@@ -94,9 +94,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

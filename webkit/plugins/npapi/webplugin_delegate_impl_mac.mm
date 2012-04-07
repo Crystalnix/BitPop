@@ -12,12 +12,12 @@
 #include <set>
 
 #include "base/file_util.h"
+#include "base/mac/mac_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_counters.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "base/sys_info.h"
 #include "base/sys_string_conversions.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "webkit/glue/webkit_glue.h"
@@ -122,7 +122,8 @@ class CarbonIdleEventSource {
     // Adds |delegate| to this visibility group.
     void RegisterDelegate(WebPluginDelegateImpl* delegate) {
       if (delegates_.empty()) {
-        timer_.Start(base::TimeDelta::FromMilliseconds(timer_period_),
+        timer_.Start(FROM_HERE,
+                     base::TimeDelta::FromMilliseconds(timer_period_),
                      this, &VisibilityGroup::SendIdleEvents);
       }
       delegates_.insert(delegate);
@@ -262,9 +263,11 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
       instance_(instance),
       parent_(containing_view),
       quirks_(0),
+      use_buffer_context_(true),
       buffer_context_(NULL),
       layer_(nil),
       surface_(NULL),
+      composited_(false),
       renderer_(nil),
       containing_window_has_focus_(false),
       initial_window_focus_(false),
@@ -382,17 +385,34 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
           redraw_timer_.reset(new base::RepeatingTimer<WebPluginDelegateImpl>);
         }
         layer_ = layer;
-        surface_ = plugin_->GetAcceleratedSurface();
+
+        gfx::GpuPreference gpu_preference = gfx::PreferDiscreteGpu;
+        // On dual GPU systems, force the use of the discrete GPU for
+        // the CARenderer underlying our Core Animation backend for
+        // all plugins except Flash. For some reason Unity3D's output
+        // doesn't show up if the integrated GPU is used. Safari keeps
+        // even Flash 11 with Stage3D on the integrated GPU, so mirror
+        // that behavior here.
+        const WebPluginInfo& plugin_info =
+            instance_->plugin_lib()->plugin_info();
+        if (plugin_info.name.find(ASCIIToUTF16("Flash")) != string16::npos)
+          gpu_preference = gfx::PreferIntegratedGpu;
+        surface_ = plugin_->GetAcceleratedSurface(gpu_preference);
 
         // If surface initialization fails for some reason, just continue
         // without any drawing; returning false would be a more confusing user
         // experience (since it triggers a missing plugin placeholder).
         if (surface_ && surface_->context()) {
+          composited_ = surface_->IsComposited();
           renderer_ = [[CARenderer rendererWithCGLContext:surface_->context()
                                                   options:NULL] retain];
           [renderer_ setLayer:layer_];
         }
-        plugin_->BindFakePluginWindowHandle(false);
+        if (composited_) {
+          plugin_->AcceleratedPluginEnabledRendering();
+        } else {
+          plugin_->BindFakePluginWindowHandle(false);
+        }
       }
       break;
     }
@@ -401,9 +421,10 @@ bool WebPluginDelegateImpl::PlatformInitialize() {
       break;
   }
 
-  // Let the WebPlugin know that we are windowless (unless this is a
-  // Core Animation plugin, in which case BindFakePluginWindowHandle will take
-  // care of setting up the appropriate window handle).
+  // Let the WebPlugin know that we are windowless, unless this is a Core
+  // Animation plugin, in which case AcceleratedPluginEnabledRendering
+  // calls SetWindow. Rendering breaks if SetWindow is called before
+  // accelerated rendering is enabled.
   if (!layer_)
     plugin_->SetWindow(NULL);
 
@@ -511,8 +532,8 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
     if (content_origin.x() != content_area_origin_.x() ||
         content_origin.y() != content_area_origin_.y()) {
       DLOG(WARNING) << "Stale plugin content area location: "
-                    << content_area_origin_ << " instead of "
-                    << content_origin;
+                    << content_area_origin_.ToString() << " instead of "
+                    << content_origin.ToString();
       SetContentAreaOrigin(content_origin);
     }
 
@@ -639,10 +660,6 @@ bool WebPluginDelegateImpl::PlatformHandleInputEvent(
   return handled;
 }
 
-void WebPluginDelegateImpl::InstallMissingPlugin() {
-  NOTIMPLEMENTED();
-}
-
 #pragma mark -
 
 void WebPluginDelegateImpl::WindowlessUpdateGeometry(
@@ -692,18 +709,24 @@ void WebPluginDelegateImpl::WindowlessPaint(gfx::NativeDrawingContext context,
                                             const gfx::Rect& damage_rect) {
   // If we get a paint event before we are completely set up (e.g., a nested
   // call while the plugin is still in NPP_SetWindow), bail.
-  if (!have_called_set_window_ || !buffer_context_)
+  if (!have_called_set_window_ || (use_buffer_context_ && !buffer_context_))
     return;
-  DCHECK(buffer_context_ == context);
+  DCHECK(!use_buffer_context_ || buffer_context_ == context);
 
-  static base::StatsRate plugin_paint("Plugin.Paint");
+  base::StatsRate plugin_paint("Plugin.Paint");
   base::StatsScope<base::StatsRate> scope(plugin_paint);
 
-  // Plugin invalidates trigger asynchronous paints with the original
-  // invalidation rect; the plugin may be resized before the paint is handled,
-  // so we need to ensure that the damage rect is still sane.
-  const gfx::Rect paint_rect(damage_rect.Intersect(
-      gfx::Rect(0, 0, window_rect_.width(), window_rect_.height())));
+  gfx::Rect paint_rect;
+  if (use_buffer_context_) {
+    // Plugin invalidates trigger asynchronous paints with the original
+    // invalidation rect; the plugin may be resized before the paint is handled,
+    // so we need to ensure that the damage rect is still sane.
+    paint_rect = damage_rect.Intersect(
+        gfx::Rect(0, 0, window_rect_.width(), window_rect_.height()));
+  } else {
+    // Use the actual window region when drawing directly to the window context.
+    paint_rect = damage_rect.Intersect(window_rect_);
+  }
 
   ScopedActiveDelegate active_delegate(this);
 
@@ -713,6 +736,13 @@ void WebPluginDelegateImpl::WindowlessPaint(gfx::NativeDrawingContext context,
 #endif
 
   CGContextSaveGState(context);
+
+  if (!use_buffer_context_) {
+    // Reposition the context origin so that plugins will draw at the correct
+    // location in the window.
+    CGContextClipToRect(context, paint_rect.ToCGRect());
+    CGContextTranslateCTM(context, window_rect_.x(), window_rect_.y());
+  }
 
   switch (instance()->event_model()) {
 #ifndef NP_NO_CARBON
@@ -739,10 +769,15 @@ void WebPluginDelegateImpl::WindowlessPaint(gfx::NativeDrawingContext context,
     }
   }
 
-  // The backing buffer can change during the call to NPP_HandleEvent, in which
-  // case the old context is (or is about to be) invalid.
-  if (context == buffer_context_)
+  if (use_buffer_context_) {
+    // The backing buffer can change during the call to NPP_HandleEvent, in
+    // which case the old context is (or is about to be) invalid.
+    if (context == buffer_context_)
+      CGContextRestoreGState(context);
+  } else {
+    // Always restore the context to the saved state.
     CGContextRestoreGState(context);
+  }
 }
 
 void WebPluginDelegateImpl::WindowlessSetWindow() {
@@ -960,6 +995,17 @@ void WebPluginDelegateImpl::SetNSCursor(NSCursor* cursor) {
   current_windowless_cursor_.InitFromNSCursor(cursor);
 }
 
+bool WebPluginDelegateImpl::AllowBufferFlipping() {
+#ifndef NP_NO_CARBON
+  // Using buffer flipping for Carbon plugins would require issuing an
+  // NPP_SetWindow() call for every frame, which would likely expose plugin
+  // bugs and/or suboptimal behaviour. So we don't allow it.
+  return instance()->event_model() != NPEventModelCarbon;
+#else
+  return true;
+#endif
+}
+
 #pragma mark -
 #pragma mark Internal Tracking
 
@@ -996,8 +1042,9 @@ void WebPluginDelegateImpl::PluginVisibilityChanged() {
 #endif
   if (instance()->drawing_model() == NPDrawingModelCoreAnimation) {
     bool plugin_visible = container_is_visible_ && !clip_rect_.IsEmpty();
-    if (plugin_visible && !redraw_timer_->IsRunning() && windowed_handle()) {
-      redraw_timer_->Start(
+    if (plugin_visible && !redraw_timer_->IsRunning() &&
+        (composited_ || windowed_handle())) {
+      redraw_timer_->Start(FROM_HERE,
           base::TimeDelta::FromMilliseconds(kCoreAnimationRedrawPeriodMs),
           this, &WebPluginDelegateImpl::DrawLayerInSurface);
     } else if (!plugin_visible) {
@@ -1007,8 +1054,9 @@ void WebPluginDelegateImpl::PluginVisibilityChanged() {
 }
 
 void WebPluginDelegateImpl::StartIme() {
+  // Currently the plugin IME implementation only works on 10.6.
   if (instance()->event_model() != NPEventModelCocoa ||
-      !IsImeSupported()) {
+      base::mac::IsOSLeopardOrEarlier()) {
     return;
   }
   if (ime_enabled_)
@@ -1017,25 +1065,15 @@ void WebPluginDelegateImpl::StartIme() {
   plugin_->StartIme();
 }
 
-bool WebPluginDelegateImpl::IsImeSupported() {
-  // Currently the plugin IME implementation only works on 10.6.
-  static BOOL sImeSupported = NO;
-  static BOOL sHaveCheckedSupport = NO;
-  if (!sHaveCheckedSupport) {
-    int32 major, minor, bugfix;
-    base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
-    sImeSupported = major > 10 || (major == 10 && minor > 5);
-    sHaveCheckedSupport = YES;
-  }
-  return sImeSupported;
-}
-
 #pragma mark -
 #pragma mark Core Animation Support
 
 void WebPluginDelegateImpl::DrawLayerInSurface() {
   // If we haven't plumbed up the surface yet, don't try to draw.
-  if (!windowed_handle() || !renderer_)
+  if (!renderer_)
+    return;
+
+  if (!composited_ && !windowed_handle())
     return;
 
   [renderer_ beginFrameAtTime:CACurrentMediaTime() timeStamp:NULL];
@@ -1057,8 +1095,10 @@ void WebPluginDelegateImpl::DrawLayerInSurface() {
 
 // Update the size of the surface to match the current size of the plug-in.
 void WebPluginDelegateImpl::UpdateAcceleratedSurface() {
-  // Will only have a window handle when using a Core Animation drawing model.
-  if (!windowed_handle() || !layer_)
+  if (!surface_ || !layer_)
+    return;
+
+  if (!composited_ && !windowed_handle())
     return;
 
   [CATransaction begin];
@@ -1070,10 +1110,15 @@ void WebPluginDelegateImpl::UpdateAcceleratedSurface() {
 
   [renderer_ setBounds:[layer_ bounds]];
   surface_->SetSize(window_rect_.size());
+  if (composited_) {
+    // Kick off the drawing timer, if necessary.
+    PluginVisibilityChanged();
+  }
 }
 
 void WebPluginDelegateImpl::set_windowed_handle(
     gfx::PluginWindowHandle handle) {
+  DCHECK(!composited_);
   windowed_handle_ = handle;
   surface_->SetWindowHandle(handle);
   UpdateAcceleratedSurface();
@@ -1114,6 +1159,10 @@ void WebPluginDelegateImpl::UpdateIdleEventRate() {
   bool plugin_visible = container_is_visible_ && !clip_rect_.IsEmpty();
   CarbonIdleEventSource::SharedInstance()->RegisterDelegate(this,
                                                             plugin_visible);
+}
+
+void WebPluginDelegateImpl::SetNoBufferContext() {
+  use_buffer_context_ = false;
 }
 
 void WebPluginDelegateImpl::FireIdleEvent() {

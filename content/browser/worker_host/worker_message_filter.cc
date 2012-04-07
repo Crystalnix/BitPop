@@ -6,19 +6,21 @@
 
 #include "content/browser/resource_context.h"
 #include "content/browser/worker_host/message_port_service.h"
-#include "content/browser/worker_host/worker_service.h"
+#include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
+
+using content::BrowserMessageFilter;
+using content::BrowserThread;
+using content::WorkerServiceImpl;
 
 WorkerMessageFilter::WorkerMessageFilter(
     int render_process_id,
     const content::ResourceContext* resource_context,
-    ResourceDispatcherHost* resource_dispatcher_host,
-    CallbackWithReturnValue<int>::Type* next_routing_id)
+    const NextRoutingIDCallback& callback)
     : render_process_id_(render_process_id),
       resource_context_(resource_context),
-      resource_dispatcher_host_(resource_dispatcher_host),
-      next_routing_id_(next_routing_id) {
+      next_routing_id_(callback) {
   DCHECK(resource_context);
 }
 
@@ -30,7 +32,7 @@ void WorkerMessageFilter::OnChannelClosing() {
   BrowserMessageFilter::OnChannelClosing();
 
   MessagePortService::GetInstance()->OnWorkerMessageFilterClosing(this);
-  WorkerService::GetInstance()->OnWorkerMessageFilterClosing(this);
+  WorkerServiceImpl::GetInstance()->OnWorkerMessageFilterClosing(this);
 }
 
 bool WorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
@@ -42,8 +44,6 @@ bool WorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWorker, OnCreateWorker)
     // Only sent from renderer for now, until we have nested workers.
     IPC_MESSAGE_HANDLER(ViewHostMsg_LookupSharedWorker, OnLookupSharedWorker)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_CancelCreateDedicatedWorker,
-                        OnCancelCreateDedicatedWorker)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ForwardToWorker, OnForwardToWorker)
     // Only sent from renderer.
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentDetached, OnDocumentDetached)
@@ -72,15 +72,15 @@ bool WorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
 }
 
 int WorkerMessageFilter::GetNextRoutingID() {
-  return next_routing_id_->Run();
+  return next_routing_id_.Run();
 }
 
 void WorkerMessageFilter::OnCreateWorker(
     const ViewHostMsg_CreateWorker_Params& params,
     int* route_id) {
   *route_id = params.route_id != MSG_ROUTING_NONE ?
-      params.route_id : next_routing_id_->Run();
-  WorkerService::GetInstance()->CreateWorker(
+      params.route_id : next_routing_id_.Run();
+  WorkerServiceImpl::GetInstance()->CreateWorker(
       params, *route_id, this, *resource_context_);
 }
 
@@ -89,26 +89,22 @@ void WorkerMessageFilter::OnLookupSharedWorker(
     bool* exists,
     int* route_id,
     bool* url_error) {
-  *route_id = next_routing_id_->Run();
+  *route_id = next_routing_id_.Run();
 
-  WorkerService::GetInstance()->LookupSharedWorker(
+  WorkerServiceImpl::GetInstance()->LookupSharedWorker(
       params, *route_id, this, resource_context_, exists, url_error);
 }
 
-void WorkerMessageFilter::OnCancelCreateDedicatedWorker(int route_id) {
-  WorkerService::GetInstance()->CancelCreateDedicatedWorker(route_id, this);
-}
-
 void WorkerMessageFilter::OnForwardToWorker(const IPC::Message& message) {
-  WorkerService::GetInstance()->ForwardToWorker(message, this);
+  WorkerServiceImpl::GetInstance()->ForwardToWorker(message, this);
 }
 
 void WorkerMessageFilter::OnDocumentDetached(unsigned long long document_id) {
-  WorkerService::GetInstance()->DocumentDetached(document_id, this);
+  WorkerServiceImpl::GetInstance()->DocumentDetached(document_id, this);
 }
 
 void WorkerMessageFilter::OnCreateMessagePort(int *route_id,
                                               int* message_port_id) {
-  *route_id = next_routing_id_->Run();
+  *route_id = next_routing_id_.Run();
   MessagePortService::GetInstance()->Create(*route_id, this, message_port_id);
 }

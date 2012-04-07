@@ -1,36 +1,39 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/js_modal_dialog_views.h"
 
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog.h"
+#include "chrome/browser/ui/app_modal_dialogs/js_modal_dialog.h"
+#include "chrome/browser/ui/dialog_style.h"
 #include "chrome/browser/ui/views/window.h"
 #include "grit/generated_resources.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/message_box_flags.h"
-#include "views/controls/message_box_view.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/window/window.h"
+#include "ui/views/controls/message_box_view.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/widget/widget.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // JSModalDialogViews, public:
 
-JSModalDialogViews::JSModalDialogViews(
-    JavaScriptAppModalDialog* parent)
-    : parent_(parent),
-      message_box_view_(new views::MessageBoxView(
-          parent->dialog_flags() | ui::MessageBoxFlags::kAutoDetectAlignment,
-          parent->message_text(), parent->default_prompt_text())) {
+JSModalDialogViews::JSModalDialogViews(JavaScriptAppModalDialog* parent)
+    : parent_(parent) {
+  int options = views::MessageBoxView::DETECT_ALIGNMENT;
+  if (parent->javascript_message_type() == ui::JAVASCRIPT_MESSAGE_TYPE_PROMPT)
+    options |= views::MessageBoxView::HAS_PROMPT_FIELD;
+
+  message_box_view_ = new views::MessageBoxView(options,
+                                                parent->message_text(),
+                                                parent->default_prompt_text());
   DCHECK(message_box_view_);
 
   message_box_view_->AddAccelerator(
-      views::Accelerator(ui::VKEY_C, false, true, false));
+      ui::Accelerator(ui::VKEY_C, false, true, false));
   if (parent->display_suppress_checkbox()) {
-    message_box_view_->SetCheckBoxLabel(UTF16ToWide(
-        l10n_util::GetStringUTF16(IDS_JAVASCRIPT_MESSAGEBOX_SUPPRESS_OPTION)));
+    message_box_view_->SetCheckBoxLabel(
+        l10n_util::GetStringUTF16(IDS_JAVASCRIPT_MESSAGEBOX_SUPPRESS_OPTION));
   }
 }
 
@@ -45,16 +48,16 @@ int JSModalDialogViews::GetAppModalDialogButtons() const {
 }
 
 void JSModalDialogViews::ShowAppModalDialog() {
-  window()->Show();
+  GetWidget()->Show();
 }
 
 void JSModalDialogViews::ActivateAppModalDialog() {
-  window()->Show();
-  window()->Activate();
+  GetWidget()->Show();
+  GetWidget()->Activate();
 }
 
 void JSModalDialogViews::CloseAppModalDialog() {
-  window()->Close();
+  GetWidget()->Close();
 }
 
 void JSModalDialogViews::AcceptAppModalDialog() {
@@ -69,36 +72,24 @@ void JSModalDialogViews::CancelAppModalDialog() {
 // JSModalDialogViews, views::DialogDelegate implementation:
 
 int JSModalDialogViews::GetDefaultDialogButton() const {
-  if (parent_->dialog_flags() & ui::MessageBoxFlags::kFlagHasOKButton)
-    return ui::MessageBoxFlags::DIALOGBUTTON_OK;
-
-  if (parent_->dialog_flags() & ui::MessageBoxFlags::kFlagHasCancelButton)
-    return ui::MessageBoxFlags::DIALOGBUTTON_CANCEL;
-
-  return ui::MessageBoxFlags::DIALOGBUTTON_NONE;
+  return ui::DIALOG_BUTTON_OK;
 }
 
 int JSModalDialogViews::GetDialogButtons() const {
-  int dialog_buttons = 0;
-  if (parent_->dialog_flags() & ui::MessageBoxFlags::kFlagHasOKButton)
-    dialog_buttons = ui::MessageBoxFlags::DIALOGBUTTON_OK;
+  if (parent_->javascript_message_type() == ui::JAVASCRIPT_MESSAGE_TYPE_ALERT)
+    return ui::DIALOG_BUTTON_OK;
 
-  if (parent_->dialog_flags() & ui::MessageBoxFlags::kFlagHasCancelButton)
-    dialog_buttons |= ui::MessageBoxFlags::DIALOGBUTTON_CANCEL;
-
-  return dialog_buttons;
+  return ui::DIALOG_BUTTON_OK | ui::DIALOG_BUTTON_CANCEL;
 }
 
-std::wstring JSModalDialogViews::GetWindowTitle() const {
+string16 JSModalDialogViews::GetWindowTitle() const {
   return parent_->title();
 }
-
 
 void JSModalDialogViews::WindowClosing() {
 }
 
 void JSModalDialogViews::DeleteDelegate() {
-  delete parent_;
   delete this;
 }
 
@@ -117,25 +108,33 @@ void JSModalDialogViews::OnClose() {
   parent_->OnClose();
 }
 
-std::wstring JSModalDialogViews::GetDialogButtonLabel(
-    ui::MessageBoxFlags::DialogButton button) const {
+views::Widget* JSModalDialogViews::GetWidget() {
+  return message_box_view_->GetWidget();
+}
+
+const views::Widget* JSModalDialogViews::GetWidget() const {
+  return message_box_view_->GetWidget();
+}
+
+string16 JSModalDialogViews::GetDialogButtonLabel(
+    ui::DialogButton button) const {
   if (parent_->is_before_unload_dialog()) {
-    if (button == ui::MessageBoxFlags::DIALOGBUTTON_OK) {
-      return UTF16ToWide(l10n_util::GetStringUTF16(
-          IDS_BEFOREUNLOAD_MESSAGEBOX_OK_BUTTON_LABEL));
-    } else if (button == ui::MessageBoxFlags::DIALOGBUTTON_CANCEL) {
-      return UTF16ToWide(l10n_util::GetStringUTF16(
-          IDS_BEFOREUNLOAD_MESSAGEBOX_CANCEL_BUTTON_LABEL));
+    if (button == ui::DIALOG_BUTTON_OK) {
+      return l10n_util::GetStringUTF16(
+          IDS_BEFOREUNLOAD_MESSAGEBOX_OK_BUTTON_LABEL);
+    } else if (button == ui::DIALOG_BUTTON_CANCEL) {
+      return l10n_util::GetStringUTF16(
+          IDS_BEFOREUNLOAD_MESSAGEBOX_CANCEL_BUTTON_LABEL);
     }
   }
   return DialogDelegate::GetDialogButtonLabel(button);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// JSModalDialogViews, views::WindowDelegate implementation:
+// JSModalDialogViews, views::WidgetDelegate implementation:
 
-bool JSModalDialogViews::IsModal() const {
-  return true;
+ui::ModalType JSModalDialogViews::GetModalType() const {
+  return ui::MODAL_TYPE_SYSTEM;
 }
 
 views::View* JSModalDialogViews::GetContentsView() {
@@ -157,6 +156,6 @@ NativeAppModalDialog* NativeAppModalDialog::CreateNativeJavaScriptPrompt(
     gfx::NativeWindow parent_window) {
   JSModalDialogViews* d = new JSModalDialogViews(dialog);
 
-  browser::CreateViewsWindow(parent_window, gfx::Rect(), d);
+  browser::CreateViewsWindow(parent_window, d, STYLE_GENERIC);
   return d;
 }

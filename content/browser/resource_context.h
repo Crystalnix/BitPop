@@ -8,23 +8,24 @@
 #include <map>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/weak_ptr.h"
+#include "content/common/content_export.h"
 
+class AudioManager;
 class ChromeAppCacheService;
 class ChromeBlobStorageContext;
-class ExtensionInfoMap;
-class HostZoomMap;
+class MediaObserver;
 namespace fileapi {
 class FileSystemContext;
 }  // namespace fileapi
+namespace media_stream {
+class MediaStreamManager;
+}  // namespace media_stream
 namespace net {
 class HostResolver;
 class URLRequestContext;
 }  // namespace net
-namespace prerender {
-class PrerenderManager;
-}  // namespace prerender
 namespace quota {
 class QuotaManager;
 };  // namespace quota
@@ -34,11 +35,13 @@ class DatabaseTracker;
 
 namespace content {
 
+class HostZoomMap;
+
 // ResourceContext contains the relevant context information required for
 // resource loading. It lives on the IO thread, although it is constructed on
 // the UI thread. ResourceContext doesn't own anything it points to, it just
 // holds pointers to relevant objects to resource loading.
-class ResourceContext {
+class CONTENT_EXPORT ResourceContext {
  public:
   virtual ~ResourceContext();
 
@@ -71,17 +74,15 @@ class ResourceContext {
   HostZoomMap* host_zoom_map() const;
   void set_host_zoom_map(HostZoomMap* host_zoom_map);
 
-  // =======================================================================
-  // TODO(willchan): These don't belong in content/. Remove them eventually.
+  MediaObserver* media_observer() const;
+  void set_media_observer(MediaObserver* media_observer);
 
-  // TODO(mpcomplete): Kill this one.
-  const ExtensionInfoMap* extension_info_map() const;
-  void set_extension_info_map(ExtensionInfoMap* extension_info_map);
+  media_stream::MediaStreamManager* media_stream_manager() const;
+  void set_media_stream_manager(
+      media_stream::MediaStreamManager* media_stream_manager);
 
-  // TODO(cbentzel): Kill this one.
-  const base::WeakPtr<prerender::PrerenderManager>& prerender_manager() const;
-  void set_prerender_manager(
-      const base::WeakPtr<prerender::PrerenderManager>& prerender_manager);
+  AudioManager* audio_manager() const;
+  void set_audio_manager(AudioManager* audio_manager);
 
  protected:
   ResourceContext();
@@ -97,17 +98,13 @@ class ResourceContext {
   ChromeBlobStorageContext* blob_storage_context_;
   quota::QuotaManager* quota_manager_;
   HostZoomMap* host_zoom_map_;
+  MediaObserver* media_observer_;
+  media_stream::MediaStreamManager* media_stream_manager_;
+  AudioManager* audio_manager_;
 
   // Externally-defined data accessible by key.
   typedef std::map<const void*, void*> UserDataMap;
   UserDataMap user_data_;
-
-
-  // =======================================================================
-  // TODO(willchan): These don't belong in content/. Remove them eventually.
-
-  ExtensionInfoMap* extension_info_map_;
-  base::WeakPtr<prerender::PrerenderManager> prerender_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceContext);
 };

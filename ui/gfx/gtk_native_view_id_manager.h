@@ -10,22 +10,16 @@
 
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 typedef unsigned long XID;
 struct _GtkPreserveWindow;
 
 // NativeViewIds are the opaque values which the renderer holds as a reference
-// to a window. These ids are often used in sync calls from the renderer and
-// one cannot terminate sync calls on the UI thread as that can lead to
-// deadlocks.
+// to a window.
 //
-// Because of this, we have the BACKGROUND_X11 thread for these calls and this
-// thread has a separate X connection in order to answer them. But one cannot
-// use GTK on multiple threads, so the BACKGROUND_X11 thread deals only in Xlib
-// calls and, thus, XIDs.
-//
-// So we could make NativeViewIds be the X id of the window. However, at the
+// We could make NativeViewIds be the X id of the window. However, at the
 // time when we need to tell the renderer about its NativeViewId, an XID isn't
 // availible and it goes very much against the grain of the code to make it so.
 // Also, we worry that GTK might choose to change the underlying X window id
@@ -37,7 +31,7 @@ struct _GtkPreserveWindow;
 // pointers and observes the various signals from the widget for when an X
 // window is created, destroyed etc. Thus it provides a thread safe mapping
 // from NativeViewIds to the current XID for that widget.
-class GtkNativeViewManager {
+class UI_EXPORT GtkNativeViewManager {
  public:
   // Returns the singleton instance.
   static GtkNativeViewManager* GetInstance();

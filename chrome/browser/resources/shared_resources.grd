@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- This comment is only here because changes to resources are not picked up
-without changes to the corresponding grd file. paaaae -->
+without changes to the corresponding grd file. -->
 <grit latest_public_release="0" current_release="1">
   <outputs>
     <output filename="grit/shared_resources.h" type="rc_header">
@@ -16,10 +16,24 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/css/about_memory.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_BUTTON"
                file="shared/css/button.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_CHECKBOX"
+               file="shared/css/checkbox.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_DIALOGS"
+               file="shared/css/dialogs.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_LIST"
                file="shared/css/list.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_MENU"
                file="shared/css/menu.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_CHROME"
+               file="shared/css/chrome_shared.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_CHROME2"
+               file="shared/css/chrome_shared2.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_OVERLAY"
+               file="shared/css/overlay.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_SELECT"
+               file="shared/css/select.css" type="BINDATA" />
+      <include name="IDR_SHARED_CSS_SPINNER"
+               file="shared/css/spinner.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_TABLE"
                file="shared/css/table.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_TABS"
@@ -30,18 +44,32 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/css/tree.css" type="BINDATA" />
       <include name="IDR_SHARED_CSS_TREE_JS"
                file="shared/css/tree.css.js" type="BINDATA" />
-      <include name="IDR_SHARED_IMAGES_ACTIVE_DOWNLOADS_MENU"
-               file="shared/images/active_downloads_menu.png" type="BINDATA" />
-      <include name="IDR_SHARED_IMAGES_ICON_FILE"
-               file="shared/images/icon_file.png" type="BINDATA" />
-      <include name="IDR_SHARED_IMAGES_ICON_FOLDER"
-               file="shared/images/icon_folder.png" type="BINDATA" />
-      <include name="IDR_SHARED_IMAGES_ICON_MEDIA"
-               file="shared/images/icon_media.png" type="BINDATA" />
-      <include name="IDR_SHARED_IMAGES_ICON_PHOTO"
-               file="shared/images/icon_photo.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_CHECKMARK"
+               file="shared/images/checkmark.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_CHECKBOX_BLACK"
+               file="shared/images/checkbox_black.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_CHECKBOX_WHITE"
+               file="shared/images/checkbox_white.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_DISABLED_SELECT"
+               file="shared/images/disabled_select.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_GOOGLE_LOGO_41"
+               file="shared/images/google-logo-41.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_GOOGLE_MAIL"
+               file="shared/images/google-mail.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_GOOGLE_TRANSPARENT"
+               file="shared/images/google-transparent.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_SELECT"
+               file="shared/images/select.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_SPINNER"
+               file="shared/images/spinner.svg" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_SYNC_BACKUP"
+               file="shared/images/sync-backup.png" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_SYNC"
+               file="shared/images/sync.png" type="BINDATA" />
       <include name="IDR_SHARED_IMAGES_THROBBER"
                file="shared/images/throbber.svg" type="BINDATA" />
+      <include name="IDR_SHARED_IMAGES_TRASH"
+               file="shared/images/trash.png" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR"
                file="shared/js/cr.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_COMMAND_LINE"
@@ -50,20 +78,28 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/js/cr/event_target.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_LINK_CONTROLLER"
                file="shared/js/cr/link_controller.js" type="BINDATA" />
-      <include name="IDR_SHARED_JS_CR_LOCALE"
-               file="shared/js/cr/locale.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_PROMISE"
                file="shared/js/cr/promise.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI"
                file="shared/js/cr/ui.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_ALERT_OVERLAY"
+               file="shared/js/cr/ui/alert_overlay.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_ARRAY_DATA_MODEL"
                file="shared/js/cr/ui/array_data_model.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_AUTOCOMPLETE_LIST"
+               file="shared/js/cr/ui/autocomplete_list.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_CARD_SLIDER"
+               file="shared/js/cr/ui/card_slider.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_COMMAND"
                file="shared/js/cr/ui/command.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_CONTEXT_MENU_BUTTON"
                file="shared/js/cr/ui/context_menu_button.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_CONTEXT_MENU_HANDLER"
                file="shared/js/cr/ui/context_menu_handler.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_DIALOGS"
+               file="shared/js/cr/ui/dialogs.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_DRAG_WRAPPER"
+               file="shared/js/cr/ui/drag_wrapper.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_FOCUS_OUTLINE_MANAGER"
                file="shared/js/cr/ui/focus_outline_manager.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_LIST"
@@ -88,6 +124,8 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/js/cr/ui/splitter.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_GRID"
                file="shared/js/cr/ui/grid.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_REPEATING_BUTTON"
+               file="shared/js/cr/ui/repeating_button.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_TABLE"
                file="shared/js/cr/ui/table.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_TABLE_COLUMN"
@@ -104,6 +142,8 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/js/cr/ui/tabs.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_CR_UI_TREE"
                file="shared/js/cr/ui/tree.js" type="BINDATA" />
+      <include name="IDR_SHARED_JS_CR_UI_TOUCH_HANDLER"
+               file="shared/js/cr/ui/touch_handler.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_EVENT_TRACKER"
                file="shared/js/event_tracker.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_I18N_PROCESS"
@@ -111,7 +151,8 @@ without changes to the corresponding grd file. paaaae -->
       <include name="IDR_SHARED_JS_I18N_TEMPLATE"
                file="shared/js/i18n_template.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_JSTEMPLATE_COMPILED"
-               file="shared/js/jstemplate_compiled.js" type="BINDATA" />
+               file="shared/js/jstemplate_compiled.js"
+               flattenhtml="true" type="BINDATA" />
       <include name="IDR_SHARED_JS_LOCAL_STRINGS"
                file="shared/js/local_strings.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_MEDIA_COMMON"
@@ -120,6 +161,8 @@ without changes to the corresponding grd file. paaaae -->
                file="shared/js/parse_html_subset.js" type="BINDATA" />
       <include name="IDR_SHARED_JS_UTIL"
                file="shared/js/util.js" type="BINDATA" />
+      <include name="IDR_THIRD_PARTY_FONTS_OPEN_SANS"
+               file="third_party/fonts/open_sans.woff" type="BINDATA" />
     </includes>
   </release>
 </grit>

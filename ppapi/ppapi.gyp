@@ -28,6 +28,7 @@
     ],
   },
   'includes': [
+    'ppapi_sources.gypi',
     'ppapi_cpp.gypi',
     'ppapi_gl.gypi',
   ],

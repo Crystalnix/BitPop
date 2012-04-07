@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/canvas_skia.h"
 #include "ui/gfx/color_utils.h"
+#include "ui/gfx/native_theme.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/gtk_util.h"
@@ -31,17 +32,12 @@
 
 namespace {
 
-const char16 kEllipsis[] = { 0x2026 };
+const char16 kEllipsis[] = { 0x2026, 0x0 };
 
 // The minimum distance between the top and bottom of the {icon|text} and the
 // top or bottom of the row.
 const int kMinimumIconVerticalPadding = 2;
-
-#if defined(TOUCH_UI)
-const int kMinimumTextVerticalPadding = 15;
-#else
 const int kMinimumTextVerticalPadding = 3;
-#endif
 
 }  // namespace
 
@@ -116,8 +112,7 @@ AutocompleteResultView::AutocompleteResultView(
       normal_font_(font),
       bold_font_(bold_font),
       ellipsis_width_(font.GetStringWidth(string16(kEllipsis))),
-      mirroring_context_(new MirroringContext()),
-      match_(NULL, 0, false, AutocompleteMatch::URL_WHAT_YOU_TYPED) {
+      mirroring_context_(new MirroringContext()) {
   CHECK_GE(model_index, 0);
   if (default_icon_size_ == 0) {
     default_icon_size_ = ResourceBundle::GetSharedInstance().GetBitmapNamed(
@@ -140,6 +135,16 @@ SkColor AutocompleteResultView::GetColor(ResultViewState state,
     colors[SELECTED][BACKGROUND] = color_utils::GetSysSkColor(COLOR_HIGHLIGHT);
     colors[NORMAL][TEXT] = color_utils::GetSysSkColor(COLOR_WINDOWTEXT);
     colors[SELECTED][TEXT] = color_utils::GetSysSkColor(COLOR_HIGHLIGHTTEXT);
+#elif defined(USE_AURA)
+    const gfx::NativeTheme* theme = gfx::NativeTheme::instance();
+    colors[SELECTED][BACKGROUND] = theme->GetSystemColor(
+        gfx::NativeTheme::kColorId_TextfieldSelectionBackgroundFocused);
+    colors[SELECTED][TEXT] = theme->GetSystemColor(
+        gfx::NativeTheme::kColorId_TextfieldSelectionColor);
+    colors[NORMAL][BACKGROUND] = theme->GetSystemColor(
+        gfx::NativeTheme::kColorId_TextfieldDefaultBackground);
+    colors[NORMAL][TEXT] = theme->GetSystemColor(
+        gfx::NativeTheme::kColorId_TextfieldDefaultColor);
 #elif defined(TOOLKIT_USES_GTK)
     GdkColor bg_color, selected_bg_color, text_color, selected_text_color;
     gtk_util::GetTextColors(
@@ -440,7 +445,7 @@ void AutocompleteResultView::Elide(Runs* runs, int remaining_width) const {
 
       // Can we fit at least an ellipsis?
       string16 elided_text =
-          ui::ElideText(j->text, *j->font, remaining_width, false);
+          ui::ElideText(j->text, *j->font, remaining_width, ui::ELIDE_AT_END);
       Classifications::reverse_iterator prior_classification(j);
       ++prior_classification;
       const bool on_first_classification =
@@ -517,7 +522,7 @@ void AutocompleteResultView::Layout() {
 void AutocompleteResultView::OnPaint(gfx::Canvas* canvas) {
   const ResultViewState state = GetState();
   if (state != NORMAL)
-    canvas->AsCanvasSkia()->drawColor(GetColor(state, BACKGROUND));
+    canvas->GetSkCanvas()->drawColor(GetColor(state, BACKGROUND));
 
   // Paint the icon.
   canvas->DrawBitmapInt(*GetIcon(), GetMirroredXForRect(icon_bounds_),

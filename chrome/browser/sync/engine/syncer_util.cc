@@ -9,7 +9,10 @@
 #include <string>
 #include <vector>
 
+#include "base/location.h"
+#include "base/metrics/histogram.h"
 #include "chrome/browser/sync/engine/conflict_resolver.h"
+#include "chrome/browser/sync/engine/nigori_util.h"
 #include "chrome/browser/sync/engine/syncer_proto_util.h"
 #include "chrome/browser/sync/engine/syncer_types.h"
 #include "chrome/browser/sync/engine/syncproto.h"
@@ -19,9 +22,10 @@
 #include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
 #include "chrome/browser/sync/syncable/model_type.h"
-#include "chrome/browser/sync/syncable/nigori_util.h"
 #include "chrome/browser/sync/syncable/syncable.h"
 #include "chrome/browser/sync/syncable/syncable_changes_version.h"
+#include "chrome/browser/sync/util/cryptographer.h"
+#include "chrome/browser/sync/util/time.h"
 
 using syncable::BASE_VERSION;
 using syncable::Blob;
@@ -31,6 +35,7 @@ using syncable::CREATE_NEW_UPDATE_ITEM;
 using syncable::CTIME;
 using syncable::Directory;
 using syncable::Entry;
+using syncable::GetModelTypeFromSpecifics;
 using syncable::GET_BY_HANDLE;
 using syncable::GET_BY_ID;
 using syncable::ID;
@@ -39,11 +44,13 @@ using syncable::IS_DIR;
 using syncable::IS_UNAPPLIED_UPDATE;
 using syncable::IS_UNSYNCED;
 using syncable::Id;
+using syncable::IsRealDataType;
 using syncable::META_HANDLE;
 using syncable::MTIME;
 using syncable::MutableEntry;
 using syncable::NEXT_ID;
 using syncable::NON_UNIQUE_NAME;
+using syncable::BASE_SERVER_SPECIFICS;
 using syncable::PARENT_ID;
 using syncable::PREV_ID;
 using syncable::ReadTransaction;
@@ -69,8 +76,8 @@ namespace browser_sync {
 int SyncerUtil::GetUnsyncedEntries(syncable::BaseTransaction* trans,
                                    std::vector<int64> *handles) {
   trans->directory()->GetUnsyncedMetaHandles(trans, handles);
-  VLOG_IF(1, !handles->empty()) << "Have " << handles->size()
-                                << " unsynced items.";
+  DVLOG_IF(1, !handles->empty()) << "Have " << handles->size()
+                                 << " unsynced items.";
   return handles->size();
 }
 
@@ -90,7 +97,7 @@ void SyncerUtil::ChangeEntryIDAndUpdateChildren(
   }
   if (entry->Get(IS_DIR)) {
     // Get all child entries of the old id.
-    trans->directory()->GetChildHandles(trans, old_id, children);
+    trans->directory()->GetChildHandlesById(trans, old_id, children);
     Directory::ChildHandles::iterator i = children->begin();
     while (i != children->end()) {
       MutableEntry child_entry(trans, GET_BY_HANDLE, *i++);
@@ -173,7 +180,7 @@ syncable::Id SyncerUtil::FindLocalIdToUpdate(
             // we don't server delete the item, because we don't allow it to
             // exist locally at all.  So the item will remain orphaned on
             // the server, and we won't pay attention to it.
-            return syncable::kNullId;
+            return syncable::GetNullId();
           }
         }
         // Target this change to the existing local entry; later,
@@ -230,9 +237,9 @@ syncable::Id SyncerUtil::FindLocalIdToUpdate(
       // Just a quick sanity check.
       DCHECK(!local_entry.Get(ID).ServerKnows());
 
-      VLOG(1) << "Reuniting lost commit response IDs. server id: "
-              << update.id() << " local id: " << local_entry.Get(ID)
-              << " new version: " << new_version;
+      DVLOG(1) << "Reuniting lost commit response IDs. server id: "
+               << update.id() << " local id: " << local_entry.Get(ID)
+               << " new version: " << new_version;
 
       return local_entry.Get(ID);
     }
@@ -247,15 +254,88 @@ UpdateAttemptResponse SyncerUtil::AttemptToUpdateEntry(
     syncable::MutableEntry* const entry,
     ConflictResolver* resolver,
     Cryptographer* cryptographer) {
-
   CHECK(entry->good());
   if (!entry->Get(IS_UNAPPLIED_UPDATE))
     return SUCCESS;  // No work to do.
   syncable::Id id = entry->Get(ID);
+  const sync_pb::EntitySpecifics& specifics = entry->Get(SERVER_SPECIFICS);
+
+  // We intercept updates to the Nigori node, update the Cryptographer and
+  // encrypt any unsynced changes here because there is no Nigori
+  // ChangeProcessor. We never put the nigori node in a state of
+  // conflict_encryption.
+  //
+  // We always update the cryptographer with the server's nigori node,
+  // even if we have a locally modified nigori node (we manually merge nigori
+  // data in the conflict resolver in that case). This handles the case where
+  // two clients both set a different passphrase. The second client to attempt
+  // to commit will go into a state of having pending keys, unioned the set of
+  // encrypted types, and eventually re-encrypt everything with the passphrase
+  // of the first client and commit the set of merged encryption keys. Until the
+  // second client provides the pending passphrase, the cryptographer will
+  // preserve the encryption keys based on the local passphrase, while the
+  // nigori node will preserve the server encryption keys.
+  //
+  // If non-encryption changes are made to the nigori node, they will be
+  // lost as part of conflict resolution. This is intended, as we place a higher
+  // priority on preserving the server's passphrase change to preserving local
+  // non-encryption changes. Next time the non-encryption changes are made to
+  // the nigori node (e.g. on restart), they will commit without issue.
+  if (specifics.HasExtension(sync_pb::nigori)) {
+    const sync_pb::NigoriSpecifics& nigori =
+        specifics.GetExtension(sync_pb::nigori);
+    cryptographer->Update(nigori);
+
+    // Make sure any unsynced changes are properly encrypted as necessary.
+    // We only perform this if the cryptographer is ready. If not, these are
+    // re-encrypted at SetPassphrase time (via ReEncryptEverything). This logic
+    // covers the case where the nigori updated marked new datatypes for
+    // encryption, but didn't change the passphrase.
+    if (cryptographer->is_ready()) {
+      // Note that we don't bother to encrypt any data for which IS_UNSYNCED
+      // == false here. The machine that turned on encryption should know about
+      // and re-encrypt all synced data. It's possible it could get interrupted
+      // during this process, but we currently reencrypt everything at startup
+      // as well, so as soon as a client is restarted with this datatype marked
+      // for encryption, all the data should be updated as necessary.
+
+      // If this fails, something is wrong with the cryptographer, but there's
+      // nothing we can do about it here.
+      syncable::ProcessUnsyncedChangesForEncryption(trans,
+                                                    cryptographer);
+    }
+  }
+
+  // Only apply updates that we can decrypt. If we can't decrypt the update, it
+  // is likely because the passphrase has not arrived yet. Because the
+  // passphrase may not arrive within this GetUpdates, we can't just return
+  // conflict, else we try to perform normal conflict resolution prematurely or
+  // the syncer may get stuck. As such, we return CONFLICT_ENCRYPTION, which is
+  // treated as a non-blocking conflict. See the description in syncer_types.h.
+  // This prevents any unsynced changes from commiting and postpones conflict
+  // resolution until all data can be decrypted.
+  if (specifics.has_encrypted() &&
+      !cryptographer->CanDecrypt(specifics.encrypted())) {
+    // We can't decrypt this node yet.
+    DVLOG(1) << "Received an undecryptable "
+             << syncable::ModelTypeToString(entry->GetServerModelType())
+             << " update, returning encryption_conflict.";
+    return CONFLICT_ENCRYPTION;
+  } else if (specifics.HasExtension(sync_pb::password) &&
+             entry->Get(UNIQUE_SERVER_TAG).empty()) {
+    // Passwords use their own legacy encryption scheme.
+    const sync_pb::PasswordSpecifics& password =
+        specifics.GetExtension(sync_pb::password);
+    if (!cryptographer->CanDecrypt(password.encrypted())) {
+      DVLOG(1) << "Received an undecryptable password update, returning "
+               << "encryption_conflict.";
+      return CONFLICT_ENCRYPTION;
+    }
+  }
 
   if (entry->Get(IS_UNSYNCED)) {
-    VLOG(1) << "Skipping update, returning conflict for: " << id
-            << " ; it's unsynced.";
+    DVLOG(1) << "Skipping update, returning conflict for: " << id
+             << " ; it's unsynced.";
     return CONFLICT;
   }
   if (!entry->Get(SERVER_IS_DEL)) {
@@ -272,84 +352,30 @@ UpdateAttemptResponse SyncerUtil::AttemptToUpdateEntry(
     }
     if (entry->Get(PARENT_ID) != new_parent) {
       if (!entry->Get(IS_DEL) && !IsLegalNewParent(trans, id, new_parent)) {
-        VLOG(1) << "Not updating item " << id
-                << ", illegal new parent (would cause loop).";
+        DVLOG(1) << "Not updating item " << id
+                 << ", illegal new parent (would cause loop).";
         return CONFLICT;
       }
     }
   } else if (entry->Get(IS_DIR)) {
     Directory::ChildHandles handles;
-    trans->directory()->GetChildHandles(trans, id, &handles);
+    trans->directory()->GetChildHandlesById(trans, id, &handles);
     if (!handles.empty()) {
       // If we have still-existing children, then we need to deal with
       // them before we can process this change.
-      VLOG(1) << "Not deleting directory; it's not empty " << *entry;
+      DVLOG(1) << "Not deleting directory; it's not empty " << *entry;
       return CONFLICT;
     }
   }
 
-  // We intercept updates to the Nigori node, update the Cryptographer and
-  // encrypt any unsynced changes here because there is no Nigori
-  // ChangeProcessor.
-  const sync_pb::EntitySpecifics& specifics = entry->Get(SERVER_SPECIFICS);
-  if (specifics.HasExtension(sync_pb::nigori)) {
-    const sync_pb::NigoriSpecifics& nigori =
-        specifics.GetExtension(sync_pb::nigori);
-    cryptographer->Update(nigori);
-
-    // Make sure any unsynced changes are properly encrypted as necessary.
-    syncable::ModelTypeSet encrypted_types =
-        cryptographer->GetEncryptedTypes();
-    if (!VerifyUnsyncedChangesAreEncrypted(trans, encrypted_types) &&
-        (!cryptographer->is_ready() ||
-         !syncable::ProcessUnsyncedChangesForEncryption(trans, encrypted_types,
-                                                        cryptographer))) {
-      // We were unable to encrypt the changes, possibly due to a missing
-      // passphrase. We return conflict, even though the conflict is with the
-      // unsynced change and not the nigori node. We ensure foward progress
-      // because the cryptographer already has the pending keys set, so once
-      // the new passphrase is entered we should be able to encrypt properly.
-      // And, because this update will not be applied yet, next time around
-      // we will properly encrypt all appropriate unsynced data.
-      // Note: we return CONFLICT_ENCRYPTION instead of CONFLICT. See
-      // explanation below.
-      VLOG(1) << "Marking nigori node update as conflicting due to being unable"
-              << " to encrypt all necessary unsynced changes.";
-      return CONFLICT_ENCRYPTION;
-    }
-
-    // Note that we don't bother to encrypt any synced data that now requires
-    // encryption. The machine that turned on encryption should encrypt
-    // everything itself. It's possible it could get interrupted during this
-    // process, but we currently reencrypt everything at startup as well,
-    // so as soon as a client is restarted with this datatype encrypted, all the
-    // data should be updated as necessary.
-  }
-
-  // Only apply updates that we can decrypt. If we can't decrypt the update, it
-  // is likely because the passphrase has not arrived yet. Because the
-  // passphrase may not arrive within this GetUpdates, we can't just return
-  // conflict, else the syncer gets stuck. As such, we return
-  // CONFLICT_ENCRYPTION, which is treated as a non-blocking conflict. See the
-  // description in syncer_types.h.
-  if (!entry->Get(SERVER_IS_DIR)) {
-    if (specifics.has_encrypted() &&
-        !cryptographer->CanDecrypt(specifics.encrypted())) {
-      // We can't decrypt this node yet.
-      VLOG(1) << "Received an undecryptable "
-              << syncable::ModelTypeToString(entry->GetServerModelType())
-              << " update, returning encryption_conflict.";
-      return CONFLICT_ENCRYPTION;
-    } else if (specifics.HasExtension(sync_pb::password)) {
-      // Passwords use their own legacy encryption scheme.
-      const sync_pb::PasswordSpecifics& password =
-          specifics.GetExtension(sync_pb::password);
-      if (!cryptographer->CanDecrypt(password.encrypted())) {
-        VLOG(1) << "Received an undecryptable password update, returning "
-                << "encryption_conflict.";
-        return CONFLICT_ENCRYPTION;
-      }
-    }
+  if (specifics.has_encrypted()) {
+    DVLOG(2) << "Received a decryptable "
+             << syncable::ModelTypeToString(entry->GetServerModelType())
+             << " update, applying normally.";
+  } else {
+    DVLOG(2) << "Received an unencrypted "
+             << syncable::ModelTypeToString(entry->GetServerModelType())
+             << " update, applying normally.";
   }
 
   SyncerUtil::UpdateLocalDataFromServerData(trans, entry);
@@ -416,10 +442,8 @@ void SyncerUtil::UpdateServerFieldsFromUpdate(
   target->Put(SERVER_PARENT_ID, update.parent_id());
   target->Put(SERVER_NON_UNIQUE_NAME, name);
   target->Put(SERVER_VERSION, update.version());
-  target->Put(SERVER_CTIME,
-      ServerTimeToClientTime(update.ctime()));
-  target->Put(SERVER_MTIME,
-      ServerTimeToClientTime(update.mtime()));
+  target->Put(SERVER_CTIME, ProtoTimeToTime(update.ctime()));
+  target->Put(SERVER_MTIME, ProtoTimeToTime(update.mtime()));
   target->Put(SERVER_IS_DIR, update.IsFolder());
   if (update.has_server_defined_unique_tag()) {
     const std::string& tag = update.server_defined_unique_tag();
@@ -458,75 +482,11 @@ void SyncerUtil::UpdateServerFieldsFromUpdate(
 // static
 void SyncerUtil::CreateNewEntry(syncable::WriteTransaction *trans,
                                 const syncable::Id& id) {
-  syncable::MutableEntry entry(trans, syncable::GET_BY_ID, id);
+  syncable::MutableEntry entry(trans, GET_BY_ID, id);
   if (!entry.good()) {
     syncable::MutableEntry new_entry(trans, syncable::CREATE_NEW_UPDATE_ITEM,
                                      id);
   }
-}
-
-// static
-bool SyncerUtil::ServerAndLocalOrdersMatch(syncable::Entry* entry) {
-  // Find the closest up-to-date local sibling by walking the linked list.
-  syncable::Id local_up_to_date_predecessor = entry->Get(PREV_ID);
-  while (!local_up_to_date_predecessor.IsRoot()) {
-    Entry local_prev(entry->trans(), GET_BY_ID, local_up_to_date_predecessor);
-    if (!local_prev.good() || local_prev.Get(IS_DEL))
-      return false;
-    if (!local_prev.Get(IS_UNAPPLIED_UPDATE) && !local_prev.Get(IS_UNSYNCED))
-      break;
-    local_up_to_date_predecessor = local_prev.Get(PREV_ID);
-  }
-
-  // Now find the closest up-to-date sibling in the server order.
-  syncable::Id server_up_to_date_predecessor =
-      entry->ComputePrevIdFromServerPosition(entry->Get(SERVER_PARENT_ID));
-  return server_up_to_date_predecessor == local_up_to_date_predecessor;
-}
-
-// static
-bool SyncerUtil::ServerAndLocalEntriesMatch(syncable::Entry* entry) {
-  if (!ClientAndServerTimeMatch(
-        entry->Get(CTIME), ClientTimeToServerTime(entry->Get(SERVER_CTIME)))) {
-    LOG(WARNING) << "Client and server time mismatch";
-    return false;
-  }
-  if (entry->Get(IS_DEL) && entry->Get(SERVER_IS_DEL))
-    return true;
-  // Name should exactly match here.
-  if (!(entry->Get(NON_UNIQUE_NAME) == entry->Get(SERVER_NON_UNIQUE_NAME))) {
-    LOG(WARNING) << "Unsanitized name mismatch";
-    return false;
-  }
-
-  if (entry->Get(PARENT_ID) != entry->Get(SERVER_PARENT_ID) ||
-      entry->Get(IS_DIR) != entry->Get(SERVER_IS_DIR) ||
-      entry->Get(IS_DEL) != entry->Get(SERVER_IS_DEL)) {
-    LOG(WARNING) << "Metabit mismatch";
-    return false;
-  }
-
-  if (!ServerAndLocalOrdersMatch(entry)) {
-    LOG(WARNING) << "Server/local ordering mismatch";
-    return false;
-  }
-
-  // TODO(ncarter): This is unfortunately heavyweight.  Can we do better?
-  if (entry->Get(SPECIFICS).SerializeAsString() !=
-      entry->Get(SERVER_SPECIFICS).SerializeAsString()) {
-    LOG(WARNING) << "Specifics mismatch";
-    return false;
-  }
-  if (entry->Get(IS_DIR))
-    return true;
-  // For historical reasons, a folder's MTIME changes when its contents change.
-  // TODO(ncarter): Remove the special casing of MTIME.
-  bool time_match = ClientAndServerTimeMatch(entry->Get(MTIME),
-      ClientTimeToServerTime(entry->Get(SERVER_MTIME)));
-  if (!time_match) {
-    LOG(WARNING) << "Time mismatch";
-  }
-  return time_match;
 }
 
 // static
@@ -541,8 +501,8 @@ void SyncerUtil::SplitServerInformationIntoNewEntry(
   CopyServerFields(entry, &new_entry);
   ClearServerData(entry);
 
-  VLOG(1) << "Splitting server information, local entry: " << *entry
-          << " server entry: " << new_entry;
+  DVLOG(1) << "Splitting server information, local entry: " << *entry
+           << " server entry: " << new_entry;
 }
 
 // This function is called on an entry when we can update the user-facing data
@@ -554,9 +514,11 @@ void SyncerUtil::UpdateLocalDataFromServerData(
   DCHECK(!entry->Get(IS_UNSYNCED));
   DCHECK(entry->Get(IS_UNAPPLIED_UPDATE));
 
-  VLOG(2) << "Updating entry : " << *entry;
+  DVLOG(2) << "Updating entry : " << *entry;
   // Start by setting the properties that determine the model_type.
   entry->Put(SPECIFICS, entry->Get(SERVER_SPECIFICS));
+  // Clear the previous server specifics now that we're applying successfully.
+  entry->Put(BASE_SERVER_SPECIFICS, sync_pb::EntitySpecifics());
   entry->Put(IS_DIR, entry->Get(SERVER_IS_DIR));
   // This strange dance around the IS_DEL flag avoids problems when setting
   // the name.
@@ -659,7 +621,7 @@ void SyncerUtil::MarkDeletedChildrenSynced(
     return;
   Directory::UnsyncedMetaHandles handles;
   {
-    ReadTransaction trans(dir, __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir);
     dir->GetUnsyncedMetaHandles(&trans, &handles);
   }
   if (handles.empty())
@@ -667,7 +629,7 @@ void SyncerUtil::MarkDeletedChildrenSynced(
   Directory::UnsyncedMetaHandles::iterator it;
   for (it = handles.begin() ; it != handles.end() ; ++it) {
     // Single transaction / entry we deal with.
-    WriteTransaction trans(dir, SYNCER, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, SYNCER, dir);
     MutableEntry entry(&trans, GET_BY_HANDLE, *it);
     if (!entry.Get(IS_UNSYNCED) || !entry.Get(IS_DEL))
       continue;
@@ -766,17 +728,6 @@ VerifyResult SyncerUtil::VerifyUpdateConsistency(
       return VERIFY_FAIL;
     }
     if (target->Get(ID) == update.id()) {
-      // Checks that are only valid if we're not changing the ID.
-      if (target->Get(BASE_VERSION) == update.version() &&
-          !target->Get(IS_UNSYNCED) &&
-          !SyncerProtoUtil::Compare(*target, update)) {
-        // TODO(sync): This constraint needs to be relaxed. For now it's OK to
-        // fail the verification and deal with it when we ApplyUpdates.
-        LOG(ERROR) << "Server update doesn't match local data with same "
-            "version. A bug should be filed. Entry: " << *target <<
-            "Update: " << SyncerProtoUtil::SyncEntityDebugString(update);
-        return VERIFY_FAIL;
-      }
       if (target->Get(SERVER_VERSION) > update.version()) {
         LOG(WARNING) << "We've already seen a more recent version.";
         LOG(WARNING) << " Entry: " << *target;
@@ -804,8 +755,8 @@ VerifyResult SyncerUtil::VerifyUndelete(syncable::WriteTransaction* trans,
   // (where items go to version 0 when they're deleted), or else
   // removed entirely (if this type of undeletion is indeed impossible).
   CHECK(target->good());
-  VLOG(1) << "Server update is attempting undelete. " << *target
-          << "Update:" << SyncerProtoUtil::SyncEntityDebugString(update);
+  DVLOG(1) << "Server update is attempting undelete. " << *target
+           << "Update:" << SyncerProtoUtil::SyncEntityDebugString(update);
   // Move the old one aside and start over.  It's too tricky to get the old one
   // back into a state that would pass CheckTreeInvariants().
   if (target->Get(IS_DEL)) {

@@ -12,7 +12,7 @@
 
 #define IPC_MESSAGE_START P2PMsgStart
 
-IPC_ENUM_TRAITS(P2PSocketType)
+IPC_ENUM_TRAITS(content::P2PSocketType)
 
 IPC_STRUCT_TRAITS_BEGIN(net::NetworkInterface)
   IPC_STRUCT_TRAITS_MEMBER(name)
@@ -21,8 +21,12 @@ IPC_STRUCT_TRAITS_END()
 
 // P2P Socket messages sent from the browser to the renderer.
 
-IPC_MESSAGE_ROUTED1(P2PMsg_NetworkList,
+IPC_MESSAGE_ROUTED1(P2PMsg_NetworkListChanged,
                     net::NetworkInterfaceList /* networks */)
+
+IPC_MESSAGE_ROUTED2(P2PMsg_GetHostAddressResult,
+                    int32 /* request_id */,
+                    net::IPAddressNumber /* address */)
 
 IPC_MESSAGE_ROUTED2(P2PMsg_OnSocketCreated,
                     int /* socket_id */,
@@ -42,10 +46,17 @@ IPC_MESSAGE_ROUTED3(P2PMsg_OnDataReceived,
 
 // P2P Socket messages sent from the renderer to the browser.
 
-IPC_MESSAGE_ROUTED0(P2PHostMsg_GetNetworkList)
+// Start/stop sending P2PMsg_NetworkListChanged messages when network
+// configuration changes.
+IPC_MESSAGE_ROUTED0(P2PHostMsg_StartNetworkNotifications)
+IPC_MESSAGE_ROUTED0(P2PHostMsg_StopNetworkNotifications)
+
+IPC_MESSAGE_ROUTED2(P2PHostMsg_GetHostAddress,
+                    std::string /* host_name */,
+                    int32 /* request_id */)
 
 IPC_MESSAGE_ROUTED4(P2PHostMsg_CreateSocket,
-                    P2PSocketType /* type */,
+                    content::P2PSocketType /* type */,
                     int /* socket_id */,
                     net::IPEndPoint /* local_address */,
                     net::IPEndPoint /* remote_address */)

@@ -4,6 +4,7 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_controller.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
@@ -230,8 +231,8 @@ struct LayoutMetrics {
           parentController:(BookmarkBarFolderController*)parentController
              barController:(BookmarkBarController*)barController {
   NSString* nibPath =
-      [base::mac::MainAppBundle() pathForResource:@"BookmarkBarFolderWindow"
-                                          ofType:@"nib"];
+      [base::mac::FrameworkBundle() pathForResource:@"BookmarkBarFolderWindow"
+                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
     parentButton_.reset([button retain]);
     selectedIndex_ = -1;
@@ -506,7 +507,8 @@ struct LayoutMetrics {
     topOfWindow = [[parentButton_ window]
                    convertBaseToScreen:[[parentButton_ superview]
                                         convertPoint:topOfWindow toView:nil]];
-    newWindowTopLeft.y = topOfWindow.y;
+    newWindowTopLeft.y = topOfWindow.y +
+                         2 * bookmarks::kBookmarkVerticalPadding;
   }
   return newWindowTopLeft;
 }
@@ -760,16 +762,14 @@ struct LayoutMetrics {
   // TODO(jrg): combine with addNodesToButtonList: code from
   // bookmark_bar_controller.mm (but use y offset)
   // http://crbug.com/35966
-  if (!node->child_count()) {
+  if (node->empty()) {
     // If no children we are the empty button.
     BookmarkButton* button = [self makeButtonForNode:nil
                                                frame:buttonsOuterFrame];
     [buttons_ addObject:button];
     [folderView_ addSubview:button];
   } else {
-    for (int i = startingIndex;
-         i < node->child_count();
-         i++) {
+    for (int i = startingIndex; i < node->child_count(); ++i) {
       const BookmarkNode* child = node->GetChild(i);
       BookmarkButton* button = [self makeButtonForNode:child
                                                  frame:buttonsOuterFrame];
@@ -788,6 +788,7 @@ struct LayoutMetrics {
   CGFloat windowWidth = buttonWidth + padding_;
   NSPoint newWindowTopLeft = [self windowTopLeftForWidth:windowWidth
                                                   height:height];
+
   // Make sure as much of a submenu is exposed (which otherwise would be a
   // problem if the parent button is close to the bottom of the screen).
   if ([parentController_ isKindOfClass:[self class]]) {
@@ -796,16 +797,26 @@ struct LayoutMetrics {
                        height;
     newWindowTopLeft.y = MAX(newWindowTopLeft.y, minimumY);
   }
+
   NSWindow* window = [self window];
   NSRect windowFrame = NSMakeRect(newWindowTopLeft.x,
                                   newWindowTopLeft.y - height,
                                   windowWidth, height);
   [window setFrame:windowFrame display:NO];
+
   NSRect folderFrame = NSMakeRect(0, 0, windowWidth, height);
   [folderView_ setFrame:folderFrame];
+
+  // For some reason, when opening a "large" bookmark folder (containing 12 or
+  // more items) using the keyboard, the scroll view seems to want to be
+  // offset by default: [ http://crbug.com/101099 ].  Explicitly reseting the
+  // scroll position here is a bit hacky, but it does seem to work.
+  [[scrollView_ contentView] scrollToPoint:NSMakePoint(0, 0)];
+
   NSSize newSize = NSMakeSize(windowWidth, 0.0);
   [self adjustWindowLeft:newWindowTopLeft.x size:newSize scrollingBy:0.0];
   [self configureWindowLevel];
+
   [window display];
 }
 
@@ -867,9 +878,9 @@ struct LayoutMetrics {
 // If the button at index contains the mouse it will select it and return YES.
 // Otherwise returns NO.
 - (BOOL)selectButtonIfHoveredAtIndex:(int)index {
-  BookmarkButton *btn = [self buttonAtIndex:index];
-  if ([[btn cell] isMouseReallyInside]) {
-    buttonThatMouseIsIn_ = btn;
+  BookmarkButton* button = [self buttonAtIndex:index];
+  if ([[button cell] isMouseReallyInside]) {
+    buttonThatMouseIsIn_ = button;
     [self setSelectedButtonByIndex:index];
     return YES;
   }
@@ -1363,7 +1374,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
 }
 
 - (NSWindow*)browserWindow {
-  return [parentController_ browserWindow];
+  return [barController_ browserWindow];
 }
 
 - (BOOL)canDragBookmarkButtonToTrash:(BookmarkButton*)button {
@@ -1571,7 +1582,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
   if ([prefix length] == 0) // Also handles nil.
     return -1;
   int maxButtons = [buttons_ count];
-  NSString *lowercasePrefix = [prefix lowercaseString];
+  NSString* lowercasePrefix = [prefix lowercaseString];
   for (int i = 0 ; i < maxButtons ; ++i) {
     BookmarkButton* button = [buttons_ objectAtIndex:i];
     if ([[[button title] lowercaseString] hasPrefix:lowercasePrefix])
@@ -1668,7 +1679,7 @@ static BOOL ValueInRangeInclusive(CGFloat low, CGFloat value, CGFloat high) {
   }
 
   // It is a char or string worth adding to the type-select buffer.
-  NSString *newString = (!typedPrefix_) ?
+  NSString* newString = (!typedPrefix_) ?
       newText : [typedPrefix_ stringByAppendingString:newText];
   [typedPrefix_ release];
   typedPrefix_ = [newString retain];

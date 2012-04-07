@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,20 +10,18 @@
 
 class RenderWidgetHostView;
 
+// TODO(mpcomplete): I don't know what this does or if it is needed anymore,
+// now that ExtensionHost is restructured to rely on TabContents.
 class ExtensionHostMac : public ExtensionHost {
  public:
-  ExtensionHostMac(const Extension* extension, SiteInstance* site_instance,
-                   const GURL& url, ViewType::Type host_type) :
+  ExtensionHostMac(const Extension* extension,
+                   content::SiteInstance* site_instance,
+                   const GURL& url, content::ViewType host_type) :
       ExtensionHost(extension, site_instance, url, host_type) {}
   virtual ~ExtensionHostMac();
- protected:
-  virtual RenderWidgetHostView* CreateNewWidgetInternal(
-      int route_id,
-      WebKit::WebPopupType popup_type);
-  virtual void ShowCreatedWidgetInternal(RenderWidgetHostView* widget_host_view,
-                                         const gfx::Rect& initial_pos);
  private:
-  virtual void UnhandledKeyboardEvent(const NativeWebKeyboardEvent& event);
+  virtual void UnhandledKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionHostMac);
 };

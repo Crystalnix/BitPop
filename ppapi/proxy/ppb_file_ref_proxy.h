@@ -12,24 +12,27 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_time.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/proxy/proxy_non_thread_safe_ref_count.h"
+#include "ppapi/utility/completion_callback_factory.h"
 
-struct PPB_FileRef_Dev;
-
-namespace pp {
-namespace proxy {
+namespace ppapi {
 
 class HostResource;
-struct PPBFileRef_CreateInfo;
+struct PPB_FileRef_CreateInfo;
+
+namespace proxy {
+
+class SerializedVarReturnValue;
 
 class PPB_FileRef_Proxy : public InterfaceProxy {
  public:
-  PPB_FileRef_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  explicit PPB_FileRef_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_FileRef_Proxy();
-
-  static const Info* GetInfo();
 
   static PP_Resource CreateProxyResource(PP_Resource file_system,
                                          const char* path);
+  static PP_Resource CreateProxyResource(
+      const PPB_FileRef_CreateInfo& serialized);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -44,7 +47,7 @@ class PPB_FileRef_Proxy : public InterfaceProxy {
   // Various PPAPI functions return file refs from various interfaces, so this
   // function is public so anybody can send a file ref.
   void SerializeFileRef(PP_Resource file_ref,
-                        PPBFileRef_CreateInfo* result);
+                        PPB_FileRef_CreateInfo* result);
 
   // Creates a plugin resource from the given CreateInfo sent from the host.
   // The value will be the result of calling SerializeFileRef on the host.
@@ -54,32 +57,48 @@ class PPB_FileRef_Proxy : public InterfaceProxy {
   // Various PPAPI functions return file refs from various interfaces, so this
   // function is public so anybody can receive a file ref.
   static PP_Resource DeserializeFileRef(
-      const PPBFileRef_CreateInfo& serialized);
+      const PPB_FileRef_CreateInfo& serialized);
+
+  static const ApiID kApiID = API_ID_PPB_FILE_REF;
 
  private:
-  // Message handlers.
+  // Plugin -> host message handlers.
   void OnMsgCreate(const HostResource& file_system,
                    const std::string& path,
-                   PPBFileRef_CreateInfo* result);
+                   PPB_FileRef_CreateInfo* result);
   void OnMsgGetParent(const HostResource& host_resource,
-                      PPBFileRef_CreateInfo* result);
+                      PPB_FileRef_CreateInfo* result);
   void OnMsgMakeDirectory(const HostResource& host_resource,
                           PP_Bool make_ancestors,
-                          uint32_t serialized_callback);
+                          int callback_id);
   void OnMsgTouch(const HostResource& host_resource,
                   PP_Time last_access,
                   PP_Time last_modified,
-                  uint32_t serialized_callback);
+                  int callback_id);
   void OnMsgDelete(const HostResource& host_resource,
-                   uint32_t serialized_callback);
+                   int callback_id);
   void OnMsgRename(const HostResource& file_ref,
                    const HostResource& new_file_ref,
-                   uint32_t serialized_callback);
+                   int callback_id);
+  void OnMsgGetAbsolutePath(const HostResource& host_resource,
+                            SerializedVarReturnValue result);
+
+  // Host -> Plugin message handlers.
+  void OnMsgCallbackComplete(const HostResource& host_resource,
+                             int callback_id,
+                             int32_t result);
+
+  void OnCallbackCompleteInHost(int32_t result,
+                                const HostResource& host_resource,
+                                int callback_id);
+
+  pp::CompletionCallbackFactory<PPB_FileRef_Proxy,
+                                ProxyNonThreadSafeRefCount> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_FileRef_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_FILE_REF_PROXY_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
@@ -22,7 +22,7 @@ class FileStream;
 
 // Interface implemented by callers who require callbacks when new chunks
 // of data are added.
-class NET_TEST ChunkCallback {
+class NET_EXPORT_PRIVATE ChunkCallback {
  public:
   // Invoked when a new data chunk was given for a chunked transfer upload.
   virtual void OnChunkAvailable() = 0;
@@ -31,7 +31,7 @@ class NET_TEST ChunkCallback {
   virtual ~ChunkCallback() {}
 };
 
-class NET_API UploadData : public base::RefCounted<UploadData> {
+class NET_EXPORT UploadData : public base::RefCounted<UploadData> {
  public:
   enum Type {
     TYPE_BYTES,
@@ -43,7 +43,7 @@ class NET_API UploadData : public base::RefCounted<UploadData> {
     TYPE_CHUNK,
   };
 
-  class NET_API Element {
+  class NET_EXPORT Element {
    public:
     Element();
     ~Element();
@@ -145,8 +145,6 @@ class NET_API UploadData : public base::RefCounted<UploadData> {
 
   void AppendBytes(const char* bytes, int bytes_len);
 
-  void AppendFile(const FilePath& file_path);
-
   void AppendFileRange(const FilePath& file_path,
                        uint64 offset, uint64 length,
                        const base::Time& expected_modification_time);
@@ -167,6 +165,10 @@ class NET_API UploadData : public base::RefCounted<UploadData> {
 
   // Returns the total size in bytes of the data to upload.
   uint64 GetContentLength();
+
+  // Returns true if the upload data is entirely in memory (i.e. the
+  // upload data is not chunked, and all elemnts are of TYPE_BYTES).
+  bool IsInMemory() const;
 
   std::vector<Element>* elements() {
     return &elements_;

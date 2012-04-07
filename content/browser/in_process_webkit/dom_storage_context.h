@@ -10,9 +10,11 @@
 #include <set>
 
 #include "base/file_path.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
 #include "base/time.h"
+#include "content/common/content_export.h"
 
 class DOMStorageArea;
 class DOMStorageMessageFilter;
@@ -24,13 +26,13 @@ class SpecialStoragePolicy;
 }
 
 // This is owned by WebKitContext and is all the dom storage information that's
-// shared by all the DOMStorageMessageFilters that share the same profile.  The
-// specifics of responsibilities are fairly well documented here and in
-// StorageNamespace and StorageArea.  Everything is only to be accessed on the
-// WebKit thread unless noted otherwise.
+// shared by all the DOMStorageMessageFilters that share the same browser
+// context.  The specifics of responsibilities are fairly well documented here
+// and in StorageNamespace and StorageArea.  Everything is only to be accessed
+// on the WebKit thread unless noted otherwise.
 //
 // NOTE: Virtual methods facilitate mocking functions for testing.
-class DOMStorageContext {
+class CONTENT_EXPORT DOMStorageContext {
  public:
   DOMStorageContext(WebKitContext* webkit_context,
                     quota::SpecialStoragePolicy* special_storage_policy);
@@ -102,12 +104,20 @@ class DOMStorageContext {
     clear_local_state_on_exit_ = clear_local_state;
   }
 
-#ifdef UNIT_TEST
-  // For unit tests allow to override the |data_path_|.
-  void set_data_path(const FilePath& data_path) { data_path_ = data_path; }
-#endif
+  // Disables the exit-time deletion for all data (also session-only data).
+  void SaveSessionState() {
+    save_session_state_ = true;
+  }
+
+  void set_data_path_for_testing(const FilePath& data_path) {
+    data_path_ = data_path;
+  }
 
  private:
+
+  FRIEND_TEST_ALL_PREFIXES(DOMStorageTest, SessionOnly);
+  FRIEND_TEST_ALL_PREFIXES(DOMStorageTest, SaveSessionState);
+
   // Get the local storage instance.  The object is owned by this class.
   DOMStorageNamespace* CreateLocalStorage();
 
@@ -136,7 +146,10 @@ class DOMStorageContext {
   // True if the destructor should delete its files.
   bool clear_local_state_on_exit_;
 
-  // Path where the profile data is stored.
+  // If true, nothing (not even session-only data) should be deleted on exit.
+  bool save_session_state_;
+
+  // Path where the browser context data is stored.
   // TODO(pastarmovj): Keep in mind that unlike indexed db data_path_ variable
   // this one still has to point to the upper level dir because of the
   // MigrateLocalStorageDirectory function. Once this function disappears we can

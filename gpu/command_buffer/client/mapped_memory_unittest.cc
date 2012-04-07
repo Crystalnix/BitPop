@@ -3,15 +3,18 @@
 // found in the LICENSE file.
 
 #include "gpu/command_buffer/client/mapped_memory.h"
-#include "base/callback.h"
+#include "base/bind.h"
 #include "base/message_loop.h"
-#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/scoped_nsautorelease_pool.h"
+#endif
 
 namespace gpu {
 
@@ -39,20 +42,14 @@ class MappedMemoryTestBase : public testing::Test {
                               Return(error::kNoError)));
 
     command_buffer_.reset(new CommandBufferService);
-    command_buffer_->Initialize(kBufferSize);
-    Buffer ring_buffer = command_buffer_->GetRingBuffer();
-
-    parser_ = new CommandParser(ring_buffer.ptr,
-                                ring_buffer.size,
-                                0,
-                                ring_buffer.size,
-                                0,
-                                api_mock_.get());
+    command_buffer_->Initialize();
 
     gpu_scheduler_.reset(new GpuScheduler(
-        command_buffer_.get(), NULL, parser_, INT_MAX));
-    command_buffer_->SetPutOffsetChangeCallback(NewCallback(
-        gpu_scheduler_.get(), &GpuScheduler::PutChanged));
+        command_buffer_.get(), api_mock_.get(), NULL));
+    command_buffer_->SetPutOffsetChangeCallback(base::Bind(
+        &GpuScheduler::PutChanged, base::Unretained(gpu_scheduler_.get())));
+    command_buffer_->SetGetBufferChangeCallback(base::Bind(
+        &GpuScheduler::SetGetBuffer, base::Unretained(gpu_scheduler_.get())));
 
     api_mock_->set_engine(gpu_scheduler_.get());
 
@@ -64,12 +61,13 @@ class MappedMemoryTestBase : public testing::Test {
     return command_buffer_->GetState().token;
   }
 
+#if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool autorelease_pool_;
+#endif
   MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<CommandBufferService> command_buffer_;
   scoped_ptr<GpuScheduler> gpu_scheduler_;
-  CommandParser* parser_;
   scoped_ptr<CommandBufferHelper> helper_;
 };
 
@@ -253,6 +251,49 @@ TEST_F(MappedMemoryManagerTest, DontFree) {
   ASSERT_TRUE(mem1);
 }
 
+TEST_F(MappedMemoryManagerTest, FreeUnused) {
+  int32 id = -1;
+  unsigned int offset = 0xFFFFFFFFU;
+  void* m1 = manager_->Alloc(kBufferSize, &id, &offset);
+  void* m2 = manager_->Alloc(kBufferSize, &id, &offset);
+  ASSERT_TRUE(m1 != NULL);
+  ASSERT_TRUE(m2 != NULL);
+  EXPECT_EQ(2u, manager_->num_chunks());
+  manager_->FreeUnused();
+  EXPECT_EQ(2u, manager_->num_chunks());
+  manager_->Free(m2);
+  EXPECT_EQ(2u, manager_->num_chunks());
+  manager_->FreeUnused();
+  EXPECT_EQ(1u, manager_->num_chunks());
+  manager_->Free(m1);
+  EXPECT_EQ(1u, manager_->num_chunks());
+  manager_->FreeUnused();
+  EXPECT_EQ(0u, manager_->num_chunks());
+}
+
+TEST_F(MappedMemoryManagerTest, ChunkSizeMultiple) {
+  const unsigned int kSize = 1024;
+  manager_->set_chunk_size_multiple(kSize *  2);
+  // Check if we allocate less than the chunk size multiple we get
+  // chunks arounded up.
+  int32 id1 = -1;
+  unsigned int offset1 = 0xFFFFFFFFU;
+  void* mem1 = manager_->Alloc(kSize, &id1, &offset1);
+  int32 id2 = -1;
+  unsigned int offset2 = 0xFFFFFFFFU;
+  void* mem2 = manager_->Alloc(kSize, &id2, &offset2);
+  int32 id3 = -1;
+  unsigned int offset3 = 0xFFFFFFFFU;
+  void* mem3 = manager_->Alloc(kSize, &id3, &offset3);
+  ASSERT_TRUE(mem1);
+  ASSERT_TRUE(mem2);
+  ASSERT_TRUE(mem3);
+  EXPECT_NE(-1, id1);
+  EXPECT_EQ(id1, id2);
+  EXPECT_NE(id2, id3);
+  EXPECT_EQ(0u, offset1);
+  EXPECT_EQ(kSize, offset2);
+  EXPECT_EQ(0u, offset3);
+}
+
 }  // namespace gpu
-
-

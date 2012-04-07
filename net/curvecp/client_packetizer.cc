@@ -4,6 +4,7 @@
 
 #include "net/curvecp/client_packetizer.h"
 
+#include "base/bind.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/sys_addrinfo.h"
@@ -32,13 +33,13 @@ ClientPacketizer::ClientPacketizer()
     : Packetizer(),
       next_state_(NONE),
       listener_(NULL),
-      user_callback_(NULL),
       current_address_(NULL),
       hello_attempts_(0),
       initiate_sent_(false),
       ALLOW_THIS_IN_INITIALIZER_LIST(
-          io_callback_(this, &ClientPacketizer::OnIOComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(timers_factory_(this)) {
+          io_callback_(base::Bind(&ClientPacketizer::OnIOComplete,
+                                  base::Unretained(this)))),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   // TODO(mbelshe): Initialize our keys and such properly.
   //     for now we use random values to keep them unique.
   for (int i = 0; i < 32; ++i)
@@ -50,8 +51,8 @@ ClientPacketizer::~ClientPacketizer() {
 
 int ClientPacketizer::Connect(const AddressList& server,
                               Packetizer::Listener* listener,
-                              CompletionCallback* callback) {
-  DCHECK(!user_callback_);
+                              const CompletionCallback& callback) {
+  DCHECK(user_callback_.is_null());
   DCHECK(!socket_.get());
   DCHECK(!listener_);
 
@@ -68,7 +69,7 @@ int ClientPacketizer::Connect(const AddressList& server,
 int ClientPacketizer::SendMessage(ConnectionKey key,
                                   const char* data,
                                   size_t length,
-                                  CompletionCallback* callback) {
+                                  const CompletionCallback& callback) {
   // We can't send messages smaller than 16 bytes.
   if (length < 16)
     return ERR_UNEXPECTED;
@@ -97,7 +98,7 @@ int ClientPacketizer::SendMessage(ConnectionKey key,
     // TODO(mbelshe) - this is just broken to make it work with cleartext
     memcpy(&buffer->data()[sizeof(InitiatePacket)], data, length);
     int packet_length = sizeof(InitiatePacket) + length;
-    int rv = socket_->Write(buffer, packet_length, &io_callback_);
+    int rv = socket_->Write(buffer, packet_length, io_callback_);
     if (rv <= 0)
       return rv;
     CHECK_EQ(packet_length, rv);  // We must send all data.
@@ -121,7 +122,7 @@ int ClientPacketizer::SendMessage(ConnectionKey key,
   // TODO(mbelshe): Fill in rest of message
   memcpy(&buffer->data()[sizeof(ClientMessagePacket)], data, length);
   int packet_length = sizeof(ClientMessagePacket) + length;
-  int rv = socket_->Write(buffer, packet_length, &io_callback_);
+  int rv = socket_->Write(buffer, packet_length, io_callback_);
   if (rv <= 0)
     return rv;
   CHECK_EQ(packet_length, rv);  // We must send all data.
@@ -214,7 +215,7 @@ int ClientPacketizer::DoSendingHello() {
          sizeof(shortterm_public_key_));
   // TODO(mbelshe): populate all other fields of the HelloPacket.
 
-  return socket_->Write(buffer, sizeof(struct HelloPacket), &io_callback_);
+  return socket_->Write(buffer, sizeof(struct HelloPacket), io_callback_);
 }
 
 int ClientPacketizer::DoSendingHelloComplete(int rv) {
@@ -237,7 +238,7 @@ int ClientPacketizer::DoWaitingCookie() {
   StartHelloTimer(kHelloTimeoutMs[hello_attempts_++]);
 
   read_buffer_ = new IOBuffer(kMaxPacketLength);
-  return socket_->Read(read_buffer_, kMaxPacketLength, &io_callback_);
+  return socket_->Read(read_buffer_, kMaxPacketLength, io_callback_);
 }
 
 int ClientPacketizer::DoWaitingCookieComplete(int rv) {
@@ -278,11 +279,11 @@ int ClientPacketizer::DoConnected(int rv) {
 
 void ClientPacketizer::DoCallback(int result) {
   DCHECK_NE(result, ERR_IO_PENDING);
-  DCHECK(user_callback_);
+  DCHECK(!user_callback_.is_null());
 
-  CompletionCallback* callback = user_callback_;
-  user_callback_ = NULL;
-  callback->Run(result);
+  CompletionCallback callback = user_callback_;
+  user_callback_.Reset();
+  callback.Run(result);
 }
 
 int ClientPacketizer::ConnectNextAddress() {
@@ -290,7 +291,10 @@ int ClientPacketizer::ConnectNextAddress() {
 
   DCHECK(addresses_.head());
 
-  socket_.reset(new UDPClientSocket(NULL, NetLog::Source()));
+  socket_.reset(new UDPClientSocket(DatagramSocket::DEFAULT_BIND,
+                                    RandIntCallback(),
+                                    NULL,
+                                    NetLog::Source()));
 
   // Rotate to next address in the list.
   if (current_address_)
@@ -312,12 +316,12 @@ int ClientPacketizer::ConnectNextAddress() {
 void ClientPacketizer::StartHelloTimer(int milliseconds) {
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      timers_factory_.NewRunnableMethod(&ClientPacketizer::OnHelloTimeout),
+      base::Bind(&ClientPacketizer::OnHelloTimeout, weak_factory_.GetWeakPtr()),
       milliseconds);
 }
 
 void ClientPacketizer::RevokeHelloTimer() {
-  timers_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void ClientPacketizer::OnHelloTimeout() {
@@ -365,7 +369,7 @@ int ClientPacketizer::ReadPackets() {
   while (true) {
     rv = socket_->Read(read_buffer_,
                        kMaxPacketLength,
-                       &io_callback_);
+                       io_callback_);
     if (rv <= 0) {
       if (rv != ERR_IO_PENDING)
         LOG(ERROR) << "Error reading socket:" << rv;

@@ -10,7 +10,6 @@
 #include <list>
 
 #include "base/basictypes.h"
-#include "base/task.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/timer.h"
 #include "net/base/completion_callback.h"
@@ -23,7 +22,6 @@
 
 namespace net {
 
-class DrainableIOBuffer;
 class IOBufferWithSize;
 class Packetizer;
 
@@ -34,16 +32,16 @@ class Messenger : public base::NonThreadSafe,
   explicit Messenger(Packetizer* packetizer);
   virtual ~Messenger();
 
-  int Read(IOBuffer* buf, int buf_len, CompletionCallback* callback);
-  int Write(IOBuffer* buf, int buf_len, CompletionCallback* callback);
+  int Read(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
+  int Write(IOBuffer* buf, int buf_len, const CompletionCallback& callback);
 
-  // Packetizer::Listener methods:
-  virtual void OnConnection(ConnectionKey key);
+  // Packetizer::Listener implementation.
+  virtual void OnConnection(ConnectionKey key) OVERRIDE;
   virtual void OnClose(Packetizer* packetizer, ConnectionKey key);
   virtual void OnMessage(Packetizer* packetizer,
                          ConnectionKey key,
                          unsigned char* msg,
-                         size_t length);
+                         size_t length) OVERRIDE;
 
  protected:
   ConnectionKey key_;
@@ -71,13 +69,13 @@ class Messenger : public base::NonThreadSafe,
   // The send_buffer is a list of pending data to pack into messages and send
   // to the remote.
   CircularBuffer send_buffer_;
-  CompletionCallback* send_complete_callback_;
+  CompletionCallback send_complete_callback_;
   scoped_refptr<IOBuffer> pending_send_;
   int pending_send_length_;
 
   // The read_buffer is a list of pending data which has been unpacked from
   // messages and is awaiting delivery to the application.
-  CompletionCallback* receive_complete_callback_;
+  CompletionCallback receive_complete_callback_;
   scoped_refptr<IOBuffer> pending_receive_;
   int pending_receive_length_;
 
@@ -93,9 +91,6 @@ class Messenger : public base::NonThreadSafe,
   // A timer to fire when we can send data.
   base::OneShotTimer<Messenger> send_timer_;
 
-  CompletionCallbackImpl<Messenger> send_message_callback_;
-
-  ScopedRunnableMethodFactory<Messenger> factory_;
   DISALLOW_COPY_AND_ASSIGN(Messenger);
 };
 

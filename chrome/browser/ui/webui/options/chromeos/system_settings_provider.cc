@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 #include <string>
 
 #include "base/i18n/rtl.h"
+#include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -120,7 +121,8 @@ static const char* kTimeZones[] = {
     "Pacific/Tongatapu",
 };
 
-static base::Lock timezone_bundle_lock;
+static base::LazyInstance<base::Lock>::Leaky
+    g_timezone_bundle_lock = LAZY_INSTANCE_INITIALIZER;
 
 struct UResClose {
   inline void operator() (UResourceBundle* b) const {
@@ -138,7 +140,7 @@ string16 GetExemplarCity(const icu::TimeZone& zone) {
 
   UErrorCode status = U_ZERO_ERROR;
   {
-    base::AutoLock lock(timezone_bundle_lock);
+    base::AutoLock lock(g_timezone_bundle_lock.Get());
     if (zone_bundle == NULL)
       zone_bundle = ures_open(zone_bundle_name, uloc_getDefault(), &status);
 
@@ -156,13 +158,13 @@ string16 GetExemplarCity(const icu::TimeZone& zone) {
   scoped_ptr_malloc<UResourceBundle, UResClose> zone_item(
       ures_getByKey(zone_strings, zone_id_str.c_str(), NULL, &status));
   icu::UnicodeString city;
-  if (U_FAILURE(status))
-    goto fallback;
-  city = icu::ures_getUnicodeStringByKey(zone_item.get(), "ec", &status);
-  if (U_SUCCESS(status))
-    return string16(city.getBuffer(), city.length());
+  if (!U_FAILURE(status)) {
+    city = icu::ures_getUnicodeStringByKey(zone_item.get(), "ec", &status);
+    if (U_SUCCESS(status))
+      return string16(city.getBuffer(), city.length());
+  }
 
- fallback:
+  // Fallback case in case of failure.
   ReplaceSubstringsAfterOffset(&zone_id_str, 0, ":", "/");
   // Take the last component of a timezone id (e.g. 'Baz' in 'Foo/Bar/Baz').
   // Depending on timezones, keeping all but the 1st component
@@ -180,54 +182,68 @@ string16 GetExemplarCity(const icu::TimeZone& zone) {
 
 namespace chromeos {
 
-SystemSettingsProvider::SystemSettingsProvider() {
+SystemSettingsProvider::SystemSettingsProvider(
+    const NotifyObserversCallback& notify_cb)
+    : CrosSettingsProvider(notify_cb) {
   for (size_t i = 0; i < arraysize(kTimeZones); i++) {
     timezones_.push_back(icu::TimeZone::createTimeZone(
         icu::UnicodeString(kTimeZones[i], -1, US_INV)));
   }
-  SystemAccess::GetInstance()->AddObserver(this);
-
+  system::TimezoneSettings::GetInstance()->AddObserver(this);
+  timezone_value_.reset(base::Value::CreateStringValue(GetKnownTimezoneID(
+      system::TimezoneSettings::GetInstance()->GetTimezone())));
 }
 
 SystemSettingsProvider::~SystemSettingsProvider() {
-  SystemAccess::GetInstance()->RemoveObserver(this);
+  system::TimezoneSettings::GetInstance()->RemoveObserver(this);
   STLDeleteElements(&timezones_);
 }
 
-void SystemSettingsProvider::DoSet(const std::string& path, Value* in_value) {
+void SystemSettingsProvider::DoSet(const std::string& path,
+                                   const base::Value& in_value) {
   // Non-guest users can change the time zone.
   if (UserManager::Get()->IsLoggedInAsGuest())
     return;
 
   if (path == kSystemTimezone) {
     string16 value;
-    if (!in_value || !in_value->IsType(Value::TYPE_STRING) ||
-        !in_value->GetAsString(&value))
+    if (!in_value.IsType(Value::TYPE_STRING) || !in_value.GetAsString(&value))
       return;
     const icu::TimeZone* timezone = GetTimezone(value);
     if (!timezone)
       return;
-    SystemAccess::GetInstance()->SetTimezone(*timezone);
+    system::TimezoneSettings::GetInstance()->SetTimezone(*timezone);
+    timezone_value_.reset(
+        base::Value::CreateStringValue(GetKnownTimezoneID(*timezone)));
   }
 }
 
-bool SystemSettingsProvider::Get(const std::string& path,
-                                 Value** out_value) const {
-  if (path == kSystemTimezone) {
-    *out_value = Value::CreateStringValue(GetKnownTimezoneID(
-        SystemAccess::GetInstance()->GetTimezone()));
-    return true;
-  }
-  return false;
+const base::Value* SystemSettingsProvider::Get(const std::string& path) const {
+  if (path == kSystemTimezone)
+    return timezone_value_.get();
+  return NULL;
 }
 
-bool SystemSettingsProvider::HandlesSetting(const std::string& path) {
-  return ::StartsWithASCII(path, std::string("cros.system."), true);
+// The timezone is always trusted.
+bool SystemSettingsProvider::GetTrusted(const std::string& path,
+                                        const base::Closure& callback) {
+  return true;
+}
+
+bool SystemSettingsProvider::HandlesSetting(const std::string& path) const {
+  return path == kSystemTimezone;
+}
+
+void SystemSettingsProvider::Reload() {
+  // TODO(pastarmovj): We can actually cache the timezone here to make returning
+  // it faster.
 }
 
 void SystemSettingsProvider::TimezoneChanged(const icu::TimeZone& timezone) {
   // Fires system setting change notification.
-  CrosSettings::Get()->FireObservers(kSystemTimezone);
+  timezone_value_.reset(
+      base::Value::CreateStringValue(GetKnownTimezoneID(timezone)));
+  NotifyObservers(kSystemTimezone);
 }
 
 ListValue* SystemSettingsProvider::GetTimezoneList() {

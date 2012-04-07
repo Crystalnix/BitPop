@@ -4,39 +4,39 @@
 
 #include "content/browser/appcache/appcache_dispatcher_host.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
-#include "content/browser/resource_context.h"
-#include "content/browser/user_metrics.h"
 #include "content/common/appcache_messages.h"
+#include "content/public/browser/user_metrics.h"
+
+using content::BrowserMessageFilter;
+using content::UserMetricsAction;
 
 AppCacheDispatcherHost::AppCacheDispatcherHost(
-    const content::ResourceContext* resource_context,
+    ChromeAppCacheService* appcache_service,
     int process_id)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(frontend_proxy_(this)),
-      resource_context_(resource_context),
+    : appcache_service_(appcache_service),
+      ALLOW_THIS_IN_INITIALIZER_LIST(frontend_proxy_(this)),
       process_id_(process_id) {
-  DCHECK(resource_context_);
 }
 
 AppCacheDispatcherHost::~AppCacheDispatcherHost() {}
 
 void AppCacheDispatcherHost::OnChannelConnected(int32 peer_pid) {
   BrowserMessageFilter::OnChannelConnected(peer_pid);
-
-  // Get the AppCacheService (it can only be accessed from IO thread).
-  appcache_service_ = resource_context_->appcache_service();
-  resource_context_ = NULL;
-
   if (appcache_service_.get()) {
     backend_impl_.Initialize(
         appcache_service_.get(), &frontend_proxy_, process_id_);
-    get_status_callback_.reset(
-        NewCallback(this, &AppCacheDispatcherHost::GetStatusCallback));
-    start_update_callback_.reset(
-        NewCallback(this, &AppCacheDispatcherHost::StartUpdateCallback));
-    swap_cache_callback_.reset(
-        NewCallback(this, &AppCacheDispatcherHost::SwapCacheCallback));
+    get_status_callback_ =
+        base::Bind(&AppCacheDispatcherHost::GetStatusCallback,
+                   base::Unretained(this));
+    start_update_callback_ =
+        base::Bind(&AppCacheDispatcherHost::StartUpdateCallback,
+                   base::Unretained(this));
+    swap_cache_callback_ =
+        base::Bind(&AppCacheDispatcherHost::SwapCacheCallback,
+                   base::Unretained(this));
   }
 }
 
@@ -65,7 +65,7 @@ bool AppCacheDispatcherHost::OnMessageReceived(const IPC::Message& message,
 }
 
 void AppCacheDispatcherHost::BadMessageReceived() {
-  UserMetrics::RecordAction(UserMetricsAction("BadMessageTerminate_ACDH"));
+  content::RecordAction(UserMetricsAction("BadMessageTerminate_ACDH"));
   BrowserMessageFilter::BadMessageReceived();
 }
 
@@ -147,8 +147,7 @@ void AppCacheDispatcherHost::OnGetResourceList(
     backend_impl_.GetResourceList(host_id, params);
 }
 
-void AppCacheDispatcherHost::OnGetStatus(int host_id,
-                                         IPC::Message* reply_msg) {
+void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
   if (pending_reply_msg_.get()) {
     BadMessageReceived();
     delete reply_msg;
@@ -157,8 +156,8 @@ void AppCacheDispatcherHost::OnGetStatus(int host_id,
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.GetStatusWithCallback(
-            host_id, get_status_callback_.get(), reply_msg)) {
+    if (!backend_impl_.GetStatusWithCallback(host_id, get_status_callback_,
+                                             reply_msg)) {
       BadMessageReceived();
     }
     return;
@@ -177,8 +176,8 @@ void AppCacheDispatcherHost::OnStartUpdate(int host_id,
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.StartUpdateWithCallback(
-            host_id, start_update_callback_.get(), reply_msg)) {
+    if (!backend_impl_.StartUpdateWithCallback(host_id, start_update_callback_,
+                                               reply_msg)) {
       BadMessageReceived();
     }
     return;
@@ -187,8 +186,7 @@ void AppCacheDispatcherHost::OnStartUpdate(int host_id,
   StartUpdateCallback(false, reply_msg);
 }
 
-void AppCacheDispatcherHost::OnSwapCache(int host_id,
-                                         IPC::Message* reply_msg) {
+void AppCacheDispatcherHost::OnSwapCache(int host_id, IPC::Message* reply_msg) {
   if (pending_reply_msg_.get()) {
     BadMessageReceived();
     delete reply_msg;
@@ -197,8 +195,8 @@ void AppCacheDispatcherHost::OnSwapCache(int host_id,
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.SwapCacheWithCallback(
-            host_id, swap_cache_callback_.get(), reply_msg)) {
+    if (!backend_impl_.SwapCacheWithCallback(host_id, swap_cache_callback_,
+                                             reply_msg)) {
       BadMessageReceived();
     }
     return;

@@ -8,6 +8,8 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
+#include "chrome/browser/sync/glue/generic_change_processor.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller.h"
 
 namespace browser_sync {
@@ -15,23 +17,28 @@ namespace browser_sync {
 class AppDataTypeController : public FrontendDataTypeController {
  public:
   AppDataTypeController(
-      ProfileSyncFactory* profile_sync_factory,
+      ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
   virtual ~AppDataTypeController();
 
   // DataTypeController implementation.
-  virtual syncable::ModelType type() const;
+  virtual syncable::ModelType type() const OVERRIDE;
+
+ protected:
+  virtual GenericChangeProcessor* change_processor() const OVERRIDE;
 
  private:
   // DataTypeController implementations.
-  virtual bool StartModels();
-  virtual void CreateSyncComponents();
+  virtual bool StartModels() OVERRIDE;
+  virtual void CreateSyncComponents() OVERRIDE;
   virtual void RecordUnrecoverableError(
       const tracked_objects::Location& from_here,
-      const std::string& message);
-  virtual void RecordAssociationTime(base::TimeDelta time);
-  virtual void RecordStartFailure(StartResult result);
+      const std::string& message) OVERRIDE;
+  virtual void RecordAssociationTime(base::TimeDelta time) OVERRIDE;
+  virtual void RecordStartFailure(StartResult result) OVERRIDE;
+
+  scoped_ptr<GenericChangeProcessor> generic_change_processor_;
 
   DISALLOW_COPY_AND_ASSIGN(AppDataTypeController);
 };

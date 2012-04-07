@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,46 @@
 
 #include "ui/base/x/x11_util.h"
 
-#include <gdk/gdk.h>
-#include <gdk/gdkx.h>
-#include <gtk/gtk.h>
-
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
 #include <list>
+#include <map>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/singleton.h"
+#include "base/message_loop.h"
 #include "base/string_number_conversions.h"
+#include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/thread.h"
+#include "ui/base/keycodes/keyboard_code_conversion_x.h"
 #include "ui/base/x/x11_util_internal.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+
+#if defined(OS_FREEBSD)
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#endif
+
+#if defined(TOOLKIT_USES_GTK)
+#include <gdk/gdk.h>
+#include <gdk/gdkx.h>
+#include <gtk/gtk.h>
+#include "ui/base/gtk/gtk_compat.h"
+#include "ui/base/gtk/gdk_x_compat.h"
+#else
+// TODO(sad): Use the new way of handling X errors when
+// http://codereview.chromium.org/7889040/ lands.
+#define gdk_error_trap_push()
+#define gdk_error_trap_pop() false
+#define gdk_flush()
+#endif
 
 namespace ui {
 
@@ -56,8 +78,18 @@ CachedPictFormats* get_cached_pict_formats() {
 const size_t kMaxCacheSize = 5;
 
 int DefaultX11ErrorHandler(Display* d, XErrorEvent* e) {
-  MessageLoop::current()->PostTask(
-       FROM_HERE, NewRunnableFunction(LogErrorEventDescription, d, *e));
+  if (MessageLoop::current()) {
+    MessageLoop::current()->PostTask(
+         FROM_HERE,
+         base::Bind(&LogErrorEventDescription, d, *e));
+  } else {
+    LOG(ERROR)
+        << "X Error detected: "
+        << "serial " << e->serial << ", "
+        << "error_code " << static_cast<int>(e->error_code) << ", "
+        << "request_code " << static_cast<int>(e->request_code) << ", "
+        << "minor_code " << static_cast<int>(e->minor_code);
+  }
   return 0;
 }
 
@@ -71,9 +103,7 @@ int DefaultX11IOErrorHandler(Display* d) {
 bool GetProperty(XID window, const std::string& property_name, long max_length,
                  Atom* type, int* format, unsigned long* num_items,
                  unsigned char** property) {
-  Atom property_atom = gdk_x11_get_xatom_by_name_for_display(
-      gdk_display_get_default(), property_name.c_str());
-
+  Atom property_atom = GetAtom(property_name.c_str());
   unsigned long remaining_bytes = 0;
   return XGetWindowProperty(GetXDisplay(),
                             window,
@@ -89,19 +119,113 @@ bool GetProperty(XID window, const std::string& property_name, long max_length,
                             property);
 }
 
+// Converts ui::EventType to XKeyEvent state.
+unsigned int XKeyEventState(int flags) {
+  return
+      ((flags & ui::EF_SHIFT_DOWN) ? ShiftMask : 0) |
+      ((flags & ui::EF_CONTROL_DOWN) ? ControlMask : 0) |
+      ((flags & ui::EF_ALT_DOWN) ? Mod1Mask : 0) |
+      ((flags & ui::EF_CAPS_LOCK_DOWN) ? LockMask : 0);
+}
+
+// Converts EventType to XKeyEvent type.
+int XKeyEventType(ui::EventType type) {
+  switch (type) {
+    case ui::ET_KEY_PRESSED:
+      return KeyPress;
+    case ui::ET_KEY_RELEASED:
+      return KeyRelease;
+    default:
+      return 0;
+  }
+}
+
+// Converts KeyboardCode to XKeyEvent keycode.
+unsigned int XKeyEventKeyCode(ui::KeyboardCode key_code,
+                              int flags,
+                              Display* display) {
+  const int keysym = XKeysymForWindowsKeyCode(key_code,
+                                              flags & ui::EF_SHIFT_DOWN);
+  // Tests assume the keycode for XK_less is equal to the one of XK_comma,
+  // but XKeysymToKeycode returns 94 for XK_less while it returns 59 for
+  // XK_comma. Here we convert the value for XK_less to the value for XK_comma.
+  return (keysym == XK_less) ? 59 : XKeysymToKeycode(display, keysym);
+}
+
+// A process wide singleton that manages the usage of X cursors.
+class XCursorCache {
+ public:
+   XCursorCache() {}
+  ~XCursorCache() {
+    Clear();
+  }
+
+  Cursor GetCursor(int cursor_shape) {
+    // Lookup cursor by attempting to insert a null value, which avoids
+    // a second pass through the map after a cache miss.
+    std::pair<std::map<int, Cursor>::iterator, bool> it = cache_.insert(
+        std::make_pair(cursor_shape, 0));
+    if (it.second) {
+      Display* display = base::MessagePumpForUI::GetDefaultXDisplay();
+      it.first->second = XCreateFontCursor(display, cursor_shape);
+    }
+    return it.first->second;
+  }
+
+  void Clear() {
+    Display* display = base::MessagePumpForUI::GetDefaultXDisplay();
+    for (std::map<int, Cursor>::iterator it =
+        cache_.begin(); it != cache_.end(); ++it) {
+      XFreeCursor(display, it->second);
+    }
+    cache_.clear();
+  }
+
+ private:
+  // Maps X11 font cursor shapes to Cursor IDs.
+  std::map<int, Cursor> cache_;
+
+  DISALLOW_COPY_AND_ASSIGN(XCursorCache);
+};
+
+// A singleton object that remembers remappings of mouse buttons.
+class XButtonMap {
+ public:
+  static XButtonMap* GetInstance() {
+    return Singleton<XButtonMap>::get();
+  }
+
+  void UpdateMapping() {
+    count_ = XGetPointerMapping(ui::GetXDisplay(), map_, arraysize(map_));
+  }
+
+  int GetMappedButton(int button) {
+    return button > 0 && button <= count_ ? map_[button - 1] : button;
+  }
+
+ private:
+  friend struct DefaultSingletonTraits<XButtonMap>;
+
+  XButtonMap() {
+    UpdateMapping();
+  }
+
+  ~XButtonMap() {}
+
+  unsigned char map_[256];
+  int count_;
+
+  DISALLOW_COPY_AND_ASSIGN(XButtonMap);
+};
+
 }  // namespace
 
 bool XDisplayExists() {
-  return (gdk_display_get_default() != NULL);
+  return (GetXDisplay() != NULL);
 }
 
 Display* GetXDisplay() {
-  static Display* display = NULL;
-
-  if (!display)
-    display = gdk_x11_get_default_xdisplay();
-
-  return display;
+  return base::MessagePumpForUI::GetDefaultXDisplay();
 }
 
 static SharedMemorySupport DoQuerySharedMemorySupport(Display* dpy) {
@@ -110,6 +234,19 @@ static SharedMemorySupport DoQuerySharedMemorySupport(Display* dpy) {
   // Query the server's support for XSHM.
   if (!XShmQueryVersion(dpy, &dummy, &dummy, &pixmaps_supported))
     return SHARED_MEMORY_NONE;
+
+#if defined(OS_FREEBSD)
+  // On FreeBSD we can't access the shared memory after it was marked for
+  // deletion, unless this behaviour is explicitly enabled by the user.
+  // In case it's not enabled disable shared memory support.
+  int allow_removed;
+  size_t length = sizeof(allow_removed);
+
+  if ((sysctlbyname("kern.ipc.shm_allow_removed", &allow_removed, &length,
+      NULL, 0) < 0) || allow_removed < 1) {
+    return SHARED_MEMORY_NONE;
+  }
+#endif
 
   // Next we probe to see if shared memory will really work
   int shmkey = shmget(IPC_PRIVATE, 1, 0666);
@@ -169,25 +306,51 @@ int GetDefaultScreen(Display* display) {
   return XDefaultScreen(display);
 }
 
+Cursor GetXCursor(int cursor_shape) {
+  CR_DEFINE_STATIC_LOCAL(XCursorCache, cache, ());
+
+  if (cursor_shape == kCursorClearXCursorCache) {
+    cache.Clear();
+    return 0;
+  }
+
+  return cache.GetCursor(cursor_shape);
+}
+
 XID GetX11RootWindow() {
-  return GDK_WINDOW_XID(gdk_get_default_root_window());
+  return DefaultRootWindow(GetXDisplay());
 }
 
 bool GetCurrentDesktop(int* desktop) {
   return GetIntProperty(GetX11RootWindow(), "_NET_CURRENT_DESKTOP", desktop);
 }
 
+#if defined(TOOLKIT_USES_GTK)
 XID GetX11WindowFromGtkWidget(GtkWidget* widget) {
-  return GDK_WINDOW_XID(widget->window);
+  return GDK_WINDOW_XID(gtk_widget_get_window(widget));
 }
 
 XID GetX11WindowFromGdkWindow(GdkWindow* window) {
   return GDK_WINDOW_XID(window);
 }
 
+GtkWindow* GetGtkWindowFromX11Window(XID xid) {
+  GdkWindow* gdk_window =
+      gdk_x11_window_lookup_for_display(gdk_display_get_default(), xid);
+  if (!gdk_window)
+    return NULL;
+  GtkWindow* gtk_window = NULL;
+  gdk_window_get_user_data(gdk_window,
+                           reinterpret_cast<gpointer*>(&gtk_window));
+  if (!gtk_window)
+    return NULL;
+  return gtk_window;
+}
+
 void* GetVisualFromGtkWidget(GtkWidget* widget) {
   return GDK_VISUAL_XVISUAL(gtk_widget_get_visual(widget));
 }
+#endif  // defined(TOOLKIT_USES_GTK)
 
 int BitsPerPixelForPixmapDepth(Display* dpy, int depth) {
   int count;
@@ -209,7 +372,8 @@ int BitsPerPixelForPixmapDepth(Display* dpy, int depth) {
 
 bool IsWindowVisible(XID window) {
   XWindowAttributes win_attributes;
-  XGetWindowAttributes(GetXDisplay(), window, &win_attributes);
+  if (!XGetWindowAttributes(GetXDisplay(), window, &win_attributes))
+    return false;
   if (win_attributes.map_state != IsViewable)
     return false;
   // Some compositing window managers (notably kwin) do not actually unmap
@@ -242,7 +406,7 @@ bool GetWindowRect(XID window, gfx::Rect* rect) {
 bool PropertyExists(XID window, const std::string& property_name) {
   Atom type = None;
   int format = 0;  // size in bits of each item in 'property'
-  long unsigned int num_items = 0;
+  unsigned long num_items = 0;
   unsigned char* property = NULL;
 
   int result = GetProperty(window, property_name, 1,
@@ -257,7 +421,7 @@ bool PropertyExists(XID window, const std::string& property_name) {
 bool GetIntProperty(XID window, const std::string& property_name, int* value) {
   Atom type = None;
   int format = 0;  // size in bits of each item in 'property'
-  long unsigned int num_items = 0;
+  unsigned long num_items = 0;
   unsigned char* property = NULL;
 
   int result = GetProperty(window, property_name, 1,
@@ -270,7 +434,7 @@ bool GetIntProperty(XID window, const std::string& property_name, int* value) {
     return false;
   }
 
-  *value = *(reinterpret_cast<int*>(property));
+  *value = static_cast<int>(*(reinterpret_cast<long*>(property)));
   XFree(property);
   return true;
 }
@@ -280,7 +444,7 @@ bool GetIntArrayProperty(XID window,
                          std::vector<int>* value) {
   Atom type = None;
   int format = 0;  // size in bits of each item in 'property'
-  long unsigned int num_items = 0;
+  unsigned long num_items = 0;
   unsigned char* properties = NULL;
 
   int result = GetProperty(window, property_name,
@@ -294,9 +458,11 @@ bool GetIntArrayProperty(XID window,
     return false;
   }
 
-  int* int_properties = reinterpret_cast<int*>(properties);
+  long* int_properties = reinterpret_cast<long*>(properties);
   value->clear();
-  value->insert(value->begin(), int_properties, int_properties + num_items);
+  for (unsigned long i = 0; i < num_items; ++i) {
+    value->push_back(static_cast<int>(int_properties[i]));
+  }
   XFree(properties);
   return true;
 }
@@ -306,7 +472,7 @@ bool GetAtomArrayProperty(XID window,
                           std::vector<Atom>* value) {
   Atom type = None;
   int format = 0;  // size in bits of each item in 'property'
-  long unsigned int num_items = 0;
+  unsigned long num_items = 0;
   unsigned char* properties = NULL;
 
   int result = GetProperty(window, property_name,
@@ -331,7 +497,7 @@ bool GetStringProperty(
     XID window, const std::string& property_name, std::string* value) {
   Atom type = None;
   int format = 0;  // size in bits of each item in 'property'
-  long unsigned int num_items = 0;
+  unsigned long num_items = 0;
   unsigned char* property = NULL;
 
   int result = GetProperty(window, property_name, 1024,
@@ -347,6 +513,50 @@ bool GetStringProperty(
   value->assign(reinterpret_cast<char*>(property), num_items);
   XFree(property);
   return true;
+}
+
+bool SetIntProperty(XID window,
+                    const std::string& name,
+                    const std::string& type,
+                    int value) {
+  std::vector<int> values(1, value);
+  return SetIntArrayProperty(window, name, type, values);
+}
+
+bool SetIntArrayProperty(XID window,
+                         const std::string& name,
+                         const std::string& type,
+                         const std::vector<int>& value) {
+  DCHECK(!value.empty());
+  Atom name_atom = GetAtom(name.c_str());
+  Atom type_atom = GetAtom(type.c_str());
+
+  // XChangeProperty() expects values of type 32 to be longs.
+  scoped_array<long> data(new long[value.size()]);
+  for (size_t i = 0; i < value.size(); ++i)
+    data[i] = value[i];
+
+  gdk_error_trap_push();
+  XChangeProperty(ui::GetXDisplay(),
+                  window,
+                  name_atom,
+                  type_atom,
+                  32,  // size in bits of items in 'value'
+                  PropModeReplace,
+                  reinterpret_cast<const unsigned char*>(data.get()),
+                  value.size());  // num items
+  XSync(ui::GetXDisplay(), False);
+  return gdk_error_trap_pop() == 0;
+}
+
+Atom GetAtom(const char* name) {
+#if defined(TOOLKIT_USES_GTK)
+  return gdk_x11_get_xatom_by_name_for_display(
+      gdk_display_get_default(), name);
+#else
+  // TODO(derat): Cache atoms to avoid round-trips to the server.
+  return XInternAtom(GetXDisplay(), name, false);
+#endif
 }
 
 XID GetParentWindow(XID window) {
@@ -502,8 +712,28 @@ XID CreatePictureFromSkiaPixmap(Display* display, XID pixmap) {
   return picture;
 }
 
-void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
-                  void* pixmap_gc, const uint8* data, int width, int height) {
+void PutARGBImage(Display* display,
+                  void* visual, int depth,
+                  XID pixmap, void* pixmap_gc,
+                  const uint8* data,
+                  int width, int height) {
+  PutARGBImage(display,
+               visual, depth,
+               pixmap, pixmap_gc,
+               data, width, height,
+               0, 0, // src_x, src_y
+               0, 0, // dst_x, dst_y
+               width, height);
+}
+
+void PutARGBImage(Display* display,
+                  void* visual, int depth,
+                  XID pixmap, void* pixmap_gc,
+                  const uint8* data,
+                  int data_width, int data_height,
+                  int src_x, int src_y,
+                  int dst_x, int dst_y,
+                  int copy_width, int copy_height) {
   // TODO(scherkus): potential performance impact... consider passing in as a
   // parameter.
   int pixmap_bpp = BitsPerPixelForPixmapDepth(display, depth);
@@ -511,15 +741,15 @@ void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
   XImage image;
   memset(&image, 0, sizeof(image));
 
-  image.width = width;
-  image.height = height;
+  image.width = data_width;
+  image.height = data_height;
   image.format = ZPixmap;
   image.byte_order = LSBFirst;
   image.bitmap_unit = 8;
   image.bitmap_bit_order = LSBFirst;
   image.depth = depth;
   image.bits_per_pixel = pixmap_bpp;
-  image.bytes_per_line = width * pixmap_bpp / 8;
+  image.bytes_per_line = data_width * pixmap_bpp / 8;
 
   if (pixmap_bpp == 32) {
     image.red_mask = 0xff0000;
@@ -534,8 +764,8 @@ void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
         image.blue_mask == vis->blue_mask) {
       image.data = const_cast<char*>(reinterpret_cast<const char*>(data));
       XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-                0, 0 /* source x, y */, 0, 0 /* dest x, y */,
-                width, height);
+                src_x, src_y, dst_x, dst_y,
+                copy_width, copy_height);
     } else {
       // Otherwise, we need to shuffle the colors around. Assume red and blue
       // need to be swapped.
@@ -543,13 +773,14 @@ void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
       // It's possible to use some fancy SSE tricks here, but since this is the
       // slow path anyway, we do it slowly.
 
-      uint8_t* bitmap32 = static_cast<uint8_t*>(malloc(4 * width * height));
+      uint8_t* bitmap32 =
+          static_cast<uint8_t*>(malloc(4 * data_width * data_height));
       if (!bitmap32)
         return;
       uint8_t* const orig_bitmap32 = bitmap32;
       const uint32_t* bitmap_in = reinterpret_cast<const uint32_t*>(data);
-      for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
+      for (int y = 0; y < data_height; ++y) {
+        for (int x = 0; x < data_width; ++x) {
           const uint32_t pixel = *(bitmap_in++);
           bitmap32[0] = (pixel >> 16) & 0xff;  // Red
           bitmap32[1] = (pixel >> 8) & 0xff;   // Green
@@ -560,21 +791,22 @@ void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
       }
       image.data = reinterpret_cast<char*>(orig_bitmap32);
       XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-                0, 0 /* source x, y */, 0, 0 /* dest x, y */,
-                width, height);
+                src_x, src_y, dst_x, dst_y,
+                copy_width, copy_height);
       free(orig_bitmap32);
     }
   } else if (pixmap_bpp == 16) {
     // Some folks have VNC setups which still use 16-bit visuals and VNC
     // doesn't include Xrender.
 
-    uint16_t* bitmap16 = static_cast<uint16_t*>(malloc(2 * width * height));
+    uint16_t* bitmap16 =
+        static_cast<uint16_t*>(malloc(2 * data_width * data_height));
     if (!bitmap16)
       return;
     uint16_t* const orig_bitmap16 = bitmap16;
     const uint32_t* bitmap_in = reinterpret_cast<const uint32_t*>(data);
-    for (int y = 0; y < height; ++y) {
-      for (int x = 0; x < width; ++x) {
+    for (int y = 0; y < data_height; ++y) {
+      for (int x = 0; x < data_width; ++x) {
         const uint32_t pixel = *(bitmap_in++);
         uint16_t out_pixel = ((pixel >> 8) & 0xf800) |
                              ((pixel >> 5) & 0x07e0) |
@@ -589,8 +821,8 @@ void PutARGBImage(Display* display, void* visual, int depth, XID pixmap,
     image.blue_mask = 0x001f;
 
     XPutImage(display, pixmap, static_cast<GC>(pixmap_gc), &image,
-              0, 0 /* source x, y */, 0, 0 /* dest x, y */,
-              width, height);
+              src_x, src_y, dst_x, dst_y,
+              copy_width, copy_height);
     free(orig_bitmap16);
   } else {
     LOG(FATAL) << "Sorry, we don't support your visual depth without "
@@ -605,52 +837,6 @@ void FreePicture(Display* display, XID picture) {
 
 void FreePixmap(Display* display, XID pixmap) {
   XFreePixmap(display, pixmap);
-}
-
-// Called on BACKGROUND_X11 thread.
-Display* GetSecondaryDisplay() {
-  static Display* display = NULL;
-  if (!display) {
-    display = XOpenDisplay(NULL);
-    CHECK(display);
-  }
-
-  return display;
-}
-
-// Called on BACKGROUND_X11 thread.
-bool GetWindowGeometry(int* x, int* y, unsigned* width, unsigned* height,
-                       XID window) {
-  Window root_window, child_window;
-  unsigned border_width, depth;
-  int temp;
-
-  if (!XGetGeometry(GetSecondaryDisplay(), window, &root_window, &temp, &temp,
-                    width, height, &border_width, &depth))
-    return false;
-  if (!XTranslateCoordinates(GetSecondaryDisplay(), window, root_window,
-                             0, 0 /* input x, y */, x, y /* output x, y */,
-                             &child_window))
-    return false;
-
-  return true;
-}
-
-// Called on BACKGROUND_X11 thread.
-bool GetWindowParent(XID* parent_window, bool* parent_is_root, XID window) {
-  XID root_window, *children;
-  unsigned num_children;
-
-  Status s = XQueryTree(GetSecondaryDisplay(), window, &root_window,
-                        parent_window, &children, &num_children);
-  if (!s)
-    return false;
-
-  if (children)
-    XFree(children);
-
-  *parent_is_root = root_window == *parent_window;
-  return true;
 }
 
 bool GetWindowManagerName(std::string* wm_name) {
@@ -688,6 +874,34 @@ bool GetWindowManagerName(std::string* wm_name) {
   return !got_error && result;
 }
 
+WindowManagerName GuessWindowManager() {
+  std::string name;
+  if (GetWindowManagerName(&name)) {
+    // These names are taken from the WMs' source code.
+    if (name == "Compiz" || name == "compiz")
+      return WM_COMPIZ;
+    if (name == "KWin")
+      return WM_KWIN;
+    if (name == "Metacity")
+      return WM_METACITY;
+    if (name == "Mutter")
+      return WM_MUTTER;
+    if (name == "Xfwm4")
+      return WM_XFWM4;
+    if (name == "chromeos-wm")
+      return WM_CHROME_OS;
+    if (name == "Blackbox")
+      return WM_BLACKBOX;
+    if (name == "e16")
+      return WM_ENLIGHTENMENT;
+    if (StartsWithASCII(name, "IceWM", true))
+      return WM_ICE_WM;
+    if (name == "Openbox")
+      return WM_OPENBOX;
+  }
+  return WM_UNKNOWN;
+}
+
 bool ChangeWindowDesktop(XID window, XID destination) {
   int desktop;
   if (!GetWindowDesktop(destination, &desktop))
@@ -701,8 +915,7 @@ bool ChangeWindowDesktop(XID window, XID destination) {
   XEvent event;
   event.xclient.type = ClientMessage;
   event.xclient.window = window;
-  event.xclient.message_type = gdk_x11_get_xatom_by_name_for_display(
-      gdk_display_get_default(), "_NET_WM_DESKTOP");
+  event.xclient.message_type = GetAtom("_NET_WM_DESKTOP");
   event.xclient.format = 32;
   event.xclient.data.l[0] = desktop;
   event.xclient.data.l[1] = 1;  // source indication
@@ -718,8 +931,7 @@ void SetDefaultX11ErrorHandlers() {
 
 bool IsX11WindowFullScreen(XID window) {
   // First check if _NET_WM_STATE property contains _NET_WM_STATE_FULLSCREEN.
-  static Atom atom = gdk_x11_get_xatom_by_name_for_display(
-      gdk_display_get_default(), "_NET_WM_STATE_FULLSCREEN");
+  static Atom atom = GetAtom("_NET_WM_STATE_FULLSCREEN");
 
   std::vector<Atom> atom_properties;
   if (GetAtomArrayProperty(window,
@@ -729,6 +941,7 @@ bool IsX11WindowFullScreen(XID window) {
           != atom_properties.end())
     return true;
 
+#if defined(TOOLKIT_USES_GTK)
   // As the last resort, check if the window size is as large as the main
   // screen.
   GdkRectangle monitor_rect;
@@ -742,6 +955,52 @@ bool IsX11WindowFullScreen(XID window) {
          monitor_rect.y == window_rect.y() &&
          monitor_rect.width == window_rect.width() &&
          monitor_rect.height == window_rect.height();
+#else
+  NOTIMPLEMENTED();
+  return false;
+#endif
+}
+
+bool IsMotionEvent(XEvent* event) {
+  int type = event->type;
+  if (type == GenericEvent)
+    type = event->xgeneric.evtype;
+  return type == MotionNotify;
+}
+
+int GetMappedButton(int button) {
+  return XButtonMap::GetInstance()->GetMappedButton(button);
+}
+
+void UpdateButtonMap() {
+  XButtonMap::GetInstance()->UpdateMapping();
+}
+
+void InitXKeyEventForTesting(EventType type,
+                             KeyboardCode key_code,
+                             int flags,
+                             XEvent* event) {
+  CHECK(event);
+  Display* display = GetXDisplay();
+  XKeyEvent key_event;
+  key_event.type = XKeyEventType(type);
+  CHECK_NE(0, key_event.type);
+  key_event.serial = 0;
+  key_event.send_event = 0;
+  key_event.display = display;
+  key_event.time = 0;
+  key_event.window = 0;
+  key_event.root = 0;
+  key_event.subwindow = 0;
+  key_event.x = 0;
+  key_event.y = 0;
+  key_event.x_root = 0;
+  key_event.y_root = 0;
+  key_event.state = XKeyEventState(flags);
+  key_event.keycode = XKeyEventKeyCode(key_code, flags, display);
+  key_event.same_screen = 1;
+  event->type = key_event.type;
+  event->xkey = key_event;
 }
 
 // ----------------------------------------------------------------------------

@@ -57,7 +57,7 @@ namespace {
 //
 // For the NSS PKCS#12 library, must convert PRUnichars (shorts) to
 // a buffer of octets.  Must handle byte order correctly.
-// TODO: Is there a mozilla way to do this?  In the string lib?
+// TODO: Is there a Mozilla way to do this?  In the string lib?
 void unicodeToItem(const PRUnichar *uni, SECItem *item)
 {
   int len = 0;
@@ -138,7 +138,7 @@ pip_ucs2_ascii_conversion_fn(PRBool toUnicode,
                              PRBool swapBytes)
 {
   CHECK_GE(maxOutBufLen, inBufLen);
-  // do a no-op, since I've already got unicode.  Hah!
+  // do a no-op, since I've already got Unicode.  Hah!
   *outBufLen = inBufLen;
   memcpy(outBuf, inBuf, inBufLen);
   return PR_TRUE;
@@ -151,7 +151,8 @@ nsPKCS12Blob_ImportHelper(const char* pkcs12_data,
                           const string16& password,
                           bool is_extractable,
                           bool try_zero_length_secitem,
-                          PK11SlotInfo *slot)
+                          PK11SlotInfo *slot,
+                          net::CertificateList* imported_certs)
 {
   DCHECK(pkcs12_data);
   DCHECK(slot);
@@ -159,6 +160,10 @@ nsPKCS12Blob_ImportHelper(const char* pkcs12_data,
   SECStatus srv = SECSuccess;
   SEC_PKCS12DecoderContext *dcx = NULL;
   SECItem unicodePw;
+  SECItem attribute_value;
+  CK_BBOOL attribute_data = CK_FALSE;
+  const SEC_PKCS12DecoderItem* decoder_item = NULL;
+
   unicodePw.type = siBuffer;
   unicodePw.len = 0;
   unicodePw.data = NULL;
@@ -188,53 +193,101 @@ nsPKCS12Blob_ImportHelper(const char* pkcs12_data,
   // validate bags
   srv = SEC_PKCS12DecoderValidateBags(dcx, nickname_collision);
   if (srv) goto finish;
-  // import cert and key
+  // import certificate and key
   srv = SEC_PKCS12DecoderImportBags(dcx);
   if (srv) goto finish;
 
-  if (!is_extractable) {
-    SECItem attribute_value;
-    CK_BBOOL attribute_data = CK_FALSE;
-    attribute_value.data = &attribute_data;
-    attribute_value.len = sizeof(attribute_data);
-    CERTCertList* cert_list = SEC_PKCS12DecoderGetCerts(dcx);
+  attribute_value.data = &attribute_data;
+  attribute_value.len = sizeof(attribute_data);
 
-    // Iterate through each certificate in the chain and mark corresponding
-    // private key as unextractable.
-    for (CERTCertListNode* node = CERT_LIST_HEAD(cert_list);
-         !CERT_LIST_END(node, cert_list); node = CERT_LIST_NEXT(node)) {
-      SECKEYPrivateKey* privKey =  PK11_FindKeyByDERCert(slot,
-                                                         node->cert,
-                                                         NULL);  // wincx
+  srv = SEC_PKCS12DecoderIterateInit(dcx);
+  if (srv) goto finish;
+
+  if (imported_certs)
+    imported_certs->clear();
+
+  // Collect the list of decoded certificates, and mark private keys
+  // non-extractable if needed.
+  while (SEC_PKCS12DecoderIterateNext(dcx, &decoder_item) == SECSuccess) {
+    if (decoder_item->type != SEC_OID_PKCS12_V1_CERT_BAG_ID)
+      continue;
+
+    CERTCertificate* cert = PK11_FindCertFromDERCertItem(
+        slot, decoder_item->der,
+        NULL);  // wincx
+    if (!cert) {
+      LOG(ERROR) << "Could not grab a handle to the certificate in the slot "
+                 << "from the corresponding PKCS#12 DER certificate.";
+      continue;
+    }
+
+    // Add the cert to the list
+    if (imported_certs) {
+      // Empty list of intermediates.
+      net::X509Certificate::OSCertHandles intermediates;
+      imported_certs->push_back(
+          net::X509Certificate::CreateFromHandle(cert, intermediates));
+    }
+
+    // Once we have determined that the imported certificate has an
+    // associated private key too, only then can we mark the key as
+    // non-extractable.
+    if (!decoder_item->hasKey) {
+      CERT_DestroyCertificate(cert);
+      continue;
+    }
+
+    // Iterate through all the imported PKCS12 items and mark any accompanying
+    // private keys as non-extractable.
+    if (!is_extractable) {
+      SECKEYPrivateKey* privKey = PK11_FindPrivateKeyFromCert(slot, cert,
+                                                              NULL);  // wincx
       if (privKey) {
-        // Mark the private key as unextractable.
+        // Mark the private key as non-extractable.
         srv = PK11_WriteRawAttribute(PK11_TypePrivKey, privKey, CKA_EXTRACTABLE,
                                      &attribute_value);
         SECKEY_DestroyPrivateKey(privKey);
         if (srv) {
-          LOG(ERROR) << "Couldn't set CKA_EXTRACTABLE attribute on private "
+          LOG(ERROR) << "Could not set CKA_EXTRACTABLE attribute on private "
                      << "key.";
+          CERT_DestroyCertificate(cert);
           break;
         }
       }
     }
-    CERT_DestroyCertList(cert_list);
+    CERT_DestroyCertificate(cert);
     if (srv) goto finish;
   }
-
   import_result = net::OK;
 finish:
   // If srv != SECSuccess, NSS probably set a specific error code.
   // We should use that error code instead of inventing a new one
   // for every error possible.
   if (srv != SECSuccess) {
-    if (SEC_ERROR_BAD_PASSWORD == PORT_GetError()) {
-      import_result = net::ERR_PKCS12_IMPORT_BAD_PASSWORD;
-    }
-    else
-    {
-      LOG(ERROR) << "PKCS#12 import failed with error " << PORT_GetError();
-      import_result = net::ERR_PKCS12_IMPORT_FAILED;
+    int error = PORT_GetError();
+    LOG(ERROR) << "PKCS#12 import failed with error " << error;
+    switch (error) {
+      case SEC_ERROR_BAD_PASSWORD:
+      case SEC_ERROR_PKCS12_PRIVACY_PASSWORD_INCORRECT:
+        import_result = net::ERR_PKCS12_IMPORT_BAD_PASSWORD;
+        break;
+      case SEC_ERROR_PKCS12_INVALID_MAC:
+        import_result = net::ERR_PKCS12_IMPORT_INVALID_MAC;
+        break;
+      case SEC_ERROR_BAD_DER:
+      case SEC_ERROR_PKCS12_DECODING_PFX:
+      case SEC_ERROR_PKCS12_CORRUPT_PFX_STRUCTURE:
+        import_result = net::ERR_PKCS12_IMPORT_INVALID_FILE;
+        break;
+      case SEC_ERROR_PKCS12_UNSUPPORTED_MAC_ALGORITHM:
+      case SEC_ERROR_PKCS12_UNSUPPORTED_TRANSPORT_MODE:
+      case SEC_ERROR_PKCS12_UNSUPPORTED_PBE_ALGORITHM:
+      case SEC_ERROR_PKCS12_UNSUPPORTED_VERSION:
+        import_result = net::ERR_PKCS12_IMPORT_UNSUPPORTED;
+        break;
+      default:
+        import_result = net::ERR_PKCS12_IMPORT_FAILED;
+        break;
     }
   }
   // Finish the decoder
@@ -287,8 +340,8 @@ class PKCS12InitSingleton {
   }
 };
 
-static base::LazyInstance<PKCS12InitSingleton> g_pkcs12_init_singleton(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<PKCS12InitSingleton> g_pkcs12_init_singleton =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -301,10 +354,12 @@ int nsPKCS12Blob_Import(PK11SlotInfo* slot,
                         const char* pkcs12_data,
                         size_t pkcs12_len,
                         const string16& password,
-                        bool is_extractable) {
+                        bool is_extractable,
+                        net::CertificateList* imported_certs) {
 
   int rv = nsPKCS12Blob_ImportHelper(pkcs12_data, pkcs12_len, password,
-                                     is_extractable, false, slot);
+                                     is_extractable, false, slot,
+                                     imported_certs);
 
   // When the user entered a zero length password:
   //   An empty password should be represented as an empty
@@ -316,7 +371,7 @@ int nsPKCS12Blob_Import(PK11SlotInfo* slot,
   //   flavors.
   if (rv == net::ERR_PKCS12_IMPORT_BAD_PASSWORD && password.empty()) {
     rv = nsPKCS12Blob_ImportHelper(pkcs12_data, pkcs12_len, password,
-                                   is_extractable, true, slot);
+                                   is_extractable, true, slot, imported_certs);
   }
   return rv;
 }
@@ -378,7 +433,7 @@ nsPKCS12Blob_Export(std::string* output,
                                                       nssCert,
                                                       NULL);  // wincx
        if (privKey) {
-        PRBool privKeyIsExtractable;
+        PRBool privKeyIsExtractable = PR_FALSE;
         SECStatus rv = isExtractable(privKey, &privKeyIsExtractable);
         SECKEY_DestroyPrivateKey(privKey);
 

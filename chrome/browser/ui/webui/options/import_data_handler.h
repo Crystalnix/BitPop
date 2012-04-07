@@ -10,31 +10,33 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/importer/importer_data_types.h"
-#include "chrome/browser/importer/importer_list.h"
+#include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 
 class ImporterHost;
+class ImporterList;
 
 // Chrome personal stuff import data overlay UI handler.
 class ImportDataHandler : public OptionsPageUIHandler,
-                          public ImporterList::Observer,
+                          public importer::ImporterListObserver,
                           public importer::ImporterProgressObserver {
  public:
   ImportDataHandler();
   virtual ~ImportDataHandler();
 
   // OptionsPageUIHandler:
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
-  virtual void Initialize();
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler:
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
-  void ImportData(const ListValue* args);
+  void ImportData(const base::ListValue* args);
 
-  // ImporterList::Observer:
+  // importer::ImporterListObserver:
   virtual void OnSourceProfilesLoaded() OVERRIDE;
 
   // importer::ImporterProgressObserver:
@@ -48,6 +50,8 @@ class ImportDataHandler : public OptionsPageUIHandler,
   // If non-null it means importing is in progress. ImporterHost takes care
   // of deleting itself when import is complete.
   ImporterHost* importer_host_;  // weak
+
+  bool import_did_succeed_;
 
   DISALLOW_COPY_AND_ASSIGN(ImportDataHandler);
 };

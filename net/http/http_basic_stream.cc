@@ -4,14 +4,18 @@
 
 #include "net/http/http_basic_stream.h"
 
+#include "base/format_macros.h"
+#include "base/metrics/histogram.h"
 #include "base/stringprintf.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
+#include "net/http/http_response_body_drainer.h"
 #include "net/http/http_stream_parser.h"
 #include "net/http/http_util.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/client_socket_pool_base.h"
 
 namespace net {
 
@@ -22,18 +26,21 @@ HttpBasicStream::HttpBasicStream(ClientSocketHandle* connection,
       parser_(parser),
       connection_(connection),
       using_proxy_(using_proxy),
-      request_info_(NULL) {
+      request_info_(NULL),
+      response_(NULL),
+      bytes_read_offset_(0) {
 }
 
 HttpBasicStream::~HttpBasicStream() {}
 
-int HttpBasicStream::InitializeStream(const HttpRequestInfo* request_info,
-                                      const BoundNetLog& net_log,
-                                      CompletionCallback* callback) {
+int HttpBasicStream::InitializeStream(
+    const HttpRequestInfo* request_info, const BoundNetLog& net_log,
+    const CompletionCallback& callback) {
   DCHECK(!parser_.get());
   request_info_ = request_info;
   parser_.reset(new HttpStreamParser(connection_.get(), request_info,
                                      read_buf_, net_log));
+  bytes_read_offset_ = connection_->socket()->NumBytesRead();
   return OK;
 }
 
@@ -41,7 +48,7 @@ int HttpBasicStream::InitializeStream(const HttpRequestInfo* request_info,
 int HttpBasicStream::SendRequest(const HttpRequestHeaders& headers,
                                  UploadDataStream* request_body,
                                  HttpResponseInfo* response,
-                                 CompletionCallback* callback) {
+                                 const CompletionCallback& callback) {
   DCHECK(parser_.get());
   DCHECK(request_info_);
   const std::string path = using_proxy_ ?
@@ -50,6 +57,7 @@ int HttpBasicStream::SendRequest(const HttpRequestHeaders& headers,
   request_line_ = base::StringPrintf("%s %s HTTP/1.1\r\n",
                                      request_info_->method.c_str(),
                                      path.c_str());
+  response_ = response;
   return parser_->SendRequest(request_line_, headers, request_body, response,
                               callback);
 }
@@ -58,7 +66,7 @@ uint64 HttpBasicStream::GetUploadProgress() const {
   return parser_->GetUploadProgress();
 }
 
-int HttpBasicStream::ReadResponseHeaders(CompletionCallback* callback) {
+int HttpBasicStream::ReadResponseHeaders(const CompletionCallback& callback) {
   return parser_->ReadResponseHeaders(callback);
 }
 
@@ -67,7 +75,7 @@ const HttpResponseInfo* HttpBasicStream::GetResponseInfo() const {
 }
 
 int HttpBasicStream::ReadResponseBody(IOBuffer* buf, int buf_len,
-                                      CompletionCallback* callback) {
+                                      const CompletionCallback& callback) {
   return parser_->ReadResponseBody(buf, buf_len, callback);
 }
 
@@ -117,6 +125,16 @@ void HttpBasicStream::GetSSLCertRequestInfo(
 
 bool HttpBasicStream::IsSpdyHttpStream() const {
   return false;
+}
+
+void HttpBasicStream::LogNumRttVsBytesMetrics() const {
+  // Log rtt metrics here.
+}
+
+void HttpBasicStream::Drain(HttpNetworkSession* session) {
+  HttpResponseBodyDrainer* drainer = new HttpResponseBodyDrainer(this);
+  drainer->Start(session);
+  // |drainer| will delete itself.
 }
 
 }  // namespace net

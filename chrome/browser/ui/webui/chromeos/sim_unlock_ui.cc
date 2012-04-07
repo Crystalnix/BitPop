@@ -6,8 +6,11 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
+#include "base/message_loop.h"
 #include "base/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -15,16 +18,22 @@
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::BrowserThread;
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
@@ -89,20 +98,16 @@ class SimUnlockHandler : public WebUIMessageHandler,
   SimUnlockHandler();
   virtual ~SimUnlockHandler();
 
-  // Init work after Attach.
-  void Init(TabContents* contents);
-
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // NetworkLibrary::NetworkDeviceObserver implementation.
-  virtual void OnNetworkDeviceChanged(NetworkLibrary* cros,
-                                      const NetworkDevice* device);
+  virtual void OnNetworkDeviceSimLockChanged(
+      NetworkLibrary* cros, const NetworkDevice* device) OVERRIDE;
 
   // NetworkLibrary::PinOperationObserver implementation.
   virtual void OnPinOperationCompleted(NetworkLibrary* cros,
-                                       PinOperationError error);
+                                       PinOperationError error) OVERRIDE;
 
  private:
   // Should keep this state enum in sync with similar one in JS code.
@@ -212,7 +217,7 @@ class SimUnlockHandler : public WebUIMessageHandler,
   void UpdatePage(const chromeos::NetworkDevice* cellular,
                   const std::string& error_msg);
 
-  TabContents* tab_contents_;
+  // Dialog internal state.
   SimUnlockState state_;
 
   // Path of the Cellular device that we monitor property updates from.
@@ -223,6 +228,12 @@ class SimUnlockHandler : public WebUIMessageHandler,
 
   // New PIN value for the case when we unblock SIM card or change PIN.
   std::string new_pin_;
+
+  // True if there's a pending PIN operation.
+  // That means that SIM lock state change will be received 2 times:
+  // OnNetworkDeviceSimLockChanged and OnPinOperationCompleted.
+  // First one should be ignored.
+  bool pending_pin_operation_;
 
   DISALLOW_COPY_AND_ASSIGN(SimUnlockHandler);
 };
@@ -295,22 +306,18 @@ void SimUnlockUIHTMLSource::StartDataRequest(const std::string& path,
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_SIM_UNLOCK_HTML));
 
-  const std::string& full_html = jstemplate_builder::GetI18nTemplateHtml(
-      html, &strings);
+  std::string full_html = jstemplate_builder::GetI18nTemplateHtml(html,
+                                                                  &strings);
 
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes());
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
+  SendResponse(request_id, base::RefCountedString::TakeString(&full_html));
 }
 
 // SimUnlockHandler ------------------------------------------------------------
 
 SimUnlockHandler::SimUnlockHandler()
-    : tab_contents_(NULL),
-      state_(SIM_UNLOCK_LOADING),
-      dialog_mode_(SimDialogDelegate::SIM_DIALOG_UNLOCK) {
+    : state_(SIM_UNLOCK_LOADING),
+      dialog_mode_(SimDialogDelegate::SIM_DIALOG_UNLOCK),
+      pending_pin_operation_(false) {
   const chromeos::NetworkDevice* cellular = GetCellularDevice();
   // One could just call us directly via chrome://sim-unlock.
   if (cellular) {
@@ -329,40 +336,42 @@ SimUnlockHandler::~SimUnlockHandler() {
   }
 }
 
-WebUIMessageHandler* SimUnlockHandler::Attach(WebUI* web_ui) {
-  return WebUIMessageHandler::Attach(web_ui);
-}
-
-void SimUnlockHandler::Init(TabContents* contents) {
-  tab_contents_ = contents;
-}
-
 void SimUnlockHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback(kJsApiCancel,
-        NewCallback(this, &SimUnlockHandler::HandleCancel));
-  web_ui_->RegisterMessageCallback(kJsApiChangePinCode,
-      NewCallback(this, &SimUnlockHandler::HandleChangePinCode));
-  web_ui_->RegisterMessageCallback(kJsApiEnterPinCode,
-      NewCallback(this, &SimUnlockHandler::HandleEnterPinCode));
-  web_ui_->RegisterMessageCallback(kJsApiEnterPukCode,
-      NewCallback(this, &SimUnlockHandler::HandleEnterPukCode));
-  web_ui_->RegisterMessageCallback(kJsApiProceedToPukInput,
-      NewCallback(this, &SimUnlockHandler::HandleProceedToPukInput));
-  web_ui_->RegisterMessageCallback(kJsApiSimStatusInitialize,
-      NewCallback(this, &SimUnlockHandler::HandleSimStatusInitialize));
+  web_ui()->RegisterMessageCallback(kJsApiCancel,
+      base::Bind(&SimUnlockHandler::HandleCancel,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiChangePinCode,
+      base::Bind(&SimUnlockHandler::HandleChangePinCode,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiEnterPinCode,
+      base::Bind(&SimUnlockHandler::HandleEnterPinCode,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiEnterPukCode,
+      base::Bind(&SimUnlockHandler::HandleEnterPukCode,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiProceedToPukInput,
+      base::Bind(&SimUnlockHandler::HandleProceedToPukInput,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiSimStatusInitialize,
+      base::Bind(&SimUnlockHandler::HandleSimStatusInitialize,
+                 base::Unretained(this)));
 }
 
-void SimUnlockHandler::OnNetworkDeviceChanged(NetworkLibrary* cros,
-                                              const NetworkDevice* device) {
-  chromeos::SIMLockState lock_state = device->sim_lock_state();
+void SimUnlockHandler::OnNetworkDeviceSimLockChanged(
+    NetworkLibrary* cros, const NetworkDevice* device) {
+  chromeos::SimLockState lock_state = device->sim_lock_state();
   int retries_left = device->sim_retries_left();
-  VLOG(1) << "OnNetworkDeviceChanged, lock: " << lock_state
+  VLOG(1) << "OnNetworkDeviceSimLockChanged, lock: " << lock_state
           << ", retries: " << retries_left;
-  ProcessSimCardState(GetCellularDevice());
+  // There's a pending PIN operation.
+  // Wait for it to finish and refresh state then.
+  if (!pending_pin_operation_)
+    ProcessSimCardState(GetCellularDevice());
 }
 
 void SimUnlockHandler::OnPinOperationCompleted(NetworkLibrary* cros,
                                                PinOperationError error) {
+  pending_pin_operation_ = false;
   DCHECK(cros);
   const NetworkDevice* cellular = cros->FindCellularDevice();
   DCHECK(cellular);
@@ -411,7 +420,8 @@ void SimUnlockHandler::EnterCode(const std::string& code,
   CHECK(lib);
 
   const NetworkDevice* cellular = GetCellularDevice();
-  chromeos::SIMLockState lock_state = cellular->sim_lock_state();
+  chromeos::SimLockState lock_state = cellular->sim_lock_state();
+  pending_pin_operation_ = true;
 
   switch (code_type) {
     case CODE_PIN:
@@ -443,17 +453,17 @@ void SimUnlockHandler::EnterCode(const std::string& code,
 }
 
 void SimUnlockHandler::NotifyOnEnterPinEnded(bool cancelled) {
-  NotificationService::current()->Notify(
-      NotificationType::ENTER_PIN_ENDED,
-      NotificationService::AllSources(),
-      Details<bool>(&cancelled));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_ENTER_PIN_ENDED,
+      content::NotificationService::AllSources(),
+      content::Details<bool>(&cancelled));
 }
 
 void SimUnlockHandler::NotifyOnRequirePinChangeEnded(bool new_value) {
-  NotificationService::current()->Notify(
-      NotificationType::REQUIRE_PIN_SETTING_CHANGE_ENDED,
-      NotificationService::AllSources(),
-      Details<bool>(&new_value));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_REQUIRE_PIN_SETTING_CHANGE_ENDED,
+      content::NotificationService::AllSources(),
+      content::Details<bool>(&new_value));
 }
 
 void SimUnlockHandler::HandleCancel(const ListValue* args) {
@@ -464,7 +474,7 @@ void SimUnlockHandler::HandleCancel(const ListValue* args) {
   }
   scoped_refptr<TaskProxy> task = new TaskProxy(AsWeakPtr());
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(task.get(), &TaskProxy::HandleCancel));
+      base::Bind(&TaskProxy::HandleCancel, task.get()));
 }
 
 void SimUnlockHandler::HandleChangePinCode(const ListValue* args) {
@@ -485,7 +495,7 @@ void SimUnlockHandler::HandleEnterCode(SimUnlockCode code_type,
                                        const std::string& code) {
   scoped_refptr<TaskProxy> task = new TaskProxy(AsWeakPtr(), code, code_type);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(task.get(), &TaskProxy::HandleEnterCode));
+      base::Bind(&TaskProxy::HandleEnterCode, task.get()));
 }
 
 void SimUnlockHandler::HandleEnterPinCode(const ListValue* args) {
@@ -520,7 +530,7 @@ void SimUnlockHandler::HandleProceedToPukInput(const ListValue* args) {
   }
   scoped_refptr<TaskProxy> task = new TaskProxy(AsWeakPtr());
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(task.get(), &TaskProxy::HandleProceedToPukInput));
+      base::Bind(&TaskProxy::HandleProceedToPukInput, task.get()));
 }
 
 void SimUnlockHandler::HandleSimStatusInitialize(const ListValue* args) {
@@ -535,7 +545,7 @@ void SimUnlockHandler::HandleSimStatusInitialize(const ListValue* args) {
   VLOG(1) << "Initializing SIM dialog in mode: " << dialog_mode_;
   scoped_refptr<TaskProxy> task = new TaskProxy(AsWeakPtr());
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(task.get(), &TaskProxy::HandleInitialize));
+      base::Bind(&TaskProxy::HandleInitialize, task.get()));
 }
 
 void SimUnlockHandler::InitializeSimStatus() {
@@ -552,7 +562,7 @@ void SimUnlockHandler::ProcessSimCardState(
     const chromeos::NetworkDevice* cellular) {
   std::string error_msg;
   if (cellular) {
-    chromeos::SIMLockState lock_state = cellular->sim_lock_state();
+    chromeos::SimLockState lock_state = cellular->sim_lock_state();
     int retries_left = cellular->sim_retries_left();
     VLOG(1) << "Current state: " << state_ << " lock_state: " << lock_state
             << " retries: " << retries_left;
@@ -648,19 +658,19 @@ void SimUnlockHandler::UpdatePage(const chromeos::NetworkDevice* cellular,
     sim_dict.SetString(kError, error_msg);
   else
     sim_dict.SetString(kError, kErrorOk);
-  web_ui_->CallJavascriptFunction(kJsApiSimStatusChanged, sim_dict);
+  web_ui()->CallJavascriptFunction(kJsApiSimStatusChanged, sim_dict);
 }
 
 // SimUnlockUI -----------------------------------------------------------------
 
-SimUnlockUI::SimUnlockUI(TabContents* contents) : WebUI(contents) {
+SimUnlockUI::SimUnlockUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   SimUnlockHandler* handler = new SimUnlockHandler();
-  AddMessageHandler((handler)->Attach(this));
-  handler->Init(contents);
+  web_ui->AddMessageHandler(handler);
   SimUnlockUIHTMLSource* html_source = new SimUnlockUIHTMLSource();
 
   // Set up the chrome://sim-unlock/ source.
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(html_source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(html_source);
 }
 
 }  // namespace chromeos

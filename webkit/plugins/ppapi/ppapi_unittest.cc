@@ -38,17 +38,10 @@ PP_Bool Instance_DidCreate(PP_Instance pp_instance,
 void Instance_DidDestroy(PP_Instance instance) {
 }
 
-void Instance_DidChangeView(PP_Instance pp_instance,
-                            const PP_Rect* position,
-                            const PP_Rect* clip) {
+void Instance_DidChangeView(PP_Instance pp_instance, PP_Resource view) {
 }
 
 void Instance_DidChangeFocus(PP_Instance pp_instance, PP_Bool has_focus) {
-}
-
-PP_Bool Instance_HandleInputEvent(PP_Instance pp_instance,
-                                  const PP_InputEvent* event) {
-  return PP_FALSE;
 }
 
 PP_Bool Instance_HandleDocumentLoad(PP_Instance pp_instance,
@@ -61,7 +54,6 @@ static PPP_Instance mock_instance_interface = {
   &Instance_DidDestroy,
   &Instance_DidChangeView,
   &Instance_DidChangeFocus,
-  &Instance_HandleInputEvent,
   &Instance_HandleDocumentLoad
 };
 
@@ -80,7 +72,7 @@ PpapiUnittest::~PpapiUnittest() {
 }
 
 void PpapiUnittest::SetUp() {
-  delegate_.reset(new MockPluginDelegate);
+  delegate_.reset(NewPluginDelegate());
 
   // Initialize the mock module.
   module_ = new PluginModule("Mock plugin", FilePath(), this);
@@ -90,9 +82,11 @@ void PpapiUnittest::SetUp() {
   ASSERT_TRUE(module_->InitAsInternalPlugin(entry_points));
 
   // Initialize the mock instance.
-  instance_ = new PluginInstance(delegate_.get(), module(),
-      PluginInstance::new_instance_interface<PPP_Instance>(
-          GetMockInterface(PPP_INSTANCE_INTERFACE)));
+  instance_ = PluginInstance::Create1_0(
+      delegate_.get(),
+      module(),
+      GetMockInterface(PPP_INSTANCE_INTERFACE_1_0));
+
 }
 
 void PpapiUnittest::TearDown() {
@@ -100,8 +94,12 @@ void PpapiUnittest::TearDown() {
   module_ = NULL;
 }
 
+MockPluginDelegate* PpapiUnittest::NewPluginDelegate() {
+  return new MockPluginDelegate;
+}
+
 const void* PpapiUnittest::GetMockInterface(const char* interface_name) const {
-  if (strcmp(interface_name, PPP_INSTANCE_INTERFACE) == 0)
+  if (strcmp(interface_name, PPP_INSTANCE_INTERFACE_1_0) == 0)
     return &mock_instance_interface;
   return NULL;
 }
@@ -134,7 +132,7 @@ class PpapiCustomInterfaceFactoryTest
     result_ = false;
   }
 
-  static void* InterfaceFactory(const std::string& interface_name) {
+  static const void* InterfaceFactory(const std::string& interface_name) {
     result_ = true;
     return NULL;
   }

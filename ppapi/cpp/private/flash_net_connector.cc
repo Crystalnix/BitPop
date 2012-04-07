@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(viettrungluu): See the comment in corresponding .h file.
-
 #include "ppapi/cpp/private/flash_net_connector.h"
 
 #include "ppapi/c/pp_errors.h"
@@ -34,11 +32,11 @@ NetConnector::NetConnector(const Instance& instance) {
 int32_t NetConnector::ConnectTcp(const char* host,
                                  uint16_t port,
                                  PP_FileHandle* socket_out,
-                                 PP_Flash_NetAddress* local_addr_out,
-                                 PP_Flash_NetAddress* remote_addr_out,
+                                 PP_NetAddress_Private* local_addr_out,
+                                 PP_NetAddress_Private* remote_addr_out,
                                  const CompletionCallback& cc) {
   if (!has_interface<PPB_Flash_NetConnector>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Flash_NetConnector>()->ConnectTcp(
       pp_resource(),
       host, port,
@@ -46,13 +44,13 @@ int32_t NetConnector::ConnectTcp(const char* host,
       cc.pp_completion_callback());
 }
 
-int32_t NetConnector::ConnectTcpAddress(const PP_Flash_NetAddress* addr,
+int32_t NetConnector::ConnectTcpAddress(const PP_NetAddress_Private* addr,
                                         PP_FileHandle* socket_out,
-                                        PP_Flash_NetAddress* local_addr_out,
-                                        PP_Flash_NetAddress* remote_addr_out,
+                                        PP_NetAddress_Private* local_addr_out,
+                                        PP_NetAddress_Private* remote_addr_out,
                                         const CompletionCallback& cc) {
   if (!has_interface<PPB_Flash_NetConnector>())
-    return PP_ERROR_NOINTERFACE;
+    return cc.MayForce(PP_ERROR_NOINTERFACE);
   return get_interface<PPB_Flash_NetConnector>()->ConnectTcpAddress(
       pp_resource(),
       addr,

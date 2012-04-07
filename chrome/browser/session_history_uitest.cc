@@ -4,8 +4,9 @@
 
 #include "base/string_util.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/automation/tab_proxy.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
+#include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/ui/ui_test.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
@@ -79,8 +80,9 @@ class SessionHistoryTest : public UITest {
   net::TestServer test_server_;
 };
 
-#if defined(OS_WIN)
-// See http://crbug.com/61619
+#if defined(OS_WIN) || defined(OS_MACOSX)
+// See http://crbug.com/61619 on windows.
+// See http://crbug.com/102094 on mac.
 #define MAYBE_BasicBackForward FLAKY_BasicBackForward
 #else
 #define MAYBE_BasicBackForward BasicBackForward
@@ -144,15 +146,12 @@ TEST_F(SessionHistoryTest, MAYBE_BasicBackForward) {
   EXPECT_EQ(L"bot3", GetTabTitle());
 }
 
-#if defined(OS_WIN)
-// See http://crbug.com/61619
-#define MAYBE_FrameBackForward FLAKY_FrameBackForward
-#else
-#define MAYBE_FrameBackForward FrameBackForward
-#endif
-
 // Test that back/forward works when navigating in subframes.
-TEST_F(SessionHistoryTest, MAYBE_FrameBackForward) {
+#if defined(OS_WIN)
+// http://crbug.com/48833
+#define FrameBackForward FLAKY_FrameBackForward
+#endif
+TEST_F(SessionHistoryTest, FrameBackForward) {
   ASSERT_TRUE(test_server_.Start());
 
   // about:blank should be loaded first.

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -15,15 +15,13 @@
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/util_constants.h"
 
-namespace installer {
-class MasterPreferences;
-}
-
 class ChromeFrameDistribution : public BrowserDistribution {
  public:
   virtual std::wstring GetAppGuid() OVERRIDE;
 
   virtual std::wstring GetApplicationName() OVERRIDE;
+
+  virtual std::wstring GetAppShortCutName() OVERRIDE;
 
   virtual std::wstring GetAlternateApplicationName() OVERRIDE;
 
@@ -43,6 +41,8 @@ class ChromeFrameDistribution : public BrowserDistribution {
 
   virtual std::wstring GetStatsServerURL() OVERRIDE;
 
+  virtual std::string GetNetworkStatsServer() const OVERRIDE;
+
   virtual std::wstring GetUninstallLinkName() OVERRIDE;
 
   virtual std::wstring GetUninstallRegPath() OVERRIDE;
@@ -50,6 +50,8 @@ class ChromeFrameDistribution : public BrowserDistribution {
   virtual std::wstring GetVersionKey() OVERRIDE;
 
   virtual bool CanSetAsDefault() OVERRIDE;
+
+  virtual bool CanCreateDesktopShortcuts() OVERRIDE;
 
   virtual void UpdateInstallStatus(bool system_install,
       installer::ArchiveType archive_type,

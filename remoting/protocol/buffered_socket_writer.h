@@ -7,13 +7,15 @@
 
 #include <list>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "net/base/io_buffer.h"
 #include "net/socket/socket.h"
 
-class MessageLoop;
-class Task;
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
 
 namespace net {
 class Socket;
@@ -34,19 +36,21 @@ namespace protocol {
 class BufferedSocketWriterBase
     : public base::RefCountedThreadSafe<BufferedSocketWriterBase> {
  public:
-  typedef Callback1<int>::Type WriteFailedCallback;
+  typedef base::Callback<void(int)> WriteFailedCallback;
 
-  explicit BufferedSocketWriterBase();
+  explicit BufferedSocketWriterBase(base::MessageLoopProxy* message_loop);
   virtual ~BufferedSocketWriterBase();
 
   // Initializes the writer. Must be called on the thread that will be used
   // to access the socket in the future. |callback| will be called after each
-  // failed write.
-  void Init(net::Socket* socket, WriteFailedCallback* callback);
+  // failed write. Caller retains ownership of |socket|.
+  // TODO(sergeyu): Change it so that it take ownership of |socket|.
+  void Init(net::Socket* socket, const WriteFailedCallback& callback);
 
   // Puts a new data chunk in the buffer. Returns false and doesn't enqueue
   // the data if called before Init(). Can be called on any thread.
-  bool Write(scoped_refptr<net::IOBufferWithSize> buffer, Task* done_task);
+  bool Write(scoped_refptr<net::IOBufferWithSize> buffer,
+             const base::Closure& done_task);
 
   // Returns current size of the buffer. Can be called on any thread.
   int GetBufferSize();
@@ -55,7 +59,8 @@ class BufferedSocketWriterBase
   // to be written. Can be called on any thread.
   int GetBufferChunks();
 
-  // Stops writing and drops current buffers.
+  // Stops writing and drops current buffers. Must be called on the
+  // network thread.
   void Close();
 
  protected:
@@ -89,25 +94,23 @@ class BufferedSocketWriterBase
   base::Lock lock_;
 
   net::Socket* socket_;
-  MessageLoop* message_loop_;
-  scoped_ptr<WriteFailedCallback> write_failed_callback_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  WriteFailedCallback write_failed_callback_;
 
   bool write_pending_;
-
-  net::CompletionCallbackImpl<BufferedSocketWriterBase> written_callback_;
 
   bool closed_;
 };
 
 class BufferedSocketWriter : public BufferedSocketWriterBase {
  public:
-  BufferedSocketWriter();
+  explicit BufferedSocketWriter(base::MessageLoopProxy* message_loop);
   virtual ~BufferedSocketWriter();
 
  protected:
-  virtual void GetNextPacket_Locked(net::IOBuffer** buffer, int* size);
-  virtual void AdvanceBufferPosition_Locked(int written);
-  virtual void OnError_Locked(int result);
+  virtual void GetNextPacket_Locked(net::IOBuffer** buffer, int* size) OVERRIDE;
+  virtual void AdvanceBufferPosition_Locked(int written) OVERRIDE;
+  virtual void OnError_Locked(int result) OVERRIDE;
 
  private:
   scoped_refptr<net::DrainableIOBuffer> current_buf_;
@@ -115,13 +118,13 @@ class BufferedSocketWriter : public BufferedSocketWriterBase {
 
 class BufferedDatagramWriter : public BufferedSocketWriterBase {
  public:
-  BufferedDatagramWriter();
+  explicit BufferedDatagramWriter(base::MessageLoopProxy* message_loop);
   virtual ~BufferedDatagramWriter();
 
  protected:
-  virtual void GetNextPacket_Locked(net::IOBuffer** buffer, int* size);
-  virtual void AdvanceBufferPosition_Locked(int written);
-  virtual void OnError_Locked(int result);
+  virtual void GetNextPacket_Locked(net::IOBuffer** buffer, int* size) OVERRIDE;
+  virtual void AdvanceBufferPosition_Locked(int written) OVERRIDE;
+  virtual void OnError_Locked(int result) OVERRIDE;
 };
 
 }  // namespace protocol

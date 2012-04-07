@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #ifndef GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_UTILS_H_
 #define GPU_COMMAND_BUFFER_COMMON_GLES2_CMD_UTILS_H_
 
+#include <string>
 #include "../common/types.h"
 
 namespace gpu {
@@ -56,9 +57,30 @@ class GLES2Util {
  public:
   static const int kNumFaces = 6;
 
-  explicit GLES2Util(
-      int num_compressed_texture_formats)
-      : num_compressed_texture_formats_(num_compressed_texture_formats) {
+  struct EnumToString {
+    uint32 value;
+    const char* name;
+  };
+
+  GLES2Util()
+      : num_compressed_texture_formats_(0),
+        num_shader_binary_formats_(0) {
+  }
+
+  int num_compressed_texture_formats() const {
+    return num_compressed_texture_formats_;
+  }
+
+  void set_num_compressed_texture_formats(int num_compressed_texture_formats) {
+    num_compressed_texture_formats_ = num_compressed_texture_formats;
+  }
+
+  int num_shader_binary_formats() const {
+    return num_shader_binary_formats_;
+  }
+
+  void set_num_shader_binary_formats(int num_shader_binary_formats) {
+    num_shader_binary_formats_ = num_shader_binary_formats;
   }
 
   // Gets the number of values a particular id will return when a glGet
@@ -69,6 +91,8 @@ class GLES2Util {
   static bool ComputeImageDataSize(
     int width, int height, int format, int type, int unpack_alignment,
     uint32* size);
+
+  static size_t RenderbufferBytesPerPixel(int format);
 
   static uint32 GetGLDataTypeSizeForUniforms(int type);
 
@@ -91,8 +115,21 @@ class GLES2Util {
     return value > 0 && (value & (value - 1)) != 0;
   }
 
+  static std::string GetStringEnum(uint32 value);
+  static std::string GetStringBool(uint32 value);
+  static std::string GetStringError(uint32 value);
+
+  #include "../common/gles2_cmd_utils_autogen.h"
+
  private:
+  static std::string GetQualifiedEnumString(
+      const EnumToString* table, size_t count, uint32 value);
+
+  static const EnumToString* enum_to_string_table_;
+  static const size_t enum_to_string_table_len_;
+
   int num_compressed_texture_formats_;
+  int num_shader_binary_formats_;
 };
 
 }  // namespace gles2

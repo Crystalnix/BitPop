@@ -11,7 +11,6 @@
 #include "chrome/browser/icon_manager.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 
-class GURL;
 class RefCountedBytes;
 
 namespace gfx {
@@ -28,9 +27,9 @@ class FileIconSource : public ChromeURLDataManager::DataSource {
   // the path we registered.
   virtual void StartDataRequest(const std::string& path,
                                 bool is_incognito,
-                                int request_id);
+                                int request_id) OVERRIDE;
 
-  virtual std::string GetMimeType(const std::string&) const;
+  virtual std::string GetMimeType(const std::string&) const OVERRIDE;
 
   // Called when favicon data is available from the history backend.
   void OnFileIconDataAvailable(

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -32,10 +32,7 @@ class HistoryTest(pyauto.PyUITest):
     while True:
       raw_input('Interact with the browser and hit <enter> to dump history.. ')
       print '*' * 20
-      history = self.GetHistoryInfo().History()
-      import pprint
-      pp = pprint.PrettyPrinter(indent=2)
-      pp.pprint(history)
+      self.pprint(self.GetHistoryInfo().History())
 
   def testHistoryPersists(self):
     """Verify that history persists after session restart."""
@@ -211,13 +208,146 @@ class HistoryTest(pyauto.PyUITest):
 
   def testFtpHistory(self):
     """Verify a site using ftp protocol shows up within history."""
-    ftp_url = 'ftp://ftp.kernel.org/'
-    ftp_title = 'Index of /'
+    ftp_server = self.StartFTPServer(os.path.join('chrome', 'test', 'data'))
+    ftp_title = 'A Small Hello'
+    ftp_url = self.GetFtpURLForDataPath(ftp_server, 'History', 'landing.html')
     self.NavigateToURL(ftp_url)
     history = self.GetHistoryInfo().History()
     self.assertEqual(len(history), 1)
     self.assertEqual(ftp_title, history[0]['title'])
-    self.assertEqual(ftp_url, history[0]['url'])
+    self.StopFTPServer(ftp_server)
+
+  def _CheckHistory(self, title, url, length, index=0):
+    """Verify that the current history matches expectations.
+
+    Verify that history item has the given title and url
+    and that length of history list is as expected.
+
+    Args:
+      title: Expected title of given web page.
+      url: Expected address of given web page.
+      length: Expected length of history list.
+      index: Position of item we want to check in history list.
+    """
+    history = self.GetHistoryInfo().History()
+    self.assertEqual(
+        length, len(history),
+        msg='History length: expected = %d, actual = %d.'
+            % (length, len(history)))
+    self.assertEqual(
+        title, history[index]['title'],
+        msg='Title: expected = %s, actual = %s.'
+            % (title,  history[index]['title']))
+    self.assertEqual(
+        url, history[index]['url'], msg='URL: expected = %s, actual = %s.'
+            % (url,  history[index]['url']))
+
+  def _NavigateAndCheckHistory(self, title, page, length):
+    """Navigate to a page, then verify the history.
+
+    Args:
+      title: Title of given web page.
+      page: Filename of given web page.
+      length: Length of history list.
+    """
+    url = self.GetFileURLForDataPath(page)
+    self.NavigateToURL(url)
+    self._CheckHistory(title, url, length)
+
+  def testNavigateBringPageToTop(self):
+    """Verify that navigation brings current page to top of history list."""
+    self._NavigateAndCheckHistory('Title Of Awesomeness', 'title2.html', 1)
+    self._NavigateAndCheckHistory('Title Of More Awesomeness', 'title3.html',
+                                  2)
+
+  def testReloadBringPageToTop(self):
+    """Verify that reloading a page brings it to top of history list."""
+    url1 = self.GetFileURLForDataPath('title2.html')
+    title1 = 'Title Of Awesomeness'
+    self._NavigateAndCheckHistory(title1, 'title2.html', 1)
+
+    url2 = self.GetFileURLForDataPath('title3.html')
+    title2 = 'Title Of More Awesomeness'
+    self.AppendTab(pyauto.GURL(url2))
+    self._CheckHistory(title2, url2, 2)
+
+    self.ActivateTab(0)
+    self.ReloadActiveTab()
+    self._CheckHistory(title1, url1, 2)
+
+  def testBackForwardBringPageToTop(self):
+    """Verify that back/forward brings current page to top of history list."""
+    url1 = self.GetFileURLForDataPath('title2.html')
+    title1 = 'Title Of Awesomeness'
+    self._NavigateAndCheckHistory(title1, 'title2.html', 1)
+
+    url2 = self.GetFileURLForDataPath('title3.html')
+    title2 = 'Title Of More Awesomeness'
+    self._NavigateAndCheckHistory(title2, 'title3.html', 2)
+
+    tab = self.GetBrowserWindow(0).GetTab(0)
+    tab.GoBack()
+    self._CheckHistory(title1, url1, 2)
+    tab.GoForward()
+    self._CheckHistory(title2, url2, 2)
+
+  def testAppendTabAddPage(self):
+    """Verify that opening a new tab adds that page to history."""
+    self._NavigateAndCheckHistory('Title Of Awesomeness', 'title2.html', 1)
+
+    url2 = self.GetFileURLForDataPath('title3.html')
+    title2 = 'Title Of More Awesomeness'
+    self.AppendTab(pyauto.GURL(url2))
+    self._CheckHistory(title2, url2, 2)
+
+  def testOpenWindowAddPage(self):
+    """Verify that opening new window to a page adds the page to history."""
+    self._NavigateAndCheckHistory('Title Of Awesomeness', 'title2.html', 1)
+
+    url2 = self.GetFileURLForDataPath('title3.html')
+    title2 = 'Title Of More Awesomeness'
+    self.OpenNewBrowserWindow(True)
+    self.NavigateToURL(url2, 1)
+    self._CheckHistory(title2, url2, 2)
+
+  def testSubmitFormAddsTargetPage(self):
+    """Verify that submitting form adds target page to history list."""
+    url1 = self.GetFileURLForDataPath('History', 'form.html')
+    self.NavigateToURL(url1)
+    self.assertTrue(self.SubmitForm('form'))
+    url2 = self.GetFileURLForDataPath('History', 'target.html')
+    self.assertEqual(
+        'SUCCESS',
+        self.GetDOMValue('document.getElementById("result").innerHTML'))
+    self._CheckHistory('Target Page', url2, 2)
+
+  def testOneHistoryTabPerWindow(self):
+    """Verify history shortcut opens only one history tab per window.
+
+    Also, make sure that existing history tab is activated.
+    """
+    # Invoke History.
+    self.RunCommand(pyauto.IDC_SHOW_HISTORY)
+    self.assertEqual('History', self.GetActiveTabTitle(),
+                     msg='History page was not opened.')
+
+    # Open new tab, invoke History again.
+    self.RunCommand(pyauto.IDC_NEW_TAB)
+    self.RunCommand(pyauto.IDC_SHOW_HISTORY)
+
+    # Verify there is only one history tab, and that it is activated.
+    tab0url = self.GetBrowserInfo()['windows'][0]['tabs'][0]['url']
+    self.assertEqual(
+        'chrome://history/', tab0url, msg='Tab 0: expected = %s, actual = %s.'
+            % ('chrome://history/',  tab0url))
+
+    tab1url = self.GetBrowserInfo()['windows'][0]['tabs'][1]['url']
+    self.assertNotEqual(
+        'chrome://history/', tab1url,
+        msg='Tab 1: History page not expected.')
+
+    self.assertEqual('History', self.GetActiveTabTitle(),
+                     msg='History page is not activated.')
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,15 +10,10 @@
 #include "base/logging.h"
 #include "base/stringprintf.h"
 #include "base/string_split.h"
+#include "base/sys_byteorder.h"
 #include "build/build_config.h"
 #include "chrome/browser/safe_browsing/protocol_parser.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
-
-#if defined(OS_WIN)
-#include <Winsock2.h>
-#elif defined(OS_POSIX)
-#include <arpa/inet.h>
-#endif
 
 namespace {
 // Helper function for quick scans of a line oriented protocol. Note that we use
@@ -335,8 +330,9 @@ bool SafeBrowsingProtocolParser::ParseAddChunk(const std::string& list_name,
   SBEntry::Type type = hash_len == sizeof(SBPrefix) ?
       SBEntry::ADD_PREFIX : SBEntry::ADD_FULL_HASH;
 
-  if (list_name == safe_browsing_util::kBinHashList) {
-    // kBinHashList only contains prefixes, no HOSTKEY and COUNT.
+  if (list_name == safe_browsing_util::kBinHashList ||
+      list_name == safe_browsing_util::kDownloadWhiteList) {
+    // These lists only contain prefixes, no HOSTKEY and COUNT.
     DCHECK_EQ(0, remaining % hash_len);
     prefix_count = remaining / hash_len;
     SBChunkHost chunk_host;
@@ -345,11 +341,16 @@ bool SafeBrowsingProtocolParser::ParseAddChunk(const std::string& list_name,
     hosts->push_back(chunk_host);
     if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry, prefix_count))
       return false;
+    DCHECK_GE(remaining, 0);
   } else {
     SBPrefix host;
     const int min_size = sizeof(SBPrefix) + 1;
     while (remaining >= min_size) {
-      ReadHostAndPrefixCount(&chunk_data, &remaining, &host, &prefix_count);
+      if (!ReadHostAndPrefixCount(&chunk_data, &remaining,
+                                  &host, &prefix_count)) {
+        return false;
+      }
+      DCHECK_GE(remaining, 0);
       SBChunkHost chunk_host;
       chunk_host.host = host;
       chunk_host.entry = SBEntry::Create(type, prefix_count);
@@ -357,6 +358,7 @@ bool SafeBrowsingProtocolParser::ParseAddChunk(const std::string& list_name,
       if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry,
                         prefix_count))
         return false;
+      DCHECK_GE(remaining, 0);
     }
   }
   return remaining == 0;
@@ -373,7 +375,8 @@ bool SafeBrowsingProtocolParser::ParseSubChunk(const std::string& list_name,
   SBEntry::Type type = hash_len == sizeof(SBPrefix) ?
       SBEntry::SUB_PREFIX : SBEntry::SUB_FULL_HASH;
 
-  if (list_name == safe_browsing_util::kBinHashList) {
+  if (list_name == safe_browsing_util::kBinHashList ||
+      list_name == safe_browsing_util::kDownloadWhiteList) {
     SBChunkHost chunk_host;
     // Set host to 0 and it won't be used for kBinHashList.
     chunk_host.host = 0;
@@ -383,31 +386,43 @@ bool SafeBrowsingProtocolParser::ParseSubChunk(const std::string& list_name,
     chunk_host.entry = SBEntry::Create(type, prefix_count);
     if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry, prefix_count))
       return false;
+    DCHECK_GE(remaining, 0);
     hosts->push_back(chunk_host);
   } else {
     SBPrefix host;
     const int min_size = 2 * sizeof(SBPrefix) + 1;
     while (remaining >= min_size) {
-      ReadHostAndPrefixCount(&chunk_data, &remaining, &host, &prefix_count);
+      if (!ReadHostAndPrefixCount(&chunk_data, &remaining,
+                                  &host, &prefix_count)) {
+        return false;
+      }
+      DCHECK_GE(remaining, 0);
       SBChunkHost chunk_host;
       chunk_host.host = host;
       chunk_host.entry = SBEntry::Create(type, prefix_count);
       hosts->push_back(chunk_host);
       if (prefix_count == 0) {
         // There is only an add chunk number (no prefixes).
-        chunk_host.entry->set_chunk_id(ReadChunkId(&chunk_data, &remaining));
+        int chunk_id;
+        if (!ReadChunkId(&chunk_data, &remaining, &chunk_id))
+          return false;
+        DCHECK_GE(remaining, 0);
+        chunk_host.entry->set_chunk_id(chunk_id);
         continue;
       }
       if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry,
                         prefix_count))
         return false;
+      DCHECK_GE(remaining, 0);
     }
   }
   return remaining == 0;
 }
 
-void SafeBrowsingProtocolParser::ReadHostAndPrefixCount(
+bool SafeBrowsingProtocolParser::ReadHostAndPrefixCount(
     const char** data, int* remaining, SBPrefix* host, int* count) {
+  if (static_cast<size_t>(*remaining) < sizeof(SBPrefix) + 1)
+    return false;
   // Next 4 bytes are the host prefix.
   memcpy(host, *data, sizeof(SBPrefix));
   *data += sizeof(SBPrefix);
@@ -417,15 +432,23 @@ void SafeBrowsingProtocolParser::ReadHostAndPrefixCount(
   *count = static_cast<unsigned char>(**data);
   *data += 1;
   *remaining -= 1;
+  DCHECK_GE(*remaining, 0);
+  return true;
 }
 
-int SafeBrowsingProtocolParser::ReadChunkId(
-    const char** data, int* remaining) {
-  int chunk_number;
-  memcpy(&chunk_number, *data, sizeof(chunk_number));
-  *data += sizeof(chunk_number);
-  *remaining -= sizeof(chunk_number);
-  return htonl(chunk_number);
+bool SafeBrowsingProtocolParser::ReadChunkId(
+    const char** data, int* remaining, int* chunk_id) {
+  // Protocol says four bytes, not sizeof(int).  Make sure those
+  // values are the same.
+  DCHECK_EQ(sizeof(*chunk_id), 4u);
+  if (static_cast<size_t>(*remaining) < sizeof(*chunk_id))
+    return false;
+  memcpy(chunk_id, *data, sizeof(*chunk_id));
+  *data += sizeof(*chunk_id);
+  *remaining -= sizeof(*chunk_id);
+  *chunk_id = htonl(*chunk_id);
+  DCHECK_GE(*remaining, 0);
+  return true;
 }
 
 bool SafeBrowsingProtocolParser::ReadPrefixes(
@@ -433,20 +456,25 @@ bool SafeBrowsingProtocolParser::ReadPrefixes(
   int hash_len = entry->HashLen();
   for (int i = 0; i < count; ++i) {
     if (entry->IsSub()) {
-      entry->SetChunkIdAtPrefix(i, ReadChunkId(data, remaining));
-      if (*remaining <= 0)
+      int chunk_id;
+      if (!ReadChunkId(data, remaining, &chunk_id))
         return false;
+      DCHECK_GE(*remaining, 0);
+      entry->SetChunkIdAtPrefix(i, chunk_id);
     }
 
+    if (*remaining < hash_len)
+      return false;
     if (entry->IsPrefix()) {
+      DCHECK_EQ(hash_len, (int)sizeof(SBPrefix));
       entry->SetPrefixAt(i, *reinterpret_cast<const SBPrefix*>(*data));
     } else {
+      DCHECK_EQ(hash_len, (int)sizeof(SBFullHash));
       entry->SetFullHashAt(i, *reinterpret_cast<const SBFullHash*>(*data));
     }
     *data += hash_len;
     *remaining -= hash_len;
-    if (*remaining < 0)
-      return false;
+    DCHECK_GE(*remaining, 0);
   }
 
   return true;

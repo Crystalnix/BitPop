@@ -9,6 +9,8 @@
 #include <windows.h>
 #include <wincrypt.h>
 
+#include "crypto/crypto_export.h"
+
 namespace crypto {
 
 // CryptAcquireContext when passed CRYPT_NEWKEYSET or CRYPT_DELETEKEYSET in
@@ -21,11 +23,17 @@ namespace crypto {
 // "The CryptAcquireContext function is generally thread safe unless
 // CRYPT_NEWKEYSET or CRYPT_DELETEKEYSET is specified in the dwFlags
 // parameter."
-BOOL CryptAcquireContextLocked(HCRYPTPROV* prov,
-                               LPCWSTR container,
-                               LPCWSTR provider,
-                               DWORD prov_type,
-                               DWORD flags);
+CRYPTO_EXPORT BOOL CryptAcquireContextLocked(HCRYPTPROV* prov,
+                                             LPCWSTR container,
+                                             LPCWSTR provider,
+                                             DWORD prov_type,
+                                             DWORD flags);
+
+// Wrappers of malloc and free for CryptoAPI routines that need memory
+// allocators, such as in CRYPT_DECODE_PARA. Such routines require WINAPI
+// calling conventions.
+CRYPTO_EXPORT void* WINAPI CryptAlloc(size_t size);
+CRYPTO_EXPORT void WINAPI CryptFree(void* p);
 
 }  // namespace crypto
 

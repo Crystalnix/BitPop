@@ -10,22 +10,25 @@
 #include <set>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ipc/ipc_message.h"
 
-class GURL;
 class Profile;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 // This class manages message and event passing between renderer processes.
 // It maintains a list of processes that are listening to events and a set of
 // open channels.
 //
 // Messaging works this way:
-// - An extension-owned script context (like a toolstrip or a content script)
-// adds an event listener to the "onConnect" event.
+// - An extension-owned script context (like a background page or a content
+//   script) adds an event listener to the "onConnect" event.
 // - Another context calls "extension.connect()" to open a channel to the
 // extension process, or an extension context calls "tabs.connect(tabId)" to
 // open a channel to the content scripts for the given tab.  The EMS notifies
@@ -45,17 +48,17 @@ class TabContents;
 // class. Then we can get rid of ProfileDestroyed().
 class ExtensionMessageService
     : public base::RefCounted<ExtensionMessageService>,
-      public NotificationObserver {
+      public content::NotificationObserver {
  public:
   // A messaging channel. Note that the opening port can be the same as the
-  // receiver, if an extension toolstrip wants to talk to its tab (for example).
+  // receiver, if an extension background page wants to talk to its tab (for
+  // example).
   struct MessageChannel;
   struct MessagePort;
 
   // Javascript function name constants.
   static const char kDispatchOnConnect[];
   static const char kDispatchOnDisconnect[];
-  static const char kDispatchOnMessage[];
 
   // Allocates a pair of port ids.
   // NOTE: this can be called from any thread.
@@ -103,7 +106,7 @@ class ExtensionMessageService
   // the code doesn't detect whether the extension actually exists.
   int OpenSpecialChannelToTab(
       const std::string& extension_id, const std::string& channel_name,
-      TabContents* target_tab_contents, IPC::Message::Sender* source);
+      content::WebContents* target_web_contents, IPC::Message::Sender* source);
 
   // Closes the message channel associated with the given port, and notifies
   // the other side.
@@ -133,17 +136,17 @@ class ExtensionMessageService
   void CloseChannelImpl(MessageChannelMap::iterator channel_iter, int port_id,
                         bool notify_other_port);
 
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // An IPC sender that might be in our list of channels has closed.
   void OnSenderClosed(IPC::Message::Sender* sender);
 
   Profile* profile_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   MessageChannelMap channels_;
 

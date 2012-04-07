@@ -11,7 +11,6 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/i18n/icu_util.h"
-#include "base/memory/memory_debug.h"
 #include "base/message_loop.h"
 #include "base/metrics/stats_table.h"
 #include "base/path_service.h"
@@ -235,7 +234,7 @@ int main(int argc, char* argv[]) {
              .AppendASCII("test_shell").AppendASCII("index.html");
   starting_url = net::FilePathToFileURL(path);
 
-  const std::vector<CommandLine::StringType>& args = parsed_command_line.args();
+  const CommandLine::StringVector& args = parsed_command_line.GetArgs();
   if (!args.empty()) {
     GURL url(args[0]);
     if (url.is_valid()) {
@@ -287,6 +286,11 @@ int main(int argc, char* argv[]) {
         extensions_v8::HeapProfilerExtension::Get());
   }
 
+  if (parsed_command_line.HasSwitch(test_shell::kDartFlags)) {
+    webkit_glue::SetDartFlags(
+        parsed_command_line.GetSwitchValueASCII(test_shell::kDartFlags));
+  }
+
   // Load and initialize the stats table.  Attempt to construct a somewhat
   // unique name to isolate separate instances from each other.
 
@@ -323,12 +327,6 @@ int main(int argc, char* argv[]) {
         base::EventRecorder::current()->StartRecording(script_path);
       if (playback_mode)
         base::EventRecorder::current()->StartPlayback(script_path);
-    }
-
-    if (parsed_command_line.HasSwitch(test_shell::kDebugMemoryInUse)) {
-      base::MemoryDebug::SetMemoryInUseEnabled(true);
-      // Dump all in use memory at startup
-      base::MemoryDebug::DumpAllMemoryInUse();
     }
 
     webkit_glue::SetJavaScriptFlags(TestShell::GetJSFlagsForLoad(0));

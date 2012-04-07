@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include "chrome/browser/sync/engine/net/server_connection_manager.h"
 #include "chrome/browser/sync/sessions/sync_session.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
 
 namespace browser_sync {
 using sessions::SyncSession;
@@ -15,9 +14,10 @@ using sessions::SyncSession;
 SyncerCommand::SyncerCommand() {}
 SyncerCommand::~SyncerCommand() {}
 
-void SyncerCommand::Execute(SyncSession* session) {
-  ExecuteImpl(session);
+SyncerError SyncerCommand::Execute(SyncSession* session) {
+  SyncerError result = ExecuteImpl(session);
   SendNotifications(session);
+  return result;
 }
 
 void SyncerCommand::SendNotifications(SyncSession* session) {
@@ -28,7 +28,7 @@ void SyncerCommand::SendNotifications(SyncSession* session) {
     return;
   }
 
-  if (session->status_controller()->TestAndClearIsDirty()) {
+  if (session->mutable_status_controller()->TestAndClearIsDirty()) {
     SyncEngineEvent event(SyncEngineEvent::STATUS_CHANGED);
     const sessions::SyncSessionSnapshot& snapshot(session->TakeSnapshot());
     event.snapshot = &snapshot;

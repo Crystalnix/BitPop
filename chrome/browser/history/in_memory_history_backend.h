@@ -19,12 +19,11 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class FilePath;
 class GURL;
-class HistoryDatabase;
 class Profile;
 
 namespace history {
@@ -36,7 +35,7 @@ class URLDatabase;
 struct URLsDeletedDetails;
 struct URLsModifiedDetails;
 
-class InMemoryHistoryBackend : public NotificationObserver {
+class InMemoryHistoryBackend : public content::NotificationObserver {
  public:
   InMemoryHistoryBackend();
   virtual ~InMemoryHistoryBackend();
@@ -66,9 +65,9 @@ class InMemoryHistoryBackend : public NotificationObserver {
   }
 
   // Notification callback.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Return the quick history index.
   history::InMemoryURLIndex* InMemoryIndex() const { return index_.get(); }
@@ -88,7 +87,7 @@ class InMemoryHistoryBackend : public NotificationObserver {
   // Returns true if there is a keyword associated with the specified url.
   bool HasKeyword(const GURL& url);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   scoped_ptr<InMemoryDatabase> db_;
 

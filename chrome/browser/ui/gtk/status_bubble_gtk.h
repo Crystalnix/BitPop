@@ -10,15 +10,16 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/status_bubble.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/point.h"
 
 class GtkThemeService;
@@ -33,7 +34,7 @@ class SlideAnimation;
 // window manager to not try to be "helpful" and center our popups, etc.
 // We therefore position it absolutely in a GtkFixed, that we don't own.
 class StatusBubbleGtk : public StatusBubble,
-                        public NotificationObserver,
+                        public content::NotificationObserver,
                         public ui::AnimationDelegate {
  public:
   explicit StatusBubbleGtk(Profile* profile);
@@ -43,24 +44,25 @@ class StatusBubbleGtk : public StatusBubble,
   int y_offset() const { return y_offset_; }
 
   // StatusBubble implementation.
-  virtual void SetStatus(const string16& status);
-  virtual void SetURL(const GURL& url, const string16& languages);
-  virtual void Hide();
-  virtual void MouseMoved(const gfx::Point& location, bool left_content);
+  virtual void SetStatus(const string16& status) OVERRIDE;
+  virtual void SetURL(const GURL& url, const std::string& languages) OVERRIDE;
+  virtual void Hide() OVERRIDE;
+  virtual void MouseMoved(const gfx::Point& location,
+                          bool left_content) OVERRIDE;
 
   // ui::AnimationDelegate implementation.
-  virtual void AnimationEnded(const ui::Animation* animation);
-  virtual void AnimationProgressed(const ui::Animation* animation);
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
   // Called when the download shelf becomes visible or invisible.
   // This is used by to ensure that the status bubble does not obscure
   // the download shelf, when it is visible.
-  virtual void UpdateDownloadShelfVisibility(bool visible);
+  virtual void UpdateDownloadShelfVisibility(bool visible) OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Top of the widget hierarchy for a StatusBubble. This top level widget is
   // guarenteed to have its gtk_widget_name set to "status-bubble" for
@@ -111,19 +113,19 @@ class StatusBubbleGtk : public StatusBubble,
   CHROMEGTK_CALLBACK_1(StatusBubbleGtk, gboolean, HandleEnterNotify,
                        GdkEventCrossing*);
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // Provides colors.
   GtkThemeService* theme_service_;
 
   // The toplevel event box.
-  OwnedWidgetGtk container_;
+  ui::OwnedWidgetGtk container_;
 
   // The GtkAlignment holding |label_|.
   GtkWidget* padding_;
 
   // The GtkLabel holding the text.
-  OwnedWidgetGtk label_;
+  ui::OwnedWidgetGtk label_;
 
   // The status text we want to display when there are no URLs to display.
   std::string status_text_;
@@ -136,7 +138,7 @@ class StatusBubbleGtk : public StatusBubble,
 
   // Used to determine the character set that the user can read (for eliding
   // the url text).
-  string16 languages_;
+  std::string languages_;
 
   // A timer that hides our window after a delay.
   base::OneShotTimer<StatusBubbleGtk> hide_timer_;

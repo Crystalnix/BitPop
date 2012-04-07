@@ -6,24 +6,26 @@
 
 #include "webkit/tools/test_shell/simple_socket_stream_bridge.h"
 
+#include "base/atomicops.h"
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
 #include "googleurl/src/gurl.h"
 #include "net/socket_stream/socket_stream_job.h"
 #include "net/websockets/websocket_job.h"
 #include "net/url_request/url_request_context.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSocketStreamHandle.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSocketStreamHandle.h"
 #include "webkit/glue/websocketstreamhandle_bridge.h"
 #include "webkit/glue/websocketstreamhandle_delegate.h"
 
 using webkit_glue::WebSocketStreamHandleBridge;
 
-static const int kNoSocketId = 0;
+const int kNoSocketId = 0;
 
 namespace {
 
 MessageLoop* g_io_thread;
-scoped_refptr<net::URLRequestContext> g_request_context;
+net::URLRequestContext* g_request_context;
 
 class WebSocketStreamHandleBridgeImpl
     : public WebSocketStreamHandleBridge,
@@ -68,7 +70,7 @@ class WebSocketStreamHandleBridgeImpl
 
   scoped_refptr<net::SocketStreamJob> socket_;
   // Number of pending tasks to handle net::SocketStream::Delegate methods.
-  int num_pending_tasks_;
+  base::subtle::Atomic32 num_pending_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(WebSocketStreamHandleBridgeImpl);
 };
@@ -93,8 +95,7 @@ void WebSocketStreamHandleBridgeImpl::Connect(const GURL& url) {
   AddRef();  // Released in DoOnClose().
   g_io_thread->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoConnect,
-                        url));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoConnect, this, url));
   if (delegate_)
     delegate_->WillOpenStream(handle_, url);
 }
@@ -104,8 +105,8 @@ bool WebSocketStreamHandleBridgeImpl::Send(
   DCHECK(g_io_thread);
   g_io_thread->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoSend,
-                        new std::vector<char>(data)));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoSend, this,
+                 new std::vector<char>(data)));
   return true;
 }
 
@@ -113,45 +114,44 @@ void WebSocketStreamHandleBridgeImpl::Close() {
   DCHECK(g_io_thread);
   g_io_thread->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoClose));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoClose, this));
 }
 
 void WebSocketStreamHandleBridgeImpl::OnConnected(
     net::SocketStream* socket, int max_pending_send_allowed) {
-  ++num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, 1);
   message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoOnConnected,
-                        max_pending_send_allowed));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoOnConnected, this,
+                 max_pending_send_allowed));
 }
 
 void WebSocketStreamHandleBridgeImpl::OnSentData(
     net::SocketStream* socket, int amount_sent) {
-  ++num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, 1);
   message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoOnSentData,
-                        amount_sent));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoOnSentData, this,
+                 amount_sent));
 }
 
 void WebSocketStreamHandleBridgeImpl::OnReceivedData(
     net::SocketStream* socket, const char* data, int len) {
-  ++num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, 1);
   message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &WebSocketStreamHandleBridgeImpl::DoOnReceivedData,
-                        new std::vector<char>(data, data + len)));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoOnReceivedData, this,
+                 new std::vector<char>(data, data + len)));
 }
 
 void WebSocketStreamHandleBridgeImpl::OnClose(net::SocketStream* socket) {
-  ++num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, 1);
   // Release socket_ on IO thread.
   socket_ = NULL;
   socket_id_ = kNoSocketId;
   message_loop_->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &WebSocketStreamHandleBridgeImpl::DoOnClose));
+      base::Bind(&WebSocketStreamHandleBridgeImpl::DoOnClose, this));
 }
 
 void WebSocketStreamHandleBridgeImpl::DoConnect(const GURL& url) {
@@ -182,14 +182,14 @@ void WebSocketStreamHandleBridgeImpl::DoClose() {
 void WebSocketStreamHandleBridgeImpl::DoOnConnected(
     int max_pending_send_allowed) {
   DCHECK(MessageLoop::current() == message_loop_);
-  --num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, -1);
   if (delegate_)
     delegate_->DidOpenStream(handle_, max_pending_send_allowed);
 }
 
 void WebSocketStreamHandleBridgeImpl::DoOnSentData(int amount_sent) {
   DCHECK(MessageLoop::current() == message_loop_);
-  --num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, -1);
   if (delegate_)
     delegate_->DidSendData(handle_, amount_sent);
 }
@@ -197,7 +197,7 @@ void WebSocketStreamHandleBridgeImpl::DoOnSentData(int amount_sent) {
 void WebSocketStreamHandleBridgeImpl::DoOnReceivedData(
     std::vector<char>* data) {
   DCHECK(MessageLoop::current() == message_loop_);
-  --num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, -1);
   scoped_ptr<std::vector<char> > scoped_data(data);
   if (delegate_)
     delegate_->DidReceiveData(handle_, &(data->at(0)), data->size());
@@ -205,7 +205,7 @@ void WebSocketStreamHandleBridgeImpl::DoOnReceivedData(
 
 void WebSocketStreamHandleBridgeImpl::DoOnClose() {
   DCHECK(MessageLoop::current() == message_loop_);
-  --num_pending_tasks_;
+  base::subtle::NoBarrier_AtomicIncrement(&num_pending_tasks_, -1);
   // Don't handle OnClose if there are pending tasks.
   DCHECK_EQ(num_pending_tasks_, 0);
   DCHECK(!socket_);
@@ -223,21 +223,20 @@ void WebSocketStreamHandleBridgeImpl::DoOnClose() {
 void SimpleSocketStreamBridge::InitializeOnIOThread(
     net::URLRequestContext* request_context) {
   g_io_thread = MessageLoop::current();
-  g_request_context = request_context;
+  if ((g_request_context = request_context))
+    g_request_context->AddRef();
 }
 
 void SimpleSocketStreamBridge::Cleanup() {
   g_io_thread = NULL;
+  if (g_request_context)
+    g_request_context->Release();
   g_request_context = NULL;
 }
 
-namespace webkit_glue {
-
 /* static */
-WebSocketStreamHandleBridge* WebSocketStreamHandleBridge::Create(
+webkit_glue::WebSocketStreamHandleBridge* SimpleSocketStreamBridge::Create(
     WebKit::WebSocketStreamHandle* handle,
-    WebSocketStreamHandleDelegate* delegate) {
+    webkit_glue::WebSocketStreamHandleDelegate* delegate) {
   return new WebSocketStreamHandleBridgeImpl(handle, delegate);
 }
-
-}  // namespace webkit_glue

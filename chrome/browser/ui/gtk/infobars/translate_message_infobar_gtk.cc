@@ -7,10 +7,13 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
+#include "ui/base/gtk/gtk_signal_registrar.h"
 
 TranslateMessageInfoBar::TranslateMessageInfoBar(
+    InfoBarTabHelper* owner,
     TranslateInfoBarDelegate* delegate)
-    : TranslateInfoBarBase(delegate) {
+    : TranslateInfoBarBase(owner, delegate) {
 }
 
 TranslateMessageInfoBar::~TranslateMessageInfoBar() {
@@ -19,7 +22,7 @@ TranslateMessageInfoBar::~TranslateMessageInfoBar() {
 void TranslateMessageInfoBar::Init() {
   TranslateInfoBarBase::Init();
 
-  GtkWidget* hbox = gtk_hbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* hbox = gtk_hbox_new(FALSE, ui::kControlSpacing);
   gtk_util::CenterWidgetInHBox(hbox_, hbox, false, 0);
 
   std::string text = UTF16ToUTF8(GetDelegate()->GetMessageInfoBarText());
@@ -28,7 +31,8 @@ void TranslateMessageInfoBar::Init() {
   if (!button_text.empty()) {
     GtkWidget* button =
         gtk_button_new_with_label(UTF16ToUTF8(button_text).c_str());
-    g_signal_connect(button, "clicked",G_CALLBACK(&OnButtonPressedThunk), this);
+    Signals()->Connect(button, "clicked",G_CALLBACK(&OnButtonPressedThunk),
+                       this);
     gtk_box_pack_start(GTK_BOX(hbox), button, FALSE, FALSE, 0);
   }
 }

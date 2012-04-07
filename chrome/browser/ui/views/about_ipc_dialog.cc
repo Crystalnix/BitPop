@@ -4,12 +4,16 @@
 
 // Need to include this before any other file because it defines
 // IPC_MESSAGE_LOG_ENABLED. We need to use it to define
-// IPC_MESSAGE_MACROS_LOG_ENABLED so render_messages.h will generate the
+// IPC_MESSAGE_MACROS_LOG_ENABLED so that all_messages.h will generate the
 // ViewMsgLog et al. functions.
 #include "ipc/ipc_message.h"
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
 #define IPC_MESSAGE_MACROS_LOG_ENABLED
+
+// We need to do this real early to be sure IPC_MESSAGE_MACROS_LOG_ENABLED
+// doesn't get undefined.
+#include "chrome/common/all_messages.h"
 
 #include "chrome/browser/ui/views/about_ipc_dialog.h"
 
@@ -21,20 +25,16 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/render_messages.h"
-#include "content/common/devtools_messages.h"
-#include "content/common/plugin_messages.h"
+#include "content/public/browser/content_ipc_logging.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
-#include "views/controls/button/text_button.h"
-#include "views/controls/native/native_view_host.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -214,8 +214,7 @@ AboutIPCDialog::~AboutIPCDialog() {
 void AboutIPCDialog::RunDialog() {
   if (!g_active_dialog) {
     g_active_dialog = new AboutIPCDialog;
-    views::Window::CreateChromeWindow(NULL, gfx::Rect(),
-                                      g_active_dialog)->Show();
+    views::Widget::CreateWindow(g_active_dialog)->Show();
   } else {
     // TODO(brettw) it would be nice to focus the existing window.
   }
@@ -267,8 +266,8 @@ int AboutIPCDialog::GetDialogButtons() const {
   return 0;
 }
 
-std::wstring AboutIPCDialog::GetWindowTitle() const {
-  return L"about:ipc";
+string16 AboutIPCDialog::GetWindowTitle() const {
+  return ASCIIToUTF16("about:ipc");
 }
 
 void AboutIPCDialog::Layout() {
@@ -353,11 +352,11 @@ void AboutIPCDialog::ButtonPressed(
     if (tracking_) {
       track_toggle_->SetText(kStartTrackingLabel);
       tracking_ = false;
-      g_browser_process->SetIPCLoggingEnabled(false);
+      content::EnableIPCLogging(false);
     } else {
       track_toggle_->SetText(kStopTrackingLabel);
       tracking_ = true;
-      g_browser_process->SetIPCLoggingEnabled(true);
+      content::EnableIPCLogging(true);
     }
     track_toggle_->SchedulePaint();
   } else if (button == clear_button_) {

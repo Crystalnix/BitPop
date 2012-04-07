@@ -11,6 +11,7 @@
         {
           'target_name' : 'mach_override',
           'type': 'static_library',
+          'toolsets': ['host', 'target'],
           'sources': [
             'mach_override.c',
             'mach_override.h',
@@ -20,9 +21,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

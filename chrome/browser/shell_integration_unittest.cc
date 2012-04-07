@@ -10,13 +10,13 @@
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -27,6 +27,8 @@
 #endif
 
 #define FPL FILE_PATH_LITERAL
+
+using content::BrowserThread;
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 namespace {
@@ -78,7 +80,7 @@ TEST(ShellIntegrationTest, GetDesktopShortcutTemplate) {
   const char kTestData2[] = "a different testing string";
 
   MessageLoop message_loop;
-  BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+  content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
   {
     ScopedTempDir temp_dir;
@@ -203,7 +205,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Icon=chrome-http__gmail.com\n"
       "Type=Application\n"
       "Categories=Application;Network;WebBrowser;\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=gmail.com\n"
+#endif
     },
 
     // Make sure we don't insert duplicate shebangs.
@@ -221,7 +227,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Name=GMail\n"
       "Exec=/opt/google/chrome/google-chrome --app=http://gmail.com/\n"
       "Icon=chrome-http__gmail.com\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=gmail.com\n"
+#endif
     },
 
     // Make sure i18n-ed comments are removed.
@@ -239,7 +249,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Name=GMail\n"
       "Exec=/opt/google/chrome/google-chrome --app=http://gmail.com/\n"
       "Icon=chrome-http__gmail.com\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=gmail.com\n"
+#endif
     },
 
     // Make sure that empty icons are replaced by the chrome icon.
@@ -258,7 +272,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Name=GMail\n"
       "Exec=/opt/google/chrome/google-chrome --app=http://gmail.com/\n"
       "Icon=/opt/google/chrome/product_logo_48.png\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=gmail.com\n"
+#endif
     },
 
     // Now we're starting to be more evil...
@@ -276,7 +294,11 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "Exec=/opt/google/chrome/google-chrome "
       "--app=http://evil.com/evil%20--join-the-b0tnet\n"
       "Icon=chrome-http__evil.com_evil\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=evil.com__evil%20--join-the-b0tnet\n"
+#endif
     },
     { "http://evil.com/evil; rm -rf /; \"; rm -rf $HOME >ownz0red",
       "Innocent Title",
@@ -296,8 +318,12 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       // be; finally, \\ becomes \\\\ when represented in a C++ string!
       "-rf%20\\\\$HOME%20%3Eownz0red\"\n"
       "Icon=chrome-http__evil.com_evil\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=evil.com__evil;%20rm%20-rf%20_;%20%22;%20"
       "rm%20-rf%20$HOME%20%3Eownz0red\n"
+#endif
     },
     { "http://evil.com/evil | cat `echo ownz0red` >/dev/null",
       "Innocent Title",
@@ -314,8 +340,12 @@ TEST(ShellIntegrationTest, GetDesktopFileContents) {
       "--app=http://evil.com/evil%20%7C%20cat%20%60echo%20ownz0red"
       "%60%20%3E/dev/null\n"
       "Icon=chrome-http__evil.com_evil\n"
+#if !defined(USE_AURA)
+      // Aura Chrome creates browser window in a single X11 window, so
+      // WMClass does not matter.
       "StartupWMClass=evil.com__evil%20%7C%20cat%20%60echo%20ownz0red"
       "%60%20%3E_dev_null\n"
+#endif
     },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); i++) {
@@ -342,7 +372,7 @@ TEST(ShellIntegrationTest, GetChromiumAppIdTest) {
   FilePath default_user_data_dir;
   chrome::GetDefaultUserDataDirectory(&default_user_data_dir);
   FilePath default_profile_path =
-      default_user_data_dir.AppendASCII(chrome::kNotSignedInProfile);
+      default_user_data_dir.AppendASCII(chrome::kInitialProfile);
   EXPECT_EQ(BrowserDistribution::GetDistribution()->GetBrowserAppId(),
             ShellIntegration::GetChromiumAppId(default_profile_path));
 

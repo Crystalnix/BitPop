@@ -1,64 +1,88 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/test/ui/ui_test.h"
-
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
+#include "base/utf_string_conversions.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/html_dialog_view.h"
-#include "chrome/browser/ui/webui/html_dialog_ui.h"
+#include "chrome/browser/ui/webui/test_html_dialog_ui_delegate.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/widget/widget.h"
 
+using content::WebContents;
 using testing::Eq;
 
 namespace {
 
-// Window non-client-area means that the minimum size for the window
-// won't be the actual minimum size - our layout and resizing code
-// makes sure the chrome is always visible.
-const int kMinimumWidthToTestFor = 20;
-const int kMinimumHeightToTestFor = 30;
+// Initial size of HTMLDialog for SizeWindow test case.
+const int kInitialWidth = 40;
+const int kInitialHeight = 40;
 
-class TestHtmlDialogUIDelegate : public HtmlDialogUIDelegate {
+class TestHtmlDialogView: public HtmlDialogView {
  public:
-  TestHtmlDialogUIDelegate() {}
-  virtual ~TestHtmlDialogUIDelegate() {}
+  TestHtmlDialogView(Profile* profile,
+                     Browser* browser,
+                     HtmlDialogUIDelegate* delegate)
+      : HtmlDialogView(profile, browser, delegate),
+        painted_(false),
+        should_quit_on_size_change_(false) {
+    delegate->GetDialogSize(&last_size_);
+  }
 
-  // HTMLDialogUIDelegate implementation:
-  virtual bool IsDialogModal() const {
-    return true;
+  bool painted() const {
+    return painted_;
   }
-  virtual std::wstring GetDialogTitle() const {
-    return std::wstring(L"Test");
+
+  void set_should_quit_on_size_change(bool should_quit) {
+    should_quit_on_size_change_ = should_quit;
   }
-  virtual GURL GetDialogContentURL() const {
-    return GURL(chrome::kAboutBlankURL);
+
+ private:
+  // TODO(xiyuan): Update this when WidgetDelegate has bounds change hook.
+  virtual void SaveWindowPlacement(const gfx::Rect& bounds,
+                                   ui::WindowShowState show_state) OVERRIDE {
+    if (should_quit_on_size_change_ && last_size_ != bounds.size()) {
+      // Schedule message loop quit because we could be called while
+      // the bounds change call is on the stack and not in the nested message
+      // loop.
+      MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
+          &MessageLoop::Quit, base::Unretained(MessageLoop::current())));
+    }
+
+    last_size_ = bounds.size();
   }
-  virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const { }
-  virtual void GetDialogSize(gfx::Size* size) const {
-    size->set_width(40);
-    size->set_height(40);
+
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE {
+    should_quit_on_size_change_ = false;  // No quit when we are closing.
+    HtmlDialogView::OnDialogClosed(json_retval);
   }
-  virtual std::string GetDialogArgs() const {
-    return std::string();
+
+  virtual void OnTabMainFrameFirstRender() OVERRIDE {
+    HtmlDialogView::OnTabMainFrameFirstRender();
+    painted_ = true;
+    MessageLoop::current()->Quit();
   }
-  virtual void OnDialogClosed(const std::string& json_retval) { }
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog) {
-    if (out_close_dialog)
-      *out_close_dialog = true;
-  }
-  virtual bool ShouldShowDialogTitle() const { return true; }
+
+  // Whether first rendered notification is received.
+  bool painted_;
+
+  // Whether we should quit message loop when size change is detected.
+  bool should_quit_on_size_change_;
+  gfx::Size last_size_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestHtmlDialogView);
 };
 
 }  // namespace
@@ -66,51 +90,6 @@ class TestHtmlDialogUIDelegate : public HtmlDialogUIDelegate {
 class HtmlDialogBrowserTest : public InProcessBrowserTest {
  public:
   HtmlDialogBrowserTest() {}
-
-#if defined(OS_WIN)
-  class WindowChangedObserver : public MessageLoopForUI::Observer {
-   public:
-    WindowChangedObserver() {}
-
-    static WindowChangedObserver* GetInstance() {
-      return Singleton<WindowChangedObserver>::get();
-    }
-
-    // This method is called before processing a message.
-    virtual void WillProcessMessage(const MSG& msg) {}
-
-    // This method is called after processing a message.
-    virtual void DidProcessMessage(const MSG& msg) {
-      // Either WM_PAINT or WM_TIMER indicates the actual work of
-      // pushing through the window resizing messages is done since
-      // they are lower priority (we don't get to see the
-      // WM_WINDOWPOSCHANGED message here).
-      if (msg.message == WM_PAINT || msg.message == WM_TIMER)
-        MessageLoop::current()->Quit();
-    }
-  };
-#elif !defined(OS_MACOSX)
-  class WindowChangedObserver : public MessageLoopForUI::Observer {
-   public:
-    WindowChangedObserver() {}
-
-    static WindowChangedObserver* GetInstance() {
-      return Singleton<WindowChangedObserver>::get();
-    }
-
-    // This method is called before processing a message.
-    virtual void WillProcessEvent(GdkEvent* event) {}
-
-    // This method is called after processing a message.
-    virtual void DidProcessEvent(GdkEvent* event) {
-      // Quit once the GDK_CONFIGURE event has been processed - seeing
-      // this means the window sizing request that was made actually
-      // happened.
-      if (event->type == GDK_CONFIGURE)
-        MessageLoop::current()->Quit();
-    }
-  };
-#endif
 };
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
@@ -125,19 +104,21 @@ class HtmlDialogBrowserTest : public InProcessBrowserTest {
 #endif
 
 IN_PROC_BROWSER_TEST_F(HtmlDialogBrowserTest, MAYBE_SizeWindow) {
-  HtmlDialogUIDelegate* delegate = new TestHtmlDialogUIDelegate();
+  test::TestHtmlDialogUIDelegate* delegate = new test::TestHtmlDialogUIDelegate(
+      GURL(chrome::kChromeUIChromeURLsURL));
+  delegate->set_size(kInitialWidth, kInitialHeight);
 
-  HtmlDialogView* html_view =
-      new HtmlDialogView(browser()->profile(), delegate);
-  TabContents* tab_contents = browser()->GetSelectedTabContents();
-  ASSERT_TRUE(tab_contents != NULL);
-  views::Window::CreateChromeWindow(tab_contents->GetMessageBoxRootWindow(),
-                                    gfx::Rect(), html_view);
+  TestHtmlDialogView* html_view =
+      new TestHtmlDialogView(browser()->profile(), browser(), delegate);
+  WebContents* web_contents = browser()->GetSelectedWebContents();
+  ASSERT_TRUE(web_contents != NULL);
+  views::Widget::CreateWindowWithParent(
+      html_view, web_contents->GetView()->GetTopLevelNativeWindow());
   html_view->InitDialog();
-  html_view->window()->Show();
+  html_view->GetWidget()->Show();
 
-  MessageLoopForUI::current()->AddObserver(
-      WindowChangedObserver::GetInstance());
+  // TestHtmlDialogView should quit current message loop on size change.
+  html_view->set_should_quit_on_size_change(true);
 
   gfx::Rect bounds = html_view->GetWidget()->GetClientAreaScreenBounds();
 
@@ -148,13 +129,13 @@ IN_PROC_BROWSER_TEST_F(HtmlDialogBrowserTest, MAYBE_SizeWindow) {
   set_bounds.set_width(400);
   set_bounds.set_height(300);
 
-  html_view->MoveContents(tab_contents, set_bounds);
-  ui_test_utils::RunMessageLoop();
+  html_view->MoveContents(web_contents, set_bounds);
+  ui_test_utils::RunMessageLoop();  // TestHtmlDialogView will quit.
   actual_bounds = html_view->GetWidget()->GetClientAreaScreenBounds();
   EXPECT_EQ(set_bounds, actual_bounds);
 
-  rwhv_bounds =
-      html_view->tab_contents()->GetRenderWidgetHostView()->GetViewBounds();
+  rwhv_bounds = html_view->dom_contents()->web_contents()->
+      GetRenderWidgetHostView()->GetViewBounds();
   EXPECT_LT(0, rwhv_bounds.width());
   EXPECT_LT(0, rwhv_bounds.height());
   EXPECT_GE(set_bounds.width(), rwhv_bounds.width());
@@ -164,29 +145,29 @@ IN_PROC_BROWSER_TEST_F(HtmlDialogBrowserTest, MAYBE_SizeWindow) {
   set_bounds.set_width(550);
   set_bounds.set_height(250);
 
-  html_view->MoveContents(tab_contents, set_bounds);
-  ui_test_utils::RunMessageLoop();
+  html_view->MoveContents(web_contents, set_bounds);
+  ui_test_utils::RunMessageLoop();  // TestHtmlDialogView will quit.
   actual_bounds = html_view->GetWidget()->GetClientAreaScreenBounds();
   EXPECT_EQ(set_bounds, actual_bounds);
 
-  rwhv_bounds =
-      html_view->tab_contents()->GetRenderWidgetHostView()->GetViewBounds();
+  rwhv_bounds = html_view->dom_contents()->web_contents()->
+      GetRenderWidgetHostView()->GetViewBounds();
   EXPECT_LT(0, rwhv_bounds.width());
   EXPECT_LT(0, rwhv_bounds.height());
   EXPECT_GE(set_bounds.width(), rwhv_bounds.width());
   EXPECT_GE(set_bounds.height(), rwhv_bounds.height());
 
   // Get very small.
-  set_bounds.set_width(kMinimumWidthToTestFor);
-  set_bounds.set_height(kMinimumHeightToTestFor);
+  gfx::Size min_size = html_view->GetWidget()->GetMinimumSize();
+  set_bounds.set_size(min_size);
 
-  html_view->MoveContents(tab_contents, set_bounds);
-  ui_test_utils::RunMessageLoop();
+  html_view->MoveContents(web_contents, set_bounds);
+  ui_test_utils::RunMessageLoop();  // TestHtmlDialogView will quit.
   actual_bounds = html_view->GetWidget()->GetClientAreaScreenBounds();
   EXPECT_EQ(set_bounds, actual_bounds);
 
-  rwhv_bounds =
-      html_view->tab_contents()->GetRenderWidgetHostView()->GetViewBounds();
+  rwhv_bounds = html_view->dom_contents()->web_contents()->
+      GetRenderWidgetHostView()->GetViewBounds();
   EXPECT_LT(0, rwhv_bounds.width());
   EXPECT_LT(0, rwhv_bounds.height());
   EXPECT_GE(set_bounds.width(), rwhv_bounds.width());
@@ -196,12 +177,33 @@ IN_PROC_BROWSER_TEST_F(HtmlDialogBrowserTest, MAYBE_SizeWindow) {
   set_bounds.set_width(0);
   set_bounds.set_height(0);
 
-  html_view->MoveContents(tab_contents, set_bounds);
-  ui_test_utils::RunMessageLoop();
+  html_view->MoveContents(web_contents, set_bounds);
+  ui_test_utils::RunMessageLoop();  // TestHtmlDialogView will quit.
   actual_bounds = html_view->GetWidget()->GetClientAreaScreenBounds();
   EXPECT_LT(0, actual_bounds.width());
   EXPECT_LT(0, actual_bounds.height());
+}
 
-  MessageLoopForUI::current()->RemoveObserver(
-      WindowChangedObserver::GetInstance());
+// This is timing out about 5~10% of runs. See crbug.com/86059.
+IN_PROC_BROWSER_TEST_F(HtmlDialogBrowserTest, DISABLED_WebContentRendered) {
+  HtmlDialogUIDelegate* delegate = new test::TestHtmlDialogUIDelegate(
+      GURL(chrome::kChromeUIChromeURLsURL));
+
+  TestHtmlDialogView* html_view =
+      new TestHtmlDialogView(browser()->profile(), browser(), delegate);
+  WebContents* web_contents = browser()->GetSelectedWebContents();
+  ASSERT_TRUE(web_contents != NULL);
+  views::Widget::CreateWindowWithParent(
+      html_view, web_contents->GetView()->GetTopLevelNativeWindow());
+  EXPECT_TRUE(html_view->initialized_);
+
+  html_view->InitDialog();
+  html_view->GetWidget()->Show();
+
+  // TestHtmlDialogView::OnTabMainFrameFirstRender() will Quit().
+  MessageLoopForUI::current()->Run();
+
+  EXPECT_TRUE(html_view->painted());
+
+  html_view->GetWidget()->Close();
 }

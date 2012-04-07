@@ -1,71 +1,78 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/browsing_data_appcache_helper.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "webkit/appcache/appcache_database.h"
 #include "webkit/appcache/appcache_storage.h"
 
 using appcache::AppCacheDatabase;
+using content::BrowserThread;
 
 BrowsingDataAppCacheHelper::BrowsingDataAppCacheHelper(Profile* profile)
-    : request_context_getter_(profile->GetRequestContext()),
-      is_fetching_(false) {
+    : is_fetching_(false),
+      appcache_service_(profile->GetAppCacheService()) {
 }
 
-void BrowsingDataAppCacheHelper::StartFetching(Callback0::Type* callback) {
+void BrowsingDataAppCacheHelper::StartFetching(const base::Closure& callback) {
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     DCHECK(!is_fetching_);
-    DCHECK(callback);
+    DCHECK_EQ(false, callback.is_null());
     is_fetching_ = true;
     info_collection_ = new appcache::AppCacheInfoCollection;
-    completion_callback_.reset(callback);
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, NewRunnableMethod(
-        this, &BrowsingDataAppCacheHelper::StartFetching, callback));
+    completion_callback_ = callback;
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&BrowsingDataAppCacheHelper::StartFetching, this, callback));
     return;
   }
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  appcache_info_callback_ =
-      new net::CancelableCompletionCallback<BrowsingDataAppCacheHelper>(
-          this, &BrowsingDataAppCacheHelper::OnFetchComplete);
-  GetAppCacheService()->GetAllAppCacheInfo(info_collection_,
-                                           appcache_info_callback_);
+  appcache_info_callback_.Reset(
+      base::Bind(&BrowsingDataAppCacheHelper::OnFetchComplete,
+                 base::Unretained(this)));
+  appcache_service_->GetAllAppCacheInfo(info_collection_,
+                                        appcache_info_callback_.callback());
 }
 
 void BrowsingDataAppCacheHelper::CancelNotification() {
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    completion_callback_.reset();
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, NewRunnableMethod(
-        this, &BrowsingDataAppCacheHelper::CancelNotification));
+    completion_callback_.Reset();
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&BrowsingDataAppCacheHelper::CancelNotification, this));
     return;
   }
 
-  if (appcache_info_callback_)
-    appcache_info_callback_.release()->Cancel();
+  appcache_info_callback_.Cancel();
 }
 
 void BrowsingDataAppCacheHelper::DeleteAppCacheGroup(
     const GURL& manifest_url) {
   if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, NewRunnableMethod(
-        this, &BrowsingDataAppCacheHelper::DeleteAppCacheGroup,
-        manifest_url));
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&BrowsingDataAppCacheHelper::DeleteAppCacheGroup, this,
+                   manifest_url));
     return;
   }
-  GetAppCacheService()->DeleteAppCacheGroup(manifest_url, NULL);
+
+  appcache_service_->DeleteAppCacheGroup(
+      manifest_url, net::CompletionCallback());
 }
 
 BrowsingDataAppCacheHelper::~BrowsingDataAppCacheHelper() {}
 
 void BrowsingDataAppCacheHelper::OnFetchComplete(int rv) {
   if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    // Filter out appache info entries for extensions. Extension state is not
+    // Filter out appcache info entries for extensions. Extension state is not
     // considered browsing data.
     typedef std::map<GURL, appcache::AppCacheInfoVector> InfoByOrigin;
     InfoByOrigin& origin_map = info_collection_->infos_by_origin;
@@ -77,28 +84,19 @@ void BrowsingDataAppCacheHelper::OnFetchComplete(int rv) {
         origin_map.erase(current);
     }
 
-    appcache_info_callback_ = NULL;
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE, NewRunnableMethod(
-        this, &BrowsingDataAppCacheHelper::OnFetchComplete, rv));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&BrowsingDataAppCacheHelper::OnFetchComplete, this, rv));
     return;
   }
 
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(is_fetching_);
   is_fetching_ = false;
-  if (completion_callback_ != NULL) {
-    completion_callback_->Run();
-    completion_callback_.reset();
+  if (!completion_callback_.is_null()) {
+    completion_callback_.Run();
+    completion_callback_.Reset();
   }
-}
-
-ChromeAppCacheService* BrowsingDataAppCacheHelper::GetAppCacheService() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  ChromeURLRequestContext* request_context =
-      reinterpret_cast<ChromeURLRequestContext*>(
-          request_context_getter_->GetURLRequestContext());
-  return request_context ? request_context->appcache_service()
-                         : NULL;
 }
 
 CannedBrowsingDataAppCacheHelper::CannedBrowsingDataAppCacheHelper(
@@ -144,9 +142,8 @@ bool CannedBrowsingDataAppCacheHelper::empty() const {
 }
 
 void CannedBrowsingDataAppCacheHelper::StartFetching(
-    Callback0::Type* completion_callback) {
-  completion_callback->Run();
-  delete completion_callback;
+    const base::Closure& completion_callback) {
+  completion_callback.Run();
 }
 
 CannedBrowsingDataAppCacheHelper::~CannedBrowsingDataAppCacheHelper() {}

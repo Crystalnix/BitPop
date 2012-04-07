@@ -7,22 +7,33 @@
 
 #include "ui/gfx/gl/gl_surface.h"
 
+#include "base/compiler_specific.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/gfx/gl/gl_export.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
 namespace gfx {
 
 // Base class for GLX surfaces.
-class GLSurfaceGLX : public GLSurface {
+class GL_EXPORT GLSurfaceGLX : public GLSurface {
  public:
   GLSurfaceGLX();
   virtual ~GLSurfaceGLX();
 
   static bool InitializeOneOff();
-  static Display* GetDisplay();
 
-  // Get the FB config that the surface was created with.
+  // These aren't particularly tied to surfaces, but since we already
+  // have the static InitializeOneOff here, it's easiest to reuse its
+  // initialization guards.
+  static const char* GetGLXExtensions();
+  static bool HasGLXExtension(const char* name);
+  static bool IsCreateContextRobustnessSupported();
+
+  virtual void* GetDisplay() OVERRIDE;
+
+  // Get the FB config that the surface was created with or NULL if it is not
+  // a GLX drawable.
   virtual void* GetConfig() = 0;
 
  private:
@@ -30,41 +41,46 @@ class GLSurfaceGLX : public GLSurface {
 };
 
 // A surface used to render to a view.
-class NativeViewGLSurfaceGLX : public GLSurfaceGLX {
+class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX {
  public:
   explicit NativeViewGLSurfaceGLX(gfx::PluginWindowHandle window);
   virtual ~NativeViewGLSurfaceGLX();
 
   // Implement GLSurfaceGLX.
-  virtual bool Initialize();
-  virtual void Destroy();
-  virtual bool IsOffscreen();
-  virtual bool SwapBuffers();
-  virtual gfx::Size GetSize();
-  virtual void* GetHandle();
-  virtual void* GetConfig();
+  virtual bool Initialize() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+  virtual gfx::Size GetSize() OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual std::string GetExtensions() OVERRIDE;
+  virtual void* GetConfig() OVERRIDE;
+  virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
+
+ protected:
+  NativeViewGLSurfaceGLX();
+
+  gfx::PluginWindowHandle window_;
 
  private:
-  gfx::PluginWindowHandle window_;
   void* config_;
-  XID glx_window_;
   DISALLOW_COPY_AND_ASSIGN(NativeViewGLSurfaceGLX);
 };
 
 // A surface used to render to an offscreen pbuffer.
-class PbufferGLSurfaceGLX : public GLSurfaceGLX {
+class GL_EXPORT PbufferGLSurfaceGLX : public GLSurfaceGLX {
  public:
   explicit PbufferGLSurfaceGLX(const gfx::Size& size);
   virtual ~PbufferGLSurfaceGLX();
 
   // Implement GLSurfaceGLX.
-  virtual bool Initialize();
-  virtual void Destroy();
-  virtual bool IsOffscreen();
-  virtual bool SwapBuffers();
-  virtual gfx::Size GetSize();
-  virtual void* GetHandle();
-  virtual void* GetConfig();
+  virtual bool Initialize() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+  virtual gfx::Size GetSize() OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual void* GetConfig() OVERRIDE;
 
  private:
   gfx::Size size_;

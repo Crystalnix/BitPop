@@ -1,14 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_webstore_private_api.h"
 
 #include <string>
-#include <vector>
 
-#include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/crx_installer.h"
@@ -16,84 +15,90 @@
 #include "chrome/browser/extensions/extension_install_dialog.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/net/gaia/token_service.h"
+#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/token_service.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/net/gaia/gaia_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
-#include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
+const char kAppInstallBubbleKey[] = "appInstallBubble";
 const char kIconDataKey[] = "iconData";
+const char kIconUrlKey[] = "iconUrl";
 const char kIdKey[] = "id";
 const char kLocalizedNameKey[] = "localizedName";
 const char kLoginKey[] = "login";
 const char kManifestKey[] = "manifest";
 const char kTokenKey[] = "token";
 
-const char kImageDecodeError[] = "Image decode failed";
+const char kCannotSpecifyIconDataAndUrlError[] =
+    "You cannot specify both icon data and an icon url";
+const char kInvalidIconUrlError[] = "Invalid icon url";
 const char kInvalidIdError[] = "Invalid id";
 const char kInvalidManifestError[] = "Invalid manifest";
-const char kNoPreviousBeginInstallError[] =
-    "* does not match a previous call to beginInstall";
+const char kNoPreviousBeginInstallWithManifestError[] =
+    "* does not match a previous call to beginInstallWithManifest3";
 const char kUserCancelledError[] = "User cancelled install";
-const char kUserGestureRequiredError[] =
-    "This function must be called during a user gesture";
 
 ProfileSyncService* test_sync_service = NULL;
-BrowserSignin* test_signin = NULL;
-bool ignore_user_gesture_for_tests = false;
-
-// A flag used for BeginInstallWithManifest::SetAutoConfirmForTests.
-enum AutoConfirmForTest {
-  DO_NOT_SKIP = 0,
-  PROCEED,
-  ABORT
-};
-AutoConfirmForTest auto_confirm_for_tests = DO_NOT_SKIP;
-
 
 // Returns either the test sync service, or the real one from |profile|.
 ProfileSyncService* GetSyncService(Profile* profile) {
+  // TODO(webstore): It seems |test_sync_service| is not used anywhere. It
+  // should be removed.
   if (test_sync_service)
     return test_sync_service;
   else
-    return profile->GetProfileSyncService();
+    return ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
 }
 
-BrowserSignin* GetBrowserSignin(Profile* profile) {
-  if (test_signin)
-    return test_signin;
-  else
-    return profile->GetBrowserSignin();
-}
+// Whitelists extension IDs for use by webstorePrivate.silentlyInstall.
+bool trust_test_ids = false;
 
-bool IsWebStoreURL(Profile* profile, const GURL& url) {
-  ExtensionService* service = profile->GetExtensionService();
-  const Extension* store = service->GetWebStoreApp();
-  if (!store) {
-    NOTREACHED();
-    return false;
-  }
-  return (service->GetExtensionByWebExtent(url) == store);
+bool IsTrustedForSilentInstall(const std::string& id) {
+  // Trust the extensions in api_test/webstore_private/bundle when the flag
+  // is set.
+  if (trust_test_ids &&
+      (id == "begfmnajjkbjdgmffnjaojchoncnmngg" ||
+       id == "bmfoocgfinpmkmlbjhcbofejhkhlbchk" ||
+       id == "mpneghmdnmaolkljkipbhaienajcflfe"))
+    return true;
+
+  return
+      id == "jgoepmocgafhnchmokaimcmlojpnlkhp" ||  // +1 Extension
+      id == "cpembckmhnjipbgbnfiocbgnkpjdokdd" ||  // +1 Extension - dev
+      id == "boemmnepglcoinjcdlfcpcbmhiecichi" ||  // Notifications
+      id == "flibmgiapaohcbondaoopaalfejliklp" ||  // Notifications - dev
+      id == "nckgahadagoaajjgafhacjanaoiihapd" ||  // Talk
+      id == "eggnbpckecmjlblplehfpjjdhhidfdoj" ||  // Talk Beta
+      id == "dlppkpafhbajpcmmoheippocdidnckmm" ||  // Remaining are placeholders
+      id == "hmglfmpefabcafaimbpldpambdfomanl" ||
+      id == "idfijlieiecpfcjckpkliefekpokhhnd" ||
+      id == "jaokjbijaokooelpahnlmbciccldmfla" ||
+      id == "kdjeommiakphmeionoojjljlecmpaldd" ||
+      id == "lpdeojkfhenboeibhkjhiancceeboknd";
 }
 
 // Helper to create a dictionary with login and token properties set from
 // the appropriate values in the passed-in |profile|.
 DictionaryValue* CreateLoginResult(Profile* profile) {
   DictionaryValue* dictionary = new DictionaryValue();
-  std::string username = GetBrowserSignin(profile)->GetSignedInUsername();
+  std::string username = profile->GetPrefs()->GetString(
+      prefs::kGoogleServicesUsername);
   dictionary->SetString(kLoginKey, username);
   if (!username.empty()) {
     CommandLine* cmdline = CommandLine::ForCurrentProcess();
@@ -108,6 +113,8 @@ DictionaryValue* CreateLoginResult(Profile* profile) {
   return dictionary;
 }
 
+WebstoreInstaller::Delegate* test_webstore_installer_delegate = NULL;
+
 }  // namespace
 
 // static
@@ -117,179 +124,22 @@ void WebstorePrivateApi::SetTestingProfileSyncService(
 }
 
 // static
-void WebstorePrivateApi::SetTestingBrowserSignin(BrowserSignin* signin) {
-  test_signin = signin;
+void WebstorePrivateApi::SetWebstoreInstallerDelegateForTesting(
+    WebstoreInstaller::Delegate* delegate) {
+  test_webstore_installer_delegate = delegate;
 }
 
 // static
-void BeginInstallFunction::SetIgnoreUserGestureForTests(bool ignore) {
-  ignore_user_gesture_for_tests = ignore;
+void WebstorePrivateApi::SetTrustTestIDsForTesting(bool allow) {
+  trust_test_ids = allow;
 }
 
-bool BeginInstallFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
-    return false;
-
-  std::string id;
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &id));
-  if (!Extension::IdIsValid(id)) {
-    error_ = kInvalidIdError;
-    return false;
-  }
-
-  if (!user_gesture() && !ignore_user_gesture_for_tests) {
-    error_ = kUserGestureRequiredError;
-    return false;
-  }
-
-  // This gets cleared in CrxInstaller::ConfirmInstall(). TODO(asargent) - in
-  // the future we may also want to add time-based expiration, where a whitelist
-  // entry is only valid for some number of minutes.
-  CrxInstaller::SetWhitelistedInstallId(id);
-  return true;
-}
-
-// This is a class to help BeginInstallWithManifestFunction manage sending
-// JSON manifests and base64-encoded icon data to the utility process for
-// parsing.
-class SafeBeginInstallHelper : public UtilityProcessHost::Client {
- public:
-  SafeBeginInstallHelper(BeginInstallWithManifestFunction* client,
-                         const std::string& icon_data,
-                         const std::string& manifest)
-      : client_(client),
-        icon_data_(icon_data),
-        manifest_(manifest),
-        utility_host_(NULL),
-        icon_decode_complete_(false),
-        manifest_parse_complete_(false),
-        parse_error_(BeginInstallWithManifestFunction::UNKNOWN_ERROR) {}
-
-  void Start() {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &SafeBeginInstallHelper::StartWorkOnIOThread));
-  }
-
-  void StartWorkOnIOThread() {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    utility_host_ = new UtilityProcessHost(this, BrowserThread::IO);
-    utility_host_->StartBatchMode();
-    if (icon_data_.empty())
-      icon_decode_complete_ = true;
-    else
-      utility_host_->StartImageDecodingBase64(icon_data_);
-    utility_host_->StartJSONParsing(manifest_);
-  }
-
-  // Implementing pieces of the UtilityProcessHost::Client interface.
-  virtual void OnDecodeImageSucceeded(const SkBitmap& decoded_image) {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    icon_ = decoded_image;
-    icon_decode_complete_ = true;
-    ReportResultsIfComplete();
-  }
-  virtual void OnDecodeImageFailed() {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    icon_decode_complete_ = true;
-    error_ = std::string(kImageDecodeError);
-    parse_error_ = BeginInstallWithManifestFunction::ICON_ERROR;
-    ReportResultsIfComplete();
-  }
-  virtual void OnJSONParseSucceeded(const ListValue& wrapper) {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    manifest_parse_complete_ = true;
-    Value* value = NULL;
-    CHECK(wrapper.Get(0, &value));
-    if (value->IsType(Value::TYPE_DICTIONARY)) {
-      parsed_manifest_.reset(
-          static_cast<DictionaryValue*>(value)->DeepCopy());
-    } else {
-      parse_error_ = BeginInstallWithManifestFunction::MANIFEST_ERROR;
-    }
-    ReportResultsIfComplete();
-  }
-
-  virtual void OnJSONParseFailed(const std::string& error_message) {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    manifest_parse_complete_ = true;
-    error_ = error_message;
-    parse_error_ = BeginInstallWithManifestFunction::MANIFEST_ERROR;
-    ReportResultsIfComplete();
-  }
-
-  void ReportResultsIfComplete() {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-    if (!icon_decode_complete_ || !manifest_parse_complete_)
-      return;
-
-    // The utility_host_ will take care of deleting itself after this call.
-    utility_host_->EndBatchMode();
-    utility_host_ = NULL;
-
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        NewRunnableMethod(this,
-                          &SafeBeginInstallHelper::ReportResultFromUIThread));
-  }
-
-  void ReportResultFromUIThread() {
-    CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    if (error_.empty() && parsed_manifest_.get())
-      client_->OnParseSuccess(icon_, parsed_manifest_.release());
-    else
-      client_->OnParseFailure(parse_error_, error_);
-  }
-
- private:
-  ~SafeBeginInstallHelper() {}
-
-  // The client who we'll report results back to.
-  BeginInstallWithManifestFunction* client_;
-
-  // The data to parse.
-  std::string icon_data_;
-  std::string manifest_;
-
-  UtilityProcessHost* utility_host_;
-
-  // Flags for whether we're done doing icon decoding and manifest parsing.
-  bool icon_decode_complete_;
-  bool manifest_parse_complete_;
-
-  // The results of succesful decoding/parsing.
-  SkBitmap icon_;
-  scoped_ptr<DictionaryValue> parsed_manifest_;
-
-  // A details string for keeping track of any errors.
-  std::string error_;
-
-  // A code to distinguish between an error with the icon, and an error with the
-  // manifest.
-  BeginInstallWithManifestFunction::ResultCode parse_error_;
-};
-
-BeginInstallWithManifestFunction::BeginInstallWithManifestFunction() {}
+BeginInstallWithManifestFunction::BeginInstallWithManifestFunction()
+  : use_app_installed_bubble_(false) {}
 
 BeginInstallWithManifestFunction::~BeginInstallWithManifestFunction() {}
 
 bool BeginInstallWithManifestFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url())) {
-    SetResult(PERMISSION_DENIED);
-    return false;
-  }
-
-  if (!user_gesture() && !ignore_user_gesture_for_tests) {
-    SetResult(NO_GESTURE);
-    error_ = kUserGestureRequiredError;
-    return false;
-  }
-
   DictionaryValue* details = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &details));
   CHECK(details);
@@ -303,22 +153,51 @@ bool BeginInstallWithManifestFunction::RunImpl() {
 
   EXTENSION_FUNCTION_VALIDATE(details->GetString(kManifestKey, &manifest_));
 
+  if (details->HasKey(kIconDataKey) && details->HasKey(kIconUrlKey)) {
+    SetResult(ICON_ERROR);
+    error_ = kCannotSpecifyIconDataAndUrlError;
+    return false;
+  }
+
   if (details->HasKey(kIconDataKey))
     EXTENSION_FUNCTION_VALIDATE(details->GetString(kIconDataKey, &icon_data_));
+
+  GURL icon_url;
+  if (details->HasKey(kIconUrlKey)) {
+    std::string tmp_url;
+    EXTENSION_FUNCTION_VALIDATE(details->GetString(kIconUrlKey, &tmp_url));
+    icon_url = source_url().Resolve(tmp_url);
+    if (!icon_url.is_valid()) {
+      SetResult(INVALID_ICON_URL);
+      error_ = kInvalidIconUrlError;
+      return false;
+    }
+  }
 
   if (details->HasKey(kLocalizedNameKey))
     EXTENSION_FUNCTION_VALIDATE(details->GetString(kLocalizedNameKey,
                                                    &localized_name_));
 
-  scoped_refptr<SafeBeginInstallHelper> helper =
-      new SafeBeginInstallHelper(this, icon_data_, manifest_);
-  // The helper will call us back via OnParseSucces or OnParseFailure.
+  if (details->HasKey(kAppInstallBubbleKey))
+    EXTENSION_FUNCTION_VALIDATE(details->GetBoolean(
+        kAppInstallBubbleKey, &use_app_installed_bubble_));
+
+  net::URLRequestContextGetter* context_getter = NULL;
+  if (!icon_url.is_empty())
+    context_getter = profile()->GetRequestContext();
+
+  scoped_refptr<WebstoreInstallHelper> helper = new WebstoreInstallHelper(
+      this, id_, manifest_, icon_data_, icon_url, context_getter);
+
+  // The helper will call us back via OnWebstoreParseSuccess or
+  // OnWebstoreParseFailure.
   helper->Start();
 
-  // Matched with a Release in OnSuccess/OnFailure.
+  // Matched with a Release in OnWebstoreParseSuccess/OnWebstoreParseFailure.
   AddRef();
 
-  // The response is sent asynchronously in OnSuccess/OnFailure.
+  // The response is sent asynchronously in OnWebstoreParseSuccess/
+  // OnWebstoreParseFailure.
   return true;
 }
 
@@ -346,80 +225,63 @@ void BeginInstallWithManifestFunction::SetResult(ResultCode code) {
     case PERMISSION_DENIED:
       result_.reset(Value::CreateStringValue("permission_denied"));
       break;
-    case NO_GESTURE:
-      result_.reset(Value::CreateStringValue("no_gesture"));
+    case INVALID_ICON_URL:
+      result_.reset(Value::CreateStringValue("invalid_icon_url"));
       break;
     default:
       CHECK(false);
   }
 }
 
-// static
-void BeginInstallWithManifestFunction::SetIgnoreUserGestureForTests(
-    bool ignore) {
-  ignore_user_gesture_for_tests = ignore;
-}
-
-void BeginInstallWithManifestFunction::SetAutoConfirmForTests(
-    bool should_proceed) {
-  auto_confirm_for_tests = should_proceed ? PROCEED : ABORT;
-}
-
-void BeginInstallWithManifestFunction::OnParseSuccess(
-    const SkBitmap& icon, DictionaryValue* parsed_manifest) {
+void BeginInstallWithManifestFunction::OnWebstoreParseSuccess(
+    const std::string& id,
+    const SkBitmap& icon,
+    DictionaryValue* parsed_manifest) {
+  CHECK_EQ(id_, id);
   CHECK(parsed_manifest);
   icon_ = icon;
   parsed_manifest_.reset(parsed_manifest);
 
-  // If we were passed a localized name to use in the dialog, create a copy
-  // of the original manifest and replace the name in it.
-  scoped_ptr<DictionaryValue> localized_manifest;
-  if (!localized_name_.empty()) {
-    localized_manifest.reset(parsed_manifest->DeepCopy());
-    localized_manifest->SetString(extension_manifest_keys::kName,
-                                  localized_name_);
-  }
+  ExtensionInstallUI::Prompt prompt(ExtensionInstallUI::INSTALL_PROMPT);
 
-  // Create a dummy extension and show the extension install confirmation
-  // dialog.
-  std::string init_errors;
-  dummy_extension_ = Extension::Create(
-      FilePath(),
-      Extension::INTERNAL,
-      localized_manifest.get() ? *localized_manifest.get() : *parsed_manifest,
-      Extension::NO_FLAGS,
-      &init_errors);
-  if (!dummy_extension_.get()) {
-    OnParseFailure(MANIFEST_ERROR, std::string(kInvalidManifestError));
+  if (!ShowExtensionInstallDialogForManifest(
+      profile(),
+      this,
+      parsed_manifest,
+      id_,
+      localized_name_,
+      "", // no localized description
+      &icon_,
+      prompt,
+      &dummy_extension_)) {
+    OnWebstoreParseFailure(id_, WebstoreInstallHelper::Delegate::MANIFEST_ERROR,
+                           kInvalidManifestError);
     return;
   }
-
-  if (icon_.empty())
-    icon_ = Extension::GetDefaultIcon(dummy_extension_->is_app());
-
-  // In tests, we may have setup to proceed or abort without putting up the real
-  // confirmation dialog.
-  if (auto_confirm_for_tests != DO_NOT_SKIP) {
-    if (auto_confirm_for_tests == PROCEED)
-      this->InstallUIProceed();
-    else
-      this->InstallUIAbort();
-    return;
-  }
-
-  ShowExtensionInstallDialog(profile(),
-                             this,
-                             dummy_extension_.get(),
-                             &icon_,
-                             dummy_extension_->GetPermissionMessageStrings(),
-                             ExtensionInstallUI::INSTALL_PROMPT);
 
   // Control flow finishes up in InstallUIProceed or InstallUIAbort.
 }
 
-void BeginInstallWithManifestFunction::OnParseFailure(
-    ResultCode result_code, const std::string& error_message) {
-  SetResult(result_code);
+void BeginInstallWithManifestFunction::OnWebstoreParseFailure(
+    const std::string& id,
+    WebstoreInstallHelper::Delegate::InstallHelperResultCode result_code,
+    const std::string& error_message) {
+  CHECK_EQ(id_, id);
+
+  // Map from WebstoreInstallHelper's result codes to ours.
+  switch (result_code) {
+    case WebstoreInstallHelper::Delegate::UNKNOWN_ERROR:
+      SetResult(UNKNOWN_ERROR);
+      break;
+    case WebstoreInstallHelper::Delegate::ICON_ERROR:
+      SetResult(ICON_ERROR);
+      break;
+    case WebstoreInstallHelper::Delegate::MANIFEST_ERROR:
+      SetResult(MANIFEST_ERROR);
+      break;
+    default:
+      CHECK(false);
+  }
   error_ = error_message;
   SendResponse(false);
 
@@ -428,30 +290,52 @@ void BeginInstallWithManifestFunction::OnParseFailure(
 }
 
 void BeginInstallWithManifestFunction::InstallUIProceed() {
+  // This gets cleared in CrxInstaller::ConfirmInstall(). TODO(asargent) - in
+  // the future we may also want to add time-based expiration, where a whitelist
+  // entry is only valid for some number of minutes.
   CrxInstaller::WhitelistEntry* entry = new CrxInstaller::WhitelistEntry;
   entry->parsed_manifest.reset(parsed_manifest_.release());
   entry->localized_name = localized_name_;
+  entry->use_app_installed_bubble = use_app_installed_bubble_;
   CrxInstaller::SetWhitelistEntry(id_, entry);
   SetResult(ERROR_NONE);
   SendResponse(true);
+
+  // The Permissions_Install histogram is recorded from the ExtensionService
+  // for all extension installs, so we only need to record the web store
+  // specific histogram here.
+  ExtensionService::RecordPermissionMessagesHistogram(
+      dummy_extension_, "Extensions.Permissions_WebStoreInstall");
 
   // Matches the AddRef in RunImpl().
   Release();
 }
 
-void BeginInstallWithManifestFunction::InstallUIAbort() {
-  error_ = std::string(kUserCancelledError);
+void BeginInstallWithManifestFunction::InstallUIAbort(bool user_initiated) {
+  error_ = kUserCancelledError;
   SetResult(USER_CANCELLED);
   SendResponse(false);
+
+  // The web store install histograms are a subset of the install histograms.
+  // We need to record both histograms here since CrxInstaller::InstallUIAbort
+  // is never called for web store install cancellations.
+  std::string histogram_name = user_initiated ?
+      "Extensions.Permissions_WebStoreInstallCancel" :
+      "Extensions.Permissions_WebStoreInstallAbort";
+  ExtensionService::RecordPermissionMessagesHistogram(
+      dummy_extension_, histogram_name.c_str());
+
+  histogram_name = user_initiated ?
+      "Extensions.Permissions_InstallCancel" :
+      "Extensions.Permissions_InstallAbort";
+  ExtensionService::RecordPermissionMessagesHistogram(
+      dummy_extension_, histogram_name.c_str());
 
   // Matches the AddRef in RunImpl().
   Release();
 }
 
 bool CompleteInstallFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
-    return false;
-
   std::string id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &id));
   if (!Extension::IdIsValid(id)) {
@@ -462,42 +346,106 @@ bool CompleteInstallFunction::RunImpl() {
   if (!CrxInstaller::IsIdWhitelisted(id) &&
       !CrxInstaller::GetWhitelistEntry(id)) {
     error_ = ExtensionErrorUtils::FormatErrorMessage(
-        kNoPreviousBeginInstallError, id);
+        kNoPreviousBeginInstallWithManifestError, id);
     return false;
   }
 
-  std::vector<std::string> params;
-  params.push_back("id=" + id);
-  params.push_back("lang=" + g_browser_process->GetApplicationLocale());
-  params.push_back("uc");
-  std::string url_string = Extension::GalleryUpdateUrl(true).spec();
-
-  GURL url(url_string + "?response=redirect&x=" +
-      EscapeQueryParamValue(JoinString(params, '&'), true));
-  DCHECK(url.is_valid());
-
-  // The download url for the given |id| is now contained in |url|. We
-  // navigate the current (calling) tab to this url which will result in a
-  // download starting. Once completed it will go through the normal extension
-  // install flow. The above call to SetWhitelistedInstallId will bypass the
-  // normal permissions install dialog.
-  NavigationController& controller =
-      dispatcher()->delegate()->GetAssociatedTabContents()->controller();
-  controller.LoadURL(url, source_url(), PageTransition::LINK);
+  // The extension will install through the normal extension install flow, but
+  // the above call to SetWhitelistedInstallId will bypass the normal
+  // permissions install dialog.
+  scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
+      profile(), test_webstore_installer_delegate,
+      &(dispatcher()->delegate()->GetAssociatedWebContents()->GetController()),
+      id, WebstoreInstaller::FLAG_NONE);
+  installer->Start();
 
   return true;
 }
 
-bool GetBrowserLoginFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
+SilentlyInstallFunction::SilentlyInstallFunction() {}
+SilentlyInstallFunction::~SilentlyInstallFunction() {}
+
+bool SilentlyInstallFunction::RunImpl() {
+  DictionaryValue* details = NULL;
+  EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(0, &details));
+  CHECK(details);
+
+  EXTENSION_FUNCTION_VALIDATE(details->GetString(kIdKey, &id_));
+  if (!IsTrustedForSilentInstall(id_)) {
+    error_ = kInvalidIdError;
     return false;
+  }
+
+  EXTENSION_FUNCTION_VALIDATE(details->GetString(kManifestKey, &manifest_));
+
+  // Matched in OnWebstoreParseFailure, OnExtensionInstall{Success,Failure}.
+  AddRef();
+
+  scoped_refptr<WebstoreInstallHelper> helper = new WebstoreInstallHelper(
+      this, id_, manifest_, std::string(), GURL(), NULL);
+  helper->Start();
+
+  return true;
+}
+
+void SilentlyInstallFunction::OnWebstoreParseSuccess(
+    const std::string& id,
+    const SkBitmap& icon,
+    base::DictionaryValue* parsed_manifest) {
+  CHECK_EQ(id_, id);
+
+  // This lets CrxInstaller bypass the permission confirmation UI for the
+  // extension. The whitelist entry gets cleared in
+  // CrxInstaller::ConfirmInstall.
+  CrxInstaller::WhitelistEntry* entry = new CrxInstaller::WhitelistEntry;
+  entry->parsed_manifest.reset(parsed_manifest);
+  entry->use_app_installed_bubble = false;
+  entry->skip_post_install_ui = true;
+  CrxInstaller::SetWhitelistEntry(id_, entry);
+
+  scoped_refptr<WebstoreInstaller> installer = new WebstoreInstaller(
+      profile(), this,
+      &(dispatcher()->delegate()->GetAssociatedWebContents()->GetController()),
+      id_, WebstoreInstaller::FLAG_NONE);
+  installer->Start();
+}
+
+void SilentlyInstallFunction::OnWebstoreParseFailure(
+    const std::string& id,
+    InstallHelperResultCode result_code,
+    const std::string& error_message) {
+  CHECK_EQ(id_, id);
+
+  error_ = error_message;
+  SendResponse(false);
+
+  Release();  // Matches the AddRef() in RunImpl().
+}
+
+void SilentlyInstallFunction::OnExtensionInstallSuccess(const std::string& id) {
+  CHECK_EQ(id_, id);
+
+  SendResponse(true);
+
+  Release();  // Matches the AddRef() in RunImpl().
+}
+
+void SilentlyInstallFunction::OnExtensionInstallFailure(
+    const std::string& id, const std::string& error) {
+  CHECK_EQ(id_, id);
+
+  error_ = error;
+  SendResponse(false);
+
+  Release();  // Matches the AddRef() in RunImpl().
+}
+
+bool GetBrowserLoginFunction::RunImpl() {
   result_.reset(CreateLoginResult(profile_->GetOriginalProfile()));
   return true;
 }
 
 bool GetStoreLoginFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
-    return false;
   ExtensionService* service = profile_->GetExtensionService();
   ExtensionPrefs* prefs = service->extension_prefs();
   std::string login;
@@ -510,8 +458,6 @@ bool GetStoreLoginFunction::RunImpl() {
 }
 
 bool SetStoreLoginFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
-    return false;
   std::string login;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &login));
   ExtensionService* service = profile_->GetExtensionService();
@@ -520,118 +466,64 @@ bool SetStoreLoginFunction::RunImpl() {
   return true;
 }
 
-PromptBrowserLoginFunction::PromptBrowserLoginFunction()
-    : waiting_for_token_(false) {}
+GetWebGLStatusFunction::GetWebGLStatusFunction() {}
+GetWebGLStatusFunction::~GetWebGLStatusFunction() {}
 
-PromptBrowserLoginFunction::~PromptBrowserLoginFunction() {
-}
-
-bool PromptBrowserLoginFunction::RunImpl() {
-  if (!IsWebStoreURL(profile_, source_url()))
-    return false;
-
-  std::string preferred_email;
-  if (args_->GetSize() > 0) {
-    EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &preferred_email));
-  }
-
-  Profile* profile = profile_->GetOriginalProfile();
-
-  // Login can currently only be invoked tab-modal.  Since this is
-  // coming from the webstore, we should always have a tab, but check
-  // just in case.
-  TabContents* tab = dispatcher()->delegate()->GetAssociatedTabContents();
-  if (!tab)
-    return false;
-
-  // We return the result asynchronously, so we addref to keep ourself alive.
-  // Matched with a Release in OnLoginSuccess() and OnLoginFailure().
-  AddRef();
-
-  // Start listening for notifications about the token.
-  TokenService* token_service = profile->GetTokenService();
-  registrar_.Add(this,
-                 NotificationType::TOKEN_AVAILABLE,
-                 Source<TokenService>(token_service));
-  registrar_.Add(this,
-                 NotificationType::TOKEN_REQUEST_FAILED,
-                 Source<TokenService>(token_service));
-
-  GetBrowserSignin(profile)->RequestSignin(tab,
-                                           ASCIIToUTF16(preferred_email),
-                                           GetLoginMessage(),
-                                           this);
-
-  // The response will be sent asynchronously in OnLoginSuccess/OnLoginFailure.
-  return true;
-}
-
-string16 PromptBrowserLoginFunction::GetLoginMessage() {
-  using l10n_util::GetStringUTF16;
-  using l10n_util::GetStringFUTF16;
-
-  // TODO(johnnyg): This would be cleaner as an HTML template.
-  // http://crbug.com/60216
-  string16 message;
-  message = ASCIIToUTF16("<p>")
-      + GetStringUTF16(IDS_WEB_STORE_LOGIN_INTRODUCTION_1)
-      + ASCIIToUTF16("</p>");
-  message = message + ASCIIToUTF16("<p>")
-      + GetStringFUTF16(IDS_WEB_STORE_LOGIN_INTRODUCTION_2,
-                        GetStringUTF16(IDS_PRODUCT_NAME))
-      + ASCIIToUTF16("</p>");
-  return message;
-}
-
-void PromptBrowserLoginFunction::OnLoginSuccess() {
-  // Ensure that apps are synced.
-  // - If the user has already setup sync, we add Apps to the current types.
-  // - If not, we create a new set which is just Apps.
-  ProfileSyncService* service = GetSyncService(profile_->GetOriginalProfile());
-  syncable::ModelTypeSet types;
-  if (service->HasSyncSetupCompleted())
-    service->GetPreferredDataTypes(&types);
-  types.insert(syncable::APPS);
-  service->ChangePreferredDataTypes(types);
-  service->SetSyncSetupCompleted();
-
-  // We'll finish up in Observe() when the token is ready.
-  waiting_for_token_ = true;
-}
-
-void PromptBrowserLoginFunction::OnLoginFailure(
-    const GoogleServiceAuthError& error) {
-  SendResponse(false);
-  // Matches the AddRef in RunImpl().
-  Release();
-}
-
-void PromptBrowserLoginFunction::Observe(NotificationType type,
-                                         const NotificationSource& source,
-                                         const NotificationDetails& details) {
-  // Make sure this notification is for the service we are interested in.
-  std::string service;
-  if (type == NotificationType::TOKEN_AVAILABLE) {
-    TokenService::TokenAvailableDetails* available =
-        Details<TokenService::TokenAvailableDetails>(details).ptr();
-    service = available->service();
-  } else if (type == NotificationType::TOKEN_REQUEST_FAILED) {
-    TokenService::TokenRequestFailedDetails* failed =
-        Details<TokenService::TokenRequestFailedDetails>(details).ptr();
-    service = failed->service();
+// static
+bool GetWebGLStatusFunction::IsWebGLAllowed(GpuDataManager* manager) {
+  bool webgl_allowed = true;
+  if (!manager->GpuAccessAllowed()) {
+    webgl_allowed = false;
   } else {
-    NOTREACHED();
+    uint32 blacklist_flags = manager->GetGpuFeatureFlags().flags();
+    if (blacklist_flags & GpuFeatureFlags::kGpuFeatureWebgl)
+      webgl_allowed = false;
   }
+  return webgl_allowed;
+}
 
-  if (service != GaiaConstants::kGaiaService) {
-    return;
-  }
-
-  DCHECK(waiting_for_token_);
-
-  result_.reset(CreateLoginResult(profile_->GetOriginalProfile()));
+void GetWebGLStatusFunction::OnGpuInfoUpdate() {
+  GpuDataManager* manager = GpuDataManager::GetInstance();
+  manager->RemoveObserver(this);
+  bool webgl_allowed = IsWebGLAllowed(manager);
+  CreateResult(webgl_allowed);
   SendResponse(true);
 
   // Matches the AddRef in RunImpl().
   Release();
+}
+
+void GetWebGLStatusFunction::CreateResult(bool webgl_allowed) {
+  result_.reset(Value::CreateStringValue(
+      webgl_allowed ? "webgl_allowed" : "webgl_blocked"));
+}
+
+bool GetWebGLStatusFunction::RunImpl() {
+  bool finalized = true;
+#if defined(OS_LINUX)
+  // On Windows and Mac, so far we can always make the final WebGL blacklisting
+  // decision based on partial GPU info; on Linux, we need to launch the GPU
+  // process to collect full GPU info and make the final decision.
+  finalized = false;
+#endif
+
+  GpuDataManager* manager = GpuDataManager::GetInstance();
+  if (manager->complete_gpu_info_available())
+    finalized = true;
+
+  bool webgl_allowed = IsWebGLAllowed(manager);
+  if (!webgl_allowed)
+    finalized = true;
+
+  if (finalized) {
+    CreateResult(webgl_allowed);
+    SendResponse(true);
+  } else {
+    // Matched with a Release in OnGpuInfoUpdate.
+    AddRef();
+
+    manager->AddObserver(this);
+    manager->RequestCompleteGpuInfoIfNeeded();
+  }
+  return true;
 }

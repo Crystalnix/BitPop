@@ -7,6 +7,7 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/common/renderer_preferences.h"
 
 #if defined(TOOLKIT_USES_GTK)
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
@@ -15,7 +16,8 @@
 
 namespace renderer_preferences_util {
 
-void UpdateFromSystemSettings(RendererPreferences* prefs, Profile* profile) {
+void UpdateFromSystemSettings(
+    content::RendererPreferences* prefs, Profile* profile) {
 #if defined(TOOLKIT_USES_GTK)
   gtk_util::UpdateGtkFontSettings(prefs);
 
@@ -38,7 +40,7 @@ void UpdateFromSystemSettings(RendererPreferences* prefs, Profile* profile) {
   prefs->focus_ring_color = SkColorSetRGB(0x50, 0x7A, 0xD5);
   prefs->active_selection_bg_color = SkColorSetRGB(0xDC, 0xE4, 0xFA);
   prefs->active_selection_fg_color = SK_ColorBLACK;
-  prefs->inactive_selection_bg_color = SkColorSetRGB(0xF7, 0xF7, 0xF7);
+  prefs->inactive_selection_bg_color = SkColorSetRGB(0xEA, 0xEA, 0xEA);
   prefs->inactive_selection_fg_color = SK_ColorBLACK;
 #endif  // defined(OS_CHROMEOS)
 
@@ -46,6 +48,8 @@ void UpdateFromSystemSettings(RendererPreferences* prefs, Profile* profile) {
 
   prefs->enable_referrers =
       profile->GetPrefs()->GetBoolean(prefs::kEnableReferrers);
+  prefs->default_zoom_level =
+      profile->GetPrefs()->GetDouble(prefs::kDefaultZoomLevel);
 }
 
 }  // renderer_preferences_util

@@ -6,12 +6,14 @@
     "128": "img/docs_spreadsheets-128.gif"
   },
   "description": "Demonstrates how to use OAuth to connect the Google Documents List Data API.",
-  "background_page": "background.html",
+  "background": {
+    "page": "background.html"
+  },
   "options_page": "options.html",
   "browser_action": {
     "default_title": "List your Google Docs",
     "default_icon": "img/docs_spreadsheets-32.gif",
-    "popup": "popup.html"
+    "default_popup": "popup.html"
   },
   "permissions": [
     "tabs",

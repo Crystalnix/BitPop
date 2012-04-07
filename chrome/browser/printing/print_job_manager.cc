@@ -1,23 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/printing/print_job_manager.h"
 
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/printer_query.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
 #include "printing/printed_document.h"
 #include "printing/printed_page.h"
+
+using content::BrowserThread;
 
 namespace printing {
 
 PrintJobManager::PrintJobManager() {
-  registrar_.Add(this, NotificationType::PRINT_JOB_EVENT,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_PRINT_JOB_EVENT,
+                 content::NotificationService::AllSources());
 }
 
 PrintJobManager::~PrintJobManager() {
@@ -93,13 +96,13 @@ void PrintJobManager::RegisterPrefs(PrefService* prefs) {
   prefs->RegisterBooleanPref(prefs::kPrintingEnabled, true);
 }
 
-void PrintJobManager::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::PRINT_JOB_EVENT: {
-      OnPrintJobEvent(Source<PrintJob>(source).ptr(),
-                      *Details<JobEventDetails>(details).ptr());
+void PrintJobManager::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_PRINT_JOB_EVENT: {
+      OnPrintJobEvent(content::Source<PrintJob>(source).ptr(),
+                      *content::Details<JobEventDetails>(details).ptr());
       break;
     }
     default: {
@@ -161,6 +164,10 @@ void PrintJobManager::OnPrintJobEvent(
       break;
     }
   }
+}
+
+bool PrintJobManager::printing_enabled() const {
+  return *printing_enabled_;
 }
 
 }  // namespace printing

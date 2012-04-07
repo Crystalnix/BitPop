@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,9 @@
 
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/gtk/cairo_cached_surface.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_link_button.h"
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
@@ -25,10 +21,14 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/cairo_cached_surface.h"
+#include "ui/gfx/image/image.h"
 #include "webkit/glue/webkit_glue.h"
+
+using content::OpenURLParams;
 
 namespace {
 
@@ -69,28 +69,30 @@ GtkWidget* MakeMarkupLabel(const char* format, const std::string& str) {
 }
 
 void OnLinkButtonClick(GtkWidget* button, const char* url) {
-  BrowserList::GetLastActive()->
-      OpenURL(GURL(url), GURL(), NEW_WINDOW, PageTransition::LINK);
+  BrowserList::GetLastActive()->OpenURL(OpenURLParams(
+      GURL(url), content::Referrer(), NEW_WINDOW, content::PAGE_TRANSITION_LINK,
+      false));
 }
 
 const char* GetChromiumUrl() {
-  static GURL url = google_util::AppendGoogleLocaleParam(
-      GURL(chrome::kChromiumProjectURL));
+  CR_DEFINE_STATIC_LOCAL(GURL, url, (google_util::AppendGoogleLocaleParam(
+      GURL(chrome::kChromiumProjectURL))));
   return url.spec().c_str();
 }
 
 gboolean OnEventBoxExpose(GtkWidget* event_box,
                           GdkEventExpose* expose,
                           gboolean user_data) {
-  cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(event_box->window));
+  cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(
+      gtk_widget_get_window(event_box)));
   gdk_cairo_rectangle(cr, &expose->area);
   cairo_clip(cr);
-  GtkThemeService* theme_provider =
-      GtkThemeService::GetFrom(BrowserList::GetLastActive()->profile());
-  CairoCachedSurface* background = theme_provider->GetSurfaceNamed(
-      IDR_ABOUT_BACKGROUND_COLOR, event_box);
 
-  background->SetSource(cr, 0, 0);
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  gfx::CairoCachedSurface* background =
+      rb.GetNativeImageNamed(IDR_ABOUT_BACKGROUND_COLOR).ToCairo();
+  background->SetSource(cr, event_box, 0, 0);
+
   cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_REPEAT);
   gdk_cairo_rectangle(cr, &expose->area);
   cairo_fill(cr);
@@ -101,24 +103,8 @@ gboolean OnEventBoxExpose(GtkWidget* event_box,
 }  // namespace
 
 void ShowAboutDialogForProfile(GtkWindow* parent, Profile* profile) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   static GdkPixbuf* background = rb.GetNativeImageNamed(IDR_ABOUT_BACKGROUND);
-  chrome::VersionInfo version_info;
-  std::string current_version = version_info.Version();
-#if !defined(GOOGLE_CHROME_BUILD)
-  current_version += " (";
-  current_version += l10n_util::GetStringUTF8(
-      version_info.IsOfficialBuild() ?
-      IDS_ABOUT_VERSION_OFFICIAL : IDS_ABOUT_VERSION_UNOFFICIAL);
-  current_version += " ";
-  current_version += version_info.LastChange();
-  current_version += " ";
-  current_version += version_info.OSType();
-  current_version += ")";
-#endif
-  std::string channel = platform_util::GetVersionStringModifier();
-  if (!channel.empty())
-    current_version += " " + channel;
 
   // Build the dialog.
   GtkWidget* dialog = gtk_dialog_new_with_buttons(
@@ -130,12 +116,14 @@ void ShowAboutDialogForProfile(GtkWindow* parent, Profile* profile) {
   // The layout of this dialog is special because the logo should be flush
   // with the edges of the window.
   gtk_widget_set_name(dialog, "about-dialog");
+#if !GTK_CHECK_VERSION(2, 22, 0)
   gtk_dialog_set_has_separator(GTK_DIALOG(dialog), FALSE);
+#endif
 
   GtkWidget* close_button = gtk_dialog_add_button(GTK_DIALOG(dialog),
       GTK_STOCK_CLOSE, GTK_RESPONSE_CLOSE);
 
-  GtkWidget* content_area = GTK_DIALOG(dialog)->vbox;
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
 
   // Use an event box to get the background painting correctly
   GtkWidget* ebox = gtk_event_box_new();
@@ -151,14 +139,16 @@ void ShowAboutDialogForProfile(GtkWindow* parent, Profile* profile) {
 
   GtkWidget* text_vbox = gtk_vbox_new(FALSE, kExtraLineSpacing);
 
-  GdkColor black = gtk_util::kGdkBlack;
+  GdkColor black = ui::kGdkBlack;
   GtkWidget* product_label = MakeMarkupLabel(
       "<span font_desc=\"18\" style=\"normal\">%s</span>",
       l10n_util::GetStringUTF8(IDS_PRODUCT_NAME));
   gtk_widget_modify_fg(product_label, GTK_STATE_NORMAL, &black);
   gtk_box_pack_start(GTK_BOX(text_vbox), product_label, FALSE, FALSE, 0);
 
-  GtkWidget* version_label = gtk_label_new(current_version.c_str());
+  chrome::VersionInfo version_info;
+  GtkWidget* version_label = gtk_label_new(
+      version_info.CreateVersionString().c_str());
   gtk_misc_set_alignment(GTK_MISC(version_label), 0.0, 0.5);
   gtk_label_set_selectable(GTK_LABEL(version_label), TRUE);
   gtk_widget_modify_fg(version_label, GTK_STATE_NORMAL, &black);
@@ -227,7 +217,7 @@ void ShowAboutDialogForProfile(GtkWindow* parent, Profile* profile) {
                    const_cast<char*>(GetChromiumUrl()));
   g_signal_connect(chromium_url_appears_first ? second_link : first_link,
                    "clicked", G_CALLBACK(OnLinkButtonClick),
-                   const_cast<char*>(chrome::kAboutCreditsURL));
+                   const_cast<char*>(chrome::kChromeUICreditsURL));
 
   GtkWidget* license_hbox = gtk_hbox_new(FALSE, 0);
   gtk_box_pack_start(GTK_BOX(license_hbox), license_chunk1,
@@ -276,14 +266,14 @@ void ShowAboutDialogForProfile(GtkWindow* parent, Profile* profile) {
   gtk_box_pack_start(GTK_BOX(tos_hbox), tos_chunk2, FALSE, FALSE, 0);
 
   g_signal_connect(tos_link, "clicked", G_CALLBACK(OnLinkButtonClick),
-    const_cast<char*>(chrome::kAboutTermsURL));
+    const_cast<char*>(chrome::kChromeUITermsURL));
   gtk_box_pack_start(GTK_BOX(vbox), tos_hbox, TRUE, TRUE, 0);
 #endif
 
   GtkWidget* alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
   gtk_alignment_set_padding(GTK_ALIGNMENT(alignment),
-      gtk_util::kContentAreaBorder, 0,
-      gtk_util::kContentAreaBorder, gtk_util::kContentAreaBorder);
+      ui::kContentAreaBorder, 0,
+      ui::kContentAreaBorder, ui::kContentAreaBorder);
   gtk_container_add(GTK_CONTAINER(alignment), vbox);
   gtk_box_pack_start(GTK_BOX(content_area), alignment, FALSE, FALSE, 0);
 

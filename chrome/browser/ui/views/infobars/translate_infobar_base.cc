@@ -8,18 +8,17 @@
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/ui/views/infobars/after_translate_infobar.h"
 #include "chrome/browser/ui/views/infobars/before_translate_infobar.h"
-#include "chrome/browser/ui/views/infobars/infobar_button_border.h"
 #include "chrome/browser/ui/views/infobars/translate_message_infobar.h"
 #include "grit/theme_resources.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/label.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/label.h"
 
 // TranslateInfoBarDelegate ---------------------------------------------------
 
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
+InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
   TranslateInfoBarBase* infobar = NULL;
   switch (type_) {
     case BEFORE_TRANSLATE:
@@ -44,7 +43,7 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
 // static
 const int TranslateInfoBarBase::kButtonInLabelSpacing = 5;
 
-TranslateInfoBarBase::TranslateInfoBarBase(TabContentsWrapper* owner,
+TranslateInfoBarBase::TranslateInfoBarBase(InfoBarTabHelper* owner,
                                            TranslateInfoBarDelegate* delegate)
     : InfoBarView(owner, delegate),
       error_background_(InfoBarDelegate::WARNING_TYPE) {
@@ -79,11 +78,12 @@ void TranslateInfoBarBase::ViewHierarchyChanged(bool is_add,
 void TranslateInfoBarBase::UpdateLanguageButtonText(
     views::MenuButton* button,
     LanguagesMenuModel::LanguageType language_type) {
+  DCHECK(button);
   TranslateInfoBarDelegate* delegate = GetDelegate();
-  button->SetText(UTF16ToWideHack(delegate->GetLanguageDisplayableNameAt(
-      (language_type == LanguagesMenuModel::ORIGINAL) ?
-          delegate->original_language_index() :
-          delegate->target_language_index())));
+  bool is_original = language_type == LanguagesMenuModel::ORIGINAL;
+  int index = is_original ? delegate->original_language_index()
+                          : delegate->target_language_index();
+  button->SetText(delegate->GetLanguageDisplayableNameAt(index));
   // The button may have to grow to show the new text.
   Layout();
   SchedulePaint();
@@ -129,7 +129,7 @@ void TranslateInfoBarBase::FadeBackground(gfx::Canvas* canvas,
   // Draw the background into an offscreen buffer with alpha value per animation
   // value, then blend it back into the current canvas.
   canvas->SaveLayerAlpha(static_cast<int>(animation_value * 255));
-  canvas->AsCanvasSkia()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
   background.Paint(canvas, this);
   canvas->Restore();
 }

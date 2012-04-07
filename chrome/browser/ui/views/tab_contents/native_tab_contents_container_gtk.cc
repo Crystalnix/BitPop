@@ -9,9 +9,11 @@
 #include "chrome/browser/ui/views/tab_contents/tab_contents_view_views.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
 #include "content/browser/tab_contents/interstitial_page.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 #include "ui/base/accessibility/accessible_view_state.h"
-#include "views/focus/focus_manager.h"
+#include "ui/views/focus/focus_manager.h"
+
+using content::WebContents;
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeTabContentsContainerGtk, public:
@@ -20,7 +22,7 @@ NativeTabContentsContainerGtk::NativeTabContentsContainerGtk(
     TabContentsContainer* container)
     : container_(container),
       focus_callback_id_(0) {
-  SetID(VIEW_ID_TAB_CONTAINER_FOCUS_VIEW);
+  set_id(VIEW_ID_TAB_CONTAINER_FOCUS_VIEW);
 }
 
 NativeTabContentsContainerGtk::~NativeTabContentsContainerGtk() {
@@ -29,29 +31,36 @@ NativeTabContentsContainerGtk::~NativeTabContentsContainerGtk() {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeTabContentsContainerGtk, NativeTabContentsContainer overrides:
 
-void NativeTabContentsContainerGtk::AttachContents(TabContents* contents) {
+void NativeTabContentsContainerGtk::AttachContents(WebContents* contents) {
   Attach(contents->GetNativeView());
 }
 
-void NativeTabContentsContainerGtk::DetachContents(TabContents* contents) {
+void NativeTabContentsContainerGtk::DetachContents(WebContents* contents) {
   gtk_widget_hide(contents->GetNativeView());
 
   // Now detach the TabContents.
   Detach();
 
-  static_cast<TabContentsViewViews*>(contents->view())->Unparent();
+  static_cast<TabContentsViewViews*>(contents->GetView())->Unparent();
 }
 
 void NativeTabContentsContainerGtk::SetFastResize(bool fast_resize) {
   set_fast_resize(fast_resize);
 }
 
+bool NativeTabContentsContainerGtk::GetFastResize() const {
+  return fast_resize();
+}
+
+bool NativeTabContentsContainerGtk::FastResizeAtLastLayout() const {
+  return fast_resize_at_last_layout();
+}
+
 void NativeTabContentsContainerGtk::RenderViewHostChanged(
     RenderViewHost* old_host,
     RenderViewHost* new_host) {
   // If we are focused, we need to pass the focus to the new RenderViewHost.
-  views::FocusManager* focus_manager = GetFocusManager();
-  if (focus_manager->GetFocusedView() == this)
+  if (GetFocusManager()->GetFocusedView() == this)
     OnFocus();
 }
 
@@ -59,9 +68,7 @@ views::View* NativeTabContentsContainerGtk::GetView() {
   return this;
 }
 
-void NativeTabContentsContainerGtk::TabContentsFocused(
-    TabContents* tab_contents) {
-#if !defined(TOUCH_UI)
+void NativeTabContentsContainerGtk::WebContentsFocused(WebContents* contents) {
   // Called when the tab contents native view gets focused (typically through a
   // user click).  We make ourself the focused view, so the focus is restored
   // properly when the browser window is deactivated/reactivated.
@@ -71,9 +78,6 @@ void NativeTabContentsContainerGtk::TabContentsFocused(
     return;
   }
   focus_manager->SetFocusedView(this);
-#else
-  // no native views in TOUCH_UI, so don't steal the focus
-#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -86,8 +90,8 @@ bool NativeTabContentsContainerGtk::SkipDefaultKeyEventProcessing(
   // We'll first give the page a chance to process the key events.  If it does
   // not process them, they'll be returned to us and we'll treat them as
   // accelerators then.
-  return container_->tab_contents() &&
-         !container_->tab_contents()->is_crashed();
+  return container_->web_contents() &&
+         !container_->web_contents()->IsCrashed();
 }
 
 views::FocusTraversable* NativeTabContentsContainerGtk::GetFocusTraversable() {
@@ -97,12 +101,12 @@ views::FocusTraversable* NativeTabContentsContainerGtk::GetFocusTraversable() {
 bool NativeTabContentsContainerGtk::IsFocusable() const {
   // We need to be focusable when our contents is not a view hierarchy, as
   // clicking on the contents needs to focus us.
-  return container_->tab_contents() != NULL;
+  return container_->web_contents() != NULL;
 }
 
 void NativeTabContentsContainerGtk::OnFocus() {
-  if (container_->tab_contents())
-    container_->tab_contents()->Focus();
+  if (container_->web_contents())
+    container_->web_contents()->Focus();
 }
 
 void NativeTabContentsContainerGtk::RequestFocus() {
@@ -123,15 +127,15 @@ void NativeTabContentsContainerGtk::RequestFocus() {
 
 void NativeTabContentsContainerGtk::AboutToRequestFocusFromTabTraversal(
     bool reverse) {
-  if (!container_->tab_contents())
+  if (!container_->web_contents())
     return;
   // Give an opportunity to the tab to reset its focus.
-  if (container_->tab_contents()->interstitial_page()) {
-    container_->tab_contents()->interstitial_page()->FocusThroughTabTraversal(
+  if (container_->web_contents()->GetInterstitialPage()) {
+    container_->web_contents()->GetInterstitialPage()->FocusThroughTabTraversal(
         reverse);
     return;
   }
-  container_->tab_contents()->FocusThroughTabTraversal(reverse);
+  container_->web_contents()->FocusThroughTabTraversal(reverse);
 }
 
 void NativeTabContentsContainerGtk::GetAccessibleState(

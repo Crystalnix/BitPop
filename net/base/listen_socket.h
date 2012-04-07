@@ -27,19 +27,20 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 #if defined(OS_POSIX)
-struct event;  // From libevent
 typedef int SOCKET;
 #endif
 
+namespace net {
+
 // Implements a raw socket interface
-class NET_API ListenSocket : public base::RefCountedThreadSafe<ListenSocket>,
+class NET_EXPORT ListenSocket : public base::RefCountedThreadSafe<ListenSocket>,
 #if defined(OS_WIN)
-                             public base::win::ObjectWatcher::Delegate {
+                                public base::win::ObjectWatcher::Delegate {
 #elif defined(OS_POSIX)
-                             public MessageLoopForIO::Watcher {
+                                public MessageLoopForIO::Watcher {
 #endif
  public:
   // TODO(erikkay): this delegate should really be split into two parts
@@ -80,8 +81,7 @@ class NET_API ListenSocket : public base::RefCountedThreadSafe<ListenSocket>,
   enum WaitState {
     NOT_WAITING      = 0,
     WAITING_ACCEPT   = 1,
-    WAITING_READ     = 3,
-    WAITING_CLOSE    = 4
+    WAITING_READ     = 2
   };
 
   static const SOCKET kInvalidSocket;
@@ -113,8 +113,8 @@ class NET_API ListenSocket : public base::RefCountedThreadSafe<ListenSocket>,
   HANDLE socket_event_;
 #elif defined(OS_POSIX)
   // Called by MessagePumpLibevent when the socket is ready to do I/O
-  virtual void OnFileCanReadWithoutBlocking(int fd);
-  virtual void OnFileCanWriteWithoutBlocking(int fd);
+  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
+  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
   WaitState wait_state_;
   // The socket's libevent wrapper
   MessageLoopForIO::FileDescriptorWatcher watcher_;
@@ -129,5 +129,7 @@ class NET_API ListenSocket : public base::RefCountedThreadSafe<ListenSocket>,
 
   DISALLOW_COPY_AND_ASSIGN(ListenSocket);
 };
+
+}  // namespace net
 
 #endif  // NET_BASE_LISTEN_SOCKET_H_

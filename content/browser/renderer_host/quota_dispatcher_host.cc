@@ -4,18 +4,18 @@
 
 #include "content/browser/renderer_host/quota_dispatcher_host.h"
 
-#include "base/memory/scoped_callback_factory.h"
+#include "base/bind.h"
+#include "base/memory/weak_ptr.h"
 #include "content/browser/quota_permission_context.h"
 #include "content/common/quota_messages.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageQuotaError.h"
 #include "webkit/quota/quota_manager.h"
 
+using quota::QuotaClient;
 using quota::QuotaManager;
 using quota::QuotaStatusCode;
 using quota::StorageType;
-using WebKit::WebStorageQuotaError;
 
 // Created one per request to carry the request's request_id around.
 // Dispatches requests from renderer/worker to the QuotaManager and
@@ -58,13 +58,14 @@ class QuotaDispatcherHost::QueryUsageAndQuotaDispatcher
       QuotaDispatcherHost* dispatcher_host,
       int request_id)
       : RequestDispatcher(dispatcher_host, request_id),
-        callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
   virtual ~QueryUsageAndQuotaDispatcher() {}
 
   void QueryStorageUsageAndQuota(const GURL& origin, StorageType type) {
-    quota_manager()->GetUsageAndQuota(origin, type,
-        callback_factory_.NewCallback(
-            &QueryUsageAndQuotaDispatcher::DidQueryStorageUsageAndQuota));
+    quota_manager()->GetUsageAndQuota(
+        origin, type,
+        base::Bind(&QueryUsageAndQuotaDispatcher::DidQueryStorageUsageAndQuota,
+                   weak_factory_.GetWeakPtr()));
   }
 
  private:
@@ -72,8 +73,7 @@ class QuotaDispatcherHost::QueryUsageAndQuotaDispatcher
       QuotaStatusCode status, int64 usage, int64 quota) {
     DCHECK(dispatcher_host());
     if (status != quota::kQuotaStatusOk) {
-      dispatcher_host()->Send(new QuotaMsg_DidFail(
-          request_id(), static_cast<WebStorageQuotaError>(status)));
+      dispatcher_host()->Send(new QuotaMsg_DidFail(request_id(), status));
     } else {
       dispatcher_host()->Send(new QuotaMsg_DidQueryStorageUsageAndQuota(
           request_id(), usage, quota));
@@ -81,7 +81,7 @@ class QuotaDispatcherHost::QueryUsageAndQuotaDispatcher
     Completed();
   }
 
-  base::ScopedCallbackFactory<QueryUsageAndQuotaDispatcher> callback_factory_;
+  base::WeakPtrFactory<QueryUsageAndQuotaDispatcher> weak_factory_;
 };
 
 class QuotaDispatcherHost::RequestQuotaDispatcher
@@ -102,7 +102,7 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
         current_quota_(0),
         requested_quota_(requested_quota),
         render_view_id_(render_view_id),
-        callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+        weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
   virtual ~RequestQuotaDispatcher() {}
 
   void Start() {
@@ -111,12 +111,13 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
     if (type_ == quota::kStorageTypePersistent) {
       quota_manager()->GetPersistentHostQuota(
           host_,
-          callback_factory_.NewCallback(&self_type::DidGetHostQuota));
+          base::Bind(&self_type::DidGetHostQuota,
+                     weak_factory_.GetWeakPtr()));
     } else {
       quota_manager()->GetUsageAndQuota(
           origin_, type_,
-          callback_factory_.NewCallback(
-              &self_type::DidGetTemporaryUsageAndQuota));
+          base::Bind(&self_type::DidGetTemporaryUsageAndQuota,
+                     weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -142,7 +143,8 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
     DCHECK(permission_context());
     permission_context()->RequestQuotaPermission(
         origin_, type_, requested_quota_, render_process_id(), render_view_id_,
-        callback_factory_.NewCallback(&self_type::DidGetPermissionResponse));
+        base::Bind(&self_type::DidGetPermissionResponse,
+                   weak_factory_.GetWeakPtr()));
   }
 
   void DidGetTemporaryUsageAndQuota(QuotaStatusCode status,
@@ -160,7 +162,8 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
     // Now we're allowed to set the new quota.
     quota_manager()->SetPersistentHostQuota(
         host_, requested_quota_,
-        callback_factory_.NewCallback(&self_type::DidSetHostQuota));
+        base::Bind(&self_type::DidSetHostQuota,
+                   weak_factory_.GetWeakPtr()));
   }
 
   void DidSetHostQuota(QuotaStatusCode status,
@@ -175,8 +178,7 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
   void DidFinish(QuotaStatusCode status, int64 granted_quota) {
     DCHECK(dispatcher_host());
     if (status != quota::kQuotaStatusOk) {
-      dispatcher_host()->Send(new QuotaMsg_DidFail(
-          request_id(), static_cast<WebStorageQuotaError>(status)));
+      dispatcher_host()->Send(new QuotaMsg_DidFail(request_id(), status));
     } else {
       dispatcher_host()->Send(new QuotaMsg_DidGrantStorageQuota(
           request_id(), granted_quota));
@@ -190,7 +192,7 @@ class QuotaDispatcherHost::RequestQuotaDispatcher
   int64 current_quota_;
   const int64 requested_quota_;
   const int render_view_id_;
-  base::ScopedCallbackFactory<self_type> callback_factory_;
+  base::WeakPtrFactory<self_type> weak_factory_;
 };
 
 QuotaDispatcherHost::QuotaDispatcherHost(
@@ -222,17 +224,17 @@ bool QuotaDispatcherHost::OnMessageReceived(
 void QuotaDispatcherHost::OnQueryStorageUsageAndQuota(
     int request_id,
     const GURL& origin,
-    WebKit::WebStorageQuotaType type) {
+    StorageType type) {
   QueryUsageAndQuotaDispatcher* dispatcher = new QueryUsageAndQuotaDispatcher(
       this, request_id);
-  dispatcher->QueryStorageUsageAndQuota(origin, static_cast<StorageType>(type));
+  dispatcher->QueryStorageUsageAndQuota(origin, type);
 }
 
 void QuotaDispatcherHost::OnRequestStorageQuota(
     int render_view_id,
     int request_id,
     const GURL& origin,
-    WebKit::WebStorageQuotaType type,
+    StorageType type,
     int64 requested_size) {
   if (quota_manager_->IsStorageUnlimited(origin)) {
     // If the origin is marked 'unlimited' we always just return ok.
@@ -240,28 +242,14 @@ void QuotaDispatcherHost::OnRequestStorageQuota(
     return;
   }
 
-  StorageType storage_type = static_cast<StorageType>(type);
-  if (storage_type != quota::kStorageTypeTemporary &&
-      storage_type != quota::kStorageTypePersistent) {
+  if (type != quota::kStorageTypeTemporary &&
+      type != quota::kStorageTypePersistent) {
     // Unsupported storage types.
-    Send(new QuotaMsg_DidFail(
-        request_id,
-        WebKit::WebStorageQuotaErrorNotSupported));
+    Send(new QuotaMsg_DidFail(request_id, quota::kQuotaErrorNotSupported));
     return;
   }
 
   RequestQuotaDispatcher* dispatcher = new RequestQuotaDispatcher(
-      this, request_id, origin, storage_type,
-      requested_size, render_view_id);
+      this, request_id, origin, type, requested_size, render_view_id);
   dispatcher->Start();
 }
-
-COMPILE_ASSERT(int(WebKit::WebStorageQuotaTypeTemporary) == \
-               int(quota::kStorageTypeTemporary), mismatching_enums);
-COMPILE_ASSERT(int(WebKit::WebStorageQuotaTypePersistent) == \
-               int(quota::kStorageTypePersistent), mismatching_enums);
-
-COMPILE_ASSERT(int(WebKit::WebStorageQuotaErrorNotSupported) == \
-               int(quota::kQuotaErrorNotSupported), mismatching_enums);
-COMPILE_ASSERT(int(WebKit::WebStorageQuotaErrorAbort) == \
-               int(quota::kQuotaErrorAbort), mismatching_enums);

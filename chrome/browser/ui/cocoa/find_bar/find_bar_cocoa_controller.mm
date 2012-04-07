@@ -1,26 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
-#import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
+#import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_text_field_cell.h"
-#import "chrome/browser/ui/cocoa/find_pasteboard.h"
 #import "chrome/browser/ui/cocoa/focus_tracker.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#import "content/browser/find_pasteboard.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 
 const float kFindBarOpenDuration = 0.2;
@@ -60,7 +61,7 @@ const float kRightEdgeOffset = 25;
 
 - (id)init {
   if ((self = [super initWithNibName:@"FindBar"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     [[NSNotificationCenter defaultCenter]
         addObserver:self
            selector:@selector(findPboardUpdated:)
@@ -91,6 +92,7 @@ const float kRightEdgeOffset = 25;
 
 - (void)awakeFromNib {
   [findBarView_ setFrame:[self hiddenFindBarFrame]];
+  defaultWidth_ = NSWidth([findBarView_ frame]);
 
   // Stopping the search requires a findbar controller, which isn't valid yet
   // during setup. Furthermore, there is no active search yet anyway.
@@ -134,7 +136,7 @@ const float kRightEdgeOffset = 25;
 - (void)positionFindBarViewAtMaxY:(CGFloat)maxY maxWidth:(CGFloat)maxWidth {
   NSView* containerView = [self view];
   CGFloat containerHeight = NSHeight([containerView frame]);
-  CGFloat containerWidth = NSWidth([containerView frame]);
+  CGFloat containerWidth = std::min(maxWidth, defaultWidth_);
 
   // Adjust where we'll actually place the find bar.
   maxY += [containerView cr_lineWidth];
@@ -232,7 +234,8 @@ const float kRightEdgeOffset = 25;
     // |ForwardKeyboardEvent()| directly ignores edit commands, which breaks
     // cmd-up/down if we ever decide to include |moveToBeginningOfDocument:| in
     // the list above.
-    RenderViewHost* render_view_host = contents->render_view_host();
+    RenderViewHost* render_view_host =
+        contents->web_contents()->GetRenderViewHost();
     render_view_host->ForwardKeyboardEvent(NativeWebKeyboardEvent(event));
     return YES;
   }
@@ -252,7 +255,8 @@ const float kRightEdgeOffset = 25;
 
   // The browser window might have changed while the FindBar was hidden.
   // Update its position now.
-  [browserWindowController_ layoutSubviews];
+  if (browserWindowController_)
+    [browserWindowController_ layoutSubviews];
 
   // Move to the correct horizontal position first, to prevent the FindBar
   // from jumping around when switching tabs.
@@ -296,7 +300,7 @@ const float kRightEdgeOffset = 25;
         [focusTracker_ restoreFocusInWindow:[findBarView_ window]])) {
     // Fall back to giving focus to the tab contents.
     findBarBridge_->
-        GetFindBarController()->tab_contents()->tab_contents()->Focus();
+        GetFindBarController()->tab_contents()->web_contents()->Focus();
   }
   focusTracker_.reset(nil);
 }
@@ -391,6 +395,9 @@ const float kRightEdgeOffset = 25;
   return view_rect.origin();
 }
 
+- (int)findBarWidth {
+  return NSWidth([[self view] frame]);
+}
 @end
 
 @implementation FindBarCocoaController (PrivateMethods)
@@ -461,7 +468,8 @@ const float kRightEdgeOffset = 25;
     return frame.origin.x;
 
   // Get the size of the container.
-  gfx::Rect container_rect(contents->view()->GetContainerSize());
+  gfx::Rect container_rect(
+      contents->web_contents()->GetView()->GetContainerSize());
 
   // Position the FindBar on the top right corner.
   view_rect.set_x(

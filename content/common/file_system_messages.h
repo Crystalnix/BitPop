@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 // Multiply-included message file, hence no include guard.
 
 #include "base/file_util_proxy.h"
+#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "webkit/fileapi/file_system_types.h"
@@ -22,9 +23,8 @@ IPC_ENUM_TRAITS(fileapi::FileSystemType)
 // File system messages sent from the browser to the child process.
 
 // WebFrameClient::openFileSystem response messages.
-IPC_MESSAGE_CONTROL4(FileSystemMsg_OpenComplete,
+IPC_MESSAGE_CONTROL3(FileSystemMsg_DidOpenFileSystem,
                      int /* request_id */,
-                     bool /* accepted */,
                      std::string /* name */,
                      GURL /* root_url */)
 
@@ -132,3 +132,16 @@ IPC_MESSAGE_CONTROL3(FileSystemHostMsg_OpenFile,
                      int /* request id */,
                      GURL /* file path */,
                      int /* file flags */)
+
+// For Pepper's URL loader.
+IPC_SYNC_MESSAGE_CONTROL1_1(FileSystemHostMsg_SyncGetPlatformPath,
+                            GURL /* file path */,
+                            FilePath /* platform_path */)
+
+// Pre- and post-update notifications for ppapi implementation.
+IPC_MESSAGE_CONTROL1(FileSystemHostMsg_WillUpdate,
+                     GURL /* file_path */)
+
+IPC_MESSAGE_CONTROL2(FileSystemHostMsg_DidUpdate,
+                     GURL /* file_path */,
+                     int64 /* delta */)

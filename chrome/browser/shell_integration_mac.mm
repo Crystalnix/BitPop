@@ -1,24 +1,30 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/shell_integration.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/foundation_util.h"
-#include "chrome/browser/platform_util.h"
+#include "chrome/common/chrome_version_info.h"
 #import "third_party/mozilla/NSWorkspace+Utils.h"
+
+bool ShellIntegration::CanSetAsDefaultBrowser() {
+  return chrome::VersionInfo::GetChannel() !=
+      chrome::VersionInfo::CHANNEL_CANARY;
+}
 
 // Sets Chromium as default browser to be used by the operating system. This
 // applies only for the current user. Returns false if this cannot be done, or
 // if the operation fails.
 bool ShellIntegration::SetAsDefaultBrowser() {
-  if (!platform_util::CanSetAsDefaultBrowser())
+  if (!CanSetAsDefaultBrowser())
     return false;
 
-  // We really do want the main bundle here, not base::mac::MainAppBundle(),
-  // which is the bundle for the framework.
-  NSString* identifier = [[NSBundle mainBundle] bundleIdentifier];
+  // We really do want the outer bundle here, not the main bundle since setting
+  // a shortcut to Chrome as the default browser doesn't make sense.
+  NSString* identifier = [base::mac::OuterBundle() bundleIdentifier];
   if (!identifier)
     return false;
 
@@ -33,12 +39,12 @@ bool ShellIntegration::SetAsDefaultProtocolClient(const std::string& protocol) {
   if (protocol.empty())
     return false;
 
-  if (!platform_util::CanSetAsDefaultProtocolClient(protocol))
+  if (!CanSetAsDefaultProtocolClient())
     return false;
 
-  // We really do want the main bundle here, not base::mac::MainAppBundle(),
-  // which is the bundle for the framework.
-  NSString* identifier = [[NSBundle mainBundle] bundleIdentifier];
+  // We really do want the main bundle here since it makes sense to set an
+  // app shortcut as a default protocol handler.
+  NSString* identifier = [base::mac::MainBundle() bundleIdentifier];
   if (!identifier)
     return false;
 
@@ -90,9 +96,9 @@ bool IsIdentifierDefaultProtocolClient(NSString* identifier,
 // protocols; we don't want to report "no" here if the user has simply chosen
 // to open HTML files in a text editor and FTP links with an FTP client.)
 ShellIntegration::DefaultWebClientState ShellIntegration::IsDefaultBrowser() {
-  // We really do want the main bundle here, not base::mac::MainAppBundle(),
-  // which is the bundle for the framework.
-  NSString* my_identifier = [[NSBundle mainBundle] bundleIdentifier];
+  // We really do want the outer bundle here, since this we want to know the
+  // status of the main Chrome bundle and not a shortcut.
+  NSString* my_identifier = [base::mac::OuterBundle() bundleIdentifier];
   if (!my_identifier)
     return UNKNOWN_DEFAULT_WEB_CLIENT;
 
@@ -112,9 +118,9 @@ ShellIntegration::DefaultWebClientState
   if (protocol.empty())
     return UNKNOWN_DEFAULT_WEB_CLIENT;
 
-  // We really do want the main bundle here, not base::mac::MainAppBundle(),
-  // which is the bundle for the framework.
-  NSString* my_identifier = [[NSBundle mainBundle] bundleIdentifier];
+  // We really do want the main bundle here since it makes sense to set an
+  // app shortcut as a default protocol handler.
+  NSString* my_identifier = [base::mac::MainBundle() bundleIdentifier];
   if (!my_identifier)
     return UNKNOWN_DEFAULT_WEB_CLIENT;
 

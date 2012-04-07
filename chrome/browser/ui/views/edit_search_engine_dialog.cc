@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,18 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/search_engines/edit_search_engine_controller.h"
 #include "googleurl/src/gurl.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/controls/table/table_view.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/window/window.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/table/table_view.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 using views::GridLayout;
 using views::ImageView;
@@ -31,8 +31,8 @@ using views::Textfield;
 namespace {
 // Converts a URL as understood by TemplateURL to one appropriate for display
 // to the user.
-std::wstring GetDisplayURL(const TemplateURL& turl) {
-  return turl.url() ? turl.url()->DisplayURL() : std::wstring();
+string16 GetDisplayURL(const TemplateURL& turl) {
+  return turl.url() ? turl.url()->DisplayURL() : string16();
 }
 }  // namespace
 
@@ -66,29 +66,29 @@ void EditSearchEngineDialog::Show(gfx::NativeWindow parent,
       new EditSearchEngineDialog(template_url, delegate, profile);
   // Window interprets an empty rectangle as needing to query the content for
   // the size as well as centering relative to the parent.
-  views::Window::CreateChromeWindow(parent, gfx::Rect(), contents);
-  contents->window()->Show();
+  views::Widget::CreateWindowWithParent(contents, parent);
+  contents->GetWidget()->Show();
   contents->GetDialogClientView()->UpdateDialogButtons();
   contents->title_tf_->SelectAll();
   contents->title_tf_->RequestFocus();
 }
 
-bool EditSearchEngineDialog::IsModal() const {
-  return true;
+ui::ModalType EditSearchEngineDialog::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
-std::wstring EditSearchEngineDialog::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(controller_->template_url() ?
+string16 EditSearchEngineDialog::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(controller_->template_url() ?
       IDS_SEARCH_ENGINES_EDITOR_EDIT_WINDOW_TITLE :
-      IDS_SEARCH_ENGINES_EDITOR_NEW_WINDOW_TITLE));
+      IDS_SEARCH_ENGINES_EDITOR_NEW_WINDOW_TITLE);
 }
 
 bool EditSearchEngineDialog::IsDialogButtonEnabled(
-    MessageBoxFlags::DialogButton button) const {
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK) {
-    return (controller_->IsKeywordValid(WideToUTF16(keyword_tf_->text())) &&
-            controller_->IsTitleValid(WideToUTF16(title_tf_->text())) &&
-            controller_->IsURLValid(WideToUTF8(url_tf_->text())));
+    ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK) {
+    return (controller_->IsKeywordValid(keyword_tf_->text()) &&
+            controller_->IsTitleValid(title_tf_->text()) &&
+            controller_->IsURLValid(UTF16ToUTF8(url_tf_->text())));
   }
   return true;
 }
@@ -99,9 +99,8 @@ bool EditSearchEngineDialog::Cancel() {
 }
 
 bool EditSearchEngineDialog::Accept() {
-  controller_->AcceptAddOrEdit(WideToUTF16(title_tf_->text()),
-                               WideToUTF16(keyword_tf_->text()),
-                               WideToUTF8(url_tf_->text()));
+  controller_->AcceptAddOrEdit(title_tf_->text(), keyword_tf_->text(),
+                               UTF16ToUTF8(url_tf_->text()));
   return true;
 }
 
@@ -110,7 +109,7 @@ views::View* EditSearchEngineDialog::GetContentsView() {
 }
 
 void EditSearchEngineDialog::ContentsChanged(Textfield* sender,
-                                             const std::wstring& new_contents) {
+                                             const string16& new_contents) {
   GetDialogClientView()->UpdateDialogButtons();
   UpdateImageViews();
 }
@@ -133,9 +132,9 @@ void EditSearchEngineDialog::Init() {
     // occasionally we need to update the URL of prepopulated TemplateURLs.
     url_tf_->SetReadOnly(controller_->template_url()->prepopulate_id() != 0);
   } else {
-    title_tf_ = CreateTextfield(std::wstring(), false);
-    keyword_tf_ = CreateTextfield(std::wstring(), true);
-    url_tf_ = CreateTextfield(std::wstring(), false);
+    title_tf_ = CreateTextfield(string16(), false);
+    keyword_tf_ = CreateTextfield(string16(), true);
+    url_tf_ = CreateTextfield(string16(), false);
   }
   title_iv_ = new ImageView();
   keyword_iv_ = new ImageView();
@@ -205,13 +204,14 @@ void EditSearchEngineDialog::Init() {
   // In order to fix this problem we transform the substring "%s" so that it
   // is displayed correctly when rendered in an RTL context.
   layout->StartRowWithPadding(0, 2, 0, unrelated_y);
-  std::wstring description = UTF16ToWide(l10n_util::GetStringUTF16(
-      IDS_SEARCH_ENGINES_EDITOR_URL_DESCRIPTION_LABEL));
+  string16 description = l10n_util::GetStringUTF16(
+      IDS_SEARCH_ENGINES_EDITOR_URL_DESCRIPTION_LABEL);
   if (base::i18n::IsRTL()) {
-    const std::wstring reversed_percent(L"s%");
-    std::wstring::size_type percent_index =
-        description.find(L"%s", static_cast<std::wstring::size_type>(0));
-    if (percent_index != std::wstring::npos)
+    const string16 reversed_percent(ASCIIToUTF16("s%"));
+    string16::size_type percent_index =
+        description.find(ASCIIToUTF16("%s"),
+                         static_cast<string16::size_type>(0));
+    if (percent_index != string16::npos)
       description.replace(percent_index,
                           reversed_percent.length(),
                           reversed_percent);
@@ -226,28 +226,34 @@ void EditSearchEngineDialog::Init() {
 
 views::Label* EditSearchEngineDialog::CreateLabel(int message_id) {
   views::Label* label =
-      new views::Label(UTF16ToWide(l10n_util::GetStringUTF16(message_id)));
+      new views::Label(l10n_util::GetStringUTF16(message_id));
   label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
   return label;
 }
 
-Textfield* EditSearchEngineDialog::CreateTextfield(const std::wstring& text,
+Textfield* EditSearchEngineDialog::CreateTextfield(const string16& text,
                                                    bool lowercase) {
   Textfield* text_field = new Textfield(
+#if defined(USE_AURA)
+      Textfield::STYLE_DEFAULT);
+  NOTIMPLEMENTED();   // TODO(beng): support lowercase mode in
+                      //             NativeTextfieldViews.
+                      //             http://crbug.com/109308
+#else
       lowercase ? Textfield::STYLE_LOWERCASE : Textfield::STYLE_DEFAULT);
+#endif
   text_field->SetText(text);
   text_field->SetController(this);
   return text_field;
 }
 
 void EditSearchEngineDialog::UpdateImageViews() {
-  UpdateImageView(keyword_iv_,
-                  controller_->IsKeywordValid(WideToUTF16(keyword_tf_->text())),
+  UpdateImageView(keyword_iv_, controller_->IsKeywordValid(keyword_tf_->text()),
                   IDS_SEARCH_ENGINES_INVALID_KEYWORD_TT);
-  UpdateImageView(url_iv_, controller_->IsURLValid(WideToUTF8(url_tf_->text())),
+  UpdateImageView(url_iv_,
+                  controller_->IsURLValid(UTF16ToUTF8(url_tf_->text())),
                   IDS_SEARCH_ENGINES_INVALID_URL_TT);
-  UpdateImageView(title_iv_,
-                  controller_->IsTitleValid(WideToUTF16(title_tf_->text())),
+  UpdateImageView(title_iv_, controller_->IsTitleValid(title_tf_->text()),
                   IDS_SEARCH_ENGINES_INVALID_TITLE_TT);
 }
 
@@ -255,13 +261,12 @@ void EditSearchEngineDialog::UpdateImageView(ImageView* image_view,
                                              bool is_valid,
                                              int invalid_message_id) {
   if (is_valid) {
-    image_view->SetTooltipText(std::wstring());
+    image_view->SetTooltipText(string16());
     image_view->SetImage(
         ResourceBundle::GetSharedInstance().GetBitmapNamed(
             IDR_INPUT_GOOD));
   } else {
-    image_view->SetTooltipText(
-        UTF16ToWide(l10n_util::GetStringUTF16(invalid_message_id)));
+    image_view->SetTooltipText(l10n_util::GetStringUTF16(invalid_message_id));
     image_view->SetImage(
         ResourceBundle::GetSharedInstance().GetBitmapNamed(
             IDR_INPUT_ALERT));

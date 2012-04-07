@@ -9,25 +9,32 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/eintr_wrapper.h"
 #include "base/environment.h"
+#include "base/file_util.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
 #include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/browser/renderer_host/render_sandbox_host_linux.h"
-#include "content/common/process_watcher.h"
-#include "content/common/result_codes.h"
 #include "content/common/unix_domain_socket_posix.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/result_codes.h"
 #include "sandbox/linux/suid/suid_unsafe_environment_variables.h"
+
+#if defined(USE_TCMALLOC)
+#include "third_party/tcmalloc/chromium/src/google/heap-profiler.h"
+#endif
 
 static void SaveSUIDUnsafeEnvironmentVariables() {
   // The ELF loader will clear many environment variables so we save them to
@@ -57,8 +64,7 @@ ZygoteHost::ZygoteHost()
       init_(false),
       using_suid_sandbox_(false),
       have_read_sandbox_status_word_(false),
-      sandbox_status_(0) {
-}
+      sandbox_status_(0) {}
 
 ZygoteHost::~ZygoteHost() {
   if (init_)
@@ -104,14 +110,8 @@ void ZygoteHost::Init(const std::string& sandbox_cmd) {
     switches::kAllowSandboxDebugging,
     switches::kLoggingLevel,
     switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
-    switches::kEnableRemoting,
     switches::kV,
     switches::kVModule,
-    switches::kUserDataDir,  // Make logs go to the right file.
-    // Load (in-process) Pepper plugins in-process in the zygote pre-sandbox.
-    switches::kPpapiFlashInProcess,
-    switches::kPpapiFlashPath,
-    switches::kPpapiFlashVersion,
     switches::kRegisterPepperPlugins,
     switches::kDisableSeccompSandbox,
     switches::kEnableSeccompSandbox,
@@ -119,10 +119,18 @@ void ZygoteHost::Init(const std::string& sandbox_cmd) {
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             arraysize(kForwardSwitches));
 
-  sandbox_binary_ = sandbox_cmd.c_str();
-  struct stat st;
+  content::GetContentClient()->browser()->AppendExtraCommandLineSwitches(
+      &cmd_line, -1);
 
-  if (!sandbox_cmd.empty() && stat(sandbox_binary_.c_str(), &st) == 0) {
+  sandbox_binary_ = sandbox_cmd.c_str();
+
+  if (!sandbox_cmd.empty()) {
+    struct stat st;
+    if (stat(sandbox_binary_.c_str(), &st) != 0) {
+      LOG(FATAL) << "The SUID sandbox helper binary is missing: "
+                 << sandbox_binary_ << " Aborting now.";
+    }
+
     if (access(sandbox_binary_.c_str(), X_OK) == 0 &&
         (st.st_uid == 0) &&
         (st.st_mode & S_ISUID) &&
@@ -135,8 +143,12 @@ void ZygoteHost::Init(const std::string& sandbox_cmd) {
       LOG(FATAL) << "The SUID sandbox helper binary was found, but is not "
                     "configured correctly. Rather than run without sandboxing "
                     "I'm aborting now. You need to make sure that "
-                 << sandbox_binary_ << " is mode 4755 and owned by root.";
+                 << sandbox_binary_ << " is owned by root and has mode 4755.";
     }
+  } else {
+    LOG(WARNING) << "Running without the SUID sandbox! See "
+        "http://code.google.com/p/chromium/wiki/LinuxSUIDSandboxDevelopment "
+        "for more information on developing with the sandbox on.";
   }
 
   // Start up the sandbox host process and get the file descriptor for the
@@ -151,15 +163,17 @@ void ZygoteHost::Init(const std::string& sandbox_cmd) {
     fds_to_map.push_back(std::make_pair(dummy_fd, 7));
   }
 
-  base::ProcessHandle process;
-  base::LaunchApp(cmd_line.argv(), fds_to_map, false, &process);
+  base::ProcessHandle process = -1;
+  base::LaunchOptions options;
+  options.fds_to_remap = &fds_to_map;
+  base::LaunchProcess(cmd_line.argv(), options, &process);
   CHECK(process != -1) << "Failed to launch zygote process";
 
   if (using_suid_sandbox_) {
     // In the SUID sandbox, the real zygote is forked from the sandbox.
     // We need to look for it.
     // But first, wait for the zygote to tell us it's running.
-    // The sending code is in chrome/browser/zygote_main_linux.cc.
+    // The sending code is in content/browser/zygote_main_linux.cc.
     std::vector<int> fds_vec;
     const int kExpectedLength = sizeof(kZygoteMagic);
     char buf[kExpectedLength];
@@ -188,7 +202,7 @@ void ZygoteHost::Init(const std::string& sandbox_cmd) {
 
     if (process != pid_) {
       // Reap the sandbox.
-      ProcessWatcher::EnsureProcessGetsReaped(process);
+      base::EnsureProcessGetsReaped(process);
     }
   } else {
     // Not using the SUID sandbox.
@@ -223,13 +237,15 @@ ssize_t ZygoteHost::ReadReply(void* buf, size_t buf_len) {
   return HANDLE_EINTR(read(control_fd_, buf, buf_len));
 }
 
-pid_t ZygoteHost::ForkRenderer(
+pid_t ZygoteHost::ForkRequest(
     const std::vector<std::string>& argv,
-    const base::GlobalDescriptors::Mapping& mapping) {
+    const base::GlobalDescriptors::Mapping& mapping,
+    const std::string& process_type) {
   DCHECK(init_);
   Pickle pickle;
 
   pickle.WriteInt(kCmdFork);
+  pickle.WriteString(process_type);
   pickle.WriteInt(argv.size());
   for (std::vector<std::string>::const_iterator
        i = argv.begin(); i != argv.end(); ++i)
@@ -251,69 +267,125 @@ pid_t ZygoteHost::ForkRenderer(
                                    fds))
       return base::kNullProcessHandle;
 
-    if (ReadReply(&pid, sizeof(pid)) != sizeof(pid))
+    // Read the reply, which pickles the PID and an optional UMA enumeration.
+    static const unsigned kMaxReplyLength = 2048;
+    char buf[kMaxReplyLength];
+    const ssize_t len = ReadReply(buf, sizeof(buf));
+
+    Pickle reply_pickle(buf, len);
+    void *iter = NULL;
+    if (len <= 0 || !reply_pickle.ReadInt(&iter, &pid))
       return base::kNullProcessHandle;
+
+    // If there is a nonempty UMA name string, then there is a UMA
+    // enumeration to record.
+    std::string uma_name;
+    int uma_sample;
+    int uma_boundary_value;
+    if (reply_pickle.ReadString(&iter, &uma_name) &&
+        !uma_name.empty() &&
+        reply_pickle.ReadInt(&iter, &uma_sample) &&
+        reply_pickle.ReadInt(&iter, &uma_boundary_value)) {
+      // We cannot use the UMA_HISTOGRAM_ENUMERATION macro here,
+      // because that's only for when the name is the same every time.
+      // Here we're using whatever name we got from the other side.
+      // But since it's likely that the same one will be used repeatedly
+      // (even though it's not guaranteed), we cache it here.
+      static base::Histogram* uma_histogram;
+      if (!uma_histogram || uma_histogram->histogram_name() != uma_name) {
+        uma_histogram = base::LinearHistogram::FactoryGet(
+            uma_name, 1,
+            uma_boundary_value,
+            uma_boundary_value + 1, base::Histogram::kUmaTargetedHistogramFlag);
+      }
+      uma_histogram->Add(uma_sample);
+    }
+
     if (pid <= 0)
       return base::kNullProcessHandle;
   }
 
-  const int kRendererScore = 5;
-  AdjustRendererOOMScore(pid, kRendererScore);
+#if !defined(OS_OPENBSD)
+  // This is just a starting score for a renderer or extension (the
+  // only types of processes that will be started this way).  It will
+  // get adjusted as time goes on.  (This is the same value as
+  // chrome::kLowestRendererOomScore in chrome/chrome_constants.h, but
+  // that's not something we can include here.)
+  const int kLowestRendererOomScore = 300;
+  AdjustRendererOOMScore(pid, kLowestRendererOomScore);
+#endif
 
   return pid;
 }
 
+#if !defined(OS_OPENBSD)
 void ZygoteHost::AdjustRendererOOMScore(base::ProcessHandle pid, int score) {
-  // 1) You can't change the oom_adj of a non-dumpable process (EPERM) unless
-  //    you're root. Because of this, we can't set the oom_adj from the browser
-  //    process.
+  // 1) You can't change the oom_score_adj of a non-dumpable process
+  //    (EPERM) unless you're root. Because of this, we can't set the
+  //    oom_adj from the browser process.
   //
-  // 2) We can't set the oom_adj before entering the sandbox because the
-  //    zygote is in the sandbox and the zygote is as critical as the browser
-  //    process. Its oom_adj value shouldn't be changed.
+  // 2) We can't set the oom_score_adj before entering the sandbox
+  //    because the zygote is in the sandbox and the zygote is as
+  //    critical as the browser process. Its oom_adj value shouldn't
+  //    be changed.
   //
-  // 3) A non-dumpable process can't even change its own oom_adj because it's
-  //    root owned 0644. The sandboxed processes don't even have /proc, but one
-  //    could imagine passing in a descriptor from outside.
+  // 3) A non-dumpable process can't even change its own oom_score_adj
+  //    because it's root owned 0644. The sandboxed processes don't
+  //    even have /proc, but one could imagine passing in a descriptor
+  //    from outside.
   //
   // So, in the normal case, we use the SUID binary to change it for us.
   // However, Fedora (and other SELinux systems) don't like us touching other
-  // process's oom_adj values
+  // process's oom_score_adj (or oom_adj) values
   // (https://bugzilla.redhat.com/show_bug.cgi?id=581256).
   //
   // The offical way to get the SELinux mode is selinux_getenforcemode, but I
   // don't want to add another library to the build as it's sure to cause
   // problems with other, non-SELinux distros.
   //
-  // So we just check for /selinux. This isn't foolproof, but it's not bad
-  // and it's easy.
+  // So we just check for files in /selinux. This isn't foolproof, but it's not
+  // bad and it's easy.
 
   static bool selinux;
   static bool selinux_valid = false;
 
   if (!selinux_valid) {
-    selinux = access("/selinux", X_OK) == 0;
+    const FilePath kSelinuxPath("/selinux");
+    selinux = access(kSelinuxPath.value().c_str(), X_OK) == 0 &&
+        file_util::CountFilesCreatedAfter(kSelinuxPath,
+                                          base::Time::UnixEpoch()) > 0;
     selinux_valid = true;
   }
 
   if (using_suid_sandbox_ && !selinux) {
-    base::ProcessHandle sandbox_helper_process;
-    std::vector<std::string> adj_oom_score_cmdline;
+#if defined(USE_TCMALLOC)
+    // If heap profiling is running, these processes are not exiting, at least
+    // on ChromeOS. The easiest thing to do is not launch them when profiling.
+    // TODO(stevenjb): Investigate further and fix.
+    if (IsHeapProfilerRunning())
+      return;
+#endif
+    // The command line switch used for supplying the OOM adjustment score
+    // to the setuid sandbox.
+    static const char kAdjustOOMScoreSwitch[] = "--adjust-oom-score";
 
+    std::vector<std::string> adj_oom_score_cmdline;
     adj_oom_score_cmdline.push_back(sandbox_binary_);
-    adj_oom_score_cmdline.push_back(base::kAdjustOOMScoreSwitch);
+    adj_oom_score_cmdline.push_back(kAdjustOOMScoreSwitch);
     adj_oom_score_cmdline.push_back(base::Int64ToString(pid));
     adj_oom_score_cmdline.push_back(base::IntToString(score));
-    CommandLine adj_oom_score_cmd(adj_oom_score_cmdline);
-    if (base::LaunchApp(adj_oom_score_cmd, false, true,
-                        &sandbox_helper_process)) {
-      ProcessWatcher::EnsureProcessGetsReaped(sandbox_helper_process);
+
+    base::ProcessHandle sandbox_helper_process;
+    if (base::LaunchProcess(adj_oom_score_cmdline, base::LaunchOptions(),
+                            &sandbox_helper_process)) {
+      base::EnsureProcessGetsReaped(sandbox_helper_process);
     }
   } else if (!using_suid_sandbox_) {
     if (!base::AdjustOOMScore(pid, score))
       PLOG(ERROR) << "Failed to adjust OOM score of renderer with pid " << pid;
   }
 }
+#endif
 
 void ZygoteHost::EnsureProcessTerminated(pid_t process) {
   DCHECK(init_);
@@ -336,7 +408,7 @@ base::TerminationStatus ZygoteHost::GetTerminationStatus(
 
   // Set this now to handle the early termination cases.
   if (exit_code)
-    *exit_code = ResultCodes::NORMAL_EXIT;
+    *exit_code = content::RESULT_CODE_NORMAL_EXIT;
 
   static const unsigned kMaxMessageLength = 128;
   char buf[kMaxMessageLength];

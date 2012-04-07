@@ -10,12 +10,11 @@
 #include "base/rand_util.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
-#include "base/task.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/service/cloud_print/cloud_print_consts.h"
+#include "chrome/service/cloud_print/cloud_print_token_store.h"
 #include "chrome/service/service_process.h"
-#include "content/common/url_fetcher.h"
 
 std::string StringFromJobStatus(cloud_print::PrintJobStatus status) {
   std::string ret;
@@ -139,7 +138,7 @@ GURL CloudPrintHelpers::GetUrlForJobStatusUpdate(
 
 GURL CloudPrintHelpers::GetUrlForUserMessage(const GURL& cloud_print_server_url,
                                              const std::string& message_id) {
-  std::string path(AppendPathToUrl(cloud_print_server_url, "user/message"));
+  std::string path(AppendPathToUrl(cloud_print_server_url, "message"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
   std::string query = StringPrintf("code=%s", message_id.c_str());
@@ -175,8 +174,10 @@ bool CloudPrintHelpers::ParseResponseJSON(
 
   scoped_ptr<DictionaryValue> response_dict_local(
       static_cast<DictionaryValue*>(message_value.release()));
-  if (succeeded)
-    response_dict_local->GetBoolean(kSuccessValue, succeeded);
+  if (succeeded) {
+    if (!response_dict_local->GetBoolean(kSuccessValue, succeeded))
+      *succeeded = false;
+  }
   if (response_dict)
     *response_dict = response_dict_local.release();
   return true;
@@ -216,7 +217,7 @@ std::string CloudPrintHelpers::GenerateHashOfStringMap(
     values_list.append(it->first);
     values_list.append(it->second);
   }
-  return MD5String(values_list);
+  return base::MD5String(values_list);
 }
 
 void CloudPrintHelpers::GenerateMultipartPostDataForPrinterTags(
@@ -249,7 +250,7 @@ void CloudPrintHelpers::GenerateMultipartPostDataForPrinterTags(
     AddMultipartValueForUpload(kPrinterTagValue, msg, mime_boundary,
                                std::string(), post_data);
   }
-  std::string tags_hash = MD5String(tags_list);
+  std::string tags_hash = base::MD5String(tags_list);
   std::string tags_hash_msg(kTagsHashTagName);
   tags_hash_msg += "=";
   tags_hash_msg += tags_hash;
@@ -265,3 +266,20 @@ bool CloudPrintHelpers::IsDryRunJob(const std::vector<std::string>& tags) {
   }
   return false;
 }
+
+std::string CloudPrintHelpers::GetCloudPrintAuthHeader() {
+  std::string header;
+  CloudPrintTokenStore* token_store = CloudPrintTokenStore::current();
+  if (!token_store || token_store->token().empty()) {
+    // Using LOG here for critical errors. GCP connector may run in the headless
+    // mode and error indication might be useful for user in that case.
+    LOG(ERROR) << "CP_PROXY: Missing OAuth token for request";
+  }
+
+  if (token_store) {
+    header = "Authorization: OAuth ";
+    header += token_store->token();
+  }
+  return header;
+}
+

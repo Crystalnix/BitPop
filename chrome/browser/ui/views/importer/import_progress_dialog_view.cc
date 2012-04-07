@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,11 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/label.h"
-#include "views/controls/throbber.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/window/window.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/throbber.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 ImportProgressDialogView::ImportProgressDialogView(
     HWND parent_window,
@@ -30,16 +30,16 @@ ImportProgressDialogView::ImportProgressDialogView(
       state_passwords_(new views::CheckmarkThrobber),
       state_history_(new views::CheckmarkThrobber),
       state_cookies_(new views::CheckmarkThrobber),
-      label_bookmarks_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_BOOKMARKS)))),
-      label_searches_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_SEARCH)))),
-      label_passwords_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_PASSWORDS)))),
-      label_history_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_HISTORY)))),
-      label_cookies_(new views::Label(UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_COOKIES)))),
+      label_bookmarks_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_BOOKMARKS))),
+      label_searches_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_SEARCH))),
+      label_passwords_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_PASSWORDS))),
+      label_history_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_HISTORY))),
+      label_cookies_(new views::Label(
+          l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_COOKIES))),
       parent_window_(parent_window),
       items_(items),
       importer_host_(importer_host),
@@ -98,7 +98,7 @@ ImportProgressDialogView::~ImportProgressDialogView() {
 }
 
 gfx::Size ImportProgressDialogView::GetPreferredSize() {
-  return gfx::Size(views::Window::GetLocalizedContentsSize(
+  return gfx::Size(views::Widget::GetLocalizedContentsSize(
       IDS_IMPORTPROGRESS_DIALOG_WIDTH_CHARS,
       IDS_IMPORTPROGRESS_DIALOG_HEIGHT_LINES));
 }
@@ -111,22 +111,21 @@ void ImportProgressDialogView::ViewHierarchyChanged(bool is_add,
 }
 
 int ImportProgressDialogView::GetDialogButtons() const {
-  return MessageBoxFlags::DIALOGBUTTON_CANCEL;
+  return ui::DIALOG_BUTTON_CANCEL;
 }
 
-std::wstring ImportProgressDialogView::GetDialogButtonLabel(
-    MessageBoxFlags::DialogButton button) const {
-  DCHECK(button == MessageBoxFlags::DIALOGBUTTON_CANCEL);
-  return UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_CANCEL));
+string16 ImportProgressDialogView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  DCHECK_EQ(button, ui::DIALOG_BUTTON_CANCEL);
+  return l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_STATUS_CANCEL);
 }
 
-bool ImportProgressDialogView::IsModal() const {
-  return parent_window_ != NULL;
+ui::ModalType ImportProgressDialogView::GetModalType() const {
+  return parent_window_ ? ui::MODAL_TYPE_WINDOW : ui::MODAL_TYPE_NONE;
 }
 
-std::wstring ImportProgressDialogView::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_TITLE));
+string16 ImportProgressDialogView::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(IDS_IMPORT_PROGRESS_TITLE);
 }
 
 bool ImportProgressDialogView::Cancel() {
@@ -275,7 +274,7 @@ void ImportProgressDialogView::ImportEnded() {
   // In every case, we need to close the UI now.
   importing_ = false;
   importer_host_->SetObserver(NULL);
-  window()->Close();
+  GetWidget()->Close();
   if (importer_observer_)
     importer_observer_->ImportCompleted();
 }
@@ -289,17 +288,17 @@ void ShowImportProgressDialog(HWND parent_window,
                               const SourceProfile& source_profile,
                               Profile* target_profile,
                               bool first_run) {
-  DCHECK(items != 0);
+  DCHECK_NE(items, 0u);
   ImportProgressDialogView* progress_view = new ImportProgressDialogView(
       parent_window,
       items,
       importer_host,
       importer_observer,
       source_profile.importer_name,
-      source_profile.importer_type == importer::BOOKMARKS_HTML);
+      source_profile.importer_type == importer::TYPE_BOOKMARKS_FILE);
 
-  views::Window* window = views::Window::CreateChromeWindow(
-      parent_window, gfx::Rect(), progress_view);
+  views::Widget* window =
+      views::Widget::CreateWindowWithParent(progress_view, parent_window);
 
   if (!importer_host->is_headless() && !first_run)
     window->Show();

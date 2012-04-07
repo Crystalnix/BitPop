@@ -1,41 +1,34 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/syncable/syncable.h"
 
-#include "build/build_config.h"
-
-#include <sys/types.h>
-
-#include <limits>
 #include <string>
 
-#if !defined(OS_WIN)
-#define MAX_PATH PATH_MAX
-#include <ostream>
-#include <stdio.h>
-#include <sys/ipc.h>
-#include <sys/sem.h>
-#include <sys/times.h>
-#endif  // !defined(OS_WIN)
-
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
 #include "base/stringprintf.h"
+#include "base/synchronization/condition_variable.h"
 #include "base/threading/platform_thread.h"
 #include "base/values.h"
 #include "chrome/browser/sync/engine/syncproto.h"
+#include "chrome/browser/sync/internal_api/includes/unrecoverable_error_handler_mock.h"
 #include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
 #include "chrome/browser/sync/syncable/directory_backing_store.h"
+#include "chrome/browser/sync/syncable/directory_change_delegate.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
-#include "chrome/test/sync/engine/test_id_factory.h"
-#include "chrome/test/sync/engine/test_syncable_utils.h"
-#include "chrome/test/values_test_util.h"
+#include "chrome/browser/sync/test/engine/test_id_factory.h"
+#include "chrome/browser/sync/test/engine/test_syncable_utils.h"
+#include "chrome/browser/sync/test/null_directory_change_delegate.h"
+#include "chrome/browser/sync/test/null_transaction_observer.h"
+#include "chrome/test/base/values_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
 
@@ -47,14 +40,16 @@ namespace syncable {
 
 class SyncableKernelTest : public testing::Test {};
 
+// TODO(akalin): Add unit tests for EntryKernel::ContainsString().
+
 TEST_F(SyncableKernelTest, ToValue) {
   EntryKernel kernel;
   scoped_ptr<DictionaryValue> value(kernel.ToValue());
   if (value.get()) {
     // Not much to check without repeating the ToValue() code.
     EXPECT_TRUE(value->HasKey("isDirty"));
-    // The extra +1 is for "isDirty".
-    EXPECT_EQ(BIT_TEMPS_END - BEGIN_FIELDS + 1,
+    // The extra +2 is for "isDirty" and "serverModelType".
+    EXPECT_EQ(BIT_TEMPS_END - BEGIN_FIELDS + 2,
               static_cast<int>(value->size()));
   } else {
     ADD_FAILURE();
@@ -97,31 +92,46 @@ class SyncableGeneralTest : public testing::Test {
   virtual void TearDown() {
   }
  protected:
+  MessageLoop message_loop_;
   ScopedTempDir temp_dir_;
+  NullDirectoryChangeDelegate delegate_;
   FilePath db_path_;
 };
 
 TEST_F(SyncableGeneralTest, General) {
-  Directory dir;
-  dir.Open(db_path_, "SimpleTest");
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  Directory dir(&mock_handler);
+  ASSERT_EQ(OPENED, dir.Open(db_path_, "SimpleTest", &delegate_,
+                             NullTransactionObserver()));
+
+  int64 root_metahandle;
+  {
+    ReadTransaction rtrans(FROM_HERE, &dir);
+    Entry e(&rtrans, GET_BY_ID, rtrans.root_id());
+    ASSERT_TRUE(e.good());
+    root_metahandle = e.Get(META_HANDLE);
+  }
 
   int64 written_metahandle;
   const Id id = TestIdFactory::FromNumber(99);
   std::string name = "Jeff";
   // Test simple read operations on an empty DB.
   {
-    ReadTransaction rtrans(&dir, __FILE__, __LINE__);
+    ReadTransaction rtrans(FROM_HERE, &dir);
     Entry e(&rtrans, GET_BY_ID, id);
     ASSERT_FALSE(e.good());  // Hasn't been written yet.
 
     Directory::ChildHandles child_handles;
-    dir.GetChildHandles(&rtrans, rtrans.root_id(), &child_handles);
+    dir.GetChildHandlesById(&rtrans, rtrans.root_id(), &child_handles);
+    EXPECT_TRUE(child_handles.empty());
+
+    dir.GetChildHandlesByHandle(&rtrans, root_metahandle, &child_handles);
     EXPECT_TRUE(child_handles.empty());
   }
 
   // Test creating a new meta entry.
   {
-    WriteTransaction wtrans(&dir, UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
     MutableEntry me(&wtrans, CREATE, wtrans.root_id(), name);
     ASSERT_TRUE(me.good());
     me.Put(ID, id);
@@ -129,15 +139,23 @@ TEST_F(SyncableGeneralTest, General) {
     written_metahandle = me.Get(META_HANDLE);
   }
 
-  // Test GetChildHandles after something is now in the DB.
+  // Test GetChildHandles* after something is now in the DB.
   // Also check that GET_BY_ID works.
   {
-    ReadTransaction rtrans(&dir, __FILE__, __LINE__);
+    ReadTransaction rtrans(FROM_HERE, &dir);
     Entry e(&rtrans, GET_BY_ID, id);
     ASSERT_TRUE(e.good());
 
     Directory::ChildHandles child_handles;
-    dir.GetChildHandles(&rtrans, rtrans.root_id(), &child_handles);
+    dir.GetChildHandlesById(&rtrans, rtrans.root_id(), &child_handles);
+    EXPECT_EQ(1u, child_handles.size());
+
+    for (Directory::ChildHandles::iterator i = child_handles.begin();
+         i != child_handles.end(); ++i) {
+      EXPECT_EQ(*i, written_metahandle);
+    }
+
+    dir.GetChildHandlesByHandle(&rtrans, root_metahandle, &child_handles);
     EXPECT_EQ(1u, child_handles.size());
 
     for (Directory::ChildHandles::iterator i = child_handles.begin();
@@ -149,7 +167,7 @@ TEST_F(SyncableGeneralTest, General) {
   // Test writing data to an entity. Also check that GET_BY_HANDLE works.
   static const char s[] = "Hello World.";
   {
-    WriteTransaction trans(&dir, UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, &dir);
     MutableEntry e(&trans, GET_BY_HANDLE, written_metahandle);
     ASSERT_TRUE(e.good());
     PutDataAsBookmarkFavicon(&trans, &e, s, sizeof(s));
@@ -157,7 +175,7 @@ TEST_F(SyncableGeneralTest, General) {
 
   // Test reading back the contents that we just wrote.
   {
-    WriteTransaction trans(&dir, UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, &dir);
     MutableEntry e(&trans, GET_BY_HANDLE, written_metahandle);
     ASSERT_TRUE(e.good());
     ExpectDataFromBookmarkFaviconEquals(&trans, &e, s, sizeof(s));
@@ -165,17 +183,91 @@ TEST_F(SyncableGeneralTest, General) {
 
   // Verify it exists in the folder.
   {
-    ReadTransaction rtrans(&dir, __FILE__, __LINE__);
+    ReadTransaction rtrans(FROM_HERE, &dir);
     EXPECT_EQ(1, CountEntriesWithName(&rtrans, rtrans.root_id(), name));
   }
 
   // Now delete it.
   {
-    WriteTransaction trans(&dir, UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, &dir);
     MutableEntry e(&trans, GET_BY_HANDLE, written_metahandle);
     e.Put(IS_DEL, true);
 
     EXPECT_EQ(0, CountEntriesWithName(&trans, trans.root_id(), name));
+  }
+
+  dir.SaveChanges();
+}
+
+TEST_F(SyncableGeneralTest, ChildrenOps) {
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  Directory dir(&mock_handler);
+  ASSERT_EQ(OPENED, dir.Open(db_path_, "SimpleTest", &delegate_,
+                             NullTransactionObserver()));
+
+  int64 root_metahandle;
+  {
+    ReadTransaction rtrans(FROM_HERE, &dir);
+    Entry e(&rtrans, GET_BY_ID, rtrans.root_id());
+    ASSERT_TRUE(e.good());
+    root_metahandle = e.Get(META_HANDLE);
+  }
+
+  int64 written_metahandle;
+  const Id id = TestIdFactory::FromNumber(99);
+  std::string name = "Jeff";
+  {
+    ReadTransaction rtrans(FROM_HERE, &dir);
+    Entry e(&rtrans, GET_BY_ID, id);
+    ASSERT_FALSE(e.good());  // Hasn't been written yet.
+
+    EXPECT_FALSE(dir.HasChildren(&rtrans, rtrans.root_id()));
+    Id child_id;
+    EXPECT_TRUE(dir.GetFirstChildId(&rtrans, rtrans.root_id(), &child_id));
+    EXPECT_TRUE(child_id.IsRoot());
+  }
+
+  {
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
+    MutableEntry me(&wtrans, CREATE, wtrans.root_id(), name);
+    ASSERT_TRUE(me.good());
+    me.Put(ID, id);
+    me.Put(BASE_VERSION, 1);
+    written_metahandle = me.Get(META_HANDLE);
+  }
+
+  // Test children ops after something is now in the DB.
+  {
+    ReadTransaction rtrans(FROM_HERE, &dir);
+    Entry e(&rtrans, GET_BY_ID, id);
+    ASSERT_TRUE(e.good());
+
+    Entry child(&rtrans, GET_BY_HANDLE, written_metahandle);
+    ASSERT_TRUE(child.good());
+
+    EXPECT_TRUE(dir.HasChildren(&rtrans, rtrans.root_id()));
+    Id child_id;
+    EXPECT_TRUE(dir.GetFirstChildId(&rtrans, rtrans.root_id(), &child_id));
+    EXPECT_EQ(e.Get(ID), child_id);
+  }
+
+  {
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
+    MutableEntry me(&wtrans, GET_BY_HANDLE, written_metahandle);
+    ASSERT_TRUE(me.good());
+    me.Put(IS_DEL, true);
+  }
+
+  // Test children ops after the children have been deleted.
+  {
+    ReadTransaction rtrans(FROM_HERE, &dir);
+    Entry e(&rtrans, GET_BY_ID, id);
+    ASSERT_TRUE(e.good());
+
+    EXPECT_FALSE(dir.HasChildren(&rtrans, rtrans.root_id()));
+    Id child_id;
+    EXPECT_TRUE(dir.GetFirstChildId(&rtrans, rtrans.root_id(), &child_id));
+    EXPECT_TRUE(child_id.IsRoot());
   }
 
   dir.SaveChanges();
@@ -190,10 +282,12 @@ TEST_F(SyncableGeneralTest, ClientIndexRebuildsProperly) {
 
   // Test creating a new meta entry.
   {
-    Directory dir;
-    dir.Open(db_path_, "IndexTest");
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
+    Directory dir(&mock_handler);
+    ASSERT_EQ(OPENED, dir.Open(db_path_, "IndexTest", &delegate_,
+                               NullTransactionObserver()));
     {
-      WriteTransaction wtrans(&dir, UNITTEST, __FILE__, __LINE__);
+      WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
       MutableEntry me(&wtrans, CREATE, wtrans.root_id(), name);
       ASSERT_TRUE(me.good());
       me.Put(ID, id);
@@ -206,10 +300,12 @@ TEST_F(SyncableGeneralTest, ClientIndexRebuildsProperly) {
 
   // The DB was closed. Now reopen it. This will cause index regeneration.
   {
-    Directory dir;
-    dir.Open(db_path_, "IndexTest");
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
+    Directory dir(&mock_handler);
+    ASSERT_EQ(OPENED, dir.Open(db_path_, "IndexTest",
+                               &delegate_, NullTransactionObserver()));
 
-    ReadTransaction trans(&dir, __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, &dir);
     Entry me(&trans, GET_BY_CLIENT_TAG, tag);
     ASSERT_TRUE(me.good());
     EXPECT_EQ(me.Get(ID), id);
@@ -226,10 +322,12 @@ TEST_F(SyncableGeneralTest, ClientIndexRebuildsDeletedProperly) {
 
   // Test creating a deleted, unsynced, server meta entry.
   {
-    Directory dir;
-    dir.Open(db_path_, "IndexTest");
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
+    Directory dir(&mock_handler);
+    ASSERT_EQ(OPENED, dir.Open(db_path_, "IndexTest", &delegate_,
+                                NullTransactionObserver()));
     {
-      WriteTransaction wtrans(&dir, UNITTEST, __FILE__, __LINE__);
+      WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
       MutableEntry me(&wtrans, CREATE, wtrans.root_id(), "deleted");
       ASSERT_TRUE(me.good());
       me.Put(ID, id);
@@ -244,10 +342,12 @@ TEST_F(SyncableGeneralTest, ClientIndexRebuildsDeletedProperly) {
   // The DB was closed. Now reopen it. This will cause index regeneration.
   // Should still be present and valid in the client tag index.
   {
-    Directory dir;
-    dir.Open(db_path_, "IndexTest");
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
+    Directory dir(&mock_handler);
+    ASSERT_EQ(OPENED, dir.Open(db_path_, "IndexTest", &delegate_,
+                               NullTransactionObserver()));
 
-    ReadTransaction trans(&dir, __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, &dir);
     Entry me(&trans, GET_BY_CLIENT_TAG, tag);
     ASSERT_TRUE(me.good());
     EXPECT_EQ(me.Get(ID), id);
@@ -258,12 +358,14 @@ TEST_F(SyncableGeneralTest, ClientIndexRebuildsDeletedProperly) {
 }
 
 TEST_F(SyncableGeneralTest, ToValue) {
-  Directory dir;
-  dir.Open(db_path_, "SimpleTest");
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  Directory dir(&mock_handler);
+  ASSERT_EQ(OPENED, dir.Open(db_path_, "SimpleTest", &delegate_,
+                             NullTransactionObserver()));
 
   const Id id = TestIdFactory::FromNumber(99);
   {
-    ReadTransaction rtrans(&dir, __FILE__, __LINE__);
+    ReadTransaction rtrans(FROM_HERE, &dir);
     Entry e(&rtrans, GET_BY_ID, id);
     EXPECT_FALSE(e.good());  // Hasn't been written yet.
 
@@ -274,7 +376,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
 
   // Test creating a new meta entry.
   {
-    WriteTransaction wtrans(&dir, UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, &dir);
     MutableEntry me(&wtrans, CREATE, wtrans.root_id(), "new");
     ASSERT_TRUE(me.good());
     me.Put(ID, id);
@@ -283,9 +385,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
     scoped_ptr<DictionaryValue> value(me.ToValue());
     ExpectDictBooleanValue(true, *value, "good");
     EXPECT_TRUE(value->HasKey("kernel"));
-    ExpectDictStringValue("Unspecified", *value, "serverModelType");
     ExpectDictStringValue("Unspecified", *value, "modelType");
-    ExpectDictBooleanValue(false, *value, "shouldMaintainPosition");
     ExpectDictBooleanValue(true, *value, "existsOnClientBecauseNameIsNonEmpty");
     ExpectDictBooleanValue(false, *value, "isRoot");
   }
@@ -296,6 +396,7 @@ TEST_F(SyncableGeneralTest, ToValue) {
 // A Directory whose backing store always fails SaveChanges by returning false.
 class TestUnsaveableDirectory : public Directory {
  public:
+  TestUnsaveableDirectory() : Directory(&mock_handler_) {}
   class UnsaveableBackingStore : public DirectoryBackingStore {
    public:
      UnsaveableBackingStore(const std::string& dir_name,
@@ -310,11 +411,14 @@ class TestUnsaveableDirectory : public Directory {
       const FilePath& backing_filepath) {
     return new UnsaveableBackingStore(dir_name, backing_filepath);
   }
+ private:
+  browser_sync::MockUnrecoverableErrorHandler mock_handler_;
 };
 
 // Test suite for syncable::Directory.
 class SyncableDirectoryTest : public testing::Test {
  protected:
+  MessageLoop message_loop_;
   ScopedTempDir temp_dir_;
   static const char kName[];
   static const Id kId;
@@ -322,13 +426,15 @@ class SyncableDirectoryTest : public testing::Test {
   // SetUp() is called before each test case is run.
   // The sqlite3 DB is deleted before each test is run.
   virtual void SetUp() {
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     file_path_ = temp_dir_.path().Append(
         FILE_PATH_LITERAL("Test.sqlite3"));
     file_util::Delete(file_path_, true);
-    dir_.reset(new Directory());
+    dir_.reset(new Directory(&mock_handler));
     ASSERT_TRUE(dir_.get());
-    ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
+    ASSERT_EQ(OPENED, dir_->Open(file_path_, kName,
+                                 &delegate_, NullTransactionObserver()));
     ASSERT_TRUE(dir_->good());
   }
 
@@ -340,9 +446,11 @@ class SyncableDirectoryTest : public testing::Test {
   }
 
   void ReloadDir() {
-    dir_.reset(new Directory());
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
+    dir_.reset(new Directory(&mock_handler));
     ASSERT_TRUE(dir_.get());
-    ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
+    ASSERT_EQ(OPENED, dir_->Open(file_path_, kName,
+                                 &delegate_, NullTransactionObserver()));
   }
 
   void SaveAndReloadDir() {
@@ -358,11 +466,11 @@ class SyncableDirectoryTest : public testing::Test {
     return 1 == dir_->kernel_->metahandles_to_purge->count(metahandle);
   }
 
-  void CheckPurgeEntriesWithTypeInSucceeded(const ModelTypeSet& types_to_purge,
+  void CheckPurgeEntriesWithTypeInSucceeded(ModelTypeSet types_to_purge,
                                             bool before_reload) {
     SCOPED_TRACE(testing::Message("Before reload: ") << before_reload);
     {
-      ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+      ReadTransaction trans(FROM_HERE, dir_.get());
       MetahandleSet all_set;
       dir_->GetAllMetaHandles(&trans, &all_set);
       EXPECT_EQ(3U, all_set.size());
@@ -371,20 +479,30 @@ class SyncableDirectoryTest : public testing::Test {
       for (MetahandleSet::iterator iter = all_set.begin();
            iter != all_set.end(); ++iter) {
         Entry e(&trans, GET_BY_HANDLE, *iter);
-        if ((types_to_purge.count(e.GetModelType()) ||
-             types_to_purge.count(e.GetServerModelType()))) {
+        const ModelType local_type = e.GetModelType();
+        const ModelType server_type = e.GetServerModelType();
+
+        // Note the dance around incrementing |it|, since we sometimes erase().
+        if ((IsRealDataType(local_type) &&
+             types_to_purge.Has(local_type)) ||
+            (IsRealDataType(server_type) &&
+             types_to_purge.Has(server_type))) {
           FAIL() << "Illegal type should have been deleted.";
         }
       }
     }
 
-    EXPECT_FALSE(dir_->initial_sync_ended_for_type(PREFERENCES));
-    EXPECT_FALSE(dir_->initial_sync_ended_for_type(AUTOFILL));
+    for (ModelTypeSet::Iterator it = types_to_purge.First();
+         it.Good(); it.Inc()) {
+      EXPECT_FALSE(dir_->initial_sync_ended_for_type(it.Get()));
+    }
+    EXPECT_FALSE(types_to_purge.Has(BOOKMARKS));
     EXPECT_TRUE(dir_->initial_sync_ended_for_type(BOOKMARKS));
   }
 
   scoped_ptr<Directory> dir_;
   FilePath file_path_;
+  NullDirectoryChangeDelegate delegate_;
 
   // Creates an empty entry and sets the ID field to the default kId.
   void CreateEntry(const std::string& entryname) {
@@ -396,7 +514,7 @@ class SyncableDirectoryTest : public testing::Test {
     CreateEntry(entryname, TestIdFactory::FromNumber(id));
   }
   void CreateEntry(const std::string& entryname, Id id) {
-    WriteTransaction wtrans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry me(&wtrans, CREATE, wtrans.root_id(), entryname);
     ASSERT_TRUE(me.good());
     me.Put(ID, id);
@@ -417,7 +535,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsMetahandlesToPurge) {
   MetahandleSet expected_purges;
   MetahandleSet all_handles;
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     for (int i = 0; i < metas_to_create; i++) {
       MutableEntry e(&trans, CREATE, trans.root_id(), "foo");
       e.Put(IS_UNSYNCED, true);
@@ -435,8 +553,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsMetahandlesToPurge) {
     }
   }
 
-  ModelTypeSet to_purge;
-  to_purge.insert(BOOKMARKS);
+  syncable::ModelTypeSet to_purge(BOOKMARKS);
   dir_->PurgeEntriesWithTypeIn(to_purge);
 
   Directory::SaveChangesSnapshot snapshot1;
@@ -444,8 +561,8 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsMetahandlesToPurge) {
   dir_->TakeSnapshotForSaveChanges(&snapshot1);
   EXPECT_TRUE(expected_purges == snapshot1.metahandles_to_purge);
 
-  to_purge.clear();
-  to_purge.insert(PREFERENCES);
+  to_purge.Clear();
+  to_purge.Put(PREFERENCES);
   dir_->PurgeEntriesWithTypeIn(to_purge);
 
   dir_->HandleSaveChangesFailure(snapshot1);
@@ -459,7 +576,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsAllDirtyHandlesTest) {
   const int metahandles_to_create = 100;
   std::vector<int64> expected_dirty_metahandles;
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     for (int i = 0; i < metahandles_to_create; i++) {
       MutableEntry e(&trans, CREATE, trans.root_id(), "foo");
       expected_dirty_metahandles.push_back(e.Get(META_HANDLE));
@@ -474,7 +591,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsAllDirtyHandlesTest) {
     // Make sure there's an entry for each new metahandle.  Make sure all
     // entries are marked dirty.
     ASSERT_EQ(expected_dirty_metahandles.size(), snapshot.dirty_metas.size());
-    for (OriginalEntries::const_iterator i = snapshot.dirty_metas.begin();
+    for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
         i != snapshot.dirty_metas.end(); ++i) {
       ASSERT_TRUE(i->is_dirty());
     }
@@ -482,7 +599,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsAllDirtyHandlesTest) {
   }
   // Put a new value with existing transactions as well as adding new ones.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     std::vector<int64> new_dirty_metahandles;
     for (std::vector<int64>::const_iterator i =
         expected_dirty_metahandles.begin();
@@ -507,7 +624,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsAllDirtyHandlesTest) {
     // Make sure there's an entry for each new metahandle.  Make sure all
     // entries are marked dirty.
     EXPECT_EQ(expected_dirty_metahandles.size(), snapshot.dirty_metas.size());
-    for (OriginalEntries::const_iterator i = snapshot.dirty_metas.begin();
+    for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
         i != snapshot.dirty_metas.end(); ++i) {
       EXPECT_TRUE(i->is_dirty());
     }
@@ -526,14 +643,12 @@ TEST_F(SyncableDirectoryTest, TestPurgeEntriesWithTypeIn) {
   dir_->set_initial_sync_ended_for_type(PREFERENCES, true);
   dir_->set_initial_sync_ended_for_type(AUTOFILL, true);
 
-  std::set<ModelType> types_to_purge;
-  types_to_purge.insert(PREFERENCES);
-  types_to_purge.insert(AUTOFILL);
+  syncable::ModelTypeSet types_to_purge(PREFERENCES, AUTOFILL);
 
   TestIdFactory id_factory;
   // Create some items for each type.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry item1(&trans, CREATE, trans.root_id(), "Item");
     ASSERT_TRUE(item1.good());
     item1.Put(SPECIFICS, bookmark_specs);
@@ -573,7 +688,7 @@ TEST_F(SyncableDirectoryTest, TestPurgeEntriesWithTypeIn) {
 
   dir_->SaveChanges();
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     MetahandleSet all_set;
     dir_->GetAllMetaHandles(&trans, &all_set);
     ASSERT_EQ(7U, all_set.size());
@@ -595,7 +710,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
   const unsigned int number_changed = 100u;
   std::vector<int64> expected_dirty_metahandles;
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     for (int i = 0; i < metahandles_to_create; i++) {
       MutableEntry e(&trans, CREATE, trans.root_id(), "foo");
       expected_dirty_metahandles.push_back(e.Get(META_HANDLE));
@@ -605,7 +720,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
   dir_->SaveChanges();
   // Put a new value with existing transactions as well as adding new ones.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     std::vector<int64> new_dirty_metahandles;
     for (std::vector<int64>::const_iterator i =
         expected_dirty_metahandles.begin();
@@ -626,7 +741,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
   dir_->SaveChanges();
   // Don't make any changes whatsoever and ensure nothing comes back.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     for (std::vector<int64>::const_iterator i =
         expected_dirty_metahandles.begin();
         i != expected_dirty_metahandles.end(); ++i) {
@@ -645,7 +760,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
     dir_->VacuumAfterSaveChanges(snapshot);
   }
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     bool should_change = false;
     for (std::vector<int64>::const_iterator i =
         expected_dirty_metahandles.begin();
@@ -669,7 +784,7 @@ TEST_F(SyncableDirectoryTest, TakeSnapshotGetsOnlyDirtyHandlesTest) {
     // Make sure there's an entry for each changed metahandle.  Make sure all
     // entries are marked dirty.
     EXPECT_EQ(number_changed, snapshot.dirty_metas.size());
-    for (OriginalEntries::const_iterator i = snapshot.dirty_metas.begin();
+    for (EntryKernelSet::const_iterator i = snapshot.dirty_metas.begin();
         i != snapshot.dirty_metas.end(); ++i) {
       EXPECT_TRUE(i->is_dirty());
     }
@@ -682,21 +797,21 @@ const Id SyncableDirectoryTest::kId(TestIdFactory::FromNumber(-99));
 
 namespace {
 TEST_F(SyncableDirectoryTest, TestBasicLookupNonExistantID) {
-  ReadTransaction rtrans(dir_.get(), __FILE__, __LINE__);
+  ReadTransaction rtrans(FROM_HERE, dir_.get());
   Entry e(&rtrans, GET_BY_ID, kId);
   ASSERT_FALSE(e.good());
 }
 
 TEST_F(SyncableDirectoryTest, TestBasicLookupValidID) {
   CreateEntry("rtc");
-  ReadTransaction rtrans(dir_.get(), __FILE__, __LINE__);
+  ReadTransaction rtrans(FROM_HERE, dir_.get());
   Entry e(&rtrans, GET_BY_ID, kId);
   ASSERT_TRUE(e.good());
 }
 
 TEST_F(SyncableDirectoryTest, TestDelete) {
   std::string name = "peanut butter jelly time";
-  WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+  WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
   MutableEntry e1(&trans, CREATE, trans.root_id(), name);
   ASSERT_TRUE(e1.good());
   ASSERT_TRUE(e1.Put(IS_DEL, true));
@@ -720,7 +835,7 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
   Directory::UnsyncedMetaHandles handles;
   int64 handle1, handle2;
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     dir_->GetUnsyncedMetaHandles(&trans, &handles);
     ASSERT_TRUE(0 == handles.size());
@@ -740,7 +855,7 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     dir_->GetUnsyncedMetaHandles(&trans, &handles);
     ASSERT_TRUE(0 == handles.size());
@@ -751,7 +866,7 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     dir_->GetUnsyncedMetaHandles(&trans, &handles);
     ASSERT_TRUE(1 == handles.size());
     ASSERT_TRUE(handle1 == handles[0]);
@@ -762,7 +877,7 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     dir_->GetUnsyncedMetaHandles(&trans, &handles);
     ASSERT_TRUE(2 == handles.size());
     if (handle1 == handles[0]) {
@@ -780,7 +895,7 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     dir_->GetUnsyncedMetaHandles(&trans, &handles);
     ASSERT_TRUE(1 == handles.size());
     ASSERT_TRUE(handle2 == handles[0]);
@@ -790,10 +905,12 @@ TEST_F(SyncableDirectoryTest, TestGetUnsynced) {
 TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
   Directory::UnappliedUpdateMetaHandles handles;
   int64 handle1, handle2;
+  const syncable::FullModelTypeSet all_types =
+      syncable::FullModelTypeSet::All();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
-    dir_->GetUnappliedUpdateMetaHandles(&trans, &handles);
+    dir_->GetUnappliedUpdateMetaHandles(&trans, all_types, &handles);
     ASSERT_TRUE(0 == handles.size());
 
     MutableEntry e1(&trans, CREATE, trans.root_id(), "abba");
@@ -813,9 +930,9 @@ TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
-    dir_->GetUnappliedUpdateMetaHandles(&trans, &handles);
+    dir_->GetUnappliedUpdateMetaHandles(&trans, all_types, &handles);
     ASSERT_TRUE(0 == handles.size());
 
     MutableEntry e3(&trans, GET_BY_HANDLE, handle1);
@@ -824,8 +941,8 @@ TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
-    dir_->GetUnappliedUpdateMetaHandles(&trans, &handles);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
+    dir_->GetUnappliedUpdateMetaHandles(&trans, all_types, &handles);
     ASSERT_TRUE(1 == handles.size());
     ASSERT_TRUE(handle1 == handles[0]);
 
@@ -835,8 +952,8 @@ TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
-    dir_->GetUnappliedUpdateMetaHandles(&trans, &handles);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
+    dir_->GetUnappliedUpdateMetaHandles(&trans, all_types, &handles);
     ASSERT_TRUE(2 == handles.size());
     if (handle1 == handles[0]) {
       ASSERT_TRUE(handle2 == handles[1]);
@@ -851,8 +968,8 @@ TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
   }
   dir_->SaveChanges();
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
-    dir_->GetUnappliedUpdateMetaHandles(&trans, &handles);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
+    dir_->GetUnappliedUpdateMetaHandles(&trans, all_types, &handles);
     ASSERT_TRUE(1 == handles.size());
     ASSERT_TRUE(handle2 == handles[0]);
   }
@@ -862,9 +979,9 @@ TEST_F(SyncableDirectoryTest, TestGetUnappliedUpdates) {
 TEST_F(SyncableDirectoryTest, DeleteBug_531383) {
   // Try to evoke a check failure...
   TestIdFactory id_factory;
-  int64 grandchild_handle, twin_handle;
+  int64 grandchild_handle;
   {
-    WriteTransaction wtrans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry parent(&wtrans, CREATE, id_factory.root(), "Bob");
     ASSERT_TRUE(parent.good());
     parent.Put(IS_DIR, true);
@@ -886,11 +1003,10 @@ TEST_F(SyncableDirectoryTest, DeleteBug_531383) {
     ASSERT_TRUE(grandchild.Put(IS_DEL, false));
 
     grandchild_handle = grandchild.Get(META_HANDLE);
-    twin_handle = twin.Get(META_HANDLE);
   }
   dir_->SaveChanges();
   {
-    WriteTransaction wtrans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry grandchild(&wtrans, GET_BY_HANDLE, grandchild_handle);
     grandchild.Put(IS_DEL, true);  // Used to CHECK fail here.
   }
@@ -902,7 +1018,7 @@ static inline bool IsLegalNewParent(const Entry& a, const Entry& b) {
 
 TEST_F(SyncableDirectoryTest, TestIsLegalNewParent) {
   TestIdFactory id_factory;
-  WriteTransaction wtrans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+  WriteTransaction wtrans(FROM_HERE, UNITTEST, dir_.get());
   Entry root(&wtrans, GET_BY_ID, id_factory.root());
   ASSERT_TRUE(root.good());
   MutableEntry parent(&wtrans, CREATE, root.Get(ID), "Bob");
@@ -961,7 +1077,7 @@ TEST_F(SyncableDirectoryTest, TestEntryIsInFolder) {
   std::string entry_name = "entry";
 
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry folder(&trans, CREATE, trans.root_id(), "folder");
     ASSERT_TRUE(folder.good());
     EXPECT_TRUE(folder.Put(IS_DIR, true));
@@ -977,7 +1093,7 @@ TEST_F(SyncableDirectoryTest, TestEntryIsInFolder) {
 
   // Make sure we can find the entry in the folder.
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     EXPECT_EQ(0, CountEntriesWithName(&trans, trans.root_id(), entry_name));
     EXPECT_EQ(1, CountEntriesWithName(&trans, folder_id, entry_name));
 
@@ -992,7 +1108,7 @@ TEST_F(SyncableDirectoryTest, TestEntryIsInFolder) {
 TEST_F(SyncableDirectoryTest, TestParentIdIndexUpdate) {
   std::string child_name = "child";
 
-  WriteTransaction wt(dir_.get(), UNITTEST, __FILE__, __LINE__);
+  WriteTransaction wt(FROM_HERE, UNITTEST, dir_.get());
   MutableEntry parent_folder(&wt, CREATE, wt.root_id(), "folder1");
   parent_folder.Put(IS_UNSYNCED, true);
   EXPECT_TRUE(parent_folder.Put(IS_DIR, true));
@@ -1021,7 +1137,7 @@ TEST_F(SyncableDirectoryTest, TestNoReindexDeletedItems) {
   std::string folder_name = "folder";
   std::string new_name = "new_name";
 
-  WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+  WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
   MutableEntry folder(&trans, CREATE, trans.root_id(), folder_name);
   ASSERT_TRUE(folder.good());
   ASSERT_TRUE(folder.Put(IS_DIR, true));
@@ -1039,7 +1155,7 @@ TEST_F(SyncableDirectoryTest, TestNoReindexDeletedItems) {
 }
 
 TEST_F(SyncableDirectoryTest, TestCaseChangeRename) {
-  WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+  WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
   MutableEntry folder(&trans, CREATE, trans.root_id(), "CaseChange");
   ASSERT_TRUE(folder.good());
   EXPECT_TRUE(folder.Put(PARENT_ID, trans.root_id()));
@@ -1052,34 +1168,31 @@ TEST_F(SyncableDirectoryTest, TestShareInfo) {
   dir_->set_store_birthday("Jan 31st");
   dir_->SetNotificationState("notification_state");
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     EXPECT_TRUE(dir_->initial_sync_ended_for_type(AUTOFILL));
     EXPECT_FALSE(dir_->initial_sync_ended_for_type(BOOKMARKS));
     EXPECT_EQ("Jan 31st", dir_->store_birthday());
-    EXPECT_EQ("notification_state", dir_->GetAndClearNotificationState());
-    EXPECT_EQ("", dir_->GetAndClearNotificationState());
+    EXPECT_EQ("notification_state", dir_->GetNotificationState());
   }
   dir_->set_store_birthday("April 10th");
   dir_->SetNotificationState("notification_state2");
   dir_->SaveChanges();
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     EXPECT_TRUE(dir_->initial_sync_ended_for_type(AUTOFILL));
     EXPECT_FALSE(dir_->initial_sync_ended_for_type(BOOKMARKS));
     EXPECT_EQ("April 10th", dir_->store_birthday());
-    EXPECT_EQ("notification_state2", dir_->GetAndClearNotificationState());
-    EXPECT_EQ("", dir_->GetAndClearNotificationState());
+    EXPECT_EQ("notification_state2", dir_->GetNotificationState());
   }
   dir_->SetNotificationState("notification_state2");
   // Restore the directory from disk.  Make sure that nothing's changed.
   SaveAndReloadDir();
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     EXPECT_TRUE(dir_->initial_sync_ended_for_type(AUTOFILL));
     EXPECT_FALSE(dir_->initial_sync_ended_for_type(BOOKMARKS));
     EXPECT_EQ("April 10th", dir_->store_birthday());
-    EXPECT_EQ("notification_state2", dir_->GetAndClearNotificationState());
-    EXPECT_EQ("", dir_->GetAndClearNotificationState());
+    EXPECT_EQ("notification_state2", dir_->GetNotificationState());
   }
 }
 
@@ -1091,7 +1204,7 @@ TEST_F(SyncableDirectoryTest, TestSimpleFieldsPreservedDuringSaveChanges) {
   std::string create_name =  "Create";
 
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry create(&trans, CREATE, trans.root_id(), create_name);
     MutableEntry update(&trans, CREATE_NEW_UPDATE_ITEM, update_id);
     create.Put(IS_UNSYNCED, true);
@@ -1106,13 +1219,15 @@ TEST_F(SyncableDirectoryTest, TestSimpleFieldsPreservedDuringSaveChanges) {
   }
 
   dir_->SaveChanges();
-  dir_.reset(new Directory());
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  dir_.reset(new Directory(&mock_handler));
   ASSERT_TRUE(dir_.get());
-  ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
+  ASSERT_EQ(OPENED, dir_->Open(file_path_, kName,
+                               &delegate_, NullTransactionObserver()));
   ASSERT_TRUE(dir_->good());
 
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     Entry create(&trans, GET_BY_ID, create_id);
     EXPECT_EQ(1, CountEntriesWithName(&trans, trans.root_id(), create_name));
     Entry update(&trans, GET_BY_ID, update_id);
@@ -1127,6 +1242,14 @@ TEST_F(SyncableDirectoryTest, TestSimpleFieldsPreservedDuringSaveChanges) {
     EXPECT_EQ(update_pre_save.ref((Int64Field)i),
               update_post_save.ref((Int64Field)i))
               << "int64 field #" << i << " changed during save/load";
+  }
+  for ( ; i < TIME_FIELDS_END ; ++i) {
+    EXPECT_EQ(create_pre_save.ref((TimeField)i),
+              create_post_save.ref((TimeField)i))
+              << "time field #" << i << " changed during save/load";
+    EXPECT_EQ(update_pre_save.ref((TimeField)i),
+              update_post_save.ref((TimeField)i))
+              << "time field #" << i << " changed during save/load";
   }
   for ( ; i < ID_FIELDS_END ; ++i) {
     EXPECT_EQ(create_pre_save.ref((IdField)i),
@@ -1166,7 +1289,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailure) {
   int64 handle1 = 0;
   // Set up an item using a regular, saveable directory.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     MutableEntry e1(&trans, CREATE, trans.root_id(), "aguilera");
     ASSERT_TRUE(e1.good());
@@ -1183,7 +1306,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailure) {
   // Make sure the item is no longer dirty after saving,
   // and make a modification.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     MutableEntry aguilera(&trans, GET_BY_HANDLE, handle1);
     ASSERT_TRUE(aguilera.good());
@@ -1199,11 +1322,12 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailure) {
   // always fail.
   dir_.reset(new TestUnsaveableDirectory());
   ASSERT_TRUE(dir_.get());
-  ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
+  ASSERT_EQ(OPENED, dir_->Open(file_path_, kName,
+                               &delegate_, NullTransactionObserver()));
   ASSERT_TRUE(dir_->good());
   int64 handle2 = 0;
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     MutableEntry aguilera(&trans, GET_BY_HANDLE, handle1);
     ASSERT_TRUE(aguilera.good());
@@ -1232,7 +1356,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailure) {
 
   // Make sure things were rolled back and the world is as it was before call.
   {
-     ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+     ReadTransaction trans(FROM_HERE, dir_.get());
      Entry e1(&trans, GET_BY_HANDLE, handle1);
      ASSERT_TRUE(e1.good());
      EntryKernel aguilera = e1.GetKernelCopy();
@@ -1249,7 +1373,7 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailureWithPurge) {
   int64 handle1 = 0;
   // Set up an item using a regular, saveable directory.
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     MutableEntry e1(&trans, CREATE, trans.root_id(), "aguilera");
     ASSERT_TRUE(e1.good());
@@ -1272,11 +1396,11 @@ TEST_F(SyncableDirectoryTest, TestSaveChangesFailureWithPurge) {
   // always fail.
   dir_.reset(new TestUnsaveableDirectory());
   ASSERT_TRUE(dir_.get());
-  ASSERT_TRUE(OPENED == dir_->Open(file_path_, kName));
+  ASSERT_EQ(OPENED, dir_->Open(file_path_, kName,
+                               &delegate_, NullTransactionObserver()));
   ASSERT_TRUE(dir_->good());
 
-  ModelTypeSet set;
-  set.insert(BOOKMARKS);
+  syncable::ModelTypeSet set(BOOKMARKS);
   dir_->PurgeEntriesWithTypeIn(set);
   EXPECT_TRUE(IsInMetahandlesToPurge(handle1));
   ASSERT_FALSE(dir_->SaveChanges());
@@ -1300,7 +1424,7 @@ TEST_F(SyncableDirectoryTest, GetModelType) {
     sync_pb::EntitySpecifics specifics;
     AddDefaultExtensionValue(datatype, &specifics);
 
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
 
     MutableEntry folder(&trans, CREATE, trans.root_id(), "Folder");
     ASSERT_TRUE(folder.good());
@@ -1394,47 +1518,21 @@ class SyncableDirectoryManager : public testing::Test {
   virtual void TearDown() {
   }
  protected:
+  MessageLoop message_loop_;
   ScopedTempDir temp_dir_;
+  NullDirectoryChangeDelegate delegate_;
 };
 
 TEST_F(SyncableDirectoryManager, TestFileRelease) {
   DirectoryManager dm(FilePath(temp_dir_.path()));
-  ASSERT_TRUE(dm.Open("ScopeTest"));
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  ASSERT_TRUE(dm.Open("ScopeTest", &delegate_, &mock_handler,
+              NullTransactionObserver()));
   {
     ScopedDirLookup(&dm, "ScopeTest");
   }
   dm.Close("ScopeTest");
   ASSERT_TRUE(file_util::Delete(dm.GetSyncDataDatabasePath(), true));
-}
-
-class ThreadOpenTestDelegate : public base::PlatformThread::Delegate {
- public:
-  explicit ThreadOpenTestDelegate(DirectoryManager* dm)
-      : directory_manager_(dm) {}
-  DirectoryManager* const directory_manager_;
-
- private:
-  // PlatformThread::Delegate methods:
-  virtual void ThreadMain() {
-    CHECK(directory_manager_->Open("Open"));
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(ThreadOpenTestDelegate);
-};
-
-TEST_F(SyncableDirectoryManager, ThreadOpenTest) {
-  DirectoryManager dm(FilePath(temp_dir_.path()));
-  base::PlatformThreadHandle thread_handle;
-  ThreadOpenTestDelegate test_delegate(&dm);
-  ASSERT_TRUE(base::PlatformThread::Create(0, &test_delegate, &thread_handle));
-  base::PlatformThread::Join(thread_handle);
-  {
-    ScopedDirLookup dir(&dm, "Open");
-    ASSERT_TRUE(dir.good());
-  }
-  dm.Close("Open");
-  ScopedDirLookup dir(&dm, "Open");
-  ASSERT_FALSE(dir.good());
 }
 
 struct Step {
@@ -1455,28 +1553,32 @@ class ThreadBugDelegate : public base::PlatformThread::Delegate {
  protected:
   const int role_;
   Step* const step_;
+  NullDirectoryChangeDelegate delegate_;
   DirectoryManager* const directory_manager_;
 
   // PlatformThread::Delegate methods:
   virtual void ThreadMain() {
+    MessageLoop message_loop;
     const std::string dirname = "ThreadBug1";
     base::AutoLock scoped_lock(step_->mutex);
-
+    browser_sync::MockUnrecoverableErrorHandler mock_handler;
     while (step_->number < 3) {
       while (step_->number % 2 != role_) {
         step_->condvar.Wait();
       }
       switch (step_->number) {
       case 0:
-        directory_manager_->Open(dirname);
+        directory_manager_->Open(
+            dirname, &delegate_, &mock_handler, NullTransactionObserver());
         break;
       case 1:
         {
           directory_manager_->Close(dirname);
-          directory_manager_->Open(dirname);
+          directory_manager_->Open(
+              dirname, &delegate_, &mock_handler, NullTransactionObserver());
           ScopedDirLookup dir(directory_manager_, dirname);
           CHECK(dir.good());
-          WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
+          WriteTransaction trans(FROM_HERE, UNITTEST, dir);
           MutableEntry me(&trans, CREATE, trans.root_id(), "Jeff");
           step_->metahandle = me.Get(META_HANDLE);
           me.Put(IS_UNSYNCED, true);
@@ -1486,7 +1588,7 @@ class ThreadBugDelegate : public base::PlatformThread::Delegate {
         {
           ScopedDirLookup dir(directory_manager_, dirname);
           CHECK(dir.good());
-          ReadTransaction trans(dir, __FILE__, __LINE__);
+          ReadTransaction trans(FROM_HERE, dir);
           Entry e(&trans, GET_BY_HANDLE, step_->metahandle);
           CHECK(e.good());  // Failed due to ThreadBug1
         }
@@ -1501,26 +1603,6 @@ class ThreadBugDelegate : public base::PlatformThread::Delegate {
   DISALLOW_COPY_AND_ASSIGN(ThreadBugDelegate);
 };
 
-TEST_F(SyncableDirectoryManager, ThreadBug1) {
-  Step step;
-  step.number = 0;
-  DirectoryManager dirman(FilePath(temp_dir_.path()));
-  ThreadBugDelegate thread_delegate_1(0, &step, &dirman);
-  ThreadBugDelegate thread_delegate_2(1, &step, &dirman);
-
-  base::PlatformThreadHandle thread_handle_1;
-  base::PlatformThreadHandle thread_handle_2;
-
-  ASSERT_TRUE(
-      base::PlatformThread::Create(0, &thread_delegate_1, &thread_handle_1));
-  ASSERT_TRUE(
-      base::PlatformThread::Create(0, &thread_delegate_2, &thread_handle_2));
-
-  base::PlatformThread::Join(thread_handle_1);
-  base::PlatformThread::Join(thread_handle_2);
-}
-
-
 // The in-memory information would get out of sync because a
 // directory would be closed and re-opened, and then an old
 // Directory::Kernel with stale information would get saved to the db.
@@ -1531,6 +1613,7 @@ class DirectoryKernelStalenessBugDelegate : public ThreadBugDelegate {
     : ThreadBugDelegate(role, step, dirman) {}
 
   virtual void ThreadMain() {
+    MessageLoop message_loop;
     const char test_bytes[] = "test data";
     const std::string dirname = "DirectoryKernelStalenessBug";
     base::AutoLock scoped_lock(step_->mutex);
@@ -1543,14 +1626,16 @@ class DirectoryKernelStalenessBugDelegate : public ThreadBugDelegate {
       switch (step_->number) {
       case 0:
         {
+          browser_sync::MockUnrecoverableErrorHandler mock_handler;
           // Clean up remnants of earlier test runs.
           file_util::Delete(directory_manager_->GetSyncDataDatabasePath(),
                             true);
           // Test.
-          directory_manager_->Open(dirname);
+          directory_manager_->Open(
+              dirname, &delegate_, &mock_handler, NullTransactionObserver());
           ScopedDirLookup dir(directory_manager_, dirname);
           CHECK(dir.good());
-          WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
+          WriteTransaction trans(FROM_HERE, UNITTEST, dir);
           MutableEntry me(&trans, CREATE, trans.root_id(), "Jeff");
           me.Put(BASE_VERSION, 1);
           me.Put(ID, jeff_id);
@@ -1566,7 +1651,9 @@ class DirectoryKernelStalenessBugDelegate : public ThreadBugDelegate {
         break;
       case 1:
         {
-          directory_manager_->Open(dirname);
+          browser_sync::MockUnrecoverableErrorHandler mock_handler;
+          directory_manager_->Open(
+              dirname, &delegate_, &mock_handler, NullTransactionObserver());
           ScopedDirLookup dir(directory_manager_, dirname);
           CHECK(dir.good());
         }
@@ -1581,7 +1668,7 @@ class DirectoryKernelStalenessBugDelegate : public ThreadBugDelegate {
         {
           ScopedDirLookup dir(directory_manager_, dirname);
           CHECK(dir.good());
-          ReadTransaction trans(dir, __FILE__, __LINE__);
+          ReadTransaction trans(FROM_HERE, dir);
           Entry e(&trans, GET_BY_ID, jeff_id);
           ExpectDataFromBookmarkFaviconEquals(&trans, &e, test_bytes,
                                                 sizeof(test_bytes));
@@ -1641,14 +1728,14 @@ class StressTransactionsDelegate : public base::PlatformThread::Delegate {
     for (int i = 0; i < 20; ++i) {
       const int rand_action = rand() % 10;
       if (rand_action < 4 && !path_name.empty()) {
-        ReadTransaction trans(dir, __FILE__, __LINE__);
+        ReadTransaction trans(FROM_HERE, dir);
         CHECK(1 == CountEntriesWithName(&trans, trans.root_id(), path_name));
         base::PlatformThread::Sleep(rand() % 10);
       } else {
         std::string unique_name =
             base::StringPrintf("%d.%d", thread_number_, entry_count++);
         path_name.assign(unique_name.begin(), unique_name.end());
-        WriteTransaction trans(dir, UNITTEST, __FILE__, __LINE__);
+        WriteTransaction trans(FROM_HERE, UNITTEST, dir);
         MutableEntry e(&trans, CREATE, trans.root_id(), path_name);
         CHECK(e.good());
         base::PlatformThread::Sleep(rand() % 20);
@@ -1665,12 +1752,15 @@ class StressTransactionsDelegate : public base::PlatformThread::Delegate {
 };
 
 TEST(SyncableDirectory, StressTransactions) {
+  MessageLoop message_loop;
   ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   DirectoryManager dirman(FilePath(temp_dir.path()));
   std::string dirname = "stress";
   file_util::Delete(dirman.GetSyncDataDatabasePath(), true);
-  dirman.Open(dirname);
+  NullDirectoryChangeDelegate delegate;
+  browser_sync::MockUnrecoverableErrorHandler mock_handler;
+  dirman.Open(dirname, &delegate, &mock_handler, NullTransactionObserver());
 
   const int kThreadCount = 7;
   base::PlatformThreadHandle threads[kThreadCount];
@@ -1705,7 +1795,7 @@ class SyncableClientTagTest : public SyncableDirectoryTest {
 
   // Attempt to create an entry with a default tag.
   bool CreateWithTag(const char* tag, Id id, bool deleted) {
-    WriteTransaction wtrans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction wtrans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry me(&wtrans, CREATE, wtrans.root_id(), test_name_);
     CHECK(me.good());
     me.Put(ID, id);
@@ -1721,7 +1811,7 @@ class SyncableClientTagTest : public SyncableDirectoryTest {
   // Verify an entry exists with the default tag.
   void VerifyTag(Id id, bool deleted) {
     // Should still be present and valid in the client tag index.
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     Entry me(&trans, GET_BY_CLIENT_TAG, test_tag_);
     CHECK(me.good());
     EXPECT_EQ(me.Get(ID), id);
@@ -1738,13 +1828,13 @@ TEST_F(SyncableClientTagTest, TestClientTagClear) {
   Id server_id = factory_.NewServerId();
   EXPECT_TRUE(CreateWithDefaultTag(server_id, false));
   {
-    WriteTransaction trans(dir_.get(), UNITTEST, __FILE__, __LINE__);
+    WriteTransaction trans(FROM_HERE, UNITTEST, dir_.get());
     MutableEntry me(&trans, GET_BY_CLIENT_TAG, test_tag_);
     EXPECT_TRUE(me.good());
     me.Put(UNIQUE_CLIENT_TAG, "");
   }
   {
-    ReadTransaction trans(dir_.get(), __FILE__, __LINE__);
+    ReadTransaction trans(FROM_HERE, dir_.get());
     Entry by_tag(&trans, GET_BY_CLIENT_TAG, test_tag_);
     EXPECT_FALSE(by_tag.good());
 

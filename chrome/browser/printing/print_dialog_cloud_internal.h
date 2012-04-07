@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,37 +9,48 @@
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
-#include "content/browser/webui/web_ui.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_ui_message_handler.h"
 
 class GURL;
-class StringValue;
 class CloudPrintHtmlDialogDelegateTest;
+
+namespace base {
+class ListValue;
+class StringValue;
+class Value;
+}
 
 namespace internal_cloud_print_helpers {
 
 // Small class to virtualize a few functions to aid with unit testing.
 class CloudPrintDataSenderHelper {
  public:
-  explicit CloudPrintDataSenderHelper(WebUI* web_ui) : web_ui_(web_ui) {}
+  explicit CloudPrintDataSenderHelper(content::WebUI* web_ui)
+      : web_ui_(web_ui) {}
   virtual ~CloudPrintDataSenderHelper() {}
 
   // Virtualize the overrides of these three functions from WebUI to
   // facilitate unit testing.
   virtual void CallJavascriptFunction(const std::wstring& function_name);
   virtual void CallJavascriptFunction(const std::wstring& function_name,
-                                      const Value& arg);
+                                      const base::Value& arg);
   virtual void CallJavascriptFunction(const std::wstring& function_name,
-                                      const Value& arg1,
-                                      const Value& arg2);
+                                      const base::Value& arg1,
+                                      const base::Value& arg2);
+  virtual void CallJavascriptFunction(const std::wstring& function_name,
+                                      const base::Value& arg1,
+                                      const base::Value& arg2,
+                                      const base::Value& arg3);
 
  private:
-  WebUI* web_ui_;
+  content::WebUI* web_ui_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintDataSenderHelper);
 };
@@ -54,6 +65,7 @@ class CloudPrintDataSender
   // lifetime of the helper.
   CloudPrintDataSender(CloudPrintDataSenderHelper* helper,
                        const string16& print_job_title,
+                       const string16& print_ticket,
                        const std::string& file_type);
 
   // Calls to read in the PDF file (on the FILE thread) then send that
@@ -73,8 +85,9 @@ class CloudPrintDataSender
 
   base::Lock lock_;
   CloudPrintDataSenderHelper* volatile helper_;
-  scoped_ptr<StringValue> print_data_;
+  scoped_ptr<base::StringValue> print_data_;
   string16 print_job_title_;
+  string16 print_ticket_;
   std::string file_type_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintDataSender);
@@ -89,26 +102,29 @@ class CloudPrintHtmlDialogDelegate;
 // the renderer process - do we want a progress throbber shown?
 // Probably..), and packing up the PDF and job parameters and sending
 // them to the cloud.
-class CloudPrintFlowHandler : public WebUIMessageHandler,
-                              public NotificationObserver {
+class CloudPrintFlowHandler : public content::WebUIMessageHandler,
+                              public content::NotificationObserver {
  public:
-  explicit CloudPrintFlowHandler(const FilePath& path_to_file,
-                                 const string16& print_job_title,
-                                 const std::string& file_type);
+  CloudPrintFlowHandler(const FilePath& path_to_file,
+                        const string16& print_job_title,
+                        const string16& print_ticket,
+                        const std::string& file_type,
+                        bool close_after_signin,
+                        const base::Closure& callback);
   virtual ~CloudPrintFlowHandler();
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Callbacks from the page.
-  void HandleShowDebugger(const ListValue* args);
-  void HandleSendPrintData(const ListValue* args);
-  void HandleSetPageParameters(const ListValue* args);
+  void HandleShowDebugger(const base::ListValue* args);
+  void HandleSendPrintData(const base::ListValue* args);
+  void HandleSetPageParameters(const base::ListValue* args);
 
   virtual void SetDialogDelegate(CloudPrintHtmlDialogDelegate *delegate);
   void StoreDialogClientSize() const;
@@ -124,12 +140,15 @@ class CloudPrintFlowHandler : public WebUIMessageHandler,
   void CancelAnyRunningTask();
 
   CloudPrintHtmlDialogDelegate* dialog_delegate_;
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   FilePath path_to_file_;
   string16 print_job_title_;
+  string16 print_ticket_;
   std::string file_type_;
   scoped_refptr<CloudPrintDataSender> print_data_sender_;
   scoped_ptr<CloudPrintDataSenderHelper> print_data_helper_;
+  bool close_after_signin_;
+  base::Closure callback_;
 
   DISALLOW_COPY_AND_ASSIGN(CloudPrintFlowHandler);
 };
@@ -143,22 +162,27 @@ class CloudPrintHtmlDialogDelegate : public HtmlDialogUIDelegate {
                                int width, int height,
                                const std::string& json_arguments,
                                const string16& print_job_title,
+                               const string16& print_ticket,
                                const std::string& file_type,
-                               bool modal);
+                               bool modal,
+                               bool delete_on_close,
+                               bool close_after_signin,
+                               const base::Closure& callback);
   virtual ~CloudPrintHtmlDialogDelegate();
 
   // HTMLDialogUIDelegate implementation:
-  virtual bool IsDialogModal() const;
-  virtual std::wstring GetDialogTitle() const;
-  virtual GURL GetDialogContentURL() const;
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const;
-  virtual void GetDialogSize(gfx::Size* size) const;
-  virtual std::string GetDialogArgs() const;
-  virtual void OnDialogClosed(const std::string& json_retval);
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog);
-  virtual bool ShouldShowDialogTitle() const;
-  virtual bool HandleContextMenu(const ContextMenuParams& params);
+      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
+  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
+  virtual std::string GetDialogArgs() const OVERRIDE;
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnCloseContents(content::WebContents* source,
+                               bool* out_close_dialog) OVERRIDE;
+  virtual bool ShouldShowDialogTitle() const OVERRIDE;
+  virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
 
  private:
   friend class ::CloudPrintHtmlDialogDelegateTest;
@@ -167,9 +191,11 @@ class CloudPrintHtmlDialogDelegate : public HtmlDialogUIDelegate {
   CloudPrintHtmlDialogDelegate(CloudPrintFlowHandler* flow_handler,
                                int width, int height,
                                const std::string& json_arguments,
-                               bool modal);
+                               bool modal,
+                               bool delete_on_close);
   void Init(int width, int height, const std::string& json_arguments);
 
+  bool delete_on_close_;
   CloudPrintFlowHandler* flow_handler_;
   bool modal_;
   mutable bool owns_flow_handler_;
@@ -181,10 +207,13 @@ class CloudPrintHtmlDialogDelegate : public HtmlDialogUIDelegate {
   DISALLOW_COPY_AND_ASSIGN(CloudPrintHtmlDialogDelegate);
 };
 
-void CreateDialogImpl(const FilePath& path_to_file,
-                      const string16& print_job_title,
-                      const std::string& file_type,
-                      bool modal);
+void CreateDialogFullImpl(const FilePath& path_to_file,
+                          const string16& print_job_title,
+                          const string16& print_ticket,
+                          const std::string& file_type,
+                          bool modal,
+                          bool delete_on_close);
+void CreateDialogSigninImpl(const base::Closure& callback);
 
 void Delete(const FilePath& path_to_file);
 

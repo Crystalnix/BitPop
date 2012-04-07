@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,23 +6,22 @@
 #define CHROME_BROWSER_HISTORY_HISTORY_DATABASE_H_
 #pragma once
 
-#include "app/sql/connection.h"
-#include "app/sql/init_status.h"
-#include "app/sql/meta_table.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/history/download_database.h"
 #include "chrome/browser/history/history_types.h"
-#include "chrome/browser/history/starred_url_database.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/history/visit_database.h"
 #include "chrome/browser/history/visitsegment_database.h"
+#include "sql/connection.h"
+#include "sql/init_status.h"
+#include "sql/meta_table.h"
 
 class FilePath;
 
 namespace history {
-
-// Forward declaration for the temporary migration code in Init().
-class TextDatabaseManager;
 
 // Encapsulates the SQL connection for the history database. This class holds
 // the database connection and has methods the history system (including full
@@ -32,10 +31,7 @@ class TextDatabaseManager;
 // as the storage interface. Logic for manipulating this storage layer should
 // be in HistoryBackend.cc.
 class HistoryDatabase : public DownloadDatabase,
-  // TODO(sky): See if we can nuke StarredURLDatabase and just create on the
-  // stack for migration. Then HistoryDatabase would directly descend from
-  // URLDatabase.
-                        public StarredURLDatabase,
+                        public URLDatabase,
                         public VisitDatabase,
                         public VisitSegmentDatabase {
  public:
@@ -146,8 +142,9 @@ class HistoryDatabase : public DownloadDatabase,
 
  private:
   FRIEND_TEST_ALL_PREFIXES(IconMappingMigrationTest, TestIconMappingMigration);
-  // Implemented for URLDatabase.
-  virtual sql::Connection& GetDB();
+
+  // Overridden from URLDatabase:
+  virtual sql::Connection& GetDB() OVERRIDE;
 
   // Migration -----------------------------------------------------------------
 
@@ -179,6 +176,6 @@ class HistoryDatabase : public DownloadDatabase,
   DISALLOW_COPY_AND_ASSIGN(HistoryDatabase);
 };
 
-}  // history
+}  // namespace history
 
 #endif  // CHROME_BROWSER_HISTORY_HISTORY_DATABASE_H_

@@ -4,19 +4,22 @@
 
 #include "chrome/browser/ui/views/dom_view.h"
 
-#include "content/browser/tab_contents/tab_contents.h"
-#include "views/focus/focus_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_preferences_util.h"
+#include "chrome/browser/ui/views/tab_contents/tab_contents_view_views.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
+#include "ui/views/focus/focus_manager.h"
 
-#if defined(TOUCH_UI)
-#include "chrome/browser/ui/views/tab_contents/tab_contents_view_touch.h"
-#endif
+using content::SiteInstance;
+using content::WebContents;
 
 // static
 const char DOMView::kViewClassName[] =
     "browser/ui/views/DOMView";
 
-DOMView::DOMView() : tab_contents_(NULL), initialized_(false) {
-  SetFocusable(true);
+DOMView::DOMView() : initialized_(false) {
+  set_focusable(true);
 }
 
 DOMView::~DOMView() {
@@ -33,7 +36,12 @@ bool DOMView::Init(Profile* profile, SiteInstance* instance) {
     return true;
 
   initialized_ = true;
-  tab_contents_.reset(CreateTabContents(profile, instance));
+  WebContents* web_contents = CreateTabContents(profile, instance);
+  dom_contents_.reset(new TabContentsWrapper(web_contents));
+
+  renderer_preferences_util::UpdateFromSystemSettings(
+        web_contents->GetMutableRendererPrefs(), profile);
+
   // Attach the native_view now if the view is already added to Widget.
   if (GetWidget())
     AttachTabContents();
@@ -41,14 +49,16 @@ bool DOMView::Init(Profile* profile, SiteInstance* instance) {
   return true;
 }
 
-TabContents* DOMView::CreateTabContents(Profile* profile,
+WebContents* DOMView::CreateTabContents(Profile* profile,
                                         SiteInstance* instance) {
-  return new TabContents(profile, instance, MSG_ROUTING_NONE, NULL, NULL);
+  return WebContents::Create(profile, instance, MSG_ROUTING_NONE, NULL, NULL);
 }
 
 void DOMView::LoadURL(const GURL& url) {
   DCHECK(initialized_);
-  tab_contents_->controller().LoadURL(url, GURL(), PageTransition::START_PAGE);
+  dom_contents_->web_contents()->GetController().LoadURL(
+      url, content::Referrer(), content::PAGE_TRANSITION_START_PAGE,
+      std::string());
 }
 
 bool DOMView::SkipDefaultKeyEventProcessing(const views::KeyEvent& e) {
@@ -59,7 +69,7 @@ bool DOMView::SkipDefaultKeyEventProcessing(const views::KeyEvent& e) {
 }
 
 void DOMView::OnFocus() {
-  tab_contents_->Focus();
+  dom_contents_->web_contents()->Focus();
 }
 
 void DOMView::ViewHierarchyChanged(bool is_add, views::View* parent,
@@ -67,16 +77,12 @@ void DOMView::ViewHierarchyChanged(bool is_add, views::View* parent,
   // Attach the native_view when this is added to Widget if
   // the native view has not been attached yet and tab_contents_ exists.
   views::NativeViewHost::ViewHierarchyChanged(is_add, parent, child);
-  if (is_add && GetWidget() && !native_view() && tab_contents_.get())
+  if (is_add && GetWidget() && !native_view() && dom_contents_.get())
     AttachTabContents();
   else if (!is_add && child == this && native_view())
     Detach();
 }
 
 void DOMView::AttachTabContents() {
-#if defined(TOUCH_UI)
-  AttachToView(static_cast<TabContentsViewTouch*>(tab_contents_->view()));
-#else
-  Attach(tab_contents_->GetNativeView());
-#endif
+  Attach(dom_contents_->web_contents()->GetNativeView());
 }

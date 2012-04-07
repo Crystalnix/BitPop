@@ -90,12 +90,12 @@ const size_t kNumChewingMultipleChoicePrefs = 2;
 extern const LanguageMultipleChoicePreference<int> kChewingHsuSelKeyType;
 
 // ---------------------------------------------------------------------------
-// For Korean input method (ibus-hangul)
+// For Korean input method (ibus-mozc-hangul)
 // ---------------------------------------------------------------------------
 extern const char kHangulSectionName[];
 extern const char kHangulKeyboardConfigName[];
-extern const char kHangulHanjaKeysConfigName[];
-extern const char kHangulHanjaKeys[];
+extern const char kHangulHanjaBindingKeysConfigName[];
+extern const char kHangulHanjaBindingKeys[];
 
 struct HangulKeyboardNameIDPair {
   int message_id;
@@ -104,7 +104,7 @@ struct HangulKeyboardNameIDPair {
 
 extern const HangulKeyboardNameIDPair kHangulKeyboardNameIDPairs[];
 // See comments at kNumChewingBooleanPrefs for why we hard-code this here.
-const size_t kNumHangulKeyboardNameIDPairs = 4;
+const size_t kNumHangulKeyboardNameIDPairs = 5;
 
 // ---------------------------------------------------------------------------
 // For Simplified Chinese input method (ibus-pinyin)
@@ -135,7 +135,7 @@ extern const char kMozcSectionName[];
 
 extern const LanguageBooleanPrefs kMozcBooleanPrefs[];
 // See comments at kNumChewingBooleanPrefs for why we hard-code this here.
-const size_t kNumMozcBooleanPrefs = 8;
+const size_t kNumMozcBooleanPrefs = 4;
 
 extern const LanguageMultipleChoicePreference<const char*>
     kMozcMultipleChoicePrefs[];

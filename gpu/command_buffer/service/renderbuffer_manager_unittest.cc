@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,10 @@ namespace gles2 {
 class RenderbufferManagerTest : public testing::Test {
  public:
   static const GLint kMaxSize = 128;
+  static const GLint kMaxSamples = 4;
 
   RenderbufferManagerTest()
-      : manager_(kMaxSize) {
+      : manager_(kMaxSize, kMaxSamples) {
   }
   ~RenderbufferManagerTest() {
     manager_.Destroy(false);
@@ -40,6 +41,7 @@ class RenderbufferManagerTest : public testing::Test {
 // GCC requires these declarations, but MSVC requires they not be present
 #ifndef COMPILER_MSVC
 const GLint RenderbufferManagerTest::kMaxSize;
+const GLint RenderbufferManagerTest::kMaxSamples;
 #endif
 
 TEST_F(RenderbufferManagerTest, Basic) {
@@ -47,12 +49,15 @@ TEST_F(RenderbufferManagerTest, Basic) {
   const GLuint kService1Id = 11;
   const GLuint kClient2Id = 2;
   EXPECT_EQ(kMaxSize, manager_.max_renderbuffer_size());
+  EXPECT_EQ(kMaxSamples, manager_.max_samples());
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
   // Check we can create renderbuffer.
   manager_.CreateRenderbufferInfo(kClient1Id, kService1Id);
   // Check renderbuffer got created.
   RenderbufferManager::RenderbufferInfo* info1 =
       manager_.GetRenderbufferInfo(kClient1Id);
   ASSERT_TRUE(info1 != NULL);
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
   GLuint client_id = 0;
   EXPECT_TRUE(manager_.GetClientId(info1->service_id(), &client_id));
   EXPECT_EQ(kClient1Id, client_id);
@@ -63,6 +68,7 @@ TEST_F(RenderbufferManagerTest, Basic) {
   // Check we can't get the renderbuffer after we remove it.
   manager_.RemoveRenderbufferInfo(kClient1Id);
   EXPECT_TRUE(manager_.GetRenderbufferInfo(kClient1Id) == NULL);
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
 }
 
 TEST_F(RenderbufferManagerTest, Destroy) {
@@ -96,23 +102,54 @@ TEST_F(RenderbufferManagerTest, RenderbufferInfo) {
   EXPECT_EQ(static_cast<GLenum>(GL_RGBA4), info1->internal_format());
   EXPECT_EQ(0, info1->width());
   EXPECT_EQ(0, info1->height());
-
-  EXPECT_FALSE(info1->cleared());
-  info1->set_cleared();
   EXPECT_TRUE(info1->cleared());
+  EXPECT_EQ(0u, info1->EstimatedSize());
 
   // Check if we set the info it gets marked as not cleared.
   const GLsizei kSamples = 4;
-  const GLenum kFormat = GL_RGBA;
+  const GLenum kFormat = GL_RGBA4;
   const GLsizei kWidth = 128;
   const GLsizei kHeight = 64;
-  info1->SetInfo(kSamples, kFormat, kWidth, kHeight);
+  manager_.SetInfo(info1, kSamples, kFormat, kWidth, kHeight);
   EXPECT_EQ(kSamples, info1->samples());
   EXPECT_EQ(kFormat, info1->internal_format());
   EXPECT_EQ(kWidth, info1->width());
   EXPECT_EQ(kHeight, info1->height());
   EXPECT_FALSE(info1->cleared());
   EXPECT_FALSE(info1->IsDeleted());
+  EXPECT_TRUE(manager_.HaveUnclearedRenderbuffers());
+  EXPECT_EQ(kWidth * kHeight * 4u * 2u, info1->EstimatedSize());
+
+  manager_.SetCleared(info1);
+  EXPECT_TRUE(info1->cleared());
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
+
+  manager_.SetInfo(info1, kSamples, kFormat, kWidth, kHeight);
+  EXPECT_TRUE(manager_.HaveUnclearedRenderbuffers());
+
+  manager_.RemoveRenderbufferInfo(kClient1Id);
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
+}
+
+TEST_F(RenderbufferManagerTest, UseDeletedRenderbufferInfo) {
+  const GLuint kClient1Id = 1;
+  const GLuint kService1Id = 11;
+  manager_.CreateRenderbufferInfo(kClient1Id, kService1Id);
+  RenderbufferManager::RenderbufferInfo::Ref info1(
+      manager_.GetRenderbufferInfo(kClient1Id));
+  ASSERT_TRUE(info1 != NULL);
+  // Remove it.
+  manager_.RemoveRenderbufferInfo(kClient1Id);
+  // Use after removing.
+  const GLsizei kSamples = 4;
+  const GLenum kFormat = GL_RGBA4;
+  const GLsizei kWidth = 128;
+  const GLsizei kHeight = 64;
+  manager_.SetInfo(info1, kSamples, kFormat, kWidth, kHeight);
+  // See that it still affects manager.
+  EXPECT_TRUE(manager_.HaveUnclearedRenderbuffers());
+  manager_.SetCleared(info1);
+  EXPECT_FALSE(manager_.HaveUnclearedRenderbuffers());
 }
 
 }  // namespace gles2

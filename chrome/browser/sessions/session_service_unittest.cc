@@ -1,13 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -16,18 +18,20 @@
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_test_helper.h"
 #include "chrome/browser/sessions/session_types.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/test/browser_with_test_window_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::NavigationEntry;
+
 class SessionServiceTest : public BrowserWithTestWindowTest,
-                           public NotificationObserver {
+                           public content::NotificationObserver {
  public:
   SessionServiceTest() : window_bounds(0, 1, 2, 3), sync_save_count_(0){}
 
@@ -45,14 +49,16 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
     helper_.set_service(session_service);
 
     service()->SetWindowType(window_id, Browser::TYPE_TABBED);
-    service()->SetWindowBounds(window_id, window_bounds, false);
+    service()->SetWindowBounds(window_id,
+                               window_bounds,
+                               ui::SHOW_STATE_NORMAL);
   }
 
   // Upon notification, increment the sync_save_count variable
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
-    ASSERT_EQ(type.value, NotificationType::SESSION_SERVICE_SAVED);
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    ASSERT_EQ(type, chrome::NOTIFICATION_SESSION_SERVICE_SAVED);
     sync_save_count_++;
   }
 
@@ -65,15 +71,15 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
                         const TabNavigation& navigation,
                         int index,
                         bool select) {
-    NavigationEntry entry;
-    entry.set_url(navigation.virtual_url());
-    entry.set_referrer(navigation.referrer());
-    entry.set_title(navigation.title());
-    entry.set_content_state(navigation.state());
-    entry.set_transition_type(navigation.transition());
-    entry.set_has_post_data(
+    scoped_ptr<NavigationEntry> entry(NavigationEntry::Create());
+    entry->SetURL(navigation.virtual_url());
+    entry->SetReferrer(navigation.referrer());
+    entry->SetTitle(navigation.title());
+    entry->SetContentState(navigation.state());
+    entry->SetTransitionType(navigation.transition());
+    entry->SetHasPostData(
         navigation.type_mask() & TabNavigation::HAS_POST_DATA);
-    service()->UpdateTabNavigation(window_id, tab_id, index, entry);
+    service()->UpdateTabNavigation(window_id, tab_id, index, *entry.get());
     if (select)
       service()->SetSelectedNavigationIndex(window_id, tab_id, index);
   }
@@ -94,9 +100,10 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
   bool CreateAndWriteSessionWithOneTab(bool pinned_state, bool write_always) {
     SessionID tab_id;
     TabNavigation nav1(0, GURL("http://google.com"),
-                       GURL("http://www.referrer.com"),
+                       content::Referrer(GURL("http://www.referrer.com"),
+                                         WebKit::WebReferrerPolicyDefault),
                        ASCIIToUTF16("abc"), "def",
-                       PageTransition::QUALIFIER_MASK);
+                       content::PAGE_TRANSITION_QUALIFIER_MASK);
 
     helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
     UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -142,9 +149,10 @@ TEST_F(SessionServiceTest, Basic) {
   ASSERT_NE(window_id.id(), tab_id.id());
 
   TabNavigation nav1(0, GURL("http://google.com"),
-                     GURL("http://www.referrer.com"),
+                     content::Referrer(GURL("http://www.referrer.com"),
+                                       WebKit::WebReferrerPolicyDefault),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -170,9 +178,9 @@ TEST_F(SessionServiceTest, PersistPostData) {
   SessionID tab_id;
   ASSERT_NE(window_id.id(), tab_id.id());
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), std::string(),
-                     PageTransition::QUALIFIER_MASK);
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
   nav1.set_type_mask(TabNavigation::HAS_POST_DATA);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
@@ -189,12 +197,12 @@ TEST_F(SessionServiceTest, ClosingTabStaysClosed) {
   SessionID tab2_id;
   ASSERT_NE(tab_id.id(), tab2_id.id());
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -220,12 +228,12 @@ TEST_F(SessionServiceTest, ClosingTabStaysClosed) {
 TEST_F(SessionServiceTest, Pruning) {
   SessionID tab_id;
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   for (int i = 0; i < 6; ++i) {
@@ -256,19 +264,21 @@ TEST_F(SessionServiceTest, TwoWindows) {
   SessionID tab1_id;
   SessionID tab2_id;
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab1_id, 0, true);
   UpdateNavigation(window_id, tab1_id, nav1, 0, true);
 
   const gfx::Rect window2_bounds(3, 4, 5, 6);
   service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
-  service()->SetWindowBounds(window2_id, window2_bounds, true);
+  service()->SetWindowBounds(window2_id,
+                             window2_bounds,
+                             ui::SHOW_STATE_MAXIMIZED);
   helper_.PrepareTabInWindow(window2_id, tab2_id, 0, true);
   UpdateNavigation(window2_id, tab2_id, nav2, 0, true);
 
@@ -285,15 +295,15 @@ TEST_F(SessionServiceTest, TwoWindows) {
   SessionTab* rt2;
   if (windows[0]->window_id.id() == window_id.id()) {
     ASSERT_EQ(window2_id.id(), windows[1]->window_id.id());
-    ASSERT_FALSE(windows[0]->is_maximized);
-    ASSERT_TRUE(windows[1]->is_maximized);
+    ASSERT_EQ(ui::SHOW_STATE_NORMAL, windows[0]->show_state);
+    ASSERT_EQ(ui::SHOW_STATE_MAXIMIZED, windows[1]->show_state);
     rt1 = windows[0]->tabs[0];
     rt2 = windows[1]->tabs[0];
   } else {
     ASSERT_EQ(window2_id.id(), windows[0]->window_id.id());
     ASSERT_EQ(window_id.id(), windows[1]->window_id.id());
-    ASSERT_TRUE(windows[0]->is_maximized);
-    ASSERT_FALSE(windows[1]->is_maximized);
+    ASSERT_EQ(ui::SHOW_STATE_MAXIMIZED, windows[0]->show_state);
+    ASSERT_EQ(ui::SHOW_STATE_NORMAL, windows[1]->show_state);
     rt1 = windows[1]->tabs[0];
     rt2 = windows[0]->tabs[0];
   }
@@ -311,16 +321,18 @@ TEST_F(SessionServiceTest, WindowWithNoTabsGetsPruned) {
   SessionID tab1_id;
   SessionID tab2_id;
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
 
   helper_.PrepareTabInWindow(window_id, tab1_id, 0, true);
   UpdateNavigation(window_id, tab1_id, nav1, 0, true);
 
   const gfx::Rect window2_bounds(3, 4, 5, 6);
   service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
-  service()->SetWindowBounds(window2_id, window2_bounds, false);
+  service()->SetWindowBounds(window2_id,
+                             window2_bounds,
+                             ui::SHOW_STATE_NORMAL);
   helper_.PrepareTabInWindow(window2_id, tab2_id, 0, true);
 
   ScopedVector<SessionWindow> windows;
@@ -341,12 +353,12 @@ TEST_F(SessionServiceTest, ClosingWindowDoesntCloseTabs) {
   SessionID tab2_id;
   ASSERT_NE(tab_id.id(), tab2_id.id());
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -380,14 +392,16 @@ TEST_F(SessionServiceTest, WindowCloseCommittedAfterNavigate) {
   ASSERT_NE(window2_id.id(), window_id.id());
 
   service()->SetWindowType(window2_id, Browser::TYPE_TABBED);
-  service()->SetWindowBounds(window2_id, window_bounds, false);
+  service()->SetWindowBounds(window2_id,
+                             window_bounds,
+                             ui::SHOW_STATE_NORMAL);
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -423,14 +437,16 @@ TEST_F(SessionServiceTest, IgnorePopups) {
   ASSERT_NE(window2_id.id(), window_id.id());
 
   service()->SetWindowType(window2_id, Browser::TYPE_POPUP);
-  service()->SetWindowBounds(window2_id, window_bounds, false);
+  service()->SetWindowBounds(window2_id,
+                             window_bounds,
+                             ui::SHOW_STATE_NORMAL);
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -462,14 +478,16 @@ TEST_F(SessionServiceTest, RestorePopup) {
   ASSERT_NE(window2_id.id(), window_id.id());
 
   service()->SetWindowType(window2_id, Browser::TYPE_POPUP);
-  service()->SetWindowBounds(window2_id, window_bounds, false);
+  service()->SetWindowBounds(window2_id,
+                             window_bounds,
+                             ui::SHOW_STATE_NORMAL);
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
-  TabNavigation nav2(0, GURL("http://google2.com"), GURL(),
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  TabNavigation nav2(0, GURL("http://google2.com"), content::Referrer(),
                      ASCIIToUTF16("abcd"), "defg",
-                     PageTransition::AUTO_BOOKMARK);
+                     content::PAGE_TRANSITION_AUTO_BOOKMARK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -510,8 +528,10 @@ TEST_F(SessionServiceTest, PruneFromFront) {
 
   // Add 5 navigations, with the 4th selected.
   for (int i = 0; i < 5; ++i) {
-    TabNavigation nav(0, GURL(base_url + base::IntToString(i)), GURL(),
-                      ASCIIToUTF16("a"), "b", PageTransition::QUALIFIER_MASK);
+    TabNavigation nav(0, GURL(base_url + base::IntToString(i)),
+                      content::Referrer(),
+                      ASCIIToUTF16("a"), "b",
+                      content::PAGE_TRANSITION_QUALIFIER_MASK);
     UpdateNavigation(window_id, tab_id, nav, i, (i == 3));
   }
 
@@ -551,8 +571,10 @@ TEST_F(SessionServiceTest, PruneToEmpty) {
 
   // Add 5 navigations, with the 4th selected.
   for (int i = 0; i < 5; ++i) {
-    TabNavigation nav(0, GURL(base_url + base::IntToString(i)), GURL(),
-                      ASCIIToUTF16("a"), "b", PageTransition::QUALIFIER_MASK);
+    TabNavigation nav(0, GURL(base_url + base::IntToString(i)),
+                      content::Referrer(),
+                      ASCIIToUTF16("a"), "b",
+                      content::PAGE_TRANSITION_QUALIFIER_MASK);
     UpdateNavigation(window_id, tab_id, nav, i, (i == 3));
   }
 
@@ -582,9 +604,9 @@ TEST_F(SessionServiceTest, PersistApplicationExtensionID) {
   ASSERT_NE(window_id.id(), tab_id.id());
   std::string app_id("foo");
 
-  TabNavigation nav1(0, GURL("http://google.com"), GURL(),
+  TabNavigation nav1(0, GURL("http://google.com"), content::Referrer(),
                      ASCIIToUTF16("abc"), std::string(),
-                     PageTransition::QUALIFIER_MASK);
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -602,41 +624,11 @@ TEST_F(SessionServiceTest, PinnedTrue) {
   EXPECT_TRUE(CreateAndWriteSessionWithOneTab(true, true));
 }
 
-class GetCurrentSessionCallbackHandler {
- public:
-  void OnGotSession(int handle, std::vector<SessionWindow*>* windows) {
-    EXPECT_EQ(1U, windows->size());
-    EXPECT_EQ(2U, (*windows)[0]->tabs.size());
-    EXPECT_EQ(2U, (*windows)[0]->tabs[0]->navigations.size());
-    EXPECT_EQ(GURL("http://bar/1"),
-              (*windows)[0]->tabs[0]->navigations[0].virtual_url());
-    EXPECT_EQ(GURL("http://bar/2"),
-              (*windows)[0]->tabs[0]->navigations[1].virtual_url());
-    EXPECT_EQ(2U, (*windows)[0]->tabs[1]->navigations.size());
-    EXPECT_EQ(GURL("http://foo/1"),
-              (*windows)[0]->tabs[1]->navigations[0].virtual_url());
-    EXPECT_EQ(GURL("http://foo/2"),
-              (*windows)[0]->tabs[1]->navigations[1].virtual_url());
-  }
-};
-
-TEST_F(SessionServiceTest, GetCurrentSession) {
-  AddTab(browser(), GURL("http://foo/1"));
-  NavigateAndCommitActiveTab(GURL("http://foo/2"));
-  AddTab(browser(), GURL("http://bar/1"));
-  NavigateAndCommitActiveTab(GURL("http://bar/2"));
-
-  CancelableRequestConsumer consumer;
-  GetCurrentSessionCallbackHandler handler;
-  service()->GetCurrentSession(&consumer,
-      NewCallback(&handler, &GetCurrentSessionCallbackHandler::OnGotSession));
-}
-
 // Test that the notification for SESSION_SERVICE_SAVED is working properly.
 TEST_F(SessionServiceTest, SavedSessionNotification) {
-  NotificationRegistrar registrar_;
-  registrar_.Add(this, NotificationType::SESSION_SERVICE_SAVED,
-                 NotificationService::AllSources());
+  content::NotificationRegistrar registrar_;
+  registrar_.Add(this, chrome::NOTIFICATION_SESSION_SERVICE_SAVED,
+                 content::NotificationService::AllSources());
   service()->Save();
   EXPECT_EQ(sync_save_count_, 1);
 }
@@ -647,9 +639,10 @@ TEST_F(SessionServiceTest, CloseTabUserGesture) {
   ASSERT_NE(window_id.id(), tab_id.id());
 
   TabNavigation nav1(0, GURL("http://google.com"),
-                     GURL("http://www.referrer.com"),
+                     content::Referrer(GURL("http://www.referrer.com"),
+                                       WebKit::WebReferrerPolicyDefault),
                      ASCIIToUTF16("abc"), "def",
-                     PageTransition::QUALIFIER_MASK);
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
 
   helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
   UpdateNavigation(window_id, tab_id, nav1, 0, true);
@@ -659,4 +652,25 @@ TEST_F(SessionServiceTest, CloseTabUserGesture) {
   ReadWindows(&(windows.get()));
 
   ASSERT_TRUE(windows->empty());
+}
+
+// Verifies SetWindowBounds maps SHOW_STATE_DEFAULT to SHOW_STATE_NORMAL.
+TEST_F(SessionServiceTest, DontPersistDefault) {
+  SessionID tab_id;
+  ASSERT_NE(window_id.id(), tab_id.id());
+  TabNavigation nav1(0, GURL("http://google.com"),
+                     content::Referrer(GURL("http://www.referrer.com"),
+                                       WebKit::WebReferrerPolicyDefault),
+                     ASCIIToUTF16("abc"), "def",
+                     content::PAGE_TRANSITION_QUALIFIER_MASK);
+  helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
+  UpdateNavigation(window_id, tab_id, nav1, 0, true);
+  service()->SetWindowBounds(window_id,
+                             window_bounds,
+                             ui::SHOW_STATE_DEFAULT);
+
+  ScopedVector<SessionWindow> windows;
+  ReadWindows(&(windows.get()));
+  ASSERT_EQ(1U, windows->size());
+  EXPECT_EQ(ui::SHOW_STATE_NORMAL, windows[0]->show_state);
 }

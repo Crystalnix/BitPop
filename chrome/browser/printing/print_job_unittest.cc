@@ -6,9 +6,9 @@
 #include "base/string16.h"
 #include "chrome/browser/printing/print_job.h"
 #include "chrome/browser/printing/print_job_worker.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "printing/printed_pages_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -16,11 +16,8 @@ namespace {
 
 class TestSource : public printing::PrintedPagesSource {
  public:
-  virtual string16 RenderSourceName() {
+  virtual string16 RenderSourceName() OVERRIDE {
     return string16();
-  }
-  virtual GURL RenderSourceUrl() {
-    return GURL();
   }
 };
 
@@ -58,6 +55,7 @@ class TestOwner : public printing::PrintJobWorkerOwner {
   virtual int cookie() const {
     return 42;
   }
+
  private:
   printing::PrintSettings settings_;
 };
@@ -73,29 +71,31 @@ class TestPrintJob : public printing::PrintJob {
   volatile bool* check_;
 };
 
-class TestPrintNotifObserv : public NotificationObserver {
+class TestPrintNotifObserv : public content::NotificationObserver {
  public:
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    EXPECT_FALSE(true);
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    ADD_FAILURE();
   }
 };
 
 }  // namespace
 
-TEST(PrintJobTest, SimplePrint) {
+typedef testing::Test PrintJobTest;
+
+TEST_F(PrintJobTest, SimplePrint) {
   // Test the multi-threaded nature of PrintJob to make sure we can use it with
   // known lifetime.
 
   // This message loop is actually never run.
   MessageLoop current;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   TestPrintNotifObserv observ;
-  registrar_.Add(&observ, NotificationType::ALL,
-                 NotificationService::AllSources());
+  registrar_.Add(&observ, content::NOTIFICATION_ALL,
+                 content::NotificationService::AllSources());
   volatile bool check = false;
   scoped_refptr<printing::PrintJob> job(new TestPrintJob(&check));
   EXPECT_EQ(MessageLoop::current(), job->message_loop());
@@ -107,7 +107,7 @@ TEST(PrintJobTest, SimplePrint) {
   EXPECT_TRUE(check);
 }
 
-TEST(PrintJobTest, SimplePrintLateInit) {
+TEST_F(PrintJobTest, SimplePrintLateInit) {
   volatile bool check = false;
   MessageLoop current;
   scoped_refptr<printing::PrintJob> job(new TestPrintJob(&check));

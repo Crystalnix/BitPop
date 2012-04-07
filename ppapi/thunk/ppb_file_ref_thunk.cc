@@ -1,13 +1,15 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ppapi/c/dev/pp_file_info_dev.h"
-#include "ppapi/c/dev/ppb_file_ref_dev.h"
+#include "ppapi/c/pp_file_info.h"
+#include "ppapi/c/ppb_file_ref.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
-#include "ppapi/thunk/thunk.h"
+#include "ppapi/c/private/ppb_file_ref_private.h"
+#include "ppapi/thunk/common.h"
 #include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/thunk.h"
 #include "ppapi/thunk/ppb_file_ref_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
 
@@ -28,7 +30,7 @@ PP_Bool IsFileRef(PP_Resource resource) {
   return PP_FromBool(enter.succeeded());
 }
 
-PP_FileSystemType_Dev GetFileSystemType(PP_Resource file_ref) {
+PP_FileSystemType GetFileSystemType(PP_Resource file_ref) {
   EnterResource<PPB_FileRef_API> enter(file_ref, true);
   if (enter.failed())
     return PP_FILESYSTEMTYPE_INVALID;
@@ -61,8 +63,9 @@ int32_t MakeDirectory(PP_Resource directory_ref,
                       PP_CompletionCallback callback) {
   EnterResource<PPB_FileRef_API> enter(directory_ref, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  return enter.object()->MakeDirectory(make_ancestors, callback);
+    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
+  int32_t result = enter.object()->MakeDirectory(make_ancestors, callback);
+  return MayForceCallback(callback, result);
 }
 
 int32_t Touch(PP_Resource file_ref,
@@ -71,16 +74,19 @@ int32_t Touch(PP_Resource file_ref,
               PP_CompletionCallback callback) {
   EnterResource<PPB_FileRef_API> enter(file_ref, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  return enter.object()->Touch(last_access_time, last_modified_time, callback);
+    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
+  int32_t result = enter.object()->Touch(last_access_time, last_modified_time,
+                                         callback);
+  return MayForceCallback(callback, result);
 }
 
 int32_t Delete(PP_Resource file_ref,
                PP_CompletionCallback callback) {
   EnterResource<PPB_FileRef_API> enter(file_ref, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  return enter.object()->Delete(callback);
+    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
+  int32_t result = enter.object()->Delete(callback);
+  return MayForceCallback(callback, result);
 }
 
 int32_t Rename(PP_Resource file_ref,
@@ -88,11 +94,19 @@ int32_t Rename(PP_Resource file_ref,
                PP_CompletionCallback callback) {
   EnterResource<PPB_FileRef_API> enter(file_ref, true);
   if (enter.failed())
-    return PP_ERROR_BADRESOURCE;
-  return enter.object()->Rename(new_file_ref, callback);
+    return MayForceCallback(callback, PP_ERROR_BADRESOURCE);
+  int32_t result = enter.object()->Rename(new_file_ref, callback);
+  return MayForceCallback(callback, result);
 }
 
-const PPB_FileRef_Dev g_ppb_file_ref_thunk = {
+PP_Var GetAbsolutePath(PP_Resource file_ref) {
+  EnterResource<PPB_FileRef_API> enter(file_ref, true);
+  if (enter.failed())
+    return PP_MakeUndefined();
+  return enter.object()->GetAbsolutePath();
+}
+
+const PPB_FileRef g_ppb_file_ref_thunk = {
   &Create,
   &IsFileRef,
   &GetFileSystemType,
@@ -105,10 +119,18 @@ const PPB_FileRef_Dev g_ppb_file_ref_thunk = {
   &Rename
 };
 
+const PPB_FileRefPrivate g_ppb_file_ref_private_thunk = {
+  &GetAbsolutePath
+};
+
 }  // namespace
 
-const PPB_FileRef_Dev* GetPPB_FileRef_Thunk() {
+const PPB_FileRef_1_0* GetPPB_FileRef_1_0_Thunk() {
   return &g_ppb_file_ref_thunk;
+}
+
+const PPB_FileRefPrivate_0_1* GetPPB_FileRefPrivate_0_1_Thunk() {
+  return &g_ppb_file_ref_private_thunk;
 }
 
 }  // namespace thunk

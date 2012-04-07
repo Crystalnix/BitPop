@@ -12,137 +12,70 @@
 
 #include "base/basictypes.h"
 #include "base/synchronization/lock.h"
-#include "base/tuple.h"
-#include "chrome/browser/content_settings/content_settings_base_provider.h"
-#include "chrome/browser/content_settings/content_settings_provider.h"
+#include "chrome/browser/content_settings/content_settings_observable_provider.h"
+#include "chrome/browser/content_settings/content_settings_origin_identifier_value_map.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
 
-class ContentSettingsDetails;
-class DictionaryValue;
 class PrefService;
-class Profile;
 
 namespace content_settings {
 
-class PolicyDefaultProvider : public DefaultProviderInterface,
-                              public NotificationObserver {
+// PolicyProvider that provides managed content-settings.
+class PolicyProvider : public ObservableProvider,
+                       public content::NotificationObserver {
  public:
-  explicit PolicyDefaultProvider(Profile* profile);
-  virtual ~PolicyDefaultProvider();
-
-  // DefaultContentSettingsProvider implementation.
-  virtual ContentSetting ProvideDefaultSetting(
-      ContentSettingsType content_type) const;
-  virtual void UpdateDefaultSetting(ContentSettingsType content_type,
-                                    ContentSetting setting);
-  virtual void ResetToDefaults();
-  virtual bool DefaultSettingIsManaged(ContentSettingsType content_type) const;
-
+  explicit PolicyProvider(PrefService* prefs);
+  virtual ~PolicyProvider();
   static void RegisterUserPrefs(PrefService* prefs);
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // ProviderInterface implementations.
+  virtual RuleIterator* GetRuleIterator(
+      ContentSettingsType content_type,
+      const ResourceIdentifier& resource_identifier,
+      bool incognito) const OVERRIDE;
 
+  virtual bool SetWebsiteSetting(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
+      ContentSettingsType content_type,
+      const ResourceIdentifier& resource_identifier,
+      Value* value) OVERRIDE;
+
+  virtual void ClearAllContentSettingsRules(
+      ContentSettingsType content_type) OVERRIDE;
+
+  virtual void ShutdownOnUIThread() OVERRIDE;
+
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
  private:
-  // Informs observers that content settings have changed. Make sure that
-  // |lock_| is not held when calling this, as listeners will usually call one
-  // of the GetSettings functions in response, which would then lead to a
-  // mutex deadlock.
-  void NotifyObservers(const ContentSettingsDetails& details);
-
-  void UnregisterObservers();
-
   // Reads the policy managed default settings.
   void ReadManagedDefaultSettings();
 
   // Reads the policy controlled default settings for a specific content type.
   void UpdateManagedDefaultSetting(ContentSettingsType content_type);
 
-  // Copies of the pref data, so that we can read it on the IO thread.
-  ContentSettings managed_default_content_settings_;
-
-  Profile* profile_;
-
-  // Whether this settings map is for an OTR session.
-  bool is_off_the_record_;
-
-  // Used around accesses to the managed_default_content_settings_ object to
-  // guarantee thread safety.
-  mutable base::Lock lock_;
-
-  PrefChangeRegistrar pref_change_registrar_;
-  NotificationRegistrar notification_registrar_;
-
-  DISALLOW_COPY_AND_ASSIGN(PolicyDefaultProvider);
-};
-
-// PolicyProvider that provider managed content-settings.
-class PolicyProvider : public BaseProvider,
-                       public NotificationObserver {
- public:
-  explicit PolicyProvider(Profile* profile,
-                          DefaultProviderInterface* default_provider);
-  virtual ~PolicyProvider();
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  // BaseProvider Implementation
-  virtual void Init();
-
-  virtual void SetContentSetting(
-      const ContentSettingsPattern& requesting_pattern,
-      const ContentSettingsPattern& embedding_pattern,
-      ContentSettingsType content_type,
-      const ResourceIdentifier& resource_identifier,
-      ContentSetting content_setting);
-
-  virtual ContentSetting GetContentSetting(
-      const GURL& requesting_url,
-      const GURL& embedding_url,
-      ContentSettingsType content_type,
-      const ResourceIdentifier& resource_identifier) const;
-
-  virtual void ClearAllContentSettingsRules(
-      ContentSettingsType content_type);
-
-  virtual void ResetToDefaults();
-
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
- private:
-  typedef Tuple5<
-      ContentSettingsPattern,
-      ContentSettingsPattern,
-      ContentSettingsType,
-      ResourceIdentifier,
-      ContentSetting> ContentSettingsRule;
-
-  typedef std::vector<ContentSettingsRule> ContentSettingsRules;
-
   void ReadManagedContentSettings(bool overwrite);
 
-  void GetContentSettingsFromPreferences(PrefService* prefs,
-                                         ContentSettingsRules* rules);
+  void GetContentSettingsFromPreferences(OriginIdentifierValueMap* rules);
 
-  void ReadManagedContentSettingsTypes(
-      ContentSettingsType content_type);
+  void GetAutoSelectCertificateSettingsFromPreferences(
+      OriginIdentifierValueMap* value_map);
 
-  void NotifyObservers(const ContentSettingsDetails& details);
+  void ReadManagedContentSettingsTypes(ContentSettingsType content_type);
 
-  void UnregisterObservers();
+  OriginIdentifierValueMap value_map_;
 
-  Profile* profile_;
-
-  // Weak, owned by HostContentSettingsMap.
-  DefaultProviderInterface* default_provider_;
+  PrefService* prefs_;
 
   PrefChangeRegistrar pref_change_registrar_;
-  NotificationRegistrar notification_registrar_;
+
+  // Used around accesses to the |value_map_| object to guarantee
+  // thread safety.
+  mutable base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(PolicyProvider);
 };

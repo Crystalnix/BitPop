@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/time.h"
-#include "chrome/browser/browser_process.h"
 #import "chrome/browser/ui/cocoa/about_ipc_controller.h"
+#include "content/public/browser/content_ipc_logging.h"
 
 #if defined(IPC_MESSAGE_LOG_ENABLED)
 
@@ -86,8 +87,8 @@ AboutIPCController* gSharedController = nil;
 }
 
 - (id)init {
-  NSString* nibpath = [base::mac::MainAppBundle() pathForResource:@"AboutIPC"
-                                                          ofType:@"nib"];
+  NSString* nibpath = [base::mac::FrameworkBundle() pathForResource:@"AboutIPC"
+                                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibpath owner:self])) {
     // Default to all on
     appCache_ = view_ = utilityHost_ = viewHost_ = plugin_ =
@@ -100,8 +101,7 @@ AboutIPCController* gSharedController = nil;
 - (void)dealloc {
   if (gSharedController == self)
     gSharedController = nil;
-  if (g_browser_process)
-    g_browser_process->SetIPCLoggingEnabled(false);  // just in case...
+  content::EnableIPCLogging(false);  // just in case...
   IPC::Logging::GetInstance()->SetConsumer(NULL);
   [super dealloc];
 }
@@ -130,8 +130,7 @@ AboutIPCController* gSharedController = nil;
 }
 
 - (IBAction)startStop:(id)sender {
-  g_browser_process->SetIPCLoggingEnabled(
-      !IPC::Logging::GetInstance()->Enabled());
+  content::EnableIPCLogging(!IPC::Logging::GetInstance()->Enabled());
   [self updateVisibleRunState];
 }
 

@@ -8,9 +8,11 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 
 ExtensionToolbarModel::ExtensionToolbarModel(ExtensionService* service)
     : service_(service),
@@ -18,15 +20,15 @@ ExtensionToolbarModel::ExtensionToolbarModel(ExtensionService* service)
       extensions_initialized_(false) {
   DCHECK(service_);
 
-  registrar_.Add(this, NotificationType::EXTENSION_LOADED,
-                 Source<Profile>(service_->profile()));
-  registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-                 Source<Profile>(service_->profile()));
-  registrar_.Add(this, NotificationType::EXTENSIONS_READY,
-                 Source<Profile>(service_->profile()));
-  registrar_.Add(this,
-                 NotificationType::EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(service_->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 content::Source<Profile>(service_->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSIONS_READY,
+                 content::Source<Profile>(service_->profile()));
+  registrar_.Add(
+      this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED,
+      content::Source<ExtensionPrefs>(service_->extension_prefs()));
 
   visible_icon_count_ = prefs_->GetInteger(prefs::kExtensionToolbarSize);
 }
@@ -76,13 +78,13 @@ void ExtensionToolbarModel::MoveBrowserAction(const Extension* extension,
 void ExtensionToolbarModel::SetVisibleIconCount(int count) {
   visible_icon_count_ = count == static_cast<int>(size()) ? -1 : count;
   prefs_->SetInteger(prefs::kExtensionToolbarSize, visible_icon_count_);
-  prefs_->ScheduleSavePersistentPrefs();
 }
 
-void ExtensionToolbarModel::Observe(NotificationType type,
-                                    const NotificationSource& source,
-                                    const NotificationDetails& details) {
-  if (type == NotificationType::EXTENSIONS_READY) {
+void ExtensionToolbarModel::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_EXTENSIONS_READY) {
     InitializeExtensionList();
     return;
   }
@@ -91,12 +93,12 @@ void ExtensionToolbarModel::Observe(NotificationType type,
     return;
 
   const Extension* extension = NULL;
-  if (type == NotificationType::EXTENSION_UNLOADED) {
-    extension = Details<UnloadedExtensionInfo>(details)->extension;
+  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
+    extension = content::Details<UnloadedExtensionInfo>(details)->extension;
   } else {
-    extension = Details<const Extension>(details).ptr();
+    extension = content::Details<const Extension>(details).ptr();
   }
-  if (type == NotificationType::EXTENSION_LOADED) {
+  if (type == chrome::NOTIFICATION_EXTENSION_LOADED) {
     // We don't want to add the same extension twice. It may have already been
     // added by EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED below, if the user
     // hides the browser action and then disables and enables the extension.
@@ -106,10 +108,11 @@ void ExtensionToolbarModel::Observe(NotificationType type,
     }
     if (service_->GetBrowserActionVisibility(extension))
       AddExtension(extension);
-  } else if (type == NotificationType::EXTENSION_UNLOADED) {
+  } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
     RemoveExtension(extension);
-  } else if (type ==
-             NotificationType::EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED) {
+  } else if (
+        type ==
+        chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_VISIBILITY_CHANGED) {
     if (service_->GetBrowserActionVisibility(extension))
       AddExtension(extension);
     else
@@ -177,8 +180,9 @@ void ExtensionToolbarModel::InitializeExtensionList() {
   ExtensionList unsorted;
 
   // Create the lists.
-  for (size_t i = 0; i < service_->extensions()->size(); ++i) {
-    const Extension* extension = service_->extensions()->at(i);
+  for (ExtensionSet::const_iterator it = service_->extensions()->begin();
+       it != service_->extensions()->end(); ++it) {
+    const Extension* extension = *it;
     if (!extension->browser_action())
       continue;
     if (!service_->GetBrowserActionVisibility(extension))

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,13 @@
 #include "base/basictypes.h"
 #include "build/build_config.h"
 
-class DictionaryValue;
 class FilePath;
 class GURL;
 class TemplateURL;
+
+namespace base {
+class DictionaryValue;
+}
 
 #if defined(OS_WIN)
 // Detects which version of Firefox is installed from registry. Returns its
@@ -62,7 +65,7 @@ FilePath GetProfilesINI();
 //   Path=Profiles/abcdefeg.default
 // We set "[value]" in path "<Section>.<Key>". For example, the path
 // "Genenral.StartWithLastProfile" has the value "1".
-void ParseProfileINI(const FilePath& file, DictionaryValue* root);
+void ParseProfileINI(const FilePath& file, base::DictionaryValue* root);
 
 // Returns true if we want to add the URL to the history. We filter out the URL
 // with a unsupported scheme.
@@ -72,12 +75,6 @@ bool CanImportURL(const GURL& url);
 // with the resulting TemplateURLs.
 void ParseSearchEnginesFromXMLFiles(const std::vector<FilePath>& xml_files,
                                     std::vector<TemplateURL*>* search_engines);
-
-// Returns the index of the default search engine in the |search_engines| list.
-// If none is found, -1 is returned.
-int GetFirefoxDefaultSearchEngineIndex(
-    const std::vector<TemplateURL*>& search_engines,
-    const FilePath& profile_path);
 
 // Returns the home page set in Firefox in a particular profile.
 GURL GetHomepage(const FilePath& profile_path);
@@ -93,7 +90,7 @@ bool IsDefaultHomepage(const GURL& homepage, const FilePath& app_path);
 // |prefs| is not filled).
 // Note: for strings, only valid UTF-8 string values are supported. If a
 // key/pair is not valid UTF-8, it is ignored and will not appear in |prefs|.
-bool ParsePrefFile(const FilePath& pref_file, DictionaryValue* prefs);
+bool ParsePrefFile(const FilePath& pref_file, base::DictionaryValue* prefs);
 
 // Parses the value of a particular firefox preference from a string that is the
 // contents of the prefs file.

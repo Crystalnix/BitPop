@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/autofill_field.h"
 #include "chrome/browser/autofill/form_field.h"
@@ -18,7 +19,7 @@ TEST(FormFieldTest, Match) {
   EXPECT_TRUE(FormField::Match(&field, string16(), FormField::MATCH_LABEL));
 
   // Strictly empty pattern matches empty string.
-  field.label = ASCIIToUTF16("");
+  field.label = string16();
   EXPECT_TRUE(FormField::Match(&field, ASCIIToUTF16("^$"),
               FormField::MATCH_LABEL));
 
@@ -101,4 +102,15 @@ TEST(FormFieldTest, Match) {
   field.label = ASCIIToUTF16("xxxHeAd_tAiLxxx");
   EXPECT_TRUE(FormField::Match(&field, ASCIIToUTF16("head_tail"),
               FormField::MATCH_LABEL));
+
+  // Word boundaries.
+  field.label = ASCIIToUTF16("contains word:");
+  EXPECT_TRUE(FormField::Match(&field, ASCIIToUTF16("\\bword\\b"),
+                               FormField::MATCH_LABEL));
+  EXPECT_FALSE(FormField::Match(&field, ASCIIToUTF16("\\bcon\\b"),
+                                FormField::MATCH_LABEL));
+  // Make sure the circumflex in 'crepe' is not treated as a word boundary.
+  field.label = UTF8ToUTF16("cr" "\xC3\xAA" "pe");
+  EXPECT_FALSE(FormField::Match(&field, ASCIIToUTF16("\\bcr\\b"),
+                                FormField::MATCH_LABEL));
 }

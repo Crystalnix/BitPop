@@ -14,30 +14,26 @@
 
 namespace skia {
 
-class SK_API VectorPlatformDeviceEmfFactory : public SkDeviceFactory {
- public:
-  virtual SkDevice* newDevice(SkCanvas* ignored, SkBitmap::Config config,
-                              int width, int height,
-                              bool isOpaque, bool isForLayer) OVERRIDE;
-  static PlatformDevice* CreateDevice(int width, int height, bool isOpaque,
-                                      HANDLE shared_section);
-};
-
 // A device is basically a wrapper around SkBitmap that provides a surface for
 // SkCanvas to draw into. This specific device is not not backed by a surface
 // and is thus unreadable. This is because the backend is completely vectorial.
 // This device is a simple wrapper over a Windows device context (HDC) handle.
-class VectorPlatformDeviceEmf : public PlatformDevice {
+class VectorPlatformDeviceEmf : public PlatformDevice, public SkDevice {
  public:
+  SK_API static SkDevice* CreateDevice(int width, int height, bool isOpaque,
+                                       HANDLE shared_section);
+
   // Factory function. The DC is kept as the output context.
-  static VectorPlatformDeviceEmf* create(HDC dc, int width, int height);
+  static SkDevice* create(HDC dc, int width, int height);
 
   VectorPlatformDeviceEmf(HDC dc, const SkBitmap& bitmap);
   virtual ~VectorPlatformDeviceEmf();
 
   // PlatformDevice methods
-  virtual PlatformSurface BeginPlatformPaint();
-  virtual void DrawToNativeContext(HDC dc, int x, int y, const RECT* src_rect);
+  virtual PlatformSurface BeginPlatformPaint() OVERRIDE;
+  virtual void DrawToNativeContext(HDC dc, int x, int y,
+                                   const RECT* src_rect) OVERRIDE;
+  virtual bool AlphaBlendUsed() const OVERRIDE { return alpha_blend_used_; }
 
   // SkDevice methods.
   virtual uint32_t getDeviceCapabilities();
@@ -75,14 +71,14 @@ class VectorPlatformDeviceEmf : public PlatformDevice {
                           const SkPaint&) OVERRIDE;
 
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
-                             const SkClipStack&);
+                             const SkClipStack&) OVERRIDE;
 
   void LoadClipRegion();
-  bool alpha_blend_used() const { return alpha_blend_used_; }
 
  protected:
-  // Override from SkDevice (through PlatformDevice).
-  virtual SkDeviceFactory* onNewDeviceFactory();
+  virtual SkDevice* onCreateCompatibleDevice(SkBitmap::Config, int width,
+                                             int height, bool isOpaque,
+                                             Usage usage) OVERRIDE;
 
  private:
   // Applies the SkPaint's painting properties in the current GDI context, if
@@ -140,4 +136,3 @@ class VectorPlatformDeviceEmf : public PlatformDevice {
 }  // namespace skia
 
 #endif  // SKIA_EXT_VECTOR_PLATFORM_DEVICE_EMF_WIN_H_
-

@@ -9,8 +9,9 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/automation/tab_proxy.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
+#include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
 #include "chrome/test/ui/ui_test.h"
 #include "googleurl/src/gurl.h"
@@ -602,7 +603,7 @@ TEST_F(TabRestoreUITest, RestoreWindow) {
   EXPECT_TRUE(url == url2_);
 }
 
-// Restore tab with special URL about:credits and make sure the page loads
+// Restore tab with special URL chrome://credits/ and make sure the page loads
 // properly after restore. See http://crbug.com/31905.
 TEST_F(TabRestoreUITest, RestoreTabWithSpecialURL) {
   scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
@@ -610,7 +611,7 @@ TEST_F(TabRestoreUITest, RestoreTabWithSpecialURL) {
   CheckActiveWindow(browser.get());
 
   // Navigate new tab to a special URL.
-  const GURL special_url(chrome::kAboutCreditsURL);
+  const GURL special_url(chrome::kChromeUICreditsURL);
   ASSERT_TRUE(browser->AppendTab(special_url));
   scoped_refptr<TabProxy> tab(browser->GetActiveTab());
   ASSERT_TRUE(tab.get());
@@ -643,7 +644,7 @@ TEST_F(TabRestoreUITest, RestoreTabWithSpecialURLOnBack) {
   CheckActiveWindow(browser.get());
 
   // Navigate new tab to a special URL.
-  const GURL special_url(chrome::kAboutCreditsURL);
+  const GURL special_url(chrome::kChromeUICreditsURL);
   ASSERT_TRUE(browser->AppendTab(special_url));
   scoped_refptr<TabProxy> tab(browser->GetActiveTab());
   ASSERT_TRUE(tab.get());

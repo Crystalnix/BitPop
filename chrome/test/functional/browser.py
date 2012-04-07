@@ -1,8 +1,9 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import logging
 import os
 import re
 import types
@@ -19,12 +20,9 @@ class BrowserTest(pyauto.PyUITest):
 
     This method will not run automatically.
     """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
     while True:
       raw_input('Hit <enter> to dump info.. ')
-      info = self.GetBrowserInfo()
-      pp.pprint(info)
+      self.pprint(self.GetBrowserInfo())
 
   def setUp(self):
     pyauto.PyUITest.setUp(self)
@@ -72,6 +70,7 @@ class BrowserTest(pyauto.PyUITest):
     info = self.GetBrowserInfo()
     # Verify valid version string
     version_string = info['properties']['ChromeVersion']
+    logging.info('ChromeVersion: %s' % version_string)
     self.assertTrue(re.match('\d+\.\d+\.\d+.\.\d+', version_string))
     # Verify browser process
     self.assertEqual(types.IntType, type(info['browser_pid']))
@@ -99,58 +98,23 @@ class BrowserTest(pyauto.PyUITest):
     """Verify window resizing and persistence after restart."""
     def _VerifySize(x, y, width, height):
       info = self.GetBrowserInfo()
-      self.assertEqual(x, info['windows'][0]['x'])
-      self.assertEqual(y, info['windows'][0]['y'])
-      self.assertEqual(width, info['windows'][0]['width'])
-      self.assertEqual(height, info['windows'][0]['height'])
+      self.assertEqual(x, info['windows'][0]['x'],
+                       msg='Window x value should be %d, but was %d.' % (
+                           x, info['windows'][0]['x']))
+      self.assertEqual(y, info['windows'][0]['y'],
+                       msg='Window y value should be %d, but was %d.' % (
+                           y, info['windows'][0]['y']))
+      self.assertEqual(width, info['windows'][0]['width'],
+                       msg='Window width value should be %d, but was %d.' % (
+                           width, info['windows'][0]['width']))
+      self.assertEqual(height, info['windows'][0]['height'],
+                       msg='Window height value should be %d, but was %d.' % (
+                           height, info['windows'][0]['height']))
+
     self.SetWindowDimensions(x=20, y=40, width=600, height=300)
     _VerifySize(20, 40, 600, 300)
     self.RestartBrowser(clear_profile=False)
     _VerifySize(20, 40, 600, 300)
-
-  def testCanLoadFlash(self):
-    """Verify that we can play Flash.
-
-    We merely check that the flash process kicks in.
-    """
-    flash_url = self.GetFileURLForDataPath('plugin', 'flash.swf')
-    self.NavigateToURL(flash_url)
-    child_processes = self.GetBrowserInfo()['child_processes']
-    self.assertTrue([x for x in child_processes
-        if x['type'] == self._flash_plugin_type and
-        x['name'] == 'Shockwave Flash'])
-
-  def _GetFlashProcessesInfo(self):
-    """Get info about flash processes, if any."""
-    return [x for x in self.GetBrowserInfo()['child_processes']
-            if x['type'] == self._flash_plugin_type and
-            x['name'] == 'Shockwave Flash']
-
-  def testSingleFlashPluginProcess(self):
-    """Verify there's only one flash plugin process shared across all uses."""
-    flash_url = self.GetFileURLForDataPath('plugin', 'flash.swf')
-    self.NavigateToURL(flash_url)
-    for _ in range(2):
-      self.AppendTab(pyauto.GURL(flash_url))
-    # Open flash in new window
-    self.OpenNewBrowserWindow(True)
-    self.NavigateToURL(flash_url, 1, 0)
-    # Open flash in new incognito window
-    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
-    self.NavigateToURL(flash_url, 1, 0)
-    # Verify there's only 1 flash process
-    self.assertEqual(1, len(self._GetFlashProcessesInfo()))
-
-  def testFlashLoadsAfterKill(self):
-    """Verify that Flash process reloads after crashing (or being killed)."""
-    flash_url = self.GetFileURLForDataPath('plugin', 'flash.swf')
-    self.NavigateToURL(flash_url)
-    flash_process_id1 = self._GetFlashProcessesInfo()[0]['pid']
-    self.Kill(flash_process_id1)
-    self.ReloadActiveTab()
-    flash_processes = self._GetFlashProcessesInfo()
-    self.assertEqual(1, len(flash_processes))
-    self.assertNotEqual(flash_process_id1, flash_processes[0]['pid'])
 
   def testMaxProcess(self):
     """Verify that opening 100 tabs doesn't create 100 child processes"""
@@ -194,6 +158,18 @@ class BrowserTest(pyauto.PyUITest):
     self.assertEquals(popup_pid, parent_pid,
                       msg='Parent and popup are not sharing a process.')
 
+  def testPopupSharesSameProcessInIncognito(self):
+    """Verify parent incognito and popup share same process id"""
+    self.RunCommand(pyauto.IDC_NEW_INCOGNITO_WINDOW)
+    file_url = self.GetFileURLForDataPath('popup_blocker',
+                                          'popup-window-open.html')
+    self.NavigateToURL(file_url, 1, 0)
+    self.UnblockAndLaunchBlockedPopup(0, tab_index=0, windex=1)
+    self.assertEquals(
+          self.GetBrowserInfo()['windows'][1]['tabs'][0]['renderer_pid'],
+          self.GetBrowserInfo()['windows'][2]['tabs'][0]['renderer_pid'],
+          msg='Incognito window and popup are not sharing a process id.')
+
   def testKillAndReloadSharedProcess(self):
     """Verify that killing a shared process kills all associated renderers.
     In this case we are killing a process shared by a parent and
@@ -228,7 +204,6 @@ class BrowserTest(pyauto.PyUITest):
     # The shared process id should be different from the previous one.
     self.assertNotEqual(shared_pid,
         self.GetBrowserInfo()['windows'][0]['tabs'][0]['renderer_pid'])
-
 
 if __name__ == '__main__':
   pyauto_functional.Main()

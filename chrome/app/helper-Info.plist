@@ -20,11 +20,11 @@
 	<string>????</string>
 	<key>LSFileQuarantineEnabled</key>
 	<true/>
-	<key>LSHasLocalizedDisplayName</key>
-	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>10.5.0</string>
 	<key>LSUIElement</key>
 	<string>1</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
 </dict>
 </plist>

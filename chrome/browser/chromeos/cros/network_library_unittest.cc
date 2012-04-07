@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 
+#include "base/at_exit.h"
+#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -117,5 +119,134 @@ TEST(NetworkLibraryTest, DecodeNonAsciiSSID) {
     delete wifi;
   }
 }
+
+// Create a stub libcros for testing NetworkLibrary functionality through
+// NetworkLibraryStubImpl.
+// NOTE: It would be of little value to test stub functions that simply return
+// predefined values, e.g. ethernet_available(). However, many other functions
+// such as connected_network() return values which are set indirectly and thus
+// we can test the logic of those setters.
+
+class NetworkLibraryStubTest : public testing::Test {
+ public:
+  NetworkLibraryStubTest() : cros_(NULL) {}
+
+ protected:
+  virtual void SetUp() {
+    cros_ = CrosLibrary::Get()->GetNetworkLibrary();
+    ASSERT_TRUE(cros_) << "GetNetworkLibrary() Failed!";
+  }
+  virtual void TearDown() {
+    cros_ = NULL;
+  }
+
+  ScopedStubCrosEnabler cros_stub_;
+  NetworkLibrary* cros_;
+};
+
+// Default stub state:
+// vpn1: disconnected, L2TP/IPsec + PSK
+// vpn2: disconnected, L2TP/IPsec + user cert
+// vpn3: disconnected, OpenVpn
+// eth1: connected (active network)
+// wifi1: connected
+// wifi2: disconnected
+// wifi3: disconnected, WEP
+// wifi4: disconnected, 8021x
+// wifi5: disconnected
+// wifi6: disconnected
+// cellular1: connected, activated, not roaming
+// cellular2: disconnected, activated, roaming
+
+TEST_F(NetworkLibraryStubTest, NetworkLibraryAccessors) {
+  // Set up state.
+  // Set wifi2->connecting for these tests.
+  WifiNetwork* wifi2 = cros_->FindWifiNetworkByPath("wifi2");
+  ASSERT_NE(static_cast<const Network*>(NULL), wifi2);
+  Network::TestApi test_wifi2(wifi2);
+  test_wifi2.SetConnecting(true);
+  // Set cellular1->connecting for these tests.
+  CellularNetwork* cellular1 = cros_->FindCellularNetworkByPath("cellular1");
+  ASSERT_NE(static_cast<const Network*>(NULL), cellular1);
+  Network::TestApi test_cellular1(cellular1);
+  test_cellular1.SetConnecting(true);
+
+  // Ethernet
+  ASSERT_NE(static_cast<const EthernetNetwork*>(NULL),
+            cros_->ethernet_network());
+  EXPECT_EQ("eth1", cros_->ethernet_network()->service_path());
+  EXPECT_NE(static_cast<const Network*>(NULL),
+            cros_->FindNetworkByPath("eth1"));
+  EXPECT_TRUE(cros_->ethernet_connected());
+  EXPECT_FALSE(cros_->ethernet_connecting());
+
+  // Wifi
+  ASSERT_NE(static_cast<const WifiNetwork*>(NULL), cros_->wifi_network());
+  EXPECT_EQ("wifi1", cros_->wifi_network()->service_path());
+  EXPECT_NE(static_cast<const WifiNetwork*>(NULL),
+            cros_->FindWifiNetworkByPath("wifi1"));
+  EXPECT_TRUE(cros_->wifi_connected());
+  EXPECT_FALSE(cros_->wifi_connecting());  // Only true for active wifi.
+  EXPECT_GE(cros_->wifi_networks().size(), 1U);
+
+  // Cellular
+  ASSERT_NE(static_cast<const CellularNetwork*>(NULL),
+            cros_->cellular_network());
+  EXPECT_EQ("cellular1", cros_->cellular_network()->service_path());
+  EXPECT_NE(static_cast<const CellularNetwork*>(NULL),
+            cros_->FindCellularNetworkByPath("cellular1"));
+  EXPECT_FALSE(cros_->cellular_connected());
+  EXPECT_TRUE(cros_->cellular_connecting());
+  EXPECT_GE(cros_->cellular_networks().size(), 1U);
+
+  // VPN
+  ASSERT_EQ(static_cast<const VirtualNetwork*>(NULL), cros_->virtual_network());
+  EXPECT_GE(cros_->virtual_networks().size(), 1U);
+
+  // Active network and global state
+  EXPECT_TRUE(cros_->Connected());
+  ASSERT_NE(static_cast<const Network*>(NULL), cros_->active_network());
+  EXPECT_EQ("eth1", cros_->active_network()->service_path());
+  ASSERT_NE(static_cast<const Network*>(NULL), cros_->connected_network());
+  EXPECT_EQ("eth1", cros_->connected_network()->service_path());
+  // The "wifi1" is connected, so we do not return "wifi2" for the connecting
+  // network. There is no conencted cellular network, so "cellular1" is
+  // returned by connecting_network().
+  EXPECT_TRUE(cros_->Connecting());
+  ASSERT_NE(static_cast<const Network*>(NULL), cros_->connecting_network());
+  EXPECT_EQ("cellular1", cros_->connecting_network()->service_path());
+}
+
+TEST_F(NetworkLibraryStubTest, NetworkConnectWifi) {
+  WifiNetwork* wifi1 = cros_->FindWifiNetworkByPath("wifi1");
+  ASSERT_NE(static_cast<const WifiNetwork*>(NULL), wifi1);
+  EXPECT_TRUE(wifi1->connected());
+  cros_->DisconnectFromNetwork(wifi1);
+  EXPECT_FALSE(wifi1->connected());
+  EXPECT_TRUE(cros_->CanConnectToNetwork(wifi1));
+  cros_->ConnectToWifiNetwork(wifi1);
+  EXPECT_TRUE(wifi1->connected());
+}
+
+TEST_F(NetworkLibraryStubTest, NetworkConnectVPN) {
+  VirtualNetwork* vpn1 = cros_->FindVirtualNetworkByPath("vpn1");
+  EXPECT_NE(static_cast<const VirtualNetwork*>(NULL), vpn1);
+  EXPECT_FALSE(vpn1->connected());
+  EXPECT_TRUE(cros_->CanConnectToNetwork(vpn1));
+  cros_->ConnectToVirtualNetwork(vpn1);
+  EXPECT_TRUE(vpn1->connected());
+  ASSERT_NE(static_cast<const VirtualNetwork*>(NULL), cros_->virtual_network());
+  EXPECT_EQ("vpn1", cros_->virtual_network()->service_path());
+}
+
+// TODO(stevenjb): Test remembered networks.
+
+// TODO(stevenjb): Test network profiles.
+
+// TODO(stevenjb): Test network devices.
+
+// TODO(stevenjb): Test data plans.
+
+// TODO(stevenjb): Test monitor network / device.
 
 }  // namespace chromeos

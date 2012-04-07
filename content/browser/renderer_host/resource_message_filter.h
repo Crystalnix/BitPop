@@ -6,11 +6,10 @@
 #define CONTENT_BROWSER_RENDERER_HOST_RESOURCE_MESSAGE_FILTER_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/browser_message_filter.h"
-#include "content/common/child_process_info.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/browser_message_filter.h"
+#include "content/public/common/process_type.h"
 #include "webkit/glue/resource_type.h"
-
-class ResourceDispatcherHost;
 
 namespace content {
 class ResourceContext;
@@ -25,7 +24,8 @@ class URLRequestContext;
 // delayed by costly UI processing that may be occuring on the main thread of
 // the browser.  It also means that any hangs in starting a network request
 // will not interfere with browser UI.
-class ResourceMessageFilter : public BrowserMessageFilter {
+class CONTENT_EXPORT ResourceMessageFilter
+    : public content::BrowserMessageFilter {
  public:
   // Allows selecting the net::URLRequestContext used to service requests.
   class URLRequestContextSelector {
@@ -40,16 +40,16 @@ class ResourceMessageFilter : public BrowserMessageFilter {
     DISALLOW_COPY_AND_ASSIGN(URLRequestContextSelector);
   };
 
-  ResourceMessageFilter(int child_id,
-                        ChildProcessInfo::ProcessType process_type,
-                        const content::ResourceContext* resource_context,
-                        URLRequestContextSelector* url_request_context_selector,
-                        ResourceDispatcherHost* resource_dispatcher_host);
+  ResourceMessageFilter(
+      int child_id,
+      content::ProcessType process_type,
+      const content::ResourceContext* resource_context,
+      URLRequestContextSelector* url_request_context_selector);
 
-  // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing();
+  // content::BrowserMessageFilter implementation.
+  virtual void OnChannelClosing() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
   const content::ResourceContext& resource_context() const {
     return *resource_context_;
@@ -60,7 +60,7 @@ class ResourceMessageFilter : public BrowserMessageFilter {
       ResourceType::Type request_type);
 
   int child_id() const { return child_id_; }
-  ChildProcessInfo::ProcessType process_type() const { return process_type_; }
+  content::ProcessType process_type() const { return process_type_; }
 
  protected:
   // Protected destructor so that we can be overriden in tests.
@@ -70,15 +70,12 @@ class ResourceMessageFilter : public BrowserMessageFilter {
   // The ID of the child process.
   int child_id_;
 
-  ChildProcessInfo::ProcessType process_type_;
+  content::ProcessType process_type_;
 
   // Owned by ProfileIOData* which is guaranteed to outlive us.
   const content::ResourceContext* const resource_context_;
 
   const scoped_ptr<URLRequestContextSelector> url_request_context_selector_;
-
-  // Owned by BrowserProcess, which is guaranteed to outlive us.
-  ResourceDispatcherHost* resource_dispatcher_host_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ResourceMessageFilter);
 };

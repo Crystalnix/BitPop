@@ -2,23 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/net/url_request_mock_http_job.h"
+#include "chrome/browser/download/chrome_download_manager_delegate.h"
+#include "chrome/browser/download/download_history.h"
+#include "chrome/browser/download/download_service.h"
+#include "chrome/browser/download/download_service_factory.h"
+#include "chrome/browser/net/url_request_mock_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/download/download_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/browser/ui/webui/active_downloads_ui.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/browser/download/download_persistent_store_info.h"
+#include "content/browser/net/url_request_mock_http_job.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
+using content::DownloadItem;
+using content::DownloadManager;
+using content::WebContents;
 
 namespace {
 
@@ -33,19 +49,144 @@ static const char* kAppendedExtension =
 
 class SavePageBrowserTest : public InProcessBrowserTest {
  protected:
-  void SetUp() {
+  void SetUp() OVERRIDE {
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir_));
     ASSERT_TRUE(save_dir_.CreateUniqueTempDir());
     InProcessBrowserTest::SetUp();
   }
 
-  GURL WaitForSavePackageToFinish() {
+  void SetUpOnMainThread() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&chrome_browser_net::SetUrlRequestMocksEnabled, true));
+  }
+
+  GURL NavigateToMockURL(const std::string& prefix) {
+    GURL url = URLRequestMockHTTPJob::GetMockUrl(
+        FilePath(kTestDir).AppendASCII(prefix + ".htm"));
+    ui_test_utils::NavigateToURL(browser(), url);
+    return url;
+  }
+
+  // Returns full paths of destination file and directory.
+  void GetDestinationPaths(const std::string& prefix,
+                FilePath* full_file_name,
+                FilePath* dir) {
+    *full_file_name = save_dir_.path().AppendASCII(prefix + ".htm");
+    *dir = save_dir_.path().AppendASCII(prefix + "_files");
+  }
+
+  WebContents* GetCurrentTab() const {
+    WebContents* current_tab = browser()->GetSelectedWebContents();
+    EXPECT_TRUE(current_tab);
+    return current_tab;
+  }
+
+
+  GURL WaitForSavePackageToFinish() const {
     ui_test_utils::TestNotificationObserver observer;
     ui_test_utils::RegisterAndWait(&observer,
-        NotificationType::SAVE_PACKAGE_SUCCESSFULLY_FINISHED,
-        NotificationService::AllSources());
-    return *Details<GURL>(observer.details()).ptr();
+        content::NOTIFICATION_SAVE_PACKAGE_SUCCESSFULLY_FINISHED,
+        content::NotificationService::AllSources());
+    return content::Details<DownloadItem>(observer.details()).ptr()->
+        GetOriginalUrl();
   }
+
+#if defined(OS_CHROMEOS) && !defined(USE_AURA)
+  const ActiveDownloadsUI::DownloadList& GetDownloads() const {
+    Browser* popup = ActiveDownloadsUI::GetPopup();
+    EXPECT_TRUE(popup);
+    ActiveDownloadsUI* downloads_ui = static_cast<ActiveDownloadsUI*>(
+        popup->GetSelectedWebContents()->GetWebUI()->GetController());
+    EXPECT_TRUE(downloads_ui);
+    return downloads_ui->GetDownloads();
+  }
+#endif
+
+  void CheckDownloadUI(const FilePath& download_path) const {
+#if defined(OS_CHROMEOS) && !defined(USE_AURA)
+    const ActiveDownloadsUI::DownloadList& downloads = GetDownloads();
+    EXPECT_EQ(downloads.size(), 1U);
+
+    bool found = false;
+    for (size_t i = 0; i < downloads.size(); ++i) {
+      if (downloads[i]->GetFullPath() == download_path) {
+        found = true;
+        break;
+      }
+    }
+    EXPECT_TRUE(found);
+#else
+    EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
+#endif
+  }
+
+  DownloadManager* GetDownloadManager() const {
+    DownloadManager* download_manager =
+        DownloadServiceFactory::GetForProfile(
+            browser()->profile())->GetDownloadManager();
+    EXPECT_TRUE(download_manager);
+    return download_manager;
+  }
+
+  void QueryDownloadHistory() {
+    // Query the history system.
+    ChromeDownloadManagerDelegate* delegate =
+      static_cast<ChromeDownloadManagerDelegate*>(
+          GetDownloadManager()->delegate());
+    delegate->download_history()->Load(
+        base::Bind(&SavePageBrowserTest::OnQueryDownloadEntriesComplete,
+                   base::Unretained(this)));
+
+    // Run message loop until a quit message is sent from
+    // OnQueryDownloadEntriesComplete().
+    ui_test_utils::RunMessageLoop();
+  }
+
+  void OnQueryDownloadEntriesComplete(
+      std::vector<DownloadPersistentStoreInfo>* entries) {
+    history_entries_ = *entries;
+
+    // Indicate thet we have received the history and can continue.
+    MessageLoopForUI::current()->Quit();
+  }
+
+  struct DownloadPersistentStoreInfoMatch
+    : public std::unary_function<DownloadPersistentStoreInfo, bool> {
+
+    DownloadPersistentStoreInfoMatch(const GURL& url,
+                                     const FilePath& path,
+                                     int64 num_files)
+      : url_(url),
+        path_(path),
+        num_files_(num_files) {
+    }
+
+    bool operator() (const DownloadPersistentStoreInfo& info) const {
+      return info.url == url_ &&
+        info.path == path_ &&
+        // For save packages, received bytes is actually the number of files.
+        info.received_bytes == num_files_ &&
+        info.total_bytes == 0 &&
+        info.state == DownloadItem::COMPLETE;
+    }
+
+    GURL url_;
+    FilePath path_;
+    int64 num_files_;
+  };
+
+  void CheckDownloadHistory(const GURL& url,
+                            const FilePath& path,
+                            int64 num_files_) {
+    QueryDownloadHistory();
+
+    EXPECT_NE(std::find_if(history_entries_.begin(), history_entries_.end(),
+        DownloadPersistentStoreInfoMatch(url, path, num_files_)),
+        history_entries_.end());
+  }
+
+  std::vector<DownloadPersistentStoreInfo> history_entries_;
 
   // Path to directory containing test data.
   FilePath test_dir_;
@@ -55,28 +196,22 @@ class SavePageBrowserTest : public InProcessBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLOnly) {
-  FilePath file_name(FILE_PATH_LITERAL("a.htm"));
-  GURL url = URLRequestMockHTTPJob::GetMockUrl(
-      FilePath(kTestDir).Append(file_name));
-  ui_test_utils::NavigateToURL(browser(), url);
+  GURL url = NavigateToMockURL("a");
 
-  TabContentsWrapper* current_tab = browser()->GetSelectedTabContentsWrapper();
-  ASSERT_TRUE(current_tab);
-
-  FilePath full_file_name = save_dir_.path().Append(file_name);
-  FilePath dir = save_dir_.path().AppendASCII("a_files");
-  ASSERT_TRUE(current_tab->download_tab_helper()->SavePage(
-      full_file_name, dir, SavePackage::SAVE_AS_ONLY_HTML));
+  FilePath full_file_name, dir;
+  GetDestinationPaths("a", &full_file_name, &dir);
+  ASSERT_TRUE(GetCurrentTab()->SavePage(full_file_name, dir,
+                                        content::SAVE_PAGE_TYPE_AS_ONLY_HTML));
 
   EXPECT_EQ(url, WaitForSavePackageToFinish());
 
-  if (browser()->SupportsWindowFeature(Browser::FEATURE_DOWNLOADSHELF))
-    EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
+  CheckDownloadUI(full_file_name);
+  CheckDownloadHistory(url, full_file_name, 1);  // a.htm is 1 file.
 
   EXPECT_TRUE(file_util::PathExists(full_file_name));
   EXPECT_FALSE(file_util::PathExists(dir));
   EXPECT_TRUE(file_util::ContentsEqual(
-      test_dir_.Append(FilePath(kTestDir)).Append(file_name),
+      test_dir_.Append(FilePath(kTestDir)).Append(FILE_PATH_LITERAL("a.htm")),
       full_file_name));
 }
 
@@ -88,19 +223,15 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveViewSourceHTMLOnly) {
       FilePath(kTestDir).Append(file_name));
   ui_test_utils::NavigateToURL(browser(), view_source_url);
 
-  TabContentsWrapper* current_tab = browser()->GetSelectedTabContentsWrapper();
-  ASSERT_TRUE(current_tab);
-
-  FilePath full_file_name = save_dir_.path().Append(file_name);
-  FilePath dir = save_dir_.path().AppendASCII("a_files");
-
-  ASSERT_TRUE(current_tab->download_tab_helper()->SavePage(
-      full_file_name, dir, SavePackage::SAVE_AS_ONLY_HTML));
+  FilePath full_file_name, dir;
+  GetDestinationPaths("a", &full_file_name, &dir);
+  ASSERT_TRUE(GetCurrentTab()->SavePage(full_file_name, dir,
+                                        content::SAVE_PAGE_TYPE_AS_ONLY_HTML));
 
   EXPECT_EQ(actual_page_url, WaitForSavePackageToFinish());
 
-  if (browser()->SupportsWindowFeature(Browser::FEATURE_DOWNLOADSHELF))
-    EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
+  CheckDownloadUI(full_file_name);
+  CheckDownloadHistory(actual_page_url, full_file_name, 1);  // a.htm is 1 file.
 
   EXPECT_TRUE(file_util::PathExists(full_file_name));
   EXPECT_FALSE(file_util::PathExists(dir));
@@ -110,23 +241,17 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveViewSourceHTMLOnly) {
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveCompleteHTML) {
-  FilePath file_name(FILE_PATH_LITERAL("b.htm"));
-  GURL url = URLRequestMockHTTPJob::GetMockUrl(
-      FilePath(kTestDir).Append(file_name));
-  ui_test_utils::NavigateToURL(browser(), url);
+  GURL url = NavigateToMockURL("b");
 
-  TabContentsWrapper* current_tab = browser()->GetSelectedTabContentsWrapper();
-  ASSERT_TRUE(current_tab);
-
-  FilePath full_file_name = save_dir_.path().Append(file_name);
-  FilePath dir = save_dir_.path().AppendASCII("b_files");
-  ASSERT_TRUE(current_tab->download_tab_helper()->SavePage(
-      full_file_name, dir, SavePackage::SAVE_AS_COMPLETE_HTML));
+  FilePath full_file_name, dir;
+  GetDestinationPaths("b", &full_file_name, &dir);
+  ASSERT_TRUE(GetCurrentTab()->SavePage(
+      full_file_name, dir, content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML));
 
   EXPECT_EQ(url, WaitForSavePackageToFinish());
 
-  if (browser()->SupportsWindowFeature(Browser::FEATURE_DOWNLOADSHELF))
-    EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
+  CheckDownloadUI(full_file_name);
+  CheckDownloadHistory(url, full_file_name, 3);  // b.htm is 3 files.
 
   EXPECT_TRUE(file_util::PathExists(full_file_name));
   EXPECT_TRUE(file_util::PathExists(dir));
@@ -148,27 +273,19 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, NoSave) {
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, FileNameFromPageTitle) {
-  FilePath file_name(FILE_PATH_LITERAL("b.htm"));
-
-  GURL url = URLRequestMockHTTPJob::GetMockUrl(
-      FilePath(kTestDir).Append(file_name));
-  ui_test_utils::NavigateToURL(browser(), url);
+  GURL url = NavigateToMockURL("b");
 
   FilePath full_file_name = save_dir_.path().AppendASCII(
       std::string("Test page for saving page feature") + kAppendedExtension);
   FilePath dir = save_dir_.path().AppendASCII(
       "Test page for saving page feature_files");
-
-  TabContentsWrapper* current_tab = browser()->GetSelectedTabContentsWrapper();
-  ASSERT_TRUE(current_tab);
-
-  ASSERT_TRUE(current_tab->download_tab_helper()->SavePage(
-      full_file_name, dir, SavePackage::SAVE_AS_COMPLETE_HTML));
+  ASSERT_TRUE(GetCurrentTab()->SavePage(
+      full_file_name, dir, content::SAVE_PAGE_TYPE_AS_COMPLETE_HTML));
 
   EXPECT_EQ(url, WaitForSavePackageToFinish());
 
-  if (browser()->SupportsWindowFeature(Browser::FEATURE_DOWNLOADSHELF))
-    EXPECT_TRUE(browser()->window()->IsDownloadShelfVisible());
+  CheckDownloadUI(full_file_name);
+  CheckDownloadHistory(url, full_file_name, 3);  // b.htm is 3 files.
 
   EXPECT_TRUE(file_util::PathExists(full_file_name));
   EXPECT_TRUE(file_util::PathExists(dir));
@@ -181,6 +298,38 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, FileNameFromPageTitle) {
   EXPECT_TRUE(file_util::ContentsEqual(
       test_dir_.Append(FilePath(kTestDir)).AppendASCII("1.css"),
       dir.AppendASCII("1.css")));
+}
+
+IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, RemoveFromList) {
+  GURL url = NavigateToMockURL("a");
+
+  FilePath full_file_name, dir;
+  GetDestinationPaths("a", &full_file_name, &dir);
+  ASSERT_TRUE(GetCurrentTab()->SavePage(full_file_name, dir,
+                                        content::SAVE_PAGE_TYPE_AS_ONLY_HTML));
+
+  EXPECT_EQ(url, WaitForSavePackageToFinish());
+
+  CheckDownloadUI(full_file_name);
+  CheckDownloadHistory(url, full_file_name, 1);  // a.htm is 1 file.
+
+  EXPECT_EQ(GetDownloadManager()->RemoveAllDownloads(), 1);
+
+#if defined(OS_CHROMEOS) && !defined(USE_AURA)
+  EXPECT_EQ(GetDownloads().size(), 0U);
+#endif
+
+  // Should not be in history.
+  QueryDownloadHistory();
+  EXPECT_EQ(std::find_if(history_entries_.begin(), history_entries_.end(),
+      DownloadPersistentStoreInfoMatch(url, full_file_name, 1)),
+      history_entries_.end());
+
+  EXPECT_TRUE(file_util::PathExists(full_file_name));
+  EXPECT_FALSE(file_util::PathExists(dir));
+  EXPECT_TRUE(file_util::ContentsEqual(
+      test_dir_.Append(FilePath(kTestDir)).Append(FILE_PATH_LITERAL("a.htm")),
+      full_file_name));
 }
 
 }  // namespace

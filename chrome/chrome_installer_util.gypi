@@ -11,6 +11,12 @@
       # This part is shared between the two versions of the target.
       ['installer_util_target==1', {
         'sources': [
+          'installer/util/app_command.cc',
+          'installer/util/app_command.h',
+          'installer/util/app_commands.cc',
+          'installer/util/app_commands.h',
+          'installer/util/auto_launch_util.cc',
+          'installer/util/auto_launch_util.h',
           'installer/util/browser_distribution.cc',
           'installer/util/browser_distribution.h',
           'installer/util/channel_info.cc',
@@ -21,6 +27,8 @@
           'installer/util/chromium_binaries_distribution.h',
           'installer/util/conditional_work_item_list.cc',
           'installer/util/conditional_work_item_list.h',
+          'installer/util/copy_reg_key_work_item.cc',
+          'installer/util/copy_reg_key_work_item.h',
           'installer/util/copy_tree_work_item.cc',
           'installer/util/copy_tree_work_item.h',
           'installer/util/create_dir_work_item.cc',
@@ -47,10 +55,10 @@
           'installer/util/helper.h',
           'installer/util/install_util.cc',
           'installer/util/install_util.h',
-          'installer/util/installation_state.h',
           'installer/util/installation_state.cc',
-          'installer/util/installer_state.h',
+          'installer/util/installation_state.h',
           'installer/util/installer_state.cc',
+          'installer/util/installer_state.h',
           'installer/util/l10n_string_util.cc',
           'installer/util/l10n_string_util.h',
           'installer/util/language_selector.cc',
@@ -59,10 +67,8 @@
           'installer/util/master_preferences_constants.h',
           'installer/util/move_tree_work_item.cc',
           'installer/util/move_tree_work_item.h',
-          'installer/util/app_command.cc',
-          'installer/util/app_command.h',
-          'installer/util/app_commands.cc',
-          'installer/util/app_commands.h',
+          'installer/util/registry_key_backup.cc',
+          'installer/util/registry_key_backup.h',
           'installer/util/self_reg_work_item.cc',
           'installer/util/self_reg_work_item.h',
           'installer/util/set_reg_value_work_item.cc',
@@ -88,19 +94,18 @@
         {
           'target_name': 'installer_util',
           'type': 'static_library',
-          'msvs_guid': 'EFBB1436-A63F-4CD8-9E99-B89226E782EC',
           'variables': {
             'installer_util_target': 1,
           },
           'dependencies': [
             'installer_util_strings',
-            '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
             'common_constants',
-            'chrome_resources',
-            'chrome_strings',
-            '../content/content.gyp:content_common',
             '<(DEPTH)/base/base.gyp:base',
             '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+            '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
+            '<(DEPTH)/content/content.gyp:content_common',
             '<(DEPTH)/courgette/courgette.gyp:courgette_lib',
             '<(DEPTH)/third_party/bspatch/bspatch.gyp:bspatch',
             '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
@@ -138,11 +143,18 @@
             'installer/util/shell_util.cc',
             'installer/util/shell_util.h',
           ],
+          'conditions': [
+            ['component=="shared_library" and incremental_chrome_dll!=1', {
+              'sources': [ '../content/public/common/content_switches.cc' ],
+              'defines': [ 'COMPILE_CONTENT_STATICALLY'],
+            }, {
+              'dependencies': ['<(DEPTH)/content/content.gyp:content_common'],
+            }],
+          ],
         },
         {
           'target_name': 'installer_util_nacl_win64',
           'type': 'static_library',
-          'msvs_guid': '91016F29-C324-4236-8AA0-032765E71582',
           'variables': {
             'installer_util_target': 1,
           },
@@ -172,8 +184,8 @@
           'type': 'static_library',
           'dependencies': [
             'common_constants',
-            'chrome_resources',
-            'chrome_strings',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
+            '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
           ],
           'sources': [
             'installer/util/master_preferences.cc',
@@ -184,14 +196,15 @@
           'include_dirs': [
             '<(DEPTH)',
           ],
+          'conditions': [
+            ['component == "shared_library"', {
+              'sources': [ '../content/public/common/content_switches.cc' ],
+              'defines': [ 'COMPILE_CONTENT_STATICALLY'],
+            }],
+          ],
         }
       ],
     }],
+
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -26,17 +27,8 @@ class AutomationProxy;
 // implementation or to override browser launching behavior.
 class ProxyLauncher {
  public:
-  // Default path for named testing interface.
-  static const char kDefaultInterfacePath[];
-
-  // Profile theme type choices.
-  enum ProfileType {
-    DEFAULT_THEME = 0,
-    COMPLEX_THEME = 1,
-    NATIVE_THEME = 2,
-    CUSTOM_FRAME = 3,
-    CUSTOM_FRAME_NATIVE_THEME = 4,
-  };
+  // Default ID for named testing interface.
+  static const char kDefaultInterfaceId[];
 
   // Different ways to quit the browser.
   enum ShutdownType {
@@ -54,8 +46,9 @@ class ProxyLauncher {
     // into the user data directory for the test.
     FilePath template_user_data;
 
-    // Profile theme type.
-    ProfileType profile_type;
+    // Called just before starting the browser to allow any setup of the
+    // profile for the run time environment.
+    base::Closure setup_profile_callback;
 
     // Command line to launch the browser.
     CommandLine command;
@@ -72,8 +65,10 @@ class ProxyLauncher {
   virtual ~ProxyLauncher();
 
   // Launches the browser if needed and establishes a connection with it.
-  virtual void InitializeConnection(const LaunchState& state,
-                                    bool wait_for_initial_loads) = 0;
+  // Returns true on success.
+  virtual bool InitializeConnection(
+      const LaunchState& state,
+      bool wait_for_initial_loads) WARN_UNUSED_RESULT = 0;
 
   // Shuts down the browser if needed and destroys any
   // connections established by InitalizeConnection.
@@ -115,7 +110,7 @@ class ProxyLauncher {
 
   // Check that no processes related to Chrome exist, displaying
   // the given message if any do.
-  void AssertAppNotRunning(const std::wstring& error_message);
+  void AssertAppNotRunning(const std::string& error_message);
 
   // Wait for the browser process to shut down on its own (i.e. as a result of
   // some action that your test has taken). If it has exited within |timeout|,
@@ -146,61 +141,6 @@ class ProxyLauncher {
     shutdown_type_ = value;
   }
 
-  // Get/Set a flag to run the renderer in-process when running the tests.
-  static bool in_process_renderer() { return in_process_renderer_; }
-  static void set_in_process_renderer(bool value) {
-    in_process_renderer_ = value;
-  }
-
-  // Get/Set a flag to run the renderer outside the sandbox when running tests.
-  static bool no_sandbox() { return no_sandbox_; }
-  static void set_no_sandbox(bool value) {
-    no_sandbox_ = value;
-  }
-
-  // Get/Set a flag to run with DCHECKs enabled in release.
-  static bool enable_dcheck() { return enable_dcheck_; }
-  static void set_enable_dcheck(bool value) {
-    enable_dcheck_ = value;
-  }
-
-  // Get/Set a flag to dump the process memory without crashing on DCHECKs.
-  static bool silent_dump_on_dcheck() { return silent_dump_on_dcheck_; }
-  static void set_silent_dump_on_dcheck(bool value) {
-    silent_dump_on_dcheck_ = value;
-  }
-
-  // Get/Set a flag to disable breakpad handling.
-  static bool disable_breakpad() { return disable_breakpad_; }
-  static void set_disable_breakpad(bool value) {
-    disable_breakpad_ = value;
-  }
-
-  static bool show_error_dialogs() { return show_error_dialogs_; }
-  static void set_show_error_dialogs(bool value) {
-    show_error_dialogs_ = value;
-  }
-
-  static bool full_memory_dump() { return full_memory_dump_; }
-  static void set_full_memory_dump(bool value) {
-    full_memory_dump_ = value;
-  }
-
-  static bool dump_histograms_on_exit() { return dump_histograms_on_exit_; }
-  static void set_dump_histograms_on_exit(bool value) {
-    dump_histograms_on_exit_ = value;
-  }
-
-  static const std::string& js_flags() { return js_flags_; }
-  static void set_js_flags(const std::string& value) {
-    js_flags_ = value;
-  }
-
-  static const std::string& log_level() { return log_level_; }
-  static void set_log_level(const std::string& value) {
-    log_level_ = value;
-  }
-
  protected:
   // Creates an automation proxy.
   virtual AutomationProxy* CreateAutomationProxy(
@@ -226,6 +166,7 @@ class ProxyLauncher {
                               bool include_testing_id);
 
   bool LaunchBrowserHelper(const LaunchState& state,
+                           bool main_launch,
                            bool wait,
                            base::ProcessHandle* process) WARN_UNUSED_RESULT;
 
@@ -250,35 +191,32 @@ class ProxyLauncher {
   // The method for shutting down the browser. Used in ShutdownTest.
   ShutdownType shutdown_type_;
 
-  // True if we're in single process mode.
-  static bool in_process_renderer_;
-
   // If true, runs the renderer outside the sandbox.
-  static bool no_sandbox_;
+  bool no_sandbox_;
 
   // If true, write full memory dump during crash.
-  static bool full_memory_dump_;
+  bool full_memory_dump_;
 
   // If true, a user is paying attention to the test, so show error dialogs.
-  static bool show_error_dialogs_;
+  bool show_error_dialogs_;
 
   // Include histograms in log on exit.
-  static bool dump_histograms_on_exit_;
+  bool dump_histograms_on_exit_;
 
   // Enable dchecks in release mode.
-  static bool enable_dcheck_;
+  bool enable_dcheck_;
 
   // Dump process memory on dcheck without crashing.
-  static bool silent_dump_on_dcheck_;
+  bool silent_dump_on_dcheck_;
 
   // Disable breakpad on the browser.
-  static bool disable_breakpad_;
+  bool disable_breakpad_;
 
   // Flags passed to the JS engine.
-  static std::string js_flags_;
+  std::string js_flags_;
 
   // Logging level.
-  static std::string log_level_;
+  std::string log_level_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyLauncher);
 };
@@ -295,8 +233,9 @@ class NamedProxyLauncher : public ProxyLauncher {
                      bool launch_browser, bool disconnect_on_failure);
 
   virtual AutomationProxy* CreateAutomationProxy(int execution_timeout);
-  virtual void InitializeConnection(const LaunchState& state,
-                                    bool wait_for_initial_loads);
+  virtual bool InitializeConnection(
+      const LaunchState& state,
+      bool wait_for_initial_loads) OVERRIDE WARN_UNUSED_RESULT;
   virtual void TerminateConnection();
   virtual std::string PrefixedChannelID() const;
 
@@ -314,8 +253,9 @@ class AnonymousProxyLauncher : public ProxyLauncher {
  public:
   explicit AnonymousProxyLauncher(bool disconnect_on_failure);
   virtual AutomationProxy* CreateAutomationProxy(int execution_timeout);
-  virtual void InitializeConnection(const LaunchState& state,
-                                    bool wait_for_initial_loads);
+  virtual bool InitializeConnection(
+      const LaunchState& state,
+      bool wait_for_initial_loads) OVERRIDE WARN_UNUSED_RESULT;
   virtual void TerminateConnection();
   virtual std::string PrefixedChannelID() const;
 

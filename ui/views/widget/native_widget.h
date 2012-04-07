@@ -4,78 +4,35 @@
 
 #ifndef UI_VIEWS_WIDGET_NATIVE_WIDGET_H_
 #define UI_VIEWS_WIDGET_NATIVE_WIDGET_H_
+#pragma once
 
-#include "ui/views/native_types.h"
+#include "ui/views/widget/widget.h"
 
-namespace gfx{
-class Path;
-class Rect;
-}
-
-namespace ui {
+namespace views {
 namespace internal {
-class NativeWidgetListener;
+class NativeWidgetPrivate;
 }
-class View;
-class Widget;
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeWidget interface
 //
-//  An interface implemented by an object that encapsulates rendering, event
-//  handling and widget management provided by an underlying native toolkit.
+//  An interface that serves as the public API base for the
+//  internal::NativeWidget interface that Widget uses to communicate with a
+//  backend-specific native widget implementation. This is the only component of
+//  this interface that is publicly visible, and exists solely for exposure via
+//  Widget's native_widget() accessor, which code occasionally static_casts to
+//  a known implementation in platform-specific code.
 //
-class NativeWidget {
+class VIEWS_EXPORT NativeWidget {
  public:
   virtual ~NativeWidget() {}
 
-  static NativeWidget* CreateNativeWidget(
-      internal::NativeWidgetListener* listener);
+ private:
+  friend class Widget;
 
-  // Retrieves the NativeWidget implementation associated with the given
-  // NativeView or Window, or NULL if the supplied handle has no associated
-  // NativeView.
-  static NativeWidget* GetNativeWidgetForNativeView(
-      gfx::NativeView native_view);
-  static NativeWidget* GetNativeWidgetForNativeWindow(
-      gfx::NativeWindow native_window);
-
-  // Retrieves the top NativeWidget in the hierarchy containing the given
-  // NativeView, or NULL if there is no NativeWidget that contains it.
-  static NativeWidget* GetTopLevelNativeWidget(gfx::NativeView native_view);
-
-  // See Widget for documentation and notes.
-  virtual void InitWithNativeViewParent(gfx::NativeView parent,
-                                        const gfx::Rect& bounds) = 0;
-  virtual void InitWithWidgetParent(Widget* parent,
-                                    const gfx::Rect& bounds) = 0;
-  virtual void InitWithViewParent(View* parent, const gfx::Rect& bounds) = 0;
-  virtual void SetNativeWindowProperty(const char* name, void* value) = 0;
-  virtual void* GetNativeWindowProperty(const char* name) const = 0;
-  virtual gfx::Rect GetWindowScreenBounds() const = 0;
-  virtual gfx::Rect GetClientAreaScreenBounds() const = 0;
-  virtual void SetBounds(const gfx::Rect& bounds) = 0;
-  virtual void SetShape(const gfx::Path& shape) = 0;
-  virtual gfx::NativeView GetNativeView() const = 0;
-  virtual void Show() = 0;
-  virtual void Hide() = 0;
-  virtual void Close() = 0;
-  virtual void MoveAbove(NativeWidget* other) = 0;
-  virtual void SetAlwaysOnTop(bool always_on_top) = 0;
-  virtual bool IsVisible() const = 0;
-  virtual bool IsActive() const = 0;
-  virtual void SetMouseCapture() = 0;
-  virtual void ReleaseMouseCapture() = 0;
-  virtual bool HasMouseCapture() const = 0;
-  virtual bool ShouldReleaseCaptureOnMouseReleased() const = 0;
-  virtual void Invalidate() = 0;
-  virtual void InvalidateRect(const gfx::Rect& invalid_rect) = 0;
-  virtual void Paint() = 0;
-  virtual void FocusNativeView(gfx::NativeView native_view) = 0;
-  virtual Widget* GetWidget() const = 0;
+  virtual internal::NativeWidgetPrivate* AsNativeWidgetPrivate() = 0;
 };
 
-}  // namespace ui
+}  // namespace views
 
 #endif  // UI_VIEWS_WIDGET_NATIVE_WIDGET_H_
-

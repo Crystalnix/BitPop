@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,11 +15,13 @@
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
 #include "base/string_number_conversions.h"
+#include "base/string_piece.h"
 #include "base/string_util.h"
 #include "base/time.h"
 #include "net/base/escape.h"
 #include "net/http/http_util.h"
 
+using base::StringPiece;
 using base::Time;
 using base::TimeDelta;
 
@@ -112,6 +114,13 @@ int MapHttpResponseCode(int code) {
       code <= HISTOGRAM_MAX_HTTP_RESPONSE_CODE)
     return code;
   return 0;
+}
+
+void CheckDoesNotHaveEmbededNulls(const std::string& str) {
+  // Care needs to be taken when adding values to the raw headers string to
+  // make sure it does not contain embeded NULLs. Any embeded '\0' may be
+  // understood as line terminators and change how header lines get tokenized.
+  CHECK(str.find('\0') == std::string::npos);
 }
 
 }  // namespace
@@ -287,6 +296,42 @@ void HttpResponseHeaders::MergeWithHeaders(const std::string& raw_headers,
   Parse(new_raw_headers);
 }
 
+void HttpResponseHeaders::MergeWithHeadersWithValue(
+    const std::string& raw_headers,
+    const std::string& header_to_remove_name,
+    const std::string& header_to_remove_value) {
+  std::string header_to_remove_name_lowercase(header_to_remove_name);
+  StringToLowerASCII(&header_to_remove_name_lowercase);
+
+  std::string new_raw_headers(raw_headers);
+  for (size_t i = 0; i < parsed_.size(); ++i) {
+    DCHECK(!parsed_[i].is_continuation());
+
+    // Locate the start of the next header.
+    size_t k = i;
+    while (++k < parsed_.size() && parsed_[k].is_continuation()) {}
+    --k;
+
+    std::string name(parsed_[i].name_begin, parsed_[i].name_end);
+    StringToLowerASCII(&name);
+    std::string value(parsed_[i].value_begin, parsed_[i].value_end);
+    if (name != header_to_remove_name_lowercase ||
+        value != header_to_remove_value) {
+      // It's ok to preserve this header in the final result.
+      new_raw_headers.append(parsed_[i].name_begin, parsed_[k].value_end);
+      new_raw_headers.push_back('\0');
+    }
+
+    i = k;
+  }
+  new_raw_headers.push_back('\0');
+
+  // Make this object hold the new data.
+  raw_headers_.clear();
+  parsed_.clear();
+  Parse(new_raw_headers);
+}
+
 void HttpResponseHeaders::RemoveHeader(const std::string& name) {
   // Copy up to the null byte.  This just copies the status line.
   std::string new_raw_headers(raw_headers_.c_str());
@@ -299,7 +344,17 @@ void HttpResponseHeaders::RemoveHeader(const std::string& name) {
   MergeWithHeaders(new_raw_headers, to_remove);
 }
 
+void HttpResponseHeaders::RemoveHeaderWithValue(const std::string& name,
+                                                const std::string& value) {
+  // Copy up to the null byte.  This just copies the status line.
+  std::string new_raw_headers(raw_headers_.c_str());
+  new_raw_headers.push_back('\0');
+
+  MergeWithHeadersWithValue(new_raw_headers, name, value);
+}
+
 void HttpResponseHeaders::AddHeader(const std::string& header) {
+  CheckDoesNotHaveEmbededNulls(header);
   DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 2]);
   DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 1]);
   // Don't copy the last null.
@@ -315,6 +370,7 @@ void HttpResponseHeaders::AddHeader(const std::string& header) {
 }
 
 void HttpResponseHeaders::ReplaceStatusLine(const std::string& new_status) {
+  CheckDoesNotHaveEmbededNulls(new_status);
   // Copy up to the null byte.  This just copies the status line.
   std::string new_raw_headers(new_status);
   new_raw_headers.push_back('\0');
@@ -329,16 +385,20 @@ void HttpResponseHeaders::Parse(const std::string& raw_input) {
   // ParseStatusLine adds a normalized status line to raw_headers_
   std::string::const_iterator line_begin = raw_input.begin();
   std::string::const_iterator line_end =
-      find(line_begin, raw_input.end(), '\0');
+      std::find(line_begin, raw_input.end(), '\0');
   // has_headers = true, if there is any data following the status line.
   // Used by ParseStatusLine() to decide if a HTTP/0.9 is really a HTTP/1.0.
   bool has_headers = (line_end != raw_input.end() &&
                       (line_end + 1) != raw_input.end() &&
                       *(line_end + 1) != '\0');
   ParseStatusLine(line_begin, line_end, has_headers);
+  raw_headers_.push_back('\0');  // Terminate status line with a null.
 
   if (line_end == raw_input.end()) {
-    raw_headers_.push_back('\0');
+    raw_headers_.push_back('\0');  // Ensure the headers end with a double null.
+
+    DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 2]);
+    DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 1]);
     return;
   }
 
@@ -348,6 +408,13 @@ void HttpResponseHeaders::Parse(const std::string& raw_input) {
   // Now, we add the rest of the raw headers to raw_headers_, and begin parsing
   // it (to populate our parsed_ vector).
   raw_headers_.append(line_end + 1, raw_input.end());
+
+  // Ensure the headers end with a double null.
+  while (raw_headers_.size() < 2 ||
+         raw_headers_[raw_headers_.size() - 2] != '\0' ||
+         raw_headers_[raw_headers_.size() - 1] != '\0') {
+    raw_headers_.push_back('\0');
+  }
 
   // Adjust to point at the null byte following the status line
   line_end = raw_headers_.begin() + status_line_len - 1;
@@ -360,6 +427,9 @@ void HttpResponseHeaders::Parse(const std::string& raw_input) {
               headers.values_begin(),
               headers.values_end());
   }
+
+  DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 2]);
+  DCHECK_EQ('\0', raw_headers_[raw_headers_.size() - 1]);
 }
 
 // Append all of our headers to the final output string.
@@ -457,7 +527,7 @@ std::string HttpResponseHeaders::GetStatusText() const {
   std::string::const_iterator begin = status_text.begin();
   std::string::const_iterator end = status_text.end();
   for (int i = 0; i < 2; ++i)
-    begin = find(begin, end, ' ') + 1;
+    begin = std::find(begin, end, ' ') + 1;
   return std::string(begin, end);
 }
 
@@ -557,7 +627,7 @@ HttpVersion HttpResponseHeaders::ParseVersion(
     return HttpVersion();
   }
 
-  std::string::const_iterator dot = find(p, line_end, '.');
+  std::string::const_iterator dot = std::find(p, line_end, '.');
   if (dot == line_end) {
     DVLOG(1) << "malformed version";
     return HttpVersion();
@@ -604,12 +674,11 @@ void HttpResponseHeaders::ParseStatusLine(
   }
 
   // TODO(eroman): this doesn't make sense if ParseVersion failed.
-  std::string::const_iterator p = find(line_begin, line_end, ' ');
+  std::string::const_iterator p = std::find(line_begin, line_end, ' ');
 
   if (p == line_end) {
     DVLOG(1) << "missing response status; assuming 200 OK";
     raw_headers_.append(" 200 OK");
-    raw_headers_.push_back('\0');
     response_code_ = 200;
     return;
   }
@@ -631,7 +700,7 @@ void HttpResponseHeaders::ParseStatusLine(
   raw_headers_.push_back(' ');
   raw_headers_.append(code, p);
   raw_headers_.push_back(' ');
-  base::StringToInt(code, p, &response_code_);
+  base::StringToInt(StringPiece(code, p), &response_code_);
 
   // Skip whitespace.
   while (*p == ' ')
@@ -649,8 +718,6 @@ void HttpResponseHeaders::ParseStatusLine(
   } else {
     raw_headers_.append(p, line_end);
   }
-
-  raw_headers_.push_back('\0');
 }
 
 size_t HttpResponseHeaders::FindHeader(size_t from,
@@ -777,7 +844,7 @@ void HttpResponseHeaders::GetMimeTypeAndCharset(std::string* mime_type,
 
   void* iter = NULL;
   while (EnumerateHeader(&iter, name, &value))
-    HttpUtil::ParseContentType(value, mime_type, charset, &had_charset);
+    HttpUtil::ParseContentType(value, mime_type, charset, &had_charset, NULL);
 }
 
 bool HttpResponseHeaders::GetMimeType(std::string* mime_type) const {
@@ -1006,8 +1073,8 @@ bool HttpResponseHeaders::GetMaxAgeValue(TimeDelta* result) const {
                                value.begin() + kMaxAgePrefixLen,
                                kMaxAgePrefix)) {
         int64 seconds;
-        base::StringToInt64(value.begin() + kMaxAgePrefixLen,
-                            value.end(),
+        base::StringToInt64(StringPiece(value.begin() + kMaxAgePrefixLen,
+                                        value.end()),
                             &seconds);
         *result = TimeDelta::FromSeconds(seconds);
         return true;
@@ -1047,8 +1114,7 @@ bool HttpResponseHeaders::GetTimeValuedHeader(const std::string& name,
   if (!EnumerateHeader(NULL, name, &value))
     return false;
 
-  std::wstring value_wide(value.begin(), value.end());  // inflate ascii
-  return Time::FromString(value_wide.c_str(), result);
+  return Time::FromString(value.c_str(), result);
 }
 
 bool HttpResponseHeaders::IsKeepAlive() const {
@@ -1186,8 +1252,8 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
           byte_range_resp_spec.begin() + minus_position;
       HttpUtil::TrimLWS(&first_byte_pos_begin, &first_byte_pos_end);
 
-      bool ok = base::StringToInt64(first_byte_pos_begin,
-                                    first_byte_pos_end,
+      bool ok = base::StringToInt64(StringPiece(first_byte_pos_begin,
+                                                first_byte_pos_end),
                                     first_byte_position);
 
       // Obtain last-byte-pos.
@@ -1197,8 +1263,8 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
           byte_range_resp_spec.end();
       HttpUtil::TrimLWS(&last_byte_pos_begin, &last_byte_pos_end);
 
-      ok &= base::StringToInt64(last_byte_pos_begin,
-                                last_byte_pos_end,
+      ok &= base::StringToInt64(StringPiece(last_byte_pos_begin,
+                                            last_byte_pos_end),
                                 last_byte_position);
       if (!ok) {
         *first_byte_position = *last_byte_position = -1;
@@ -1222,8 +1288,8 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
 
   if (LowerCaseEqualsASCII(instance_length_begin, instance_length_end, "*")) {
     return false;
-  } else if (!base::StringToInt64(instance_length_begin,
-                                  instance_length_end,
+  } else if (!base::StringToInt64(StringPiece(instance_length_begin,
+                                              instance_length_end),
                                   instance_length)) {
     *instance_length = -1;
     return false;
@@ -1236,6 +1302,12 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
     return false;
 
   return true;
+}
+
+bool HttpResponseHeaders::IsChunkEncoded() const {
+  // Ignore spurious chunked responses from HTTP/1.0 servers and proxies.
+  return GetHttpVersion() >= HttpVersion(1, 1) &&
+      HasHeaderValue("Transfer-Encoding", "chunked");
 }
 
 }  // namespace net

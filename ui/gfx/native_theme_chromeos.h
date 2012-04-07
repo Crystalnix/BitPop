@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,17 @@
 
 #include <map>
 #include "base/compiler_specific.h"
-#include "ui/gfx/native_theme_linux.h"
+#include "ui/gfx/native_theme_base.h"
 
 class SkBitmap;
 
-class NativeThemeChromeos : public gfx::NativeThemeLinux {
+namespace gfx {
+
+class NativeThemeChromeos : public NativeThemeBase {
+ public:
+  static const NativeThemeChromeos* instance();
+
  private:
-  friend class NativeThemeLinux;
   NativeThemeChromeos();
   virtual ~NativeThemeChromeos();
 
@@ -21,8 +25,9 @@ class NativeThemeChromeos : public gfx::NativeThemeLinux {
   virtual gfx::Size GetPartSize(Part part,
                                 State state,
                                 const ExtraParams& extra) const OVERRIDE;
+  virtual SkColor GetSystemColor(ColorId color_id) const OVERRIDE;
 
-  // NativeThemeLinux overrides
+  // NativeThemeBase overrides
   virtual void PaintScrollbarTrack(SkCanvas* canvas,
       Part part, State state,
       const ScrollbarTrackExtraParams& extra_params,
@@ -73,6 +78,12 @@ class NativeThemeChromeos : public gfx::NativeThemeLinux {
       const gfx::Rect& rect,
       const InnerSpinButtonExtraParams& spin_button) const OVERRIDE;
 
+  virtual void PaintMenuPopupBackground(
+      SkCanvas* canvas,
+      State state,
+      const gfx::Rect& rect,
+      const MenuListExtraParams& menu_list) const OVERRIDE;
+
   // Draw the progress bar.
   virtual void PaintProgressBar(SkCanvas* canvas,
       State state,
@@ -92,5 +103,7 @@ class NativeThemeChromeos : public gfx::NativeThemeLinux {
 
   DISALLOW_COPY_AND_ASSIGN(NativeThemeChromeos);
 };
+
+}  // namespace gfx
 
 #endif  // UI_GFX_NATIVE_THEME_CHROMEOS_H_

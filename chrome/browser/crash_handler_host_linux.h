@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CRASH_HANDLER_HOST_LINUX_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/message_loop.h"
 
 #if defined(USE_LINUX_BREAKPAD)
@@ -44,11 +45,11 @@ class CrashHandlerHostLinux : public MessageLoopForIO::Watcher,
   }
 
   // MessagePumbLibevent::Watcher impl:
-  virtual void OnFileCanWriteWithoutBlocking(int fd);
-  virtual void OnFileCanReadWithoutBlocking(int fd);
+  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
 
   // MessageLoop::DestructionObserver impl:
-  virtual void WillDestroyCurrentMessageLoop();
+  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
 
 #if defined(USE_LINUX_BREAKPAD)
   // Whether we are shutting down or not.
@@ -95,6 +96,23 @@ class CrashHandlerHostLinux : public MessageLoopForIO::Watcher,
   DISALLOW_COPY_AND_ASSIGN(CrashHandlerHostLinux);
 };
 
+class ExtensionCrashHandlerHostLinux : public CrashHandlerHostLinux {
+ public:
+  // Returns the singleton instance.
+  static ExtensionCrashHandlerHostLinux* GetInstance();
+
+ private:
+  friend struct DefaultSingletonTraits<ExtensionCrashHandlerHostLinux>;
+  ExtensionCrashHandlerHostLinux();
+  virtual ~ExtensionCrashHandlerHostLinux();
+
+#if defined(USE_LINUX_BREAKPAD)
+  virtual void SetProcessType() OVERRIDE;
+#endif
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionCrashHandlerHostLinux);
+};
+
 class GpuCrashHandlerHostLinux : public CrashHandlerHostLinux {
  public:
   // Returns the singleton instance.
@@ -106,7 +124,7 @@ class GpuCrashHandlerHostLinux : public CrashHandlerHostLinux {
   virtual ~GpuCrashHandlerHostLinux();
 
 #if defined(USE_LINUX_BREAKPAD)
-  virtual void SetProcessType();
+  virtual void SetProcessType() OVERRIDE;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(GpuCrashHandlerHostLinux);
@@ -123,27 +141,10 @@ class PluginCrashHandlerHostLinux : public CrashHandlerHostLinux {
   virtual ~PluginCrashHandlerHostLinux();
 
 #if defined(USE_LINUX_BREAKPAD)
-  virtual void SetProcessType();
+  virtual void SetProcessType() OVERRIDE;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(PluginCrashHandlerHostLinux);
-};
-
-class RendererCrashHandlerHostLinux : public CrashHandlerHostLinux {
- public:
-  // Returns the singleton instance.
-  static RendererCrashHandlerHostLinux* GetInstance();
-
- private:
-  friend struct DefaultSingletonTraits<RendererCrashHandlerHostLinux>;
-  RendererCrashHandlerHostLinux();
-  virtual ~RendererCrashHandlerHostLinux();
-
-#if defined(USE_LINUX_BREAKPAD)
-  virtual void SetProcessType();
-#endif
-
-  DISALLOW_COPY_AND_ASSIGN(RendererCrashHandlerHostLinux);
 };
 
 class PpapiCrashHandlerHostLinux : public CrashHandlerHostLinux {
@@ -157,10 +158,27 @@ class PpapiCrashHandlerHostLinux : public CrashHandlerHostLinux {
   virtual ~PpapiCrashHandlerHostLinux();
 
 #if defined(USE_LINUX_BREAKPAD)
-  virtual void SetProcessType();
+  virtual void SetProcessType() OVERRIDE;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(PpapiCrashHandlerHostLinux);
+};
+
+class RendererCrashHandlerHostLinux : public CrashHandlerHostLinux {
+ public:
+  // Returns the singleton instance.
+  static RendererCrashHandlerHostLinux* GetInstance();
+
+ private:
+  friend struct DefaultSingletonTraits<RendererCrashHandlerHostLinux>;
+  RendererCrashHandlerHostLinux();
+  virtual ~RendererCrashHandlerHostLinux();
+
+#if defined(USE_LINUX_BREAKPAD)
+  virtual void SetProcessType() OVERRIDE;
+#endif
+
+  DISALLOW_COPY_AND_ASSIGN(RendererCrashHandlerHostLinux);
 };
 
 #endif  // CHROME_BROWSER_CRASH_HANDLER_HOST_LINUX_H_

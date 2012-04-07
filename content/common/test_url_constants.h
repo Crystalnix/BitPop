@@ -8,7 +8,7 @@
 #define CONTENT_COMMON_TEST_URL_CONSTANTS_H_
 #pragma once
 
-#include "content/common/url_constants.h"
+#include "content/public/common/url_constants.h"
 
 namespace chrome {
 
@@ -20,8 +20,8 @@ namespace chrome {
 extern const char kTestCacheURL[];
 extern const char kTestHangURL[];
 
-// The About pages are assumed in several tests to not be a WebUI page.
-extern const char kTestMemoryURL[];
+// One of the few about pages that is not a WebUI page.
+extern const char kTestGpuCleanURL[];
 
 // The NTP is assumed in several tests to have the property that it is WebUI.
 extern const char kTestNewTabURL[];

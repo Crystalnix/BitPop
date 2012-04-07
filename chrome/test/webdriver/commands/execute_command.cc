@@ -7,9 +7,9 @@
 #include <string>
 
 #include "base/values.h"
-#include "chrome/test/webdriver/session.h"
 #include "chrome/test/webdriver/commands/response.h"
 #include "chrome/test/webdriver/webdriver_error.h"
+#include "chrome/test/webdriver/webdriver_session.h"
 
 namespace webdriver {
 
@@ -40,6 +40,7 @@ void ExecuteCommand::ExecutePost(Response* const response) {
   Value* result = NULL;
   Error* error = session_->ExecuteScript(script, args, &result);
   if (error) {
+    error->AddDetails("Script execution failed. Script: " + script);
     response->SetError(error);
     return;
   }

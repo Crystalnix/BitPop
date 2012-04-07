@@ -27,7 +27,8 @@ void ExtensionsStartupUtil::OnPackSuccess(
           crx_path, output_private_key_path)));
 }
 
-void ExtensionsStartupUtil::OnPackFailure(const std::string& error_message) {
+void ExtensionsStartupUtil::OnPackFailure(const std::string& error_message,
+                                          ExtensionCreator::ErrorType type) {
   ShowPackExtensionMessage(L"Extension Packaging Error",
                            UTF8ToWide(error_message));
 }
@@ -43,7 +44,7 @@ void ExtensionsStartupUtil::ShowPackExtensionMessage(
   out_text.append("\n\n");
   out_text.append(WideToASCII(message));
   out_text.append("\n");
-  base::StringPrintf("%s", out_text.c_str());
+  printf("%s", out_text.c_str());
 #endif
 }
 
@@ -58,8 +59,10 @@ bool ExtensionsStartupUtil::PackExtension(const CommandLine& cmd_line) {
     private_key_path = cmd_line.GetSwitchValuePath(switches::kPackExtensionKey);
   }
 
-  // Launch a job to perform the packing on the file thread.
-  pack_job_ = new PackExtensionJob(this, src_dir, private_key_path);
+  // Launch a job to perform the packing on the file thread.  Ignore warnings
+  // from the packing process. (e.g. Overwrite any existing crx file.)
+  pack_job_ = new PackExtensionJob(this, src_dir, private_key_path,
+                                   ExtensionCreator::kOverwriteCRX);
   pack_job_->set_asynchronous(false);
   pack_job_->Start();
 
@@ -79,12 +82,8 @@ bool ExtensionsStartupUtil::UninstallExtension(const CommandLine& cmd_line,
 
   std::string extension_id = cmd_line.GetSwitchValueASCII(
       switches::kUninstallExtension);
-  if (ExtensionService::UninstallExtensionHelper(extension_service,
-                                                 extension_id)) {
-    return true;
-  }
-
-  return false;
+  return ExtensionService::UninstallExtensionHelper(extension_service,
+                                                    extension_id);
 }
 
 ExtensionsStartupUtil::~ExtensionsStartupUtil() {

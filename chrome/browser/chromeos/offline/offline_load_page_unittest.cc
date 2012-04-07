@@ -1,16 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/offline/offline_load_page.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "chrome/browser/renderer_host/offline_resource_handler.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
-#include "content/common/view_messages.h"
+#include "content/test/test_browser_thread.h"
+
+using content::BrowserThread;
 
 static const char* kURL1 = "http://www.google.com/";
 static const char* kURL2 = "http://www.gmail.com/";
+
+namespace chromeos {
+
+class OfflineLoadPageTest;
 
 namespace {
 
@@ -19,23 +25,28 @@ class TestOfflineLoadPage :  public chromeos::OfflineLoadPage {
  public:
   TestOfflineLoadPage(TabContents* tab_contents,
                       const GURL& url,
-                      Delegate* delegate)
-    : chromeos::OfflineLoadPage(tab_contents, url, delegate) {
-    EnableTest();
+                      OfflineLoadPageTest* test_page)
+    : chromeos::OfflineLoadPage(tab_contents, url, CompletionCallback()),
+      test_page_(test_page) {
   }
 
   // Overriden from InterstitialPage.  Don't create a view.
-  virtual TabContentsView* CreateTabContentsView() {
+  virtual content::WebContentsView* CreateWebContentsView() OVERRIDE {
     return NULL;
   }
+
+  // chromeos::OfflineLoadPage override.
+  virtual void NotifyBlockingPageComplete(bool proceed) OVERRIDE;
+
+ private:
+  OfflineLoadPageTest* test_page_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestOfflineLoadPage);
 };
 
 }  // namespace
 
-namespace chromeos {
-
-class OfflineLoadPageTest : public RenderViewHostTestHarness,
-                            public OfflineLoadPage::Delegate {
+class OfflineLoadPageTest : public ChromeRenderViewHostTestHarness {
  public:
   // The decision the user made.
   enum UserResponse {
@@ -50,12 +61,11 @@ class OfflineLoadPageTest : public RenderViewHostTestHarness,
   }
 
   virtual void SetUp() {
-    RenderViewHostTestHarness::SetUp();
+    ChromeRenderViewHostTestHarness::SetUp();
     user_response_ = PENDING;
   }
 
-  // OfflineLoadPage::Delegate implementation.
-  virtual void OnBlockingPageComplete(bool proceed) {
+  void OnBlockingPageComplete(bool proceed) {
     if (proceed)
       user_response_ = OK;
     else
@@ -63,9 +73,9 @@ class OfflineLoadPageTest : public RenderViewHostTestHarness,
   }
 
   void Navigate(const char* url, int page_id) {
-    ViewHostMsg_FrameNavigate_Params params;
-    InitNavigateParams(&params, page_id, GURL(url), PageTransition::TYPED);
-    contents()->TestDidNavigate(contents()->render_view_host(), params);
+    contents()->TestDidNavigate(
+        contents()->GetRenderViewHost(), page_id, GURL(url),
+        content::PAGE_TRANSITION_TYPED);
   }
 
   void ShowInterstitial(const char* url) {
@@ -82,16 +92,26 @@ class OfflineLoadPageTest : public RenderViewHostTestHarness,
 
  private:
   UserResponse user_response_;
-  BrowserThread ui_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread io_thread_;
+
+  // Initializes / shuts down a stub CrosLibrary.
+  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
+
+  DISALLOW_COPY_AND_ASSIGN(OfflineLoadPageTest);
 };
 
+void TestOfflineLoadPage::NotifyBlockingPageComplete(bool proceed) {
+  test_page_->OnBlockingPageComplete(proceed);
+}
 
-TEST_F(OfflineLoadPageTest, OfflinePaeProceed) {
+
+TEST_F(OfflineLoadPageTest, OfflinePageProceed) {
   // Start a load.
   Navigate(kURL1, 1);
   // Load next page.
-  controller().LoadURL(GURL(kURL2), GURL(), PageTransition::TYPED);
+  controller().LoadURL(GURL(kURL2), content::Referrer(),
+                       content::PAGE_TRANSITION_TYPED, std::string());
 
   // Simulate the load causing an offline browsing interstitial page
   // to be shown.
@@ -118,7 +138,8 @@ TEST_F(OfflineLoadPageTest, OfflinePaeProceed) {
 TEST_F(OfflineLoadPageTest, OfflinePageDontProceed) {
   // Start a load.
   Navigate(kURL1, 1);
-  controller().LoadURL(GURL(kURL2), GURL(), PageTransition::TYPED);
+  controller().LoadURL(GURL(kURL2), content::Referrer(),
+                       content::PAGE_TRANSITION_TYPED, std::string());
 
   // Simulate the load causing an offline interstitial page to be shown.
   ShowInterstitial(kURL2);
@@ -133,7 +154,7 @@ TEST_F(OfflineLoadPageTest, OfflinePageDontProceed) {
   EXPECT_EQ(CANCEL, user_response());
   EXPECT_FALSE(GetOfflineLoadPage());
   // We did not proceed, the pending entry should be gone.
-  EXPECT_FALSE(controller().pending_entry());
+  EXPECT_FALSE(controller().GetPendingEntry());
   // the URL is set back to kURL1.
   EXPECT_EQ(kURL1, contents()->GetURL().spec());
 }

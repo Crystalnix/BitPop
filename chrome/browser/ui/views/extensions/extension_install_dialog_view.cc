@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,46 +10,40 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/dialog_style.h"
 #include "chrome/browser/ui/views/window.h"
 #include "chrome/common/extensions/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/layout/layout_constants.h"
-#include "views/view.h"
-#include "views/window/dialog_delegate.h"
-#include "views/window/window.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/views/border.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
+#include "ui/views/controls/link_listener.h"
+#include "ui/views/controls/separator.h"
+#include "ui/views/layout/box_layout.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_delegate.h"
+
+using content::OpenURLParams;
+using content::Referrer;
 
 namespace {
 
 // Size of extension icon in top left of dialog.
 const int kIconSize = 69;
 
-// Width of the white permission box. This also is the max width of all
-// elements in the right column of the dialog in the case where the extension
-// requests permissions.
-const int kPermissionBoxWidth = 270;
-
-// Width of the right column of the dialog when the extension requests no
+// Width of the left column of the dialog when the extension requests
 // permissions.
-const int kNoPermissionsRightColumnWidth = 210;
+const int kPermissionsLeftColumnWidth = 250;
 
-// Width of the gray border around the permission box.
-const int kPermissionBoxBorderWidth = 1;
-
-// Width of the horizontal padding inside the permission box border.
-const int kPermissionBoxHorizontalPadding = 10;
-
-// Width of the vertical padding inside the permission box border.
-const int kPermissionBoxVerticalPadding = 11;
-
-// The max width of the individual permission strings inside the permission
-// box.
-const int kPermissionLabelWidth =
-    kPermissionBoxWidth -
-    kPermissionBoxBorderWidth * 2 -
-    kPermissionBoxHorizontalPadding * 2;
+// Width of the left column of the dialog when the extension requests no
+// permissions.
+const int kNoPermissionsLeftColumnWidth = 200;
 
 // Heading font size correction.
 #if defined(CROS_FONTS_USING_BCI)
@@ -58,64 +52,49 @@ const int kHeadingFontSizeDelta = 0;
 const int kHeadingFontSizeDelta = 1;
 #endif
 
+const int kRatingFontSizeDelta = -1;
+
+void AddResourceIcon(const SkBitmap* skia_image, void* data) {
+  views::View* parent = static_cast<views::View*>(data);
+  views::ImageView* image_view = new views::ImageView();
+  image_view->SetImage(*skia_image);
+  parent->AddChildView(image_view);
+}
+
 }  // namespace
 
 // Implements the extension installation dialog for TOOLKIT_VIEWS.
-class ExtensionInstallDialogView : public views::View,
-                                   public views::DialogDelegate {
+class ExtensionInstallDialogView : public views::DialogDelegateView,
+                                   public views::LinkListener {
  public:
   ExtensionInstallDialogView(ExtensionInstallUI::Delegate* delegate,
                              const Extension* extension,
-                             SkBitmap* icon,
-                             const std::vector<string16>& permissions,
-                             ExtensionInstallUI::PromptType type);
+                             SkBitmap* skia_icon,
+                             const ExtensionInstallUI::Prompt& prompt);
   virtual ~ExtensionInstallDialogView();
 
  private:
-  // views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void Layout() OVERRIDE;
-
-  // views::DialogDelegate:
-  virtual std::wstring GetDialogButtonLabel(
-      MessageBoxFlags::DialogButton button) const OVERRIDE;
+  // views::DialogDelegateView:
+  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual int GetDefaultDialogButton() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
-  // views::WindowDelegate:
-  virtual bool IsModal() const OVERRIDE;
-  virtual std::wstring GetWindowTitle() const OVERRIDE;
+  // views::WidgetDelegate:
+  virtual ui::ModalType GetModalType() const OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
 
-  // The delegate that we will call back to when the user accepts or rejects
-  // the installation.
+  // views::LinkListener:
+  virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
+
+  bool is_inline_install() {
+    return prompt_.type() == ExtensionInstallUI::INLINE_INSTALL_PROMPT;
+  }
+
   ExtensionInstallUI::Delegate* delegate_;
-
-  // Displays the extension's icon.
-  views::ImageView* icon_;
-
-  // Displays the main heading "Install FooBar?".
-  views::Label* heading_;
-
-  // Displays the permission box header "The extension will have access to:".
-  views::Label* will_have_access_to_;
-
-  // The white box containing the list of permissions the extension requires.
-  // This can be NULL if the extension requires no permissions.
-  views::View* permission_box_;
-
-  // The labels describing each of the permissions the extension requires.
-  std::vector<views::Label*> permissions_;
-
-  // The width of the right column of the dialog. Will be either
-  // kPermissionBoxWidth or kNoPermissionsRightColumnWidth, depending on
-  // whether the extension requires any permissions.
-  int right_column_width_;
-
-  // The type of install dialog, which must be INSTALL_PROMPT or
-  // RE_ENABLE_PROMPT.
-  ExtensionInstallUI::PromptType type_;
+  const Extension* extension_;
+  ExtensionInstallUI::Prompt prompt_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionInstallDialogView);
 };
@@ -123,173 +102,182 @@ class ExtensionInstallDialogView : public views::View,
 ExtensionInstallDialogView::ExtensionInstallDialogView(
     ExtensionInstallUI::Delegate* delegate,
     const Extension* extension,
-    SkBitmap* icon,
-    const std::vector<string16>& permissions,
-    ExtensionInstallUI::PromptType type)
+    SkBitmap* skia_icon,
+    const ExtensionInstallUI::Prompt& prompt)
     : delegate_(delegate),
-      icon_(NULL),
-      heading_(NULL),
-      will_have_access_to_(NULL),
-      permission_box_(NULL),
-      right_column_width_(0),
-      type_(type) {
+      extension_(extension),
+      prompt_(prompt) {
+  // Possible grid layouts:
+  // Inline install
+  //      w/ permissions                 no permissions
+  // +--------------------+------+  +--------------+------+
+  // | heading            | icon |  | heading      | icon |
+  // +--------------------|      |  +--------------|      |
+  // | rating             |      |  | rating       |      |
+  // +--------------------|      |  +--------------+      |
+  // | user_count         |      |  | user_count   |      |
+  // +--------------------|      |  +--------------|      |
+  // | store_link         |      |  | store_link   |      |
+  // +--------------------+------+  +--------------+------+
+  // |      separator            |
+  // +--------------------+------+
+  // | permissions_header |      |
+  // +--------------------+------+
+  // | permission1        |      |
+  // +--------------------+------+
+  // | permission2        |      |
+  // +--------------------+------+
+  //
+  // Regular install
+  //      w/ permissions                 no permissions
+  // +--------------------+------+  +--------------+------+
+  // | heading            | icon |  | heading      | icon |
+  // +--------------------|      |  +--------------+------+
+  // | permissions_header |      |
+  // +--------------------|      |
+  // | permission1        |      |
+  // +--------------------|      |
+  // | permission2        |      |
+  // +--------------------+------+
+
+  views::GridLayout* layout = views::GridLayout::CreatePanel(this);
+  SetLayoutManager(layout);
+
+  int column_set_id = 0;
+  views::ColumnSet* column_set = layout->AddColumnSet(column_set_id);
+  int left_column_width = prompt.GetPermissionCount() > 0 ?
+      kPermissionsLeftColumnWidth : kNoPermissionsLeftColumnWidth;
+
+  column_set->AddColumn(views::GridLayout::LEADING,
+                        views::GridLayout::FILL,
+                        0,  // no resizing
+                        views::GridLayout::USE_PREF,
+                        0,  // no fixed with
+                        left_column_width);
+  column_set->AddPaddingColumn(0, views::kPanelHorizMargin);
+  column_set->AddColumn(views::GridLayout::LEADING,
+                        views::GridLayout::LEADING,
+                        0,  // no resizing
+                        views::GridLayout::USE_PREF,
+                        0,  // no fixed width
+                        kIconSize);
+
+  layout->StartRow(0, column_set_id);
+
+  views::Label* heading = new views::Label(
+      prompt.GetHeading(extension->name()));
+  heading->SetFont(heading->font().DeriveFont(kHeadingFontSizeDelta,
+                                              gfx::Font::BOLD));
+  heading->SetMultiLine(true);
+  heading->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  heading->SizeToFit(left_column_width);
+  layout->AddView(heading);
+
   // Scale down to icon size, but allow smaller icons (don't scale up).
-  gfx::Size size(icon->width(), icon->height());
+  gfx::Size size(skia_icon->width(), skia_icon->height());
   if (size.width() > kIconSize || size.height() > kIconSize)
     size = gfx::Size(kIconSize, kIconSize);
-  icon_ = new views::ImageView();
-  icon_->SetImageSize(size);
-  icon_->SetImage(*icon);
-  icon_->SetHorizontalAlignment(views::ImageView::CENTER);
-  icon_->SetVerticalAlignment(views::ImageView::CENTER);
-  AddChildView(icon_);
+  views::ImageView* icon = new views::ImageView();
+  icon->SetImageSize(size);
+  icon->SetImage(*skia_icon);
+  icon->SetHorizontalAlignment(views::ImageView::CENTER);
+  icon->SetVerticalAlignment(views::ImageView::CENTER);
+  int icon_row_span = 1;
+  if (is_inline_install()) {
+    // Also span the rating, user_count and store_link rows.
+    icon_row_span = 4;
+  } else if (prompt.GetPermissionCount()) {
+    // Also span the permission header and each of the permission rows (all have
+    // a padding row above it).
+    icon_row_span = 3 + prompt.GetPermissionCount() * 2;
+  }
+  layout->AddView(icon, 1, icon_row_span);
 
-  heading_ = new views::Label(UTF16ToWide(
-      l10n_util::GetStringFUTF16(ExtensionInstallUI::kHeadingIds[type_],
-                                 UTF8ToUTF16(extension->name()))));
-  heading_->SetFont(heading_->font().DeriveFont(kHeadingFontSizeDelta,
-                                                gfx::Font::BOLD));
-  heading_->SetMultiLine(true);
-  heading_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-  AddChildView(heading_);
+  if (is_inline_install()) {
+    layout->StartRow(0, column_set_id);
+    views::View* rating = new views::View();
+    rating->SetLayoutManager(new views::BoxLayout(
+        views::BoxLayout::kHorizontal, 0, 0, 0));
+    layout->AddView(rating);
+    prompt.AppendRatingStars(AddResourceIcon, rating);
 
-  if (permissions.empty()) {
-    right_column_width_ = kNoPermissionsRightColumnWidth;
-  } else {
-    right_column_width_ = kPermissionBoxWidth;
-    will_have_access_to_ = new views::Label(UTF16ToWide(
-        l10n_util::GetStringUTF16(ExtensionInstallUI::kWarningIds[type_])));
-    will_have_access_to_->SetMultiLine(true);
-    will_have_access_to_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-    AddChildView(will_have_access_to_);
+    views::Label* rating_count = new views::Label(prompt.GetRatingCount());
+    rating_count->SetFont(
+        rating_count->font().DeriveFont(kRatingFontSizeDelta));
+    // Add some space between the stars and the rating count.
+    rating_count->set_border(views::Border::CreateEmptyBorder(0, 2, 0, 0));
+    rating->AddChildView(rating_count);
 
-    permission_box_ = new views::View();
-    permission_box_->set_background(
-        views::Background::CreateSolidBackground(SK_ColorWHITE));
-    permission_box_->set_border(
-        views::Border::CreateSolidBorder(kPermissionBoxBorderWidth,
-                                         SK_ColorLTGRAY));
-    AddChildView(permission_box_);
+    layout->StartRow(0, column_set_id);
+    views::Label* user_count = new views::Label(prompt.GetUserCount());
+    user_count->SetAutoColorReadabilityEnabled(false);
+    user_count->SetEnabledColor(SK_ColorGRAY);
+    user_count->SetFont(user_count->font().DeriveFont(kRatingFontSizeDelta));
+    layout->AddView(user_count);
+
+    layout->StartRow(0, column_set_id);
+    views::Link* store_link = new views::Link(
+        l10n_util::GetStringUTF16(IDS_EXTENSION_PROMPT_STORE_LINK));
+    store_link->SetFont(store_link->font().DeriveFont(kRatingFontSizeDelta));
+    store_link->set_listener(this);
+    layout->AddView(store_link);
   }
 
-  for (size_t i = 0; i < permissions.size(); ++i) {
-    views::Label* label = new views::Label(UTF16ToWide(permissions[i]));
-    label->SetMultiLine(true);
-    label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
-    permission_box_->AddChildView(label);
-    permissions_.push_back(label);
+  if (prompt.GetPermissionCount()) {
+    layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+
+    if (is_inline_install()) {
+      layout->StartRow(0, column_set_id);
+      layout->AddView(new views::Separator(), 3, 1, views::GridLayout::FILL,
+                      views::GridLayout::FILL);
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+    }
+
+    layout->StartRow(0, column_set_id);
+    views::Label* permissions_header = new views::Label(
+        prompt.GetPermissionsHeader());
+    permissions_header->SetMultiLine(true);
+    permissions_header->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+    permissions_header->SizeToFit(left_column_width);
+    layout->AddView(permissions_header);
+
+    for (size_t i = 0; i < prompt.GetPermissionCount(); ++i) {
+      layout->AddPaddingRow(0, views::kRelatedControlVerticalSpacing);
+      layout->StartRow(0, column_set_id);
+      views::Label* permission_label = new views::Label(
+          prompt.GetPermission(i));
+      permission_label->SetMultiLine(true);
+      permission_label->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+      permission_label->SizeToFit(left_column_width);
+      layout->AddView(permission_label);
+    }
   }
 }
 
 ExtensionInstallDialogView::~ExtensionInstallDialogView() {
 }
 
-gfx::Size ExtensionInstallDialogView::GetPreferredSize() {
-  int width = views::kPanelHorizMargin * 2;
-  width += kIconSize;
-  width += views::kPanelHorizMargin;  // Gutter.
-  width += right_column_width_;
-
-  int height = views::kPanelVertMargin * 2;
-  height += heading_->GetHeightForWidth(right_column_width_);
-
-  if (permission_box_) {
-    height += views::kRelatedControlVerticalSpacing;
-    height += will_have_access_to_->GetHeightForWidth(right_column_width_);
-
-    height += views::kRelatedControlVerticalSpacing;
-    height += kPermissionBoxBorderWidth * 2;
-    height += kPermissionBoxVerticalPadding * 2;
-
-    for (size_t i = 0; i < permissions_.size(); ++i) {
-      if (i > 0)
-        height += views::kRelatedControlVerticalSpacing;
-      height += permissions_[0]->GetHeightForWidth(kPermissionLabelWidth);
-    }
-  }
-
-  return gfx::Size(width,
-                   std::max(height, kIconSize + views::kPanelVertMargin * 2));
-}
-
-void ExtensionInstallDialogView::Layout() {
-  int x = views::kPanelHorizMargin;
-  int y = views::kPanelVertMargin;
-
-  icon_->SetBounds(x, y, kIconSize, kIconSize);
-  x += kIconSize;
-  x += views::kPanelHorizMargin;
-
-  heading_->SizeToFit(right_column_width_);
-  heading_->SetX(x);
-
-  // If there's no special permissions, we do a slightly different layout with
-  // the heading centered vertically wrt the icon.
-  if (!permission_box_) {
-    heading_->SetY((GetPreferredSize().height() - heading_->height()) / 2);
-    return;
-  }
-
-  // Otherwise, do the layout with the permission box.
-  heading_->SetY(y);
-  y += heading_->height();
-
-  y += views::kRelatedControlVerticalSpacing;
-  will_have_access_to_->SizeToFit(right_column_width_);
-  will_have_access_to_->SetX(x);
-  will_have_access_to_->SetY(y);
-  y += will_have_access_to_->height();
-
-  y += views::kRelatedControlVerticalSpacing;
-  permission_box_->SetX(x);
-  permission_box_->SetY(y);
-
-  // First we layout the labels inside the permission box, so that we know how
-  // big the box will have to be.
-  int label_x = kPermissionBoxBorderWidth + kPermissionBoxHorizontalPadding;
-  int label_y = kPermissionBoxBorderWidth + kPermissionBoxVerticalPadding;
-  int permission_box_height = kPermissionBoxBorderWidth * 2;
-  permission_box_height += kPermissionBoxVerticalPadding * 2;
-
-  for (size_t i = 0; i < permissions_.size(); ++i) {
-    if (i > 0) {
-      label_y += views::kRelatedControlVerticalSpacing;
-      permission_box_height += views::kPanelVertMargin;
-    }
-
-    permissions_[i]->SizeToFit(kPermissionLabelWidth);
-    permissions_[i]->SetX(label_x);
-    permissions_[i]->SetY(label_y);
-
-    label_y += permissions_[i]->height();
-    permission_box_height += permissions_[i]->height();
-  }
-
-  // Now finally we can size the permission box itself.
-  permission_box_->SetBounds(permission_box_->x(), permission_box_->y(),
-                             right_column_width_, permission_box_height);
-}
-
-std::wstring ExtensionInstallDialogView::GetDialogButtonLabel(
-    MessageBoxFlags::DialogButton button) const {
+string16 ExtensionInstallDialogView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
   switch (button) {
-    case MessageBoxFlags::DIALOGBUTTON_OK:
-      return UTF16ToWide(
-          l10n_util::GetStringUTF16(ExtensionInstallUI::kButtonIds[type_]));
-    case MessageBoxFlags::DIALOGBUTTON_CANCEL:
-      return UTF16ToWide(l10n_util::GetStringUTF16(IDS_CANCEL));
+    case ui::DIALOG_BUTTON_OK:
+      return prompt_.GetAcceptButtonLabel();
+    case ui::DIALOG_BUTTON_CANCEL:
+      return prompt_.HasAbortButtonLabel() ?
+          prompt_.GetAbortButtonLabel() :
+          l10n_util::GetStringUTF16(IDS_CANCEL);
     default:
       NOTREACHED();
-      return std::wstring();
+      return string16();
   }
 }
 
 int ExtensionInstallDialogView::GetDefaultDialogButton() const {
-  return MessageBoxFlags::DIALOGBUTTON_CANCEL;
+  return ui::DIALOG_BUTTON_CANCEL;
 }
 
 bool ExtensionInstallDialogView::Cancel() {
-  delegate_->InstallUIAbort();
+  delegate_->InstallUIAbort(true);
   return true;
 }
 
@@ -298,26 +286,35 @@ bool ExtensionInstallDialogView::Accept() {
   return true;
 }
 
-bool ExtensionInstallDialogView::IsModal() const {
-  return true;
+ui::ModalType ExtensionInstallDialogView::GetModalType() const {
+  return ui::MODAL_TYPE_WINDOW;
 }
 
-std::wstring ExtensionInstallDialogView::GetWindowTitle() const {
-  return UTF16ToWide(
-      l10n_util::GetStringUTF16(ExtensionInstallUI::kTitleIds[type_]));
+string16 ExtensionInstallDialogView::GetWindowTitle() const {
+  return prompt_.GetDialogTitle(extension_);
 }
 
 views::View* ExtensionInstallDialogView::GetContentsView() {
   return this;
 }
 
-void ShowExtensionInstallDialog(
+void ExtensionInstallDialogView::LinkClicked(views::Link* source,
+                                             int event_flags) {
+  GURL store_url(
+      extension_urls::GetWebstoreItemDetailURLPrefix() + extension_->id());
+  OpenURLParams params(
+      store_url, Referrer(), NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_LINK,
+      false);
+  BrowserList::GetLastActive()->OpenURL(params);
+  GetWidget()->Close();
+}
+
+void ShowExtensionInstallDialogImpl(
     Profile* profile,
     ExtensionInstallUI::Delegate* delegate,
     const Extension* extension,
     SkBitmap* icon,
-    const std::vector<string16>& permissions,
-    ExtensionInstallUI::PromptType type) {
+    const ExtensionInstallUI::Prompt& prompt) {
 #if defined(OS_CHROMEOS)
   // Use a tabbed browser window as parent on ChromeOS.
   Browser* browser = BrowserList::FindTabbedBrowser(profile, true);
@@ -325,21 +322,21 @@ void ShowExtensionInstallDialog(
   Browser* browser = BrowserList::GetLastActiveWithProfile(profile);
 #endif
   if (!browser) {
-    delegate->InstallUIAbort();
+    delegate->InstallUIAbort(false);
     return;
   }
 
   BrowserWindow* browser_window = browser->window();
   if (!browser_window) {
-    delegate->InstallUIAbort();
+    delegate->InstallUIAbort(false);
     return;
   }
 
   ExtensionInstallDialogView* dialog = new ExtensionInstallDialogView(
-      delegate, extension, icon, permissions, type);
+      delegate, extension, icon, prompt);
 
-  views::Window* window =  browser::CreateViewsWindow(
-      browser_window->GetNativeHandle(), gfx::Rect(), dialog);
+  views::Widget* window =  browser::CreateViewsWindow(
+      browser_window->GetNativeHandle(), dialog, STYLE_GENERIC);
 
   window->Show();
 }

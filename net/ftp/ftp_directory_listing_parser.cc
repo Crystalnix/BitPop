@@ -6,12 +6,13 @@
 
 #include "base/i18n/icu_encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "net/base/net_errors.h"
 #include "net/ftp/ftp_directory_listing_parser_ls.h"
 #include "net/ftp/ftp_directory_listing_parser_netware.h"
+#include "net/ftp/ftp_directory_listing_parser_os2.h"
 #include "net/ftp/ftp_directory_listing_parser_vms.h"
 #include "net/ftp/ftp_directory_listing_parser_windows.h"
 #include "net/ftp/ftp_server_type_histograms.h"
@@ -72,6 +73,12 @@ int ParseListing(const string16& text,
   }
 
   entries->clear();
+  if (ParseFtpDirectoryListingOS2(lines, entries)) {
+    *server_type = SERVER_OS2;
+    return FillInRawName(encoding, entries);
+  }
+
+  entries->clear();
   return ERR_UNRECOGNIZED_FTP_DIRECTORY_LISTING_FORMAT;
 }
 
@@ -109,7 +116,9 @@ int DecodeAndParse(const std::string& text,
 
 }  // namespace
 
-FtpDirectoryListingEntry::FtpDirectoryListingEntry() {
+FtpDirectoryListingEntry::FtpDirectoryListingEntry()
+    : type(UNKNOWN),
+      size(-1) {
 }
 
 int ParseFtpDirectoryListing(const std::string& text,

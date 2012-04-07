@@ -6,15 +6,18 @@
   "description": "File Manager",
   "incognito" : "split",
   "icons": {
-    "16": "images/icon16.png"
+    "16": "images/icon16.png",
+    "128": "images/icon128.png"
   },
   "permissions": [
     "fileBrowserHandler",
     "fileBrowserPrivate",
     "mediaPlayerPrivate",
+    "metricsPrivate",
     "unlimitedStorage",
     "chrome://extension-icon/",
-    "chrome://resources/"
+    "chrome://resources/",
+    "tabs"
   ],
   "app": {
     "launch": {
@@ -23,51 +26,16 @@
   },
   "file_browser_handlers": [
     {
-      "id": "preview",
-      "default_title": "__MSG_PREVIEW_IMAGE__",
-      "default_icon": "images/icon_preview_16x16.png",
-      "file_filters": [
-        "filesystem:*.gif",
-        "filesystem:*.jpg",
-        "filesystem:*.jpeg",
-        "filesystem:*.webp",
-        "filesystem:*.png",
-        "filesystem:*.GIF",
-        "filesystem:*.JPG",
-        "filesystem:*.JPEG",
-        "filesystem:*.WEBP",
-        "filesystem:*.PNG"
-      ]
-    },
-    {
       "id": "play",
       "default_title": "__MSG_PLAY_MEDIA__",
       "default_icon": "images/icon_play_16x16.png",
       "file_filters": [
-        "filesystem:*.webm",
-        "filesystem:*.WEBM",
-        "filesystem:*.mp4",
-        "filesystem:*.MP4",
-        "filesystem:*.m4v",
-        "filesystem:*.M4V",
-        "filesystem:*.mov",
-        "filesystem:*.MOV",
-        "filesystem:*.ogg",
-        "filesystem:*.OGG",
-        "filesystem:*.oga",
-        "filesystem:*.OGA",
-        "filesystem:*.ogm",
-        "filesystem:*.OGM",
-        "filesystem:*.ogv",
-        "filesystem:*.OGV",
-        "filesystem:*.ogx",
-        "filesystem:*.OGX",
-        "filesystem:*.wav",
-        "filesystem:*.WAV",
-        "filesystem:*.mp3",
-        "filesystem:*.MP3",
+        "filesystem:*.flac",
         "filesystem:*.m4a",
-        "filesystem:*.M4A"
+        "filesystem:*.mp3",
+        "filesystem:*.oga",
+        "filesystem:*.ogg",
+        "filesystem:*.wav"
       ]
     },
     {
@@ -75,31 +43,52 @@
       "default_title": "__MSG_ENQUEUE_MEDIA__",
       "default_icon": "images/icon_add_to_queue_16x16.png",
       "file_filters": [
-        "filesystem:*.webm",
-        "filesystem:*.WEBM",
-        "filesystem:*.mp4",
-        "filesystem:*.MP4",
-        "filesystem:*.m4v",
-        "filesystem:*.M4V",
-        "filesystem:*.mov",
-        "filesystem:*.MOV",
-        "filesystem:*.ogg",
-        "filesystem:*.OGG",
-        "filesystem:*.oga",
-        "filesystem:*.OGA",
-        "filesystem:*.ogm",
-        "filesystem:*.OGM",
-        "filesystem:*.ogv",
-        "filesystem:*.OGV",
-        "filesystem:*.ogx",
-        "filesystem:*.OGX",
-        "filesystem:*.wav",
-        "filesystem:*.WAV",
-        "filesystem:*.mp3",
-        "filesystem:*.MP3",
+        "filesystem:*.flac",
         "filesystem:*.m4a",
-        "filesystem:*.M4A"
+        "filesystem:*.mp3",
+        "filesystem:*.oga",
+        "filesystem:*.ogg",
+        "filesystem:*.wav"
+      ]
+    },
+    {
+      "id": "mount-archive",
+      "default_title": "__MSG_MOUNT_ARCHIVE__",
+      "default_icon": "images/icon_mount_archive_16x16.png",
+      "file_filters": [
+        "filesystem:*.zip"
+      ]
+    },
+    {
+      "id": "gallery",
+      "default_title": "__MSG_GALLERY__",
+      "default_icon": "images/icon_preview_16x16.png",
+      "file_filters": [
+        // Image formats
+        "filesystem:*.bmp",
+        "filesystem:*.gif",
+        "filesystem:*.jpg",
+        "filesystem:*.jpeg",
+        "filesystem:*.png",
+        "filesystem:*.webp",
+        // Video formats
+        "filesystem:*.3gp",
+        "filesystem:*.avi",
+        "filesystem:*.m4v",
+        "filesystem:*.mov",
+        "filesystem:*.mp4",
+        "filesystem:*.mpeg",
+        "filesystem:*.mpeg4",
+        "filesystem:*.mpg",
+        "filesystem:*.mpg4",
+        "filesystem:*.ogm",
+        "filesystem:*.ogv",
+        "filesystem:*.ogx",
+        "filesystem:*.webm"
       ]
     }
-  ]
+  ],
+  "chrome_url_overrides": {
+    "files": "main.html"
+  }
 }

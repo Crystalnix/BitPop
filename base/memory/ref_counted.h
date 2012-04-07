@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,17 @@
 #define BASE_MEMORY_REF_COUNTED_H_
 #pragma once
 
+#include <cassert>
+
 #include "base/atomic_ref_count.h"
-#include "base/base_api.h"
+#include "base/base_export.h"
 #include "base/threading/thread_collision_warner.h"
 
 namespace base {
 
 namespace subtle {
 
-class BASE_API RefCountedBase {
+class BASE_EXPORT RefCountedBase {
  public:
   static bool ImplementsThreadSafeReferenceCounting() { return false; }
 
@@ -40,7 +42,7 @@ class BASE_API RefCountedBase {
   DISALLOW_COPY_AND_ASSIGN(RefCountedBase);
 };
 
-class BASE_API RefCountedThreadSafeBase {
+class BASE_EXPORT RefCountedThreadSafeBase {
  public:
   static bool ImplementsThreadSafeReferenceCounting() { return true; }
 
@@ -243,7 +245,10 @@ class scoped_refptr {
 
   T* get() const { return ptr_; }
   operator T*() const { return ptr_; }
-  T* operator->() const { return ptr_; }
+  T* operator->() const {
+    assert(ptr_ != NULL);
+    return ptr_;
+  }
 
   // Release a pointer.
   // The return value is the current pointer held by this object.
@@ -260,9 +265,10 @@ class scoped_refptr {
     // AddRef first so that self assignment should work
     if (p)
       p->AddRef();
-    if (ptr_ )
-      ptr_ ->Release();
+    T* old_ptr = ptr_;
     ptr_ = p;
+    if (old_ptr)
+      old_ptr->Release();
     return *this;
   }
 

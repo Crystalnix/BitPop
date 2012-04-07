@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,10 @@
 
 #include <string>
 
-class DictionaryValue;
+#include "base/string_piece.h"
+
 namespace base {
-class StringPiece;
+class DictionaryValue;
 }
 
 namespace jstemplate_builder {
@@ -27,20 +28,20 @@ namespace jstemplate_builder {
 // string includes the HTML and the javascript code necessary to generate the
 // full page with support for JsTemplates.
 std::string GetTemplateHtml(const base::StringPiece& html_template,
-                            const DictionaryValue* json,
+                            const base::DictionaryValue* json,
                             const base::StringPiece& template_id);
 
 // A helper function that generates a string of HTML to be loaded.  The
 // string includes the HTML and the javascript code necessary to generate the
 // full page with support for i18n Templates.
 std::string GetI18nTemplateHtml(const base::StringPiece& html_template,
-                                const DictionaryValue* json);
+                                const base::DictionaryValue* json);
 
 // A helper function that generates a string of HTML to be loaded.  The
 // string includes the HTML and the javascript code necessary to generate the
 // full page with support for both i18n Templates and JsTemplates.
 std::string GetTemplatesHtml(const base::StringPiece& html_template,
-                             const DictionaryValue* json,
+                             const base::DictionaryValue* json,
                              const base::StringPiece& template_id);
 
 // The following functions build up the different parts that the above
@@ -48,11 +49,11 @@ std::string GetTemplatesHtml(const base::StringPiece& html_template,
 
 // Appends a script tag with a variable name |templateData| that has the JSON
 // assigned to it.
-void AppendJsonHtml(const DictionaryValue* json, std::string* output);
+void AppendJsonHtml(const base::DictionaryValue* json, std::string* output);
 
 // Same as AppendJsonHtml(), execpt does not include the <script></script>
 // tag wrappers.
-void AppendJsonJS(const DictionaryValue* json, std::string* output);
+void AppendJsonJS(const base::DictionaryValue* json, std::string* output);
 
 // Appends the source for JsTemplates in a script tag.
 void AppendJsTemplateSourceHtml(std::string* output);

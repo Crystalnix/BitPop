@@ -1,33 +1,35 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/download/download_shelf_view.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_manager.h"
+#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/download/download_item_view.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "views/background.h"
-#include "views/controls/button/image_button.h"
-#include "views/controls/image_view.h"
-#include "views/controls/link.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/link.h"
 
 // Max number of download views we'll contain. Any time a view is added and
 // we already have this many download views, one is removed.
@@ -67,6 +69,8 @@ static const int kShelfAnimationDurationMs = 120;
 // other app and return to chrome with the download shelf still open.
 static const int kNotifyOnExitTimeMS = 5000;
 
+using content::DownloadItem;
+
 namespace {
 
 // Sets size->width() to view's preferred width + size->width().s
@@ -87,53 +91,20 @@ int CenterPosition(int size, int target_size) {
 DownloadShelfView::DownloadShelfView(Browser* browser, BrowserView* parent)
     : browser_(browser),
       parent_(parent),
+      auto_closed_(true),
       ALLOW_THIS_IN_INITIALIZER_LIST(
           mouse_watcher_(this, this, gfx::Insets())) {
   mouse_watcher_.set_notify_on_exit_time_ms(kNotifyOnExitTimeMS);
-  SetID(VIEW_ID_DOWNLOAD_SHELF);
+  set_id(VIEW_ID_DOWNLOAD_SHELF);
   parent->AddChildView(this);
-  Init();
 }
 
 DownloadShelfView::~DownloadShelfView() {
   parent_->RemoveChildView(this);
 }
 
-void DownloadShelfView::Init() {
-  ResourceBundle &rb = ResourceBundle::GetSharedInstance();
-  arrow_image_ = new views::ImageView();
-  arrow_image_->SetImage(rb.GetBitmapNamed(IDR_DOWNLOADS_FAVICON));
-  AddChildView(arrow_image_);
-
-  show_all_view_ = new views::Link(
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_SHOW_ALL_DOWNLOADS)));
-  show_all_view_->set_listener(this);
-  AddChildView(show_all_view_);
-
-  close_button_ = new views::ImageButton(this);
-  close_button_->SetImage(views::CustomButton::BS_NORMAL,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR));
-  close_button_->SetImage(views::CustomButton::BS_HOT,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
-  close_button_->SetImage(views::CustomButton::BS_PUSHED,
-                          rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
-  close_button_->SetAccessibleName(
-      l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
-  UpdateButtonColors();
-  AddChildView(close_button_);
-
-  new_item_animation_.reset(new ui::SlideAnimation(this));
-  new_item_animation_->SetSlideDuration(kNewItemAnimationDurationMs);
-
-  shelf_animation_.reset(new ui::SlideAnimation(this));
-  shelf_animation_->SetSlideDuration(kShelfAnimationDurationMs);
-  Show();
-}
-
 void DownloadShelfView::AddDownloadView(DownloadItemView* view) {
   mouse_watcher_.Stop();
-
-  Show();
 
   DCHECK(view);
   download_views_.push_back(view);
@@ -145,7 +116,7 @@ void DownloadShelfView::AddDownloadView(DownloadItemView* view) {
   new_item_animation_->Show();
 }
 
-void DownloadShelfView::AddDownload(BaseDownloadItemModel* download_model) {
+void DownloadShelfView::DoAddDownload(BaseDownloadItemModel* download_model) {
   DownloadItemView* view = new DownloadItemView(
       download_model->download(), this, download_model);
   AddDownloadView(view);
@@ -155,11 +126,15 @@ void DownloadShelfView::MouseMovedOutOfView() {
   Close();
 }
 
-void DownloadShelfView::FocusWillChange(views::View* focused_before,
-                                        views::View* focused_now) {
+void DownloadShelfView::OnWillChangeFocus(views::View* focused_before,
+                                          views::View* focused_now) {
   SchedulePaintForDownloadItem(focused_before);
   SchedulePaintForDownloadItem(focused_now);
-  AccessiblePaneView::FocusWillChange(focused_before, focused_now);
+}
+
+void DownloadShelfView::OnDidChangeFocus(views::View* focused_before,
+                                         views::View* focused_now) {
+  AccessiblePaneView::OnDidChangeFocus(focused_before, focused_now);
 }
 
 void DownloadShelfView::RemoveDownloadView(View* view) {
@@ -179,10 +154,8 @@ void DownloadShelfView::RemoveDownloadView(View* view) {
 }
 
 views::View* DownloadShelfView::GetDefaultFocusableChild() {
-  if (!download_views_.empty())
-    return download_views_[0];
-  else
-    return show_all_view_;
+  return download_views_.empty() ?
+      static_cast<View*>(show_all_view_) : download_views_[0];
 }
 
 void DownloadShelfView::OnPaint(gfx::Canvas* canvas) {
@@ -193,14 +166,15 @@ void DownloadShelfView::OnPaint(gfx::Canvas* canvas) {
   for (size_t i = 0; i < download_views_.size(); ++i) {
     if (download_views_[i]->HasFocus()) {
       gfx::Rect r = GetFocusRectBounds(download_views_[i]);
-      canvas->DrawFocusRect(r.x(), r.y(), r.width(), r.height() - 1);
+      r.Inset(0, 0, 0, 1);
+      canvas->DrawFocusRect(r);
       break;
     }
   }
 }
 
 void DownloadShelfView::OnPaintBorder(gfx::Canvas* canvas) {
-  canvas->FillRectInt(kBorderColor, 0, 0, width(), 1);
+  canvas->FillRect(kBorderColor, gfx::Rect(0, 0, width(), 1));
 }
 
 void DownloadShelfView::OpenedDownload(DownloadItemView* view) {
@@ -250,12 +224,6 @@ void DownloadShelfView::AnimationEnded(const ui::Animation *animation) {
 }
 
 void DownloadShelfView::Layout() {
-  // Now that we know we have a parent, we can safely set our theme colors.
-  show_all_view_->SetColor(
-      GetThemeProvider()->GetColor(ThemeService::COLOR_BOOKMARK_TEXT));
-  set_background(views::Background::CreateSolidBackground(
-      GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
-
   // Let our base class layout our child views
   views::View::Layout();
 
@@ -326,6 +294,48 @@ void DownloadShelfView::Layout() {
   }
 }
 
+void DownloadShelfView::ViewHierarchyChanged(bool is_add,
+                                             View* parent,
+                                             View* child) {
+  View::ViewHierarchyChanged(is_add, parent, child);
+
+  if (is_add && (child == this)) {
+    set_background(views::Background::CreateSolidBackground(
+        GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
+
+    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    arrow_image_ = new views::ImageView();
+    arrow_image_->SetImage(rb.GetBitmapNamed(IDR_DOWNLOADS_FAVICON));
+    AddChildView(arrow_image_);
+
+    show_all_view_ = new views::Link(
+        l10n_util::GetStringUTF16(IDS_SHOW_ALL_DOWNLOADS));
+    show_all_view_->set_listener(this);
+    show_all_view_->SetBackgroundColor(background()->get_color());
+    show_all_view_->SetEnabledColor(
+        GetThemeProvider()->GetColor(ThemeService::COLOR_BOOKMARK_TEXT));
+    AddChildView(show_all_view_);
+
+    close_button_ = new views::ImageButton(this);
+    close_button_->SetImage(views::CustomButton::BS_NORMAL,
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR));
+    close_button_->SetImage(views::CustomButton::BS_HOT,
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR_H));
+    close_button_->SetImage(views::CustomButton::BS_PUSHED,
+                            rb.GetBitmapNamed(IDR_CLOSE_BAR_P));
+    close_button_->SetAccessibleName(
+        l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
+    UpdateButtonColors();
+    AddChildView(close_button_);
+
+    new_item_animation_.reset(new ui::SlideAnimation(this));
+    new_item_animation_->SetSlideDuration(kNewItemAnimationDurationMs);
+
+    shelf_animation_.reset(new ui::SlideAnimation(this));
+    shelf_animation_->SetSlideDuration(kShelfAnimationDurationMs);
+  }
+}
+
 bool DownloadShelfView::CanFitFirstDownloadItem() {
   if (download_views_.empty())
     return true;
@@ -367,6 +377,7 @@ void DownloadShelfView::LinkClicked(views::Link* source, int event_flags) {
 
 void DownloadShelfView::ButtonPressed(
     views::Button* button, const views::Event& event) {
+  auto_closed_ = false;
   Close();
 }
 
@@ -378,13 +389,21 @@ bool DownloadShelfView::IsClosing() const {
   return shelf_animation_->IsClosing();
 }
 
-void DownloadShelfView::Show() {
+void DownloadShelfView::DoShow() {
   shelf_animation_->Show();
 }
 
-void DownloadShelfView::Close() {
+void DownloadShelfView::DoClose() {
+  int num_in_progress = 0;
+  for (size_t i = 0; i < download_views_.size(); ++i) {
+    if (download_views_[i]->download()->IsInProgress())
+      ++num_in_progress;
+  }
+  download_util::RecordShelfClose(
+      download_views_.size(), num_in_progress, auto_closed_);
   parent_->SetDownloadShelfVisible(false);
   shelf_animation_->Hide();
+  auto_closed_ = true;
 }
 
 Browser* DownloadShelfView::browser() const {
@@ -392,6 +411,10 @@ Browser* DownloadShelfView::browser() const {
 }
 
 void DownloadShelfView::Closed() {
+  // Don't remove completed downloads if the shelf is just being auto-hidden
+  // rather than explicitly closed by the user.
+  if (is_hidden())
+    return;
   // When the close animation is complete, remove all completed downloads.
   size_t i = 0;
   while (i < download_views_.size()) {
@@ -400,12 +423,12 @@ void DownloadShelfView::Closed() {
                             download->IsCancelled() ||
                             download->IsInterrupted();
     if (is_transfer_done &&
-        download->safety_state() != DownloadItem::DANGEROUS) {
+        download->GetSafetyState() != DownloadItem::DANGEROUS) {
       RemoveDownloadView(download_views_[i]);
     } else {
       // Treat the item as opened when we close. This way if we get shown again
       // the user need not open this item for the shelf to auto-close.
-      download->set_opened(true);
+      download->SetOpened(true);
       ++i;
     }
   }
@@ -413,7 +436,7 @@ void DownloadShelfView::Closed() {
 
 bool DownloadShelfView::CanAutoClose() {
   for (size_t i = 0; i < download_views_.size(); ++i) {
-    if (!download_views_[i]->download()->opened())
+    if (!download_views_[i]->download()->GetOpened())
       return false;
   }
   return true;

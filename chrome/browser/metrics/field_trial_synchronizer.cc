@@ -4,12 +4,15 @@
 
 #include "chrome/browser/metrics/field_trial_synchronizer.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/threading/thread.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/render_messages.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
+
+using content::BrowserThread;
 
 FieldTrialSynchronizer::FieldTrialSynchronizer() {
   DCHECK(field_trial_synchronizer_ == NULL);
@@ -29,10 +32,11 @@ void FieldTrialSynchronizer::NotifyAllRenderers(
   // need to be on the UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  for (RenderProcessHost::iterator it(RenderProcessHost::AllHostsIterator());
+  for (content::RenderProcessHost::iterator it(
+          content::RenderProcessHost::AllHostsIterator());
        !it.IsAtEnd(); it.Advance()) {
     it.GetCurrentValue()->Send(
-        new ViewMsg_SetFieldTrialGroup(field_trial_name, group_name));
+        new ChromeViewMsg_SetFieldTrialGroup(field_trial_name, group_name));
   }
 }
 
@@ -41,10 +45,10 @@ void FieldTrialSynchronizer::OnFieldTrialGroupFinalized(
     const std::string& group_name) {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this,
-                        &FieldTrialSynchronizer::NotifyAllRenderers,
-                        field_trial_name,
-                        group_name));
+      base::Bind(&FieldTrialSynchronizer::NotifyAllRenderers,
+                 this,
+                 field_trial_name,
+                 group_name));
 }
 
 // static

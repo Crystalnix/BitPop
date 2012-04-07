@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,103 +7,96 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
-#include "remoting/jingle_glue/jingle_client.h"
+#include "remoting/jingle_glue/signal_strategy.h"
 #include "remoting/proto/internal.pb.h"
-#include "remoting/protocol/connection_to_host.h"
-#include "remoting/protocol/host_stub.h"
-#include "remoting/protocol/input_stub.h"
+#include "remoting/protocol/input_filter.h"
 #include "remoting/protocol/message_reader.h"
 #include "remoting/protocol/session.h"
 #include "remoting/protocol/session_manager.h"
 
-class MessageLoop;
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
+
+namespace pp {
+class Instance;
+}  // namespace pp
 
 namespace remoting {
 
-class JingleThread;
-class PortAllocatorSessionFactory;
 class XmppProxy;
 class VideoPacket;
 
 namespace protocol {
 
-class ClientMessageDispatcher;
+class Authenticator;
+class ClientControlDispatcher;
+class ClientEventDispatcher;
 class ClientStub;
+class HostStub;
+class InputStub;
 class SessionConfig;
 class VideoReader;
 class VideoStub;
 
-class ConnectionToHost : public JingleClient::Callback {
+class ConnectionToHost : public SignalStrategy::Listener,
+                         public SessionManager::Listener {
  public:
   enum State {
-    STATE_EMPTY,
-    STATE_CONNECTED,
-    STATE_AUTHENTICATED,
-    STATE_FAILED,
-    STATE_CLOSED,
+    CONNECTING,
+    CONNECTED,
+    FAILED,
+    CLOSED,
+  };
+
+  enum Error {
+    OK,
+    HOST_IS_OFFLINE,
+    SESSION_REJECTED,
+    INCOMPATIBLE_PROTOCOL,
+    NETWORK_FAILURE,
   };
 
   class HostEventCallback {
    public:
     virtual ~HostEventCallback() {}
 
-    // Called when the network connection is opened.
-    virtual void OnConnectionOpened(ConnectionToHost* conn) = 0;
-
-    // Called when the network connection is closed.
-    virtual void OnConnectionClosed(ConnectionToHost* conn) = 0;
-
-    // Called when the network connection has failed.
-    virtual void OnConnectionFailed(ConnectionToHost* conn) = 0;
+    // Called when state of the connection changes.
+    virtual void OnConnectionState(State state, Error error) = 0;
   };
 
-  // Takes ownership of |network_manager| and |socket_factory|. Both
-  // |network_manager| and |socket_factory| may be set to NULL.
-  //
-  // TODO(sergeyu): Constructor shouldn't need thread here.
-  ConnectionToHost(JingleThread* thread,
-                   talk_base::NetworkManager* network_manager,
-                   talk_base::PacketSocketFactory* socket_factory,
-                   PortAllocatorSessionFactory* session_factory);
+  ConnectionToHost(base::MessageLoopProxy* message_loop,
+                   pp::Instance* pp_instance,
+                   bool allow_nat_traversal);
   virtual ~ConnectionToHost();
 
-  // TODO(ajwong): We need to generalize this API.
-  virtual void Connect(const std::string& username,
-                       const std::string& auth_token,
-                       const std::string& auth_service,
+  virtual void Connect(scoped_refptr<XmppProxy> xmpp_proxy,
+                       const std::string& local_jid,
                        const std::string& host_jid,
-                       const std::string& access_code,
+                       const std::string& host_public_key,
+                       scoped_ptr<Authenticator> authenticator,
                        HostEventCallback* event_callback,
                        ClientStub* client_stub,
                        VideoStub* video_stub);
-  virtual void ConnectSandboxed(scoped_refptr<XmppProxy> xmpp_proxy,
-                                const std::string& your_jid,
-                                const std::string& host_jid,
-                                const std::string& access_code,
-                                HostEventCallback* event_callback,
-                                ClientStub* client_stub,
-                                VideoStub* video_stub);
-  virtual void Disconnect();
 
-  virtual const SessionConfig* config();
+  virtual void Disconnect(const base::Closure& shutdown_task);
+
+  virtual const SessionConfig& config();
 
   virtual InputStub* input_stub();
 
-  virtual HostStub* host_stub();
+  // SignalStrategy::StatusObserver interface.
+  virtual void OnSignalStrategyStateChange(
+      SignalStrategy::State state) OVERRIDE;
 
-  // JingleClient::Callback interface.
-  virtual void OnStateChange(JingleClient* client, JingleClient::State state);
-
-  // Callback for chromotocol SessionManager.
-  void OnNewSession(
-      Session* connection,
-      SessionManager::IncomingSessionResponse* response);
-
-  // Callback for chromotocol Session.
-  void OnSessionStateChange(Session::State state);
+  // SessionManager::Listener interface.
+  virtual void OnSessionManagerReady() OVERRIDE;
+  virtual void OnIncomingSession(
+      Session* session,
+      SessionManager::IncomingSessionResponse* response) OVERRIDE;
 
   // Called when the host accepts the client authentication.
   void OnClientAuthenticated();
@@ -112,64 +105,50 @@ class ConnectionToHost : public JingleClient::Callback {
   State state() const;
 
  private:
-  // The message loop for the jingle thread this object works on.
-  MessageLoop* message_loop();
+  // Callback for |session_|.
+  void OnSessionStateChange(Session::State state);
 
-  // Called on the jingle thread after we've successfully to XMPP server. Starts
-  // P2P connection to the host.
-  void InitSession();
+  // Callbacks for channel initialization
+  void OnChannelInitialized(bool successful);
+
+  void NotifyIfChannelsReady();
 
   // Callback for |video_reader_|.
   void OnVideoPacket(VideoPacket* packet);
 
-  // Used by Disconnect() to disconnect chromoting connection, stop chromoting
-  // server, and then disconnect XMPP connection.
-  void OnDisconnected();
-  void OnServerClosed();
+  void CloseOnError(Error error);
 
-  // Internal state of the connection.
-  State state_;
+  // Stops writing in the channels.
+  void CloseChannels();
 
-  JingleThread* thread_;
+  void SetState(State state, Error error);
 
-  scoped_ptr<talk_base::NetworkManager> network_manager_;
-  scoped_ptr<talk_base::PacketSocketFactory> socket_factory_;
-  scoped_ptr<PortAllocatorSessionFactory> port_allocator_session_factory_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_;
+  pp::Instance* pp_instance_;
+  bool allow_nat_traversal_;
 
-  scoped_ptr<SignalStrategy> signal_strategy_;
-  scoped_refptr<JingleClient> jingle_client_;
-  scoped_refptr<SessionManager> session_manager_;
-  scoped_refptr<Session> session_;
-
-  scoped_ptr<VideoReader> video_reader_;
+  std::string host_jid_;
+  std::string host_public_key_;
+  scoped_ptr<Authenticator> authenticator_;
 
   HostEventCallback* event_callback_;
 
-  std::string host_jid_;
-  std::string access_code_;
-
-  scoped_ptr<ClientMessageDispatcher> dispatcher_;
-
-  ////////////////////////////////////////////////////////////////////////////
-  // User input event channel interface
-
-  // Stub for sending input event messages to the host.
-  scoped_ptr<InputStub> input_stub_;
-
-  ////////////////////////////////////////////////////////////////////////////
-  // Protocol control channel interface
-
-  // Stub for sending control messages to the host.
-  scoped_ptr<HostStub> host_stub_;
-
-  // Stub for receiving control messages from the host.
+  // Stub for incoming messages.
   ClientStub* client_stub_;
-
-  ////////////////////////////////////////////////////////////////////////////
-  // Video channel interface
-
-  // Stub for receiving video packets from the host.
   VideoStub* video_stub_;
+
+  scoped_ptr<SignalStrategy> signal_strategy_;
+  scoped_ptr<SessionManager> session_manager_;
+  scoped_ptr<Session> session_;
+
+  scoped_ptr<VideoReader> video_reader_;
+  scoped_ptr<ClientControlDispatcher> control_dispatcher_;
+  scoped_ptr<ClientEventDispatcher> event_dispatcher_;
+  InputFilter event_forwarder_;
+
+  // Internal state of the connection.
+  State state_;
+  Error error_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ConnectionToHost);
@@ -177,7 +156,5 @@ class ConnectionToHost : public JingleClient::Callback {
 
 }  // namespace protocol
 }  // namespace remoting
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::protocol::ConnectionToHost);
 
 #endif  // REMOTING_PROTOCOL_CONNECTION_TO_HOST_H_

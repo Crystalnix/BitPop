@@ -10,9 +10,10 @@
 
 #include <list>
 
-#include "base/base_api.h"
+#include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/message_pump.h"
+#include "base/message_pump_observer.h"
 #include "base/observer_list.h"
 #include "base/time.h"
 #include "base/win/scoped_handle.h"
@@ -22,25 +23,8 @@ namespace base {
 // MessagePumpWin serves as the base for specialized versions of the MessagePump
 // for Windows. It provides basic functionality like handling of observers and
 // controlling the lifetime of the message pump.
-class BASE_API MessagePumpWin : public MessagePump {
+class BASE_EXPORT MessagePumpWin : public MessagePump {
  public:
-  // An Observer is an object that receives global notifications from the
-  // UI MessageLoop.
-  //
-  // NOTE: An Observer implementation should be extremely fast!
-  //
-  class Observer {
-   public:
-    virtual ~Observer() {}
-
-    // This method is called before processing a message.
-    // The message may be undefined in which case msg.message is 0
-    virtual void WillProcessMessage(const MSG& msg) = 0;
-
-    // This method is called when control returns from processing a UI message.
-    // The message may be undefined in which case msg.message is 0
-    virtual void DidProcessMessage(const MSG& msg) = 0;
-  };
 
   // Dispatcher is used during a nested invocation of Run to dispatch events.
   // If Run is invoked with a non-NULL Dispatcher, MessageLoop does not
@@ -50,7 +34,7 @@ class BASE_API MessagePumpWin : public MessagePump {
   //
   // The nested loop is exited by either posting a quit, or returning false
   // from Dispatch.
-  class Dispatcher {
+  class BASE_EXPORT Dispatcher {
    public:
     virtual ~Dispatcher() {}
     // Dispatches the event. If true is returned processing continues as
@@ -62,11 +46,11 @@ class BASE_API MessagePumpWin : public MessagePump {
   virtual ~MessagePumpWin() {}
 
   // Add an Observer, which will start receiving notifications immediately.
-  void AddObserver(Observer* observer);
+  void AddObserver(MessagePumpObserver* observer);
 
   // Remove an Observer.  It is safe to call this method while an Observer is
   // receiving a notification callback.
-  void RemoveObserver(Observer* observer);
+  void RemoveObserver(MessagePumpObserver* observer);
 
   // Give a chance to code processing additional messages to notify the
   // message loop observers that another message has been processed.
@@ -95,7 +79,7 @@ class BASE_API MessagePumpWin : public MessagePump {
   virtual void DoRunLoop() = 0;
   int GetCurrentDelay() const;
 
-  ObserverList<Observer> observers_;
+  ObserverList<MessagePumpObserver> observers_;
 
   // The time at which delayed work should run.
   TimeTicks delayed_work_time_;
@@ -157,7 +141,7 @@ class BASE_API MessagePumpWin : public MessagePump {
 // an excellent choice.  It is also helpful that the starter messages that are
 // placed in the queue when new task arrive also awakens DoRunLoop.
 //
-class BASE_API MessagePumpForUI : public MessagePumpWin {
+class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
  public:
   // The application-defined code passed to the hook procedure.
   static const int kMessageFilterCode = 0x5001;
@@ -196,7 +180,7 @@ class BASE_API MessagePumpForUI : public MessagePumpWin {
 // deal with Windows mesagges, and instead has a Run loop based on Completion
 // Ports so it is better suited for IO operations.
 //
-class BASE_API MessagePumpForIO : public MessagePumpWin {
+class BASE_EXPORT MessagePumpForIO : public MessagePumpWin {
  public:
   struct IOContext;
 

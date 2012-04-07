@@ -6,7 +6,9 @@
 
 namespace quota {
 
-MockSpecialStoragePolicy::MockSpecialStoragePolicy() {}
+MockSpecialStoragePolicy::MockSpecialStoragePolicy()
+    : all_unlimited_(false) {}
+
 MockSpecialStoragePolicy::~MockSpecialStoragePolicy() {}
 
 bool MockSpecialStoragePolicy::IsStorageProtected(const GURL& origin) {
@@ -14,11 +16,21 @@ bool MockSpecialStoragePolicy::IsStorageProtected(const GURL& origin) {
 }
 
 bool MockSpecialStoragePolicy::IsStorageUnlimited(const GURL& origin) {
+  if (all_unlimited_)
+    return true;
   return unlimited_.find(origin) != unlimited_.end();
+}
+
+bool MockSpecialStoragePolicy::IsStorageSessionOnly(const GURL& origin) {
+  return session_only_.find(origin) != session_only_.end();
 }
 
 bool MockSpecialStoragePolicy::IsFileHandler(const std::string& extension_id) {
   return file_handlers_.find(extension_id) != file_handlers_.end();
+}
+
+bool MockSpecialStoragePolicy::HasSessionOnlyOrigins() {
+  return !session_only_.empty();
 }
 
 }  // namespace quota

@@ -6,17 +6,21 @@
 #define CHROME_BROWSER_RENDERER_HOST_CHROME_RENDER_MESSAGE_FILTER_H_
 #pragma once
 
+#include <string>
+#include <vector>
+
+#include "base/file_path.h"
+#include "base/memory/weak_ptr.h"
+#include "base/message_loop_helpers.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/content_settings.h"
-#include "chrome/browser/prefs/pref_member.h"
-#include "content/browser/browser_message_filter.h"
-#include "content/common/dom_storage_common.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCache.h"
 
+class CookieSettings;
 struct ExtensionHostMsg_Request_Params;
-class FilePath;
+class ExtensionInfoMap;
 class GURL;
-class HostContentSettingsMap;
-class Profile;
 
 namespace net {
 class URLRequestContextGetter;
@@ -24,28 +28,30 @@ class URLRequestContextGetter;
 
 // This class filters out incoming Chrome-specific IPC messages for the renderer
 // process on the IPC thread.
-class ChromeRenderMessageFilter : public BrowserMessageFilter {
+class ChromeRenderMessageFilter : public content::BrowserMessageFilter {
  public:
   ChromeRenderMessageFilter(int render_process_id,
                             Profile* profile,
                             net::URLRequestContextGetter* request_context);
 
-  // BrowserMessageFilter methods:
+  // content::BrowserMessageFilter methods:
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
-  virtual void OnDestruct() const;
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+                                 bool* message_was_ok) OVERRIDE;
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
 
  private:
-  friend class BrowserThread;
-  friend class DeleteTask<ChromeRenderMessageFilter>;
+  friend class content::BrowserThread;
+  friend class base::DeleteHelper<ChromeRenderMessageFilter>;
 
   virtual ~ChromeRenderMessageFilter();
 
+#if !defined(DISABLE_NACL)
   void OnLaunchNaCl(const std::wstring& url,
-                    int channel_descriptor,
+                    int socket_count,
                     IPC::Message* reply_msg);
+#endif
   void OnDnsPrefetch(const std::vector<std::string>& hostnames);
   void OnRendererHistograms(int sequence_number,
                             const std::vector<std::string>& histogram_info);
@@ -81,12 +87,17 @@ class ChromeRenderMessageFilter : public BrowserMessageFilter {
                               const std::string& event_name);
   void OnExtensionRemoveListener(const std::string& extension_id,
                                  const std::string& event_name);
+  void OnExtensionIdle(const std::string& extension_id);
+  void OnExtensionEventAck(const std::string& extension_id);
   void OnExtensionCloseChannel(int port_id);
+  void OnExtensionRequestForIOThread(
+      int routing_id,
+      const ExtensionHostMsg_Request_Params& params);
 #if defined(USE_TCMALLOC)
-  void OnRendererTcmalloc(base::ProcessId pid, const std::string& output);
+  void OnRendererTcmalloc(const std::string& output);
+  void OnWriteTcmallocHeapProfile(const FilePath::StringType& filename,
+                                  const std::string& output);
 #endif
-  void OnGetPluginPolicies(ContentSetting* outdated_policy,
-                           ContentSetting* authorize_policy);
   void OnAllowDatabase(int render_view_id,
                        const GURL& origin_url,
                        const GURL& top_origin_url,
@@ -96,7 +107,7 @@ class ChromeRenderMessageFilter : public BrowserMessageFilter {
   void OnAllowDOMStorage(int render_view_id,
                          const GURL& origin_url,
                          const GURL& top_origin_url,
-                         DOMStorageType type,
+                         bool local,
                          bool* allowed);
   void OnAllowFileSystem(int render_view_id,
                          const GURL& origin_url,
@@ -107,12 +118,8 @@ class ChromeRenderMessageFilter : public BrowserMessageFilter {
                         const GURL& top_origin_url,
                         const string16& name,
                         bool* allowed);
-  void OnGetPluginContentSetting(const GURL& policy_url,
-                                 const std::string& resource,
-                                 ContentSetting* setting);
-  void OnCanTriggerClipboardRead(const GURL& url, bool* allowed);
-  void OnCanTriggerClipboardWrite(const GURL& url, bool* allowed);
-  void OnClearPredictorCache(int* result);
+  void OnCanTriggerClipboardRead(const GURL& origin, bool* allowed);
+  void OnCanTriggerClipboardWrite(const GURL& origin, bool* allowed);
   void OnGetCookies(const GURL& url,
                     const GURL& first_party_for_cookies,
                     IPC::Message* reply_msg);
@@ -127,11 +134,13 @@ class ChromeRenderMessageFilter : public BrowserMessageFilter {
   // accessed on the UI thread!
   Profile* profile_;
   scoped_refptr<net::URLRequestContextGetter> request_context_;
+  scoped_refptr<ExtensionInfoMap> extension_info_map_;
   // Used to look up permissions at database creation time.
-  scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
+  scoped_refptr<CookieSettings> cookie_settings_;
 
-  BooleanPrefMember allow_outdated_plugins_;
-  BooleanPrefMember always_authorize_plugins_;
+  const content::ResourceContext& resource_context_;
+
+  base::WeakPtrFactory<ChromeRenderMessageFilter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeRenderMessageFilter);
 };

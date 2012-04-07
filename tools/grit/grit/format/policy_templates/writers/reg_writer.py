@@ -27,14 +27,14 @@ class RegWriter(template_writer.TemplateWriter):
   def _EscapeRegString(self, string):
     return string.replace('\\', '\\\\').replace('\"', '\\\"')
 
-  def _StartBlock(self, suffix):
-    key = 'HKEY_LOCAL_MACHINE\\' + self.config['win_reg_key_name']
+  def _StartBlock(self, key, suffix, list):
+    key = 'HKEY_LOCAL_MACHINE\\' + key
     if suffix:
       key = key + '\\' + suffix
-    if key != self._last_key:
-      self._out.append('')
-      self._out.append('[%s]' % key)
-      self._last_key = key
+    if key != self._last_key.get(id(list), None):
+      list.append('')
+      list.append('[%s]' % key)
+      self._last_key[id(list)] = key
 
   def PreprocessPolicies(self, policy_list):
     return self.FlattenGroupsAndSortPolicies(policy_list,
@@ -49,18 +49,18 @@ class RegWriter(template_writer.TemplateWriter):
     # Lists come after regular policies.
     return (is_list, policy['name'])
 
-  def WritePolicy(self, policy):
+  def _WritePolicy(self, policy, key, list):
     example_value = policy['example_value']
 
     if policy['type'] == 'list':
-      self._StartBlock(policy['name'])
+      self._StartBlock(key, policy['name'], list)
       i = 1
       for item in example_value:
         escaped_str = self._EscapeRegString(item)
-        self._out.append('"%d"="%s"' % (i, escaped_str))
+        list.append('"%d"="%s"' % (i, escaped_str))
         i = i + 1
     else:
-      self._StartBlock(None)
+      self._StartBlock(key, None, list)
       if policy['type'] == 'string':
         escaped_str = self._EscapeRegString(example_value)
         example_value_str = '"' + escaped_str + '"'
@@ -76,7 +76,17 @@ class RegWriter(template_writer.TemplateWriter):
       else:
         raise Exception('unknown policy type %s:' % policy['type'])
 
-      self._out.append('"%s"=%s' % (policy['name'], example_value_str))
+      list.append('"%s"=%s' % (policy['name'], example_value_str))
+
+  def WritePolicy(self, policy):
+    self._WritePolicy(policy,
+                      self.config['win_reg_mandatory_key_name'],
+                      self._mandatory)
+
+  def WriteRecommendedPolicy(self, policy):
+    self._WritePolicy(policy,
+                      self.config['win_reg_recommended_key_name'],
+                      self._recommended)
 
   def BeginTemplate(self):
     pass
@@ -85,8 +95,11 @@ class RegWriter(template_writer.TemplateWriter):
     pass
 
   def Init(self):
-    self._out = ['Windows Registry Editor Version 5.00']
-    self._last_key = None
+    self._mandatory = []
+    self._recommended = []
+    self._last_key = {}
 
   def GetTemplateText(self):
-    return self.NEWLINE.join(self._out)
+    prefix = ['Windows Registry Editor Version 5.00']
+    all = prefix + self._mandatory + self._recommended
+    return self.NEWLINE.join(all)

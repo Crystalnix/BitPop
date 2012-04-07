@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,16 @@
 
 #include <algorithm>
 
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/string16.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
+#include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/test/automation/automation_json_requests.h"
 #include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
-#include "content/common/json_value_serializer.h"
 #include "googleurl/src/gurl.h"
 
 TabProxy::TabProxy(AutomationMessageSender* sender,
@@ -84,7 +85,6 @@ int TabProxy::FindInPage(const std::wstring& search_string,
     return -1;
 
   AutomationMsg_Find_Params params;
-  params.unused = 0;
   params.search_string = WideToUTF16Hack(search_string);
   params.find_next = find_next;
   params.match_case = (match_case == CASE_SENSITIVE);
@@ -261,14 +261,13 @@ bool TabProxy::GetProcessID(int* process_id) const {
 bool TabProxy::ExecuteAndExtractString(const std::wstring& frame_xpath,
                                        const std::wstring& jscript,
                                        std::wstring* string_value) {
-  Value* root = NULL;
-  bool succeeded = ExecuteAndExtractValue(frame_xpath, jscript, &root);
-  if (!succeeded)
+  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  if (root == NULL)
     return false;
 
   DCHECK(root->IsType(Value::TYPE_LIST));
   Value* value = NULL;
-  succeeded = static_cast<ListValue*>(root)->Get(0, &value);
+  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
     string16 read_value;
     succeeded = value->GetAsString(&read_value);
@@ -277,80 +276,66 @@ bool TabProxy::ExecuteAndExtractString(const std::wstring& frame_xpath,
       *string_value = UTF16ToWideHack(read_value);
     }
   }
-
-  delete root;
   return succeeded;
 }
 
 bool TabProxy::ExecuteAndExtractBool(const std::wstring& frame_xpath,
                                      const std::wstring& jscript,
                                      bool* bool_value) {
-  Value* root = NULL;
-  bool succeeded = ExecuteAndExtractValue(frame_xpath, jscript, &root);
-  if (!succeeded)
+  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  if (root == NULL)
     return false;
 
   bool read_value = false;
   DCHECK(root->IsType(Value::TYPE_LIST));
   Value* value = NULL;
-  succeeded = static_cast<ListValue*>(root)->Get(0, &value);
+  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
     succeeded = value->GetAsBoolean(&read_value);
     if (succeeded) {
       *bool_value = read_value;
     }
   }
-
-  delete value;
   return succeeded;
 }
 
 bool TabProxy::ExecuteAndExtractInt(const std::wstring& frame_xpath,
                                     const std::wstring& jscript,
                                     int* int_value) {
-  Value* root = NULL;
-  bool succeeded = ExecuteAndExtractValue(frame_xpath, jscript, &root);
-  if (!succeeded)
+  scoped_ptr<Value> root(ExecuteAndExtractValue(frame_xpath, jscript));
+  if (root == NULL)
     return false;
 
   int read_value = 0;
   DCHECK(root->IsType(Value::TYPE_LIST));
   Value* value = NULL;
-  succeeded = static_cast<ListValue*>(root)->Get(0, &value);
+  bool succeeded = static_cast<ListValue*>(root.get())->Get(0, &value);
   if (succeeded) {
     succeeded = value->GetAsInteger(&read_value);
     if (succeeded) {
       *int_value = read_value;
     }
   }
-
-  delete value;
   return succeeded;
 }
 
-bool TabProxy::ExecuteAndExtractValue(const std::wstring& frame_xpath,
-                                      const std::wstring& jscript,
-                                      Value** value) {
+Value* TabProxy::ExecuteAndExtractValue(const std::wstring& frame_xpath,
+                                        const std::wstring& jscript) {
   if (!is_valid())
-    return false;
-
-  if (!value) {
-    NOTREACHED();
-    return false;
-  }
+    return NULL;
 
   std::string json;
   if (!sender_->Send(new AutomationMsg_DomOperation(handle_, frame_xpath,
-                                                    jscript, &json)))
-    return false;
+                                                    jscript, &json))) {
+    return NULL;
+  }
   // Wrap |json| in an array before deserializing because valid JSON has an
   // array or an object as the root.
   json.insert(0, "[");
   json.append("]");
 
   JSONStringValueSerializer deserializer(json);
-  *value = deserializer.Deserialize(NULL, NULL);
-  return *value != NULL;
+  return deserializer.Deserialize(NULL, NULL);
 }
 
 DOMElementProxyRef TabProxy::GetDOMDocument() {
@@ -380,7 +365,8 @@ bool TabProxy::WaitForChildWindowCountToChange(int count, int* new_count,
                                                int wait_timeout) {
   int intervals = std::max(wait_timeout / automation::kSleepTime, 1);
   for (int i = 0; i < intervals; ++i) {
-    base::PlatformThread::Sleep(automation::kSleepTime);
+    base::PlatformThread::Sleep(
+        base::TimeDelta::FromMilliseconds(automation::kSleepTime));
     bool succeeded = GetConstrainedWindowCount(new_count);
     if (!succeeded)
       return false;
@@ -408,7 +394,8 @@ bool TabProxy::WaitForBlockedPopupCountToChangeTo(int target_count,
                                                   int wait_timeout) {
   int intervals = std::max(wait_timeout / automation::kSleepTime, 1);
   for (int i = 0; i < intervals; ++i) {
-    base::PlatformThread::Sleep(automation::kSleepTime);
+    base::PlatformThread::Sleep(
+        base::TimeDelta::FromMilliseconds(automation::kSleepTime));
     int new_count = -1;
     bool succeeded = GetBlockedPopupCount(&new_count);
     if (!succeeded)
@@ -585,8 +572,8 @@ bool TabProxy::WaitForTabToBeRestored(uint32 timeout_ms) {
       succeeded;
 }
 
-bool TabProxy::GetSecurityState(SecurityStyle* security_style,
-                                int* ssl_cert_status,
+bool TabProxy::GetSecurityState(content::SecurityStyle* security_style,
+                                net::CertStatus* ssl_cert_status,
                                 int* insecure_content_status) {
   DCHECK(security_style && ssl_cert_status && insecure_content_status);
 
@@ -602,7 +589,7 @@ bool TabProxy::GetSecurityState(SecurityStyle* security_style,
   return succeeded;
 }
 
-bool TabProxy::GetPageType(PageType* type) {
+bool TabProxy::GetPageType(content::PageType* type) {
   DCHECK(type);
 
   if (!is_valid())
@@ -643,7 +630,7 @@ bool TabProxy::PrintAsync() {
 
 bool TabProxy::SavePage(const FilePath& file_name,
                         const FilePath& dir_path,
-                        SavePackage::SavePackageType type) {
+                        content::SavePageType type) {
   if (!is_valid())
     return false;
 
@@ -739,21 +726,22 @@ bool TabProxy::CaptureEntirePageAsPNG(const FilePath& path) {
     return false;
 
   int browser_index, tab_index;
-  std::string error_msg;
+  automation::Error error;
   if (!SendGetIndicesFromTabHandleJSONRequest(
-         sender_, handle_, &browser_index, &tab_index, &error_msg)) {
+         sender_, handle_, &browser_index, &tab_index, &error)) {
     return false;
   }
 
-  return SendCaptureEntirePageJSONRequest(sender_, browser_index,
-                                          tab_index, path, &error_msg);
+  return SendCaptureEntirePageJSONRequest(
+      sender_, WebViewLocator::ForIndexPair(browser_index, tab_index),
+      path, &error);
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 void TabProxy::Reposition(HWND window, HWND window_insert_after, int left,
                           int top, int width, int height, int flags,
                           HWND parent_window) {
-  Reposition_Params params = {0};
+  Reposition_Params params;
   params.window = window;
   params.window_insert_after = window_insert_after;
   params.left = left;

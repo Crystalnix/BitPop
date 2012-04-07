@@ -6,6 +6,7 @@
 #define NET_PROXY_NETWORK_DELEGATE_ERROR_OBSERVER_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "net/proxy/proxy_resolver_error_observer.h"
 
@@ -19,7 +20,7 @@ class NetworkDelegate;
 
 // An implementation of ProxyResolverErrorObserver that forwards PAC script
 // errors to a NetworkDelegate object on the thread it lives on.
-class NET_TEST NetworkDelegateErrorObserver
+class NET_EXPORT_PRIVATE NetworkDelegateErrorObserver
     : public ProxyResolverErrorObserver {
  public:
   NetworkDelegateErrorObserver(NetworkDelegate* network_delegate,
@@ -27,7 +28,8 @@ class NET_TEST NetworkDelegateErrorObserver
   virtual ~NetworkDelegateErrorObserver();
 
   // ProxyResolverErrorObserver implementation.
-  virtual void OnPACScriptError(int line_number, const string16& error);
+  virtual void OnPACScriptError(int line_number, const string16& error)
+      OVERRIDE;
 
  private:
   class Core;

@@ -6,10 +6,9 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_MESSAGE_HANDLER_H_
 #pragma once
 
-#include "content/browser/renderer_host/render_view_host_observer.h"
+#include <string>
 
-class Profile;
-struct ExtensionHostMsg_DomMessage_Params;
+#include "content/public/browser/render_view_host_observer.h"
 
 // Filters and dispatches extension-related IPC messages that arrive from
 // renderers. There is one of these objects for each RenderViewHost in Chrome.
@@ -20,15 +19,15 @@ struct ExtensionHostMsg_DomMessage_Params;
 // could eliminate this class. Right now, we don't end up with an EFD for tab
 // contents unless that tab contents is hosting chrome-extension:// URLs. That
 // still leaves content scripts. See also: crbug.com/80307.
-class ExtensionMessageHandler : public RenderViewHostObserver {
+class ExtensionMessageHandler : public content::RenderViewHostObserver {
  public:
   // |sender| is guaranteed to outlive this object.
   explicit ExtensionMessageHandler(RenderViewHost* render_view_host);
   virtual ~ExtensionMessageHandler();
 
   // RenderViewHostObserver overrides.
-  virtual void RenderViewHostInitialized();
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual void RenderViewHostInitialized() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
   // Message handlers.

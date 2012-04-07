@@ -2,25 +2,29 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/threading/thread.h"
+#include "base/json/json_value_serializer.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/user_script_listener.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension_file_util.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/mock_resource_context.h"
-#include "content/browser/renderer_host/global_request_id.h"
+#include "content/browser/renderer_host/dummy_resource_handler.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
-#include "content/browser/renderer_host/resource_handler.h"
 #include "content/browser/renderer_host/resource_queue.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class Profile;
+using content::DummyResourceHandler;
 
 namespace {
 
@@ -28,70 +32,13 @@ const char kMatchingUrl[] = "http://google.com/";
 const char kNotMatchingUrl[] = "http://example.com/";
 const char kTestData[] = "Hello, World!";
 
-// Dummy ResourceHandler required for ResourceDispatcherHostRequestInfo.
-class DummyResourceHandler : public ResourceHandler {
- public:
-  DummyResourceHandler() {
-  }
-
-  virtual bool OnUploadProgress(int request_id, uint64 position, uint64 size) {
-    NOTREACHED();
-    return true;
-  }
-
-
-  virtual bool OnRequestRedirected(int request_id, const GURL& url,
-                                   ResourceResponse* response,
-                                   bool* defer) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnWillStart(int request_id,
-                           const GURL& url,
-                           bool* defer) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
-                          int* buf_size,
-                          int min_size) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnReadCompleted(int request_id, int* bytes_read) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnResponseCompleted(int request_id,
-                                   const net::URLRequestStatus& status,
-                                   const std::string& security_info) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual void OnRequestClosed() {
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DummyResourceHandler);
-};
-
 ResourceDispatcherHostRequestInfo* CreateRequestInfo(int request_id) {
   return new ResourceDispatcherHostRequestInfo(
-      new DummyResourceHandler(), ChildProcessInfo::RENDER_PROCESS, 0, 0, 0,
-      request_id, ResourceType::MAIN_FRAME, 0, false, false, false,
-      &content::MockResourceContext::GetInstance());
+      new DummyResourceHandler(), content::PROCESS_TYPE_RENDERER, 0, 0, 0,
+      request_id, false, -1, false, -1, ResourceType::MAIN_FRAME,
+      content::PAGE_TRANSITION_LINK, 0, false, false, false,
+      WebKit::WebReferrerPolicyDefault,
+      content::MockResourceContext::GetInstance());
 }
 
 // A simple test net::URLRequestJob. We don't care what it does, only that
@@ -104,16 +51,40 @@ class SimpleTestJob : public net::URLRequestTestJob {
   ~SimpleTestJob() {}
 };
 
+// Yoinked from extension_manifest_unittest.cc.
+DictionaryValue* LoadManifestFile(const FilePath path, std::string* error) {
+  EXPECT_TRUE(file_util::PathExists(path));
+  JSONFileValueSerializer serializer(path);
+  return static_cast<DictionaryValue*>(serializer.Deserialize(NULL, error));
+}
+
+scoped_refptr<Extension> LoadExtension(const std::string& filename,
+                                       std::string* error) {
+  FilePath path;
+  PathService::Get(chrome::DIR_TEST_DATA, &path);
+  path = path.
+      AppendASCII("extensions").
+      AppendASCII("manifest_tests").
+      AppendASCII(filename.c_str());
+  scoped_ptr<DictionaryValue> value(LoadManifestFile(path, error));
+  if (!value.get())
+    return NULL;
+  return Extension::Create(path.DirName(), Extension::LOAD, *value,
+                           Extension::NO_FLAGS, error);
+}
+
+}  // namespace
+
 class UserScriptListenerTest
     : public ExtensionServiceTestBase,
       public net::URLRequest::Interceptor {
  public:
   UserScriptListenerTest() {
-    net::URLRequest::RegisterRequestInterceptor(this);
+    net::URLRequest::Deprecated::RegisterRequestInterceptor(this);
   }
 
   ~UserScriptListenerTest() {
-    net::URLRequest::UnregisterRequestInterceptor(this);
+    net::URLRequest::Deprecated::UnregisterRequestInterceptor(this);
   }
 
   virtual void SetUp() {
@@ -160,13 +131,13 @@ class UserScriptListenerTest
         .AppendASCII("Extensions")
         .AppendASCII("behllobkkfkfnphdnhnkndlbkcpglgmj")
         .AppendASCII("1.0.0.0");
-    service_->LoadExtension(extension_path);
+    extensions::UnpackedInstaller::Create(service_)->Load(extension_path);
   }
 
   void UnloadTestExtension() {
-    ASSERT_FALSE(service_->extensions()->empty());
-    service_->UnloadExtension(service_->extensions()->at(0)->id(),
-                              UnloadedExtensionInfo::DISABLE);
+    ASSERT_FALSE(service_->extensions()->is_empty());
+    service_->UnloadExtension((*service_->extensions()->begin())->id(),
+                              extension_misc::UNLOAD_REASON_DISABLE);
   }
 
   scoped_refptr<UserScriptListener> listener_;
@@ -174,6 +145,8 @@ class UserScriptListenerTest
  private:
   ResourceQueue resource_queue_;
 };
+
+namespace {
 
 TEST_F(UserScriptListenerTest, DelayAndUpdate) {
   LoadTestExtension();
@@ -183,10 +156,10 @@ TEST_F(UserScriptListenerTest, DelayAndUpdate) {
   scoped_ptr<TestURLRequest> request(StartTestRequest(&delegate, kMatchingUrl));
   ASSERT_FALSE(request->is_pending());
 
-  NotificationService::current()->Notify(
-      NotificationType::USER_SCRIPTS_UPDATED,
-      Source<Profile>(profile_.get()),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      content::Source<Profile>(profile_.get()),
+      content::NotificationService::NoDetails());
   MessageLoop::current()->RunAllPending();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
@@ -206,10 +179,10 @@ TEST_F(UserScriptListenerTest, DelayAndUnload) {
   // listener that the user scripts have been updated.
   ASSERT_FALSE(request->is_pending());
 
-  NotificationService::current()->Notify(
-      NotificationType::USER_SCRIPTS_UPDATED,
-      Source<Profile>(profile_.get()),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      content::Source<Profile>(profile_.get()),
+      content::NotificationService::NoDetails());
   MessageLoop::current()->RunAllPending();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
@@ -236,6 +209,46 @@ TEST_F(UserScriptListenerTest, NoDelayNotMatching) {
   // The request should be started immediately.
   ASSERT_TRUE(request->is_pending());
 
+  MessageLoop::current()->RunAllPending();
+  EXPECT_EQ(kTestData, delegate.data_received());
+}
+
+TEST_F(UserScriptListenerTest, MultiProfile) {
+  LoadTestExtension();
+  MessageLoop::current()->RunAllPending();
+
+  // Fire up a second profile and have it load and extension with a content
+  // script.
+  TestingProfile profile2;
+  std::string error;
+  scoped_refptr<Extension> extension = LoadExtension(
+      "content_script_yahoo.json", &error);
+  ASSERT_TRUE(extension.get());
+
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_LOADED,
+      content::Source<Profile>(&profile2),
+      content::Details<Extension>(extension.get()));
+
+  TestDelegate delegate;
+  scoped_ptr<TestURLRequest> request(StartTestRequest(&delegate, kMatchingUrl));
+  ASSERT_FALSE(request->is_pending());
+
+  // When the first profile's user scripts are ready, the request should still
+  // be blocked waiting for profile2.
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      content::Source<Profile>(profile_.get()),
+      content::NotificationService::NoDetails());
+  MessageLoop::current()->RunAllPending();
+  ASSERT_FALSE(request->is_pending());
+  EXPECT_TRUE(delegate.data_received().empty());
+
+  // After profile2 is ready, the request should proceed.
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
+      content::Source<Profile>(&profile2),
+      content::NotificationService::NoDetails());
   MessageLoop::current()->RunAllPending();
   EXPECT_EQ(kTestData, delegate.data_received());
 }

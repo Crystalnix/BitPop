@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/callback_old.h"
 #include "build/build_config.h"
 #include "gpu/command_buffer/service/common_decoder.h"
 #include "ui/gfx/size.h"
@@ -22,17 +21,21 @@ class GLSurface;
 
 namespace gpu {
 
-class SurfaceManager;
+class StreamTextureManager;
 
 namespace gles2 {
 
 class ContextGroup;
 class GLES2Util;
 
-struct DisallowedExtensions {
-  DisallowedExtensions() : multisampling(false) {}
+struct DisallowedFeatures {
+  DisallowedFeatures()
+      : multisampling(false),
+        driver_bug_workarounds(false) {
+  }
 
   bool multisampling;
+  bool driver_bug_workarounds;
 };
 
 // This class implements the AsyncAPIInterface interface, decoding GLES2
@@ -40,10 +43,10 @@ struct DisallowedExtensions {
 class GLES2Decoder : public CommonDecoder {
  public:
   typedef error::Error Error;
+  typedef base::Callback<void(int32 id, const std::string& msg)> MsgCallback;
 
   // Creates a decoder.
-  static GLES2Decoder* Create(SurfaceManager* surface_manager,
-                              ContextGroup* group);
+  static GLES2Decoder* Create(ContextGroup* group);
 
   virtual ~GLES2Decoder();
 
@@ -51,8 +54,18 @@ class GLES2Decoder : public CommonDecoder {
     return debug_;
   }
 
+  // Set to true to call glGetError after every command.
   void set_debug(bool debug) {
     debug_ = debug;
+  }
+
+  bool log_commands() const {
+    return log_commands_;
+  }
+
+  // Set to true to LOG every command.
+  void set_log_commands(bool log_commands) {
+    log_commands_ = log_commands;
   }
 
   // Initializes the graphics context. Can create an offscreen
@@ -65,34 +78,29 @@ class GLES2Decoder : public CommonDecoder {
   //  allowed_extensions: A string in the same format as
   //      glGetString(GL_EXTENSIONS) that lists the extensions this context
   //      should allow. Passing NULL or "*" means allow all extensions.
-  //  parent: the GLES2 decoder that can access this decoder's front buffer
-  //      through a texture ID in its namespace.
-  //  parent_client_texture_id: the texture ID of the front buffer in the
-  //      parent's namespace.
   // Returns:
   //   true if successful.
   virtual bool Initialize(const scoped_refptr<gfx::GLSurface>& surface,
                           const scoped_refptr<gfx::GLContext>& context,
                           const gfx::Size& size,
-                          const DisallowedExtensions& disallowed_extensions,
+                          const DisallowedFeatures& disallowed_features,
                           const char* allowed_extensions,
-                          const std::vector<int32>& attribs,
-                          GLES2Decoder* parent,
-                          uint32 parent_client_texture_id) = 0;
+                          const std::vector<int32>& attribs) = 0;
 
   // Destroys the graphics context.
   virtual void Destroy() = 0;
 
-  // Resize an offscreen frame buffer.
-  virtual void ResizeOffscreenFrameBuffer(const gfx::Size& size) = 0;
+  virtual bool SetParent(GLES2Decoder* parent_decoder,
+                         uint32 parent_texture_id) = 0;
 
-  // Force the offscreen frame buffer's size to be updated. This
-  // usually occurs lazily, during SwapBuffers, but on some platforms
-  // (Mac OS X in particular) it must be done immediately.
-  virtual bool UpdateOffscreenFrameBufferSize() = 0;
+  // Resize an offscreen frame buffer.
+  virtual bool ResizeOffscreenFrameBuffer(const gfx::Size& size) = 0;
 
   // Make this decoder's GL context current.
   virtual bool MakeCurrent() = 0;
+
+  // Have the decoder release the context.
+  virtual void ReleaseCurrent() = 0;
 
   // Gets the GLES2 Util which holds info.
   virtual GLES2Util* GetGLES2Util() = 0;
@@ -108,26 +116,41 @@ class GLES2Decoder : public CommonDecoder {
 
   // Sets a callback which is called when a glResizeCHROMIUM command
   // is processed.
-  virtual void SetResizeCallback(Callback1<gfx::Size>::Type* callback) = 0;
+  virtual void SetResizeCallback(
+      const base::Callback<void(gfx::Size)>& callback) = 0;
 
-  // Sets a callback which is called when a SwapBuffers command is processed.
-  virtual void SetSwapBuffersCallback(Callback0::Type* callback) = 0;
-
-  // Sets a callback which is called after a Set/WaitLatch command is processed.
-  // The bool parameter will be true for SetLatch, and false for a WaitLatch
-  // that is blocked. An unblocked WaitLatch will not trigger a callback.
-  virtual void SetLatchCallback(const base::Callback<void(bool)>& callback) = 0;
+  virtual void SetStreamTextureManager(StreamTextureManager* manager) = 0;
 
   // Get the service texture ID corresponding to a client texture ID.
   // If no such record is found then return false.
   virtual bool GetServiceTextureId(uint32 client_texture_id,
                                    uint32* service_texture_id);
 
+  // Provides detail about a lost context if one occurred.
+  virtual error::ContextLostReason GetContextLostReason() = 0;
+
+  // Clears a level of a texture
+  // Returns false if a GL error should be generated.
+  virtual bool ClearLevel(
+      unsigned service_id,
+      unsigned bind_target,
+      unsigned target,
+      int level,
+      unsigned format,
+      unsigned type,
+      int width,
+      int height,
+      bool is_texture_immutable) = 0;
+
+  // A callback for messages from the decoder.
+  virtual void SetMsgCallback(const MsgCallback& callback) = 0;
+
  protected:
   GLES2Decoder();
 
  private:
   bool debug_;
+  bool log_commands_;
 
   DISALLOW_COPY_AND_ASSIGN(GLES2Decoder);
 };

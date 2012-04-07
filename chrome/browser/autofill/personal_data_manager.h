@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
@@ -18,13 +17,20 @@
 #include "chrome/browser/autofill/autofill_profile.h"
 #include "chrome/browser/autofill/credit_card.h"
 #include "chrome/browser/autofill/field_types.h"
+#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/webdata/web_data_service.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
-class AutofillManager;
 class AutofillMetrics;
 class FormStructure;
+class PersonalDataManagerObserver;
 class Profile;
+
+namespace autofill_helper {
+void SetProfiles(int, std::vector<AutofillProfile>*);
+}
 
 // Handles loading and saving Autofill profile information to the web database.
 // This class also stores the profiles loaded from the database for use during
@@ -32,32 +38,34 @@ class Profile;
 class PersonalDataManager
     : public WebDataServiceConsumer,
       public ProfileSyncServiceObserver,
-      public base::RefCountedThreadSafe<PersonalDataManager> {
+      public ProfileKeyedService,
+      public content::NotificationObserver {
  public:
-  // An interface the PersonalDataManager uses to notify its clients (observers)
-  // when it has finished loading personal data from the web database.  Register
-  // the observer via PersonalDataManager::SetObserver.
-  class Observer {
-   public:
-    // Notifies the observer that the PersonalDataManager changed in some way.
-    virtual void OnPersonalDataChanged() = 0;
-
-   protected:
-    virtual ~Observer() {}
-  };
-
-  // WebDataServiceConsumer implementation:
-  virtual void OnWebDataServiceRequestDone(WebDataService::Handle h,
-                                           const WDTypedResult* result);
+  // WebDataServiceConsumer:
+  virtual void OnWebDataServiceRequestDone(
+      WebDataService::Handle h,
+      const WDTypedResult* result) OVERRIDE;
 
   // Sets the listener to be notified of PersonalDataManager events.
-  virtual void SetObserver(PersonalDataManager::Observer* observer);
+  virtual void SetObserver(PersonalDataManagerObserver* observer);
 
   // Removes |observer| as the observer of this PersonalDataManager.
-  virtual void RemoveObserver(PersonalDataManager::Observer* observer);
+  virtual void RemoveObserver(PersonalDataManagerObserver* observer);
 
   // ProfileSyncServiceObserver:
-  virtual void OnStateChanged();
+  virtual void OnStateChanged() OVERRIDE;
+
+  // ProfileKeyedService:
+  // Cancels any pending requests to WebDataService and stops listening for Sync
+  // notifications.
+  virtual void Shutdown() OVERRIDE;
+
+  // content::NotificationObserver:
+  // Observes "batch" changes made by Sync and refreshes data from the
+  // WebDataService in response.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Scans the given |form| for importable Autofill data. If the form includes
   // sufficient address data, it is immediately imported. If the form includes
@@ -96,11 +104,6 @@ class PersonalDataManager
   // no credit card with the specified |guid|.
   CreditCard* GetCreditCardByGUID(const std::string& guid);
 
-  // Gets the possible field types for the given text, determined by matching
-  // the text with all known personal information and returning matching types.
-  void GetMatchingTypes(const string16& text,
-                        FieldTypeSet* matching_types) const;
-
   // Gets the field types availabe in the stored address and credit card data.
   void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
 
@@ -128,9 +131,6 @@ class PersonalDataManager
   // Also see SetProfile for more details.
   virtual void Refresh();
 
-  // Kicks off asynchronous loading of profiles and credit cards.
-  void Init(Profile* profile);
-
   // Checks suitability of |profile| for adding to the user's set of profiles.
   static bool IsValidLearnableProfile(const AutofillProfile& profile);
 
@@ -143,15 +143,18 @@ class PersonalDataManager
       std::vector<AutofillProfile>* merged_profiles);
 
  protected:
-  // Make sure that only Profile and certain tests can create an instance of
+  // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
-  friend class base::RefCountedThreadSafe<PersonalDataManager>;
-  friend class AutofillMergeTest;
-  friend class LiveAutofillSyncTest;
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, FirstMiddleLast);
+  FRIEND_TEST_ALL_PREFIXES(AutofillMetricsTest, AutofillIsEnabledAtStartup);
+  FRIEND_TEST_ALL_PREFIXES(PersonalDataManagerTest,
+                           AggregateExistingAuxiliaryProfile);
+  friend class PersonalDataManagerFactory;
   friend class PersonalDataManagerTest;
-  friend class ProfileImpl;
+  friend class scoped_ptr<PersonalDataManager>;
   friend class ProfileSyncServiceAutofillTest;
   friend class TestingAutomationProvider;
+  friend void autofill_helper::SetProfiles(int, std::vector<AutofillProfile>*);
 
   PersonalDataManager();
   virtual ~PersonalDataManager();
@@ -239,14 +242,20 @@ class PersonalDataManager
   WebDataService::Handle pending_creditcards_query_;
 
   // The observers.
-  ObserverList<Observer> observers_;
+  ObserverList<PersonalDataManagerObserver> observers_;
 
  private:
+  // Kicks off asynchronous loading of profiles and credit cards.
+  void Init(Profile* profile);
+
   // For logging UMA metrics. Overridden by metrics tests.
   scoped_ptr<const AutofillMetrics> metric_logger_;
 
   // Whether we have already logged the number of profiles this session.
   mutable bool has_logged_profile_count_;
+
+  // Manages registration lifetime for NotificationObserver implementation.
+  content::NotificationRegistrar notification_registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PersonalDataManager);
 };

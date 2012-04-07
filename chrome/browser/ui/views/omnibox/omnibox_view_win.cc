@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,17 @@
 #include <richedit.h>
 #include <textserv.h>
 
-#include "app/win/iat_patch_function.h"
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
+#include "base/property_bag.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
+#include "base/win/iat_patch_function.h"
+#include "base/win/windows_version.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/autocomplete/autocomplete_accessibility.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
@@ -28,16 +29,17 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_service.h"
+#include "chrome/browser/ui/views/omnibox/omnibox_view_views.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
 #include "googleurl/src/url_util.h"
 #include "grit/generated_resources.h"
 #include "net/base/escape.h"
 #include "skia/ext/skia_utils_win.h"
+#include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -45,19 +47,22 @@
 #include "ui/base/dragdrop/drop_target.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
+#include "ui/base/events.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_win.h"
+#include "ui/base/win/mouse_wheel_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
-#include "views/controls/textfield/native_textfield_win.h"
-#include "views/drag_utils.h"
-#include "views/events/event_utils_win.h"
-#include "views/focus/focus_util_win.h"
-#include "views/widget/widget.h"
+#include "ui/views/controls/textfield/native_textfield_win.h"
+#include "ui/views/drag_utils.h"
+#include "ui/views/widget/widget.h"
 
 #pragma comment(lib, "oleacc.lib")  // Needed for accessibility support.
 #pragma comment(lib, "riched20.lib")  // Needed for the richedit control.
+
+using content::UserMetricsAction;
+using content::WebContents;
 
 ///////////////////////////////////////////////////////////////////////////////
 // AutocompleteEditModel
@@ -307,6 +312,39 @@ OmniboxViewWin::ScopedSuspendUndo::~ScopedSuspendUndo() {
     text_object_model_->Undo(tomResume, NULL);
 }
 
+// A subclass of NativeViewHost that provides accessibility info for the
+// underlying Omnibox view.
+class OmniboxViewWrapper : public views::NativeViewHost {
+ public:
+  explicit OmniboxViewWrapper(OmniboxViewWin* omnibox_view_win)
+      : omnibox_view_win_(omnibox_view_win) {}
+
+  gfx::NativeViewAccessible GetNativeViewAccessible() {
+    // This forces it to use NativeViewAccessibilityWin rather than
+    // any accessibility provided natively by the HWND.
+    return View::GetNativeViewAccessible();
+  }
+
+  // views::View
+  virtual void GetAccessibleState(ui::AccessibleViewState* state) {
+    views::NativeViewHost::GetAccessibleState(state);
+    state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_LOCATION);
+    state->role = ui::AccessibilityTypes::ROLE_TEXT;
+    state->value = omnibox_view_win_->GetText();
+    state->state = ui::AccessibilityTypes::STATE_EDITABLE;
+    size_t sel_start;
+    size_t sel_end;
+    omnibox_view_win_->GetSelectionBounds(&sel_start, &sel_end);
+    state->selection_start = sel_start;
+    state->selection_end = sel_end;
+  }
+
+ private:
+  OmniboxViewWin* omnibox_view_win_;
+
+  DISALLOW_COPY_AND_ASSIGN(OmniboxViewWrapper);
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // OmniboxViewWin
 
@@ -333,8 +371,8 @@ BOOL WINAPI EndPaintIntercept(HWND hWnd, const PAINTSTRUCT* lpPaint) {
 
 // Returns a lazily initialized property bag accessor for saving our state in a
 // TabContents.
-PropertyAccessor<AutocompleteEditState>* GetStateAccessor() {
-  static PropertyAccessor<AutocompleteEditState> state;
+base::PropertyAccessor<AutocompleteEditState>* GetStateAccessor() {
+  static base::PropertyAccessor<AutocompleteEditState> state;
   return &state;
 }
 
@@ -348,8 +386,8 @@ class PaintPatcher {
 
  private:
   size_t refcount_;
-  app::win::IATPatchFunction begin_paint_;
-  app::win::IATPatchFunction end_paint_;
+  base::win::IATPatchFunction begin_paint_;
+  base::win::IATPatchFunction end_paint_;
 
   DISALLOW_COPY_AND_ASSIGN(PaintPatcher);
 };
@@ -383,7 +421,7 @@ void PaintPatcher::DerefPatch() {
   }
 }
 
-base::LazyInstance<PaintPatcher> g_paint_patcher(base::LINKER_INITIALIZED);
+base::LazyInstance<PaintPatcher> g_paint_patcher = LAZY_INSTANCE_INITIALIZER;
 
 // twips are a unit of type measurement, and RichEdit controls use them
 // to set offsets.
@@ -391,18 +429,17 @@ const int kTwipsPerInch = 1440;
 
 }  // namespace
 
-OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
-                               AutocompleteEditController* controller,
+OmniboxViewWin::OmniboxViewWin(AutocompleteEditController* controller,
                                ToolbarModel* toolbar_model,
                                LocationBarView* parent_view,
-                               HWND hwnd,
-                               Profile* profile,
                                CommandUpdater* command_updater,
                                bool popup_window_mode,
-                               const views::View* location_bar)
-    : model_(new AutocompleteEditModel(this, controller, profile)),
-      popup_view_(new AutocompletePopupContentsView(font, this, model_.get(),
-                                                    profile, location_bar)),
+                               views::View* location_bar)
+    : model_(new AutocompleteEditModel(this, controller,
+                                       parent_view->browser()->profile())),
+      popup_view_(new AutocompletePopupContentsView(parent_view->font(), this,
+                                                    model_.get(),
+                                                    location_bar)),
       controller_(controller),
       parent_view_(parent_view),
       toolbar_model_(toolbar_model),
@@ -415,11 +452,12 @@ OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
       can_discard_mousemove_(false),
       ignore_ime_messages_(false),
       delete_at_end_pressed_(false),
-      font_(font),
+      font_(parent_view->font()),
       possible_drag_(false),
       in_drag_(false),
       initiated_drag_(false),
       drop_highlight_position_(-1),
+      ime_candidate_window_open_(false),
       background_color_(skia::SkColorToCOLORREF(LocationBarView::GetColor(
           ToolbarModel::NONE, LocationBarView::BACKGROUND))),
       security_level_(ToolbarModel::NONE),
@@ -432,9 +470,20 @@ OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
 
   g_paint_patcher.Pointer()->RefPatch();
 
-  Create(hwnd, 0, 0, 0, l10n_util::GetExtendedStyles());
+  Create(location_bar->GetWidget()->GetNativeView(), 0, 0, 0,
+         l10n_util::GetExtendedStyles());
   SetReadOnly(popup_window_mode_);
   SetFont(font_.GetNativeFont());
+
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    // Locally define CLSID_TextInputPanel to avoid issues with multiply defined
+    // or undefined symbols if we include peninputpanel_i.c.
+    const GUID CLSID_TextInputPanel = {0xf9b189d7, 0x228b, 0x4f2b, 0x86, 0x50,\
+                0xb9, 0x7f, 0x59, 0xe0, 0x2c, 0x8c};
+    keyboard_.CreateInstance(CLSID_TextInputPanel, NULL, CLSCTX_INPROC);
+    if (keyboard_ != NULL)
+      keyboard_->put_AttachedEditWindow(m_hWnd);
+  }
 
   // NOTE: Do not use SetWordBreakProcEx() here, that is no longer supported as
   // of Rich Edit 2.0 onward.
@@ -442,10 +491,10 @@ OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
               reinterpret_cast<LPARAM>(&WordBreakProc));
 
   // Get the metrics for the font.
-  HDC dc = ::GetDC(NULL);
-  SelectObject(dc, font_.GetNativeFont());
+  HDC hdc = ::GetDC(NULL);
+  HGDIOBJ old_font = SelectObject(hdc, font_.GetNativeFont());
   TEXTMETRIC tm = {0};
-  GetTextMetrics(dc, &tm);
+  GetTextMetrics(hdc, &tm);
   const float kXHeightRatio = 0.7f;  // The ratio of a font's x-height to its
                                      // cap height.  Sadly, Windows doesn't
                                      // provide a true value for a font's
@@ -460,8 +509,11 @@ OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
 
   // Get the number of twips per pixel, which we need below to offset our text
   // by the desired number of pixels.
-  const long kTwipsPerPixel = kTwipsPerInch / GetDeviceCaps(dc, LOGPIXELSY);
-  ::ReleaseDC(NULL, dc);
+  const long kTwipsPerPixel = kTwipsPerInch / GetDeviceCaps(hdc, LOGPIXELSY);
+  // It's unsafe to delete a DC with a non-stock object selected, so restore the
+  // original font.
+  SelectObject(hdc, old_font);
+  ::ReleaseDC(NULL, hdc);
 
   // Set the default character style -- adjust to our desired baseline.
   CHARFORMAT cf = {0};
@@ -484,10 +536,6 @@ OmniboxViewWin::OmniboxViewWin(const gfx::Font& font,
 }
 
 OmniboxViewWin::~OmniboxViewWin() {
-  NotificationService::current()->Notify(NotificationType::OMNIBOX_DESTROYED,
-                                         Source<OmniboxViewWin>(this),
-                                         NotificationService::NoDetails());
-
   // Explicitly release the text object model now that we're done with it, and
   // before we free the library. If the library gets unloaded before this
   // released, it becomes garbage.
@@ -514,7 +562,7 @@ gfx::Font OmniboxViewWin::GetFont() {
   return font_;
 }
 
-void OmniboxViewWin::SaveStateToTab(TabContents* tab) {
+void OmniboxViewWin::SaveStateToTab(WebContents* tab) {
   DCHECK(tab);
 
   const AutocompleteEditModel::State model_state(
@@ -522,13 +570,13 @@ void OmniboxViewWin::SaveStateToTab(TabContents* tab) {
 
   CHARRANGE selection;
   GetSelection(selection);
-  GetStateAccessor()->SetProperty(tab->property_bag(),
+  GetStateAccessor()->SetProperty(tab->GetPropertyBag(),
       AutocompleteEditState(
           model_state,
           State(selection, saved_selection_for_focus_change_)));
 }
 
-void OmniboxViewWin::Update(const TabContents* tab_for_state_restoring) {
+void OmniboxViewWin::Update(const WebContents* tab_for_state_restoring) {
   const bool visibly_changed_permanent_text =
       model_->UpdatePermanentText(toolbar_model_->GetText());
 
@@ -555,7 +603,7 @@ void OmniboxViewWin::Update(const TabContents* tab_for_state_restoring) {
     RevertAll();
 
     const AutocompleteEditState* state = GetStateAccessor()->GetProperty(
-        tab_for_state_restoring->property_bag());
+        tab_for_state_restoring->GetPropertyBag());
     if (state) {
       model_->RestoreState(state->model_state);
 
@@ -616,7 +664,8 @@ void OmniboxViewWin::OpenMatch(const AutocompleteMatch& match,
 string16 OmniboxViewWin::GetText() const {
   const int len = GetTextLength() + 1;
   string16 str;
-  GetWindowText(WriteInto(&str, len), len);
+  if (len > 1)
+    GetWindowText(WriteInto(&str, len), len);
   return str;
 }
 
@@ -672,7 +721,7 @@ bool OmniboxViewWin::DeleteAtEndPressed() {
 }
 
 void OmniboxViewWin::GetSelectionBounds(string16::size_type* start,
-                                        string16::size_type* end) {
+                                        string16::size_type* end) const {
   CHARRANGE selection;
   GetSel(selection);
   *start = static_cast<size_t>(selection.cpMin);
@@ -697,6 +746,11 @@ void OmniboxViewWin::RevertAll() {
 void OmniboxViewWin::UpdatePopup() {
   ScopedFreeze freeze(this, GetTextObjectModel());
   model_->SetInputInProgress(true);
+
+  // Don't allow the popup to open while the candidate window is open, so
+  // they don't overlap.
+  if (ime_candidate_window_open_)
+    return;
 
   if (!model_->has_focus()) {
     // When we're in the midst of losing focus, don't rerun autocomplete.  This
@@ -727,31 +781,6 @@ void OmniboxViewWin::ClosePopup() {
 
 void OmniboxViewWin::SetFocus() {
   ::SetFocus(m_hWnd);
-  parent_view_->GetWidget()->NotifyAccessibilityEvent(
-      parent_view_,
-      ui::AccessibilityTypes::EVENT_FOCUS,
-      false);
-}
-
-IAccessible* OmniboxViewWin::GetIAccessible() {
-  if (!autocomplete_accessibility_) {
-    CComObject<AutocompleteAccessibility>* accessibility = NULL;
-    if (!SUCCEEDED(CComObject<AutocompleteAccessibility>::CreateInstance(
-            &accessibility)) || !accessibility)
-      return NULL;
-
-    // Wrap the created object in a smart pointer so it won't leak.
-    base::win::ScopedComPtr<IAccessible> accessibility_comptr(accessibility);
-    if (!SUCCEEDED(accessibility->Initialize(this)))
-      return NULL;
-
-    // Copy to the class smart pointer, and notify that an instance of
-    // IAccessible was allocated for m_hWnd.
-    autocomplete_accessibility_ = accessibility_comptr;
-    NotifyWinEvent(EVENT_OBJECT_CREATE, m_hWnd, OBJID_CLIENT, CHILDID_SELF);
-  }
-  // Detach to leave ref counting to the caller.
-  return autocomplete_accessibility_.Detach();
 }
 
 void OmniboxViewWin::SetDropHighlightPosition(int position) {
@@ -894,12 +923,14 @@ bool OmniboxViewWin::OnAfterPossibleChangeInternal(bool force_text_changed) {
   if (text_differs) {
     // Note that a TEXT_CHANGED event implies that the cursor/selection
     // probably changed too, so we don't need to send both.
-    parent_view_->GetWidget()->NotifyAccessibilityEvent(
-        parent_view_, ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
+    native_view_host_->GetWidget()->NotifyAccessibilityEvent(
+        native_view_host_, ui::AccessibilityTypes::EVENT_TEXT_CHANGED, true);
   } else if (selection_differs) {
     // Notify assistive technology that the cursor or selection changed.
-    parent_view_->GetWidget()->NotifyAccessibilityEvent(
-        parent_view_, ui::AccessibilityTypes::EVENT_SELECTION_CHANGED, true);
+    native_view_host_->GetWidget()->NotifyAccessibilityEvent(
+        native_view_host_,
+        ui::AccessibilityTypes::EVENT_SELECTION_CHANGED,
+        true);
   } else if (delete_at_end_pressed_) {
     model_->OnChanged();
   }
@@ -909,6 +940,23 @@ bool OmniboxViewWin::OnAfterPossibleChangeInternal(bool force_text_changed) {
 
 gfx::NativeView OmniboxViewWin::GetNativeView() const {
   return m_hWnd;
+}
+
+// static
+gfx::NativeView OmniboxViewWin::GetRelativeWindowForNativeView(
+    gfx::NativeView edit_native_view) {
+  // When an IME is attached to the rich-edit control, retrieve its window
+  // handle, and the popup window of AutocompletePopupView will be shown
+  // under the IME windows.
+  // Otherwise, the popup window will be shown under top-most windows.
+  // TODO(hbono): http://b/1111369 if we exclude this popup window from the
+  // display area of IME windows, this workaround becomes unnecessary.
+  HWND ime_window = ImmGetDefaultIMEWnd(edit_native_view);
+  return ime_window ? ime_window : HWND_NOTOPMOST;
+}
+
+gfx::NativeView OmniboxViewWin::GetRelativeWindowForPopup() const {
+  return GetRelativeWindowForNativeView(GetNativeView());
 }
 
 CommandUpdater* OmniboxViewWin::GetCommandUpdater() {
@@ -938,12 +986,21 @@ bool OmniboxViewWin::IsImeComposing() const {
   return ime_composing;
 }
 
+int OmniboxViewWin::GetMaxEditWidth(int entry_width) const {
+  RECT formatting_rect;
+  GetRect(&formatting_rect);
+  RECT edit_bounds;
+  GetClientRect(&edit_bounds);
+  return entry_width - formatting_rect.left -
+      (edit_bounds.right - formatting_rect.right);
+}
+
 views::View* OmniboxViewWin::AddToView(views::View* parent) {
-  views::NativeViewHost* host = new views::NativeViewHost;
-  parent->AddChildView(host);
-  host->set_focus_view(parent);
-  host->Attach(GetNativeView());
-  return host;
+  native_view_host_ = new OmniboxViewWrapper(this);
+  parent->AddChildView(native_view_host_);
+  native_view_host_->set_focus_view(parent);
+  native_view_host_->Attach(GetNativeView());
+  return native_view_host_;
 }
 
 int OmniboxViewWin::OnPerformDrop(const views::DropTargetEvent& event) {
@@ -960,8 +1017,7 @@ int OmniboxViewWin::OnPerformDropImpl(const views::DropTargetEvent& event,
     if (data.GetURLAndTitle(&url, &title)) {
       string16 text(StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
       SetUserText(text);
-      if (url.spec().length() == text.length())
-        model()->AcceptInput(CURRENT_TAB, true);
+      model()->AcceptInput(CURRENT_TAB, true);
       return CopyOrLinkDragOperation(event.source_operations());
     }
   } else if (data.HasString()) {
@@ -998,7 +1054,7 @@ bool OmniboxViewWin::SkipDefaultKeyEventProcessing(
   // entering special characters.  We do translate alt-home.
   if (event.IsAltDown() && (key != ui::VKEY_HOME) &&
       views::NativeTextfieldWin::IsNumPadDigit(key,
-                                               views::IsExtendedKey(event)))
+          (event.flags() & ui::EF_EXTENDED) != 0))
     return true;
 
   // Skip accelerators for key combinations omnibox wants to crack. This list
@@ -1310,7 +1366,7 @@ void OmniboxViewWin::OnCopy() {
   scw.WriteText(text);
   if (write_url) {
     scw.WriteBookmark(text, url.spec());
-    scw.WriteHyperlink(EscapeForHTML(text), url.spec());
+    scw.WriteHyperlink(net::EscapeForHTML(text), url.spec());
   }
 }
 
@@ -1322,18 +1378,13 @@ void OmniboxViewWin::OnCut() {
   ReplaceSel(L"", true);
 }
 
-LRESULT OmniboxViewWin::OnGetObject(UINT uMsg,
+LRESULT OmniboxViewWin::OnGetObject(UINT message,
                                     WPARAM wparam,
                                     LPARAM lparam) {
-  // Accessibility readers will send an OBJID_CLIENT message.
+  // This is a request for the native accessibility object.
   if (lparam == OBJID_CLIENT) {
-    // Re-attach for internal re-usage of accessibility pointer.
-    autocomplete_accessibility_.Attach(GetIAccessible());
-
-    if (autocomplete_accessibility_) {
-      return LresultFromObject(IID_IAccessible, wparam,
-                               autocomplete_accessibility_);
-    }
+    return LresultFromObject(IID_IAccessible, wparam,
+                             native_view_host_->GetNativeViewAccessible());
   }
   return 0;
 }
@@ -1360,6 +1411,44 @@ LRESULT OmniboxViewWin::OnImeComposition(UINT message,
   // to make sure the model can update its internal states correctly.
   OnAfterPossibleChangeInternal((lparam & GCS_RESULTSTR) != 0);
   return result;
+}
+
+LRESULT OmniboxViewWin::OnImeNotify(UINT message,
+                                    WPARAM wparam,
+                                    LPARAM lparam) {
+  // Close the popup when the IME composition window is open, so they don't
+  // overlap.
+  switch (wparam) {
+    case IMN_OPENCANDIDATE:
+      ime_candidate_window_open_ = true;
+      ClosePopup();
+      break;
+    case IMN_CLOSECANDIDATE:
+      ime_candidate_window_open_ = false;
+
+      // UpdatePopup assumes user input is in progress, so only call it if
+      // that's the case. Otherwise, autocomplete may run on an empty user
+      // text. For example, Baidu Japanese IME sends IMN_CLOSECANDIDATE when
+      // composition mode is entered, but the user may not have input anything
+      // yet.
+      if (model_->user_input_in_progress())
+        UpdatePopup();
+
+      break;
+    default:
+      break;
+  }
+  return DefWindowProc(message, wparam, lparam);
+}
+
+LRESULT OmniboxViewWin::OnPointerDown(UINT message,
+                                      WPARAM wparam,
+                                      LPARAM lparam) {
+  SetFocus();
+  // ITextInputPanel is not supported on all platforms.  NULL is fine.
+  if (keyboard_ != NULL)
+    keyboard_->SetInPlaceVisibility(true);
+  return DefWindowProc(message, wparam, lparam);
 }
 
 void OmniboxViewWin::OnKeyDown(TCHAR key,
@@ -1448,6 +1537,13 @@ void OmniboxViewWin::OnKillFocus(HWND focus_wnd) {
   // URL.  We have to do this after calling DefWindowProc() because otherwise
   // an in-progress IME composition will be completed at the new caret position,
   // resulting in the string jumping unexpectedly to the front of the edit.
+  //
+  // Crazy hack: If we just do PlaceCaretAt(0), and the beginning of the text is
+  // currently scrolled out of view, we can wind up with a blinking cursor in
+  // the toolbar at the current X coordinate of the beginning of the text.  By
+  // first doing a reverse-select-all to scroll the beginning of the text into
+  // view, we work around this CRichEditCtrl bug.
+  SelectAll(true);
   PlaceCaretAt(0);
 }
 
@@ -1810,8 +1906,8 @@ void OmniboxViewWin::OnWindowPosChanging(WINDOWPOS* window_pos) {
 
 BOOL OmniboxViewWin::OnMouseWheel(UINT flags, short delta, CPoint point) {
   // Forward the mouse-wheel message to the window under the mouse.
-  if (!views::RerouteMouseWheel(m_hWnd, MAKEWPARAM(flags, delta),
-                                MAKELPARAM(point.x, point.y)))
+  if (!ui::RerouteMouseWheel(m_hWnd, MAKEWPARAM(flags, delta),
+                             MAKELPARAM(point.x, point.y)))
     SetMsgHandled(false);
   return 0;
 }
@@ -2065,13 +2161,11 @@ void OmniboxViewWin::GetSelection(CHARRANGE& sel) const {
 }
 
 string16 OmniboxViewWin::GetSelectedText() const {
-  // Figure out the length of the selection.
   CHARRANGE sel;
   GetSel(sel);
-
-  // Grab the selected text.
   string16 str;
-  GetSelText(WriteInto(&str, sel.cpMax - sel.cpMin + 1));
+  if (sel.cpMin != sel.cpMax)
+    GetSelText(WriteInto(&str, sel.cpMax - sel.cpMin + 1));
   return str;
 }
 
@@ -2271,8 +2365,10 @@ void OmniboxViewWin::DrawSlashForInsecureScheme(HDC hdc,
   // Create a canvas as large as |scheme_rect| to do our drawing, and initialize
   // it to fully transparent so any antialiasing will look nice when painted
   // atop the edit.
-  gfx::CanvasSkia canvas(scheme_rect.Width(), scheme_rect.Height(), false);
-  canvas.getDevice()->accessBitmap(true).eraseARGB(0, 0, 0, 0);
+  gfx::CanvasSkia canvas(gfx::Size(scheme_rect.Width(), scheme_rect.Height()),
+                         false);
+  SkCanvas* sk_canvas = canvas.sk_canvas();
+  sk_canvas->getDevice()->accessBitmap(true).eraseARGB(0, 0, 0, 0);
 
   // Calculate the start and end of the stroke, which are just the lower left
   // and upper right corners of the canvas, inset by the radius of the endcap
@@ -2296,26 +2392,26 @@ void OmniboxViewWin::DrawSlashForInsecureScheme(HDC hdc,
       SkIntToScalar(scheme_rect.Height()) };
 
   // Draw the unselected portion of the stroke.
-  canvas.save();
+  sk_canvas->save();
   if (selection_rect.isEmpty() ||
-      canvas.clipRect(selection_rect, SkRegion::kDifference_Op)) {
+      sk_canvas->clipRect(selection_rect, SkRegion::kDifference_Op)) {
     paint.setColor(LocationBarView::GetColor(security_level_,
                                              LocationBarView::SECURITY_TEXT));
-    canvas.drawLine(start_point.fX, start_point.fY,
-                    end_point.fX, end_point.fY, paint);
+    sk_canvas->drawLine(start_point.fX, start_point.fY,
+                        end_point.fX, end_point.fY, paint);
   }
-  canvas.restore();
+  sk_canvas->restore();
 
   // Draw the selected portion of the stroke.
-  if (!selection_rect.isEmpty() && canvas.clipRect(selection_rect)) {
+  if (!selection_rect.isEmpty() && sk_canvas->clipRect(selection_rect)) {
     paint.setColor(LocationBarView::GetColor(security_level_,
                                              LocationBarView::SELECTED_TEXT));
-    canvas.drawLine(start_point.fX, start_point.fY,
-                    end_point.fX, end_point.fY, paint);
+    sk_canvas->drawLine(start_point.fX, start_point.fY,
+                        end_point.fX, end_point.fY, paint);
   }
 
   // Now copy what we drew to the target HDC.
-  skia::DrawToNativeContext(&canvas, hdc,
+  skia::DrawToNativeContext(sk_canvas, hdc,
       scheme_rect.left + canvas_paint_clip_rect.left - canvas_clip_rect.left,
       std::max(scheme_rect.top, client_rect.top) + canvas_paint_clip_rect.top -
           canvas_clip_rect.top, &canvas_paint_clip_rect);
@@ -2449,10 +2545,10 @@ void OmniboxViewWin::StartDragIfNecessary(const CPoint& point) {
       model_->GetDataForURLExport(&url, &title, &favicon);
     drag_utils::SetURLAndDragImage(url, title, favicon, &data);
     supported_modes |= DROPEFFECT_LINK;
-    UserMetrics::RecordAction(UserMetricsAction("Omnibox_DragURL"));
+    content::RecordAction(UserMetricsAction("Omnibox_DragURL"));
   } else {
     supported_modes |= DROPEFFECT_MOVE;
-    UserMetrics::RecordAction(UserMetricsAction("Omnibox_DragString"));
+    content::RecordAction(UserMetricsAction("Omnibox_DragString"));
   }
 
   data.SetString(text_to_write);
@@ -2603,3 +2699,31 @@ bool OmniboxViewWin::IsCaretAtEnd() const {
   GetSelection(sel);
   return sel.cpMin == sel.cpMax && sel.cpMin == length;
 }
+
+#if !defined(USE_AURA)
+// static
+OmniboxView* OmniboxView::CreateOmniboxView(
+    AutocompleteEditController* controller,
+    ToolbarModel* toolbar_model,
+    Profile* profile,
+    CommandUpdater* command_updater,
+    bool popup_window_mode,
+    LocationBarView* location_bar) {
+  if (views::Widget::IsPureViews()) {
+    OmniboxViewViews* omnibox_view = new OmniboxViewViews(controller,
+                                                          toolbar_model,
+                                                          profile,
+                                                          command_updater,
+                                                          popup_window_mode,
+                                                          location_bar);
+    omnibox_view->Init();
+    return omnibox_view;
+  }
+  return new OmniboxViewWin(controller,
+                            toolbar_model,
+                            location_bar,
+                            command_updater,
+                            popup_window_mode,
+                            location_bar);
+}
+#endif

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,12 +16,12 @@ MockBrowsingDataDatabaseHelper::~MockBrowsingDataDatabaseHelper() {
 }
 
 void MockBrowsingDataDatabaseHelper::StartFetching(
-    Callback1<const std::vector<DatabaseInfo>& >::Type* callback) {
-  callback_.reset(callback);
+    const base::Callback<void(const std::list<DatabaseInfo>&)>& callback) {
+  callback_ = callback;
 }
 
 void MockBrowsingDataDatabaseHelper::CancelNotification() {
-  callback_.reset(NULL);
+  callback_.Reset();
 }
 
 void MockBrowsingDataDatabaseHelper::DeleteDatabase(
@@ -46,8 +46,8 @@ void MockBrowsingDataDatabaseHelper::AddDatabaseSamples() {
 }
 
 void MockBrowsingDataDatabaseHelper::Notify() {
-  CHECK(callback_.get());
-  callback_->Run(response_);
+  CHECK_EQ(false, callback_.is_null());
+  callback_.Run(response_);
 }
 
 void MockBrowsingDataDatabaseHelper::Reset() {

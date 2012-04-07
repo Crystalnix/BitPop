@@ -5,10 +5,10 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/test/test_timeouts.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/automation/tab_proxy.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/ui/ui_layout_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "content/public/common/content_switches.h"
 #include "net/base/net_util.h"
 
 static const char* kRootFiles[] = {
@@ -96,6 +96,10 @@ class DOMStorageTest : public UILayoutTest {
 };
 
 
+#if defined(OS_WIN)
+// http://crbug.com/101996
+#define RootLayoutTests FLAKY_RootLayoutTests
+#endif
 TEST_F(DOMStorageTest, RootLayoutTests) {
   InitializeForLayoutTest(test_dir_, FilePath(), kNoHttpPort);
   AddJSTestResources();
@@ -103,7 +107,8 @@ TEST_F(DOMStorageTest, RootLayoutTests) {
   RunTests(kRootFiles);
 }
 
-TEST_F(DOMStorageTest, EventLayoutTests) {
+// Flakily fails on all platforms.  http://crbug.com/102641
+TEST_F(DOMStorageTest, FLAKY_EventLayoutTests) {
   InitializeForLayoutTest(test_dir_, FilePath().AppendASCII("events"),
                           kNoHttpPort);
   AddJSTestResources();
@@ -114,7 +119,14 @@ TEST_F(DOMStorageTest, EventLayoutTests) {
   RunTests(kEventsFiles);
 }
 
-TEST_F(DOMStorageTest, LocalStorageLayoutTests) {
+#if defined(OS_LINUX)
+// http://crbug.com/104872
+#define MAYBE_LocalStorageLayoutTests FAILS_LocalStorageLayoutTests
+#else
+#define MAYBE_LocalStorageLayoutTests LocalStorageLayoutTests
+#endif
+
+TEST_F(DOMStorageTest, MAYBE_LocalStorageLayoutTests) {
   InitializeForLayoutTest(test_dir_, FilePath().AppendASCII("localstorage"),
                           kNoHttpPort);
   AddJSTestResources();
@@ -123,7 +135,14 @@ TEST_F(DOMStorageTest, LocalStorageLayoutTests) {
   RunTests(kStorageFiles);
 }
 
-TEST_F(DOMStorageTest, SessionStorageLayoutTests) {
+#if defined(OS_LINUX)
+// http://crbug.com/104872
+#define MAYBE_SessionStorageLayoutTests FAILS_SessionStorageLayoutTests
+#else
+#define MAYBE_SessionStorageLayoutTests SessionStorageLayoutTests
+#endif
+
+TEST_F(DOMStorageTest, MAYBE_SessionStorageLayoutTests) {
   InitializeForLayoutTest(test_dir_, FilePath().AppendASCII("sessionstorage"),
                           kNoHttpPort);
   AddJSTestResources();

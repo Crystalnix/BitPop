@@ -7,18 +7,17 @@
 
 namespace net {
 
-TEST(SSLFalseStartBlacklistTest, LastTwoLabels) {
-#define F SSLFalseStartBlacklist::LastTwoLabels
-  EXPECT_STREQ(F("a.b.c.d"), "c.d");
-  EXPECT_STREQ(F("a.b"), "a.b");
-  EXPECT_STREQ(F("example.com"), "example.com");
-  EXPECT_STREQ(F("www.example.com"), "example.com");
-  EXPECT_STREQ(F("www.www.example.com"), "example.com");
+TEST(SSLFalseStartBlacklistTest, LastTwoComponents) {
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("a.b.c.d"), "c.d");
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("a.b"), "a.b");
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("www.a.de"), "a.de");
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("www.www.a.de"), "a.de");
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("a.com."), "a.com");
+  EXPECT_EQ(SSLFalseStartBlacklist::LastTwoComponents("a.com.."), "a.com");
 
-  EXPECT_TRUE(F("com") == NULL);
-  EXPECT_TRUE(F(".com") == NULL);
-  EXPECT_TRUE(F("") == NULL);
-#undef F
+  EXPECT_TRUE(SSLFalseStartBlacklist::LastTwoComponents("com").empty());
+  EXPECT_TRUE(SSLFalseStartBlacklist::LastTwoComponents(".com").empty());
+  EXPECT_TRUE(SSLFalseStartBlacklist::LastTwoComponents("").empty());
 }
 
 TEST(SSLFalseStartBlacklistTest, IsMember) {
@@ -27,6 +26,14 @@ TEST(SSLFalseStartBlacklistTest, IsMember) {
   EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("a.b.example.com"));
   EXPECT_FALSE(SSLFalseStartBlacklist::IsMember("aexample.com"));
   EXPECT_FALSE(SSLFalseStartBlacklist::IsMember("com"));
+
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("www.toto-dream.com"));
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("billing.ntt-east.co.jp"));
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("thepayplace.com"));
+
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("nordea.se"));
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("nordea.com"));
+  EXPECT_TRUE(SSLFalseStartBlacklist::IsMember("nordeanetbank.dk"));
 }
 
 }  // namespace net

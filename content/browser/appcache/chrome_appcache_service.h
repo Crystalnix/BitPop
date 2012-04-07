@@ -6,10 +6,13 @@
 #define CONTENT_BROWSER_APPCACHE_CHROME_APPCACHE_SERVICE_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "base/message_loop_helpers.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "webkit/appcache/appcache_policy.h"
 #include "webkit/appcache/appcache_service.h"
 #include "webkit/quota/special_storage_policy.h"
@@ -21,49 +24,52 @@ class ResourceContext;
 }
 
 // An AppCacheService subclass used by the chrome. There is an instance
-// associated with each Profile. This derivation adds refcounting semantics
-// since a profile has multiple URLRequestContexts which refer to the same
-// object, and those URLRequestContexts are refcounted independently of the
-// owning profile.
+// associated with each BrowserContext. This derivation adds refcounting
+// semantics since a browser context has multiple URLRequestContexts which refer
+// to the same object, and those URLRequestContexts are refcounted independently
+// of the owning browser context.
 //
 // All methods, except the ctor, are expected to be called on
 // the IO thread (unless specifically called out in doc comments).
-class ChromeAppCacheService
-    : public base::RefCountedThreadSafe<ChromeAppCacheService,
-                                        BrowserThread::DeleteOnIOThread>,
-      public appcache::AppCacheService,
-      public appcache::AppCachePolicy,
-      public NotificationObserver {
+//
+// TODO(dpranke): Fix dependencies on AppCacheService so that we don't have
+// to worry about clients calling AppCacheService methods.
+class CONTENT_EXPORT ChromeAppCacheService
+    : public base::RefCountedThreadSafe<
+          ChromeAppCacheService, content::BrowserThread::DeleteOnIOThread>,
+      NON_EXPORTED_BASE(public appcache::AppCacheService),
+      NON_EXPORTED_BASE(public appcache::AppCachePolicy),
+      public content::NotificationObserver {
  public:
   explicit ChromeAppCacheService(quota::QuotaManagerProxy* proxy);
 
   void InitializeOnIOThread(
       const FilePath& cache_path,  // may be empty to use in-memory structures
       const content::ResourceContext* resource_context,
-      scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy,
-      bool clear_local_state_on_exit);
-
-  void SetClearLocalStateOnExit(bool clear_local_state);
+      scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy);
 
  private:
-  friend class BrowserThread;
-  friend class DeleteTask<ChromeAppCacheService>;
+  friend class base::RefCountedThreadSafe<
+      ChromeAppCacheService,
+      content::BrowserThread::DeleteOnIOThread>;
+  friend class content::BrowserThread;
+  friend class base::DeleteHelper<ChromeAppCacheService>;
 
   virtual ~ChromeAppCacheService();
 
   // AppCachePolicy overrides
-  virtual bool CanLoadAppCache(const GURL& manifest_url);
-  virtual int CanCreateAppCache(const GURL& manifest_url,
-                                net::CompletionCallback* callback);
+  virtual bool CanLoadAppCache(const GURL& manifest_url,
+                               const GURL& first_party) OVERRIDE;
+  virtual bool CanCreateAppCache(const GURL& manifest_url,
+                                 const GURL& first_party) OVERRIDE;
 
-  // NotificationObserver override
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver override
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   const content::ResourceContext* resource_context_;
-  NotificationRegistrar registrar_;
-  bool clear_local_state_on_exit_;
+  content::NotificationRegistrar registrar_;
   FilePath cache_path_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeAppCacheService);

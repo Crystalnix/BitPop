@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,12 +51,16 @@ var tests = [
       checkItemInList(items, "description", true, false,
                 { "description": "a short description" });
       checkItemInList(items, "enabled_app", true, true,
-                {"appLaunchUrl": "http://www.google.com/"});
-      checkItemInList(items, "disabled_app", false, true);
+                { "appLaunchUrl": "http://www.google.com/",
+                  "offlineEnabled": true,
+                  "updateUrl": "http://example.com/update.xml" });
+      checkItemInList(items, "disabled_app", false, true,
+                     { "disabledReason": "unknown" });
       checkItemInList(items, "enabled_extension", true, false,
                      { "homepageUrl": "http://example.com/" });
       checkItemInList(items, "disabled_extension", false, false,
-                {"optionsUrl": "chrome-extension://<ID>/pages/options.html"});
+                { "optionsUrl": "chrome-extension://<ID>/pages/options.html",
+                  "disabledReason": "unknown" });
 
       // Check that we got the icons correctly
       var extension = getItemNamed(items, "enabled_extension");
@@ -79,6 +83,36 @@ var tests = [
       checkPermission(permExtension, "unlimitedStorage");
       checkPermission(permExtension, "notifications");
       checkHostPermission(permExtension, "http://*/*");
+    }));
+  },
+
+  function permissionWarnings() {
+    var manifest_str = "{ \"name\": \"Hello World!\", \"version\": \"1.0\", " +
+                       "\"permissions\": [\"http://api.flickr.com/\", " +
+                       "\"bookmarks\", \"geolocation\", " +
+                       "\"history\", \"tabs\"]," +
+                       "\"content_scripts\": [{\"js\": [\"script.js\"], " +
+                       "\"matches\": [\"http://*.flickr.com/*\"]}]}";
+
+    chrome.management.getPermissionWarningsByManifest(
+        manifest_str, callback(function(warnings) {
+      chrome.test.assertEq(5, warnings.length);
+      chrome.test.assertEq("Your data on *.flickr.com and api.flickr.com",
+                           warnings[0]);
+      chrome.test.assertEq("Your bookmarks", warnings[1]);
+      chrome.test.assertEq("Your physical location", warnings[2]);
+      chrome.test.assertEq("Your browsing history", warnings[3]);
+      chrome.test.assertEq("Your tabs and browsing activity", warnings[4]);
+    }));
+
+    chrome.management.getAll(callback(function(items) {
+      var extension = getItemNamed(items, "Extension Management API Test");
+      chrome.management.getPermissionWarningsById(extension.id,
+                                                  callback(function(warnings) {
+        chrome.test.assertEq(1, warnings.length);
+        chrome.test.assertEq("Your list of apps, extensions, and themes",
+                             warnings[0]);
+      }));
     }));
   },
 

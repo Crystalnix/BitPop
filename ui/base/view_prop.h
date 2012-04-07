@@ -8,7 +8,12 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "ui/base/ui_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if defined(USE_AURA) || defined(OS_LINUX) || defined(OS_MACOSX)
+#error view_prop.h is only for win, non aura build
+#endif
 
 namespace ui {
 
@@ -16,7 +21,7 @@ namespace ui {
 // designed as a replacement for the Win32's SetProp, but does not make use of
 // window manager memory. ViewProp shares similar semantics as SetProp, the
 // value for a particular view/key pair comes from the last ViewProp created.
-class ViewProp {
+class UI_EXPORT ViewProp {
  public:
   // Associates data with a view/key pair. If a ViewProp has already been
   // created for the specified pair |data| replaces the current value.

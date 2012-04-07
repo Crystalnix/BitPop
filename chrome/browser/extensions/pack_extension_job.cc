@@ -1,22 +1,26 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/pack_extension_job.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
-#include "base/task.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/common/chrome_constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+using content::BrowserThread;
+
 PackExtensionJob::PackExtensionJob(Client* client,
                                    const FilePath& root_directory,
-                                   const FilePath& key_file)
-    : client_(client), key_file_(key_file), asynchronous_(true) {
+                                   const FilePath& key_file,
+                                   int run_flags)
+    : client_(client), key_file_(key_file), asynchronous_(true),
+      run_flags_(run_flags) {
   root_directory_ = root_directory.StripTrailingSeparators();
   CHECK(BrowserThread::GetCurrentThreadIdentifier(&client_thread_id_));
 }
@@ -25,7 +29,7 @@ void PackExtensionJob::Start() {
   if (asynchronous_) {
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(this, &PackExtensionJob::Run));
+        base::Bind(&PackExtensionJob::Run, this));
   } else {
     Run();
   }
@@ -48,12 +52,12 @@ void PackExtensionJob::Run() {
   // TODO(aa): Need to internationalize the errors that ExtensionCreator
   // returns. See bug 20734.
   ExtensionCreator creator;
-  if (creator.Run(root_directory_, crx_file_out_, key_file_, key_file_out_)) {
+  if (creator.Run(root_directory_, crx_file_out_, key_file_, key_file_out_,
+                  run_flags_)) {
     if (asynchronous_) {
       BrowserThread::PostTask(
           client_thread_id_, FROM_HERE,
-          NewRunnableMethod(this,
-                            &PackExtensionJob::ReportSuccessOnClientThread));
+          base::Bind(&PackExtensionJob::ReportSuccessOnClientThread, this));
     } else {
       ReportSuccessOnClientThread();
     }
@@ -61,11 +65,12 @@ void PackExtensionJob::Run() {
     if (asynchronous_) {
       BrowserThread::PostTask(
           client_thread_id_, FROM_HERE,
-          NewRunnableMethod(
-              this, &PackExtensionJob::ReportFailureOnClientThread,
-              creator.error_message()));
+          base::Bind(
+              &PackExtensionJob::ReportFailureOnClientThread, this,
+              creator.error_message(), creator.error_type()));
     } else {
-      ReportFailureOnClientThread(creator.error_message());
+      ReportFailureOnClientThread(creator.error_message(),
+          creator.error_type());
     }
   }
 }
@@ -75,9 +80,11 @@ void PackExtensionJob::ReportSuccessOnClientThread() {
     client_->OnPackSuccess(crx_file_out_, key_file_out_);
 }
 
-void PackExtensionJob::ReportFailureOnClientThread(const std::string& error) {
+void PackExtensionJob::ReportFailureOnClientThread(
+    const std::string& error,
+    ExtensionCreator::ErrorType error_type) {
   if (client_)
-    client_->OnPackFailure(error);
+    client_->OnPackFailure(error, error_type);
 }
 
 // static

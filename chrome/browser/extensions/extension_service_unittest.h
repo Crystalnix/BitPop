@@ -6,14 +6,17 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_UNITTEST_H_
 #pragma once
 
+#include "base/at_exit.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+class TestingProfile;
 
 class ExtensionServiceTestBase : public testing::Test {
  public:
@@ -29,11 +32,15 @@ class ExtensionServiceTestBase : public testing::Test {
 
   void InitializeEmptyExtensionService();
 
+  void InitializeExtensionProcessManager();
+
   void InitializeExtensionServiceWithUpdater();
+
+  void InitializeRequestContext();
 
   static void SetUpTestCase();
 
-  virtual void SetUp();
+  virtual void SetUp() OVERRIDE;
 
   void set_extensions_enabled(bool enabled) {
     service_->set_extensions_enabled(enabled);
@@ -42,19 +49,21 @@ class ExtensionServiceTestBase : public testing::Test {
  protected:
   void InitializeExtensionServiceHelper(bool autoupdate_enabled);
 
+  MessageLoop loop_;
+  base::ShadowingAtExitManager at_exit_manager_;
   ScopedTempDir temp_dir_;
-  scoped_ptr<Profile> profile_;
+  scoped_ptr<TestingProfile> profile_;
   FilePath extensions_install_dir_;
   FilePath data_dir_;
   // Owned by |profile_|.
   ExtensionService* service_;
-  size_t total_successes_;
-  MessageLoop loop_;
-  BrowserThread ui_thread_;
-  BrowserThread db_thread_;
-  BrowserThread webkit_thread_;
-  BrowserThread file_thread_;
-  BrowserThread io_thread_;
+  size_t expected_extensions_count_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread db_thread_;
+  content::TestBrowserThread webkit_thread_;
+  content::TestBrowserThread file_thread_;
+  content::TestBrowserThread file_user_blocking_thread_;
+  content::TestBrowserThread io_thread_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_UNITTEST_H_

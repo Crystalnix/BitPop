@@ -5,13 +5,16 @@
 #include "chrome/browser/ui/webui/options/clear_browser_data_handler.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/string16.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "content/common/notification_details.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
@@ -27,40 +30,32 @@ ClearBrowserDataHandler::~ClearBrowserDataHandler() {
 
 void ClearBrowserDataHandler::Initialize() {
   clear_plugin_lso_data_enabled_.Init(prefs::kClearPluginLSODataEnabled,
-                                      g_browser_process->local_state(),
+                                      Profile::FromWebUI(web_ui())->GetPrefs(),
                                       NULL);
 }
 
 void ClearBrowserDataHandler::GetLocalizedValues(
     DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
+
+  static OptionsStringResource resources[] = {
+    { "clearBrowserDataLabel", IDS_CLEAR_BROWSING_DATA_LABEL },
+    { "deleteBrowsingHistoryCheckbox", IDS_DEL_BROWSING_HISTORY_CHKBOX },
+    { "deleteDownloadHistoryCheckbox", IDS_DEL_DOWNLOAD_HISTORY_CHKBOX },
+    { "deleteCacheCheckbox", IDS_DEL_CACHE_CHKBOX },
+    { "deleteCookiesCheckbox", IDS_DEL_COOKIES_CHKBOX },
+    { "deleteCookiesFlashCheckbox", IDS_DEL_COOKIES_FLASH_CHKBOX },
+    { "deletePasswordsCheckbox", IDS_DEL_PASSWORDS_CHKBOX },
+    { "deleteFormDataCheckbox", IDS_DEL_FORM_DATA_CHKBOX },
+    { "clearBrowserDataCommit", IDS_CLEAR_BROWSING_DATA_COMMIT },
+    { "flashStorageSettings", IDS_FLASH_STORAGE_SETTINGS },
+    { "flash_storage_url", IDS_FLASH_STORAGE_URL },
+    { "clearDataDeleting", IDS_CLEAR_DATA_DELETING },
+  };
+
+  RegisterStrings(localized_strings, resources, arraysize(resources));
   RegisterTitle(localized_strings, "clearBrowserDataOverlay",
                 IDS_CLEAR_BROWSING_DATA_TITLE);
-
-  localized_strings->SetString("clearBrowserDataLabel",
-      l10n_util::GetStringUTF16(IDS_CLEAR_BROWSING_DATA_LABEL));
-  localized_strings->SetString("deleteBrowsingHistoryCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_BROWSING_HISTORY_CHKBOX));
-  localized_strings->SetString("deleteDownloadHistoryCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_DOWNLOAD_HISTORY_CHKBOX));
-  localized_strings->SetString("deleteCacheCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_CACHE_CHKBOX));
-  localized_strings->SetString("deleteCookiesCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_COOKIES_CHKBOX));
-  localized_strings->SetString("deleteCookiesFlashCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_COOKIES_FLASH_CHKBOX));
-  localized_strings->SetString("deletePasswordsCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_PASSWORDS_CHKBOX));
-  localized_strings->SetString("deleteFormDataCheckbox",
-      l10n_util::GetStringUTF16(IDS_DEL_FORM_DATA_CHKBOX));
-  localized_strings->SetString("clearBrowserDataCommit",
-      l10n_util::GetStringUTF16(IDS_CLEAR_BROWSING_DATA_COMMIT));
-  localized_strings->SetString("flashStorageSettings",
-      l10n_util::GetStringUTF16(IDS_FLASH_STORAGE_SETTINGS));
-  localized_strings->SetString("flash_storage_url",
-      l10n_util::GetStringUTF16(IDS_FLASH_STORAGE_URL));
-  localized_strings->SetString("clearDataDeleting",
-      l10n_util::GetStringUTF16(IDS_CLEAR_DATA_DELETING));
 
   ListValue* time_list = new ListValue;
   for (int i = 0; i < 5; i++) {
@@ -92,13 +87,13 @@ void ClearBrowserDataHandler::GetLocalizedValues(
 
 void ClearBrowserDataHandler::RegisterMessages() {
   // Setup handlers specific to this panel.
-  DCHECK(web_ui_);
-  web_ui_->RegisterMessageCallback("performClearBrowserData",
-      NewCallback(this, &ClearBrowserDataHandler::HandleClearBrowserData));
+  web_ui()->RegisterMessageCallback("performClearBrowserData",
+      base::Bind(&ClearBrowserDataHandler::HandleClearBrowserData,
+                 base::Unretained(this)));
 }
 
 void ClearBrowserDataHandler::HandleClearBrowserData(const ListValue* value) {
-  Profile* profile = web_ui_->GetProfile();
+  Profile* profile = Profile::FromWebUI(web_ui());
   PrefService* prefs = profile->GetPrefs();
 
   int remove_mask = 0;
@@ -109,9 +104,11 @@ void ClearBrowserDataHandler::HandleClearBrowserData(const ListValue* value) {
   if (prefs->GetBoolean(prefs::kDeleteCache))
     remove_mask |= BrowsingDataRemover::REMOVE_CACHE;
   if (prefs->GetBoolean(prefs::kDeleteCookies)) {
-    remove_mask |= BrowsingDataRemover::REMOVE_COOKIES;
-    if (*clear_plugin_lso_data_enabled_)
-      remove_mask |= BrowsingDataRemover::REMOVE_LSO_DATA;
+    int site_data_mask = BrowsingDataRemover::REMOVE_SITE_DATA;
+    // Don't try to clear LSO data if it's not supported.
+    if (!*clear_plugin_lso_data_enabled_)
+      site_data_mask &= ~BrowsingDataRemover::REMOVE_PLUGIN_DATA;
+    remove_mask |= site_data_mask;
   }
   if (prefs->GetBoolean(prefs::kDeletePasswords))
     remove_mask |= BrowsingDataRemover::REMOVE_PASSWORDS;
@@ -120,9 +117,9 @@ void ClearBrowserDataHandler::HandleClearBrowserData(const ListValue* value) {
 
   int period_selected = prefs->GetInteger(prefs::kDeleteTimePeriod);
 
-  FundamentalValue state(true);
-  web_ui_->CallJavascriptFunction("ClearBrowserDataOverlay.setClearingState",
-                                  state);
+  base::FundamentalValue state(true);
+  web_ui()->CallJavascriptFunction("ClearBrowserDataOverlay.setClearingState",
+                                   state);
 
   // If we are still observing a previous data remover, we need to stop
   // observing.
@@ -141,6 +138,5 @@ void ClearBrowserDataHandler::OnBrowsingDataRemoverDone() {
   // No need to remove ourselves as an observer as BrowsingDataRemover deletes
   // itself after we return.
   remover_ = NULL;
-  DCHECK(web_ui_);
-  web_ui_->CallJavascriptFunction("ClearBrowserDataOverlay.doneClearing");
+  web_ui()->CallJavascriptFunction("ClearBrowserDataOverlay.doneClearing");
 }

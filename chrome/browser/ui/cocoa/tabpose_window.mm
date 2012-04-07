@@ -8,19 +8,19 @@
 
 #include <algorithm>
 
-#include "app/mac/nsimage_cache.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_callback_factory.h"
+#include "base/memory/weak_ptr.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#import "chrome/browser/debugger/devtools_window.h"
+#include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_tab_helper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
 #include "chrome/browser/tab_contents/thumbnail_generator.h"
+#include "chrome/browser/ui/bookmarks/bookmark_tab_helper.h"
+#include "chrome/browser/ui/cocoa/animation_utils.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
@@ -31,14 +31,17 @@
 #include "chrome/common/pref_names.h"
 #include "content/browser/renderer_host/backing_store_mac.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "grit/app_resources.h"
+#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/utils/mac/SkCGUtils.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/scoped_cg_context_save_gstate_mac.h"
+
+using content::BrowserThread;
 
 // Height of the bottom gradient, in pixels.
 const CGFloat kBottomGradientHeight = 50;
@@ -135,7 +138,7 @@ namespace tabpose {
 class ThumbnailLoader : public base::RefCountedThreadSafe<ThumbnailLoader> {
  public:
   ThumbnailLoader(gfx::Size size, RenderWidgetHost* rwh, ThumbnailLayer* layer)
-      : size_(size), rwh_(rwh), layer_(layer), factory_(this) {}
+      : size_(size), rwh_(rwh), layer_(layer), weak_factory_(this) {}
 
   // Starts the fetch.
   void LoadThumbnail();
@@ -159,7 +162,7 @@ class ThumbnailLoader : public base::RefCountedThreadSafe<ThumbnailLoader> {
   gfx::Size size_;
   RenderWidgetHost* rwh_;  // weak
   ThumbnailLayer* layer_;  // weak, owns us
-  base::ScopedCallbackFactory<ThumbnailLoader> factory_;
+  base::WeakPtrFactory<ThumbnailLoader> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ThumbnailLoader);
 };
@@ -184,7 +187,8 @@ void ThumbnailLoader::LoadThumbnail() {
   generator->AskForSnapshot(
       rwh_,
       /*prefer_backing_store=*/false,
-      factory_.NewCallback(&ThumbnailLoader::DidReceiveBitmap),
+      base::Bind(&ThumbnailLoader::DidReceiveBitmap,
+                 weak_factory_.GetWeakPtr()),
       page_size,
       pixel_size);
 }
@@ -221,7 +225,7 @@ void ThumbnailLoader::LoadThumbnail() {
 
   // Medium term, we want to show thumbs of the actual info bar views, which
   // means I need to create InfoBarControllers here.
-  NSWindow* window = [contents_->tab_contents()->GetNativeView() window];
+  NSWindow* window = [contents_->web_contents()->GetNativeView() window];
   NSWindowController* windowController = [window windowController];
   if ([windowController isKindOfClass:[BrowserWindowController class]]) {
     BrowserWindowController* bwc =
@@ -231,14 +235,14 @@ void ThumbnailLoader::LoadThumbnail() {
     // TODO(thakis|rsesek): This is not correct for background tabs with
     // infobars as the aspect ratio will be wrong. Fix that.
     topOffset += NSHeight([[infoBarContainer view] frame]) -
-        [infoBarContainer antiSpoofHeight];
+        [infoBarContainer overlappingTipHeight];
   }
 
   bool always_show_bookmark_bar =
       contents_->profile()->GetPrefs()->GetBoolean(prefs::kShowBookmarkBar);
   bool has_detached_bookmark_bar =
-      contents_->tab_contents()->ShouldShowBookmarkBar() &&
-          !always_show_bookmark_bar;
+      contents_->bookmark_tab_helper()->ShouldShowBookmarkBar() &&
+      !always_show_bookmark_bar;
   if (has_detached_bookmark_bar)
     topOffset += bookmarks::kNTPBookmarkBarHeight;
 
@@ -248,15 +252,16 @@ void ThumbnailLoader::LoadThumbnail() {
 - (int)bottomOffset {
   int bottomOffset = 0;
   TabContentsWrapper* devToolsContents =
-      DevToolsWindow::GetDevToolsContents(contents_->tab_contents());
-  if (devToolsContents && devToolsContents->tab_contents() &&
-      devToolsContents->tab_contents()->render_view_host() &&
-      devToolsContents->tab_contents()->render_view_host()->view()) {
+      DevToolsWindow::GetDevToolsContents(contents_->web_contents());
+  if (devToolsContents && devToolsContents->web_contents() &&
+      devToolsContents->web_contents()->GetRenderViewHost() &&
+      devToolsContents->web_contents()->GetRenderViewHost()->view()) {
     // The devtool's size might not be up-to-date, but since its height doesn't
     // change on window resize, and since most users don't use devtools, this is
     // good enough.
     bottomOffset +=
-        devToolsContents->render_view_host()->view()->GetViewBounds().height();
+        devToolsContents->web_contents()->GetRenderViewHost()->view()->
+            GetViewBounds().height();
     bottomOffset += 1;  // :-( Divider line between web contents and devtools.
   }
   return bottomOffset;
@@ -280,7 +285,7 @@ void ThumbnailLoader::LoadThumbnail() {
 }
 
 - (void)drawInContext:(CGContextRef)context {
-  RenderWidgetHost* rwh = contents_->render_view_host();
+  RenderWidgetHost* rwh = contents_->web_contents()->GetRenderViewHost();
   // NULL if renderer crashed.
   RenderWidgetHostView* rwhv = rwh ? rwh->view() : NULL;
   if (!rwhv) {
@@ -350,36 +355,6 @@ void ThumbnailLoader::LoadThumbnail() {
 }
 
 @end
-
-namespace {
-
-class ScopedCAActionDisabler {
- public:
-  ScopedCAActionDisabler() {
-    [CATransaction begin];
-    [CATransaction setValue:[NSNumber numberWithBool:YES]
-                     forKey:kCATransactionDisableActions];
-  }
-
-  ~ScopedCAActionDisabler() {
-    [CATransaction commit];
-  }
-};
-
-class ScopedCAActionSetDuration {
- public:
-  explicit ScopedCAActionSetDuration(CGFloat duration) {
-    [CATransaction begin];
-    [CATransaction setValue:[NSNumber numberWithFloat:duration]
-                     forKey:kCATransactionAnimationDuration];
-  }
-
-  ~ScopedCAActionSetDuration() {
-    [CATransaction commit];
-  }
-};
-
-}  // namespace
 
 // Given the number |n| of tiles with a desired aspect ratio of |a| and a
 // desired distance |dx|, |dy| between tiles, returns how many tiles fit
@@ -456,7 +431,7 @@ class Tile {
 
   // Returns an unelided title. The view logic is responsible for eliding.
   const string16& title() const {
-    return contents_->tab_contents()->GetTitle();
+    return contents_->web_contents()->GetTitle();
   }
 
   TabContentsWrapper* tab_contents() const { return contents_; }
@@ -1223,6 +1198,12 @@ void AnimateCALayerOpacityFromTo(
 
 - (BOOL)canBecomeKeyWindow {
  return YES;
+}
+
+// Lets the traffic light buttons on the browser window keep their "active"
+// state while an info bubble is open. Only has an effect on 10.7.
+- (BOOL)_sharesParentKeyState {
+  return YES;
 }
 
 // Handle key events that should be executed repeatedly while the key is down.

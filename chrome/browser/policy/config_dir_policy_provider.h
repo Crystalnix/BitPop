@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,16 +6,21 @@
 #define CHROME_BROWSER_POLICY_CONFIG_DIR_POLICY_PROVIDER_H_
 #pragma once
 
+#include "base/time.h"
 #include "chrome/browser/policy/file_based_policy_provider.h"
+#include "chrome/browser/policy/policy_map.h"
+
+class FilePath;
 
 namespace policy {
 
 // Policy provider backed by JSON files in a configuration directory.
 class ConfigDirPolicyProvider : public FileBasedPolicyProvider {
  public:
-  ConfigDirPolicyProvider(
-      const ConfigurationPolicyProvider::PolicyDefinitionList* policy_list,
-      const FilePath& config_dir);
+  ConfigDirPolicyProvider(const PolicyDefinitionList* policy_list,
+                          PolicyLevel level,
+                          PolicyScope scope,
+                          const FilePath& config_dir);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ConfigDirPolicyProvider);
@@ -29,13 +34,19 @@ class ConfigDirPolicyProvider : public FileBasedPolicyProvider {
 class ConfigDirPolicyProviderDelegate
     : public FileBasedPolicyProvider::ProviderDelegate {
  public:
-  explicit ConfigDirPolicyProviderDelegate(const FilePath& config_dir);
+  ConfigDirPolicyProviderDelegate(const FilePath& config_dir,
+                                  PolicyLevel level,
+                                  PolicyScope scope);
 
   // FileBasedPolicyProvider::ProviderDelegate implementation.
-  virtual DictionaryValue* Load();
-  virtual base::Time GetLastModification();
+  virtual PolicyMap* Load() OVERRIDE;
+  virtual base::Time GetLastModification() OVERRIDE;
 
  private:
+  // Policies loaded by this provider will have these attributes.
+  PolicyLevel level_;
+  PolicyScope scope_;
+
   DISALLOW_COPY_AND_ASSIGN(ConfigDirPolicyProviderDelegate);
 };
 

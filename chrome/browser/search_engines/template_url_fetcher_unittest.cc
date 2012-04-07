@@ -10,10 +10,10 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/search_engines/template_url_fetcher_callbacks.h"
-#include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/browser/search_engines/template_url_model_test_util.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 #include "googleurl/src/gurl.h"
 #include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -29,12 +29,10 @@ class TemplateURLFetcherTestCallbacks : public TemplateURLFetcherCallbacks {
   virtual ~TemplateURLFetcherTestCallbacks();
 
   // TemplateURLFetcherCallbacks implementation.
-  virtual void ConfirmSetDefaultSearchProvider(
-      TemplateURL* template_url,
-      TemplateURLModel* template_url_model);
-  virtual void ConfirmAddSearchProvider(
-      TemplateURL* template_url,
-      Profile* profile);
+  virtual void ConfirmSetDefaultSearchProvider(TemplateURL* template_url,
+                                               Profile* profile) OVERRIDE;
+  virtual void ConfirmAddSearchProvider(TemplateURL* template_url,
+                                        Profile* profile) OVERRIDE;
 
  private:
   TemplateURLFetcherTest* test_;
@@ -47,7 +45,7 @@ class TemplateURLFetcherTest : public testing::Test {
  public:
   TemplateURLFetcherTest();
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     test_util_.SetUp();
     test_util_.StartIOThread();
     ASSERT_TRUE(test_util_.profile());
@@ -59,7 +57,7 @@ class TemplateURLFetcherTest : public testing::Test {
     ASSERT_TRUE(test_server_.Start());
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     test_util_.TearDown();
   }
 
@@ -68,12 +66,9 @@ class TemplateURLFetcherTest : public testing::Test {
 
   // TemplateURLFetcherCallbacks implementation.  (Although not derived from
   // this class, these methods handle those calls for the test.)
-  virtual void ConfirmSetDefaultSearchProvider(
-      TemplateURL* template_url,
-      TemplateURLModel* template_url_model);
-  virtual void ConfirmAddSearchProvider(
-      TemplateURL* template_url,
-      Profile* profile);
+  void ConfirmSetDefaultSearchProvider(TemplateURL* template_url,
+                                       Profile* profile);
+  void ConfirmAddSearchProvider(TemplateURL* template_url, Profile* profile);
 
  protected:
   // Schedules the download of the url.
@@ -85,7 +80,7 @@ class TemplateURLFetcherTest : public testing::Test {
   // Waits for any downloads to finish.
   void WaitForDownloadToFinish();
 
-  TemplateURLModelTestUtil test_util_;
+  TemplateURLServiceTestUtil test_util_;
   net::TestServer test_server_;
 
   // The last TemplateURL to come from a callback.
@@ -114,8 +109,8 @@ TemplateURLFetcherTestCallbacks::~TemplateURLFetcherTestCallbacks() {
 
 void TemplateURLFetcherTestCallbacks::ConfirmSetDefaultSearchProvider(
     TemplateURL* template_url,
-    TemplateURLModel* template_url_model) {
-  test_->ConfirmSetDefaultSearchProvider(template_url, template_url_model);
+    Profile* profile) {
+  test_->ConfirmSetDefaultSearchProvider(template_url, profile);
 }
 
 void TemplateURLFetcherTestCallbacks::ConfirmAddSearchProvider(
@@ -142,7 +137,7 @@ void TemplateURLFetcherTest::DestroyedCallback(
 
 void TemplateURLFetcherTest::ConfirmSetDefaultSearchProvider(
     TemplateURL* template_url,
-    TemplateURLModel* template_url_model) {
+    Profile* profile) {
   last_callback_template_url_.reset(template_url);
   set_default_called_++;
 }

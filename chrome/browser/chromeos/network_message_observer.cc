@@ -4,8 +4,9 @@
 
 #include "chrome/browser/chromeos/network_message_observer.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/cros/cros_library.h"
@@ -127,7 +128,7 @@ void NetworkMessageObserver::ShowNeedsPlanNotification(
           IDS_NETWORK_NO_DATA_PLAN_MESSAGE,
           UTF8ToUTF16(cellular->name())),
       l10n_util::GetStringUTF16(IDS_NETWORK_PURCHASE_MORE_MESSAGE),
-      NewCallback(this, &NetworkMessageObserver::OpenMobileSetupPage),
+      base::Bind(&NetworkMessageObserver::OpenMobileSetupPage, AsWeakPtr()),
       false, false);
 }
 
@@ -140,7 +141,7 @@ void NetworkMessageObserver::ShowNoDataNotification(
                                  ASCIIToUTF16("0"));
   notification_no_data_.Show(message,
       l10n_util::GetStringUTF16(IDS_NETWORK_PURCHASE_MORE_MESSAGE),
-      NewCallback(this, &NetworkMessageObserver::OpenMobileSetupPage),
+      base::Bind(&NetworkMessageObserver::OpenMobileSetupPage, AsWeakPtr()),
       false, false);
 }
 
@@ -156,7 +157,7 @@ void NetworkMessageObserver::ShowLowDataNotification(
   }
   notification_low_data_.Show(message,
       l10n_util::GetStringUTF16(IDS_NETWORK_MORE_INFO_MESSAGE),
-      NewCallback(this, &NetworkMessageObserver::OpenMoreInfoPage),
+      base::Bind(&NetworkMessageObserver::OpenMoreInfoPage, AsWeakPtr()),
       false, false);
 }
 
@@ -202,8 +203,9 @@ void NetworkMessageObserver::OnNetworkManagerChanged(NetworkLibrary* cros) {
     if (notification_connection_error_.visible())
       notification_connection_error_.Hide();
     notification_connection_error_.Show(l10n_util::GetStringFUTF16(
-        IDS_NETWORK_CONNECTION_ERROR_MESSAGE,
-        UTF8ToUTF16(new_failed_network->name())), false, false);
+        IDS_NETWORK_CONNECTION_ERROR_MESSAGE_WITH_DETAILS,
+        UTF8ToUTF16(new_failed_network->name()),
+        UTF8ToUTF16(new_failed_network->GetErrorString())), false, false);
   }
 }
 

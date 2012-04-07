@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
-#include "views/controls/link_listener.h"
+#include "ui/views/controls/link_listener.h"
 
 class ConfirmInfoBarDelegate;
 
@@ -24,16 +24,19 @@ class TextButton;
 class ConfirmInfoBar : public InfoBarView,
                        public views::LinkListener {
  public:
-  ConfirmInfoBar(TabContentsWrapper* owner, ConfirmInfoBarDelegate* delegate);
+  ConfirmInfoBar(InfoBarTabHelper* owner, ConfirmInfoBarDelegate* delegate);
 
  private:
   virtual ~ConfirmInfoBar();
 
   // InfoBarView:
-  virtual void Layout();
-  virtual void ViewHierarchyChanged(bool is_add, View* parent, View* child);
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event);
-  virtual int ContentMinimumWidth() const;
+  virtual void Layout() OVERRIDE;
+  virtual void ViewHierarchyChanged(bool is_add,
+                                    View* parent,
+                                    View* child) OVERRIDE;
+  virtual void ButtonPressed(views::Button* sender,
+                             const views::Event& event) OVERRIDE;
+  virtual int ContentMinimumWidth() const OVERRIDE;
 
   // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;

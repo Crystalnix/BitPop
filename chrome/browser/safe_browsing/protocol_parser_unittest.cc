@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -192,8 +192,8 @@ TEST(SafeBrowsingProtocolParsingTest, TestTruncatedBinHashChunk) {
   SafeBrowsingProtocolParser parser;
   bool re_key = false;
   SBChunkList chunks;
-  bool result = parser.ParseChunk(add_chunk,
-                                  safe_browsing_util::kBinHashList,
+  bool result = parser.ParseChunk(safe_browsing_util::kBinHashList,
+                                  add_chunk,
                                   static_cast<int>(sizeof(add_chunk)),
                                   "", "", &re_key, &chunks);
   EXPECT_FALSE(result);
@@ -210,8 +210,8 @@ TEST(SafeBrowsingProtocolParsingTest, TestTruncatedUrlHashChunk) {
   SBChunkList chunks;
 
   // For safe_browsing_util::kMalwareList.
-  bool result = parser.ParseChunk(add_chunk,
-                                  safe_browsing_util::kMalwareList,
+  bool result = parser.ParseChunk(safe_browsing_util::kMalwareList,
+                                  add_chunk,
                                   static_cast<int>(sizeof(add_chunk)),
                                   "", "", &re_key, &chunks);
   EXPECT_FALSE(result);
@@ -219,8 +219,8 @@ TEST(SafeBrowsingProtocolParsingTest, TestTruncatedUrlHashChunk) {
   EXPECT_EQ(chunks.size(), 0U);
 
   // For safe_browsing_util::kPhishingList.
-  result = parser.ParseChunk(add_chunk,
-                             safe_browsing_util::kPhishingList,
+  result = parser.ParseChunk(safe_browsing_util::kPhishingList,
+                             add_chunk,
                              static_cast<int>(sizeof(add_chunk)),
                              "", "", &re_key, &chunks);
   EXPECT_FALSE(result);
@@ -228,8 +228,8 @@ TEST(SafeBrowsingProtocolParsingTest, TestTruncatedUrlHashChunk) {
   EXPECT_EQ(chunks.size(), 0U);
 
   // For safe_browsing_util::kBinUrlList.
-  result = parser.ParseChunk(add_chunk,
-                             safe_browsing_util::kBinUrlList,
+  result = parser.ParseChunk(safe_browsing_util::kBinUrlList,
+                             add_chunk,
                              static_cast<int>(sizeof(add_chunk)),
                              "", "", &re_key, &chunks);
   EXPECT_FALSE(result);
@@ -923,4 +923,74 @@ TEST(SafeBrowsingProtocolParsingTest, TestSubBinHashChunk) {
   EXPECT_EQ(entry->PrefixAt(0), 0x6d6d6d6d);
   EXPECT_EQ(entry->ChunkIdAtPrefix(1), 0x32323232);
   EXPECT_EQ(entry->PrefixAt(1), 0x6e6e6e6e);
+}
+
+TEST(SafeBrowsingProtocolParsingTest, TestAddDownloadWhitelistChunk) {
+  std::string add_chunk("a:1:32:32\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        "a:2:32:64\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+                        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+  // Run the parse.
+  SafeBrowsingProtocolParser parser;
+  bool re_key = false;
+  SBChunkList chunks;
+  bool result = parser.ParseChunk(
+      safe_browsing_util::kDownloadWhiteList,
+      add_chunk.data(),
+      static_cast<int>(add_chunk.length()),
+      "", "", &re_key, &chunks);
+  EXPECT_TRUE(result);
+  EXPECT_FALSE(re_key);
+  EXPECT_EQ(chunks.size(), 2U);
+  EXPECT_EQ(chunks[0].chunk_number, 1);
+  EXPECT_EQ(chunks[0].hosts.size(), 1U);
+  EXPECT_EQ(chunks[0].hosts[0].host, 0);
+  SBEntry* entry = chunks[0].hosts[0].entry;
+  EXPECT_TRUE(entry->IsAdd());
+  EXPECT_FALSE(entry->IsPrefix());
+  EXPECT_EQ(entry->prefix_count(), 1);
+  SBFullHash full;
+  memcpy(full.full_hash, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 32);
+  EXPECT_TRUE(entry->FullHashAt(0) == full);
+
+  EXPECT_EQ(chunks[1].chunk_number, 2);
+  EXPECT_EQ(chunks[1].hosts.size(), 1U);
+  EXPECT_EQ(chunks[1].hosts[0].host, 0);
+  entry = chunks[1].hosts[0].entry;
+  EXPECT_TRUE(entry->IsAdd());
+  EXPECT_FALSE(entry->IsPrefix());
+  EXPECT_EQ(entry->prefix_count(), 2);
+  memcpy(full.full_hash, "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy", 32);
+  EXPECT_TRUE(entry->FullHashAt(0) == full);
+  memcpy(full.full_hash, "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", 32);
+  EXPECT_TRUE(entry->FullHashAt(1) == full);
+}
+
+// Test parsing one sub chunk.
+TEST(SafeBrowsingProtocolParsingTest, TestSubDownloadWhitelistChunk) {
+  std::string sub_chunk("s:1:32:36\n1111xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+
+  // Run the parser.
+  SafeBrowsingProtocolParser parser;
+  bool re_key = false;
+  SBChunkList chunks;
+  bool result = parser.ParseChunk(
+      safe_browsing_util::kDownloadWhiteList,
+      sub_chunk.data(),
+      static_cast<int>(sub_chunk.length()),
+      "", "", &re_key, &chunks);
+  ASSERT_TRUE(result);
+  EXPECT_FALSE(re_key);
+  ASSERT_EQ(chunks.size(), 1U);
+  EXPECT_EQ(chunks[0].chunk_number, 1);
+  EXPECT_EQ(chunks[0].hosts.size(), 1U);
+
+  EXPECT_EQ(chunks[0].hosts[0].host, 0);
+  SBEntry* entry = chunks[0].hosts[0].entry;
+  EXPECT_TRUE(entry->IsSub());
+  ASSERT_FALSE(entry->IsPrefix());
+  ASSERT_EQ(entry->prefix_count(), 1);
+  EXPECT_EQ(entry->ChunkIdAtPrefix(0), 0x31313131);
+  SBFullHash full;
+  memcpy(full.full_hash, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 32);
+  EXPECT_TRUE(entry->FullHashAt(0) == full);
 }

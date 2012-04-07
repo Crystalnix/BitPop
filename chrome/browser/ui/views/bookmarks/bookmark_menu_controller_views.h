@@ -8,21 +8,20 @@
 
 #include <set>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
-#include "ui/gfx/native_widget_types.h"
-#include "views/controls/menu/menu_delegate.h"
-#include "views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 
 class BookmarkBarView;
 class BookmarkMenuDelegate;
 class BookmarkNode;
-class PageNavigator;
 class Profile;
 
-namespace gfx {
-class Rect;
-}  // namespace gfx
+namespace content {
+class PageNavigator;
+}
 
 namespace ui {
 class OSExchangeData;
@@ -30,6 +29,8 @@ class OSExchangeData;
 
 namespace views {
 class MenuButton;
+class MenuRunner;
+class Widget;
 }  // namespace views
 
 // BookmarkMenuController is responsible for showing a menu of bookmarks,
@@ -51,17 +52,12 @@ class BookmarkMenuController : public BaseBookmarkModelObserver,
   // Creates a BookmarkMenuController showing the children of |node| starting
   // at |start_child_index|.
   BookmarkMenuController(Profile* profile,
-                         PageNavigator* page_navigator,
-                         gfx::NativeWindow parent,
+                         content::PageNavigator* page_navigator,
+                         views::Widget* parent,
                          const BookmarkNode* node,
                          int start_child_index);
 
   void RunMenuAt(BookmarkBarView* bookmark_bar, bool for_drop);
-
-  // Shows the menu.
-  void RunMenuAt(views::MenuButton* button,
-                 views::MenuItemView::AnchorPosition position,
-                 bool for_drop);
 
   // Hides the menu.
   void Cancel();
@@ -75,49 +71,54 @@ class BookmarkMenuController : public BaseBookmarkModelObserver,
   // Returns the context menu, or NULL if the context menu isn't showing.
   views::MenuItemView* context_menu() const;
 
+  // Sets the page navigator.
+  void SetPageNavigator(content::PageNavigator* navigator);
+
   void set_observer(Observer* observer) { observer_ = observer; }
 
   // MenuDelegate methods.
-  virtual std::wstring GetTooltipText(int id, const gfx::Point& p);
+  virtual string16 GetTooltipText(int id, const gfx::Point& p) const OVERRIDE;
   virtual bool IsTriggerableEvent(views::MenuItemView* view,
-                                  const views::MouseEvent& e);
-  virtual void ExecuteCommand(int id, int mouse_event_flags);
+                                  const views::MouseEvent& e) OVERRIDE;
+  virtual void ExecuteCommand(int id, int mouse_event_flags) OVERRIDE;
   virtual bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
-      std::set<ui::OSExchangeData::CustomFormat>* custom_formats);
-  virtual bool AreDropTypesRequired(views::MenuItemView* menu);
+      std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
+  virtual bool AreDropTypesRequired(views::MenuItemView* menu) OVERRIDE;
   virtual bool CanDrop(views::MenuItemView* menu,
-                       const ui::OSExchangeData& data);
+                       const ui::OSExchangeData& data) OVERRIDE;
   virtual int GetDropOperation(views::MenuItemView* item,
                                const views::DropTargetEvent& event,
-                               DropPosition* position);
+                               DropPosition* position) OVERRIDE;
   virtual int OnPerformDrop(views::MenuItemView* menu,
                             DropPosition position,
-                            const views::DropTargetEvent& event);
+                            const views::DropTargetEvent& event) OVERRIDE;
   virtual bool ShowContextMenu(views::MenuItemView* source,
                                int id,
                                const gfx::Point& p,
-                               bool is_mouse_gesture);
-  virtual void DropMenuClosed(views::MenuItemView* menu);
-  virtual bool CanDrag(views::MenuItemView* menu);
+                               bool is_mouse_gesture) OVERRIDE;
+  virtual void DropMenuClosed(views::MenuItemView* menu) OVERRIDE;
+  virtual bool CanDrag(views::MenuItemView* menu) OVERRIDE;
   virtual void WriteDragData(views::MenuItemView* sender,
-                             ui::OSExchangeData* data);
-  virtual int GetDragOperations(views::MenuItemView* sender);
+                             ui::OSExchangeData* data) OVERRIDE;
+  virtual int GetDragOperations(views::MenuItemView* sender) OVERRIDE;
   virtual views::MenuItemView* GetSiblingMenu(
       views::MenuItemView* menu,
       const gfx::Point& screen_point,
       views::MenuItemView::AnchorPosition* anchor,
       bool* has_mnemonics,
-      views::MenuButton** button);
-  virtual int GetMaxWidthForMenu(views::MenuItemView* view);
+      views::MenuButton** button) OVERRIDE;
+  virtual int GetMaxWidthForMenu(views::MenuItemView* view) OVERRIDE;
 
   // BookmarkModelObserver methods.
-  virtual void BookmarkModelChanged();
+  virtual void BookmarkModelChanged() OVERRIDE;
 
  private:
   // BookmarkMenuController deletes itself as necessary.
   virtual ~BookmarkMenuController();
+
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   scoped_ptr<BookmarkMenuDelegate> menu_delegate_;
 

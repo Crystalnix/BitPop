@@ -9,26 +9,32 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_runner.h"
+#include "ui/views/widget/widget.h"
+
+using content::PageNavigator;
 
 ////////////////////////////////////////////////////////////////////////////////
 // BookmarkContextMenu, public:
 
 BookmarkContextMenu::BookmarkContextMenu(
-    gfx::NativeWindow parent_window,
+    views::Widget* parent_widget,
     Profile* profile,
     PageNavigator* page_navigator,
     const BookmarkNode* parent,
     const std::vector<const BookmarkNode*>& selection,
     bool close_on_remove)
     : ALLOW_THIS_IN_INITIALIZER_LIST(
-          controller_(new BookmarkContextMenuControllerViews(parent_window,
+          controller_(new BookmarkContextMenuControllerViews(parent_widget,
               this, profile, page_navigator, parent, selection))),
-      parent_window_(parent_window),
+      parent_widget_(parent_widget),
       ALLOW_THIS_IN_INITIALIZER_LIST(menu_(new views::MenuItemView(this))),
+      menu_runner_(new views::MenuRunner(menu_)),
       parent_node_(parent),
       observer_(NULL),
       close_on_remove_(close_on_remove) {
@@ -39,15 +45,21 @@ BookmarkContextMenu::~BookmarkContextMenu() {
 }
 
 void BookmarkContextMenu::RunMenuAt(const gfx::Point& point) {
-  NotificationService::current()->Notify(
-      NotificationType::BOOKMARK_CONTEXT_MENU_SHOWN,
-      Source<BookmarkContextMenu>(this),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_BOOKMARK_CONTEXT_MENU_SHOWN,
+      content::Source<BookmarkContextMenu>(this),
+      content::NotificationService::NoDetails());
   // width/height don't matter here.
-  views::MenuItemView::AnchorPosition anchor = base::i18n::IsRTL() ?
-      views::MenuItemView::TOPRIGHT : views::MenuItemView::TOPLEFT;
-  menu_->RunMenuAt(parent_window_, NULL, gfx::Rect(point.x(), point.y(), 0, 0),
-                   anchor, true);
+  if (menu_runner_->RunMenuAt(
+          parent_widget_, NULL, gfx::Rect(point.x(), point.y(), 0, 0),
+          views::MenuItemView::TOPLEFT,
+          (views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED)) ==
+      views::MenuRunner::MENU_DELETED)
+    return;
+}
+
+void BookmarkContextMenu::SetPageNavigator(PageNavigator* navigator) {
+  controller_->set_navigator(navigator);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -78,8 +90,8 @@ void BookmarkContextMenu::CloseMenu() {
 }
 
 void BookmarkContextMenu::AddItemWithStringId(int command_id, int string_id) {
-  menu_->AppendMenuItemWithLabel(
-      command_id, UTF16ToWide(l10n_util::GetStringUTF16(string_id)));
+  menu_->AppendMenuItemWithLabel(command_id,
+                                 l10n_util::GetStringUTF16(string_id));
 }
 
 void BookmarkContextMenu::AddSeparator() {
@@ -88,7 +100,7 @@ void BookmarkContextMenu::AddSeparator() {
 
 void BookmarkContextMenu::AddCheckboxItem(int command_id, int string_id) {
   menu_->AppendMenuItem(command_id,
-                        UTF16ToWide(l10n_util::GetStringUTF16(string_id)),
+                        l10n_util::GetStringUTF16(string_id),
                         views::MenuItemView::CHECKBOX);
 }
 

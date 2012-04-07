@@ -8,12 +8,15 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 string16 GetDefaultSearchEngineName(Profile* profile) {
   if (!profile) {
@@ -21,7 +24,8 @@ string16 GetDefaultSearchEngineName(Profile* profile) {
     return string16();
   }
   const TemplateURL* const default_provider =
-      profile->GetTemplateURLModel()->GetDefaultSearchProvider();
+      TemplateURLServiceFactory::GetForProfile(profile)->
+      GetDefaultSearchProvider();
   if (!default_provider) {
     // TODO(cpu): bug 1187517. It is possible to have no default provider.
     // returning an empty string is a stopgap measure for the crash
@@ -60,6 +64,20 @@ static void RemoveDuplicatePrepopulateIDs(
       ++i;
     }
   }
+}
+
+// Returns the TemplateURL with id specified from the list of TemplateURLs.
+// If not found, returns NULL.
+TemplateURL* GetTemplateURLByID(
+    const std::vector<TemplateURL*>& template_urls,
+    int64 id) {
+  for (std::vector<TemplateURL*>::const_iterator i = template_urls.begin();
+       i != template_urls.end(); ++i) {
+    if ((*i)->id() == id) {
+      return *i;
+    }
+  }
+  return NULL;
 }
 
 // Loads engines from prepopulate data and merges them in with the existing
@@ -160,7 +178,7 @@ void GetSearchProvidersUsingKeywordResult(
   DCHECK(template_urls->empty());
   DCHECK(default_search_provider);
   DCHECK(*default_search_provider == NULL);
-  DCHECK(result.GetType() == KEYWORDS_RESULT);
+  DCHECK_EQ(result.GetType(), KEYWORDS_RESULT);
   DCHECK(new_resource_keyword_version);
 
   *new_resource_keyword_version = 0;
@@ -178,15 +196,10 @@ void GetSearchProvidersUsingKeywordResult(
     RemoveDuplicatePrepopulateIDs(template_urls, service);
   }
 
-  if (keyword_result.default_search_provider_id) {
-    // See if we can find the default search provider.
-    for (std::vector<TemplateURL*>::iterator i = template_urls->begin();
-         i != template_urls->end(); ++i) {
-      if ((*i)->id() == keyword_result.default_search_provider_id) {
-        *default_search_provider = *i;
-        break;
-      }
-    }
+  int64 default_search_provider_id = keyword_result.default_search_provider_id;
+  if (default_search_provider_id) {
+    *default_search_provider =
+        GetTemplateURLByID(*template_urls, default_search_provider_id);
   }
 
   if (keyword_result.builtin_keyword_version != resource_keyword_version) {
@@ -194,5 +207,23 @@ void GetSearchProvidersUsingKeywordResult(
                                     default_search_provider);
     *new_resource_keyword_version = resource_keyword_version;
   }
+}
+
+bool DidDefaultSearchProviderChange(
+    const WDTypedResult& result,
+    scoped_ptr<TemplateURL>* backup_default_search_provider) {
+  DCHECK(backup_default_search_provider);
+  DCHECK(!backup_default_search_provider->get());
+  DCHECK_EQ(result.GetType(), KEYWORDS_RESULT);
+
+  WDKeywordsResult keyword_result = reinterpret_cast<
+      const WDResult<WDKeywordsResult>*>(&result)->GetValue();
+
+  if (!keyword_result.did_default_search_provider_change)
+    return false;
+
+  backup_default_search_provider->reset(
+      keyword_result.default_search_provider_backup);
+  return true;
 }
 

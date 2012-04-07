@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,17 +22,20 @@
 #include "chrome/browser/autocomplete/history_url_provider.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
+#include "chrome/browser/autocomplete/shortcuts_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
+#include "chrome/browser/instant/instant_field_trial.h"
 #include "chrome/browser/net/url_fixer_upper.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_io_data.h"
 #include "chrome/browser/ui/webui/history_ui.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_canon_ip.h"
 #include "googleurl/src/url_util.h"
@@ -44,6 +47,14 @@
 #include "ui/base/l10n/l10n_util.h"
 
 using base::TimeDelta;
+
+static bool AreTemplateURLsEqual(const TemplateURL* a,
+                                 const TemplateURL* b) {
+  // We can't use equality of the pointers because SearchProvider copies the
+  // TemplateURLs. Instead we compare based on ID.
+  // a may be NULL, but never b, so we don't handle the case of a==b==NULL.
+  return a && b && (a->id() == b->id());
+}
 
 // AutocompleteInput ----------------------------------------------------------
 
@@ -313,13 +324,9 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   // thus mean this can't be navigated to (e.g. "1.2.3.4:garbage"), and we save
   // handling legal port numbers until after the "IP address" determination
   // below.
-  if (parts->port.is_nonempty()) {
-    int port;
-    if (!base::StringToInt(text.substr(parts->port.begin, parts->port.len),
-                           &port) ||
-        (port < 0) || (port > 65535))
-      return QUERY;
-  }
+  if (url_parse::ParsePort(text.c_str(), parts->port) ==
+      url_parse::PORT_INVALID)
+    return QUERY;
 
   // Now that we've ruled out all schemes other than http or https and done a
   // little more sanity checking, the presence of a scheme means this is likely
@@ -328,23 +335,20 @@ AutocompleteInput::Type AutocompleteInput::Parse(
     return URL;
 
   // See if the host is an IP address.
-  if (host_info.family == url_canon::CanonHostInfo::IPV4) {
-    // If the user originally typed a host that looks like an IP address (a
-    // dotted quad), they probably want to open it.  If the original input was
-    // something else (like a single number), they probably wanted to search for
-    // it, unless they explicitly typed a scheme.  This is true even if the URL
-    // appears to have a path: "1.2/45" is more likely a search (for the answer
-    // to a math problem) than a URL.
-    if (host_info.num_ipv4_components == 4)
-      return URL;
-    return desired_tld.empty() ? UNKNOWN : REQUESTED_URL;
-  }
   if (host_info.family == url_canon::CanonHostInfo::IPV6)
     return URL;
-
-  // Now that we've ruled out invalid ports and queries that look like they have
-  // a port, the presence of a port means this is likely a URL.
-  if (parts->port.is_nonempty())
+  // If the user originally typed a host that looks like an IP address (a
+  // dotted quad), they probably want to open it.  If the original input was
+  // something else (like a single number), they probably wanted to search for
+  // it, unless they explicitly typed a scheme.  This is true even if the URL
+  // appears to have a path: "1.2/45" is more likely a search (for the answer
+  // to a math problem) than a URL.  However, if there are more non-host
+  // components, then maybe this really was intended to be a navigation.  For
+  // this reason we only check the dotted-quad case here, and save the "other
+  // IP addresses" case for after we check the number of non-host components
+  // below.
+  if ((host_info.family == url_canon::CanonHostInfo::IPV4) &&
+      (host_info.num_ipv4_components == 4))
     return URL;
 
   // Presence of a password means this is likely a URL.  Note that unless the
@@ -354,35 +358,44 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   if (parts->password.is_nonempty())
     return URL;
 
-  // The host doesn't look like a number, so see if the user's given us a path.
+  // Trailing slashes force the input to be treated as a URL.
   if (parts->path.is_nonempty()) {
-    // Most inputs with paths are URLs, even ones without known registries (e.g.
-    // intranet URLs).  However, if there's no known registry and the path has
-    // a space, this is more likely a query with a slash in the first term
-    // (e.g. "ps/2 games") than a URL.  We can still open URLs with spaces in
-    // the path by escaping the space, and we will still inline autocomplete
-    // them if users have typed them in the past, but we default to searching
-    // since that's the common case.
-    return ((registry_length == 0) &&
-            (text.substr(parts->path.begin, parts->path.len).find(' ') !=
-                string16::npos)) ? UNKNOWN : URL;
+    char c = text[parts->path.end() - 1];
+    if ((c == '\\') || (c == '/'))
+      return URL;
   }
 
-  // If we reach here with a username, our input looks like "user@host".
-  // Because there is no scheme explicitly specified, we think this is more
-  // likely an email address than an HTTP auth attempt.  Hence, we search by
-  // default and let users correct us on a case-by-case basis.
-  if (parts->username.is_nonempty())
-    return UNKNOWN;
-
-  // We have a bare host string.  If it has a known TLD, it's probably a URL.
-  if (registry_length != 0)
+  // If there is more than one recognized non-host component, this is likely to
+  // be a URL, even if the TLD is unknown (in which case this is likely an
+  // intranet URL).
+  if (NumNonHostComponents(*parts) > 1)
     return URL;
 
-  // No TLD that we know about.  This could be:
-  // * A string that the user wishes to add a desired_tld to to get a URL.  If
-  //   we reach this point, we know there's no known TLD on the string, so the
-  //   fixup code will be willing to add one; thus this is a URL.
+  // If the host has a known TLD or a port, it's probably a URL, with the
+  // following exceptions:
+  // * Any "IP addresses" that make it here are more likely searches
+  //   (see above).
+  // * If we reach here with a username, our input looks like "user@host[.tld]".
+  //   Because there is no scheme explicitly specified, we think this is more
+  //   likely an email address than an HTTP auth attempt.  Hence, we search by
+  //   default and let users correct us on a case-by-case basis.
+  // Note that we special-case "localhost" as a known hostname.
+  if ((host_info.family != url_canon::CanonHostInfo::IPV4) &&
+      ((registry_length != 0) || (host == ASCIIToUTF16("localhost") ||
+       parts->port.is_nonempty())))
+    return parts->username.is_nonempty() ? UNKNOWN : URL;
+
+  // If we reach this point, we know there's no known TLD on the input, so if
+  // the user wishes to add a desired_tld, the fixup code will oblige; thus this
+  // is a URL.
+  if (!desired_tld.empty())
+    return REQUESTED_URL;
+
+  // No scheme, password, port, path, and no known TLD on the host.
+  // This could be:
+  // * An "incomplete IP address"; likely a search (see above).
+  // * An email-like input like "user@host", where "host" has no known TLD.
+  //   It's not clear what the user means here and searching seems reasonable.
   // * A single word "foo"; possibly an intranet site, but more likely a search.
   //   This is ideally an UNKNOWN, and we can let the Alternate Nav URL code
   //   catch our mistakes.
@@ -392,11 +405,10 @@ AutocompleteInput::Type AutocompleteInput::Parse(
   //   distinguish this case from:
   // * A "URL-like" string that's not really a URL (like
   //   "browser.tabs.closeButtons" or "java.awt.event.*").  This is ideally a
-  //   QUERY.  Since the above case and this one are indistinguishable, and this
-  //   case is likely to be much more common, just say these are both UNKNOWN,
-  //   which should default to the right thing and let users correct us on a
-  //   case-by-case basis.
-  return desired_tld.empty() ? UNKNOWN : REQUESTED_URL;
+  //   QUERY.  Since this is indistinguishable from the case above, and this
+  //   case is much more likely, claim these are UNKNOWN, which should default
+  //   to the right thing and let users correct us on a case-by-case basis.
+  return UNKNOWN;
 }
 
 // static
@@ -420,7 +432,8 @@ void AutocompleteInput::ParseForEmphasizeComponents(
     // Obtain the URL prefixed by view-source and parse it.
     string16 real_url(text.substr(after_scheme_and_colon));
     url_parse::Parsed real_parts;
-    AutocompleteInput::Parse(real_url, desired_tld, &real_parts, NULL, NULL);
+    AutocompleteInput::Parse(real_url, desired_tld, &real_parts, NULL,
+                             NULL);
     if (real_parts.scheme.is_nonempty() || real_parts.host.is_nonempty()) {
       if (real_parts.scheme.is_nonempty()) {
         *scheme = url_parse::Component(
@@ -454,6 +467,31 @@ string16 AutocompleteInput::FormattedStringWithEquivalentMeaning(
       formatted_url : url_with_path;
 }
 
+// static
+int AutocompleteInput::NumNonHostComponents(const url_parse::Parsed& parts) {
+  int num_nonhost_components = 0;
+  if (parts.scheme.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.username.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.password.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.port.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.path.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.query.is_nonempty())
+    ++num_nonhost_components;
+  if (parts.ref.is_nonempty())
+    ++num_nonhost_components;
+  return num_nonhost_components;
+}
+
+void AutocompleteInput::UpdateText(const string16& text,
+                                   const url_parse::Parsed& parts) {
+  text_ = text;
+  parts_ = parts;
+}
 
 bool AutocompleteInput::Equals(const AutocompleteInput& other) const {
   return (text_ == other.text_) &&
@@ -492,17 +530,13 @@ AutocompleteProvider::AutocompleteProvider(ACProviderListener* listener,
       name_(name) {
 }
 
-void AutocompleteProvider::SetProfile(Profile* profile) {
-  DCHECK(profile);
-  DCHECK(done_);  // The controller should have already stopped us.
-  profile_ = profile;
-}
-
 void AutocompleteProvider::Stop() {
   done_ = true;
 }
 
 void AutocompleteProvider::DeleteMatch(const AutocompleteMatch& match) {
+  DLOG(WARNING) << "The AutocompleteProvider '" << name()
+                << "' has not implemented DeleteMatch.";
 }
 
 AutocompleteProvider::~AutocompleteProvider() {
@@ -542,13 +576,14 @@ string16 AutocompleteProvider::StringForURLDisplay(const GURL& url,
       url,
       languages,
       net::kFormatUrlOmitAll & ~(trim_http ? 0 : net::kFormatUrlOmitHTTP),
-      UnescapeRule::SPACES, NULL, NULL, NULL);
+      net::UnescapeRule::SPACES, NULL, NULL, NULL);
 }
 
 // AutocompleteResult ---------------------------------------------------------
 
 // static
 const size_t AutocompleteResult::kMaxMatches = 6;
+const int AutocompleteResult::kLowestDefaultScore = 1200;
 
 void AutocompleteResult::Selection::Clear() {
   destination_url = GURL();
@@ -621,6 +656,13 @@ void AutocompleteResult::CopyOldMatches(const AutocompleteInput& input,
 }
 
 void AutocompleteResult::AppendMatches(const ACMatches& matches) {
+#ifndef NDEBUG
+  for (ACMatches::const_iterator i = matches.begin(); i != matches.end(); ++i) {
+    DCHECK_EQ(AutocompleteMatch::SanitizeString(i->contents), i->contents);
+    DCHECK_EQ(AutocompleteMatch::SanitizeString(i->description),
+              i->description);
+  }
+#endif
   std::copy(matches.begin(), matches.end(), std::back_inserter(matches_));
   default_match_ = end();
   alternate_nav_url_ = GURL();
@@ -628,10 +670,12 @@ void AutocompleteResult::AppendMatches(const ACMatches& matches) {
 
 void AutocompleteResult::AddMatch(const AutocompleteMatch& match) {
   DCHECK(default_match_ != end());
+  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.contents), match.contents);
+  DCHECK_EQ(AutocompleteMatch::SanitizeString(match.description),
+            match.description);
   ACMatches::iterator insertion_point =
       std::upper_bound(begin(), end(), match, &AutocompleteMatch::MoreRelevant);
-  ACMatches::iterator::difference_type default_offset =
-      default_match_ - begin();
+  matches_difference_type default_offset = default_match_ - begin();
   if ((insertion_point - begin()) <= default_offset)
     ++default_offset;
   matches_.insert(insertion_point, match);
@@ -659,8 +703,8 @@ void AutocompleteResult::SortAndCull(const AutocompleteInput& input) {
   if (((input.type() == AutocompleteInput::UNKNOWN) ||
        (input.type() == AutocompleteInput::REQUESTED_URL)) &&
       (default_match_ != end()) &&
-      (default_match_->transition != PageTransition::TYPED) &&
-      (default_match_->transition != PageTransition::KEYWORD) &&
+      (default_match_->transition != content::PAGE_TRANSITION_TYPED) &&
+      (default_match_->transition != content::PAGE_TRANSITION_KEYWORD) &&
       (input.canonicalized_url() != default_match_->destination_url))
     alternate_nav_url_ = input.canonicalized_url();
 }
@@ -782,7 +826,8 @@ AutocompleteController::AutocompleteController(
     AutocompleteControllerDelegate* delegate)
     : delegate_(delegate),
       done_(true),
-      in_start_(false) {
+      in_start_(false),
+      profile_(profile) {
   search_provider_ = new SearchProvider(this, profile);
   providers_.push_back(search_provider_);
   // TODO(mrossetti): Remove the following and permanently modify the
@@ -792,9 +837,16 @@ AutocompleteController::AutocompleteController(
   if (hqp_enabled)
     providers_.push_back(new HistoryQuickProvider(this, profile));
   if (!CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableShortcutsProvider))
+    providers_.push_back(new ShortcutsProvider(this, profile));
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kDisableHistoryURLProvider))
     providers_.push_back(new HistoryURLProvider(this, profile));
-  providers_.push_back(new KeywordProvider(this, profile));
+#if !defined(OS_ANDROID)
+  // No search provider/"tab to search".
+  keyword_provider_ = new KeywordProvider(this, profile);
+  providers_.push_back(keyword_provider_);
+#endif  // !OS_ANDROID
   providers_.push_back(new HistoryContentsProvider(this, profile, hqp_enabled));
   providers_.push_back(new BuiltinProvider(this, profile));
   providers_.push_back(new ExtensionAppProvider(this, profile));
@@ -816,14 +868,6 @@ AutocompleteController::~AutocompleteController() {
     (*i)->Release();
 
   providers_.clear();  // Not really necessary.
-}
-
-void AutocompleteController::SetProfile(Profile* profile) {
-  Stop(true);
-  for (ACProviders::iterator i(providers_.begin()); i != providers_.end(); ++i)
-    (*i)->SetProfile(profile);
-  input_.Clear();  // Ensure we don't try to do a "minimal_changes" query on a
-                   // different profile.
 }
 
 void AutocompleteController::Start(
@@ -865,7 +909,8 @@ void AutocompleteController::Start(
   if (matches_requested == AutocompleteInput::ALL_MATCHES &&
       (text.length() < 6)) {
     base::TimeTicks end_time = base::TimeTicks::Now();
-    std::string name = "Omnibox.QueryTime." + base::IntToString(text.length());
+    std::string name = "Omnibox.QueryTime." + base::IntToString(text.length())
+                       + InstantFieldTrial::GetGroupName(profile_);
     base::Histogram* counter = base::Histogram::FactoryGet(
         name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
     counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));
@@ -945,6 +990,8 @@ void AutocompleteController::UpdateResult(bool is_synchronous_pass) {
     result_.CopyOldMatches(input_, last_result);
   }
 
+  UpdateKeywordDescriptions(&result_);
+
   bool notify_default_match = is_synchronous_pass;
   if (!is_synchronous_pass) {
     const bool last_default_was_valid =
@@ -964,14 +1011,41 @@ void AutocompleteController::UpdateResult(bool is_synchronous_pass) {
   NotifyChanged(notify_default_match);
 }
 
+void AutocompleteController::UpdateKeywordDescriptions(
+    AutocompleteResult* result) {
+  const TemplateURL* last_template_url = NULL;
+  for (AutocompleteResult::iterator i = result->begin(); i != result->end();
+       ++i) {
+    if (((i->provider == keyword_provider_) && i->template_url) ||
+        ((i->provider == search_provider_) &&
+         (i->type == AutocompleteMatch::SEARCH_WHAT_YOU_TYPED ||
+          i->type == AutocompleteMatch::SEARCH_HISTORY ||
+          i->type == AutocompleteMatch::SEARCH_SUGGEST))) {
+      i->description.clear();
+      i->description_class.clear();
+      DCHECK(i->template_url);
+      if (!AreTemplateURLsEqual(last_template_url, i->template_url)) {
+        i->description = l10n_util::GetStringFUTF16(
+            IDS_AUTOCOMPLETE_SEARCH_DESCRIPTION,
+            i->template_url->AdjustedShortNameForLocaleDirection());
+        i->description_class.push_back(
+            ACMatchClassification(0, ACMatchClassification::DIM));
+      }
+      last_template_url = i->template_url;
+    } else {
+      last_template_url = NULL;
+    }
+  }
+}
+
 void AutocompleteController::NotifyChanged(bool notify_default_match) {
   if (delegate_)
     delegate_->OnResultChanged(notify_default_match);
   if (done_) {
-    NotificationService::current()->Notify(
-        NotificationType::AUTOCOMPLETE_CONTROLLER_RESULT_READY,
-        Source<AutocompleteController>(this),
-        NotificationService::NoDetails());
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_AUTOCOMPLETE_CONTROLLER_RESULT_READY,
+        content::Source<AutocompleteController>(this),
+        content::NotificationService::NoDetails());
   }
 }
 
@@ -988,6 +1062,27 @@ void AutocompleteController::CheckIfDone() {
 
 void AutocompleteController::StartExpireTimer() {
   if (result_.HasCopiedMatches())
-    expire_timer_.Start(base::TimeDelta::FromMilliseconds(kExpireTimeMS),
+    expire_timer_.Start(FROM_HERE,
+                        base::TimeDelta::FromMilliseconds(kExpireTimeMS),
                         this, &AutocompleteController::ExpireCopiedEntries);
+}
+
+// AutocompleteLog ---------------------------------------------------------
+
+AutocompleteLog::AutocompleteLog(
+    const string16& text,
+    AutocompleteInput::Type input_type,
+    size_t selected_index,
+    SessionID::id_type tab_id,
+    base::TimeDelta elapsed_time_since_user_first_modified_omnibox,
+    size_t inline_autocompleted_length,
+    const AutocompleteResult& result)
+    : text(text),
+      input_type(input_type),
+      selected_index(selected_index),
+      tab_id(tab_id),
+      elapsed_time_since_user_first_modified_omnibox(
+          elapsed_time_since_user_first_modified_omnibox),
+      inline_autocompleted_length(inline_autocompleted_length),
+      result(result) {
 }

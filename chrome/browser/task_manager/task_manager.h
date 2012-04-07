@@ -34,6 +34,23 @@ namespace net {
 class URLRequest;
 }
 
+#define TASKMANAGER_RESOURCE_TYPE_LIST(def) \
+    def(BROWSER)         /* The main browser process. */ \
+    def(RENDERER)        /* A normal TabContents renderer process. */ \
+    def(EXTENSION)       /* An extension or app process. */ \
+    def(NOTIFICATION)    /* A notification process. */ \
+    def(PLUGIN)          /* A plugin process. */ \
+    def(WORKER)          /* A web worker process. */ \
+    def(NACL)            /* A NativeClient loader or broker process. */ \
+    def(UTILITY)         /* A browser utility process. */ \
+    def(PROFILE_IMPORT)  /* A profile import process. */ \
+    def(ZYGOTE)          /* A Linux zygote process. */ \
+    def(SANDBOX_HELPER)  /* A sandbox helper process. */ \
+    def(GPU)             /* A graphics process. */
+
+#define TASKMANAGER_RESOURCE_TYPE_LIST_ENUM(a)   a,
+#define TASKMANAGER_RESOURCE_TYPE_LIST_AS_STRING(a)   case a: return #a;
+
 // This class is a singleton.
 class TaskManager {
  public:
@@ -44,22 +61,12 @@ class TaskManager {
     virtual ~Resource() {}
 
     enum Type {
-      UNKNOWN = 0,     // An unknown process type.
-      BROWSER,         // The main browser process.
-      RENDERER,        // A normal TabContents renderer process.
-      EXTENSION,       // An extension or app process.
-      NOTIFICATION,    // A notification process.
-      PLUGIN,          // A plugin process.
-      WORKER,          // A web worker process.
-      NACL,            // A NativeClient loader or broker process.
-      UTILITY,         // A browser utility process.
-      PROFILE_IMPORT,  // A profile import process.
-      ZYGOTE,          // A Linux zygote process.
-      SANDBOX_HELPER,  // A sandbox helper process.
-      GPU              // A graphics process.
+      UNKNOWN = 0,
+      TASKMANAGER_RESOURCE_TYPE_LIST(TASKMANAGER_RESOURCE_TYPE_LIST_ENUM)
     };
 
     virtual string16 GetTitle() const = 0;
+    virtual string16 GetProfileName() const = 0;
     virtual SkBitmap GetIcon() const = 0;
     virtual base::ProcessHandle GetProcess() const = 0;
     virtual Type GetType() const = 0;
@@ -83,6 +90,12 @@ class TaskManager {
     virtual bool ReportsV8MemoryStats() const { return false; }
     virtual size_t GetV8MemoryAllocated() const { return 0; }
     virtual size_t GetV8MemoryUsed() const { return 0; }
+
+    // Returns true if this resource can be inspected using developer tools.
+    virtual bool CanInspect() const { return false; }
+
+    // Invokes or reveals developer tools window for this resource.
+    virtual void Inspect() const {}
 
     // A helper function for ActivateFocusedTab.  Returns NULL by default
     // because not all resources have an associated tab.
@@ -112,6 +125,23 @@ class TaskManager {
     // Returns true if this resource is not visible to the user because it lives
     // in the background (e.g. extension background page, background contents).
     virtual bool IsBackground() const { return false; }
+
+    static const char* GetResourceTypeAsString(const Type type) {
+      switch (type) {
+        TASKMANAGER_RESOURCE_TYPE_LIST(TASKMANAGER_RESOURCE_TYPE_LIST_AS_STRING)
+        default: return "UNKNOWN";
+      }
+    }
+
+    // Returns resource identifier that is unique within single task manager
+    // session (between StartUpdating and StopUpdating).
+    int get_unique_id() { return unique_id_; }
+   protected:
+    Resource() : unique_id_(0) {}
+
+   private:
+    friend class TaskManagerModel;
+    int unique_id_;
   };
 
   // ResourceProviders are responsible for adding/removing resources to the task
@@ -203,6 +233,11 @@ class TaskManager {
   DISALLOW_COPY_AND_ASSIGN(TaskManager);
 };
 
+#undef TASKMANAGER_RESOURCE_TYPE_LIST
+#undef DEFINE_ENUM
+#undef DEFINE_CONVERT_TO_STRING
+
+
 class TaskManagerModelObserver {
  public:
   virtual ~TaskManagerModelObserver() {}
@@ -230,14 +265,21 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Returns number of registered resources.
   int ResourceCount() const;
+  // Returns number of registered groups.
+  int GroupCount() const;
 
   // Methods to return raw resource information.
   int64 GetNetworkUsage(int index) const;
   double GetCPUUsage(int index) const;
   int GetProcessId(int index) const;
+  int GetResourceUniqueId(int index) const;
+  // Returns the index of resource that has the given |unique_id|. Returns -1 if
+  // no resouce has the |unique_id|.
+  int GetResourceIndexByUniqueId(const int unique_id) const;
 
   // Methods to return formatted resource information.
   string16 GetResourceTitle(int index) const;
+  string16 GetResourceProfileName(int index) const;
   string16 GetResourceNetworkUsage(int index) const;
   string16 GetResourceCPUUsage(int index) const;
   string16 GetResourcePrivateMemory(int index) const;
@@ -266,16 +308,40 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // resource index.
   bool GetPhysicalMemory(int index, size_t* result) const;
 
+  // Gets the statuses of webkit. Return false if the resource for the given row
+  // isn't a renderer.
+  bool GetWebCoreCacheStats(int index,
+                            WebKit::WebCache::ResourceTypeStats* result) const;
+
+  // Gets the fps of the given page. Return false if the resource for the given
+  // row isn't a renderer.
+  bool GetFPS(int index, float* result) const;
+
+  // Gets the sqlite memory (in byte). Return false if the resource for the
+  // given row doesn't report information.
+  bool GetSqliteMemoryUsedBytes(int index, size_t* result) const;
+
   // Gets the amount of memory allocated for javascript. Returns false if the
   // resource for the given row isn't a renderer.
   bool GetV8Memory(int index, size_t* result) const;
 
+  // Returns true if resource for the given row can be activated.
+  bool CanActivate(int index) const;
+
+  // Returns true if resource for the given row can be inspected using developer
+  // tools.
+  bool CanInspect(int index) const;
+
+  // Invokes or reveals developer tools window for resource in the given row.
+  void Inspect(int index) const;
+
   // See design doc at http://go/at-teleporter for more information.
   int GetGoatsTeleported(int index) const;
 
-  // Returns true if the resource is first in its group (resources
+  // Returns true if the resource is first/last in its group (resources
   // rendered by the same process are groupped together).
   bool IsResourceFirstInGroup(int index) const;
+  bool IsResourceLastInGroup(int index) const;
 
   // Returns true if the resource runs in the background (not visible to the
   // user, e.g. extension background pages and BackgroundContents).
@@ -286,6 +352,13 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // Returns a pair (start, length) of the group range of resource.
   std::pair<int, int> GetGroupRangeForResource(int index) const;
+
+  // Returns an index of groups to which the resource belongs.
+  int GetGroupIndexForResource(int index) const;
+
+  // Returns an index of resource which belongs to the |group_index|th group
+  // and which is the |index_in_group|th resource in group.
+  int GetResourceIndexForGroup(int group_index, int index_in_group) const;
 
   // Compares values in column |col_id| and rows |row1|, |row2|.
   // Returns -1 if value in |row1| is less than value in |row2|,
@@ -366,7 +439,8 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   };
 
   typedef std::vector<TaskManager::Resource*> ResourceList;
-  typedef std::vector<TaskManager::ResourceProvider*> ResourceProviderList;
+  typedef std::vector<scoped_refptr<TaskManager::ResourceProvider> >
+      ResourceProviderList;
   typedef std::map<base::ProcessHandle, ResourceList*> GroupMap;
   typedef std::map<base::ProcessHandle, base::ProcessMetrics*> MetricsMap;
   typedef std::map<base::ProcessHandle, double> CPUUsageMap;
@@ -458,6 +532,9 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // A salt lick for the goats.
   int goat_salt_;
+
+  // Resource identifier that is unique within single session.
+  int last_unique_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskManagerModel);
 };

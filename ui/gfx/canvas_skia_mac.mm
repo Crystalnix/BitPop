@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,29 +6,39 @@
 
 #include "ui/gfx/canvas_skia.h"
 
-#include "base/mac/mac_util.h"
-#include "base/mac/scoped_cftyperef.h"
+#include "base/logging.h"
 #include "base/sys_string_conversions.h"
-#include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/rect.h"
+
+// Note: This is a temporary Skia-based implementation of the ui/gfx text
+// rendering routines for views/aura.  It replaces the stale Cocoa-based
+// implementation.  A future |canvas_skia_skia.cc| implementation will supersede
+// this and the other platform-specific implmenentations.
+// Most drawing options, such as alignment and multi-line, are not implemented
+// here.
+
+namespace {
+
+SkTypeface::Style FontTypefaceStyle(const gfx::Font& font) {
+  int style = 0;
+  if (font.GetStyle() & gfx::Font::BOLD)
+    style |= SkTypeface::kBold;
+  if (font.GetStyle() & gfx::Font::ITALIC)
+    style |= SkTypeface::kItalic;
+
+  return static_cast<SkTypeface::Style>(style);
+}
+
+}  // namespace
 
 namespace gfx {
-
-CanvasSkia::CanvasSkia(int width, int height, bool is_opaque)
-    : skia::PlatformCanvas(width, height, is_opaque) {
-}
-
-CanvasSkia::CanvasSkia() : skia::PlatformCanvas() {
-}
-
-CanvasSkia::~CanvasSkia() {
-}
 
 // static
 void CanvasSkia::SizeStringInt(const string16& text,
                                const gfx::Font& font,
-                               int* width, int* height,
+                               int* width,
+                               int* height,
                                int flags) {
   NSFont* native_font = font.GetNativeFont();
   NSString* ns_string = base::SysUTF16ToNSString(text);
@@ -45,50 +55,25 @@ void CanvasSkia::DrawStringInt(const string16& text,
                                const SkColor& color,
                                int x, int y, int w, int h,
                                int flags) {
-  if (!IntersectsClipRectInt(x, y, w, h))
-    return;
-
-  skia::ScopedPlatformPaint scoped_platform_paint(this);
-  CGContextRef context = scoped_platform_paint.GetPlatformSurface();
-  CGContextSaveGState(context);
-
-  NSColor* ns_color = [NSColor colorWithDeviceRed:SkColorGetR(color) / 255.0
-                                            green:SkColorGetG(color) / 255.0
-                                             blue:SkColorGetB(color) / 255.0
-                                            alpha:SkColorGetA(color) / 255.0];
-  NSMutableParagraphStyle *ns_style =
-      [[[NSParagraphStyle alloc] init] autorelease];
-  if (flags & TEXT_ALIGN_CENTER)
-    [ns_style setAlignment:NSCenterTextAlignment];
-  // TODO(awalker): Implement the rest of the Canvas text flags
-
-  NSDictionary* attributes =
-      [NSDictionary dictionaryWithObjectsAndKeys:
-          font.GetNativeFont(), NSFontAttributeName,
-          ns_color, NSForegroundColorAttributeName,
-          ns_style, NSParagraphStyleAttributeName,
-          nil];
-
-  NSAttributedString* ns_string =
-      [[[NSAttributedString alloc] initWithString:base::SysUTF16ToNSString(text)
-                                       attributes:attributes] autorelease];
-  base::mac::ScopedCFTypeRef<CTFramesetterRef> framesetter(
-      CTFramesetterCreateWithAttributedString(
-          base::mac::NSToCFCast(ns_string)));
-
-  CGRect text_bounds = CGRectMake(x, y, w, h);
-  CGMutablePathRef path = CGPathCreateMutable();
-  CGPathAddRect(path, NULL, text_bounds);
-
-  base::mac::ScopedCFTypeRef<CTFrameRef> frame(
-      CTFramesetterCreateFrame(framesetter, CFRangeMake(0, 0), path, NULL));
-  CTFrameDraw(frame, context);
-  CGContextRestoreGState(context);
+  SkTypeface* typeface = SkTypeface::CreateFromName(font.GetFontName().c_str(),
+                                                    FontTypefaceStyle(font));
+  SkPaint paint;
+  paint.setTypeface(typeface);
+  typeface->unref();
+  paint.setColor(color);
+  canvas_->drawText(text.c_str(),
+                    text.size() * sizeof(string16::value_type),
+                    x,
+                    y + h,
+                    paint);
 }
 
-ui::TextureID CanvasSkia::GetTextureID() {
-  // TODO(wjmaclean)
-  return 0;
+void CanvasSkia::DrawStringWithHalo(const string16& text,
+                                    const gfx::Font& font,
+                                    const SkColor& text_color,
+                                    const SkColor& halo_color,
+                                    int x, int y, int w, int h,
+                                    int flags) {
 }
 
 }  // namespace gfx

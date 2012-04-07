@@ -9,6 +9,7 @@
 #include "base/stringprintf.h"
 #include "webkit/appcache/appcache.h"
 #include "webkit/appcache/appcache_backend_impl.h"
+#include "webkit/appcache/appcache_policy.h"
 #include "webkit/appcache/appcache_request_handler.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -16,18 +17,26 @@ namespace appcache {
 
 namespace {
 
-void FillCacheInfo(
-    const AppCache* cache, Status status, AppCacheInfo* info) {
-  DCHECK(cache);
-  info->cache_id = cache->cache_id();
+void FillCacheInfo(const AppCache* cache,
+                   const GURL& manifest_url,
+                   Status status, AppCacheInfo* info) {
+  info->manifest_url = manifest_url;
   info->status = status;
-  info->is_complete = cache->is_complete();
-  if (info->is_complete) {
-    info->manifest_url = cache->owning_group()->manifest_url();
-    info->last_update_time = cache->update_time();
-    info->creation_time = cache->owning_group()->creation_time();
-    info->size = cache->cache_size();
-  }
+
+  if (!cache)
+    return;
+
+  info->cache_id = cache->cache_id();
+
+  if (!cache->is_complete())
+    return;
+
+  DCHECK(cache->owning_group());
+  info->is_complete = true;
+  info->group_id = cache->owning_group()->group_id();
+  info->last_update_time = cache->update_time();
+  info->creation_time = cache->owning_group()->creation_time();
+  info->size = cache->cache_size();
 }
 
 }  // Anonymous namespace
@@ -40,9 +49,9 @@ AppCacheHost::AppCacheHost(int host_id, AppCacheFrontend* frontend,
       pending_main_resource_cache_id_(kNoCacheId),
       pending_selected_cache_id_(kNoCacheId),
       frontend_(frontend), service_(service),
-      pending_get_status_callback_(NULL), pending_start_update_callback_(NULL),
-      pending_swap_cache_callback_(NULL), pending_callback_param_(NULL),
-      main_resource_was_fallback_(false), main_resource_blocked_(false),
+      pending_callback_param_(NULL),
+      main_resource_was_namespace_entry_(false),
+      main_resource_blocked_(false),
       associated_cache_info_pending_(false) {
 }
 
@@ -68,9 +77,9 @@ void AppCacheHost::RemoveObserver(Observer* observer) {
 void AppCacheHost::SelectCache(const GURL& document_url,
                                const int64 cache_document_was_loaded_from,
                                const GURL& manifest_url) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_ &&
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null() &&
          !is_selection_pending());
 
   origin_in_use_ = document_url.GetOrigin();
@@ -95,6 +104,19 @@ void AppCacheHost::SelectCache(const GURL& document_url,
 
   if (!manifest_url.is_empty() &&
       (manifest_url.GetOrigin() == document_url.GetOrigin())) {
+    DCHECK(!first_party_url_.is_empty());
+    AppCachePolicy* policy = service()->appcache_policy();
+    if (policy &&
+        !policy->CanCreateAppCache(manifest_url, first_party_url_)) {
+      FinishCacheSelection(NULL, NULL);
+      std::vector<int> host_ids(1, host_id_);
+      frontend_->OnEventRaised(host_ids, CHECKING_EVENT);
+      frontend_->OnErrorEventRaised(
+          host_ids, "Cache creation was blocked by the content policy");
+      frontend_->OnContentBlocked(host_id_, manifest_url);
+      return;
+    }
+
     // Note: The client detects if the document was not loaded using HTTP GET
     // and invokes SelectCache without a manifest url, so that detection step
     // is also skipped here. See WebApplicationCacheHostImpl.cc
@@ -111,9 +133,9 @@ void AppCacheHost::SelectCache(const GURL& document_url,
 
 void AppCacheHost::SelectCacheForWorker(int parent_process_id,
                                         int parent_host_id) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_ &&
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null() &&
          !is_selection_pending());
 
   parent_process_id_ = parent_process_id;
@@ -122,9 +144,9 @@ void AppCacheHost::SelectCacheForWorker(int parent_process_id,
 }
 
 void AppCacheHost::SelectCacheForSharedWorker(int64 appcache_id) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_ &&
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null() &&
          !is_selection_pending());
 
   if (appcache_id != kNoCacheId) {
@@ -139,16 +161,16 @@ void AppCacheHost::MarkAsForeignEntry(const GURL& document_url,
                                       int64 cache_document_was_loaded_from) {
   // The document url is not the resource url in the fallback case.
   service_->storage()->MarkEntryAsForeign(
-      main_resource_was_fallback_ ? fallback_url_ : document_url,
+      main_resource_was_namespace_entry_ ? namespace_entry_url_ : document_url,
       cache_document_was_loaded_from);
   SelectCache(document_url, kNoCacheId, GURL());
 }
 
-void AppCacheHost::GetStatusWithCallback(GetStatusCallback* callback,
+void AppCacheHost::GetStatusWithCallback(const GetStatusCallback& callback,
                                          void* callback_param) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_);
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null());
 
   pending_get_status_callback_ = callback;
   pending_callback_param_ = callback_param;
@@ -159,20 +181,18 @@ void AppCacheHost::GetStatusWithCallback(GetStatusCallback* callback,
 }
 
 void AppCacheHost::DoPendingGetStatus() {
-  DCHECK(pending_get_status_callback_);
+  DCHECK_EQ(false, pending_get_status_callback_.is_null());
 
-  pending_get_status_callback_->Run(
-      GetStatus(), pending_callback_param_);
-
-  pending_get_status_callback_ = NULL;
+  pending_get_status_callback_.Run(GetStatus(), pending_callback_param_);
+  pending_get_status_callback_.Reset();
   pending_callback_param_ = NULL;
 }
 
-void AppCacheHost::StartUpdateWithCallback(StartUpdateCallback* callback,
+void AppCacheHost::StartUpdateWithCallback(const StartUpdateCallback& callback,
                                            void* callback_param) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_);
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null());
 
   pending_start_update_callback_ = callback;
   pending_callback_param_ = callback_param;
@@ -183,7 +203,7 @@ void AppCacheHost::StartUpdateWithCallback(StartUpdateCallback* callback,
 }
 
 void AppCacheHost::DoPendingStartUpdate() {
-  DCHECK(pending_start_update_callback_);
+  DCHECK_EQ(false, pending_start_update_callback_.is_null());
 
   // 6.9.8 Application cache API
   bool success = false;
@@ -195,18 +215,16 @@ void AppCacheHost::DoPendingStartUpdate() {
     }
   }
 
-  pending_start_update_callback_->Run(
-      success, pending_callback_param_);
-
-  pending_start_update_callback_ = NULL;
+  pending_start_update_callback_.Run(success, pending_callback_param_);
+  pending_start_update_callback_.Reset();
   pending_callback_param_ = NULL;
 }
 
-void AppCacheHost::SwapCacheWithCallback(SwapCacheCallback* callback,
+void AppCacheHost::SwapCacheWithCallback(const SwapCacheCallback& callback,
                                          void* callback_param) {
-  DCHECK(!pending_start_update_callback_ &&
-         !pending_swap_cache_callback_ &&
-         !pending_get_status_callback_);
+  DCHECK(pending_start_update_callback_.is_null() &&
+         pending_swap_cache_callback_.is_null() &&
+         pending_get_status_callback_.is_null());
 
   pending_swap_cache_callback_ = callback;
   pending_callback_param_ = callback_param;
@@ -217,26 +235,24 @@ void AppCacheHost::SwapCacheWithCallback(SwapCacheCallback* callback,
 }
 
 void AppCacheHost::DoPendingSwapCache() {
-  DCHECK(pending_swap_cache_callback_);
+  DCHECK_EQ(false, pending_swap_cache_callback_.is_null());
 
   // 6.9.8 Application cache API
   bool success = false;
   if (associated_cache_ && associated_cache_->owning_group()) {
     if (associated_cache_->owning_group()->is_obsolete()) {
       success = true;
-      AssociateCache(NULL);
+      AssociateNoCache(GURL());
     } else if (swappable_cache_) {
       DCHECK(swappable_cache_.get() ==
              swappable_cache_->owning_group()->newest_complete_cache());
       success = true;
-      AssociateCache(swappable_cache_);
+      AssociateCompleteCache(swappable_cache_);
     }
   }
 
-  pending_swap_cache_callback_->Run(
-      success, pending_callback_param_);
-
-  pending_swap_cache_callback_ = NULL;
+  pending_swap_cache_callback_.Run(success, pending_callback_param_);
+  pending_swap_cache_callback_.Reset();
   pending_callback_param_ = NULL;
 }
 
@@ -267,8 +283,12 @@ AppCacheRequestHandler* AppCacheHost::CreateRequestHandler(
     return NULL;
   }
 
-  if (AppCacheRequestHandler::IsMainResourceType(resource_type))
+  if (AppCacheRequestHandler::IsMainResourceType(resource_type)) {
+    // Store the first party origin so that it can be used later in SelectCache
+    // for checking whether the creation of the appcache is allowed.
+    first_party_url_ = request->first_party_for_cookies();
     return new AppCacheRequestHandler(this, resource_type);
+  }
 
   if ((associated_cache() && associated_cache()->is_complete()) ||
       is_selection_pending()) {
@@ -278,22 +298,9 @@ AppCacheRequestHandler* AppCacheHost::CreateRequestHandler(
 }
 
 void AppCacheHost::GetResourceList(
-    std::vector<AppCacheResourceInfo>* resource_infos) {
-  if (associated_cache_.get() && associated_cache_->is_complete()) {
-    for (AppCache::EntryMap::const_iterator it =
-         associated_cache_->entries().begin();
-         it != associated_cache_->entries().end(); ++it) {
-      AppCacheResourceInfo info;
-      info.url = it->first;
-      info.is_master = it->second.IsMaster();
-      info.is_manifest = it->second.IsManifest();
-      info.is_fallback = it->second.IsFallback();
-      info.is_foreign = it->second.IsForeign();
-      info.is_explicit = it->second.IsExplicit();
-      info.size = it->second.response_size();
-      resource_infos->push_back(info);
-    }
-  }
+    AppCacheResourceInfoVector* resource_infos) {
+  if (associated_cache_.get() && associated_cache_->is_complete())
+    associated_cache_->ToResourceInfoVector(resource_infos);
 }
 
 Status AppCacheHost::GetStatus() {
@@ -367,7 +374,7 @@ void AppCacheHost::FinishCacheSelection(
         host_id_, LOG_INFO,
         base::StringPrintf(
             kFormatString, owing_group->manifest_url().spec().c_str()));
-    AssociateCache(cache);
+    AssociateCompleteCache(cache);
     if (!owing_group->is_obsolete() && !owing_group->is_being_deleted()) {
       owing_group->StartUpdateWithHost(this);
       ObserveGroupBeingUpdated(owing_group);
@@ -388,21 +395,22 @@ void AppCacheHost::FinishCacheSelection(
         host_id_, LOG_INFO,
         base::StringPrintf(kFormatString,
                            group->manifest_url().spec().c_str()));
-    AssociateCache(NULL);  // The UpdateJob may produce one for us later.
+    // The UpdateJob may produce one for us later.
+    AssociateNoCache(preferred_manifest_url_);
     group->StartUpdateWithNewMasterEntry(this, new_master_entry_url_);
     ObserveGroupBeingUpdated(group);
   } else {
     // Otherwise, the Document is not associated with any application cache.
     new_master_entry_url_ = GURL();
-    AssociateCache(NULL);
+    AssociateNoCache(GURL());
   }
 
   // Respond to pending callbacks now that we have a selection.
-  if (pending_get_status_callback_)
+  if (!pending_get_status_callback_.is_null())
     DoPendingGetStatus();
-  else if (pending_start_update_callback_)
+  else if (!pending_start_update_callback_.is_null())
     DoPendingStartUpdate();
-  else if (pending_swap_cache_callback_)
+  else if (!pending_swap_cache_callback_.is_null())
     DoPendingSwapCache();
 
   FOR_EACH_OBSERVER(Observer, observers_, OnCacheSelectionComplete(this));
@@ -428,14 +436,11 @@ void AppCacheHost::OnUpdateComplete(AppCacheGroup* group) {
   if (associated_cache_info_pending_ && associated_cache_.get() &&
       associated_cache_->is_complete()) {
     AppCacheInfo info;
-    FillCacheInfo(associated_cache_.get(), GetStatus(), &info);
+    FillCacheInfo(
+        associated_cache_.get(), preferred_manifest_url_, GetStatus(), &info);
     associated_cache_info_pending_ = false;
     frontend_->OnCacheSelected(host_id_, info);
   }
-}
-
-void AppCacheHost::OnContentBlocked(AppCacheGroup* group) {
-  frontend_->OnContentBlocked(host_id_, group->manifest_url());
 }
 
 void AppCacheHost::SetSwappableCache(AppCacheGroup* group) {
@@ -460,9 +465,10 @@ void AppCacheHost::LoadMainResourceCache(int64 cache_id) {
   service_->storage()->LoadCache(cache_id, this);
 }
 
-void AppCacheHost::NotifyMainResourceFallback(const GURL& fallback_url) {
-  main_resource_was_fallback_ = true;
-  fallback_url_ = fallback_url;
+void AppCacheHost::NotifyMainResourceIsNamespaceEntry(
+    const GURL& namespace_entry_url) {
+  main_resource_was_namespace_entry_ = true;
+  namespace_entry_url_ = namespace_entry_url;
 }
 
 void AppCacheHost::NotifyMainResourceBlocked(const GURL& manifest_url) {
@@ -470,7 +476,25 @@ void AppCacheHost::NotifyMainResourceBlocked(const GURL& manifest_url) {
   blocked_manifest_url_ = manifest_url;
 }
 
-void AppCacheHost::AssociateCache(AppCache* cache) {
+void AppCacheHost::AssociateNoCache(const GURL& manifest_url) {
+  // manifest url can be empty.
+  AssociateCacheHelper(NULL, manifest_url);
+}
+
+void AppCacheHost::AssociateIncompleteCache(AppCache* cache,
+                                            const GURL& manifest_url) {
+  DCHECK(cache && !cache->is_complete());
+  DCHECK(!manifest_url.is_empty());
+  AssociateCacheHelper(cache, manifest_url);
+}
+
+void AppCacheHost::AssociateCompleteCache(AppCache* cache) {
+  DCHECK(cache && cache->is_complete());
+  AssociateCacheHelper(cache, cache->owning_group()->manifest_url());
+}
+
+void AppCacheHost::AssociateCacheHelper(AppCache* cache,
+                                        const GURL& manifest_url) {
   if (associated_cache_.get()) {
     associated_cache_->UnassociateHost(this);
   }
@@ -479,10 +503,10 @@ void AppCacheHost::AssociateCache(AppCache* cache) {
   SetSwappableCache(cache ? cache->owning_group() : NULL);
   associated_cache_info_pending_ = cache && !cache->is_complete();
   AppCacheInfo info;
-  if (cache) {
+  if (cache)
     cache->AssociateHost(this);
-    FillCacheInfo(cache, GetStatus(), &info);
-  }
+
+  FillCacheInfo(cache, manifest_url, GetStatus(), &info);
   frontend_->OnCacheSelected(host_id_, info);
 }
 

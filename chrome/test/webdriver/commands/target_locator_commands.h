@@ -10,23 +10,25 @@
 
 #include "chrome/test/webdriver/commands/webdriver_command.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace webdriver {
 
 class Response;
-class WebElementId;
+class ElementId;
 
 // Gets the current window handle.
 // REST URL: /session/:sessionId/window_handle
 class WindowHandleCommand : public WebDriverCommand {
  public:
   WindowHandleCommand(const std::vector<std::string>& path_segments,
-                      DictionaryValue* parameters);
+                      base::DictionaryValue* parameters);
   virtual ~WindowHandleCommand();
 
-  virtual bool DoesGet();
-  virtual void ExecuteGet(Response* const response);
+  virtual bool DoesGet() OVERRIDE;
+  virtual void ExecuteGet(Response* const response) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WindowHandleCommand);
@@ -37,11 +39,11 @@ class WindowHandleCommand : public WebDriverCommand {
 class WindowHandlesCommand : public WebDriverCommand {
  public:
   WindowHandlesCommand(const std::vector<std::string>& path_segments,
-                       DictionaryValue* parameters);
+                       base::DictionaryValue* parameters);
   virtual ~WindowHandlesCommand();
 
-  virtual bool DoesGet();
-  virtual void ExecuteGet(Response* const response);
+  virtual bool DoesGet() OVERRIDE;
+  virtual void ExecuteGet(Response* const response) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WindowHandlesCommand);
@@ -53,13 +55,15 @@ class WindowHandlesCommand : public WebDriverCommand {
 class WindowCommand : public WebDriverCommand {
  public:
   WindowCommand(const std::vector<std::string>& path_segments,
-                DictionaryValue* parameters);
+                base::DictionaryValue* parameters);
   virtual ~WindowCommand();
 
-  virtual bool DoesPost();
-  virtual bool DoesDelete();
-  virtual void ExecutePost(Response* const response);
-  virtual void ExecuteDelete(Response* const response);
+  virtual bool DoesPost() OVERRIDE;
+  virtual bool DoesDelete() OVERRIDE;
+  virtual void ExecutePost(Response* const response) OVERRIDE;
+  virtual void ExecuteDelete(Response* const response) OVERRIDE;
+
+  virtual bool ShouldRunPreAndPostCommandHandlers() OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WindowCommand);
@@ -70,14 +74,14 @@ class WindowCommand : public WebDriverCommand {
 class SwitchFrameCommand : public WebDriverCommand {
  public:
   SwitchFrameCommand(const std::vector<std::string>& path_segments,
-                     DictionaryValue* parameters);
+                     base::DictionaryValue* parameters);
   virtual ~SwitchFrameCommand();
 
-  virtual bool DoesPost();
-  virtual void ExecutePost(Response* const response);
+  virtual bool DoesPost() OVERRIDE;
+  virtual void ExecutePost(Response* const response) OVERRIDE;
 
  private:
-  bool GetWebElementParameter(const std::string& key, WebElementId* out) const;
+  bool GetWebElementParameter(const std::string& key, ElementId* out) const;
 
   DISALLOW_COPY_AND_ASSIGN(SwitchFrameCommand);
 };
@@ -86,11 +90,11 @@ class SwitchFrameCommand : public WebDriverCommand {
 class ActiveElementCommand : public WebDriverCommand {
  public:
   ActiveElementCommand(const std::vector<std::string>& path_segments,
-                       DictionaryValue* parameters);
+                       base::DictionaryValue* parameters);
   virtual ~ActiveElementCommand();
 
-  virtual bool DoesPost();
-  virtual void ExecutePost(Response* const response);
+  virtual bool DoesPost() OVERRIDE;
+  virtual void ExecutePost(Response* const response) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ActiveElementCommand);

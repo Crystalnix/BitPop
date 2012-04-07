@@ -4,14 +4,31 @@
 
 #include <string>
 
+#include "base/message_loop.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autofill/address.h"
 #include "chrome/browser/autofill/autofill_type.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
+
+class AddressTest : public testing::Test {
+ public:
+  // In order to access the application locale -- which the tested functions do
+  // internally -- this test must run on the UI thread.
+  AddressTest() : ui_thread_(BrowserThread::UI, &message_loop_) {}
+
+ private:
+  MessageLoopForUI message_loop_;
+  content::TestBrowserThread ui_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(AddressTest);
+};
+
 // Test that the getters and setters for country code are working.
-TEST(AddressTest, CountryCode) {
+TEST_F(AddressTest, CountryCode) {
   Address address;
   EXPECT_EQ(std::string(), address.country_code());
 
@@ -23,7 +40,7 @@ TEST(AddressTest, CountryCode) {
 }
 
 // Test that country codes are properly decoded as country names.
-TEST(AddressTest, GetCountry) {
+TEST_F(AddressTest, GetCountry) {
   Address address;
   EXPECT_EQ(std::string(), address.country_code());
 
@@ -41,7 +58,7 @@ TEST(AddressTest, GetCountry) {
 }
 
 // Test that we properly detect country codes appropriate for each country.
-TEST(AddressTest, SetCountry) {
+TEST_F(AddressTest, SetCountry) {
   Address address;
   EXPECT_EQ(std::string(), address.country_code());
 
@@ -77,7 +94,7 @@ TEST(AddressTest, SetCountry) {
 }
 
 // Test that we properly match typed values to stored country data.
-TEST(AddressTest, IsCountry) {
+TEST_F(AddressTest, IsCountry) {
   Address address;
   address.set_country_code("US");
 

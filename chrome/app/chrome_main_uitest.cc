@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/file_util.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "net/base/net_util.h"
 
 typedef UITest ChromeMainTest;
@@ -26,7 +27,7 @@ TEST_F(ChromeMainTest, SecondLaunch) {
   ASSERT_TRUE(automation()->WaitForWindowCountToBecome(2));
 }
 
-TEST_F(ChromeMainTest, ReuseBrowserInstanceWhenOpeningFile) {
+TEST_F(ChromeMainTest, DISABLED_ReuseBrowserInstanceWhenOpeningFile) {
   include_testing_id_ = false;
 
   FilePath test_file = test_data_directory_.AppendASCII("empty.html");

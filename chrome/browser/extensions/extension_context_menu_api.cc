@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -139,11 +139,10 @@ bool ExtensionContextMenuFunction::ParseURLPatterns(
     if (!(*i)->GetAsString(&tmp))
       return false;
 
-    URLPattern pattern(ExtensionMenuManager::kAllowedSchemes);
+    URLPattern pattern(URLPattern::SCHEME_ALL);
     // TODO(skerner):  Consider enabling strict pattern parsing
     // if this extension's location indicates that it is under development.
-    if (URLPattern::PARSE_SUCCESS != pattern.Parse(tmp,
-                                                   URLPattern::PARSE_LENIENT)) {
+    if (URLPattern::PARSE_SUCCESS != pattern.Parse(tmp)) {
       error_ = ExtensionErrorUtils::FormatErrorMessage(kInvalidURLPatternError,
                                                        tmp);
       return false;
@@ -270,6 +269,7 @@ bool CreateContextMenuFunction::RunImpl() {
 }
 
 bool UpdateContextMenuFunction::RunImpl() {
+  bool radioItemUpdated = false;
   ExtensionMenuItem::Id item_id(profile(), extension_id(), 0);
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &item_id.uid));
 
@@ -282,19 +282,21 @@ bool UpdateContextMenuFunction::RunImpl() {
     return false;
   }
 
-  DictionaryValue *properties = NULL;
+  DictionaryValue* properties = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetDictionary(1, &properties));
   EXTENSION_FUNCTION_VALIDATE(properties != NULL);
-
-  ExtensionMenuManager* menu_manager =
-      profile()->GetExtensionService()->menu_manager();
 
   // Type.
   ExtensionMenuItem::Type type;
   if (!ParseType(*properties, item->type(), &type))
     return false;
-  if (type != item->type())
+  if (type != item->type()) {
+    if (type == ExtensionMenuItem::RADIO ||
+        item->type() == ExtensionMenuItem::RADIO) {
+      radioItemUpdated = true;
+    }
     item->set_type(type);
+  }
 
   // Title.
   if (properties->HasKey(kTitleKey)) {
@@ -314,6 +316,7 @@ bool UpdateContextMenuFunction::RunImpl() {
   if (checked != item->checked()) {
     if (!item->SetChecked(checked))
       return false;
+    radioItemUpdated = true;
   }
 
   // Contexts.
@@ -325,12 +328,17 @@ bool UpdateContextMenuFunction::RunImpl() {
 
   // Parent id.
   ExtensionMenuItem* parent = NULL;
-  if (!GetParent(*properties, *menu_manager, &parent))
+  if (!GetParent(*properties, *manager, &parent))
     return false;
-  if (parent && !menu_manager->ChangeParent(item->id(), &parent->id()))
+  if (parent && !manager->ChangeParent(item->id(), &parent->id()))
     return false;
 
   if (!SetURLPatterns(*properties, item))
+    return false;
+
+  // There is no need to call ItemUpdated if ChangeParent is called because
+  // all sanitation is taken care of in ChangeParent.
+  if (!parent && radioItemUpdated && !manager->ItemUpdated(item->id()))
     return false;
 
   return true;

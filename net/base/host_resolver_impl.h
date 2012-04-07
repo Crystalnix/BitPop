@@ -17,7 +17,7 @@
 #include "net/base/host_cache.h"
 #include "net/base/host_resolver.h"
 #include "net/base/host_resolver_proc.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/network_change_notifier.h"
 
@@ -59,10 +59,11 @@ namespace net {
 // the results from the first attempt that finishes and ignore the results from
 // all other attempts.
 
-class NET_API HostResolverImpl
+class NET_EXPORT HostResolverImpl
     : public HostResolver,
       NON_EXPORTED_BASE(public base::NonThreadSafe),
-      public NetworkChangeNotifier::IPAddressObserver {
+      public NetworkChangeNotifier::IPAddressObserver,
+      public NetworkChangeNotifier::DNSObserver {
  public:
   // The index into |job_pools_| for the various job pools. Pools with a higher
   // index have lower priority.
@@ -110,13 +111,6 @@ class NET_API HostResolverImpl
   // be called.
   virtual ~HostResolverImpl();
 
-  // Continuously observe whether IPv6 is supported, and set the allowable
-  // address family to IPv4 iff IPv6 is not supported.
-  void ProbeIPv6Support();
-
-  // Returns the cache this resolver uses, or NULL if caching is disabled.
-  HostCache* cache() { return cache_.get(); }
-
   // Applies a set of constraints for requests that belong to the specified
   // pool. NOTE: Don't call this after requests have been already been started.
   //
@@ -135,21 +129,17 @@ class NET_API HostResolverImpl
   // HostResolver methods:
   virtual int Resolve(const RequestInfo& info,
                       AddressList* addresses,
-                      CompletionCallback* callback,
+                      const CompletionCallback& callback,
                       RequestHandle* out_req,
-                      const BoundNetLog& source_net_log);
-  virtual void CancelRequest(RequestHandle req);
-  virtual void AddObserver(HostResolver::Observer* observer);
-  virtual void RemoveObserver(HostResolver::Observer* observer);
-
-  // Set address family, and disable IPv6 probe support.
-  virtual void SetDefaultAddressFamily(AddressFamily address_family);
-  virtual AddressFamily GetDefaultAddressFamily() const;
-
-  virtual HostResolverImpl* GetAsHostResolverImpl();
-
-  // TODO(eroman): hack for http://crbug.com/15513
-  virtual void Shutdown();
+                      const BoundNetLog& source_net_log) OVERRIDE;
+  virtual int ResolveFromCache(const RequestInfo& info,
+                               AddressList* addresses,
+                               const BoundNetLog& source_net_log) OVERRIDE;
+  virtual void CancelRequest(RequestHandle req) OVERRIDE;
+  virtual void SetDefaultAddressFamily(AddressFamily address_family) OVERRIDE;
+  virtual AddressFamily GetDefaultAddressFamily() const OVERRIDE;
+  virtual void ProbeIPv6Support() OVERRIDE;
+  virtual HostCache* GetHostCache() OVERRIDE;
 
  private:
   // Allow tests to access our innards for testing purposes.
@@ -165,7 +155,31 @@ class NET_API HostResolverImpl
   typedef std::vector<Request*> RequestsList;
   typedef HostCache::Key Key;
   typedef std::map<Key, scoped_refptr<Job> > JobMap;
-  typedef std::vector<HostResolver::Observer*> ObserversList;
+
+  // Helper used by |Resolve()| and |ResolveFromCache()|.  Performs IP
+  // literal and cache lookup, returns OK if successful,
+  // ERR_NAME_NOT_RESOLVED if either hostname is invalid or IP literal is
+  // incompatible, ERR_DNS_CACHE_MISS if entry was not found in cache.
+  int ResolveHelper(const Key& key,
+                    const RequestInfo& info,
+                    AddressList* addresses,
+                    const BoundNetLog& request_net_log);
+
+  // Tries to resolve |key| as an IP, returns true and sets |net_error| if
+  // succeeds, returns false otherwise.
+  bool ResolveAsIP(const Key& key,
+                   const RequestInfo& info,
+                   int* net_error,
+                   AddressList* addresses);
+
+  // If |key| is not found in cache returns false, otherwise returns
+  // true, sets |net_error| to the cached error code and fills |addresses|
+  // if it is a positive entry.
+  bool ServeFromCache(const Key& key,
+                      const RequestInfo& info,
+                      const BoundNetLog& request_net_log,
+                      int* net_error,
+                      AddressList* addresses);
 
   // Returns the HostResolverProc to use for this instance.
   HostResolverProc* effective_resolver_proc() const {
@@ -197,13 +211,11 @@ class NET_API HostResolverImpl
   // Called when a request has just been started.
   void OnStartRequest(const BoundNetLog& source_net_log,
                       const BoundNetLog& request_net_log,
-                      int request_id,
                       const RequestInfo& info);
 
   // Called when a request has just completed (before its callback is run).
   void OnFinishRequest(const BoundNetLog& source_net_log,
                        const BoundNetLog& request_net_log,
-                       int request_id,
                        const RequestInfo& info,
                        int net_error,
                        int os_error);
@@ -211,7 +223,6 @@ class NET_API HostResolverImpl
   // Called when a request has been cancelled.
   void OnCancelRequest(const BoundNetLog& source_net_log,
                        const BoundNetLog& request_net_log,
-                       int request_id,
                        const RequestInfo& info);
 
   // Notify IPv6ProbeJob not to call back, and discard reference to the job.
@@ -253,7 +264,7 @@ class NET_API HostResolverImpl
   void AbortAllInProgressJobs();
 
   // NetworkChangeNotifier::IPAddressObserver methods:
-  virtual void OnIPAddressChanged();
+  virtual void OnIPAddressChanged() OVERRIDE;
 
   // Helper methods to get and set max_retry_attempts_.
   size_t max_retry_attempts() const {
@@ -276,6 +287,9 @@ class NET_API HostResolverImpl
   void set_retry_factor(const uint32 retry_factor) {
     retry_factor_ = retry_factor;
   }
+
+  // NetworkChangeNotifier::OnDNSChanged methods:
+  virtual void OnDNSChanged() OVERRIDE;
 
   // Cache of host resolution results.
   scoped_ptr<HostCache> cache_;
@@ -307,13 +321,6 @@ class NET_API HostResolverImpl
   // HostResolver gets deleted from within the callback).
   scoped_refptr<Job> cur_completing_job_;
 
-  // The observers to notify when a request starts/ends.
-  ObserversList observers_;
-
-  // Monotonically increasing ID number to assign to the next request.
-  // Observers are the only consumers of this ID number.
-  int next_request_id_;
-
   // Monotonically increasing ID number to assign to the next job.
   // The only consumer of this ID is the requests tracing code.
   int next_job_id_;
@@ -324,9 +331,6 @@ class NET_API HostResolverImpl
 
   // Address family to use when the request doesn't specify one.
   AddressFamily default_address_family_;
-
-  // TODO(eroman): hack for http://crbug.com/15513
-  bool shutdown_;
 
   // Indicate if probing is done after each network change event to set address
   // family.

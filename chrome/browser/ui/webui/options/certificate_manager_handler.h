@@ -8,11 +8,12 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/certificate_manager_model.h"
-#include "chrome/browser/ui/shell_dialogs.h"
+#include "chrome/browser/ui/select_file_dialog.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "content/browser/cancelable_request.h"
 #include "net/base/cert_database.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -26,32 +27,35 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
   virtual ~CertificateManagerHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
-  virtual void RegisterMessages();
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void RegisterMessages() OVERRIDE;
 
   // CertificateManagerModel::Observer implementation.
-  virtual void CertificatesRefreshed();
+  virtual void CertificatesRefreshed() OVERRIDE;
 
   // SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const FilePath& path, int index, void* params);
-  virtual void FileSelectionCanceled(void* params);
+  virtual void FileSelected(const FilePath& path,
+                            int index,
+                            void* params) OVERRIDE;
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
 
  private:
   // View certificate.
-  void View(const ListValue* args);
+  void View(const base::ListValue* args);
 
   // Edit server certificate trust values.
-  void EditServer(const ListValue* args);
+  void EditServer(const base::ListValue* args);
 
   // Edit certificate authority trust values.  The sequence goes like:
   //  1. user clicks edit button -> CertificateEditCaTrustOverlay.show ->
   //  GetCATrust -> CertificateEditCaTrustOverlay.populateTrust
   //  2. user clicks ok -> EditCATrust -> CertificateEditCaTrustOverlay.dismiss
-  void GetCATrust(const ListValue* args);
-  void EditCATrust(const ListValue* args);
+  void GetCATrust(const base::ListValue* args);
+  void EditCATrust(const base::ListValue* args);
 
   // Cleanup state stored during import or export process.
-  void CancelImportExportProcess(const ListValue* args);
+  void CancelImportExportProcess(const base::ListValue* args);
   void ImportExportCleanup();
 
   // Export to PKCS #12 file.  The sequence goes like:
@@ -65,10 +69,10 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
   //  4. slots unlocked -> ExportPersonalSlotsUnlocked -> exports to memory
   //  buffer -> starts async write operation
   //  5. write finishes (or fails) -> ExportPersonalFileWritten
-  void ExportPersonal(const ListValue* args);
-  void ExportAllPersonal(const ListValue* args);
+  void ExportPersonal(const base::ListValue* args);
+  void ExportAllPersonal(const base::ListValue* args);
   void ExportPersonalFileSelected(const FilePath& path);
-  void ExportPersonalPasswordSelected(const ListValue* args);
+  void ExportPersonalPasswordSelected(const base::ListValue* args);
   void ExportPersonalSlotsUnlocked();
   void ExportPersonalFileWritten(int write_errno, int bytes_written);
 
@@ -85,9 +89,9 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
   //  6a. if import succeeds -> ImportExportCleanup
   //  6b. if import fails -> show error, ImportExportCleanup
   //  TODO(mattm): allow retrying with different password
-  void StartImportPersonal(const ListValue* args);
+  void StartImportPersonal(const base::ListValue* args);
   void ImportPersonalFileSelected(const FilePath& path);
-  void ImportPersonalPasswordSelected(const ListValue* args);
+  void ImportPersonalPasswordSelected(const base::ListValue* args);
   void ImportPersonalFileRead(int read_errno, std::string data);
   void ImportPersonalSlotUnlocked();
 
@@ -97,7 +101,7 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
   //  3. read completes -> ImportServerFileRead -> parse certs -> attempt import
   //  4a. if import succeeds -> ImportExportCleanup
   //  4b. if import fails -> show error, ImportExportCleanup
-  void ImportServer(const ListValue* args);
+  void ImportServer(const base::ListValue* args);
   void ImportServerFileSelected(const FilePath& path);
   void ImportServerFileRead(int read_errno, std::string data);
 
@@ -109,19 +113,19 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
   //  4. user clicks ok -> ImportCATrustSelected -> attempt import
   //  5a. if import succeeds -> ImportExportCleanup
   //  5b. if import fails -> show error, ImportExportCleanup
-  void ImportCA(const ListValue* args);
+  void ImportCA(const base::ListValue* args);
   void ImportCAFileSelected(const FilePath& path);
   void ImportCAFileRead(int read_errno, std::string data);
-  void ImportCATrustSelected(const ListValue* args);
+  void ImportCATrustSelected(const base::ListValue* args);
 
   // Export a certificate.
-  void Export(const ListValue* args);
+  void Export(const base::ListValue* args);
 
   // Delete certificate and private key (if any).
-  void Delete(const ListValue* args);
+  void Delete(const base::ListValue* args);
 
   // Populate the trees in all the tabs.
-  void Populate(const ListValue* args);
+  void Populate(const base::ListValue* args);
 
   // Populate the given tab's tree.
   void PopulateTree(const std::string& tab_name, net::CertType type);
@@ -138,7 +142,7 @@ class CertificateManagerHandler : public OptionsPageUIHandler,
 
 #if defined(OS_CHROMEOS)
   // Check whether Tpm token is ready and notifiy JS side.
-  void CheckTpmTokenReady(const ListValue* args);
+  void CheckTpmTokenReady(const base::ListValue* args);
 #endif
 
   gfx::NativeWindow GetParentWindow() const;

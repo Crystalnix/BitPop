@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,10 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/bandwidth_metrics.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/upload_data.h"
+#include "net/socket/ssl_client_socket.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 
@@ -37,12 +38,12 @@ class SSLInfo;
 // a SpdyNetworkTransaction) will maintain a reference to the stream.  When
 // initiated by the server, only the SpdySession will maintain any reference,
 // until such a time as a client object requests a stream for the path.
-class NET_TEST SpdyStream
+class NET_EXPORT_PRIVATE SpdyStream
     : public base::RefCounted<SpdyStream>,
       public ChunkCallback {
  public:
   // Delegate handles protocol specific behavior of spdy stream.
-  class NET_TEST Delegate {
+  class NET_EXPORT_PRIVATE Delegate {
    public:
     Delegate() {}
 
@@ -136,6 +137,9 @@ class NET_TEST SpdyStream
     stalled_by_flow_control_ = stalled;
   }
 
+  // Adjust the |send_window_size_| by |delta_window_size|.
+  void AdjustSendWindowSize(int delta_window_size);
+
   // Increases |send_window_size_| with delta extracted from a WINDOW_UPDATE
   // frame; sends a RST_STREAM if delta overflows |send_window_size_| and
   // removes the stream from the session.
@@ -199,6 +203,7 @@ class NET_TEST SpdyStream
   void OnClose(int status);
 
   void Cancel();
+  void Close();
   bool cancelled() const { return cancelled_; }
   bool closed() const { return io_state_ == STATE_DONE; }
 
@@ -213,7 +218,9 @@ class NET_TEST SpdyStream
                       spdy::SpdyDataFlags flags);
 
   // Fills SSL info in |ssl_info| and returns true when SSL is in use.
-  bool GetSSLInfo(SSLInfo* ssl_info, bool* was_npn_negotiated);
+  bool GetSSLInfo(SSLInfo* ssl_info,
+                  bool* was_npn_negotiated,
+                  SSLClientSocket::NextProto* protocol_negotiated);
 
   // Fills SSL Certificate Request info |cert_request_info| and returns
   // true when SSL is in use.
@@ -233,7 +240,7 @@ class NET_TEST SpdyStream
   GURL GetUrl() const;
 
   // ChunkCallback methods.
-  virtual void OnChunkAvailable();
+  virtual void OnChunkAvailable() OVERRIDE;
 
  private:
   enum State {

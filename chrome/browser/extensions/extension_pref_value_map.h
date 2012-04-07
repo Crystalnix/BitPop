@@ -71,14 +71,14 @@ class ExtensionPrefValueMap {
   // Precondition: the extension must be registered.
   void SetExtensionPref(const std::string& ext_id,
                         const std::string& key,
-                        extension_prefs_scope::Scope scope,
-                        Value* value);
+                        ExtensionPrefsScope scope,
+                        base::Value* value);
 
   // Remove the extension preference value for |key| of extension |ext_id|.
   // Precondition: the extension must be registered.
   void RemoveExtensionPref(const std::string& ext_id,
                            const std::string& key,
-                           extension_prefs_scope::Scope scope);
+                           ExtensionPrefsScope scope);
 
   // Returns true if currently no extension with higher precedence controls the
   // preference.
@@ -122,9 +122,9 @@ class ExtensionPrefValueMap {
 
   void RemoveObserver(Observer* observer);
 
-  const Value* GetEffectivePrefValue(const std::string& key,
-                                     bool incognito,
-                                     bool* from_incognito) const;
+  const base::Value* GetEffectivePrefValue(const std::string& key,
+                                           bool incognito,
+                                           bool* from_incognito) const;
 
  private:
   struct ExtensionEntry;
@@ -133,11 +133,11 @@ class ExtensionPrefValueMap {
 
   const PrefValueMap* GetExtensionPrefValueMap(
       const std::string& ext_id,
-      extension_prefs_scope::Scope scope) const;
+      ExtensionPrefsScope scope) const;
 
   PrefValueMap* GetExtensionPrefValueMap(
       const std::string& ext_id,
-      extension_prefs_scope::Scope scope);
+      ExtensionPrefsScope scope);
 
   // Returns all keys of pref values that are set by the extension of |entry|,
   // regardless whether they are set for incognito or regular pref values.

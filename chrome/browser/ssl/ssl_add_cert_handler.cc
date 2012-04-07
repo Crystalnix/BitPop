@@ -1,19 +1,24 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ssl/ssl_add_cert_handler.h"
 
+#include "base/bind.h"
 #include "chrome/browser/tab_contents/tab_contents_ssl_helper.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/cert_database.h"
 #include "net/base/net_errors.h"
 #include "net/base/x509_certificate.h"
 #include "net/url_request/url_request.h"
+
+using content::BrowserThread;
+using content::WebContents;
 
 SSLAddCertHandler::SSLAddCertHandler(net::URLRequest* request,
                                      net::X509Certificate* cert,
@@ -30,7 +35,7 @@ SSLAddCertHandler::SSLAddCertHandler(net::URLRequest* request,
   // Delay adding the certificate until the next mainloop iteration.
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(this, &SSLAddCertHandler::Run));
+      base::Bind(&SSLAddCertHandler::Run, this));
 }
 
 SSLAddCertHandler::~SSLAddCertHandler() {}
@@ -44,8 +49,8 @@ void SSLAddCertHandler::Run() {
   if (cert_error != net::OK) {
     BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &SSLAddCertHandler::CallVerifyClientCertificateError,
+      base::Bind(
+          &SSLAddCertHandler::CallVerifyClientCertificateError, this,
           cert_error));
     Finished(false);
     return;
@@ -74,15 +79,15 @@ void SSLAddCertHandler::Finished(bool add_cert) {
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &SSLAddCertHandler::CallAddClientCertificate, add_cert,
-          cert_error));
+      base::Bind(
+          &SSLAddCertHandler::CallAddClientCertificate, this,
+          add_cert, cert_error));
 
   Release();
 }
 
 void SSLAddCertHandler::CallVerifyClientCertificateError(int cert_error) {
-  TabContents* tab = tab_util::GetTabContentsByID(
+  WebContents* tab = tab_util::GetWebContentsByID(
       render_process_host_id_, render_view_id_);
   if (!tab)
     return;
@@ -94,7 +99,7 @@ void SSLAddCertHandler::CallVerifyClientCertificateError(int cert_error) {
 
 void SSLAddCertHandler::CallAddClientCertificate(bool add_cert,
                                                  int cert_error) {
-  TabContents* tab = tab_util::GetTabContentsByID(
+  WebContents* tab = tab_util::GetWebContentsByID(
       render_process_host_id_, render_view_id_);
   if (!tab)
     return;

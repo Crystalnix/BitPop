@@ -191,13 +191,38 @@ that trigger them.
   </td>
   <td>
     <!-- HasEffectiveBrowsingHistoryPermission -->
-     "tabs" permission
+    Any of the following:
+    <ul>
+      <li> "tabs" permission </li>
+      <li> "webNavigation" permission </li>
+    </ul>
   </td>
   <td>
     <p>
       The "tabs" permission is required by the
       <a href="tabs.html"><code>chrome.tabs</code></a> and 
       <a href="windows.html"><code>chrome.windows</code></a> modules.
+    </p>
+    <p>
+      The "webNavigation" permission is required by the
+      <a href="webNavigation.html"><code>chrome.webNavigation</code></a> module.
+    </p>
+  </td>
+</tr>
+
+<tr>
+  <td style="font-weight:bold">
+    <!-- IDS_EXTENSION_PROMPT_WARNING_CONTENT_SETTINGS -->
+    Settings that specify whether websites can use features such as cookies, JavaScript, and plug-ins
+  </td>
+  <td>
+    <!-- HasEffectiveBrowsingHistoryPermission -->
+     "contentSettings" permission
+  </td>
+  <td>
+    <p>
+      The "contentSettings" permission is required by
+      <a href="contentSettings.html"><code>chrome.contentSettings</code></a>.
     </p>
   </td>
 </tr>
@@ -279,7 +304,7 @@ that trigger them.
 <tr>
   <td style="font-weight:bold">
     <!-- IDS_EXTENSION_PROMPT_WARNING_MANAGEMENT -->
-    Your list of installed apps, extensions, and themes
+    Your list of apps, extensions, and themes
     <br />
     <span style="font-weight:normal; font-style:italic">or</span>
     <br />
@@ -330,6 +355,20 @@ that trigger them.
     </ul>
   </td>
 </tr>
+
+<tr>
+  <td style="font-weight:bold">
+    <!-- IDS_EXTENSION_PROMPT_WARNING_PRIVACY-->
+    Privacy-related settings
+  </td>
+  <td>
+    "privacy" permission
+  </td>
+  <td>
+    The "privacy" permission is required by the
+    <a href="privacy.html"><code>chrome.privacy</code></a> module.
+  </td>
+</tr>
 </table>
 </p>
 
@@ -349,6 +388,8 @@ The following permissions don't result in a warning:
   <li>"idle"</li>
   <li>"notifications"</li>
   <li>"unlimitedStorage"</li>
+  <li>"webRequest"</li>
+  <li>"webRequestBlocking"</li>
 </ul>
 
 <h2 id="test"> Testing permission warnings </h2>
@@ -377,4 +418,11 @@ Finally, update the extension
 (and all other extensions that have outstanding updates)
 by clicking the <b>chrome://extensions</b> page's
 <b>Update extensions now</b> button.
+</p>
+
+<h2 id="api">API</h2>
+
+<p>
+You can get a list of permission warnings for any manifest with
+<a href="management.html#method-getPermissionWarnings">chrome.management.getPermissionWarnings()</a>.
 </p>

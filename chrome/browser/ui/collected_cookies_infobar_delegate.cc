@@ -5,16 +5,16 @@
 #include "chrome/browser/ui/collected_cookies_infobar_delegate.h"
 
 #include "base/logging.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 CollectedCookiesInfoBarDelegate::CollectedCookiesInfoBarDelegate(
-    TabContents* tab_contents)
-    : ConfirmInfoBarDelegate(tab_contents),
-      tab_contents_(tab_contents) {
+    InfoBarTabHelper* infobar_helper)
+    : ConfirmInfoBarDelegate(infobar_helper) {
 }
 
 gfx::Image* CollectedCookiesInfoBarDelegate::GetIcon() const {
@@ -41,6 +41,6 @@ string16 CollectedCookiesInfoBarDelegate::GetButtonLabel(
 }
 
 bool CollectedCookiesInfoBarDelegate::Accept() {
-  tab_contents_->controller().Reload(true);
+  owner()->web_contents()->GetController().Reload(true);
   return true;
 }

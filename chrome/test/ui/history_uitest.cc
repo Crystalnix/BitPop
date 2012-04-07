@@ -7,11 +7,12 @@
 #include "base/file_path.h"
 #include "base/test/test_timeouts.h"
 #include "chrome/browser/ui/view_ids.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/ui/ui_test.h"
-#include "chrome/test/ui_test_utils.h"
 #include "ui/base/events.h"
 #include "ui/gfx/rect.h"
 
@@ -84,7 +85,7 @@ TEST_F(HistoryTester, VerifyHistoryLength3) {
                 kTestCompleteSuccess, TestTimeouts::action_max_timeout_ms());
 }
 
-#if defined(OS_WIN) || defined(OS_LINUX)
+#if !defined(OS_MACOSX)
 TEST_F(HistoryTester, ConsiderRedirectAfterGestureAsUserInitiated) {
   // Test the history length for the following page transition.
   //
@@ -110,13 +111,13 @@ TEST_F(HistoryTester, ConsiderRedirectAfterGestureAsUserInitiated) {
   ASSERT_TRUE(window->GetViewBounds(VIEW_ID_TAB_CONTAINER, &tab_view_bounds,
                                     true));
   ASSERT_TRUE(window->SimulateOSClick(tab_view_bounds.CenterPoint(),
-                                      ui::EF_LEFT_BUTTON_DOWN));
+                                      ui::EF_LEFT_MOUSE_BUTTON));
 
   NavigateToURL(GURL("javascript:redirectToPage12()"));
   WaitForFinish("History_Length_Test_12", "1", url, kTestCompleteCookie,
                 kTestCompleteSuccess, TestTimeouts::action_max_timeout_ms());
 }
-#endif  // defined(OS_WIN) || defined(OS_LINUX)
+#endif  // !defined(OS_MACOSX)
 
 TEST_F(HistoryTester, ConsiderSlowRedirectAsUserInitiated) {
   // Test the history length for the following page transition.

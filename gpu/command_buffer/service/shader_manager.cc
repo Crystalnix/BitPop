@@ -4,6 +4,7 @@
 
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "base/logging.h"
+#include "base/string_util.h"
 
 namespace gpu {
 namespace gles2 {

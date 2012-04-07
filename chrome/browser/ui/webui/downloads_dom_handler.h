@@ -8,68 +8,76 @@
 
 #include <vector>
 
-#include "base/memory/scoped_callback_factory.h"
-#include "chrome/browser/download/download_item.h"
-#include "chrome/browser/download/download_manager.h"
-#include "content/browser/webui/web_ui.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/browser/web_ui_message_handler.h"
 
+namespace base {
 class ListValue;
+}
 
 // The handler for Javascript messages related to the "downloads" view,
 // also observes changes to the download manager.
-class DownloadsDOMHandler : public WebUIMessageHandler,
-                            public DownloadManager::Observer,
-                            public DownloadItem::Observer {
+class DownloadsDOMHandler : public content::WebUIMessageHandler,
+                            public content::DownloadManager::Observer,
+                            public content::DownloadItem::Observer {
  public:
-  explicit DownloadsDOMHandler(DownloadManager* dlm);
+  explicit DownloadsDOMHandler(content::DownloadManager* dlm);
   virtual ~DownloadsDOMHandler();
 
   void Init();
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // DownloadItem::Observer interface
-  virtual void OnDownloadUpdated(DownloadItem* download);
-  virtual void OnDownloadOpened(DownloadItem* download) { }
+  virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
+  virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE { }
 
   // DownloadManager::Observer interface
-  virtual void ModelChanged();
+  virtual void ModelChanged() OVERRIDE;
 
   // Callback for the "getDownloads" message.
-  void HandleGetDownloads(const ListValue* args);
+  void HandleGetDownloads(const base::ListValue* args);
 
   // Callback for the "openFile" message - opens the file in the shell.
-  void HandleOpenFile(const ListValue* args);
+  void HandleOpenFile(const base::ListValue* args);
 
   // Callback for the "drag" message - initiates a file object drag.
-  void HandleDrag(const ListValue* args);
+  void HandleDrag(const base::ListValue* args);
 
   // Callback for the "saveDangerous" message - specifies that the user
   // wishes to save a dangerous file.
-  void HandleSaveDangerous(const ListValue* args);
+  void HandleSaveDangerous(const base::ListValue* args);
 
   // Callback for the "discardDangerous" message - specifies that the user
   // wishes to discard (remove) a dangerous file.
-  void HandleDiscardDangerous(const ListValue* args);
+  void HandleDiscardDangerous(const base::ListValue* args);
 
   // Callback for the "show" message - shows the file in explorer.
-  void HandleShow(const ListValue* args);
+  void HandleShow(const base::ListValue* args);
 
   // Callback for the "pause" message - pauses the file download.
-  void HandlePause(const ListValue* args);
+  void HandlePause(const base::ListValue* args);
 
   // Callback for the "remove" message - removes the file download from shelf
   // and list.
-  void HandleRemove(const ListValue* args);
+  void HandleRemove(const base::ListValue* args);
 
   // Callback for the "cancel" message - cancels the download.
-  void HandleCancel(const ListValue* args);
+  void HandleCancel(const base::ListValue* args);
 
   // Callback for the "clearAll" message - clears all the downloads.
-  void HandleClearAll(const ListValue* args);
+  void HandleClearAll(const base::ListValue* args);
+
+  // Callback for the "openDownloadsFolder" message - opens the downloads
+  // folder.
+  void HandleOpenDownloadsFolder(const base::ListValue* args);
 
  private:
+  class OriginalDownloadManagerObserver;
+
   // Send the current list of downloads to the page.
   void SendCurrentDownloads();
 
@@ -77,24 +85,30 @@ class DownloadsDOMHandler : public WebUIMessageHandler,
   void ClearDownloadItems();
 
   // Return the download that corresponds to a given id.
-  DownloadItem* GetDownloadById(int id);
+  content::DownloadItem* GetDownloadById(int id);
 
   // Return the download that is referred to in a given value.
-  DownloadItem* GetDownloadByValue(const ListValue* args);
+  content::DownloadItem* GetDownloadByValue(const base::ListValue* args);
 
   // Current search text.
   std::wstring search_text_;
 
   // Our model
-  DownloadManager* download_manager_;
+  content::DownloadManager* download_manager_;
+
+  // The downloads webui for an off-the-record window also shows downloads from
+  // the parent profile.
+  scoped_ptr<OriginalDownloadManagerObserver>
+      original_download_manager_observer_;
 
   // The current set of visible DownloadItems for this view received from the
   // DownloadManager. DownloadManager owns the DownloadItems. The vector is
   // kept in order, sorted by ascending start time.
-  typedef std::vector<DownloadItem*> OrderedDownloads;
+  // Note that when a download item is removed, the entry in the vector becomes
+  // null.  This should only be a transient state, as a ModelChanged()
+  // notification should follow close on the heels of such a change.
+  typedef std::vector<content::DownloadItem*> OrderedDownloads;
   OrderedDownloads download_items_;
-
-  base::ScopedCallbackFactory<DownloadsDOMHandler> callback_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadsDOMHandler);
 };

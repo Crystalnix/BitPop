@@ -10,13 +10,13 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/time.h"
 
 class MessageLoop;
-class Task;
 
 // This class maintains state that is used to upload histogram data from the
 // various renderer processes, into the browser process.  Such transactions are
@@ -63,8 +63,6 @@ class HistogramSynchronizer : public
   // already completed, and will not need this instance any further.
   HistogramSynchronizer();
 
-  ~HistogramSynchronizer();
-
   // Return pointer to the singleton instance, which is allocated and
   // deallocated on the main UI thread (during system startup and teardown).
   static HistogramSynchronizer* CurrentSynchronizer();
@@ -77,10 +75,12 @@ class HistogramSynchronizer : public
 
   // Contact all renderers, and get them to upload to the browser any/all
   // changes to histograms.  When all changes have been acquired, or when the
-  // wait time expires (whichever is sooner), post the callback_task to the
-  // specified thread. Note the callback_task is posted exactly once.
+  // wait time expires (whichever is sooner), post the callback to the
+  // specified message loop. Note the callback is posted exactly once.
   static void FetchRendererHistogramsAsynchronously(
-      MessageLoop* callback_thread, Task* callback_task, int wait_time);
+      MessageLoop* callback_thread,
+      const base::Closure& callback,
+      int wait_time);
 
   // This method is called on the IO thread. Deserializes the histograms and
   // records that we have received histograms from a renderer process.
@@ -88,6 +88,10 @@ class HistogramSynchronizer : public
       int sequence_number, const std::vector<std::string>& histograms);
 
  private:
+  friend class base::RefCountedThreadSafe<HistogramSynchronizer>;
+
+  ~HistogramSynchronizer();
+
   // Establish a new sequence_number_, and use it to notify all the renderers of
   // the need to supply, to the browser, any changes in their histograms.
   // The argument indicates whether this will set async_sequence_number_ or
@@ -100,13 +104,13 @@ class HistogramSynchronizer : public
   // either signal the waiting process or call the callback function.
   void DecrementPendingRenderers(int sequence_number);
 
-  // Set the callback_thread_ and callback_task_ members. If these members
-  // already had values, then as a side effect, post the old callback_task_ to
-  // the old callaback_thread_.  This side effect should not generally happen,
-  // but is in place to assure correctness (that any tasks that were set, are
-  // eventually called, and never merely discarded).
+  // Set the callback_thread_ and callback_ members. If these members already
+  // had values, then as a side effect, post the old callback_ to the old
+  // callaback_thread_.  This side effect should not generally happen, but is in
+  // place to assure correctness (that any tasks that were set, are eventually
+  // called, and never merely discarded).
   void SetCallbackTaskAndThread(MessageLoop* callback_thread,
-                                Task* callback_task);
+                                const base::Closure& callback);
 
   void ForceHistogramSynchronizationDoneCallback(int sequence_number);
 
@@ -116,8 +120,10 @@ class HistogramSynchronizer : public
                                      int renderer_count);
 
   // Internal helper function, to post task, and record callback stats.
-  void InternalPostTask(MessageLoop* thread, Task* task,
-      int unresponsive_renderers, const base::TimeTicks& started);
+  void InternalPostTask(MessageLoop* thread,
+                        const base::Closure& callback,
+                        int unresponsive_renderers,
+                        const base::TimeTicks& started);
 
   // This lock_ protects access to all members.
   base::Lock lock_;
@@ -128,8 +134,8 @@ class HistogramSynchronizer : public
 
   // When a request is made to asynchronously update the histograms, we store
   // the task and thread we use to post a completion notification in
-  // callback_task_ and callback_thread_.
-  Task* callback_task_;
+  // callback_ and callback_thread_.
+  base::Closure callback_;
   MessageLoop* callback_thread_;
 
   // We don't track the actual renderers that are contacted for an update, only

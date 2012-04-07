@@ -4,7 +4,7 @@
 
 #include "content/browser/renderer_host/backing_store_skia.h"
 
-#include "content/browser/renderer_host/render_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/canvas.h"
@@ -31,7 +31,7 @@ BackingStoreSkia::~BackingStoreSkia() {
 
 void BackingStoreSkia::SkiaShowRect(const gfx::Point& point,
                                     gfx::Canvas* canvas) {
-  canvas->AsCanvasSkia()->drawBitmap(bitmap_,
+  canvas->GetSkCanvas()->drawBitmap(bitmap_,
       SkIntToScalar(point.x()), SkIntToScalar(point.y()));
 }
 
@@ -42,10 +42,13 @@ size_t BackingStoreSkia::MemorySize() {
 }
 
 void BackingStoreSkia::PaintToBackingStore(
-    RenderProcessHost* process,
+    content::RenderProcessHost* process,
     TransportDIB::Id bitmap,
     const gfx::Rect& bitmap_rect,
-    const std::vector<gfx::Rect>& copy_rects) {
+    const std::vector<gfx::Rect>& copy_rects,
+    const base::Closure& completion_callback,
+    bool* scheduled_completion_callback) {
+  *scheduled_completion_callback = false;
   if (bitmap_rect.IsEmpty())
     return;
 
@@ -60,8 +63,12 @@ void BackingStoreSkia::PaintToBackingStore(
   if (!dib)
     return;
 
-  scoped_ptr<skia::PlatformCanvas> p_canvas(
-      dib->GetPlatformCanvas(width, height));
+  SkPaint copy_paint;
+  copy_paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+
+  SkBitmap sk_bitmap;
+  sk_bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
+  sk_bitmap.setPixels(dib->memory());
   for (size_t i = 0; i < copy_rects.size(); i++) {
     const gfx::Rect& copy_rect = copy_rects[i];
     int x = copy_rect.x() - bitmap_rect.x();
@@ -72,8 +79,7 @@ void BackingStoreSkia::PaintToBackingStore(
     SkRect dstrect = SkRect::MakeXYWH(
         SkIntToScalar(copy_rect.x()), SkIntToScalar(copy_rect.y()),
         SkIntToScalar(w), SkIntToScalar(h));
-    SkBitmap b = skia::GetTopDevice(*p_canvas)->accessBitmap(false);
-    canvas_.get()->drawBitmapRect(b, &srcrect, dstrect);
+    canvas_.get()->drawBitmapRect(sk_bitmap, &srcrect, dstrect, &copy_paint);
   }
 }
 

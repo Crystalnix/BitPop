@@ -9,15 +9,10 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
 
 namespace crypto {
 class RSAPrivateKey;
 }  // namespace base
-
-namespace net {
-class X509Certificate;
-}  // namespace net
 
 namespace remoting {
 
@@ -34,19 +29,19 @@ class HostKeyPair {
   bool Load(HostConfig* host_config);
   void Save(MutableHostConfig* host_config);
 
+  crypto::RSAPrivateKey* private_key() { return key_.get(); }
+
   std::string GetPublicKey() const;
   std::string GetSignature(const std::string& message) const;
 
   // Make a new copy of private key. Caller will own the generated private key.
   crypto::RSAPrivateKey* CopyPrivateKey() const;
-  net::X509Certificate* GenerateCertificate() const;
+  std::string GenerateCertificate() const;
 
  private:
   scoped_ptr<crypto::RSAPrivateKey> key_;
 };
 
 }  // namespace remoting
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::HostKeyPair);
 
 #endif  // REMOTING_HOST_HOST_KEY_PAIR_H_

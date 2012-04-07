@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,14 @@
 #include <CoreFoundation/CoreFoundation.h>
 #import <Foundation/Foundation.h>
 
+#include "base/auto_reset.h"
 #include "base/base_switches.h"
 #import "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #import "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #import "base/mac/scoped_nsautorelease_pool.h"
@@ -24,23 +26,80 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/env_vars.h"
 #include "chrome/installer/util/google_update_settings.h"
+#include "native_client/src/trusted/service_runtime/osx/crash_filter.h"
 #include "policy/policy_constants.h"
 
 namespace {
 
 BreakpadRef gBreakpadRef = NULL;
 
+void SetCrashKeyValue(NSString* key, NSString* value) {
+  // Comment repeated from header to prevent confusion:
+  // IMPORTANT: On OS X, the key/value pairs are sent to the crash server
+  // out of bounds and not recorded on disk in the minidump, this means
+  // that if you look at the minidump file locally you won't see them!
+  if (gBreakpadRef == NULL) {
+    return;
+  }
+
+  BreakpadAddUploadParameter(gBreakpadRef, key, value);
+}
+
+void ClearCrashKeyValue(NSString* key) {
+  if (gBreakpadRef == NULL) {
+    return;
+  }
+
+  BreakpadRemoveUploadParameter(gBreakpadRef, key);
+}
+
+bool FatalMessageHandler(int severity, const char* file, int line,
+                         size_t message_start, const std::string& str) {
+  // Do not handle non-FATAL.
+  if (severity != logging::LOG_FATAL)
+    return false;
+
+  // In case of OOM condition, this code could be reentered when
+  // constructing and storing the key.  Using a static is not
+  // thread-safe, but if multiple threads are in the process of a
+  // fatal crash at the same time, this should work.
+  static bool guarded = false;
+  if (guarded)
+    return false;
+
+  AutoReset<bool> guard(&guarded, true);
+
+  // Only log last path component.  This matches logging.cc.
+  if (file) {
+    const char* slash = strrchr(file, '/');
+    if (slash)
+      file = slash + 1;
+  }
+
+  NSString* fatal_key = @"LOG_FATAL";
+  NSString* fatal_value =
+      [NSString stringWithFormat:@"%s:%d: %s",
+                                 file, line, str.c_str() + message_start];
+  SetCrashKeyValue(fatal_key, fatal_value);
+
+  // Rather than including the code to force the crash here, allow the
+  // caller to do it.
+  return false;
+}
+
+#if !defined(DISABLE_NACL)
+bool NaClBreakpadCrashFilter(int exception_type,
+                             int exception_code,
+                             mach_port_t crashing_thread,
+                             void* context) {
+  return !NaClMachThreadIsInUntrusted(crashing_thread);
+}
+#endif
+
 }  // namespace
 
 bool IsCrashReporterEnabled() {
   return gBreakpadRef != NULL;
-}
-
-void DestructCrashReporter() {
-  if (gBreakpadRef) {
-    BreakpadRelease(gBreakpadRef);
-    gBreakpadRef = NULL;
-  }
 }
 
 // Only called for a branded build of Chrome.app.
@@ -55,7 +114,7 @@ void InitCrashReporter() {
   // Helper processes may not have access to the disk or to the same data as
   // the browser process, so the browser passes the decision to them on the
   // command line.
-  NSBundle* main_bundle = base::mac::MainAppBundle();
+  NSBundle* main_bundle = base::mac::FrameworkBundle();
   bool is_browser = !base::mac::IsBackgroundOnlyProcess();
   bool enable_breakpad = false;
   CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -155,15 +214,17 @@ void InitCrashReporter() {
 
   // Enable child process crashes to include the page URL.
   // TODO: Should this only be done for certain process types?
-  child_process_logging::SetCrashKeyFunctions(SetCrashKeyValue,
-                                              ClearCrashKeyValue);
+  base::mac::SetCrashKeyFunctions(SetCrashKeyValue,
+                                  ClearCrashKeyValue);
 
   if (!is_browser) {
     // Get the guid from the command line switch.
     std::string guid =
         command_line->GetSwitchValueASCII(switches::kEnableCrashReporter);
     child_process_logging::SetClientId(guid);
-   }
+  }
+
+  logging::SetLogMessageHandler(&FatalMessageHandler);
 }
 
 void InitCrashProcessInfo() {
@@ -180,36 +241,12 @@ void InitCrashProcessInfo() {
     process_type = base::SysUTF8ToNSString(process_type_switch);
   }
 
+#if !defined(DISABLE_NACL)
+  if (process_type_switch == switches::kNaClLoaderProcess) {
+    BreakpadSetFilterCallback(gBreakpadRef, NaClBreakpadCrashFilter, NULL);
+  }
+#endif
+
   // Store process type in crash dump.
   SetCrashKeyValue(@"ptype", process_type);
-}
-
-void SetCrashKeyValue(NSString* key, NSString* value) {
-  // Comment repeated from header to prevent confusion:
-  // IMPORTANT: On OS X, the key/value pairs are sent to the crash server
-  // out of bounds and not recorded on disk in the minidump, this means
-  // that if you look at the minidump file locally you won't see them!
-  if (gBreakpadRef == NULL) {
-    return;
-  }
-
-  BreakpadAddUploadParameter(gBreakpadRef, key, value);
-}
-
-void ClearCrashKeyValue(NSString* key) {
-  if (gBreakpadRef == NULL) {
-    return;
-  }
-
-  BreakpadRemoveUploadParameter(gBreakpadRef, key);
-}
-
-// NOTE(shess): These also exist in breakpad_mac_stubs.mm.
-ScopedCrashKey::ScopedCrashKey(NSString* key, NSString* value)
-    : crash_key_([key retain]) {
-  SetCrashKeyValue(crash_key_.get(), value);
-}
-
-ScopedCrashKey::~ScopedCrashKey() {
-  ClearCrashKeyValue(crash_key_.get());
 }

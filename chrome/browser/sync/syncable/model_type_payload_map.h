@@ -14,7 +14,9 @@
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace syncable {
 
@@ -24,11 +26,13 @@ typedef std::map<ModelType, std::string> ModelTypePayloadMap;
 
 // Helper functions for building ModelTypePayloadMaps.
 
-// Make a TypePayloadMap from all the types in a ModelTypeBitSet using
-// a default payload.
-ModelTypePayloadMap ModelTypePayloadMapFromBitSet(
-    const ModelTypeBitSet& model_types,
-    const std::string& payload);
+// Make a TypePayloadMap from all the types in a ModelTypeSet using a
+// default payload.
+ModelTypePayloadMap ModelTypePayloadMapFromEnumSet(
+    ModelTypeSet model_types, const std::string& payload);
+
+ModelTypeSet ModelTypePayloadMapToEnumSet(
+    const ModelTypePayloadMap& payload_map);
 
 // Make a TypePayloadMap for all the enabled types in a
 // ModelSafeRoutingInfo using a default payload.
@@ -36,8 +40,11 @@ ModelTypePayloadMap ModelTypePayloadMapFromRoutingInfo(
     const browser_sync::ModelSafeRoutingInfo& routes,
     const std::string& payload);
 
+std::string ModelTypePayloadMapToString(
+    const ModelTypePayloadMap& model_type_payloads);
+
 // Caller takes ownership of the returned dictionary.
-DictionaryValue* ModelTypePayloadMapToValue(
+base::DictionaryValue* ModelTypePayloadMapToValue(
     const ModelTypePayloadMap& model_type_payloads);
 
 // Coalesce |update| into |original|, overwriting only when |update| has

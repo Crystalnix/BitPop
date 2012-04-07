@@ -58,6 +58,8 @@ PlatformFile CreatePlatformFile(const FilePath& name,
   DWORD sharing = (flags & PLATFORM_FILE_EXCLUSIVE_READ) ? 0 : FILE_SHARE_READ;
   if (!(flags & PLATFORM_FILE_EXCLUSIVE_WRITE))
     sharing |= FILE_SHARE_WRITE;
+  if (flags & PLATFORM_FILE_SHARE_DELETE)
+    sharing |= FILE_SHARE_DELETE;
 
   DWORD create_flags = 0;
   if (flags & PLATFORM_FILE_ASYNC)
@@ -130,6 +132,11 @@ int ReadPlatformFile(PlatformFile file, int64 offset, char* data, int size) {
     return 0;
 
   return -1;
+}
+
+int ReadPlatformFileNoBestEffort(PlatformFile file, int64 offset,
+                                 char* data, int size) {
+  return ReadPlatformFile(file, offset, data, size);
 }
 
 int WritePlatformFile(PlatformFile file, int64 offset,
@@ -209,7 +216,7 @@ bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info) {
   size.LowPart = file_info.nFileSizeLow;
   info->size = size.QuadPart;
   info->is_directory =
-      file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
+      (file_info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
   info->is_symbolic_link = false; // Windows doesn't have symbolic links.
   info->last_modified = base::Time::FromFileTime(file_info.ftLastWriteTime);
   info->last_accessed = base::Time::FromFileTime(file_info.ftLastAccessTime);
@@ -217,4 +224,4 @@ bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info) {
   return true;
 }
 
-}  // namespace disk_cache
+}  // namespace base

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,18 +78,9 @@ base::StringPiece FakeSSLClientSocket::GetSslServerHello() {
 
 FakeSSLClientSocket::FakeSSLClientSocket(
     net::StreamSocket* transport_socket)
-    : connect_callback_(ALLOW_THIS_IN_INITIALIZER_LIST(this),
-                        &FakeSSLClientSocket::OnConnectDone),
-      send_client_hello_callback_(
-          ALLOW_THIS_IN_INITIALIZER_LIST(this),
-          &FakeSSLClientSocket::OnSendClientHelloDone),
-      verify_server_hello_callback_(
-          ALLOW_THIS_IN_INITIALIZER_LIST(this),
-          &FakeSSLClientSocket::OnVerifyServerHelloDone),
-      transport_socket_(transport_socket),
+    : transport_socket_(transport_socket),
       next_handshake_state_(STATE_NONE),
       handshake_completed_(false),
-      user_connect_callback_(NULL),
       write_buf_(NewDrainableIOBufferWithSize(arraysize(kSslClientHello))),
       read_buf_(NewDrainableIOBufferWithSize(arraysize(kSslServerHello))) {
   CHECK(transport_socket_.get());
@@ -99,14 +90,14 @@ FakeSSLClientSocket::FakeSSLClientSocket(
 FakeSSLClientSocket::~FakeSSLClientSocket() {}
 
 int FakeSSLClientSocket::Read(net::IOBuffer* buf, int buf_len,
-                             net::CompletionCallback* callback) {
+                              const net::CompletionCallback& callback) {
   DCHECK_EQ(next_handshake_state_, STATE_NONE);
   DCHECK(handshake_completed_);
   return transport_socket_->Read(buf, buf_len, callback);
 }
 
 int FakeSSLClientSocket::Write(net::IOBuffer* buf, int buf_len,
-                              net::CompletionCallback* callback) {
+                               const net::CompletionCallback& callback) {
   DCHECK_EQ(next_handshake_state_, STATE_NONE);
   DCHECK(handshake_completed_);
   return transport_socket_->Write(buf, buf_len, callback);
@@ -120,21 +111,21 @@ bool FakeSSLClientSocket::SetSendBufferSize(int32 size) {
   return transport_socket_->SetSendBufferSize(size);
 }
 
-int FakeSSLClientSocket::Connect(net::CompletionCallback* callback) {
+int FakeSSLClientSocket::Connect(const net::CompletionCallback& callback) {
   // We don't support synchronous operation, even if
   // |transport_socket_| does.
-  DCHECK(callback);
+  DCHECK(!callback.is_null());
   DCHECK_EQ(next_handshake_state_, STATE_NONE);
   DCHECK(!handshake_completed_);
-  DCHECK(!user_connect_callback_);
+  DCHECK(user_connect_callback_.is_null());
   DCHECK_EQ(write_buf_->BytesConsumed(), 0);
   DCHECK_EQ(read_buf_->BytesConsumed(), 0);
 
   next_handshake_state_ = STATE_CONNECT;
   int status = DoHandshakeLoop();
-  if (status == net::ERR_IO_PENDING) {
+  if (status == net::ERR_IO_PENDING)
     user_connect_callback_ = callback;
-  }
+
   return status;
 }
 
@@ -167,9 +158,9 @@ int FakeSSLClientSocket::DoHandshakeLoop() {
 void FakeSSLClientSocket::RunUserConnectCallback(int status) {
   DCHECK_LE(status, net::OK);
   next_handshake_state_ = STATE_NONE;
-  net::CompletionCallback* user_connect_callback = user_connect_callback_;
-  user_connect_callback_ = NULL;
-  user_connect_callback->Run(status);
+  net::CompletionCallback user_connect_callback = user_connect_callback_;
+  user_connect_callback_.Reset();
+  user_connect_callback.Run(status);
 }
 
 void FakeSSLClientSocket::DoHandshakeLoopWithUserConnectCallback() {
@@ -180,7 +171,8 @@ void FakeSSLClientSocket::DoHandshakeLoopWithUserConnectCallback() {
 }
 
 int FakeSSLClientSocket::DoConnect() {
-  int status = transport_socket_->Connect(&connect_callback_);
+  int status = transport_socket_->Connect(
+      base::Bind(&FakeSSLClientSocket::OnConnectDone, base::Unretained(this)));
   if (status != net::OK) {
     return status;
   }
@@ -191,7 +183,7 @@ int FakeSSLClientSocket::DoConnect() {
 void FakeSSLClientSocket::OnConnectDone(int status) {
   DCHECK_NE(status, net::ERR_IO_PENDING);
   DCHECK_LE(status, net::OK);
-  DCHECK(user_connect_callback_);
+  DCHECK(!user_connect_callback_.is_null());
   if (status != net::OK) {
     RunUserConnectCallback(status);
     return;
@@ -209,7 +201,8 @@ void FakeSSLClientSocket::ProcessConnectDone() {
 int FakeSSLClientSocket::DoSendClientHello() {
   int status = transport_socket_->Write(
       write_buf_, write_buf_->BytesRemaining(),
-      &send_client_hello_callback_);
+      base::Bind(&FakeSSLClientSocket::OnSendClientHelloDone,
+                 base::Unretained(this)));
   if (status < net::OK) {
     return status;
   }
@@ -219,7 +212,7 @@ int FakeSSLClientSocket::DoSendClientHello() {
 
 void FakeSSLClientSocket::OnSendClientHelloDone(int status) {
   DCHECK_NE(status, net::ERR_IO_PENDING);
-  DCHECK(user_connect_callback_);
+  DCHECK(!user_connect_callback_.is_null());
   if (status < net::OK) {
     RunUserConnectCallback(status);
     return;
@@ -242,7 +235,8 @@ void FakeSSLClientSocket::ProcessSendClientHelloDone(size_t written) {
 int FakeSSLClientSocket::DoVerifyServerHello() {
   int status = transport_socket_->Read(
       read_buf_, read_buf_->BytesRemaining(),
-      &verify_server_hello_callback_);
+      base::Bind(&FakeSSLClientSocket::OnVerifyServerHelloDone,
+                 base::Unretained(this)));
   if (status < net::OK) {
     return status;
   }
@@ -252,7 +246,7 @@ int FakeSSLClientSocket::DoVerifyServerHello() {
 
 void FakeSSLClientSocket::OnVerifyServerHelloDone(int status) {
   DCHECK_NE(status, net::ERR_IO_PENDING);
-  DCHECK(user_connect_callback_);
+  DCHECK(!user_connect_callback_.is_null());
   if (status < net::OK) {
     RunUserConnectCallback(status);
     return;
@@ -295,7 +289,7 @@ void FakeSSLClientSocket::Disconnect() {
   transport_socket_->Disconnect();
   next_handshake_state_ = STATE_NONE;
   handshake_completed_ = false;
-  user_connect_callback_ = NULL;
+  user_connect_callback_.Reset();
   write_buf_->SetOffset(0);
   read_buf_->SetOffset(0);
 }
@@ -334,6 +328,14 @@ bool FakeSSLClientSocket::WasEverUsed() const {
 
 bool FakeSSLClientSocket::UsingTCPFastOpen() const {
   return transport_socket_->UsingTCPFastOpen();
+}
+
+int64 FakeSSLClientSocket::NumBytesRead() const {
+  return transport_socket_->NumBytesRead();
+}
+
+base::TimeDelta FakeSSLClientSocket::GetConnectTimeMicros() const {
+  return transport_socket_->GetConnectTimeMicros();
 }
 
 }  // namespace notifier

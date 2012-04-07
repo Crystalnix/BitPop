@@ -9,27 +9,20 @@
 #include <string>
 #include <vector>
 
-#include "chrome/browser/chromeos/options/network_config_view.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/models/menu_model.h"
-#include "ui/gfx/native_widget_types.h"
-#include "views/controls/menu/view_menu_delegate.h"
+#include "base/memory/scoped_ptr.h"
+#include "chrome/browser/chromeos/cros/network_library.h"  // ConnectionType
+#include "ui/gfx/native_widget_types.h"  // gfx::NativeWindow
+#include "ui/views/controls/menu/view_menu_delegate.h"
 
-namespace {
-
-const int kMainCommandIndexOffset = 1000;
-const int kVPNCommandIndexOffset  = 2000;
-const int kMoreCommandIndexOffset = 3000;
-
-}  // namespace
-
-namespace gfx {
-class Canvas;
+namespace ui {
+class MenuModel;
 }
 
 namespace views {
 class MenuItemView;
 class MenuButton;
+class MenuModelAdapter;
+class MenuRunner;
 }
 
 namespace chromeos {
@@ -49,7 +42,8 @@ class NetworkMenuModel;
 // <icon>  Cellular Network A
 // <icon>  Cellular Network B
 // <icon>  Cellular Network C
-// <icon>  Other...
+// <icon>  Other Wi-Fi network...
+// --------------------------------
 // <icon>  Private networks ->
 //         <icon>  Virtual Network A
 //         <icon>  Virtual Network B
@@ -65,122 +59,58 @@ class NetworkMenuModel;
 //
 // <icon> will show the strength of the wifi/cellular networks.
 // The label will be BOLD if the network is currently connected.
-class NetworkMenu : public views::ViewMenuDelegate {
+
+class NetworkMenu {
  public:
-  NetworkMenu();
+  class Delegate {
+   public:
+    virtual views::MenuButton* GetMenuButton() = 0;
+    virtual gfx::NativeWindow GetNativeWindow() const = 0;
+    virtual void OpenButtonOptions() = 0;
+    virtual bool ShouldOpenButtonOptions() const = 0;
+  };
+
+  explicit NetworkMenu(Delegate* delegate);
   virtual ~NetworkMenu();
 
-  void SetFirstLevelMenuWidth(int width);
+  // Access to menu definition.
+  ui::MenuModel* GetMenuModel();
 
   // Cancels the active menu.
   void CancelMenu();
 
-  virtual bool IsBrowserMode() const = 0;
+  // Update the menu (e.g. when the network list or status has changed).
+  virtual void UpdateMenu();
 
-  // The following methods returns pointer to a shared instance of the SkBitmap.
-  // This shared bitmap is owned by the resource bundle and should not be freed.
-
-  // Returns the Icon for a network strength for a WifiNetwork |wifi|.
-  // Expected to never return NULL.
-  static const SkBitmap* IconForNetworkStrength(const WifiNetwork* wifi);
-  // Returns the Icon for a network strength for CellularNetwork |cellular|.
-  // Expected to never return NULL.
-  static const SkBitmap* IconForNetworkStrength(
-      const CellularNetwork* cellular);
-  // Returns the Icon for animating network connecting.
-  // |animation_value| is the value from Animation.GetCurrentValue()
-  // |type| is the connection type
-  // Expected to never return NULL.
-  static const SkBitmap* IconForNetworkConnecting(double animation_value,
-                                                  ConnectionType type);
-
-  // Returns the Badge for a given network technology.
-  // This returns different colored symbols depending on cellular data left.
-  // Returns NULL if not badge is needed.
-  static const SkBitmap* BadgeForNetworkTechnology(
-      const CellularNetwork* cellular);
-  // Returns the Badge for a given network roaming status.
-  // This returns "R" badge if network is in roaming state, otherwise
-  // returns NULL. Badge is supposed to be shown on top right of the icon.
-  static const SkBitmap* BadgeForRoamingStatus(const CellularNetwork* cellular);
-  // Returns the badge for the given network if it's active with vpn.
-  // If |network| is not null, will check if it's the active network.
-  // If |network| is null or if |network| is the active one, the yellow lock
-  // badge will be returned, otherwise returns null.
-  // Badge is supposed to be shown on in bottom left corner of the icon.
-  static const SkBitmap* BadgeForPrivateNetworkStatus(const Network* network);
-
-  // Returns an Icon for a given network.
-  static SkBitmap IconForNetwork(const Network* network);
-  // This method will convert the |icon| bitmap to the correct size for display.
-  // |icon| must be non-NULL.
-  // If |badge| icon is not NULL, it will be drawn on top of the icon in
-  // the bottom-right corner.
-  static SkBitmap IconForDisplay(const SkBitmap* icon, const SkBitmap* badge);
-  // This method will convert the |icon| bitmap to the correct size for display.
-  // |icon| must be non-NULL.
-  // If one of the |bottom_right_badge| or |top_left_badge| or
-  // |bottom_left_badge| icons are not NULL, they will be drawn on top of the
-  // icon.
-  static SkBitmap IconForDisplay(const SkBitmap* icon,
-                                 const SkBitmap* bottom_right_badge,
-                                 const SkBitmap* top_left_badge,
-                                 const SkBitmap* bottom_left_badge);
-
-  // Returns the connection type which should be passed to subsequent calls
-  // to IconForNetworkConnecting(). If |network| is non NULL this will be the
-  // either TYPE_WIFI or TYPE_CELLULAR depending on the network. If |network|
-  // is NULL it will be the type of a connecting network, preferring TYPE_WIFI
-  // if both types are connecting. If no network is connecting and |network| is
-  // NULL, TYPE_WIFI will be returned.
-  static ConnectionType TypeForNetwork(const Network* network);
-
- protected:
-  virtual views::MenuButton* GetMenuButton() = 0;
-  virtual gfx::NativeWindow GetNativeWindow() const = 0;
-  virtual void OpenButtonOptions() = 0;
-  virtual bool ShouldOpenButtonOptions() const = 0;
-
-  // Notify subclasses that connection to |network| was initiated.
-  virtual void OnConnectNetwork(const Network* network,
-                                SkBitmap selected_icon_) {}
+  // Run the menu.
+  void RunMenu(views::View* source);
 
   // Shows network details in Web UI options window.
   void ShowTabbedNetworkSettings(const Network* network) const;
 
-  // Update the menu (e.g. when the network list or status has changed).
-  void UpdateMenu();
+  // Getters.
+  Delegate* delegate() const { return delegate_; }
+
+  // Setters.
+  void set_min_width(int min_width) { min_width_ = min_width; }
 
  private:
   friend class NetworkMenuModel;
 
-  // views::ViewMenuDelegate implementation.
-  virtual void RunMenu(views::View* source, const gfx::Point& pt);
+  // Weak ptr to delegate.
+  Delegate* delegate_;
 
   // Set to true if we are currently refreshing the menu.
   bool refreshing_menu_;
 
-  // Bars images resources.
-  static const int kNumBarsImages;
-  static const int kBarsImages[];
-  static const int kBarsImagesOrange[];
-  static SkBitmap kBarsImagesAnimating[];
-
-  // Arcs image resources.
-  static const int kNumArcsImages;
-  static const int kArcsImages[];
-  static SkBitmap kArcsImagesAnimating[];
-
   // The network menu.
-  scoped_ptr<views::MenuItemView> network_menu_;
-
   scoped_ptr<NetworkMenuModel> main_menu_model_;
+  scoped_ptr<views::MenuModelAdapter> menu_model_adapter_;
+  views::MenuItemView* menu_item_view_;
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   // Holds minimum width of the menu.
   int min_width_;
-
-  // If true, call into the settings UI for network configuration dialogs.
-  bool use_settings_ui_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkMenu);
 };

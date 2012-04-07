@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,9 @@
 #include <set>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/device_orientation/orientation.h"
@@ -18,7 +18,7 @@ namespace device_orientation {
 
 ProviderImpl::ProviderImpl(const DataFetcherFactory factories[])
     : creator_loop_(MessageLoop::current()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(do_poll_method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   for (const DataFetcherFactory* fp = factories; *fp; ++fp)
     factories_.push_back(*fp);
 }
@@ -98,11 +98,11 @@ void ProviderImpl::DoInitializePollingThread(
 void ProviderImpl::ScheduleInitializePollingThread() {
   DCHECK(MessageLoop::current() == creator_loop_);
 
-  Task* task = NewRunnableMethod(this,
-                                 &ProviderImpl::DoInitializePollingThread,
-                                 factories_);
   MessageLoop* polling_loop = polling_thread_->message_loop();
-  polling_loop->PostTask(FROM_HERE, task);
+  polling_loop->PostTask(FROM_HERE,
+                         base::Bind(&ProviderImpl::DoInitializePollingThread,
+                                    this,
+                                    factories_));
 }
 
 void ProviderImpl::DoNotify(const Orientation& orientation) {
@@ -124,8 +124,8 @@ void ProviderImpl::DoNotify(const Orientation& orientation) {
 void ProviderImpl::ScheduleDoNotify(const Orientation& orientation) {
   DCHECK(MessageLoop::current() == polling_thread_->message_loop());
 
-  Task* task = NewRunnableMethod(this, &ProviderImpl::DoNotify, orientation);
-  creator_loop_->PostTask(FROM_HERE, task);
+  creator_loop_->PostTask(
+      FROM_HERE, base::Bind(&ProviderImpl::DoNotify, this, orientation));
 }
 
 void ProviderImpl::DoPoll() {
@@ -150,9 +150,11 @@ void ProviderImpl::DoPoll() {
 void ProviderImpl::ScheduleDoPoll() {
   DCHECK(MessageLoop::current() == polling_thread_->message_loop());
 
-  Task* task = do_poll_method_factory_.NewRunnableMethod(&ProviderImpl::DoPoll);
   MessageLoop* polling_loop = polling_thread_->message_loop();
-  polling_loop->PostDelayedTask(FROM_HERE, task, SamplingIntervalMs());
+  polling_loop->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ProviderImpl::DoPoll, weak_factory_.GetWeakPtr()),
+      SamplingInterval());
 }
 
 namespace {
@@ -190,14 +192,14 @@ bool ProviderImpl::SignificantlyDifferent(const Orientation& o1,
                                          o2.gamma_);
 }
 
-int ProviderImpl::SamplingIntervalMs() const {
+base::TimeDelta ProviderImpl::SamplingInterval() const {
   DCHECK(MessageLoop::current() == polling_thread_->message_loop());
   DCHECK(data_fetcher_.get());
 
   // TODO(erg): There used to be unused code here, that called a default
   // implementation on the DataFetcherInterface that was never defined. I'm
   // removing unused methods from headers.
-  return kDesiredSamplingIntervalMs;
+  return base::TimeDelta::FromMilliseconds(kDesiredSamplingIntervalMs);
 }
 
 }  // namespace device_orientation

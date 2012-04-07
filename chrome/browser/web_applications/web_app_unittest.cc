@@ -10,33 +10,19 @@
 #include "chrome/browser/ui/tab_contents/test_tab_contents_wrapper.h"
 #include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/common/extensions/extension_messages.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 class WebApplicationTest : public TabContentsWrapperTestHarness {
  public:
-  WebApplicationTest()
-      : TabContentsWrapperTestHarness(),
-        ui_thread_(BrowserThread::UI, &message_loop_) {
+  WebApplicationTest() : ui_thread_(BrowserThread::UI, &message_loop_) {
   }
 
  private:
-  // Supply our own profile so we use the correct profile data. The test harness
-  // is not supposed to overwrite a profile if it's already created.
-  virtual void SetUp() {
-    profile_.reset(new TestingProfile());
-
-    TabContentsWrapperTestHarness::SetUp();
-  }
-
-  virtual void TearDown() {
-    TabContentsWrapperTestHarness::TearDown();
-
-    profile_.reset(NULL);
-  }
-
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(WebApplicationTest, GetShortcutInfoForTab) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,50 +10,45 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/ui/views/notifications/balloon_view_host.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/label.h"
-#include "views/controls/menu/view_menu_delegate.h"
-#include "views/view.h"
-#include "views/widget/widget_delegate.h"
-
-namespace views {
-class ButtonListener;
-class ImageButton;
-class ImagePainter;
-class TextButton;
-class Menu2;
-}  // namespace views
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget_delegate.h"
 
 class BalloonCollection;
-class NotificationDetails;
 class NotificationOptionsMenuModel;
-class NotificationSource;
 
 namespace ui {
 class SlideAnimation;
 }
 
+namespace views {
+class ButtonListener;
+class ImageButton;
+class MenuRunner;
+}
+
 // A balloon view is the UI component for a desktop notification toasts.
 // It draws a border, and within the border an HTML renderer.
 class BalloonViewImpl : public BalloonView,
-                        public views::View,
                         public views::ViewMenuDelegate,
-                        public views::WidgetDelegate,
+                        public views::WidgetDelegateView,
                         public views::ButtonListener,
-                        public NotificationObserver,
+                        public content::NotificationObserver,
                         public ui::AnimationDelegate {
  public:
   explicit BalloonViewImpl(BalloonCollection* collection);
-  ~BalloonViewImpl();
+  virtual ~BalloonViewImpl();
 
   // BalloonView interface.
   virtual void Show(Balloon* balloon) OVERRIDE;
@@ -62,6 +57,8 @@ class BalloonViewImpl : public BalloonView,
   virtual void Close(bool by_user) OVERRIDE;
   virtual gfx::Size GetSize() const OVERRIDE;
   virtual BalloonHost* GetHost() const OVERRIDE;
+
+  void set_enable_web_ui(bool enable) { enable_web_ui_ = enable; }
 
  private:
   // views::View interface.
@@ -80,16 +77,13 @@ class BalloonViewImpl : public BalloonView,
   virtual void ButtonPressed(
       views::Button* sender, const views::Event&) OVERRIDE;
 
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // ui::AnimationDelegate interface.
   virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-
-  // Launches the options menu at screen coordinates |pt|.
-  void RunOptionsMenu(const gfx::Point& pt);
 
   // Initializes the options menu.
   void CreateOptionsMenu();
@@ -145,7 +139,7 @@ class BalloonViewImpl : public BalloonView,
   scoped_ptr<BalloonViewHost> html_contents_;
 
   // The following factory is used to call methods at a later time.
-  ScopedRunnableMethodFactory<BalloonViewImpl> method_factory_;
+  base::WeakPtrFactory<BalloonViewImpl> method_factory_;
 
   // Pointer to sub-view is owned by the View sub-class.
   views::ImageButton* close_button_;
@@ -160,10 +154,13 @@ class BalloonViewImpl : public BalloonView,
 
   // The options menu.
   scoped_ptr<NotificationOptionsMenuModel> options_menu_model_;
-  scoped_ptr<views::Menu2> options_menu_menu_;
+  scoped_ptr<views::MenuRunner> menu_runner_;
   views::MenuButton* options_menu_button_;
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
+
+  // Set to true if this is browser generate web UI.
+  bool enable_web_ui_;
 
   DISALLOW_COPY_AND_ASSIGN(BalloonViewImpl);
 };

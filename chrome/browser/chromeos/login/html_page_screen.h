@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,39 +8,28 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
 #include "chrome/browser/chromeos/login/view_screen.h"
 #include "chrome/browser/chromeos/login/web_page_screen.h"
 #include "chrome/browser/chromeos/login/web_page_view.h"
+#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
 
 namespace chromeos {
 
 class ViewScreenDelegate;
-
-class HTMLPageDomView : public WebPageDomView {
- public:
-  HTMLPageDomView() {}
-
- protected:
-  // Overriden from DOMView:
-  virtual TabContents* CreateTabContents(Profile* profile,
-                                         SiteInstance* instance);
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(HTMLPageDomView);
-};
 
 class HTMLPageView : public WebPageView {
  public:
   HTMLPageView();
 
  protected:
-  virtual WebPageDomView* dom_view();
+  virtual WebPageDomView* dom_view() OVERRIDE;
 
  private:
   // View that renders page.
-  HTMLPageDomView* dom_view_;
+  WebPageDomView* dom_view_;
 
   DISALLOW_COPY_AND_ASSIGN(HTMLPageView);
 };
@@ -48,36 +37,31 @@ class HTMLPageView : public WebPageView {
 // HTMLPageScreen is used to show arbitrary HTML page. It is used to show
 // simple screens like recover.
 class HTMLPageScreen : public ViewScreen<HTMLPageView>,
-                       public WebPageScreen,
-                       public WebPageDelegate {
+                       public WebPageScreen {
  public:
   HTMLPageScreen(ViewScreenDelegate* delegate, const std::string& url);
   virtual ~HTMLPageScreen();
 
-  // WebPageDelegate implementation:
-  virtual void OnPageLoaded();
-  virtual void OnPageLoadFailed(const std::string& url);
-
  protected:
   // Overrides WebPageScreen:
-  virtual void OnNetworkTimeout();
+  virtual void OnNetworkTimeout() OVERRIDE;
 
  private:
   // ViewScreen implementation:
-  virtual void CreateView();
-  virtual void Refresh();
-  virtual HTMLPageView* AllocateView();
+  virtual void CreateView() OVERRIDE;
+  virtual void Refresh() OVERRIDE;
+  virtual HTMLPageView* AllocateView() OVERRIDE;
 
-  virtual void LoadingStateChanged(TabContents* source);
-  virtual void NavigationStateChanged(const TabContents* source,
-                                      unsigned changed_flags);
-  virtual void HandleKeyboardEvent(const NativeWebKeyboardEvent& event);
+  virtual void HandleKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
 
   // WebPageScreen implementation:
-  virtual void CloseScreen(ScreenObserver::ExitCodes code);
+  virtual void CloseScreen(ScreenObserver::ExitCodes code) OVERRIDE;
 
   // URL to navigate.
   std::string url_;
+
+  UnhandledKeyboardEventHandler unhandled_keyboard_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(HTMLPageScreen);
 };

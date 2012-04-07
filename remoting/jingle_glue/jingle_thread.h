@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,9 @@
 #include "third_party/libjingle/source/talk/base/taskrunner.h"
 #include "third_party/libjingle/source/talk/base/thread.h"
 
-namespace buzz {
-class XmppClient;
-}
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
 
 namespace remoting {
 
@@ -24,17 +24,25 @@ class TaskPump : public talk_base::MessageHandler,
   TaskPump();
 
   // TaskRunner methods.
-  virtual void WakeTasks();
-  virtual int64 CurrentTime();
+  virtual void WakeTasks() OVERRIDE;
+  virtual int64 CurrentTime() OVERRIDE;
 
   // MessageHandler methods.
-  virtual void OnMessage(talk_base::Message* pmsg);
+  virtual void OnMessage(talk_base::Message* pmsg) OVERRIDE;
+};
+
+class JingleThreadMessageLoop : public MessageLoop {
+ public:
+  explicit JingleThreadMessageLoop(talk_base::Thread* thread);
+  virtual ~JingleThreadMessageLoop();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(JingleThreadMessageLoop);
 };
 
 // TODO(sergeyu): This class should be changed to inherit from Chromiums
 // base::Thread instead of libjingle's thread.
-class JingleThread : public talk_base::Thread,
-                     public talk_base::MessageHandler {
+class JingleThread : public talk_base::Thread {
  public:
   JingleThread();
   virtual ~JingleThread();
@@ -42,29 +50,24 @@ class JingleThread : public talk_base::Thread,
   void Start();
 
   // Main function for the thread. Should not be called directly.
-  virtual void Run();
+  virtual void Run() OVERRIDE;
 
   // Stop the thread.
-  virtual void Stop();
+  virtual void Stop() OVERRIDE;
 
   // Returns Chromiums message loop for this thread.
-  // TODO(sergeyu): remove this method when we use base::Thread instead of
-  // talk_base::Thread
   MessageLoop* message_loop();
+  base::MessageLoopProxy* message_loop_proxy();
 
   // Returns task pump if the thread is running, otherwise NULL is returned.
   TaskPump* task_pump();
 
  private:
-  class JingleMessageLoop;
-  class JingleMessagePump;
-
-  virtual void OnMessage(talk_base::Message* msg);
-
   TaskPump* task_pump_;
   base::WaitableEvent started_event_;
   base::WaitableEvent stopped_event_;
   MessageLoop* message_loop_;
+  scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(JingleThread);
 };

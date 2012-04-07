@@ -24,13 +24,12 @@
 #include "courgette/third_party/bsdiff.h"
 #include "courgette/crc.h"
 #include "courgette/difference_estimator.h"
-#include "courgette/image_info.h"
 #include "courgette/streams.h"
 #include "courgette/region.h"
 #include "courgette/simple_delta.h"
 
-#include "courgette/win32_x86_patcher.h"
-#include "courgette/win32_x86_generator.h"
+#include "courgette/patcher_x86_32.h"
+#include "courgette/patch_generator_x86_32.h"
 
 namespace courgette {
 
@@ -65,17 +64,31 @@ Status TransformationPatchGenerator::Reform(
 // Element kind.
 TransformationPatchGenerator* MakeGenerator(Element* old_element,
                                             Element* new_element) {
-  if (new_element->kind() == Element::WIN32_X86_WITH_CODE) {
-    CourgetteWin32X86PatchGenerator* generator =
-        new CourgetteWin32X86PatchGenerator(
-            old_element,
-            new_element,
-            new CourgetteWin32X86Patcher(old_element->region()));
-    return generator;
-  } else {
-    LOG(WARNING) << "Unexpected Element::Kind " << old_element->kind();
-    return NULL;
+  switch (new_element->kind()) {
+    case EXE_UNKNOWN:
+      break;
+    case EXE_WIN_32_X86: {
+      TransformationPatchGenerator* generator =
+          new PatchGeneratorX86_32(
+              old_element,
+              new_element,
+              new PatcherX86_32(old_element->region()),
+              EXE_WIN_32_X86);
+      return generator;
+    }
+    case EXE_ELF_32_X86: {
+      TransformationPatchGenerator* generator =
+          new PatchGeneratorX86_32(
+              old_element,
+              new_element,
+              new PatcherX86_32(old_element->region()),
+              EXE_ELF_32_X86);
+      return generator;
+    }
   }
+
+  LOG(WARNING) << "Unexpected Element::Kind " << old_element->kind();
+  return NULL;
 }
 
 // Checks to see if the proposed comparison is 'unsafe'.  Sometimes one element
@@ -237,7 +250,7 @@ Status GenerateEnsemblePatch(SourceStream* base,
     return C_STREAM_ERROR;
 
   for (size_t i = 0;  i < number_of_transformations;  ++i) {
-    CourgettePatchFile::TransformationMethodId kind = generators[i]->Kind();
+    ExecutableType kind = generators[i]->Kind();
     if (!tranformation_descriptions->WriteVarint32(kind))
       return C_STREAM_ERROR;
   }

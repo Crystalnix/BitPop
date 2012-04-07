@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,24 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/basictypes.h"
 #include "base/string16.h"
-#include "chrome/browser/chromeos/notifications/balloon_collection_impl.h"
+#include "chrome/browser/chromeos/notifications/balloon_view_host.h"  // MessageCallback
 #include "chrome/browser/notifications/notification_delegate.h"
 #include "googleurl/src/gurl.h"
 
-class MessageCallback;
 class Profile;
 
 namespace chromeos {
+
+#if defined(USE_AURA)
+class BalloonCollectionImplAura;
+typedef class BalloonCollectionImplAura BalloonCollectionImplType;
+#else
+class BalloonCollectionImpl;
+typedef class BalloonCollectionImpl BalloonCollectionImplType;
+#endif
 
 // The system notification object handles the display of a system notification
 
@@ -49,7 +57,8 @@ class SystemNotification {
   // Same as Show() above with a footer link at the bottom and a callback
   // for when the link is clicked.
   void Show(const string16& message, const string16& link_text,
-            MessageCallback* callback, bool urgent, bool sticky);
+            const BalloonViewHost::MessageCallback& callback,
+            bool urgent, bool sticky);
 
   // Hide will dismiss the notification, if the notification is already
   // hidden it does nothing
@@ -65,11 +74,11 @@ class SystemNotification {
   class Delegate : public NotificationDelegate {
    public:
     explicit Delegate(const std::string& id);
-    virtual void Display() {}
-    virtual void Error() {}
-    virtual void Close(bool by_user) {}
-    virtual void Click() {}
-    virtual std::string id() const;
+    virtual void Display() OVERRIDE {}
+    virtual void Error() OVERRIDE {}
+    virtual void Close(bool by_user) OVERRIDE {}
+    virtual void Click() OVERRIDE {}
+    virtual std::string id() const OVERRIDE;
 
    private:
     std::string id_;
@@ -80,7 +89,7 @@ class SystemNotification {
   void Init(int icon_resource_id);
 
   Profile* profile_;
-  BalloonCollectionImpl* collection_;
+  BalloonCollectionImplType* collection_;
   scoped_refptr<NotificationDelegate> delegate_;
   GURL icon_;
   string16 title_;

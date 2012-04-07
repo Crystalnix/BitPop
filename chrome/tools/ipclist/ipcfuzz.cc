@@ -3,23 +3,23 @@
 // found in the LICENSE file.
 
 #include <algorithm>
-#include <iostream>
+#include <ostream>
 #include <set>
 #include <vector>
 
 #include "base/command_line.h"
 #include "base/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
 #include "base/pickle.h"
 #include "base/process_util.h"
-#include "base/scoped_ptr.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/threading/thread.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/tools/ipclist/all_messages.h"
+#include "chrome/common/all_messages.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_switches.h"
@@ -60,7 +60,7 @@ class Fuzzer {
   virtual void FuzzBytes(void* data, int data_len) = 0;
 };
 
-}  // Namespace IPC
+}  // namespace IPC
 
 namespace {
 
@@ -90,7 +90,7 @@ void FuzzStringType(T* value, unsigned int frequency,
   }
 }
 
-}  // Namespace
+}  // namespace
 
 // One such fuzzer implementation.
 class DefaultFuzzer : public IPC::Fuzzer {
@@ -115,8 +115,7 @@ class DefaultFuzzer : public IPC::Fuzzer {
         srand(new_seed);
     }
 
-    if ((env_var = getenv("CHROME_IPC_FUZZING_FREQUENCY")))
-    {
+    if ((env_var = getenv("CHROME_IPC_FUZZING_FREQUENCY"))) {
       unsigned int new_frequency = atoi(env_var);
       if (new_frequency)
         frequency_ = new_frequency;
@@ -511,8 +510,11 @@ class PickleCracker : public Pickle {
 
 // STRUCT declarations cause corresponding STRUCT_TRAITS declarations to occur.
 #undef IPC_STRUCT_BEGIN
+#undef IPC_STRUCT_BEGIN_WITH_PARENT
 #undef IPC_STRUCT_MEMBER
 #undef IPC_STRUCT_END
+#define IPC_STRUCT_BEGIN_WITH_PARENT(struct_name, parent)\
+  IPC_STRUCT_BEGIN(struct_name)
 #define IPC_STRUCT_BEGIN(struct_name) IPC_STRUCT_TRAITS_BEGIN(struct_name)
 #define IPC_STRUCT_MEMBER(type, name) IPC_STRUCT_TRAITS_MEMBER(name)
 #define IPC_STRUCT_END() IPC_STRUCT_TRAITS_END()
@@ -547,7 +549,7 @@ class PickleCracker : public Pickle {
   };
 
 // Bring them into existence.
-#include "chrome/tools/ipclist/all_messages.h"
+#include "chrome/common/all_messages.h"
 
 // Redefine macros to generate fuzzing funtions
 #include "ipc/ipc_message_null_macros.h"
@@ -632,7 +634,7 @@ class PickleCracker : public Pickle {
 #define IPC_MEMBERS_OUT_4()                NULL, NULL, NULL, NULL
 #define IPC_MEMBERS_OUT_5()                NULL, NULL, NULL, NULL, NULL
 
-#include "chrome/tools/ipclist/all_messages.h"
+#include "chrome/common/all_messages.h"
 
 typedef IPC::Message* (*FuzzFunction)(IPC::Message*, IPC::Fuzzer*);
 typedef base::hash_map<uint32, FuzzFunction> FuzzFunctionMap;
@@ -644,7 +646,7 @@ typedef base::hash_map<uint32, FuzzFunction> FuzzFunctionMap;
   (*map)[static_cast<uint32>(name::ID)] = fuzzer_for_##name;
 
 void PopulateFuzzFunctionMap(FuzzFunctionMap *map) {
-#include "chrome/tools/ipclist/all_messages.h"
+#include "chrome/common/all_messages.h"
 }
 
 class ipcfuzz : public IPC::ChannelProxy::OutgoingMessageFilter {
@@ -685,4 +687,3 @@ extern "C" {
 IPC::ChannelProxy::OutgoingMessageFilter* GetFilter(void) {
   return &g_ipcfuzz;
 }
-

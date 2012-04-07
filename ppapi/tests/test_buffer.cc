@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,15 +14,16 @@
 REGISTER_TEST_CASE(Buffer);
 
 bool TestBuffer::Init() {
-  buffer_interface_ = reinterpret_cast<PPB_Buffer_Dev const*>(
+  buffer_interface_ = static_cast<const PPB_Buffer_Dev*>(
       pp::Module::Get()->GetBrowserInterface(PPB_BUFFER_DEV_INTERFACE));
   return !!buffer_interface_;
 }
 
-void TestBuffer::RunTest() {
+void TestBuffer::RunTests(const std::string& filter) {
   instance_->LogTest("InvalidSize", TestInvalidSize());
   instance_->LogTest("InitToZero", TestInitToZero());
   instance_->LogTest("IsBuffer", TestIsBuffer());
+  instance_->LogTest("BasicLifecyle", TestBasicLifeCycle());
 }
 
 std::string TestBuffer::TestInvalidSize() {
@@ -75,3 +76,39 @@ std::string TestBuffer::TestIsBuffer() {
   PASS();
 }
 
+std::string TestBuffer::TestBasicLifeCycle() {
+  enum { kBufferSize = 100 };
+
+  pp::Buffer_Dev *buffer = new pp::Buffer_Dev(instance_, kBufferSize);
+  if (buffer->is_null() ||
+      !buffer_interface_->IsBuffer(buffer->pp_resource()) ||
+      buffer->size() != kBufferSize) {
+    return "Error creating buffer (earlier test should have failed)";
+  }
+
+  // Test that the buffer got created & mapped.
+  if (buffer->data() == NULL)
+    return "Failed to Map() buffer";
+
+  // Test that the buffer is writeable.
+  char* data = static_cast<char*>(buffer->data());
+  for (int i = 0; i < kBufferSize; ++i)
+    data[i] = 'X';
+
+  // Implicitly test that the copy constructor doesn't cause a double-unmap on
+  // delete.
+  pp::Buffer_Dev* copy = new pp::Buffer_Dev(*buffer);
+
+  // Implicitly test that destroying the buffer doesn't encounter a fatal error
+  // in Unmap.
+  delete buffer;
+
+  // Test that we can still write to copy's copy of the data.
+  char* copy_data = static_cast<char*>(copy->data());
+  for (int i = 0; i < kBufferSize; ++i)
+    copy_data[i] = 'Y';
+
+  delete copy;
+
+  PASS();
+}

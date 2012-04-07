@@ -1,17 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/sim_dialog_delegate.h"
 
 #include "base/stringprintf.h"
-#include "chrome/browser/chromeos/frame/bubble_window.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/html_dialog_view.h"
+#include "chrome/browser/ui/views/window.h"
 #include "chrome/common/url_constants.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
@@ -36,43 +41,27 @@ const char kSimDialogChangePinMode[]  = "change-pin";
 const char kSimDialogSetLockOnMode[]  = "set-lock-on";
 const char kSimDialogSetLockOffMode[] = "set-lock-off";
 
-// Custom HtmlDialogView with disabled context menu.
-class HtmlDialogWithoutContextMenuView : public HtmlDialogView {
- public:
-  HtmlDialogWithoutContextMenuView(Profile* profile,
-                                   HtmlDialogUIDelegate* delegate)
-      : HtmlDialogView(profile, delegate) {}
-
-  // TabContentsDelegate implementation.
-  bool HandleContextMenu(const ContextMenuParams& params) {
-    // Disable context menu.
-    return true;
-  }
-};
-
 }  // namespace
 
 namespace chromeos {
 
 // static
 void SimDialogDelegate::ShowDialog(gfx::NativeWindow owning_window,
-                                         SimDialogMode mode) {
+                                   SimDialogMode mode) {
   Profile* profile;
+  Browser* browser = NULL;
   if (UserManager::Get()->user_is_logged_in()) {
-    Browser* browser = BrowserList::GetLastActive();
+    browser = BrowserList::GetLastActive();
     DCHECK(browser);
     profile = browser->profile();
   } else {
     profile = ProfileManager::GetDefaultProfile();
   }
-  HtmlDialogView* html_view = new HtmlDialogWithoutContextMenuView(
-      profile, new SimDialogDelegate(mode));
+  HtmlDialogView* html_view =
+      new HtmlDialogView(profile, browser, new SimDialogDelegate(mode));
   html_view->InitDialog();
-  chromeos::BubbleWindow::Create(owning_window,
-                                 gfx::Rect(),
-                                 chromeos::BubbleWindow::STYLE_GENERIC,
-                                 html_view);
-  html_view->window()->Show();
+  browser::CreateViewsWindow(owning_window, html_view, STYLE_FLUSH);
+  html_view->GetWidget()->Show();
 }
 
 SimDialogDelegate::SimDialogDelegate(SimDialogMode dialog_mode)
@@ -82,12 +71,12 @@ SimDialogDelegate::SimDialogDelegate(SimDialogMode dialog_mode)
 SimDialogDelegate::~SimDialogDelegate() {
 }
 
-bool SimDialogDelegate::IsDialogModal() const {
-  return true;
+ui::ModalType SimDialogDelegate::GetDialogModalType() const {
+  return ui::MODAL_TYPE_SYSTEM;
 }
 
-std::wstring SimDialogDelegate::GetDialogTitle() const {
-  return std::wstring();
+string16 SimDialogDelegate::GetDialogTitle() const {
+  return string16();
 }
 
 GURL SimDialogDelegate::GetDialogContentURL() const {
@@ -126,14 +115,19 @@ void SimDialogDelegate::OnDialogClosed(const std::string& json_retval) {
   delete this;
 }
 
-void SimDialogDelegate::OnCloseContents(TabContents* source,
-                                              bool* out_close_dialog) {
+void SimDialogDelegate::OnCloseContents(WebContents* source,
+                                        bool* out_close_dialog) {
   if (out_close_dialog)
     *out_close_dialog = true;
 }
 
 bool SimDialogDelegate::ShouldShowDialogTitle() const {
   return false;
+}
+
+bool SimDialogDelegate::HandleContextMenu(const ContextMenuParams& params) {
+  // Disable context menu.
+  return true;
 }
 
 }  // namespace chromeos

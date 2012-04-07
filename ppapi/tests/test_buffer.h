@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,8 @@
 
 #include <string>
 
+#include "ppapi/c/dev/ppb_buffer_dev.h"
 #include "ppapi/tests/test_case.h"
-
-struct PPB_Buffer_Dev;
 
 class TestBuffer : public TestCase {
  public:
@@ -17,12 +16,13 @@ class TestBuffer : public TestCase {
 
   // TestCase implementation.
   virtual bool Init();
-  virtual void RunTest();
+  virtual void RunTests(const std::string& filter);
 
  private:
   std::string TestInvalidSize();
   std::string TestInitToZero();
   std::string TestIsBuffer();
+  std::string TestBasicLifeCycle();
 
   // Used by the tests that access the C API directly.
   const PPB_Buffer_Dev* buffer_interface_;

@@ -9,14 +9,14 @@
 #include "base/pickle.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPoint.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSerializedScriptValue.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSerializedScriptValue.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "webkit/glue/webkit_glue.h"
 
 using WebKit::WebData;
@@ -32,8 +32,9 @@ namespace webkit_glue {
 
 namespace {
 struct SerializeObject {
-  SerializeObject() : iter(NULL) {}
-  SerializeObject(const char* data, int len) : pickle(data, len), iter(NULL) {}
+  SerializeObject() : iter(NULL), version(0) {}
+  SerializeObject(const char* data, int len)
+      : pickle(data, len), iter(NULL), version(0) {}
 
   std::string GetAsString() {
     return std::string(static_cast<const char*>(pickle.data()), pickle.size());
@@ -58,12 +59,13 @@ struct SerializeObject {
 // 8: Adds support for file range and modification time
 // 9: Adds support for itemSequenceNumbers
 // 10: Adds support for blob
+// 11: Adds support for pageScaleFactor
 // Should be const, but unit tests may modify it.
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See CreateHistoryStateForURL.
 //
-int kVersion = 10;
+int kVersion = 11;
 
 // A bunch of convenience functions to read/write to SerializeObjects.
 // The serializers assume the input data is in the correct format and so does
@@ -74,9 +76,13 @@ inline void WriteData(const void* data, int length, SerializeObject* obj) {
 
 inline void ReadData(const SerializeObject* obj, const void** data,
                      int* length) {
-  const char* tmp = NULL;
-  obj->pickle.ReadData(&obj->iter, &tmp, length);
-  *data = tmp;
+  const char* tmp;
+  if (obj->pickle.ReadData(&obj->iter, &tmp, length)) {
+    *data = tmp;
+  } else {
+    *data = NULL;
+    *length = 0;
+  }
 }
 
 inline bool ReadBytes(const SerializeObject* obj, const void** data,
@@ -93,9 +99,10 @@ inline void WriteInteger(int data, SerializeObject* obj) {
 }
 
 inline int ReadInteger(const SerializeObject* obj) {
-  int tmp = 0;
-  obj->pickle.ReadInt(&obj->iter, &tmp);
-  return tmp;
+  int tmp;
+  if (obj->pickle.ReadInt(&obj->iter, &tmp))
+    return tmp;
+  return 0;
 }
 
 inline void WriteInteger64(int64 data, SerializeObject* obj) {
@@ -127,9 +134,10 @@ inline void WriteBoolean(bool data, SerializeObject* obj) {
 }
 
 inline bool ReadBoolean(const SerializeObject* obj) {
-  bool tmp = false;
-  obj->pickle.ReadBool(&obj->iter, &tmp);
-  return tmp;
+  bool tmp;
+  if (obj->pickle.ReadBool(&obj->iter, &tmp))
+    return tmp;
+  return false;
 }
 
 inline void WriteGURL(const GURL& url, SerializeObject* obj) {
@@ -138,8 +146,9 @@ inline void WriteGURL(const GURL& url, SerializeObject* obj) {
 
 inline GURL ReadGURL(const SerializeObject* obj) {
   std::string spec;
-  obj->pickle.ReadString(&obj->iter, &spec);
-  return GURL(spec);
+  if (obj->pickle.ReadString(&obj->iter, &spec))
+    return GURL(spec);
+  return GURL();
 }
 
 // Read/WriteString pickle the WebString as <int length><WebUChar* data>.
@@ -317,6 +326,8 @@ void WriteHistoryItem(
 
   WriteStringVector(item.documentState(), obj);
 
+  if (kVersion >= 11)
+    WriteReal(item.pageScaleFactor(), obj);
   if (kVersion >= 9)
     WriteInteger64(item.itemSequenceNumber(), obj);
   if (kVersion >= 6)
@@ -383,6 +394,8 @@ WebHistoryItem ReadHistoryItem(
 
   item.setDocumentState(ReadStringVector(obj));
 
+  if (obj->version >= 11)
+    item.setPageScaleFactor(ReadReal(obj));
   if (obj->version >= 9)
     item.setItemSequenceNumber(ReadInteger64(obj));
   if (obj->version >= 6)

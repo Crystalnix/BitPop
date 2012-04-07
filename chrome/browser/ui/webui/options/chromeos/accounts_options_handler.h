@@ -6,38 +6,31 @@
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS_CHROMEOS_ACCOUNTS_OPTIONS_HANDLER_H_
 #pragma once
 
-#include "chrome/browser/ui/webui/options/chromeos/cros_options_page_ui_handler.h"
-
-class OptionsManagedBannerHandler;
+#include "base/compiler_specific.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
 
 namespace chromeos {
 
-class UserCrosSettingsProvider;
-
 // ChromeOS accounts options page handler.
-class AccountsOptionsHandler : public CrosOptionsPageUIHandler {
+class AccountsOptionsHandler : public OptionsPageUIHandler {
  public:
   AccountsOptionsHandler();
   virtual ~AccountsOptionsHandler();
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
-  virtual void Initialize();
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
 
  private:
-  UserCrosSettingsProvider* users_settings() const;
-
   // Javascript callbacks to whitelist/unwhitelist user.
-  void WhitelistUser(const ListValue* args);
-  void UnwhitelistUser(const ListValue* args);
+  void HandleWhitelistUser(const base::ListValue* args);
+  void HandleUnwhitelistUser(const base::ListValue* args);
 
   // Javascript callback to auto add existing users to white list.
-  void WhitelistExistingUsers(const ListValue* args);
-
-  scoped_ptr<OptionsManagedBannerHandler> banner_handler_;
+  void HandleWhitelistExistingUsers(const base::ListValue* args);
 
   DISALLOW_COPY_AND_ASSIGN(AccountsOptionsHandler);
 };

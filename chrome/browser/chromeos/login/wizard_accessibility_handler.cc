@@ -10,14 +10,14 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string_number_conversions.h"
-#include "chrome/browser/accessibility_events.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/speech_synthesis_library.h"
-#include "chrome/browser/extensions/extension_accessibility_api.h"
-#include "chrome/browser/extensions/extension_accessibility_api_constants.h"
+#include "chrome/browser/accessibility/accessibility_extension_api.h"
+#include "chrome/browser/accessibility/accessibility_extension_api_constants.h"
+#include "chrome/browser/accessibility/accessibility_events.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -100,57 +100,39 @@ void AppendIndexOfCount(int index, int count, std::string* str) {
 namespace chromeos {
 
 void WizardAccessibilityHandler::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
   const AccessibilityControlInfo *control_info =
-      Details<const AccessibilityControlInfo>(details).ptr();
+      content::Details<const AccessibilityControlInfo>(details).ptr();
   std::string description;
   EarconType earcon = NO_EARCON;
   DescribeAccessibilityEvent(type, control_info, &description, &earcon);
-  Speak(description.c_str(), false, true);
-}
-
-void WizardAccessibilityHandler::Speak(const char* speak_str,
-                                       bool queue,
-                                       bool interruptible) {
-  if (chromeos::CrosLibrary::Get()->EnsureLoaded()) {
-    if (queue || !interruptible) {
-      std::string props = "";
-      props.append("enqueue=");
-      props.append(queue ? "1;" : "0;");
-      props.append("interruptible=");
-      props.append(interruptible ? "1;" : "0;");
-      chromeos::CrosLibrary::Get()->GetSpeechSynthesisLibrary()->
-          SetSpeakProperties(props.c_str());
-    }
-    chromeos::CrosLibrary::Get()->GetSpeechSynthesisLibrary()->
-        Speak(speak_str);
-  }
+  accessibility::Speak(description.c_str());
 }
 
 void WizardAccessibilityHandler::DescribeAccessibilityEvent(
-    NotificationType event_type,
+    int event_type,
     const AccessibilityControlInfo* control_info,
     std::string* out_spoken_description,
     EarconType* out_earcon) {
   *out_spoken_description = std::string();
   *out_earcon = NO_EARCON;
 
-  switch (event_type.value) {
-    case NotificationType::ACCESSIBILITY_CONTROL_FOCUSED:
+  switch (event_type) {
+    case chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED:
       DescribeControl(control_info, false, out_spoken_description, out_earcon);
       break;
-    case NotificationType::ACCESSIBILITY_CONTROL_ACTION:
+    case chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_ACTION:
       DescribeControl(control_info, true, out_spoken_description, out_earcon);
       break;
-    case NotificationType::ACCESSIBILITY_TEXT_CHANGED:
+    case chrome::NOTIFICATION_ACCESSIBILITY_TEXT_CHANGED:
       DescribeTextChanged(control_info, out_spoken_description, out_earcon);
       break;
-    case NotificationType::ACCESSIBILITY_MENU_OPENED:
+    case chrome::NOTIFICATION_ACCESSIBILITY_MENU_OPENED:
       *out_earcon = EARCON_OBJECT_OPENED;
       break;
-    case NotificationType::ACCESSIBILITY_MENU_CLOSED:
+    case chrome::NOTIFICATION_ACCESSIBILITY_MENU_CLOSED:
       *out_earcon = EARCON_OBJECT_CLOSED;
       break;
     default:

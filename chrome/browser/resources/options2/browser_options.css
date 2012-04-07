@@ -1,0 +1,136 @@
+/* TODO(csilv): Re-order, rename selectors according to style guide. */
+
+/* This is necessary because the fix for correctly wrapping labels
+ * (crbug.com/109334) requires labels to be display: block; however, this label
+ * has a button inline after it.
+ */
+#home-page-label {
+  display: inline;
+}
+
+#customHomePageGroup {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+}
+
+#homepageURL {
+  margin-left: 10px;
+}
+
+#defaultSearchEngineGroup {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+
+#defaultSearchEngineGroup > div {
+  display: -webkit-box;
+  -webkit-box-orient: horizontal;
+}
+
+#defaultSearchEngine {
+  display: block;
+  -webkit-box-flex: 1;
+  max-width: 100px;
+}
+
+#defaultSearchGroupLabel {
+  margin-bottom: 5px;
+}
+
+#defaultSearchManageEnginesButton {
+  margin-top: 0;
+  -webkit-margin-start: 10px;
+}
+
+#defaultBrowserState {
+  margin-top: 6px;
+}
+
+#instantOption {
+  margin-bottom: 3px;
+  margin-top: 10px
+}
+
+#instantConfirmText {
+  font-family: inherit;
+  white-space: pre-wrap;
+  width: 500px;
+}
+
+#instantConfirmLearnMore {
+  position: absolute;
+  bottom: 18px;
+}
+
+#account-picture-wrapper {
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  display: inline-block;
+  margin: 5px 10px 5px 2px;
+  padding: 3px;
+}
+
+#account-picture {
+  width: 70px;
+  height: 70px;
+  vertical-align: middle;
+}
+
+#sync-overview p {
+  display: inline;
+}
+
+#profiles-list {
+  min-height: 0;
+  margin-bottom: 10px;
+}
+
+#profiles-list > * {
+  height: 40px;
+}
+
+.profile-img {
+  height: 31px;
+  padding: 3px;
+  vertical-align: middle;
+  width: 38px;
+}
+
+.profile-item-current {
+  font-weight: bold;
+}
+
+.sync-error {
+  background: #FFDBDB;
+  border: 1px solid #ce4c4c;
+  border-radius: 2px;
+  padding: 10px;
+}
+
+.sync-error .link-button {
+  margin: 0 1ex;
+  padding: 0;
+}
+
+#enable-auto-login-checkbox {
+  margin-top: 10px;
+}
+
+#mac-passwords-warning,
+#manage-data-group {
+  margin-top: 10px;
+}
+
+#pointer-sensitivity-more {
+  float: right;
+}
+
+html[dir=rtl] #pointer-sensitivity-more {
+  float: left;
+}
+
+#pointer-value,
+#slider-control {
+   display: inline-block;
+   vertical-align: top;
+}

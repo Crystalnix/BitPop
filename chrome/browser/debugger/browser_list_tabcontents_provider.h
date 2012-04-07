@@ -5,15 +5,26 @@
 #ifndef CHROME_BROWSER_DEBUGGER_BROWSER_LIST_TABCONTENTS_PROVIDER_H_
 #define CHROME_BROWSER_DEBUGGER_BROWSER_LIST_TABCONTENTS_PROVIDER_H_
 
-#include "chrome/browser/debugger/devtools_http_protocol_handler.h"
+#include <string>
 
-class BrowserListTabContentsProvider :
-    public DevToolsHttpProtocolHandler::TabContentsProvider {
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "content/public/browser/devtools_http_handler_delegate.h"
+
+class BrowserListTabContentsProvider
+    : public content::DevToolsHttpHandlerDelegate {
  public:
   BrowserListTabContentsProvider() {}
   virtual ~BrowserListTabContentsProvider() {}
 
-  virtual DevToolsHttpProtocolHandler::InspectableTabs GetInspectableTabs();
+  // DevToolsHttpProtocolHandler::Delegate overrides.
+  virtual DevToolsHttpHandlerDelegate::InspectableTabs
+      GetInspectableTabs() OVERRIDE;
+  virtual std::string GetDiscoveryPageHTML() OVERRIDE;
+  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
+  virtual bool BundlesFrontendResources() OVERRIDE;
+  virtual std::string GetFrontendResourcesBaseURL() OVERRIDE;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserListTabContentsProvider);
 };

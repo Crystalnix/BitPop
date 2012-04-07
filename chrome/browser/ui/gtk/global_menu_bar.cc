@@ -6,6 +6,7 @@
 
 #include <gtk/gtk.h>
 
+#include "base/command_line.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -13,8 +14,11 @@
 #include "chrome/browser/ui/gtk/accelerators_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/gtk_util.h"
@@ -112,14 +116,6 @@ GlobalMenuBarCommand history_menu[] = {
   { MENU_END, MENU_END }
 };
 
-GlobalMenuBarCommand bookmark_menu[] = {
-  { IDS_BOOKMARK_MANAGER, IDC_SHOW_BOOKMARK_MANAGER },
-  { IDS_BOOKMARK_CURRENT_PAGE_LINUX, IDC_BOOKMARK_PAGE },
-  { IDS_BOOKMARK_ALL_TABS_LINUX, IDC_BOOKMARK_ALL_TABS },
-
-  { MENU_END, MENU_END }
-};
-
 GlobalMenuBarCommand tools_menu[] = {
   { IDS_SHOW_DOWNLOADS, IDC_SHOW_DOWNLOADS },
   { IDS_SHOW_HISTORY, IDC_SHOW_HISTORY },
@@ -149,10 +145,8 @@ GlobalMenuBarCommand help_menu[] = {
 
 GlobalMenuBar::GlobalMenuBar(Browser* browser)
     : browser_(browser),
-      profile_(browser_->profile()),
       menu_bar_(gtk_menu_bar_new()),
       history_menu_(browser_),
-      bookmark_menu_(browser_),
       dummy_accel_group_(gtk_accel_group_new()),
       block_activation_(false) {
   // The global menu bar should never actually be shown in the app; it should
@@ -168,8 +162,7 @@ GlobalMenuBar::GlobalMenuBar(Browser* browser)
   BuildGtkMenuFrom(IDS_VIEW_MENU_LINUX, &id_to_menu_item_, view_menu, NULL);
   BuildGtkMenuFrom(IDS_HISTORY_MENU_LINUX, &id_to_menu_item_,
                    history_menu, &history_menu_);
-  BuildGtkMenuFrom(IDS_BOOKMARKS_MENU_LINUX, &id_to_menu_item_, bookmark_menu,
-                   &bookmark_menu_);
+
   BuildGtkMenuFrom(IDS_TOOLS_MENU_LINUX, &id_to_menu_item_, tools_menu, NULL);
   BuildGtkMenuFrom(IDS_HELP_MENU_LINUX, &id_to_menu_item_, help_menu, NULL);
 
@@ -196,21 +189,24 @@ GlobalMenuBar::GlobalMenuBar(Browser* browser)
     browser_->command_updater()->AddCommandObserver(it->first, this);
   }
 
-  // Listen for bookmark bar visibility changes and set the initial state.
-  registrar_.Add(this, NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED,
-                 NotificationService::AllSources());
-  Observe(NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED,
-          NotificationService::AllSources(),
-          NotificationService::NoDetails());
+  pref_change_registrar_.Init(browser_->profile()->GetPrefs());
+  pref_change_registrar_.Add(prefs::kShowBookmarkBar, this);
+  OnBookmarkBarVisibilityChanged();
 }
 
 GlobalMenuBar::~GlobalMenuBar() {
+  Disable();
+  g_object_unref(dummy_accel_group_);
+}
+
+void GlobalMenuBar::Disable() {
   for (CommandIDMenuItemMap::const_iterator it = id_to_menu_item_.begin();
        it != id_to_menu_item_.end(); ++it) {
     browser_->command_updater()->RemoveCommandObserver(it->first, this);
   }
+  id_to_menu_item_.clear();
 
-  g_object_unref(dummy_accel_group_);
+  pref_change_registrar_.RemoveAll();
 }
 
 void GlobalMenuBar::BuildGtkMenuFrom(
@@ -229,7 +225,7 @@ void GlobalMenuBar::BuildGtkMenuFrom(
   gtk_widget_show(menu);
 
   GtkWidget* menu_item = gtk_menu_item_new_with_mnemonic(
-      gfx::ConvertAcceleratorsFromWindowsStyle(
+      gfx::RemoveWindowsStyleAccelerators(
           l10n_util::GetStringUTF8(menu_str_id)).c_str());
 
   // Give the owner a chance to sink the reference before we add it to the menu
@@ -286,16 +282,20 @@ void GlobalMenuBar::EnabledStateChangedForCommand(int id, bool enabled) {
     gtk_widget_set_sensitive(it->second, enabled);
 }
 
-void GlobalMenuBar::Observe(NotificationType type,
-                            const NotificationSource& source,
-                            const NotificationDetails& details) {
-  DCHECK(type.value == NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED);
+void GlobalMenuBar::Observe(int type,
+                            const content::NotificationSource& source,
+                            const content::NotificationDetails& details) {
+  DCHECK_EQ(chrome::NOTIFICATION_PREF_CHANGED, type);
+  const std::string& pref_name = *content::Details<std::string>(details).ptr();
+  DCHECK_EQ(prefs::kShowBookmarkBar, pref_name);
+  OnBookmarkBarVisibilityChanged();
+}
 
+void GlobalMenuBar::OnBookmarkBarVisibilityChanged() {
   CommandIDMenuItemMap::iterator it =
       id_to_menu_item_.find(IDC_SHOW_BOOKMARK_BAR);
   if (it != id_to_menu_item_.end()) {
     PrefService* prefs = browser_->profile()->GetPrefs();
-
     block_activation_ = true;
     gtk_check_menu_item_set_active(
         GTK_CHECK_MENU_ITEM(it->second),

@@ -69,16 +69,16 @@ cr.define('cr.ui', function() {
     itemConstructor_: GridItem,
 
     /**
-     * In the case of multiple columns lead item must have the same height
-     * as a regular item.
-     * @type {number}
-     * @override
+     * Whether or not the rows on list have various heights.
+     * Shows a warning at the setter because cr.ui.Grid does not support this.
+     * @type {boolean}
      */
-    get leadItemHeight() {
-      return this.getItemHeight_();
+    get fixedHeight() {
+      return true;
     },
-    set leadItemHeight(height) {
-      // Lead item height cannot be set.
+    set fixedHeight(fixedHeight) {
+      if (!fixedHeight)
+        console.warn('cr.ui.Grid does not support fixedHeight = false');
     },
 
     /**
@@ -87,7 +87,14 @@ cr.define('cr.ui', function() {
      * @private
      */
     getColumnCount_: function() {
-      var width = this.getItemWidth_();
+      // Size comes here with margin already collapsed.
+      var size = this.getDefaultItemSize_();
+
+      // We should uncollapse margin, since margin isn't collapsed for
+      // inline-block elements according to css spec which are thumbnail items.
+
+      var width = size.width + Math.min(size.marginLeft, size.marginRight);
+
       return width ? Math.floor(this.clientWidth / width) : 0;
     },
 
@@ -116,7 +123,7 @@ cr.define('cr.ui', function() {
      * @override
      */
     getItemTop: function(index) {
-      return Math.floor(index / this.columns) * this.getItemHeight_();
+      return Math.floor(index / this.columns) * this.getDefaultItemHeight_();
     },
 
     /**
@@ -150,75 +157,106 @@ cr.define('cr.ui', function() {
     },
 
     /**
-     * Calculates the number of items fitting in viewport given the index of
-     * first item and heights.
-     * @param {number} itemHeight The height of the item.
-     * @param {number} firstIndex Index of the first item in viewport.
+     * Calculates the number of items fitting in the given viewport.
      * @param {number} scrollTop The scroll top position.
-     * @return {number} The number of items in view port.
+     * @param {number} clientHeight The height of viewport.
+     * @return {{first: number, length: number, last: number}} The index of
+     *     first item in view port, The number of items, The item past the last.
      * @override
      */
-    getItemsInViewPort: function(itemHeight, firstIndex, scrollTop) {
+    getItemsInViewPort: function(scrollTop, clientHeight) {
+      var itemHeight = this.getDefaultItemHeight_();
+      var firstIndex =
+          this.autoExpands ? 0 : this.getIndexForListOffset_(scrollTop);
       var columns = this.columns;
-      var clientHeight = this.clientHeight;
       var count = this.autoExpands_ ? this.dataModel.length : Math.max(
           columns * (Math.ceil(clientHeight / itemHeight) + 1),
           this.countItemsInRange_(firstIndex, scrollTop + clientHeight));
       count = columns * Math.ceil(count / columns);
       count = Math.min(count, this.dataModel.length - firstIndex);
-      return count;
+      return {
+        first: firstIndex,
+        length: count,
+        last: firstIndex + count - 1
+      };
     },
 
     /**
-     * Adds items to the list and {@code newCachedItems}.
+     * Merges list items. Calls the base class implementation and then
+     * puts spacers on the right places.
      * @param {number} firstIndex The index of first item, inclusively.
      * @param {number} lastIndex The index of last item, exclusively.
      * @param {Object.<string, ListItem>} cachedItems Old items cache.
      * @param {Object.<string, ListItem>} newCachedItems New items cache.
      * @override
      */
-    addItems: function(firstIndex, lastIndex, cachedItems, newCachedItems) {
-      var listItem;
-      var dataModel = this.dataModel;
-      var spacers = this.spacers_ || {};
-      var spacerIndex = 0;
+    mergeItems: function(firstIndex, lastIndex, cachedItems, newCachedItems) {
+      List.prototype.mergeItems.call(this,
+          firstIndex, lastIndex, cachedItems, newCachedItems);
+
+      var afterFiller = this.afterFiller_;
       var columns = this.columns;
 
-      for (var y = firstIndex; y < lastIndex; y++) {
-        if (y % columns == 0 && y > 0) {
-          var spacer = spacers[spacerIndex];
-          if (!spacer) {
-            spacer = this.ownerDocument.createElement('div');
-            spacer.className = 'spacer';
-            spacers[spacerIndex] = spacer;
-          }
-          this.appendChild(spacer);
-          spacerIndex++;
+      for (var item = this.beforeFiller_.nextSibling; item != afterFiller;) {
+        var next = item.nextSibling;
+        if (isSpacer(item)) {
+          // Spacer found on a place it mustn't be.
+          this.removeChild(item);
+          item = next;
+          continue;
         }
-        var dataItem = dataModel.item(y);
-        listItem = cachedItems[y] || this.createItem(dataItem);
-        listItem.listIndex = y;
-        this.appendChild(listItem);
-        newCachedItems[y] = listItem;
+        var index = item.listIndex;
+        var nextIndex = index + 1;
+
+        // Invisible pinned item could be outside of the
+        // [firstIndex, lastIndex). Ignore it.
+        if (index >= firstIndex && nextIndex < lastIndex &&
+            nextIndex % columns == 0) {
+          if (isSpacer(next)) {
+            // Leave the spacer on its place.
+            item = next.nextSibling;
+          } else {
+            // Insert spacer.
+            var spacer = this.ownerDocument.createElement('div');
+            spacer.className = 'spacer';
+            this.insertBefore(spacer, next);
+            item = next;
+          }
+        } else
+          item = next;
       }
 
-      this.spacers_ = spacers;
+      function isSpacer(child) {
+        return child.classList.contains('spacer') &&
+               child != afterFiller;  // Must not be removed.
+      }
     },
 
     /**
      * Returns the height of after filler in the list.
      * @param {number} lastIndex The index of item past the last in viewport.
-     * @param {number} itemHeight The height of the item.
      * @return {number} The height of after filler.
      * @override
      */
-    getAfterFillerHeight: function(lastIndex, itemHeight) {
+    getAfterFillerHeight: function(lastIndex) {
       var columns = this.columns;
+      var itemHeight = this.getDefaultItemHeight_();
       // We calculate the row of last item, and the row of last shown item.
       // The difference is the number of rows not shown.
       var afterRows = Math.floor((this.dataModel.length - 1) / columns) -
           Math.floor((lastIndex - 1) / columns);
       return afterRows * itemHeight;
+    },
+
+    /**
+     * Returns true if the child is a list item.
+     * @param {Node} child Child of the list.
+     * @return {boolean} True if a list item.
+     */
+    isItem: function(child) {
+      // Non-items are before-, afterFiller and spacers added in mergeItems.
+      return child.nodeType == Node.ELEMENT_NODE &&
+             !child.classList.contains('spacer');
     }
   };
 
@@ -293,6 +331,7 @@ cr.define('cr.ui', function() {
 
   return {
     Grid: Grid,
-    GridItem: GridItem
+    GridItem: GridItem,
+    GridSelectionController: GridSelectionController
   }
 });

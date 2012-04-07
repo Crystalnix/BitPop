@@ -4,8 +4,7 @@
 //
 // The intent of this file is to provide a type-neutral abstraction between
 // Chrome and WebKit for resource loading. This pure-virtual interface is
-// implemented by the embedder, which also provides a factory method Create
-// to instantiate this object.
+// implemented by the embedder.
 //
 // One of these objects will be created by WebKit for each request. WebKit
 // will own the pointer to the bridge, and will delete it when the request is
@@ -33,7 +32,10 @@
 #include "googleurl/src/gurl.h"
 #include "net/base/host_port_pair.h"
 #include "net/url_request/url_request_status.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebReferrerPolicy.h"
 #include "webkit/glue/resource_type.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace net {
 class HttpResponseHeaders;
@@ -48,11 +50,14 @@ namespace webkit_glue {
 // All the values for starts and ends are given in milliseconds and are
 // offsets with respect to the given base time.
 struct ResourceLoadTimingInfo {
-  ResourceLoadTimingInfo();
-  ~ResourceLoadTimingInfo();
+  WEBKIT_GLUE_EXPORT ResourceLoadTimingInfo();
+  WEBKIT_GLUE_EXPORT ~ResourceLoadTimingInfo();
 
-  // All the values in this struct are given as offsets in milliseconds wrt
-  // this base time.
+  // All the values in this struct are given as offsets in ticks wrt
+  // this base tick count.
+  base::TimeTicks base_ticks;
+
+  // The value of Time::Now() when base_ticks was set.
   base::Time base_time;
 
   // The time that proxy processing started. For requests with no proxy phase,
@@ -103,8 +108,8 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
   typedef std::vector<std::pair<std::string, std::string> >
       HeadersVector;
 
-  ResourceDevToolsInfo();
-  ~ResourceDevToolsInfo();
+  WEBKIT_GLUE_EXPORT ResourceDevToolsInfo();
+  WEBKIT_GLUE_EXPORT ~ResourceDevToolsInfo();
 
   int32 http_status_code;
   std::string http_status_text;
@@ -115,8 +120,8 @@ struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
 };
 
 struct ResourceResponseInfo {
-  ResourceResponseInfo();
-  ~ResourceResponseInfo();
+  WEBKIT_GLUE_EXPORT ResourceResponseInfo();
+  WEBKIT_GLUE_EXPORT ~ResourceResponseInfo();
 
   // The time at which the request was made that resulted in this response.
   // For cached responses, this time could be "far" in the past.
@@ -196,8 +201,9 @@ struct ResourceResponseInfo {
 
 class ResourceLoaderBridge {
  public:
-  // Structure used when calling ResourceLoaderBridge::Create().
-  struct RequestInfo {
+  // Structure used when calling
+  // WebKitPlatformSupportImpl::CreateResourceLoader().
+  struct WEBKIT_GLUE_EXPORT RequestInfo {
     RequestInfo();
     ~RequestInfo();
 
@@ -214,6 +220,9 @@ class ResourceLoaderBridge {
     // Optional parameter, a URL with similar constraints in how it must be
     // encoded as the url member.
     GURL referrer;
+
+    // The referrer policy that applies to the referrer.
+    WebKit::WebReferrerPolicy referrer_policy;
 
     // For HTTP(S) requests, the headers parameter can be a \r\n-delimited and
     // \r\n-terminated list of MIME headers.  They should be ASCII-encoded using
@@ -246,6 +255,12 @@ class ResourceLoaderBridge {
 
     // True if the request was user initiated.
     bool has_user_gesture;
+
+    // Extra data associated with this request.  We do not own this pointer.
+    WebKit::WebURLRequest::ExtraData* extra_data;
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(RequestInfo);
   };
 
   // See the SyncLoad method declared below.  (The name of this struct is not
@@ -317,20 +332,15 @@ class ResourceLoaderBridge {
 
     // Called when the response is complete.  This method signals completion of
     // the resource load.ff
-    virtual void OnCompletedRequest(const net::URLRequestStatus& status,
-                                    const std::string& security_info,
-                                    const base::Time& completion_time) = 0;
+    virtual void OnCompletedRequest(
+        const net::URLRequestStatus& status,
+        const std::string& security_info,
+        const base::TimeTicks& completion_time) = 0;
   };
 
-  // use Create() for construction, but anybody can delete at any time,
-  // INCLUDING during processing of callbacks.
-  virtual ~ResourceLoaderBridge();
-
-  // Call this method to make a new instance.
-  //
-  // For HTTP(S) POST requests, the AppendDataToUpload and AppendFileToUpload
-  // methods may be called to construct the body of the request.
-  static ResourceLoaderBridge* Create(const RequestInfo& request_info);
+  // use WebKitPlatformSupportImpl::CreateResourceLoader() for construction, but
+  // anybody can delete at any time, INCLUDING during processing of callbacks.
+  WEBKIT_GLUE_EXPORT virtual ~ResourceLoaderBridge();
 
   // Call this method before calling Start() to append a chunk of binary data
   // to the request body.  May only be used with HTTP(S) POST requests.
@@ -382,9 +392,16 @@ class ResourceLoaderBridge {
   // response parameter.
   virtual void SyncLoad(SyncLoadResponse* response) = 0;
 
+  // When loader is transferred from one page to another, the IPC routing id
+  // can change (they are associated with pages).
+  virtual void UpdateRoutingId(int new_routing_id) = 0;
+
  protected:
-  // construction must go through Create()
-  ResourceLoaderBridge();
+  // Construction must go through
+  // WebKitPlatformSupportImpl::CreateResourceLoader()
+  // For HTTP(S) POST requests, the AppendDataToUpload and AppendFileToUpload
+  // methods may be called to construct the body of the request.
+  WEBKIT_GLUE_EXPORT ResourceLoaderBridge();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ResourceLoaderBridge);

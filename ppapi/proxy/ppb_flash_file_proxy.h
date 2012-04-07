@@ -5,6 +5,7 @@
 #ifndef PPAPI_PPB_FLASH_FILE_PROXY_H_
 #define PPAPI_PPB_FLASH_FILE_PROXY_H_
 
+#include <string>
 #include <vector>
 
 #include "ipc/ipc_platform_file.h"
@@ -12,27 +13,24 @@
 #include "ppapi/c/pp_module.h"
 #include "ppapi/proxy/interface_proxy.h"
 
-struct PP_FileInfo_Dev;
+struct PP_FileInfo;
 struct PPB_Flash_File_FileRef;
 struct PPB_Flash_File_ModuleLocal;
 
-namespace pp {
-namespace proxy {
+namespace ppapi {
 
 class HostResource;
+
+namespace proxy {
+
 struct SerializedDirEntry;
 
 class PPB_Flash_File_ModuleLocal_Proxy : public InterfaceProxy {
  public:
-  PPB_Flash_File_ModuleLocal_Proxy(Dispatcher* dispatcher,
-                                   const void* target_interface);
+  PPB_Flash_File_ModuleLocal_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Flash_File_ModuleLocal_Proxy();
 
-  static const Info* GetInfo();
-
-  const PPB_Flash_File_ModuleLocal* ppb_flash_file_module_local_target() const {
-    return static_cast<const PPB_Flash_File_ModuleLocal*>(target_interface());
-  }
+  static const PPB_Flash_File_ModuleLocal* GetInterface();
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -57,41 +55,50 @@ class PPB_Flash_File_ModuleLocal_Proxy : public InterfaceProxy {
                       int32_t* result);
   void OnMsgQueryFile(PP_Instance instance,
                       const std::string& path,
-                      PP_FileInfo_Dev* info,
+                      PP_FileInfo* info,
                       int32_t* result);
   void OnMsgGetDirContents(PP_Instance instance,
                            const std::string& path,
-                           std::vector<pp::proxy::SerializedDirEntry>* entries,
+                           std::vector<SerializedDirEntry>* entries,
                            int32_t* result);
+
+  // When this proxy is in the host side, this value caches the interface
+  // pointer so we don't have to retrieve it from the dispatcher each time.
+  // In the plugin, this value is always NULL.
+  const PPB_Flash_File_ModuleLocal* ppb_flash_file_module_local_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(PPB_Flash_File_ModuleLocal_Proxy);
 };
 
 class PPB_Flash_File_FileRef_Proxy : public InterfaceProxy {
  public:
-  PPB_Flash_File_FileRef_Proxy(Dispatcher* dispatcher,
-                               const void* target_interface);
+  PPB_Flash_File_FileRef_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Flash_File_FileRef_Proxy();
 
-  static const Info* GetInfo();
-
-  const PPB_Flash_File_FileRef* ppb_flash_file_module_local_target() const {
-    return static_cast<const PPB_Flash_File_FileRef*>(target_interface());
-  }
+  static const PPB_Flash_File_FileRef* GetInterface();
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
  private:
   // Message handlers.
-  void OnMsgOpenFile(const HostResource& host_resource,
+  void OnMsgOpenFile(const ppapi::HostResource& host_resource,
                      int32_t mode,
                      IPC::PlatformFileForTransit* file_handle,
                      int32_t* result);
-  void OnMsgQueryFile(const HostResource& host_resource,
-                      PP_FileInfo_Dev* info,
+  void OnMsgQueryFile(const ppapi::HostResource& host_resource,
+                      PP_FileInfo* info,
                       int32_t* result);
+
+  // When this proxy is in the host side, this value caches the interface
+  // pointer so we don't have to retrieve it from the dispatcher each time.
+  // In the plugin, this value is always NULL.
+  const PPB_Flash_File_FileRef* ppb_flash_file_fileref_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(PPB_Flash_File_FileRef_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PPB_FLASH_FILE_PROXY_H_

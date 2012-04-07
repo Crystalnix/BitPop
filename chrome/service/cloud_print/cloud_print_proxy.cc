@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/service/cloud_print/cloud_print_proxy.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/process_util.h"
@@ -18,10 +19,9 @@
 #include "chrome/service/service_process_prefs.h"
 #include "googleurl/src/gurl.h"
 
-// This method is invoked on the IO thread to launch the browser process to
-// display a desktop notification that the Cloud Print token is invalid and
-// needs re-authentication.
-static void ShowTokenExpiredNotificationInBrowser() {
+namespace {
+
+void LaunchBrowserProcessWithSwitch(const std::string& switch_string) {
   DCHECK(g_service_process->io_thread()->message_loop_proxy()->
       BelongsToCurrentThread());
   FilePath exe_path;
@@ -36,10 +36,23 @@ static void ShowTokenExpiredNotificationInBrowser() {
       process_command_line.GetSwitchValuePath(switches::kUserDataDir);
   if (!user_data_dir.empty())
     cmd_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir);
-  cmd_line.AppendSwitch(switches::kNotifyCloudPrintTokenExpired);
+  cmd_line.AppendSwitch(switch_string);
 
-  base::LaunchApp(cmd_line, false, false, NULL);
+  base::LaunchProcess(cmd_line, base::LaunchOptions(), NULL);
 }
+
+// This method is invoked on the IO thread to launch the browser process to
+// display a desktop notification that the Cloud Print token is invalid and
+// needs re-authentication.
+void ShowTokenExpiredNotificationInBrowser() {
+  LaunchBrowserProcessWithSwitch(switches::kNotifyCloudPrintTokenExpired);
+}
+
+void CheckCloudPrintProxyPolicyInBrowser() {
+  LaunchBrowserProcessWithSwitch(switches::kCheckCloudPrintConnectorPolicy);
+}
+
+}  // namespace
 
 CloudPrintProxy::CloudPrintProxy()
     : service_prefs_(NULL),
@@ -158,7 +171,8 @@ bool CloudPrintProxy::CreateBackend() {
 
   GURL cloud_print_server_url(cloud_print_server_url_str.c_str());
   DCHECK(cloud_print_server_url.is_valid());
-  backend_.reset(new CloudPrintProxyBackend(this, cloud_print_server_url,
+  backend_.reset(new CloudPrintProxyBackend(this, proxy_id_,
+                                            cloud_print_server_url,
                                             print_system_settings,
                                             oauth_client_info,
                                             enable_job_poll));
@@ -169,10 +183,10 @@ void CloudPrintProxy::DisableForUser() {
   DCHECK(CalledOnValidThread());
   user_email_.clear();
   enabled_ = false;
-  Shutdown();
   if (client_) {
     client_->OnCloudPrintProxyDisabled(true);
   }
+  Shutdown();
 }
 
 void CloudPrintProxy::GetProxyInfo(cloud_print::CloudPrintProxyInfo* info) {
@@ -181,15 +195,15 @@ void CloudPrintProxy::GetProxyInfo(cloud_print::CloudPrintProxyInfo* info) {
   if (enabled_)
     info->email = user_email();
   info->proxy_id = proxy_id_;
+  // If the Cloud Print service is not enabled, we may need to read the old
+  // value of proxy_id from prefs.
+  if (info->proxy_id.empty())
+    service_prefs_->GetString(prefs::kCloudPrintProxyId, &info->proxy_id);
 }
 
-// Notification methods from the backend. Called on UI thread.
-void CloudPrintProxy::OnPrinterListAvailable(
-    const printing::PrinterList& printer_list) {
-  DCHECK(CalledOnValidThread());
-  // We could potentially show UI here allowing the user to select which
-  // printers to register. For now, we just register all.
-  backend_->RegisterPrinters(printer_list);
+void CloudPrintProxy::CheckCloudPrintProxyPolicy() {
+  g_service_process->io_thread()->message_loop_proxy()->PostTask(
+      FROM_HERE, base::Bind(&CheckCloudPrintProxyPolicyInBrowser));
 }
 
 void CloudPrintProxy::OnAuthenticated(
@@ -225,7 +239,7 @@ void CloudPrintProxy::OnAuthenticationFailed() {
   // expired (unless error dialogs are disabled).
   if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoErrorDialogs))
     g_service_process->io_thread()->message_loop_proxy()->PostTask(
-        FROM_HERE, NewRunnableFunction(&ShowTokenExpiredNotificationInBrowser));
+        FROM_HERE, base::Bind(&ShowTokenExpiredNotificationInBrowser));
 }
 
 void CloudPrintProxy::OnPrintSystemUnavailable() {
@@ -243,4 +257,3 @@ void CloudPrintProxy::Shutdown() {
     backend_->Shutdown();
   backend_.reset();
 }
-

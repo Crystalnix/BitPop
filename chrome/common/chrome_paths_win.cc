@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,9 @@
 #include <shlobj.h>
 #include <shobjidl.h>
 
-#include "app/win/scoped_co_mem.h"
 #include "base/file_path.h"
 #include "base/path_service.h"
+#include "base/win/scoped_co_mem.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
 
@@ -71,7 +71,7 @@ bool GetUserDownloadsDirectory(FilePath* result) {
       REFKNOWNFOLDERID, DWORD, HANDLE, PWSTR*);
   GetKnownFolderPath f = reinterpret_cast<GetKnownFolderPath>(
       GetProcAddress(GetModuleHandle(L"shell32.dll"), "SHGetKnownFolderPath"));
-  app::win::ScopedCoMem<wchar_t> path_buf;
+  base::win::ScopedCoMem<wchar_t> path_buf;
   if (f && SUCCEEDED(f(FOLDERID_Downloads, 0, NULL, &path_buf))) {
     *result = FilePath(std::wstring(path_buf));
     return true;

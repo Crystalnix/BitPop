@@ -17,10 +17,26 @@
     <script type="text/javascript" src="js/bootstrap.js"></script>
     <script type="text/javascript" src="js/sidebar.js"></script>
   <title>Other Deployment Options - Google Chrome Extensions - Google Code</title></head>
-  <body>  <div id="gc-container" class="labs">
-      <div id="devModeWarning">
-        You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
-      </div>
+  <body>  <div id="devModeWarning" class="displayModeWarning">
+    You are viewing extension docs in chrome via the 'file:' scheme: are you expecting to see local changes when you refresh? You'll need run chrome with --allow-file-access-from-files.
+  </div>
+  <div id="branchWarning" class="displayModeWarning">
+    <span>WARNING: This is the <span id="branchName">BETA</span> documentation.
+    It may not work with the stable release of Chrome.</span>
+    <select id="branchChooser">
+      <option>Choose a different version...
+      </option><option value="">Stable
+      </option><option value="beta">Beta
+      </option><option value="dev">Dev
+      </option><option value="trunk">Trunk
+    </option></select>
+  </div>
+  <div id="unofficialWarning" class="displayModeWarning">
+    <span>WARNING: This is unofficial documentation. It may not work with the
+    current release of Chrome.</span>
+    <button id="goToOfficialDocs">Go to the official docs</button>
+  </div>
+  <div id="gc-container" class="labs">
       <!-- SUBTEMPLATES: DO NOT MOVE FROM THIS LOCATION -->
       <!-- In particular, sub-templates that recurse, must be used by allowing
            jstemplate to make a copy of the template in this section which
@@ -107,6 +123,46 @@
             </div>
           </dl>
         </div>
+
+        <!-- Individual subsections from the table of contents -->
+        <ol>
+          <li id="propertiesTocTemplate">
+            <a href="#properties">Properties</a>
+            <ol>
+              <li>
+                <a href="#property-anchor">propertyName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="methodsTocTemplate">
+            <a>Methods</a>
+            <ol>
+              <li>
+                <a href="#method-anchor">methodName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="eventsTocTemplate">
+            <a>Events</a>
+            <ol>
+              <li>
+                <a href="#event-anchor">eventName</a>
+              </li>
+            </ol>
+          </li>
+          <li id="typesTocTemplate">
+            <a href="#types">Types</a>
+            <ol>
+              <li>
+                <a href="#id-anchor">id</a>
+                <ol>
+                  <div></div>
+                  <div></div>
+                </ol>
+              </li>
+            </ol>
+          </li>
+        </ol>
       </div> <!-- /SUBTEMPLATES -->
 
   <a id="top"></a>
@@ -130,10 +186,10 @@
             </div>
           </form>
 
-          <script type="text/javascript" src="http://www.google.com/jsapi"></script>
+          <script type="text/javascript" src="https://www.google.com/jsapi"></script>
           <script type="text/javascript">google.load("elements", "1", {packages: "transliteration"});</script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
-          <script type="text/javascript" src="http://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/t13n?form=cse&amp;t13n_langs=en"></script>
+          <script type="text/javascript" src="https://www.google.com/coop/cse/brand?form=cse&amp;lang=en"></script>
         </td>
       </tr>
     </tbody></table>
@@ -158,6 +214,9 @@
           </li>
           <li id="group_link">
             <a href="http://groups.google.com/a/chromium.org/group/chromium-extensions" title="Google Chrome Extensions developer forum">Group</a>
+          </li>
+          <li id="so_link">
+            <a href="http://stackoverflow.com/questions/tagged/google-chrome-extension" title="[google-chrome-extension] tag on Stack Overflow">Questions?</a>
           </li>
         </ul>
       </div> <!-- end gc-topnav -->
@@ -186,6 +245,7 @@
                 <ul>
                   <li><a href="bookmarks.html">Bookmarks</a></li>
                   <li><a href="cookies.html">Cookies</a></li>
+                  <li><a href="devtools.html">Developer Tools</a></li>
                   <li><a href="events.html">Events</a></li>
                   <li><a href="history.html">History</a></li>
                   <li><a href="management.html">Management</a></li>
@@ -199,9 +259,9 @@
                   <li><a href="background_pages.html">Background Pages</a></li>
                   <li><a href="content_scripts.html">Content Scripts</a></li>
                   <li><a href="xhr.html">Cross-Origin XHR</a></li>
-                  <li><a href="idle.html">Idle</a></li>
                   <li><a href="i18n.html">Internationalization</a></li>
                   <li><a href="messaging.html">Message Passing</a></li>
+                  <li><a href="permissions.html">Optional Permissions</a></li>
                   <li><a href="npapi.html">NPAPI Plugins</a></li>
                 </ul>
               </li>
@@ -267,8 +327,8 @@
             </li><li>
               <a href="#preferences">Using a preferences file</a>
               <ol>
-                <li style="display: none; ">
-                  <a>h3Name</a>
+                <li>
+                  <a href="#troubleshooting">Troubleshooting Mac OS permissions problems</a>
                 </li>
               </ol>
             </li><li>
@@ -296,38 +356,10 @@
               <li style="display: none; ">
                 <a href="#apiReference">API reference</a>
                 <ol>
-                  <li>
-                    <a href="#properties">Properties</a>
-                    <ol>
-                      <li>
-                        <a href="#property-anchor">propertyName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Methods</a>
-                    <ol>
-                      <li>
-                        <a href="#method-anchor">methodName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a>Events</a>
-                    <ol>
-                      <li>
-                        <a href="#event-anchor">eventName</a>
-                      </li>
-                    </ol>
-                  </li>
-                  <li>
-                    <a href="#types">Types</a>
-                    <ol>
-                      <li>
-                        <a href="#id-anchor">id</a>
-                      </li>
-                    </ol>
-                  </li>
+                  <div></div>
+                  <div></div>
+                  <div></div>
+                  <div></div>
                 </ol>
               </li>
           </ol>
@@ -434,8 +466,7 @@ file available to the machine you want to install the extension on.
 <code>\\server\share\extension.crx</code>
 or <code>/home/share/extension.crx</code>.)
 </li>
-<li>Locate the <code>external_extensions.json</code> file
-  under the Google Chrome installation directory.
+<li>Locate the <code>external_extensions.json</code> file.
   If the file doesn't exist, create it.
   The location depends on the operating system.
   <dl>
@@ -444,8 +475,15 @@ or <code>/home/share/extension.crx</code>.)
     <br>
     Example: <code>c:\Users\Me\AppData\Local\Google\Chrome\Application\6.0.422.0\Extensions\</code>
     </dd>
-  <dt> Mac OS X: </dt>
-    <dd> <code>/Applications/Google Chrome.app/Contents/Extensions/</code> </dd>
+  <dt> Mac OS X:</dt>
+    <dd>For a specific user: <code>~USERNAME/Library/Application Support/Google/Chrome/External Extensions/</code><br>
+        For all users: <code>/Library/Application Support/Google/Chrome/External Extensions/</code>
+    <p>The external extensions file for all users is read only if every directory in the path is owned by the user <code>root</code>, has the group <code>admin</code> or <code>wheel</code>, and is not world writable.  The path must also be free of symbolic links.  These restrictions prevent an unprivileged user from causing extensions to be installed for all users.  See <a href="#troubleshooting">troubleshooting</a> for details.</p>
+    <p class="note">
+    <b>Note:</b> The above path for all users was added in Chrome 16.  Prior versions used a different path, which is now deprecated:
+    <code>/Applications/Google Chrome.app/Contents/Extensions/</code> .</p>
+  </dd>
+
   <dt> Linux: </dt>
     <dd> <code>/opt/google/chrome/extensions/</code> <br>
     <b>Note:</b> Use <code>chmod</code> if necessary
@@ -485,12 +523,41 @@ Example:
     "external_update_url": "http://myhost.com/mytestextension/updates.xml"
   }
 }</pre>
+<p>
+If you would like to install extension only for some browser locales,
+you can list supported locales in field name "supported_locale". Locale may
+specify parent locale like "en", in this case the extension will be
+installed for all English locales like "en-US", "en-GB", etc.
+If another browser locale is selected that is not supported by the extension,
+the external extensions will be uninstalled. If "supported_locales" list
+is missing, the extension will be installed for any locale.
+</p>
+Example:
+<pre>{
+  "aaaaaaaaaabbbbbbbbbbcccccccccc": {
+    "external_update_url": "http://myhost.com/mytestextension/updates.xml",
+    "supported_locales": [ "en", "fr", "de" ]
+  }
+}</pre>
 </li>
 
 <li>Save the JSON file. </li>
 <li>Launch Google Chrome and go to <b>chrome://extensions</b>;
 you should see the extension listed. </li>
 </ol>
+
+<h3 id="troubleshooting">Troubleshooting Mac OS permissions problems</h3>
+
+<p>On Mac OS, the external extensions file for all users is only read if file system permissions prevent unprivelaged users from changing it.  If you do not see external extensions installed when Chrome is launched, there may be a permissions problem with the external extensions preferences file.  To see if this is the problem, follow these steps:</p>
+
+<ol>
+  <li> Launch the Console program.  You can find it under /Applications/Utilities/Console. </li>
+  <li> If the leftmost icon in the Console says "Show Log List", click that icon.  A second column appears at the left. </li>
+  <li> Click "Console Messages" in the left pane. </li>
+  <li> Search for the string <b>Can not read external extensions</b>.  If there is a problem reading the external extensions file, you will find an error message.  Look for another error message directly above it, which should explain the issue.  For example, if you see the following error:
+     "Path /Library/Application Support/Google/Chrome is owned by the wrong group", you need to use <code>chgrp</code> or the Finder's Get Info dialog to change the directory's group owner to the Administrator group.</li>
+  <li> After fixing the issue, relaunch Chrome.  Test that the external extension is now installed.  It is possible that one permissions error keeps Chrome from detecting a second error.  If the external extension was not installed, repeat these steps until you do not see an error in the Console application.
+</li></ol>
 
 <h2 id="registry">Using the Windows registry</h2>
 
@@ -552,9 +619,11 @@ This section answers common questions about external extensions.
 <br>
 
 <p><b>Can I specify a URL as a path to the external extension?</b> </p>
-<p>Yes, if you host the extension as explained in
-<a href="hosting.html">hosting</a>.
-</p>
+<p>Yes, if you use a <a href="#preferences">preferences JSON</a> file. The
+extension must be hosted as explained in <a href="hosting.html">hosting</a>.
+Use the "external_update_url" property to point to an
+<a href="autoupdate.html#H2-2">update manifest</a> that has the URL for your
+extension.</p>
 
 <br>
 
@@ -723,7 +792,7 @@ through the UI, and then uninstalling it. </p>
 
               <div class="summary">
                 <!-- Note: intentionally longer 80 columns -->
-                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>));
+                <span class="subdued">chrome.bookmarks</span><span>onEvent</span><span class="subdued">.addListener</span>(function(<span>Type param1, Type param2</span>) <span class="subdued">{...}</span><span>, Type opt_param1, Type opt_param2</span>);
               </div>
 
               <div class="description">
@@ -802,8 +871,8 @@ through the UI, and then uninstalling it. </p>
   </p>
 
 <!-- begin analytics -->
-<script src="http://www.google-analytics.com/urchin.js" type="text/javascript"></script>
-<script src="http://www.google-analytics.com/ga.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/urchin.js" type="text/javascript"></script>
+<script src="https://www.google-analytics.com/ga.js" type="text/javascript"></script>
 
 <script type="text/javascript">
   // chrome doc tracking

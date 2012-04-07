@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,19 +8,23 @@
 
 #include <gtk/gtk.h>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/rect.h"
 
-class CairoCachedSurface;
 class GtkThemeService;
 class SkBitmap;
+
+namespace gfx {
+class CairoCachedSurface;
+}
 
 // These classes implement two kinds of custom-drawn buttons.  They're
 // used on the toolbar and the bookmarks bar.
@@ -28,7 +32,7 @@ class SkBitmap;
 // CustomDrawButtonBase provides the base for building a custom drawn button.
 // It handles managing the pixbufs containing all the static images used to draw
 // the button.  It also manages painting these pixbufs.
-class CustomDrawButtonBase : public NotificationObserver {
+class CustomDrawButtonBase : public content::NotificationObserver {
  public:
   // If the images come from ResourceBundle rather than the theme provider,
   // pass in NULL for |theme_provider|.
@@ -56,21 +60,21 @@ class CustomDrawButtonBase : public NotificationObserver {
   // Set the background details.
   void SetBackground(SkColor color, SkBitmap* image, SkBitmap* mask);
 
-  // Provide NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Provide content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // Get the CairoCachedSurface from |surfaces_| for |state|.
-  CairoCachedSurface* PixbufForState(int state);
+  gfx::CairoCachedSurface* PixbufForState(int state);
 
   // We store one surface for each possible state of the button;
   // INSENSITIVE is the last available state;
-  scoped_ptr<CairoCachedSurface> surfaces_[GTK_STATE_INSENSITIVE + 1];
+  scoped_ptr<gfx::CairoCachedSurface> surfaces_[GTK_STATE_INSENSITIVE + 1];
 
   // The background image.
-  scoped_ptr<CairoCachedSurface> background_image_;
+  scoped_ptr<gfx::CairoCachedSurface> background_image_;
 
   // If non-negative, the state to paint the button.
   int paint_override_;
@@ -89,7 +93,7 @@ class CustomDrawButtonBase : public NotificationObserver {
   bool flipped_;
 
   // Used to listen for theme change notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomDrawButtonBase);
 };
@@ -112,7 +116,7 @@ class CustomDrawHoverController : public ui::AnimationDelegate {
   }
 
  private:
-  virtual void AnimationProgressed(const ui::Animation* animation);
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
   CHROMEGTK_CALLBACK_1(CustomDrawHoverController, gboolean, OnEnter,
                        GdkEventCrossing*);
@@ -126,7 +130,7 @@ class CustomDrawHoverController : public ui::AnimationDelegate {
 // CustomDrawButton is a plain button where all its various states are drawn
 // with static images. In GTK rendering mode, it will show the standard button
 // with GTK |stock_id|.
-class CustomDrawButton : public NotificationObserver {
+class CustomDrawButton : public content::NotificationObserver {
  public:
   // The constructor takes 4 resource ids.  If a resource doesn't exist for a
   // button, pass in 0.
@@ -158,21 +162,22 @@ class CustomDrawButton : public NotificationObserver {
 
   void Init();
 
+  // Make this CustomDrawButton always use the chrome style rendering; it will
+  // never render gtk-like.
+  void ForceChromeTheme();
+
   // Flip the image horizontally. Not to be used for RTL/LTR reasons. (In RTL
   // mode, this will unflip the image.)
   void set_flipped(bool flipped) { button_base_.set_flipped(flipped); }
 
   GtkWidget* widget() const { return widget_.get(); }
 
-  gfx::Rect bounds() const {
-      return gfx::Rect(widget_->allocation.x,
-                       widget_->allocation.y,
-                       widget_->allocation.width,
-                       widget_->allocation.height);
-  }
+  // Returns the widget's allocation.
+  GtkAllocation WidgetAllocation() const;
 
-  int width() const { return widget_->allocation.width; }
-  int height() const { return widget_->allocation.height; }
+  // Returns the dimensions of the first surface.
+  int SurfaceWidth() const;
+  int SurfaceHeight() const;
 
   // Set the state to draw. We will paint the widget as if it were in this
   // state.
@@ -184,10 +189,10 @@ class CustomDrawButton : public NotificationObserver {
   // Set the background details.
   void SetBackground(SkColor color, SkBitmap* image, SkBitmap* mask);
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Returns a standard close button. Pass a |theme_provider| to use Gtk icons
   // in Gtk rendering mode.
@@ -206,20 +211,23 @@ class CustomDrawButton : public NotificationObserver {
                        GdkEventExpose*);
 
   // The actual button widget.
-  OwnedWidgetGtk widget_;
+  ui::OwnedWidgetGtk widget_;
 
   CustomDrawButtonBase button_base_;
 
   CustomDrawHoverController hover_controller_;
 
   // The widget to use when we are displaying in GTK+ theme mode.
-  OwnedWidgetGtk native_widget_;
+  ui::OwnedWidgetGtk native_widget_;
 
   // Our theme provider.
   GtkThemeService* theme_service_;
 
+  // True if we should never do gtk rendering.
+  bool forcing_chrome_theme_;
+
   // Used to listen for theme change notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(CustomDrawButton);
 };

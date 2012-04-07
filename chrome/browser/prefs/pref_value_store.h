@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
 #include "chrome/common/pref_store.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 
-class FilePath;
 class PrefModelAssociator;
 class PrefNotifier;
 class PrefStore;
@@ -80,7 +79,7 @@ class PrefValueStore {
   // was found in any of the available PrefStores. Most callers should use
   // Preference::GetValue() instead of calling this method directly.
   bool GetValue(const std::string& name,
-                Value::ValueType type,
+                base::Value::Type type,
                 const Value** out_value) const;
 
   // These methods return true if a preference with the given name is in the
@@ -95,6 +94,7 @@ class PrefValueStore {
   // a higher-priority source.
   bool PrefValueFromExtensionStore(const char* name) const;
   bool PrefValueFromUserStore(const char* name) const;
+  bool PrefValueFromRecommendedStore(const char* name) const;
   bool PrefValueFromDefaultStore(const char* name) const;
 
   // Check whether a Preference value is modifiable by the user, i.e. whether
@@ -104,6 +104,9 @@ class PrefValueStore {
   // Check whether a Preference value is modifiable by an extension, i.e.
   // whether there is no higher-priority source controlling it.
   bool PrefValueExtensionModifiable(const char* name) const;
+
+  // Update the command line PrefStore with |command_line_prefs|.
+  void UpdateCommandLinePrefStore(PrefStore* command_line_prefs);
 
  private:
   // PrefStores must be listed here in order from highest to lowest priority.
@@ -154,8 +157,8 @@ class PrefValueStore {
 
    private:
     // PrefStore::Observer implementation.
-    virtual void OnPrefValueChanged(const std::string& key);
-    virtual void OnInitializationCompleted(bool succeeded);
+    virtual void OnPrefValueChanged(const std::string& key) OVERRIDE;
+    virtual void OnInitializationCompleted(bool succeeded) OVERRIDE;
 
     // PrefValueStore this keeper is part of.
     PrefValueStore* pref_value_store_;
@@ -169,7 +172,7 @@ class PrefValueStore {
     DISALLOW_COPY_AND_ASSIGN(PrefStoreKeeper);
   };
 
-  typedef std::map<std::string, Value::ValueType> PrefTypeMap;
+  typedef std::map<std::string, base::Value::Type> PrefTypeMap;
 
   friend class PrefValueStorePolicyRefreshTest;
   FRIEND_TEST_ALL_PREFIXES(PrefValueStorePolicyRefreshTest, TestPolicyRefresh);

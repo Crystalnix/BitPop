@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,8 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/string16.h"
-#include "views/view.h"
-#include "views/window/dialog_delegate.h"
+#include "ui/views/view.h"
+#include "ui/views/window/dialog_delegate.h"
 
 class Browser;
 
@@ -24,8 +24,7 @@ namespace views {
 class Label;
 }
 
-class DownloadInProgressDialogView : public views::View,
-                                     public views::DialogDelegate {
+class DownloadInProgressDialogView : public views::DialogDelegateView {
  public:
   explicit DownloadInProgressDialogView(Browser* browser);
   virtual ~DownloadInProgressDialogView();
@@ -34,22 +33,21 @@ class DownloadInProgressDialogView : public views::View,
   // views::View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  // views::DialogDelegate:
-  virtual std::wstring GetDialogButtonLabel(
-      MessageBoxFlags::DialogButton button) const OVERRIDE;
+  // views::DialogDelegateView:
+  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
   virtual int GetDefaultDialogButton() const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
-  virtual bool IsModal() const OVERRIDE;
-  virtual std::wstring GetWindowTitle() const OVERRIDE;
+  virtual ui::ModalType GetModalType() const OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
 
   Browser* browser_;
   views::Label* warning_;
   views::Label* explanation_;
 
-  std::wstring ok_button_text_;
-  std::wstring cancel_button_text_;
+  string16 ok_button_text_;
+  string16 cancel_button_text_;
 
   string16 product_name_;
 

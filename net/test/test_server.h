@@ -24,8 +24,11 @@
 #endif
 
 class CommandLine;
-class DictionaryValue;
 class GURL;
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace net {
 
@@ -42,6 +45,8 @@ class TestServer {
     TYPE_HTTP,
     TYPE_HTTPS,
     TYPE_SYNC,
+    TYPE_TCP_ECHO,
+    TYPE_UDP_ECHO,
   };
 
   // Container for various options to control how the HTTPS server is
@@ -98,6 +103,11 @@ class TestServer {
     // HTTPS server, or BULK_CIPHER_ANY to indicate that all implemented
     // ciphers are acceptable.
     int bulk_ciphers;
+
+    // If true, pass the --https-record-resume argument to testserver.py which
+    // causes it to log session cache actions and echo the log on
+    // /ssl-session-cache.
+    bool record_resume;
   };
 
   TestServer(Type type, const FilePath& document_root);
@@ -115,7 +125,7 @@ class TestServer {
 
   const FilePath& document_root() const { return document_root_; }
   const HostPortPair& host_port_pair() const;
-  const DictionaryValue& server_data() const;
+  const base::DictionaryValue& server_data() const;
   std::string GetScheme() const;
   bool GetAddressList(AddressList* address_list) const WARN_UNUSED_RESULT;
 
@@ -169,7 +179,7 @@ class TestServer {
   HostPortPair host_port_pair_;
 
   // Holds the data sent from the server (e.g., port number).
-  scoped_ptr<DictionaryValue> server_data_;
+  scoped_ptr<base::DictionaryValue> server_data_;
 
   // Handle of the Python process running the test server.
   base::ProcessHandle process_handle_;
@@ -200,6 +210,9 @@ class TestServer {
 
   // Has the server been started?
   bool started_;
+
+  // Enables logging of the server to the console.
+  bool log_to_console_;
 
   DISALLOW_COPY_AND_ASSIGN(TestServer);
 };

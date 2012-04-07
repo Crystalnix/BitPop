@@ -173,7 +173,7 @@ static std::string FixupPath(const std::string& text) {
   GURL file_url = net::FilePathToFileURL(FilePath(filename));
   if (file_url.is_valid()) {
     return UTF16ToUTF8(net::FormatUrl(file_url, std::string(),
-        net::kFormatUrlOmitUsernamePassword, UnescapeRule::NORMAL, NULL,
+        net::kFormatUrlOmitUsernamePassword, net::UnescapeRule::NORMAL, NULL,
         NULL, NULL));
   }
 
@@ -406,10 +406,10 @@ std::string URLFixerUpper::SegmentURL(const std::string& text,
         chrome::kFtpScheme : chrome::kHttpScheme);
   }
 
-  // Not segmenting file schemes or nonstandard schemes.
-  if ((scheme == chrome::kFileScheme) ||
-      !url_util::IsStandard(scheme.c_str(),
-      url_parse::Component(0, static_cast<int>(scheme.length()))))
+  // Proceed with about and chrome schemes, but not file or nonstandard schemes.
+  if ((scheme != chrome::kAboutScheme) && (scheme != chrome::kChromeUIScheme) &&
+      ((scheme == chrome::kFileScheme) || !url_util::IsStandard(scheme.c_str(),
+           url_parse::Component(0, static_cast<int>(scheme.length())))))
     return scheme;
 
   if (parts->scheme.is_valid()) {
@@ -427,7 +427,7 @@ std::string URLFixerUpper::SegmentURL(const std::string& text,
 
   // Construct the text to parse by inserting the scheme.
   std::string inserted_text(scheme);
-  inserted_text.append("://");
+  inserted_text.append(chrome::kStandardSchemeSeparator);
   std::string text_to_parse(text.begin(), first_nonwhite);
   text_to_parse.append(inserted_text);
   text_to_parse.append(first_nonwhite, text.end());
@@ -478,11 +478,16 @@ GURL URLFixerUpper::FixupURL(const std::string& text,
   if (scheme == chrome::kFileScheme)
     return GURL(parts.scheme.is_valid() ? text : FixupPath(text));
 
+  // Parse and rebuild about: and chrome: URLs, except about:blank.
+  bool chrome_url = !LowerCaseEqualsASCII(trimmed, chrome::kAboutBlankURL) &&
+      ((scheme == chrome::kAboutScheme) || (scheme == chrome::kChromeUIScheme));
+
   // For some schemes whose layouts we understand, we rebuild it.
-  if (url_util::IsStandard(scheme.c_str(),
+  if (chrome_url || url_util::IsStandard(scheme.c_str(),
           url_parse::Component(0, static_cast<int>(scheme.length())))) {
-    std::string url(scheme);
-    url.append("://");
+    // Replace the about: scheme with the chrome: scheme.
+    std::string url(chrome_url ? chrome::kChromeUIScheme : scheme);
+    url.append(chrome::kStandardSchemeSeparator);
 
     // We need to check whether the |username| is valid because it is our
     // responsibility to append the '@' to delineate the user information from
@@ -494,6 +499,8 @@ GURL URLFixerUpper::FixupURL(const std::string& text,
     }
 
     FixupHost(trimmed, parts.host, parts.scheme.is_valid(), desired_tld, &url);
+    if (chrome_url && !parts.host.is_valid())
+      url.append(chrome::kChromeUIDefaultHost);
     FixupPort(trimmed, parts.port, &url);
     FixupPath(trimmed, parts.path, &url);
     FixupQuery(trimmed, parts.query, &url);
@@ -505,7 +512,7 @@ GURL URLFixerUpper::FixupURL(const std::string& text,
   // In the worst-case, we insert a scheme if the URL lacks one.
   if (!parts.scheme.is_valid()) {
     std::string fixed_scheme(scheme);
-    fixed_scheme.append("://");
+    fixed_scheme.append(chrome::kStandardSchemeSeparator);
     trimmed.insert(0, fixed_scheme);
   }
 
@@ -531,19 +538,23 @@ GURL URLFixerUpper::FixupRelativeFile(const FilePath& base_dir,
   PrepareStringForFileOps(text, &trimmed);
 
   bool is_file = true;
+  // Avoid recognizing definite non-file URLs as file paths.
+  GURL gurl(trimmed);
+  if (gurl.is_valid() && gurl.IsStandard())
+    is_file = false;
   FilePath full_path;
-  if (!ValidPathForFile(trimmed, &full_path)) {
+  if (is_file && !ValidPathForFile(trimmed, &full_path)) {
     // Not a path as entered, try unescaping it in case the user has
     // escaped things. We need to go through 8-bit since the escaped values
     // only represent 8-bit values.
 #if defined(OS_WIN)
-    std::wstring unescaped = UTF8ToWide(UnescapeURLComponent(
+    std::wstring unescaped = UTF8ToWide(net::UnescapeURLComponent(
         WideToUTF8(trimmed),
-        UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS));
+        net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS));
 #elif defined(OS_POSIX)
-    std::string unescaped = UnescapeURLComponent(
+    std::string unescaped = net::UnescapeURLComponent(
         trimmed,
-        UnescapeRule::SPACES | UnescapeRule::URL_SPECIAL_CHARS);
+        net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS);
 #endif
 
     if (!ValidPathForFile(unescaped, &full_path))
@@ -558,7 +569,7 @@ GURL URLFixerUpper::FixupRelativeFile(const FilePath& base_dir,
     GURL file_url = net::FilePathToFileURL(full_path);
     if (file_url.is_valid())
       return GURL(UTF16ToUTF8(net::FormatUrl(file_url, std::string(),
-          net::kFormatUrlOmitUsernamePassword, UnescapeRule::NORMAL, NULL,
+          net::kFormatUrlOmitUsernamePassword, net::UnescapeRule::NORMAL, NULL,
           NULL, NULL)));
     // Invalid files fall through to regular processing.
   }

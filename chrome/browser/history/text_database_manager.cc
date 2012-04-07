@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/history/text_database_manager.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
@@ -32,7 +33,7 @@ std::string ConvertStringForIndexer(const string16& input) {
 
 // Data older than this will be committed to the full text index even if we
 // haven't gotten a title and/or body.
-const int kExpirationSec = 20;
+const int kExpirationSeconds = 20;
 
 }  // namespace
 
@@ -70,7 +71,7 @@ void TextDatabaseManager::PageInfo::set_body(const string16& bdy) {
 }
 
 bool TextDatabaseManager::PageInfo::Expired(TimeTicks now) const {
-  return now - added_time_ > TimeDelta::FromSeconds(kExpirationSec);
+  return now - added_time_ > base::TimeDelta::FromSeconds(kExpirationSeconds);
 }
 
 // TextDatabaseManager ---------------------------------------------------------
@@ -85,7 +86,7 @@ TextDatabaseManager::TextDatabaseManager(const FilePath& dir,
       transaction_nesting_(0),
       db_cache_(DBCache::NO_AUTO_EVICT),
       present_databases_loaded_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
       history_publisher_(NULL) {
 }
 
@@ -207,8 +208,8 @@ void TextDatabaseManager::AddPageTitle(const GURL& url,
       // not worth it for this edge case.
       //
       // It will be almost impossible for the title to take longer than
-      // kExpirationSec yet we got a body in less than that time, since the
-      // title should always come in first.
+      // kExpirationSeconds yet we got a body in less than that time, since
+      // the title should always come in first.
       return;
     }
 
@@ -234,9 +235,9 @@ void TextDatabaseManager::AddPageContents(const GURL& url,
   RecentChangeList::iterator found = recent_changes_.Peek(url);
   if (found == recent_changes_.end()) {
     // This page is not in our cache of recent pages. This means that the page
-    // took more than kExpirationSec to load. Often, this will be the result of
-    // a very slow iframe or other resource on the page that makes us think its
-    // still loading.
+    // took more than kExpirationSeconds to load. Often, this will be the result
+    // of a very slow iframe or other resource on the page that makes us think
+    // its still loading.
     //
     // As a fallback, set the most recent visit's contents using the input, and
     // use the last set title in the URL table as the title to index.
@@ -281,32 +282,30 @@ bool TextDatabaseManager::AddPageData(const GURL& url,
   // anything in the main database, but we don't bother looking through the
   // archived database.
   VisitVector visits;
-  visit_database_->GetVisitsForURL(url_id, &visits);
-  size_t our_visit_row_index = visits.size();
+  visit_database_->GetIndexedVisitsForURL(url_id, &visits);
   for (size_t i = 0; i < visits.size(); i++) {
-    // While we're going trough all the visits, also find our row so we can
-    // avoid another DB query.
-    if (visits[i].visit_id == visit_id) {
-      our_visit_row_index = i;
-    } else if (visits[i].is_indexed) {
-      visits[i].is_indexed = false;
-      visit_database_->UpdateVisitRow(visits[i]);
-      DeletePageData(visits[i].visit_time, url, NULL);
-    }
+    visits[i].is_indexed = false;
+    visit_database_->UpdateVisitRow(visits[i]);
+    DeletePageData(visits[i].visit_time, url, NULL);
   }
 
   if (visit_id) {
-    // We're supposed to update the visit database.
-    if (our_visit_row_index >= visits.size()) {
-      NOTREACHED() << "We should always have found a visit when given an ID.";
+    // We're supposed to update the visit database, so load the visit.
+    VisitRow row;
+    if (!visit_database_->GetRowForVisit(visit_id, &row)) {
+      // This situation can occur if Chrome's history is in the process of
+      // being updated, and then the browsing history is deleted before all
+      // updates have been completely performed.  In this case, a stale update
+      // to the database is attempted, leading to the warning below.
+      DLOG(WARNING) << "Could not find requested visit #" << visit_id;
       return false;
     }
 
-    DCHECK(visit_time == visits[our_visit_row_index].visit_time);
+    DCHECK(visit_time == row.visit_time);
 
     // Update the visit database to reference our addition.
-    visits[our_visit_row_index].is_indexed = true;
-    if (!visit_database_->UpdateVisitRow(visits[our_visit_row_index]))
+    row.is_indexed = true;
+    if (!visit_database_->UpdateVisitRow(row))
       return false;
   }
 
@@ -377,6 +376,9 @@ void TextDatabaseManager::DeleteAll() {
   DCHECK_EQ(0, transaction_nesting_) << "Calling deleteAll in a transaction.";
 
   InitDBList();
+
+  // Delete uncommitted entries.
+  recent_changes_.Clear();
 
   // Close all open databases.
   db_cache_.Clear();
@@ -531,10 +533,12 @@ TextDatabase* TextDatabaseManager::GetDBForTime(Time time,
 }
 
 void TextDatabaseManager::ScheduleFlushOldChanges() {
-  factory_.RevokeAll();
-  MessageLoop::current()->PostDelayedTask(FROM_HERE, factory_.NewRunnableMethod(
-          &TextDatabaseManager::FlushOldChanges),
-      kExpirationSec * Time::kMillisecondsPerSecond);
+  weak_factory_.InvalidateWeakPtrs();
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&TextDatabaseManager::FlushOldChanges,
+                 weak_factory_.GetWeakPtr()),
+      base::TimeDelta::FromSeconds(kExpirationSeconds));
 }
 
 void TextDatabaseManager::FlushOldChanges() {

@@ -4,25 +4,30 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/stringprintf.h"
-#include "chrome/browser/debugger/devtools_client_host.h"
-#include "chrome/browser/debugger/devtools_manager.h"
 #include "chrome/browser/extensions/extension_devtools_browsertest.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/site_instance.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/devtools_messages.h"
+#include "content/public/browser/devtools_agent_host_registry.h"
+#include "content/public/browser/devtools_client_host.h"
+#include "content/public/browser/devtools_manager.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/net_util.h"
+
+using content::DevToolsAgentHost;
+using content::DevToolsAgentHostRegistry;
+using content::DevToolsClientHost;
+using content::DevToolsManager;
+using content::WebContents;
 
 // Looks for an ExtensionHost whose URL has the given path component (including
 // leading slash).  Also verifies that the expected number of hosts are loaded.
@@ -59,9 +64,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
   DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
 
   // Grab the tab_id of whatever tab happens to be first.
-  TabContents* tab_contents = browser()->GetTabContentsAt(0);
-  ASSERT_TRUE(tab_contents);
-  int tab_id = ExtensionTabUtil::GetTabId(tab_contents);
+  WebContents* web_contents = browser()->GetWebContentsAt(0);
+  ASSERT_TRUE(web_contents);
+  int tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
   // Test setup.
   bool result = false;
@@ -73,16 +78,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
 
   // Setting the events should have caused an ExtensionDevToolsBridge to be
   // registered for the tab's RenderViewHost.
+  DevToolsAgentHost* agent = DevToolsAgentHostRegistry::GetDevToolsAgentHost(
+      web_contents->GetRenderViewHost());
   DevToolsClientHost* devtools_client_host =
-      devtools_manager->GetDevToolsClientHostFor(
-          tab_contents->render_view_host());
+      devtools_manager->GetDevToolsClientHostFor(agent);
   ASSERT_TRUE(devtools_client_host);
 
   // Test onPageEvent event.
   result = false;
 
-  DevToolsClientMsg_DispatchOnInspectorFrontend pageEventMessage("");
-  devtools_client_host->SendMessageToClient(pageEventMessage);
+  devtools_client_host->DispatchOnInspectorFrontend("");
   ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
       host->render_view_host(), L"", L"testReceivePageEvent()", &result));
   EXPECT_TRUE(result);
@@ -90,7 +95,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, FLAKY_TimelineApi) {
   // Test onTabClose event.
   result = false;
   devtools_manager->UnregisterDevToolsClientHostFor(
-      tab_contents->render_view_host());
+      DevToolsAgentHostRegistry::GetDevToolsAgentHost(
+          web_contents->GetRenderViewHost()));
   ASSERT_TRUE(ui_test_utils::ExecuteJavaScriptAndExtractBool(
       host->render_view_host(), L"", L"testReceiveTabCloseEvent()", &result));
   EXPECT_TRUE(result);
@@ -115,9 +121,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   DevToolsManager* devtools_manager = DevToolsManager::GetInstance();
 
   // Grab the tab_id of whatever tab happens to be first.
-  TabContents* tab_contents = browser()->GetTabContentsAt(0);
-  ASSERT_TRUE(tab_contents);
-  int tab_id = ExtensionTabUtil::GetTabId(tab_contents);
+  WebContents* web_contents = browser()->GetWebContentsAt(0);
+  ASSERT_TRUE(web_contents);
+  int tab_id = ExtensionTabUtil::GetTabId(web_contents);
 
   // Test setup.
   bool result = false;
@@ -130,7 +136,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
   // Setting the event listeners should have caused an ExtensionDevToolsBridge
   // to be registered for the tab's RenderViewHost.
   ASSERT_TRUE(devtools_manager->GetDevToolsClientHostFor(
-      tab_contents->render_view_host()));
+      DevToolsAgentHostRegistry::GetDevToolsAgentHost(
+          web_contents->GetRenderViewHost())));
 
   // Register listeners from the second extension as well.
   std::wstring script = base::StringPrintf(L"registerListenersForTab(%d)",
@@ -146,7 +153,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
       host_one->render_view_host(), L"", L"unregisterListeners()", &result));
   EXPECT_TRUE(result);
   ASSERT_TRUE(devtools_manager->GetDevToolsClientHostFor(
-      tab_contents->render_view_host()));
+      DevToolsAgentHostRegistry::GetDevToolsAgentHost(
+          web_contents->GetRenderViewHost())));
 
   // Removing the listeners from the second extension should tear the bridge
   // down.
@@ -155,5 +163,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionDevToolsBrowserTest, ProcessRefCounting) {
       host_two->render_view_host(), L"", L"unregisterListeners()", &result));
   EXPECT_TRUE(result);
   ASSERT_FALSE(devtools_manager->GetDevToolsClientHostFor(
-      tab_contents->render_view_host()));
+      DevToolsAgentHostRegistry::GetDevToolsAgentHost(
+          web_contents->GetRenderViewHost())));
 }

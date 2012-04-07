@@ -9,12 +9,14 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/notifications/balloon.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/notifications/balloon_view_host_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/gfx/point.h"
@@ -25,9 +27,7 @@ class BalloonCollection;
 class CustomDrawButton;
 class GtkThemeService;
 class MenuGtk;
-class NotificationDetails;
 class NotificationOptionsMenuModel;
-class NotificationSource;
 
 namespace ui {
 class SlideAnimation;
@@ -37,31 +37,31 @@ class SlideAnimation;
 // It draws a border, and within the border an HTML renderer.
 class BalloonViewImpl : public BalloonView,
                         public MenuGtk::Delegate,
-                        public NotificationObserver,
+                        public content::NotificationObserver,
                         public ui::AnimationDelegate {
  public:
   explicit BalloonViewImpl(BalloonCollection* collection);
   virtual ~BalloonViewImpl();
 
   // BalloonView interface.
-  virtual void Show(Balloon* balloon);
-  virtual void Update();
-  virtual void RepositionToBalloon();
-  virtual void Close(bool by_user);
-  virtual gfx::Size GetSize() const;
-  virtual BalloonHost* GetHost() const;
+  virtual void Show(Balloon* balloon) OVERRIDE;
+  virtual void Update() OVERRIDE;
+  virtual void RepositionToBalloon() OVERRIDE;
+  virtual void Close(bool by_user) OVERRIDE;
+  virtual gfx::Size GetSize() const OVERRIDE;
+  virtual BalloonHost* GetHost() const OVERRIDE;
 
   // MenuGtk::Delegate interface.
-  virtual void StoppedShowing();
+  virtual void StoppedShowing() OVERRIDE;
 
  private:
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // ui::AnimationDelegate interface.
-  virtual void AnimationProgressed(const ui::Animation* animation);
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
 
   // Do the delayed close work.  The balloon and all view components will be
   // destroyed at this time, so it shouldn't be called while still processing
@@ -114,7 +114,7 @@ class BalloonViewImpl : public BalloonView,
   scoped_ptr<BalloonViewHost> html_contents_;
 
   // The following factory is used to call methods at a later time.
-  ScopedRunnableMethodFactory<BalloonViewImpl> method_factory_;
+  base::WeakPtrFactory<BalloonViewImpl> weak_factory_;
 
   // Close button.
   scoped_ptr<CustomDrawButton> close_button_;
@@ -130,7 +130,7 @@ class BalloonViewImpl : public BalloonView,
   // The button to open the options menu.
   scoped_ptr<CustomDrawButton> options_menu_button_;
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
 
   // Is the menu currently showing?
   bool menu_showing_;

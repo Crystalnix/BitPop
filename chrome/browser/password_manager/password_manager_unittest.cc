@@ -11,14 +11,15 @@
 #include "chrome/browser/password_manager/password_manager_delegate.h"
 #include "chrome/browser/password_manager/password_store.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-using webkit_glue::PasswordForm;
+using content::BrowserThread;
+using webkit::forms::PasswordForm;
 using testing::_;
 using testing::DoAll;
 using ::testing::Exactly;
@@ -28,7 +29,7 @@ using ::testing::Return;
 class MockPasswordManagerDelegate : public PasswordManagerDelegate {
  public:
   MOCK_METHOD1(FillPasswordForm, void(
-     const webkit_glue::PasswordFormFillData&));
+     const webkit::forms::PasswordFormFillData&));
   MOCK_METHOD1(AddSavePasswordInfoBar, void(PasswordFormManager*));
   MOCK_METHOD0(GetProfileForPasswordManager, Profile*());
   MOCK_METHOD0(DidLastPageLoadEncounterSSLErrors, bool());
@@ -65,9 +66,9 @@ class MockPasswordStore : public PasswordStore {
   MOCK_METHOD1(GetAutofillableLoginsImpl, void(GetLoginsRequest*));
   MOCK_METHOD1(GetBlacklistLoginsImpl, void(GetLoginsRequest*));
   MOCK_METHOD1(FillAutofillableLogins,
-      bool(std::vector<webkit_glue::PasswordForm*>*));
+      bool(std::vector<webkit::forms::PasswordForm*>*));
   MOCK_METHOD1(FillBlacklistLogins,
-      bool(std::vector<webkit_glue::PasswordForm*>*));
+      bool(std::vector<webkit::forms::PasswordForm*>*));
 };
 
 ACTION_P2(InvokeConsumer, handle, forms) {
@@ -78,19 +79,19 @@ ACTION_P(SaveToScopedPtr, scoped) {
   scoped->reset(arg0);
 }
 
-class PasswordManagerTest : public RenderViewHostTestHarness {
+class PasswordManagerTest : public ChromeRenderViewHostTestHarness {
  public:
   PasswordManagerTest()
       : ui_thread_(BrowserThread::UI, MessageLoopForUI::current()) {}
  protected:
 
   virtual void SetUp() {
-    RenderViewHostTestHarness::SetUp();
-
     store_ = new MockPasswordStore();
-    profile_.reset(new TestingProfileWithPasswordStore(store_));
+    browser_context_.reset(new TestingProfileWithPasswordStore(store_));
+    ChromeRenderViewHostTestHarness::SetUp();
+
     EXPECT_CALL(delegate_, GetProfileForPasswordManager())
-        .WillRepeatedly(Return(profile_.get()));
+        .WillRepeatedly(Return(profile()));
     manager_.reset(new PasswordManager(contents(), &delegate_));
     EXPECT_CALL(delegate_, DidLastPageLoadEncounterSSLErrors())
         .WillRepeatedly(Return(false));
@@ -99,6 +100,7 @@ class PasswordManagerTest : public RenderViewHostTestHarness {
   virtual void TearDown() {
     manager_.reset();
     store_ = NULL;
+    ChromeRenderViewHostTestHarness::TearDown();
   }
 
   PasswordForm MakeSimpleForm() {
@@ -117,9 +119,8 @@ class PasswordManagerTest : public RenderViewHostTestHarness {
   PasswordManager* manager() { return manager_.get(); }
 
   // We create a UI thread to satisfy PasswordStore.
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
 
-  scoped_ptr<Profile> profile_;
   scoped_refptr<MockPasswordStore> store_;
   MockPasswordManagerDelegate delegate_;  // Owned by manager_.
   scoped_ptr<PasswordManager> manager_;

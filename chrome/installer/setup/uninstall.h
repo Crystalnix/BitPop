@@ -17,7 +17,6 @@
 class BrowserDistribution;
 class CommandLine;
 class FilePath;
-class InstallUtil;
 
 namespace installer {
 
@@ -37,7 +36,7 @@ bool DeleteChromeRegistrationKeys(BrowserDistribution* dist, HKEY root,
 // Removes any legacy registry keys from earlier versions of Chrome that are no
 // longer needed. This is used during autoupdate since we don't do full
 // uninstalls/reinstalls to update.
-void RemoveLegacyRegistryKeys(BrowserDistribution* dist);
+void RemoveChromeLegacyRegistryKeys(BrowserDistribution* dist);
 
 // This function uninstalls a product.  Hence we came up with this awesome
 // name for it.

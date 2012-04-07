@@ -4,61 +4,6 @@
     <output filename="grit/locale_settings.h" type="rc_header">
       <emit emit_type='prepend'></emit>
     </output>
-    <output filename="locale_settings_am.rc" type="rc_all" lang="am" />
-    <output filename="locale_settings_ar.rc" type="rc_all" lang="ar" />
-    <output filename="locale_settings_bg.rc" type="rc_all" lang="bg" />
-    <output filename="locale_settings_bn.rc" type="rc_all" lang="bn" />
-    <output filename="locale_settings_ca.rc" type="rc_all" lang="ca" />
-    <output filename="locale_settings_cs.rc" type="rc_all" lang="cs" />
-    <output filename="locale_settings_da.rc" type="rc_all" lang="da" />
-    <output filename="locale_settings_de.rc" type="rc_all" lang="de" />
-    <output filename="locale_settings_el.rc" type="rc_all" lang="el" />
-    <output filename="locale_settings_en-GB.rc" type="rc_all" lang="en-GB" />
-    <output filename="locale_settings_en-US.rc" type="rc_all" lang="en" />
-    <output filename="locale_settings_es.rc" type="rc_all" lang="es" />
-    <output filename="locale_settings_es-419.rc" type="rc_all" lang="es-419" />
-    <output filename="locale_settings_et.rc" type="rc_all" lang="et" />
-    <output filename="locale_settings_fa.rc" type="rc_all" lang="fa" />
-    <output filename="locale_settings_fi.rc" type="rc_all" lang="fi" />
-    <output filename="locale_settings_fil.rc" type="rc_all" lang="fil" />
-    <output filename="locale_settings_fr.rc" type="rc_all" lang="fr" />
-    <output filename="locale_settings_gu.rc" type="rc_all" lang="gu" />
-    <output filename="locale_settings_he.rc" type="rc_all" lang="he" />
-    <output filename="locale_settings_hi.rc" type="rc_all" lang="hi" />
-    <output filename="locale_settings_hr.rc" type="rc_all" lang="hr" />
-    <output filename="locale_settings_hu.rc" type="rc_all" lang="hu" />
-    <output filename="locale_settings_id.rc" type="rc_all" lang="id" />
-    <output filename="locale_settings_it.rc" type="rc_all" lang="it" />
-    <output filename="locale_settings_ja.rc" type="rc_all" lang="ja" />
-    <output filename="locale_settings_kn.rc" type="rc_all" lang="kn" />
-    <output filename="locale_settings_ko.rc" type="rc_all" lang="ko" />
-    <output filename="locale_settings_lt.rc" type="rc_all" lang="lt" />
-    <output filename="locale_settings_lv.rc" type="rc_all" lang="lv" />
-    <output filename="locale_settings_ml.rc" type="rc_all" lang="ml" />
-    <output filename="locale_settings_mr.rc" type="rc_all" lang="mr" />
-    <output filename="locale_settings_nl.rc" type="rc_all" lang="nl" />
-    <!-- The translation console uses 'no' for Norwegian Bokmål. It should
-         be 'nb'. -->
-    <output filename="locale_settings_nb.rc" type="rc_all" lang="no" />
-    <output filename="locale_settings_pl.rc" type="rc_all" lang="pl" />
-    <output filename="locale_settings_pt-BR.rc" type="rc_all" lang="pt-BR" />
-    <output filename="locale_settings_pt-PT.rc" type="rc_all" lang="pt-PT" />
-    <output filename="locale_settings_ro.rc" type="rc_all" lang="ro" />
-    <output filename="locale_settings_ru.rc" type="rc_all" lang="ru" />
-    <output filename="locale_settings_sk.rc" type="rc_all" lang="sk" />
-    <output filename="locale_settings_sl.rc" type="rc_all" lang="sl" />
-    <output filename="locale_settings_sr.rc" type="rc_all" lang="sr" />
-    <output filename="locale_settings_sv.rc" type="rc_all" lang="sv" />
-    <output filename="locale_settings_sw.rc" type="rc_all" lang="sw" />
-    <output filename="locale_settings_ta.rc" type="rc_all" lang="ta" />
-    <output filename="locale_settings_te.rc" type="rc_all" lang="te" />
-    <output filename="locale_settings_th.rc" type="rc_all" lang="th" />
-    <output filename="locale_settings_tr.rc" type="rc_all" lang="tr" />
-    <output filename="locale_settings_uk.rc" type="rc_all" lang="uk" />
-    <output filename="locale_settings_vi.rc" type="rc_all" lang="vi" />
-    <output filename="locale_settings_zh-CN.rc" type="rc_all" lang="zh-CN" />
-    <output filename="locale_settings_zh-TW.rc" type="rc_all" lang="zh-TW" />
-
     <output filename="locale_settings_am.pak" type="data_package" lang="am" />
     <output filename="locale_settings_ar.pak" type="data_package" lang="ar" />
     <if expr="pp_ifdef('use_third_party_translations')">
@@ -66,6 +11,9 @@
     </if>
     <output filename="locale_settings_bg.pak" type="data_package" lang="bg" />
     <output filename="locale_settings_bn.pak" type="data_package" lang="bn" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="locale_settings_bs.pak" type="data_package" lang="bs" />
+    </if>
     <output filename="locale_settings_ca.pak" type="data_package" lang="ca" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="locale_settings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
@@ -74,6 +22,9 @@
     <output filename="locale_settings_da.pak" type="data_package" lang="da" />
     <output filename="locale_settings_de.pak" type="data_package" lang="de" />
     <output filename="locale_settings_el.pak" type="data_package" lang="el" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="locale_settings_en-AU.pak" type="data_package" lang="en-AU" />
+    </if>
     <output filename="locale_settings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="locale_settings_en-US.pak" type="data_package" lang="en" />
     <if expr="pp_ifdef('use_third_party_translations')">
@@ -86,6 +37,7 @@
       <output filename="locale_settings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="locale_settings_fa.pak" type="data_package" lang="fa" />
+    <output filename="locale_settings_fake-bidi.pak" type="data_package" lang="fake-bidi" />
     <output filename="locale_settings_fi.pak" type="data_package" lang="fi" />
     <output filename="locale_settings_fil.pak" type="data_package" lang="fil" />
     <output filename="locale_settings_fr.pak" type="data_package" lang="fr" />
@@ -99,6 +51,7 @@
     <output filename="locale_settings_hu.pak" type="data_package" lang="hu" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="locale_settings_hy.pak" type="data_package" lang="hy" />
+      <output filename="locale_settings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="locale_settings_id.pak" type="data_package" lang="id" />
     <output filename="locale_settings_it.pak" type="data_package" lang="it" />
@@ -110,11 +63,13 @@
     <output filename="locale_settings_ko.pak" type="data_package" lang="ko" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="locale_settings_ku.pak" type="data_package" lang="ku" />
+      <output filename="locale_settings_kw.pak" type="data_package" lang="kw" />
     </if>
     <output filename="locale_settings_lt.pak" type="data_package" lang="lt" />
     <output filename="locale_settings_lv.pak" type="data_package" lang="lv" />
     <output filename="locale_settings_ml.pak" type="data_package" lang="ml" />
     <output filename="locale_settings_mr.pak" type="data_package" lang="mr" />
+    <output filename="locale_settings_ms.pak" type="data_package" lang="ms" />
     <output filename="locale_settings_nl.pak" type="data_package" lang="nl" />
     <!-- The translation console uses 'no' for Norwegian Bokmål. It should
          be 'nb'. -->
@@ -173,6 +128,7 @@
     <file path="locale_settings_lv.xtb" lang="lv" />
     <file path="locale_settings_ml.xtb" lang="ml" />
     <file path="locale_settings_mr.xtb" lang="mr" />
+    <file path="locale_settings_ms.xtb" lang="ms" />
     <file path="locale_settings_nl.xtb" lang="nl" />
     <file path="locale_settings_nb.xtb" lang="no" />
     <file path="locale_settings_pl.xtb" lang="pl" />
@@ -193,6 +149,7 @@
     <file path="locale_settings_vi.xtb" lang="vi" />
     <file path="locale_settings_zh-CN.xtb" lang="zh-CN" />
     <file path="locale_settings_zh-TW.xtb" lang="zh-TW" />
+    <file path="locale_settings_fake-bidi.xtb" lang="fake-bidi" />
   </translations>
   <release seq="1" allow_pseudo="false">
     <includes>
@@ -283,15 +240,6 @@
         en-US
       </message>
 
-      <!-- The width and height of the Import dialog box in characters and lines (See -->
-      <!-- above). -->
-      <message name="IDS_IMPORT_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        60
-      </message>
-      <message name="IDS_IMPORT_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        14
-      </message>
-
       <!-- The width and height of the About dialog box in characters and lines (See -->
       <!-- above). -->
       <message name="IDS_ABOUT_DIALOG_WIDTH_CHARS" use_name_for_id="true">
@@ -299,6 +247,11 @@
       </message>
       <message name="IDS_ABOUT_DIALOG_MINIMUM_HEIGHT_LINES" use_name_for_id="true">
         4
+      </message>
+
+      <!-- The width of the Crucial Notification bubble in characters (See above). -->
+      <message name="IDS_CRUCIAL_NOTIFICATION_BUBBLE_WIDTH_CHARS" use_name_for_id="true">
+        55
       </message>
 
       <!-- The width and height of the Join Wi-Fi network dialog box in -->
@@ -315,7 +268,7 @@
         86
       </message>
       <message name="IDS_JOIN_WIFI_NETWORK_DIALOG_ADVANCED_MINIMUM_HEIGHT_LINES" use_name_for_id="true">
-        27
+        30
       </message>
       
       <!-- The width and height of the Page Info dialog box in characters and lines -->
@@ -335,15 +288,6 @@
         30
       </message>
 
-      <!-- The width and height of the Search Engines dialog box in characters and -->
-      <!-- lines (See above). -->
-      <message name="IDS_SEARCHENGINES_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        95
-      </message>
-      <message name="IDS_SEARCHENGINES_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        25
-      </message>
-
       <!-- The width and height of the Edit Bookmark dialog box in characters and lines -->
       <!-- (See above). -->
       <message name="IDS_EDITBOOKMARK_DIALOG_WIDTH_CHARS" use_name_for_id="true">
@@ -352,23 +296,6 @@
       <message name="IDS_EDITBOOKMARK_DIALOG_HEIGHT_LINES" use_name_for_id="true">
         25
       </message>
-
-      <!-- The width and height of the First Run Search Engine Selection dialog box in characters and -->
-      <!-- lines (See above). -->
-      <message name="IDS_FIRSTRUN_SEARCH_ENGINE_SELECTION_WIDTH_CHARS" use_name_for_id="true">
-        128
-      </message>
-      <if expr="pp_ifdef('_google_chrome')">
-        <message name="IDS_FIRSTRUN_SEARCH_ENGINE_SELECTION_HEIGHT_LINES" use_name_for_id="true">
-          22
-        </message>
-      </if>
-      <!-- With text instead of images, the selection dialog is much smaller. -->
-      <if expr="not pp_ifdef('_google_chrome')">
-        <message name="IDS_FIRSTRUN_SEARCH_ENGINE_SELECTION_HEIGHT_LINES" use_name_for_id="true">
-          14
-        </message>
-      </if>
 
       <!-- The width and height of the Import Progress dialog box in characters and -->
       <!-- lines (See above). -->
@@ -386,33 +313,6 @@
       </message>
       <message name="IDS_IMPORTLOCK_DIALOG_HEIGHT_LINES" use_name_for_id="true">
         8
-      </message>
-
-      <!-- The width and height of the First Run Search Information bubble in -->
-      <!-- characters and lines (See above). -->
-      <message name="IDS_FIRSTRUNBUBBLE_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        93
-      </message>
-      <message name="IDS_FIRSTRUNBUBBLE_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        12
-      </message>
-
-      <!-- The width and height of the First Run Search Information OEM -->
-      <!-- bubble in characters and lines (See above). -->
-      <message name="IDS_FIRSTRUNOEMBUBBLE_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        37
-      </message>
-      <message name="IDS_FIRSTRUNOEMBUBBLE_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        3
-      </message>
-
-      <!-- The width and height of the First Run Omnibox Information minimal -->
-      <!-- bubble in characters and lines (See above). -->
-      <message name="IDS_FIRSTRUN_MINIMAL_BUBBLE_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-        82
-      </message>
-      <message name="IDS_FIRSTRUN_MINIMAL_BUBBLE_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-        5
       </message>
 
       <!-- The minimum width of javascript alert popups. -->
@@ -437,7 +337,12 @@
 
       <!-- The URL for the themes gallery. -->
       <message name="IDS_THEMES_GALLERY_URL" translateable="false">
-        https://tools.google.com/chrome/intl/[GRITLANGCODE]/themes/index.html
+        https://chrome.google.com/webstore?hl=[GRITLANGCODE]&amp;category=theme
+      </message>
+
+      <!-- The URL for the webstore. -->
+      <message name="IDS_WEBSTORE_URL" translateable="false">
+        https://chrome.google.com/webstore?hl=[GRITLANGCODE]
       </message>
 
       <!-- The URL for Google Chrome welcome page. This is used for the pre -->
@@ -453,18 +358,12 @@
         http://www.adobe.com/go/settmgr_storage_en
       </message>
 
-      <!-- The width of the sync setup wizard / login dialog in characters. -->
-      <message name="IDS_SYNC_SETUP_WIZARD_WIDTH_CHARS" use_name_for_id="true">
-        60
-      </message>
-
-      <!-- The height of the sync setup wizard / login dialog in lines. -->
-      <message name="IDS_SYNC_SETUP_WIZARD_HEIGHT_LINES" use_name_for_id="true">
-        19
-      </message>
-
       <message name="IDS_SYNC_GET_ACCESS_CODE_URL" translateable="false">
         https://www.google.com/accounts/IssuedAuthSubTokens?hl=[GRITLANGCODE]
+      </message>
+
+      <message name="IDS_SYNC_UNRECOVERABLE_ERROR_HELP_URL" translateable="false">
+        https://www.google.com/support/chrome/bin/answer.py?answer=1181420
       </message>
 
       <!-- The width of the cloud print setup wizard / login dialog in -->
@@ -509,7 +408,7 @@
       </message>
 
       <!-- The width and height for the "create application shortcuts error" dialog. -->
-      <if expr="os == 'linux2' or os.find('bsd') != -1 or os == 'sunos5'">
+      <if expr="is_posix and not is_macosx">
         <message name="IDS_CREATE_SHORTCUTS_ERROR_DIALOG_WIDTH_CHARS" use_name_for_id="true">
          60
         </message>
@@ -533,15 +432,6 @@
           13
         </message>
 
-        <!-- The width and height of the TPM setting dialog box in -->
-        <!-- characters and lines (See above). -->
-        <message name="IDS_TPM_INFO_DIALOG_WIDTH_CHARS" use_name_for_id="true">
-          80
-        </message>
-        <message name="IDS_TPM_INFO_DIALOG_HEIGHT_LINES" use_name_for_id="true">
-          10
-        </message>
-
         <!-- The width and height of the password changed dialog box in -->
         <!-- characters and lines (See above). -->
         <message name="IDS_PASSWORD_CHANGED_DIALOG_WIDTH_CHARS" use_name_for_id="true">
@@ -555,15 +445,6 @@
       <!-- The width of the default search engine dialog in characters -->
       <message name="IDS_DEFAULT_SEARCH_WIDTH_CHARS" use_name_for_id="true">
         82
-      </message>
-
-      <!-- The width and height of the About Panel Information bubble in -->
-      <!-- characters and lines (See above). -->
-      <message name="IDS_ABOUTPANELBUBBLE_WIDTH_CHARS" use_name_for_id="true">
-        56
-      </message>
-      <message name="IDS_ABOUTPANELBUBBLE_HEIGHT_LINES" use_name_for_id="true">
-        8
       </message>
     </messages>
   </release>

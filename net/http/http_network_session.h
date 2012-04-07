@@ -11,63 +11,71 @@
 #include "base/threading/non_thread_safe.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/host_resolver.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/ssl_client_auth_cache.h"
-#include "net/http/http_alternate_protocols.h"
 #include "net/http/http_auth_cache.h"
 #include "net/http/http_stream_factory.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_settings_storage.h"
 
+namespace base {
 class Value;
+}
 
 namespace net {
 
 class CertVerifier;
 class ClientSocketFactory;
-class DnsCertProvenanceChecker;
-class DnsRRResolver;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class HttpNetworkSessionPeer;
 class HttpProxyClientSocketPool;
 class HttpResponseBodyDrainer;
+class HttpServerProperties;
 class NetLog;
 class NetworkDelegate;
+class OriginBoundCertService;
 class ProxyService;
+class SOCKSClientSocketPool;
+class SSLClientSocketPool;
 class SSLConfigService;
 class SSLHostInfoFactory;
+class TransportClientSocketPool;
+class TransportSecurityState;
 
 // This class holds session objects used by HttpNetworkTransaction objects.
-class NET_API HttpNetworkSession
+class NET_EXPORT HttpNetworkSession
     : public base::RefCounted<HttpNetworkSession>,
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
-  struct NET_API Params {
+  struct NET_EXPORT Params {
     Params()
         : client_socket_factory(NULL),
           host_resolver(NULL),
           cert_verifier(NULL),
-          dnsrr_resolver(NULL),
-          dns_cert_checker(NULL),
+          origin_bound_cert_service(NULL),
+          transport_security_state(NULL),
           proxy_service(NULL),
           ssl_host_info_factory(NULL),
           ssl_config_service(NULL),
           http_auth_handler_factory(NULL),
           network_delegate(NULL),
+          http_server_properties(NULL),
           net_log(NULL) {}
 
     ClientSocketFactory* client_socket_factory;
     HostResolver* host_resolver;
     CertVerifier* cert_verifier;
-    DnsRRResolver* dnsrr_resolver;
-    DnsCertProvenanceChecker* dns_cert_checker;
+    OriginBoundCertService* origin_bound_cert_service;
+    TransportSecurityState* transport_security_state;
     ProxyService* proxy_service;
     SSLHostInfoFactory* ssl_host_info_factory;
+    std::string ssl_session_cache_shard;
     SSLConfigService* ssl_config_service;
     HttpAuthHandlerFactory* http_auth_handler_factory;
     NetworkDelegate* network_delegate;
+    HttpServerProperties* http_server_properties;
     NetLog* net_log;
   };
 
@@ -82,35 +90,22 @@ class NET_API HttpNetworkSession
 
   void RemoveResponseDrainer(HttpResponseBodyDrainer* drainer);
 
-  const HttpAlternateProtocols& alternate_protocols() const {
-    return alternate_protocols_;
-  }
-  HttpAlternateProtocols* mutable_alternate_protocols() {
-    return &alternate_protocols_;
+  TransportClientSocketPool* GetTransportSocketPool() {
+    return socket_pool_manager_->GetTransportSocketPool();
   }
 
-  TransportClientSocketPool* transport_socket_pool() {
-    return socket_pool_manager_.transport_socket_pool();
-  }
-
-  SSLClientSocketPool* ssl_socket_pool() {
-    return socket_pool_manager_.ssl_socket_pool();
+  SSLClientSocketPool* GetSSLSocketPool() {
+    return socket_pool_manager_->GetSSLSocketPool();
   }
 
   SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const HostPortPair& socks_proxy) {
-    return socket_pool_manager_.GetSocketPoolForSOCKSProxy(socks_proxy);
-  }
+      const HostPortPair& socks_proxy);
 
   HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
-      const HostPortPair& http_proxy) {
-    return socket_pool_manager_.GetSocketPoolForHTTPProxy(http_proxy);
-  }
+      const HostPortPair& http_proxy);
 
   SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const HostPortPair& proxy_server) {
-    return socket_pool_manager_.GetSocketPoolForSSLWithProxy(proxy_server);
-  }
+      const HostPortPair& proxy_server);
 
   CertVerifier* cert_verifier() { return cert_verifier_; }
   ProxyService* proxy_service() { return proxy_service_; }
@@ -122,34 +117,26 @@ class NET_API HttpNetworkSession
   NetworkDelegate* network_delegate() {
     return network_delegate_;
   }
-
+  HttpServerProperties* http_server_properties() {
+    return http_server_properties_;
+  }
   HttpStreamFactory* http_stream_factory() {
     return http_stream_factory_.get();
   }
-
   NetLog* net_log() {
     return net_log_;
   }
 
   // Creates a Value summary of the state of the socket pools. The caller is
   // responsible for deleting the returned value.
-  Value* SocketPoolInfoToValue() const {
-    return socket_pool_manager_.SocketPoolInfoToValue();
-  }
+  base::Value* SocketPoolInfoToValue() const;
 
   // Creates a Value summary of the state of the SPDY sessions. The caller is
   // responsible for deleting the returned value.
-  Value* SpdySessionPoolInfoToValue() const;
+  base::Value* SpdySessionPoolInfoToValue() const;
 
-  void CloseAllConnections() {
-    socket_pool_manager_.FlushSocketPools();
-    spdy_session_pool_.CloseCurrentSessions();
-  }
-
-  void CloseIdleConnections() {
-    socket_pool_manager_.CloseIdleSockets();
-  }
-
+  void CloseAllConnections();
+  void CloseIdleConnections();
 
  private:
   friend class base::RefCounted<HttpNetworkSession>;
@@ -159,6 +146,7 @@ class NET_API HttpNetworkSession
 
   NetLog* const net_log_;
   NetworkDelegate* const network_delegate_;
+  HttpServerProperties* const http_server_properties_;
   CertVerifier* const cert_verifier_;
   HttpAuthHandlerFactory* const http_auth_handler_factory_;
 
@@ -168,8 +156,7 @@ class NET_API HttpNetworkSession
 
   HttpAuthCache http_auth_cache_;
   SSLClientAuthCache ssl_client_auth_cache_;
-  HttpAlternateProtocols alternate_protocols_;
-  ClientSocketPoolManager socket_pool_manager_;
+  scoped_ptr<ClientSocketPoolManager> socket_pool_manager_;
   SpdySessionPool spdy_session_pool_;
   scoped_ptr<HttpStreamFactory> http_stream_factory_;
   std::set<HttpResponseBodyDrainer*> response_drainers_;

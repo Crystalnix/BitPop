@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,7 +66,7 @@ TEST_F(CookiesDetailsTest, CreateForTreeDatabase) {
 
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeTreeDatabase);
   EXPECT_NSEQ(@"a great place to climb", [details.get() databaseDescription]);
-  EXPECT_NSEQ(@"1234 B", [details.get() fileSize]);
+  EXPECT_NSEQ(@"1,234 B", [details.get() fileSize]);
   EXPECT_NSNE(@"", [details.get() lastModified]);
 
   EXPECT_TRUE([details.get() shouldHideCookieDetailsView]);
@@ -95,7 +95,7 @@ TEST_F(CookiesDetailsTest, CreateForTreeLocalStorage) {
 
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeTreeLocalStorage);
   EXPECT_NSEQ(@"chromium.org", [details.get() domain]);
-  EXPECT_NSEQ(@"1234 B", [details.get() fileSize]);
+  EXPECT_NSEQ(@"1,234 B", [details.get() fileSize]);
   EXPECT_NSNE(@"", [details.get() lastModified]);
 
   EXPECT_TRUE([details.get() shouldHideCookieDetailsView]);
@@ -123,7 +123,7 @@ TEST_F(CookiesDetailsTest, CreateForTreeAppCache) {
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeTreeAppCache);
   EXPECT_NSEQ(@"http://chromium.org/stuff.manifest",
               [details.get() manifestURL]);
-  EXPECT_NSEQ(@"2678 B", [details.get() fileSize]);
+  EXPECT_NSEQ(@"2,678 B", [details.get() fileSize]);
   EXPECT_NSNE(@"", [details.get() lastAccessed]);
   EXPECT_NSNE(@"", [details.get() created]);
 
@@ -140,28 +140,18 @@ TEST_F(CookiesDetailsTest, CreateForTreeAppCache) {
 TEST_F(CookiesDetailsTest, CreateForTreeIndexedDB) {
   scoped_nsobject<CocoaCookieDetails> details;
 
-  std::string protocol("http");
-  std::string host("moose.org");
-  unsigned short port = 80;
-  std::string database_identifier("id");
-  std::string origin("moose.org");
-  FilePath file_path(FILE_PATH_LITERAL("/"));
+  GURL origin("http://moose.org/");
   int64 size = 1234;
   base::Time last_modified = base::Time::Now();
-  BrowsingDataIndexedDBHelper::IndexedDBInfo info(protocol,
-                                                  host,
-                                                  port,
-                                                  database_identifier,
-                                                  origin,
-                                                  file_path,
+  BrowsingDataIndexedDBHelper::IndexedDBInfo info(origin,
                                                   size,
                                                   last_modified);
 
   details.reset([[CocoaCookieDetails alloc] initWithIndexedDBInfo:&info]);
 
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeTreeIndexedDB);
-  EXPECT_NSEQ(@"moose.org", [details.get() domain]);
-  EXPECT_NSEQ(@"1234 B", [details.get() fileSize]);
+  EXPECT_NSEQ(@"http://moose.org/", [details.get() domain]);
+  EXPECT_NSEQ(@"1,234 B", [details.get() fileSize]);
   EXPECT_NSNE(@"", [details.get() lastModified]);
 
   EXPECT_TRUE([details.get() shouldHideCookieDetailsView]);

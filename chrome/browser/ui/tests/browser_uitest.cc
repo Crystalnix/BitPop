@@ -12,11 +12,10 @@
 #include "base/test/test_timeouts.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/pref_names.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
@@ -39,160 +38,29 @@ class VisibleBrowserTest : public UITest {
   }
 };
 
-#if defined(OS_WIN)
-// The browser should quit quickly if it receives a WM_ENDSESSION message.
-TEST_F(BrowserTest, WindowsSessionEnd) {
-#elif defined(OS_POSIX)
-// The browser should quit gracefully and quickly if it receives a SIGTERM.
-TEST_F(BrowserTest, PosixSessionEnd) {
-#endif
+}  // namespace
+
+// The browser should quit quickly if it receives a WM_ENDSESSION message
+// on Windows, or SIGTERM on posix.
+TEST_F(BrowserTest, SessionEnd) {
   FilePath test_file(test_data_directory_);
   test_file = test_file.AppendASCII("title1.html");
 
   NavigateToURL(net::FilePathToFileURL(test_file));
   TerminateBrowser();
-
-  // Make sure the UMA metrics say we didn't crash.
-  scoped_ptr<DictionaryValue> local_prefs(GetLocalState());
-  bool exited_cleanly;
-  ASSERT_TRUE(local_prefs.get());
-  ASSERT_TRUE(local_prefs->GetBoolean(prefs::kStabilityExitedCleanly,
-                                      &exited_cleanly));
-  ASSERT_TRUE(exited_cleanly);
-
-  // And that session end was successful.
-  bool session_end_completed;
-  ASSERT_TRUE(local_prefs->GetBoolean(prefs::kStabilitySessionEndCompleted,
-                                      &session_end_completed));
-  ASSERT_TRUE(session_end_completed);
-
-  // Make sure session restore says we didn't crash.
-  scoped_ptr<DictionaryValue> profile_prefs(GetDefaultProfilePreferences());
-  ASSERT_TRUE(profile_prefs.get());
-  ASSERT_TRUE(profile_prefs->GetBoolean(prefs::kSessionExitedCleanly,
-                                        &exited_cleanly));
-  ASSERT_TRUE(exited_cleanly);
 }
 
-// Test that scripts can fork a new renderer process for a tab in a particular
-// case (which matches following a link in Gmail).  The script must open a new
-// tab, set its window.opener to null, and redirect it to a cross-site URL.
-// (Bug 1115708)
-// This test can only run if V8 is in use, and not KJS, because KJS will not
-// set window.opener to null properly.
-#ifdef CHROME_V8
-TEST_F(BrowserTest, NullOpenerRedirectForksProcess) {
-  // This test only works in multi-process mode
-  if (ProxyLauncher::in_process_renderer())
-    return;
-
-  net::TestServer test_server(net::TestServer::TYPE_HTTP,
-                              FilePath(FILE_PATH_LITERAL("chrome/test/data")));
-  ASSERT_TRUE(test_server.Start());
-
-  FilePath test_file(test_data_directory_);
-  scoped_refptr<BrowserProxy> window(automation()->GetBrowserWindow(0));
-  ASSERT_TRUE(window.get());
-  scoped_refptr<TabProxy> tab(window->GetActiveTab());
-  ASSERT_TRUE(tab.get());
-
-  // Start with a file:// url
-  test_file = test_file.AppendASCII("title2.html");
-  tab->NavigateToURL(net::FilePathToFileURL(test_file));
-  int orig_tab_count = -1;
-  ASSERT_TRUE(window->GetTabCount(&orig_tab_count));
-  int orig_process_count = 0;
-  ASSERT_TRUE(GetBrowserProcessCount(&orig_process_count));
-  ASSERT_GE(orig_process_count, 1);
-
-  // Use JavaScript URL to "fork" a new tab, just like Gmail.  (Open tab to a
-  // blank page, set its opener to null, and redirect it cross-site.)
-  std::wstring url_prefix(L"javascript:(function(){w=window.open();");
-  GURL fork_url(url_prefix +
-      L"w.opener=null;w.document.location=\"http://localhost:1337\";})()");
-
-  // Make sure that a new tab has been created and that we have a new renderer
-  // process for it.
-  ASSERT_TRUE(tab->NavigateToURLAsync(fork_url));
-  PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
-  int process_count = 0;
-  ASSERT_TRUE(GetBrowserProcessCount(&process_count));
-  ASSERT_EQ(orig_process_count + 1, process_count);
-  int new_tab_count = -1;
-  ASSERT_TRUE(window->GetTabCount(&new_tab_count));
-  ASSERT_EQ(orig_tab_count + 1, new_tab_count);
-}
-#endif  // CHROME_V8
-
-// This test fails on ChromeOS (it has never been known to work on it).
-// Currently flaky on Windows - it has crashed a couple of times.
-// http://crbug.com/32799
-#if defined(OS_CHROMEOS)
-#define MAYBE_OtherRedirectsDontForkProcess DISABLED_OtherRedirectsDontForkProcess
+// WindowOpenClose is flaky on ChromeOS and fails consistently on linux views.
+// See http://crbug.com/85763.
+#if defined (OS_CHROMEOS)
+#define MAYBE_WindowOpenClose FLAKY_WindowOpenClose
+#elif defined(OS_LINUX) && defined(TOOLKIT_VIEWS)
+#define MAYBE_WindowOpenClose FAILS_WindowOpenClose
 #else
-#define MAYBE_OtherRedirectsDontForkProcess FLAKY_OtherRedirectsDontForkProcess
+#define MAYBE_WindowOpenClose WindowOpenClose
 #endif
 
-// Tests that non-Gmail-like script redirects (i.e., non-null window.opener) or
-// a same-page-redirect) will not fork a new process.
-TEST_F(BrowserTest, MAYBE_OtherRedirectsDontForkProcess) {
-  // This test only works in multi-process mode
-  if (ProxyLauncher::in_process_renderer())
-    return;
-
-  net::TestServer test_server(net::TestServer::TYPE_HTTP,
-                              FilePath(FILE_PATH_LITERAL("chrome/test/data")));
-  ASSERT_TRUE(test_server.Start());
-
-  FilePath test_file(test_data_directory_);
-  scoped_refptr<BrowserProxy> window(automation()->GetBrowserWindow(0));
-  ASSERT_TRUE(window.get());
-  scoped_refptr<TabProxy> tab(window->GetActiveTab());
-  ASSERT_TRUE(tab.get());
-
-  // Start with a file:// url
-  test_file = test_file.AppendASCII("title2.html");
-  ASSERT_EQ(AUTOMATION_MSG_NAVIGATION_SUCCESS,
-            tab->NavigateToURL(net::FilePathToFileURL(test_file)));
-  int orig_tab_count = -1;
-  ASSERT_TRUE(window->GetTabCount(&orig_tab_count));
-  int orig_process_count = 0;
-  ASSERT_TRUE(GetBrowserProcessCount(&orig_process_count));
-  ASSERT_GE(orig_process_count, 1);
-
-  // Use JavaScript URL to almost fork a new tab, but not quite.  (Leave the
-  // opener non-null.)  Should not fork a process.
-  std::string url_str = "javascript:(function(){w=window.open(); ";
-  url_str += "w.document.location=\"";
-  url_str += test_server.GetURL("").spec();
-  url_str += "\";})()";
-  GURL dont_fork_url(url_str);
-
-  // Make sure that a new tab but not new process has been created.
-  ASSERT_TRUE(tab->NavigateToURLAsync(dont_fork_url));
-  base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
-  int process_count = 0;
-  ASSERT_TRUE(GetBrowserProcessCount(&process_count));
-  ASSERT_EQ(orig_process_count, process_count);
-  int new_tab_count = -1;
-  ASSERT_TRUE(window->GetTabCount(&new_tab_count));
-  ASSERT_EQ(orig_tab_count + 1, new_tab_count);
-
-  // Same thing if the current tab tries to redirect itself.
-  url_str = "javascript:(function(){w=window.open(); ";
-  url_str += "document.location=\"";
-  url_str += test_server.GetURL("").spec();
-  url_str += "\";})()";
-  GURL dont_fork_url2(url_str);
-
-  // Make sure that no new process has been created.
-  ASSERT_TRUE(tab->NavigateToURLAsync(dont_fork_url2));
-  base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
-  ASSERT_TRUE(GetBrowserProcessCount(&process_count));
-  ASSERT_EQ(orig_process_count, process_count);
-}
-
-TEST_F(VisibleBrowserTest, WindowOpenClose) {
+TEST_F(VisibleBrowserTest, MAYBE_WindowOpenClose) {
   FilePath test_file(test_data_directory_);
   test_file = test_file.AppendASCII("window.close.html");
 
@@ -328,6 +196,10 @@ TEST_F(RunInBackgroundTest, RunInBackgroundBasicTest) {
   ASSERT_TRUE(automation()->OpenNewBrowserWindow(Browser::TYPE_TABBED, true));
   ASSERT_TRUE(automation()->GetBrowserWindowCount(&window_count));
   EXPECT_EQ(1, window_count);
+  // Set the shutdown type to 'SESSION_ENDING' since we are running in
+  // background mode and neither closing all the windows nor quitting will
+  // shut down the browser.
+  set_shutdown_type(ProxyLauncher::SESSION_ENDING);
 }
 
 // Tests to ensure that the browser continues running in the background after
@@ -351,8 +223,6 @@ TEST_F(NoStartupWindowTest, NoStartupWindowBasicTest) {
   ASSERT_TRUE(automation()->GetBrowserWindowCount(&window_count));
   EXPECT_EQ(1, window_count);
 }
-
-}  // namespace
 
 // This test needs to be placed outside the anonymouse namespace because we
 // need to access private type of Browser.

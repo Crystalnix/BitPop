@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,120 +6,154 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_WEBUI_LOGIN_VIEW_H_
 #pragma once
 
+#include <map>
+#include <string>
+
 #include "chrome/browser/chromeos/login/login_html_dialog.h"
-#include "chrome/browser/chromeos/status/status_area_host.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "views/focus/focus_manager.h"
-#include "views/view.h"
+#include "chrome/browser/chromeos/status/status_area_button.h"
+#include "chrome/browser/chromeos/status/status_area_view_chromeos.h"
+#include "chrome/browser/tab_first_render_watcher.h"
+#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+#include "content/public/browser/web_contents_delegate.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_delegate.h"
 
 class DOMView;
 class GURL;
-class KeyboardContainerView;
-class NotificationDetails;
-class NotificationSource;
-class Profile;
+class StatusAreaView;
+
+namespace content {
+class WebUI;
+}
 
 namespace views {
+class View;
 class Widget;
-class WindowDelegate;
 }
 
 namespace chromeos {
 
-class StatusAreaView;
-
 // View used to render a WebUI supporting Widget. This widget is used for the
-// WebUI based start up and lock screens. It contains a StatusAreaView, DOMView,
-// and on touch builds a KeyboardContainerView.
-class WebUILoginView : public views::View,
-                       public StatusAreaHost,
-                       public chromeos::LoginHtmlDialog::Delegate,
-                       public views::FocusChangeListener,
-                       public NotificationObserver {
+// WebUI based start up and lock screens. It contains a StatusAreaView and
+// DOMView.
+class WebUILoginView : public views::WidgetDelegateView,
+                       public StatusAreaButton::Delegate,
+                       public content::WebContentsDelegate,
+                       public TabFirstRenderWatcher::Delegate {
  public:
-  enum VirtualKeyboardType {
-    NONE,
-    GENERIC,
-    URL,
-  };
-
-  // Internal class name.
-  static const char kViewClassName[];
+  static const int kStatusAreaCornerPadding;
 
   WebUILoginView();
+  virtual ~WebUILoginView();
 
-  // Initializes the webui login view. |login_url| must be specified.
-  void Init(const GURL& login_url);
+  // Initializes the webui login view.
+  virtual void Init(views::Widget* login_window);
 
-  // Creates a window containing an instance of WebUILoginView as the root
-  // view. The caller is responsible for showing (and closing) the returned
-  // widget. The WebUILoginView is set in |view|. |login_url| is the webpage
-  // that will be opened in the DOMView.
-  static views::Widget* CreateWindowContainingView(
-      const gfx::Rect& bounds,
-      const GURL& login_url,
-      WebUILoginView** view);
-
-  // Overriden from views::Views:
+  // Overridden from views::Views:
+  virtual bool AcceleratorPressed(
+      const ui::Accelerator& accelerator) OVERRIDE;
   virtual std::string GetClassName() const OVERRIDE;
 
-  // Overridden from StatusAreaHost:
-  virtual gfx::NativeWindow GetNativeWindow() const;
+  // Called when WebUI window is created.
+  virtual void OnWindowCreated();
 
-  // Overridden from views::FocusChangeListener:
-  virtual void FocusWillChange(views::View* focused_before,
-                               views::View* focused_now);
-
- protected:
-  // Overridden from views::View:
-  virtual void Layout() OVERRIDE;
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-
-  // Overridden from StatusAreaHost:
-  virtual Profile* GetProfile() const OVERRIDE;
-  virtual void ExecuteBrowserCommand(int id) const OVERRIDE;
-  virtual bool ShouldOpenButtonOptions(
-      const views::View* button_view) const OVERRIDE;
-  virtual void OpenButtonOptions(const views::View* button_view) OVERRIDE;
-  virtual ScreenMode GetScreenMode() const OVERRIDE;
-  virtual TextStyle GetTextStyle() const OVERRIDE;
-
-  // Overridden from LoginHtmlDialog::Delegate:
-  virtual void OnDialogClosed() OVERRIDE;
-  virtual void OnLocaleChanged() OVERRIDE;
-
- private:
-  // Creates and adds the status_area.
-  void InitStatusArea();
+  // Gets the native window from the view widget.
+  gfx::NativeWindow GetNativeWindow() const;
 
   // Invokes SetWindowType for the window. This is invoked during startup and
   // after we've painted.
   void UpdateWindowType();
 
-  void InitVirtualKeyboard();
-  void UpdateKeyboardAndLayout(bool should_show_keyboard);
-  VirtualKeyboardType DecideKeyboardStateForView(views::View* view);
+  // Loads given page. Should be called after Init() has been called.
+  void LoadURL(const GURL& url);
 
-  // Overridden from NotificationObserver.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Returns current WebUI.
+  content::WebUI* GetWebUI();
 
-  Profile* profile_;
+  // Opens proxy settings dialog.
+  void OpenProxySettings();
+
+  // Toggles whether status area is enabled.
+  void SetStatusAreaEnabled(bool enable);
+
+  // Toggles status area visibility.
+  void SetStatusAreaVisible(bool visible);
+
+ protected:
+  // Overridden from views::View:
+  virtual void Layout() OVERRIDE;
+  virtual void OnLocaleChanged() OVERRIDE;
+  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
+
+  // Overridden from StatusAreaButton::Delegate:
+  virtual bool ShouldExecuteStatusAreaCommand(
+      const views::View* button_view, int command_id) const OVERRIDE;
+  virtual void ExecuteStatusAreaCommand(
+      const views::View* button_view, int command_id) OVERRIDE;
+  virtual gfx::Font GetStatusAreaFont(const gfx::Font& font) const OVERRIDE;
+  virtual StatusAreaButton::TextStyle GetStatusAreaTextStyle() const OVERRIDE;
+  virtual void ButtonVisibilityChanged(views::View* button_view) OVERRIDE;
+
+  // TabFirstRenderWatcher::Delegate implementation.
+  virtual void OnRenderHostCreated(RenderViewHost* host) OVERRIDE;
+  virtual void OnTabMainFrameLoaded() OVERRIDE;
+  virtual void OnTabMainFrameFirstRender() OVERRIDE;
+
+  // Creates and adds the status area (separate window).
+  virtual void InitStatusArea();
+
+  // Returns the screen mode to set on the status area view.
+  virtual StatusAreaViewChromeos::ScreenMode GetScreenMode();
+
+  // Returns the type to use for the status area widget.
+  virtual views::Widget::InitParams::Type GetStatusAreaWidgetType();
 
   StatusAreaView* status_area_;
 
   // DOMView for rendering a webpage as a webui login.
   DOMView* webui_login_;
 
+ private:
+  // Map type for the accelerator-to-identifier map.
+  typedef std::map<ui::Accelerator, std::string> AccelMap;
+
+  // Overridden from content::WebContentsDelegate.
+  virtual bool HandleContextMenu(const ContextMenuParams& params) OVERRIDE;
+  virtual void HandleKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual bool IsPopupOrPanel(
+      const content::WebContents* source) const OVERRIDE;
+  virtual bool TakeFocus(bool reverse) OVERRIDE;
+
+  // Called when focus is returned from status area.
+  // |reverse| is true when focus is traversed backwards (using Shift-Tab).
+  void ReturnFocus(bool reverse);
+
+  // Login window which shows the view.
+  views::Widget* login_window_;
+
+  // Window that contains status area.
+  // TODO(nkostylev): Temporary solution till we have
+  // RenderWidgetHostViewViews working.
+  views::Widget* status_window_;
+
+  // Converts keyboard events on the TabContents to accelerators.
+  UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+
+  // Maps installed accelerators to OOBE webui accelerator identifiers.
+  AccelMap accel_map_;
+
   // Proxy settings dialog that can be invoked from network menu.
   scoped_ptr<LoginHtmlDialog> proxy_settings_dialog_;
 
-  bool keyboard_showing_;
-  bool focus_listener_added_;
-  KeyboardContainerView* keyboard_;
-  NotificationRegistrar registrar_;
+  // Watches webui_login_'s TabContents rendering.
+  scoped_ptr<TabFirstRenderWatcher> tab_watcher_;
+
+  // Whether the host window is frozen.
+  bool host_window_frozen_;
+
+  // Caches StatusArea visibility setting before it has been initialized.
+  bool status_area_visibility_on_init_;
 
   DISALLOW_COPY_AND_ASSIGN(WebUILoginView);
 };

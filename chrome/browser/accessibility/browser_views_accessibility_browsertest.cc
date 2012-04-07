@@ -13,29 +13,26 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/accessibility/accessibility_types.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "views/accessibility/native_view_accessibility_win.h"
-#include "views/window/window.h"
+#include "ui/base/win/atl_module.h"
+#include "ui/views/accessibility/native_view_accessibility_win.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
 VARIANT id_self = {VT_I4, CHILDID_SELF};
-
-// Dummy class to force creation of ATL module, needed by COM to instantiate
-// NativeViewAccessibilityWin.
-class TestAtlModule : public CAtlDllModuleT<TestAtlModule> {};
-TestAtlModule test_atl_module_;
 
 }  // namespace
 
 class BrowserViewsAccessibilityTest : public InProcessBrowserTest {
  public:
   BrowserViewsAccessibilityTest() {
+    ui::win::CreateATLModuleIfNeeded();
     ::CoInitialize(NULL);
   }
 
@@ -55,8 +52,7 @@ class BrowserViewsAccessibilityTest : public InProcessBrowserTest {
 
   // Retrieve an instance of BrowserView
   BrowserView* GetBrowserView() {
-    return BrowserView::GetBrowserViewForNativeWindow(
-               browser()->window()->GetNativeHandle());
+    return BrowserView::GetBrowserViewForBrowser(browser());
   }
 
   // Retrieves and initializes an instance of ToolbarView.
@@ -84,10 +80,7 @@ class BrowserViewsAccessibilityTest : public InProcessBrowserTest {
                                    int32 role) {
     ASSERT_TRUE(NULL != view);
 
-    TestAccessibilityInfo(
-        NativeViewAccessibilityWin::GetAccessibleForView(view),
-        name,
-        role);
+    TestAccessibilityInfo(view->GetNativeViewAccessible(), name, role);
   }
 
 
@@ -140,9 +133,11 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 
 // Retrieve accessibility object for non client view and verify accessibility
 // info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestNonClientViewAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestNonClientViewAccObj) {
   views::View* non_client_view =
-  GetBrowserView()->GetWindow()->non_client_view();
+  GetBrowserView()->GetWidget()->non_client_view();
 
   TestViewAccessibilityObject(non_client_view,
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)),
@@ -151,8 +146,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestNonClientViewAccObj) {
 
 // Retrieve accessibility object for browser root view and verify
 // accessibility info.
+// http://crbug.com/104132
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       TestBrowserRootViewAccObj) {
+                       FLAKY_TestBrowserRootViewAccObj) {
   views::View* browser_root_view = GetBrowserView()->frame()->GetRootView();
 
   TestViewAccessibilityObject(
@@ -162,7 +158,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 }
 
 // Retrieve accessibility object for browser view and verify accessibility info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestBrowserViewAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestBrowserViewAccObj) {
   // Verify root view MSAA name and role.
   TestViewAccessibilityObject(
       GetBrowserView(),
@@ -171,7 +169,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestBrowserViewAccObj) {
 }
 
 // Retrieve accessibility object for toolbar view and verify accessibility info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestToolbarViewAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestToolbarViewAccObj) {
   // Verify toolbar MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView(),
@@ -180,7 +180,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestToolbarViewAccObj) {
 }
 
 // Retrieve accessibility object for Back button and verify accessibility info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestBackButtonAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestBackButtonAccObj) {
   // Verify Back button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_BACK_BUTTON),
@@ -190,7 +192,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestBackButtonAccObj) {
 
 // Retrieve accessibility object for Forward button and verify accessibility
 // info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestForwardButtonAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestForwardButtonAccObj) {
   // Verify Forward button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_FORWARD_BUTTON),
@@ -200,7 +204,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestForwardButtonAccObj) {
 
 // Retrieve accessibility object for Reload button and verify accessibility
 // info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestReloadButtonAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestReloadButtonAccObj) {
   // Verify Reload button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_RELOAD_BUTTON),
@@ -209,7 +215,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestReloadButtonAccObj) {
 }
 
 // Retrieve accessibility object for Home button and verify accessibility info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestHomeButtonAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       FLAKY_TestHomeButtonAccObj) {
   // Verify Home button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_HOME_BUTTON),
@@ -218,8 +226,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestHomeButtonAccObj) {
 }
 
 // Retrieve accessibility object for Star button and verify accessibility info.
+// http://crbug.com/104132
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       TestStarButtonAccObj) {
+                       FLAKY_TestStarButtonAccObj) {
   // Verify Star button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_STAR_BUTTON),
@@ -229,7 +238,8 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 
 // Retrieve accessibility object for App menu button and verify accessibility
 // info.
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestAppMenuAccObj) {
+// http://crbug.com/104132
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, FLAKY_TestAppMenuAccObj) {
   // Verify App menu button MSAA name and role.
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_APP_MENU),
@@ -237,8 +247,9 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestAppMenuAccObj) {
       ROLE_SYSTEM_BUTTONMENU);
 }
 
+// http://crbug.com/104132
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       TestBookmarkBarViewAccObj) {
+                       FLAKY_TestBookmarkBarViewAccObj) {
   TestViewAccessibilityObject(
       GetBookmarkBarView(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_BOOKMARKS)),
@@ -248,12 +259,12 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
                        TestAboutChromeViewAccObj) {
   //  Firstly, test that the WindowDelegate got updated.
-  views::Window* about_chrome_window =
+  views::Widget* about_chrome_window =
       GetBrowserView()->DoShowAboutChromeDialog();
   EXPECT_STREQ(
-      about_chrome_window->window_delegate()->GetWindowTitle().c_str(),
+      about_chrome_window->widget_delegate()->GetWindowTitle().c_str(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ABOUT_CHROME_TITLE)).c_str());
-  EXPECT_EQ(about_chrome_window->window_delegate()->GetAccessibleWindowRole(),
+  EXPECT_EQ(about_chrome_window->widget_delegate()->GetAccessibleWindowRole(),
             ui::AccessibilityTypes::ROLE_DIALOG);
 
   // Also test the accessibility object directly.

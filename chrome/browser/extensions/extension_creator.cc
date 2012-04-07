@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,13 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_handle.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
+#include "chrome/browser/extensions/extension_creator_filter.h"
 #include "chrome/browser/extensions/sandboxed_extension_unpacker.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_file_util.h"
@@ -24,10 +27,15 @@ namespace {
   const int kRSAKeySize = 1024;
 };
 
+ExtensionCreator::ExtensionCreator() : error_type_(kOtherError) {
+}
+
 bool ExtensionCreator::InitializeInput(
     const FilePath& extension_dir,
+    const FilePath& crx_path,
     const FilePath& private_key_path,
-    const FilePath& private_key_output_path) {
+    const FilePath& private_key_output_path,
+    int run_flags) {
   // Validate input |extension_dir|.
   if (extension_dir.value().empty() ||
       !file_util::DirectoryExists(extension_dir)) {
@@ -61,17 +69,44 @@ bool ExtensionCreator::InitializeInput(
       return false;
   }
 
+  // Check whether crx file already exists. Should be last check, as this is
+  // a warning only.
+  if (!(run_flags & kOverwriteCRX) && file_util::PathExists(crx_path)) {
+    error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_CRX_EXISTS);
+    error_type_ = kCRXExists;
+
+    return false;
+  }
+
+  return true;
+}
+
+bool ExtensionCreator::ValidateManifest(const FilePath& extension_dir,
+                                        crypto::RSAPrivateKey* key_pair) {
+  std::vector<uint8> public_key_bytes;
+  if (!key_pair->ExportPublicKey(&public_key_bytes)) {
+    error_message_ =
+        l10n_util::GetStringUTF8(IDS_EXTENSION_PUBLIC_KEY_FAILED_TO_EXPORT);
+    return false;
+  }
+
+  std::string public_key;
+  public_key.insert(public_key.begin(),
+                    public_key_bytes.begin(), public_key_bytes.end());
+
+  std::string extension_id;
+  if (!Extension::GenerateId(public_key, &extension_id))
+    return false;
+
   // Load the extension once. We don't really need it, but this does a lot of
   // useful validation of the structure.
   scoped_refptr<Extension> extension(
-      extension_file_util::LoadExtension(absolute_extension_dir,
+      extension_file_util::LoadExtension(extension_dir,
+                                         extension_id,
                                          Extension::INTERNAL,
                                          Extension::STRICT_ERROR_CHECKS,
                                          &error_message_));
-  if (!extension.get())
-    return false;  // LoadExtension already set error_message_.
-
-  return true;
+  return !!extension.get();
 }
 
 crypto::RSAPrivateKey* ExtensionCreator::ReadInputKey(const FilePath&
@@ -153,7 +188,10 @@ bool ExtensionCreator::CreateZip(const FilePath& extension_dir,
                                  FilePath* zip_path) {
   *zip_path = temp_path.Append(FILE_PATH_LITERAL("extension.zip"));
 
-  if (!Zip(extension_dir, *zip_path, false)) {  // no hidden files
+  scoped_refptr<ExtensionCreatorFilter> filter = new ExtensionCreatorFilter();
+  const base::Callback<bool(const FilePath&)>& filter_cb =
+    base::Bind(&ExtensionCreatorFilter::ShouldPackageFile, filter.get());
+  if (!zip::ZipWithFilterCallback(extension_dir, *zip_path, filter_cb)) {
     error_message_ =
         l10n_util::GetStringUTF8(IDS_EXTENSION_FAILED_DURING_PACKAGING);
     return false;
@@ -192,13 +230,13 @@ bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
   if (file_util::PathExists(crx_path))
     file_util::Delete(crx_path, false);
   ScopedStdioHandle crx_handle(file_util::OpenFile(crx_path, "wb"));
-
-  std::vector<uint8> public_key;
-  if (!private_key->ExportPublicKey(&public_key)) {
-    error_message_ =
-        l10n_util::GetStringUTF8(IDS_EXTENSION_PUBLIC_KEY_FAILED_TO_EXPORT);
+  if (!crx_handle.get()) {
+    error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_SHARING_VIOLATION);
     return false;
   }
+
+  std::vector<uint8> public_key;
+  CHECK(private_key->ExportPublicKey(&public_key));
 
   SandboxedExtensionUnpacker::ExtensionHeader header;
   memcpy(&header.magic, SandboxedExtensionUnpacker::kExtensionHeaderMagic,
@@ -238,10 +276,11 @@ bool ExtensionCreator::WriteCRX(const FilePath& zip_path,
 bool ExtensionCreator::Run(const FilePath& extension_dir,
                            const FilePath& crx_path,
                            const FilePath& private_key_path,
-                           const FilePath& output_private_key_path) {
+                           const FilePath& output_private_key_path,
+                           int run_flags) {
   // Check input diretory and read manifest.
-  if (!InitializeInput(extension_dir, private_key_path,
-                       output_private_key_path)) {
+  if (!InitializeInput(extension_dir, crx_path, private_key_path,
+                       output_private_key_path, run_flags)) {
     return false;
   }
 
@@ -252,6 +291,10 @@ bool ExtensionCreator::Run(const FilePath& extension_dir,
   else
     key_pair.reset(GenerateKey(output_private_key_path));
   if (!key_pair.get())
+    return false;
+
+  // Perform some extra validation by loading the extension.
+  if (!ValidateManifest(extension_dir, key_pair.get()))
     return false;
 
   ScopedTempDir temp_dir;

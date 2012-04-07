@@ -8,12 +8,14 @@
 #include <map>
 #include <vector>
 
+#include "base/cancelable_callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/task.h"
+#include "base/time.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/appcache/appcache_export.h"
 
 namespace appcache {
 
@@ -25,14 +27,11 @@ class HostObserver;
 
 // Collection of application caches identified by the same manifest URL.
 // A group exists as long as it is in use by a host or is being updated.
-class AppCacheGroup : public base::RefCounted<AppCacheGroup> {
+class APPCACHE_EXPORT AppCacheGroup : public base::RefCounted<AppCacheGroup> {
  public:
 
-  class UpdateObserver {
+  class APPCACHE_EXPORT UpdateObserver {
     public:
-      // Called if access to the appcache was blocked by a policy.
-      virtual void OnContentBlocked(AppCacheGroup* group) = 0;
-
       // Called just after an appcache update has completed.
       virtual void OnUpdateComplete(AppCacheGroup* group) = 0;
       virtual ~UpdateObserver() {}
@@ -147,7 +146,7 @@ class AppCacheGroup : public base::RefCounted<AppCacheGroup> {
   // Updates that have been queued for the next run.
   QueuedUpdates queued_updates_;
   ObserverList<UpdateObserver> queued_observers_;
-  CancelableTask* restart_update_task_;
+  base::CancelableClosure restart_update_task_;
   scoped_ptr<HostObserver> host_observer_;
 
   // True if we're in our destructor.

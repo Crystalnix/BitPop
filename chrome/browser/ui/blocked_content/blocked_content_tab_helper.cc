@@ -11,13 +11,16 @@
 #include "chrome/browser/ui/blocked_content/blocked_content_container.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/web_contents.h"
+
+using content::NavigationEntry;
 
 BlockedContentTabHelper::BlockedContentTabHelper(
     TabContentsWrapper* tab_contents)
-        : TabContentsObserver(tab_contents->tab_contents()),
+        : content::WebContentsObserver(tab_contents->web_contents()),
           blocked_contents_(new BlockedContentContainer(tab_contents)),
           all_contents_blocked_(false),
           tab_contents_wrapper_(tab_contents),
@@ -27,9 +30,9 @@ BlockedContentTabHelper::BlockedContentTabHelper(
 BlockedContentTabHelper::~BlockedContentTabHelper() {
 }
 
-void BlockedContentTabHelper::DidNavigateMainFramePostCommit(
+void BlockedContentTabHelper::DidNavigateMainFrame(
     const content::LoadCommittedDetails& details,
-    const ViewHostMsg_FrameNavigate_Params& params) {
+    const content::FrameNavigateParams& params) {
   // Clear all page actions, blocked content notifications and browser actions
   // for this tab, unless this is an in-page navigation.
   if (!details.is_in_page) {
@@ -43,7 +46,7 @@ void BlockedContentTabHelper::DidNavigateMainFramePostCommit(
 
 void BlockedContentTabHelper::PopupNotificationVisibilityChanged(
     bool visible) {
-  if (tab_contents()->is_being_destroyed())
+  if (web_contents()->IsBeingDestroyed())
     return;
   tab_contents_wrapper_->content_settings()->SetPopupsBlocked(visible);
 }
@@ -81,13 +84,19 @@ void BlockedContentTabHelper::AddPopup(TabContentsWrapper* new_contents,
   // entry is the page to be loaded as we navigate away from the unloading
   // page.  For this reason, we can't use GetURL() to get the opener URL,
   // because it returns the active entry.
-  NavigationEntry* entry = tab_contents()->controller().GetLastCommittedEntry();
-  GURL creator = entry ? entry->virtual_url() : GURL::EmptyGURL();
+  NavigationEntry* entry =
+      web_contents()->GetController().GetLastCommittedEntry();
+  GURL creator = entry ? entry->GetVirtualURL() : GURL::EmptyGURL();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents()->GetBrowserContext());
 
   if (creator.is_valid() &&
-      tab_contents()->profile()->GetHostContentSettingsMap()->GetContentSetting(
-          creator, CONTENT_SETTINGS_TYPE_POPUPS, "") == CONTENT_SETTING_ALLOW) {
-    tab_contents()->AddNewContents(new_contents->tab_contents(),
+      profile->GetHostContentSettingsMap()->GetContentSetting(
+          creator,
+          creator,
+          CONTENT_SETTINGS_TYPE_POPUPS,
+          "") == CONTENT_SETTING_ALLOW) {
+    web_contents()->AddNewContents(new_contents->web_contents(),
                                    NEW_POPUP,
                                    initial_pos,
                                    true);  // user_gesture

@@ -9,7 +9,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string16.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -181,12 +181,12 @@ class TimeFormatter {
     DISALLOW_COPY_AND_ASSIGN(TimeFormatter);
 };
 
-static base::LazyInstance<TimeFormatter> g_time_formatter(
-    base::LINKER_INITIALIZED);
+static base::LazyInstance<TimeFormatter> g_time_formatter =
+    LAZY_INSTANCE_INITIALIZER;
 
 void TimeFormatter::BuildFormats(
     FormatType format_type, std::vector<icu::PluralFormat*>* time_formats) {
-  static const icu::UnicodeString kKeywords[] = {
+  const icu::UnicodeString kKeywords[] = {
     UNICODE_STRING_SIMPLE("other"), UNICODE_STRING_SIMPLE("one"),
     UNICODE_STRING_SIMPLE("zero"), UNICODE_STRING_SIMPLE("two"),
     UNICODE_STRING_SIMPLE("few"), UNICODE_STRING_SIMPLE("many")
@@ -237,7 +237,7 @@ void TimeFormatter::BuildFormats(
 // unless translators make a mistake.
 icu::PluralFormat* TimeFormatter::createFallbackFormat(
     const icu::PluralRules& rules, int index, FormatType format_type) {
-  static const icu::UnicodeString kUnits[4][2] = {
+  const icu::UnicodeString kUnits[4][2] = {
     { UNICODE_STRING_SIMPLE("sec"), UNICODE_STRING_SIMPLE("secs") },
     { UNICODE_STRING_SIMPLE("min"), UNICODE_STRING_SIMPLE("mins") },
     { UNICODE_STRING_SIMPLE("hour"), UNICODE_STRING_SIMPLE("hours") },
@@ -296,9 +296,9 @@ static string16 FormatTimeImpl(const TimeDelta& delta, FormatType format_type) {
   // With the fallback added, this should never fail.
   DCHECK(U_SUCCESS(error));
   int capacity = time_string.length() + 1;
+  DCHECK_GT(capacity, 1);
   string16 result;
-  time_string.extract(static_cast<UChar*>(
-                      WriteInto(&result, capacity)),
+  time_string.extract(static_cast<UChar*>(WriteInto(&result, capacity)),
                       capacity, error);
   DCHECK(U_SUCCESS(error));
   return result;

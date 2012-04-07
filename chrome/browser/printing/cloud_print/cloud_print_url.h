@@ -1,10 +1,12 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PRINTING_CLOUD_PRINT_CLOUD_PRINT_URL_H_
 #define CHROME_BROWSER_PRINTING_CLOUD_PRINT_CLOUD_PRINT_URL_H_
 #pragma once
+
+#include <string>
 
 class GURL;
 class Profile;
@@ -17,6 +19,8 @@ class CloudPrintURL {
   GURL GetCloudPrintServiceURL();
   GURL GetCloudPrintServiceDialogURL();
   GURL GetCloudPrintServiceManageURL();
+  GURL GetCloudPrintServiceEnableURL(const std::string& proxy_id);
+  GURL GetCloudPrintSigninURL();
 
   // These aren't derived from the service, but it makes sense to keep all the
   // URLs together, and this gives the unit tests access for testing.

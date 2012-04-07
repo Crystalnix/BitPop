@@ -5,22 +5,26 @@
 #ifndef CONTENT_BROWSER_FONT_LIST_ASYNC_H_
 #define CONTENT_BROWSER_FONT_LIST_ASYNC_H_
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/common/content_export.h"
 
+namespace base {
 class ListValue;
+}
 
 namespace content {
 
 // Wraps ownership of a ListValue so we can send it across threads without
 // having ownership problems (for example if the calling thread goes away
 // before the callback is executed, we want the ListValue to be destroyed.
-struct FontListResult : public base::RefCountedThreadSafe<FontListResult> {
+struct CONTENT_EXPORT FontListResult
+    : public base::RefCountedThreadSafe<FontListResult> {
   FontListResult();
   ~FontListResult();
 
-  scoped_ptr<ListValue> list;
+  scoped_ptr<base::ListValue> list;
 };
 
 // Retrieves the list of fonts on the system as a list of strings. It provides
@@ -34,7 +38,7 @@ struct FontListResult : public base::RefCountedThreadSafe<FontListResult> {
 // If the caller wants to take ownership of the ListValue, it can just do
 // FontListResult.list.release() or use scoped_ptr.swap() because this value
 // isn't used for anything else.
-void GetFontListAsync(
+CONTENT_EXPORT void GetFontListAsync(
     const base::Callback<void(scoped_refptr<FontListResult>)>& callback);
 
 }  // namespace content

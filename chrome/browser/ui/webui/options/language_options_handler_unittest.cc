@@ -11,40 +11,38 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/input_method_library.h"
+#include "chrome/browser/chromeos/input_method/ibus_controller.h"
+#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_CHROMEOS)
-static chromeos::InputMethodDescriptors CreateInputMethodDescriptors() {
-  chromeos::InputMethodDescriptors descriptors;
-  descriptors.push_back(
-      chromeos::InputMethodDescriptor("xkb:us::eng", "USA",
-                                      "us", "us", "eng"));
-  descriptors.push_back(
-      chromeos::InputMethodDescriptor("xkb:fr::fra", "France",
-                                      "fr", "fr", "fra"));
-  descriptors.push_back(
-      chromeos::InputMethodDescriptor("xkb:be::fra", "Belgium",
-                                      "be", "be", "fr"));
-  descriptors.push_back(
-      chromeos::InputMethodDescriptor("mozc", "Mozc (US keyboard layout)",
-                                      "us", "us", "ja"));
+
+using chromeos::input_method::IBusController;
+using chromeos::input_method::InputMethodDescriptor;
+using chromeos::input_method::InputMethodDescriptors;
+
+static InputMethodDescriptor GetDesc(IBusController* controller,
+                                     const std::string& id,
+                                     const std::string& raw_layout,
+                                     const std::string& language_code) {
+  return controller->CreateInputMethodDescriptor(id, "", raw_layout,
+                                                 language_code);
+}
+
+static InputMethodDescriptors CreateInputMethodDescriptors() {
+  scoped_ptr<IBusController> controller(IBusController::Create());
+
+  InputMethodDescriptors descriptors;
+  descriptors.push_back(GetDesc(controller.get(), "xkb:us::eng", "us", "eng"));
+  descriptors.push_back(GetDesc(controller.get(), "xkb:fr::fra", "fr", "fra"));
+  descriptors.push_back(GetDesc(controller.get(), "xkb:be::fra", "be", "fr"));
+  descriptors.push_back(GetDesc(controller.get(), "mozc", "us", "ja"));
   return descriptors;
 }
 
 TEST(LanguageOptionsHandlerTest, GetInputMethodList) {
-  // Use the stub libcros. The object will take care of the cleanup.
-  chromeos::ScopedStubCrosEnabler stub_cros_enabler;
-
-  // Reset the library implementation so it will be initialized
-  // again. Otherwise, non-stub implementation can be reused, if it's
-  // already initialized elsewhere, which results in a crash.
-  chromeos::CrosLibrary::Get()->GetTestApi()->SetInputMethodLibrary(NULL,
-                                                                    false);
-
-  chromeos::InputMethodDescriptors descriptors = CreateInputMethodDescriptors();
+  InputMethodDescriptors descriptors = CreateInputMethodDescriptors();
   scoped_ptr<ListValue> list(
       chromeos::CrosLanguageOptionsHandler::GetInputMethodList(descriptors));
   ASSERT_EQ(4U, list->GetSize());
@@ -98,7 +96,7 @@ TEST(LanguageOptionsHandlerTest, GetInputMethodList) {
 }
 
 TEST(LanguageOptionsHandlerTest, GetLanguageList) {
-  chromeos::InputMethodDescriptors descriptors = CreateInputMethodDescriptors();
+  InputMethodDescriptors descriptors = CreateInputMethodDescriptors();
   scoped_ptr<ListValue> list(
       chromeos::CrosLanguageOptionsHandler::GetLanguageList(descriptors));
   ASSERT_EQ(8U, list->GetSize());
@@ -178,8 +176,7 @@ TEST(LanguageOptionsHandlerTest, GetLanguageList) {
   ASSERT_TRUE(entry->GetString("nativeDisplayName", &native_display_name));
   EXPECT_EQ("es-419", language_code);
   EXPECT_EQ("Spanish (Latin America)", display_name);
-  EXPECT_EQ("espa\u00F1ol (Latinoam\u00E9rica y el Caribe)",
-            native_display_name);
+  EXPECT_EQ("espa\u00F1ol (Latinoam\u00E9rica)", native_display_name);
 }
 #endif  // defined(OS_CHROMEOS)
 

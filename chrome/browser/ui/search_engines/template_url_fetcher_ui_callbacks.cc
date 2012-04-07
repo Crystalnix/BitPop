@@ -9,18 +9,20 @@
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper.h"
 #include "chrome/browser/ui/search_engines/search_engine_tab_helper_delegate.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+
+using content::WebContents;
 
 TemplateURLFetcherUICallbacks::TemplateURLFetcherUICallbacks(
     SearchEngineTabHelper* tab_helper,
-    TabContents* tab_contents)
+    WebContents* web_contents)
     : source_(tab_helper),
-      tab_contents_(tab_contents) {
+      web_contents_(web_contents) {
   registrar_.Add(this,
-                 NotificationType::TAB_CONTENTS_DESTROYED,
-                 Source<TabContents>(tab_contents_));
+                 content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<WebContents>(web_contents_));
 }
 
 TemplateURLFetcherUICallbacks::~TemplateURLFetcherUICallbacks() {
@@ -28,15 +30,13 @@ TemplateURLFetcherUICallbacks::~TemplateURLFetcherUICallbacks() {
 
 void TemplateURLFetcherUICallbacks::ConfirmSetDefaultSearchProvider(
     TemplateURL* template_url,
-    TemplateURLModel* template_url_model) {
+    Profile* profile) {
   scoped_ptr<TemplateURL> owned_template_url(template_url);
-  if (!source_ || !source_->delegate() || !tab_contents_)
+  if (!source_ || !source_->delegate() || !web_contents_)
       return;
 
-  source_->delegate()->ConfirmSetDefaultSearchProvider(
-      tab_contents_,
-      owned_template_url.release(),
-      template_url_model);
+  source_->delegate()->ConfirmSetDefaultSearchProvider(web_contents_,
+      owned_template_url.release(), profile);
 }
 
 void TemplateURLFetcherUICallbacks::ConfirmAddSearchProvider(
@@ -51,11 +51,11 @@ void TemplateURLFetcherUICallbacks::ConfirmAddSearchProvider(
 }
 
 void TemplateURLFetcherUICallbacks::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  DCHECK(type == NotificationType::TAB_CONTENTS_DESTROYED);
-  DCHECK(source == Source<TabContents>(tab_contents_));
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
+  DCHECK(source == content::Source<WebContents>(web_contents_));
   source_ = NULL;
-  tab_contents_ = NULL;
+  web_contents_ = NULL;
 }

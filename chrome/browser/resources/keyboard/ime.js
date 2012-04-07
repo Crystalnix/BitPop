@@ -9,6 +9,7 @@
 /**
  * Const variables
  */
+const IME_KEYBOARD_HEIGHT = 300;
 const IME_HEIGHT = 48;
 const IME_VMARGIN = 12;
 const IME_HMARGIN = 16;
@@ -47,17 +48,17 @@ Button.prototype = {
    * @return {string}
    */
   get text() {
-    return this.textContent;
+    return this.innerHTML;
   },
 
   /**
-   * Sets the text of the button
-   * @param {string} text in button, if text is empty, the button will be
-   * hidden.
+   * Sets the HTML of the button
+   * @param {string} text in button in HTML format. If text is empty, the
+   * button will be hidden.
    * @return {void}
    */
   set text(text) {
-    this.textContent = text;
+    this.innerHTML = text;
     if (text) {
       this.style.display = 'inline-block';
     } else {
@@ -89,12 +90,12 @@ ImeUi.prototype = {
     this.appendChild(this.auxiliary_);
 
     var that = this;
-    this.pageUp_ = new Button({'text': ' << '});
+    this.pageUp_ = new Button({'text': ' &laquo; '});
     this.pageUp_.onclick = function() {
       that.pageUp();
     };
 
-    this.pageDown_ = new Button({'text': ' >> '});
+    this.pageDown_ = new Button({'text': ' &raquo; '});
     this.pageDown_.onclick = function() {
       that.pageDown();
     };
@@ -123,6 +124,15 @@ ImeUi.prototype = {
     }
 
     this.appendChild(this.pageDown_);
+    this.update();
+  },
+
+  /**
+   * Returns true if Ime Ui is visible.
+   * @return {boolean}
+   */
+  get visible() {
+    return this.style.display != 'none';
   },
 
   /**
@@ -171,14 +181,21 @@ ImeUi.prototype = {
   },
 
   update : function() {
-    // TODO(penghuang) Add API for show and hide ImeUI.
-    // Currently, ImeUi is always visible.
-    if (true || (this.table_ && this.table_.visible) || this.auxiliary_.text_) {
-      this.style.display = 'block';
-    } else {
-      this.style.display = 'none';
+    var visible =
+      (this.table_ && this.table_.visible) || this.auxiliary_.text_;
+
+    if (visible == this.visible) {
+      return;
     }
 
+    if (visible) {
+      chrome.experimental.input.setKeyboardHeight(
+        IME_KEYBOARD_HEIGHT + IME_HEIGHT);
+      this.style.display = 'inline-block';
+    } else {
+      this.style.display = 'none';
+      chrome.experimental.input.setKeyboardHeight(IME_KEYBOARD_HEIGHT);
+    }
     // TODO(penghuang) Adjust the width of all items in ImeUi to fill the width
     // of keyboard.
   },
@@ -189,7 +206,7 @@ ImeUi.prototype = {
    * @return {void}
    */
   candidateClicked: function(index) {
-    chrome.experimental.inputUI.candidateClicked(index, 1);
+    chrome.experimental.input.ui.candidateClicked(index, 1);
   },
 
   /**
@@ -197,7 +214,7 @@ ImeUi.prototype = {
    * @return {void}
    */
   pageUp: function() {
-    chrome.experimental.inputUI.pageUp();
+    chrome.experimental.input.ui.pageUp();
   },
 
   /**
@@ -205,7 +222,7 @@ ImeUi.prototype = {
    * @return {void}
    */
   pageDown: function() {
-    chrome.experimental.inputUI.pageDown();
+    chrome.experimental.input.ui.pageDown();
   },
 };
 
@@ -224,7 +241,7 @@ function initIme(element) {
 
   try {
     // Register self to receive input method UI events.
-    chrome.experimental.inputUI.register();
+    chrome.experimental.input.ui.register();
   } catch (e) {
     // The ime is not enabled in chromium.
     return;
@@ -240,15 +257,15 @@ function initIme(element) {
   element.appendChild(clearingDiv);
 
   // Install events handlers.
-  chrome.experimental.inputUI.onSetCursorLocation.addListener(
+  chrome.experimental.input.ui.onSetCursorLocation.addListener(
       function(x, y, w, h) {
         imeui.setCursorLocation(x, y, w, h);
       });
-  chrome.experimental.inputUI.onUpdateAuxiliaryText.addListener(
+  chrome.experimental.input.ui.onUpdateAuxiliaryText.addListener(
       function(text) {
         imeui.updateAuxiliaryText(text);
       });
-  chrome.experimental.inputUI.onUpdateLookupTable.addListener(
+  chrome.experimental.input.ui.onUpdateLookupTable.addListener(
       function(table) {
         imeui.updateLookupTable(table);
       });

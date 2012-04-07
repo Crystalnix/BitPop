@@ -9,15 +9,19 @@
 #include <map>
 #include <set>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
 #include "chrome/browser/bookmarks/bookmark_node_data.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_context_menu.h"
-#include "ui/gfx/native_widget_types.h"
-#include "views/controls/menu/menu_delegate.h"
+#include "ui/views/controls/menu/menu_delegate.h"
 
 class BookmarkNode;
-class PageNavigator;
 class Profile;
+
+namespace content {
+class PageNavigator;
+}
 
 namespace ui {
 class OSExchangeData;
@@ -25,6 +29,7 @@ class OSExchangeData;
 
 namespace views {
 class MenuItemView;
+class Widget;
 }
 
 // BookmarkMenuDelegate acts as the (informal) views::MenuDelegate for showing
@@ -36,18 +41,18 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
                              public BookmarkContextMenuObserver {
  public:
   enum ShowOptions {
-    // Indicates a menu should be added containing the 'other' bookmarks folder
-    // and all its contents. This only makes sense when showing the contents
-    // of the bookmark folder.
-    SHOW_OTHER_FOLDER,
+    // Indicates a menu should be added containing the permanent folders (other
+    // than then bookmark bar folder). This only makes sense when showing the
+    // contents of the bookmark bar folder.
+    SHOW_PERMANENT_FOLDERS,
 
-    // Don't show the 'other' bookmarks folder.
-    HIDE_OTHER_FOLDER
+    // Don't show any additional folders.
+    HIDE_PERMANENT_FOLDERS
   };
 
   BookmarkMenuDelegate(Profile* profile,
-                       PageNavigator* navigator,
-                       gfx::NativeWindow parent,
+                       content::PageNavigator* navigator,
+                       views::Widget* parent,
                        int first_menu_id);
   virtual ~BookmarkMenuDelegate();
 
@@ -56,7 +61,11 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
             views::MenuItemView* parent,
             const BookmarkNode* node,
             int start_child_index,
-            ShowOptions show_options);
+            ShowOptions show_options,
+            bookmark_utils::BookmarkLaunchLocation);
+
+  // Sets the PageNavigator.
+  void SetPageNavigator(content::PageNavigator* navigator);
 
   // Returns the id given to the next menu.
   int next_menu_id() const { return next_menu_id_; }
@@ -75,14 +84,14 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
 
   Profile* profile() { return profile_; }
 
-  gfx::NativeWindow parent() { return parent_; }
+  views::Widget* parent() { return parent_; }
 
   // Returns true if we're in the process of mutating the model. This happens
   // when the user deletes menu items using the context menu.
   bool is_mutating_model() const { return is_mutating_model_; }
 
   // MenuDelegate like methods (see class description for details).
-  std::wstring GetTooltipText(int id, const gfx::Point& p);
+  string16 GetTooltipText(int id, const gfx::Point& p) const;
   bool IsTriggerableEvent(views::MenuItemView* menu,
                           const views::MouseEvent& e);
   void ExecuteCommand(int id, int mouse_event_flags);
@@ -114,10 +123,11 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
 
   // BookmarkContextMenu::Observer methods.
   virtual void WillRemoveBookmarks(
-      const std::vector<const BookmarkNode*>& bookmarks);
-  virtual void DidRemoveBookmarks();
+      const std::vector<const BookmarkNode*>& bookmarks) OVERRIDE;
+  virtual void DidRemoveBookmarks() OVERRIDE;
 
  private:
+  typedef std::map<int, const BookmarkNode*> MenuIDToNodeMap;
   typedef std::map<const BookmarkNode*, int> NodeToMenuIDMap;
   typedef std::map<const BookmarkNode*, views::MenuItemView*> NodeToMenuMap;
 
@@ -127,9 +137,19 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
                                   int start_child_index,
                                   ShowOptions show_options);
 
-  // Builds the menu for the other bookmarks folder. This is added as the last
-  // item to menu_.
-  void BuildOtherFolderMenu(views::MenuItemView* menu, int* next_menu_id);
+  // Invokes BuildMenuForPermanentNode() for the permanent nodes (excluding
+  // 'other bookmarks' folder).
+  void BuildMenusForPermanentNodes(views::MenuItemView* menu,
+                                   int* next_menu_id);
+
+  // If |node| has children a new menu is created and added to |menu| to
+  // represent it. If |node| is not empty and |added_separator| is false, a
+  // separator is added before the new menu items and |added_separator| is set
+  // to true.
+  void BuildMenuForPermanentNode(const BookmarkNode* node,
+                                 views::MenuItemView* menu,
+                                 int* next_menu_id,
+                                 bool* added_separator);
 
   // Creates an entry in menu for each child node of |parent| starting at
   // |start_child_index|.
@@ -141,22 +161,15 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
   // Returns the menu whose id is |id|.
   views::MenuItemView* GetMenuByID(int id);
 
-  // Does the work of processing WillRemoveBookmarks. On exit the set of removed
-  // menus is added to |removed_menus|. It's up to the caller to delete the
-  // the menus added to |removed_menus|.
-  void WillRemoveBookmarksImpl(
-      const std::vector<const BookmarkNode*>& bookmarks,
-      std::set<views::MenuItemView*>* removed_menus);
-
   Profile* profile_;
 
-  PageNavigator* page_navigator_;
+  content::PageNavigator* page_navigator_;
 
   // Parent of menus.
-  gfx::NativeWindow parent_;
+  views::Widget* parent_;
 
   // Maps from menu id to BookmarkNode.
-  std::map<int, const BookmarkNode*> menu_id_to_node_map_;
+  MenuIDToNodeMap menu_id_to_node_map_;
 
   // Mapping from node to menu id. This only contains entries for nodes of type
   // URL.
@@ -187,6 +200,9 @@ class BookmarkMenuDelegate : public BaseBookmarkModelObserver,
 
   // Is the model being changed?
   bool is_mutating_model_;
+
+  // The location where this bookmark menu will be displayed (for UMA).
+  bookmark_utils::BookmarkLaunchLocation location_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkMenuDelegate);
 };

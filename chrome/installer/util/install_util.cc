@@ -15,6 +15,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -30,7 +31,6 @@
 #include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item_list.h"
-#include "content/common/json_value_serializer.h"
 
 using base::win::RegKey;
 using installer::ProductState;
@@ -39,13 +39,20 @@ namespace {
 
 const wchar_t kStageBinaryPatching[] = L"binary_patching";
 const wchar_t kStageBuilding[] = L"building";
+const wchar_t kStageConfiguringAutoLaunch[] = L"configuring_auto_launch";
+const wchar_t kStageCopyingPreferencesFile[] = L"copying_prefs";
+const wchar_t kStageCreatingShortcuts[] = L"creating_shortcuts";
 const wchar_t kStageEnsemblePatching[] = L"ensemble_patching";
 const wchar_t kStageExecuting[] = L"executing";
 const wchar_t kStageFinishing[] = L"finishing";
 const wchar_t kStagePreconditions[] = L"preconditions";
+const wchar_t kStageRefreshingPolicy[] = L"refreshing_policy";
+const wchar_t kStageRegisteringChrome[] = L"registering_chrome";
+const wchar_t kStageRemovingOldVersions[] = L"removing_old_ver";
 const wchar_t kStageRollingback[] = L"rollingback";
 const wchar_t kStageUncompressing[] = L"uncompressing";
 const wchar_t kStageUnpacking[] = L"unpacking";
+const wchar_t kStageUpdatingChannels[] = L"updating_channels";
 
 const wchar_t* const kStages[] = {
   NULL,
@@ -57,11 +64,54 @@ const wchar_t* const kStages[] = {
   kStageBuilding,
   kStageExecuting,
   kStageRollingback,
-  kStageFinishing
+  kStageRefreshingPolicy,
+  kStageUpdatingChannels,
+  kStageCopyingPreferencesFile,
+  kStageCreatingShortcuts,
+  kStageRegisteringChrome,
+  kStageRemovingOldVersions,
+  kStageFinishing,
+  kStageConfiguringAutoLaunch,
 };
 
 COMPILE_ASSERT(installer::NUM_STAGES == arraysize(kStages),
                kStages_disagrees_with_Stage_comma_they_must_match_bang);
+
+// Creates a zero-sized non-decorated foreground window that doesn't appear
+// in the taskbar. This is used as a parent window for calls to ShellExecuteEx
+// in order for the UAC dialog to appear in the foreground and for focus
+// to be returned to this process once the UAC task is dismissed. Returns
+// NULL on failure, a handle to the UAC window on success.
+HWND CreateUACForegroundWindow() {
+  HWND foreground_window = ::CreateWindowEx(WS_EX_TOOLWINDOW,
+                                            L"STATIC",
+                                            NULL,
+                                            WS_POPUP | WS_VISIBLE,
+                                            0, 0, 0, 0,
+                                            NULL, NULL,
+                                            ::GetModuleHandle(NULL),
+                                            NULL);
+  if (foreground_window) {
+    HMONITOR monitor = ::MonitorFromWindow(foreground_window,
+                                           MONITOR_DEFAULTTONEAREST);
+    if (monitor) {
+      MONITORINFO mi = {0};
+      mi.cbSize = sizeof(mi);
+      ::GetMonitorInfo(monitor, &mi);
+      RECT screen_rect = mi.rcWork;
+      int x_offset = (screen_rect.right - screen_rect.left) / 2;
+      int y_offset = (screen_rect.bottom - screen_rect.top) / 2;
+      ::MoveWindow(foreground_window,
+                   screen_rect.left + x_offset,
+                   screen_rect.top + y_offset,
+                   0, 0, FALSE);
+    } else {
+      NOTREACHED() << "Unable to get default monitor";
+    }
+    ::SetForegroundWindow(foreground_window);
+  }
+  return foreground_window;
+}
 
 }  // namespace
 
@@ -70,7 +120,7 @@ bool InstallUtil::ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code) {
   DCHECK(!program.empty());
   DCHECK_NE(program[0], L'\"');
 
-  CommandLine::StringType params(cmd.command_line_string());
+  CommandLine::StringType params(cmd.GetCommandLineString());
   if (params[0] == '"') {
     DCHECK_EQ('"', params[program.length() + 1]);
     DCHECK_EQ(program, params.substr(1, program.length()));
@@ -82,24 +132,33 @@ bool InstallUtil::ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code) {
 
   TrimWhitespace(params, TRIM_ALL, &params);
 
+  HWND uac_foreground_window = CreateUACForegroundWindow();
+
   SHELLEXECUTEINFO info = {0};
   info.cbSize = sizeof(SHELLEXECUTEINFO);
   info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  info.hwnd = uac_foreground_window;
   info.lpVerb = L"runas";
   info.lpFile = program.c_str();
   info.lpParameters = params.c_str();
   info.nShow = SW_SHOW;
-  if (::ShellExecuteEx(&info) == FALSE)
-    return false;
 
-  ::WaitForSingleObject(info.hProcess, INFINITE);
-  DWORD ret_val = 0;
-  if (!::GetExitCodeProcess(info.hProcess, &ret_val))
-    return false;
+  bool success = false;
+  if (::ShellExecuteEx(&info) == TRUE) {
+    ::WaitForSingleObject(info.hProcess, INFINITE);
+    DWORD ret_val = 0;
+    if (::GetExitCodeProcess(info.hProcess, &ret_val)) {
+      success = true;
+      if (exit_code)
+        *exit_code = ret_val;
+    }
+  }
 
-  if (exit_code)
-    *exit_code = ret_val;
-  return true;
+  if (uac_foreground_window) {
+    DestroyWindow(uac_foreground_window);
+  }
+
+  return success;
 }
 
 CommandLine InstallUtil::GetChromeUninstallCmd(
@@ -116,7 +175,8 @@ Version* InstallUtil::GetChromeVersion(BrowserDistribution* dist,
   DCHECK(dist);
   RegKey key;
   HKEY reg_root = (system_install) ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-  LONG result = key.Open(reg_root, dist->GetVersionKey().c_str(), KEY_READ);
+  LONG result = key.Open(reg_root, dist->GetVersionKey().c_str(),
+                         KEY_QUERY_VALUE);
 
   std::wstring version_str;
   if (result == ERROR_SUCCESS)
@@ -126,6 +186,33 @@ Version* InstallUtil::GetChromeVersion(BrowserDistribution* dist,
   if (result == ERROR_SUCCESS && !version_str.empty()) {
     VLOG(1) << "Existing " << dist->GetApplicationName()
             << " version found " << version_str;
+    ret = Version::GetVersionFromString(WideToASCII(version_str));
+  } else {
+    DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
+    VLOG(1) << "No existing " << dist->GetApplicationName()
+            << " install found.";
+  }
+
+  return ret;
+}
+
+Version* InstallUtil::GetCriticalUpdateVersion(BrowserDistribution* dist,
+                                               bool system_install) {
+  DCHECK(dist);
+  RegKey key;
+  HKEY reg_root = (system_install) ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
+  LONG result =
+      key.Open(reg_root, dist->GetVersionKey().c_str(), KEY_QUERY_VALUE);
+
+  string16 version_str;
+  if (result == ERROR_SUCCESS)
+    result = key.ReadValue(google_update::kRegCriticalVersionField,
+                           &version_str);
+
+  Version* ret = NULL;
+  if (result == ERROR_SUCCESS && !version_str.empty()) {
+    VLOG(1) << "Critical Update version for " << dist->GetApplicationName()
+            << " found " << version_str;
     ret = Version::GetVersionFromString(WideToASCII(version_str));
   } else {
     DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
@@ -183,8 +270,21 @@ void InstallUtil::UpdateInstallerStage(bool system_install,
   LONG result = state_key.Open(root, state_key_path.c_str(),
                                KEY_QUERY_VALUE | KEY_SET_VALUE);
   if (result == ERROR_SUCCESS) {
-    // TODO(grt): switch to using Google Update's new InstallerExtraCode1 value
-    // once it exists.  In the meantime, encode the stage into the channel name.
+    if (stage == installer::NO_STAGE) {
+      result = state_key.DeleteValue(installer::kInstallerExtraCode1);
+      LOG_IF(ERROR, result != ERROR_SUCCESS && result != ERROR_FILE_NOT_FOUND)
+          << "Failed deleting installer stage from " << state_key_path
+          << "; result: " << result;
+    } else {
+      const DWORD extra_code_1 = static_cast<DWORD>(stage);
+      result = state_key.WriteValue(installer::kInstallerExtraCode1,
+                                    extra_code_1);
+      LOG_IF(ERROR, result != ERROR_SUCCESS)
+          << "Failed writing installer stage to " << state_key_path
+          << "; result: " << result;
+    }
+    // TODO(grt): Remove code below here once we're convinced that our use of
+    // Google Update's new InstallerExtraCode1 value is good.
     installer::ChannelInfo channel_info;
     // This will return false if the "ap" value isn't present, which is fine.
     channel_info.Initialize(state_key);
@@ -280,7 +380,7 @@ bool InstallUtil::DeleteRegistryValue(HKEY reg_root,
                                       const std::wstring& value_name) {
   RegKey key(reg_root, key_path.c_str(), KEY_ALL_ACCESS);
   VLOG(1) << "Deleting registry value " << value_name;
-  if (key.ValueExists(value_name.c_str())) {
+  if (key.HasValue(value_name.c_str())) {
     LONG result = key.DeleteValue(value_name.c_str());
     if (result != ERROR_SUCCESS) {
       LOG(ERROR) << "Failed to delete registry value: " << value_name
@@ -292,7 +392,7 @@ bool InstallUtil::DeleteRegistryValue(HKEY reg_root,
 }
 
 // static
-bool InstallUtil::DeleteRegistryKeyIf(
+InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryKeyIf(
     HKEY root_key,
     const std::wstring& key_to_delete_path,
     const std::wstring& key_to_test_path,
@@ -300,6 +400,7 @@ bool InstallUtil::DeleteRegistryKeyIf(
     const RegistryValuePredicate& predicate) {
   DCHECK(root_key);
   DCHECK(value_name);
+  ConditionalDeleteResult delete_result = NOT_FOUND;
   RegKey key;
   std::wstring actual_value;
   if (key.Open(root_key, key_to_test_path.c_str(),
@@ -307,13 +408,14 @@ bool InstallUtil::DeleteRegistryKeyIf(
       key.ReadValue(value_name, &actual_value) == ERROR_SUCCESS &&
       predicate.Evaluate(actual_value)) {
     key.Close();
-    return DeleteRegistryKey(root_key, key_to_delete_path);
+    delete_result = DeleteRegistryKey(root_key, key_to_delete_path)
+        ? DELETED : DELETE_FAILED;
   }
-  return true;
+  return delete_result;
 }
 
 // static
-bool InstallUtil::DeleteRegistryValueIf(
+InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryValueIf(
     HKEY root_key,
     const wchar_t* key_path,
     const wchar_t* value_name,
@@ -321,6 +423,7 @@ bool InstallUtil::DeleteRegistryValueIf(
   DCHECK(root_key);
   DCHECK(key_path);
   DCHECK(value_name);
+  ConditionalDeleteResult delete_result = NOT_FOUND;
   RegKey key;
   std::wstring actual_value;
   if (key.Open(root_key, key_path,
@@ -331,10 +434,11 @@ bool InstallUtil::DeleteRegistryValueIf(
     if (result != ERROR_SUCCESS) {
       LOG(ERROR) << "Failed to delete registry value: " << value_name
                  << " error: " << result;
-      return false;
+      delete_result = DELETE_FAILED;
     }
+    delete_result = DELETED;
   }
-  return true;
+  return delete_result;
 }
 
 bool InstallUtil::ValueEquals::Evaluate(const std::wstring& value) const {

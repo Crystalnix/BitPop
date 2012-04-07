@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,18 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "chrome/browser/sync/protocol/app_notification_specifics.pb.h"
+#include "chrome/browser/sync/protocol/app_setting_specifics.pb.h"
 #include "chrome/browser/sync/protocol/app_specifics.pb.h"
 #include "chrome/browser/sync/protocol/autofill_specifics.pb.h"
 #include "chrome/browser/sync/protocol/bookmark_specifics.pb.h"
 #include "chrome/browser/sync/protocol/encryption.pb.h"
+#include "chrome/browser/sync/protocol/extension_setting_specifics.pb.h"
 #include "chrome/browser/sync/protocol/extension_specifics.pb.h"
 #include "chrome/browser/sync/protocol/nigori_specifics.pb.h"
 #include "chrome/browser/sync/protocol/password_specifics.pb.h"
 #include "chrome/browser/sync/protocol/preference_specifics.pb.h"
+#include "chrome/browser/sync/protocol/search_engine_specifics.pb.h"
 #include "chrome/browser/sync/protocol/session_specifics.pb.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/protocol/theme_specifics.pb.h"
@@ -43,7 +47,7 @@ TEST_F(ProtoValueConversionsTest, ProtoChangeCheck) {
   // If this number changes, that means we added or removed a data
   // type.  Don't forget to add a unit test for {New
   // type}SpecificsToValue below.
-  EXPECT_EQ(13, syncable::MODEL_TYPE_COUNT);
+  EXPECT_EQ(17, syncable::MODEL_TYPE_COUNT);
 
   // We'd also like to check if we changed any field in our messages.
   // However, that's hard to do: sizeof could work, but it's
@@ -82,6 +86,24 @@ TEST_F(ProtoValueConversionsTest, PasswordSpecificsData) {
   EXPECT_EQ("<redacted>", password_value);
 }
 
+TEST_F(ProtoValueConversionsTest, AppNotificationToValue) {
+  TestSpecificsToValue(AppNotificationToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, AppSettingSpecificsToValue) {
+  sync_pb::AppNotificationSettings specifics;
+  specifics.set_disabled(true);
+  specifics.set_oauth_client_id("some_id_value");
+  scoped_ptr<DictionaryValue> value(AppSettingsToValue(specifics));
+  EXPECT_FALSE(value->empty());
+  bool disabled_value = false;
+  std::string oauth_client_id_value;
+  EXPECT_TRUE(value->GetBoolean("disabled", &disabled_value));
+  EXPECT_EQ(true, disabled_value);
+  EXPECT_TRUE(value->GetString("oauth_client_id", &oauth_client_id_value));
+  EXPECT_EQ("some_id_value", oauth_client_id_value);
+}
+
 TEST_F(ProtoValueConversionsTest, AppSpecificsToValue) {
   TestSpecificsToValue(AppSpecificsToValue);
 }
@@ -90,16 +112,16 @@ TEST_F(ProtoValueConversionsTest, AutofillSpecificsToValue) {
   TestSpecificsToValue(AutofillSpecificsToValue);
 }
 
-TEST_F(ProtoValueConversionsTest, AutofillCreditCardSpecificsToValue) {
-  TestSpecificsToValue(AutofillCreditCardSpecificsToValue);
-}
-
 TEST_F(ProtoValueConversionsTest, AutofillProfileSpecificsToValue) {
   TestSpecificsToValue(AutofillProfileSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, BookmarkSpecificsToValue) {
   TestSpecificsToValue(BookmarkSpecificsToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, ExtensionSettingSpecificsToValue) {
+  TestSpecificsToValue(ExtensionSettingSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, ExtensionSpecificsToValue) {
@@ -116,6 +138,10 @@ TEST_F(ProtoValueConversionsTest, PasswordSpecificsToValue) {
 
 TEST_F(ProtoValueConversionsTest, PreferenceSpecificsToValue) {
   TestSpecificsToValue(PreferenceSpecificsToValue);
+}
+
+TEST_F(ProtoValueConversionsTest, SearchEngineSpecificsToValue) {
+  TestSpecificsToValue(SearchEngineSpecificsToValue);
 }
 
 TEST_F(ProtoValueConversionsTest, SessionSpecificsToValue) {
@@ -139,13 +165,17 @@ TEST_F(ProtoValueConversionsTest, EntitySpecificsToValue) {
 #define SET_EXTENSION(key) (void)specifics.MutableExtension(sync_pb::key)
 
   SET_EXTENSION(app);
+  SET_EXTENSION(app_notification);
+  SET_EXTENSION(app_setting);
   SET_EXTENSION(autofill);
   SET_EXTENSION(autofill_profile);
   SET_EXTENSION(bookmark);
   SET_EXTENSION(extension);
+  SET_EXTENSION(extension_setting);
   SET_EXTENSION(nigori);
   SET_EXTENSION(password);
   SET_EXTENSION(preference);
+  SET_EXTENSION(search_engine);
   SET_EXTENSION(session);
   SET_EXTENSION(theme);
   SET_EXTENSION(typed_url);

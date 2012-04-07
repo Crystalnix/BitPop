@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,8 +22,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/size.h"
@@ -101,6 +101,7 @@ const char WebApplicationInfo::kInvalidIconURL[] =
     "an absolute URL with the same origin as the application definition.";
 
 WebApplicationInfo::WebApplicationInfo() {
+  is_bookmark_app = false;
 }
 
 WebApplicationInfo::~WebApplicationInfo() {
@@ -153,7 +154,7 @@ bool ParseWebAppFromWebDocument(WebFrame* frame,
   if (head.isNull())
     return true;
 
-  GURL frame_url = frame->url();
+  GURL document_url = document.url();
   WebNodeList children = head.childNodes();
   for (unsigned i = 0; i < children.length(); ++i) {
     WebNode child = children.item(i);
@@ -174,8 +175,8 @@ bool ParseWebAppFromWebDocument(WebFrame* frame,
         std::string definition_url_string(elem.getAttribute("href").utf8());
         GURL definition_url;
         if (!(definition_url =
-              frame_url.Resolve(definition_url_string)).is_valid() ||
-            definition_url.GetOrigin() != frame_url.GetOrigin()) {
+              document_url.Resolve(definition_url_string)).is_valid() ||
+            definition_url.GetOrigin() != document_url.GetOrigin()) {
           *error = UTF8ToUTF16(WebApplicationInfo::kInvalidDefinitionURL);
           return false;
         }
@@ -194,8 +195,8 @@ bool ParseWebAppFromWebDocument(WebFrame* frame,
         app_info->description = content;
       } else if (name == "application-url") {
         std::string url = content.utf8();
-        app_info->app_url = frame_url.is_valid() ?
-            frame_url.Resolve(url) : GURL(url);
+        app_info->app_url = document_url.is_valid() ?
+            document_url.Resolve(url) : GURL(url);
         if (!app_info->app_url.is_valid())
           app_info->app_url = GURL();
       }
@@ -208,7 +209,7 @@ bool ParseWebAppFromWebDocument(WebFrame* frame,
 bool ParseWebAppFromDefinitionFile(Value* definition_value,
                                    WebApplicationInfo* web_app,
                                    string16* error) {
-  CHECK(web_app->manifest_url.is_valid());
+  DCHECK(web_app->manifest_url.is_valid());
 
   int error_code = 0;
   std::string error_message;
@@ -219,9 +220,9 @@ bool ParseWebAppFromDefinitionFile(Value* definition_value,
           false,  // disallow trailing comma
           &error_code,
           &error_message));
-  CHECK(schema.get())
+  DCHECK(schema.get())
       << "Error parsing JSON schema: " << error_code << ": " << error_message;
-  CHECK(schema->IsType(Value::TYPE_DICTIONARY))
+  DCHECK(schema->IsType(Value::TYPE_DICTIONARY))
       << "schema root must be dictionary.";
 
   JSONSchemaValidator validator(static_cast<DictionaryValue*>(schema.get()));
@@ -238,7 +239,7 @@ bool ParseWebAppFromDefinitionFile(Value* definition_value,
 
   // This must be true because the schema requires the root value to be a
   // dictionary.
-  CHECK(definition_value->IsType(Value::TYPE_DICTIONARY));
+  DCHECK(definition_value->IsType(Value::TYPE_DICTIONARY));
   DictionaryValue* definition = static_cast<DictionaryValue*>(definition_value);
 
   // Parse launch URL. It must be a valid URL in the same origin as the

@@ -11,6 +11,9 @@
     </if>
     <output filename="platform_locale_settings_bg.pak" type="data_package" lang="bg" />
     <output filename="platform_locale_settings_bn.pak" type="data_package" lang="bn" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="platform_locale_settings_bs.pak" type="data_package" lang="bs" />
+    </if>
     <output filename="platform_locale_settings_ca.pak" type="data_package" lang="ca" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="platform_locale_settings_ca@valencia.pak" type="data_package" lang="ca@valencia" />
@@ -19,6 +22,9 @@
     <output filename="platform_locale_settings_da.pak" type="data_package" lang="da" />
     <output filename="platform_locale_settings_de.pak" type="data_package" lang="de" />
     <output filename="platform_locale_settings_el.pak" type="data_package" lang="el" />
+    <if expr="pp_ifdef('use_third_party_translations')">
+      <output filename="platform_locale_settings_en-AU.pak" type="data_package" lang="en-AU" />
+    </if>
     <output filename="platform_locale_settings_en-GB.pak" type="data_package" lang="en-GB" />
     <output filename="platform_locale_settings_en-US.pak" type="data_package" lang="en" />
     <if expr="pp_ifdef('use_third_party_translations')">
@@ -31,6 +37,7 @@
       <output filename="platform_locale_settings_eu.pak" type="data_package" lang="eu" />
     </if>
     <output filename="platform_locale_settings_fa.pak" type="data_package" lang="fa" />
+    <output filename="platform_locale_settings_fake-bidi.pak" type="data_package" lang="fake-bidi" />
     <output filename="platform_locale_settings_fi.pak" type="data_package" lang="fi" />
     <output filename="platform_locale_settings_fil.pak" type="data_package" lang="fil" />
     <output filename="platform_locale_settings_fr.pak" type="data_package" lang="fr" />
@@ -44,6 +51,7 @@
     <output filename="platform_locale_settings_hu.pak" type="data_package" lang="hu" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="platform_locale_settings_hy.pak" type="data_package" lang="hy" />
+      <output filename="platform_locale_settings_ia.pak" type="data_package" lang="ia" />
     </if>
     <output filename="platform_locale_settings_id.pak" type="data_package" lang="id" />
     <output filename="platform_locale_settings_it.pak" type="data_package" lang="it" />
@@ -55,11 +63,13 @@
     <output filename="platform_locale_settings_ko.pak" type="data_package" lang="ko" />
     <if expr="pp_ifdef('use_third_party_translations')">
       <output filename="platform_locale_settings_ku.pak" type="data_package" lang="ku" />
+      <output filename="platform_locale_settings_kw.pak" type="data_package" lang="kw" />
     </if>
     <output filename="platform_locale_settings_lt.pak" type="data_package" lang="lt" />
     <output filename="platform_locale_settings_lv.pak" type="data_package" lang="lv" />
     <output filename="platform_locale_settings_ml.pak" type="data_package" lang="ml" />
     <output filename="platform_locale_settings_mr.pak" type="data_package" lang="mr" />
+    <output filename="platform_locale_settings_ms.pak" type="data_package" lang="ms" />
     <output filename="platform_locale_settings_nl.pak" type="data_package" lang="nl" />
     <!-- The translation console uses 'no' for Norwegian Bokmål. It should
          be 'nb'. -->
@@ -118,6 +128,7 @@
     <file path="platform_locale_settings/locale_settings_linux_lv.xtb" lang="lv" />
     <file path="platform_locale_settings/locale_settings_linux_ml.xtb" lang="ml" />
     <file path="platform_locale_settings/locale_settings_linux_mr.xtb" lang="mr" />
+    <file path="platform_locale_settings/locale_settings_linux_ms.xtb" lang="ms" />
     <file path="platform_locale_settings/locale_settings_linux_nl.xtb" lang="nl" />
     <file path="platform_locale_settings/locale_settings_linux_nb.xtb" lang="no" />
     <file path="platform_locale_settings/locale_settings_linux_pl.xtb" lang="pl" />

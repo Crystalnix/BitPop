@@ -19,17 +19,10 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/logging.h"
-#include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_tokenizer.h"
 #include "base/string_util.h"
-#include "base/threading/thread.h"
-#include "base/threading/thread_local.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_variant.h"
-#include "base/win/win_util.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/common/automation_messages.h"
@@ -42,14 +35,12 @@
 #include "chrome_frame/crash_reporting/crash_metrics.h"
 #include "chrome_frame/utils.h"
 #include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/navigation_types.h"
-#include "content/common/page_zoom.h"
+#include "content/public/browser/invalidate_type.h"
+#include "content/public/common/page_zoom.h"
 #include "grit/generated_resources.h"
 
 DEFINE_GUID(CGID_DocHostCmdPriv, 0x000214D4L, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0,
             0x46);
-
-base::ThreadLocalPointer<ChromeActiveDocument> g_active_doc_cache;
 
 bool g_first_launch_by_process_ = true;
 
@@ -73,29 +64,14 @@ ChromeActiveDocument::ChromeActiveDocument()
 }
 
 HRESULT ChromeActiveDocument::FinalConstruct() {
-  // If we have a cached ChromeActiveDocument instance in TLS, then grab
-  // ownership of the cached document's automation client. This is an
-  // optimization to get Chrome active documents to load faster.
-  ChromeActiveDocument* cached_document = g_active_doc_cache.Get();
-  if (cached_document && cached_document->IsValid()) {
-    SetResourceModule();
-    DCHECK(automation_client_.get() == NULL);
-    automation_client_.swap(cached_document->automation_client_);
-    DVLOG(1) << "Reusing automation client instance from " << cached_document;
-    DCHECK(automation_client_.get() != NULL);
-    automation_client_->Reinitialize(this, url_fetcher_.get());
-    is_automation_client_reused_ = true;
-    OnAutomationServerReady();
-  } else {
-    // The FinalConstruct implementation in the ChromeFrameActivexBase class
-    // i.e. Base creates an instance of the ChromeFrameAutomationClient class
-    // and initializes it, which would spawn a new Chrome process, etc.
-    // We don't want to be doing this if we have a cached document, whose
-    // automation client instance can be reused.
-    HRESULT hr = BaseActiveX::FinalConstruct();
-    if (FAILED(hr))
-      return hr;
-  }
+  // The FinalConstruct implementation in the ChromeFrameActivexBase class
+  // i.e. Base creates an instance of the ChromeFrameAutomationClient class
+  // and initializes it, which would spawn a new Chrome process, etc.
+  // We don't want to be doing this if we have a cached document, whose
+  // automation client instance can be reused.
+  HRESULT hr = BaseActiveX::FinalConstruct();
+  if (FAILED(hr))
+    return hr;
 
   InitializeAutomationSettings();
 
@@ -543,13 +519,6 @@ HRESULT ChromeActiveDocument::GetInPlaceFrame(
 HRESULT ChromeActiveDocument::IOleObject_SetClientSite(
     IOleClientSite* client_site) {
   if (client_site == NULL) {
-    ChromeActiveDocument* cached_document = g_active_doc_cache.Get();
-    if (cached_document) {
-      DCHECK(this == cached_document);
-      g_active_doc_cache.Set(NULL);
-      cached_document->Release();
-    }
-
     base::win::ScopedComPtr<IDocHostUIHandler> doc_host_handler;
     if (doc_site_)
       doc_host_handler.QueryFrom(doc_site_);
@@ -631,7 +600,7 @@ HRESULT ChromeActiveDocument::ActiveXDocActivate(LONG verb) {
 
 void ChromeActiveDocument::OnNavigationStateChanged(
     int flags, const NavigationInfo& nav_info) {
-  // TODO(joshia): handle INVALIDATE_TAB,INVALIDATE_LOAD etc.
+  // TODO(joshia): handle INVALIDATE_TYPE_TAB,INVALIDATE_TYPE_LOAD etc.
   DVLOG(1) << __FUNCTION__
            << "\n Flags: " << flags
            << ", Url: " << nav_info.url
@@ -735,7 +704,7 @@ void ChromeActiveDocument::UpdateNavigationState(
   if (is_ssl_state_changed) {
     int lock_status = SECURELOCK_SET_UNSECURE;
     switch (new_navigation_info.security_style) {
-      case SECURITY_STYLE_AUTHENTICATED:
+      case content::SECURITY_STYLE_AUTHENTICATED:
         lock_status = new_navigation_info.displayed_insecure_content ?
             SECURELOCK_SET_MIXED : SECURELOCK_SET_SECUREUNKNOWNBIT;
         break;
@@ -788,6 +757,19 @@ void ChromeActiveDocument::UpdateNavigationState(
     url_.Allocate(UTF8ToWide(new_navigation_info.url.spec()).c_str());
 
   if (is_internal_navigation) {
+    // IE6 does not support tabs. If Chrome sent us a window open request
+    // indicating that the navigation needs to occur in a foreground tab or
+    // a popup window, then we need to ensure that the new window in IE6 is
+    // brought to the foreground.
+    if (GetIEVersion() == IE_6 &&
+        is_attach_external_tab_url &&
+        (cf_url.disposition() == NEW_FOREGROUND_TAB ||
+         cf_url.disposition() == NEW_POPUP)) {
+      base::win::ScopedComPtr<IWebBrowser2> wb2;
+      DoQueryService(SID_SWebBrowserApp, m_spClientSite, wb2.Receive());
+      if (wb2)
+        BaseActiveX::BringWebBrowserWindowToTop(wb2);
+    }
     base::win::ScopedComPtr<IDocObjectService> doc_object_svc;
     base::win::ScopedComPtr<IWebBrowserEventsService> web_browser_events_svc;
 
@@ -915,9 +897,9 @@ void ChromeActiveDocument::OnSetZoomRange(const GUID* cmd_group_guid,
 
   if (in_args && V_VT(in_args) == VT_I4 && IsValid()) {
     if (in_args->lVal == kZoomIn) {
-      automation_client_->SetZoomLevel(PageZoom::ZOOM_IN);
+      automation_client_->SetZoomLevel(content::PAGE_ZOOM_IN);
     } else if (in_args->lVal == kZoomOut) {
-      automation_client_->SetZoomLevel(PageZoom::ZOOM_OUT);
+      automation_client_->SetZoomLevel(content::PAGE_ZOOM_OUT);
     } else {
       DLOG(WARNING) << "Unsupported zoom level:" << in_args->lVal;
     }
@@ -930,28 +912,48 @@ void ChromeActiveDocument::OnUnload(const GUID* cmd_group_guid,
                                     VARIANT* in_args,
                                     VARIANT* out_args) {
   if (IsValid() && out_args) {
+    // If the navigation is attempted to the url loaded in CF, with the only
+    // difference being the addition of an anchor, IE will attempt to unload
+    // the currently loaded document which basically would end up running
+    // unload handlers on the currently loaded document thus rendering it non
+    // functional. We handle this as below:-
+    // The BHO receives the new url in the BeforeNavigate event.
+    // We compare the non anchor portions of the url in the BHO with the loaded
+    // url and if they match, we initiate a Chrome navigation to the url with
+    // the anchor which works nicely.
+    // We don't want to continue processing the unload in this case.
+    // Note:-
+    // IE handles these navigations by querying the loaded document for
+    // IHTMLDocument which then handles the new navigation. That won't work for
+    // us as we don't implement IHTMLDocument.
+    NavigationManager* mgr = NavigationManager::GetThreadInstance();
+    DLOG_IF(ERROR, !mgr) << "Couldn't get instance of NavigationManager";
+    if (mgr) {
+      ChromeFrameUrl url;
+      url.Parse(mgr->url());
+      if (url.gurl().has_ref()) {
+        url_canon::Replacements<char> replacements;
+        replacements.ClearRef();
+
+        if (url.gurl().ReplaceComponents(replacements) ==
+            GURL(static_cast<BSTR>(url_))) {
+          // We want to reuse the existing automation client and channel for
+          // initiating the new navigation. Setting the
+          // is_automation_client_reused_ flag to true before calling the
+          // LaunchUrl function achieves that.
+          is_automation_client_reused_ = true;
+          LaunchUrl(url, mgr->referrer());
+          out_args->vt = VT_BOOL;
+          out_args->boolVal = VARIANT_FALSE;
+          return;
+        }
+      }
+    }
     bool should_unload = true;
     automation_client_->OnUnload(&should_unload);
     out_args->vt = VT_BOOL;
     out_args->boolVal = should_unload ? VARIANT_TRUE : VARIANT_FALSE;
   }
-}
-
-void ChromeActiveDocument::OnOpenURL(const GURL& url_to_open,
-                                     const GURL& referrer,
-                                     int open_disposition) {
-  // If the disposition indicates that we should be opening the URL in the
-  // current tab, then we can reuse the ChromeFrameAutomationClient instance
-  // maintained by the current ChromeActiveDocument instance. We cache this
-  // instance so that it can be used by the new ChromeActiveDocument instance
-  // which may be instantiated for handling the new URL.
-  if (open_disposition == CURRENT_TAB) {
-    // Grab a reference to ensure that the document remains valid.
-    AddRef();
-    g_active_doc_cache.Set(this);
-  }
-
-  BaseActiveX::OnOpenURL(url_to_open, referrer, open_disposition);
 }
 
 void ChromeActiveDocument::OnAttachExternalTab(
@@ -1054,6 +1056,8 @@ bool ChromeActiveDocument::LaunchUrl(const ChromeFrameUrl& cf_url,
     }
   }
 
+  document_url_ = cf_url.gurl().spec();
+
   url_.Allocate(UTF8ToWide(cf_url.gurl().spec()).c_str());
   if (cf_url.attach_to_external_tab()) {
     automation_client_->AttachExternalTab(cf_url.cookie());
@@ -1078,7 +1082,7 @@ bool ChromeActiveDocument::LaunchUrl(const ChromeFrameUrl& cf_url,
     // If no profile was given, then make use of the host process's name.
     if (profile.empty())
       profile = GetHostProcessName(false);
-    return InitializeAutomation(profile, L"", IsIEInPrivate(),
+    return InitializeAutomation(profile, IsIEInPrivate(),
                                 false, cf_url.gurl(), GURL(referrer),
                                 false);
   }
@@ -1381,13 +1385,13 @@ bool ChromeActiveDocument::IsNewNavigation(
   // the renderer(WebKit). Condition 1 below has to be true along with the
   // any of the other conditions below.
   // 1. The navigation notification flags passed in as the flags parameter
-  //    is not INVALIDATE_LOAD which indicates that the loading state of the
-  //    tab changed.
+  //    is not INVALIDATE_TYPE_LOAD which indicates that the loading state of
+  //    the tab changed.
   // 2. The navigation index is greater than 0 which means that a top level
   //    navigation was initiated on the current external tab.
   // 3. The navigation type has changed.
   // 4. The url or the referrer are different.
-  if (flags == TabContents::INVALIDATE_LOAD)
+  if (flags == content::INVALIDATE_TYPE_LOAD)
     return false;
 
   if (new_navigation_info.navigation_index <= 0)

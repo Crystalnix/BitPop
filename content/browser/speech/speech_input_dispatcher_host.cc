@@ -1,11 +1,16 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/speech/speech_input_dispatcher_host.h"
 
 #include "base/lazy_instance.h"
+#include "content/browser/resource_context.h"
+#include "content/browser/speech/speech_input_preferences.h"
 #include "content/common/speech_input_messages.h"
+#include "content/public/browser/content_browser_client.h"
+
+using content::BrowserThread;
 
 namespace speech_input {
 
@@ -45,7 +50,7 @@ class SpeechInputDispatcherHost::SpeechInputCallers {
 };
 
 static base::LazyInstance<SpeechInputDispatcherHost::SpeechInputCallers>
-    g_speech_input_callers(base::LINKER_INITIALIZED);
+    g_speech_input_callers = LAZY_INSTANCE_INITIALIZER;
 
 SpeechInputDispatcherHost::SpeechInputCallers::SpeechInputCallers()
     : next_id_(1) {
@@ -101,12 +106,22 @@ int SpeechInputDispatcherHost::SpeechInputCallers::request_id(int id) {
 
 //-------------------------- SpeechInputDispatcherHost -------------------------
 
-SpeechInputManager::AccessorMethod*
-    SpeechInputDispatcherHost::manager_accessor_ = &SpeechInputManager::Get;
+SpeechInputManager* SpeechInputDispatcherHost::manager_;
 
-SpeechInputDispatcherHost::SpeechInputDispatcherHost(int render_process_id)
+void SpeechInputDispatcherHost::set_manager(SpeechInputManager* manager) {
+  manager_ = manager;
+}
+
+SpeechInputDispatcherHost::SpeechInputDispatcherHost(
+    int render_process_id,
+    net::URLRequestContextGetter* context_getter,
+    SpeechInputPreferences* speech_input_preferences,
+    const content::ResourceContext* resource_context)
     : render_process_id_(render_process_id),
-      may_have_pending_requests_(false) {
+      may_have_pending_requests_(false),
+      context_getter_(context_getter),
+      speech_input_preferences_(speech_input_preferences),
+      resource_context_(resource_context) {
   // This is initialized by Browser. Do not add any non-trivial
   // initialization here, instead do it lazily when required (e.g. see the
   // method |manager()|) or add an Init() method.
@@ -123,7 +138,9 @@ SpeechInputDispatcherHost::~SpeechInputDispatcherHost() {
 }
 
 SpeechInputManager* SpeechInputDispatcherHost::manager() {
-  return (*manager_accessor_)();
+  if (manager_)
+    return manager_;
+  return content::GetContentClient()->browser()->GetSpeechInputManager();
 }
 
 bool SpeechInputDispatcherHost::OnMessageReceived(
@@ -147,13 +164,17 @@ bool SpeechInputDispatcherHost::OnMessageReceived(
 
 void SpeechInputDispatcherHost::OnStartRecognition(
     const SpeechInputHostMsg_StartRecognition_Params &params) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   int caller_id = g_speech_input_callers.Get().CreateId(
       render_process_id_, params.render_view_id, params.request_id);
   manager()->StartRecognition(this, caller_id,
                               render_process_id_,
                               params.render_view_id, params.element_rect,
                               params.language, params.grammar,
-                              params.origin_url);
+                              params.origin_url,
+                              context_getter_.get(),
+                              speech_input_preferences_.get(),
+                              resource_context_->audio_manager());
 }
 
 void SpeechInputDispatcherHost::OnCancelRecognition(int render_view_id,
@@ -176,7 +197,7 @@ void SpeechInputDispatcherHost::OnStopRecording(int render_view_id,
 }
 
 void SpeechInputDispatcherHost::SetRecognitionResult(
-    int caller_id, const SpeechInputResultArray& result) {
+    int caller_id, const content::SpeechInputResult& result) {
   VLOG(1) << "SpeechInputDispatcherHost::SetRecognitionResult enter";
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   int caller_render_view_id =

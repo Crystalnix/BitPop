@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -29,6 +29,12 @@ then
   *Darwin*10.[0-9].[0-9]*i386*)
     PLATFORM="mac_10.6"
     ;;
+  *Darwin*10.[0-9].[0-9]*x86_64*)
+    PLATFORM="mac_10.6"
+    ;;
+  *Darwin*11.[0-9].[0-9]*x86_64*)
+    PLATFORM="mac_10.7"
+    ;;
   *)
     echo "Unknown platform:" >&2
     uname -a >&2
@@ -43,7 +49,9 @@ then
     CHROME_VALGRIND="$THISDIR/../../third_party/valgrind/$PLATFORM"
 
     # TODO(timurrrr): readlink -f is not present on Mac...
-    if [ "$PLATFORM" != "mac" ] && [ "$PLATFORM" != "mac_10.6" ]
+    if [ "$PLATFORM" != "mac" ] && \
+      [ "$PLATFORM" != "mac_10.6" ] && \
+      [ "$PLATFORM" != "mac_10.7" ]
     then
       # Get rid of all "../" dirs
       CHROME_VALGRIND=`readlink -f $CHROME_VALGRIND`
@@ -54,18 +62,6 @@ then
       # We couldn't find the binaries in third_party/valgrind
       CHROME_VALGRIND=""
     fi
-  fi
-
-  if [ "$CHROME_VALGRIND" = "" ]
-  then
-    # Couldn't find the binaries checked out from SVN.
-    # Let's try to find out valgrind in /usr/local. Use the most recent one.
-    # See build-valgrind-for-chromium.sh and its history for these constants.
-    for SVNREV in '10880-redzone' '10880'
-    do
-      CHROME_VALGRIND=/usr/local/valgrind-$SVNREV
-      test -x $CHROME_VALGRIND/bin/valgrind && break
-    done
   fi
 fi
 

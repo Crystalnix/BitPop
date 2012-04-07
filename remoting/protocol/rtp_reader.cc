@@ -36,13 +36,14 @@ RtpReader::~RtpReader() {
 }
 
 void RtpReader::Init(net::Socket* socket,
-                     OnMessageCallback* on_message_callback) {
-  on_message_callback_.reset(on_message_callback);
+                     const OnMessageCallback& on_message_callback) {
+  DCHECK(!on_message_callback.is_null());
+  on_message_callback_ = on_message_callback;
   SocketReaderBase::Init(socket);
 }
 
 void RtpReader::OnDataReceived(net::IOBuffer* buffer, int data_size) {
-  RtpPacket* packet = new RtpPacket();
+  scoped_ptr<RtpPacket> packet(new RtpPacket());
   int header_size = UnpackRtpHeader(reinterpret_cast<uint8*>(buffer->data()),
                                     data_size, packet->mutable_header());
   if (header_size < 0) {
@@ -72,9 +73,8 @@ void RtpReader::OnDataReceived(net::IOBuffer* buffer, int data_size) {
 
   int16 delta = sequence_number - max_sequence_number_;
   if (delta <= -kMaxMisorder || delta > kMaxDropout) {
-    // TODO(sergeyu): Do we need to handle restarted trasmission?
+    // TODO(sergeyu): Do we need to handle restarted transmission?
     LOG(WARNING) << "Received RTP packet with invalid sequence number.";
-    delete packet;
     return;
   }
 
@@ -90,7 +90,7 @@ void RtpReader::OnDataReceived(net::IOBuffer* buffer, int data_size) {
 
   ++total_packets_received_;
 
-  on_message_callback_->Run(packet);
+  on_message_callback_.Run(packet.release());
 }
 
 void RtpReader::GetReceiverReport(RtcpReceiverReport* report) {

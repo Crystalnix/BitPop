@@ -6,14 +6,14 @@
 #define CHROME_BROWSER_UI_WEBUI_FLAGS_UI_H_
 #pragma once
 
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_controller.h"
 
 class PrefService;
 class RefCountedMemory;
 
-class FlagsUI : public WebUI {
+class FlagsUI : public content::WebUIController {
  public:
-  explicit FlagsUI(TabContents* contents);
+  explicit FlagsUI(content::WebUI* web_ui);
 
   static RefCountedMemory* GetFaviconResourceBytes();
   static void RegisterPrefs(PrefService* prefs);

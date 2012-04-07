@@ -4,80 +4,32 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/browser_thread_impl.h"
 #include "content/browser/mock_resource_context.h"
-#include "content/browser/renderer_host/global_request_id.h"
+#include "content/browser/renderer_host/dummy_resource_handler.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
-#include "content/browser/renderer_host/resource_handler.h"
 #include "content/browser/renderer_host/resource_queue.h"
+#include "content/public/browser/global_request_id.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
+using content::BrowserThreadImpl;
+using content::DummyResourceHandler;
+using content::GlobalRequestID;
 
 namespace {
 
 const char kTestUrl[] = "data:text/plain,Hello World!";
 
-class DummyResourceHandler : public ResourceHandler {
- public:
-  DummyResourceHandler() {
-  }
-
-  bool OnUploadProgress(int request_id, uint64 position, uint64 size) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnRequestRedirected(int request_id, const GURL& url,
-                                   ResourceResponse* response,
-                                   bool* defer) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnWillStart(int request_id, const GURL& url, bool* defer) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnWillRead(int request_id,
-                          net::IOBuffer** buf,
-                          int* buf_size,
-                          int min_size) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnReadCompleted(int request_id, int* bytes_read) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual bool OnResponseCompleted(int request_id,
-                                   const net::URLRequestStatus& status,
-                                   const std::string& security_info) {
-    NOTREACHED();
-    return true;
-  }
-
-  virtual void OnRequestClosed() {
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(DummyResourceHandler);
-};
-
 ResourceDispatcherHostRequestInfo* GetRequestInfo(int request_id) {
   return new ResourceDispatcherHostRequestInfo(
-      new DummyResourceHandler(), ChildProcessInfo::RENDER_PROCESS, 0, 0, 0,
-      request_id, ResourceType::MAIN_FRAME, 0, false, false, false,
-      &content::MockResourceContext::GetInstance());
+      new DummyResourceHandler(), content::PROCESS_TYPE_RENDERER, 0, 0, 0,
+      request_id, false, -1, false, -1, ResourceType::MAIN_FRAME,
+      content::PAGE_TRANSITION_LINK, 0, false, false, false,
+      WebKit::WebReferrerPolicyDefault,
+      content::MockResourceContext::GetInstance());
 }
 
 void InitializeQueue(ResourceQueue* queue, ResourceQueueDelegate* delegate) {
@@ -130,7 +82,6 @@ class AlwaysDelayingDelegate : public ResourceQueueDelegate {
       net::URLRequest* request,
       const ResourceDispatcherHostRequestInfo& request_info,
       const GlobalRequestID& request_id) {
-    delayed_requests_.push_back(request_id);
     return true;
   }
 
@@ -139,21 +90,14 @@ class AlwaysDelayingDelegate : public ResourceQueueDelegate {
   }
 
   void StartDelayedRequests() {
-    if (!resource_queue_)
-      return;
-
-    for (RequestList::iterator i = delayed_requests_.begin();
-         i != delayed_requests_.end(); ++i) {
-      resource_queue_->StartDelayedRequest(this, *i);
-    }
+    if (resource_queue_)
+      resource_queue_->StartDelayedRequests(this);
   }
 
  private:
   typedef std::vector<GlobalRequestID> RequestList;
 
   ResourceQueue* resource_queue_;
-
-  RequestList delayed_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(AlwaysDelayingDelegate);
 };
@@ -183,8 +127,8 @@ class ResourceQueueTest : public testing::Test,
 
  private:
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread io_thread_;
+  BrowserThreadImpl ui_thread_;
+  BrowserThreadImpl io_thread_;
 };
 
 TEST_F(ResourceQueueTest, Basic) {
@@ -263,6 +207,32 @@ TEST_F(ResourceQueueTest, TwoDelegates) {
   MessageLoop::current()->RunAllPending();
   EXPECT_EQ(0, response_started_count_);
   always_delaying_delegate.StartDelayedRequests();
+  MessageLoop::current()->RunAllPending();
+  EXPECT_EQ(1, response_started_count_);
+
+  queue.Shutdown();
+}
+
+TEST_F(ResourceQueueTest, TwoDelayingDelegates) {
+  ResourceQueue queue;
+
+  AlwaysDelayingDelegate always_delaying_delegate1;
+  AlwaysDelayingDelegate always_delaying_delegate2;
+  InitializeQueue(
+      &queue, &always_delaying_delegate1, &always_delaying_delegate2);
+
+  net::URLRequest request(GURL(kTestUrl), this);
+  scoped_ptr<ResourceDispatcherHostRequestInfo> request_info(GetRequestInfo(0));
+  EXPECT_EQ(0, response_started_count_);
+  queue.AddRequest(&request, *request_info.get());
+  MessageLoop::current()->RunAllPending();
+  EXPECT_EQ(0, response_started_count_);
+
+  always_delaying_delegate1.StartDelayedRequests();
+  MessageLoop::current()->RunAllPending();
+  EXPECT_EQ(0, response_started_count_);
+
+  always_delaying_delegate2.StartDelayedRequests();
   MessageLoop::current()->RunAllPending();
   EXPECT_EQ(1, response_started_count_);
 

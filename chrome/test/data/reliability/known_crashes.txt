@@ -106,7 +106,7 @@ SUBSTRING : pluginprocesshost::replytorenderer___pluginprocesshost::onchannelcre
 PREFIX : windowdragresponsetask::run___messageloop::runtask
 
 # 31936
-PREFIX : webcore::uniscribehelpertextrun::uniscribehelpertextrun___webcore::font::floatwidthforcomplextext___webcore::font::floatwidth___webcore::renderimage::setimagesizeforalttext
+SUBSTRING : webcore::uniscribehelpertextrun::uniscribehelpertextrun___webcore::font::floatwidthforcomplextext
 
 # 61593
 PREFIX : webcore::font::glyphdataforcharacter___webcore::widthiterator::advance___webcore::font::floatwidthforsimpletext___webcore::font::floatwidth___webcore::renderimage::setimagesizeforalttext___webcore::renderimage::imagechanged
@@ -123,24 +123,11 @@ PREFIX : resourcemessagefilter::ongotplugininfo
 # 63659
 PREFIX : hungwindowdetector::checkchildwindow___hungwindowdetector::childwndenumproc___hungwindowdetector::ontick___workerthreadticker::timertask::run
 
-# 66795
-PREFIX : webkit_glue::resourcefetcher::didfail___webkit_glue::weburlloaderimpl::context::oncompletedrequest___resourcedispatcher::onrequestcomplete___ipc::messagewithtuple<tuple4<int,urlrequeststatus,std::basic_string<char,std::char_traits<char>,std::allocator<char> >,base::time> >::dispatch<resourcedispatcher,void (__thiscall resourcedispatcher::*)(int,urlrequeststatus const &,std::basic_string<char,std::char_traits<char>,std::allocator<char> > const &,base::time const &)>___resourcedispatcher::dispatchmessagew___resourcedispatcher::onmessagereceived___childthread::onmessagereceived___runnablemethod<selectfiledialogimpl,void (__thiscall selectfiledialogimpl::*)(selectfiledialogimpl::executeselectparams const &),tuple1<selectfiledialogimpl::executeselectparams> >::run___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain
-PREFIX : webkit_glue::resourcefetcher::didfail___webkit_glue::weburlloaderimpl::context::oncompletedrequest___resourcedispatcher::onrequestcomplete___ipc::messagewithtuple<tuple4<int,urlrequeststatus,std::basic_string<char,std::char_traits<char>,std::allocator<char> >,base::time> >::dispatch<resourcedispatcher,resourcedispatcher,void (__thiscall resourcedispatcher::*)(int,urlrequeststatus const &,std::basic_string<char,std::char_traits<char>,std::allocator<char> > const &,base::time const &)>___resourcedispatcher::dispatchmessagew___resourcedispatcher::onmessagereceived___childthread::onmessagereceived___runnablemethod<profilewriter,void (__thiscall profilewriter::*)(gurl const &),tuple1<gurl> >::run___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain
-
-# 72796
-PREFIX : webcore::timerbase::timerbase___webcore::suspendabletimer::suspendabletimer___webcore::domtimer::domtimer___webcore::domtimer::install___webcore::windowsettimeoutimpl___webcore::v8domwindow::settimeoutcallback___v8::internal::handleapicallhelper<0>___v8::internal::builtin_handleapicall___v8::internal::invoke___v8::internal::execution::call___v8::function::call___webcore::v8proxy::callfunction___webcore::scheduledaction::execute___webcore::scheduledaction::execute___webcore::domtimer::fired___webcore::threadtimers::sharedtimerfiredinternal___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain___`anonymous namespace'::runnamedprocesstypemain___chromemain___maindllloader::launch___wwinmain_____tmaincrtstartup
-
 # 72832
 PREFIX : webcore::renderblock::marginbeforeforchild___webcore::renderblock::addoverflowfromfloats___webcore::renderblock::computeoverflow___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutpositionedobjects___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::frameview::layout___webcore::document::updatelayout___webcore::document::updatelayoutignorependingstylesheets___webcore::element::offsetwidth___webcore::elementinternal::offsetwidthattrgetter
 
-# 73575
-PREFIX: webkit::webnode::document___autofill::formmanager::resetframe___renderview::willclose___webkit::frameloaderclientimpl::dispatchwillclose___webcore::frameloader::closeolddatasources___webcore::frameloader::commitprovisionalload___webcore::documentloader::commitload___webcore::documentloader::receiveddata___webcore::mainresourceloader::adddata___webcore::resourceloader::didreceivedata___webcore::mainresourceloader::didreceivedata___webcore::resourceloader::didreceivedata___webcore::resourcehandleinternal::didreceivedata___webkit_glue::weburlloaderimpl::context::onreceiveddata___resourcedispatcher::onreceiveddata___ipc::messagewithtuple<tuple3<int,void *,int> >::dispatch<resourcedispatcher,resourcedispatcher,int,void *,int>___resourcedispatcher::dispatchmessagew___resourcedispatcher::onmessagereceived___childthread::onmessagereceived___runnablemethod<spellcheckhost,void (__thiscall spellcheckhost::*)(std::basic_string<char,std::char_traits<char>,std::allocator<char> > const &),tuple1<std::basic_string<char,std::char_traits<char>,std::allocator<char> > > >::run___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain___`anonymous namespace'::runnamedprocesstypemain___chromemain___maindllloader::launch___wwinmain_____tmaincrtstartup
-
 # 74607
 PREFIX: webcore::renderstyle::getshadowverticalextent___webcore::inlineflowbox::addtextboxvisualoverflow___webcore::inlineflowbox::computeoverflow___webcore::renderblock::layoutinlinechildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutpositionedobjects___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::rendertablecell::layout___webcore::rendertablerow::layout___webcore::rendertablesection::layout___webcore::rendertable::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderblock::layoutblockchild___webcore::renderblock::layoutblockchildren___webcore::renderblock::layoutblock___webcore::renderblock::layout___webcore::renderview::layout___webcore::frameview::layout___webcore::frameview::updatelayoutandstyleifneededrecursive___renderwidget::dodeferredupdate___renderwidget::onupdaterectack___ipc::message::dispatch<renderview,renderview>___renderwidget::onmessagereceived___renderview::onmessagereceived___messagerouter::routemessage___messagerouter::onmessagereceived___childthread::onmessagereceived___runnablemethod<cancelablerequest<callbackrunner<tuple3<int,scoped_refptr<history::mostvisitedthumbnails>,bool> > >,void (__thiscall cancelablerequest<callbackrunner<tuple3<int,scoped_refptr<history::mostvisitedthumbnails>,bool> > >::*)(tuple3<int,scoped_refptr<history::mostvisitedthumbnails>,bool> const &),tuple1<tuple3<int,scoped_refptr<history::mostvisitedthumbnails>,bool> > >::run___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain___`anonymous namespace'::runnamedprocesstypemain___chromemain___maindllloader::launch___wwinmain_____tmaincrtstartup
-
-# 75352
-PREFIX: webcore::reportfatalerrorinv8___v8::internal::v8::fatalprocessoutofmemory___v8::internal::setelement___v8::internal::runtime::setobjectproperty___v8::internal::runtime_setproperty___v8::internal::invoke___v8::internal::execution::call___v8::script::run___webcore::v8proxy::runscript___webcore::v8proxy::evaluate___webcore::scriptcontroller::evaluate___webcore::scriptelement::executescript___webcore::scriptelement::preparescript___webcore::htmlscriptrunner::runscript___webcore::htmlscriptrunner::execute___webcore::htmldocumentparser::runscriptsforpausedtreebuilder___webcore::htmldocumentparser::cantakenexttoken___webcore::htmldocumentparser::pumptokenizer___webcore::htmldocumentparser::resumeparsingafterscriptexecution___webcore::htmldocumentparser::notifyfinished___webcore::cachedscript::checknotify___webcore::cachedscript::data___webcore::cachedresourcerequest::didfinishloading___webcore::subresourceloader::didfinishloading___webcore::resourceloader::didfinishloading___webcore::resourcehandleinternal::didfinishloading___webkit_glue::weburlloaderimpl::context::oncompletedrequest___resourcedispatcher::onrequestcomplete___ipc::messagewithtuple<tuple4<int,net::urlrequeststatus,std::basic_string<char,std::char_traits<char>,std::allocator<char> >,base::time> >::dispatch<resourcedispatcher,resourcedispatcher,void (__thiscall resourcedispatcher::*)(int,net::urlrequeststatus const &,std::basic_string<char,std::char_traits<char>,std::allocator<char> > const &,base::time const &)>___resourcedispatcher::dispatchmessagew___resourcedispatcher::onmessagereceived___childthread::onmessagereceived___runnablemethod<cancelablerequest<callbackrunner<tuple2<int,std::vector<history::mostvisitedurl,std::allocator<history::mostvisitedurl> > > > >,void (__thiscall cancelablerequest<callbackrunner<tuple2<int,std::vector<history::mostvisitedurl,std::allocator<history::mostvisitedurl> > > > >::*)(tuple2<int,std::vector<history::mostvisitedurl,std::allocator<history::mostvisitedurl> > > const &),tuple1<tuple2<int,std::vector<history::mostvisitedurl,std::allocator<history::mostvisitedurl> > > > >::run___messageloop::runtask___messageloop::dowork___base::messagepumpdefault::run___messageloop::runinternal___messageloop::run___renderermain___`anonymous namespace'::runnamedprocesstypemain___chromemain___maindllloader::launch___wwinmain_____tmaincrtstartup
 
 # 75368
 PREFIX: skpixelref::unlockpixels___skbitmap::freepixels___webcore::framedata::clear___wtf::vector<webcore::framedata,0>::shrink___webcore::bitmapimage::~bitmapimage___webcore::bitmapimage::`scalar deleting destructor'___webcore::cachedimage::~cachedimage___webcore::cachedimage::`scalar deleting destructor'
@@ -172,17 +159,60 @@ PREFIX: webcore::implicitanimation::~implicitanimation___webcore::implicitanimat
 # 21054
 REGEX : ^deletetask.*::run___messageloop::runtask___messageloop::dowork
 
-# 83657
-PREFIX: base::internal::lockimpl::lock___extensioncontentsettingsstore::geteffectivecontentsetting___content_settings::extensionprovider::getcontentsetting
-
-# 83674
-PREFIX: webcore::cssstyleselector::loadpendingimages___webcore::cssstyleselector::styleforelement___webcore::node::styleforrenderer
-
-# 83676
-PREFIX: webcore::renderstyle::haspseudostyle___webcore::cssstyleselector::styleforelement___webcore::node::styleforrenderer
-
-# 84048
-PREFIX: webcore::element::getattribute___webcore::floatwidthofsubstringusingsvgfont___webcore::svgtextrunrenderingcontext::floatwidthusingsvgfont___webcore::font::width
-
 # 84178
 PREFIX: `anonymous namespace'::establishchannelcallback::send___`anonymous namespace'::establishchannelcallback::runwithparams___gpuprocesshost::sendoutstandingreplies
+
+# 87593
+PREFIX: webcore::cachedresource::stoploading___webcore::cachedresourcerequest::didfail___webcore::subresourceloader::didfail___webcore::resourceloader::didfail___webcore::resourcehandleinternal::didfail___webkit_glue::weburlloaderimpl::context::oncompletedrequest___resourcedispatcher::onrequestcomplete
+
+# 88061
+PREFIX: `anonymous namespace'::invalidparameter____purecall___windowdragresponsetask::run___`anonymous namespace'::taskclosureadapter::run___messageloop::runtask
+
+# 89570
+REGEX: base::internal::invokerstorage1.*___browsermainparts::~browsermainparts
+
+# 89697
+PREFIX: `anonymous namespace'::purecall____purecall___renderviewhost::onmessagereceived___browserrenderprocesshost::onchannelerror___`anonymous namespace'::taskclosureadapter::run___messageloop::runtask
+
+# 90200
+SUBSTRING: resourcedispatcherhost::cancelrequestsforcontext___base::internal::invoker2<0,base::internal::invokerstorage2<void (__thiscall resourcedispatcherhost::*)(content::resourcecontext const *),base::internal::unretainedwrapper<resourcedispatcherhost>,profileiodata::resourcecontext *>,void (__thiscall resourcedispatcherhost::*)(content::resourcecontext const *)>::doinvoke
+
+# 90393
+PREFIX: webkit_glue::datasourceinitdone___base::internal::invoker3<0,base::internal::invokerstorage3<void (__cdecl*)(callbackrunner<tuple1<webkit_glue::webdatasource *> > *,base::callback<void __cdecl(enum media::pipelinestatus,media::datasource *)> const &,scoped_refptr<webkit_glue::webdatasource> const &,enum media::pipelinestatus),callbackrunner<tuple1<webkit_glue::webdatasource *> > *,base::callback<void __cdecl(enum media::pipelinestatus,media::datasource *)>,scoped_refptr<webkit_glue::webdatasource> >,void (__cdecl*)(callbackrunner<tuple1<webkit_glue::webdatasource *> > *,base::callback<void __cdecl(enum media::pipelinestatus,media::datasource *)> const &,scoped_refptr<webkit_glue::webdatasource> const &,enum media::pipelinestatus)>::doinvoke___webkit_glue::buffereddatasource::doneinitialization_locked___webkit_glue::buffereddatasource::httpinitialstartcallback
+
+# 90577
+PREFIX: messageloop::calculatedelayedruntime___messageloop::posttask___media::pipelineimpl::ondemuxerbuilt
+
+# 90579
+PREFIX: messageloop::calculatedelayedruntime___messageloop::posttask___media::ffmpegdemuxer::initialize
+
+# 89679
+# 90796
+REGEX: (^|`anonymous namespace'::purecall____purecall___)renderviewhost::onmessagereceived___browserrenderprocesshost::onchannelerror___(`anonymous namespace'|base::subtle)::taskclosureadapter::run___messageloop::runtask___messageloop::dowork___base::messagepumpforui::dorunloop___base::messagepumpwin::runwithdispatcher___messageloop::runinternal___messageloopforui::run___`anonymous namespace'::runuimessageloop___browsermain___`anonymous namespace'::runnamedprocesstypemain___chromemain___maindllloader::launch___wwinmain_____tmaincrtstartup
+
+# 93459
+PREFIX: webcore::htmlsourcetracker::sourcefortoken___webcore::htmldocumentparser::sourcefortoken___webcore::xssauditor::eraseattributeifinjected___webcore
+
+# 95069
+PREFIX: `anonymous namespace'::invalidparameter____purecall___memcpy_s___std::basic_string<char,std::char_traits<char>,std::allocator<char> >::assign___gurl::gurl___`anonymous namespace'::do_malloc___malloc___scoped_refptr<resourcehandler>::operator=___resourcedispatcherhost::beginrequest___resourcehostmsg_requestresource::dispatch<resourcedispatcherhost,resourcedispatcherhost,int,resourcehostmsg_request const &>
+
+# 95289
+PREFIX: net::networkdelegate::notifycompleted___net::urlrequest::docancel___net::urlrequest::~urlrequest___stldeletevalues<std::map<globalrequestid,net::urlrequest *,std::less<globalrequestid>,std::allocator<std::pair<globalrequestid const ,net::urlrequest *> > > >___resourcedispatcherhost::onshutdown
+
+# 95506
+PREFIX: base::debug::breakdebugger___`anonymous namespace'::silentruntimeasserthandler___logging::logmessage::~logmessage___`anonymous namespace'::shutdownwatchdogthread::alarm___base::watchdog::threaddelegate::threadmain
+
+# 95951
+PREFIX: net::sdchmanager::getavaildictionarylist___net::urlrequesthttpjob::addextraheaders___net::urlrequesthttpjob::start___net::urlrequest::startjob___net::urlrequest::start___urlfetcher::core::startoniothread
+
+# 95953
+REGEX: std::_tree<std::_tmap_traits<std::basic_string.*,remoting::javascriptiqrequest *,std::less.*,remoting::javascriptiqrequest *> >,0> >::_lbound___std::_tree<std::_tmap_traits.*basic_string.*,extensioncontentsettingsstore::extensionentry *,std::less.*,extensioncontentsettingsstore::extensionentry *> >,0> >::find___net::sdchmanager::isinsupporteddomain___net::urlrequesthttpjob::addextraheaders
+
+# 95954
+PREFIX: net::sdchmanager::isinsupporteddomain___net::urlrequesthttpjob::addextraheaders___net::urlrequesthttpjob::start___net::urlrequest::startjob___net::urlrequest::start___urlfetcher::core::startoniothread
+
+# 96234
+PREFIX: std::_tree<std::_tmap_traits<syncable::id,int,std::less<syncable::id>,std::allocator<std::pair<syncable::id const ,int> >,0> >::_lbound___std::_tree<std::_tmap_traits<std::basic_string<char,std::char_traits<char>,std::allocator<char> >,fileapi::filesystemdirectorydatabase *,std::less<std::basic_string<char,std::char_traits<char>,std::allocator<char> > >,std::allocator<std::pair<std::basic_string<char,std::char_traits<char>,std::allocator<char> > const ,fileapi::filesystemdirectorydatabase *> >,0> >::find___net::sdchmanager::isinsupporteddomain___net::urlrequesthttpjob::addextraheaders
+
+# 96235
+PREFIX: browser::hidebookmarkbubbleview___browserview::onwidgetmove___views::nativewidgetwin::onmove

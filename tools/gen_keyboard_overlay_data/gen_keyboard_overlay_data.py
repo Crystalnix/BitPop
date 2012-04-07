@@ -1,5 +1,5 @@
-#!/usr/bin/python
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,30 +8,30 @@
 This script fetches data from the keyboard layout and hotkey data spreadsheet,
 and output the data depending on the option.
 
-  --cc: Generates C++ code snippet to be inserted into
+  --cc: Rewrites a part of C++ code in
       chrome/browser/chromeos/webui/keyboard_overlay_ui.cc
 
-  --grd: Generates grd message snippet to be inserted into
+  --grd: Rewrites a part of grd messages in
       chrome/app/generated_resources.grd
 
-  --js: Generates a JavaScript file used as
+  --js: Rewrites the entire JavaScript code in
       chrome/browser/resources/keyboard_overlay/keyboard_overlay_data.js
 
-  --altgr: Generates a list of layouts to be inserted into
+  --altgr: Rewrites a list of layouts in
       chrome/browser/chromeos/input_method/xkeyboard.cc
 
-
-These options can be specified at the same time, and the files are generated
-with corresponding extensions appended at the end of the name specified by
---out.
+These options can be specified at the same time.
 
 e.g.
-python gen_keyboard_overlay_data.py --cc --grd --js --out=keyboard_overlay_data
+python gen_keyboard_overlay_data.py --cc --grd --js
 
-The command above generates keyboard_overlay_data.cc,
-keyboard_overlay_data.grd, and keyboard_overlay_data.js.
+The output directory of the generated files can be changed with --outdir.
+
+e.g. (This will generate tmp/xkeyboard.cc)
+python gen_keyboard_overlay_data.py --outdir=tmp --altgr
 """
 
+import cStringIO
 import datetime
 import gdata.spreadsheet.service
 import getpass
@@ -47,6 +47,19 @@ MODIFIER_ALT = 1 << 2
 
 KEYBOARD_GLYPH_SPREADSHEET_KEY = '0Ao3KldW9piwEdExLbGR6TmZ2RU9aUjFCMmVxWkVqVmc'
 HOTKEY_SPREADSHEET_KEY = '0AqzoqbAMLyEPdE1RQXdodk1qVkFyTWtQbUxROVM1cXc'
+CC_OUTDIR = 'chrome/browser/ui/webui/chromeos'
+CC_FILENAME = 'keyboard_overlay_ui.cc'
+GRD_OUTDIR = 'chrome/app'
+GRD_FILENAME = 'generated_resources.grd'
+JS_OUTDIR = 'chrome/browser/resources/chromeos'
+JS_FILENAME = 'keyboard_overlay_data.js'
+ALTGR_OUTDIR = 'chrome/browser/chromeos/input_method'
+ALTGR_FILENAME = 'xkeyboard_data.h'
+CC_START = r'IDS_KEYBOARD_OVERLAY_INSTRUCTIONS_HIDE },'
+CC_END = r'};'
+GRD_START = """Escape to hide
+      </message>"""
+GRD_END = r'    </if>'
 
 LABEL_MAP = {
   'glyph_arrow_down': 'down',
@@ -63,7 +76,7 @@ LABEL_MAP = {
   # Kana/Eisu key on Japanese keyboard
   'glyph_ime': u'\u304b\u306a\u0020\u002f\u0020\u82f1\u6570',
   'glyph_lock': 'lock',
-  'glyph_overview': 'switch window',
+  'glyph_overview': 'maximize',
   'glyph_power': 'power',
   'glyph_right': 'right',
   'glyph_reload': 'reload',
@@ -75,6 +88,77 @@ LABEL_MAP = {
   'glyph_volume_mute': 'mute',
   'glyph_volume_up': 'vol. up',
 };
+
+INPUT_METHOD_ID_TO_OVERLAY_ID = {
+  'm17n:ar:kbd': 'ar',
+  'm17n:fa:isiri': 'ar',
+  'm17n:hi:itrans': 'hi',
+  'm17n:th:kesmanee': 'th',
+  'm17n:th:pattachote': 'th',
+  'm17n:th:tis820': 'th',
+  'm17n:vi:tcvn': 'vi',
+  'm17n:vi:telex': 'vi',
+  'm17n:vi:viqr': 'vi',
+  'm17n:vi:vni': 'vi',
+  'm17n:zh:cangjie': 'zh_TW',
+  'm17n:zh:quick': 'zh_TW',
+  'mozc': 'en_US',
+  'mozc-chewing': 'zh_TW',
+  'mozc-dv': 'en_US_dvorak',
+  'mozc-hangul': 'ko',
+  'mozc-jp': 'ja',
+  'pinyin': 'zh_CN',
+  'pinyin-dv': 'en_US_dvorak',
+  'xkb:be::fra': 'fr',
+  'xkb:be::ger': 'de',
+  'xkb:be::nld': 'nl',
+  'xkb:bg::bul': 'bg',
+  'xkb:bg:phonetic:bul': 'bg',
+  'xkb:br::por': 'pt_BR',
+  'xkb:ca::fra': 'fr_CA',
+  'xkb:ca:eng:eng': 'ca',
+  'xkb:ch::ger': 'de',
+  'xkb:ch:fr:fra': 'fr',
+  'xkb:cz::cze': 'cs',
+  'xkb:de::ger': 'de',
+  'xkb:de:neo:ger': 'de_neo',
+  'xkb:dk::dan': 'da',
+  'xkb:ee::est': 'et',
+  'xkb:es::spa': 'es',
+  'xkb:es:cat:cat': 'ca',
+  'xkb:fi::fin': 'fi',
+  'xkb:fr::fra': 'fr',
+  'xkb:gb:dvorak:eng': 'en_GB_dvorak',
+  'xkb:gb:extd:eng': 'en_GB',
+  'xkb:gr::gre': 'el',
+  'xkb:hr::scr': 'hr',
+  'xkb:hu::hun': 'hu',
+  'xkb:il::heb': 'iw',
+  'xkb:it::ita': 'it',
+  'xkb:jp::jpn': 'ja',
+  'xkb:kr:kr104:kor': 'ko',
+  'xkb:latam::spa': 'es_419',
+  'xkb:lt::lit': 'lt',
+  'xkb:lv:apostrophe:lav': 'lv',
+  'xkb:no::nob': 'no',
+  'xkb:pl::pol': 'pl',
+  'xkb:pt::por': 'pt_PT',
+  'xkb:ro::rum': 'ro',
+  'xkb:rs::srp': 'sr',
+  'xkb:ru::rus': 'ru',
+  'xkb:ru:phonetic:rus': 'ru',
+  'xkb:se::swe': 'sv',
+  'xkb:si::slv': 'sl',
+  'xkb:sk::slo': 'sk',
+  'xkb:tr::tur': 'tr',
+  'xkb:ua::ukr': 'uk',
+  'xkb:us::eng': 'en_US',
+  'xkb:us:altgr-intl:eng': 'en_US_altgr_intl',
+  'xkb:us:colemak:eng': 'en_US_colemak',
+  'xkb:us:dvorak:eng': 'en_US_dvorak',
+  'xkb:us:intl:eng': 'en_US_intl',
+  'zinnia-japanese': 'ja',
+}
 
 COPYRIGHT_HEADER_TEMPLATE=(
 """// Copyright (c) %s The Chromium Authors. All rights reserved.
@@ -89,13 +173,20 @@ GRD_SNIPPET_TEMPLATE="""      <message name="%s" desc="%s">
 """
 
 # A snippet for C++ file
-CC_SNIPPET_TEMPLATE="""  localized_strings.SetString("%s",
-      l10n_util::GetStringUTF16(%s));
+CC_SNIPPET_TEMPLATE="""  { "%s", %s },
 """
 
-ALTGR_TEMPLATE="""// These are the overlay names of layouts that shouldn't
-// remap the right alt key.
-const char* kKeepRightAltOverlays[] = {
+ALTGR_TEMPLATE=(
+"""// This file was generated by 'gen_keyboard_overlay_data.py --altgr'
+
+#ifndef CHROME_BROWSER_CHROMEOS_INPUT_METHOD_XKEYBOARD_DATA_H_
+#define CHROME_BROWSER_CHROMEOS_INPUT_METHOD_XKEYBOARD_DATA_H_
+
+namespace chromeos {
+namespace input_method {
+
+// These are the input method IDs that shouldn't remap the right alt key.
+const char* kKeepRightAltInputMethods[] = {
 %s
 };
 
@@ -104,7 +195,11 @@ const char* kCapsLockRemapped[] = {
 %s
 };
 
-"""
+}  // input_method
+}  // chromeos
+
+#endif  // CHROME_BROWSER_CHROMEOS_INPUT_METHOD_XKEYBOARD_DATA_H_
+""")
 
 def SplitBehavior(behavior):
   """Splits the behavior to compose a message or i18n-content value.
@@ -125,6 +220,16 @@ def ToMessageName(behavior):
   """
   segments = [segment.upper() for segment in SplitBehavior(behavior)]
   return 'IDS_KEYBOARD_OVERLAY_' + ('_'.join(segments))
+
+
+def ToMessageDesc(description):
+  """Composes a message description for grd file."""
+  message_desc = 'The text in the keyboard overlay to explain the shortcut'
+  if description:
+    message_desc = '%s (%s).' % (message_desc, description)
+  else:
+    message_desc += '.'
+  return message_desc
 
 
 def Toi18nContent(behavior):
@@ -182,8 +287,8 @@ def ParseOptions():
                     help='Output cc file.')
   parser.add_option('--altgr', dest='altgr', default=False, action='store_true',
                     help='Output altgr file.')
-  parser.add_option('--out', dest='out', default='keyboard_overlay_data',
-                    help='The output file name without extension.')
+  parser.add_option('--outdir', dest='outdir', default=None,
+                    help='Specify the directory files are generated.')
   (options, unused_args) = parser.parse_args()
 
   if not options.username.endswith('google.com'):
@@ -196,7 +301,8 @@ def ParseOptions():
 
   # Get the password from the terminal, if needed.
   if not options.password:
-    options.password = getpass.getpass('Password for %s: ' % options.username)
+    options.password = getpass.getpass(
+        'Application specific password for %s: ' % options.username)
   return options
 
 
@@ -257,17 +363,11 @@ def FetchSpreadsheetFeeds(client, key, sheets, cols):
 
 def FetchKeyboardGlyphData(client):
   """Fetches the keyboard glyph data from the spreadsheet."""
-  languages = ['en_US', 'en_US_colemak', 'en_US_dvorak', 'en_US_intl',
-               'en_US_altgr_intl', 'ar', 'ar_fr', 'bg', 'ca', 'cs', 'da',
-               'de', 'de_neo', 'el', 'en_fr_hybrid_CA', 'en_GB', 'en_GB_dvorak',
-               'es', 'es_419', 'et', 'fi', 'fil', 'fr', 'fr_CA', 'hi',
-               'hr', 'hu', 'id', 'it', 'iw', 'ja', 'ko', 'lt', 'lv', 'nl', 'no',
-               'pl', 'pt_BR', 'pt_PT', 'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'th',
-               'tr', 'uk', 'vi', 'zh_CN', 'zh_TW']
   glyph_cols = ['scancode', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7',
                 'p8', 'p9', 'label', 'format', 'notes']
   keyboard_glyph_data = FetchSpreadsheetFeeds(
-      client, KEYBOARD_GLYPH_SPREADSHEET_KEY, languages, glyph_cols)
+      client, KEYBOARD_GLYPH_SPREADSHEET_KEY,
+      INPUT_METHOD_ID_TO_OVERLAY_ID.values(), glyph_cols)
   ret = {}
   for lang in keyboard_glyph_data:
     ret[lang] = {}
@@ -317,7 +417,7 @@ def FetchHotkeyData(client):
   """Fetches the hotkey data from the spreadsheet."""
   hotkey_sheet = ['Cross Platform Behaviors']
   hotkey_cols = ['behavior', 'context', 'kind', 'actionctrlctrlcmdonmac',
-                 'chromeos']
+                 'chromeos', 'descriptionfortranslation']
   hotkey_data = FetchSpreadsheetFeeds(client, HOTKEY_SPREADSHEET_KEY,
                                       hotkey_sheet, hotkey_cols)
   action_to_id = {}
@@ -331,7 +431,8 @@ def FetchHotkeyData(client):
     if not action:
       continue
     behavior = line['behavior'].strip()
-    result.append((behavior, action))
+    description = line.get('descriptionfortranslation')
+    result.append((behavior, action, description))
   return result
 
 
@@ -340,76 +441,127 @@ def GenerateCopyrightHeader():
   return COPYRIGHT_HEADER_TEMPLATE % datetime.date.today().year
 
 
-def OutputJson(keyboard_glyph_data, hotkey_data, layouts, var_name, outfile):
+def UniqueBehaviors(hotkey_data):
+  """Retrieves a sorted list of unique behaviors from |hotkey_data|."""
+  return sorted(set((behavior, description) for (behavior, _, description)
+                    in hotkey_data),
+                cmp=lambda x, y: cmp(ToMessageName(x[0]), ToMessageName(y[0])))
+
+
+def GetPath(path_from_src):
+  """Returns the absolute path of the specified path."""
+  path = os.path.join(os.path.dirname(__file__), '../..', path_from_src)
+  if not os.path.isfile(path):
+    print 'WARNING: %s does not exist. Maybe moved or renamed?' % path
+  return path
+
+
+def OutputFile(outpath, snippet):
+  """Output the snippet into the specified path."""
+  out = file(outpath, 'w')
+  out.write(GenerateCopyrightHeader() + '\n')
+  out.write(snippet)
+  print 'Output ' + os.path.normpath(outpath)
+
+
+def RewriteFile(start, end, original_dir, original_filename, snippet,
+                outdir=None):
+  """Replaces a part of the specified file with snippet and outputs it."""
+  original_path = GetPath(os.path.join(original_dir, original_filename))
+  original = file(original_path, 'r')
+  original_content = original.read()
+  original.close()
+  if outdir:
+    outpath = os.path.join(outdir, original_filename)
+  else:
+    outpath = original_path
+  out = file(outpath, 'w')
+  rx = re.compile(r'%s\n.*?%s\n' % (re.escape(start), re.escape(end)),
+                  re.DOTALL)
+  new_content = re.sub(rx, '%s\n%s%s\n' % (start, snippet, end),
+                       original_content)
+  out.write(new_content)
+  out.close()
+  print 'Output ' + os.path.normpath(outpath)
+
+
+def OutputJson(keyboard_glyph_data, hotkey_data, layouts, var_name, outdir):
   """Outputs the keyboard overlay data as a JSON file."""
-  print 'Generating: %s' % outfile
   action_to_id = {}
-  for (behavior, action) in hotkey_data:
+  for (behavior, action, _) in hotkey_data:
     i18nContent = Toi18nContent(behavior)
     action_to_id[action] = i18nContent
   data = {'keyboardGlyph': keyboard_glyph_data,
           'shortcut': action_to_id,
-          'layouts': layouts}
-  out = file(outfile, 'w')
-  out.write(GenerateCopyrightHeader() + '\n')
+          'layouts': layouts,
+          'inputMethodIdToOverlayId': INPUT_METHOD_ID_TO_OVERLAY_ID}
+
+  if not outdir:
+    outdir = JS_OUTDIR
+  outpath = GetPath(os.path.join(outdir, JS_FILENAME))
   json_data =  json.dumps(data, sort_keys=True, indent=2)
   # Remove redundant spaces after ','
   json_data = json_data.replace(', \n', ',\n')
-  out.write('var %s = %s;' % (var_name, json_data))
+  snippet = 'var %s = %s;\n' % (var_name, json_data)
+  OutputFile(outpath, snippet)
 
 
-def OutputGrd(hotkey_data, outfile):
-  """Outputs a snippet used for a grd file."""
-  print 'Generating: %s' % outfile
-  desc = 'The text in the keyboard overlay to explain the shortcut.'
-  out = file(outfile, 'w')
-  for (behavior, _) in hotkey_data:
-    out.write(GRD_SNIPPET_TEMPLATE % (ToMessageName(behavior), desc, behavior))
+def OutputGrd(hotkey_data, outdir):
+  """Outputs a part of messages in the grd file."""
+  snippet = cStringIO.StringIO()
+  for (behavior, description) in UniqueBehaviors(hotkey_data):
+    snippet.write(GRD_SNIPPET_TEMPLATE %
+                  (ToMessageName(behavior), ToMessageDesc(description),
+                   behavior))
+
+  RewriteFile(GRD_START, GRD_END, GRD_OUTDIR, GRD_FILENAME, snippet.getvalue(),
+              outdir)
 
 
-def OutputCC(hotkey_data, outfile):
-  """Outputs a snippet used for C++ file."""
-  print 'Generating: %s' % outfile
-  out = file(outfile, 'w')
-  for (behavior, _) in hotkey_data:
+def OutputCC(hotkey_data, outdir):
+  """Outputs a part of code in the C++ file."""
+  snippet = cStringIO.StringIO()
+  for (behavior, _) in UniqueBehaviors(hotkey_data):
     message_name = ToMessageName(behavior)
-    # Indent the line if message_name is longer than 45 characters, which means
-    # the second line in the generated code is longer than 80 characters.
-    if len(message_name) > 45:
-      message_name = '\n          %s' % message_name
-    out.write(CC_SNIPPET_TEMPLATE % (Toi18nContent(behavior),
-                                     message_name))
+    output = CC_SNIPPET_TEMPLATE % (Toi18nContent(behavior), message_name)
+    # Break the line if the line is longer than 80 characters
+    if len(output) > 80:
+      output = output.replace(' ' + message_name, '\n    %s' % message_name)
+    snippet.write(output)
+
+  RewriteFile(CC_START, CC_END, CC_OUTDIR, CC_FILENAME, snippet.getvalue(),
+              outdir)
 
 
-def OutputAltGr(keyboard_glyph_data, outfile):
+def OutputAltGr(keyboard_glyph_data, outdir):
   """Outputs the keyboard overlay data as a JSON file."""
-  print 'Generating: %s' % outfile
-
   altgr_output = []
-  capslock_output = []
+  caps_lock_output = []
 
-  for layout in keyboard_glyph_data.keys():
+  for input_method_id, layout in INPUT_METHOD_ID_TO_OVERLAY_ID.iteritems():
     try:
       # If left and right alt have different values, this layout to the list of
       # layouts that don't remap the right alt key.
       right_alt = keyboard_glyph_data[layout]["keys"]["E0 38"]["label"].strip()
       left_alt = keyboard_glyph_data[layout]["keys"]["38"]["label"].strip()
       if right_alt.lower() != left_alt.lower():
-        altgr_output.append('  "%s",' % layout)
+        altgr_output.append('  "%s",' % input_method_id)
     except KeyError:
       pass
 
     try:
       caps_lock = keyboard_glyph_data[layout]["keys"]["E0 5B"]["label"].strip()
       if caps_lock.lower() != "search":
-        capslock_output.append('  "%s",' % layout)
+        caps_lock_output.append('  "%s",' % input_method_id)
     except KeyError:
       pass
 
-  out = file(outfile, 'w')
-  out.write(ALTGR_TEMPLATE % (
-      "\n".join(altgr_output), "\n".join(capslock_output)))
-
+  if not outdir:
+    outdir = ALTGR_OUTDIR
+  outpath = GetPath(os.path.join(outdir, ALTGR_FILENAME))
+  snippet = ALTGR_TEMPLATE % ("\n".join(sorted(altgr_output)),
+                              "\n".join(sorted(caps_lock_output)))
+  OutputFile(outpath, snippet)
 
 
 def main():
@@ -423,13 +575,13 @@ def main():
   if options.js:
     layouts = FetchLayoutsData(client)
     OutputJson(keyboard_glyph_data, hotkey_data, layouts, 'keyboardOverlayData',
-               options.out + '.js')
+               options.outdir)
   if options.grd:
-    OutputGrd(hotkey_data, options.out + '.grd')
+    OutputGrd(hotkey_data, options.outdir)
   if options.cc:
-    OutputCC(hotkey_data, options.out + '.cc')
+    OutputCC(hotkey_data, options.outdir)
   if options.altgr:
-    OutputAltGr(keyboard_glyph_data, options.out + '.altgr')
+    OutputAltGr(keyboard_glyph_data, options.outdir)
 
 
 if __name__ == '__main__':

@@ -12,15 +12,15 @@
 REGISTER_TEST_CASE(UMA);
 
 bool TestUMA::Init() {
-  uma_interface_ = reinterpret_cast<PPB_UMA_Private const*>(
+  uma_interface_ = static_cast<const PPB_UMA_Private*>(
       pp::Module::Get()->GetBrowserInterface(PPB_UMA_PRIVATE_INTERFACE));
   return !!uma_interface_;
 }
 
-void TestUMA::RunTest() {
-  instance_->LogTest("Count", TestCount());
-  instance_->LogTest("Time", TestTime());
-  instance_->LogTest("Enum", TestEnum());
+void TestUMA::RunTests(const std::string& filter) {
+  RUN_TEST(Count, filter);
+  RUN_TEST(Time, filter);
+  RUN_TEST(Enum, filter);
 }
 
 std::string TestUMA::TestCount() {

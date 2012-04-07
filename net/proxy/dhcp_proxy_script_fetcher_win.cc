@@ -1,11 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/proxy/dhcp_proxy_script_fetcher_win.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/metrics/histogram.h"
 #include "base/perftimer.h"
+#include "base/threading/worker_pool.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/dhcp_proxy_script_adapter_fetcher_win.h"
 
@@ -35,9 +38,8 @@ namespace net {
 DhcpProxyScriptFetcherWin::DhcpProxyScriptFetcherWin(
     URLRequestContext* url_request_context)
     : state_(STATE_START),
-      ALLOW_THIS_IN_INITIALIZER_LIST(fetcher_callback_(
-          this, &DhcpProxyScriptFetcherWin::OnFetcherDone)),
       num_pending_fetchers_(0),
+      destination_string_(NULL),
       url_request_context_(url_request_context) {
   DCHECK(url_request_context_);
 }
@@ -45,10 +47,15 @@ DhcpProxyScriptFetcherWin::DhcpProxyScriptFetcherWin(
 DhcpProxyScriptFetcherWin::~DhcpProxyScriptFetcherWin() {
   // Count as user-initiated if we are not yet in STATE_DONE.
   Cancel();
+
+  // The WeakPtr we passed to the worker thread may be destroyed on the
+  // worker thread.  This detaches any outstanding WeakPtr state from
+  // the current thread.
+  base::SupportsWeakPtr<DhcpProxyScriptFetcherWin>::DetachFromThread();
 }
 
 int DhcpProxyScriptFetcherWin::Fetch(string16* utf16_text,
-                                     CompletionCallback* callback) {
+                                     const CompletionCallback& callback) {
   DCHECK(CalledOnValidThread());
   if (state_ != STATE_START && state_ != STATE_DONE) {
     NOTREACHED();
@@ -57,27 +64,21 @@ int DhcpProxyScriptFetcherWin::Fetch(string16* utf16_text,
 
   fetch_start_time_ = base::TimeTicks::Now();
 
-  std::set<std::string> adapter_names;
-  if (!ImplGetCandidateAdapterNames(&adapter_names)) {
-    return ERR_UNEXPECTED;
-  }
-  if (adapter_names.empty()) {
-    return ERR_PAC_NOT_IN_DHCP;
-  }
-
-  state_ = STATE_NO_RESULTS;
-
-  client_callback_ = callback;
+  state_ = STATE_WAIT_ADAPTERS;
+  callback_ = callback;
   destination_string_ = utf16_text;
 
-  for (std::set<std::string>::iterator it = adapter_names.begin();
-       it != adapter_names.end();
-       ++it) {
-    DhcpProxyScriptAdapterFetcher* fetcher(ImplCreateAdapterFetcher());
-    fetcher->Fetch(*it, &fetcher_callback_);
-    fetchers_.push_back(fetcher);
-  }
-  num_pending_fetchers_ = fetchers_.size();
+  last_query_ = ImplCreateAdapterQuery();
+  base::WorkerPool::PostTaskAndReply(
+      FROM_HERE,
+      base::Bind(
+          &DhcpProxyScriptFetcherWin::AdapterQuery::GetCandidateAdapterNames,
+          last_query_.get()),
+      base::Bind(
+          &DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone,
+          AsWeakPtr(),
+          last_query_),
+      true);
 
   return ERR_IO_PENDING;
 }
@@ -99,6 +100,7 @@ void DhcpProxyScriptFetcherWin::CancelImpl() {
   DCHECK(CalledOnValidThread());
 
   if (state_ != STATE_DONE) {
+    callback_.Reset();
     wait_timer_.Stop();
     state_ = STATE_DONE;
 
@@ -110,6 +112,45 @@ void DhcpProxyScriptFetcherWin::CancelImpl() {
 
     fetchers_.reset();
   }
+}
+
+void DhcpProxyScriptFetcherWin::OnGetCandidateAdapterNamesDone(
+    scoped_refptr<AdapterQuery> query) {
+  DCHECK(CalledOnValidThread());
+
+  // This can happen if this object is reused for multiple queries,
+  // and a previous query was cancelled before it completed.
+  if (query.get() != last_query_.get())
+    return;
+  last_query_ = NULL;
+
+  // Enable unit tests to wait for this to happen; in production this function
+  // call is a no-op.
+  ImplOnGetCandidateAdapterNamesDone();
+
+  // We may have been cancelled.
+  if (state_ != STATE_WAIT_ADAPTERS)
+    return;
+
+  state_ = STATE_NO_RESULTS;
+
+  const std::set<std::string>& adapter_names = query->adapter_names();
+
+  if (adapter_names.empty()) {
+    TransitionToDone();
+    return;
+  }
+
+  for (std::set<std::string>::const_iterator it = adapter_names.begin();
+       it != adapter_names.end();
+       ++it) {
+    DhcpProxyScriptAdapterFetcher* fetcher(ImplCreateAdapterFetcher());
+    fetcher->Fetch(
+        *it, base::Bind(&DhcpProxyScriptFetcherWin::OnFetcherDone,
+                        base::Unretained(this)));
+    fetchers_.push_back(fetcher);
+  }
+  num_pending_fetchers_ = fetchers_.size();
 }
 
 std::string DhcpProxyScriptFetcherWin::GetFetcherName() const {
@@ -152,7 +193,7 @@ void DhcpProxyScriptFetcherWin::OnFetcherDone(int result) {
   // for the rest of the results.
   if (state_ == STATE_NO_RESULTS) {
     state_ = STATE_SOME_RESULTS;
-    wait_timer_.Start(
+    wait_timer_.Start(FROM_HERE,
         base::TimeDelta::FromMilliseconds(ImplGetMaxWaitMs()),
         this, &DhcpProxyScriptFetcherWin::OnWaitTimer);
   }
@@ -174,41 +215,43 @@ void DhcpProxyScriptFetcherWin::OnWaitTimer() {
 void DhcpProxyScriptFetcherWin::TransitionToDone() {
   DCHECK(state_ == STATE_NO_RESULTS || state_ == STATE_SOME_RESULTS);
 
-  // Should have returned immediately at Fetch() if no adapters to check.
-  DCHECK(!fetchers_.empty());
-
-  // Scan twice for the result; once through the whole list for success,
-  // then if no success, return result for most preferred network adapter,
-  // preferring "real" network errors to the ERR_PAC_NOT_IN_DHCP error.
-  // Default to ERR_ABORTED if no fetcher completed.
-  int result = ERR_ABORTED;
-  for (FetcherVector::iterator it = fetchers_.begin();
-       it != fetchers_.end();
-       ++it) {
-    if ((*it)->DidFinish() && (*it)->GetResult() == OK) {
-      result = OK;
-      *destination_string_ = (*it)->GetPacScript();
-      pac_url_ = (*it)->GetPacURL();
-      break;
-    }
-  }
-  if (result != OK) {
-    destination_string_->clear();
+  int result = ERR_PAC_NOT_IN_DHCP;  // Default if no fetchers.
+  if (!fetchers_.empty()) {
+    // Scan twice for the result; once through the whole list for success,
+    // then if no success, return result for most preferred network adapter,
+    // preferring "real" network errors to the ERR_PAC_NOT_IN_DHCP error.
+    // Default to ERR_ABORTED if no fetcher completed.
+    result = ERR_ABORTED;
     for (FetcherVector::iterator it = fetchers_.begin();
          it != fetchers_.end();
          ++it) {
-      if ((*it)->DidFinish()) {
-        result = (*it)->GetResult();
-        if (result != ERR_PAC_NOT_IN_DHCP) {
-          break;
+      if ((*it)->DidFinish() && (*it)->GetResult() == OK) {
+        result = OK;
+        *destination_string_ = (*it)->GetPacScript();
+        pac_url_ = (*it)->GetPacURL();
+        break;
+      }
+    }
+    if (result != OK) {
+      destination_string_->clear();
+      for (FetcherVector::iterator it = fetchers_.begin();
+           it != fetchers_.end();
+           ++it) {
+        if ((*it)->DidFinish()) {
+          result = (*it)->GetResult();
+          if (result != ERR_PAC_NOT_IN_DHCP) {
+            break;
+          }
         }
       }
     }
   }
 
+  CompletionCallback callback = callback_;
   CancelImpl();
   DCHECK_EQ(state_, STATE_DONE);
   DCHECK(fetchers_.empty());
+  DCHECK(callback_.is_null());  // Invariant of data.
 
   UMA_HISTOGRAM_TIMES("Net.DhcpWpadCompletionTime",
                       base::TimeTicks::Now() - fetch_start_time_);
@@ -218,7 +261,8 @@ void DhcpProxyScriptFetcherWin::TransitionToDone() {
         "Net.DhcpWpadFetchError", std::abs(result), GetAllErrorCodesForUma());
   }
 
-  client_callback_->Run(result);
+  // We may be deleted re-entrantly within this outcall.
+  callback.Run(result);
 }
 
 int DhcpProxyScriptFetcherWin::num_pending_fetchers() const {
@@ -234,9 +278,9 @@ DhcpProxyScriptAdapterFetcher*
   return new DhcpProxyScriptAdapterFetcher(url_request_context_);
 }
 
-bool DhcpProxyScriptFetcherWin::ImplGetCandidateAdapterNames(
-    std::set<std::string>* adapter_names) {
-  return GetCandidateAdapterNames(adapter_names);
+DhcpProxyScriptFetcherWin::AdapterQuery*
+    DhcpProxyScriptFetcherWin::ImplCreateAdapterQuery() {
+  return new AdapterQuery();
 }
 
 int DhcpProxyScriptFetcherWin::ImplGetMaxWaitMs() {
@@ -307,6 +351,26 @@ bool DhcpProxyScriptFetcherWin::GetCandidateAdapterNames(
   }
 
   return true;
+}
+
+DhcpProxyScriptFetcherWin::AdapterQuery::AdapterQuery() {
+}
+
+DhcpProxyScriptFetcherWin::AdapterQuery::~AdapterQuery() {
+}
+
+void DhcpProxyScriptFetcherWin::AdapterQuery::GetCandidateAdapterNames() {
+  ImplGetCandidateAdapterNames(&adapter_names_);
+}
+
+const std::set<std::string>&
+    DhcpProxyScriptFetcherWin::AdapterQuery::adapter_names() const {
+  return adapter_names_;
+}
+
+bool DhcpProxyScriptFetcherWin::AdapterQuery::ImplGetCandidateAdapterNames(
+    std::set<std::string>* adapter_names) {
+  return DhcpProxyScriptFetcherWin::GetCandidateAdapterNames(adapter_names);
 }
 
 }  // namespace net

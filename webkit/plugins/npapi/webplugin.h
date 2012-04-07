@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,10 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "ui/gfx/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 // TODO(port): this typedef is obviously incorrect on non-Windows
 // platforms, but now a lot of code now accidentally depends on them
@@ -20,22 +22,16 @@ typedef void* HANDLE;
 class GURL;
 struct NPObject;
 
-namespace WebKit {
-class WebFrame;
-}
-
 namespace webkit {
 namespace npapi {
 
-class WebPluginDelegate;
-class WebPluginParentView;
 class WebPluginResourceClient;
 #if defined(OS_MACOSX)
 class WebPluginAcceleratedSurface;
 #endif
 
 // Describes the new location for a plugin window.
-struct WebPluginGeometry {
+struct WEBKIT_PLUGINS_EXPORT WebPluginGeometry {
   WebPluginGeometry();
   ~WebPluginGeometry();
 
@@ -88,16 +84,22 @@ class WebPlugin {
   // Cancels a pending request.
   virtual void SetWindowlessPumpEvent(HANDLE pump_messages_event) = 0;
   virtual void ReparentPluginWindow(HWND window, HWND parent) = 0;
+  virtual void ReportExecutableMemory(size_t size) = 0;
 #endif
   virtual void CancelResource(unsigned long id) = 0;
   virtual void Invalidate() = 0;
   virtual void InvalidateRect(const gfx::Rect& rect) = 0;
 
-  // Returns the NPObject for the browser's window object.
+  // Returns the NPObject for the browser's window object. Does not
+  // take a reference.
   virtual NPObject* GetWindowScriptNPObject() = 0;
 
-  // Returns the DOM element that loaded the plugin.
+  // Returns the DOM element that loaded the plugin. Does not take a
+  // reference.
   virtual NPObject* GetPluginElement() = 0;
+
+  // Resolves the proxies for the url, returns true on success.
+  virtual bool FindProxyForUrl(const GURL& url, std::string* proxy_list) = 0;
 
   // Cookies
   virtual void SetCookie(const GURL& url,
@@ -105,11 +107,6 @@ class WebPlugin {
                          const std::string& cookie) = 0;
   virtual std::string GetCookies(const GURL& url,
                                  const GURL& first_party_for_cookies) = 0;
-
-  // When a default plugin has downloaded the plugin list and finds it is
-  // available, it calls this method to notify the renderer. Also it will update
-  // the status when user clicks on the plugin to install.
-  virtual void OnMissingPluginStatus(int status) = 0;
 
   // Handles GetURL/GetURLNotify/PostURL/PostURLNotify requests initiated
   // by plugins.  If the plugin wants notification of the result, notify_id will
@@ -145,10 +142,10 @@ class WebPlugin {
 
 #if defined(OS_MACOSX)
   // Called to inform the WebPlugin that the plugin has gained or lost focus.
-  virtual void FocusChanged(bool focused) {};
+  virtual void FocusChanged(bool focused) {}
 
   // Starts plugin IME.
-  virtual void StartIme() {};
+  virtual void StartIme() {}
 
   // Synthesize a fake window handle for the plug-in to identify the instance
   // to the browser, allowing mapping to a surface for hardware accelleration
@@ -159,13 +156,16 @@ class WebPlugin {
   virtual void BindFakePluginWindowHandle(bool opaque) {}
 
   // Returns the accelerated surface abstraction for accelerated plugins.
-  virtual WebPluginAcceleratedSurface* GetAcceleratedSurface();
-#endif
+  virtual WebPluginAcceleratedSurface* GetAcceleratedSurface(
+      gfx::GpuPreference gpu_preference);
 
-  // Gets the WebPluginDelegate that implements the interface.
-  // This API is only for use with Pepper, and is only overridden
-  // by in-renderer implementations.
-  virtual WebPluginDelegate* delegate();
+  // Composited Core Animation plugin support.
+  virtual void AcceleratedPluginEnabledRendering() = 0;
+  virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
+                                                   int32 height,
+                                                   uint32 surface_id) = 0;
+  virtual void AcceleratedPluginSwappedIOSurface() = 0;
+#endif
 
   // Handles NPN_URLRedirectResponse calls issued by plugins in response to
   // HTTP URL redirect notifications.

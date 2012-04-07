@@ -1,3 +1,7 @@
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 // Bookmark Manager API test for Chrome.
 // browser_tests.exe --gtest_filter=ExtensionApiTest.BookmarkManager
 
@@ -10,6 +14,32 @@ const bookmarkManager = chrome.experimental.bookmarkManager;
 var fooNode, fooNode2, barNode, gooNode, count, emptyFolder, emptyFolder2;
 var folder, nodeA, nodeB;
 var childFolder, grandChildFolder, childNodeA, childNodeB;
+
+var clipboardArguments;
+function doCopy() {
+  clipboardArguments = arguments;
+  document.execCommand('copy');
+}
+function doCut() {
+  clipboardArguments = arguments;
+  document.execCommand('cut');
+}
+function doPaste() {
+  clipboardArguments = arguments;
+  document.execCommand('paste');
+}
+document.addEventListener('copy', function (event) {
+  bookmarkManager.copy.apply(null, clipboardArguments);
+  event.preventDefault();
+});
+document.addEventListener('cut', function (event) {
+  bookmarkManager.cut.apply(null, clipboardArguments);
+  event.preventDefault();
+});
+document.addEventListener('paste', function (event) {
+  bookmarkManager.paste.apply(null, clipboardArguments);
+  event.preventDefault();
+});
 
 var tests = [
   function getStrings() {
@@ -162,7 +192,7 @@ var tests = [
 
   function clipboard2() {
     // Copy the fooNode.
-    bookmarkManager.copy([fooNode.id]);
+    doCopy([fooNode.id]);
 
     // Ensure canPaste is now true.
     bookmarkManager.canPaste('1', pass(function(result) {
@@ -170,7 +200,7 @@ var tests = [
     }));
 
     // Paste it.
-    bookmarkManager.paste('1');
+    doPaste('1');
 
     // Ensure it got added at the end.
     bookmarks.getChildren('1', pass(function(result) {
@@ -187,7 +217,7 @@ var tests = [
 
   function clipboard3() {
     // Cut fooNode bookmarks.
-    bookmarkManager.cut([fooNode.id, fooNode2.id]);
+    doCut([fooNode.id, fooNode2.id]);
 
     // Ensure count decreased by 2.
     bookmarks.getChildren('1', pass(function(result) {
@@ -203,7 +233,7 @@ var tests = [
 
   function clipboard4() {
     // Paste the cut bookmarks at a specific position between bar and goo.
-    bookmarkManager.paste('1', [barNode.id]);
+    doPaste('1', [barNode.id]);
 
     // Check that the two bookmarks were pasted after bar.
     bookmarks.getChildren('1', pass(function(result) {
@@ -234,7 +264,7 @@ var tests = [
   // Ensure we can copy empty folders
   function clipboard5() {
     // Copy it.
-    bookmarkManager.copy([emptyFolder.id]);
+    doCopy([emptyFolder.id]);
 
     // Ensure canPaste is now true.
     bookmarkManager.canPaste('1', pass(function(result) {
@@ -242,7 +272,7 @@ var tests = [
     }));
 
     // Paste it at the end of a multiple selection.
-    bookmarkManager.paste('1', [barNode.id, fooNode2.id]);
+    doPaste('1', [barNode.id, fooNode2.id]);
 
     // Ensure it got added at the right place.
     bookmarks.getChildren('1', pass(function(result) {
@@ -261,6 +291,12 @@ var tests = [
       assertEq(emptyFolder2.title, emptyFolder.title);
       assertEq(emptyFolder2.url, emptyFolder.url);
       assertEq(emptyFolder2.parentId, emptyFolder.parentId);
+    }));
+  },
+
+  function canEdit() {
+    bookmarkManager.canEdit(pass(function(result) {
+      assertTrue(result, 'Should be able to edit bookmarks');
     }));
   }
 ];

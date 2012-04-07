@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,10 @@
 
 #include <map>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Extension;
 class ExtensionResource;
@@ -35,7 +36,7 @@ namespace gfx {
 // Observer is notified immediately from the call to LoadImage. In other words,
 // by the time LoadImage returns the observer has been notified.
 //
-class ImageLoadingTracker : public NotificationObserver {
+class ImageLoadingTracker : public content::NotificationObserver {
  public:
   enum CacheParam {
     CACHE,
@@ -44,11 +45,9 @@ class ImageLoadingTracker : public NotificationObserver {
 
   class Observer {
    public:
-    virtual ~Observer();
-
     // Will be called when the image with the given index has loaded.
     // The |image| is owned by the tracker, so the observer should make a copy
-    // if they need to access it after this call. |image| can be null if valid
+    // if they need to access it after this call. |image| can be null if a valid
     // image was not found or it failed to decode. |resource| is the
     // ExtensionResource where the |image| came from and the |index| represents
     // the index of the image just loaded (starts at 0 and increments every
@@ -56,6 +55,9 @@ class ImageLoadingTracker : public NotificationObserver {
     virtual void OnImageLoaded(SkBitmap* image,
                                const ExtensionResource& resource,
                                int index) = 0;
+
+   protected:
+    virtual ~Observer();
   };
 
   explicit ImageLoadingTracker(Observer* observer);
@@ -69,6 +71,11 @@ class ImageLoadingTracker : public NotificationObserver {
                  const ExtensionResource& resource,
                  const gfx::Size& max_size,
                  CacheParam cache);
+
+  // Returns the ID used for the next image that is loaded. That is, the return
+  // value from this method corresponds to the int that is passed to
+  // OnImageLoaded() the next time LoadImage() is invoked.
+  int next_id() const { return next_id_; }
 
  private:
   typedef std::map<int, const Extension*> LoadMap;
@@ -84,11 +91,11 @@ class ImageLoadingTracker : public NotificationObserver {
   void OnImageLoaded(SkBitmap* image, const ExtensionResource& resource,
                      const gfx::Size& original_size, int id);
 
-  // NotificationObserver method. If an extension is uninstalled while we're
-  // waiting for the image we remove the entry from load_map_.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver method. If an extension is uninstalled while
+  // we're waiting for the image we remove the entry from load_map_.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // The view that is waiting for the image to load.
   Observer* observer_;
@@ -104,7 +111,7 @@ class ImageLoadingTracker : public NotificationObserver {
   // deleted while fetching the image the entry is removed from the map.
   LoadMap load_map_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageLoadingTracker);
 };

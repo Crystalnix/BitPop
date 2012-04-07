@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,14 @@
 #define CHROME_BROWSER_UI_VIEWS_FIND_BAR_VIEW_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "chrome/browser/ui/find_bar/find_notification_details.h"
 #include "chrome/browser/ui/views/dropdown_bar_view.h"
 #include "ui/gfx/size.h"
-#include "views/controls/button/button.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/controls/textfield/textfield_controller.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/controls/textfield/textfield_controller.h"
 
 class FindBarHost;
 
@@ -63,31 +64,32 @@ class FindBarView : public DropdownBarView,
   void ClearMatchCount();
 
   // Claims focus for the text field and selects its contents.
-  virtual void SetFocusAndSelection(bool select_all);
+  virtual void SetFocusAndSelection(bool select_all) OVERRIDE;
 
   // views::View:
-  virtual void OnPaint(gfx::Canvas* canvas);
-  virtual void Layout();
-  virtual gfx::Size GetPreferredSize();
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void Layout() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add,
                                     views::View* parent,
-                                    views::View* child);
+                                    views::View* child) OVERRIDE;
 
   // views::ButtonListener:
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event);
+  virtual void ButtonPressed(views::Button* sender,
+                             const views::Event& event) OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents);
+                               const string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
-                              const views::KeyEvent& key_event);
+                              const views::KeyEvent& key_event) OVERRIDE;
 
  private:
   // Update the appearance for the match count label.
   void UpdateMatchCountAppearance(bool no_match);
 
   // Overridden from views::View.
-  virtual void OnThemeChanged();
+  virtual void OnThemeChanged() OVERRIDE;
 
   // We use a hidden view to grab mouse clicks and bring focus to the find
   // text box. This is because although the find text box may look like it
@@ -102,7 +104,7 @@ class FindBarView : public DropdownBarView,
       : view_to_focus_on_mousedown_(view_to_focus_on_mousedown) {}
 
    private:
-    virtual bool OnMousePressed(const views::MouseEvent& event);
+    virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
 
     views::Textfield* view_to_focus_on_mousedown_;
 
@@ -116,14 +118,14 @@ class FindBarView : public DropdownBarView,
      SearchTextfieldView();
      virtual ~SearchTextfieldView();
 
-     virtual void RequestFocus();
+     virtual void RequestFocus() OVERRIDE;
 
    private:
      DISALLOW_COPY_AND_ASSIGN(SearchTextfieldView);
   };
 
   // Returns the OS-specific view for the find bar that acts as an intermediary
-  // between us and the TabContentsView.
+  // between us and the WebContentsView.
   FindBarHost* find_bar_host() const;
 
   // The controls in the window.
@@ -134,12 +136,15 @@ class FindBarView : public DropdownBarView,
   views::ImageButton* find_next_button_;
   views::ImageButton* close_button_;
 
+  // The preferred height of the find bar.
+  int preferred_height_;
+
   // The background image for the Find text box, which we draw behind the Find
   // box to provide the Chrome look to the edge of the text box.
-  const SkBitmap* background_;
+  const SkBitmap* text_box_background_;
 
   // The rounded edge on the left side of the Find text box.
-  const SkBitmap* background_left_;
+  const SkBitmap* text_box_background_left_;
 
   DISALLOW_COPY_AND_ASSIGN(FindBarView);
 };

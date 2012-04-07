@@ -1,5 +1,5 @@
 @ECHO OFF
-REM Copyright (c) 2009 The Chromium Authors. All rights reserved.
+REM Copyright (c) 2011 The Chromium Authors. All rights reserved.
 REM Use of this source code is governed by a BSD-style license that can be
 REM found in the LICENSE file.
 REM
@@ -38,37 +38,55 @@ setlocal
 set CLIENT_ROOT=%~dp0%..\..
 set CONFIG=%1
 
+if (%2)==() goto setdefault
+if (%3)==() goto usage
+set DRIVE=%2
+set INSTALL_ROOT=%3
+goto pastbase
+:setdefault
+set DRIVE=c:
+set INSTALL_ROOT=\trybot
+:pastbase
+
 @ECHO ON
-c:
-mkdir \trybot
-cd \trybot
+%DRIVE%
+mkdir %INSTALL_ROOT%
+cd %INSTALL_ROOT%
 rmdir /s /q base
-rmdir /s /q chrome\%CONFIG%
+rmdir /s /q build\%CONFIG%
 rmdir /s /q chrome_frame
 mkdir base
-mkdir chrome\%CONFIG%
+mkdir build\%CONFIG%
 mkdir chrome_frame\test\data
 mkdir chrome_frame\test\html_util_test_data
+mkdir net\data
+mkdir net\tools\testserver
+mkdir third_party\pyftpdlib
+mkdir third_party\pylib
+mkdir third_party\python_26
+mkdir third_party\tlslite
 copy %CLIENT_ROOT%\base\base_paths_win.cc base\base_paths_win.cc
-xcopy %CLIENT_ROOT%\chrome\%CONFIG% chrome\%CONFIG% /E /EXCLUDE:%CLIENT_ROOT%\chrome_frame\test\poor_mans_trybot_xcopy_filter.txt
+xcopy %CLIENT_ROOT%\build\%CONFIG% build\%CONFIG% /E /EXCLUDE:%CLIENT_ROOT%\chrome_frame\test\poor_mans_trybot_xcopy_filter.txt
 xcopy %CLIENT_ROOT%\chrome_frame\test\data chrome_frame\test\data /E
+xcopy %CLIENT_ROOT%\net\data net\data /E
+xcopy %CLIENT_ROOT%\net\tools\testserver net\tools\testserver /E
+xcopy %CLIENT_ROOT%\third_party\pyftpdlib third_party\pyftpdlib /E
+xcopy %CLIENT_ROOT%\third_party\pylib third_party\pylib /E
+xcopy %CLIENT_ROOT%\third_party\python_26 third_party\python_26 /E
+xcopy %CLIENT_ROOT%\third_party\tlslite third_party\tlslite /E
 xcopy %CLIENT_ROOT%\chrome_frame\test\html_util_test_data chrome_frame\test\html_util_test_data /E
 copy %CLIENT_ROOT%\chrome_frame\CFInstance.js chrome_frame\CFInstance.js
 copy %CLIENT_ROOT%\chrome_frame\CFInstall.js chrome_frame\CFInstall.js
 @ECHO OFF
 echo ************************************
 echo DO THE FOLLOWING IN AN ADMIN PROMPT:
-echo ************************************
-echo regsvr32 \trybot\chrome\%CONFIG%\servers\npchrome_frame.dll
-echo rundll32 \trybot\chrome\debug\servers\npchrome_frame.dll,RegisterNPAPIPlugin
 echo *********************************
-echo THEN DO THIS IN A REGULAR PROMPT:
-echo *********************************
-echo \trybot\chrome\%CONFIG%\chrome_frame_unittests.exe
-echo \trybot\chrome\%CONFIG%\chrome_frame_tests.exe
+echo %DRIVE%%INSTALL_ROOT%\build\%CONFIG%\chrome_frame_unittests.exe
+echo %DRIVE%%INSTALL_ROOT%\build\%CONFIG%\chrome_frame_tests.exe
+echo %DRIVE%%INSTALL_ROOT%\build\%CONFIG%\chrome_frame_net_tests.exe
 goto end
 
 :usage
-echo "Usage: poor_mans_trybot.bat [debug|release]"
+echo "Usage: poor_mans_trybot.bat CONFIG [DRIVE INSTALL_ROOT]"
 
 :end

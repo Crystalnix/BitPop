@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 using base::win::RegKey;
-using chrome_frame_test::TempRegKeyOverride;
 
 const wchar_t kChannelName[] = L"-dev";
 const wchar_t kSuffix[] = L"-fix";
@@ -31,23 +30,16 @@ TEST(SimpleUtilTests, GetTempInternetFiles) {
 class UtilTests : public testing::Test {
  protected:
   void SetUp() {
-    TempRegKeyOverride::DeleteAllTempKeys();
     DeleteAllSingletons();
-
-    hklm_pol_.reset(new TempRegKeyOverride(HKEY_LOCAL_MACHINE, L"hklm_fake"));
-    hkcu_pol_.reset(new TempRegKeyOverride(HKEY_CURRENT_USER, L"hkcu_fake"));
   }
 
   void TearDown() {
-    hkcu_pol_.reset(NULL);
-    hklm_pol_.reset(NULL);
-    TempRegKeyOverride::DeleteAllTempKeys();
+    registry_virtualization_.RemoveAllOverrides();
   }
 
   // This is used to manage life cycle of PolicySettings singleton.
   // base::ShadowingAtExitManager at_exit_manager_;
-  scoped_ptr<TempRegKeyOverride> hklm_pol_;
-  scoped_ptr<TempRegKeyOverride> hkcu_pol_;
+  chrome_frame_test::ScopedVirtualizeHklmAndHkcu registry_virtualization_;
 };
 
 TEST_F(UtilTests, GetModuleVersionTest) {
@@ -113,7 +105,7 @@ TEST_F(UtilTests, IsValidUrlScheme) {
     { L"https://www.google.ca", false, true },
     { L"about:config", false, true },
     { L"view-source:http://www.google.ca", false, true },
-    { L"chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html", false, false },
+    { L"chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html", false, false },
     { L"ftp://www.google.ca", false, false },
     { L"file://www.google.ca", false, false },
     { L"file://C:\boot.ini", false, false },
@@ -123,7 +115,7 @@ TEST_F(UtilTests, IsValidUrlScheme) {
     { L"https://www.google.ca", true, true },
     { L"about:config", true, true },
     { L"view-source:http://www.google.ca", true, true },
-    { L"chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html", true, true },
+    { L"chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html", true, true },
     { L"ftp://www.google.ca", true, false },
     { L"file://www.google.ca", true, false },
     { L"file://C:\boot.ini", true, false },
@@ -304,7 +296,7 @@ TEST_F(UtilTests, CanNavigateTest) {
     { "about:blank", true, true, false },
     { "About:Version", true, true, false },
     { "about:config", false, true, false },
-    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html", false, true,
+    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html", false, true,
        false },
     { "ftp://www.google.ca", false, true, false },
     { "file://www.google.ca", false, true, false },
@@ -312,9 +304,9 @@ TEST_F(UtilTests, CanNavigateTest) {
     { "SIP:someone@10.1.2.3", false, true, false },
 
     // privileged test cases
-    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html", true, true,
+    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html", true, true,
        true },
-    { "data://aaaaaaaaaaaaaaaaaaa/toolstrip.html", true, true, true },
+    { "data://aaaaaaaaaaaaaaaaaaa/monkey.html", true, true, true },
   };
 
   for (int i = 0; i < arraysize(test_cases); ++i) {
@@ -352,7 +344,7 @@ TEST_F(UtilTests, CanNavigateTestDenyAll) {
     { "about:blank"},
     { "About:Version"},
     { "about:config"},
-    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html"},
+    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html"},
     { "ftp://www.google.ca"},
     { "file://www.google.ca"},
     { "file://C:\boot.ini"},
@@ -389,7 +381,7 @@ TEST_F(UtilTests, CanNavigateTestAllowAll) {
     { "about:blank"},
     { "About:Version"},
     { "about:config"},
-    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/toolstrip.html"},
+    { "chrome-extension://aaaaaaaaaaaaaaaaaaa/monkey.html"},
     { "ftp://www.google.ca"},
     { "file://www.google.ca"},
     { "file://C:\boot.ini"},

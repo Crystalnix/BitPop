@@ -8,10 +8,12 @@
 #include <wincrypt.h>
 
 #include "base/base_paths.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
+#include "base/process_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/test/test_timeouts.h"
@@ -22,59 +24,6 @@
 #pragma comment(lib, "crypt32.lib")
 
 namespace {
-
-bool LaunchTestServerAsJob(const CommandLine& cmdline,
-                           bool start_hidden,
-                           base::ProcessHandle* process_handle,
-                           base::win::ScopedHandle* job_handle) {
-  // Launch test server process.
-  STARTUPINFO startup_info = {0};
-  startup_info.cb = sizeof(startup_info);
-  startup_info.dwFlags = STARTF_USESHOWWINDOW;
-  startup_info.wShowWindow = start_hidden ? SW_HIDE : SW_SHOW;
-  PROCESS_INFORMATION process_info;
-
-  // If this code is run under a debugger, the test server process is
-  // automatically associated with a job object created by the debugger.
-  // The CREATE_BREAKAWAY_FROM_JOB flag is used to prevent this.
-  if (!CreateProcess(
-      NULL, const_cast<wchar_t*>(cmdline.command_line_string().c_str()),
-      NULL, NULL, TRUE, CREATE_BREAKAWAY_FROM_JOB, NULL, NULL,
-      &startup_info, &process_info)) {
-    LOG(ERROR) << "Could not create process.";
-    return false;
-  }
-  CloseHandle(process_info.hThread);
-
-  // If the caller wants the process handle, we won't close it.
-  if (process_handle) {
-    *process_handle = process_info.hProcess;
-  } else {
-    CloseHandle(process_info.hProcess);
-  }
-
-  // Create a JobObject and associate the test server process with it.
-  job_handle->Set(CreateJobObject(NULL, NULL));
-  if (!job_handle->IsValid()) {
-    LOG(ERROR) << "Could not create JobObject.";
-    return false;
-  } else {
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info = {0};
-    limit_info.BasicLimitInformation.LimitFlags =
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    if (0 == SetInformationJobObject(job_handle->Get(),
-      JobObjectExtendedLimitInformation, &limit_info, sizeof(limit_info))) {
-      LOG(ERROR) << "Could not SetInformationJobObject.";
-      return false;
-    }
-    if (0 == AssignProcessToJobObject(job_handle->Get(),
-                                      process_info.hProcess)) {
-      LOG(ERROR) << "Could not AssignProcessToObject.";
-      return false;
-    }
-  }
-  return true;
-}
 
 // Writes |size| bytes to |handle| and sets |*unblocked| to true.
 // Used as a crude timeout mechanism by ReadData().
@@ -103,8 +52,7 @@ bool ReadData(HANDLE read_fd, HANDLE write_fd,
   // Prepare a timeout in case the server fails to start.
   bool unblocked = false;
   thread.message_loop()->PostDelayedTask(
-      FROM_HERE,
-      NewRunnableFunction(UnblockPipe, write_fd, bytes_max, &unblocked),
+      FROM_HERE, base::Bind(UnblockPipe, write_fd, bytes_max, &unblocked),
       TestTimeouts::action_max_timeout_ms());
 
   DWORD bytes_read = 0;
@@ -179,11 +127,22 @@ bool TestServer::LaunchPython(const FilePath& testserver_path) {
   python_command.AppendArg("--startup-pipe=" +
       base::IntToString(reinterpret_cast<uintptr_t>(child_write)));
 
-  if (!LaunchTestServerAsJob(python_command,
-                             true,
-                             &process_handle_,
-                             &job_handle_)) {
-    LOG(ERROR) << "Failed to launch " << python_command.command_line_string();
+  job_handle_.Set(CreateJobObject(NULL, NULL));
+  if (!job_handle_.IsValid()) {
+    LOG(ERROR) << "Could not create JobObject.";
+    return false;
+  }
+
+  if (!base::SetJobObjectAsKillOnJobClose(job_handle_.Get())) {
+    LOG(ERROR) << "Could not SetInformationJobObject.";
+    return false;
+  }
+
+  base::LaunchOptions launch_options;
+  launch_options.inherit_handles = true;
+  launch_options.job_handle = job_handle_.Get();
+  if (!base::LaunchProcess(python_command, launch_options, &process_handle_)) {
+    LOG(ERROR) << "Failed to launch " << python_command.GetCommandLineString();
     return false;
   }
 

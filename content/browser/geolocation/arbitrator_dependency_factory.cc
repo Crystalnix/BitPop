@@ -4,9 +4,12 @@
 
 #include "content/browser/geolocation/arbitrator_dependency_factory.h"
 
-#include "chrome/browser/profiles/profile.h"
-#include "content/browser/geolocation/access_token_store.h"
+#include "base/time.h"
 #include "content/browser/geolocation/location_provider.h"
+#include "content/public/browser/access_token_store.h"
+#include "content/public/browser/content_browser_client.h"
+
+using content::AccessTokenStore;
 
 // GeolocationArbitratorDependencyFactory
 GeolocationArbitratorDependencyFactory::
@@ -14,11 +17,6 @@ GeolocationArbitratorDependencyFactory::
 }
 
 // DefaultGeolocationArbitratorDependencyFactory
-net::URLRequestContextGetter*
-DefaultGeolocationArbitratorDependencyFactory::GetContextGetter() {
-  return Profile::GetDefaultRequestContext();
-}
-
 DefaultGeolocationArbitratorDependencyFactory::GetTimeNow
 DefaultGeolocationArbitratorDependencyFactory::GetTimeFunction() {
   return base::Time::Now;
@@ -26,7 +24,7 @@ DefaultGeolocationArbitratorDependencyFactory::GetTimeFunction() {
 
 AccessTokenStore*
 DefaultGeolocationArbitratorDependencyFactory::NewAccessTokenStore() {
-  return NewChromePrefsAccessTokenStore();
+  return content::GetContentClient()->browser()->CreateAccessTokenStore();
 }
 
 LocationProviderBase*
@@ -43,4 +41,3 @@ LocationProviderBase*
 DefaultGeolocationArbitratorDependencyFactory::NewSystemLocationProvider() {
   return ::NewSystemLocationProvider();
 }
-

@@ -11,8 +11,9 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/task.h"
-#include "chrome/browser/sync/unrecoverable_error_handler.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/sync/internal_api/includes/unrecoverable_error_handler.h"
 #include "chrome/browser/sync/glue/model_associator.h"
 
 class BookmarkModel;
@@ -20,14 +21,10 @@ class BookmarkNode;
 
 namespace sync_api {
 class BaseNode;
-class BaseTransaction;
-class ReadNode;
 struct UserShare;
 }
 
 namespace browser_sync {
-
-class BookmarkChangeProcessor;
 
 // Contains all model association related logic:
 // * Algorithm to associate bookmark model and sync model.
@@ -43,6 +40,9 @@ class BookmarkModelAssociator
       UnrecoverableErrorHandler* unrecoverable_error_handler);
   virtual ~BookmarkModelAssociator();
 
+  // Updates the visibility of the permanents node in the BookmarkModel.
+  void UpdatePermanentNodeVisibility();
+
   // AssociatorInterface implementation.
   //
   // AssociateModels iterates through both the sync and the browser
@@ -52,41 +52,41 @@ class BookmarkModelAssociator
   // node.  After successful completion, the models should be identical and
   // corresponding. Returns true on success.  On failure of this step, we
   // should abort the sync operation and report an error to the user.
-  virtual bool AssociateModels();
+  virtual bool AssociateModels(SyncError* error) OVERRIDE;
 
-  virtual bool DisassociateModels();
+  virtual bool DisassociateModels(SyncError* error) OVERRIDE;
 
   // The has_nodes out param is true if the sync model has nodes other
   // than the permanent tagged nodes.
-  virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes);
+  virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes) OVERRIDE;
 
   // Returns sync id for the given bookmark node id.
   // Returns sync_api::kInvalidId if the sync node is not found for the given
   // bookmark node id.
-  virtual int64 GetSyncIdFromChromeId(const int64& node_id);
+  virtual int64 GetSyncIdFromChromeId(const int64& node_id) OVERRIDE;
 
   // Returns the bookmark node for the given sync id.
   // Returns NULL if no bookmark node is found for the given sync id.
-  virtual const BookmarkNode* GetChromeNodeFromSyncId(int64 sync_id);
+  virtual const BookmarkNode* GetChromeNodeFromSyncId(int64 sync_id) OVERRIDE;
 
   // Initializes the given sync node from the given bookmark node id.
   // Returns false if no sync node was found for the given bookmark node id or
   // if the initialization of sync node fails.
   virtual bool InitSyncNodeFromChromeId(const int64& node_id,
-                                        sync_api::BaseNode* sync_node);
+                                        sync_api::BaseNode* sync_node) OVERRIDE;
 
   // Associates the given bookmark node with the given sync id.
-  virtual void Associate(const BookmarkNode* node, int64 sync_id);
+  virtual void Associate(const BookmarkNode* node, int64 sync_id) OVERRIDE;
   // Remove the association that corresponds to the given sync id.
-  virtual void Disassociate(int64 sync_id);
+  virtual void Disassociate(int64 sync_id) OVERRIDE;
 
-  virtual void AbortAssociation() {
+  virtual void AbortAssociation() OVERRIDE {
     // No implementation needed, this associator runs on the main
     // thread.
   }
 
   // See ModelAssociator interface.
-  virtual bool CryptoReadyIfNecessary();
+  virtual bool CryptoReadyIfNecessary() OVERRIDE;
 
  protected:
   // Stores the id of the node with the given tag in |sync_id|.
@@ -111,7 +111,7 @@ class BookmarkModelAssociator
 
   // Matches up the bookmark model and the sync model to build model
   // associations.
-  bool BuildAssociations();
+  bool BuildAssociations(SyncError* error);
 
   // Associate a top-level node of the bookmark model with a permanent node in
   // the sync domain.  Such permanent nodes are identified by a tag that is
@@ -119,7 +119,7 @@ class BookmarkModelAssociator
   // user's share.  For example, "other_bookmarks" is the tag for the Other
   // Bookmarks folder.  The sync nodes are server-created.
   bool AssociateTaggedPermanentNode(const BookmarkNode* permanent_node,
-                                    const std::string& tag);
+                                    const std::string& tag) WARN_UNUSED_RESULT;
 
   // Compare the properties of a pair of nodes from either domain.
   bool NodesMatch(const BookmarkNode* bookmark,
@@ -136,7 +136,7 @@ class BookmarkModelAssociator
   // Used to post PersistAssociation tasks to the current message loop and
   // guarantees no invocations can occur if |this| has been deleted. (This
   // allows this class to be non-refcounted).
-  ScopedRunnableMethodFactory<BookmarkModelAssociator> persist_associations_;
+  base::WeakPtrFactory<BookmarkModelAssociator> weak_factory_;
 
   int number_of_new_sync_nodes_created_at_association_;
 

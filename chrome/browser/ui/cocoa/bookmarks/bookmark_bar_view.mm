@@ -5,14 +5,18 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_view.h"
 
 #include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
+#include "chrome/browser/profiles/profile.h"
+#import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
-#import "chrome/browser/themes/theme_service.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+
+using content::UserMetricsAction;
 
 @interface BookmarkBarView (Private)
 - (void)themeDidChangeNotification:(NSNotification*)aNotification;
@@ -122,7 +126,8 @@
 
 // Shim function to assist in unit testing.
 - (BOOL)dragClipboardContainsBookmarks {
-  return bookmark_pasteboard_helper_mac::DragClipboardContainsBookmarks();
+  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
+      bookmark_pasteboard_helper_mac::kDragPasteboard);
 }
 
 // NSDraggingDestination methods
@@ -162,6 +167,8 @@
 }
 
 - (void)draggingExited:(id<NSDraggingInfo>)info {
+  [controller_ draggingExited:info];
+
   // Regardless of the type of dragging which ended, we need to get rid of the
   // drop indicator if one was shown.
   if (dropIndicatorShown_) {
@@ -171,6 +178,8 @@
 }
 
 - (void)draggingEnded:(id<NSDraggingInfo>)info {
+  [controller_ draggingEnded:info];
+
   [[BookmarkButton draggedButton] setHidden:NO];
   if (dropIndicatorShown_) {
     dropIndicatorShown_ = NO;
@@ -217,11 +226,25 @@
   if (data && [info draggingSource]) {
     BookmarkButton* button = nil;
     [data getBytes:&button length:sizeof(button)];
-    BOOL copy = !([info draggingSourceOperationMask] & NSDragOperationMove);
+
+    // If we're dragging from one profile to another, disallow moving (only
+    // allow copying). Each profile has its own bookmark model, so one way to
+    // check whether we are dragging across profiles is to see if the
+    // |BookmarkNode| corresponding to |button| exists in this profile. If it
+    // does, we're dragging within a profile; otherwise, we're dragging across
+    // profiles.
+    const BookmarkModel* const model = [[self controller] bookmarkModel];
+    const BookmarkNode* const source_node = [button bookmarkNode];
+    const BookmarkNode* const target_node =
+        model->GetNodeByID(source_node->id());
+
+    BOOL copy =
+        !([info draggingSourceOperationMask] & NSDragOperationMove) ||
+        (source_node != target_node);
     rtn = [controller_ dragButton:button
                                to:[info draggingLocation]
                              copy:copy];
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBar_DragEnd"));
+    content::RecordAction(UserMetricsAction("BookmarkBar_DragEnd"));
   }
   return rtn;
 }

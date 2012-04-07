@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,9 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/string16.h"
+#include "base/time.h"
 #include "base/timer.h"
+#include "chrome/browser/sessions/session_id.h"
 #include "googleurl/src/gurl.h"
 #include "googleurl/src/url_parse.h"
 
@@ -44,15 +46,16 @@
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
 // Extension App (exact match)                                         | 1425
-// HistoryURL (exact or inline autocomplete match)                     | 1400
+// HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
+// HistoryURL (intranet url never visited match, some inexact matches) | 1400++
 // Search Primary Provider (past query in history within 2 days)       | 1399**
 // Search Primary Provider (what you typed)                            | 1300
-// HistoryURL (what you typed)                                         | 1200
+// HistoryURL (what you typed, some inexact matches)                   | 1200++
 // Extension App (inexact match)                                       | 1175*~
 // Keyword (substituting, exact match)                                 | 1100
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryContents (any match in title of starred page)                | 1000++
-// HistoryURL (inexact match)                                          |  900++
+// HistoryURL (some inexact matches)                                   |  900++
 // Search Primary Provider (navigational suggestion)                   |  800++
 // HistoryContents (any match in title of nonstarred page)             |  700++
 // Search Primary Provider (suggestion)                                |  600++
@@ -69,15 +72,16 @@
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
 // Extension App (exact match)                                         | 1425
-// HistoryURL (exact or inline autocomplete match)                     | 1400
+// HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
+// HistoryURL (intranet url never visited match, some inexact matches) | 1400++
 // Search Primary Provider (past query in history within 2 days)       | 1399**
-// HistoryURL (what you typed)                                         | 1200
+// HistoryURL (what you typed, some inexact matches)                   | 1200++
 // Extension App (inexact match)                                       | 1175*~
 // Search Primary Provider (what you typed)                            | 1150
 // Keyword (substituting, exact match)                                 | 1100
 // Search Primary Provider (past query in history older than 2 days)   | 1050--
 // HistoryContents (any match in title of starred page)                | 1000++
-// HistoryURL (inexact match)                                          |  900++
+// HistoryURL (some inexact matches)                                   |  900++
 // Search Primary Provider (navigational suggestion)                   |  800++
 // HistoryContents (any match in title of nonstarred page)             |  700++
 // Search Primary Provider (suggestion)                                |  600++
@@ -94,11 +98,12 @@
 // --------------------------------------------------------------------|-----
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
 // Extension App (exact match)                                         | 1425
-// HistoryURL (exact or inline autocomplete match)                     | 1400
-// HistoryURL (what you typed)                                         | 1200
+// HistoryURL (good exact or inline autocomplete matches, some inexact)| 1410++
+// HistoryURL (intranet url never visited match, some inexact matches) | 1400++
+// HistoryURL (what you typed, some inexact matches)                   | 1200++
 // Extension App (inexact match)                                       | 1175*~
 // Keyword (substituting, exact match)                                 | 1100
-// HistoryURL (inexact match)                                          |  900++
+// HistoryURL (some inexact matches)                                   |  900++
 // Search Primary Provider (what you typed)                            |  850
 // Search Primary Provider (navigational suggestion)                   |  800++
 // Search Primary Provider (past query in history)                     |  750--
@@ -112,10 +117,10 @@
 //
 // QUERY input type:
 // --------------------------------------------------------------------|-----
+// Search Primary or Secondary (past query in history within 2 days)   | 1599**
 // Keyword (non-substituting or in keyword UI mode, exact match)       | 1500
 // Keyword (substituting, exact match)                                 | 1450
 // Extension App (exact match)                                         | 1425
-// HistoryURL (exact or inline autocomplete match)                     | 1400
 // Search Primary Provider (past query in history within 2 days)       | 1399**
 // Search Primary Provider (what you typed)                            | 1300
 // Extension App (inexact match)                                       | 1175*~
@@ -171,7 +176,7 @@ class AutocompleteInput;
 struct AutocompleteMatch;
 class AutocompleteProvider;
 class AutocompleteResult;
-class HistoryContentsProvider;
+class KeywordProvider;
 class Profile;
 class SearchProvider;
 class TemplateURL;
@@ -260,13 +265,16 @@ class AutocompleteInput {
       const GURL& url,
       const string16& formatted_url);
 
+  // Returns the number of non-empty components in |parts| besides the host.
+  static int NumNonHostComponents(const url_parse::Parsed& parts);
+
   // User-provided text to be completed.
   const string16& text() const { return text_; }
 
   // Use of this setter is risky, since no other internal state is updated
-  // besides |text_|.  Only callers who know that they're not changing the
-  // type/scheme/etc. should use this.
-  void set_text(const string16& text) { text_ = text; }
+  // besides |text_| and |parts_|.  Only callers who know that they're not
+  // changing the type/scheme/etc. should use this.
+  void UpdateText(const string16& text, const url_parse::Parsed& parts);
 
   // User's desired TLD, if one is not already present in the text to
   // autocomplete.  When this is non-empty, it also implies that "www." should
@@ -357,11 +365,6 @@ class AutocompleteProvider
                        Profile* profile,
                        const char* name);
 
-  // Invoked when the profile changes.
-  // NOTE: Do not access any previous Profile* at this point as it may have
-  // already been deleted.
-  void SetProfile(Profile* profile);
-
   // Called to start an autocomplete query.  The provider is responsible for
   // tracking its matches for this query and whether it is done processing the
   // query.  When new matches are available or the provider finishes, it
@@ -402,6 +405,9 @@ class AutocompleteProvider
   // NOTE: Remember to call OnProviderUpdate() if matches_ is updated.
   virtual void DeleteMatch(const AutocompleteMatch& match);
 
+#ifdef UNIT_TEST
+  void set_listener(ACProviderListener* listener) { listener_ = listener; }
+#endif
   // A suggested upper bound for how many matches a provider should return.
   // TODO(pkasting): http://b/1111299 , http://b/933133 This should go away once
   // we have good relevance heuristics; the controller should handle all
@@ -485,6 +491,13 @@ class AutocompleteResult {
     bool is_history_what_you_typed_match;
   };
 
+  // Max number of matches we'll show from the various providers.
+  static const size_t kMaxMatches;
+
+  // The lowest score a match can have and still potentially become the default
+  // match for the result set.
+  static const int kLowestDefaultScore;
+
   AutocompleteResult();
   ~AutocompleteResult();
 
@@ -539,11 +552,16 @@ class AutocompleteResult {
   void Validate() const;
 #endif
 
-  // Max number of matches we'll show from the various providers.
-  static const size_t kMaxMatches;
-
  private:
   typedef std::map<AutocompleteProvider*, ACMatches> ProviderToMatches;
+
+#if defined(OS_ANDROID)
+  // iterator::difference_type is not defined in the STL that we compile with on
+  // Android.
+  typedef int matches_difference_type;
+#else
+  typedef ACMatches::iterator::difference_type matches_difference_type;
+#endif
 
   // Populates |provider_to_matches| from |matches_|.
   void BuildProviderToMatches(ProviderToMatches* provider_to_matches) const;
@@ -590,19 +608,17 @@ class AutocompleteController : public ACProviderListener {
   AutocompleteController(Profile* profile,
                          AutocompleteControllerDelegate* delegate);
 #ifdef UNIT_TEST
-  explicit AutocompleteController(const ACProviders& providers)
+  AutocompleteController(const ACProviders& providers, Profile* profile)
       : delegate_(NULL),
         providers_(providers),
+        keyword_provider_(NULL),
         search_provider_(NULL),
         done_(true),
-        in_start_(false) {
+        in_start_(false),
+        profile_(profile) {
   }
 #endif
   ~AutocompleteController();
-
-  // Invoked when the profile changes. This forwards the call down to all
-  // the AutocompleteProviders.
-  void SetProfile(Profile* profile);
 
   // Starts an autocomplete query, which continues until all providers are
   // done or the query is Stop()ed.  It is safe to Start() a new query without
@@ -657,6 +673,11 @@ class AutocompleteController : public ACProviderListener {
   // the popup to ensure it's not showing an out-of-date query.
   void ExpireCopiedEntries();
 
+#ifdef UNIT_TEST
+  void set_search_provider(SearchProvider* provider) {
+    search_provider_ = provider;
+  }
+#endif
   SearchProvider* search_provider() const { return search_provider_; }
 
   // Getters
@@ -673,6 +694,10 @@ class AutocompleteController : public ACProviderListener {
   // Start() is calling this to get the synchronous result.
   void UpdateResult(bool is_synchronous_pass);
 
+  // For each group of contiguous matches from the same TemplateURL, show the
+  // provider name as a description on the first match in the group.
+  void UpdateKeywordDescriptions(AutocompleteResult* result);
+
   // Calls AutocompleteControllerDelegate::OnResultChanged() and if done sends
   // AUTOCOMPLETE_CONTROLLER_RESULT_READY.
   void NotifyChanged(bool notify_default_match);
@@ -687,6 +712,8 @@ class AutocompleteController : public ACProviderListener {
 
   // A list of all providers.
   ACProviders providers_;
+
+  KeywordProvider* keyword_provider_;
 
   SearchProvider* search_provider_;
 
@@ -707,6 +734,8 @@ class AutocompleteController : public ACProviderListener {
   // notifications until Start() has been invoked on all providers.
   bool in_start_;
 
+  Profile* profile_;
+
   DISALLOW_COPY_AND_ASSIGN(AutocompleteController);
 };
 
@@ -715,23 +744,32 @@ class AutocompleteController : public ACProviderListener {
 // The data to log (via the metrics service) when the user selects an item
 // from the omnibox popup.
 struct AutocompleteLog {
-  AutocompleteLog(const string16& text,
-                  AutocompleteInput::Type input_type,
-                  size_t selected_index,
-                  size_t inline_autocompleted_length,
-                  const AutocompleteResult& result)
-      : text(text),
-        input_type(input_type),
-        selected_index(selected_index),
-        inline_autocompleted_length(inline_autocompleted_length),
-        result(result) {
-  }
+  AutocompleteLog(
+      const string16& text,
+      AutocompleteInput::Type input_type,
+      size_t selected_index,
+      SessionID::id_type tab_id,
+      base::TimeDelta elapsed_time_since_user_first_modified_omnibox,
+      size_t inline_autocompleted_length,
+      const AutocompleteResult& result);
   // The user's input text in the omnibox.
   string16 text;
   // The detected type of the user's input.
   AutocompleteInput::Type input_type;
   // Selected index (if selected) or -1 (AutocompletePopupModel::kNoMatch).
   size_t selected_index;
+  // ID of the tab the selected autocomplete suggestion was opened in.
+  // Set to -1 if we haven't yet determined the destination tab.
+  SessionID::id_type tab_id;
+  // The amount of time since the user first began modifying the text
+  // in the omnibox.  If at some point after modifying the text, the
+  // user reverts the modifications (thus seeing the current web
+  // page's URL again), then writes in the omnibox again, this time
+  // delta should be computed starting from the second series of
+  // modifications.  If we somehow skipped the logic to record
+  // the time the user began typing (this should only happen in
+  // unit tests), this elapsed time is set to -1 milliseconds.
+  base::TimeDelta elapsed_time_since_user_first_modified_omnibox;
   // Inline autocompleted length (if displayed).
   size_t inline_autocompleted_length;
   // Result set.

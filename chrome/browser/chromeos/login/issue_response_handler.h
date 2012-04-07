@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/chromeos/login/auth_response_handler.h"
 
 namespace net {
@@ -29,18 +30,22 @@ class IssueResponseHandler : public AuthResponseHandler {
   virtual ~IssueResponseHandler() {}
 
   // Overridden from AuthResponseHandler.
-  virtual bool CanHandle(const GURL& url);
+  virtual bool CanHandle(const GURL& url) OVERRIDE;
 
   // Overridden from AuthResponseHandler.
   // Takes in a response from IssueAuthToken, formats into an appropriate query
   // to sent to TokenAuth, and issues said query.  |catcher| will receive
   // the response to the fetch.  This fetch will follow redirects, which is
   // necesary to support GAFYD and corp accounts.
-  virtual URLFetcher* Handle(const std::string& to_process,
-                             URLFetcher::Delegate* catcher);
+  virtual content::URLFetcher* Handle(
+      const std::string& to_process,
+      content::URLFetcherDelegate* catcher) OVERRIDE;
 
   // exposed for testing
   std::string token_url() { return token_url_; }
+
+  // Builds a TokenAuth URL using the specified authorization token.
+  static std::string BuildTokenAuthUrlWithToken(const std::string& token);
 
  private:
   std::string token_url_;

@@ -4,9 +4,11 @@
 
 #include "chrome/browser/enumerate_modules_model_win.h"
 
+#include <algorithm>
 #include <Tlhelp32.h>
 #include <wintrust.h>
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_path.h"
@@ -24,10 +26,13 @@
 #include "crypto/sha2.h"
 #include "chrome/browser/net/service_providers_win.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::BrowserThread;
 
 // The period of time (in milliseconds) to wait until checking to see if any
 // incompatible modules exist.
@@ -138,8 +143,14 @@ const ModuleEnumerator::BlacklistEntry ModuleEnumerator::kModuleBlacklist[] = {
   // cwalsp.dll, "%systemroot%\\system32\\".
   { "e579a039", "23d01d5b", "", "", "", kUninstallLink },
 
+  // datamngr.dll, "%programfiles%\\windows searchqu toolbar\\".
+  { "7add320b", "7a3c8be3", "", "", "", kUninstallLink },
+
   // dsoqq0.dll, "%temp%\\".
   { "1c4df325", "59145acf", "", "", "", kUninstallLink },
+
+  // flt.dll, "%programfiles%\\tueagles\\".
+  { "6d01f4a1", "7935e9c2", "", "", "", kUninstallLink },
 
   // This looks like a malware edition of a Brazilian Bank plugin, sometimes
   // referred to as Malware.Banc.A.
@@ -204,6 +215,12 @@ const ModuleEnumerator::BlacklistEntry ModuleEnumerator::kModuleBlacklist[] = {
   // post0.dll, "%systemroot%\\system32\\".
   { "7405c0c8", "23d01d5b", "", "", "", kUninstallLink },
 
+  // questbrwsearch.dll, "%programfiles%\\questbrwsearch\\".
+  { "0953ed09", "f0d5eeda", "", "", "", kUninstallLink },
+
+  // questscan.dll, "%programfiles%\\questscan\\".
+  { "f4f3391e", "119d20f7", "", "", "", kUninstallLink },
+
   // radhslib.dll (Naomi web filter), "%programfiles%\\rnamfler\\".
   // See http://crbug.com/12517.
   { "7edcd250", "0733dc3e", "", "", "", INVESTIGATING },
@@ -212,7 +229,10 @@ const ModuleEnumerator::BlacklistEntry ModuleEnumerator::kModuleBlacklist[] = {
   { "a1ed94a7", "ea9d6b36", "", "", "", kUninstallLink },
 
   // rooksdol.dll, "%programfiles%\\trusteer\\rapport\\bin\\".
-  { "802aefef", "06120e13", "", "", "3.5.1008.40", INVESTIGATING },
+  { "802aefef", "06120e13", "", "", "3.5.1008.40", UPDATE },
+
+  // scanquery.dll, "%programfiles%\\scanquery\\".
+  { "0b52d2ae", "a4cc88b1", "", "", "", kUninstallLink },
 
   // sdata.dll, "%programdata%\\srtserv\\".
   { "1936d5cc", "223c44be", "", "", "", kUninstallLink },
@@ -381,9 +401,8 @@ void ModuleEnumerator::ScanNow(ModulesVector* list, bool limited_mode) {
   if (!limited_mode_) {
     CHECK(BrowserThread::GetCurrentThreadIdentifier(&callback_thread_id_));
     DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    BrowserThread::PostTask(
-        BrowserThread::FILE, FROM_HERE,
-            NewRunnableMethod(this, &ModuleEnumerator::ScanImpl));
+    BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+                            base::Bind(&ModuleEnumerator::ScanImpl, this));
   } else {
     // Run it synchronously.
     ScanImpl();
@@ -425,9 +444,8 @@ void ModuleEnumerator::ScanImpl() {
 
   if (!limited_mode_) {
     // Send a reply back on the UI thread.
-    BrowserThread::PostTask(
-        callback_thread_id_, FROM_HERE,
-        NewRunnableMethod(this, &ModuleEnumerator::ReportBack));
+    BrowserThread::PostTask(callback_thread_id_, FROM_HERE,
+                            base::Bind(&ModuleEnumerator::ReportBack, this));
   } else {
     // We are on the main thread already.
     ReportBack();
@@ -769,10 +787,10 @@ bool EnumerateModulesModel::ShouldShowConflictWarning() const {
 void EnumerateModulesModel::AcknowledgeConflictNotification() {
   if (!conflict_notification_acknowledged_) {
     conflict_notification_acknowledged_ = true;
-    NotificationService::current()->Notify(
-        NotificationType::MODULE_INCOMPATIBILITY_BADGE_CHANGE,
-        Source<EnumerateModulesModel>(this),
-        NotificationService::NoDetails());
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_MODULE_INCOMPATIBILITY_BADGE_CHANGE,
+        content::Source<EnumerateModulesModel>(this),
+        content::NotificationService::NoDetails());
   }
 }
 
@@ -888,7 +906,7 @@ EnumerateModulesModel::EnumerateModulesModel()
       suspected_bad_modules_detected_(0) {
   const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
   if (cmd_line.HasSwitch(switches::kConflictingModulesCheck)) {
-    check_modules_timer_.Start(
+    check_modules_timer_.Start(FROM_HERE,
         base::TimeDelta::FromMilliseconds(kModuleCheckDelayMs),
         this, &EnumerateModulesModel::ScanNow);
   }
@@ -924,10 +942,10 @@ void EnumerateModulesModel::DoneScanning() {
   if (limited_mode_)
     return;
 
-  NotificationService::current()->Notify(
-      NotificationType::MODULE_LIST_ENUMERATED,
-      Source<EnumerateModulesModel>(this),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_MODULE_LIST_ENUMERATED,
+      content::Source<EnumerateModulesModel>(this),
+      content::NotificationService::NoDetails());
 
   // Command line flag must be enabled for the notification to get sent out.
   // Otherwise we'd get the badge (while the feature is disabled) when we
@@ -936,10 +954,10 @@ void EnumerateModulesModel::DoneScanning() {
   if (!cmd_line.HasSwitch(switches::kConflictingModulesCheck))
     return;
 
-  NotificationService::current()->Notify(
-      NotificationType::MODULE_INCOMPATIBILITY_BADGE_CHANGE,
-      Source<EnumerateModulesModel>(this),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_MODULE_INCOMPATIBILITY_BADGE_CHANGE,
+      content::Source<EnumerateModulesModel>(this),
+      content::NotificationService::NoDetails());
 }
 
 GURL EnumerateModulesModel::ConstructHelpCenterUrl(

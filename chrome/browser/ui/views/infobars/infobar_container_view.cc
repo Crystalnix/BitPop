@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/infobars/infobar_container_view.h"
 
+#include "base/message_loop.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
 #include "grit/generated_resources.h"
@@ -12,7 +13,7 @@
 
 InfoBarContainerView::InfoBarContainerView(Delegate* delegate)
     : InfoBarContainer(delegate) {
-  SetID(VIEW_ID_INFO_BAR_CONTAINER);
+  set_id(VIEW_ID_INFO_BAR_CONTAINER);
 }
 
 InfoBarContainerView::~InfoBarContainerView() {
@@ -31,7 +32,7 @@ void InfoBarContainerView::Layout() {
   int top = GetVerticalOverlap(NULL);
 
   for (int i = 0; i < child_count(); ++i) {
-    InfoBarView* child = static_cast<InfoBarView*>(GetChildViewAt(i));
+    InfoBarView* child = static_cast<InfoBarView*>(child_at(i));
     top -= child->arrow_height();
     int child_height = child->total_height();
     child->SetBounds(0, top, width(), child_height);
@@ -44,10 +45,13 @@ void InfoBarContainerView::GetAccessibleState(ui::AccessibleViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_INFOBAR_CONTAINER);
 }
 
-void InfoBarContainerView::PlatformSpecificAddInfoBar(InfoBar* infobar) {
-  AddChildView(static_cast<InfoBarView*>(infobar));
+void InfoBarContainerView::PlatformSpecificAddInfoBar(InfoBar* infobar,
+                                                      size_t position) {
+  AddChildViewAt(static_cast<InfoBarView*>(infobar),
+                 static_cast<int>(position));
 }
 
 void InfoBarContainerView::PlatformSpecificRemoveInfoBar(InfoBar* infobar) {
   RemoveChildView(static_cast<InfoBarView*>(infobar));
+  MessageLoop::current()->DeleteSoon(FROM_HERE, infobar);
 }

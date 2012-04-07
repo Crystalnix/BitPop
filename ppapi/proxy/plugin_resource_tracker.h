@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,99 +9,45 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
-#include "base/memory/linked_ptr.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
-#include "ppapi/proxy/host_resource.h"
-#include "ppapi/shared_impl/tracker_base.h"
+#include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/resource_tracker.h"
 
 template<typename T> struct DefaultSingletonTraits;
 
-namespace pp {
+namespace ppapi {
+
 namespace proxy {
 
-class PluginDispatcher;
-class PluginResource;
-
-class PluginResourceTracker : public ::ppapi::TrackerBase {
+class PPAPI_PROXY_EXPORT PluginResourceTracker : public ResourceTracker {
  public:
-  // Called by tests that want to specify a specific ResourceTracker. This
-  // allows them to use a unique one each time and avoids singletons sticking
-  // around across tests.
-  static void SetInstanceForTest(PluginResourceTracker* tracker);
-
-  // Returns the global singleton resource tracker for the plugin.
-  static PluginResourceTracker* GetInstance();
-  static ::ppapi::TrackerBase* GetTrackerBaseInstance();
-
-  // Returns the object associated with the given resource ID, or NULL if
-  // there isn't one.
-  PluginResource* GetResourceObject(PP_Resource pp_resource);
-
-  // Adds the given resource object to the tracked list, and returns the
-  // plugin-local PP_Resource ID that identifies the resource. Note that this
-  // PP_Resource is not valid to send to the host, use
-  // PluginResource.host_resource() to get that.
-  PP_Resource AddResource(linked_ptr<PluginResource> object);
-
-  void AddRefResource(PP_Resource resource);
-  void ReleaseResource(PP_Resource resource);
+  PluginResourceTracker();
+  virtual ~PluginResourceTracker();
 
   // Given a host resource, maps it to an existing plugin resource ID if it
   // exists, or returns 0 on failure.
   PP_Resource PluginResourceForHostResource(
       const HostResource& resource) const;
 
-  // TrackerBase.
-  virtual ::ppapi::ResourceObjectBase* GetResourceAPI(
-      PP_Resource res) OVERRIDE;
-  virtual ::ppapi::FunctionGroupBase* GetFunctionAPI(
-      PP_Instance inst,
-      pp::proxy::InterfaceID id) OVERRIDE;
-  virtual PP_Instance GetInstanceForResource(PP_Resource resource) OVERRIDE;
+ protected:
+  // ResourceTracker overrides.
+  virtual PP_Resource AddResource(Resource* object) OVERRIDE;
+  virtual void RemoveResource(Resource* object) OVERRIDE;
 
  private:
-  friend struct DefaultSingletonTraits<PluginResourceTracker>;
-  friend class PluginResourceTrackerTest;
-  friend class PluginProxyTest;
-
-  PluginResourceTracker();
-  ~PluginResourceTracker();
-
-  struct ResourceInfo {
-    ResourceInfo();
-    ResourceInfo(int ref_count, linked_ptr<PluginResource> r);
-    ResourceInfo(const ResourceInfo& other);
-    ~ResourceInfo();
-
-    ResourceInfo& operator=(const ResourceInfo& other);
-
-    int ref_count;
-    linked_ptr<PluginResource> resource;  // May be NULL.
-  };
-
-  void ReleasePluginResourceRef(const PP_Resource& var,
-                                bool notify_browser_on_release);
-
-  // Map of plugin resource IDs to the information tracking that resource.
-  typedef std::map<PP_Resource, ResourceInfo> ResourceMap;
-  ResourceMap resource_map_;
-
   // Map of host instance/resource pairs to a plugin resource ID.
   typedef std::map<HostResource, PP_Resource> HostResourceMap;
   HostResourceMap host_resource_map_;
-
-  // Tracks the last ID we've sent out as a plugin resource so we don't send
-  // duplicates.
-  PP_Resource last_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginResourceTracker);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PLUGIN_RESOURCE_TRACKER_H_

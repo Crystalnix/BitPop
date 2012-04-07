@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,15 @@
 
 namespace browser_sync {
 
+using ::testing::_;
+
 ACTION(InvokeTask) {
-  arg3->Run();
-  delete arg3;
+  arg3.Run(syncable::ModelTypeSet());
 }
 
 SyncBackendHostMock::SyncBackendHostMock() {
   // By default, invoke the ready callback.
-  ON_CALL(*this, ConfigureDataTypes(testing::_, testing::_, testing::_,
-    testing::_, testing::_)).
+  ON_CALL(*this, ConfigureDataTypes(_, _, _, _, _, _)).
       WillByDefault(InvokeTask());
 }
 

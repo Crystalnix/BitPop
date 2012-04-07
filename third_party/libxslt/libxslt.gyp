@@ -22,7 +22,7 @@
       'target_name': 'libxslt',
       'conditions': [
         ['os_posix == 1 and OS != "mac" and use_system_libxml', {
-          'type': 'settings',
+          'type': 'none',
           'direct_dependent_settings': {
             'cflags': [
               '<!@(pkg-config --cflags libxslt)',
@@ -38,7 +38,6 @@
           },
         }, { # else: os_posix != 1 or OS == "mac" or ! use_system_libxml
           'type': 'static_library',
-          'msvs_guid': 'FC0E1FD0-5DD7-4041-A1C9-CD3C376E4EED',
           'sources': [
             'libxslt/attributes.c',
             'libxslt/attributes.h',
@@ -109,15 +108,20 @@
           },
           'conditions': [
             ['OS!="win"', {'product_name': 'xslt'}],
+            ['clang == 1', {
+              'xcode_settings': {
+                'WARNING_CFLAGS': [
+                  # libxslt stores a char[3] in a `const unsigned char*`.
+                  '-Wno-pointer-sign',
+                ],
+              },
+              'cflags': [
+                '-Wno-pointer-sign',
+              ],
+            }],
           ],
         }],
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

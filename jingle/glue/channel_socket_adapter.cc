@@ -18,8 +18,6 @@ TransportChannelSocketAdapter::TransportChannelSocketAdapter(
     cricket::TransportChannel* channel)
     : message_loop_(MessageLoop::current()),
       channel_(channel),
-      read_callback_(NULL),
-      write_callback_(NULL),
       closed_error_code_(net::OK) {
   DCHECK(channel_);
 
@@ -35,11 +33,13 @@ TransportChannelSocketAdapter::~TransportChannelSocketAdapter() {
 }
 
 int TransportChannelSocketAdapter::Read(
-    net::IOBuffer* buf, int buffer_size, net::CompletionCallback* callback) {
+    net::IOBuffer* buf,
+    int buffer_size,
+    const net::CompletionCallback& callback) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   DCHECK(buf);
-  DCHECK(callback);
-  CHECK(!read_callback_);
+  DCHECK(!callback.is_null());
+  CHECK(read_callback_.is_null());
 
   if (!channel_) {
     DCHECK(closed_error_code_ != net::OK);
@@ -54,11 +54,13 @@ int TransportChannelSocketAdapter::Read(
 }
 
 int TransportChannelSocketAdapter::Write(
-    net::IOBuffer* buffer, int buffer_size, net::CompletionCallback* callback) {
+    net::IOBuffer* buffer,
+    int buffer_size,
+    const net::CompletionCallback& callback) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   DCHECK(buffer);
-  DCHECK(callback);
-  CHECK(!write_callback_);
+  DCHECK(!callback.is_null());
+  CHECK(write_callback_.is_null());
 
   if (!channel_) {
     DCHECK(closed_error_code_ != net::OK);
@@ -68,14 +70,18 @@ int TransportChannelSocketAdapter::Write(
   int result;
   if (channel_->writable()) {
     result = channel_->SendPacket(buffer->data(), buffer_size);
-    if (result < 0)
+    if (result < 0) {
       result = net::MapSystemError(channel_->GetError());
+
+      // If the underlying socket returns IO pending where it shouldn't we
+      // pretend the packet is dropped and return as succeeded because no
+      // writeable callback will happen.
+      if (result == net::ERR_IO_PENDING)
+        result = net::OK;
+    }
   } else {
     // Channel is not writable yet.
     result = net::ERR_IO_PENDING;
-  }
-
-  if (result == net::ERR_IO_PENDING) {
     write_callback_ = callback;
     write_buffer_ = buffer;
     write_buffer_size_ = buffer_size;
@@ -86,14 +92,12 @@ int TransportChannelSocketAdapter::Write(
 
 bool TransportChannelSocketAdapter::SetReceiveBufferSize(int32 size) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  NOTIMPLEMENTED();
-  return false;
+  return channel_->SetOption(talk_base::Socket::OPT_RCVBUF, size) == 0;
 }
 
 bool TransportChannelSocketAdapter::SetSendBufferSize(int32 size) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
-  NOTIMPLEMENTED();
-  return false;
+  return channel_->SetOption(talk_base::Socket::OPT_SNDBUF, size) == 0;
 }
 
 void TransportChannelSocketAdapter::Close(int error_code) {
@@ -108,18 +112,18 @@ void TransportChannelSocketAdapter::Close(int error_code) {
   channel_->SignalDestroyed.disconnect(this);
   channel_ = NULL;
 
-  if (read_callback_) {
-    net::CompletionCallback* callback = read_callback_;
-    read_callback_ = NULL;
+  if (!read_callback_.is_null()) {
+    net::CompletionCallback callback = read_callback_;
+    read_callback_.Reset();
     read_buffer_ = NULL;
-    callback->Run(error_code);
+    callback.Run(error_code);
   }
 
-  if (write_callback_) {
-    net::CompletionCallback* callback = write_callback_;
-    write_callback_ = NULL;
+  if (!write_callback_.is_null()) {
+    net::CompletionCallback callback = write_callback_;
+    write_callback_.Reset();
     write_buffer_ = NULL;
-    callback->Run(error_code);
+    callback.Run(error_code);
   }
 }
 
@@ -127,7 +131,7 @@ void TransportChannelSocketAdapter::OnNewPacket(
     cricket::TransportChannel* channel, const char* data, size_t data_size) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   DCHECK_EQ(channel, channel_);
-  if (read_callback_) {
+  if (!read_callback_.is_null()) {
     DCHECK(read_buffer_);
     CHECK_LT(data_size, static_cast<size_t>(std::numeric_limits<int>::max()));
 
@@ -139,11 +143,11 @@ void TransportChannelSocketAdapter::OnNewPacket(
 
     memcpy(read_buffer_->data(), data, data_size);
 
-    net::CompletionCallback* callback = read_callback_;
-    read_callback_ = NULL;
+    net::CompletionCallback callback = read_callback_;
+    read_callback_.Reset();
     read_buffer_ = NULL;
 
-    callback->Run(data_size);
+    callback.Run(data_size);
   } else {
     LOG(WARNING)
         << "Data was received without a callback. Dropping the packet.";
@@ -154,17 +158,17 @@ void TransportChannelSocketAdapter::OnWritableState(
     cricket::TransportChannel* channel) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   // Try to send the packet if there is a pending write.
-  if (write_callback_) {
+  if (!write_callback_.is_null()) {
     int result = channel_->SendPacket(write_buffer_->data(),
                                       write_buffer_size_);
     if (result < 0)
       result = net::MapSystemError(channel_->GetError());
 
     if (result != net::ERR_IO_PENDING) {
-      net::CompletionCallback* callback = write_callback_;
-      write_callback_ = NULL;
+      net::CompletionCallback callback = write_callback_;
+      write_callback_.Reset();
       write_buffer_ = NULL;
-      callback->Run(result);
+      callback.Run(result);
     }
   }
 }

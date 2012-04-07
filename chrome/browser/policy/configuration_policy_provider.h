@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,12 +11,11 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/values.h"
-#include "chrome/browser/policy/configuration_policy_store_interface.h"
-#include "policy/configuration_policy_type.h"
+#include "base/observer_list.h"
 
 namespace policy {
 
+struct PolicyDefinitionList;
 class PolicyMap;
 
 // A mostly-abstract super class for platform-specific policy providers.
@@ -26,50 +25,53 @@ class ConfigurationPolicyProvider {
  public:
   class Observer {
    public:
-    virtual ~Observer() {}
-    virtual void OnUpdatePolicy() = 0;
-    virtual void OnProviderGoingAway() = 0;
-  };
-
-  // Used for static arrays of policy values that is used to initialize an
-  // instance of the ConfigurationPolicyProvider.
-  struct PolicyDefinitionList {
-    struct Entry {
-      ConfigurationPolicyType policy_type;
-      Value::ValueType value_type;
-      const char* name;
-    };
-
-    const Entry* begin;
-    const Entry* end;
+    virtual ~Observer();
+    virtual void OnUpdatePolicy(ConfigurationPolicyProvider* provider) = 0;
+    virtual void OnProviderGoingAway(ConfigurationPolicyProvider* provider);
   };
 
   explicit ConfigurationPolicyProvider(const PolicyDefinitionList* policy_list);
 
   virtual ~ConfigurationPolicyProvider();
 
-  // Must be implemented by provider subclasses to specify the provider-specific
-  // policy decisions. The preference service invokes this |Provide| method when
-  // it needs a policy provider to specify its policy choices. In |Provide|, the
-  // |ConfigurationPolicyProvider| must make calls to the |Apply| method of
-  // |store| to apply specific policies. Returns true if the policy could be
-  // provided, otherwise false.
-  virtual bool Provide(ConfigurationPolicyStoreInterface* store) = 0;
+  // Fills the given |result| with the current policy values. Returns true if
+  // the policies were provided. This is used mainly by the
+  // ConfigurationPolicyPrefStore, which retrieves policy values from here.
+  bool Provide(PolicyMap* result);
 
   // Check whether this provider has completed initialization. This is used to
   // detect whether initialization is done in case providers implementations
   // need to do asynchronous operations for initialization.
   virtual bool IsInitializationComplete() const;
 
- protected:
-  // Decodes the value tree and writes the configuration to the given |store|.
-  void ApplyPolicyValueTree(const DictionaryValue* policies,
-                             ConfigurationPolicyStoreInterface* store);
+#if !defined(OFFICIAL_BUILD)
+  // Overrides the policy values that are obtained in calls to |Provide|.
+  // The default behavior is restored if |policies| is NULL.
+  // Takes ownership of |policies|.
+  // This is meant for tests only, and is disabled on official builds.
+  void OverridePolicies(PolicyMap* policies);
+#endif
 
-  // Writes the configuration found in the already-decoded map |policies| to
-  // the given |store|.
-  void ApplyPolicyMap(const PolicyMap* policies,
-                      ConfigurationPolicyStoreInterface* store);
+  // Asks the provider to refresh its policies. All the updates caused by this
+  // call will be visible on the next call of OnUpdatePolicy on the observers,
+  // which are guaranteed to happen even if the refresh fails.
+  // It is possible that OnProviderGoingAway is called first though, and
+  // OnUpdatePolicy won't be called if that happens.
+  virtual void RefreshPolicies() = 0;
+
+  // Utility method that converts deprecated policies into their corresponding
+  // actual policies. Subclasses can use this to fix deprecated policies in
+  // PolicyMaps that they obtained from elsewhere.
+  static void FixDeprecatedPolicies(PolicyMap* policies);
+
+ protected:
+  // Sends a policy update notification to observers.
+  void NotifyPolicyUpdated();
+
+  // Must be implemented by subclasses to provide their policy values. The
+  // values actually provided by |Provide| can be overridden using
+  // |OverridePolicies|.
+  virtual bool ProvideInternal(PolicyMap* result) = 0;
 
   const PolicyDefinitionList* policy_definition_list() const {
     return policy_definition_list_;
@@ -78,19 +80,19 @@ class ConfigurationPolicyProvider {
  private:
   friend class ConfigurationPolicyObserverRegistrar;
 
-  // Temporarily needed for access to ApplyPolicyValueTree as long as we need
-  // to support old-style policy.
-  friend class UserPolicyCache;
-
-  virtual void AddObserver(ConfigurationPolicyProvider::Observer* observer) = 0;
-  virtual void RemoveObserver(
-      ConfigurationPolicyProvider::Observer* observer) = 0;
+  virtual void AddObserver(Observer* observer);
+  virtual void RemoveObserver(Observer* observer);
 
   // Contains the default mapping from policy values to the actual names.
-  const ConfigurationPolicyProvider::PolicyDefinitionList*
-      policy_definition_list_;
+  const PolicyDefinitionList* policy_definition_list_;
 
- private:
+  ObserverList<Observer, true> observer_list_;
+
+#if !defined(OFFICIAL_BUILD)
+  // Usually NULL, but can be used in tests to override the policies provided.
+  scoped_ptr<PolicyMap> override_policies_;
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(ConfigurationPolicyProvider);
 };
 
@@ -108,8 +110,11 @@ class ConfigurationPolicyObserverRegistrar
             ConfigurationPolicyProvider::Observer* observer);
 
   // ConfigurationPolicyProvider::Observer implementation:
-  virtual void OnUpdatePolicy();
-  virtual void OnProviderGoingAway();
+  virtual void OnUpdatePolicy(ConfigurationPolicyProvider* provider) OVERRIDE;
+  virtual void OnProviderGoingAway(
+      ConfigurationPolicyProvider* provider) OVERRIDE;
+
+  ConfigurationPolicyProvider* provider() { return provider_; }
 
  private:
   ConfigurationPolicyProvider* provider_;

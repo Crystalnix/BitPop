@@ -10,6 +10,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 
+#pragma comment(lib, "crypt32.lib")
+
 namespace {
   // Helper for error handling during key import.
 #define READ_ASSERT(truth) \
@@ -132,7 +134,19 @@ bool RSAPrivateKey::InitProvider() {
                                       PROV_RSA_FULL, CRYPT_VERIFYCONTEXT);
 }
 
-bool RSAPrivateKey::ExportPrivateKey(std::vector<uint8>* output) {
+RSAPrivateKey* RSAPrivateKey::Copy() const {
+  scoped_ptr<RSAPrivateKey> copy(new RSAPrivateKey());
+  if (!CryptContextAddRef(provider_, NULL, 0)) {
+    NOTREACHED();
+    return NULL;
+  }
+  copy->provider_.reset(provider_.get());
+  if (!CryptDuplicateKey(key_.get(), NULL, 0, copy->key_.receive()))
+    return NULL;
+  return copy.release();
+}
+
+bool RSAPrivateKey::ExportPrivateKey(std::vector<uint8>* output) const {
   // Export the key
   DWORD blob_length = 0;
   if (!CryptExportKey(key_, 0, PRIVATEKEYBLOB, 0, NULL, &blob_length)) {
@@ -185,7 +199,7 @@ bool RSAPrivateKey::ExportPrivateKey(std::vector<uint8>* output) {
   return pki.Export(output);
 }
 
-bool RSAPrivateKey::ExportPublicKey(std::vector<uint8>* output) {
+bool RSAPrivateKey::ExportPublicKey(std::vector<uint8>* output) const {
   DWORD key_info_len;
   if (!CryptExportPublicKeyInfo(
       provider_, AT_SIGNATURE, X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
@@ -220,9 +234,7 @@ bool RSAPrivateKey::ExportPublicKey(std::vector<uint8>* output) {
     return false;
   }
 
-  for (size_t i = 0; i < encoded_length; ++i)
-    output->push_back(encoded[i]);
-
+  output->assign(encoded.get(), encoded.get() + encoded_length);
   return true;
 }
 

@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
@@ -21,25 +20,13 @@
 #include "chrome/browser/sync/syncable/directory_event.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/util/extensions_activity_monitor.h"
-#include "chrome/common/deprecated/event_sys.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
 
 namespace syncable {
-class Directory;
-class DirectoryManager;
 class Entry;
-class Id;
 class MutableEntry;
-class WriteTransaction;
 }  // namespace syncable
 
 namespace browser_sync {
-
-class ModelSafeWorker;
-class ServerConnectionManager;
-class SyncProcessState;
-class URLFactory;
-struct HttpResponse;
 
 enum SyncerStep {
   SYNCER_BEGIN,
@@ -74,8 +61,6 @@ class Syncer {
  public:
   typedef std::vector<int64> UnsyncedMetaHandles;
 
-  // The constructor may be called from a thread that is not the Syncer's
-  // dedicated thread, to allow some flexibility in the setup.
   Syncer();
   virtual ~Syncer();
 
@@ -84,8 +69,7 @@ class Syncer {
   bool ExitRequested();
   void RequestEarlyExit();
 
-  // Like SyncShare() above, but |first_step| and |last_step| are provided to
-  // perform a partial sync cycle, stopping after |last_step| is performed.
+  // Runs a sync cycle from |first_step| to |last_step|.
   virtual void SyncShare(sessions::SyncSession* session,
                          SyncerStep first_step,
                          SyncerStep last_step);
@@ -99,15 +83,9 @@ class Syncer {
 
   ConflictResolver resolver_;
 
-  // A callback hook used in unittests to simulate changes between conflict set
-  // building and conflict resolution.
-  Callback0::Type* pre_conflict_resolution_closure_;
-
   friend class SyncerTest;
   FRIEND_TEST_ALL_PREFIXES(SyncerTest, NameClashWithResolver);
   FRIEND_TEST_ALL_PREFIXES(SyncerTest, IllegalAndLegalUpdates);
-  FRIEND_TEST_ALL_PREFIXES(SusanDeletingTest,
-                           NewServerItemInAFolderHierarchyWeHaveDeleted3);
   FRIEND_TEST_ALL_PREFIXES(SyncerTest, TestCommitListOrderingAndNewParent);
   FRIEND_TEST_ALL_PREFIXES(SyncerTest,
                            TestCommitListOrderingAndNewParentAndChild);
@@ -133,8 +111,8 @@ class Syncer {
 // Utility function declarations.
 void CopyServerFields(syncable::Entry* src, syncable::MutableEntry* dest);
 void ClearServerData(syncable::MutableEntry* entry);
+const char* SyncerStepToString(const SyncerStep);
 
 }  // namespace browser_sync
 
 #endif  // CHROME_BROWSER_SYNC_ENGINE_SYNCER_H_
-

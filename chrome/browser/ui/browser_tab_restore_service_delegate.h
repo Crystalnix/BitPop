@@ -12,10 +12,6 @@
 #include "chrome/browser/sessions/tab_restore_service_delegate.h"
 
 class Browser;
-class Profile;
-class SessionStorageNamespace;
-class TabContents;
-class TabNavigation;
 
 // Implementation of TabRestoreServiceDelegate which uses an instance of
 // Browser in order to fulfil its duties.
@@ -30,10 +26,10 @@ class BrowserTabRestoreServiceDelegate : public TabRestoreServiceDelegate {
   virtual const SessionID& GetSessionID() const OVERRIDE;
   virtual int GetTabCount() const OVERRIDE;
   virtual int GetSelectedIndex() const OVERRIDE;
-  virtual TabContents* GetTabContentsAt(int index) const OVERRIDE;
-  virtual TabContents* GetSelectedTabContents() const OVERRIDE;
+  virtual content::WebContents* GetWebContentsAt(int index) const OVERRIDE;
+  virtual content::WebContents* GetSelectedWebContents() const OVERRIDE;
   virtual bool IsTabPinned(int index) const OVERRIDE;
-  virtual TabContents* AddRestoredTab(
+  virtual content::WebContents* AddRestoredTab(
       const std::vector<TabNavigation>& navigations,
       int tab_index,
       int selected_navigation,

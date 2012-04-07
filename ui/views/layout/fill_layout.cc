@@ -5,12 +5,8 @@
 #include "ui/views/layout/fill_layout.h"
 
 #include "base/logging.h"
-#include "ui/views/view.h"
 
-namespace ui {
-
-////////////////////////////////////////////////////////////////////////////////
-// FillLayout, public:
+namespace views {
 
 FillLayout::FillLayout() {
 }
@@ -18,20 +14,17 @@ FillLayout::FillLayout() {
 FillLayout::~FillLayout() {
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// FillLayout, LayoutManager implementation:
-
 void FillLayout::Layout(View* host) {
-  if (host->children_empty())
+  if (!host->has_children())
     return;
 
-  View* child = host->child_at(0);
-  child->SetBounds(gfx::Rect(gfx::Point(), host->size()));
+  View* frame_view = host->child_at(0);
+  frame_view->SetBounds(0, 0, host->width(), host->height());
 }
 
 gfx::Size FillLayout::GetPreferredSize(View* host) {
-  DCHECK_EQ(1U, host->children_size());
+  DCHECK_EQ(1, host->child_count());
   return host->child_at(0)->GetPreferredSize();
 }
 
-}  // namespace ui
+}  // namespace views

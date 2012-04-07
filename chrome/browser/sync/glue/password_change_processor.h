@@ -12,13 +12,12 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/sync/glue/password_model_associator.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_types.h"
 
 class PasswordStore;
 class MessageLoop;
-class NotificationService;
 
 namespace browser_sync {
 
@@ -29,24 +28,23 @@ class UnrecoverableErrorHandler;
 // operations and use of this class are from the DB thread on Windows and Linux,
 // or the password thread on Mac.
 class PasswordChangeProcessor : public ChangeProcessor,
-                                public NotificationObserver {
+                                public content::NotificationObserver {
  public:
   PasswordChangeProcessor(PasswordModelAssociator* model_associator,
                           PasswordStore* password_store,
                           UnrecoverableErrorHandler* error_handler);
   virtual ~PasswordChangeProcessor();
 
-  // NotificationObserver implementation.
+  // content::NotificationObserver implementation.
   // Passwords -> sync_api model change application.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // sync_api model -> WebDataService change application.
   virtual void ApplyChangesFromSyncModel(
       const sync_api::BaseTransaction* trans,
-      const sync_api::SyncManager::ChangeRecord* changes,
-      int change_count) OVERRIDE;
+      const sync_api::ImmutableChangeRecordList& changes) OVERRIDE;
 
   // Commit changes buffered during ApplyChanges. We must commit them to the
   // password store only after the sync_api transaction is released, else there
@@ -59,6 +57,7 @@ class PasswordChangeProcessor : public ChangeProcessor,
   virtual void StopImpl() OVERRIDE;
 
  private:
+  friend class ScopedStopObserving<PasswordChangeProcessor>;
   void StartObserving();
   void StopObserving();
 
@@ -76,7 +75,7 @@ class PasswordChangeProcessor : public ChangeProcessor,
   PasswordModelAssociator::PasswordVector updated_passwords_;
   PasswordModelAssociator::PasswordVector deleted_passwords_;
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
 
   bool observing_;
 

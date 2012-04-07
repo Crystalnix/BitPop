@@ -4,13 +4,39 @@
 
 #include "chrome/renderer/mock_printer.h"
 
+#include "base/basictypes.h"
 #include "base/file_util.h"
 #include "base/shared_memory.h"
+#include "base/string16.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/common/print_messages.h"
 #include "ipc/ipc_message_utils.h"
 #include "printing/metafile_impl.h"
 #include "printing/units.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace {
+
+void UpdateMargins(int margins_type, int dpi, PrintMsg_Print_Params* params) {
+  if (margins_type == printing::NO_MARGINS) {
+    params->content_size.SetSize(static_cast<int>((8.5 * dpi)),
+                                 static_cast<int>((11.0 * dpi)));
+    params->margin_left = 0;
+    params->margin_top = 0;
+  } else if (margins_type == printing::PRINTABLE_AREA_MARGINS) {
+    params->content_size.SetSize(static_cast<int>((8.0 * dpi)),
+                                 static_cast<int>((10.5 * dpi)));
+    params->margin_left = static_cast<int>(0.25 * dpi);
+    params->margin_top = static_cast<int>(0.25 * dpi);
+  } else if (margins_type == printing::CUSTOM_MARGINS) {
+    params->content_size.SetSize(static_cast<int>((7.9 * dpi)),
+                                 static_cast<int>((10.4 * dpi)));
+    params->margin_left = static_cast<int>(0.30 * dpi);
+    params->margin_top = static_cast<int>(0.30 * dpi);
+  }
+}
+
+} // end
 
 MockPrinterPage::MockPrinterPage(const void* source_data,
                                  uint32 source_size,
@@ -35,12 +61,24 @@ MockPrinter::MockPrinter()
     current_document_cookie_(0),
     printer_status_(PRINTER_READY),
     number_pages_(0),
-    page_number_(0) {
+    page_number_(0),
+    is_first_request_(true),
+    print_to_pdf_(false),
+    preview_request_id_(0),
+    display_header_footer_(false),
+    date_(ASCIIToUTF16("date")),
+    title_(ASCIIToUTF16("title")),
+    url_(ASCIIToUTF16("url")),
+    use_invalid_settings_(false) {
   page_size_.SetSize(static_cast<int>(8.5 * dpi_),
                      static_cast<int>(11.0 * dpi_));
-  printable_size_.SetSize(static_cast<int>((7.5 * dpi_)),
+  content_size_.SetSize(static_cast<int>((7.5 * dpi_)),
                           static_cast<int>((10.0 * dpi_)));
   margin_left_ = margin_top_ = static_cast<int>(0.5 * dpi_);
+  printable_area_.SetRect(static_cast<int>(0.25 * dpi_),
+                          static_cast<int>(0.25 *dpi_),
+                          static_cast<int>(8 * dpi_),
+                          static_cast<int>(10.5 * dpi_));
 }
 
 MockPrinter::~MockPrinter() {
@@ -58,7 +96,7 @@ void MockPrinter::GetDefaultPrintSettings(PrintMsg_Print_Params* params) {
 
   // Assign a unit document cookie and set the print settings.
   document_cookie_ = CreateDocumentCookie();
-  memset(params, 0, sizeof(PrintMsg_Print_Params));
+  params->Reset();
   SetPrintParams(params);
 }
 
@@ -69,9 +107,20 @@ void MockPrinter::SetDefaultPrintSettings(const PrintMsg_Print_Params& params) {
   desired_dpi_ = params.desired_dpi;
   selection_only_ = params.selection_only;
   page_size_ = params.page_size;
-  printable_size_ = params.printable_size;
+  content_size_ = params.content_size;
+  printable_area_ = params.printable_area;
   margin_left_ = params.margin_left;
   margin_top_ = params.margin_top;
+  display_header_footer_ = params.display_header_footer;
+  date_ = params.date;
+  title_ = params.title;
+  url_ = params.url;
+}
+
+void MockPrinter::UseInvalidSettings() {
+  use_invalid_settings_ = true;
+  PrintMsg_Print_Params empty_param;
+  SetDefaultPrintSettings(empty_param);
 }
 
 void MockPrinter::ScriptedPrint(int cookie,
@@ -81,7 +130,8 @@ void MockPrinter::ScriptedPrint(int cookie,
   // Verify the input parameters.
   EXPECT_EQ(document_cookie_, cookie);
 
-  memset(settings, 0, sizeof(PrintMsg_PrintPages_Params));
+  settings->Reset();
+
   settings->params.dpi = dpi_;
   settings->params.max_shrink = max_shrink_;
   settings->params.min_shrink = min_shrink_;
@@ -89,16 +139,29 @@ void MockPrinter::ScriptedPrint(int cookie,
   settings->params.selection_only = selection_only_;
   settings->params.document_cookie = document_cookie_;
   settings->params.page_size = page_size_;
-  settings->params.printable_size = printable_size_;
+  settings->params.content_size = content_size_;
+  settings->params.printable_area = printable_area_;
+  settings->params.is_first_request = is_first_request_;
+  settings->params.print_to_pdf = print_to_pdf_;
+  settings->params.preview_request_id = preview_request_id_;
+  settings->params.display_header_footer = display_header_footer_;
+  settings->params.date = date_;
+  settings->params.title = title_;
+  settings->params.url = url_;
   printer_status_ = PRINTER_PRINTING;
 }
 
 void MockPrinter::UpdateSettings(int cookie,
-                                 PrintMsg_PrintPages_Params* params) {
-  EXPECT_EQ(document_cookie_, cookie);
-
-  memset(params, 0, sizeof(PrintMsg_PrintPages_Params));
+                                 PrintMsg_PrintPages_Params* params,
+                                 const std::vector<int>& pages,
+                                 int margins_type) {
+  if (document_cookie_ == -1) {
+    document_cookie_ = CreateDocumentCookie();
+  }
+  params->Reset();
+  params->pages = pages;
   SetPrintParams(&(params->params));
+  UpdateMargins(margins_type, dpi_, &(params->params));
   printer_status_ = PRINTER_PRINTING;
 }
 
@@ -136,7 +199,11 @@ void MockPrinter::PrintPage(const PrintHostMsg_DidPrintPage_Params& params) {
   base::SharedMemory metafile_data(params.metafile_data_handle, true);
 #endif
   metafile_data.Map(params.data_size);
+#if defined(OS_MACOSX)
+  printing::PdfMetafileCg metafile;
+#else
   printing::NativeMetafile metafile;
+#endif
   metafile.InitFromData(metafile_data.memory(), params.data_size);
   printing::Image image(metafile);
   MockPrinterPage* page_data = new MockPrinterPage(metafile_data.memory(),
@@ -212,7 +279,7 @@ bool MockPrinter::SaveBitmap(
 }
 
 int MockPrinter::CreateDocumentCookie() {
-  return ++current_document_cookie_;
+  return use_invalid_settings_ ? 0 : ++current_document_cookie_;
 }
 
 void MockPrinter::SetPrintParams(PrintMsg_Print_Params* params) {
@@ -223,7 +290,15 @@ void MockPrinter::SetPrintParams(PrintMsg_Print_Params* params) {
   params->selection_only = selection_only_;
   params->document_cookie = document_cookie_;
   params->page_size = page_size_;
-  params->printable_size = printable_size_;
+  params->content_size = content_size_;
+  params->printable_area = printable_area_;
   params->margin_left = margin_left_;
   params->margin_top = margin_top_;
+  params->is_first_request = is_first_request_;
+  params->print_to_pdf = print_to_pdf_;
+  params->preview_request_id = preview_request_id_;
+  params->display_header_footer = display_header_footer_;
+  params->date = date_;
+  params->title = title_;
+  params->url = url_;
 }

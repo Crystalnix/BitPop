@@ -36,16 +36,19 @@
 #include "chrome/browser/tab_contents/chrome_interstitial_page.h"
 #include "googleurl/src/gurl.h"
 
-class DictionaryValue;
 class MessageLoop;
 class SafeBrowsingBlockingPageFactory;
 class MalwareDetails;
 class TabContents;
 
+namespace base {
+class DictionaryValue;
+}
+
 class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
  public:
   typedef std::vector<SafeBrowsingService::UnsafeResource> UnsafeResourceList;
-  typedef std::map<TabContents*, UnsafeResourceList> UnsafeResourceMap;
+  typedef std::map<content::WebContents*, UnsafeResourceList> UnsafeResourceMap;
 
   virtual ~SafeBrowsingBlockingPage();
 
@@ -65,20 +68,21 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   }
 
   // ChromeInterstitialPage method:
-  virtual std::string GetHTMLContents();
-  virtual void SetReportingPreference(bool report);
-  virtual void Proceed();
-  virtual void DontProceed();
+  virtual std::string GetHTMLContents() OVERRIDE;
+  virtual void Proceed() OVERRIDE;
+  virtual void DontProceed() OVERRIDE;
 
  protected:
   friend class SafeBrowsingBlockingPageTest;
 
   // ChromeInterstitialPage method:
-  virtual void CommandReceived(const std::string& command);
+  virtual void CommandReceived(const std::string& command) OVERRIDE;
+
+  void SetReportingPreference(bool report);
 
   // Don't instanciate this class directly, use ShowBlockingPage instead.
   SafeBrowsingBlockingPage(SafeBrowsingService* service,
-                           TabContents* tab_contents,
+                           content::WebContents* web_contents,
                            const UnsafeResourceList& unsafe_resources);
 
   // After a malware interstitial where the user opted-in to the
@@ -88,6 +92,8 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
   int64 malware_details_proceed_delay_ms_;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingBlockingPageTest, MalwareReports);
+
   enum BlockingPageEvent {
     SHOW,
     PROCEED,
@@ -96,13 +102,13 @@ class SafeBrowsingBlockingPage : public ChromeInterstitialPage {
 
   // Fills the passed dictionary with the strings passed to JS Template when
   // creating the HTML.
-  void PopulateMultipleThreatStringDictionary(DictionaryValue* strings);
-  void PopulateMalwareStringDictionary(DictionaryValue* strings);
-  void PopulatePhishingStringDictionary(DictionaryValue* strings);
+  void PopulateMultipleThreatStringDictionary(base::DictionaryValue* strings);
+  void PopulateMalwareStringDictionary(base::DictionaryValue* strings);
+  void PopulatePhishingStringDictionary(base::DictionaryValue* strings);
 
   // A helper method used by the Populate methods above used to populate common
   // fields.
-  void PopulateStringDictionary(DictionaryValue* strings,
+  void PopulateStringDictionary(base::DictionaryValue* strings,
                                 const string16& title,
                                 const string16& headline,
                                 const string16& description1,
@@ -178,7 +184,7 @@ class SafeBrowsingBlockingPageFactory {
 
   virtual SafeBrowsingBlockingPage* CreateSafeBrowsingPage(
       SafeBrowsingService* service,
-      TabContents* tab_contents,
+      content::WebContents* web_contents,
       const SafeBrowsingBlockingPage::UnsafeResourceList& unsafe_resources) = 0;
 };
 

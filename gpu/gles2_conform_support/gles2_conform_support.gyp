@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -31,9 +31,10 @@
       'type': 'static_library',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
         '<(DEPTH)/gpu/gpu.gyp:command_buffer_service',
       ],
-      'include_dirs': ['egl/native'],
+      'include_dirs': ['<(DEPTH)/third_party/khronos'],
       'sources': [
         'egl/config.cc',
         'egl/config.h',
@@ -44,8 +45,12 @@
         'egl/surface.h',
       ],
       'direct_dependent_settings': {
-        'include_dirs': ['egl/native'],
+        'include_dirs': ['<(DEPTH)/third_party/khronos'],
       },
+      'defines': [
+        'EGLAPI=',
+        'EGLAPIENTRY=',
+      ],
     },
     {
       'target_name': 'egl_main_native',
@@ -54,35 +59,42 @@
         'egl_native',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': ['../../build/linux/system.gyp:gtk'],
         }],
       ],
-      'include_dirs': ['egl/native'],
+      'include_dirs': ['<(DEPTH)/third_party/khronos'],
       'sources': [
         '<@(bootstrap_sources_native)',
       ],
       'direct_dependent_settings': {
-        'include_dirs': ['egl/native'],
+        'include_dirs': ['<(DEPTH)/third_party/khronos'],
       },
-      'defines': ['GTF_GLES20'],
+      'defines': [
+        'GTF_GLES20',
+        'EGLAPI=',
+        'EGLAPIENTRY=',
+      ],
     },
     {
       'target_name': 'gles2_conform_support',
       'type': 'executable',
       'dependencies': [
         'egl_native',
+        '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib_nocheck',
         '<(DEPTH)/third_party/expat/expat.gyp:expat',
       ],
       'conditions': [
-        ['OS=="linux"', {
+        ['toolkit_uses_gtk == 1', {
           'dependencies': ['../../build/linux/system.gyp:gtk'],
         }],
       ],
       'defines': [
         'GLES2_CONFORM_SUPPORT_ONLY',
         'GTF_GLES20',
+        'EGLAPI=',
+        'EGLAPIENTRY=',
       ],
       'sources': [
         '<@(bootstrap_sources_native)',
@@ -91,10 +103,3 @@
     },
   ],
 }
-
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

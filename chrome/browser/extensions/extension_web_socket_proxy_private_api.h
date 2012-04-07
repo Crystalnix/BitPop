@@ -7,36 +7,99 @@
 #pragma once
 
 #include "base/timer.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
 #include "chrome/browser/extensions/extension_function.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "net/base/address_list.h"
 
-class WebSocketProxyPrivateGetPassportForTCPFunction
-    : public AsyncExtensionFunction, public NotificationObserver {
+class IOThread;
+
+namespace net {
+class SingleRequestHostResolver;
+}
+
+// Base class for web socket proxy functions.
+class WebSocketProxyPrivate
+    : public AsyncExtensionFunction, public content::NotificationObserver {
  public:
-  WebSocketProxyPrivateGetPassportForTCPFunction();
+  WebSocketProxyPrivate();
+  virtual ~WebSocketProxyPrivate();
 
-  virtual ~WebSocketProxyPrivateGetPassportForTCPFunction();
+ protected:
+  // Custom finalization.
+  virtual void CustomFinalize() = 0;
+
+  // ExtensionFunction implementation.
+  virtual bool RunImpl() OVERRIDE;
+
+  // content::NotificationObserver implementation.
+  virtual void Observe(
+      int type, const content::NotificationSource& source,
+      const content::NotificationDetails& details) OVERRIDE;
+
+  // Destination hostname.
+  std::string hostname_;
+  // Destination IP address.
+  net::AddressList addr_;
+  // Destination port.
+  int port_;
+  // Proxy accepts websocket connections on this port.
+  int listening_port_;
+  // Whether TLS should be used.
+  bool do_tls_;
+  // Requested parameters of connection.
+  std::map<std::string, std::string> map_;
+
+ private:
+  // Finalizes and sends respond. Overwrite 'CustomFinalize' in inherited
+  // classes.
+  void Finalize();
+
+  // Callback for DNS resolution.
+  void OnHostResolution(int result);
+
+  // Posts task to the IO thread, which will make dns resolution.
+  void ResolveHost();
+  // Executes on IO thread. Performs DNS resolution.
+  void ResolveHostIOPart(IOThread* io_thread);
+
+  // Used to signal timeout (when waiting for proxy initial launch).
+  base::OneShotTimer<WebSocketProxyPrivate> timer_;
+  // Used to register for notifications.
+  content::NotificationRegistrar registrar_;
+  // Used to cancel host resolution when out of scope.
+  scoped_ptr<net::SingleRequestHostResolver> resolver_;
+  // Callback which is called when host is resolved.
+  bool is_finalized_;
+};
+
+// New API function for web socket proxy, which should be used.
+class WebSocketProxyPrivateGetURLForTCPFunction
+    : public WebSocketProxyPrivate {
+ public:
+  WebSocketProxyPrivateGetURLForTCPFunction();
+  virtual ~WebSocketProxyPrivateGetURLForTCPFunction();
 
  private:
   // ExtensionFunction implementation.
   virtual bool RunImpl() OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(
-      NotificationType type, const NotificationSource& source,
-      const NotificationDetails& details) OVERRIDE;
+  // WebSocketProxyPrivate implementation:
+  virtual void CustomFinalize() OVERRIDE;
 
-  // Finalizes async operation.
-  void Finalize();
+  DECLARE_EXTENSION_FUNCTION_NAME("webSocketProxyPrivate.getURLForTCP")
+};
 
-  // Whether already finalized.
-  bool is_finalized_;
+// Legacy API function for web socket proxy, to be eliminated.
+class WebSocketProxyPrivateGetPassportForTCPFunction
+    : public WebSocketProxyPrivate {
+ public:
+  WebSocketProxyPrivateGetPassportForTCPFunction();
+  virtual ~WebSocketProxyPrivateGetPassportForTCPFunction();
 
-  // Used to signal timeout (when waiting for proxy initial launch).
-  base::OneShotTimer<WebSocketProxyPrivateGetPassportForTCPFunction> timer_;
-
-  NotificationRegistrar registrar_;
+ private:
+  // WebSocketProxyPrivate implementation:
+  virtual void CustomFinalize() OVERRIDE;
 
   DECLARE_EXTENSION_FUNCTION_NAME("webSocketProxyPrivate.getPassportForTCP")
 };

@@ -41,12 +41,13 @@ list > [selected]:hover {
 }
 
 .table-row-cell {
+  display: -webkit-box;
   overflow: hidden;
 }
 
 .table-row-cell > * {
   overflow: hidden;
-  margin: 0 10px;
+  margin: 0 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -100,7 +101,7 @@ list > [selected]:hover {
 
 .table-header-splitter {
   position: absolute;
-  top: 0px;
+  top: 0;
   cursor: col-resize;
   width: 5px;
   -webkit-margin-start: -1px;

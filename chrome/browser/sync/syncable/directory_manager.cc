@@ -13,20 +13,14 @@
 #include "base/port.h"
 #include "base/string_util.h"
 #include "chrome/browser/sync/syncable/syncable.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
 
 using browser_sync::Cryptographer;
+using browser_sync::UnrecoverableErrorHandler;
 
 namespace syncable {
 
 static const FilePath::CharType kSyncDataDatabaseFilename[] =
     FILE_PATH_LITERAL("SyncData.sqlite3");
-
-DirectoryManagerEvent DirectoryManagerShutdownEvent() {
-  DirectoryManagerEvent event;
-  event.what_happened = DirectoryManagerEvent::SHUTDOWN;
-  return event;
-}
 
 // static
 const FilePath DirectoryManager::GetSyncDataDatabaseFilename() {
@@ -40,7 +34,6 @@ const FilePath DirectoryManager::GetSyncDataDatabasePath() const {
 DirectoryManager::DirectoryManager(const FilePath& path)
     : root_path_(path),
       managed_directory_(NULL),
-      channel_(new Channel(DirectoryManagerShutdownEvent())),
       cryptographer_(new Cryptographer) {
 }
 
@@ -48,20 +41,31 @@ DirectoryManager::~DirectoryManager() {
   base::AutoLock lock(lock_);
   DCHECK_EQ(managed_directory_, static_cast<Directory*>(NULL))
       << "Dir " << managed_directory_->name() << " not closed!";
-  delete channel_;
 }
 
-bool DirectoryManager::Open(const std::string& name) {
+bool DirectoryManager::Open(
+    const std::string& name,
+    DirectoryChangeDelegate* delegate,
+    UnrecoverableErrorHandler* unrecoverable_error_handler,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer) {
   bool was_open = false;
-  const DirOpenResult result = OpenImpl(name,
-      GetSyncDataDatabasePath(), &was_open);
+  const DirOpenResult result =
+      OpenImpl(name, GetSyncDataDatabasePath(), delegate,
+               unrecoverable_error_handler,
+               transaction_observer, &was_open);
   return syncable::OPENED == result;
 }
 
 // Opens a directory.  Returns false on error.
-DirOpenResult DirectoryManager::OpenImpl(const std::string& name,
-                                         const FilePath& path,
-                                         bool* was_open) {
+DirOpenResult DirectoryManager::OpenImpl(
+    const std::string& name,
+    const FilePath& path,
+    DirectoryChangeDelegate* delegate,
+    UnrecoverableErrorHandler* unrecoverable_error_handler,
+    const browser_sync::WeakHandle<TransactionObserver>&
+        transaction_observer,
+    bool* was_open) {
   bool opened = false;
   {
     base::AutoLock lock(lock_);
@@ -78,8 +82,9 @@ DirOpenResult DirectoryManager::OpenImpl(const std::string& name,
     return syncable::OPENED;
   // Otherwise, open it.
 
-  scoped_ptr<Directory> dir(new Directory);
-  const DirOpenResult result = dir->Open(path, name);
+  scoped_ptr<Directory> dir(new Directory(unrecoverable_error_handler));
+  const DirOpenResult result =
+      dir->Open(path, name, delegate, transaction_observer);
   if (syncable::OPENED == result) {
     base::AutoLock lock(lock_);
     managed_directory_ = dir.release();
@@ -100,12 +105,6 @@ void DirectoryManager::Close(const std::string& name) {
       return;
     }
   }
-
-  // TODO(timsteele): No lock?!
-  // Notify listeners.
-  managed_directory_->channel()->NotifyListeners(DIRECTORY_CLOSED);
-  DirectoryManagerEvent event = { DirectoryManagerEvent::CLOSED, name };
-  channel_->NotifyListeners(event);
 
   delete managed_directory_;
   managed_directory_ = NULL;

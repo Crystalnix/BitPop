@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,16 @@
 
 #include <ios>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/stack_trace.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/sys_info.h"
+#include "base/win/object_watcher.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 
@@ -36,6 +40,9 @@ const DWORD kNormalTerminationExitCode = 0;
 const DWORD kDebuggerInactiveExitCode = 0xC0000354;
 const DWORD kKeyboardInterruptExitCode = 0xC000013A;
 const DWORD kDebuggerTerminatedExitCode = 0x40010004;
+
+// Maximum amount of time (in milliseconds) to wait for the process to exit.
+static const int kWaitInterval = 2000;
 
 // This exit code is used by the Windows task manager when it kills a
 // process.  It's value is obviously not that unique, and it's
@@ -92,6 +99,69 @@ void AttachToConsole() {
   setvbuf(stdin, NULL, _IONBF, 0);
   // Fix all cout, wcout, cin, wcin, cerr, wcerr, clog and wclog.
   std::ios::sync_with_stdio();
+}
+
+void OnNoMemory() {
+  // Kill the process. This is important for security, since WebKit doesn't
+  // NULL-check many memory allocations. If a malloc fails, returns NULL, and
+  // the buffer is then used, it provides a handy mapping of memory starting at
+  // address 0 for an attacker to utilize.
+  __debugbreak();
+  _exit(1);
+}
+
+class TimerExpiredTask : public win::ObjectWatcher::Delegate {
+ public:
+  explicit TimerExpiredTask(ProcessHandle process);
+  ~TimerExpiredTask();
+
+  void TimedOut();
+
+  // MessageLoop::Watcher -----------------------------------------------------
+  virtual void OnObjectSignaled(HANDLE object);
+
+ private:
+  void KillProcess();
+
+  // The process that we are watching.
+  ProcessHandle process_;
+
+  win::ObjectWatcher watcher_;
+
+  DISALLOW_COPY_AND_ASSIGN(TimerExpiredTask);
+};
+
+TimerExpiredTask::TimerExpiredTask(ProcessHandle process) : process_(process) {
+  watcher_.StartWatching(process_, this);
+}
+
+TimerExpiredTask::~TimerExpiredTask() {
+  TimedOut();
+  DCHECK(!process_) << "Make sure to close the handle.";
+}
+
+void TimerExpiredTask::TimedOut() {
+  if (process_)
+    KillProcess();
+}
+
+void TimerExpiredTask::OnObjectSignaled(HANDLE object) {
+  CloseHandle(process_);
+  process_ = NULL;
+}
+
+void TimerExpiredTask::KillProcess() {
+  // Stop watching the process handle since we're killing it.
+  watcher_.StopWatching();
+
+  // OK, time to get frisky.  We don't actually care when the process
+  // terminates.  We just care that it eventually terminates, and that's what
+  // TerminateProcess should do for us. Don't check for the result code since
+  // it fails quite often. This should be investigated eventually.
+  base::KillProcess(process_, kProcessKilledExitCode, false);
+
+  // Now, just cleanup as if the process exited normally.
+  OnObjectSignaled(process_);
 }
 
 }  // namespace
@@ -217,24 +287,68 @@ bool GetProcessIntegrityLevel(ProcessHandle process, IntegrityLevel *level) {
   return true;
 }
 
-bool LaunchAppImpl(const std::wstring& cmdline,
-                   bool wait, bool start_hidden, bool inherit_handles,
+bool LaunchProcess(const string16& cmdline,
+                   const LaunchOptions& options,
                    ProcessHandle* process_handle) {
-  STARTUPINFO startup_info = {0};
+  STARTUPINFO startup_info = {};
   startup_info.cb = sizeof(startup_info);
+  if (options.empty_desktop_name)
+    startup_info.lpDesktop = L"";
   startup_info.dwFlags = STARTF_USESHOWWINDOW;
-  startup_info.wShowWindow = start_hidden ? SW_HIDE : SW_SHOW;
+  startup_info.wShowWindow = options.start_hidden ? SW_HIDE : SW_SHOW;
   PROCESS_INFORMATION process_info;
-  if (!CreateProcess(NULL,
-                     const_cast<wchar_t*>(cmdline.c_str()), NULL, NULL,
-                     inherit_handles, 0, NULL, NULL,
-                     &startup_info, &process_info))
-    return false;
 
-  // Handles must be closed or they will leak
+  DWORD flags = 0;
+
+  if (options.job_handle) {
+    flags |= CREATE_SUSPENDED;
+
+    // If this code is run under a debugger, the launched process is
+    // automatically associated with a job object created by the debugger.
+    // The CREATE_BREAKAWAY_FROM_JOB flag is used to prevent this.
+    flags |= CREATE_BREAKAWAY_FROM_JOB;
+  }
+
+  if (options.as_user) {
+    flags |= CREATE_UNICODE_ENVIRONMENT;
+    void* enviroment_block = NULL;
+
+    if (!CreateEnvironmentBlock(&enviroment_block, options.as_user, FALSE))
+      return false;
+
+    BOOL launched =
+        CreateProcessAsUser(options.as_user, NULL,
+                            const_cast<wchar_t*>(cmdline.c_str()),
+                            NULL, NULL, options.inherit_handles, flags,
+                            enviroment_block, NULL, &startup_info,
+                            &process_info);
+    DestroyEnvironmentBlock(enviroment_block);
+    if (!launched)
+      return false;
+  } else {
+    if (!CreateProcess(NULL,
+                       const_cast<wchar_t*>(cmdline.c_str()), NULL, NULL,
+                       options.inherit_handles, flags, NULL, NULL,
+                       &startup_info, &process_info)) {
+      return false;
+    }
+  }
+
+  if (options.job_handle) {
+    if (0 == AssignProcessToJobObject(options.job_handle,
+                                      process_info.hProcess)) {
+      DLOG(ERROR) << "Could not AssignProcessToObject.";
+      KillProcess(process_info.hProcess, kProcessKilledExitCode, true);
+      return false;
+    }
+
+    ResumeThread(process_info.hThread);
+  }
+
+  // Handles must be closed or they will leak.
   CloseHandle(process_info.hThread);
 
-  if (wait)
+  if (options.wait)
     WaitForSingleObject(process_info.hProcess, INFINITE);
 
   // If the caller wants the process handle, we won't close it.
@@ -246,65 +360,21 @@ bool LaunchAppImpl(const std::wstring& cmdline,
   return true;
 }
 
-bool LaunchApp(const std::wstring& cmdline,
-               bool wait, bool start_hidden, ProcessHandle* process_handle) {
-  return LaunchAppImpl(cmdline, wait, start_hidden, false, process_handle);
+bool LaunchProcess(const CommandLine& cmdline,
+                   const LaunchOptions& options,
+                   ProcessHandle* process_handle) {
+  return LaunchProcess(cmdline.GetCommandLineString(), options, process_handle);
 }
 
-bool LaunchAppWithHandleInheritance(
-    const std::wstring& cmdline, bool wait, bool start_hidden,
-    ProcessHandle* process_handle) {
-  return LaunchAppImpl(cmdline, wait, start_hidden, true, process_handle);
-}
-
-bool LaunchAppAsUser(UserTokenHandle token, const std::wstring& cmdline,
-                     bool start_hidden, ProcessHandle* process_handle) {
-  return LaunchAppAsUser(token, cmdline, start_hidden, process_handle,
-                         false, false);
-}
-
-bool LaunchAppAsUser(UserTokenHandle token, const std::wstring& cmdline,
-                     bool start_hidden, ProcessHandle* process_handle,
-                     bool empty_desktop_name, bool inherit_handles) {
-  STARTUPINFO startup_info = {0};
-  startup_info.cb = sizeof(startup_info);
-  if (empty_desktop_name)
-    startup_info.lpDesktop = L"";
-  PROCESS_INFORMATION process_info;
-  if (start_hidden) {
-    startup_info.dwFlags = STARTF_USESHOWWINDOW;
-    startup_info.wShowWindow = SW_HIDE;
-  }
-  DWORD flags = CREATE_UNICODE_ENVIRONMENT;
-  void* enviroment_block = NULL;
-
-  if (!CreateEnvironmentBlock(&enviroment_block, token, FALSE))
-    return false;
-
-  BOOL launched =
-      CreateProcessAsUser(token, NULL, const_cast<wchar_t*>(cmdline.c_str()),
-                          NULL, NULL, inherit_handles, flags, enviroment_block,
-                          NULL, &startup_info, &process_info);
-
-  DestroyEnvironmentBlock(enviroment_block);
-
-  if (!launched)
-    return false;
-
-  CloseHandle(process_info.hThread);
-
-  if (process_handle) {
-    *process_handle = process_info.hProcess;
-  } else {
-    CloseHandle(process_info.hProcess);
-  }
-  return true;
-}
-
-bool LaunchApp(const CommandLine& cl,
-               bool wait, bool start_hidden, ProcessHandle* process_handle) {
-  return LaunchAppImpl(cl.command_line_string(), wait,
-                       start_hidden, false, process_handle);
+bool SetJobObjectAsKillOnJobClose(HANDLE job_object) {
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit_info = {0};
+  limit_info.BasicLimitInformation.LimitFlags =
+      JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  return 0 != SetInformationJobObject(
+      job_object,
+      JobObjectExtendedLimitInformation,
+      &limit_info,
+      sizeof(limit_info));
 }
 
 // Attempts to kill the process identified by the given process
@@ -350,7 +420,8 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
     return false;
   }
 
-  // Now create the child process
+  std::wstring writable_command_line_string(cl.GetCommandLineString());
+
   PROCESS_INFORMATION proc_info = { 0 };
   STARTUPINFO start_info = { 0 };
 
@@ -363,7 +434,7 @@ bool GetAppOutput(const CommandLine& cl, std::string* output) {
 
   // Create the child process.
   if (!CreateProcess(NULL,
-                     const_cast<wchar_t*>(cl.command_line_string().c_str()),
+                     &writable_command_line_string[0],
                      NULL, NULL,
                      TRUE,  // Handles are inherited.
                      0, NULL, NULL, &start_info, &proc_info)) {
@@ -521,7 +592,7 @@ bool WaitForProcessesToExit(const std::wstring& executable_name,
   DWORD start_time = GetTickCount();
 
   NamedProcessIterator iter(executable_name, filter);
-  while (entry = iter.NextProcessEntry()) {
+  while ((entry = iter.NextProcessEntry())) {
     DWORD remaining_wait =
         std::max<int64>(0, wait_milliseconds - (GetTickCount() - start_time));
     HANDLE process = OpenProcess(SYNCHRONIZE,
@@ -536,8 +607,10 @@ bool WaitForProcessesToExit(const std::wstring& executable_name,
 }
 
 bool WaitForSingleProcess(ProcessHandle handle, int64 wait_milliseconds) {
-  bool retval = WaitForSingleObject(handle, wait_milliseconds) == WAIT_OBJECT_0;
-  return retval;
+  int exit_code;
+  if (!WaitForExitCodeWithTimeout(handle, &exit_code, wait_milliseconds))
+    return false;
+  return exit_code == 0;
 }
 
 bool CleanupProcesses(const std::wstring& executable_name,
@@ -550,6 +623,22 @@ bool CleanupProcesses(const std::wstring& executable_name,
   if (!exited_cleanly)
     KillProcesses(executable_name, exit_code, filter);
   return exited_cleanly;
+}
+
+void EnsureProcessTerminated(ProcessHandle process) {
+  DCHECK(process != GetCurrentProcess());
+
+  // If already signaled, then we are done!
+  if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) {
+    CloseHandle(process);
+    return;
+  }
+
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&TimerExpiredTask::TimedOut,
+                 base::Owned(new TimerExpiredTask(process))),
+      kWaitInterval);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -854,6 +943,10 @@ void EnableTerminationOnHeapCorruption() {
   HeapSetInformation(NULL, HeapEnableTerminationOnCorruption, NULL, 0);
 }
 
+void EnableTerminationOnOutOfMemory() {
+  std::set_new_handler(&OnNoMemory);
+}
+
 bool EnableInProcessStackDumping() {
   // Add stack dumping support on exception on windows. Similar to OS_POSIX
   // signal() handling in process_util_posix.cc.
@@ -899,7 +992,7 @@ size_t GetSystemCommitCharge() {
 
   PERFORMANCE_INFORMATION info;
   if (!InternalGetPerformanceInfo(&info, sizeof(info))) {
-    LOG(ERROR) << "Failed to fetch internal performance info.";
+    DLOG(ERROR) << "Failed to fetch internal performance info.";
     return 0;
   }
   return (info.CommitTotal * system_info.dwPageSize) / 1024;

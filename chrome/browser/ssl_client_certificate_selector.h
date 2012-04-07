@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #pragma once
 
 class SSLClientAuthHandler;
-class TabContents;
+class TabContentsWrapper;
 
 namespace net {
 class SSLCertRequestInfo;
@@ -20,11 +20,17 @@ namespace browser {
 // selection, the dialog will report back to |delegate|. |delegate| is notified
 // when the dialog closes in call cases; if the user cancels the dialog, we call
 // with a NULL certificate.
-//
-// Note: constrained dialog currently only implemented on Linux and OS X. On
-// Windows, a window-modal dialog will be used.
 void ShowSSLClientCertificateSelector(
-    TabContents* parent,
+    TabContentsWrapper* wrapper,
+    net::SSLCertRequestInfo* cert_request_info,
+    SSLClientAuthHandler* delegate);
+
+// Same as above, but doesn't check the UseMoreWebUI flag.  It just calls the
+// native implementation.  This lets us have both the WebUI implementation and
+// the native implementation linked in at the same time and switchable behind
+// a run-time flag.
+void ShowNativeSSLClientCertificateSelector(
+    TabContentsWrapper* wrapper,
     net::SSLCertRequestInfo* cert_request_info,
     SSLClientAuthHandler* delegate);
 

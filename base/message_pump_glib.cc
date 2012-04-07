@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include <math.h>
 
-#include <gtk/gtk.h>
 #include <glib.h>
 
 #include "base/eintr_wrapper.h"
@@ -85,7 +84,7 @@ int GetTimeIntervalMilliseconds(const base::TimeTicks& from) {
 // loop, around event handling.
 
 struct WorkSource : public GSource {
-  base::MessagePumpForUI* pump;
+  base::MessagePumpGlib* pump;
 };
 
 gboolean WorkSourcePrepare(GSource* source,
@@ -124,9 +123,9 @@ GSourceFuncs WorkSourceFuncs = {
 
 namespace base {
 
-struct MessagePumpForUI::RunState {
+struct MessagePumpGlib::RunState {
   Delegate* delegate;
-  Dispatcher* dispatcher;
+  MessagePumpDispatcher* dispatcher;
 
   // Used to flag that the current Run() invocation should return ASAP.
   bool should_quit;
@@ -140,13 +139,16 @@ struct MessagePumpForUI::RunState {
   bool has_work;
 };
 
-MessagePumpForUI::MessagePumpForUI()
+MessagePumpGlib::MessagePumpGlib()
     : state_(NULL),
       context_(g_main_context_default()),
       wakeup_gpollfd_(new GPollFD) {
   // Create our wakeup pipe, which is used to flag when work was scheduled.
   int fds[2];
-  CHECK_EQ(pipe(fds), 0);
+  int ret = pipe(fds);
+  DCHECK_EQ(ret, 0);
+  (void)ret;  // Prevent warning in release mode.
+
   wakeup_pipe_read_  = fds[0];
   wakeup_pipe_write_ = fds[1];
   wakeup_gpollfd_->fd = wakeup_pipe_read_;
@@ -160,26 +162,23 @@ MessagePumpForUI::MessagePumpForUI()
   // This is needed to allow Run calls inside Dispatch.
   g_source_set_can_recurse(work_source_, TRUE);
   g_source_attach(work_source_, context_);
-  gdk_event_handler_set(&EventDispatcher, this, NULL);
 }
 
-MessagePumpForUI::~MessagePumpForUI() {
-  gdk_event_handler_set(reinterpret_cast<GdkEventFunc>(gtk_main_do_event),
-                        this, NULL);
+MessagePumpGlib::~MessagePumpGlib() {
   g_source_destroy(work_source_);
   g_source_unref(work_source_);
   close(wakeup_pipe_read_);
   close(wakeup_pipe_write_);
 }
 
-void MessagePumpForUI::RunWithDispatcher(Delegate* delegate,
-                                         Dispatcher* dispatcher) {
+void MessagePumpGlib::RunWithDispatcher(Delegate* delegate,
+                                        MessagePumpDispatcher* dispatcher) {
 #ifndef NDEBUG
-  // Make sure we only run this on one thread.  GTK only has one message pump
+  // Make sure we only run this on one thread. X/GTK only has one message pump
   // so we can only have one UI loop per process.
   static base::PlatformThreadId thread_id = base::PlatformThread::CurrentId();
   DCHECK(thread_id == base::PlatformThread::CurrentId()) <<
-      "Running MessagePumpForUI on two different threads; "
+      "Running MessagePumpGlib on two different threads; "
       "this is unsupported by GLib!";
 #endif
 
@@ -207,7 +206,7 @@ void MessagePumpForUI::RunWithDispatcher(Delegate* delegate,
     // Don't block if we think we have more work to do.
     bool block = !more_work_is_plausible;
 
-    more_work_is_plausible = RunOnce(context_, block);
+    more_work_is_plausible = g_main_context_iteration(context_, block);
     if (state_->should_quit)
       break;
 
@@ -231,13 +230,8 @@ void MessagePumpForUI::RunWithDispatcher(Delegate* delegate,
   state_ = previous_state;
 }
 
-bool MessagePumpForUI::RunOnce(GMainContext* context, bool block) {
-  // g_main_context_iteration returns true if events have been dispatched.
-  return g_main_context_iteration(context, block);
-}
-
 // Return the timeout we want passed to poll.
-int MessagePumpForUI::HandlePrepare() {
+int MessagePumpGlib::HandlePrepare() {
   // We know we have work, but we haven't called HandleDispatch yet. Don't let
   // the pump block so that we can do some processing.
   if (state_ &&  // state_ may be null during tests.
@@ -249,7 +243,7 @@ int MessagePumpForUI::HandlePrepare() {
   return GetTimeIntervalMilliseconds(delayed_work_time_);
 }
 
-bool MessagePumpForUI::HandleCheck() {
+bool MessagePumpGlib::HandleCheck() {
   if (!state_)  // state_ may be null during tests.
     return false;
 
@@ -279,11 +273,11 @@ bool MessagePumpForUI::HandleCheck() {
   return false;
 }
 
-void MessagePumpForUI::HandleDispatch() {
+void MessagePumpGlib::HandleDispatch() {
   state_->has_work = false;
   if (state_->delegate->DoWork()) {
     // NOTE: on Windows at this point we would call ScheduleWork (see
-    // MessagePumpForUI::HandleWorkMessage in message_pump_win.cc). But here,
+    // MessagePumpGlib::HandleWorkMessage in message_pump_win.cc). But here,
     // instead of posting a message on the wakeup pipe, we can avoid the
     // syscalls and just signal that we have more work.
     state_->has_work = true;
@@ -295,30 +289,19 @@ void MessagePumpForUI::HandleDispatch() {
   state_->delegate->DoDelayedWork(&delayed_work_time_);
 }
 
-void MessagePumpForUI::AddObserver(Observer* observer) {
+void MessagePumpGlib::AddObserver(MessagePumpObserver* observer) {
   observers_.AddObserver(observer);
 }
 
-void MessagePumpForUI::RemoveObserver(Observer* observer) {
+void MessagePumpGlib::RemoveObserver(MessagePumpObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void MessagePumpForUI::DispatchEvents(GdkEvent* event) {
-  WillProcessEvent(event);
-  if (state_ && state_->dispatcher) { // state_ may be null during tests.
-    if (!state_->dispatcher->Dispatch(event))
-      state_->should_quit = true;
-  } else {
-    gtk_main_do_event(event);
-  }
-  DidProcessEvent(event);
-}
-
-void MessagePumpForUI::Run(Delegate* delegate) {
+void MessagePumpGlib::Run(Delegate* delegate) {
   RunWithDispatcher(delegate, NULL);
 }
 
-void MessagePumpForUI::Quit() {
+void MessagePumpGlib::Quit() {
   if (state_) {
     state_->should_quit = true;
   } else {
@@ -326,7 +309,7 @@ void MessagePumpForUI::Quit() {
   }
 }
 
-void MessagePumpForUI::ScheduleWork() {
+void MessagePumpGlib::ScheduleWork() {
   // This can be called on any thread, so we don't want to touch any state
   // variables as we would then need locks all over.  This ensures that if
   // we are sleeping in a poll that we will wake up.
@@ -336,29 +319,15 @@ void MessagePumpForUI::ScheduleWork() {
   }
 }
 
-void MessagePumpForUI::ScheduleDelayedWork(const TimeTicks& delayed_work_time) {
+void MessagePumpGlib::ScheduleDelayedWork(const TimeTicks& delayed_work_time) {
   // We need to wake up the loop in case the poll timeout needs to be
   // adjusted.  This will cause us to try to do work, but that's ok.
   delayed_work_time_ = delayed_work_time;
   ScheduleWork();
 }
 
-MessagePumpForUI::Dispatcher* MessagePumpForUI::GetDispatcher() {
+MessagePumpDispatcher* MessagePumpGlib::GetDispatcher() {
   return state_ ? state_->dispatcher : NULL;
-}
-
-void MessagePumpForUI::WillProcessEvent(GdkEvent* event) {
-  FOR_EACH_OBSERVER(Observer, observers_, WillProcessEvent(event));
-}
-
-void MessagePumpForUI::DidProcessEvent(GdkEvent* event) {
-  FOR_EACH_OBSERVER(Observer, observers_, DidProcessEvent(event));
-}
-
-// static
-void MessagePumpForUI::EventDispatcher(GdkEvent* event, gpointer data) {
-  MessagePumpForUI* message_pump = reinterpret_cast<MessagePumpForUI*>(data);
-  message_pump->DispatchEvents(event);
 }
 
 }  // namespace base

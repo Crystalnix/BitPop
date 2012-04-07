@@ -7,6 +7,7 @@
 
 #include <map>
 #include <set>
+#include <utility>
 
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
@@ -88,7 +89,9 @@ class DatabaseTracker
     virtual ~Observer() {}
   };
 
-  DatabaseTracker(const FilePath& profile_path, bool is_incognito,
+  DatabaseTracker(const FilePath& profile_path,
+                  bool is_incognito,
+                  bool clear_local_state_on_exit,
                   quota::SpecialStoragePolicy* special_storage_policy,
                   quota::QuotaManagerProxy* quota_manager_proxy,
                   base::MessageLoopProxy* db_tracker_thread);
@@ -113,7 +116,7 @@ class DatabaseTracker
   FilePath GetFullDBFilePath(const string16& origin_identifier,
                              const string16& database_name);
 
-  // virtual for unittesting only
+  // virtual for unit-testing only
   virtual bool GetOriginInfo(const string16& origin_id, OriginInfo* info);
   virtual bool GetAllOriginIdentifiers(std::vector<string16>* origin_ids);
   virtual bool GetAllOriginsInfo(std::vector<OriginInfo>* origins_info);
@@ -131,7 +134,7 @@ class DatabaseTracker
   // if non-NULL.
   int DeleteDatabase(const string16& origin_identifier,
                      const string16& database_name,
-                     net::CompletionCallback* callback);
+                     const net::CompletionCallback& callback);
 
   // Delete any databases that have been touched since the cutoff date that's
   // supplied, omitting any that match IDs within |protected_origins|.
@@ -140,14 +143,14 @@ class DatabaseTracker
   // if non-NULL. Protected origins, according the the SpecialStoragePolicy,
   // are not deleted by this method.
   int DeleteDataModifiedSince(const base::Time& cutoff,
-                              net::CompletionCallback* callback);
+                              const net::CompletionCallback& callback);
 
   // Delete all databases that belong to the given origin. Returns net::OK on
   // success, net::FAILED if not all databases could be deleted, and
   // net::ERR_IO_PENDING and |callback| is invoked upon completion, if non-NULL.
   // virtual for unit testing only
   virtual int DeleteDataForOrigin(const string16& origin_identifier,
-                                  net::CompletionCallback* callback);
+                                  const net::CompletionCallback& callback);
 
   bool IsIncognitoProfile() const { return is_incognito_; }
 
@@ -158,17 +161,20 @@ class DatabaseTracker
   bool CloseIncognitoFileHandle(const string16& vfs_file_path);
   bool HasSavedIncognitoFileHandle(const string16& vfs_file_path) const;
 
-  // Deletes the directory that stores all DBs in incognito mode, if it exists.
-  void DeleteIncognitoDBDirectory();
-
-  static void ClearLocalState(const FilePath& profile_path);
+  // Shutdown the database tracker, deleting database files if the tracker is
+  // used for an incognito profile or |clear_local_state_on_exit_| is true.
+  void Shutdown();
+  void SetClearLocalStateOnExit(bool clear_local_state_on_exit);
+  // Disables the exit-time deletion for all data (also session-only data).
+  void SaveSessionState();
 
  private:
   friend class base::RefCountedThreadSafe<DatabaseTracker>;
   friend class MockDatabaseTracker;  // for testing
 
   typedef std::map<string16, std::set<string16> > DatabaseSet;
-  typedef std::map<net::CompletionCallback*, DatabaseSet> PendingCompletionMap;
+  typedef std::vector<std::pair<net::CompletionCallback, DatabaseSet> >
+      PendingDeletionCallbacks;
   typedef std::map<string16, base::PlatformFile> FileHandlesMap;
   typedef std::map<string16, string16> OriginDirectoriesMap;
 
@@ -190,12 +196,24 @@ class DatabaseTracker
     }
   };
 
-  // virtual for unittesting only
+  // virtual for unit-testing only.
   virtual ~DatabaseTracker();
+
+  // Deletes the directory that stores all DBs in incognito mode, if it exists.
+  void DeleteIncognitoDBDirectory();
+
+  // If clear_all_databases is true, deletes all databases not protected by
+  // special storage policy. Otherwise deletes session-only databases. Blocks
+  // databases from being created/opened.
+  void ClearLocalState(bool clear_all_databases);
 
   bool DeleteClosedDatabase(const string16& origin_identifier,
                             const string16& database_name);
-  bool DeleteOrigin(const string16& origin_identifier);
+
+  // Delete all files belonging to the given origin given that no database
+  // connections within this origin are open, or if |force| is true, delete
+  // the meta data and rename the associated directory.
+  bool DeleteOrigin(const string16& origin_identifier, bool force);
   void DeleteDatabaseIfNeeded(const string16& origin_identifier,
                               const string16& database_name);
 
@@ -207,27 +225,41 @@ class DatabaseTracker
                                      int64 estimated_size);
 
   void ClearAllCachedOriginInfo();
-  CachedOriginInfo* GetCachedOriginInfo(const string16& origin_identifier);
+  CachedOriginInfo* MaybeGetCachedOriginInfo(const string16& origin_identifier,
+                                             bool create_if_needed);
+  CachedOriginInfo* GetCachedOriginInfo(const string16& origin_identifier) {
+    return MaybeGetCachedOriginInfo(origin_identifier, true);
+  }
 
   int64 GetDBFileSize(const string16& origin_identifier,
                       const string16& database_name);
-  int64 SeedOpenDatabaseSize(const string16& origin_identifier,
-                             const string16& database_name);
+  int64 SeedOpenDatabaseInfo(const string16& origin_identifier,
+                             const string16& database_name,
+                             const string16& description);
+  int64 UpdateOpenDatabaseInfoAndNotify(const string16& origin_identifier,
+                                        const string16& database_name,
+                                        const string16* opt_description);
   int64 UpdateOpenDatabaseSizeAndNotify(const string16& origin_identifier,
-                                        const string16& database_name);
+                                        const string16& database_name) {
+    return UpdateOpenDatabaseInfoAndNotify(
+        origin_identifier, database_name, NULL);
+  }
+
 
   void ScheduleDatabaseForDeletion(const string16& origin_identifier,
                                    const string16& database_name);
   // Schedule a set of open databases for deletion. If non-null, callback is
   // invoked upon completion.
   void ScheduleDatabasesForDeletion(const DatabaseSet& databases,
-                                    net::CompletionCallback* callback);
+                                    const net::CompletionCallback& callback);
 
   // Returns the directory where all DB files for the given origin are stored.
   string16 GetOriginDirectory(const string16& origin_identifier);
 
   bool is_initialized_;
   const bool is_incognito_;
+  bool clear_local_state_on_exit_;
+  bool save_session_state_;
   bool shutting_down_;
   const FilePath profile_path_;
   const FilePath db_dir_;
@@ -240,12 +272,15 @@ class DatabaseTracker
 
   // The set of databases that should be deleted but are still opened
   DatabaseSet dbs_to_be_deleted_;
-  PendingCompletionMap deletion_callbacks_;
+  PendingDeletionCallbacks deletion_callbacks_;
 
   // Apps and Extensions can have special rights.
   scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
 
   scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
+
+  // The database tracker thread we're supposed to run file IO on.
+  scoped_refptr<base::MessageLoopProxy> db_tracker_thread_;
 
   // When in incognito mode, store a DELETE_ON_CLOSE handle to each
   // main DB and journal file that was accessed. When the incognito profile

@@ -1,16 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/common/service_process_util.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
+#include "base/command_line.h"
+#include "base/file_path.h"
+#include "base/process_util.h"
 
 #if !defined(OS_MACOSX)
 #include "base/at_exit.h"
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
 #include "base/string_util.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_timeouts.h"
@@ -24,9 +26,21 @@
 #include "base/win/win_util.h"
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+#if defined(OS_POSIX)
 #include "chrome/common/auto_start_linux.h"
 #include <glib.h>
+#endif
+
+#if defined(USE_AURA)
+// This test fails http://crbug.com/84854, and is very flaky on CrOS and
+// somewhat flaky on other Linux.
+#define MAYBE_ForceShutdown FAILS_ForceShutdown
+#else
+#if defined(OS_LINUX) || defined(OS_WIN)
+#define MAYBE_ForceShutdown FLAKY_ForceShutdown
+#else
+#define MAYBE_ForceShutdown ForceShutdown
+#endif
 #endif
 
 namespace {
@@ -37,7 +51,7 @@ void ShutdownTask(MessageLoop* loop) {
   // Quit the main message loop.
   ASSERT_FALSE(g_good_shutdown);
   g_good_shutdown = true;
-  loop->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 }  // namespace
@@ -97,7 +111,7 @@ TEST_F(ServiceProcessStateTest, ReadyState) {
   ASSERT_FALSE(CheckServiceProcessReady());
   ServiceProcessState state;
   ASSERT_TRUE(state.Initialize());
-  ASSERT_TRUE(state.SignalReady(IOMessageLoopProxy(), NULL));
+  ASSERT_TRUE(state.SignalReady(IOMessageLoopProxy(), base::Closure()));
   LaunchAndWait("ServiceProcessStateTestReadyTrue");
   state.SignalStopped();
   LaunchAndWait("ServiceProcessStateTestReadyFalse");
@@ -166,12 +180,12 @@ TEST_F(ServiceProcessStateTest, SharedMem) {
   ASSERT_EQ(base::GetCurrentProcId(), pid);
 }
 
-TEST_F(ServiceProcessStateTest, ForceShutdown) {
+TEST_F(ServiceProcessStateTest, MAYBE_ForceShutdown) {
   base::ProcessHandle handle = SpawnChild("ServiceProcessStateTestShutdown",
                                           true);
   ASSERT_TRUE(handle);
   for (int i = 0; !CheckServiceProcessReady() && i < 10; ++i) {
-    base::PlatformThread::Sleep(TestTimeouts::tiny_timeout_ms());
+    base::PlatformThread::Sleep(TestTimeouts::tiny_timeout());
   }
   ASSERT_TRUE(CheckServiceProcessReady());
   std::string version;
@@ -210,11 +224,11 @@ MULTIPROCESS_TEST_MAIN(ServiceProcessStateTestShutdown) {
   ServiceProcessState state;
   EXPECT_TRUE(state.Initialize());
   EXPECT_TRUE(state.SignalReady(io_thread_.message_loop_proxy(),
-                                NewRunnableFunction(&ShutdownTask,
-                                                    MessageLoop::current())));
+                                base::Bind(&ShutdownTask,
+                                           MessageLoop::current())));
   message_loop.PostDelayedTask(FROM_HERE,
-                               new MessageLoop::QuitTask(),
-                               TestTimeouts::action_max_timeout_ms());
+                               MessageLoop::QuitClosure(),
+                               TestTimeouts::action_max_timeout());
   EXPECT_FALSE(g_good_shutdown);
   message_loop.Run();
   EXPECT_TRUE(g_good_shutdown);
@@ -225,124 +239,15 @@ MULTIPROCESS_TEST_MAIN(ServiceProcessStateTestShutdown) {
 
 #include <CoreFoundation/CoreFoundation.h>
 
-#include <launch.h>
-#include <sys/stat.h>
-
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/mac/mac_util.h"
-#include "base/mac/scoped_cftyperef.h"
-#include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
-#include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread.h"
-#include "chrome/common/launchd_mac.h"
+#include "chrome/common/mac/launchd.h"
+#include "chrome/common/mac/mock_launchd.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-// TODO(dmaclach): Write this in terms of a real mock.
-// http://crbug.com/76923
-class MockLaunchd : public Launchd {
- public:
-  MockLaunchd(const FilePath& file, MessageLoop* loop)
-      : file_(file),
-        message_loop_(loop),
-        restart_called_(false),
-        remove_called_(false),
-        checkin_called_(false),
-        write_called_(false),
-        delete_called_(false) {
-  }
-  virtual ~MockLaunchd() { }
-
-  virtual CFDictionaryRef CopyExports() OVERRIDE {
-    ADD_FAILURE();
-    return NULL;
-  }
-
-  virtual CFDictionaryRef CopyJobDictionary(CFStringRef label) OVERRIDE {
-    ADD_FAILURE();
-    return NULL;
-  }
-
-  virtual CFDictionaryRef CopyDictionaryByCheckingIn(CFErrorRef* error)
-      OVERRIDE {
-    checkin_called_ = true;
-    CFStringRef program = CFSTR(LAUNCH_JOBKEY_PROGRAM);
-    CFStringRef program_args = CFSTR(LAUNCH_JOBKEY_PROGRAMARGUMENTS);
-    const void *keys[] = { program, program_args };
-    base::mac::ScopedCFTypeRef<CFStringRef> path(
-        base::SysUTF8ToCFStringRef(file_.value()));
-    const void *array_values[] = { path.get() };
-    base::mac::ScopedCFTypeRef<CFArrayRef> args(
-        CFArrayCreate(kCFAllocatorDefault,
-                      array_values,
-                      1,
-                      &kCFTypeArrayCallBacks));
-    const void *values[] = { path, args };
-    return CFDictionaryCreate(kCFAllocatorDefault,
-                              keys,
-                              values,
-                              arraysize(keys),
-                              &kCFTypeDictionaryKeyCallBacks,
-                              &kCFTypeDictionaryValueCallBacks);
-  }
-
-  virtual bool RemoveJob(CFStringRef label, CFErrorRef* error) OVERRIDE {
-    remove_called_ = true;
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask);
-    return true;
-  }
-
-  virtual bool RestartJob(Domain domain,
-                          Type type,
-                          CFStringRef name,
-                          CFStringRef session_type) OVERRIDE {
-    restart_called_ = true;
-    message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask);
-    return true;
-  }
-
-  virtual CFMutableDictionaryRef CreatePlistFromFile(
-      Domain domain,
-      Type type,
-      CFStringRef name) OVERRIDE {
-    base::mac::ScopedCFTypeRef<CFDictionaryRef> dict(
-        CopyDictionaryByCheckingIn(NULL));
-    return CFDictionaryCreateMutableCopy(kCFAllocatorDefault, 0, dict);
-  }
-
-  virtual bool WritePlistToFile(Domain domain,
-                                Type type,
-                                CFStringRef name,
-                                CFDictionaryRef dict) OVERRIDE {
-    write_called_ = true;
-    return true;
-  }
-
-  virtual bool DeletePlist(Domain domain,
-                           Type type,
-                           CFStringRef name) OVERRIDE {
-    delete_called_ = true;
-    return true;
-  }
-
-  bool restart_called() const { return restart_called_; }
-  bool remove_called() const { return remove_called_; }
-  bool checkin_called() const { return checkin_called_; }
-  bool write_called() const { return write_called_; }
-  bool delete_called() const { return delete_called_; }
-
- private:
-  FilePath file_;
-  MessageLoop* message_loop_;
-  bool restart_called_;
-  bool remove_called_;
-  bool checkin_called_;
-  bool write_called_;
-  bool delete_called_;
-};
 
 class ServiceProcessStateFileManipulationTest : public ::testing::Test {
  protected:
@@ -356,78 +261,21 @@ class ServiceProcessStateFileManipulationTest : public ::testing::Test {
     options.message_loop_type = MessageLoop::TYPE_IO;
     ASSERT_TRUE(io_thread_.StartWithOptions(options));
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    ASSERT_TRUE(MakeABundle(GetTempDirPath(),
-                            "Test",
-                            &bundle_path_,
-                            &executable_path_));
-    mock_launchd_.reset(new MockLaunchd(executable_path_, &loop_));
+    ASSERT_TRUE(MockLaunchd::MakeABundle(GetTempDirPath(),
+                                         "Test",
+                                         &bundle_path_,
+                                         &executable_path_));
+    mock_launchd_.reset(new MockLaunchd(executable_path_, &loop_,
+                                        false, false));
     scoped_launchd_instance_.reset(
         new Launchd::ScopedInstance(mock_launchd_.get()));
     ASSERT_TRUE(service_process_state_.Initialize());
     ASSERT_TRUE(service_process_state_.SignalReady(
         io_thread_.message_loop_proxy(),
-        NULL));
+        base::Closure()));
     loop_.PostDelayedTask(FROM_HERE,
-                          new MessageLoop::QuitTask,
-                          TestTimeouts::action_max_timeout_ms());
-  }
-
-  bool MakeABundle(const FilePath& dst,
-                   const std::string& name,
-                   FilePath* bundle_root,
-                   FilePath* executable) {
-    *bundle_root = dst.Append(name + std::string(".app"));
-    FilePath contents = bundle_root->AppendASCII("Contents");
-    FilePath mac_os = contents.AppendASCII("MacOS");
-    *executable = mac_os.Append(name);
-    FilePath info_plist = contents.Append("Info.plist");
-
-    if (!file_util::CreateDirectory(mac_os)) {
-      return false;
-    }
-    const char *data = "#! testbundle\n";
-    int len = strlen(data);
-    if (file_util::WriteFile(*executable, data, len) != len) {
-      return false;
-    }
-    if (chmod(executable->value().c_str(), 0555) != 0) {
-      return false;
-    }
-
-    const char* info_plist_format =
-      "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-      "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-      "<plist version=\"1.0\">\n"
-      "<dict>\n"
-      "  <key>CFBundleDevelopmentRegion</key>\n"
-      "  <string>English</string>\n"
-      "  <key>CFBundleIdentifier</key>\n"
-      "  <string>com.test.%s</string>\n"
-      "  <key>CFBundleInfoDictionaryVersion</key>\n"
-      "  <string>6.0</string>\n"
-      "  <key>CFBundleExecutable</key>\n"
-      "  <string>%s</string>\n"
-      "  <key>CFBundleVersion</key>\n"
-      "  <string>1</string>\n"
-      "</dict>\n"
-      "</plist>\n";
-    std::string info_plist_data = base::StringPrintf(info_plist_format,
-                                                     name.c_str(),
-                                                     name.c_str());
-    len = info_plist_data.length();
-    if (file_util::WriteFile(info_plist, info_plist_data.c_str(), len) != len) {
-      return false;
-    }
-    const UInt8* bundle_root_path =
-        reinterpret_cast<const UInt8*>(bundle_root->value().c_str());
-    base::mac::ScopedCFTypeRef<CFURLRef> url(
-      CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault,
-                                              bundle_root_path,
-                                              bundle_root->value().length(),
-                                              true));
-    base::mac::ScopedCFTypeRef<CFBundleRef> bundle(
-        CFBundleCreate(kCFAllocatorDefault, url));
-    return bundle.get();
+                          MessageLoop::QuitClosure(),
+                          TestTimeouts::action_max_timeout());
   }
 
   const MockLaunchd* mock_launchd() const { return mock_launchd_.get(); }
@@ -482,13 +330,33 @@ void TrashFunc(const FilePath& src) {
   OSStatus status = FSMoveObjectToTrashSync(&path_ref,
                                             &new_path_ref,
                                             kFSFileOperationDefaultOptions);
-  EXPECT_EQ(status, noErr)  << "FSMoveObjectToTrashSync " << status;
+  EXPECT_EQ(status, noErr) << "FSMoveObjectToTrashSync " << status;
+}
+
+TEST_F(ServiceProcessStateFileManipulationTest, VerifyLaunchD) {
+  // There have been problems where launchd has gotten into a bad state, usually
+  // because something had deleted all the files in /tmp. launchd depends on
+  // a Unix Domain Socket that it creates at /tmp/launchd*/sock.
+  // The symptom of this problem is that the service process connect fails
+  // on Mac and "launch_msg(): Socket is not connected" appears.
+  // This test is designed to make sure that launchd is working.
+  // http://crbug/75518
+
+  CommandLine cl(FilePath("/bin/launchctl"));
+  cl.AppendArg("list");
+  cl.AppendArg("com.apple.launchctl.Aqua");
+
+  std::string output;
+  int exit_code = -1;
+  ASSERT_TRUE(base::GetAppOutputWithExitCode(cl, &output, &exit_code)
+              && exit_code == 0)
+      << " exit_code:" << exit_code << " " << output;
 }
 
 TEST_F(ServiceProcessStateFileManipulationTest, DeleteFile) {
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&DeleteFunc, executable_path()));
+      base::Bind(&DeleteFunc, executable_path()));
   Run();
   ASSERT_TRUE(mock_launchd()->remove_called());
   ASSERT_TRUE(mock_launchd()->delete_called());
@@ -497,7 +365,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, DeleteFile) {
 TEST_F(ServiceProcessStateFileManipulationTest, DeleteBundle) {
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&DeleteFunc, bundle_path()));
+      base::Bind(&DeleteFunc, bundle_path()));
   Run();
   ASSERT_TRUE(mock_launchd()->remove_called());
   ASSERT_TRUE(mock_launchd()->delete_called());
@@ -507,7 +375,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, MoveBundle) {
   FilePath new_loc = GetTempDirPath().AppendASCII("MoveBundle");
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&MoveFunc, bundle_path(), new_loc));
+      base::Bind(&MoveFunc, bundle_path(), new_loc));
   Run();
   ASSERT_TRUE(mock_launchd()->restart_called());
   ASSERT_TRUE(mock_launchd()->write_called());
@@ -517,7 +385,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, MoveFile) {
   FilePath new_loc = GetTempDirPath().AppendASCII("MoveFile");
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&MoveFunc, executable_path(), new_loc));
+      base::Bind(&MoveFunc, executable_path(), new_loc));
   Run();
   ASSERT_TRUE(mock_launchd()->remove_called());
   ASSERT_TRUE(mock_launchd()->delete_called());
@@ -528,7 +396,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, TrashBundle) {
   ASSERT_TRUE(base::mac::FSRefFromPath(bundle_path().value(), &bundle_ref));
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&TrashFunc, bundle_path()));
+      base::Bind(&TrashFunc, bundle_path()));
   Run();
   ASSERT_TRUE(mock_launchd()->remove_called());
   ASSERT_TRUE(mock_launchd()->delete_called());
@@ -541,7 +409,7 @@ TEST_F(ServiceProcessStateFileManipulationTest, ChangeAttr) {
   ScopedAttributesRestorer restorer(bundle_path(), 0777);
   GetIOMessageLoopProxy()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&ChangeAttr, bundle_path(), 0222));
+      base::Bind(&ChangeAttr, bundle_path(), 0222));
   Run();
   ASSERT_TRUE(mock_launchd()->remove_called());
   ASSERT_TRUE(mock_launchd()->delete_called());

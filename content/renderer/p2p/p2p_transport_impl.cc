@@ -1,47 +1,56 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/renderer/p2p/p2p_transport_impl.h"
 
-#include "base/values.h"
-#include "content/common/json_value_serializer.h"
 #include "content/renderer/p2p/ipc_network_manager.h"
 #include "content/renderer/p2p/ipc_socket_factory.h"
-#include "content/renderer/render_view.h"
+#include "content/renderer/p2p/port_allocator.h"
 #include "jingle/glue/channel_socket_adapter.h"
 #include "jingle/glue/pseudotcp_adapter.h"
 #include "jingle/glue/thread_wrapper.h"
+#include "jingle/glue/utils.h"
 #include "net/base/net_errors.h"
 #include "third_party/libjingle/source/talk/p2p/base/p2ptransportchannel.h"
 #include "third_party/libjingle/source/talk/p2p/client/basicportallocator.h"
 
+namespace content {
+
 P2PTransportImpl::P2PTransportImpl(
     talk_base::NetworkManager* network_manager,
     talk_base::PacketSocketFactory* socket_factory)
-    : event_handler_(NULL),
+    : socket_dispatcher_(NULL),
+      event_handler_(NULL),
       state_(STATE_NONE),
       network_manager_(network_manager),
-      socket_factory_(socket_factory),
-      ALLOW_THIS_IN_INITIALIZER_LIST(connect_callback_(
-          this, &P2PTransportImpl::OnTcpConnected)) {
+      socket_factory_(socket_factory) {
 }
 
 P2PTransportImpl::P2PTransportImpl(P2PSocketDispatcher* socket_dispatcher)
-    : event_handler_(NULL),
+    : socket_dispatcher_(socket_dispatcher),
+      event_handler_(NULL),
       state_(STATE_NONE),
       network_manager_(new IpcNetworkManager(socket_dispatcher)),
-      socket_factory_(new IpcPacketSocketFactory(socket_dispatcher)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(connect_callback_(
-          this, &P2PTransportImpl::OnTcpConnected)) {
+      socket_factory_(new IpcPacketSocketFactory(socket_dispatcher)) {
+  DCHECK(socket_dispatcher);
 }
 
 P2PTransportImpl::~P2PTransportImpl() {
+  MessageLoop* message_loop = MessageLoop::current();
+
+  // Because libjingle's sigslot doesn't handle deletion from a signal
+  // handler we have to postpone deletion of libjingle objects.
+  message_loop->DeleteSoon(FROM_HERE, channel_.release());
+  message_loop->DeleteSoon(FROM_HERE, allocator_.release());
+  message_loop->DeleteSoon(FROM_HERE, socket_factory_.release());
+  message_loop->DeleteSoon(FROM_HERE, network_manager_.release());
 }
 
-bool P2PTransportImpl::Init(const std::string& name,
+bool P2PTransportImpl::Init(WebKit::WebFrame* web_frame,
+                            const std::string& name,
                             Protocol protocol,
-                            const std::string& config,
+                            const Config& config,
                             EventHandler* event_handler) {
   DCHECK(event_handler);
 
@@ -52,10 +61,17 @@ bool P2PTransportImpl::Init(const std::string& name,
   name_ = name;
   event_handler_ = event_handler;
 
-  // TODO(sergeyu): Implement PortAllocator that can parse |config|
-  // and use it here instead of BasicPortAllocator.
-  allocator_.reset(new cricket::BasicPortAllocator(
-      network_manager_.get(), socket_factory_.get()));
+  if (socket_dispatcher_) {
+    DCHECK(web_frame);
+    allocator_.reset(new P2PPortAllocator(
+        web_frame, socket_dispatcher_, network_manager_.get(),
+        socket_factory_.get(), config));
+  } else {
+    // Use BasicPortAllocator if we don't have P2PSocketDispatcher
+    // (for unittests).
+    allocator_.reset(new cricket::BasicPortAllocator(
+        network_manager_.get(), socket_factory_.get()));
+  }
 
   DCHECK(!channel_.get());
   channel_.reset(new cricket::P2PTransportChannel(
@@ -66,7 +82,7 @@ bool P2PTransportImpl::Init(const std::string& name,
       this, &P2PTransportImpl::OnCandidateReady);
 
   if (protocol == PROTOCOL_UDP) {
-    channel_->SignalWritableState.connect(
+    channel_->SignalReadableState.connect(
         this, &P2PTransportImpl::OnReadableState);
     channel_->SignalWritableState.connect(
         this, &P2PTransportImpl::OnWriteableState);
@@ -80,7 +96,17 @@ bool P2PTransportImpl::Init(const std::string& name,
   if (protocol == PROTOCOL_TCP) {
     pseudo_tcp_adapter_.reset(new jingle_glue::PseudoTcpAdapter(
         channel_adapter_.release()));
-    int result = pseudo_tcp_adapter_->Connect(&connect_callback_);
+
+    if (config.tcp_receive_window > 0)
+      pseudo_tcp_adapter_->SetReceiveBufferSize(config.tcp_receive_window);
+    if (config.tcp_send_window > 0)
+      pseudo_tcp_adapter_->SetReceiveBufferSize(config.tcp_receive_window);
+    pseudo_tcp_adapter_->SetNoDelay(config.tcp_no_delay);
+    if (config.tcp_ack_delay_ms > 0)
+      pseudo_tcp_adapter_->SetAckDelay(config.tcp_ack_delay_ms);
+
+    int result = pseudo_tcp_adapter_->Connect(
+        base::Bind(&P2PTransportImpl::OnTcpConnected, base::Unretained(this)));
     if (result != net::ERR_IO_PENDING)
       OnTcpConnected(result);
   }
@@ -90,7 +116,8 @@ bool P2PTransportImpl::Init(const std::string& name,
 
 bool P2PTransportImpl::AddRemoteCandidate(const std::string& address) {
   cricket::Candidate candidate;
-  if (!DeserializeCandidate(address, &candidate)) {
+  if (!jingle_glue::DeserializeP2PCandidate(address, &candidate)) {
+    LOG(ERROR) << "Failed to parse candidate " << address;
     return false;
   }
 
@@ -105,7 +132,8 @@ void P2PTransportImpl::OnRequestSignaling() {
 void P2PTransportImpl::OnCandidateReady(
     cricket::TransportChannelImpl* channel,
     const cricket::Candidate& candidate) {
-  event_handler_->OnCandidateReady(SerializeCandidate(candidate));
+  event_handler_->OnCandidateReady(
+      jingle_glue::SerializeP2PCandidate(candidate));
 }
 
 void P2PTransportImpl::OnReadableState(cricket::TransportChannel* channel) {
@@ -116,71 +144,6 @@ void P2PTransportImpl::OnReadableState(cricket::TransportChannel* channel) {
 void P2PTransportImpl::OnWriteableState(cricket::TransportChannel* channel) {
   state_ = static_cast<State>(state_ | STATE_WRITABLE);
   event_handler_->OnStateChange(state_);
-}
-
-std::string P2PTransportImpl::SerializeCandidate(
-    const cricket::Candidate& candidate) {
-
-  // TODO(sergeyu): Use SDP to format candidates?
-  DictionaryValue value;
-  value.SetString("name", candidate.name());
-  value.SetString("ip", candidate.address().IPAsString());
-  value.SetInteger("port", candidate.address().port());
-  value.SetString("type", candidate.type());
-  value.SetString("protocol", candidate.protocol());
-  value.SetString("username", candidate.username());
-  value.SetString("password", candidate.password());
-  value.SetDouble("preference", candidate.preference());
-  value.SetInteger("generation", candidate.generation());
-
-  std::string result;
-  JSONStringValueSerializer serializer(&result);
-  serializer.Serialize(value);
-  return result;
-}
-
-bool P2PTransportImpl::DeserializeCandidate(const std::string& address,
-                                            cricket::Candidate* candidate) {
-  JSONStringValueSerializer deserializer(address);
-  scoped_ptr<Value> value(deserializer.Deserialize(NULL, NULL));
-  if (!value.get() || !value->IsType(Value::TYPE_DICTIONARY)) {
-    return false;
-  }
-
-  DictionaryValue* dic_value = static_cast<DictionaryValue*>(value.get());
-
-  std::string name;
-  std::string ip;
-  int port;
-  std::string type;
-  std::string protocol;
-  std::string username;
-  std::string password;
-  double preference;
-  int generation;
-
-  if (!dic_value->GetString("name", &name) ||
-      !dic_value->GetString("ip", &ip) ||
-      !dic_value->GetInteger("port", &port) ||
-      !dic_value->GetString("type", &type) ||
-      !dic_value->GetString("protocol", &protocol) ||
-      !dic_value->GetString("username", &username) ||
-      !dic_value->GetString("password", &password) ||
-      !dic_value->GetDouble("preference", &preference) ||
-      !dic_value->GetInteger("generation", &generation)) {
-    return false;
-  }
-
-  candidate->set_name(name);
-  candidate->set_address(talk_base::SocketAddress(ip, port));
-  candidate->set_type(type);
-  candidate->set_protocol(protocol);
-  candidate->set_username(username);
-  candidate->set_password(password);
-  candidate->set_preference(static_cast<float>(preference));
-  candidate->set_generation(generation);
-
-  return true;
 }
 
 net::Socket* P2PTransportImpl::GetChannel() {
@@ -201,3 +164,5 @@ void P2PTransportImpl::OnTcpConnected(int result) {
   state_ = static_cast<State>(STATE_READABLE | STATE_WRITABLE);
   event_handler_->OnStateChange(state_);
 }
+
+}  // namespace content

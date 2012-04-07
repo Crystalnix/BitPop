@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,30 @@
 #include "base/string16.h"
 #include "ui/base/ime/composition_underline.h"
 #include "ui/base/range/range.h"
+#include "ui/base/ui_export.h"
 
 namespace ui {
 
 // A struct represents the status of an ongoing composition text.
-struct CompositionText {
+struct UI_EXPORT CompositionText {
   CompositionText();
   ~CompositionText();
+
+  bool operator==(const CompositionText& rhs) const {
+    if ((this->text != rhs.text) ||
+        (this->selection != rhs.selection) ||
+        (this->underlines.size() != rhs.underlines.size()))
+      return false;
+    for (size_t i = 0; i < this->underlines.size(); ++i) {
+      if (this->underlines[i] != rhs.underlines[i])
+        return false;
+    }
+    return true;
+  }
+
+  bool operator!=(const CompositionText& rhs) const {
+    return !(*this == rhs);
+  }
 
   void Clear();
 

@@ -7,17 +7,20 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/task.h"
-#include "content/browser/browser_thread.h"
+#include "base/message_loop_helpers.h"
+#include "base/synchronization/lock.h"
 
 class ChromeURLDataManagerBackend;
-class DictionaryValue;
-class FilePath;
 class MessageLoop;
-class Profile;
 class RefCountedMemory;
+
+namespace base {
+class DictionaryValue;
+}
 
 // To serve dynamic data off of chrome: URLs, implement the
 // ChromeURLDataManager::DataSource interface and register your handler
@@ -102,7 +105,8 @@ class ChromeURLDataManager {
     // TODO: nuke this and convert all callers to not replace.
     virtual bool ShouldReplaceExistingSource() const;
 
-    static void SetFontAndTextDirection(DictionaryValue* localized_strings);
+    static void SetFontAndTextDirection(
+        base::DictionaryValue* localized_strings);
 
    protected:
     virtual ~DataSource();
@@ -110,7 +114,7 @@ class ChromeURLDataManager {
    private:
     friend class ChromeURLDataManagerBackend;
     friend class ChromeURLDataManager;
-    friend class DeleteTask<DataSource>;
+    friend class base::DeleteHelper<DataSource>;
 
     // SendResponse invokes this on the IO thread. Notifies the backend to
     // handle the actual work of sending the data.
@@ -136,7 +140,8 @@ class ChromeURLDataManager {
     ChromeURLDataManagerBackend* backend_;
   };
 
-  explicit ChromeURLDataManager(Profile* profile);
+  explicit ChromeURLDataManager(
+      const base::Callback<ChromeURLDataManagerBackend*(void)>& backend);
   ~ChromeURLDataManager();
 
   // Adds a DataSource to the collection of data sources. This *must* be invoked
@@ -167,12 +172,13 @@ class ChromeURLDataManager {
   // was invoked).
   static bool IsScheduledForDeletion(const DataSource* data_source);
 
-  Profile* profile_;
-
-  // Lock used when accessing |data_sources_|.
-  static base::Lock delete_lock_;
+  // A callback that returns the ChromeURLDataManagerBackend. Only accessible on
+  // the IO thread. This is necessary because ChromeURLDataManager is created on
+  // the UI thread, but ChromeURLDataManagerBackend lives on the IO thread.
+  const base::Callback<ChromeURLDataManagerBackend*(void)> backend_;
 
   // |data_sources_| that are no longer referenced and scheduled for deletion.
+  // Protected by g_delete_lock in the .cc file.
   static DataSources* data_sources_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeURLDataManager);

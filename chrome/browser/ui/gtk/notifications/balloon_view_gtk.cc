@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "chrome/browser/extensions/extension_host.h"
@@ -27,17 +29,17 @@
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/notifications/balloon_view_host_gtk.h"
 #include "chrome/browser/ui/gtk/rounded_window.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/animation/slide_animation.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -100,7 +102,7 @@ BalloonViewImpl::BalloonViewImpl(BalloonCollection* collection)
     : balloon_(NULL),
       frame_container_(NULL),
       html_container_(NULL),
-      method_factory_(this),
+      weak_factory_(this),
       close_button_(NULL),
       animation_(NULL),
       menu_showing_(false),
@@ -122,8 +124,9 @@ void BalloonViewImpl::Close(bool by_user) {
   } else {
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &BalloonViewImpl::DelayedClose, by_user));
+        base::Bind(&BalloonViewImpl::DelayedClose,
+                   weak_factory_.GetWeakPtr(),
+                   by_user));
   }
 }
 
@@ -274,7 +277,7 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   gtk_container_add(GTK_CONTAINER(label_alignment), source_label_);
   gtk_box_pack_start(GTK_BOX(hbox_), label_alignment, FALSE, FALSE, 0);
 
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   // Create a button to dismiss the balloon and add it to the toolbar.
   close_button_.reset(new CustomDrawButton(IDR_TAB_CLOSE,
@@ -287,7 +290,7 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   gtk_widget_set_tooltip_text(close_button_->widget(), dismiss_text.c_str());
   g_signal_connect(close_button_->widget(), "clicked",
                    G_CALLBACK(OnCloseButtonThunk), this);
-  GTK_WIDGET_UNSET_FLAGS(close_button_->widget(), GTK_CAN_FOCUS);
+  gtk_widget_set_can_focus(close_button_->widget(), FALSE);
   GtkWidget* close_alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
   gtk_alignment_set_padding(GTK_ALIGNMENT(close_alignment),
                             kShelfVerticalMargin, kShelfVerticalMargin,
@@ -304,7 +307,7 @@ void BalloonViewImpl::Show(Balloon* balloon) {
                               options_text.c_str());
   g_signal_connect(options_menu_button_->widget(), "button-press-event",
                    G_CALLBACK(OnOptionsMenuButtonThunk), this);
-  GTK_WIDGET_UNSET_FLAGS(options_menu_button_->widget(), GTK_CAN_FOCUS);
+  gtk_widget_set_can_focus(options_menu_button_->widget(), FALSE);
   GtkWidget* options_alignment = gtk_alignment_new(0.0, 0.0, 1.0, 1.0);
   gtk_alignment_set_padding(GTK_ALIGNMENT(options_alignment),
                             kShelfVerticalMargin, kShelfVerticalMargin,
@@ -313,11 +316,11 @@ void BalloonViewImpl::Show(Balloon* balloon) {
                     options_menu_button_->widget());
   gtk_box_pack_end(GTK_BOX(hbox_), options_alignment, FALSE, FALSE, 0);
 
-  notification_registrar_.Add(this, NotificationType::BROWSER_THEME_CHANGED,
-                              NotificationService::AllSources());
+  notification_registrar_.Add(this, chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                              content::Source<ThemeService>(theme_service_));
 
   // We don't do InitThemesFor() because it just forces a redraw.
-  gtk_util::ActAsRoundedWindow(frame_container_, gtk_util::kGdkBlack, 3,
+  gtk_util::ActAsRoundedWindow(frame_container_, ui::kGdkBlack, 3,
                                gtk_util::ROUNDED_ALL,
                                gtk_util::BORDER_ALL);
 
@@ -337,14 +340,17 @@ void BalloonViewImpl::Show(Balloon* balloon) {
   gtk_widget_show_all(frame_container_);
 
   notification_registrar_.Add(this,
-      NotificationType::NOTIFY_BALLOON_DISCONNECTED, Source<Balloon>(balloon));
+      chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
+      content::Source<Balloon>(balloon));
 }
 
 void BalloonViewImpl::Update() {
   DCHECK(html_contents_.get()) << "BalloonView::Update called before Show";
-  if (html_contents_->render_view_host())
-    html_contents_->render_view_host()->NavigateToURL(
-        balloon_->notification().content_url());
+  if (!html_contents_->web_contents())
+    return;
+  html_contents_->web_contents()->GetController().LoadURL(
+      balloon_->notification().content_url(), content::Referrer(),
+      content::PAGE_TRANSITION_LINK, std::string());
 }
 
 gfx::Point BalloonViewImpl::GetContentsOffset() const {
@@ -380,17 +386,17 @@ gfx::Rect BalloonViewImpl::GetContentsRectangle() const {
                    content_size.width(), content_size.height());
 }
 
-void BalloonViewImpl::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  if (type == NotificationType::NOTIFY_BALLOON_DISCONNECTED) {
+void BalloonViewImpl::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED) {
     // If the renderer process attached to this balloon is disconnected
     // (e.g., because of a crash), we want to close the balloon.
     notification_registrar_.Remove(this,
-        NotificationType::NOTIFY_BALLOON_DISCONNECTED,
-        Source<Balloon>(balloon_));
+        chrome::NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
+        content::Source<Balloon>(balloon_));
     Close(false);
-  } else if (type == NotificationType::BROWSER_THEME_CHANGED) {
+  } else if (type == chrome::NOTIFICATION_BROWSER_THEME_CHANGED) {
     // Since all the buttons change their own properties, and our expose does
     // all the real differences, we'll need a redraw.
     gtk_widget_queue_draw(frame_container_);
@@ -408,19 +414,22 @@ void BalloonViewImpl::OnCloseButton(GtkWidget* widget) {
 // HTML view cut off the roundedness of the notification window.
 gboolean BalloonViewImpl::OnContentsExpose(GtkWidget* sender,
                                            GdkEventExpose* event) {
+  TRACE_EVENT0("ui::gtk", "BalloonViewImpl::OnContentsExpose");
   cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(sender->window));
   gdk_cairo_rectangle(cr, &event->area);
   cairo_clip(cr);
+
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(sender, &allocation);
 
   // According to a discussion on a mailing list I found, these degenerate
   // paths are the officially supported way to draw points in Cairo.
   cairo_set_source_rgb(cr, 0, 0, 0);
   cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
   cairo_set_line_width(cr, 1.0);
-  cairo_move_to(cr, 0.5, sender->allocation.height - 0.5);
+  cairo_move_to(cr, 0.5, allocation.height - 0.5);
   cairo_close_path(cr);
-  cairo_move_to(cr, sender->allocation.width - 0.5,
-                    sender->allocation.height - 0.5);
+  cairo_move_to(cr, allocation.width - 0.5, allocation.height - 0.5);
   cairo_close_path(cr);
   cairo_stroke(cr);
   cairo_destroy(cr);
@@ -429,6 +438,7 @@ gboolean BalloonViewImpl::OnContentsExpose(GtkWidget* sender,
 }
 
 gboolean BalloonViewImpl::OnExpose(GtkWidget* sender, GdkEventExpose* event) {
+  TRACE_EVENT0("ui::gtk", "BalloonViewImpl::OnExpose");
   cairo_t* cr = gdk_cairo_create(GDK_DRAWABLE(sender->window));
   gdk_cairo_rectangle(cr, &event->area);
   cairo_clip(cr);
@@ -468,8 +478,9 @@ void BalloonViewImpl::StoppedShowing() {
   if (pending_close_) {
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &BalloonViewImpl::DelayedClose, false));
+        base::Bind(&BalloonViewImpl::DelayedClose,
+                   weak_factory_.GetWeakPtr(),
+                   false));
   }
 }
 

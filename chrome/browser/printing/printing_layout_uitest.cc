@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,9 +86,9 @@ class PrintingLayoutTest : public PrintingTest<UITest> {
       Image png_content(png);
       double diff_emf = emf_content.PercentageDifferent(test_content);
 
-      EXPECT_EQ(0., diff_emf) << verification_name <<
-          L" original size:" << emf_content.size() <<
-          L" result size:" << test_content.size();
+      EXPECT_EQ(0., diff_emf) << WideToUTF8(verification_name) <<
+          " original size:" << emf_content.size().ToString() <<
+          " result size:" << test_content.size().ToString();
       if (diff_emf) {
         // Backup the result emf file.
         file_util::CopyFile(test_result, FilePath(
@@ -98,9 +98,9 @@ class PrintingLayoutTest : public PrintingTest<UITest> {
       // This verification is only to know that the EMF rendering stays
       // immutable.
       double diff_png = emf_content.PercentageDifferent(png_content);
-      EXPECT_EQ(0., diff_png) << verification_name <<
-          L" original size:" << emf_content.size() <<
-          L" result size:" << test_content.size();
+      EXPECT_EQ(0., diff_png) << WideToUTF8(verification_name) <<
+          " original size:" << emf_content.size().ToString() <<
+          " result size:" << test_content.size().ToString();
       if (diff_png) {
         // Backup the rendered emf file to detect the rendering difference.
         emf_content.SaveToPng(FilePath(verification_file + L"_rendering.png"));
@@ -167,7 +167,7 @@ class PrintingLayoutTest : public PrintingTest<UITest> {
       }
       if (found_emf && found_prn)
         break;
-      base::PlatformThread::Sleep(100);
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(100));
     }
     EXPECT_TRUE(found_emf) << ".PRN file is: " << prn_file;
     EXPECT_TRUE(found_prn) << ".EMF file is: " << emf_file;
@@ -259,13 +259,13 @@ class DismissTheWindow : public base::DelegateSimpleThread::Delegate {
           break;
         }
       }
-      base::PlatformThread::Sleep(10);
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(10));
     }
 
     // Now verify that it indeed closed itself.
     while (IsWindow(dialog_window)) {
       CloseDialogWindow(dialog_window);
-      base::PlatformThread::Sleep(10);
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(10));
     }
   }
 

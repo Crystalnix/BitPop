@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop_proxy.h"
 #include "base/values.h"
-#include "content/common/json_value_serializer.h"
 
 namespace {
 
@@ -24,20 +24,21 @@ const FilePath::CharType* kBadExtension = FILE_PATH_LITERAL("bad");
 class FileThreadDeserializer
     : public base::RefCountedThreadSafe<FileThreadDeserializer> {
  public:
-  explicit FileThreadDeserializer(JsonPrefStore* delegate,
-                                  base::MessageLoopProxy* file_loop_proxy)
-      : delegate_(delegate),
+  FileThreadDeserializer(JsonPrefStore* delegate,
+                         base::MessageLoopProxy* file_loop_proxy)
+      : no_dir_(false),
+        error_(PersistentPrefStore::PREF_READ_ERROR_NONE),
+        delegate_(delegate),
         file_loop_proxy_(file_loop_proxy),
-        origin_loop_proxy_(base::MessageLoopProxy::CreateForCurrentThread()) {
+        origin_loop_proxy_(base::MessageLoopProxy::current()) {
   }
 
   void Start(const FilePath& path) {
     DCHECK(origin_loop_proxy_->BelongsToCurrentThread());
     file_loop_proxy_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this,
-                          &FileThreadDeserializer::ReadFileAndReport,
-                          path));
+        base::Bind(&FileThreadDeserializer::ReadFileAndReport,
+                   this, path));
   }
 
   // Deserializes JSON on the file thread.
@@ -48,7 +49,7 @@ class FileThreadDeserializer
 
     origin_loop_proxy_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &FileThreadDeserializer::ReportOnOriginThread));
+        base::Bind(&FileThreadDeserializer::ReportOnOriginThread, this));
   }
 
   // Reports deserialization result on the origin thread.
@@ -95,7 +96,7 @@ void FileThreadDeserializer::HandleErrors(
     PersistentPrefStore::PrefReadError* error) {
   *error = PersistentPrefStore::PREF_READ_ERROR_NONE;
   if (!value) {
-    VLOG(1) << "Error while loading JSON file: " << error_msg;
+    DVLOG(1) << "Error while loading JSON file: " << error_msg;
     switch (error_code) {
       case JSONFileValueSerializer::JSON_ACCESS_DENIED:
         *error = PersistentPrefStore::PREF_READ_ERROR_ACCESS_DENIED;
@@ -153,7 +154,8 @@ PrefStore::ReadResult JsonPrefStore::GetValue(const std::string& key,
                                               const Value** result) const {
   Value* tmp = NULL;
   if (prefs_->Get(key, &tmp)) {
-    *result = tmp;
+    if (result)
+      *result = tmp;
     return READ_OK;
   }
   return READ_NO_VALUE;
@@ -165,6 +167,10 @@ void JsonPrefStore::AddObserver(PrefStore::Observer* observer) {
 
 void JsonPrefStore::RemoveObserver(PrefStore::Observer* observer) {
   observers_.RemoveObserver(observer);
+}
+
+size_t JsonPrefStore::NumberOfObservers() const {
+  return observers_.size();
 }
 
 bool JsonPrefStore::IsInitializationComplete() const {
@@ -183,7 +189,7 @@ void JsonPrefStore::SetValue(const std::string& key, Value* value) {
   prefs_->Get(key, &old_value);
   if (!old_value || !value->Equals(old_value)) {
     prefs_->Set(key, new_value.release());
-    FOR_EACH_OBSERVER(PrefStore::Observer, observers_, OnPrefValueChanged(key));
+    ReportValueChanged(key);
   }
 }
 
@@ -192,14 +198,16 @@ void JsonPrefStore::SetValueSilently(const std::string& key, Value* value) {
   scoped_ptr<Value> new_value(value);
   Value* old_value = NULL;
   prefs_->Get(key, &old_value);
-  if (!old_value || !value->Equals(old_value))
+  if (!old_value || !value->Equals(old_value)) {
     prefs_->Set(key, new_value.release());
+    if (!read_only_)
+      writer_.ScheduleWrite(this);
+  }
 }
 
 void JsonPrefStore::RemoveValue(const std::string& key) {
-  if (prefs_->Remove(key, NULL)) {
-    FOR_EACH_OBSERVER(PrefStore::Observer, observers_, OnPrefValueChanged(key));
-  }
+  if (prefs_->Remove(key, NULL))
+    ReportValueChanged(key);
 }
 
 bool JsonPrefStore::ReadOnly() const {
@@ -278,26 +286,6 @@ PersistentPrefStore::PrefReadError JsonPrefStore::ReadPrefs() {
   return error;
 }
 
-bool JsonPrefStore::WritePrefs() {
-  std::string data;
-  if (!SerializeData(&data))
-    return false;
-
-  // Lie about our ability to save.
-  if (read_only_)
-    return true;
-
-  writer_.WriteNow(data);
-  return true;
-}
-
-void JsonPrefStore::ScheduleWritePrefs() {
-  if (read_only_)
-    return;
-
-  writer_.ScheduleWrite(this);
-}
-
 void JsonPrefStore::CommitPendingWrite() {
   if (writer_.HasPendingWrite() && !read_only_)
     writer_.DoScheduledWrite();
@@ -305,6 +293,8 @@ void JsonPrefStore::CommitPendingWrite() {
 
 void JsonPrefStore::ReportValueChanged(const std::string& key) {
   FOR_EACH_OBSERVER(PrefStore::Observer, observers_, OnPrefValueChanged(key));
+  if (!read_only_)
+    writer_.ScheduleWrite(this);
 }
 
 bool JsonPrefStore::SerializeData(std::string* output) {

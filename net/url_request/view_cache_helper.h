@@ -8,9 +8,10 @@
 
 #include <string>
 
+#include "base/memory/weak_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace disk_cache {
 class Backend;
@@ -21,7 +22,7 @@ namespace net {
 
 class URLRequestContext;
 
-class NET_API ViewCacheHelper {
+class NET_EXPORT ViewCacheHelper {
  public:
   ViewCacheHelper();
   ~ViewCacheHelper();
@@ -31,19 +32,24 @@ class NET_API ViewCacheHelper {
   // operation completes. |out| must remain valid until this operation completes
   // or the object is destroyed.
   int GetEntryInfoHTML(const std::string& key,
-                       URLRequestContext* context,
+                       const URLRequestContext* context,
                        std::string* out,
-                       CompletionCallback* callback);
+                       const CompletionCallback& callback);
 
   // Formats the cache contents as HTML. Returns a net error code.
   // If this method returns ERR_IO_PENDING, |callback| will be notified when the
   // operation completes. |out| must remain valid until this operation completes
   // or the object is destroyed. |url_prefix| will be prepended to each entry
   // key as a link to the entry.
-  int GetContentsHTML(URLRequestContext* context,
+  int GetContentsHTML(const URLRequestContext* context,
                       const std::string& url_prefix,
                       std::string* out,
-                      CompletionCallback* callback);
+                      const CompletionCallback& callback);
+
+  // Lower-level helper to produce a textual representation of binary data.
+  // The results are appended to |result| and can be used in HTML pages
+  // provided the dump is contained within <pre></pre> tags.
+  static void HexDump(const char *buf, size_t buf_len, std::string* result);
 
  private:
   enum State {
@@ -62,10 +68,10 @@ class NET_API ViewCacheHelper {
 
   // Implements GetEntryInfoHTML and GetContentsHTML.
   int GetInfoHTML(const std::string& key,
-                  URLRequestContext* context,
+                  const URLRequestContext* context,
                   const std::string& url_prefix,
                   std::string* out,
-                  CompletionCallback* callback);
+                  const CompletionCallback& callback);
 
   // This is a helper function used to trigger a completion callback. It may
   // only be called if callback_ is non-null.
@@ -94,7 +100,7 @@ class NET_API ViewCacheHelper {
   // Called to signal completion of asynchronous IO.
   void OnIOComplete(int result);
 
-  scoped_refptr<URLRequestContext> context_;
+  scoped_refptr<const URLRequestContext> context_;
   disk_cache::Backend* disk_cache_;
   disk_cache::Entry* entry_;
   void* iter_;
@@ -105,12 +111,11 @@ class NET_API ViewCacheHelper {
   std::string key_;
   std::string url_prefix_;
   std::string* data_;
-  CompletionCallback* callback_;
+  CompletionCallback callback_;
 
   State next_state_;
 
-  CompletionCallbackImpl<ViewCacheHelper> cache_callback_;
-  scoped_refptr<CancelableCompletionCallback<ViewCacheHelper> > entry_callback_;
+  base::WeakPtrFactory<ViewCacheHelper> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewCacheHelper);
 };

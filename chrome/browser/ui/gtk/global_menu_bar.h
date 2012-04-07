@@ -7,13 +7,14 @@
 
 #include <map>
 
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/ui/gtk/global_bookmark_menu.h"
+#include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/ui/gtk/global_history_menu.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
 class Browser;
 struct GlobalMenuBarCommand;
@@ -31,7 +32,7 @@ typedef struct _GtkWidget GtkWidget;
 // bar itself is visible, so we insert a GtkMenuBar into the window hierarchy
 // and set it to be invisible.
 class GlobalMenuBar : public CommandUpdater::CommandObserver,
-                      public NotificationObserver {
+                      public content::NotificationObserver {
  public:
   static const int TAG_NORMAL = 0;
   static const int TAG_MOST_VISITED = 1;
@@ -42,6 +43,10 @@ class GlobalMenuBar : public CommandUpdater::CommandObserver,
 
   explicit GlobalMenuBar(Browser* browser);
   virtual ~GlobalMenuBar();
+
+  // Use this method to remove the GlobalMenuBar from any further notifications
+  // and command updates but not destroy the widgets.
+  virtual void Disable();
 
   GtkWidget* widget() { return menu_bar_.get(); }
 
@@ -62,29 +67,29 @@ class GlobalMenuBar : public CommandUpdater::CommandObserver,
                            GtkWidget* menu_to_add_to);
 
   // CommandUpdater::CommandObserver:
-  virtual void EnabledStateChangedForCommand(int id, bool enabled);
+  virtual void EnabledStateChangedForCommand(int id, bool enabled) OVERRIDE;
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // Updates the visibility of the bookmark bar on pref changes.
+  void OnBookmarkBarVisibilityChanged();
 
   CHROMEGTK_CALLBACK_0(GlobalMenuBar, void, OnItemActivated);
 
   Browser* browser_;
-  Profile* profile_;
 
-  NotificationRegistrar registrar_;
+  // Tracks value of the kShowBookmarkBar preference.
+  PrefChangeRegistrar pref_change_registrar_;
 
   // Our menu bar widget.
-  OwnedWidgetGtk menu_bar_;
+  ui::OwnedWidgetGtk menu_bar_;
 
   // Listens to the TabRestoreService and the HistoryService and keeps the
   // history menu fresh.
   GlobalHistoryMenu history_menu_;
-
-  // Listens to the bookmark model and updates the menu.
-  GlobalBookmarkMenu bookmark_menu_;
 
   // For some menu items, we want to show the accelerator, but not actually
   // explicitly handle it. To this end we connect those menu items' accelerators

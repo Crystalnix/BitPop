@@ -92,7 +92,7 @@ cr.define('options', function() {
      * @private
      */
     inputFieldChanged_: function(opt_event) {
-      var disabled = !$('name-on-card').value && !$('credit-card-number');
+      var disabled = !$('name-on-card').value && !$('credit-card-number').value;
       $('autofill-edit-credit-card-apply-button').disabled = disabled;
     },
 
@@ -142,6 +142,9 @@ cr.define('options', function() {
       $('credit-card-number').value = '';
       $('expiration-month').selectedIndex = 0;
       $('expiration-year').selectedIndex = 0;
+
+      // Reset the enabled status of the 'Ok' button.
+      this.inputFieldChanged_();
     },
 
     /**

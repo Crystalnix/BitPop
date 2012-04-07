@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,13 @@
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/frame/bubble_window.h"
+#include "chrome/browser/ui/dialog_style.h"
 #include "chrome/browser/ui/views/window.h"
 #include "ui/base/gtk/gtk_signal.h"
-#include "views/controls/native/native_view_host.h"
-#include "views/window/dialog_delegate.h"
-#include "views/window/non_client_view.h"
-#include "views/window/window.h"
+#include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/window/dialog_delegate.h"
+#include "ui/views/window/non_client_view.h"
 
 namespace {
 
@@ -33,7 +34,7 @@ GtkWidget* GetDialogDefaultWidget(GtkDialog* dialog) {
   GList* current = children;
   while (current) {
     GtkWidget* widget = reinterpret_cast<GtkWidget*>(current->data);
-    if (GTK_WIDGET_HAS_DEFAULT(widget)) {
+    if (gtk_widget_has_default(widget)) {
       default_widget = widget;
       break;
     }
@@ -50,8 +51,7 @@ GtkWidget* GetDialogDefaultWidget(GtkDialog* dialog) {
 
 namespace chromeos {
 
-class NativeDialogHost : public views::View,
-                         public views::DialogDelegate {
+class NativeDialogHost : public views::DialogDelegateView {
  public:
   NativeDialogHost(gfx::NativeView native_dialog,
                    int flags,
@@ -60,26 +60,35 @@ class NativeDialogHost : public views::View,
   ~NativeDialogHost();
 
   // views::DialogDelegate implementation:
-  virtual bool CanResize() const { return flags_ & DIALOG_FLAG_RESIZEABLE; }
-  virtual int GetDialogButtons() const { return 0; }
-  virtual std::wstring GetWindowTitle() const { return title_; }
-  virtual views::View* GetContentsView() { return this; }
-  virtual bool IsModal() const { return flags_ & DIALOG_FLAG_MODAL; }
-  virtual void WindowClosing();
+  virtual bool CanResize() const OVERRIDE
+      { return flags_ & DIALOG_FLAG_RESIZEABLE; }
+  virtual int GetDialogButtons() const OVERRIDE { return 0; }
+  virtual string16 GetWindowTitle() const OVERRIDE { return title_; }
+  virtual views::View* GetContentsView() OVERRIDE { return this; }
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+    return flags_ & DIALOG_FLAG_MODAL ? ui::MODAL_TYPE_WINDOW :
+        ui::MODAL_TYPE_NONE;
+  }
+  virtual void WindowClosing() OVERRIDE;
 
  protected:
   CHROMEGTK_CALLBACK_0(NativeDialogHost, void, OnCheckResize);
   CHROMEGTK_CALLBACK_0(NativeDialogHost, void, OnDialogDestroy);
+  CHROMEGTK_CALLBACK_1(NativeDialogHost, gboolean, OnGtkKeyPressed, GdkEvent*);
 
   // views::View implementation:
-  virtual gfx::Size GetPreferredSize();
-  virtual void Layout();
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
   virtual void ViewHierarchyChanged(bool is_add,
                                     views::View* parent,
-                                    views::View* child);
+                                    views::View* child) OVERRIDE;
+
  private:
   // Init and attach to native dialog.
   void Init();
+
+  // Enable moving focuses over native widgets by the Tab key.
+  void InitNativeFocusMove(GtkWidget* contents);
 
   // Check and apply minimum size restriction.
   void CheckSize();
@@ -90,7 +99,7 @@ class NativeDialogHost : public views::View,
   // NativeViewHost for the dialog's contents.
   views::NativeViewHost* contents_view_;
 
-  std::wstring title_;
+  string16 title_;
   int flags_;
   gfx::Size size_;
   gfx::Size preferred_size_;
@@ -117,7 +126,7 @@ NativeDialogHost::NativeDialogHost(gfx::NativeView native_dialog,
       destroy_signal_id_(0) {
   const char* title = gtk_window_get_title(GTK_WINDOW(dialog_));
   if (title)
-    UTF8ToWide(title, strlen(title), &title_);
+    UTF8ToUTF16(title, strlen(title), &title_);
 
   destroy_signal_id_ = g_signal_connect(dialog_, "destroy",
       G_CALLBACK(&OnDialogDestroyThunk), this);
@@ -143,11 +152,12 @@ void NativeDialogHost::OnCheckResize(GtkWidget* widget) {
       CheckSize();
       SizeToPreferredSize();
 
-      gfx::Size window_size = window()->non_client_view()->GetPreferredSize();
-      gfx::Rect window_bounds = window()->GetBounds();
+      gfx::Size window_size =
+          GetWidget()->non_client_view()->GetPreferredSize();
+      gfx::Rect window_bounds = GetWidget()->GetWindowScreenBounds();
       window_bounds.set_width(window_size.width());
       window_bounds.set_height(window_size.height());
-      window()->SetBoundsConstrained(window_bounds, NULL);
+      GetWidget()->SetBoundsConstrained(window_bounds);
     }
   }
 }
@@ -155,7 +165,22 @@ void NativeDialogHost::OnCheckResize(GtkWidget* widget) {
 void NativeDialogHost::OnDialogDestroy(GtkWidget* widget) {
   dialog_ = NULL;
   destroy_signal_id_ = 0;
-  window()->Close();
+  GetWidget()->Close();
+}
+
+gboolean NativeDialogHost::OnGtkKeyPressed(GtkWidget* widget, GdkEvent* event) {
+  // Manually handle focus movement by Tab key.
+  // See the comments in NativeDialogHost::InitNativeFocusMove for more detail.
+  views::KeyEvent key_event(event);
+  if (views::FocusManager::IsTabTraversalKeyEvent(key_event)) {
+    GtkWindow* window = GetWidget()->GetNativeWindow();
+    GtkDirectionType dir =
+        key_event.IsShiftDown() ? GTK_DIR_TAB_BACKWARD : GTK_DIR_TAB_FORWARD;
+    static_cast<GtkWindowClass*>(
+        g_type_class_peek(GTK_TYPE_WINDOW))->move_focus(window, dir);
+    return true;
+  }
+  return false;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -206,11 +231,11 @@ void NativeDialogHost::Init() {
       kDialogPadding, kDialogPadding);
 
   // Move dialog contents into our container.
-  GtkWidget* dialog_contents = GTK_DIALOG(dialog_)->vbox;
-  g_object_ref(dialog_contents);
-  gtk_container_remove(GTK_CONTAINER(dialog_), dialog_contents);
-  gtk_container_add(GTK_CONTAINER(contents), dialog_contents);
-  g_object_unref(dialog_contents);
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  g_object_ref(content_area);
+  gtk_container_remove(GTK_CONTAINER(dialog_), content_area);
+  gtk_container_add(GTK_CONTAINER(contents), content_area);
+  g_object_unref(content_area);
   gtk_widget_hide(dialog_);
 
   g_object_set_data(G_OBJECT(dialog_), kNativeDialogHost,
@@ -221,11 +246,13 @@ void NativeDialogHost::Init() {
   contents_view_ = new views::NativeViewHost();
   // TODO(xiyuan): Find a better way to get proper background.
   contents_view_->set_background(views::Background::CreateSolidBackground(
-      BubbleWindow::kBackgroundColor));
+      kBubbleWindowBackgroundColor));
   AddChildView(contents_view_);
   contents_view_->Attach(contents);
 
-  g_signal_connect(window()->GetNativeWindow(), "check-resize",
+  InitNativeFocusMove(contents);
+
+  g_signal_connect(GetWidget()->GetNativeWindow(), "check-resize",
       G_CALLBACK(&OnCheckResizeThunk), this);
 
   const int padding = 2 * kDialogPadding;
@@ -256,6 +283,43 @@ void NativeDialogHost::Init() {
     gtk_widget_grab_focus(focus_widget);
 }
 
+void NativeDialogHost::InitNativeFocusMove(GtkWidget* contents) {
+  // Fix for http://crosbug.com/7725.
+  //
+  // When a native GTK dialog is hosted on views+GTK, the views framework
+  // prevents Tab key events to be passed to the GTK's handler in three places:
+  //   1. views::FocusManager::OnKeyEvent
+  //     It intercepts key events _after_ the usual event handlers through the
+  //     native widget hierarchy and _before_ the native key binding handlers.
+  //     Since moving focus by Tab is implemented as a key binding, it cannot
+  //     be reached. As a workaround for NativeDialogHost, we install an usual
+  //     key event handler for capturing Tab key, before FocusManager.
+  //   2. ::gtk_views_window_move_focus
+  //     The default "move_focus" method of GtkWindow is overridden by views
+  //     to invoke views::FocusManager. This is avoided by calling the default
+  //     GtkWindow->move_focus explicitly in the OnGtkKeyPressed handler.
+  //   3. ::gtk_views_fixed_init
+  //     Several GTK widgets of type GtkViewsFixed are inserted between the
+  //     dialog window and the dialog controls, so that views framework can
+  //     observe native events. The problem is that these widgets have CAN_FOCUS
+  //     flags, which means they don't propagate focuses to the child controls.
+  //     Here we turn the flag off to make descendant dialog controls focusable.
+  // Note that, these "stealing" behaviors of views are required ones in the
+  // usual situation where native widgets are used just as a hidden background
+  // implementation of views. Only when a native widget hierarchy is hosted and
+  // directly exposed to the users, the following workaround is necessary.
+
+  g_signal_connect(contents, "key_press_event",
+                   G_CALLBACK(&OnGtkKeyPressedThunk), this);
+
+  GtkWidget* window = GTK_WIDGET(GetWidget()->GetNativeWindow());
+  GtkWidget* anscestor = gtk_widget_get_parent(GTK_WIDGET(contents));
+  while (anscestor && anscestor != window) {
+    GTK_WIDGET_UNSET_FLAGS(anscestor, GTK_CAN_FOCUS);
+    anscestor = gtk_widget_get_parent(anscestor);
+  }
+}
+
 void NativeDialogHost::CheckSize() {
   // Apply the minimum size.
   if (preferred_size_.width() < min_size_.width())
@@ -271,14 +335,14 @@ void ShowNativeDialog(gfx::NativeWindow parent,
                       const gfx::Size& min_size) {
   NativeDialogHost* native_dialog_host =
       new NativeDialogHost(native_dialog, flags, size, min_size);
-  browser::CreateViewsWindow(parent, gfx::Rect(), native_dialog_host);
-  native_dialog_host->window()->Show();
+  browser::CreateViewsWindow(parent, native_dialog_host, STYLE_GENERIC);
+  native_dialog_host->GetWidget()->Show();
 }
 
 gfx::NativeWindow GetNativeDialogWindow(gfx::NativeView native_dialog) {
   NativeDialogHost* host = reinterpret_cast<NativeDialogHost*>(
       g_object_get_data(G_OBJECT(native_dialog), kNativeDialogHost));
-  return host ? host->window()->GetNativeWindow() : NULL;
+  return host ? host->GetWidget()->GetNativeWindow() : NULL;
 }
 
 gfx::Rect GetNativeDialogContentsBounds(gfx::NativeView native_dialog) {

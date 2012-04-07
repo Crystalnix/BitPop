@@ -38,7 +38,7 @@ class MockReadErrorDelegate : public PersistentPrefStore::ReadErrorDelegate {
 class JsonPrefStoreTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    message_loop_proxy_ = base::MessageLoopProxy::CreateForCurrentThread();
+    message_loop_proxy_ = base::MessageLoopProxy::current();
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
@@ -152,7 +152,7 @@ void RunBasicJsonPrefStoreTest(JsonPrefStore *pref_store,
 
   // Serialize and compare to expected output.
   ASSERT_TRUE(file_util::PathExists(golden_output_file));
-  ASSERT_TRUE(pref_store->WritePrefs());
+  pref_store->CommitPendingWrite();
   MessageLoop::current()->RunAllPending();
   EXPECT_TRUE(file_util::TextContentsEqual(golden_output_file, output_file));
   ASSERT_TRUE(file_util::Delete(output_file, false));

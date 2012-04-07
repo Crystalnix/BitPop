@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,53 +8,32 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/search_provider.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "v8/include/v8.h"
 
 using WebKit::WebFrame;
 using WebKit::WebView;
+using content::RenderView;
 
 namespace extensions_v8 {
 
-static const char* const kSearchProviderApiV1 =
+static const char* const kSearchProviderApi =
     "var external;"
     "if (!external)"
     "  external = {};"
     "external.AddSearchProvider = function(name) {"
     "  native function NativeAddSearchProvider();"
     "  NativeAddSearchProvider(name);"
-    "};";
-
-static const char* const kSearchProviderApiV2 =
-    "var external;"
-    "if (!external)"
-    "  external = {};"
-    "external.AddSearchProvider = function(name, default_provider) {"
-    "  native function NativeAddSearchProvider();"
-    "  NativeAddSearchProvider(name, default_provider);"
     "};"
     "external.IsSearchProviderInstalled = function(name) {"
     "  native function NativeIsSearchProviderInstalled();"
     "  return NativeIsSearchProviderInstalled(name);"
     "};";
 
-#undef SEARCH_PROVIDER_API_V1
-
 const char* const kExternalExtensionName = "v8/External";
-
-// Should the new api's "IsSearchProviderInstalled and InstallSearchProvider
-// with an extra parameter to indicate if the provider should be the default"
-// be available?
-static bool EnableSearchProviderV2() {
-#if defined(OS_WIN)
-  return true;
-#else
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableSearchProviderApiV2);
-#endif
-}
 
 class ExternalExtensionWrapper : public v8::Extension {
  public:
@@ -82,8 +61,7 @@ class ExternalExtensionWrapper : public v8::Extension {
 ExternalExtensionWrapper::ExternalExtensionWrapper()
     : v8::Extension(
         kExternalExtensionName,
-        !EnableSearchProviderV2() ?
-        kSearchProviderApiV1 : kSearchProviderApiV2) {
+        kSearchProviderApi) {
 }
 
 v8::Handle<v8::FunctionTemplate> ExternalExtensionWrapper::GetNativeFunction(
@@ -118,22 +96,14 @@ v8::Handle<v8::Value> ExternalExtensionWrapper::AddSearchProvider(
   std::string name = std::string(*v8::String::Utf8Value(args[0]));
   if (!name.length()) return v8::Undefined();
 
-  search_provider::OSDDType provider_type =
-      ((args.Length() < 2) || !args[1]->BooleanValue()) ?
-      search_provider::EXPLICIT_PROVIDER :
-      search_provider::EXPLICIT_DEFAULT_PROVIDER;
-
   RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
 
-  if (provider_type != search_provider::EXPLICIT_DEFAULT_PROVIDER ||
-      render_view->webview()->mainFrame()->isProcessingUserGesture()) {
-    GURL osd_url(name);
-    if (!osd_url.is_empty()) {
-      render_view->Send(new ViewHostMsg_PageHasOSDD(
-          render_view->routing_id(), render_view->page_id(), osd_url,
-          provider_type));
-    }
+  GURL osd_url(name);
+  if (!osd_url.is_empty()) {
+    render_view->Send(new ChromeViewHostMsg_PageHasOSDD(
+        render_view->GetRoutingId(), render_view->GetPageId(), osd_url,
+        search_provider::EXPLICIT_PROVIDER));
   }
 
   return v8::Undefined();
@@ -143,10 +113,10 @@ v8::Handle<v8::Value> ExternalExtensionWrapper::AddSearchProvider(
 v8::Handle<v8::Value> ExternalExtensionWrapper::IsSearchProviderInstalled(
     const v8::Arguments& args) {
   if (!args.Length()) return v8::Undefined();
+  v8::String::Utf8Value utf8name(args[0]);
+  if (!utf8name.length()) return v8::Undefined();
 
-  std::string name = std::string(*v8::String::Utf8Value(args[0]));
-  if (!name.length()) return v8::Undefined();
-
+  std::string name = std::string(*utf8name);
   RenderView* render_view = GetRenderView();
   if (!render_view) return v8::Undefined();
 
@@ -156,8 +126,11 @@ v8::Handle<v8::Value> ExternalExtensionWrapper::IsSearchProviderInstalled(
   search_provider::InstallState install = search_provider::DENIED;
   GURL inquiry_url = GURL(name);
   if (!inquiry_url.is_empty()) {
-      render_view->Send(new ViewHostMsg_GetSearchProviderInstallState(
-          render_view->routing_id(), webframe->url(), inquiry_url, &install));
+      render_view->Send(new ChromeViewHostMsg_GetSearchProviderInstallState(
+          render_view->GetRoutingId(),
+          webframe->document().url(),
+          inquiry_url,
+          &install));
   }
 
   if (install == search_provider::DENIED) {

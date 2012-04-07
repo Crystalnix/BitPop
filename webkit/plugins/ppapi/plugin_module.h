@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,35 +20,21 @@
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/ppb.h"
+#include "ppapi/c/ppb_core.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
+#include "webkit/plugins/webkit_plugins_export.h"
 
 class FilePath;
-class MessageLoop;
-struct PPB_Core;
 typedef void* NPIdentifier;
 
-namespace base {
-class WaitableEvent;
-}
-
 namespace ppapi {
+class CallbackTracker;
 class WebKitForwarding;
 }  // namespace ppapi
-
-namespace pp {
-namespace proxy {
-class HostDispatcher;
-}  // namespace proxy
-}  // namespace pp
-
-namespace IPC {
-struct ChannelHandle;
-}
 
 namespace webkit {
 namespace ppapi {
 
-class CallbackTracker;
 class PluginDelegate;
 class PluginInstance;
 
@@ -57,8 +43,9 @@ class PluginInstance;
 //
 // Note: to get from a PP_Instance to a PluginInstance*, use the
 // ResourceTracker.
-class PluginModule : public base::RefCounted<PluginModule>,
-                     public base::SupportsWeakPtr<PluginModule> {
+class WEBKIT_PLUGINS_EXPORT PluginModule :
+    public base::RefCounted<PluginModule>,
+    public base::SupportsWeakPtr<PluginModule> {
  public:
   typedef const void* (*GetInterfaceFunc)(const char*);
   typedef int (*PPP_InitializeModuleFunc)(PP_Module, PPB_GetInterface);
@@ -66,12 +53,14 @@ class PluginModule : public base::RefCounted<PluginModule>,
 
   struct EntryPoints {
     // This structure is POD, with the constructor initializing to NULL.
-    EntryPoints();
+    WEBKIT_PLUGINS_EXPORT EntryPoints();
 
     GetInterfaceFunc get_interface;
     PPP_InitializeModuleFunc initialize_module;
     PPP_ShutdownModuleFunc shutdown_module;  // Optional, may be NULL.
   };
+
+  typedef std::set<PluginInstance*> PluginInstanceSet;
 
   // You must call one of the Init functions after the constructor to create a
   // module of the type you desire.
@@ -119,6 +108,8 @@ class PluginModule : public base::RefCounted<PluginModule>,
   // but the delegate lives only on the plugin instance so we need one of them.
   PluginInstance* GetSomeInstance() const;
 
+  const PluginInstanceSet& GetAllInstances() const { return instances_; }
+
   // Calls the plugin's GetInterface and returns the given interface pointer,
   // which could be NULL.
   const void* GetPluginInterface(const char* name) const;
@@ -129,12 +120,13 @@ class PluginModule : public base::RefCounted<PluginModule>,
   void InstanceCreated(PluginInstance* instance);
   void InstanceDeleted(PluginInstance* instance);
 
-  scoped_refptr<CallbackTracker> GetCallbackTracker();
+  scoped_refptr< ::ppapi::CallbackTracker> GetCallbackTracker();
 
   // Called when running out of process and the plugin crashed. This will
   // release relevant resources and update all affected instances.
   void PluginCrashed();
 
+  bool is_in_destructor() const { return is_in_destructor_; }
   bool is_crashed() const { return is_crashed_; }
 
   // Reserves the given instance is unique within the plugin, checking for
@@ -153,22 +145,23 @@ class PluginModule : public base::RefCounted<PluginModule>,
   void SetBroker(PluginDelegate::PpapiBroker* broker);
   PluginDelegate::PpapiBroker* GetBroker();
 
-  // Retrieves the forwarding interface used for talking to WebKit.
-  ::ppapi::WebKitForwarding* GetWebKitForwarding();
-
  private:
   // Calls the InitializeModule entrypoint. The entrypoint must have been
   // set and the plugin must not be out of process (we don't maintain
   // entrypoints in that case).
-  bool InitializeModule();
+  bool InitializeModule(const EntryPoints& entry_points);
 
   PluginDelegate::ModuleLifetime* lifetime_delegate_;
 
   // Tracker for completion callbacks, used mainly to ensure that all callbacks
   // are properly aborted on module shutdown.
-  scoped_refptr<CallbackTracker> callback_tracker_;
+  scoped_refptr< ::ppapi::CallbackTracker> callback_tracker_;
 
   PP_Module pp_module_;
+
+  // True when we're running in the destructor. This allows us to write some
+  // assertions.
+  bool is_in_destructor_;
 
   // True if the plugin is running out-of-process and has crashed.
   bool is_crashed_;
@@ -199,13 +192,9 @@ class PluginModule : public base::RefCounted<PluginModule>,
 
   // Non-owning pointers to all instances associated with this module. When
   // there are no more instances, this object should be deleted.
-  typedef std::set<PluginInstance*> PluginInstanceSet;
   PluginInstanceSet instances_;
 
   PP_Bool (*reserve_instance_id_)(PP_Module, PP_Instance);
-
-  // Lazily created by GetWebKitForwarding.
-  scoped_ptr< ::ppapi::WebKitForwarding> webkit_forwarding_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginModule);
 };

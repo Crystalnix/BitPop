@@ -8,13 +8,17 @@
 
 #include <vector>
 
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/password_manager/login_database.h"
 #include "chrome/browser/password_manager/password_store.h"
 
 class MacKeychain;
+
+namespace content {
 class NotificationService;
+}
 
 // Implements PasswordStore on top of the OS X Keychain, with an internal
 // database for extra metadata. For an overview of the interactions with the
@@ -28,52 +32,53 @@ class PasswordStoreMac : public PasswordStore {
   PasswordStoreMac(MacKeychain* keychain, LoginDatabase* login_db);
 
   // Initializes |thread_| and |notification_service_|.
-  virtual bool Init();
+  virtual bool Init() OVERRIDE;
 
  protected:
   virtual ~PasswordStoreMac();
 
-  // Schedules tasks on |thread_|.
-  virtual void ScheduleTask(Task* task);
+  virtual void ScheduleTask(const base::Closure& task) OVERRIDE;
 
  private:
-  virtual void ReportMetricsImpl();
-  virtual void AddLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void UpdateLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void RemoveLoginImpl(const webkit_glue::PasswordForm& form);
-  virtual void RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
-                                              const base::Time& delete_end);
+  virtual void ReportMetricsImpl() OVERRIDE;
+  virtual void AddLoginImpl(const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void UpdateLoginImpl(
+      const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void RemoveLoginImpl(
+      const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void RemoveLoginsCreatedBetweenImpl(
+      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(GetLoginsRequest* request,
-                             const webkit_glue::PasswordForm& form);
-  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request);
-  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request);
+                             const webkit::forms::PasswordForm& form) OVERRIDE;
+  virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
+  virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual bool FillAutofillableLogins(
-      std::vector<webkit_glue::PasswordForm*>* forms);
+      std::vector<webkit::forms::PasswordForm*>* forms) OVERRIDE;
   virtual bool FillBlacklistLogins(
-      std::vector<webkit_glue::PasswordForm*>* forms);
+      std::vector<webkit::forms::PasswordForm*>* forms) OVERRIDE;
 
   // Adds the given form to the Keychain if it's something we want to store
   // there (i.e., not a blacklist entry). Returns true if the operation
   // succeeded (either we added successfully, or we didn't need to).
-  bool AddToKeychainIfNecessary(const webkit_glue::PasswordForm& form);
+  bool AddToKeychainIfNecessary(const webkit::forms::PasswordForm& form);
 
   // Returns true if our database contains a form that exactly matches the given
   // keychain form.
   bool DatabaseHasFormMatchingKeychainForm(
-      const webkit_glue::PasswordForm& form);
+      const webkit::forms::PasswordForm& form);
 
   // Returns all the Keychain entries that we own but no longer have
   // corresponding metadata for in our database.
   // Caller is responsible for deleting the forms.
-  std::vector<webkit_glue::PasswordForm*> GetUnusedKeychainForms();
+  std::vector<webkit::forms::PasswordForm*> GetUnusedKeychainForms();
 
   // Removes the given forms from the database.
   void RemoveDatabaseForms(
-      const std::vector<webkit_glue::PasswordForm*>& forms);
+      const std::vector<webkit::forms::PasswordForm*>& forms);
 
   // Removes the given forms from the Keychain.
   void RemoveKeychainForms(
-      const std::vector<webkit_glue::PasswordForm*>& forms);
+      const std::vector<webkit::forms::PasswordForm*>& forms);
 
   // Allows the creation of |notification_service_| to be scheduled on the right
   // thread.
@@ -87,7 +92,7 @@ class PasswordStoreMac : public PasswordStore {
 
   // Since we aren't running on a well-known thread but still want to send out
   // notifications, we need to run our own service.
-  scoped_ptr<NotificationService> notification_service_;
+  scoped_ptr<content::NotificationService> notification_service_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreMac);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,49 +6,112 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/values.h"
+#include "base/message_loop.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sync/glue/session_model_associator.h"
+#include "chrome/browser/sync/glue/synced_tab_delegate.h"
+#include "chrome/browser/sync/protocol/session_specifics.pb.h"
+#include "chrome/browser/sync/profile_sync_service_mock.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
-#include "content/common/page_transition_types.h"
+#include "chrome/test/base/profile_mock.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/common/page_transition_types.h"
+#include "content/test/test_browser_thread.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using browser_sync::SessionModelAssociator;
-using browser_sync::ForeignSessionTracker;
+using content::BrowserThread;
+using testing::NiceMock;
+using testing::Return;
+
 namespace browser_sync {
 
-typedef testing::Test SessionModelAssociatorTest;
+class SessionModelAssociatorTest : public testing::Test {
+ public:
+  SessionModelAssociatorTest()
+      : ui_thread_(BrowserThread::UI, &message_loop_),
+        sync_service_(&profile_) {}
+  virtual void SetUp() OVERRIDE {
+    model_associator_.reset(new SessionModelAssociator(&sync_service_, true));
+  }
+  virtual void TearDown() OVERRIDE {
+    model_associator_.reset();
+  }
+
+ protected:
+  MessageLoopForUI message_loop_;
+  content::TestBrowserThread ui_thread_;
+  NiceMock<ProfileMock> profile_;
+  NiceMock<ProfileSyncServiceMock> sync_service_;
+  scoped_ptr<SessionModelAssociator> model_associator_;
+};
 
 TEST_F(SessionModelAssociatorTest, SessionWindowHasNoTabsToSync) {
   SessionWindow win;
-  ASSERT_TRUE(SessionModelAssociator::SessionWindowHasNoTabsToSync(win));
+  ASSERT_TRUE(SessionWindowHasNoTabsToSync(win));
   scoped_ptr<SessionTab> tab(new SessionTab());
   win.tabs.push_back(tab.release());
-  ASSERT_TRUE(SessionModelAssociator::SessionWindowHasNoTabsToSync(win));
-  TabNavigation nav(0, GURL("about:bubba"), GURL("about:referrer"),
+  ASSERT_TRUE(SessionWindowHasNoTabsToSync(win));
+  TabNavigation nav(0, GURL("about:bubba"),
+                    content::Referrer(GURL("about:referrer"),
+                                      WebKit::WebReferrerPolicyDefault),
                     string16(ASCIIToUTF16("title")),
-                    std::string("state"), 0U);
+                    std::string("state"), content::PageTransitionFromInt(0));
   win.tabs[0]->navigations.push_back(nav);
-  ASSERT_FALSE(SessionModelAssociator::SessionWindowHasNoTabsToSync(win));
+  ASSERT_FALSE(SessionWindowHasNoTabsToSync(win));
 }
 
-TEST_F(SessionModelAssociatorTest, IsValidSessionTab) {
+TEST_F(SessionModelAssociatorTest, ShouldSyncSessionTab) {
   SessionTab tab;
-  ASSERT_FALSE(SessionModelAssociator::IsValidSessionTab(tab));
+  ASSERT_FALSE(ShouldSyncSessionTab(tab));
   TabNavigation nav(0, GURL(chrome::kChromeUINewTabURL),
-                    GURL("about:referrer"),
+                    content::Referrer(GURL("about:referrer"),
+                                      WebKit::WebReferrerPolicyDefault),
                     string16(ASCIIToUTF16("title")),
-                    std::string("state"), 0U);
+                    std::string("state"), content::PageTransitionFromInt(0));
   tab.navigations.push_back(nav);
   // NewTab does not count as valid if it's the only navigation.
-  ASSERT_FALSE(SessionModelAssociator::IsValidSessionTab(tab));
+  ASSERT_FALSE(ShouldSyncSessionTab(tab));
   TabNavigation nav2(0, GURL("about:bubba"),
-                    GURL("about:referrer"),
+                     content::Referrer(GURL("about:referrer"),
+                                       WebKit::WebReferrerPolicyDefault),
                     string16(ASCIIToUTF16("title")),
-                    std::string("state"), 0U);
+                    std::string("state"), content::PageTransitionFromInt(0));
   tab.navigations.push_back(nav2);
   // Once there's another navigation, the tab is valid.
-  ASSERT_TRUE(SessionModelAssociator::IsValidSessionTab(tab));
+  ASSERT_TRUE(ShouldSyncSessionTab(tab));
+}
+
+TEST_F(SessionModelAssociatorTest, ShouldSyncSessionTabIgnoresFragmentForNtp) {
+  SessionTab tab;
+  ASSERT_FALSE(ShouldSyncSessionTab(tab));
+  TabNavigation nav(0, GURL(std::string(chrome::kChromeUINewTabURL) +
+                            "#bookmarks"),
+                    content::Referrer(GURL("about:referrer"),
+                                      WebKit::WebReferrerPolicyDefault),
+                    string16(ASCIIToUTF16("title")),
+                    std::string("state"), content::PageTransitionFromInt(0));
+  tab.navigations.push_back(nav);
+  // NewTab does not count as valid if it's the only navigation.
+  ASSERT_FALSE(ShouldSyncSessionTab(tab));
+}
+
+TEST_F(SessionModelAssociatorTest, PopulateSessionHeader) {
+  sync_pb::SessionHeader header_s;
+  header_s.set_client_name("Client 1");
+  header_s.set_device_type(sync_pb::SessionHeader_DeviceType_TYPE_WIN);
+
+  SyncedSession session;
+  base::Time time = base::Time::Now();
+  SessionModelAssociator::PopulateSessionHeaderFromSpecifics(
+      header_s, time, &session);
+  ASSERT_EQ("Client 1", session.session_name);
+  ASSERT_EQ(SyncedSession::TYPE_WIN, session.device_type);
+  ASSERT_EQ(time, session.modified_time);
 }
 
 TEST_F(SessionModelAssociatorTest, PopulateSessionWindow) {
@@ -58,28 +121,21 @@ TEST_F(SessionModelAssociatorTest, PopulateSessionWindow) {
   window_s.set_selected_tab_index(1);
 
   std::string tag = "tag";
-  ForeignSessionTracker tracker;
-  ForeignSession* session = tracker.GetForeignSession(tag);
-  SessionWindow* win = new SessionWindow();
-  session->windows.push_back(win);
+  SyncedSessionTracker tracker;
+  SyncedSession* session = tracker.GetSession(tag);
+  tracker.PutWindowInSession(tag, 0);
   SessionModelAssociator::PopulateSessionWindowFromSpecifics(
-      tag, window_s, 0, win, &tracker);
-  ASSERT_EQ(1U, win->tabs.size());
-  ASSERT_EQ(1, win->selected_tab_index);
-  ASSERT_EQ(1, win->type);
-  ASSERT_EQ(1U, tracker.num_foreign_sessions());
-  ASSERT_EQ(1U, tracker.num_foreign_tabs(std::string("tag")));
-
-  // We do this so that when the destructor for the tracker is called, it will
-  // be able to delete the session, window, and tab. We can't delete these
-  // ourselves, otherwise we would run into double free errors when the
-  // destructor was invoked (the true argument tells the tracker the tab
-  // is now associated with a window).
-  ASSERT_TRUE(tracker.GetSessionTab(tag, 0, true));
+      tag, window_s, base::Time(), session->windows[0], &tracker);
+  ASSERT_EQ(1U, session->windows[0]->tabs.size());
+  ASSERT_EQ(1, session->windows[0]->selected_tab_index);
+  ASSERT_EQ(1, session->windows[0]->type);
+  ASSERT_EQ(1U, tracker.num_synced_sessions());
+  ASSERT_EQ(1U, tracker.num_synced_tabs(std::string("tag")));
 }
 
 TEST_F(SessionModelAssociatorTest, PopulateSessionTab) {
   sync_pb::SessionTab tab_s;
+  tab_s.set_tab_id(5);
   tab_s.set_tab_visual_index(13);
   tab_s.set_current_navigation_index(3);
   tab_s.set_pinned(true);
@@ -92,71 +148,176 @@ TEST_F(SessionModelAssociatorTest, PopulateSessionTab) {
   navigation->set_page_transition(sync_pb::TabNavigation_PageTransition_TYPED);
 
   SessionTab tab;
-  SessionModelAssociator::PopulateSessionTabFromSpecifics(tab_s, 0, &tab);
+  tab.tab_id.set_id(5);  // Expected to be set by the SyncedSessionTracker.
+  SessionModelAssociator::PopulateSessionTabFromSpecifics(
+      tab_s, base::Time(), &tab);
+  ASSERT_EQ(5, tab.tab_id.id());
   ASSERT_EQ(13, tab.tab_visual_index);
   ASSERT_EQ(3, tab.current_navigation_index);
   ASSERT_TRUE(tab.pinned);
   ASSERT_EQ("app_id", tab.extension_app_id);
   ASSERT_EQ(12, tab.navigations[0].index());
-  ASSERT_EQ(GURL("referrer"), tab.navigations[0].referrer());
+  ASSERT_EQ(GURL("referrer"), tab.navigations[0].referrer().url);
   ASSERT_EQ(string16(ASCIIToUTF16("title")), tab.navigations[0].title());
-  ASSERT_EQ(PageTransition::TYPED, tab.navigations[0].transition());
+  ASSERT_EQ(content::PAGE_TRANSITION_TYPED, tab.navigations[0].transition());
   ASSERT_EQ(GURL("http://foo/1"), tab.navigations[0].virtual_url());
 }
 
-TEST_F(SessionModelAssociatorTest, ForeignSessionTracker) {
-  const std::string tag1 = "tag";
-  const std::string tag2 = "tag2";
-  const std::string tag3 = "tag3";
-  ForeignSessionTracker tracker;
-  ASSERT_TRUE(tracker.empty());
-  ASSERT_EQ(0U, tracker.num_foreign_sessions());
-  ASSERT_EQ(0U, tracker.num_foreign_tabs(tag1));
-  SessionTab* tab = tracker.GetSessionTab(tag1, 0, false);
-  ASSERT_EQ(1U, tracker.num_foreign_tabs(tag1));
-  ASSERT_EQ(0U, tracker.num_foreign_sessions());
-  SessionTab* tab2 = tracker.GetSessionTab(tag1, 0, false);
-  ASSERT_EQ(1U, tracker.num_foreign_tabs(tag1));
-  ASSERT_EQ(0U, tracker.num_foreign_sessions());
-  ASSERT_EQ(tab, tab2);
-  tab2 = tracker.GetSessionTab(tag2, 0, false);
-  ASSERT_EQ(1U, tracker.num_foreign_tabs(tag1));
-  ASSERT_EQ(1U, tracker.num_foreign_tabs(tag2));
-  ASSERT_EQ(0U, tracker.num_foreign_sessions());
+TEST_F(SessionModelAssociatorTest, TabNodePool) {
+  SessionModelAssociator::TabNodePool pool(NULL);
+  pool.set_machine_tag("tag");
+  ASSERT_TRUE(pool.empty());
+  ASSERT_TRUE(pool.full());
+  ASSERT_EQ(0U, pool.capacity());
+  pool.AddTabNode(5);
+  pool.AddTabNode(10);
+  ASSERT_FALSE(pool.empty());
+  ASSERT_TRUE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  ASSERT_EQ(10, pool.GetFreeTabNode());  // Returns last free tab.
+  ASSERT_FALSE(pool.empty());
+  ASSERT_FALSE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  ASSERT_EQ(5, pool.GetFreeTabNode());  // Returns last free tab.
+  ASSERT_TRUE(pool.empty());
+  ASSERT_FALSE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  // Release them in reverse order.
+  pool.FreeTabNode(10);
+  pool.FreeTabNode(5);
+  ASSERT_EQ(2U, pool.capacity());
+  ASSERT_FALSE(pool.empty());
+  ASSERT_TRUE(pool.full());
+  ASSERT_EQ(5, pool.GetFreeTabNode());  // Returns last free tab.
+  ASSERT_FALSE(pool.empty());
+  ASSERT_FALSE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  ASSERT_FALSE(pool.empty());
+  ASSERT_FALSE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  ASSERT_EQ(10, pool.GetFreeTabNode());  // Returns last free tab.
+  ASSERT_TRUE(pool.empty());
+  ASSERT_FALSE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  // Release them again.
+  pool.FreeTabNode(10);
+  pool.FreeTabNode(5);
+  ASSERT_FALSE(pool.empty());
+  ASSERT_TRUE(pool.full());
+  ASSERT_EQ(2U, pool.capacity());
+  pool.clear();
+  ASSERT_TRUE(pool.empty());
+  ASSERT_TRUE(pool.full());
+  ASSERT_EQ(0U, pool.capacity());
+}
 
-  ASSERT_FALSE(tracker.DeleteForeignSession(tag1));
-  ASSERT_FALSE(tracker.DeleteForeignSession(tag3));
+namespace {
 
-  ForeignSession* session = tracker.GetForeignSession(tag1);
-  ForeignSession* session2 = tracker.GetForeignSession(tag2);
-  ForeignSession* session3 = tracker.GetForeignSession(tag3);
-  ASSERT_EQ(3U, tracker.num_foreign_sessions());
+class SyncedTabDelegateMock : public SyncedTabDelegate {
+ public:
+  SyncedTabDelegateMock() {}
+  ~SyncedTabDelegateMock() {}
 
-  ASSERT_TRUE(session);
-  ASSERT_TRUE(session2);
-  ASSERT_TRUE(session3);
-  ASSERT_NE(session, session2);
-  ASSERT_NE(session2, session3);
-  ASSERT_TRUE(tracker.DeleteForeignSession(tag3));
-  ASSERT_EQ(2U, tracker.num_foreign_sessions());
+  MOCK_CONST_METHOD0(GetWindowId, SessionID::id_type());
+  MOCK_CONST_METHOD0(GetSessionId, SessionID::id_type());
+  MOCK_CONST_METHOD0(IsBeingDestroyed, bool());
+  MOCK_CONST_METHOD0(profile, Profile*());
+  MOCK_CONST_METHOD0(HasExtensionAppId, bool());
+  MOCK_CONST_METHOD0(GetExtensionAppId, const std::string&());
+  MOCK_CONST_METHOD0(GetCurrentEntryIndex, int());
+  MOCK_CONST_METHOD0(GetEntryCount, int());
+  MOCK_CONST_METHOD0(GetPendingEntryIndex, int());
+  MOCK_CONST_METHOD0(GetPendingEntry, content::NavigationEntry*());
+  MOCK_CONST_METHOD1(GetEntryAtIndex, content::NavigationEntry*(int i));
+  MOCK_CONST_METHOD0(GetActiveEntry, content::NavigationEntry*());
+};
 
-  const SessionTab *tab_ptr;
-  ASSERT_TRUE(tracker.LookupSessionTab(tag1, 0, &tab_ptr));
-  ASSERT_EQ(tab_ptr, tab);
+class SyncRefreshListener : public content::NotificationObserver {
+ public:
+  SyncRefreshListener() : notified_of_refresh_(false) {
+    registrar_.Add(this, chrome::NOTIFICATION_SYNC_REFRESH,
+        content::NotificationService::AllSources());
+  }
 
-  std::vector<SessionWindow*> windows;
-  ASSERT_TRUE(tracker.LookupSessionWindows(tag1, &windows));
-  ASSERT_EQ(0U, windows.size());
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    if (type == chrome::NOTIFICATION_SYNC_REFRESH) {
+      notified_of_refresh_ = true;
+    }
+  }
 
-  // The sessions don't have valid windows, lookup should not succeed.
-  std::vector<const ForeignSession*> sessions;
-  ASSERT_FALSE(tracker.LookupAllForeignSessions(&sessions));
+  bool notified_of_refresh() const { return notified_of_refresh_; }
 
-  tracker.clear();
-  ASSERT_EQ(0U, tracker.num_foreign_tabs(tag1));
-  ASSERT_EQ(0U, tracker.num_foreign_tabs(tag2));
-  ASSERT_EQ(0U, tracker.num_foreign_sessions());
+ private:
+  bool notified_of_refresh_;
+  content::NotificationRegistrar registrar_;
+};
+
+}  // namespace.
+
+// Test that AttemptSessionsDataRefresh() triggers the NOTIFICATION_SYNC_REFRESH
+// notification.
+TEST_F(SessionModelAssociatorTest, TriggerSessionRefresh) {
+  SyncRefreshListener refresh_listener;
+
+  EXPECT_FALSE(refresh_listener.notified_of_refresh());
+  model_associator_->AttemptSessionsDataRefresh();
+  EXPECT_TRUE(refresh_listener.notified_of_refresh());
+}
+
+// Test that we exclude tabs with only chrome:// and file:// schemed navigations
+// from ShouldSyncTab(..).
+TEST_F(SessionModelAssociatorTest, ValidTabs) {
+  NiceMock<SyncedTabDelegateMock> tab_mock;
+
+  // A null entry shouldn't crash.
+  EXPECT_CALL(tab_mock, GetCurrentEntryIndex()).WillRepeatedly(Return(0));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(0)).WillRepeatedly(
+      Return((content::NavigationEntry *)NULL));
+  EXPECT_CALL(tab_mock, GetEntryCount()).WillRepeatedly(Return(1));
+  EXPECT_CALL(tab_mock, GetPendingEntryIndex()).WillRepeatedly(Return(-1));
+  EXPECT_FALSE(model_associator_->ShouldSyncTab(tab_mock));
+
+  // A chrome:// entry isn't valid.
+  scoped_ptr<content::NavigationEntry> entry(
+      content::NavigationEntry::Create());
+  entry->SetVirtualURL(GURL("chrome://preferences/"));
+  testing::Mock::VerifyAndClearExpectations(&tab_mock);
+  EXPECT_CALL(tab_mock, GetCurrentEntryIndex()).WillRepeatedly(Return(0));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(0)).WillRepeatedly(Return(entry.get()));
+  EXPECT_CALL(tab_mock, GetEntryCount()).WillRepeatedly(Return(1));
+  EXPECT_CALL(tab_mock, GetPendingEntryIndex()).WillRepeatedly(Return(-1));
+  EXPECT_FALSE(model_associator_->ShouldSyncTab(tab_mock));
+
+  // A file:// entry isn't valid, even in addition to another entry.
+  scoped_ptr<content::NavigationEntry> entry2(
+      content::NavigationEntry::Create());
+  entry2->SetVirtualURL(GURL("file://bla"));
+  testing::Mock::VerifyAndClearExpectations(&tab_mock);
+  EXPECT_CALL(tab_mock, GetCurrentEntryIndex()).WillRepeatedly(Return(0));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(0)).WillRepeatedly(Return(entry.get()));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(1)).WillRepeatedly(
+      Return(entry2.get()));
+  EXPECT_CALL(tab_mock, GetEntryCount()).WillRepeatedly(Return(2));
+  EXPECT_CALL(tab_mock, GetPendingEntryIndex()).WillRepeatedly(Return(-1));
+  EXPECT_FALSE(model_associator_->ShouldSyncTab(tab_mock));
+
+  // Add a valid scheme entry to tab, making the tab valid.
+  scoped_ptr<content::NavigationEntry> entry3(
+      content::NavigationEntry::Create());
+  entry3->SetVirtualURL(GURL("http://www.google.com"));
+  testing::Mock::VerifyAndClearExpectations(&tab_mock);
+  EXPECT_CALL(tab_mock, GetCurrentEntryIndex()).WillRepeatedly(Return(0));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(0)).WillRepeatedly(
+      Return(entry.get()));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(1)).WillRepeatedly(
+      Return(entry2.get()));
+  EXPECT_CALL(tab_mock, GetEntryAtIndex(2)).WillRepeatedly(
+      Return(entry3.get()));
+  EXPECT_CALL(tab_mock, GetEntryCount()).WillRepeatedly(Return(3));
+  EXPECT_CALL(tab_mock, GetPendingEntryIndex()).WillRepeatedly(Return(-1));
+  EXPECT_TRUE(model_associator_->ShouldSyncTab(tab_mock));
 }
 
 }  // namespace browser_sync
-

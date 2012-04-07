@@ -19,33 +19,6 @@
 
 namespace remoting {
 
-namespace {
-
-// NSS doesn't load root certificates when running in sandbox, so we
-// need to have gmail's cert hardcoded.
-//
-// TODO(sergeyu): Remove this when we don't make XMPP connection from
-// inside of sandbox.
-const char kGmailCertBase64[] =
-    "MIIC2TCCAkKgAwIBAgIDBz+SMA0GCSqGSIb3DQEBBQUAME4xCzAJBgNVBAYTAlVT"
-    "MRAwDgYDVQQKEwdFcXVpZmF4MS0wKwYDVQQLEyRFcXVpZmF4IFNlY3VyZSBDZXJ0"
-    "aWZpY2F0ZSBBdXRob3JpdHkwHhcNMDcwNDExMTcxNzM4WhcNMTIwNDEwMTcxNzM4"
-    "WjBkMQswCQYDVQQGEwJVUzETMBEGA1UECBMKQ2FsaWZvcm5pYTEWMBQGA1UEBxMN"
-    "TW91bnRhaW4gVmlldzEUMBIGA1UEChMLR29vZ2xlIEluYy4xEjAQBgNVBAMTCWdt"
-    "YWlsLmNvbTCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1Hds2jWwXAVGef06"
-    "7PeSJF/h9BnoYlTdykx0lBTDc92/JLvuq0lJkytqll1UR4kHmF4vwqQkwcqOK03w"
-    "k8qDK8fh6M13PYhvPEXP02ozsuL3vqE8hcCva2B9HVnOPY17Qok37rYQ+yexswN5"
-    "eh0+93nddEa1PyHgEQ8CDKCJaWUCAwEAAaOBrjCBqzAOBgNVHQ8BAf8EBAMCBPAw"
-    "HQYDVR0OBBYEFJcjzXEevMEDIEvuQiT7puEJY737MDoGA1UdHwQzMDEwL6AtoCuG"
-    "KWh0dHA6Ly9jcmwuZ2VvdHJ1c3QuY29tL2NybHMvc2VjdXJlY2EuY3JsMB8GA1Ud"
-    "IwQYMBaAFEjmaPkr0rKV10fYIyAQTzOYkJ/UMB0GA1UdJQQWMBQGCCsGAQUFBwMB"
-    "BggrBgEFBQcDAjANBgkqhkiG9w0BAQUFAAOBgQB74cGpjdENf9U+WEd29dfzY3Tz"
-    "JehnlY5cH5as8bOTe7PNPzj967OJ7TPWEycMwlS7CsqIsmfRGOFFfoHxo+iPugZ8"
-    "uO2Kd++QHCXL+MumGjkW4FcTFmceV/Q12Wdh3WApcqIZZciQ79MAeFh7bzteAYqf"
-    "wC98YQwylC9wVhf1yw==";
-
-}  // namespace
-
 SSLSocketAdapter* SSLSocketAdapter::Create(AsyncSocket* socket) {
   return new SSLSocketAdapter(socket);
 }
@@ -54,15 +27,10 @@ SSLSocketAdapter::SSLSocketAdapter(AsyncSocket* socket)
     : SSLAdapter(socket),
       ignore_bad_cert_(false),
       cert_verifier_(new net::CertVerifier()),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          connected_callback_(this, &SSLSocketAdapter::OnConnected)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &SSLSocketAdapter::OnRead)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          write_callback_(this, &SSLSocketAdapter::OnWrite)),
       ssl_state_(SSLSTATE_NONE),
       read_state_(IOSTATE_NONE),
-      write_state_(IOSTATE_NONE) {
+      write_state_(IOSTATE_NONE),
+      data_transferred_(0) {
   transport_socket_ = new TransportSocket(socket, this);
 }
 
@@ -95,26 +63,17 @@ int SSLSocketAdapter::BeginSSL() {
   // are correct for us, so we don't use the config service to initialize this
   // object.
   net::SSLConfig ssl_config;
-
-  std::string gmail_cert_binary;
-  base::Base64Decode(kGmailCertBase64, &gmail_cert_binary);
-  scoped_refptr<net::X509Certificate> gmail_cert =
-      net::X509Certificate::CreateFromBytes(gmail_cert_binary.data(),
-                                            gmail_cert_binary.size());
-  DCHECK(gmail_cert);
-  net::SSLConfig::CertAndStatus gmail_cert_status;
-  gmail_cert_status.cert = gmail_cert;
-  gmail_cert_status.cert_status = 0;
-  ssl_config.allowed_bad_certs.push_back(gmail_cert_status);
+  net::SSLClientSocketContext context;
+  context.cert_verifier = cert_verifier_.get();
 
   transport_socket_->set_addr(talk_base::SocketAddress(hostname_, 0));
   ssl_socket_.reset(
       net::ClientSocketFactory::GetDefaultFactory()->CreateSSLClientSocket(
           transport_socket_, net::HostPortPair(hostname_, 443), ssl_config,
-          NULL /* ssl_host_info */,
-          cert_verifier_.get()));
+          NULL /* ssl_host_info */, context));
 
-  int result = ssl_socket_->Connect(&connected_callback_);
+  int result = ssl_socket_->Connect(
+      base::Bind(&SSLSocketAdapter::OnConnected, base::Unretained(this)));
 
   if (result == net::ERR_IO_PENDING || result == net::OK) {
     return 0;
@@ -131,7 +90,8 @@ int SSLSocketAdapter::Send(const void* buf, size_t len) {
     scoped_refptr<net::IOBuffer> transport_buf(new net::IOBuffer(len));
     memcpy(transport_buf->data(), buf, len);
 
-    int result = ssl_socket_->Write(transport_buf, len, NULL);
+    int result = ssl_socket_->Write(transport_buf, len,
+                                    net::CompletionCallback());
     if (result == net::ERR_IO_PENDING) {
       SetError(EWOULDBLOCK);
     }
@@ -153,7 +113,9 @@ int SSLSocketAdapter::Recv(void* buf, size_t len) {
       switch (read_state_) {
         case IOSTATE_NONE: {
           transport_buf_ = new net::IOBuffer(len);
-          int result = ssl_socket_->Read(transport_buf_, len, &read_callback_);
+          int result = ssl_socket_->Read(
+              transport_buf_, len,
+              base::Bind(&SSLSocketAdapter::OnRead, base::Unretained(this)));
           if (result >= 0) {
             memcpy(buf, transport_buf_->data(), len);
           }
@@ -224,9 +186,7 @@ void SSLSocketAdapter::OnConnectEvent(talk_base::AsyncSocket* socket) {
 
 TransportSocket::TransportSocket(talk_base::AsyncSocket* socket,
                                  SSLSocketAdapter *ssl_adapter)
-    : read_callback_(NULL),
-      write_callback_(NULL),
-      read_buffer_len_(0),
+    : read_buffer_len_(0),
       write_buffer_len_(0),
       socket_(socket),
       was_used_to_convey_data_(false) {
@@ -237,7 +197,7 @@ TransportSocket::TransportSocket(talk_base::AsyncSocket* socket,
 TransportSocket::~TransportSocket() {
 }
 
-int TransportSocket::Connect(net::CompletionCallback* callback) {
+int TransportSocket::Connect(const net::CompletionCallback& callback) {
   // Connect is never called by SSLClientSocket, instead SSLSocketAdapter
   // calls Connect() on socket_ directly.
   NOTREACHED();
@@ -308,10 +268,20 @@ bool TransportSocket::UsingTCPFastOpen() const {
   return false;
 }
 
+int64 TransportSocket::NumBytesRead() const {
+  NOTREACHED();
+  return -1;
+}
+
+base::TimeDelta TransportSocket::GetConnectTimeMicros() const {
+  NOTREACHED();
+  return base::TimeDelta::FromMicroseconds(-1);
+}
+
 int TransportSocket::Read(net::IOBuffer* buf, int buf_len,
-                          net::CompletionCallback* callback) {
+                          const net::CompletionCallback& callback) {
   DCHECK(buf);
-  DCHECK(!read_callback_);
+  DCHECK(read_callback_.is_null());
   DCHECK(!read_buffer_.get());
   int result = socket_->Recv(buf->data(), buf_len);
   if (result < 0) {
@@ -328,9 +298,9 @@ int TransportSocket::Read(net::IOBuffer* buf, int buf_len,
 }
 
 int TransportSocket::Write(net::IOBuffer* buf, int buf_len,
-                           net::CompletionCallback* callback) {
+                           const net::CompletionCallback& callback) {
   DCHECK(buf);
-  DCHECK(!write_callback_);
+  DCHECK(write_callback_.is_null());
   DCHECK(!write_buffer_.get());
   int result = socket_->Send(buf->data(), buf_len);
   if (result < 0) {
@@ -357,13 +327,13 @@ bool TransportSocket::SetSendBufferSize(int32 size) {
 }
 
 void TransportSocket::OnReadEvent(talk_base::AsyncSocket* socket) {
-  if (read_callback_) {
+  if (!read_callback_.is_null()) {
     DCHECK(read_buffer_.get());
-    net::CompletionCallback* callback = read_callback_;
+    net::CompletionCallback callback = read_callback_;
     scoped_refptr<net::IOBuffer> buffer = read_buffer_;
     int buffer_len = read_buffer_len_;
 
-    read_callback_ = NULL;
+    read_callback_.Reset();
     read_buffer_ = NULL;
     read_buffer_len_ = 0;
 
@@ -378,18 +348,18 @@ void TransportSocket::OnReadEvent(talk_base::AsyncSocket* socket) {
       }
     }
     was_used_to_convey_data_ = true;
-    callback->RunWithParams(Tuple1<int>(result));
+    callback.Run(result);
   }
 }
 
 void TransportSocket::OnWriteEvent(talk_base::AsyncSocket* socket) {
-  if (write_callback_) {
+  if (!write_callback_.is_null()) {
     DCHECK(write_buffer_.get());
-    net::CompletionCallback* callback = write_callback_;
+    net::CompletionCallback callback = write_callback_;
     scoped_refptr<net::IOBuffer> buffer = write_buffer_;
     int buffer_len = write_buffer_len_;
 
-    write_callback_ = NULL;
+    write_callback_.Reset();
     write_buffer_ = NULL;
     write_buffer_len_ = 0;
 
@@ -404,7 +374,7 @@ void TransportSocket::OnWriteEvent(talk_base::AsyncSocket* socket) {
       }
     }
     was_used_to_convey_data_ = true;
-    callback->RunWithParams(Tuple1<int>(result));
+    callback.Run(result);
   }
 }
 

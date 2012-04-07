@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,16 @@
 #include "base/file_path.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
+#include "base/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
-#include "chrome/browser/net/url_request_failed_dns_job.h"
-#include "chrome/browser/net/url_request_mock_http_job.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/ui/ui_test.h"
+#include "content/browser/net/url_request_failed_dns_job.h"
+#include "content/browser/net/url_request_mock_http_job.h"
 #include "content/common/test_url_constants.h"
-#include "content/common/url_constants.h"
+#include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
 #include "net/test/test_server.h"
 
@@ -226,8 +228,15 @@ TEST_F(ResourceDispatcherTest, CrossSiteImmediateLoadOnunloadCookie) {
   ASSERT_STREQ("foo", value_result.c_str());
 }
 
+#if defined(OS_WIN)
+// Seems to fail sometimes on Windows: http://crbug.com/80596
+#define MAYBE_CrossSiteNoUnloadOn204 FLAKY_CrossSiteNoUnloadOn204
+#else
+#define MAYBE_CrossSiteNoUnloadOn204 CrossSiteNoUnloadOn204
+#endif
+
 // Tests that the unload handler is not run for 204 responses.
-TEST_F(ResourceDispatcherTest, CrossSiteNoUnloadOn204) {
+TEST_F(ResourceDispatcherTest, MAYBE_CrossSiteNoUnloadOn204) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(test_server.Start());
@@ -267,10 +276,6 @@ TEST_F(ResourceDispatcherTest, CrossSiteNoUnloadOn204) {
 // complete and isn't conducive to quick turnarounds. As we don't currently
 // strip the app on the build bots, this is bad times.
 TEST_F(ResourceDispatcherTest, FAILS_CrossSiteAfterCrash) {
-  // This test only works in multi-process mode
-  if (ProxyLauncher::in_process_renderer())
-    return;
-
   scoped_refptr<BrowserProxy> browser_proxy(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser_proxy.get());
   scoped_refptr<TabProxy> tab(browser_proxy->GetActiveTab());
@@ -282,7 +287,7 @@ TEST_F(ResourceDispatcherTest, FAILS_CrossSiteAfterCrash) {
 #endif
   ASSERT_TRUE(tab->NavigateToURLAsync(GURL(chrome::kAboutCrashURL)));
   // Wait for browser to notice the renderer crash.
-  base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
+  base::PlatformThread::Sleep(TestTimeouts::action_timeout());
 
   // Navigate to a new cross-site page.  The browser should not wait around for
   // the old renderer's on{before}unload handlers to run.
@@ -315,7 +320,8 @@ TEST_F(ResourceDispatcherTest, CrossSiteNavigationNonBuffered) {
 // Tests that a cross-site navigation to an error page (resulting in the link
 // doctor page) still runs the onunload handler and can support navigations
 // away from the link doctor page.  (Bug 1235537)
-TEST_F(ResourceDispatcherTest, CrossSiteNavigationErrorPage) {
+// Flaky: http://crbug.com/100823
+TEST_F(ResourceDispatcherTest, FLAKY_CrossSiteNavigationErrorPage) {
   net::TestServer test_server(net::TestServer::TYPE_HTTP,
                               FilePath(FILE_PATH_LITERAL("chrome/test/data")));
   ASSERT_TRUE(test_server.Start());
@@ -352,15 +358,22 @@ TEST_F(ResourceDispatcherTest, CrossSiteNavigationErrorPage) {
   // the ResourceDispatcherHost would think that such navigations were
   // cross-site, because we didn't clean up from the previous request.  Since
   // TabContents was in the NORMAL state, it would ignore the attempt to run
-  // the onunload handler, and the navigation would fail.
-  // (Test by redirecting to javascript:window.location='someURL'.)
+  // the onunload handler, and the navigation would fail. We can't test by
+  // redirecting to javascript:window.location='someURL', since javascript:
+  // URLs are prohibited by policy from interacting with sensitive chrome
+  // pages of which the error page is one.  Instead, use automation to kick
+  // off the navigation, and wait to see that the tab loads.
+  bool success;
   GURL test_url(test_server.GetURL("files/title2.html"));
-  std::string redirect_url = "javascript:window.location='" +
-      test_url.possibly_invalid_spec() + "'";
-  ASSERT_EQ(AUTOMATION_MSG_NAVIGATION_SUCCESS,
-            tab->NavigateToURL(GURL(redirect_url)));
-  EXPECT_TRUE(tab->GetTabTitle(&tab_title));
-  EXPECT_EQ(L"Title Of Awesomeness", tab_title);
+  std::string redirect_script = "window.location='" +
+      test_url.possibly_invalid_spec() + "';" +
+      "window.domAutomationController.send(true);";
+  EXPECT_TRUE(tab->ExecuteAndExtractBool(
+      L"", ASCIIToWide(redirect_script), &success));
+  EXPECT_TRUE(WaitUntilJavaScriptCondition(
+      tab.get(), L"", L"window.domAutomationController.send("
+          L"document.title == 'Title Of Awesomeness')",
+      20000));
 }
 
 TEST_F(ResourceDispatcherTest, CrossOriginRedirectBlocked) {

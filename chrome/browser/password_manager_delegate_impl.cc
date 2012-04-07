@@ -6,18 +6,21 @@
 
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/tab_contents/confirm_infobar_delegate.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/autofill_messages.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/ssl/ssl_manager.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources_standard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/glue/password_form.h"
+#include "webkit/forms/password_form.h"
 
 // After a successful *new* login attempt, we take the PasswordFormManager in
 // provisional_save_manager_ and move it to a SavePasswordInfoBarDelegate while
@@ -27,7 +30,7 @@
 // forms never end up in an infobar.
 class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  SavePasswordInfoBarDelegate(TabContents* tab_contents,
+  SavePasswordInfoBarDelegate(InfoBarTabHelper* infobar_helper,
                               PasswordFormManager* form_to_save);
 
  private:
@@ -59,9 +62,9 @@ class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
 };
 
 SavePasswordInfoBarDelegate::SavePasswordInfoBarDelegate(
-    TabContents* tab_contents,
+    InfoBarTabHelper* infobar_helper,
     PasswordFormManager* form_to_save)
-    : ConfirmInfoBarDelegate(tab_contents),
+    : ConfirmInfoBarDelegate(infobar_helper),
       form_to_save_(form_to_save),
       infobar_response_(NO_RESPONSE) {
 }
@@ -108,15 +111,18 @@ bool SavePasswordInfoBarDelegate::Cancel() {
 // PasswordManagerDelegateImpl ------------------------------------------------
 
 void PasswordManagerDelegateImpl::FillPasswordForm(
-    const webkit_glue::PasswordFormFillData& form_data) {
-  tab_contents_->render_view_host()->Send(new AutofillMsg_FillPasswordForm(
-      tab_contents_->render_view_host()->routing_id(), form_data));
+    const webkit::forms::PasswordFormFillData& form_data) {
+  tab_contents_->web_contents()->GetRenderViewHost()->Send(
+      new AutofillMsg_FillPasswordForm(
+          tab_contents_->web_contents()->GetRenderViewHost()->routing_id(),
+          form_data));
 }
 
 void PasswordManagerDelegateImpl::AddSavePasswordInfoBar(
     PasswordFormManager* form_to_save) {
-  tab_contents_->AddInfoBar(new SavePasswordInfoBarDelegate(
-      tab_contents_->tab_contents(), form_to_save));
+  tab_contents_->infobar_tab_helper()->AddInfoBar(
+      new SavePasswordInfoBarDelegate(
+          tab_contents_->infobar_tab_helper(), form_to_save));
 }
 
 Profile* PasswordManagerDelegateImpl::GetProfileForPasswordManager() {
@@ -124,6 +130,6 @@ Profile* PasswordManagerDelegateImpl::GetProfileForPasswordManager() {
 }
 
 bool PasswordManagerDelegateImpl::DidLastPageLoadEncounterSSLErrors() {
-  return tab_contents_->controller().ssl_manager()->
+  return tab_contents_->web_contents()->GetController().GetSSLManager()->
       ProcessedSSLErrorFromRequest();
 }

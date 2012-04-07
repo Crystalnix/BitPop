@@ -40,28 +40,19 @@ void InitializeYV12Frame(VideoFrame* frame, double white_to_black) {
 // Given a |yv12_frame| this method converts the YV12 frame to RGBA and
 // makes sure that all the pixels of the RBG frame equal |expect_rgb_color|.
 void ExpectFrameColor(media::VideoFrame* yv12_frame, uint32 expect_rgb_color) {
-  // On linux and mac builds if you directly compare using EXPECT_EQ and use
-  // the VideoFrame::kNumxxxPlanes constants, it generates an error when
-  // linking.  These are declared so that we can compare against locals.
-  const size_t expect_yuv_planes = VideoFrame::kNumYUVPlanes;
-  const size_t expect_rgb_planes = VideoFrame::kNumRGBPlanes;
-
   ASSERT_EQ(VideoFrame::YV12, yv12_frame->format());
-  ASSERT_EQ(expect_yuv_planes, yv12_frame->planes());
   ASSERT_EQ(yv12_frame->stride(VideoFrame::kUPlane),
             yv12_frame->stride(VideoFrame::kVPlane));
 
   scoped_refptr<media::VideoFrame> rgb_frame;
-  media::VideoFrame::CreateFrame(VideoFrame::RGBA,
-                                 yv12_frame->width(),
-                                 yv12_frame->height(),
-                                 yv12_frame->GetTimestamp(),
-                                 yv12_frame->GetDuration(),
-                                 &rgb_frame);
+  rgb_frame = media::VideoFrame::CreateFrame(VideoFrame::RGBA,
+                                             yv12_frame->width(),
+                                             yv12_frame->height(),
+                                             yv12_frame->GetTimestamp(),
+                                             yv12_frame->GetDuration());
 
   ASSERT_EQ(yv12_frame->width(), rgb_frame->width());
   ASSERT_EQ(yv12_frame->height(), rgb_frame->height());
-  ASSERT_EQ(expect_rgb_planes, rgb_frame->planes());
 
   media::ConvertYUVToRGB32(yv12_frame->data(VideoFrame::kYPlane),
                            yv12_frame->data(VideoFrame::kUPlane),
@@ -95,9 +86,9 @@ TEST(VideoFrame, CreateFrame) {
   const base::TimeDelta kDurationB = base::TimeDelta::FromMicroseconds(5678);
 
   // Create a YV12 Video Frame.
-  scoped_refptr<media::VideoFrame> frame;
-  VideoFrame::CreateFrame(media::VideoFrame::YV12, kWidth, kHeight,
-                          kTimestampA, kDurationA, &frame);
+  scoped_refptr<media::VideoFrame> frame =
+      VideoFrame::CreateFrame(media::VideoFrame::YV12, kWidth, kHeight,
+                              kTimestampA, kDurationA);
   ASSERT_TRUE(frame);
 
   // Test StreamSample implementation.
@@ -115,7 +106,6 @@ TEST(VideoFrame, CreateFrame) {
   EXPECT_FALSE(frame->IsEndOfStream());
 
   // Test VideoFrame implementation.
-  EXPECT_EQ(media::VideoFrame::TYPE_SYSTEM_MEMORY, frame->type());
   EXPECT_EQ(media::VideoFrame::YV12, frame->format());
   {
     SCOPED_TRACE("");
@@ -129,7 +119,7 @@ TEST(VideoFrame, CreateFrame) {
   }
 
   // Test an empty frame.
-  VideoFrame::CreateEmptyFrame(&frame);
+  frame = VideoFrame::CreateEmptyFrame();
   EXPECT_TRUE(frame->IsEndOfStream());
 }
 
@@ -139,8 +129,8 @@ TEST(VideoFrame, CreateBlackFrame) {
   const uint8 kExpectedYRow[] = { 0, 0 };
   const uint8 kExpectedUVRow[] = { 128 };
 
-  scoped_refptr<media::VideoFrame> frame;
-  VideoFrame::CreateBlackFrame(kWidth, kHeight, &frame);
+  scoped_refptr<media::VideoFrame> frame =
+      VideoFrame::CreateBlackFrame(kWidth, kHeight);
   ASSERT_TRUE(frame);
 
   // Test basic properties.
@@ -152,7 +142,6 @@ TEST(VideoFrame, CreateBlackFrame) {
   EXPECT_EQ(VideoFrame::YV12, frame->format());
   EXPECT_EQ(kWidth, frame->width());
   EXPECT_EQ(kHeight, frame->height());
-  EXPECT_EQ(3u, frame->planes());
 
   // Test frames themselves.
   uint8* y_plane = frame->data(VideoFrame::kYPlane);
@@ -169,28 +158,6 @@ TEST(VideoFrame, CreateBlackFrame) {
     u_plane += frame->stride(VideoFrame::kUPlane);
     v_plane += frame->stride(VideoFrame::kVPlane);
   }
-}
-
-TEST(VideoFram, CreateExternalFrame) {
-  scoped_array<uint8> memory(new uint8[1]);
-
-  scoped_refptr<media::VideoFrame> frame;
-  uint8* data[3] = {memory.get(), NULL, NULL};
-  int strides[3] = {1, 0, 0};
-  VideoFrame::CreateFrameExternal(media::VideoFrame::TYPE_SYSTEM_MEMORY,
-                                  media::VideoFrame::RGB32, 0, 0, 3,
-                                  data, strides,
-                                  base::TimeDelta(), base::TimeDelta(),
-                                  NULL, &frame);
-  ASSERT_TRUE(frame);
-
-  // Test frame properties.
-  EXPECT_EQ(1, frame->stride(VideoFrame::kRGBPlane));
-  EXPECT_EQ(memory.get(), frame->data(VideoFrame::kRGBPlane));
-
-  // Delete |memory| and then |frame|.
-  memory.reset();
-  frame = NULL;
 }
 
 }  // namespace media

@@ -1,10 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/ui/ui_layout_test.h"
 
 #include "base/file_util.h"
+#include "base/logging.h"
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
@@ -22,6 +23,8 @@ static const char kPlatformName[] = "chromium-win";
 static const char kPlatformName[] = "chromium-mac";
 #elif defined(OS_LINUX)
 static const char kPlatformName[] = "chromium-linux";
+#elif defined(OS_OPENBSD)
+static const char kPlatformName[] = "chromium-openbsd";
 #else
 #error No known OS defined
 #endif
@@ -47,25 +50,14 @@ void UILayoutTest::InitializeForLayoutTest(const FilePath& test_parent_dir,
                                            const FilePath& test_case_dir,
                                            int port) {
   FilePath src_dir;
-  PathService::Get(base::DIR_SOURCE_ROOT, &src_dir);
-
-  src_dir = src_dir.AppendASCII("chrome");
-  src_dir = src_dir.AppendASCII("test");
-  src_dir = src_dir.AppendASCII("data");
-  src_dir = src_dir.AppendASCII("layout_tests");
-  src_dir = src_dir.AppendASCII("LayoutTests");
-
-  // Gets the file path to WebKit ui layout tests, that is,
-  //   chrome/test/data/ui_tests/LayoutTests/...
-  // Note that we have to use our own copy of WebKit layout tests because our
-  // build machines do not have WebKit layout tests added.
+  ASSERT_TRUE(PathService::Get(chrome::DIR_LAYOUT_TESTS, &src_dir));
   layout_test_dir_ = src_dir.Append(test_parent_dir);
   layout_test_dir_ = layout_test_dir_.Append(test_case_dir);
   ASSERT_TRUE(file_util::DirectoryExists(layout_test_dir_));
 
   // Gets the file path to rebased expected result directory for the current
   // platform.
-  //   chrome/test/data/layout_tests/LayoutTests/platform/chromium_***/...
+  //   $LayoutTestRoot/platform/chromium_***/...
   rebase_result_dir_ = src_dir.AppendASCII("platform");
   rebase_result_dir_ = rebase_result_dir_.AppendASCII(kPlatformName);
   rebase_result_dir_ = rebase_result_dir_.Append(test_parent_dir);
@@ -134,19 +126,14 @@ void UILayoutTest::InitializeForLayoutTest(const FilePath& test_parent_dir,
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.AppendASCII("layout_tests");
   path = path.AppendASCII("layout_test_controller.html");
+  layout_test_controller_.clear();
   ASSERT_TRUE(file_util::ReadFileToString(path, &layout_test_controller_));
 }
 
 void UILayoutTest::AddResourceForLayoutTest(const FilePath& parent_dir,
                                             const FilePath& resource_name) {
-  FilePath root_dir;
-  PathService::Get(base::DIR_SOURCE_ROOT, &root_dir);
-
-  FilePath source = root_dir.AppendASCII("chrome");
-  source = source.AppendASCII("test");
-  source = source.AppendASCII("data");
-  source = source.AppendASCII("layout_tests");
-  source = source.AppendASCII("LayoutTests");
+  FilePath source;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_LAYOUT_TESTS, &source));
   source = source.Append(parent_dir);
   source = source.Append(resource_name);
 
@@ -227,9 +214,9 @@ void UILayoutTest::RunLayoutTest(const std::string& test_case_file_name,
           status_cookie.c_str(), TestTimeouts::action_max_timeout_ms());
 
   // Unescapes and normalizes the actual result.
-  std::string value = UnescapeURLComponent(escaped_value,
-      UnescapeRule::NORMAL | UnescapeRule::SPACES |
-          UnescapeRule::URL_SPECIAL_CHARS | UnescapeRule::CONTROL_CHARS);
+  std::string value = net::UnescapeURLComponent(escaped_value,
+      net::UnescapeRule::NORMAL | net::UnescapeRule::SPACES |
+      net::UnescapeRule::URL_SPECIAL_CHARS | net::UnescapeRule::CONTROL_CHARS);
   value += "\n";
   ReplaceSubstringsAfterOffset(&value, 0, "\r", "");
 

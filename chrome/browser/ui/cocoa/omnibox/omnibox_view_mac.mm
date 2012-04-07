@@ -6,18 +6,18 @@
 
 #include <Carbon/Carbon.h>  // kVK_Return
 
-#include "app/mac/nsimage_cache.h"
+#include "base/property_bag.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_edit.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
-#include "chrome/browser/autocomplete/autocomplete_popup_view_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/cocoa/event_utils.h"
+#include "chrome/browser/ui/cocoa/omnibox/omnibox_popup_view_mac.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
@@ -25,8 +25,11 @@
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/mac/nsimage_cache.h"
 #include "ui/gfx/rect.h"
+
+using content::WebContents;
 
 // Focus-handling between |field_| and |model_| is a bit subtle.
 // Other platforms detect change of focus, which is inconvenient
@@ -100,21 +103,22 @@ struct OmniboxViewMacState {
 };
 
 // Returns a lazily initialized property bag accessor for saving our
-// state in a TabContents.  When constructed |accessor| generates a
+// state in a WebContents.  When constructed |accessor| generates a
 // globally-unique id used to index into the per-tab PropertyBag used
 // to store the state data.
-PropertyAccessor<OmniboxViewMacState>* GetStateAccessor() {
-  static PropertyAccessor<OmniboxViewMacState> accessor;
+base::PropertyAccessor<OmniboxViewMacState>* GetStateAccessor() {
+  CR_DEFINE_STATIC_LOCAL(
+      base::PropertyAccessor<OmniboxViewMacState>, accessor, ());
   return &accessor;
 }
 
 // Accessors for storing and getting the state from the tab.
-void StoreStateToTab(TabContents* tab,
+void StoreStateToTab(WebContents* tab,
                      const OmniboxViewMacState& state) {
-  GetStateAccessor()->SetProperty(tab->property_bag(), state);
+  GetStateAccessor()->SetProperty(tab->GetPropertyBag(), state);
 }
-const OmniboxViewMacState* GetStateFromTab(const TabContents* tab) {
-  return GetStateAccessor()->GetProperty(tab->property_bag());
+const OmniboxViewMacState* GetStateFromTab(const WebContents* tab) {
+  return GetStateAccessor()->GetProperty(tab->GetPropertyBag());
 }
 
 // Helper to make converting url_parse ranges to NSRange easier to
@@ -156,7 +160,7 @@ NSImage* OmniboxViewMac::ImageForResource(int resource_id) {
   }
 
   if (image_name) {
-    if (NSImage* image = app::mac::GetCachedImageWithName(image_name)) {
+    if (NSImage* image = gfx::GetCachedImageWithName(image_name)) {
       return image;
     } else {
       NOTREACHED()
@@ -174,8 +178,7 @@ OmniboxViewMac::OmniboxViewMac(AutocompleteEditController* controller,
                                CommandUpdater* command_updater,
                                AutocompleteTextField* field)
     : model_(new AutocompleteEditModel(this, controller, profile)),
-      popup_view_(new AutocompletePopupViewMac(this, model_.get(), profile,
-                                               field)),
+      popup_view_(new OmniboxPopupViewMac(this, model_.get(), profile, field)),
       controller_(controller),
       toolbar_model_(toolbar_model),
       command_updater_(command_updater),
@@ -221,7 +224,7 @@ const AutocompleteEditModel* OmniboxViewMac::model() const {
   return model_.get();
 }
 
-void OmniboxViewMac::SaveStateToTab(TabContents* tab) {
+void OmniboxViewMac::SaveStateToTab(WebContents* tab) {
   DCHECK(tab);
 
   const bool hasFocus = [field_ currentEditor] ? true : false;
@@ -239,14 +242,13 @@ void OmniboxViewMac::SaveStateToTab(TabContents* tab) {
   StoreStateToTab(tab, state);
 }
 
-void OmniboxViewMac::Update(const TabContents* tab_for_state_restoring) {
+void OmniboxViewMac::Update(const WebContents* tab_for_state_restoring) {
   // TODO(shess): It seems like if the tab is non-NULL, then this code
   // shouldn't need to be called at all.  When coded that way, I find
   // that the field isn't always updated correctly.  Figure out why
   // this is.  Maybe this method should be refactored into more
   // specific cases.
-  const bool user_visible =
-      model_->UpdatePermanentText(WideToUTF16Hack(toolbar_model_->GetText()));
+  bool user_visible = model_->UpdatePermanentText(toolbar_model_->GetText());
 
   if (tab_for_state_restoring) {
     RevertAll();
@@ -393,7 +395,7 @@ bool OmniboxViewMac::DeleteAtEndPressed() {
 }
 
 void OmniboxViewMac::GetSelectionBounds(string16::size_type* start,
-                                        string16::size_type* end) {
+                                        string16::size_type* end) const {
   if (![field_ currentEditor]) {
     *start = *end = 0;
     return;
@@ -532,8 +534,16 @@ void OmniboxViewMac::EmphasizeURLComponents() {
 
 void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
                                          NSMutableAttributedString* as) {
+  NSUInteger as_length = [as length];
+  NSRange as_entire_string = NSMakeRange(0, as_length);
+
   [as addAttribute:NSFontAttributeName value:GetFieldFont()
-             range:NSMakeRange(0, [as length])];
+             range:as_entire_string];
+
+  // A kinda hacky way to add breaking at periods. This is what Safari does.
+  // This works for IDNs too, despite the "en_US".
+  [as addAttribute:@"NSLanguage" value:@"en_US_POSIX"
+             range:as_entire_string];
 
   // Make a paragraph style locking in the standard line height as the maximum,
   // otherwise the baseline may shift "downwards".
@@ -541,11 +551,11 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
       paragraph_style([[NSMutableParagraphStyle alloc] init]);
   [paragraph_style setMaximumLineHeight:line_height_];
   [as addAttribute:NSParagraphStyleAttributeName value:paragraph_style
-             range:NSMakeRange(0, [as length])];
+             range:as_entire_string];
 
   // Grey out the suggest text.
   [as addAttribute:NSForegroundColorAttributeName value:SuggestTextColor()
-             range:NSMakeRange([as length] - suggest_text_length_,
+             range:NSMakeRange(as_length - suggest_text_length_,
                                suggest_text_length_)];
 
   url_parse::Component scheme, host;
@@ -554,7 +564,7 @@ void OmniboxViewMac::ApplyTextAttributes(const string16& display_text,
   const bool emphasize = model_->CurrentTextIsURL() && (host.len > 0);
   if (emphasize) {
     [as addAttribute:NSForegroundColorAttributeName value:BaseTextColor()
-               range:NSMakeRange(0, [as length])];
+               range:as_entire_string];
 
     [as addAttribute:NSForegroundColorAttributeName value:HostTextColor()
                range:ComponentToNSRange(host)];
@@ -700,6 +710,12 @@ gfx::NativeView OmniboxViewMac::GetNativeView() const {
   return field_;
 }
 
+gfx::NativeView OmniboxViewMac::GetRelativeWindowForPopup() const {
+  // Not used on mac.
+  NOTREACHED();
+  return NULL;
+}
+
 CommandUpdater* OmniboxViewMac::GetCommandUpdater() {
   return command_updater_;
 }
@@ -839,7 +855,9 @@ bool OmniboxViewMac::OnDoCommandBySelector(SEL cmd) {
   // behavior with the proper WindowOpenDisposition.
   NSEvent* event = [NSApp currentEvent];
   if (cmd == @selector(insertNewline:) ||
-     (cmd == @selector(noop:) && [event keyCode] == kVK_Return)) {
+     (cmd == @selector(noop:) &&
+      ([event type] == NSKeyDown || [event type] == NSKeyUp) &&
+      [event keyCode] == kVK_Return)) {
     WindowOpenDisposition disposition =
         event_utils::WindowOpenDispositionFromNSEvent(event);
     model_->AcceptInput(disposition, false);

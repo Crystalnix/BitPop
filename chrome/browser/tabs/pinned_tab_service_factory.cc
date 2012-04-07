@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,8 @@ PinnedTabServiceFactory* PinnedTabServiceFactory::GetInstance() {
 }
 
 PinnedTabServiceFactory::PinnedTabServiceFactory()
-    : ProfileKeyedServiceFactory(ProfileDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("PinnedTabService",
+                                 ProfileDependencyManager::GetInstance()) {
 }
 
 PinnedTabServiceFactory::~PinnedTabServiceFactory() {
@@ -29,4 +30,12 @@ PinnedTabServiceFactory::~PinnedTabServiceFactory() {
 ProfileKeyedService* PinnedTabServiceFactory::BuildServiceInstanceFor(
     Profile* profile) const {
   return new PinnedTabService(profile);
+}
+
+bool PinnedTabServiceFactory::ServiceIsCreatedWithProfile() {
+  return true;
+}
+
+bool PinnedTabServiceFactory::ServiceIsNULLWhileTesting() {
+  return true;
 }

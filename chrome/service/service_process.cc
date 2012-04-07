@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/i18n/rtl.h"
@@ -25,7 +26,7 @@
 #include "chrome/service/net/service_url_request_context.h"
 #include "chrome/service/service_ipc_server.h"
 #include "chrome/service/service_process_prefs.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/network_change_notifier.h"
@@ -46,6 +47,10 @@ namespace {
 // a shutdown.
 const int64 kShutdownDelay = 60000;
 
+// Delay in milliseconds between launching a browser process to check the
+// policy for us. 8 hours * 60 * 60 * 1000
+const int64 kPolicyCheckDelay = 28800000;
+
 const char kDefaultServiceProcessLocale[] = "en-US";
 
 class ServiceIOThread : public base::Thread {
@@ -62,13 +67,11 @@ class ServiceIOThread : public base::Thread {
 
 ServiceIOThread::ServiceIOThread(const char* name) : base::Thread(name) {}
 ServiceIOThread::~ServiceIOThread() {
-  // We cannot rely on our base class to stop the thread since we want our
-  // CleanUp function to run.
   Stop();
 }
 
 void ServiceIOThread::CleanUp() {
-  URLFetcher::CancelAll();
+  content::URLFetcher::CancelAll();
 }
 
 // Prepares the localized strings that are going to be displayed to
@@ -96,7 +99,8 @@ void PrepareRestartOnCrashEnviroment(
   string16 dlg_strings(l10n_util::GetStringUTF16(IDS_CRASH_RECOVERY_TITLE));
   dlg_strings.push_back('|');
   string16 adjusted_string(
-      l10n_util::GetStringUTF16(IDS_SERVICE_CRASH_RECOVERY_CONTENT));
+      l10n_util::GetStringFUTF16(IDS_SERVICE_CRASH_RECOVERY_CONTENT,
+      l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
   base::i18n::AdjustStringForLocaleDirection(&adjusted_string);
   dlg_strings.append(adjusted_string);
   dlg_strings.push_back('|');
@@ -176,7 +180,7 @@ bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
     if (locale.empty())
       locale = kDefaultServiceProcessLocale;
   }
-  ResourceBundle::InitSharedInstance(locale);
+  ResourceBundle::InitSharedInstanceWithLocale(locale);
 
   PrepareRestartOnCrashEnviroment(command_line);
 
@@ -192,6 +196,16 @@ bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
   if (cloud_print_proxy_enabled) {
     GetCloudPrintProxy()->EnableForUser(lsid);
   }
+  // Enable Virtual Printer Driver if needed.
+  bool virtual_printer_driver_enabled = false;
+  service_prefs_->GetBoolean(prefs::kVirtualPrinterDriverEnabled,
+                             &virtual_printer_driver_enabled);
+
+  if (virtual_printer_driver_enabled) {
+    // Register the fact that there is at least one
+    // service needing the process.
+    OnServiceEnabled();
+  }
 
   VLOG(1) << "Starting Service Process IPC Server";
   ipc_server_.reset(new ServiceIPCServer(
@@ -200,13 +214,18 @@ bool ServiceProcess::Initialize(MessageLoopForUI* message_loop,
 
   // After the IPC server has started we signal that the service process is
   // ready.
-  if (!state->SignalReady(io_thread_->message_loop_proxy(),
-                          NewRunnableMethod(this, &ServiceProcess::Shutdown))) {
+  if (!service_process_state_->SignalReady(
+      io_thread_->message_loop_proxy(),
+      base::Bind(&ServiceProcess::Terminate, base::Unretained(this)))) {
     return false;
   }
 
   // See if we need to stay running.
   ScheduleShutdownCheck();
+
+  // Occasionally check to see if we need to launch the browser to get the
+  // policy state information.
+  CloudPrintPolicyCheckIfNeeded();
   return true;
 }
 
@@ -231,8 +250,24 @@ bool ServiceProcess::Teardown() {
 // This method is called when a shutdown command is received from IPC channel
 // or there was an error in the IPC channel.
 void ServiceProcess::Shutdown() {
-  // Quit the main message loop.
-  main_message_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+#if defined(OS_MACOSX)
+  // On MacOS X the service must be removed from the launchd job list.
+  // http://www.chromium.org/developers/design-documents/service-processes
+  // The best way to do that is to go through the ForceServiceProcessShutdown
+  // path. If it succeeds Terminate() will be called from the handler registered
+  // via service_process_state_->SignalReady().
+  // On failure call Terminate() directly to force the process to actually
+  // terminate.
+  if (!ForceServiceProcessShutdown("", 0)) {
+    Terminate();
+  }
+#else
+  Terminate();
+#endif
+}
+
+void ServiceProcess::Terminate() {
+  main_message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 bool ServiceProcess::HandleClientDisconnect() {
@@ -272,6 +307,20 @@ void ServiceProcess::OnCloudPrintProxyDisabled(bool persist_state) {
   OnServiceDisabled();
 }
 
+void ServiceProcess::EnableVirtualPrintDriver() {
+  OnServiceEnabled();
+  // Save the preference that we have enabled the virtual driver.
+  service_prefs_->SetBoolean(prefs::kVirtualPrinterDriverEnabled, true);
+  service_prefs_->WritePrefs();
+}
+
+void ServiceProcess::DisableVirtualPrintDriver() {
+  OnServiceDisabled();
+  // Save the preference that we have disabled the virtual driver.
+  service_prefs_->SetBoolean(prefs::kVirtualPrinterDriverEnabled, false);
+  service_prefs_->WritePrefs();
+}
+
 ServiceURLRequestContextGetter*
 ServiceProcess::GetServiceURLRequestContextGetter() {
   DCHECK(request_context_getter_.get());
@@ -306,7 +355,7 @@ void ServiceProcess::OnServiceDisabled() {
 void ServiceProcess::ScheduleShutdownCheck() {
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      NewRunnableMethod(this, &ServiceProcess::ShutdownIfNeeded),
+      base::Bind(&ServiceProcess::ShutdownIfNeeded, base::Unretained(this)),
       kShutdownDelay);
 }
 
@@ -322,6 +371,21 @@ void ServiceProcess::ShutdownIfNeeded() {
       Shutdown();
     }
   }
+}
+
+void ServiceProcess::ScheduleCloudPrintPolicyCheck() {
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ServiceProcess::CloudPrintPolicyCheckIfNeeded,
+                 base::Unretained(this)),
+      kPolicyCheckDelay);
+}
+
+void ServiceProcess::CloudPrintPolicyCheckIfNeeded() {
+  if (enabled_services_ && !ipc_server_->is_client_connected()) {
+    GetCloudPrintProxy()->CheckCloudPrintProxyPolicy();
+  }
+  ScheduleCloudPrintPolicyCheck();
 }
 
 ServiceProcess::~ServiceProcess() {

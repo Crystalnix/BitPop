@@ -2,26 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/autocomplete/history_url_provider.h"
+
+#include <algorithm>
+
 #include "base/file_util.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/autocomplete/history_url_provider.h"
+#include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/history/history.h"
-#include "chrome/test/testing_browser_process.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
 using base::TimeDelta;
 
+using content::BrowserThread;
+
 struct TestURLInfo {
-  std::string url;
-  std::string title;
+  const char* url;
+  const char* title;
   int visit_count;
   int typed_count;
 } test_db[] = {
@@ -35,7 +41,7 @@ struct TestURLInfo {
   {"http://kerneltrap.org/not_very_popular.html", "Less popular", 4, 0},
 
   // Unpopular pages should not appear in the results at all.
-  {"http://freshmeat.net/unpopular.html", "Unpopular", 1, 1},
+  {"http://freshmeat.net/unpopular.html", "Unpopular", 1, 0},
 
   // If a host has a match, we should pick it up during host synthesis.
   {"http://news.google.com/?ned=us&topic=n", "Google News - U.S.", 2, 2},
@@ -93,15 +99,36 @@ struct TestURLInfo {
 
   // URLs used by EmptyVisits.
   {"http://pandora.com/", "Pandora", 2, 2},
-  {"http://p/", "p", 0, 0},
+  // This entry is explicitly added more recently than
+  // history::kLowQualityMatchAgeLimitInDays.
+  // {"http://p/", "p", 0, 0},
+
+  // For intranet based tests.
+  {"http://intra/one", "Intranet", 2, 2},
+  {"http://intra/two", "Intranet two", 1, 1},
+  {"http://intra/three", "Intranet three", 2, 2},
+  {"http://moo/bar", "Intranet moo", 1, 1},
+  {"http://typedhost/typedpath", "Intranet typed", 1, 1},
+  {"http://typedhost/untypedpath", "Intranet untyped", 1, 0},
+
+  {"http://x.com/one", "Internet", 2, 2},
+  {"http://x.com/two", "Internet two", 1, 1},
+  {"http://x.com/three", "Internet three", 2, 2},
 };
 
-class HistoryURLProviderTest : public TestingBrowserProcessTest,
+class HistoryURLProviderTest : public testing::Test,
                                public ACProviderListener {
  public:
   HistoryURLProviderTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_) {}
+        file_thread_(BrowserThread::FILE, &message_loop_),
+        sort_matches_(false) {
+    HistoryQuickProvider::set_disabled(true);
+  }
+
+  virtual ~HistoryURLProviderTest() {
+    HistoryQuickProvider::set_disabled(false);
+  }
 
   // ACProviderListener
   virtual void OnProviderUpdate(bool updated_matches);
@@ -130,12 +157,14 @@ class HistoryURLProviderTest : public TestingBrowserProcessTest,
   void RunAdjustOffsetTest(const string16 text, size_t expected_offset);
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
   ACMatches matches_;
   scoped_ptr<TestingProfile> profile_;
   HistoryService* history_service_;
   scoped_refptr<HistoryURLProvider> autocomplete_;
+  // Should the matches be sorted and duplicates removed?
+  bool sort_matches_;
 };
 
 class HistoryURLProviderTestNoDB : public HistoryURLProviderTest {
@@ -182,6 +211,12 @@ void HistoryURLProviderTest::FillData() {
                                          visit_time, false,
                                          history::SOURCE_BROWSED);
   }
+
+  history_service_->AddPageWithDetails(
+      GURL("http://p/"), UTF8ToUTF16("p"), 0, 0,
+      Time::Now() -
+      TimeDelta::FromDays(history::kLowQualityMatchAgeLimitInDays - 1),
+      false, history::SOURCE_BROWSED);
 }
 
 void HistoryURLProviderTest::RunTest(const string16 text,
@@ -196,6 +231,15 @@ void HistoryURLProviderTest::RunTest(const string16 text,
     MessageLoop::current()->Run();
 
   matches_ = autocomplete_->matches();
+  if (sort_matches_) {
+    std::sort(matches_.begin(), matches_.end(),
+              &AutocompleteMatch::DestinationSortFunc);
+    matches_.erase(std::unique(matches_.begin(), matches_.end(),
+                               &AutocompleteMatch::DestinationsEqual),
+                   matches_.end());
+    std::sort(matches_.begin(), matches_.end(),
+              &AutocompleteMatch::MoreRelevant);
+  }
   ASSERT_EQ(num_results, matches_.size()) << "Input text: " << text
                                           << "\nTLD: \"" << desired_tld << "\"";
   for (size_t i = 0; i < num_results; ++i)
@@ -297,6 +341,7 @@ TEST_F(HistoryURLProviderTest, PromoteShorterURLs) {
   const std::string short_5a[] = {
     "http://gooey/",
     "http://www.google.com/",
+    "http://go/",
   };
   const std::string short_5b[] = {
     "http://go/",
@@ -312,21 +357,18 @@ TEST_F(HistoryURLProviderTest, CullRedirects) {
   // (the redirect set below will also increment the visit counts). We want
   // the results to be in A,B,C order. Note also that our visit counts are
   // all high enough so that domain synthesizing won't get triggered.
-  struct RedirectCase {
+  struct TestCase {
     const char* url;
     int count;
-  };
-  static const RedirectCase redirect[] = {
+  } test_cases[] = {
     {"http://redirects/A", 30},
     {"http://redirects/B", 20},
     {"http://redirects/C", 10}
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(redirect); i++) {
-    history_service_->AddPageWithDetails(GURL(redirect[i].url),
-                                         UTF8ToUTF16("Title"),
-                                         redirect[i].count, redirect[i].count,
-                                         Time::Now(), false,
-                                         history::SOURCE_BROWSED);
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); i++) {
+    history_service_->AddPageWithDetails(GURL(test_cases[i].url),
+        UTF8ToUTF16("Title"), test_cases[i].count, test_cases[i].count,
+        Time::Now(), false, history::SOURCE_BROWSED);
   }
 
   // Create a B->C->A redirect chain, but set the visit counts such that they
@@ -334,12 +376,12 @@ TEST_F(HistoryURLProviderTest, CullRedirects) {
   // search for the most recent visit when looking for redirects, so this will
   // be found even though the previous visits had no redirects.
   history::RedirectList redirects_to_a;
-  redirects_to_a.push_back(GURL(redirect[1].url));
-  redirects_to_a.push_back(GURL(redirect[2].url));
-  redirects_to_a.push_back(GURL(redirect[0].url));
-  history_service_->AddPage(GURL(redirect[0].url), NULL, 0, GURL(),
-                            PageTransition::TYPED, redirects_to_a,
-                            history::SOURCE_BROWSED, true);
+  redirects_to_a.push_back(GURL(test_cases[1].url));
+  redirects_to_a.push_back(GURL(test_cases[2].url));
+  redirects_to_a.push_back(GURL(test_cases[0].url));
+  history_service_->AddPage(GURL(test_cases[0].url), NULL, 0, GURL(),
+      content::PAGE_TRANSITION_TYPED, redirects_to_a, history::SOURCE_BROWSED,
+      true);
 
   // Because all the results are part of a redirect chain with other results,
   // all but the first one (A) should be culled. We should get the default
@@ -347,7 +389,8 @@ TEST_F(HistoryURLProviderTest, CullRedirects) {
   const string16 typing(ASCIIToUTF16("http://redirects/"));
   const std::string expected_results[] = {
     UTF16ToUTF8(typing),
-    redirect[0].url};
+    test_cases[0].url,
+  };
   RunTest(typing, string16(), true, expected_results,
           arraysize(expected_results));
 }
@@ -406,7 +449,9 @@ TEST_F(HistoryURLProviderTest, Fixup) {
   RunTest(ASCIIToUTF16("\\"), string16(), false, NULL, 0);
   RunTest(ASCIIToUTF16("#"), string16(), false, NULL, 0);
   RunTest(ASCIIToUTF16("%20"), string16(), false, NULL, 0);
-  RunTest(WideToUTF16(L"\uff65@s"), string16(), false, NULL, 0);
+  const std::string fixup_crash[] = {"http://%EF%BD%A5@s/"};
+  RunTest(WideToUTF16(L"\uff65@s"), string16(), false, fixup_crash,
+          arraysize(fixup_crash));
   RunTest(WideToUTF16(L"\u2015\u2015@ \uff7c"), string16(), false, NULL, 0);
 
   // Fixing up "file:" should result in an inline autocomplete offset of just
@@ -505,4 +550,120 @@ TEST_F(HistoryURLProviderTest, DontAutocompleteOnTrailingWhitespace) {
   matches_ = autocomplete_->matches();
   for (size_t i = 0; i < matches_.size(); ++i)
     EXPECT_EQ(string16::npos, matches_[i].inline_autocomplete_offset);
+}
+
+TEST_F(HistoryURLProviderTest, TreatEmailsAsSearches) {
+  // Visiting foo.com should not make this string be treated as a navigation.
+  // That means the result should be scored at 1200 ("what you typed") and not
+  // 1400+.
+  const std::string expected[] = {"http://user@foo.com/"};
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("user@foo.com"), string16(),
+                                  false, expected, arraysize(expected)));
+  EXPECT_EQ(1200, matches_[0].relevance);
+}
+
+TEST_F(HistoryURLProviderTest, IntranetURLsWithPaths) {
+  struct TestCase {
+    const char* input;
+    int relevance;
+  } test_cases[] = {
+    { "fooey", 0 },
+    { "fooey/", 1200 },     // 1200 for URL would still navigate by default.
+    { "fooey/a", 1200 },    // 1200 for UNKNOWN would not.
+    { "fooey/a b", 1200 },  // Also UNKNOWN.
+    { "gooey", 1410 },
+    { "gooey/", 1410 },
+    { "gooey/a", 1400 },
+    { "gooey/a b", 1400 },
+  };
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+    SCOPED_TRACE(test_cases[i].input);
+    if (test_cases[i].relevance == 0) {
+      RunTest(ASCIIToUTF16(test_cases[i].input), string16(), false, NULL, 0);
+    } else {
+      const std::string output[] = {
+        URLFixerUpper::FixupURL(test_cases[i].input, std::string()).spec()
+      };
+      ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16(test_cases[i].input),
+                              string16(), false, output, arraysize(output)));
+      EXPECT_EQ(test_cases[i].relevance, matches_[0].relevance);
+    }
+  }
+}
+
+// Makes sure autocompletion happens for intranet sites that have been
+// previoulsy visited.
+TEST_F(HistoryURLProviderTest, IntranetURLCompletion) {
+  sort_matches_ = true;
+
+  const std::string expected1[] = {
+    "http://intra/three",
+    "http://intra/two",
+  };
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("intra/t"), string16(), false,
+                                  expected1, arraysize(expected1)));
+  EXPECT_EQ(1410, matches_[0].relevance);
+  EXPECT_EQ(900, matches_[1].relevance);
+
+  const std::string expected2[] = {
+    "http://moo/b",
+    "http://moo/bar",
+  };
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("moo/b"), string16(), false,
+                                  expected2, arraysize(expected2)));
+  // The what you typed match should be 1400, otherwise the search what you
+  // typed match is going to be first.
+  EXPECT_EQ(1400, matches_[0].relevance);
+
+  const std::string expected3[] = {
+    "http://intra/one",
+    "http://intra/three",
+    "http://intra/two",
+  };
+  RunTest(ASCIIToUTF16("intra"), string16(), false, expected3,
+          arraysize(expected3));
+
+  const std::string expected4[] = {
+    "http://intra/one",
+    "http://intra/three",
+    "http://intra/two",
+  };
+  RunTest(ASCIIToUTF16("intra/"), string16(), false, expected4,
+          arraysize(expected4));
+
+  const std::string expected5[] = {
+    "http://intra/one",
+  };
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("intra/o"), string16(), false,
+                                  expected5, arraysize(expected5)));
+  EXPECT_EQ(1410, matches_[0].relevance);
+
+  const std::string expected6[] = {
+    "http://intra/x",
+  };
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("intra/x"), string16(), false,
+                                  expected6, arraysize(expected6)));
+  EXPECT_EQ(1400, matches_[0].relevance);
+
+  const std::string expected7[] = {
+    "http://typedhost/untypedpath",
+  };
+  ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16("typedhost/untypedpath"),
+      string16(), false, expected7, arraysize(expected7)));
+  EXPECT_EQ(1400, matches_[0].relevance);
+}
+
+TEST_F(HistoryURLProviderTest, CrashDueToFixup) {
+  // This test passes if we don't crash.  The results don't matter.
+  const char* const test_cases[] = {
+    "//c",
+    "\\@st"
+  };
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
+    AutocompleteInput input(ASCIIToUTF16(test_cases[i]), string16(), false,
+                            false, true, AutocompleteInput::ALL_MATCHES);
+    autocomplete_->Start(input, false);
+    if (!autocomplete_->done())
+      MessageLoop::current()->Run();
+  }
 }

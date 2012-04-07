@@ -8,30 +8,31 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
-#include "ppapi/proxy/host_resource.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/ppp_instance_combined.h"
 
-struct PP_InputEvent;
 struct PP_Rect;
-struct PPP_Instance;
 
-namespace pp {
+namespace ppapi {
+
+struct ViewData;
+
 namespace proxy {
-
-class SerializedVarReturnValue;
 
 class PPP_Instance_Proxy : public InterfaceProxy {
  public:
-  PPP_Instance_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  explicit PPP_Instance_Proxy(Dispatcher* dispatcher);
   virtual ~PPP_Instance_Proxy();
 
-  static const Info* GetInfo();
+  static const PPP_Instance* GetInstanceInterface();
 
-  const PPP_Instance* ppp_instance_target() const {
-    return reinterpret_cast<const PPP_Instance*>(target_interface());
+  PPP_Instance_Combined* ppp_instance_target() const {
+    return combined_interface_.get();
   }
 
   // InterfaceProxy implementation.
@@ -39,27 +40,22 @@ class PPP_Instance_Proxy : public InterfaceProxy {
 
  private:
   // Message handlers.
-  void OnMsgDidCreate(PP_Instance instance,
-                      const std::vector<std::string>& argn,
-                      const std::vector<std::string>& argv,
-                      PP_Bool* result);
-  void OnMsgDidDestroy(PP_Instance instance);
-  void OnMsgDidChangeView(PP_Instance instance,
-                          const PP_Rect& position,
-                          const PP_Rect& clip,
-                          PP_Bool fullscreen);
-  void OnMsgDidChangeFocus(PP_Instance instance, PP_Bool has_focus);
-  void OnMsgHandleInputEvent(PP_Instance instance,
-                             const PP_InputEvent& event,
-                             PP_Bool* result);
-  void OnMsgHandleDocumentLoad(PP_Instance instance,
-                               const HostResource& url_loader,
-                               PP_Bool* result);
-  void OnMsgGetInstanceObject(PP_Instance instance,
-                              SerializedVarReturnValue result);
+  void OnPluginMsgDidCreate(PP_Instance instance,
+                            const std::vector<std::string>& argn,
+                            const std::vector<std::string>& argv,
+                            PP_Bool* result);
+  void OnPluginMsgDidDestroy(PP_Instance instance);
+  void OnPluginMsgDidChangeView(PP_Instance instance,
+                                const ViewData& new_data,
+                                PP_Bool flash_fullscreen);
+  void OnPluginMsgDidChangeFocus(PP_Instance instance, PP_Bool has_focus);
+  void OnPluginMsgHandleDocumentLoad(PP_Instance instance,
+                                     const HostResource& url_loader,
+                                     PP_Bool* result);
+  scoped_ptr<PPP_Instance_Combined> combined_interface_;
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPP_INSTANCE_PROXY_H_

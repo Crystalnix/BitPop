@@ -2,20 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/json/json_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/json_value_serializer.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
+
+using content::BrowserThread;
 
 class ImageLoadingTrackerTest : public testing::Test,
                                 public ImageLoadingTracker::Observer {
@@ -89,9 +91,9 @@ class ImageLoadingTrackerTest : public testing::Test,
   int image_loaded_count_;
   bool quit_in_image_loaded_;
   MessageLoop ui_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
+  content::TestBrowserThread io_thread_;
 };
 
 // Tests asking ImageLoadingTracker to cache pushes the result to the Extension.
@@ -161,11 +163,11 @@ TEST_F(ImageLoadingTrackerTest, DeleteExtensionWhileWaitingForCache) {
 
   // Send out notification the extension was uninstalled.
   UnloadedExtensionInfo details(extension.get(),
-                                UnloadedExtensionInfo::UNINSTALL);
-  NotificationService::current()->Notify(
-      NotificationType::EXTENSION_UNLOADED,
-      NotificationService::AllSources(),
-      Details<UnloadedExtensionInfo>(&details));
+                                extension_misc::UNLOAD_REASON_UNINSTALL);
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      content::NotificationService::AllSources(),
+      content::Details<UnloadedExtensionInfo>(&details));
 
   // Chuck the extension, that way if anyone tries to access it we should crash
   // or get valgrind errors.

@@ -6,24 +6,21 @@
 #define PPAPI_PROXY_MOCK_RESOURCE_H_
 
 #include "ppapi/c/pp_instance.h"
-#include "ppapi/proxy/plugin_resource.h"
+#include "ppapi/shared_impl/resource.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
-class MockResource : public PluginResource {
+class MockResource : public ppapi::Resource {
  public:
-  MockResource(const HostResource& resource);
+  MockResource(const ppapi::HostResource& resource);
   virtual ~MockResource();
-
-  // Resource overrides.
-  virtual MockResource* AsMockResource();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockResource);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_MOCK_RESOURCE_H_

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/json/json_value_serializer.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/values.h"
@@ -9,10 +10,11 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/json_value_serializer.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/skia_util.h"
+
+using content::BrowserThread;
 
 // Our test class that takes care of managing the necessary threads for loading
 // extension icons, and waiting for those loads to happen.
@@ -57,9 +59,9 @@ class ExtensionIconManagerTest : public testing::Test {
   bool waiting_;
 
   MessageLoop ui_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
+  content::TestBrowserThread io_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionIconManagerTest);
 };
@@ -109,9 +111,10 @@ TEST_F(ExtensionIconManagerTest, LoadRemoveLoad) {
       static_cast<DictionaryValue*>(serializer.Deserialize(NULL, NULL)));
   ASSERT_TRUE(manifest.get() != NULL);
 
+  std::string error;
   scoped_refptr<Extension> extension(Extension::Create(
       manifest_path.DirName(), Extension::INVALID, *manifest.get(),
-      Extension::STRICT_ERROR_CHECKS, NULL));
+      Extension::STRICT_ERROR_CHECKS, &error));
   ASSERT_TRUE(extension.get());
   TestIconManager icon_manager(this);
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,10 @@ cr.define('cr.ui', function() {
         this.command = commandId;
 
       this.addEventListener('mouseup', this.handleMouseUp_);
+
+      // Adding the 'custom-appearance' class prevents button.css from changing
+      // the appearance of this element.
+      this.classList.add('custom-appearance');
     },
 
     /**
@@ -101,7 +105,7 @@ cr.define('cr.ui', function() {
      * @private
      */
     handleMouseUp_: function(e) {
-      if (!this.disabled && !this.isSeparator()) {
+      if (!this.disabled && !this.isSeparator() && this.selected) {
         // Dispatch command event followed by executing the command object.
         if (cr.dispatchSimpleEvent(this, 'activate', true, true)) {
           var command = this.command;

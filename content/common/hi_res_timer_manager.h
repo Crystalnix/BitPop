@@ -7,16 +7,18 @@
 #pragma once
 
 #include "base/system_monitor/system_monitor.h"
+#include "content/common/content_export.h"
 
 // Ensures that the Windows high resolution timer is only used
 // when not running on battery power.
-class HighResolutionTimerManager : public base::SystemMonitor::PowerObserver {
+class CONTENT_EXPORT HighResolutionTimerManager
+    : public base::SystemMonitor::PowerObserver {
  public:
   HighResolutionTimerManager();
   virtual ~HighResolutionTimerManager();
 
   // base::SystemMonitor::PowerObserver:
-  virtual void OnPowerStateChange(bool on_battery_power);
+  virtual void OnPowerStateChange(bool on_battery_power) OVERRIDE;
 
   // Returns true if the hi resolution clock could be used right now.
   bool hi_res_clock_available() const { return hi_res_clock_available_; }

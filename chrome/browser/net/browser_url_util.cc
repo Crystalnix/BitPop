@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
+#include "net/base/escape.h"
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 
@@ -24,10 +25,23 @@ void WriteURLToClipboard(const GURL& url,
   string16 text = url.SchemeIs(chrome::kMailToScheme) ?
       ASCIIToUTF16(url.path()) :
       net::FormatUrl(url, languages, net::kFormatUrlOmitNothing,
-                     UnescapeRule::NONE, NULL, NULL, NULL);
+                     net::UnescapeRule::NONE, NULL, NULL, NULL);
 
   ui::ScopedClipboardWriter scw(clipboard);
   scw.WriteURL(text);
+}
+
+GURL AppendQueryParameter(const GURL& url,
+                          const std::string& name,
+                          const std::string& value) {
+  std::string query(url.query());
+  if (!query.empty())
+    query += "&";
+  query += (net::EscapeQueryParamValue(name, true) + "=" +
+            net::EscapeQueryParamValue(value, true));
+  GURL::Replacements replacements;
+  replacements.SetQueryStr(query);
+  return url.ReplaceComponents(replacements);
 }
 
 }  // namespace chrome_browser_net

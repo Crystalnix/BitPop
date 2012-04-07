@@ -9,33 +9,35 @@
 #include "chrome/browser/translate/languages_menu_model.h"
 #include "chrome/browser/translate/options_menu_model.h"
 #include "chrome/browser/ui/views/infobars/translate_infobar_base.h"
-#include "views/controls/menu/view_menu_delegate.h"
+#include "ui/views/controls/menu/view_menu_delegate.h"
 
 class TranslateInfoBarDelegate;
 namespace views {
-class Menu2;
 class MenuButton;
 }
 
 class AfterTranslateInfoBar : public TranslateInfoBarBase,
                               public views::ViewMenuDelegate {
  public:
-  AfterTranslateInfoBar(TabContentsWrapper* owner,
+  AfterTranslateInfoBar(InfoBarTabHelper* owner,
                         TranslateInfoBarDelegate* delegate);
 
  private:
   virtual ~AfterTranslateInfoBar();
 
   // TranslateInfoBarBase:
-  virtual void Layout();
-  virtual void ViewHierarchyChanged(bool is_add, View* parent, View* child);
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event);
-  virtual int ContentMinimumWidth() const;
-  virtual void OriginalLanguageChanged();
-  virtual void TargetLanguageChanged();
+  virtual void Layout() OVERRIDE;
+  virtual void ViewHierarchyChanged(bool is_add,
+                                    View* parent,
+                                    View* child) OVERRIDE;
+  virtual void ButtonPressed(views::Button* sender,
+                             const views::Event& event) OVERRIDE;
+  virtual int ContentMinimumWidth() const OVERRIDE;
+  virtual void OriginalLanguageChanged() OVERRIDE;
+  virtual void TargetLanguageChanged() OVERRIDE;
 
   // ViewMenuDelegate:
-  virtual void RunMenu(View* source, const gfx::Point& pt);
+  virtual void RunMenu(View* source, const gfx::Point& pt) OVERRIDE;
 
   // The text displayed in the infobar is something like:
   // "Translated from <lang1> to <lang2> [more text in some languages]"
@@ -51,13 +53,8 @@ class AfterTranslateInfoBar : public TranslateInfoBarBase,
   views::MenuButton* options_menu_button_;
 
   LanguagesMenuModel original_language_menu_model_;
-  scoped_ptr<views::Menu2> original_language_menu_;
-
   LanguagesMenuModel target_language_menu_model_;
-  scoped_ptr<views::Menu2> target_language_menu_;
-
   OptionsMenuModel options_menu_model_;
-  scoped_ptr<views::Menu2> options_menu_;
 
   // True if the target language comes before the original one.
   bool swapped_language_buttons_;

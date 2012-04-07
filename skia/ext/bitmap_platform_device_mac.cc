@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,19 +50,11 @@ static CGContextRef CGContextForData(void* data, int width, int height) {
 
 }  // namespace
 
-SkDevice* BitmapPlatformDeviceFactory::newDevice(SkCanvas* ignored,
-                                                 SkBitmap::Config config,
-                                                 int width, int height,
-                                                 bool isOpaque,
-                                                 bool isForLayer) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::Create(NULL, width, height, isOpaque);
-}
-
 BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
     CGContextRef bitmap)
     : bitmap_context_(bitmap),
-      config_dirty_(true) {  // Want to load the config next time.
+      config_dirty_(true),  // Want to load the config next time.
+      transform_(SkMatrix::I()) {
   SkASSERT(bitmap_context_);
   // Initialize the clip region to the entire bitmap.
 
@@ -71,7 +63,6 @@ BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
            CGBitmapContextGetWidth(bitmap_context_),
            CGBitmapContextGetHeight(bitmap_context_));
   clip_region_ = SkRegion(rect);
-  transform_.reset();
   CGContextRetain(bitmap_context_);
   // We must save the state once so that we can use the restore/save trick
   // in LoadConfig().
@@ -152,9 +143,11 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(CGContextRef context,
   }
 #endif
 
-  if (!context)
+  if (!context) {
     context = CGContextForData(data, width, height);
-  else
+    if (!context)
+      return NULL;
+  } else
     CGContextRetain(context);
 
   BitmapPlatformDevice* rv = new BitmapPlatformDevice(
@@ -189,30 +182,13 @@ BitmapPlatformDevice* BitmapPlatformDevice::CreateWithData(uint8_t* data,
 // data. Therefore, we do not transfer ownership to the SkDevice's bitmap.
 BitmapPlatformDevice::BitmapPlatformDevice(
     BitmapPlatformDeviceData* data, const SkBitmap& bitmap)
-    : PlatformDevice(bitmap),
+    : SkDevice(bitmap),
       data_(data) {
-}
-
-// The copy constructor just adds another reference to the underlying data.
-// We use a const cast since the default Skia definitions don't define the
-// proper constedness that we expect (accessBitmap should really be const).
-BitmapPlatformDevice::BitmapPlatformDevice(
-    const BitmapPlatformDevice& other)
-    : PlatformDevice(
-          const_cast<BitmapPlatformDevice&>(other).accessBitmap(true)),
-      data_(other.data_) {
-  data_->ref();
+  SetPlatformDevice(this, this);
 }
 
 BitmapPlatformDevice::~BitmapPlatformDevice() {
   data_->unref();
-}
-
-BitmapPlatformDevice& BitmapPlatformDevice::operator=(
-    const BitmapPlatformDevice& other) {
-  data_ = other.data_;
-  data_->ref();
-  return *this;
 }
 
 CGContextRef BitmapPlatformDevice::GetBitmapContext() {
@@ -261,8 +237,11 @@ void BitmapPlatformDevice::onAccessBitmap(SkBitmap*) {
   // Not needed in CoreGraphics
 }
 
-SkDeviceFactory* BitmapPlatformDevice::onNewDeviceFactory() {
-  return SkNEW(BitmapPlatformDeviceFactory);
+SkDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
+    SkBitmap::Config config, int width, int height, bool isOpaque,
+    Usage /*usage*/) {
+  SkASSERT(config == SkBitmap::kARGB_8888_Config);
+  return BitmapPlatformDevice::Create(NULL, width, height, isOpaque);
 }
 
 }  // namespace skia

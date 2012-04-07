@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,18 +9,53 @@
 #include <vsstyle.h>
 #include <vssym32.h>
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_handle.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
+#include "base/win/scoped_select_object.h"
 #include "base/win/windows_version.h"
+#include "skia/ext/platform_canvas.h"
 #include "skia/ext/skia_utils_win.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 
 namespace {
+
+// TODO: Obtain the correct colors using GetSysColor.
+// Theme colors returned by GetSystemColor().
+const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
+// Dialogs:
+const SkColor kDialogBackgroundColor = SkColorSetRGB(200, 200, 200);
+// FocusableBorder (should be unused on Win):
+const SkColor kFocusedBorderColor= SkColorSetRGB(0x4D, 0x90, 0xFE);
+const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xD9, 0xD9, 0xD9);
+// TextButton:
+const SkColor kTextButtonBackgroundColor = SkColorSetRGB(0xde, 0xde, 0xde);
+const SkColor kTextButtonEnabledColor = SkColorSetRGB(6, 45, 117);
+const SkColor kTextButtonDisabledColor = SkColorSetRGB(161, 161, 146);
+const SkColor kTextButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
+const SkColor kTextButtonHoverColor = kTextButtonEnabledColor;
+// MenuItem:
+const SkColor kEnabledMenuItemForegroundColor = kTextButtonEnabledColor;
+const SkColor kDisabledMenuItemForegroundColor = kTextButtonDisabledColor;
+const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(246, 249, 253);
+// Textfield:
+const SkColor kTextfieldDefaultColor = SK_ColorBLACK;
+const SkColor kTextfieldDefaultBackground = SK_ColorWHITE;
+const SkColor kTextfieldSelectionColor = SK_ColorWHITE;
+const SkColor kTextfieldSelectionBackgroundFocused =
+    SkColorSetRGB(0x1D, 0x90, 0xFF);
+const SkColor kTextfieldSelectionBackgroundUnfocused = SK_ColorLTGRAY;
+
+SkColor WinColorToSkColor(COLORREF color) {
+  return SkColorSetRGB(GetRValue(color), GetGValue(color), GetBValue(color));
+}
 
 void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   // Create a 2x2 checkerboard pattern using the 3D face and highlight colors.
@@ -50,9 +85,105 @@ void SetCheckerboardShader(SkPaint* paint, const RECT& align_rect) {
   SkSafeUnref(paint->setShader(shader));
 }
 
+//    <-a->
+// [  *****             ]
+//  ____ |              |
+//  <-a-> <------b----->
+// a: object_width
+// b: frame_width
+// *: animating object
+//
+// - the animation goes from "[" to "]" repeatedly.
+// - the animation offset is at first "|"
+//
+int ComputeAnimationProgress(int frame_width,
+                             int object_width,
+                             int pixels_per_second,
+                             double animated_seconds) {
+  int animation_width = frame_width + object_width;
+  double interval = static_cast<double>(animation_width) / pixels_per_second;
+  double ratio = fmod(animated_seconds, interval) / interval;
+  return static_cast<int>(animation_width * ratio) - object_width;
+}
+
+RECT InsetRect(const RECT* rect, int size) {
+  gfx::Rect result(*rect);
+  result.Inset(size, size);
+  return result.ToRECT();
+}
+
 }  // namespace
 
 namespace gfx {
+
+bool NativeThemeWin::IsThemingActive() const {
+  if (is_theme_active_)
+    return !!is_theme_active_();
+  return false;
+}
+
+HRESULT NativeThemeWin::GetThemeColor(ThemeName theme,
+                                      int part_id,
+                                      int state_id,
+                                      int prop_id,
+                                      SkColor* color) const {
+  HANDLE handle = GetThemeHandle(theme);
+  if (handle && get_theme_color_) {
+    COLORREF color_ref;
+    if (get_theme_color_(handle, part_id, state_id, prop_id, &color_ref) ==
+        S_OK) {
+      *color = skia::COLORREFToSkColor(color_ref);
+      return S_OK;
+    }
+  }
+  return E_NOTIMPL;
+}
+
+SkColor NativeThemeWin::GetThemeColorWithDefault(ThemeName theme,
+                                                 int part_id,
+                                                 int state_id,
+                                                 int prop_id,
+                                                 int default_sys_color) const {
+  SkColor color;
+  if (GetThemeColor(theme, part_id, state_id, prop_id, &color) != S_OK)
+    color = skia::COLORREFToSkColor(GetSysColor(default_sys_color));
+  return color;
+}
+
+Size NativeThemeWin::GetThemeBorderSize(ThemeName theme) const {
+  // For simplicity use the wildcard state==0, part==0, since it works
+  // for the cases we currently depend on.
+  int border;
+  if (GetThemeInt(theme, 0, 0, TMT_BORDERSIZE, &border) == S_OK)
+    return Size(border, border);
+  else
+    return Size(GetSystemMetrics(SM_CXEDGE), GetSystemMetrics(SM_CYEDGE));
+}
+
+void NativeThemeWin::DisableTheming() const {
+  if (!set_theme_properties_)
+    return;
+  set_theme_properties_(0);
+}
+
+void NativeThemeWin::CloseHandles() const {
+  if (!close_theme_)
+    return;
+
+  for (int i = 0; i < LAST; ++i) {
+    if (theme_handles_[i]) {
+      close_theme_(theme_handles_[i]);
+      theme_handles_[i] = NULL;
+    }
+  }
+}
+
+bool NativeThemeWin::IsClassicTheme(ThemeName name) const {
+  if (!theme_dll_)
+    return true;
+
+  return !GetThemeHandle(name);
+}
 
 // static
 const NativeTheme* NativeTheme::instance() {
@@ -61,8 +192,7 @@ const NativeTheme* NativeTheme::instance() {
 
 // static
 const NativeThemeWin* NativeThemeWin::instance() {
-  // The global NativeThemeWin instance.
-  static const NativeThemeWin s_native_theme;
+  CR_DEFINE_STATIC_LOCAL(NativeThemeWin, s_native_theme, ());
   return &s_native_theme;
 }
 
@@ -107,7 +237,7 @@ NativeThemeWin::~NativeThemeWin() {
   if (theme_dll_) {
     // todo (cpu): fix this soon.  Making a call to CloseHandles() here breaks
     // certain tests and the reliability bots.
-    //CloseHandles();
+    // CloseHandles();
     FreeLibrary(theme_dll_);
   }
 }
@@ -124,7 +254,26 @@ gfx::Size NativeThemeWin::GetPartSize(Part part,
                                 NULL, TS_TRUE, &size);
   ReleaseDC(NULL, hdc);
 
-  return SUCCEEDED(hr) ? Size(size.cx, size.cy) : Size();
+  if (FAILED(hr)) {
+    // TODO(rogerta): For now, we need to support radio buttons and checkboxes
+    // when theming is not enabled.  Support for other parts can be added
+    // if/when needed.
+    switch (part) {
+      case kCheckbox:
+      case kRadio:
+        // TODO(rogerta): I was not able to find any API to get the default
+        // size of these controls, so determined these values empirically.
+        size.cx = 13;
+        size.cy = 13;
+        break;
+      default:
+        size.cx = 0;
+        size.cy = 0;
+        break;
+    }
+  }
+
+  return Size(size.cx, size.cy);
 }
 
 void NativeThemeWin::Paint(SkCanvas* canvas,
@@ -133,9 +282,8 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
                            const gfx::Rect& rect,
                            const ExtraParams& extra) const {
   if (!skia::SupportsPlatformPaint(canvas)) {
-    // TODO(alokp): Implement this path.
     // This block will only get hit with --enable-accelerated-drawing flag.
-    DLOG(INFO) << "Could not paint native UI control";
+    PaintToNonPlatformCanvas(canvas, part, state, rect, extra);
     return;
   }
 
@@ -222,13 +370,515 @@ void NativeThemeWin::Paint(SkCanvas* canvas,
   }
 }
 
+SkColor NativeThemeWin::GetSystemColor(ColorId color_id) const {
+  switch (color_id) {
+
+    // Dialogs
+    case kColorId_DialogBackground:
+      // TODO(benrg): Should this use the new Windows theme functions? The old
+      // code in DialogClientView::OnPaint used GetSysColor(COLOR_3DFACE).
+      return WinColorToSkColor(GetSysColor(COLOR_3DFACE));
+
+    // TextButton
+    case kColorId_TextButtonBackgroundColor:
+      return kTextButtonBackgroundColor;
+    case kColorId_TextButtonEnabledColor:
+      return kTextButtonEnabledColor;
+    case kColorId_TextButtonDisabledColor:
+      return kTextButtonDisabledColor;
+    case kColorId_TextButtonHighlightColor:
+      return kTextButtonHighlightColor;
+    case kColorId_TextButtonHoverColor:
+      return kTextButtonHoverColor;
+
+    // MenuItem
+    case kColorId_EnabledMenuItemForegroundColor:
+      return kEnabledMenuItemForegroundColor;
+    case kColorId_DisabledMenuItemForegroundColor:
+      return kDisabledMenuItemForegroundColor;
+    case kColorId_FocusedMenuItemBackgroundColor:
+      return kFocusedMenuItemBackgroundColor;
+
+    // Textfield
+    case kColorId_TextfieldDefaultColor:
+      return kTextfieldDefaultColor;
+    case kColorId_TextfieldDefaultBackground:
+      return kTextfieldDefaultBackground;
+    case kColorId_TextfieldSelectionColor:
+      return kTextfieldSelectionColor;
+    case kColorId_TextfieldSelectionBackgroundFocused:
+      return kTextfieldSelectionBackgroundFocused;
+    case kColorId_TextfieldSelectionBackgroundUnfocused:
+      return kTextfieldSelectionBackgroundUnfocused;
+
+    default:
+      NOTREACHED() << "Invalid color_id: " << color_id;
+      break;
+  }
+  return kInvalidColorIdColor;
+}
+
+void NativeThemeWin::PaintToNonPlatformCanvas(SkCanvas* canvas,
+                                              Part part,
+                                              State state,
+                                              const gfx::Rect& rect,
+                                              const ExtraParams& extra) const {
+  // TODO(asvitkine): This path is pretty inefficient - for each paint operation
+  //                  it creates a new offscreen bitmap Skia canvas. This can
+  //                  be sped up by doing it only once per part/state and
+  //                  keeping a cache of the resulting bitmaps.
+
+  // Create an offscreen canvas that is backed by an HDC.
+  scoped_ptr<SkCanvas> offscreen_canvas(
+      skia::CreateBitmapCanvas(rect.width(), rect.height(), false));
+  DCHECK(offscreen_canvas.get());
+  DCHECK(skia::SupportsPlatformPaint(offscreen_canvas.get()));
+
+  // Some of the Windows theme drawing operations do not write correct alpha
+  // values for fully-opaque pixels; instead the pixels get alpha 0. This is
+  // especially a problem on Windows XP or when using the Classic theme.
+  //
+  // To work-around this, mark all pixels with a placeholder value, to detect
+  // which pixels get touched by the paint operation. After paint, set any
+  // pixels that have alpha 0 to opaque and placeholders to fully-transparent.
+  const SkColor placeholder = SkColorSetARGB(1, 0, 0, 0);
+  offscreen_canvas->clear(placeholder);
+
+  // Offset destination rects to have origin (0,0).
+  gfx::Rect adjusted_rect(rect.size());
+  ExtraParams adjusted_extra(extra);
+  switch (part) {
+    case kProgressBar:
+      adjusted_extra.progress_bar.value_rect_x = 0;
+      adjusted_extra.progress_bar.value_rect_y = 0;
+      break;
+    case kScrollbarHorizontalTrack:
+    case kScrollbarVerticalTrack:
+      adjusted_extra.scrollbar_track.track_x = 0;
+      adjusted_extra.scrollbar_track.track_y = 0;
+      break;
+    default: break;
+  }
+  // Draw the theme controls using existing HDC-drawing code.
+  Paint(offscreen_canvas.get(), part, state, adjusted_rect, adjusted_extra);
+
+  // Copy the pixels to a bitmap that has ref-counted pixel storage, which is
+  // necessary to have when drawing to a SkPicture.
+  const SkBitmap& bitmap = offscreen_canvas->getDevice()->accessBitmap(false);
+  SkBitmap ref_counted;
+  bitmap.copyTo(&ref_counted, SkBitmap::kARGB_8888_Config);
+
+  // Post-process the pixels to fix up the alpha values (see big comment above).
+  const SkPMColor placeholder_value = SkPreMultiplyColor(placeholder);
+  const int pixel_count = rect.width() * rect.height();
+  SkPMColor* pixels = bitmap.getAddr32(0, 0);
+  for (int i = 0; i < pixel_count; i++) {
+    if (pixels[i] == placeholder_value) {
+      // Pixel wasn't touched - make it fully transparent.
+      pixels[i] = SkPackARGB32(0, 0, 0, 0);
+    } else if (SkGetPackedA32(pixels[i]) == 0) {
+      // Pixel was touched but has incorrect alpha of 0, make it fully opaque.
+      pixels[i] = SkPackARGB32(0xFF,
+                               SkGetPackedR32(pixels[i]),
+                               SkGetPackedG32(pixels[i]),
+                               SkGetPackedB32(pixels[i]));
+    }
+  }
+
+  // Draw the offscreen bitmap to the destination canvas.
+  canvas->drawBitmap(ref_counted, rect.x(), rect.y());
+}
+
+HRESULT NativeThemeWin::GetThemePartSize(ThemeName theme_name,
+                                         HDC hdc,
+                                         int part_id,
+                                         int state_id,
+                                         RECT* rect,
+                                         int ts,
+                                         SIZE* size) const {
+  HANDLE handle = GetThemeHandle(theme_name);
+  if (handle && get_theme_part_size_)
+    return get_theme_part_size_(handle, hdc, part_id, state_id, rect, ts, size);
+
+  return E_NOTIMPL;
+}
+
+HRESULT NativeThemeWin::PaintButton(HDC hdc,
+                                    State state,
+                                    const ButtonExtraParams& extra,
+                                    int part_id,
+                                    int state_id,
+                                    RECT* rect) const {
+  HANDLE handle = GetThemeHandle(BUTTON);
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, part_id, state_id, rect, NULL);
+
+  // Adjust classic_state based on part, state, and extras.
+  int classic_state = extra.classic_state;
+  switch (part_id) {
+    case BP_CHECKBOX:
+      classic_state |= DFCS_BUTTONCHECK;
+      break;
+    case BP_RADIOBUTTON:
+      classic_state |= DFCS_BUTTONRADIO;
+      break;
+    case BP_PUSHBUTTON:
+      classic_state |= DFCS_BUTTONPUSH;
+      break;
+    default:
+      NOTREACHED() << "Unknown part_id: " << part_id;
+      break;
+  }
+
+  switch (state) {
+    case kDisabled:
+      classic_state |= DFCS_INACTIVE;
+      break;
+    case kPressed:
+      classic_state |= DFCS_PUSHED;
+      break;
+    case kNormal:
+    case kHovered:
+      break;
+    default:
+      NOTREACHED() << "Unknown state: " << state;
+      break;
+  }
+
+  if (extra.checked)
+    classic_state |= DFCS_CHECKED;
+
+  // Draw it manually.
+  // All pressed states have both low bits set, and no other states do.
+  const bool focused = ((state_id & ETS_FOCUSED) == ETS_FOCUSED);
+  const bool pressed = ((state_id & PBS_PRESSED) == PBS_PRESSED);
+  if ((BP_PUSHBUTTON == part_id) && (pressed || focused)) {
+    // BP_PUSHBUTTON has a focus rect drawn around the outer edge, and the
+    // button itself is shrunk by 1 pixel.
+    HBRUSH brush = GetSysColorBrush(COLOR_3DDKSHADOW);
+    if (brush) {
+      FrameRect(hdc, rect, brush);
+      InflateRect(rect, -1, -1);
+    }
+  }
+  DrawFrameControl(hdc, rect, DFC_BUTTON, classic_state);
+
+  // Draw the focus rectangle (the dotted line box) only on buttons.  For radio
+  // and checkboxes, we let webkit draw the focus rectangle (orange glow).
+  if ((BP_PUSHBUTTON == part_id) && focused) {
+    // The focus rect is inside the button.  The exact number of pixels depends
+    // on whether we're in classic mode or using uxtheme.
+    if (handle && get_theme_content_rect_) {
+      get_theme_content_rect_(handle, hdc, part_id, state_id, rect, rect);
+    } else {
+      InflateRect(rect, -GetSystemMetrics(SM_CXEDGE),
+                  -GetSystemMetrics(SM_CYEDGE));
+    }
+    DrawFocusRect(hdc, rect);
+  }
+
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintMenuSeparator(
+    HDC hdc,
+    const gfx::Rect& rect,
+    const MenuSeparatorExtraParams& extra) const {
+  RECT rect_win = rect.ToRECT();
+  if (!extra.has_gutter)
+    rect_win.top = rect.y() + rect.height() / 3 + 1;
+
+  HANDLE handle = GetThemeHandle(MENU);
+  if (handle && draw_theme_) {
+    // Delta is needed for non-classic to move separator up slightly.
+    --rect_win.top;
+    --rect_win.bottom;
+    return draw_theme_(handle, hdc, MENU_POPUPSEPARATOR, MPI_NORMAL, &rect_win,
+                       NULL);
+  }
+
+  DrawEdge(hdc, &rect_win, EDGE_ETCHED, BF_TOP);
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintMenuGutter(HDC hdc,
+                                        const gfx::Rect& rect) const {
+  RECT rect_win = rect.ToRECT();
+  HANDLE handle = GetThemeHandle(MENU);
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, MENU_POPUPGUTTER, MPI_NORMAL, &rect_win,
+                       NULL);
+  return E_NOTIMPL;
+}
+
+HRESULT NativeThemeWin::PaintMenuArrow(HDC hdc,
+                                       State state,
+                                       const gfx::Rect& rect,
+                                       const MenuArrowExtraParams& extra)
+    const {
+  int state_id = MSM_NORMAL;
+  if (state == kDisabled)
+    state_id = MSM_DISABLED;
+
+  HANDLE handle = GetThemeHandle(MENU);
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_) {
+    if (extra.pointing_right) {
+      return draw_theme_(handle, hdc, MENU_POPUPSUBMENU, state_id, &rect_win,
+                         NULL);
+    } else {
+      // There is no way to tell the uxtheme API to draw a left pointing arrow;
+      // it doesn't have a flag equivalent to DFCS_MENUARROWRIGHT.  But they
+      // are needed for RTL locales on Vista.  So use a memory DC and mirror
+      // the region with GDI's StretchBlt.
+      Rect r(rect);
+      base::win::ScopedCreateDC mem_dc(CreateCompatibleDC(hdc));
+      base::win::ScopedBitmap mem_bitmap(CreateCompatibleBitmap(hdc, r.width(),
+                                                                r.height()));
+      base::win::ScopedSelectObject select_bitmap(mem_dc, mem_bitmap);
+      // Copy and horizontally mirror the background from hdc into mem_dc. Use
+      // a negative-width source rect, starting at the rightmost pixel.
+      StretchBlt(mem_dc, 0, 0, r.width(), r.height(),
+                 hdc, r.right()-1, r.y(), -r.width(), r.height(), SRCCOPY);
+      // Draw the arrow.
+      RECT theme_rect = {0, 0, r.width(), r.height()};
+      HRESULT result = draw_theme_(handle, mem_dc, MENU_POPUPSUBMENU,
+                                   state_id, &theme_rect, NULL);
+      // Copy and mirror the result back into mem_dc.
+      StretchBlt(hdc, r.x(), r.y(), r.width(), r.height(),
+                 mem_dc, r.width()-1, 0, -r.width(), r.height(), SRCCOPY);
+      return result;
+    }
+  }
+
+  // For some reason, Windows uses the name DFCS_MENUARROWRIGHT to indicate a
+  // left pointing arrow. This makes the following 'if' statement slightly
+  // counterintuitive.
+  UINT pfc_state;
+  if (extra.pointing_right)
+    pfc_state = DFCS_MENUARROW;
+  else
+    pfc_state = DFCS_MENUARROWRIGHT;
+  return PaintFrameControl(hdc, rect, DFC_MENU, pfc_state, extra.is_selected,
+                           state);
+}
+
+HRESULT NativeThemeWin::PaintMenuBackground(HDC hdc,
+                                            const gfx::Rect& rect) const {
+  HANDLE handle = GetThemeHandle(MENU);
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_) {
+    HRESULT result = draw_theme_(handle, hdc, MENU_POPUPBACKGROUND, 0,
+                                 &rect_win, NULL);
+    FrameRect(hdc, &rect_win, GetSysColorBrush(COLOR_3DSHADOW));
+    return result;
+  }
+
+  FillRect(hdc, &rect_win, GetSysColorBrush(COLOR_MENU));
+  DrawEdge(hdc, &rect_win, EDGE_RAISED, BF_RECT);
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintMenuCheck(
+    HDC hdc,
+    State state,
+    const gfx::Rect& rect,
+    const MenuCheckExtraParams& extra) const {
+  HANDLE handle = GetThemeHandle(MENU);
+  int state_id;
+  if (extra.is_radio) {
+    state_id = state == kDisabled ? MC_BULLETDISABLED : MC_BULLETNORMAL;
+  } else {
+    state_id = state == kDisabled ? MC_CHECKMARKDISABLED : MC_CHECKMARKNORMAL;
+  }
+
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, MENU_POPUPCHECK, state_id, &rect_win, NULL);
+
+  return PaintFrameControl(hdc, rect, DFC_MENU,
+                           extra.is_radio ? DFCS_MENUBULLET : DFCS_MENUCHECK,
+                           extra.is_selected, state);
+}
+
+HRESULT NativeThemeWin::PaintMenuCheckBackground(HDC hdc,
+                                                 State state,
+                                                 const gfx::Rect& rect) const {
+  HANDLE handle = GetThemeHandle(MENU);
+  int state_id = state == kDisabled ? MCB_DISABLED : MCB_NORMAL;
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, MENU_POPUPCHECKBACKGROUND, state_id,
+                       &rect_win, NULL);
+  // Nothing to do for background.
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintMenuItemBackground(
+    HDC hdc,
+    State state,
+    const gfx::Rect& rect,
+    const MenuItemExtraParams& extra) const {
+  HANDLE handle = GetThemeHandle(MENU);
+  RECT rect_win = rect.ToRECT();
+  int state_id;
+  switch (state) {
+    case kNormal:
+      state_id = MPI_NORMAL;
+      break;
+    case kDisabled:
+      state_id = extra.is_selected ? MPI_DISABLEDHOT : MPI_DISABLED;
+      break;
+    case kHovered:
+      state_id = MPI_HOT;
+      break;
+    default:
+      NOTREACHED() << "Invalid state " << state;
+      break;
+  }
+
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, MENU_POPUPITEM, state_id, &rect_win, NULL);
+
+  if (extra.is_selected)
+    FillRect(hdc, &rect_win, GetSysColorBrush(COLOR_HIGHLIGHT));
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintPushButton(HDC hdc,
+                                        Part part,
+                                        State state,
+                                        const gfx::Rect& rect,
+                                        const ButtonExtraParams& extra) const {
+  int state_id;
+  switch (state) {
+    case kDisabled:
+      state_id = PBS_DISABLED;
+      break;
+    case kHovered:
+      state_id = PBS_HOT;
+      break;
+    case kNormal:
+      state_id = extra.is_default ? PBS_DEFAULTED : PBS_NORMAL;
+      break;
+    case kPressed:
+      state_id = PBS_PRESSED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state: " << state;
+      break;
+  }
+
+  RECT rect_win = rect.ToRECT();
+  return PaintButton(hdc, state, extra, BP_PUSHBUTTON, state_id, &rect_win);
+}
+
+HRESULT NativeThemeWin::PaintRadioButton(HDC hdc,
+                                         Part part,
+                                         State state,
+                                         const gfx::Rect& rect,
+                                         const ButtonExtraParams& extra) const {
+  int state_id;
+  switch (state) {
+    case kDisabled:
+      state_id = extra.checked ? RBS_CHECKEDDISABLED : RBS_UNCHECKEDDISABLED;
+      break;
+    case kHovered:
+      state_id = extra.checked ? RBS_CHECKEDHOT : RBS_UNCHECKEDHOT;
+      break;
+    case kNormal:
+      state_id = extra.checked ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL;
+      break;
+    case kPressed:
+      state_id = extra.checked ? RBS_CHECKEDPRESSED : RBS_UNCHECKEDPRESSED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state: " << state;
+      break;
+  }
+
+  RECT rect_win = rect.ToRECT();
+  return PaintButton(hdc, state, extra, BP_RADIOBUTTON, state_id, &rect_win);
+}
+
+HRESULT NativeThemeWin::PaintCheckbox(HDC hdc,
+                                      Part part,
+                                      State state,
+                                      const gfx::Rect& rect,
+                                      const ButtonExtraParams& extra) const {
+  int state_id;
+  switch (state) {
+    case kDisabled:
+      state_id = extra.checked ? CBS_CHECKEDDISABLED :
+          extra.indeterminate ? CBS_MIXEDDISABLED :
+              CBS_UNCHECKEDDISABLED;
+      break;
+    case kHovered:
+      state_id = extra.checked ? CBS_CHECKEDHOT :
+          extra.indeterminate ? CBS_MIXEDHOT :
+              CBS_UNCHECKEDHOT;
+      break;
+    case kNormal:
+      state_id = extra.checked ? CBS_CHECKEDNORMAL :
+          extra.indeterminate ? CBS_MIXEDNORMAL :
+              CBS_UNCHECKEDNORMAL;
+      break;
+    case kPressed:
+      state_id = extra.checked ? CBS_CHECKEDPRESSED :
+          extra.indeterminate ? CBS_MIXEDPRESSED :
+              CBS_UNCHECKEDPRESSED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state: " << state;
+      break;
+  }
+
+  RECT rect_win = rect.ToRECT();
+  return PaintButton(hdc, state, extra, BP_CHECKBOX, state_id, &rect_win);
+}
+
+HRESULT NativeThemeWin::PaintMenuList(HDC hdc,
+                                      State state,
+                                      const gfx::Rect& rect,
+                                      const MenuListExtraParams& extra) const {
+  HANDLE handle = GetThemeHandle(MENULIST);
+  RECT rect_win = rect.ToRECT();
+  int state_id;
+  switch (state) {
+    case kNormal:
+      state_id = CBXS_NORMAL;
+      break;
+    case kDisabled:
+      state_id = CBXS_DISABLED;
+      break;
+    case kHovered:
+      state_id = CBXS_HOT;
+      break;
+    case kPressed:
+      state_id = CBXS_PRESSED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state " << state;
+      break;
+  }
+
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, CP_DROPDOWNBUTTON, state_id, &rect_win,
+                       NULL);
+
+  // Draw it manually.
+  DrawFrameControl(hdc, &rect_win, DFC_SCROLL,
+                   DFCS_SCROLLCOMBOBOX | extra.classic_state);
+  return S_OK;
+}
+
 HRESULT NativeThemeWin::PaintScrollbarArrow(
     HDC hdc,
     Part part,
     State state,
     const gfx::Rect& rect,
     const ScrollbarArrowExtraParams& extra) const {
-  static int state_id_matrix[4][kMaxState] = {
+  static const int state_id_matrix[4][kMaxState] = {
       ABS_DOWNDISABLED, ABS_DOWNHOT, ABS_DOWNNORMAL, ABS_DOWNPRESSED,
       ABS_LEFTDISABLED, ABS_LEFTHOT, ABS_LEFTNORMAL, ABS_LEFTPRESSED,
       ABS_RIGHTDISABLED, ABS_RIGHTHOT, ABS_RIGHTNORMAL, ABS_RIGHTPRESSED,
@@ -245,7 +895,7 @@ HRESULT NativeThemeWin::PaintScrollbarArrow(
     // specific arrow itself.  We don't want to show it "hot" mode, but only
     // in "hover" mode.
     if (state == kHovered && extra.is_hovering) {
-      switch(part) {
+      switch (part) {
         case kScrollbarDownArrow:
           state_id = ABS_DOWNHOVER;
           break;
@@ -268,7 +918,7 @@ HRESULT NativeThemeWin::PaintScrollbarArrow(
   }
 
   int classic_state = DFCS_SCROLLDOWN;
-  switch(part) {
+  switch (part) {
     case kScrollbarDownArrow:
       classic_state = DFCS_SCROLLDOWN;
       break;
@@ -285,8 +935,80 @@ HRESULT NativeThemeWin::PaintScrollbarArrow(
       NOTREACHED() << "Invalid part: " << part;
       break;
   }
-
+  switch (state) {
+    case kDisabled:
+      classic_state |= DFCS_INACTIVE;
+      break;
+    case kHovered:
+      classic_state |= DFCS_HOT;
+      break;
+    case kNormal:
+      break;
+    case kPressed:
+      classic_state |= DFCS_PUSHED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state: " << state;
+      break;
+  }
   DrawFrameControl(hdc, &rect_win, DFC_SCROLL, classic_state);
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintScrollbarThumb(
+    HDC hdc,
+    Part part,
+    State state,
+    const gfx::Rect& rect,
+    const ScrollbarThumbExtraParams& extra) const {
+  HANDLE handle = GetThemeHandle(SCROLLBAR);
+  RECT rect_win = rect.ToRECT();
+  int part_id;
+  int state_id;
+
+  switch (part) {
+    case gfx::NativeTheme::kScrollbarHorizontalThumb:
+      part_id = SBP_THUMBBTNHORZ;
+      break;
+    case gfx::NativeTheme::kScrollbarVerticalThumb:
+      part_id = SBP_THUMBBTNVERT;
+      break;
+    case gfx::NativeTheme::kScrollbarHorizontalGripper:
+      part_id = SBP_GRIPPERHORZ;
+      break;
+    case gfx::NativeTheme::kScrollbarVerticalGripper:
+      part_id = SBP_GRIPPERVERT;
+      break;
+    default:
+      NOTREACHED() << "Invalid part: " << part;
+      break;
+  }
+
+  switch (state) {
+    case kDisabled:
+      state_id = SCRBS_DISABLED;
+      break;
+    case kHovered:
+      state_id = extra.is_hovering ? SCRBS_HOVER : SCRBS_HOT;
+      break;
+    case kNormal:
+      state_id = SCRBS_NORMAL;
+      break;
+    case kPressed:
+      state_id = SCRBS_PRESSED;
+      break;
+    default:
+      NOTREACHED() << "Invalid state: " << state;
+      break;
+  }
+
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, part_id, state_id, &rect_win, NULL);
+
+  // Draw it manually.
+  if ((part_id == SBP_THUMBBTNHORZ) || (part_id == SBP_THUMBBTNVERT))
+    DrawEdge(hdc, &rect_win, EDGE_RAISED, BF_RECT | BF_MIDDLE);
+  // Classic mode doesn't have a gripper.
   return S_OK;
 }
 
@@ -302,7 +1024,7 @@ HRESULT NativeThemeWin::PaintScrollbarTrack(
   int part_id;
   int state_id;
 
-  switch(part) {
+  switch (part) {
     case gfx::NativeTheme::kScrollbarHorizontalTrack:
       part_id = extra.is_upper ? SBP_UPPERTRACKHORZ : SBP_LOWERTRACKHORZ;
       break;
@@ -314,7 +1036,7 @@ HRESULT NativeThemeWin::PaintScrollbarTrack(
       break;
   }
 
-  switch(state) {
+  switch (state) {
     case kDisabled:
       state_id = SCRBS_DISABLED;
       break;
@@ -353,399 +1075,6 @@ HRESULT NativeThemeWin::PaintScrollbarTrack(
   return S_OK;
 }
 
-HRESULT NativeThemeWin::PaintScrollbarThumb(
-    HDC hdc,
-    Part part,
-    State state,
-    const gfx::Rect& rect,
-    const ScrollbarThumbExtraParams& extra) const {
-  HANDLE handle = GetThemeHandle(SCROLLBAR);
-  RECT rect_win = rect.ToRECT();
-  int part_id;
-  int state_id;
-
-  switch(part) {
-    case gfx::NativeTheme::kScrollbarHorizontalThumb:
-      part_id = SBP_THUMBBTNHORZ;
-      break;
-    case gfx::NativeTheme::kScrollbarVerticalThumb:
-      part_id = SBP_THUMBBTNVERT;
-      break;
-    case gfx::NativeTheme::kScrollbarHorizontalGripper:
-      part_id = SBP_GRIPPERHORZ;
-      break;
-    case gfx::NativeTheme::kScrollbarVerticalGripper:
-      part_id = SBP_GRIPPERVERT;
-      break;
-    default:
-      NOTREACHED() << "Invalid part: " << part;
-      break;
-  }
-
-  switch(state) {
-    case kDisabled:
-      state_id = SCRBS_DISABLED;
-      break;
-    case kHovered:
-      state_id = extra.is_hovering ? SCRBS_HOVER : SCRBS_HOT;
-      break;
-    case kNormal:
-      state_id = SCRBS_NORMAL;
-      break;
-    case kPressed:
-      state_id = SCRBS_PRESSED;
-      break;
-    default:
-      NOTREACHED() << "Invalid state: " << state;
-      break;
-  }
-
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, part_id, state_id, &rect_win, NULL);
-
-  // Draw it manually.
-  if ((part_id == SBP_THUMBBTNHORZ) || (part_id == SBP_THUMBBTNVERT))
-    DrawEdge(hdc, &rect_win, EDGE_RAISED, BF_RECT | BF_MIDDLE);
-  // Classic mode doesn't have a gripper.
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintPushButton(HDC hdc,
-                                        Part part,
-                                        State state,
-                                        const gfx::Rect& rect,
-                                        const ButtonExtraParams& extra) const {
-  int state_id;
-  switch(state) {
-    case kDisabled:
-      state_id = PBS_DISABLED;
-      break;
-    case kHovered:
-      state_id = PBS_HOT;
-      break;
-    case kNormal:
-      state_id = extra.is_default ? PBS_DEFAULTED : PBS_NORMAL;
-      break;
-    case kPressed:
-      state_id = PBS_PRESSED;
-      break;
-    default:
-      NOTREACHED() << "Invalid state: " << state;
-      break;
-  }
-
-  RECT rect_win = rect.ToRECT();
-  return PaintButton(hdc, BP_PUSHBUTTON, state_id, extra.classic_state,
-                     &rect_win);
-}
-
-HRESULT NativeThemeWin::PaintRadioButton(HDC hdc,
-                                         Part part,
-                                         State state,
-                                         const gfx::Rect& rect,
-                                         const ButtonExtraParams& extra) const {
-  int state_id;
-  switch(state) {
-    case kDisabled:
-      state_id = extra.checked ? RBS_CHECKEDDISABLED : RBS_UNCHECKEDDISABLED;
-      break;
-    case kHovered:
-      state_id = extra.checked ? RBS_CHECKEDHOT : RBS_UNCHECKEDHOT;
-      break;
-    case kNormal:
-      state_id = extra.checked ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL;
-      break;
-    case kPressed:
-      state_id = extra.checked ? RBS_CHECKEDPRESSED : RBS_UNCHECKEDPRESSED;
-      break;
-    default:
-      NOTREACHED() << "Invalid state: " << state;
-      break;
-  }
-
-  RECT rect_win = rect.ToRECT();
-  return PaintButton(hdc, BP_RADIOBUTTON, state_id, extra.classic_state,
-                     &rect_win);
-}
-
-HRESULT NativeThemeWin::PaintCheckbox(HDC hdc,
-                                      Part part,
-                                      State state,
-                                      const gfx::Rect& rect,
-                                      const ButtonExtraParams& extra) const {
-  int state_id;
-  switch(state) {
-    case kDisabled:
-      state_id = extra.checked ? CBS_CHECKEDDISABLED :
-          extra.indeterminate ? CBS_MIXEDDISABLED :
-              CBS_UNCHECKEDDISABLED;
-      break;
-    case kHovered:
-      state_id = extra.checked ? CBS_CHECKEDHOT :
-          extra.indeterminate ? CBS_MIXEDHOT :
-              CBS_UNCHECKEDHOT;
-      break;
-    case kNormal:
-      state_id = extra.checked ? CBS_CHECKEDNORMAL :
-          extra.indeterminate ? CBS_MIXEDNORMAL :
-              CBS_UNCHECKEDNORMAL;
-      break;
-    case kPressed:
-      state_id = extra.checked ? CBS_CHECKEDPRESSED :
-          extra.indeterminate ? CBS_MIXEDPRESSED :
-              CBS_UNCHECKEDPRESSED;
-      break;
-    default:
-      NOTREACHED() << "Invalid state: " << state;
-      break;
-  }
-
-  RECT rect_win = rect.ToRECT();
-  return PaintButton(hdc, BP_CHECKBOX, state_id, extra.classic_state,
-                     &rect_win);
-}
-
-HRESULT NativeThemeWin::PaintButton(HDC hdc,
-                                    int part_id,
-                                    int state_id,
-                                    int classic_state,
-                                    RECT* rect) const {
-  HANDLE handle = GetThemeHandle(BUTTON);
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, part_id, state_id, rect, NULL);
-
-  // Draw it manually.
-  // All pressed states have both low bits set, and no other states do.
-  const bool focused = ((state_id & ETS_FOCUSED) == ETS_FOCUSED);
-  const bool pressed = ((state_id & PBS_PRESSED) == PBS_PRESSED);
-  if ((BP_PUSHBUTTON == part_id) && (pressed || focused)) {
-    // BP_PUSHBUTTON has a focus rect drawn around the outer edge, and the
-    // button itself is shrunk by 1 pixel.
-    HBRUSH brush = GetSysColorBrush(COLOR_3DDKSHADOW);
-    if (brush) {
-      FrameRect(hdc, rect, brush);
-      InflateRect(rect, -1, -1);
-    }
-  }
-  DrawFrameControl(hdc, rect, DFC_BUTTON, classic_state);
-
-  // Draw the focus rectangle (the dotted line box) only on buttons.  For radio
-  // and checkboxes, we let webkit draw the focus rectangle (orange glow).
-  if ((BP_PUSHBUTTON == part_id) && focused) {
-    // The focus rect is inside the button.  The exact number of pixels depends
-    // on whether we're in classic mode or using uxtheme.
-    if (handle && get_theme_content_rect_) {
-      get_theme_content_rect_(handle, hdc, part_id, state_id, rect, rect);
-    } else {
-      InflateRect(rect, -GetSystemMetrics(SM_CXEDGE),
-                  -GetSystemMetrics(SM_CYEDGE));
-    }
-    DrawFocusRect(hdc, rect);
-  }
-
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintMenuArrow(HDC hdc,
-                                       State state,
-                                       const gfx::Rect& rect,
-                                       const MenuArrowExtraParams& extra)
-    const {
-  int state_id = MSM_NORMAL;
-  if (state == kDisabled)
-    state_id = MSM_DISABLED;
-
-  HANDLE handle = GetThemeHandle(MENU);
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_) {
-    if (extra.pointing_right) {
-      return draw_theme_(handle, hdc, MENU_POPUPSUBMENU, state_id, &rect_win,
-                         NULL);
-    } else {
-      // There is no way to tell the uxtheme API to draw a left pointing arrow;
-      // it doesn't have a flag equivalent to DFCS_MENUARROWRIGHT.  But they
-      // are needed for RTL locales on Vista.  So use a memory DC and mirror
-      // the region with GDI's StretchBlt.
-      Rect r(rect);
-      base::win::ScopedHDC mem_dc(CreateCompatibleDC(hdc));
-      base::win::ScopedBitmap mem_bitmap(CreateCompatibleBitmap(hdc, r.width(),
-                                                                r.height()));
-      HGDIOBJ old_bitmap = SelectObject(mem_dc, mem_bitmap);
-      // Copy and horizontally mirror the background from hdc into mem_dc. Use
-      // a negative-width source rect, starting at the rightmost pixel.
-      StretchBlt(mem_dc, 0, 0, r.width(), r.height(),
-                 hdc, r.right()-1, r.y(), -r.width(), r.height(), SRCCOPY);
-      // Draw the arrow.
-      RECT theme_rect = {0, 0, r.width(), r.height()};
-      HRESULT result = draw_theme_(handle, mem_dc, MENU_POPUPSUBMENU,
-                                   state_id, &theme_rect, NULL);
-      // Copy and mirror the result back into mem_dc.
-      StretchBlt(hdc, r.x(), r.y(), r.width(), r.height(),
-                 mem_dc, r.width()-1, 0, -r.width(), r.height(), SRCCOPY);
-      SelectObject(mem_dc, old_bitmap);
-      return result;
-    }
-  }
-
-  // For some reason, Windows uses the name DFCS_MENUARROWRIGHT to indicate a
-  // left pointing arrow. This makes the following 'if' statement slightly
-  // counterintuitive.
-  UINT pfc_state;
-  if (extra.pointing_right)
-    pfc_state = DFCS_MENUARROW;
-  else
-    pfc_state = DFCS_MENUARROWRIGHT;
-  return PaintFrameControl(hdc, rect, DFC_MENU, pfc_state, extra.is_selected,
-                           state);
-}
-
-HRESULT NativeThemeWin::PaintMenuBackground(HDC hdc,
-                                            const gfx::Rect& rect) const {
-  HANDLE handle = GetThemeHandle(MENU);
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_) {
-    HRESULT result = draw_theme_(handle, hdc, MENU_POPUPBACKGROUND, 0,
-                                 &rect_win, NULL);
-    FrameRect(hdc, &rect_win, GetSysColorBrush(COLOR_3DSHADOW));
-    return result;
-  }
-
-  FillRect(hdc, &rect_win, GetSysColorBrush(COLOR_MENU));
-  DrawEdge(hdc, &rect_win, EDGE_RAISED, BF_RECT);
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintMenuCheckBackground(HDC hdc,
-                                                 State state,
-                                                 const gfx::Rect& rect) const {
-  HANDLE handle = GetThemeHandle(MENU);
-  int state_id = state == kDisabled ? MCB_DISABLED : MCB_NORMAL;
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, MENU_POPUPCHECKBACKGROUND, state_id,
-                       &rect_win, NULL);
-  // Nothing to do for background.
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintMenuCheck(
-    HDC hdc,
-    State state,
-    const gfx::Rect& rect,
-    const MenuCheckExtraParams& extra) const {
-  HANDLE handle = GetThemeHandle(MENU);
-  int state_id;
-  if (extra.is_radio) {
-    state_id = state == kDisabled ? MC_BULLETDISABLED : MC_BULLETNORMAL;
-  } else {
-    state_id = state == kDisabled ? MC_CHECKMARKDISABLED : MC_CHECKMARKNORMAL;
-  }
-
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, MENU_POPUPCHECK, state_id, &rect_win, NULL);
-
-  return PaintFrameControl(hdc, rect, DFC_MENU, DFCS_MENUCHECK,
-                           extra.is_selected, state);
-}
-
-HRESULT NativeThemeWin::PaintMenuGutter(HDC hdc,
-                                        const gfx::Rect& rect) const {
-  RECT rect_win = rect.ToRECT();
-  HANDLE handle = GetThemeHandle(MENU);
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, MENU_POPUPGUTTER, MPI_NORMAL, &rect_win,
-                       NULL);
-  return E_NOTIMPL;
-}
-
-HRESULT NativeThemeWin::PaintMenuItemBackground(
-    HDC hdc,
-    State state,
-    const gfx::Rect& rect,
-    const MenuItemExtraParams& extra) const {
-  HANDLE handle = GetThemeHandle(MENU);
-  RECT rect_win = rect.ToRECT();
-  int state_id;
-  switch(state) {
-    case kNormal:
-      state_id = MPI_NORMAL;
-      break;
-    case kDisabled:
-      state_id = extra.is_selected ? MPI_DISABLEDHOT : MPI_DISABLED;
-      break;
-    case kHovered:
-      state_id = MPI_HOT;
-      break;
-    default:
-      NOTREACHED() << "Invalid state " << state;
-      break;
-  }
-
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, MENU_POPUPITEM, state_id, &rect_win, NULL);
-
-  if (extra.is_selected)
-    FillRect(hdc, &rect_win, GetSysColorBrush(COLOR_HIGHLIGHT));
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintMenuList(HDC hdc,
-                                      State state,
-                                      const gfx::Rect& rect,
-                                      const MenuListExtraParams& extra) const {
-  HANDLE handle = GetThemeHandle(MENULIST);
-  RECT rect_win = rect.ToRECT();
-  int state_id;
-  switch(state) {
-    case kNormal:
-      state_id = CBXS_NORMAL;
-      break;
-    case kDisabled:
-      state_id = CBXS_DISABLED;
-      break;
-    case kHovered:
-      state_id = CBXS_HOT;
-      break;
-    case kPressed:
-      state_id = CBXS_PRESSED;
-      break;
-    default:
-      NOTREACHED() << "Invalid state " << state;
-      break;
-  }
-
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, CP_DROPDOWNBUTTON, state_id, &rect_win,
-                       NULL);
-
-  // Draw it manually.
-  DrawFrameControl(hdc, &rect_win, DFC_SCROLL,
-                   DFCS_SCROLLCOMBOBOX | extra.classic_state);
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintMenuSeparator(
-    HDC hdc,
-    const gfx::Rect& rect,
-    const MenuSeparatorExtraParams& extra) const {
-  RECT rect_win = rect.ToRECT();
-  if (!extra.has_gutter)
-    rect_win.top = rect.y() + rect.height() / 3 + 1;
-
-  HANDLE handle = GetThemeHandle(MENU);
-  if (handle && draw_theme_) {
-    // Delta is needed for non-classic to move separator up slightly.
-    --rect_win.top;
-    --rect_win.bottom;
-    return draw_theme_(handle, hdc, MENU_POPUPSEPARATOR, MPI_NORMAL, &rect_win,
-                       NULL);
-  }
-
-  DrawEdge(hdc, &rect_win, EDGE_ETCHED, BF_TOP);
-  return S_OK;
-}
-
 HRESULT NativeThemeWin::PaintSpinButton(
     HDC hdc,
     Part part,
@@ -756,7 +1085,7 @@ HRESULT NativeThemeWin::PaintSpinButton(
   RECT rect_win = rect.ToRECT();
   int part_id = extra.spin_up ? SPNP_UP : SPNP_DOWN;
   int state_id;
-  switch(state) {
+  switch (state) {
     case kDisabled:
       state_id = extra.spin_up ? UPS_DISABLED : DNS_DISABLED;
       break;
@@ -780,35 +1109,6 @@ HRESULT NativeThemeWin::PaintSpinButton(
   return S_OK;
 }
 
-HRESULT NativeThemeWin::PaintWindowResizeGripper(HDC hdc,
-                                                 const gfx::Rect& rect) const {
-  HANDLE handle = GetThemeHandle(STATUS);
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_) {
-    // Paint the status bar gripper.  There doesn't seem to be a
-    // standard gripper in Windows for the space between
-    // scrollbars.  This is pretty close, but it's supposed to be
-    // painted over a status bar.
-    return draw_theme_(handle, hdc, SP_GRIPPER, 0, &rect_win, NULL);
-  }
-
-  // Draw a windows classic scrollbar gripper.
-  DrawFrameControl(hdc, &rect_win, DFC_SCROLL, DFCS_SCROLLSIZEGRIP);
-  return S_OK;
-}
-
-HRESULT NativeThemeWin::PaintTabPanelBackground(HDC hdc,
-                                                const gfx::Rect& rect) const {
-  HANDLE handle = GetThemeHandle(TAB);
-  RECT rect_win = rect.ToRECT();
-  if (handle && draw_theme_)
-    return draw_theme_(handle, hdc, TABP_BODY, 0, &rect_win, NULL);
-
-  // Classic just renders a flat color background.
-  FillRect(hdc, &rect_win, reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
-  return S_OK;
-}
-
 HRESULT NativeThemeWin::PaintTrackbar(
     SkCanvas* canvas,
     HDC hdc,
@@ -821,7 +1121,7 @@ HRESULT NativeThemeWin::PaintTrackbar(
     part_id = part == kTrackbarTrack ? TKP_TRACKVERT : TKP_THUMBVERT;
 
   int state_id = 0;
-  switch(state) {
+  switch (state) {
     case kDisabled:
       state_id = TUS_DISABLED;
       break;
@@ -914,33 +1214,6 @@ HRESULT NativeThemeWin::PaintTrackbar(
     }
   }
   return S_OK;
-}
-
-//    <-a->
-// [  *****             ]
-//  ____ |              |
-//  <-a-> <------b----->
-// a: object_width
-// b: frame_width
-// *: animating object
-//
-// - the animation goes from "[" to "]" repeatedly.
-// - the animation offset is at first "|"
-//
-static int ComputeAnimationProgress(int frame_width,
-                                    int object_width,
-                                    int pixels_per_second,
-                                    double animated_seconds) {
-  int animation_width = frame_width + object_width;
-  double interval = static_cast<double>(animation_width) / pixels_per_second;
-  double ratio = fmod(animated_seconds, interval) / interval;
-  return static_cast<int>(animation_width * ratio) - object_width;
-}
-
-static RECT InsetRect(const RECT* rect, int size) {
-  gfx::Rect result(*rect);
-  result.Inset(size, size);
-  return result.ToRECT();
 }
 
 HRESULT NativeThemeWin::PaintProgressBar(
@@ -1040,6 +1313,35 @@ HRESULT NativeThemeWin::PaintProgressBar(
   return S_OK;
 }
 
+HRESULT NativeThemeWin::PaintWindowResizeGripper(HDC hdc,
+                                                 const gfx::Rect& rect) const {
+  HANDLE handle = GetThemeHandle(STATUS);
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_) {
+    // Paint the status bar gripper.  There doesn't seem to be a
+    // standard gripper in Windows for the space between
+    // scrollbars.  This is pretty close, but it's supposed to be
+    // painted over a status bar.
+    return draw_theme_(handle, hdc, SP_GRIPPER, 0, &rect_win, NULL);
+  }
+
+  // Draw a windows classic scrollbar gripper.
+  DrawFrameControl(hdc, &rect_win, DFC_SCROLL, DFCS_SCROLLSIZEGRIP);
+  return S_OK;
+}
+
+HRESULT NativeThemeWin::PaintTabPanelBackground(HDC hdc,
+                                                const gfx::Rect& rect) const {
+  HANDLE handle = GetThemeHandle(TAB);
+  RECT rect_win = rect.ToRECT();
+  if (handle && draw_theme_)
+    return draw_theme_(handle, hdc, TABP_BODY, 0, &rect_win, NULL);
+
+  // Classic just renders a flat color background.
+  FillRect(hdc, &rect_win, reinterpret_cast<HBRUSH>(COLOR_3DFACE + 1));
+  return S_OK;
+}
+
 HRESULT NativeThemeWin::PaintTextField(
     HDC hdc,
     Part part,
@@ -1048,7 +1350,7 @@ HRESULT NativeThemeWin::PaintTextField(
     const TextFieldExtraParams& extra) const {
   int part_id = EP_EDITTEXT;
   int state_id = ETS_NORMAL;
-  switch(state) {
+  switch (state) {
     case kNormal:
       if (extra.is_read_only) {
         state_id = ETS_READONLY;
@@ -1100,12 +1402,12 @@ HRESULT NativeThemeWin::PaintTextField(HDC hdc,
   // draw_theme_ex_ is NULL and draw_theme_ is non-null.
   if (handle && (draw_theme_ex_ || (draw_theme_ && draw_edges))) {
     if (draw_theme_ex_) {
-      static DTBGOPTS omit_border_options = {
+      static const DTBGOPTS omit_border_options = {
         sizeof(DTBGOPTS),
         DTBG_OMITBORDER,
-        {0,0,0,0}
+        { 0, 0, 0, 0 }
       };
-      DTBGOPTS* draw_opts = draw_edges ? NULL : &omit_border_options;
+      const DTBGOPTS* draw_opts = draw_edges ? NULL : &omit_border_options;
       hr = draw_theme_ex_(handle, hdc, part_id, state_id, rect, draw_opts);
     } else {
       hr = draw_theme_(handle, hdc, part_id, state_id, rect, NULL);
@@ -1133,52 +1435,210 @@ HRESULT NativeThemeWin::PaintTextField(HDC hdc,
   return hr;
 }
 
-bool NativeThemeWin::IsThemingActive() const {
-  if (is_theme_active_)
-    return !!is_theme_active_();
-  return false;
-}
-
-HRESULT NativeThemeWin::GetThemePartSize(ThemeName theme_name,
-                                         HDC hdc,
-                                         int part_id,
-                                         int state_id,
-                                         RECT* rect,
-                                         int ts,
-                                         SIZE* size) const {
-  HANDLE handle = GetThemeHandle(theme_name);
-  if (handle && get_theme_part_size_)
-    return get_theme_part_size_(handle, hdc, part_id, state_id, rect, ts, size);
-
-  return E_NOTIMPL;
-}
-
-HRESULT NativeThemeWin::GetThemeColor(ThemeName theme,
-                                      int part_id,
-                                      int state_id,
-                                      int prop_id,
-                                      SkColor* color) const {
-  HANDLE handle = GetThemeHandle(theme);
-  if (handle && get_theme_color_) {
-    COLORREF color_ref;
-    if (get_theme_color_(handle, part_id, state_id, prop_id, &color_ref) ==
-        S_OK) {
-      *color = skia::COLORREFToSkColor(color_ref);
-      return S_OK;
-    }
+// static
+NativeThemeWin::ThemeName NativeThemeWin::GetThemeName(Part part) {
+  ThemeName name;
+  switch (part) {
+    case kCheckbox:
+    case kRadio:
+    case kPushButton:
+      name = BUTTON;
+      break;
+    case kInnerSpinButton:
+      name = SPIN;
+      break;
+    case kMenuCheck:
+    case kMenuPopupGutter:
+    case kMenuList:
+    case kMenuPopupArrow:
+    case kMenuPopupSeparator:
+      name = MENU;
+      break;
+    case kProgressBar:
+      name = PROGRESS;
+      break;
+    case kScrollbarDownArrow:
+    case kScrollbarLeftArrow:
+    case kScrollbarRightArrow:
+    case kScrollbarUpArrow:
+    case kScrollbarHorizontalThumb:
+    case kScrollbarVerticalThumb:
+    case kScrollbarHorizontalTrack:
+    case kScrollbarVerticalTrack:
+      name = SCROLLBAR;
+      break;
+    case kSliderTrack:
+    case kSliderThumb:
+      name = TRACKBAR;
+      break;
+    case kTextField:
+      name = TEXTFIELD;
+      break;
+    case kWindowResizeGripper:
+      name = STATUS;
+      break;
+    default:
+      NOTREACHED() << "Invalid part: " << part;
+      break;
   }
-  return E_NOTIMPL;
+  return name;
 }
 
-SkColor NativeThemeWin::GetThemeColorWithDefault(ThemeName theme,
-                                                 int part_id,
-                                                 int state_id,
-                                                 int prop_id,
-                                                 int default_sys_color) const {
-  SkColor color;
-  if (GetThemeColor(theme, part_id, state_id, prop_id, &color) != S_OK)
-    color = skia::COLORREFToSkColor(GetSysColor(default_sys_color));
-  return color;
+// static
+int NativeThemeWin::GetWindowsPart(Part part,
+                                   State state,
+                                   const ExtraParams& extra) {
+  int part_id;
+  switch (part) {
+    case kCheckbox:
+      part_id = BP_CHECKBOX;
+      break;
+    case kMenuCheck:
+      part_id = MENU_POPUPCHECK;
+      break;
+    case kMenuPopupArrow:
+      part_id = MENU_POPUPSUBMENU;
+      break;
+    case kMenuPopupGutter:
+      part_id = MENU_POPUPGUTTER;
+      break;
+    case kMenuPopupSeparator:
+      part_id = MENU_POPUPSEPARATOR;
+      break;
+    case kPushButton:
+      part_id = BP_PUSHBUTTON;
+      break;
+    case kRadio:
+      part_id = BP_RADIOBUTTON;
+      break;
+    case kWindowResizeGripper:
+      part_id = SP_GRIPPER;
+      break;
+    default:
+      NOTREACHED() << "Invalid part: " << part;
+      break;
+  }
+  return part_id;
+}
+
+int NativeThemeWin::GetWindowsState(Part part,
+                                    State state,
+                                    const ExtraParams& extra) {
+  int state_id;
+  switch (part) {
+    case kCheckbox:
+      switch (state) {
+        case kNormal:
+          state_id = CBS_UNCHECKEDNORMAL;
+          break;
+        case kHovered:
+          state_id = CBS_UNCHECKEDHOT;
+          break;
+        case kPressed:
+          state_id = CBS_UNCHECKEDPRESSED;
+          break;
+        case kDisabled:
+          state_id = CBS_UNCHECKEDDISABLED;
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    case kMenuCheck:
+      switch (state) {
+        case kNormal:
+        case kHovered:
+        case kPressed:
+          state_id = extra.menu_check.is_radio ? MC_BULLETNORMAL
+                                               : MC_CHECKMARKNORMAL;
+          break;
+        case kDisabled:
+          state_id = extra.menu_check.is_radio ? MC_BULLETDISABLED
+                                               : MC_CHECKMARKDISABLED;
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    case kMenuPopupArrow:
+    case kMenuPopupGutter:
+    case kMenuPopupSeparator:
+      switch (state) {
+        case kNormal:
+          state_id = MBI_NORMAL;
+          break;
+        case kHovered:
+          state_id = MBI_HOT;
+          break;
+        case kPressed:
+          state_id = MBI_PUSHED;
+          break;
+        case kDisabled:
+          state_id = MBI_DISABLED;
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    case kPushButton:
+      switch (state) {
+        case kNormal:
+          state_id = PBS_NORMAL;
+          break;
+        case kHovered:
+          state_id = PBS_HOT;
+          break;
+        case kPressed:
+          state_id = PBS_PRESSED;
+          break;
+        case kDisabled:
+          state_id = PBS_DISABLED;
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    case kRadio:
+      switch (state) {
+        case kNormal:
+          state_id = RBS_UNCHECKEDNORMAL;
+          break;
+        case kHovered:
+          state_id = RBS_UNCHECKEDHOT;
+          break;
+        case kPressed:
+          state_id = RBS_UNCHECKEDPRESSED;
+          break;
+        case kDisabled:
+          state_id = RBS_UNCHECKEDDISABLED;
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    case kWindowResizeGripper:
+      switch (state) {
+        case kNormal:
+        case kHovered:
+        case kPressed:
+        case kDisabled:
+          state_id = 1;  // gripper has no windows state
+          break;
+        default:
+          NOTREACHED() << "Invalid state: " << state;
+          break;
+      }
+      break;
+    default:
+      NOTREACHED() << "Invalid part: " << part;
+      break;
+  }
+  return state_id;
 }
 
 HRESULT NativeThemeWin::GetThemeInt(ThemeName theme,
@@ -1190,23 +1650,6 @@ HRESULT NativeThemeWin::GetThemeInt(ThemeName theme,
   if (handle && get_theme_int_)
     return get_theme_int_(handle, part_id, state_id, prop_id, value);
   return E_NOTIMPL;
-}
-
-Size NativeThemeWin::GetThemeBorderSize(ThemeName theme) const {
-  // For simplicity use the wildcard state==0, part==0, since it works
-  // for the cases we currently depend on.
-  int border;
-  if (GetThemeInt(theme, 0, 0, TMT_BORDERSIZE, &border) == S_OK)
-    return Size(border, border);
-  else
-    return Size(GetSystemMetrics(SM_CXEDGE), GetSystemMetrics(SM_CYEDGE));
-}
-
-
-void NativeThemeWin::DisableTheming() const {
-  if (!set_theme_properties_)
-    return;
-  set_theme_properties_(0);
 }
 
 HRESULT NativeThemeWin::PaintFrameControl(HDC hdc,
@@ -1224,8 +1667,8 @@ HRESULT NativeThemeWin::PaintFrameControl(HDC hdc,
   if (mask_bitmap == NULL)
     return E_OUTOFMEMORY;
 
-  base::win::ScopedHDC bitmap_dc(CreateCompatibleDC(NULL));
-  HGDIOBJ org_bitmap = SelectObject(bitmap_dc, mask_bitmap);
+  base::win::ScopedCreateDC bitmap_dc(CreateCompatibleDC(NULL));
+  base::win::ScopedSelectObject select_bitmap(bitmap_dc, mask_bitmap);
   RECT local_rect = { 0, 0, width, height };
   DrawFrameControl(bitmap_dc, &local_rect, type, state);
 
@@ -1260,28 +1703,7 @@ HRESULT NativeThemeWin::PaintFrameControl(HDC hdc,
   SetBkColor(hdc, old_bg_color);
   SetTextColor(hdc, old_text_color);
 
-  SelectObject(bitmap_dc, org_bitmap);
-
   return S_OK;
-}
-
-void NativeThemeWin::CloseHandles() const {
-  if (!close_theme_)
-    return;
-
-  for (int i = 0; i < LAST; ++i) {
-    if (theme_handles_[i]) {
-      close_theme_(theme_handles_[i]);
-      theme_handles_[i] = NULL;
-    }
-  }
-}
-
-bool NativeThemeWin::IsClassicTheme(ThemeName name) const {
-  if (!theme_dll_)
-    return true;
-
-  return !GetThemeHandle(name);
 }
 
 HANDLE NativeThemeWin::GetThemeHandle(ThemeName theme_name) const {
@@ -1335,212 +1757,6 @@ HANDLE NativeThemeWin::GetThemeHandle(ThemeName theme_name) const {
   }
   theme_handles_[theme_name] = handle;
   return handle;
-}
-
-// static
-NativeThemeWin::ThemeName NativeThemeWin::GetThemeName(Part part) {
-  ThemeName name;
-  switch(part) {
-    case kCheckbox:
-    case kRadio:
-    case kPushButton:
-      name = BUTTON;
-      break;
-    case kInnerSpinButton:
-      name = SPIN;
-      break;
-    case kMenuCheck:
-    case kMenuPopupGutter:
-    case kMenuList:
-    case kMenuPopupArrow:
-    case kMenuPopupSeparator:
-      name = MENU;
-      break;
-    case kProgressBar:
-      name = PROGRESS;
-      break;
-    case kScrollbarDownArrow:
-    case kScrollbarLeftArrow:
-    case kScrollbarRightArrow:
-    case kScrollbarUpArrow:
-    case kScrollbarHorizontalThumb:
-    case kScrollbarVerticalThumb:
-    case kScrollbarHorizontalTrack:
-    case kScrollbarVerticalTrack:
-      name = SCROLLBAR;
-      break;
-    case kSliderTrack:
-    case kSliderThumb:
-      name = TRACKBAR;
-      break;
-    case kTextField:
-      name = TEXTFIELD;
-      break;
-    case kWindowResizeGripper:
-      name = STATUS;
-      break;
-    default:
-      NOTREACHED() << "Invalid part: " << part;
-      break;
-  }
-  return name;
-}
-
-// static
-int NativeThemeWin::GetWindowsPart(Part part,
-                                   State state,
-                                   const ExtraParams& extra) {
-  int part_id;
-  switch(part) {
-    case kCheckbox:
-      part_id = BP_CHECKBOX;
-      break;
-    case kMenuCheck:
-      part_id = MENU_POPUPCHECK;
-      break;
-    case kMenuPopupArrow:
-      part_id = MENU_POPUPSUBMENU;
-      break;
-    case kMenuPopupGutter:
-      part_id = MENU_POPUPGUTTER;
-      break;
-    case kMenuPopupSeparator:
-      part_id = MENU_POPUPSEPARATOR;
-      break;
-    case kPushButton:
-      part_id = BP_PUSHBUTTON;
-      break;
-    case kRadio:
-      part_id = BP_RADIOBUTTON;
-      break;
-    case kWindowResizeGripper:
-      part_id = SP_GRIPPER;
-      break;
-    default:
-      NOTREACHED() << "Invalid part: " << part;
-      break;
-  }
-  return part_id;
-}
-
-int NativeThemeWin::GetWindowsState(Part part,
-                                    State state,
-                                    const ExtraParams& extra) {
-  int state_id;
-  switch(part) {
-    case kCheckbox:
-      switch(state) {
-        case kNormal:
-          state_id = CBS_UNCHECKEDNORMAL;
-          break;
-        case kHovered:
-          state_id = CBS_UNCHECKEDHOT;
-          break;
-        case kPressed:
-          state_id = CBS_UNCHECKEDPRESSED;
-          break;
-        case kDisabled:
-          state_id = CBS_UNCHECKEDDISABLED;
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    case kMenuCheck:
-      switch(state) {
-        case kNormal:
-        case kHovered:
-        case kPressed:
-          state_id = extra.menu_check.is_radio ? MC_BULLETNORMAL
-                                               : MC_CHECKMARKNORMAL;
-          break;
-        case kDisabled:
-          state_id = extra.menu_check.is_radio ? MC_BULLETDISABLED
-                                               : MC_CHECKMARKDISABLED;
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    case kMenuPopupArrow:
-    case kMenuPopupGutter:
-    case kMenuPopupSeparator:
-      switch(state) {
-        case kNormal:
-          state_id = MBI_NORMAL;
-          break;
-        case kHovered:
-          state_id = MBI_HOT;
-          break;
-        case kPressed:
-          state_id = MBI_PUSHED;
-          break;
-        case kDisabled:
-          state_id = MBI_DISABLED;
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    case kPushButton:
-      switch(state) {
-        case kNormal:
-          state_id = PBS_NORMAL;
-          break;
-        case kHovered:
-          state_id = PBS_HOT;
-          break;
-        case kPressed:
-          state_id = PBS_PRESSED;
-          break;
-        case kDisabled:
-          state_id = PBS_DISABLED;
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    case kRadio:
-      switch(state) {
-        case kNormal:
-          state_id = RBS_UNCHECKEDNORMAL;
-          break;
-        case kHovered:
-          state_id = RBS_UNCHECKEDHOT;
-          break;
-        case kPressed:
-          state_id = RBS_UNCHECKEDPRESSED;
-          break;
-        case kDisabled:
-          state_id = RBS_UNCHECKEDDISABLED;
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    case kWindowResizeGripper:
-      switch(state) {
-        case kNormal:
-        case kHovered:
-        case kPressed:
-        case kDisabled:
-          state_id = 1;  // gripper has no windows state
-          break;
-        default:
-          NOTREACHED() << "Invalid state: " << state;
-          break;
-      }
-      break;
-    default:
-      NOTREACHED() << "Invalid part: " << part;
-      break;
-  }
-  return state_id;
 }
 
 }  // namespace gfx

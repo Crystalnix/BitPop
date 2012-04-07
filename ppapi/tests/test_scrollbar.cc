@@ -1,10 +1,14 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ppapi/tests/test_scrollbar.h"
 
+#include <cstring>
+
+#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_input_event.h"
+#include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/rect.h"
 #include "ppapi/tests/testing_instance.h"
@@ -18,7 +22,11 @@ TestScrollbar::TestScrollbar(TestingInstance* instance)
       scrollbar_value_changed_(false) {
 }
 
-void TestScrollbar::RunTest() {
+bool TestScrollbar::Init() {
+  return CheckTestingInterface();
+}
+
+void TestScrollbar::RunTests(const std::string& filter) {
   instance_->LogTest("HandleEvent", TestHandleEvent());
 }
 
@@ -30,10 +38,14 @@ std::string TestScrollbar::TestHandleEvent() {
 
   scrollbar_.SetDocumentSize(10000);
 
-  PP_InputEvent event;
-  event.type = PP_INPUTEVENT_TYPE_KEYDOWN;
-  event.u.key.key_code = 0x28; // VKEY_DOWN
-  scrollbar_.HandleEvent(event);
+  pp::Core* core = pp::Module::Get()->core();
+  pp::KeyboardInputEvent input_event(
+      instance_, PP_INPUTEVENT_TYPE_KEYDOWN,
+      core->GetTimeTicks(),
+      0,  // Modifier.
+      0x28,  // Key code = VKEY_DOWN.
+      pp::Var());
+  scrollbar_.HandleEvent(input_event);
 
   return scrollbar_value_changed_ ?
       "" : "Didn't get callback for scrollbar value change";
@@ -47,4 +59,8 @@ void TestScrollbar::ScrollbarValueChanged(pp::Scrollbar_Dev scrollbar,
                                           uint32_t value) {
   if (scrollbar == scrollbar_)
     scrollbar_value_changed_ = true;
+}
+
+void TestScrollbar::ScrollbarOverlayChanged(pp::Scrollbar_Dev scrollbar,
+                                            bool type) {
 }

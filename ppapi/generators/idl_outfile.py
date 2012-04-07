@@ -1,17 +1,52 @@
-#!/usr/bin/python
-#
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+#!/usr/bin/env python
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """ Output file objects for generator. """
 
+import difflib
 import os
 import time
 import sys
 
 from idl_log import ErrOut, InfoOut, WarnOut
+from idl_option import GetOption, Option, ParseOptions
 from stat import *
+
+Option('diff', 'Generate a DIFF when saving the file.')
+
+def IsEquivelent(intext, outtext):
+  if not intext: return False
+  inlines = intext.split('\n')
+  outlines = outtext.split('\n')
+
+  # If number of lines don't match, it's a mismatch
+  if len(inlines) != len(outlines):  return False
+
+  for index in range(len(inlines)):
+    inline = inlines[index]
+    outline = outlines[index]
+
+    if inline == outline: continue
+
+    # If the line is not an exact match, check for comment deltas
+    inwords = inline.split()
+    outwords = outline.split()
+
+    if not inwords or not outwords: return False
+    if inwords[0] != outwords[0] or inwords[0] not in ('/*', '*'): return False
+
+    # Neither the year, nor the modified date need an exact match
+    if inwords[1] == 'Copyright':
+      if inwords[4:] == outwords[4:]: continue
+    elif inwords[1] == 'From': # Un-wrapped modified date.
+      if inwords[0:4] == outwords[0:4]: continue
+    elif inwords[1] == 'modified': # Wrapped modified date.
+      if inwords[0:2] == outwords[0:2]: continue
+    return False
+  return True
+
 
 #
 # IDLOutFile
@@ -29,6 +64,10 @@ class IDLOutFile(object):
     self.outlist = []
     self.open = True
 
+  # Return the file name
+  def Filename(self):
+    return self.filename
+
   # Append to the output if the file is still open
   def Write(self, string):
     if not self.open:
@@ -42,13 +81,21 @@ class IDLOutFile(object):
     outtext = ''.join(self.outlist)
     if not self.always_write:
       if os.path.isfile(filename):
-        intext = open(filename, 'r').read()
+        intext = open(filename, 'rb').read()
       else:
-        intext = None
+        intext = ''
 
-      if intext == outtext:
-        InfoOut.Log('Output %s unchanged.' % self.filename)
+      if IsEquivelent(intext, outtext):
+        if GetOption('verbose'):
+          InfoOut.Log('Output %s unchanged.' % self.filename)
         return False
+
+    if GetOption('diff'):
+      for line in difflib.unified_diff(intext.split('\n'), outtext.split('\n'),
+                                       'OLD ' + self.filename,
+                                       'NEW ' + self.filename,
+                                       n=1, lineterm=''):
+        ErrOut.Log(line)
 
     try:
       # If the directory does not exit, try to create it, if we fail, we
@@ -58,9 +105,10 @@ class IDLOutFile(object):
         InfoOut.Log('Creating directory: %s\n' % basepath)
         os.makedirs(basepath)
 
-      outfile = open(filename, 'w')
-      outfile.write(''.join(self.outlist))
-      InfoOut.Log('Output %s written.' % self.filename)
+      if not GetOption('test'):
+        outfile = open(filename, 'wb')
+        outfile.write(outtext)
+        InfoOut.Log('Output %s written.' % self.filename)
       return True
 
     except IOError as (errno, strerror):
@@ -70,6 +118,7 @@ class IDLOutFile(object):
       raise
 
     return False
+
 
 def TestFile(name, stringlist, force, update):
   errors = 0
@@ -106,8 +155,8 @@ def TestFile(name, stringlist, force, update):
       return 1
   return 0
 
-if __name__ == '__main__':
 
+def main():
   errors = 0
   stringlist = ['Test', 'Testing\n', 'Test']
   filename = 'outtest.txt'
@@ -124,5 +173,8 @@ if __name__ == '__main__':
   # Clean up file
   os.remove(filename)
   if not errors: InfoOut.Log('All tests pass.')
-  sys.exit(errors)
+  return errors
 
+
+if __name__ == '__main__':
+  sys.exit(main())

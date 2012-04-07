@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@ namespace extension_debugger_api_constants {
 extern const char kCommandKey[];
 extern const char kDataKey[];
 extern const char kTabIdKey[];
+extern const char kVersionIdKey[];
 
 // Events.
 extern const char kOnEvent[];
@@ -21,10 +22,12 @@ extern const char kOnDetach[];
 
 // Errors.
 extern const char kAlreadyAttachedError[];
+extern const char kAttachToWebUIError[];
 extern const char kDebuggerExecuteFailedError[];
 extern const char kNoTabError[];
 extern const char kNotAttachedError[];
 extern const char kPermissionError[];
+extern const char kProtocolVersionNotSupportedError[];
 
 }  // namespace extension_debugger_api_constants
 

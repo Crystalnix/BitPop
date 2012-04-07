@@ -6,13 +6,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/panels/panel_scroller_container.h"
 #include "chrome/browser/chromeos/panels/panel_scroller_header.h"
 #include "ui/gfx/canvas.h"
-#include "views/widget/widget.h"
+#include "ui/views/widget/widget.h"
 
 struct PanelScroller::Panel {
   PanelScrollerHeader* header;
@@ -81,7 +81,8 @@ PanelScroller::~PanelScroller() {
 // static
 PanelScroller* PanelScroller::CreateWindow() {
   views::Widget* widget = new views::Widget;
-  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  views::Widget::InitParams params(
+      views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.bounds = gfx::Rect(0, 0, 100, 800);
   widget->Init(params);
 

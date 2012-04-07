@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,16 @@
 
 #include <algorithm>
 
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
+#include "chrome/browser/extensions/extension_info_map.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
@@ -35,13 +38,18 @@
 namespace {
 
 net::HttpResponseHeaders* BuildHttpHeaders(
-    const std::string& content_security_policy) {
+    const std::string& content_security_policy, bool send_cors_header) {
   std::string raw_headers;
   raw_headers.append("HTTP/1.1 200 OK");
   if (!content_security_policy.empty()) {
     raw_headers.append(1, '\0');
     raw_headers.append("X-WebKit-CSP: ");
     raw_headers.append(content_security_policy);
+  }
+
+  if (send_cors_header) {
+    raw_headers.append(1, '\0');
+    raw_headers.append("Access-Control-Allow-Origin: *");
   }
   raw_headers.append(2, '\0');
   return new net::HttpResponseHeaders(raw_headers);
@@ -51,17 +59,18 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
  public:
   URLRequestResourceBundleJob(
       net::URLRequest* request, const FilePath& filename, int resource_id,
-      const std::string& content_security_policy)
+      const std::string& content_security_policy, bool send_cors_header)
       : net::URLRequestSimpleJob(request),
         filename_(filename),
         resource_id_(resource_id) {
-    response_info_.headers = BuildHttpHeaders(content_security_policy);
+    response_info_.headers = BuildHttpHeaders(content_security_policy,
+                                              send_cors_header);
   }
 
   // Overridden from URLRequestSimpleJob:
   virtual bool GetData(std::string* mime_type,
                        std::string* charset,
-                       std::string* data) const {
+                       std::string* data) const OVERRIDE {
     const ResourceBundle& rb = ResourceBundle::GetSharedInstance();
     *data = rb.GetRawDataResource(resource_id_).as_string();
 
@@ -99,21 +108,69 @@ class URLRequestResourceBundleJob : public net::URLRequestSimpleJob {
   net::HttpResponseInfo response_info_;
 };
 
-class URLRequestExtensionJob : public net::URLRequestFileJob {
+class GeneratedBackgroundPageJob : public net::URLRequestSimpleJob {
  public:
-  URLRequestExtensionJob(net::URLRequest* request,
-                         const FilePath& filename,
-                         const std::string& content_security_policy)
-    : net::URLRequestFileJob(request, filename) {
-    response_info_.headers = BuildHttpHeaders(content_security_policy);
+  GeneratedBackgroundPageJob(net::URLRequest* request,
+                             const scoped_refptr<const Extension> extension,
+                             const std::string& content_security_policy)
+      : net::URLRequestSimpleJob(request),
+        extension_(extension) {
+    const bool send_cors_headers = false;
+    response_info_.headers = BuildHttpHeaders(content_security_policy,
+                                              send_cors_headers);
+  }
+
+  // Overridden from URLRequestSimpleJob:
+  virtual bool GetData(std::string* mime_type,
+                       std::string* charset,
+                       std::string* data) const OVERRIDE {
+    *mime_type = "text/html";
+    *charset = "utf-8";
+
+    *data = "<!DOCTYPE html>\n<body>\n";
+    for (size_t i = 0; i < extension_->background_scripts().size(); ++i) {
+      *data += "<script src=\"";
+      *data += extension_->background_scripts()[i];
+      *data += "\"></script>\n";
+    }
+
+    return true;
   }
 
   virtual void GetResponseInfo(net::HttpResponseInfo* info) {
     *info = response_info_;
   }
 
+ private:
+  scoped_refptr<const Extension> extension_;
   net::HttpResponseInfo response_info_;
 };
+
+class URLRequestExtensionJob : public net::URLRequestFileJob {
+ public:
+  URLRequestExtensionJob(net::URLRequest* request,
+                         const FilePath& filename,
+                         const std::string& content_security_policy,
+                         bool send_cors_header)
+    : net::URLRequestFileJob(request, filename) {
+      response_info_.headers = BuildHttpHeaders(content_security_policy,
+                                                send_cors_header);
+  }
+
+  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE {
+    *info = response_info_;
+  }
+
+  net::HttpResponseInfo response_info_;
+};
+
+bool ExtensionCanLoadInIncognito(const std::string& extension_id,
+                                 ExtensionInfoMap* extension_info_map) {
+  const Extension* extension =
+      extension_info_map->extensions().GetByID(extension_id);
+  // Only split-mode extensions can load in incognito profiles.
+  return extension && extension->incognito_split_mode();
+}
 
 // Returns true if an chrome-extension:// resource should be allowed to load.
 // TODO(aa): This should be moved into ExtensionResourceRequestPolicy, but we
@@ -137,13 +194,27 @@ bool AllowExtensionResourceLoad(net::URLRequest* request,
   // incognito tab prevents that.
   if (is_incognito &&
       info->resource_type() == ResourceType::MAIN_FRAME &&
-      !extension_info_map->ExtensionCanLoadInIncognito(request->url().host())) {
+      !ExtensionCanLoadInIncognito(request->url().host(), extension_info_map)) {
     LOG(ERROR) << "Denying load of " << request->url().spec() << " from "
                << "incognito tab.";
     return false;
   }
 
   return true;
+}
+
+// Returns true if the given URL references an icon in the given extension.
+bool URLIsForExtensionIcon(const GURL& url, const Extension* extension) {
+  DCHECK(url.SchemeIs(chrome::kExtensionScheme));
+
+  if (!extension)
+    return false;
+
+  std::string path = url.path();
+  DCHECK_EQ(url.host(), extension->id());
+  DCHECK(path.length() > 0 && path[0] == '/');
+  path = path.substr(1);
+  return extension->icons().ContainsPath(path);
 }
 
 class ExtensionProtocolHandler
@@ -177,20 +248,38 @@ ExtensionProtocolHandler::MaybeCreateJob(net::URLRequest* request) const {
 
   // chrome-extension://extension-id/resource/path.js
   const std::string& extension_id = request->url().host();
-  FilePath directory_path = extension_info_map_->
-      GetPathForExtension(extension_id);
+  const Extension* extension =
+      extension_info_map_->extensions().GetByID(extension_id);
+  FilePath directory_path;
+  if (extension)
+    directory_path = extension->path();
   if (directory_path.value().empty()) {
-    if (extension_info_map_->URLIsForExtensionIcon(request->url()))
-      directory_path = extension_info_map_->
-          GetPathForDisabledExtension(extension_id);
+    const Extension* disabled_extension =
+        extension_info_map_->disabled_extensions().GetByID(extension_id);
+    if (URLIsForExtensionIcon(request->url(), disabled_extension))
+      directory_path = disabled_extension->path();
     if (directory_path.value().empty()) {
       LOG(WARNING) << "Failed to GetPathForExtension: " << extension_id;
       return NULL;
     }
   }
 
-  const std::string& content_security_policy = extension_info_map_->
-      GetContentSecurityPolicyForExtension(extension_id);
+  std::string content_security_policy;
+  bool send_cors_header = false;
+  if (extension) {
+    content_security_policy = extension->content_security_policy();
+    if ((extension->manifest_version() >= 2 ||
+             extension->HasWebAccessibleResources()) &&
+        extension->IsResourceWebAccessible(request->url().path()))
+      send_cors_header = true;
+  }
+
+  std::string path = request->url().path();
+  if (path.size() > 1 &&
+      path.substr(1) == extension_filenames::kGeneratedBackgroundPageFilename) {
+    return new GeneratedBackgroundPageJob(
+        request, extension, content_security_policy);
+  }
 
   FilePath resources_path;
   if (PathService::Get(chrome::DIR_RESOURCES, &resources_path) &&
@@ -212,7 +301,8 @@ ExtensionProtocolHandler::MaybeCreateJob(net::URLRequest* request) const {
 #endif
       if (relative_path == bm_resource_path) {
         return new URLRequestResourceBundleJob(request, relative_path,
-            kComponentExtensionResources[i].value, content_security_policy);
+            kComponentExtensionResources[i].value, content_security_policy,
+            send_cors_header);
       }
     }
   }
@@ -230,37 +320,7 @@ ExtensionProtocolHandler::MaybeCreateJob(net::URLRequest* request) const {
   }
 
   return new URLRequestExtensionJob(request, resource_file_path,
-                                    content_security_policy);
-}
-
-class UserScriptProtocolHandler
-    : public net::URLRequestJobFactory::ProtocolHandler {
- public:
-  UserScriptProtocolHandler(const FilePath& user_script_dir_path,
-                            ExtensionInfoMap* extension_info_map)
-      : user_script_dir_path_(user_script_dir_path),
-        extension_info_map_(extension_info_map) {}
-
-  virtual ~UserScriptProtocolHandler() {}
-
-  virtual net::URLRequestJob* MaybeCreateJob(
-      net::URLRequest* request) const OVERRIDE;
-
- private:
-  const FilePath user_script_dir_path_;
-  ExtensionInfoMap* const extension_info_map_;
-};
-
-// Factory registered with net::URLRequest to create URLRequestJobs for
-// chrome-user-script:/ URLs.
-net::URLRequestJob* UserScriptProtocolHandler::MaybeCreateJob(
-    net::URLRequest* request) const {
-  // chrome-user-script:/user-script-name.user.js
-  ExtensionResource resource(
-      request->url().host(), user_script_dir_path_,
-      extension_file_util::ExtensionURLToRelativeFilePath(request->url()));
-
-  return new net::URLRequestFileJob(request, resource.GetFilePath());
+                                    content_security_policy, send_cors_header);
 }
 
 }  // namespace
@@ -269,11 +329,4 @@ net::URLRequestJobFactory::ProtocolHandler* CreateExtensionProtocolHandler(
     bool is_incognito,
     ExtensionInfoMap* extension_info_map) {
   return new ExtensionProtocolHandler(is_incognito, extension_info_map);
-}
-
-net::URLRequestJobFactory::ProtocolHandler* CreateUserScriptProtocolHandler(
-    const FilePath& user_script_dir_path,
-    ExtensionInfoMap* extension_info_map) {
-  return new UserScriptProtocolHandler(
-      user_script_dir_path, extension_info_map);
 }

@@ -1,15 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/client/rectangle_update_decoder.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
+#include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop_proxy.h"
 #include "remoting/base/decoder.h"
 #include "remoting/base/decoder_row_based.h"
 #include "remoting/base/decoder_vp8.h"
-#include "remoting/base/tracer.h"
 #include "remoting/base/util.h"
 #include "remoting/client/frame_consumer.h"
 #include "remoting/protocol/session_config.h"
@@ -19,141 +22,101 @@ using remoting::protocol::SessionConfig;
 
 namespace remoting {
 
-namespace {
-
-class PartialFrameCleanup : public Task {
- public:
-  PartialFrameCleanup(media::VideoFrame* frame, UpdatedRects* rects)
-      : frame_(frame), rects_(rects) {
-  }
-
-  virtual void Run() {
-    delete rects_;
-    frame_ = NULL;
-  }
-
- private:
-  scoped_refptr<media::VideoFrame> frame_;
-  UpdatedRects* rects_;
-};
-
-}  // namespace
-
-RectangleUpdateDecoder::RectangleUpdateDecoder(MessageLoop* message_loop,
-                                               FrameConsumer* consumer)
+RectangleUpdateDecoder::RectangleUpdateDecoder(
+    base::MessageLoopProxy* message_loop, FrameConsumer* consumer)
     : message_loop_(message_loop),
       consumer_(consumer),
-      frame_is_new_(false) {
+      screen_size_(SkISize::Make(0, 0)),
+      clip_rect_(SkIRect::MakeEmpty()),
+      decoder_needs_reset_(false) {
 }
 
 RectangleUpdateDecoder::~RectangleUpdateDecoder() {
 }
 
-void RectangleUpdateDecoder::Initialize(const SessionConfig* config) {
-  initial_screen_size_ = gfx::Size(config->initial_resolution().width,
-                                   config->initial_resolution().height);
-
+void RectangleUpdateDecoder::Initialize(const SessionConfig& config) {
   // Initialize decoder based on the selected codec.
-  ChannelConfig::Codec codec = config->video_config().codec;
+  ChannelConfig::Codec codec = config.video_config().codec;
   if (codec == ChannelConfig::CODEC_VERBATIM) {
-    TraceContext::tracer()->PrintString("Creating Verbatim decoder.");
     decoder_.reset(DecoderRowBased::CreateVerbatimDecoder());
   } else if (codec == ChannelConfig::CODEC_ZIP) {
-    TraceContext::tracer()->PrintString("Creating Zlib decoder");
     decoder_.reset(DecoderRowBased::CreateZlibDecoder());
-    // TODO(sergeyu): Enable VP8 on ARM builds.
-#if !defined(ARCH_CPU_ARM_FAMILY)
   } else if (codec == ChannelConfig::CODEC_VP8) {
-      TraceContext::tracer()->PrintString("Creating VP8 decoder");
-      decoder_.reset(new DecoderVp8());
-#endif
+    decoder_.reset(new DecoderVp8());
   } else {
     NOTREACHED() << "Invalid Encoding found: " << codec;
   }
 }
 
 void RectangleUpdateDecoder::DecodePacket(const VideoPacket* packet,
-                                          Task* done) {
-  if (message_loop_ != MessageLoop::current()) {
+                                          const base::Closure& done) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(
-        FROM_HERE,
-        NewTracedMethod(this,
-                        &RectangleUpdateDecoder::DecodePacket, packet,
-                        done));
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::DecodePacket,
+                              this, packet, done));
     return;
   }
-  base::ScopedTaskRunner done_runner(done);
-
-  TraceContext::tracer()->PrintString("Decode Packet called.");
-
-  AllocateFrame(packet, done_runner.Release());
+  AllocateFrame(packet, done);
 }
 
 void RectangleUpdateDecoder::AllocateFrame(const VideoPacket* packet,
-                                           Task* done) {
-  if (message_loop_ != MessageLoop::current()) {
+                                           const base::Closure& done) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(
-        FROM_HERE,
-        NewTracedMethod(this,
-                        &RectangleUpdateDecoder::AllocateFrame, packet, done));
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::AllocateFrame,
+                              this, packet, done));
     return;
   }
-  base::ScopedTaskRunner done_runner(done);
+  base::ScopedClosureRunner done_runner(done);
 
-  TraceContext::tracer()->PrintString("AllocateFrame called.");
+  // If the packet includes a screen size, store it.
+  if (packet->format().has_screen_width() &&
+      packet->format().has_screen_height()) {
+    screen_size_.set(packet->format().screen_width(),
+                     packet->format().screen_height());
+  }
 
-  // Find the required frame size.
-  bool has_screen_size = packet->format().has_screen_width() &&
-                         packet->format().has_screen_height();
-  gfx::Size screen_size(packet->format().screen_width(),
-                        packet->format().screen_height());
-  if (!has_screen_size)
-    screen_size = initial_screen_size_;
+  // If we've never seen a screen size, ignore the packet.
+  if (screen_size_.isZero()) {
+    return;
+  }
 
-  // Find the current frame size.
-  gfx::Size frame_size(0, 0);
+  // Ensure the output frame is the right size.
+  SkISize frame_size = SkISize::Make(0, 0);
   if (frame_)
-    frame_size = gfx::Size(static_cast<int>(frame_->width()),
-                           static_cast<int>(frame_->height()));
+    frame_size.set(frame_->width(), frame_->height());
 
   // Allocate a new frame, if necessary.
-  if ((!frame_) || (has_screen_size && (screen_size != frame_size))) {
+  if ((!frame_) || (screen_size_ != frame_size)) {
     if (frame_) {
-      TraceContext::tracer()->PrintString("Releasing old frame.");
       consumer_->ReleaseFrame(frame_);
       frame_ = NULL;
     }
-    TraceContext::tracer()->PrintString("Requesting new frame.");
 
-    consumer_->AllocateFrame(media::VideoFrame::RGB32,
-                             screen_size.width(), screen_size.height(),
-                             base::TimeDelta(), base::TimeDelta(),
-                             &frame_,
-                             NewRunnableMethod(this,
-                                 &RectangleUpdateDecoder::ProcessPacketData,
-                                 packet, done_runner.Release()));
-    frame_is_new_ = true;
+    consumer_->AllocateFrame(
+        media::VideoFrame::RGB32, screen_size_, &frame_,
+        base::Bind(&RectangleUpdateDecoder::ProcessPacketData,
+                   this, packet, done_runner.Release()));
+    decoder_needs_reset_ = true;
     return;
   }
   ProcessPacketData(packet, done_runner.Release());
 }
 
 void RectangleUpdateDecoder::ProcessPacketData(
-    const VideoPacket* packet, Task* done) {
-  if (message_loop_ != MessageLoop::current()) {
+    const VideoPacket* packet, const base::Closure& done) {
+  if (!message_loop_->BelongsToCurrentThread()) {
     message_loop_->PostTask(
-        FROM_HERE,
-        NewTracedMethod(this,
-                        &RectangleUpdateDecoder::ProcessPacketData, packet,
-                        done));
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::ProcessPacketData,
+                              this, packet, done));
     return;
   }
-  base::ScopedTaskRunner done_runner(done);
+  base::ScopedClosureRunner done_runner(done);
 
-  if (frame_is_new_) {
+  if (decoder_needs_reset_) {
     decoder_->Reset();
     decoder_->Initialize(frame_);
-    frame_is_new_ = false;
+    decoder_needs_reset_ = false;
   }
 
   if (!decoder_->IsReadyForData()) {
@@ -162,14 +125,110 @@ void RectangleUpdateDecoder::ProcessPacketData(
     return;
   }
 
-  TraceContext::tracer()->PrintString("Executing Decode.");
+  if (decoder_->DecodePacket(packet) == Decoder::DECODE_DONE)
+    SubmitToConsumer();
+}
 
-  if (decoder_->DecodePacket(packet) == Decoder::DECODE_DONE) {
-    UpdatedRects* rects = new UpdatedRects();
-    decoder_->GetUpdatedRects(rects);
-    consumer_->OnPartialFrameOutput(frame_, rects,
-                                    new PartialFrameCleanup(frame_, rects));
+void RectangleUpdateDecoder::SetOutputSize(const SkISize& size) {
+  if (!message_loop_->BelongsToCurrentThread()) {
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::SetOutputSize,
+                              this, size));
+    return;
   }
+
+  // TODO(wez): Refresh the frame only if the ratio has changed.
+  if (frame_) {
+    SkIRect frame_rect = SkIRect::MakeWH(frame_->width(), frame_->height());
+    refresh_region_.op(frame_rect, SkRegion::kUnion_Op);
+  }
+
+  // TODO(hclam): If the scale ratio has changed we should reallocate a
+  // VideoFrame of different size. However if the scale ratio is always
+  // smaller than 1.0 we can use the same video frame.
+  if (decoder_.get()) {
+    decoder_->SetOutputSize(size);
+    RefreshFullFrame();
+  }
+}
+
+void RectangleUpdateDecoder::UpdateClipRect(const SkIRect& new_clip_rect) {
+  if (!message_loop_->BelongsToCurrentThread()) {
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::UpdateClipRect,
+                              this, new_clip_rect));
+    return;
+  }
+
+  if (new_clip_rect == clip_rect_ || !decoder_.get())
+    return;
+
+  // TODO(wez): Only refresh newly-exposed portions of the frame.
+  if (frame_) {
+    SkIRect frame_rect = SkIRect::MakeWH(frame_->width(), frame_->height());
+    refresh_region_.op(frame_rect, SkRegion::kUnion_Op);
+  }
+
+  clip_rect_ = new_clip_rect;
+  decoder_->SetClipRect(new_clip_rect);
+
+  // TODO(wez): Defer refresh so that multiple events can be batched.
+  DoRefresh();
+}
+
+void RectangleUpdateDecoder::RefreshFullFrame() {
+  if (!message_loop_->BelongsToCurrentThread()) {
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::RefreshFullFrame, this));
+    return;
+  }
+
+  // If a video frame or the decoder is not allocated yet then don't
+  // save the refresh rectangle to avoid wasted computation.
+  if (!frame_ || !decoder_.get())
+    return;
+
+  SkIRect frame_rect = SkIRect::MakeWH(frame_->width(), frame_->height());
+  refresh_region_.op(frame_rect, SkRegion::kUnion_Op);
+
+  DoRefresh();
+}
+
+void RectangleUpdateDecoder::SubmitToConsumer() {
+  // A frame is not allocated yet, we can reach here because of a refresh
+  // request.
+  if (!frame_)
+    return;
+
+  SkRegion* dirty_region = new SkRegion;
+  decoder_->GetUpdatedRegion(dirty_region);
+
+  consumer_->OnPartialFrameOutput(frame_, dirty_region, base::Bind(
+      &RectangleUpdateDecoder::OnFrameConsumed, this, dirty_region));
+}
+
+void RectangleUpdateDecoder::DoRefresh() {
+  DCHECK(message_loop_->BelongsToCurrentThread());
+
+  if (refresh_region_.isEmpty())
+    return;
+
+  decoder_->RefreshRegion(refresh_region_);
+  refresh_region_.setEmpty();
+  SubmitToConsumer();
+}
+
+void RectangleUpdateDecoder::OnFrameConsumed(SkRegion* region) {
+  if (!message_loop_->BelongsToCurrentThread()) {
+    message_loop_->PostTask(
+        FROM_HERE, base::Bind(&RectangleUpdateDecoder::OnFrameConsumed,
+                              this, region));
+    return;
+  }
+
+  delete region;
+
+  DoRefresh();
 }
 
 }  // namespace remoting

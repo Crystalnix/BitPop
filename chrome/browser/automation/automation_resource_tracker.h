@@ -9,10 +9,10 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "ipc/ipc_message.h"
 
 // Template trick so that AutomationResourceTracker can be used with non-pointer
@@ -69,7 +69,7 @@ class AutomationResourceTrackerImpl {
 // close notifications.
 template <class T>
 class AutomationResourceTracker : public AutomationResourceTrackerImpl,
-                                  public NotificationObserver {
+                                  public content::NotificationObserver {
  public:
   explicit AutomationResourceTracker(IPC::Message::Sender* automation)
     : AutomationResourceTrackerImpl(automation) {}
@@ -117,14 +117,14 @@ class AutomationResourceTracker : public AutomationResourceTrackerImpl,
     return GetHandleImpl(resource);
   }
 
-  // NotificationObserver implementation--the only thing that this tracker
-  // does in response to notifications is to tell the AutomationProxy
+  // content::NotificationObserver implementation--the only thing that this
+  // tracker does in response to notifications is to tell the AutomationProxy
   // that the associated handle is now invalid.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-     T resource =
-        Source<typename AutomationResourceTraits<T>::ValueType>(source).ptr();
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+     T resource = content::Source<typename AutomationResourceTraits<T>::
+         ValueType>(source).ptr();
 
      CloseResource(resource);
   }
@@ -147,7 +147,7 @@ class AutomationResourceTracker : public AutomationResourceTrackerImpl,
     RemoveObserver(static_cast<T>(const_cast<void*>(resource)));
   }
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AutomationResourceTracker);

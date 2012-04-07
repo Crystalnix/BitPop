@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,23 +8,12 @@
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "views/controls/scrollbar/native_scroll_bar.h"
-#include "views/widget/widget.h"
+#include "content/public/browser/web_contents_view.h"
+#include "ui/views/controls/scrollbar/native_scroll_bar.h"
+#include "ui/views/widget/widget.h"
 
 void FindBarHost::AudibleAlert() {
   MessageBeep(MB_OK);
-}
-
-void FindBarHost::GetWidgetPositionNative(gfx::Rect* avoid_overlapping_rect) {
-  RECT frame_rect = {0}, webcontents_rect = {0};
-  ::GetWindowRect(::GetParent(host()->GetNativeView()), &frame_rect);
-  ::GetWindowRect(
-      find_bar_controller_->
-          tab_contents()->tab_contents()->view()->GetNativeView(),
-      &webcontents_rect);
-  avoid_overlapping_rect->Offset(0, webcontents_rect.top - frame_rect.top);
 }
 
 bool FindBarHost::ShouldForwardKeyEventToWebpageNative(

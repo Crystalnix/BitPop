@@ -1,9 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/fileapi/file_writer_delegate.h"
 
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/file_util_proxy.h"
 #include "base/message_loop.h"
 #include "base/threading/thread_restrictions.h"
@@ -11,7 +13,6 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_quota_util.h"
 #include "webkit/fileapi/quota_file_util.h"
 
@@ -21,37 +22,37 @@ static const int kReadBufSize = 32768;
 
 namespace {
 
-typedef Callback2<base::PlatformFileError /* error code */,
-                  const base::PlatformFileInfo& /* file_info */
-                  >::Type InitializeTaskCallback;
+typedef base::Callback<void(base::PlatformFileError /* error code */,
+                            const base::PlatformFileInfo& /* file_info */)>
+    InitializeTaskCallback;
 
 class InitializeTask : public base::RefCountedThreadSafe<InitializeTask> {
  public:
   InitializeTask(
       base::PlatformFile file,
       FileSystemOperationContext* context,
-      InitializeTaskCallback* callback)
+      const InitializeTaskCallback& callback)
       : origin_message_loop_proxy_(
-            base::MessageLoopProxy::CreateForCurrentThread()),
+            base::MessageLoopProxy::current()),
         error_code_(base::PLATFORM_FILE_OK),
         file_(file),
         context_(*context),
         callback_(callback) {
-    DCHECK(callback);
+    DCHECK_EQ(false, callback.is_null());
   }
 
   bool Start(scoped_refptr<base::MessageLoopProxy> message_loop_proxy,
              const tracked_objects::Location& from_here) {
-    return message_loop_proxy->PostTask(from_here, NewRunnableMethod(this,
-        &InitializeTask::ProcessOnTargetThread));
+    return message_loop_proxy->PostTask(
+        from_here,
+        base::Bind(&InitializeTask::ProcessOnTargetThread, this));
   }
 
  private:
   friend class base::RefCountedThreadSafe<InitializeTask>;
 
   void RunCallback() {
-    callback_->Run(error_code_, file_info_);
-    delete callback_;
+    callback_.Run(error_code_, file_info_);
   }
 
   void ProcessOnTargetThread() {
@@ -65,8 +66,9 @@ class InitializeTask : public base::RefCountedThreadSafe<InitializeTask> {
     }
     if (!base::GetPlatformFileInfo(file_, &file_info_))
       error_code_ = base::PLATFORM_FILE_ERROR_FAILED;
-    origin_message_loop_proxy_->PostTask(FROM_HERE, NewRunnableMethod(this,
-        &InitializeTask::RunCallback));
+    origin_message_loop_proxy_->PostTask(
+        FROM_HERE,
+        base::Bind(&InitializeTask::RunCallback, this));
   }
 
   scoped_refptr<base::MessageLoopProxy> origin_message_loop_proxy_;
@@ -74,7 +76,7 @@ class InitializeTask : public base::RefCountedThreadSafe<InitializeTask> {
 
   base::PlatformFile file_;
   FileSystemOperationContext context_;
-  InitializeTaskCallback* callback_;
+  InitializeTaskCallback callback_;
 
   base::PlatformFileInfo file_info_;
 };
@@ -94,10 +96,7 @@ FileWriterDelegate::FileWriterDelegate(
       total_bytes_written_(0),
       allowed_bytes_to_write_(0),
       io_buffer_(new net::IOBufferWithSize(kReadBufSize)),
-      io_callback_(ALLOW_THIS_IN_INITIALIZER_LIST(this),
-                   &FileWriterDelegate::OnDataWritten),
-      method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-      callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 FileWriterDelegate::~FileWriterDelegate() {
@@ -112,19 +111,12 @@ void FileWriterDelegate::OnGetFileInfoAndCallStartUpdate(
   }
   int64 allowed_bytes_growth =
       file_system_operation_context()->allowed_bytes_growth();
-  if (allowed_bytes_growth == QuotaFileUtil::kNoLimit ||
-      file_system_operation_->file_system_context()->IsStorageUnlimited(
-          file_system_operation_context()->src_origin_url())) {
-    // TODO(kinuko): kNoLimit is kint64max therefore all the calculation/
-    // comparison with the value should just work, but we should drop
-    // such implicit assumption and should use an explicit boolean flag
-    // or something.
-    allowed_bytes_to_write_ = QuotaFileUtil::kNoLimit;
-  } else {
-    if (allowed_bytes_growth < 0)
-      allowed_bytes_growth = 0;
-    allowed_bytes_to_write_ = file_info.size - offset_ + allowed_bytes_growth;
-  }
+  if (allowed_bytes_growth < 0)
+    allowed_bytes_growth = 0;
+  int64 overlap = file_info.size - offset_;
+  allowed_bytes_to_write_ = allowed_bytes_growth;
+  if (kint64max - overlap > allowed_bytes_growth)
+    allowed_bytes_to_write_ += overlap;
   size_ = file_info.size;
   file_stream_.reset(new net::FileStream(file_,
       base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_WRITE |
@@ -139,31 +131,34 @@ void FileWriterDelegate::Start(base::PlatformFile file,
 
   scoped_refptr<InitializeTask> relay = new InitializeTask(
       file_, file_system_operation_context(),
-      callback_factory_.NewCallback(
-          &FileWriterDelegate::OnGetFileInfoAndCallStartUpdate));
+      base::Bind(&FileWriterDelegate::OnGetFileInfoAndCallStartUpdate,
+                 weak_factory_.GetWeakPtr()));
   relay->Start(proxy_, FROM_HERE);
 }
 
-void FileWriterDelegate::OnReceivedRedirect(
-    net::URLRequest* request, const GURL& new_url, bool* defer_redirect) {
+void FileWriterDelegate::OnReceivedRedirect(net::URLRequest* request,
+                                            const GURL& new_url,
+                                            bool* defer_redirect) {
   NOTREACHED();
   OnError(base::PLATFORM_FILE_ERROR_SECURITY);
 }
 
-void FileWriterDelegate::OnAuthRequired(
-    net::URLRequest* request, net::AuthChallengeInfo* auth_info) {
+void FileWriterDelegate::OnAuthRequired(net::URLRequest* request,
+                                        net::AuthChallengeInfo* auth_info) {
   NOTREACHED();
   OnError(base::PLATFORM_FILE_ERROR_SECURITY);
 }
 
 void FileWriterDelegate::OnCertificateRequested(
-    net::URLRequest* request, net::SSLCertRequestInfo* cert_request_info) {
+    net::URLRequest* request,
+    net::SSLCertRequestInfo* cert_request_info) {
   NOTREACHED();
   OnError(base::PLATFORM_FILE_ERROR_SECURITY);
 }
 
-void FileWriterDelegate::OnSSLCertificateError(
-    net::URLRequest* request, int cert_error, net::X509Certificate* cert) {
+void FileWriterDelegate::OnSSLCertificateError(net::URLRequest* request,
+                                               const net::SSLInfo& ssl_info,
+                                               bool fatal) {
   NOTREACHED();
   OnError(base::PLATFORM_FILE_ERROR_SECURITY);
 }
@@ -173,7 +168,7 @@ void FileWriterDelegate::OnResponseStarted(net::URLRequest* request) {
   // file_stream_->Seek() blocks the IO thread.
   // See http://crbug.com/75548.
   base::ThreadRestrictions::ScopedAllowIO allow_io;
-  if (!request->status().is_success()) {
+  if (!request->status().is_success() || request->GetResponseCode() != 200) {
     OnError(base::PLATFORM_FILE_ERROR_FAILED);
     return;
   }
@@ -201,8 +196,8 @@ void FileWriterDelegate::Read() {
   if (request_->Read(io_buffer_.get(), io_buffer_->size(), &bytes_read_)) {
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &FileWriterDelegate::OnDataReceived, bytes_read_));
+        base::Bind(&FileWriterDelegate::OnDataReceived,
+                   weak_factory_.GetWeakPtr(), bytes_read_));
   } else if (!request_->status().is_io_pending()) {
     OnError(base::PLATFORM_FILE_ERROR_FAILED);
   }
@@ -236,14 +231,16 @@ void FileWriterDelegate::Write() {
   if (bytes_to_write > allowed_bytes_to_write_ - total_bytes_written_)
     bytes_to_write = allowed_bytes_to_write_ - total_bytes_written_;
 
-  int write_response = file_stream_->Write(io_buffer_->data() + bytes_written_,
-                                           static_cast<int>(bytes_to_write),
-                                           &io_callback_);
+  int write_response =
+      file_stream_->Write(io_buffer_->data() + bytes_written_,
+                          static_cast<int>(bytes_to_write),
+                          base::Bind(&FileWriterDelegate::OnDataWritten,
+                                     base::Unretained(this)));
   if (write_response > 0)
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(
-            &FileWriterDelegate::OnDataWritten, write_response));
+        base::Bind(&FileWriterDelegate::OnDataWritten,
+                   weak_factory_.GetWeakPtr(), write_response));
   else if (net::ERR_IO_PENDING != write_response)
     OnError(base::PLATFORM_FILE_ERROR_FAILED);
 }

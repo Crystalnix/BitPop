@@ -11,9 +11,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/automation/dom_element_proxy.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 
 class MediaPlayerBrowserTest : public InProcessBrowserTest {
  public:
@@ -53,7 +52,8 @@ IN_PROC_BROWSER_TEST_F(MediaPlayerBrowserTest, Popup) {
   // Check that its not currently visible
   ASSERT_FALSE(IsPlayerVisible());
 
-  player->EnqueueMediaFileUrl(GetMusicTestURL(), NULL);
+  player->PopupMediaPlayer(NULL);
+  player->EnqueueMediaFileUrl(GetMusicTestURL());
 
   ASSERT_TRUE(IsPlayerVisible());
 }
@@ -67,7 +67,8 @@ IN_PROC_BROWSER_TEST_F(MediaPlayerBrowserTest, PopupPlaylist) {
 
   MediaPlayer* player = MediaPlayer::GetInstance();
 
-  player->EnqueueMediaFileUrl(GetMusicTestURL(), NULL);
+  player->PopupMediaPlayer(NULL);
+  player->EnqueueMediaFileUrl(GetMusicTestURL());
 
   EXPECT_FALSE(IsPlaylistVisible());
 

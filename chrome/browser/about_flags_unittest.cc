@@ -8,7 +8,7 @@
 #include "chrome/browser/about_flags.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service.h"
 #include "grit/chromium_strings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -88,17 +88,6 @@ class AboutFlagsTest : public ::testing::Test {
   AboutFlagsTest() {
     prefs_.RegisterListPref(prefs::kEnabledLabsExperiments,
                             PrefService::UNSYNCABLE_PREF);
-#if defined(OS_CHROMEOS)
-    prefs_.RegisterBooleanPref(prefs::kLabsMediaplayerEnabled,
-                               false,
-                               PrefService::UNSYNCABLE_PREF);
-    prefs_.RegisterBooleanPref(prefs::kLabsAdvancedFilesystemEnabled,
-                               false,
-                               PrefService::UNSYNCABLE_PREF);
-    prefs_.RegisterBooleanPref(prefs::kUseVerticalTabs,
-                               false,
-                               PrefService::UNSYNCABLE_PREF);
-#endif
     testing::ClearState();
   }
 
@@ -234,7 +223,7 @@ TEST_F(AboutFlagsTest, PersistAndPrune) {
   // Experiment 3 should show still be persisted in preferences though.
   scoped_ptr<ListValue> switch_prefs(GetFlagsExperimentsData(&prefs_));
   ASSERT_TRUE(switch_prefs.get());
-  EXPECT_EQ(arraysize(kExperiments) - 1, switch_prefs->GetSize());
+  EXPECT_EQ(arraysize(kExperiments), switch_prefs->GetSize());
 }
 
 // Tests that switches which should have values get them in the command
@@ -250,8 +239,7 @@ TEST_F(AboutFlagsTest, CheckValues) {
   // Convert the flags to switches.
   ConvertFlagsToSwitches(&prefs_, &command_line);
   EXPECT_TRUE(command_line.HasSwitch(kSwitch1));
-  EXPECT_EQ(std::string(""),
-            command_line.GetSwitchValueASCII(kSwitch1));
+  EXPECT_EQ(std::string(""), command_line.GetSwitchValueASCII(kSwitch1));
   EXPECT_TRUE(command_line.HasSwitch(kSwitch2));
   EXPECT_EQ(std::string(kValueForSwitch2),
             command_line.GetSwitchValueASCII(kSwitch2));
@@ -262,11 +250,11 @@ TEST_F(AboutFlagsTest, CheckValues) {
                                     std::string("=");
 #if defined(OS_WIN)
   EXPECT_EQ(std::wstring::npos,
-            command_line.command_line_string().find(
+            command_line.GetCommandLineString().find(
                 ASCIIToWide(switch1_with_equals)));
 #else
   EXPECT_EQ(std::string::npos,
-            command_line.command_line_string().find(switch1_with_equals));
+            command_line.GetCommandLineString().find(switch1_with_equals));
 #endif
 
   // And confirm there is a '=' for switches with values.
@@ -275,17 +263,17 @@ TEST_F(AboutFlagsTest, CheckValues) {
                                     std::string("=");
 #if defined(OS_WIN)            
   EXPECT_NE(std::wstring::npos,
-            command_line.command_line_string().find(
+            command_line.GetCommandLineString().find(
                 ASCIIToWide(switch2_with_equals)));
 #else
   EXPECT_NE(std::string::npos,
-            command_line.command_line_string().find(switch2_with_equals));
+            command_line.GetCommandLineString().find(switch2_with_equals));
 #endif
 
   // And it should persist
   scoped_ptr<ListValue> switch_prefs(GetFlagsExperimentsData(&prefs_));
   ASSERT_TRUE(switch_prefs.get());
-  EXPECT_EQ(arraysize(kExperiments) - 1, switch_prefs->GetSize());
+  EXPECT_EQ(arraysize(kExperiments), switch_prefs->GetSize());
 }
 
 // Tests multi-value type experiments.

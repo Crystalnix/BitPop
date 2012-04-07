@@ -10,9 +10,11 @@
 #include "base/basictypes.h"
 #include "base/string16.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/glue/webkit_glue_export.h"
 #include "webkit/glue/webmenuitem.h"
 
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebReferrerPolicy.h"
 
 namespace webkit_glue {
 
@@ -23,9 +25,9 @@ struct CustomContextMenuContext {
   // It could also be |kCurrentRenderWidget|, which means the render widget that
   // the corresponding ViewHostMsg_ContextMenu is sent to.
   int32 render_widget_id;
-  static const int32 kCurrentRenderWidget;
+  WEBKIT_GLUE_EXPORT static const int32 kCurrentRenderWidget;
 
-  CustomContextMenuContext();
+  WEBKIT_GLUE_EXPORT CustomContextMenuContext();
 };
 
 }  // namespace webkit_glue
@@ -37,7 +39,7 @@ struct CustomContextMenuContext {
 //              they contain for the ContextMenu task. It might be better
 //              to make the string fields more generic so that this object
 //              could be used for more contextual actions.
-struct ContextMenuParams {
+struct WEBKIT_GLUE_EXPORT ContextMenuParams {
   // This is the type of Context Node that the context menu was invoked on.
   WebKit::WebContextMenuData::MediaType media_type;
 
@@ -66,8 +68,15 @@ struct ContextMenuParams {
   // on.
   GURL page_url;
 
+  // This is the absolute keyword search URL including the %s search tag when
+  // the "Add as search engine..." option is clicked (left empty if not used).
+  GURL keyword_url;
+
   // This is the URL of the subframe that the context menu was invoked on.
   GURL frame_url;
+
+  // This is the ID of the subframe that the context menu was invoked on.
+  int64 frame_id;
 
   // This is the history item state of the subframe that the context menu was
   // invoked on.
@@ -90,6 +99,9 @@ struct ContextMenuParams {
   // and populating dictionary_suggestions if the type is EDITABLE
   // and the misspelled_word is not empty.
   std::vector<string16> dictionary_suggestions;
+
+  // If editable, flag for whether node is speech-input enabled.
+  bool speech_input_enabled;
 
   // If editable, flag for whether spell check is enabled or not.
   bool spellcheck_enabled;
@@ -114,6 +126,9 @@ struct ContextMenuParams {
 
   // The character encoding of the frame on which the menu is invoked.
   std::string frame_charset;
+
+  // The referrer policy of the frame on which the menu is invoked.
+  WebKit::WebReferrerPolicy referrer_policy;
 
   webkit_glue::CustomContextMenuContext custom_context;
   std::vector<WebMenuItem> custom_items;

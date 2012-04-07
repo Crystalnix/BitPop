@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -115,14 +115,18 @@ class ObserverListBase
   explicit ObserverListBase(NotificationType type)
       : notify_depth_(0), type_(type) {}
 
-  // Add an observer to the list.
+  // Add an observer to the list.  An observer should not be added to
+  // the same list more than once.
   void AddObserver(ObserverType* obs) {
-    DCHECK(find(observers_.begin(), observers_.end(), obs) == observers_.end())
-        << "Observers can only be added once!";
+    if (std::find(observers_.begin(), observers_.end(), obs)
+        != observers_.end()) {
+      NOTREACHED() << "Observers can only be added once!";
+      return;
+    }
     observers_.push_back(obs);
   }
 
-  // Remove an observer from the list.
+  // Remove an observer from the list if it is in the list.
   void RemoveObserver(ObserverType* obs) {
     typename ListType::iterator it =
       std::find(observers_.begin(), observers_.end(), obs);
@@ -158,14 +162,9 @@ class ObserverListBase
 
  protected:
   void Compact() {
-    typename ListType::iterator it = observers_.begin();
-    while (it != observers_.end()) {
-      if (*it) {
-        ++it;
-      } else {
-        it = observers_.erase(it);
-      }
-    }
+    observers_.erase(
+        std::remove(observers_.begin(), observers_.end(),
+                    static_cast<ObserverType*>(NULL)), observers_.end());
   }
 
  private:
@@ -199,14 +198,20 @@ class ObserverList : public ObserverListBase<ObserverType> {
       DCHECK_EQ(ObserverListBase<ObserverType>::size(), 0U);
     }
   }
+
+  bool might_have_observers() const {
+    return ObserverListBase<ObserverType>::size() != 0;
+  }
 };
 
-#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)  \
-  do {                                                        \
-    ObserverListBase<ObserverType>::Iterator it(observer_list);   \
-    ObserverType* obs;                                        \
-    while ((obs = it.GetNext()) != NULL)                      \
-      obs->func;                                              \
+#define FOR_EACH_OBSERVER(ObserverType, observer_list, func)         \
+  do {                                                               \
+    if ((observer_list).might_have_observers()) {                    \
+      ObserverListBase<ObserverType>::Iterator it(observer_list);    \
+      ObserverType* obs;                                             \
+      while ((obs = it.GetNext()) != NULL)                           \
+        obs->func;                                                   \
+    }                                                                \
   } while (0)
 
 #endif  // BASE_OBSERVER_LIST_H__

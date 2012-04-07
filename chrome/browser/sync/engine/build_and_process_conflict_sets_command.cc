@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/format_macros.h"
+#include "base/location.h"
 #include "chrome/browser/sync/engine/syncer_util.h"
 #include "chrome/browser/sync/engine/update_applicator.h"
 #include "chrome/browser/sync/sessions/sync_session.h"
@@ -29,202 +30,31 @@ using std::vector;
 BuildAndProcessConflictSetsCommand::BuildAndProcessConflictSetsCommand() {}
 BuildAndProcessConflictSetsCommand::~BuildAndProcessConflictSetsCommand() {}
 
-void BuildAndProcessConflictSetsCommand::ModelChangingExecuteImpl(
-    SyncSession* session) {
-  session->status_controller()->update_conflict_sets_built(
-      BuildAndProcessConflictSets(session));
+std::set<ModelSafeGroup> BuildAndProcessConflictSetsCommand::GetGroupsToChange(
+    const sessions::SyncSession& session) const {
+  return session.GetEnabledGroupsWithConflicts();
 }
 
-bool BuildAndProcessConflictSetsCommand::BuildAndProcessConflictSets(
+SyncerError BuildAndProcessConflictSetsCommand::ModelChangingExecuteImpl(
     SyncSession* session) {
   syncable::ScopedDirLookup dir(session->context()->directory_manager(),
                                 session->context()->account_name());
   if (!dir.good())
-    return false;
-  bool had_single_direction_sets = false;
-  {  // Scope for transaction.
-    syncable::WriteTransaction trans(dir, syncable::SYNCER, __FILE__, __LINE__);
-    BuildConflictSets(&trans,
-        session->status_controller()->mutable_conflict_progress());
-    had_single_direction_sets = ProcessSingleDirectionConflictSets(&trans,
-        session->context()->resolver(),
-        session->context()->directory_manager()->GetCryptographer(&trans),
-        session->status_controller(), session->routing_info());
-    // We applied some updates transactionally, lets try syncing again.
-    if (had_single_direction_sets)
-      return true;
-  }
-  return false;
-}
+    return DIRECTORY_LOOKUP_FAILED;
 
-bool BuildAndProcessConflictSetsCommand::ProcessSingleDirectionConflictSets(
-    syncable::WriteTransaction* trans, ConflictResolver* resolver,
-    Cryptographer* cryptographer, StatusController* status,
-    const ModelSafeRoutingInfo& routes) {
-  bool rv = false;
-  set<ConflictSet*>::const_iterator all_sets_iterator;
-  for (all_sets_iterator = status->conflict_progress().ConflictSetsBegin();
-       all_sets_iterator != status->conflict_progress().ConflictSetsEnd();) {
-    const ConflictSet* conflict_set = *all_sets_iterator;
-    CHECK_GE(conflict_set->size(), 2U);
-    // We scan the set to see if it consists of changes of only one type.
-    ConflictSet::const_iterator i;
-    size_t unsynced_count = 0, unapplied_count = 0;
-    for (i = conflict_set->begin(); i != conflict_set->end(); ++i) {
-      syncable::Entry entry(trans, syncable::GET_BY_ID, *i);
-      CHECK(entry.good());
-      if (entry.Get(syncable::IS_UNSYNCED))
-        unsynced_count++;
-      if (entry.Get(syncable::IS_UNAPPLIED_UPDATE))
-        unapplied_count++;
-    }
-    if (conflict_set->size() == unsynced_count && 0 == unapplied_count) {
-      VLOG(1) << "Skipped transactional commit attempt.";
-    } else if (conflict_set->size() == unapplied_count && 0 == unsynced_count &&
-          ApplyUpdatesTransactionally(trans, conflict_set, resolver,
-                                      cryptographer, routes, status)) {
-      rv = true;
-    }
-    ++all_sets_iterator;
-  }
-  return rv;
-}
+  syncable::WriteTransaction trans(FROM_HERE, syncable::SYNCER, dir);
+  BuildConflictSets(&trans,
+      session->mutable_status_controller()->mutable_conflict_progress());
 
-namespace {
-
-void StoreLocalDataForUpdateRollback(syncable::Entry* entry,
-                                     syncable::EntryKernel* backup) {
-  CHECK(!entry->Get(syncable::IS_UNSYNCED)) << " Storing Rollback data for "
-      "entry that's unsynced." << *entry;
-  CHECK(entry->Get(syncable::IS_UNAPPLIED_UPDATE)) << " Storing Rollback data "
-      "for entry that's not an unapplied update." << *entry;
-  *backup = entry->GetKernelCopy();
-}
-
-
-bool RollbackEntry(syncable::WriteTransaction* trans,
-                   syncable::EntryKernel* backup) {
-  syncable::MutableEntry entry(trans, syncable::GET_BY_HANDLE,
-                               backup->ref(syncable::META_HANDLE));
-  CHECK(entry.good());
-
-  if (!entry.Put(syncable::IS_DEL, backup->ref(syncable::IS_DEL)))
-    return false;
-
-  entry.Put(syncable::NON_UNIQUE_NAME, backup->ref(syncable::NON_UNIQUE_NAME));
-  entry.Put(syncable::PARENT_ID, backup->ref(syncable::PARENT_ID));
-
-  if (!backup->ref(syncable::IS_DEL)) {
-    if (!entry.PutPredecessor(backup->ref(syncable::PREV_ID)))
-      return false;
-  }
-
-  if (backup->ref(syncable::PREV_ID) != entry.Get(syncable::PREV_ID))
-    return false;
-
-  entry.Put(syncable::CTIME, backup->ref(syncable::CTIME));
-  entry.Put(syncable::MTIME, backup->ref(syncable::MTIME));
-  entry.Put(syncable::BASE_VERSION, backup->ref(syncable::BASE_VERSION));
-  entry.Put(syncable::IS_DIR, backup->ref(syncable::IS_DIR));
-  entry.Put(syncable::IS_DEL, backup->ref(syncable::IS_DEL));
-  entry.Put(syncable::ID, backup->ref(syncable::ID));
-  entry.Put(syncable::IS_UNAPPLIED_UPDATE,
-            backup->ref(syncable::IS_UNAPPLIED_UPDATE));
-  return true;
-}
-
-void PlaceEntriesAtRoot(syncable::WriteTransaction* trans,
-                      const vector<syncable::Id>* ids) {
-    vector<syncable::Id>::const_iterator it;
-    for (it = ids->begin(); it != ids->end(); ++it) {
-      syncable::MutableEntry entry(trans, syncable::GET_BY_ID, *it);
-    entry.Put(syncable::PARENT_ID, trans->root_id());
-    }
-  }
-
-}  // namespace
-
-bool BuildAndProcessConflictSetsCommand::ApplyUpdatesTransactionally(
-    syncable::WriteTransaction* trans,
-    const vector<syncable::Id>* const update_set,
-    ConflictResolver* resolver,
-    Cryptographer* cryptographer,
-    const ModelSafeRoutingInfo& routes,
-    StatusController* status) {
-  // The handles in the |update_set| order.
-  vector<int64> handles;
-
-  // Holds the same Ids as update_set, but sorted so that runs of adjacent
-  // nodes appear in order.
-  vector<syncable::Id> rollback_ids;
-  rollback_ids.reserve(update_set->size());
-
-  // Tracks what's added to |rollback_ids|.
-  syncable::MetahandleSet rollback_ids_inserted_items;
-  vector<syncable::Id>::const_iterator it;
-
-  // 1. Build |rollback_ids| in the order required for successful rollback.
-  //    Specifically, for positions to come out right, restoring an item
-  //    requires that its predecessor in the sibling order is properly
-  //    restored first.
-  // 2. Build |handles|, the list of handles for ApplyUpdates.
-  for (it = update_set->begin(); it != update_set->end(); ++it) {
-    syncable::Entry entry(trans, syncable::GET_BY_ID, *it);
-    SyncerUtil::AddPredecessorsThenItem(trans, &entry,
-        syncable::IS_UNAPPLIED_UPDATE, &rollback_ids_inserted_items,
-        &rollback_ids);
-    handles.push_back(entry.Get(syncable::META_HANDLE));
-  }
-  DCHECK_EQ(rollback_ids.size(), update_set->size());
-  DCHECK_EQ(rollback_ids_inserted_items.size(), update_set->size());
-
-  // 3. Store the information needed to rollback if the transaction fails.
-  // Do this before modifying anything to keep the next/prev values intact.
-  vector<syncable::EntryKernel> rollback_data(rollback_ids.size());
-  for (size_t i = 0; i < rollback_ids.size(); ++i) {
-    syncable::Entry entry(trans, syncable::GET_BY_ID, rollback_ids[i]);
-    StoreLocalDataForUpdateRollback(&entry, &rollback_data[i]);
-  }
-
-  // 4. Use the preparer to move things to an initial starting state where
-  // nothing in the set is a child of anything else.  If
-  // we've correctly calculated the set, the server tree is valid and no
-  // changes have occurred locally we should be able to apply updates from this
-  // state.
-  PlaceEntriesAtRoot(trans, update_set);
-
-  // 5. Use the usual apply updates from the special start state we've just
-  // prepared.
-  UpdateApplicator applicator(resolver, cryptographer,
-                              handles.begin(), handles.end(),
-                              routes, status->group_restriction());
-  while (applicator.AttemptOneApplication(trans)) {
-    // Keep going till all updates are applied.
-  }
-  if (!applicator.AllUpdatesApplied()) {
-    LOG(ERROR) << "Transactional Apply Failed, Rolling back.";
-    // We have to move entries into the temp dir again. e.g. if a swap was in a
-    // set with other failing updates, the swap may have gone through, meaning
-    // the roll back needs to be transactional. But as we're going to a known
-    // good state we should always succeed.
-    PlaceEntriesAtRoot(trans, update_set);
-
-    // Rollback all entries.
-    for (size_t i = 0; i < rollback_data.size(); ++i) {
-      CHECK(RollbackEntry(trans, &rollback_data[i]));
-    }
-    return false;  // Don't save progress -- we just undid it.
-  }
-  applicator.SaveProgressIntoSessionState(status->mutable_conflict_progress(),
-                                          status->mutable_update_progress());
-  return true;
+  return SYNCER_OK;
 }
 
 void BuildAndProcessConflictSetsCommand::BuildConflictSets(
     syncable::BaseTransaction* trans,
     ConflictProgress* conflict_progress) {
   conflict_progress->CleanupSets();
-  set<syncable::Id>::iterator i = conflict_progress->ConflictingItemsBegin();
+  set<syncable::Id>::const_iterator i =
+      conflict_progress->ConflictingItemsBegin();
   while (i != conflict_progress->ConflictingItemsEnd()) {
     syncable::Entry entry(trans, syncable::GET_BY_ID, *i);
     if (!entry.good() ||
@@ -272,8 +102,8 @@ void BuildAndProcessConflictSetsCommand::MergeSetsForIntroducedLoops(
   while (!parent_id.IsRoot()) {
     syncable::Entry parent(trans, syncable::GET_BY_ID, parent_id);
     if (!parent.good()) {
-      VLOG(1) << "Bad parent in loop check, skipping. Bad parent id: "
-              << parent_id << " entry: " << *entry;
+      DVLOG(1) << "Bad parent in loop check, skipping. Bad parent id: "
+               << parent_id << " entry: " << *entry;
       return;
     }
     if (parent.Get(syncable::IS_UNSYNCED) &&
@@ -340,10 +170,10 @@ class LocallyDeletedPathChecker {
                                           const syncable::Entry& log_entry) {
     syncable::Entry parent(trans, syncable::GET_BY_ID, id);
     if (!parent.good())
-      return syncable::kNullId;
+      return syncable::GetNullId();
     syncable::Id parent_id = parent.Get(syncable::PARENT_ID);
     if (parent_id == check_id)
-      return syncable::kNullId;
+      return syncable::GetNullId();
     return parent_id;
   }
 };

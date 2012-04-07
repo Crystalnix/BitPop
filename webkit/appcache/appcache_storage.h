@@ -14,6 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
+#include "webkit/appcache/appcache_export.h"
 #include "webkit/appcache/appcache_working_set.h"
 
 class GURL;
@@ -29,10 +30,11 @@ class AppCacheService;
 struct AppCacheInfoCollection;
 struct HttpResponseInfoIOBuffer;
 
-class AppCacheStorage {
+class APPCACHE_EXPORT AppCacheStorage {
  public:
+  typedef std::map<GURL, int64> UsageMap;
 
-  class Delegate {
+  class APPCACHE_EXPORT Delegate {
    public:
     virtual ~Delegate() {}
 
@@ -58,14 +60,16 @@ class AppCacheStorage {
     virtual void OnResponseInfoLoaded(
         AppCacheResponseInfo* response_info, int64 response_id) {}
 
-    // If no response is found, entry.response_id() will be kNoResponseId.
+    // If no response is found, entry.response_id() and
+    // fallback_entry.response_id() will be kNoResponseId.
+    // If the response is the entry for an intercept or fallback
+    // namespace, the url of the namespece entry is returned.
     // If a response is found, the cache id and manifest url of the
     // containing cache and group are also returned.
     virtual void OnMainResponseFound(
         const GURL& url, const AppCacheEntry& entry,
-        const GURL& fallback_url, const AppCacheEntry& fallback_entry,
-        int64 cache_id, const GURL& mainfest_url,
-        bool was_blocked_by_policy) {}
+        const GURL& namespace_entry_url, const AppCacheEntry& fallback_entry,
+        int64 cache_id, int64 group_id, const GURL& mainfest_url) {}
   };
 
   explicit AppCacheStorage(AppCacheService* service);
@@ -97,7 +101,8 @@ class AppCacheStorage {
   // immediately without returning to the message loop. If the load fails,
   // the delegate will be called back with a NULL pointer.
   virtual void LoadResponseInfo(
-      const GURL& manifest_url, int64 response_id, Delegate* delegate);
+      const GURL& manifest_url, int64 group_id, int64 response_id,
+      Delegate* delegate);
 
   // Schedules a group and its newest complete cache to be initially stored or
   // incrementally updated with new changes. Upon completion the delegate
@@ -149,12 +154,12 @@ class AppCacheStorage {
 
   // Creates a reader to read a response from storage.
   virtual AppCacheResponseReader* CreateResponseReader(
-      const GURL& manifest_url, int64 response_id) = 0;
+      const GURL& manifest_url, int64 group_id, int64 response_id) = 0;
 
   // Creates a writer to write a new response to storage. This call
   // establishes a new response id.
   virtual AppCacheResponseWriter* CreateResponseWriter(
-      const GURL& manifest_url) = 0;
+      const GURL& manifest_url, int64 group_id) = 0;
 
   // Schedules the lazy deletion of responses and saves the ids
   // persistently such that the responses will be deleted upon restart
@@ -180,10 +185,14 @@ class AppCacheStorage {
   // The working set of object instances currently in memory.
   AppCacheWorkingSet* working_set() { return &working_set_; }
 
+  // A map of origins to usage.
+  const UsageMap* usage_map() { return &usage_map_; }
+
   // Simple ptr back to the service object that owns us.
   AppCacheService* service() { return service_; }
 
  protected:
+  friend class AppCacheQuotaClientTest;
   friend class AppCacheResponseTest;
   friend class AppCacheStorageTest;
 
@@ -224,12 +233,13 @@ class AppCacheStorage {
   // multiple callers.
   class ResponseInfoLoadTask {
    public:
-    ResponseInfoLoadTask(const GURL& manifest_url, int64 response_id,
-                         AppCacheStorage* storage);
+    ResponseInfoLoadTask(const GURL& manifest_url, int64 group_id,
+                         int64 response_id, AppCacheStorage* storage);
     ~ResponseInfoLoadTask();
 
     int64 response_id() const { return response_id_; }
     const GURL& manifest_url() const { return manifest_url_; }
+    int64 group_id() const { return group_id_; }
 
     void AddDelegate(DelegateReference* delegate_reference) {
       delegates_.push_back(delegate_reference);
@@ -242,11 +252,11 @@ class AppCacheStorage {
 
     AppCacheStorage* storage_;
     GURL manifest_url_;
+    int64 group_id_;
     int64 response_id_;
     scoped_ptr<AppCacheResponseReader> reader_;
     DelegateReferenceVector delegates_;
     scoped_refptr<HttpResponseInfoIOBuffer> info_buffer_;
-    net::CompletionCallbackImpl<ResponseInfoLoadTask> read_callback_;
   };
 
   typedef std::map<int64, ResponseInfoLoadTask*> PendingResponseInfoLoads;
@@ -267,12 +277,12 @@ class AppCacheStorage {
   }
 
   ResponseInfoLoadTask* GetOrCreateResponseInfoLoadTask(
-      const GURL& manifest_url, int64 response_id) {
+      const GURL& manifest_url, int64 group_id, int64 response_id) {
     PendingResponseInfoLoads::iterator iter =
         pending_info_loads_.find(response_id);
     if (iter != pending_info_loads_.end())
       return iter->second;
-    return new ResponseInfoLoadTask(manifest_url, response_id, this);
+    return new ResponseInfoLoadTask(manifest_url, group_id, response_id, this);
   }
 
   // Should only be called when creating a new response writer.
@@ -280,11 +290,17 @@ class AppCacheStorage {
     return ++last_response_id_;
   }
 
+  // Helpers to query and notify the QuotaManager.
+  void UpdateUsageMapAndNotify(const GURL& origin, int64 new_usage);
+  void ClearUsageMapAndNotify();
+  void NotifyStorageAccessed(const GURL& origin);
+
   // The last storage id used for different object types.
   int64 last_cache_id_;
   int64 last_group_id_;
   int64 last_response_id_;
 
+  UsageMap usage_map_;  // maps origin to usage
   AppCacheWorkingSet working_set_;
   AppCacheService* service_;
   DelegateReferenceMap delegate_references_;
@@ -294,6 +310,7 @@ class AppCacheStorage {
   static const int64 kUnitializedId;
 
   FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, DelegateReferences);
+  FRIEND_TEST_ALL_PREFIXES(AppCacheStorageTest, UsageMap);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheStorage);
 };

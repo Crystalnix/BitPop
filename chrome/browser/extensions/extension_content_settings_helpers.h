@@ -9,8 +9,17 @@
 #include <string>
 
 #include "chrome/common/content_settings.h"
+#include "chrome/common/content_settings_pattern.h"
 
 namespace extension_content_settings_helpers {
+
+// Parses an extension match pattern and returns a corresponding
+// content settings pattern object.
+// If |pattern_str| is invalid or can't be converted to a content settings
+// pattern, |error| is set to the parsing error and an invalid pattern
+// is returned.
+ContentSettingsPattern ParseExtensionPattern(const std::string& pattern_str,
+                                             std::string* error);
 
 // Converts a content settings type string to the corresponding
 // ContentSettingsType. Returns CONTENT_SETTINGS_TYPE_DEFAULT if the string

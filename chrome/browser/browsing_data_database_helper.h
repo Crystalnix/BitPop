@@ -6,10 +6,11 @@
 #define CHROME_BROWSER_BROWSING_DATA_DATABASE_HELPER_H_
 #pragma once
 
+#include <list>
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "chrome/common/url_constants.h"
@@ -57,7 +58,7 @@ class BrowsingDataDatabaseHelper
   // callback.
   // This must be called only in the UI thread.
   virtual void StartFetching(
-      Callback1<const std::vector<DatabaseInfo>& >::Type* callback);
+      const base::Callback<void(const std::list<DatabaseInfo>&)>& callback);
 
   // Cancels the notification callback (i.e., the window that created it no
   // longer exists).
@@ -77,11 +78,10 @@ class BrowsingDataDatabaseHelper
   void NotifyInUIThread();
 
   // This only mutates in the FILE thread.
-  std::vector<DatabaseInfo> database_info_;
+  std::list<DatabaseInfo> database_info_;
 
   // This only mutates on the UI thread.
-  scoped_ptr<Callback1<const std::vector<DatabaseInfo>& >::Type >
-      completion_callback_;
+  base::Callback<void(const std::list<DatabaseInfo>&)> completion_callback_;
 
   // Indicates whether or not we're currently fetching information:
   // it's true when StartFetching() is called in the UI thread, and it's reset
@@ -126,10 +126,11 @@ class CannedBrowsingDataDatabaseHelper : public BrowsingDataDatabaseHelper {
   // True if no databases are currently stored.
   bool empty() const;
 
-  // BrowsingDataDatabaseHelper methods.
+  // BrowsingDataDatabaseHelper implementation.
   virtual void StartFetching(
-      Callback1<const std::vector<DatabaseInfo>& >::Type* callback);
-  virtual void CancelNotification() {}
+      const base::Callback<void(const std::list<DatabaseInfo>&)>& callback)
+          OVERRIDE;
+  virtual void CancelNotification() OVERRIDE {}
 
  private:
   struct PendingDatabaseInfo {
@@ -153,7 +154,7 @@ class CannedBrowsingDataDatabaseHelper : public BrowsingDataDatabaseHelper {
   mutable base::Lock lock_;
 
   // This may mutate on WEBKIT and UI threads.
-  std::vector<PendingDatabaseInfo> pending_database_info_;
+  std::list<PendingDatabaseInfo> pending_database_info_;
 
   Profile* profile_;
 

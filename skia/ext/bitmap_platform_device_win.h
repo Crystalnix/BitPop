@@ -6,16 +6,11 @@
 #define SKIA_EXT_BITMAP_PLATFORM_DEVICE_WIN_H_
 #pragma once
 
-#include "skia/ext/platform_device_win.h"
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
+#include "skia/ext/platform_device.h"
 
 namespace skia {
-
-class BitmapPlatformDeviceFactory : public SkDeviceFactory {
- public:
-  virtual SkDevice* newDevice(SkCanvas* ignored, SkBitmap::Config config,
-                              int width, int height,
-                              bool isOpaque, bool isForLayer);
-};
 
 // A device is basically a wrapper around SkBitmap that provides a surface for
 // SkCanvas to draw into. Our device provides a surface Windows can also write
@@ -31,7 +26,7 @@ class BitmapPlatformDeviceFactory : public SkDeviceFactory {
 // For us, that other bitmap will become invalid as soon as the device becomes
 // invalid, which may lead to subtle bugs. Therefore, DO NOT ASSIGN THE
 // DEVICE'S PIXEL DATA TO ANOTHER BITMAP, make sure you copy instead.
-class SK_API BitmapPlatformDevice : public PlatformDevice {
+class SK_API BitmapPlatformDevice : public PlatformDevice, public SkDevice {
  public:
   // Factory function. The screen DC is used to create the bitmap, and will not
   // be stored beyond this function. is_opaque should be set if the caller
@@ -40,57 +35,38 @@ class SK_API BitmapPlatformDevice : public PlatformDevice {
   // The shared_section parameter is optional (pass NULL for default behavior).
   // If shared_section is non-null, then it must be a handle to a file-mapping
   // object returned by CreateFileMapping.  See CreateDIBSection for details.
-  static BitmapPlatformDevice* create(HDC screen_dc,
-                                      int width,
-                                      int height,
-                                      bool is_opaque,
-                                      HANDLE shared_section);
+  static BitmapPlatformDevice* create(HDC screen_dc, int width, int height,
+                                      bool is_opaque, HANDLE shared_section);
 
   // This version is the same as above but will get the screen DC itself.
-  static BitmapPlatformDevice* create(int width,
-                                      int height,
-                                      bool is_opaque,
+  static BitmapPlatformDevice* create(int width, int height, bool is_opaque,
                                       HANDLE shared_section);
 
-  // Copy constructor. When copied, devices duplicate their internal data, so
-  // stay linked. This is because their implementation is very heavyweight
-  // (lots of memory and some GDI objects). If a device has been copied, both
-  // clip rects and other state will stay in sync.
-  //
-  // This means it will NOT work to duplicate a device and assign it to a
-  // canvas, because the two canvases will each set their own clip rects, and
-  // the resulting GDI clip rect will be random.
-  //
-  // Copy constucting and "=" is designed for saving the device or passing it
-  // around to another routine willing to deal with the bitmap data directly.
-  BitmapPlatformDevice(const BitmapPlatformDevice& other);
   virtual ~BitmapPlatformDevice();
-
-  // See warning for copy constructor above.
-  BitmapPlatformDevice& operator=(const BitmapPlatformDevice& other);
 
   // PlatformDevice overrides
   // Retrieves the bitmap DC, which is the memory DC for our bitmap data. The
   // bitmap DC is lazy created.
-  virtual PlatformSurface BeginPlatformPaint();
-  virtual void EndPlatformPaint();
+  virtual PlatformSurface BeginPlatformPaint() OVERRIDE;
+  virtual void EndPlatformPaint() OVERRIDE;
 
-  virtual void DrawToNativeContext(HDC dc, int x, int y, const RECT* src_rect);
-  virtual void MakeOpaque(int x, int y, int width, int height);
+  virtual void DrawToNativeContext(HDC dc, int x, int y,
+                                   const RECT* src_rect) OVERRIDE;
 
   // Loads the given transform and clipping region into the HDC. This is
   // overridden from SkDevice.
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
-                             const SkClipStack&);
+                             const SkClipStack&) OVERRIDE;
 
  protected:
   // Flushes the Windows device context so that the pixel data can be accessed
   // directly by Skia. Overridden from SkDevice, this is called when Skia
   // starts accessing pixel data.
-  virtual void onAccessBitmap(SkBitmap* bitmap);
+  virtual void onAccessBitmap(SkBitmap* bitmap) OVERRIDE;
 
-  // Override SkDevice.
-  virtual SkDeviceFactory* onNewDeviceFactory();
+  virtual SkDevice* onCreateCompatibleDevice(SkBitmap::Config, int width,
+                                             int height, bool isOpaque,
+                                             Usage usage) OVERRIDE;
 
  private:
   // Reference counted data that can be shared between multiple devices. This
@@ -109,9 +85,10 @@ class SK_API BitmapPlatformDevice : public PlatformDevice {
 #ifdef SK_DEBUG
   int begin_paint_count_;
 #endif
+
+  DISALLOW_COPY_AND_ASSIGN(BitmapPlatformDevice);
 };
 
 }  // namespace skia
 
 #endif  // SKIA_EXT_BITMAP_PLATFORM_DEVICE_WIN_H_
-

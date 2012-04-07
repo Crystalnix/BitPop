@@ -10,35 +10,27 @@
 #include "third_party/zlib/zlib.h"
 #endif
 
-#include "base/stl_util-inl.h"
-#include "chrome/browser/browser_process.h"
-#include "content/browser/clipboard_dispatcher.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/stl_util.h"
 #include "content/common/clipboard_messages.h"
+#include "content/public/browser/content_browser_client.h"
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 
+using content::BrowserThread;
+
 namespace {
 
-// Completes a clipboard write initiated by the renderer. The write must be
-// performed on the UI thread because the clipboard service from the IO thread
-// cannot create windows so it cannot be the "owner" of the clipboard's
-// contents.
-class WriteClipboardTask : public Task {
- public:
-  explicit WriteClipboardTask(ui::Clipboard::ObjectMap* objects)
-      : objects_(objects) {}
-  ~WriteClipboardTask() {}
-
-  void Run() {
-    g_browser_process->clipboard()->WriteObjects(*objects_.get());
-  }
-
- private:
-  scoped_ptr<ui::Clipboard::ObjectMap> objects_;
-};
+// This helper is needed because content::ContentBrowserClient::GetClipboard()
+// must be called on the UI thread.
+void WriteObjectsHelper(const ui::Clipboard::ObjectMap* objects) {
+  content::GetContentClient()->browser()->GetClipboard()->WriteObjects(
+      *objects);
+}
 
 }  // namespace
 
@@ -62,6 +54,7 @@ bool ClipboardMessageFilter::OnMessageReceived(const IPC::Message& message,
   IPC_BEGIN_MESSAGE_MAP_EX(ClipboardMessageFilter, message, *message_was_ok)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_WriteObjectsAsync, OnWriteObjectsAsync)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_WriteObjectsSync, OnWriteObjectsSync)
+    IPC_MESSAGE_HANDLER(ClipboardHostMsg_GetSequenceNumber, OnGetSequenceNumber)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_IsFormatAvailable, OnIsFormatAvailable)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadAvailableTypes,
                         OnReadAvailableTypes)
@@ -69,12 +62,11 @@ bool ClipboardMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadAsciiText, OnReadAsciiText)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadHTML, OnReadHTML)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(ClipboardHostMsg_ReadImage, OnReadImage)
+    IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadCustomData, OnReadCustomData)
 #if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(ClipboardHostMsg_FindPboardWriteStringAsync,
                         OnFindPboardWriteString)
 #endif
-    IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadData, OnReadData)
-    IPC_MESSAGE_HANDLER(ClipboardHostMsg_ReadFilenames, OnReadFilenames)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -102,7 +94,7 @@ void ClipboardMessageFilter::OnWriteObjectsSync(
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
-      new WriteClipboardTask(long_living_objects));
+      base::Bind(&WriteObjectsHelper, base::Owned(long_living_objects)));
 }
 
 void ClipboardMessageFilter::OnWriteObjectsAsync(
@@ -120,11 +112,22 @@ void ClipboardMessageFilter::OnWriteObjectsAsync(
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
-      new WriteClipboardTask(long_living_objects));
+      base::Bind(&WriteObjectsHelper, base::Owned(long_living_objects)));
+}
+
+void ClipboardMessageFilter::OnGetSequenceNumber(
+    ui::Clipboard::Buffer buffer, uint64* sequence_number) {
+  *sequence_number = GetClipboard()->GetSequenceNumber(buffer);
+}
+
+void ClipboardMessageFilter::OnReadAvailableTypes(
+    ui::Clipboard::Buffer buffer, std::vector<string16>* types,
+    bool* contains_filenames) {
+  GetClipboard()->ReadAvailableTypes(buffer, types, contains_filenames);
 }
 
 void ClipboardMessageFilter::OnIsFormatAvailable(
-    ui::Clipboard::FormatType format, ui::Clipboard::Buffer buffer,
+    const ui::Clipboard::FormatType& format, ui::Clipboard::Buffer buffer,
     bool* result) {
   *result = GetClipboard()->IsFormatAvailable(format, buffer);
 }
@@ -140,9 +143,11 @@ void ClipboardMessageFilter::OnReadAsciiText(
 }
 
 void ClipboardMessageFilter::OnReadHTML(
-    ui::Clipboard::Buffer buffer, string16* markup, GURL* url) {
+    ui::Clipboard::Buffer buffer, string16* markup, GURL* url,
+    uint32* fragment_start, uint32* fragment_end) {
   std::string src_url_str;
-  GetClipboard()->ReadHTML(buffer, markup, &src_url_str);
+  GetClipboard()->ReadHTML(buffer, markup, &src_url_str, fragment_start,
+                           fragment_end);
   *url = GURL(src_url_str);
 }
 
@@ -153,15 +158,15 @@ void ClipboardMessageFilter::OnReadImage(
 #if defined(USE_X11)
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(
-          this, &ClipboardMessageFilter::OnReadImageReply, bitmap, reply_msg));
+      base::Bind(
+          &ClipboardMessageFilter::OnReadImageReply, this, bitmap, reply_msg));
 #else
   OnReadImageReply(bitmap, reply_msg);
 #endif
 }
 
 void ClipboardMessageFilter::OnReadImageReply(
-    SkBitmap bitmap, IPC::Message* reply_msg) {
+    const SkBitmap& bitmap, IPC::Message* reply_msg) {
   base::SharedMemoryHandle image_handle = base::SharedMemory::NULLHandle();
   uint32 image_size = 0;
   std::string reply_data;
@@ -191,22 +196,9 @@ void ClipboardMessageFilter::OnReadImageReply(
   Send(reply_msg);
 }
 
-void ClipboardMessageFilter::OnReadAvailableTypes(
-    ui::Clipboard::Buffer buffer, std::vector<string16>* types,
-    bool* contains_filenames) {
-  GetClipboard()->ReadAvailableTypes(buffer, types, contains_filenames);
-}
-
-void ClipboardMessageFilter::OnReadData(
-    ui::Clipboard::Buffer buffer, const string16& type, bool* succeeded,
-    string16* data, string16* metadata) {
-  *succeeded = ClipboardDispatcher::ReadData(buffer, type, data, metadata);
-}
-
-void ClipboardMessageFilter::OnReadFilenames(
-    ui::Clipboard::Buffer buffer, bool* succeeded,
-    std::vector<string16>* filenames) {
-  *succeeded = ClipboardDispatcher::ReadFilenames(buffer, filenames);
+void ClipboardMessageFilter::OnReadCustomData(
+    ui::Clipboard::Buffer buffer, const string16& type, string16* result) {
+  GetClipboard()->ReadCustomData(buffer, type, result);
 }
 
 // static

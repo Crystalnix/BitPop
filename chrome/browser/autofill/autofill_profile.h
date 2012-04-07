@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 #pragma once
 
 #include <stddef.h>
+
+#include <iosfwd>
 #include <list>
-#include <ostream>
 #include <string>
 #include <vector>
 
@@ -16,10 +17,9 @@
 #include "chrome/browser/autofill/address.h"
 #include "chrome/browser/autofill/autofill_type.h"
 #include "chrome/browser/autofill/contact_info.h"
-#include "chrome/browser/autofill/fax_number.h"
 #include "chrome/browser/autofill/field_types.h"
 #include "chrome/browser/autofill/form_group.h"
-#include "chrome/browser/autofill/home_phone_number.h"
+#include "chrome/browser/autofill/phone_number.h"
 
 // A collection of FormGroups stored in a profile.  AutofillProfile also
 // implements the FormGroup interface so that owners of this object can request
@@ -38,16 +38,20 @@ class AutofillProfile : public FormGroup {
 
   // FormGroup:
   virtual void GetMatchingTypes(const string16& text,
-                                FieldTypeSet* matching_types) const;
-  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
-  virtual string16 GetInfo(AutofillFieldType type) const;
-  virtual void SetInfo(AutofillFieldType type, const string16& value);
+                                FieldTypeSet* matching_types) const OVERRIDE;
+  virtual string16 GetInfo(AutofillFieldType type) const OVERRIDE;
+  virtual void SetInfo(AutofillFieldType type, const string16& value) OVERRIDE;
+  virtual string16 GetCanonicalizedInfo(AutofillFieldType type) const OVERRIDE;
+  virtual bool SetCanonicalizedInfo(AutofillFieldType type,
+                                    const string16& value) OVERRIDE;
 
   // Multi-value equivalents to |GetInfo| and |SetInfo|.
   void SetMultiInfo(AutofillFieldType type,
                     const std::vector<string16>& values);
   void GetMultiInfo(AutofillFieldType type,
                     std::vector<string16>* values) const;
+  void GetCanonicalizedMultiInfo(AutofillFieldType type,
+                                 std::vector<string16>* values) const;
 
   // Returns |true| if |type| accepts multi-values.
   static bool SupportsMultiValue(AutofillFieldType type);
@@ -55,7 +59,7 @@ class AutofillProfile : public FormGroup {
   // The user-visible label of the profile, generated in relation to other
   // profiles. Shows at least 2 fields that differentiate profile from other
   // profiles. See AdjustInferredLabels() further down for more description.
-  virtual const string16 Label() const;
+  const string16 Label() const;
 
   // This guid is the primary identifier for |AutofillProfile| objects.
   const std::string guid() const { return guid_; }
@@ -71,8 +75,7 @@ class AutofillProfile : public FormGroup {
   // 2. Address.
   // 3. E-mail.
   // 4. Phone.
-  // 5. Fax.
-  // 6. Company name.
+  // 5. Company name.
   // Profile labels are changed accordingly to these rules.
   // Returns true if any of the profiles were updated.
   // This function is useful if you want to adjust unique labels for all
@@ -102,15 +105,10 @@ class AutofillProfile : public FormGroup {
   // culling duplicates.  The ordering is based on collation order of the
   // textual contents of the fields.
   // GUIDs are not compared, only the values of the contents themselves.
-  // DEPRECATED: Use |CompareMulti| instead.  |Compare| does not compare
-  // multi-valued items.
+  // Full profile comparision, comparison includes multi-valued fields.
   int Compare(const AutofillProfile& profile) const;
 
-  // Comparison for Sync.  Same as |Compare| but includes multi-valued fields.
-  int CompareMulti(const AutofillProfile& profile) const;
-
   // Equality operators compare GUIDs and the contents in the comparison.
-  // TODO(dhollowa): This needs to be made multi-profile once Sync updates.
   bool operator==(const AutofillProfile& profile) const;
   virtual bool operator!=(const AutofillProfile& profile) const;
 
@@ -119,12 +117,9 @@ class AutofillProfile : public FormGroup {
   // aid with correct aggregation of new data.
   const string16 PrimaryValue() const;
 
-  // Normalizes the home phone and fax numbers.
-  // Should be called after all of the form data is imported into profile.
-  // Drops unparsable numbers, so the numbers that are incomplete or wrong
-  // are not saved. Returns true if all numbers were successfully parsed,
-  // false otherwise.
-  bool NormalizePhones();
+  // Returns true if the data in this AutofillProfile is a subset of the data in
+  // |profile|.
+  bool IsSubsetOf(const AutofillProfile& profile) const;
 
   // Overwrites the single-valued field data in |profile| with this
   // Profile.  Or, for multi-valued fields append the new values.
@@ -132,6 +127,14 @@ class AutofillProfile : public FormGroup {
 
  private:
   typedef std::vector<const FormGroup*> FormGroupList;
+
+  // FormGroup implementation.
+  virtual void GetSupportedTypes(FieldTypeSet* supported_types) const OVERRIDE;
+
+  // Shared implementation for GetMultiInfo() and GetCanonicalizedMultiInfo().
+  void GetMultiInfoImpl(AutofillFieldType type,
+                        bool canonicalize,
+                        std::vector<string16>* values) const;
 
   // Checks if the |phone| is in the |existing_phones| using fuzzy matching:
   // for example, "1-800-FLOWERS", "18003569377", "(800)356-9377" and "356-9377"
@@ -176,7 +179,6 @@ class AutofillProfile : public FormGroup {
   std::vector<EmailInfo> email_;
   CompanyInfo company_;
   std::vector<PhoneNumber> home_number_;
-  std::vector<PhoneNumber> fax_number_;
   Address address_;
 };
 

@@ -7,11 +7,16 @@
 
 #include <stddef.h>  // For NULL.
 
+#include "ppapi/shared_impl/ppapi_shared_export.h"
+
 #define FOR_ALL_PPAPI_FUNCTION_APIS(F) \
   F(PPB_CharSet_FunctionAPI) \
   F(PPB_CursorControl_FunctionAPI) \
-  F(PPB_Find_FunctionAPI) \
+  F(PPB_Flash_Clipboard_FunctionAPI) \
   F(PPB_Font_FunctionAPI) \
+  F(PPB_Fullscreen_FunctionAPI) \
+  F(PPB_Instance_FunctionAPI) \
+  F(PPB_TextInput_FunctionAPI) \
   F(ResourceCreationAPI)
 
 namespace ppapi {
@@ -23,7 +28,7 @@ FOR_ALL_PPAPI_FUNCTION_APIS(DECLARE_FUNCTION_CLASS)
 #undef DECLARE_FUNCTION_CLASS
 }  // namespace thunk
 
-class FunctionGroupBase {
+class PPAPI_SHARED_EXPORT FunctionGroupBase {
  public:
   virtual ~FunctionGroupBase();
 

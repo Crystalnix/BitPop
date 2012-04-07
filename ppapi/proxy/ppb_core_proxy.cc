@@ -6,6 +6,8 @@
 
 #include <stdlib.h>  // For malloc
 
+#include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
@@ -16,43 +18,44 @@
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
+#include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/proxy_lock.h"
+#include "ppapi/shared_impl/time_conversion.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 namespace {
 
 base::MessageLoopProxy* GetMainThreadMessageLoop() {
-  static scoped_refptr<base::MessageLoopProxy> proxy(
-      base::MessageLoopProxy::CreateForCurrentThread());
+  CR_DEFINE_STATIC_LOCAL(scoped_refptr<base::MessageLoopProxy>, proxy,
+      (base::MessageLoopProxy::current()));
   return proxy.get();
 }
 
 void AddRefResource(PP_Resource resource) {
-  PluginResourceTracker::GetInstance()->AddRefResource(resource);
+  ppapi::ProxyAutoLock lock;
+  PpapiGlobals::Get()->GetResourceTracker()->AddRefResource(resource);
 }
 
 void ReleaseResource(PP_Resource resource) {
-  PluginResourceTracker::GetInstance()->ReleaseResource(resource);
-}
-
-void* MemAlloc(uint32_t num_bytes) {
-  return malloc(num_bytes);
-}
-
-void MemFree(void* ptr) {
-  free(ptr);
+  ppapi::ProxyAutoLock lock;
+  PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(resource);
 }
 
 double GetTime() {
-  return base::Time::Now().ToDoubleT();
+  return TimeToPPTime(base::Time::Now());
 }
 
 double GetTimeTicks() {
-  // TODO(brettw) http://code.google.com/p/chromium/issues/detail?id=57448
-  // This should be a tick timer rather than wall clock time, but needs to
-  // match message times, which also currently use wall clock time.
-  return GetTime();
+  return TimeTicksToPPTimeTicks(base::TimeTicks::Now());
+}
+
+void CallbackWrapper(PP_CompletionCallback callback, int32_t result) {
+  TRACE_EVENT2("ppapi proxy", "CallOnMainThread callback",
+               "Func", reinterpret_cast<void*>(callback.func),
+               "UserData", callback.user_data);
+  PP_RunCompletionCallback(&callback, result);
 }
 
 void CallOnMainThread(int delay_in_ms,
@@ -60,50 +63,40 @@ void CallOnMainThread(int delay_in_ms,
                       int32_t result) {
   GetMainThreadMessageLoop()->PostDelayedTask(
       FROM_HERE,
-      NewRunnableFunction(callback.func, callback.user_data, result),
+      base::Bind(&CallbackWrapper, callback, result),
       delay_in_ms);
 }
 
 PP_Bool IsMainThread() {
-  return BoolToPPBool(GetMainThreadMessageLoop()->BelongsToCurrentThread());
+  return PP_FromBool(GetMainThreadMessageLoop()->BelongsToCurrentThread());
 }
 
 const PPB_Core core_interface = {
   &AddRefResource,
   &ReleaseResource,
-  &MemAlloc,
-  &MemFree,
   &GetTime,
   &GetTimeTicks,
   &CallOnMainThread,
   &IsMainThread
 };
 
-InterfaceProxy* CreateCoreProxy(Dispatcher* dispatcher,
-                                const void* target_interface) {
-  return new PPB_Core_Proxy(dispatcher, target_interface);
-}
-
 }  // namespace
 
-PPB_Core_Proxy::PPB_Core_Proxy(Dispatcher* dispatcher,
-                               const void* target_interface)
-    : InterfaceProxy(dispatcher, target_interface) {
+PPB_Core_Proxy::PPB_Core_Proxy(Dispatcher* dispatcher)
+    : InterfaceProxy(dispatcher),
+      ppb_core_impl_(NULL) {
+  if (!dispatcher->IsPlugin()) {
+    ppb_core_impl_ = static_cast<const PPB_Core*>(
+        dispatcher->local_get_interface()(PPB_CORE_INTERFACE));
+  }
 }
 
 PPB_Core_Proxy::~PPB_Core_Proxy() {
 }
 
 // static
-const InterfaceProxy::Info* PPB_Core_Proxy::GetInfo() {
-  static const Info info = {
-    &core_interface,
-    PPB_CORE_INTERFACE,
-    INTERFACE_ID_PPB_CORE,
-    false,
-    &CreateCoreProxy,
-  };
-  return &info;
+const PPB_Core* PPB_Core_Proxy::GetPPB_Core_Interface() {
+  return &core_interface;
 }
 
 bool PPB_Core_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -119,13 +112,13 @@ bool PPB_Core_Proxy::OnMessageReceived(const IPC::Message& msg) {
   return handled;
 }
 
-void PPB_Core_Proxy::OnMsgAddRefResource(HostResource resource) {
-  ppb_core_target()->AddRefResource(resource.host_resource());
+void PPB_Core_Proxy::OnMsgAddRefResource(const HostResource& resource) {
+  ppb_core_impl_->AddRefResource(resource.host_resource());
 }
 
-void PPB_Core_Proxy::OnMsgReleaseResource(HostResource resource) {
-  ppb_core_target()->ReleaseResource(resource.host_resource());
+void PPB_Core_Proxy::OnMsgReleaseResource(const HostResource& resource) {
+  ppb_core_impl_->ReleaseResource(resource.host_resource());
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

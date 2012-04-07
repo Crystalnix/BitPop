@@ -2,32 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/navigation_details.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 
 namespace {
 
-class NavigationNotificationObserver : public NotificationObserver {
+class NavigationNotificationObserver : public content::NotificationObserver {
  public:
   NavigationNotificationObserver()
       : got_navigation_(false),
         http_status_code_(0) {
-    registrar_.Add(this, NotificationType::NAV_ENTRY_COMMITTED,
-                   NotificationService::AllSources());
+    registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_COMMITTED,
+                   content::NotificationService::AllSources());
   }
 
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE {
-    DCHECK_EQ(NotificationType::NAV_ENTRY_COMMITTED, type.value);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE {
+    DCHECK_EQ(content::NOTIFICATION_NAV_ENTRY_COMMITTED, type);
     got_navigation_ = true;
     http_status_code_ =
-        Details<content::LoadCommittedDetails>(details)->
+        content::Details<content::LoadCommittedDetails>(details)->
         http_status_code;
   }
 
@@ -35,7 +36,7 @@ class NavigationNotificationObserver : public NotificationObserver {
   bool got_navigation() const { return got_navigation_; }
 
   private:
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
   int got_navigation_;
   int http_status_code_;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,20 @@
 
 #include "webkit/plugins/ppapi/plugin_delegate.h"
 
+struct PP_NetAddress_Private;
+
 namespace webkit {
 namespace ppapi {
 
 class MockPluginDelegate : public PluginDelegate {
  public:
   MockPluginDelegate();
-  ~MockPluginDelegate();
+  virtual ~MockPluginDelegate();
 
-  virtual void PluginFocusChanged(bool focused);
+  virtual void PluginFocusChanged(PluginInstance* instance, bool focused);
+  virtual void PluginTextInputTypeChanged(PluginInstance* instance);
+  virtual void PluginCaretPositionChanged(PluginInstance* instance);
+  virtual void PluginRequestedCancelComposition(PluginInstance* instance);
   virtual void PluginCrashed(PluginInstance* instance);
   virtual void InstanceCreated(PluginInstance* instance);
   virtual void InstanceDeleted(PluginInstance* instance);
@@ -23,10 +28,17 @@ class MockPluginDelegate : public PluginDelegate {
   virtual PlatformImage2D* CreateImage2D(int width, int height);
   virtual PlatformContext3D* CreateContext3D();
   virtual PlatformVideoDecoder* CreateVideoDecoder(
-      media::VideoDecodeAccelerator::Client* client);
+      media::VideoDecodeAccelerator::Client* client,
+      int32 command_buffer_route_id);
+  virtual PlatformVideoCapture* CreateVideoCapture(
+      media::VideoCapture::EventHandler* handler);
   virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
                                      uint32_t sample_count,
-                                     PlatformAudio::Client* client);
+                                     PlatformAudioCommonClient* client);
+  virtual PlatformAudioInput* CreateAudioInput(
+      uint32_t sample_rate,
+      uint32_t sample_count,
+      PlatformAudioCommonClient* client);
   virtual PpapiBroker* ConnectToPpapiBroker(PPB_Broker_Impl* client);
   virtual void NumberOfFindResultsChanged(int identifier,
                                           int total,
@@ -37,10 +49,10 @@ class MockPluginDelegate : public PluginDelegate {
       WebKit::WebFileChooserCompletion* chooser_completion);
   virtual bool AsyncOpenFile(const FilePath& path,
                              int flags,
-                             AsyncOpenFileCallback* callback);
+                             const AsyncOpenFileCallback& callback);
   virtual bool AsyncOpenFileSystemURL(const GURL& path,
                                       int flags,
-                                      AsyncOpenFileCallback* callback);
+                                      const AsyncOpenFileCallback& callback);
   virtual bool OpenFileSystem(
       const GURL& url,
       fileapi::FileSystemType type,
@@ -64,6 +76,11 @@ class MockPluginDelegate : public PluginDelegate {
   virtual bool ReadDirectory(
       const GURL& directory_path,
       fileapi::FileSystemCallbackDispatcher* dispatcher);
+  virtual void QueryAvailableSpace(const GURL& origin,
+                                   quota::StorageType type,
+                                   const AvailableSpaceCallback& callback);
+  virtual void WillUpdateFile(const GURL& file_path);
+  virtual void DidUpdateFile(const GURL& file_path, int64_t delta);
   virtual base::PlatformFileError OpenFile(const PepperFilePath& path,
                                            int flags,
                                            base::PlatformFile* file);
@@ -76,6 +93,8 @@ class MockPluginDelegate : public PluginDelegate {
                                             base::PlatformFileInfo* info);
   virtual base::PlatformFileError GetDirContents(const PepperFilePath& path,
                                                  DirContents* contents);
+  virtual void SyncGetFileSystemPlatformPath(const GURL& url,
+                                             FilePath* platform_path);
   virtual scoped_refptr<base::MessageLoopProxy>
       GetFileThreadMessageLoopProxy();
   virtual int32_t ConnectTcp(
@@ -84,7 +103,31 @@ class MockPluginDelegate : public PluginDelegate {
       uint16_t port);
   virtual int32_t ConnectTcpAddress(
       webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const struct PP_Flash_NetAddress* addr);
+      const PP_NetAddress_Private* addr);
+  virtual uint32 TCPSocketCreate();
+  virtual void TCPSocketConnect(PPB_TCPSocket_Private_Impl* socket,
+                                uint32 socket_id,
+                                const std::string& host,
+                                uint16_t port);
+  virtual void TCPSocketConnectWithNetAddress(
+      PPB_TCPSocket_Private_Impl* socket,
+      uint32 socket_id,
+      const PP_NetAddress_Private& addr);
+  virtual void TCPSocketSSLHandshake(uint32 socket_id,
+                                     const std::string& server_name,
+                                     uint16_t server_port);
+  virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read);
+  virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer);
+  virtual void TCPSocketDisconnect(uint32 socket_id);
+  virtual uint32 UDPSocketCreate();
+  virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
+                             uint32 socket_id,
+                             const PP_NetAddress_Private& addr);
+  virtual void UDPSocketRecvFrom(uint32 socket_id, int32_t num_bytes);
+  virtual void UDPSocketSendTo(uint32 socket_id,
+                               const std::string& buffer,
+                               const PP_NetAddress_Private& addr);
+  virtual void UDPSocketClose(uint32 socket_id);
   virtual int32_t ShowContextMenu(
       PluginInstance* instance,
       webkit::ppapi::PPB_Flash_Menu_Impl* menu,
@@ -99,14 +142,21 @@ class MockPluginDelegate : public PluginDelegate {
   virtual void DidStartLoading();
   virtual void DidStopLoading();
   virtual void SetContentRestriction(int restrictions);
-  virtual void HasUnsupportedFeature();
   virtual void SaveURLAs(const GURL& url);
-  virtual P2PSocketDispatcher* GetP2PSocketDispatcher();
   virtual webkit_glue::P2PTransport* CreateP2PTransport();
   virtual double GetLocalTimeZoneOffset(base::Time t);
   virtual std::string GetFlashCommandLineArgs();
   virtual base::SharedMemory* CreateAnonymousSharedMemory(uint32_t size);
   virtual ::ppapi::Preferences GetPreferences();
+  virtual bool LockMouse(PluginInstance* instance);
+  virtual void UnlockMouse(PluginInstance* instance);
+  virtual bool IsMouseLocked(PluginInstance* instance);
+  virtual void DidChangeCursor(PluginInstance* instance,
+                               const WebKit::WebCursorInfo& cursor);
+  virtual void DidReceiveMouseEvent(PluginInstance* instance);
+  virtual void SampleGamepads(WebKit::WebGamepads* data) OVERRIDE;
+  virtual bool IsInFullscreenMode();
+  virtual bool IsPageVisible() const;
 };
 
 }  // namespace ppapi

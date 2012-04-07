@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,8 @@
 #include <unistd.h>
 #endif
 
-#include <iostream>
+#include <string>
 
-#include "app/app_paths.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
@@ -22,6 +21,7 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/diagnostics/diagnostics_model.h"
 #include "chrome/common/chrome_paths.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 
 namespace {
@@ -45,9 +45,8 @@ class SimpleConsole {
   // Writes a string to the console with the current color.
   virtual bool Write(const std::wstring& text) = 0;
 
-  // Reads a string from the console. Internally it may be limited to 256
-  // characters.
-  virtual bool Read(std::wstring* txt) = 0;
+  // Called when the program is about to exit.
+  virtual void OnQuit() = 0;
 
   // Sets the foreground and background color.
   virtual bool SetColor(Color color) = 0;
@@ -84,14 +83,13 @@ class WinConsole : public SimpleConsole {
 
   // Reads a string from the console. Internally it is limited to 256
   // characters.
-  virtual bool Read(std::wstring* txt) {
+  virtual void OnQuit() {
+    // Block here so the user can see the results.
+    SetColor(SimpleConsole::DEFAULT);
+    Write(L"Press [enter] to continue\n");
     wchar_t buf[256];
-    DWORD read = sizeof(buf) - sizeof(buf[0]);
-    if (!::ReadConsoleW(std_in_, buf, read, &read, NULL))
-      return false;
-    // Note that |read| is in bytes.
-    txt->assign(buf, read/2);
-    return true;
+    DWORD read = arraysize(buf);
+    ::ReadConsoleW(std_in_, buf, read, &read, NULL);
   }
 
   // Sets the foreground and background color.
@@ -151,14 +149,9 @@ class PosixConsole : public SimpleConsole {
     return true;
   }
 
-  virtual bool Read(std::wstring* txt) {
-    std::string input;
-    if (!std::getline(std::cin, input)) {
-      std::cin.clear();
-      return false;
-    }
-    *txt = UTF8ToWide(input);
-    return true;
+  virtual void OnQuit() {
+    // The "press enter to continue" prompt isn't very unixy, so only do that on
+    // Windows.
   }
 
   virtual bool SetColor(Color color) {
@@ -240,7 +233,6 @@ class TestWriter {
   }
 
  private:
-
   SimpleConsole* console_;
 
   // Keeps track of how many tests reported failure.
@@ -286,6 +278,7 @@ class TestController : public DiagnosticsModel::Observer {
       writer_->WriteResult(false, L"Diagnostics start", L"ICU failure");
       return;
     }
+    ResourceBundle::InitSharedInstanceWithLocale("");
     int count = model->GetTestAvailableCount();
     writer_->WriteInfoText(base::StringPrintf(
         L"%d available test(s)\n\n", count));
@@ -302,7 +295,7 @@ class TestController : public DiagnosticsModel::Observer {
 
   virtual void OnFinished(int id, DiagnosticsModel* model) {
     // As each test completes we output the results.
-    ShowResult(model->GetTest(id));
+    ShowResult(&model->GetTest(id));
   }
 
   virtual void OnDoneAll(DiagnosticsModel* model) {
@@ -315,10 +308,10 @@ class TestController : public DiagnosticsModel::Observer {
   }
 
  private:
-  void ShowResult(DiagnosticsModel::TestInfo& test_info) {
-    bool success = (DiagnosticsModel::TEST_OK == test_info.GetResult());
-    writer_->WriteResult(success, UTF16ToWide(test_info.GetTitle()),
-                         UTF16ToWide(test_info.GetAdditionalInfo()));
+  void ShowResult(DiagnosticsModel::TestInfo* test_info) {
+    bool success = (DiagnosticsModel::TEST_OK == test_info->GetResult());
+    writer_->WriteResult(success, UTF16ToWide(test_info->GetTitle()),
+                         UTF16ToWide(test_info->GetAdditionalInfo()));
   }
 
   DiagnosticsModel* model_;
@@ -349,7 +342,6 @@ int DiagnosticsMain(const CommandLine& command_line) {
 
   // We need to have the path providers registered. They both
   // return void so there is no early error signal that we can use.
-  app::RegisterPathProvider();
   ui::RegisterPathProvider();
   chrome::RegisterPathProvider();
 
@@ -361,14 +353,7 @@ int DiagnosticsMain(const CommandLine& command_line) {
   controller.Run(model);
   delete model;
 
-  // The "press enter to continue" prompt isn't very unixy, so only do that on
-  // Windows.
-#if defined(OS_WIN)
-  // Block here so the user can see the results.
-  writer.WriteInfoText(L"Press [enter] to continue\n");
-  std::wstring txt;
-  console->Read(&txt);
-#endif
+  console->OnQuit();
   delete console;
   return 0;
 }

@@ -10,10 +10,15 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "content/browser/browser_message_filter.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/completion_callback.h"
 #include "net/proxy/proxy_service.h"
+
+namespace net {
+class URLRequestContextGetter;
+}
 
 // Responds to ChildProcessHostMsg_ResolveProxy, kicking off a ProxyResolve
 // request on the IO thread using the specified proxy service.  Completion is
@@ -25,19 +30,20 @@
 // the stored IPC::Message pointers for pending requests.
 //
 // This object is expected to live on the IO thread.
-class ResolveProxyMsgHelper : public BrowserMessageFilter {
+class CONTENT_EXPORT ResolveProxyMsgHelper
+    : public content::BrowserMessageFilter {
  public:
-  // If |proxy_service| is NULL, then the main profile's proxy service will
-  // be used.
+  explicit ResolveProxyMsgHelper(net::URLRequestContextGetter* getter);
+  // Constructor used by unittests.
   explicit ResolveProxyMsgHelper(net::ProxyService* proxy_service);
 
   // Destruction cancels the current outstanding request, and clears the
   // pending queue.
   virtual ~ResolveProxyMsgHelper();
 
-  // BrowserMessageFilter implementation
+  // content::BrowserMessageFilter implementation
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
 
@@ -47,10 +53,6 @@ class ResolveProxyMsgHelper : public BrowserMessageFilter {
 
   // Starts the first pending request.
   void StartPendingRequest();
-
-  // Get the proxy service instance to use. On success returns true and
-  // sets |*out|. Otherwise returns false.
-  bool GetProxyService(net::ProxyService** out) const;
 
   // A PendingRequest is a resolve request that is in progress, or queued.
   struct PendingRequest {
@@ -68,18 +70,15 @@ class ResolveProxyMsgHelper : public BrowserMessageFilter {
      net::ProxyService::PacRequest* pac_req;
   };
 
-  // Members for the current outstanding proxy request.
-  net::ProxyService* proxy_service_;
-  net::CompletionCallbackImpl<ResolveProxyMsgHelper> callback_;
+  // Info about the current outstanding proxy request.
   net::ProxyInfo proxy_info_;
 
   // FIFO queue of pending requests. The first entry is always the current one.
   typedef std::deque<PendingRequest> PendingRequestList;
   PendingRequestList pending_requests_;
 
-  // Specified by unit-tests, to use this proxy service in place of the
-  // global one.
-  net::ProxyService* proxy_service_override_;
+  scoped_refptr<net::URLRequestContextGetter> context_getter_;
+  net::ProxyService* proxy_service_;
 };
 
 #endif  // CONTENT_BROWSER_RESOLVE_PROXY_MSG_HELPER_H_

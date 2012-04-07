@@ -5,10 +5,10 @@
 #include "ppapi/proxy/serialized_structs.h"
 
 #include "ppapi/c/dev/ppb_font_dev.h"
-#include "ppapi/c/dev/pp_file_info_dev.h"
+#include "ppapi/c/pp_file_info.h"
 #include "ppapi/c/pp_rect.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 SerializedFontDescription::SerializedFontDescription()
@@ -63,10 +63,6 @@ void SerializedFontDescription::SetToPPFontDescription(
   desc->word_spacing = word_spacing;
 }
 
-PPBFileRef_CreateInfo::PPBFileRef_CreateInfo()
-    : file_system_type(PP_FILESYSTEMTYPE_EXTERNAL) {
-}
-
 PPBFlash_DrawGlyphs_Params::PPBFlash_DrawGlyphs_Params()
     : instance(0),
       font_desc(),
@@ -77,9 +73,10 @@ PPBFlash_DrawGlyphs_Params::PPBFlash_DrawGlyphs_Params()
   clip.size.width = 0;
   position.x = 0;
   position.y = 0;
+  allow_subpixel_aa = PP_FALSE;
 }
 
 PPBFlash_DrawGlyphs_Params::~PPBFlash_DrawGlyphs_Params() {}
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

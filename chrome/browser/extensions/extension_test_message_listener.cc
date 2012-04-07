@@ -1,13 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 
+#include "base/string_number_conversions.h"
 #include "chrome/browser/extensions/extension_test_api.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
 
 ExtensionTestMessageListener::ExtensionTestMessageListener(
     const std::string& expected_message,
@@ -16,8 +17,8 @@ ExtensionTestMessageListener::ExtensionTestMessageListener(
       satisfied_(false),
       waiting_(false),
       will_reply_(will_reply) {
-  registrar_.Add(this, NotificationType::EXTENSION_TEST_MESSAGE,
-                 NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_TEST_MESSAGE,
+                 content::NotificationService::AllSources());
 }
 
 ExtensionTestMessageListener::~ExtensionTestMessageListener() {}
@@ -38,13 +39,17 @@ void ExtensionTestMessageListener::Reply(const std::string& message) {
   will_reply_ = false;
 }
 
+void ExtensionTestMessageListener::Reply(int message) {
+  Reply(base::IntToString(message));
+}
+
 void ExtensionTestMessageListener::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  const std::string& content = *Details<std::string>(details).ptr();
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  const std::string& content = *content::Details<std::string>(details).ptr();
   if (!satisfied_ && content == expected_message_) {
-    function_ = Source<ExtensionTestSendMessageFunction>(source).ptr();
+    function_ = content::Source<ExtensionTestSendMessageFunction>(source).ptr();
     satisfied_ = true;
     registrar_.RemoveAll();  // Stop listening for more messages.
     if (!will_reply_) {

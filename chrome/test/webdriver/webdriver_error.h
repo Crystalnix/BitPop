@@ -9,7 +9,10 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/debug/stack_trace.h"
+
+namespace automation {
+class Error;
+}
 
 namespace webdriver {
 
@@ -29,6 +32,8 @@ enum ErrorCode {
   kNoSuchWindow = 23,
   kInvalidCookieDomain = 24,
   kUnableToSetCookie = 25,
+  kUnexpectedAlertOpen = 26,
+  kNoAlertOpenError = 27,
 
   // HTTP status codes.
   kSeeOther = 303,
@@ -41,6 +46,8 @@ enum ErrorCode {
 // Represents a WebDriver error and the context within which the error occurred.
 class Error {
  public:
+  static Error* FromAutomationError(const automation::Error& error);
+
   explicit Error(ErrorCode code);
 
   Error(ErrorCode code, const std::string& details);
@@ -49,17 +56,12 @@ class Error {
 
   void AddDetails(const std::string& details);
 
-  // Returns a formatted string describing the error. For logging purposes.
-  std::string ToString() const;
-
   ErrorCode code() const;
   const std::string& details() const;
-  const base::debug::StackTrace& trace() const;
 
  private:
   ErrorCode code_;
   std::string details_;
-  base::debug::StackTrace trace_;
 
   DISALLOW_COPY_AND_ASSIGN(Error);
 };

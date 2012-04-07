@@ -6,7 +6,6 @@
 
 #include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
-#include "ipc/ipc_platform_file.h"
 
 #define IPC_MESSAGE_START SafeBrowsingMsgStart
 
@@ -29,11 +28,12 @@ IPC_STRUCT_END()
 // SafeBrowsing client-side detection messages sent from the renderer to the
 // browser.
 
-// Inform the browser that the URL in the given ClientPhishingRequest proto is
-// phishing according to the client-side phishing detector.
+// Inform the browser that the client-side phishing detector running in the
+// renderer is done classifying the current URL.  If the URL is phishing
+// the request proto will have |is_phishing()| set to true.
 // TODO(noelutz): we may want to create custom ParamTraits for MessageLite to
 // have a generic way to send protocol messages over IPC.
-IPC_MESSAGE_ROUTED1(SafeBrowsingHostMsg_DetectedPhishingSite,
+IPC_MESSAGE_ROUTED1(SafeBrowsingHostMsg_PhishingDetectionDone,
                     std::string /* encoded ClientPhishingRequest proto */)
 
 // Send part of the DOM to the browser, to be used in a malware report.
@@ -44,10 +44,10 @@ IPC_MESSAGE_ROUTED1(SafeBrowsingHostMsg_MalwareDOMDetails,
 // renderer.
 
 // A classification model for client-side phishing detection.
-// The given file contains an encoded safe_browsing::ClientSideModel
-// protocol buffer.
+// The string is an encoded safe_browsing::ClientSideModel protocol buffer, or
+// empty to disable client-side phishing detection for this renderer.
 IPC_MESSAGE_CONTROL1(SafeBrowsingMsg_SetPhishingModel,
-                     IPC::PlatformFileForTransit /* model_file */)
+                     std::string /* encoded ClientSideModel proto */)
 
 // Request a DOM tree when a malware interstitial is shown.
 IPC_MESSAGE_ROUTED0(SafeBrowsingMsg_GetMalwareDOMDetails)

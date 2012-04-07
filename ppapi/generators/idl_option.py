@@ -1,6 +1,4 @@
-#!/usr/bin/python
-#
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -37,7 +35,7 @@ class Option(object):
     if self.testfunc:
       if not self.testfunc(self, value): return False
     # If this is a boolean option, set it to true
-    if not self.default:
+    if self.default is None:
       self.value = True
     else:
       self.value = value
@@ -55,7 +53,7 @@ def DumpOption(option):
   else:
     out = '   -%-15.15s\t%s' % (option.name, option.desc)
   if option.default:
-    out = '    %-15.15s\t%s\n\t\tDefault: %s\n' % (' ', out, option.default)
+    out = '%s\n\t\t\t(Default: %s)\n' % (out, option.default)
   InfoOut.Log(out)
 
 def DumpHelp(option=None):

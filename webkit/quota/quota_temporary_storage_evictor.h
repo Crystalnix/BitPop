@@ -9,20 +9,17 @@
 #include <map>
 #include <string>
 
-#include "base/memory/scoped_callback_factory.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/timer.h"
 #include "webkit/quota/quota_types.h"
 
 class GURL;
 
-namespace base {
-class MessageLoopProxy;
-}
-
 namespace quota {
 
 class QuotaEvictionHandler;
+struct QuotaAndUsage;
 
 class QuotaTemporaryStorageEvictor : public base::NonThreadSafe {
  public:
@@ -38,6 +35,38 @@ class QuotaTemporaryStorageEvictor : public base::NonThreadSafe {
     int64 num_evicted_origins;
     int64 num_eviction_rounds;
     int64 num_skipped_eviction_rounds;
+
+    void subtract_assign(const Statistics& rhs) {
+      num_errors_on_evicting_origin -= rhs.num_errors_on_evicting_origin;
+      num_errors_on_getting_usage_and_quota -=
+          rhs.num_errors_on_getting_usage_and_quota;
+      num_evicted_origins -= rhs.num_evicted_origins;
+      num_eviction_rounds -= rhs.num_eviction_rounds;
+      num_skipped_eviction_rounds -= rhs.num_skipped_eviction_rounds;
+    }
+  };
+
+  struct EvictionRoundStatistics {
+    EvictionRoundStatistics()
+        : in_round(false),
+          is_initialized(false),
+          usage_overage_at_round(-1),
+          diskspace_shortage_at_round(-1),
+          usage_on_beginning_of_round(-1),
+          usage_on_end_of_round(-1),
+          num_evicted_origins_in_round(0) {
+    }
+
+    bool in_round;
+    bool is_initialized;
+
+    base::Time start_time;
+    int64 usage_overage_at_round;
+    int64 diskspace_shortage_at_round;
+
+    int64 usage_on_beginning_of_round;
+    int64 usage_on_end_of_round;
+    int64 num_evicted_origins_in_round;
   };
 
   QuotaTemporaryStorageEvictor(
@@ -46,13 +75,20 @@ class QuotaTemporaryStorageEvictor : public base::NonThreadSafe {
   virtual ~QuotaTemporaryStorageEvictor();
 
   void GetStatistics(std::map<std::string, int64>* statistics);
+  void ReportPerRoundHistogram();
+  void ReportPerHourHistogram();
   void Start();
 
-  static const char kStatsLabelNumberOfErrorsOnEvictingOrigin[];
-  static const char kStatsLabelNumberOfErrorsOnGettingUsageAndQuota[];
-  static const char kStatsLabelNumberOfEvictedOrigins[];
-  static const char kStatsLabelNumberOfEvictionRounds[];
-  static const char kStatsLabelNumberOfSkippedEvictionRounds[];
+  int64 min_available_disk_space_to_start_eviction() {
+    return min_available_disk_space_to_start_eviction_;
+  }
+  void reset_min_available_disk_space_to_start_eviction() {
+    min_available_disk_space_to_start_eviction_ =
+        kMinAvailableDiskSpaceToStartEvictionNotSpecified;
+  }
+  void set_min_available_disk_space_to_start_eviction(int64 value) {
+    min_available_disk_space_to_start_eviction_ = value;
+  }
 
  private:
   friend class QuotaTemporaryStorageEvictorTest;
@@ -61,36 +97,37 @@ class QuotaTemporaryStorageEvictor : public base::NonThreadSafe {
   void ConsiderEviction();
   void OnGotUsageAndQuotaForEviction(
       QuotaStatusCode status,
-      int64 usage,
-      int64 unlimited_usage,
-      int64 quota,
-      int64 available_disk_space);
+      const QuotaAndUsage& quota_and_usage);
   void OnGotLRUOrigin(const GURL& origin);
   void OnEvictionComplete(QuotaStatusCode status);
+
+  void OnEvictionRoundStarted();
+  void OnEvictionRoundFinished();
 
   // This is only used for tests.
   void set_repeated_eviction(bool repeated_eviction) {
     repeated_eviction_ = repeated_eviction;
   }
 
-  static const double kUsageRatioToStartEviction;
-  static const int64 kDefaultMinAvailableDiskSpaceToStartEviction;
-  static const int kThresholdOfErrorsToStopEviction;
+  static const int kMinAvailableDiskSpaceToStartEvictionNotSpecified;
 
-  const int64 min_available_disk_space_to_start_eviction_;
+  int64 min_available_disk_space_to_start_eviction_;
 
   // Not owned; quota_eviction_handler owns us.
   QuotaEvictionHandler* quota_eviction_handler_;
 
   Statistics statistics_;
+  Statistics previous_statistics_;
+  EvictionRoundStatistics round_statistics_;
+  base::Time time_of_end_of_last_nonskipped_round_;
+  base::Time time_of_end_of_last_round_;
 
   int64 interval_ms_;
   bool repeated_eviction_;
-  int num_evicted_origins_in_round_;
 
-  base::OneShotTimer<QuotaTemporaryStorageEvictor> timer_;
-
-  base::ScopedCallbackFactory<QuotaTemporaryStorageEvictor> callback_factory_;
+  base::OneShotTimer<QuotaTemporaryStorageEvictor> eviction_timer_;
+  base::RepeatingTimer<QuotaTemporaryStorageEvictor> histogram_timer_;
+  base::WeakPtrFactory<QuotaTemporaryStorageEvictor> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuotaTemporaryStorageEvictor);
 };

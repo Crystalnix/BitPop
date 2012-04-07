@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,17 +13,17 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_temp_dir.h"
-#include "base/task.h"
 #include "base/time.h"
 #include "base/timer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/extensions/update_manifest.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
 #include "googleurl/src/gurl.h"
 
 class Extension;
@@ -32,6 +32,10 @@ class ExtensionUpdaterTest;
 class PrefService;
 class Profile;
 class SafeManifestParser;
+
+namespace net {
+class URLRequestStatus;
+}
 
 // To save on server resources we can request updates for multiple extensions
 // in one manifest check. This class helps us keep track of the id's for a
@@ -113,7 +117,8 @@ class ManifestFetchesBuilder {
   void AddExtension(const Extension& extension);
 
   void AddPendingExtension(const std::string& id,
-                           const PendingExtensionInfo& info);
+                           Extension::Location install_source,
+                           const GURL& update_url);
 
   // Adds all recorded stats taken so far to histogram counts.
   void ReportStats() const;
@@ -165,8 +170,8 @@ class ManifestFetchesBuilder {
 // updater->Start();
 // ....
 // updater->Stop();
-class ExtensionUpdater : public URLFetcher::Delegate,
-                         public NotificationObserver {
+class ExtensionUpdater : public content::URLFetcherDelegate,
+                         public content::NotificationObserver {
  public:
   // Holds a pointer to the passed |service|, using it for querying installed
   // extensions and installing updated ones. The |frequency_seconds| parameter
@@ -250,8 +255,8 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   // Computes when to schedule the first update check.
   base::TimeDelta DetermineFirstCheckDelay();
 
-  // URLFetcher::Delegate interface.
-  virtual void OnURLFetchComplete(const URLFetcher* source);
+  // content::URLFetcherDelegate interface.
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
   // These do the actual work when a URL fetch completes.
   virtual void OnManifestFetchComplete(const GURL& url,
@@ -259,7 +264,7 @@ class ExtensionUpdater : public URLFetcher::Delegate,
                                        int response_code,
                                        const std::string& data);
 
-  virtual void OnCRXFetchComplete(const URLFetcher* source,
+  virtual void OnCRXFetchComplete(const content::URLFetcher* source,
                                   const GURL& url,
                                   const net::URLRequestStatus& status,
                                   int response_code);
@@ -331,10 +336,10 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   // started.
   bool MaybeInstallCRXFile();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Whether Start() has been called but not Stop().
   bool alive_;
@@ -342,8 +347,8 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   base::WeakPtrFactory<ExtensionUpdater> weak_ptr_factory_;
 
   // Outstanding url fetch requests for manifests and updates.
-  scoped_ptr<URLFetcher> manifest_fetcher_;
-  scoped_ptr<URLFetcher> extension_fetcher_;
+  scoped_ptr<content::URLFetcher> manifest_fetcher_;
+  scoped_ptr<content::URLFetcher> extension_fetcher_;
 
   // Pending manifests and extensions to be fetched when the appropriate fetcher
   // is available.
@@ -362,8 +367,6 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   base::OneShotTimer<ExtensionUpdater> timer_;
   int frequency_seconds_;
 
-  ScopedRunnableMethodFactory<ExtensionUpdater> method_factory_;
-
   bool will_check_soon_;
 
   ExtensionPrefs* extension_prefs_;
@@ -375,7 +378,7 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   std::set<std::string> in_progress_ids_;
 
   // Observes CRX installs we initiate.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // True when a CrxInstaller is doing an install.  Used in MaybeUpdateCrxFile()
   // to keep more than one install from running at once.
@@ -384,8 +387,8 @@ class ExtensionUpdater : public URLFetcher::Delegate,
   // Fetched CRX files waiting to be installed.
   std::stack<FetchedCRXFile> fetched_crx_files_;
 
-  FRIEND_TEST(ExtensionUpdaterTest, TestStartUpdateCheckMemory);
-  FRIEND_TEST(ExtensionUpdaterTest, TestAfterStopBehavior);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionUpdaterTest, TestStartUpdateCheckMemory);
+  FRIEND_TEST_ALL_PREFIXES(ExtensionUpdaterTest, TestAfterStopBehavior);
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionUpdater);
 };

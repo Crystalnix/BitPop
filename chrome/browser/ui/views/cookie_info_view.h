@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,16 +9,17 @@
 #include <string>
 #include <vector>
 
+#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "net/base/cookie_monster.h"
 #include "ui/base/models/combobox_model.h"
-#include "views/controls/combobox/combobox.h"
-#include "views/view.h"
+#include "ui/views/controls/combobox/combobox_listener.h"
+#include "ui/views/view.h"
 
 namespace views {
 class GridLayout;
 class Label;
-class NativeButton;
 class Textfield;
 }
 
@@ -39,7 +40,7 @@ class CookieInfoViewDelegate {
 //
 //  Responsible for displaying a tabular grid of Cookie information.
 class CookieInfoView : public views::View,
-                       public views::Combobox::Listener,
+                       public views::ComboboxListener,
                        public ui::ComboboxModel {
  public:
   explicit CookieInfoView(bool editable_expiration_date);
@@ -62,19 +63,19 @@ class CookieInfoView : public views::View,
   void set_delegate(CookieInfoViewDelegate* delegate) { delegate_ = delegate; }
 
  protected:
-  // views::View overrides:
+  // views::View:
   virtual void ViewHierarchyChanged(bool is_add,
                                     views::View* parent,
-                                    views::View* child);
+                                    views::View* child) OVERRIDE;
 
-  // views::Combobox::Listener override.
+  // views::ComboboxListener:
   virtual void ItemChanged(views::Combobox* combo_box,
                            int prev_index,
-                           int new_index);
+                           int new_index) OVERRIDE;
 
-  // ui::ComboboxModel overrides for expires_value_combobox_.
-  virtual int GetItemCount();
-  virtual string16 GetItemAt(int index);
+  // ui::ComboboxModel:
+  virtual int GetItemCount() OVERRIDE;
+  virtual string16 GetItemAt(int index) OVERRIDE;
 
  private:
   // Layout helper routines.
@@ -105,7 +106,7 @@ class CookieInfoView : public views::View,
   views::View* expire_view_;
 
   // Option values for expires_value_combobox_.
-  std::vector<std::wstring> expire_combo_values_;
+  std::vector<string16> expire_combo_values_;
 
   // True if expiration date can be edited. In this case we will show
   // expires_value_combobox_ instead of expires_value_field_. The cookie's
@@ -120,4 +121,3 @@ class CookieInfoView : public views::View,
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_COOKIE_INFO_VIEW_H_
-

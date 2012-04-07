@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,22 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/size.h"
+
+namespace {
+struct ScopedICONINFO : ICONINFO {
+  ScopedICONINFO() {
+    hbmColor = NULL;
+    hbmMask = NULL;
+  }
+
+  ~ScopedICONINFO() {
+    if (hbmColor)
+      ::DeleteObject(hbmColor);
+    if (hbmMask)
+      ::DeleteObject(hbmMask);
+  }
+};
+}
 
 // Defining the dimensions for the icon images. We store only one value because
 // we always resize to a square image; that is, the value 48 means that we are
@@ -102,32 +118,60 @@ HICON IconUtil::CreateHICONFromSkBitmap(const SkBitmap& bitmap) {
 
 SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon, const gfx::Size& s) {
   // We start with validating parameters.
-  ICONINFO icon_info;
-  if (!icon || !(::GetIconInfo(icon, &icon_info)) ||
-      !icon_info.fIcon || s.IsEmpty())
+  if (!icon || s.IsEmpty())
     return NULL;
+  ScopedICONINFO icon_info;
+  if (!::GetIconInfo(icon, &icon_info))
+    return NULL;
+  if (!icon_info.fIcon)
+    return NULL;
+  return new SkBitmap(CreateSkBitmapFromHICONHelper(icon, s));
+}
+
+SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon) {
+  // We start with validating parameters.
+  if (!icon)
+    return NULL;
+
+  ScopedICONINFO icon_info;
+  BITMAP bitmap_info = { 0 };
+
+  if (!::GetIconInfo(icon, &icon_info))
+    return NULL;
+
+  if (!::GetObject(icon_info.hbmMask, sizeof(bitmap_info), &bitmap_info))
+    return NULL;
+
+  gfx::Size icon_size(bitmap_info.bmWidth, bitmap_info.bmHeight);
+  return new SkBitmap(CreateSkBitmapFromHICONHelper(icon, icon_size));
+}
+
+SkBitmap IconUtil::CreateSkBitmapFromHICONHelper(HICON icon,
+                                                 const gfx::Size& s) {
+  DCHECK(icon);
+  DCHECK(!s.IsEmpty());
 
   // Allocating memory for the SkBitmap object. We are going to create an ARGB
   // bitmap so we should set the configuration appropriately.
-  SkBitmap* bitmap = new SkBitmap;
-  DCHECK(bitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config, s.width(), s.height());
-  bitmap->allocPixels();
-  bitmap->eraseARGB(0, 0, 0, 0);
-  SkAutoLockPixels bitmap_lock(*bitmap);
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, s.width(), s.height());
+  bitmap.allocPixels();
+  bitmap.eraseARGB(0, 0, 0, 0);
+  SkAutoLockPixels bitmap_lock(bitmap);
 
   // Now we should create a DIB so that we can use ::DrawIconEx in order to
   // obtain the icon's image.
   BITMAPV5HEADER h;
   InitializeBitmapHeader(&h, s.width(), s.height());
-  HDC dc = ::GetDC(NULL);
+  HDC hdc = ::GetDC(NULL);
   uint32* bits;
-  HBITMAP dib = ::CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&h),
+  HBITMAP dib = ::CreateDIBSection(hdc, reinterpret_cast<BITMAPINFO*>(&h),
       DIB_RGB_COLORS, reinterpret_cast<void**>(&bits), NULL, 0);
   DCHECK(dib);
-  HDC dib_dc = CreateCompatibleDC(dc);
+  HDC dib_dc = CreateCompatibleDC(hdc);
+  ::ReleaseDC(NULL, hdc);
   DCHECK(dib_dc);
-  ::SelectObject(dib_dc, dib);
+  HGDIOBJ old_obj = ::SelectObject(dib_dc, dib);
 
   // Windows icons are defined using two different masks. The XOR mask, which
   // represents the icon image and an AND mask which is a monochrome bitmap
@@ -159,16 +203,16 @@ SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon, const gfx::Size& s) {
   // Then draw the image itself which is really the XOR mask.
   memset(bits, 0, num_pixels * 4);
   ::DrawIconEx(dib_dc, 0, 0, icon, s.width(), s.height(), 0, NULL, DI_NORMAL);
-  memcpy(bitmap->getPixels(), static_cast<void*>(bits), num_pixels * 4);
+  memcpy(bitmap.getPixels(), static_cast<void*>(bits), num_pixels * 4);
 
   // Finding out whether the bitmap has an alpha channel.
   bool bitmap_has_alpha_channel = PixelsHaveAlpha(
-      static_cast<const uint32*>(bitmap->getPixels()), num_pixels);
+      static_cast<const uint32*>(bitmap.getPixels()), num_pixels);
 
   // If the bitmap does not have an alpha channel, we need to build it using
   // the previously captured AND mask. Otherwise, we are done.
   if (!bitmap_has_alpha_channel) {
-    uint32* p = static_cast<uint32*>(bitmap->getPixels());
+    uint32* p = static_cast<uint32*>(bitmap.getPixels());
     for (size_t i = 0; i < num_pixels; ++p, ++i) {
       DCHECK_EQ((*p & 0xff000000), 0u);
       if (opaque[i])
@@ -179,9 +223,9 @@ SkBitmap* IconUtil::CreateSkBitmapFromHICON(HICON icon, const gfx::Size& s) {
   }
 
   delete [] opaque;
-  ::DeleteDC(dib_dc);
+  ::SelectObject(dib_dc, old_obj);
   ::DeleteObject(dib);
-  ::ReleaseDC(NULL, dc);
+  ::DeleteDC(dib_dc);
 
   return bitmap;
 }
@@ -200,7 +244,7 @@ bool IconUtil::CreateIconFileFromSkBitmap(const SkBitmap& bitmap,
   base::win::ScopedHandle icon_file(::CreateFile(icon_path.value().c_str(),
        GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL));
 
-  if (icon_file.Get() == INVALID_HANDLE_VALUE)
+  if (!icon_file.IsValid())
     return false;
 
   // Creating a set of bitmaps corresponding to the icon images we'll end up

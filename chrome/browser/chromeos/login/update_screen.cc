@@ -4,14 +4,17 @@
 
 #include "chrome/browser/chromeos/login/update_screen.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/threading/thread_restrictions.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
+#include "chrome/browser/chromeos/dbus/dbus_thread_manager.h"
 #include "chrome/browser/chromeos/login/screen_observer.h"
 #include "chrome/browser/chromeos/login/update_screen_actor.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 
@@ -37,14 +40,11 @@ const int kUpdateScreenHeight = 305;
 const char kUpdateDeadlineFile[] = "/tmp/update-check-response-deadline";
 
 // Invoked from call to RequestUpdateCheck upon completion of the DBus call.
-void StartUpdateCallback(void* user_data,
-                         UpdateResult result,
-                         const char* msg) {
+void StartUpdateCallback(UpdateScreen* screen,
+                         UpdateEngineClient::UpdateCheckResult result) {
   VLOG(1) << "Callback from RequestUpdateCheck, result " << result;
-  DCHECK(user_data);
-  UpdateScreen* screen = static_cast<UpdateScreen*>(user_data);
   if (UpdateScreen::HasInstance(screen)) {
-    if (result == chromeos::UPDATE_RESULT_SUCCESS)
+    if (result == UpdateEngineClient::UPDATE_RESULT_SUCCESS)
       screen->SetIgnoreIdleStatus(false);
     else
       screen->ExitUpdate(UpdateScreen::REASON_UPDATE_INIT_FAILED);
@@ -55,7 +55,7 @@ void StartUpdateCallback(void* user_data,
 
 // static
 UpdateScreen::InstanceSet& UpdateScreen::GetInstanceSet() {
-  static std::set<UpdateScreen*> instance_set;
+  CR_DEFINE_STATIC_LOCAL(std::set<UpdateScreen*>, instance_set, ());
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));  // not threadsafe.
   return instance_set;
 }
@@ -77,43 +77,48 @@ UpdateScreen::UpdateScreen(ScreenObserver* screen_observer,
       is_shown_(false),
       ignore_idle_status_(true),
       actor_(actor) {
+  actor_->SetDelegate(this);
   GetInstanceSet().insert(this);
 }
 
 UpdateScreen::~UpdateScreen() {
-  CrosLibrary::Get()->GetUpdateLibrary()->RemoveObserver(this);
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RemoveObserver(this);
   GetInstanceSet().erase(this);
+  if (actor_)
+    actor_->SetDelegate(NULL);
 }
 
-void UpdateScreen::UpdateStatusChanged(UpdateLibrary* library) {
-  UpdateStatusOperation status = library->status().status;
-  if (is_checking_for_update_ && status > UPDATE_STATUS_CHECKING_FOR_UPDATE) {
+void UpdateScreen::UpdateStatusChanged(
+    const UpdateEngineClient::Status& status) {
+  if (is_checking_for_update_ &&
+      status.status > UpdateEngineClient::UPDATE_STATUS_CHECKING_FOR_UPDATE) {
     is_checking_for_update_ = false;
   }
-  if (ignore_idle_status_ && status > UPDATE_STATUS_IDLE) {
+  if (ignore_idle_status_ && status.status >
+      UpdateEngineClient::UPDATE_STATUS_IDLE) {
     ignore_idle_status_ = false;
   }
 
-  switch (status) {
-    case UPDATE_STATUS_CHECKING_FOR_UPDATE:
+  switch (status.status) {
+    case UpdateEngineClient::UPDATE_STATUS_CHECKING_FOR_UPDATE:
       // Do nothing in these cases, we don't want to notify the user of the
       // check unless there is an update.
       break;
-    case UPDATE_STATUS_UPDATE_AVAILABLE:
+    case UpdateEngineClient::UPDATE_STATUS_UPDATE_AVAILABLE:
       MakeSureScreenIsShown();
       actor_->SetProgress(kBeforeDownloadProgress);
       if (!HasCriticalUpdate()) {
         LOG(INFO) << "Noncritical update available: "
-                  << library->status().new_version;
+                  << status.new_version;
         ExitUpdate(REASON_UPDATE_NON_CRITICAL);
       } else {
         LOG(INFO) << "Critical update available: "
-                  << library->status().new_version;
+                  << status.new_version;
         actor_->ShowPreparingUpdatesInfo(true);
         actor_->ShowCurtain(false);
       }
       break;
-    case UPDATE_STATUS_DOWNLOADING:
+    case UpdateEngineClient::UPDATE_STATUS_DOWNLOADING:
       {
         MakeSureScreenIsShown();
         if (!is_downloading_update_) {
@@ -122,29 +127,29 @@ void UpdateScreen::UpdateStatusChanged(UpdateLibrary* library) {
           is_downloading_update_ = true;
           if (!HasCriticalUpdate()) {
             LOG(INFO) << "Non-critical update available: "
-                      << library->status().new_version;
+                      << status.new_version;
             ExitUpdate(REASON_UPDATE_NON_CRITICAL);
           } else {
             LOG(INFO) << "Critical update available: "
-                      << library->status().new_version;
+                      << status.new_version;
             actor_->ShowPreparingUpdatesInfo(false);
             actor_->ShowCurtain(false);
           }
         }
         int download_progress = static_cast<int>(
-            library->status().download_progress * kDownloadProgressIncrement);
+            status.download_progress * kDownloadProgressIncrement);
         actor_->SetProgress(kBeforeDownloadProgress + download_progress);
       }
       break;
-    case UPDATE_STATUS_VERIFYING:
+    case UpdateEngineClient::UPDATE_STATUS_VERIFYING:
       MakeSureScreenIsShown();
       actor_->SetProgress(kBeforeVerifyingProgress);
       break;
-    case UPDATE_STATUS_FINALIZING:
+    case UpdateEngineClient::UPDATE_STATUS_FINALIZING:
       MakeSureScreenIsShown();
       actor_->SetProgress(kBeforeFinalizingProgress);
       break;
-    case UPDATE_STATUS_UPDATED_NEED_REBOOT:
+    case UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT:
       MakeSureScreenIsShown();
       // Make sure that first OOBE stage won't be shown after reboot.
       WizardController::MarkOobeCompleted();
@@ -152,23 +157,24 @@ void UpdateScreen::UpdateStatusChanged(UpdateLibrary* library) {
       if (HasCriticalUpdate()) {
         actor_->ShowCurtain(false);
         VLOG(1) << "Initiate reboot after update";
-        CrosLibrary::Get()->GetUpdateLibrary()->RebootAfterUpdate();
-        reboot_timer_.Start(base::TimeDelta::FromSeconds(reboot_check_delay_),
+        DBusThreadManager::Get()->GetUpdateEngineClient()->RebootAfterUpdate();
+        reboot_timer_.Start(FROM_HERE,
+                            base::TimeDelta::FromSeconds(reboot_check_delay_),
                             this,
                             &UpdateScreen::OnWaitForRebootTimeElapsed);
       } else {
         ExitUpdate(REASON_UPDATE_NON_CRITICAL);
       }
       break;
-    case UPDATE_STATUS_IDLE:
+    case UpdateEngineClient::UPDATE_STATUS_IDLE:
       if (ignore_idle_status_) {
         // It is first IDLE status that is sent before we initiated the check.
         break;
       }
       // else no break
 
-    case UPDATE_STATUS_ERROR:
-    case UPDATE_STATUS_REPORTING_ERROR_EVENT:
+    case UpdateEngineClient::UPDATE_STATUS_ERROR:
+    case UpdateEngineClient::UPDATE_STATUS_REPORTING_ERROR_EVENT:
       ExitUpdate(REASON_UPDATE_ENDED);
       break;
     default:
@@ -178,18 +184,14 @@ void UpdateScreen::UpdateStatusChanged(UpdateLibrary* library) {
 }
 
 void UpdateScreen::StartUpdate() {
-  if (!CrosLibrary::Get()->EnsureLoaded()) {
-    LOG(ERROR) << "Error loading CrosLibrary";
-    ExitUpdate(REASON_UPDATE_INIT_FAILED);
-  } else {
-    CrosLibrary::Get()->GetUpdateLibrary()->AddObserver(this);
-    VLOG(1) << "Initiate update check";
-    CrosLibrary::Get()->GetUpdateLibrary()->RequestUpdateCheck(
-        StartUpdateCallback, this);
-  }
+  DBusThreadManager::Get()->GetUpdateEngineClient()->AddObserver(this);
+  VLOG(1) << "Initiate update check";
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RequestUpdateCheck(
+      base::Bind(StartUpdateCallback, this));
 }
 
 void UpdateScreen::CancelUpdate() {
+  VLOG(1) << "Forced update cancel";
   ExitUpdate(REASON_UPDATE_CANCELED);
 }
 
@@ -209,8 +211,7 @@ void UpdateScreen::PrepareToShow() {
 }
 
 void UpdateScreen::ExitUpdate(UpdateScreen::ExitReason reason) {
-  if (CrosLibrary::Get()->EnsureLoaded())
-    CrosLibrary::Get()->GetUpdateLibrary()->RemoveObserver(this);
+  DBusThreadManager::Get()->GetUpdateEngineClient()->RemoveObserver(this);
 
   switch (reason) {
     case REASON_UPDATE_CANCELED:
@@ -223,21 +224,22 @@ void UpdateScreen::ExitUpdate(UpdateScreen::ExitReason reason) {
     case REASON_UPDATE_NON_CRITICAL:
     case REASON_UPDATE_ENDED:
       {
-        UpdateLibrary* update_library = CrosLibrary::Get()->GetUpdateLibrary();
-        switch (update_library->status().status) {
-          case UPDATE_STATUS_UPDATE_AVAILABLE:
-          case UPDATE_STATUS_UPDATED_NEED_REBOOT:
-          case UPDATE_STATUS_DOWNLOADING:
-          case UPDATE_STATUS_FINALIZING:
-          case UPDATE_STATUS_VERIFYING:
+        UpdateEngineClient* update_engine_client =
+            DBusThreadManager::Get()->GetUpdateEngineClient();
+        switch (update_engine_client->GetLastStatus().status) {
+          case UpdateEngineClient::UPDATE_STATUS_UPDATE_AVAILABLE:
+          case UpdateEngineClient::UPDATE_STATUS_UPDATED_NEED_REBOOT:
+          case UpdateEngineClient::UPDATE_STATUS_DOWNLOADING:
+          case UpdateEngineClient::UPDATE_STATUS_FINALIZING:
+          case UpdateEngineClient::UPDATE_STATUS_VERIFYING:
             DCHECK(!HasCriticalUpdate());
             // Noncritical update, just exit screen as if there is no update.
             // no break
-          case UPDATE_STATUS_IDLE:
+          case UpdateEngineClient::UPDATE_STATUS_IDLE:
             get_screen_observer()->OnExit(ScreenObserver::UPDATE_NOUPDATE);
             break;
-          case UPDATE_STATUS_ERROR:
-          case UPDATE_STATUS_REPORTING_ERROR_EVENT:
+          case UpdateEngineClient::UPDATE_STATUS_ERROR:
+          case UpdateEngineClient::UPDATE_STATUS_REPORTING_ERROR_EVENT:
             get_screen_observer()->OnExit(is_checking_for_update_ ?
                 ScreenObserver::UPDATE_ERROR_CHECKING_FOR_UPDATE :
                 ScreenObserver::UPDATE_ERROR_UPDATING);
@@ -291,6 +293,11 @@ bool UpdateScreen::HasCriticalUpdate() {
   // TODO(dpolukhin): Analyze file content. Now we can just assume that
   // if the file exists and not empty, there is critical update.
   return true;
+}
+
+void UpdateScreen::OnActorDestroyed(UpdateScreenActor* actor) {
+  if (actor_ == actor)
+    actor_ = NULL;
 }
 
 }  // namespace chromeos

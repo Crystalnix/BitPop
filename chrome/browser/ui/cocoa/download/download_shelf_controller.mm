@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
-#include "chrome/browser/download/download_item.h"
-#include "chrome/browser/download/download_manager.h"
+#include "chrome/browser/download/download_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -18,10 +18,14 @@
 #include "chrome/browser/ui/cocoa/download/download_item_controller.h"
 #include "chrome/browser/ui/cocoa/download/download_shelf_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_view.h"
-#import "chrome/browser/ui/cocoa/fullscreen_controller.h"
 #import "chrome/browser/ui/cocoa/hover_button.h"
+#import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using content::DownloadItem;
 
 // Download shelf autoclose behavior:
 //
@@ -87,7 +91,7 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
 - (id)initWithBrowser:(Browser*)browser
        resizeDelegate:(id<ViewResizer>)resizeDelegate {
   if ((self = [super initWithNibName:@"DownloadShelf"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     resizeDelegate_ = resizeDelegate;
     maxShelfHeight_ = NSHeight([[self view] bounds]);
     currentShelfHeight_ = maxShelfHeight_;
@@ -243,10 +247,19 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
   // If |sender| isn't nil, then we're being closed from the UI by the user and
   // we need to tell our shelf implementation to close. Otherwise, we're being
   // closed programmatically by our shelf implementation.
-  if (sender)
-    bridge_->Close();
-  else
+  bool auto_closed = (sender == nil);
+
+  int numInProgress = 0;
+  for (NSUInteger i = 0; i < [downloadItemControllers_ count]; ++i) {
+    if ([[downloadItemControllers_ objectAtIndex:i]download]->IsInProgress())
+      ++numInProgress;
+  }
+  download_util::RecordShelfClose(
+      [downloadItemControllers_ count], numInProgress, auto_closed);
+  if (auto_closed)
     [self showDownloadShelf:NO];
+  else
+    bridge_->Close();
 }
 
 - (void)animationDidEnd:(NSAnimation*)animation {
@@ -334,6 +347,10 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
 }
 
 - (void)closed {
+  // Don't remove completed downloads if the shelf is just being auto-hidden
+  // rather than explicitly closed by the user.
+  if (bridge_->is_hidden())
+    return;
   NSUInteger i = 0;
   while (i < [downloadItemControllers_ count]) {
     DownloadItemController* itemController =
@@ -343,12 +360,12 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
                           download->IsCancelled() ||
                           download->IsInterrupted();
     if (isTransferDone &&
-        download->safety_state() != DownloadItem::DANGEROUS) {
+        download->GetSafetyState() != DownloadItem::DANGEROUS) {
       [self remove:itemController];
     } else {
       // Treat the item as opened when we close. This way if we get shown again
       // the user need not open this item for the shelf to auto-close.
-      download->set_opened(true);
+      download->SetOpened(true);
       ++i;
     }
   }
@@ -377,7 +394,7 @@ const NSSize kHoverCloseButtonDefaultSize = { 16, 16 };
   for (NSUInteger i = 0; i < [downloadItemControllers_ count]; ++i) {
     DownloadItemController* itemController =
         [downloadItemControllers_ objectAtIndex:i];
-    if (![itemController download]->opened())
+    if (![itemController download]->GetOpened())
       return NO;
   }
   return YES;

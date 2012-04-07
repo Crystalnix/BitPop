@@ -20,7 +20,7 @@ namespace {
 
 scoped_refptr<gfx::GLSurface> InitializeGLSurface() {
   scoped_refptr<gfx::GLSurface> surface(
-      gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1)));
+      gfx::GLSurface::CreateOffscreenGLSurface(false, gfx::Size(1, 1)));
   if (!surface.get()) {
     LOG(ERROR) << "gfx::GLContext::CreateOffscreenGLSurface failed";
     return NULL;
@@ -31,8 +31,10 @@ scoped_refptr<gfx::GLSurface> InitializeGLSurface() {
 
 scoped_refptr<gfx::GLContext> InitializeGLContext(gfx::GLSurface* surface) {
 
-  scoped_refptr<gfx::GLContext> context(gfx::GLContext::CreateGLContext(NULL,
-                                                                     surface));
+  scoped_refptr<gfx::GLContext> context(
+      gfx::GLContext::CreateGLContext(NULL,
+                                      surface,
+                                      gfx::PreferDiscreteGpu));
   if (!context.get()) {
     LOG(ERROR) << "gfx::GLContext::CreateGLContext failed";
     return NULL;
@@ -76,11 +78,9 @@ std::string GetVersionFromString(const std::string& version_string) {
 
 namespace gpu_info_collector {
 
-bool CollectGraphicsInfoGL(GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
+bool CollectGraphicsInfoGL(content::GPUInfo* gpu_info) {
   if (!gfx::GLSurface::InitializeOneOff()) {
-    LOG(ERROR) << "gfx::GLContext::InitializeOneOff() failed";
+    LOG(ERROR) << "gfx::GLSurface::InitializeOneOff() failed";
     return false;
   }
 
@@ -104,9 +104,7 @@ bool CollectGraphicsInfoGL(GPUInfo* gpu_info) {
   return (validGLVersionInfo && validVideoCardInfo && validDriverInfo);
 }
 
-bool CollectGLVersionInfo(GPUInfo* gpu_info) {
-  DCHECK(gpu_info);
-
+bool CollectGLVersionInfo(content::GPUInfo* gpu_info) {
   std::string gl_version_string = gpu_info->gl_version_string;
   std::string glsl_version_string =
       GetGLString(GL_SHADING_LANGUAGE_VERSION);

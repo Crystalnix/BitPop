@@ -11,23 +11,16 @@
 
 #include "base/basictypes.h"
 
-class Task;
-
 namespace remoting {
 namespace protocol {
 
-class LocalLoginCredentials;
-class SuggestResolutionRequest;
-
 class HostStub {
  public:
-  HostStub() {};
-  virtual ~HostStub() {};
+  HostStub() {}
+  virtual ~HostStub() {}
 
-  virtual void SuggestResolution(
-      const SuggestResolutionRequest* msg, Task* done) = 0;
-  virtual void BeginSessionRequest(
-      const LocalLoginCredentials* credentials, Task* done) = 0;
+  // Currently we don't use the control channel for anything. Add new
+  // message handlers here when necessary.
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HostStub);

@@ -6,90 +6,41 @@
 
 namespace content_settings {
 
-MockDefaultProvider::MockDefaultProvider(
-    ContentSettingsType content_type,
-    ContentSetting setting,
-    bool is_managed,
-    bool can_override)
-    : content_type_(content_type),
-      setting_(setting),
-      is_managed_(is_managed),
-      can_override_(can_override) {
-}
-
-MockDefaultProvider::~MockDefaultProvider() {
-}
-
-ContentSetting MockDefaultProvider::ProvideDefaultSetting(
-    ContentSettingsType content_type) const {
-  return content_type == content_type_ ? setting_ : CONTENT_SETTING_DEFAULT;
-}
-
-void MockDefaultProvider::UpdateDefaultSetting(
-    ContentSettingsType content_type,
-    ContentSetting setting) {
-  if (can_override_ && content_type == content_type_)
-    setting_ = setting;
-}
-
-bool MockDefaultProvider::DefaultSettingIsManaged(
-    ContentSettingsType content_type) const {
-  return content_type == content_type_ && is_managed_;
-}
-
-void MockDefaultProvider::ResetToDefaults() {
-}
-
 MockProvider::MockProvider()
-    : requesting_url_pattern_(ContentSettingsPattern()),
-      embedding_url_pattern_(ContentSettingsPattern()),
-      content_type_(CONTENT_SETTINGS_TYPE_COOKIES),
-      resource_identifier_(""),
-      setting_(CONTENT_SETTING_DEFAULT),
-      read_only_(false) {}
+    : read_only_(false) {}
 
-MockProvider::MockProvider(ContentSettingsPattern requesting_url_pattern,
-                           ContentSettingsPattern embedding_url_pattern,
-                           ContentSettingsType content_type,
-                           ResourceIdentifier resource_identifier,
-                           ContentSetting setting,
-                           bool read_only,
-                           bool is_managed)
-    : requesting_url_pattern_(requesting_url_pattern),
-      embedding_url_pattern_(embedding_url_pattern),
-      content_type_(content_type),
-      resource_identifier_(resource_identifier),
-      setting_(setting),
-      read_only_(read_only) {}
+MockProvider::MockProvider(bool read_only)
+    : read_only_(read_only) {
+}
 
 MockProvider::~MockProvider() {}
 
-ContentSetting MockProvider::GetContentSetting(
-    const GURL& requesting_url,
-    const GURL& embedding_url,
+RuleIterator* MockProvider::GetRuleIterator(
     ContentSettingsType content_type,
-    const ResourceIdentifier& resource_identifier) const {
-  if (requesting_url_pattern_.Matches(requesting_url) &&
-      content_type_ == content_type &&
-      resource_identifier_ == resource_identifier) {
-    return setting_;
-  }
-  return CONTENT_SETTING_DEFAULT;
+    const ResourceIdentifier& resource_identifier,
+    bool incognito) const {
+  return value_map_.GetRuleIterator(content_type, resource_identifier, NULL);
 }
 
-void MockProvider::SetContentSetting(
+bool MockProvider::SetWebsiteSetting(
     const ContentSettingsPattern& requesting_url_pattern,
     const ContentSettingsPattern& embedding_url_pattern,
     ContentSettingsType content_type,
     const ResourceIdentifier& resource_identifier,
-    ContentSetting content_setting) {
+    base::Value* value) {
   if (read_only_)
-    return;
-  requesting_url_pattern_ = ContentSettingsPattern(requesting_url_pattern);
-  embedding_url_pattern_ = ContentSettingsPattern(embedding_url_pattern);
-  content_type_ = content_type;
-  resource_identifier_ = resource_identifier;
-  setting_ = content_setting;
+    return false;
+  value_map_.clear();
+  value_map_.SetValue(requesting_url_pattern,
+                      embedding_url_pattern,
+                      content_type,
+                      resource_identifier,
+                      value);
+  return true;
+}
+
+void MockProvider::ShutdownOnUIThread() {
+  RemoveAllObservers();
 }
 
 }  // namespace content_settings

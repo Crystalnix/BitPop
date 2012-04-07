@@ -8,18 +8,18 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/gtk/bubble/bubble_gtk.h"
 #include "chrome/browser/ui/gtk/extensions/extension_view_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/rect.h"
 
 class Browser;
 class ExtensionHost;
 class GURL;
 
-class ExtensionPopupGtk : public NotificationObserver,
+class ExtensionPopupGtk : public content::NotificationObserver,
                           public BubbleDelegateGtk,
                           public ExtensionViewGtk::Container {
  public:
@@ -34,18 +34,19 @@ class ExtensionPopupGtk : public NotificationObserver,
                    GtkWidget* anchor,
                    bool inspect);
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // BubbleDelegateGtk implementation.
   virtual void BubbleClosing(BubbleGtk* bubble,
                              bool closed_by_escape) OVERRIDE;
 
   // ExtensionViewGtk::Container implementation.
-  virtual void OnExtensionPreferredSizeChanged(ExtensionViewGtk* view,
-                                               const gfx::Size& new_size);
+  virtual void OnExtensionPreferredSizeChanged(
+      ExtensionViewGtk* view,
+      const gfx::Size& new_size) OVERRIDE;
 
   // Destroys the popup widget. This will in turn destroy us since we delete
   // ourselves when the bubble closes. Returns true if we successfully
@@ -71,6 +72,11 @@ class ExtensionPopupGtk : public NotificationObserver,
   // Shows the popup widget. Called after loading completes.
   void ShowPopup();
 
+  // See DestroyPopup. Does not return success or failure. Necessitated by
+  // base::Bind and friends, which cannot handle a WeakPtr for a function that
+  // has a return value.
+  void DestroyPopupWithoutResult();
+
   Browser* browser_;
 
   BubbleGtk* bubble_;
@@ -81,14 +87,14 @@ class ExtensionPopupGtk : public NotificationObserver,
   // The widget for anchoring the position of the bubble.
   GtkWidget* anchor_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   static ExtensionPopupGtk* current_extension_popup_;
 
   // Whether a devtools window is attached to this bubble.
   bool being_inspected_;
 
-  ScopedRunnableMethodFactory<ExtensionPopupGtk> method_factory_;
+  base::WeakPtrFactory<ExtensionPopupGtk> weak_factory_;
 
   // Used for testing. ---------------------------------------------------------
   gfx::Rect GetViewBounds();

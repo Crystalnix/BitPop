@@ -1,19 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/gtk/custom_button.h"
 
 #include "base/basictypes.h"
-#include "chrome/browser/ui/gtk/cairo_cached_surface.h"
+#include "base/debug/trace_event.h"
+#include "base/logging.h"
 #include "chrome/browser/ui/gtk/gtk_chrome_button.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "content/common/notification_service.h"
-#include "grit/theme_resources_standard.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_source.h"
+#include "grit/ui_resources_standard.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/gtk_util.h"
+#include "ui/gfx/image/cairo_cached_surface.h"
 #include "ui/gfx/skbitmap_operations.h"
 
 CustomDrawButtonBase::CustomDrawButtonBase(GtkThemeService* theme_provider,
@@ -30,8 +33,8 @@ CustomDrawButtonBase::CustomDrawButtonBase(GtkThemeService* theme_provider,
       theme_service_(theme_provider),
       flipped_(false) {
   for (int i = 0; i < (GTK_STATE_INSENSITIVE + 1); ++i)
-    surfaces_[i].reset(new CairoCachedSurface);
-  background_image_.reset(new CairoCachedSurface);
+    surfaces_[i].reset(new gfx::CairoCachedSurface);
+  background_image_.reset(new gfx::CairoCachedSurface);
 
   if (theme_provider) {
     // Load images by pretending that we got a BROWSER_THEME_CHANGED
@@ -39,11 +42,11 @@ CustomDrawButtonBase::CustomDrawButtonBase(GtkThemeService* theme_provider,
     theme_provider->InitThemesFor(this);
 
     registrar_.Add(this,
-                   NotificationType::BROWSER_THEME_CHANGED,
-                   NotificationService::AllSources());
+                   chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                   content::Source<ThemeService>(theme_provider));
   } else {
     // Load the button images from the resource bundle.
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     surfaces_[GTK_STATE_NORMAL]->UsePixbuf(
         normal_id_ ? rb.GetRTLEnabledPixbufNamed(normal_id_) : NULL);
     surfaces_[GTK_STATE_ACTIVE]->UsePixbuf(
@@ -70,8 +73,9 @@ int CustomDrawButtonBase::Height() const {
 gboolean CustomDrawButtonBase::OnExpose(GtkWidget* widget,
                                         GdkEventExpose* e,
                                         gdouble hover_state) {
+  TRACE_EVENT0("ui::gtk", "CustomDrawButtonBase::OnExpose");
   int paint_state = paint_override_ >= 0 ?
-                    paint_override_ : GTK_WIDGET_STATE(widget);
+                    paint_override_ : gtk_widget_get_state(widget);
 
   // If the paint state is PRELIGHT then set it to NORMAL (we will paint the
   // hover state according to |hover_state_|).
@@ -79,20 +83,23 @@ gboolean CustomDrawButtonBase::OnExpose(GtkWidget* widget,
     paint_state = GTK_STATE_NORMAL;
   bool animating_hover = hover_state > 0.0 &&
       paint_state == GTK_STATE_NORMAL;
-  CairoCachedSurface* pixbuf = PixbufForState(paint_state);
-  CairoCachedSurface* hover_pixbuf = PixbufForState(GTK_STATE_PRELIGHT);
+  gfx::CairoCachedSurface* pixbuf = PixbufForState(paint_state);
+  gfx::CairoCachedSurface* hover_pixbuf = PixbufForState(GTK_STATE_PRELIGHT);
 
   if (!pixbuf || !pixbuf->valid())
     return FALSE;
   if (animating_hover && (!hover_pixbuf || !hover_pixbuf->valid()))
     return FALSE;
 
-  cairo_t* cairo_context = gdk_cairo_create(GDK_DRAWABLE(widget->window));
-  cairo_translate(cairo_context, widget->allocation.x, widget->allocation.y);
+  cairo_t* cairo_context = gdk_cairo_create(GDK_DRAWABLE(
+      gtk_widget_get_window(widget)));
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(widget, &allocation);
+  cairo_translate(cairo_context, allocation.x, allocation.y);
 
   if (flipped_) {
     // Horizontally flip the image for non-LTR/RTL reasons.
-    cairo_translate(cairo_context, widget->allocation.width, 0.0f);
+    cairo_translate(cairo_context, allocation.width, 0.0f);
     cairo_scale(cairo_context, -1.0f, 1.0f);
   }
 
@@ -100,18 +107,18 @@ gboolean CustomDrawButtonBase::OnExpose(GtkWidget* widget,
   // start of the widget (left for LTR, right for RTL) and its bottom.
   gfx::Rect bounds = gfx::Rect(0, 0, pixbuf->Width(), 0);
   int x = gtk_util::MirroredLeftPointForRect(widget, bounds);
-  int y = widget->allocation.height - pixbuf->Height();
+  int y = allocation.height - pixbuf->Height();
 
   if (background_image_->valid()) {
-    background_image_->SetSource(cairo_context, x, y);
+    background_image_->SetSource(cairo_context, widget, x, y);
     cairo_paint(cairo_context);
   }
 
-  pixbuf->SetSource(cairo_context, x, y);
+  pixbuf->SetSource(cairo_context, widget, x, y);
   cairo_paint(cairo_context);
 
   if (animating_hover) {
-    hover_pixbuf->SetSource(cairo_context, x, y);
+    hover_pixbuf->SetSource(cairo_context, widget, x, y);
     cairo_paint_with_alpha(cairo_context, hover_state);
   }
 
@@ -140,10 +147,11 @@ void CustomDrawButtonBase::SetBackground(SkColor color,
   }
 }
 
-void CustomDrawButtonBase::Observe(NotificationType type,
-    const NotificationSource& source, const NotificationDetails& details) {
+void CustomDrawButtonBase::Observe(int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
   DCHECK(theme_service_);
-  DCHECK(NotificationType::BROWSER_THEME_CHANGED == type);
+  DCHECK(chrome::NOTIFICATION_BROWSER_THEME_CHANGED == type);
 
   surfaces_[GTK_STATE_NORMAL]->UsePixbuf(normal_id_ ?
       theme_service_->GetRTLEnabledPixbufNamed(normal_id_) : NULL);
@@ -156,8 +164,8 @@ void CustomDrawButtonBase::Observe(NotificationType type,
       theme_service_->GetRTLEnabledPixbufNamed(disabled_id_) : NULL);
 }
 
-CairoCachedSurface* CustomDrawButtonBase::PixbufForState(int state) {
-  CairoCachedSurface* pixbuf = surfaces_[state].get();
+gfx::CairoCachedSurface* CustomDrawButtonBase::PixbufForState(int state) {
+  gfx::CairoCachedSurface* pixbuf = surfaces_[state].get();
 
   // Fall back to the default image if we don't have one for this state.
   if (!pixbuf || !pixbuf->valid())
@@ -221,7 +229,8 @@ CustomDrawButton::CustomDrawButton(int normal_id,
                                    int hover_id,
                                    int disabled_id)
     : button_base_(NULL, normal_id, pressed_id, hover_id, disabled_id),
-      theme_service_(NULL) {
+      theme_service_(NULL),
+      forcing_chrome_theme_(false) {
   Init();
 
   // Initialize the theme stuff with no theme_provider.
@@ -237,15 +246,16 @@ CustomDrawButton::CustomDrawButton(GtkThemeService* theme_provider,
                                    GtkIconSize stock_size)
     : button_base_(theme_provider, normal_id, pressed_id, hover_id,
                    disabled_id),
-      theme_service_(theme_provider) {
+      theme_service_(theme_provider),
+      forcing_chrome_theme_(false) {
   native_widget_.Own(gtk_image_new_from_stock(stock_id, stock_size));
 
   Init();
 
   theme_service_->InitThemesFor(this);
   registrar_.Add(this,
-                 NotificationType::BROWSER_THEME_CHANGED,
-                 NotificationService::AllSources());
+                 chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                 content::Source<ThemeService>(theme_provider));
 }
 
 CustomDrawButton::CustomDrawButton(GtkThemeService* theme_provider,
@@ -257,13 +267,14 @@ CustomDrawButton::CustomDrawButton(GtkThemeService* theme_provider,
     : button_base_(theme_provider, normal_id, pressed_id, hover_id,
                    disabled_id),
       native_widget_(native_widget),
-      theme_service_(theme_provider) {
+      theme_service_(theme_provider),
+      forcing_chrome_theme_(false) {
   Init();
 
   theme_service_->InitThemesFor(this);
   registrar_.Add(this,
-                 NotificationType::BROWSER_THEME_CHANGED,
-                 NotificationService::AllSources());
+                 chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                 content::Source<ThemeService>(theme_provider));
 }
 
 CustomDrawButton::~CustomDrawButton() {
@@ -273,16 +284,36 @@ CustomDrawButton::~CustomDrawButton() {
 
 void CustomDrawButton::Init() {
   widget_.Own(gtk_chrome_button_new());
-  GTK_WIDGET_UNSET_FLAGS(widget(), GTK_CAN_FOCUS);
+  gtk_widget_set_can_focus(widget(), FALSE);
   g_signal_connect(widget(), "expose-event",
                    G_CALLBACK(OnCustomExposeThunk), this);
   hover_controller_.Init(widget());
 }
 
-void CustomDrawButton::Observe(NotificationType type,
-    const NotificationSource& source, const NotificationDetails& details) {
-  DCHECK(NotificationType::BROWSER_THEME_CHANGED == type);
+void CustomDrawButton::ForceChromeTheme() {
+  forcing_chrome_theme_ = true;
   SetBrowserTheme();
+}
+
+void CustomDrawButton::Observe(int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(chrome::NOTIFICATION_BROWSER_THEME_CHANGED == type);
+  SetBrowserTheme();
+}
+
+GtkAllocation CustomDrawButton::WidgetAllocation() const {
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(widget_.get(), &allocation);
+  return allocation;
+}
+
+int CustomDrawButton::SurfaceWidth() const {
+  return button_base_.Width();
+}
+
+int CustomDrawButton::SurfaceHeight() const {
+  return button_base_.Height();
 }
 
 void CustomDrawButton::SetPaintOverride(GtkStateType state) {
@@ -304,6 +335,7 @@ void CustomDrawButton::SetBackground(SkColor color,
 
 gboolean CustomDrawButton::OnCustomExpose(GtkWidget* sender,
                                           GdkEventExpose* e) {
+  UNSHIPPED_TRACE_EVENT0("ui::gtk", "CustomDrawButtonBase::OnCustomExpose");
   if (UseGtkTheme()) {
     // Continue processing this expose event.
     return FALSE;
@@ -341,5 +373,6 @@ void CustomDrawButton::SetBrowserTheme() {
 }
 
 bool CustomDrawButton::UseGtkTheme() {
-  return theme_service_ && theme_service_->UsingNativeTheme();
+  return !forcing_chrome_theme_ && theme_service_ &&
+      theme_service_->UsingNativeTheme();
 }

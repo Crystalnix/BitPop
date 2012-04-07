@@ -8,13 +8,19 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/common/url_fetcher.h"
+#include "content/public/common/url_fetcher.h"
+#include "content/public/common/url_fetcher_delegate.h"
 
-class DictionaryValue;
 class GURL;
 
+namespace base {
+class DictionaryValue;
+}
+
 namespace net {
+class URLRequestContextGetter;
 class URLRequestStatus;
 }  // namespace net
 
@@ -25,13 +31,14 @@ class URLRequestStatus;
 // must also be retried.
 class CloudPrintURLFetcher
     : public base::RefCountedThreadSafe<CloudPrintURLFetcher>,
-      public URLFetcher::Delegate {
+      public content::URLFetcherDelegate {
  public:
   enum ResponseAction {
     CONTINUE_PROCESSING,
     STOP_PROCESSING,
     RETRY_REQUEST,
   };
+
   class Delegate {
    public:
     virtual ~Delegate() { }
@@ -40,7 +47,7 @@ class CloudPrintURLFetcher
     // returns CONTINUE_PROCESSING, we will then check for network
     // errors. Most implementations will not override this.
     virtual ResponseAction HandleRawResponse(
-        const URLFetcher* source,
+        const content::URLFetcher* source,
         const GURL& url,
         const net::URLRequestStatus& status,
         int response_code,
@@ -55,7 +62,7 @@ class CloudPrintURLFetcher
     // Handling the raw data is needed when the expected response is NOT JSON
     // (like in the case of a print ticket response or a print job download
     // response).
-    virtual ResponseAction HandleRawData(const URLFetcher* source,
+    virtual ResponseAction HandleRawData(const content::URLFetcher* source,
                                          const GURL& url,
                                          const std::string& data) {
       return CONTINUE_PROCESSING;
@@ -63,9 +70,9 @@ class CloudPrintURLFetcher
     // This will be invoked only if HandleRawResponse and HandleRawData return
     // CONTINUE_PROCESSING AND if the response contains a valid JSON dictionary.
     // |succeeded| is the value of the "success" field in the response JSON.
-    virtual ResponseAction HandleJSONData(const URLFetcher* source,
+    virtual ResponseAction HandleJSONData(const content::URLFetcher* source,
                                           const GURL& url,
-                                          DictionaryValue* json_data,
+                                          base::DictionaryValue* json_data,
                                           bool succeeded) {
       return CONTINUE_PROCESSING;
     }
@@ -74,9 +81,19 @@ class CloudPrintURLFetcher
     virtual void OnRequestGiveUp() { }
     // Invoked when the request returns a 403 error (applicable only when
     // HandleRawResponse returns CONTINUE_PROCESSING).
-    virtual void OnRequestAuthError() = 0;
+    // Returning RETRY_REQUEST will retry current request. (auth information
+    // may have been updated and new info is available through the
+    // Authenticator interface).
+    // Returning CONTINUE_PROCESSING will treat auth error as a network error.
+    virtual ResponseAction OnRequestAuthError() = 0;
+
+    // Authentication information may change between retries.
+    // CloudPrintURLFetcher will request auth info before sending any request.
+    virtual std::string GetAuthHeader() = 0;
   };
   CloudPrintURLFetcher();
+
+  bool IsSameRequest(const content::URLFetcher* source);
 
   void StartGetRequest(const GURL& url,
                        Delegate* delegate,
@@ -89,12 +106,9 @@ class CloudPrintURLFetcher
                         const std::string& post_data,
                         const std::string& additional_headers);
 
-  // URLFetcher::Delegate implementation.
-  virtual void OnURLFetchComplete(const URLFetcher* source, const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  // content::URLFetcherDelegate implementation.
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
+
  protected:
   friend class base::RefCountedThreadSafe<CloudPrintURLFetcher>;
   virtual ~CloudPrintURLFetcher();
@@ -104,7 +118,7 @@ class CloudPrintURLFetcher
 
  private:
   void StartRequestHelper(const GURL& url,
-                          URLFetcher::RequestType request_type,
+                          content::URLFetcher::RequestType request_type,
                           Delegate* delegate,
                           int max_retries,
                           const std::string& post_data_mime_type,
@@ -112,10 +126,13 @@ class CloudPrintURLFetcher
                           const std::string& additional_headers);
   void SetupRequestHeaders();
 
-  scoped_ptr<URLFetcher> request_;
+  scoped_ptr<content::URLFetcher> request_;
   Delegate* delegate_;
   int num_retries_;
+  content::URLFetcher::RequestType request_type_;
   std::string additional_headers_;
+  std::string post_data_mime_type_;
+  std::string post_data_;
 };
 
 typedef CloudPrintURLFetcher::Delegate CloudPrintURLFetcherDelegate;

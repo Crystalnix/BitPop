@@ -8,22 +8,26 @@
 
 #include <string>
 
-#include "base/compiler_specific.h"
 #include "base/basictypes.h"
-#include "chrome/browser/sync/js_event_handler.h"
-#include "content/browser/webui/web_ui.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/sync/js/js_event_handler.h"
+#include "chrome/browser/sync/js/js_reply_handler.h"
+#include "content/public/browser/web_ui_controller.h"
 
 namespace browser_sync {
-class JsFrontend;
+class JsController;
 }  // namespace browser_sync
 
 // The implementation for the chrome://sync-internals page.
-class SyncInternalsUI : public WebUI, public browser_sync::JsEventHandler {
+class SyncInternalsUI : public content::WebUIController,
+                        public browser_sync::JsEventHandler,
+                        public browser_sync::JsReplyHandler {
  public:
-  explicit SyncInternalsUI(TabContents* contents);
+  explicit SyncInternalsUI(content::WebUI* web_ui);
   virtual ~SyncInternalsUI();
 
-  // WebUI implementation.
+  // WebUIController implementation.
   //
   // The following messages are processed:
   //
@@ -36,22 +40,23 @@ class SyncInternalsUI : public WebUI, public browser_sync::JsEventHandler {
   //
   // TODO(akalin): Add a simple isSyncEnabled() message and make
   // getAboutInfo() be handled by the sync service.
-  virtual void OnWebUISend(const GURL& source_url,
-                           const std::string& name,
-                           const ListValue& args) OVERRIDE;
+  virtual bool OverrideHandleWebUIMessage(const GURL& source_url,
+                                          const std::string& name,
+                                          const base::ListValue& args) OVERRIDE;
 
   // browser_sync::JsEventHandler implementation.
   virtual void HandleJsEvent(
       const std::string& name,
       const browser_sync::JsEventDetails& details) OVERRIDE;
-  virtual void HandleJsMessageReply(
+
+  // browser_sync::JsReplyHandler implementation.
+  virtual void HandleJsReply(
       const std::string& name,
       const browser_sync::JsArgList& args) OVERRIDE;
 
  private:
-  // Returns the sync service's JsFrontend object, or NULL if the sync
-  // service does not exist.
-  browser_sync::JsFrontend* GetJsFrontend();
+  base::WeakPtrFactory<SyncInternalsUI> weak_ptr_factory_;
+  base::WeakPtr<browser_sync::JsController> js_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncInternalsUI);
 };

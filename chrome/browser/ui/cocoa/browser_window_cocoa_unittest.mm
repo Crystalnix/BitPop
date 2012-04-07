@@ -6,11 +6,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
 #include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
-#include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
-#include "content/common/notification_type.h"
+#include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_details.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 // A BrowserWindowCocoa that goes PONG when
@@ -19,17 +20,21 @@
 class BrowserWindowCocoaPong : public BrowserWindowCocoa {
  public:
   BrowserWindowCocoaPong(Browser* browser,
-                         BrowserWindowController* controller) :
-  BrowserWindowCocoa(browser, controller, [controller window]) {
+                         BrowserWindowController* controller)
+      : BrowserWindowCocoa(browser, controller) {
     pong_ = false;
   }
   virtual ~BrowserWindowCocoaPong() { }
 
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
-    if (type.value == NotificationType::BOOKMARK_BAR_VISIBILITY_PREF_CHANGED)
-      pong_ = true;
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    if (type == chrome::NOTIFICATION_PREF_CHANGED) {
+      const std::string& pref_name =
+          *content::Details<std::string>(details).ptr();
+      if (pref_name == prefs::kShowBookmarkBar)
+        pong_ = true;
+    }
     BrowserWindowCocoa::Observe(type, source, details);
   }
 
@@ -37,50 +42,50 @@ class BrowserWindowCocoaPong : public BrowserWindowCocoa {
 };
 
 // Main test class.
-class BrowserWindowCocoaTest : public CocoaTest {
+class BrowserWindowCocoaTest : public CocoaProfileTest {
   virtual void SetUp() {
-    CocoaTest::SetUp();
-    Browser* browser = browser_helper_.browser();
-    controller_ = [[BrowserWindowController alloc] initWithBrowser:browser
+    CocoaProfileTest::SetUp();
+    ASSERT_TRUE(browser());
+
+    controller_ = [[BrowserWindowController alloc] initWithBrowser:browser()
                                                      takeOwnership:NO];
   }
 
   virtual void TearDown() {
     [controller_ close];
-    CocoaTest::TearDown();
+    CocoaProfileTest::TearDown();
   }
 
  public:
-  BrowserTestHelper browser_helper_;
   BrowserWindowController* controller_;
 };
 
 
 TEST_F(BrowserWindowCocoaTest, TestNotification) {
   BrowserWindowCocoaPong *bwc =
-      new BrowserWindowCocoaPong(browser_helper_.browser(), controller_);
+      new BrowserWindowCocoaPong(browser(), controller_);
 
   EXPECT_FALSE(bwc->pong_);
-  bookmark_utils::ToggleWhenVisible(browser_helper_.profile());
+  bookmark_utils::ToggleWhenVisible(profile());
   // Confirm we are listening
   EXPECT_TRUE(bwc->pong_);
   delete bwc;
   // If this does NOT crash it confirms we stopped listening in the destructor.
-  bookmark_utils::ToggleWhenVisible(browser_helper_.profile());
+  bookmark_utils::ToggleWhenVisible(profile());
 }
 
 
 TEST_F(BrowserWindowCocoaTest, TestBookmarkBarVisible) {
   BrowserWindowCocoaPong *bwc = new BrowserWindowCocoaPong(
-    browser_helper_.browser(),
+    browser(),
     controller_);
   scoped_ptr<BrowserWindowCocoaPong> scoped_bwc(bwc);
 
   bool before = bwc->IsBookmarkBarVisible();
-  bookmark_utils::ToggleWhenVisible(browser_helper_.profile());
+  bookmark_utils::ToggleWhenVisible(profile());
   EXPECT_NE(before, bwc->IsBookmarkBarVisible());
 
-  bookmark_utils::ToggleWhenVisible(browser_helper_.profile());
+  bookmark_utils::ToggleWhenVisible(profile());
   EXPECT_EQ(before, bwc->IsBookmarkBarVisible());
 }
 
@@ -90,8 +95,12 @@ TEST_F(BrowserWindowCocoaTest, TestBookmarkBarVisible) {
 @end
 
 @implementation FakeController
-- (void)setFullscreen:(BOOL)fullscreen {
-  fullscreen_ = fullscreen;
+- (void)enterFullscreenForURL:(const GURL&)url
+                   bubbleType:(FullscreenExitBubbleType)bubbleType {
+  fullscreen_ = YES;
+}
+- (void)exitFullscreen {
+  fullscreen_ = NO;
 }
 - (BOOL)isFullscreen {
   return fullscreen_;
@@ -104,15 +113,15 @@ TEST_F(BrowserWindowCocoaTest, TestFullscreen) {
   // windowWillClose: never gets called).
   scoped_nsobject<FakeController> fake_controller(
       [[FakeController alloc] init]);
-  BrowserWindowCocoaPong *bwc = new BrowserWindowCocoaPong(
-    browser_helper_.browser(),
+  BrowserWindowCocoaPong* bwc = new BrowserWindowCocoaPong(
+    browser(),
     (BrowserWindowController*)fake_controller.get());
   scoped_ptr<BrowserWindowCocoaPong> scoped_bwc(bwc);
 
   EXPECT_FALSE(bwc->IsFullscreen());
-  bwc->SetFullscreen(true);
+  bwc->EnterFullscreen(GURL(), FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION);
   EXPECT_TRUE(bwc->IsFullscreen());
-  bwc->SetFullscreen(false);
+  bwc->ExitFullscreen();
   EXPECT_FALSE(bwc->IsFullscreen());
   [fake_controller close];
 }

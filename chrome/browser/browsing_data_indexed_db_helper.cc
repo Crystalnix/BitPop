@@ -4,21 +4,22 @@
 
 #include "chrome/browser/browsing_data_indexed_db_helper.h"
 
-#include "base/callback_old.h"
+#include "base/bind.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
+#include "content/public/browser/browser_thread.h"
+#include "webkit/database/database_util.h"
 #include "webkit/glue/webkit_glue.h"
 
-using WebKit::WebSecurityOrigin;
+using content::BrowserThread;
+using webkit_database::DatabaseUtil;
 
 namespace {
 
@@ -27,9 +28,10 @@ class BrowsingDataIndexedDBHelperImpl : public BrowsingDataIndexedDBHelper {
   explicit BrowsingDataIndexedDBHelperImpl(Profile* profile);
 
   virtual void StartFetching(
-      Callback1<const std::vector<IndexedDBInfo>& >::Type* callback);
-  virtual void CancelNotification();
-  virtual void DeleteIndexedDBFile(const FilePath& file_path);
+      const base::Callback<void(const std::list<IndexedDBInfo>&)>&
+          callback) OVERRIDE;
+  virtual void CancelNotification() OVERRIDE;
+  virtual void DeleteIndexedDB(const GURL& origin) OVERRIDE;
 
  private:
   virtual ~BrowsingDataIndexedDBHelperImpl();
@@ -38,17 +40,17 @@ class BrowsingDataIndexedDBHelperImpl : public BrowsingDataIndexedDBHelper {
   void FetchIndexedDBInfoInWebKitThread();
   // Notifies the completion callback in the UI thread.
   void NotifyInUIThread();
-  // Delete a single indexed database file in the WEBKIT thread.
-  void DeleteIndexedDBFileInWebKitThread(const FilePath& file_path);
+  // Delete a single indexed database in the WEBKIT thread.
+  void DeleteIndexedDBInWebKitThread(const GURL& origin);
 
-  Profile* profile_;
+  scoped_refptr<IndexedDBContext> indexed_db_context_;
 
   // This only mutates in the WEBKIT thread.
-  std::vector<IndexedDBInfo> indexed_db_info_;
+  std::list<IndexedDBInfo> indexed_db_info_;
 
   // This only mutates on the UI thread.
-  scoped_ptr<Callback1<const std::vector<IndexedDBInfo>& >::Type >
-      completion_callback_;
+  base::Callback<void(const std::list<IndexedDBInfo>&)> completion_callback_;
+
   // Indicates whether or not we're currently fetching information:
   // it's true when StartFetching() is called in the UI thread, and it's reset
   // after we notified the callback in the UI thread.
@@ -60,83 +62,62 @@ class BrowsingDataIndexedDBHelperImpl : public BrowsingDataIndexedDBHelper {
 
 BrowsingDataIndexedDBHelperImpl::BrowsingDataIndexedDBHelperImpl(
     Profile* profile)
-    : profile_(profile),
-      completion_callback_(NULL),
+    : indexed_db_context_(profile->GetWebKitContext()->indexed_db_context()),
       is_fetching_(false) {
-  DCHECK(profile_);
+  DCHECK(indexed_db_context_.get());
 }
 
 BrowsingDataIndexedDBHelperImpl::~BrowsingDataIndexedDBHelperImpl() {
 }
 
 void BrowsingDataIndexedDBHelperImpl::StartFetching(
-    Callback1<const std::vector<IndexedDBInfo>& >::Type* callback) {
+    const base::Callback<void(const std::list<IndexedDBInfo>&)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!is_fetching_);
-  DCHECK(callback);
+  DCHECK_EQ(false, callback.is_null());
+
   is_fetching_ = true;
-  completion_callback_.reset(callback);
+  completion_callback_ = callback;
   BrowserThread::PostTask(
-      BrowserThread::WEBKIT, FROM_HERE,
-      NewRunnableMethod(
-          this,
-          &BrowsingDataIndexedDBHelperImpl::FetchIndexedDBInfoInWebKitThread));
+      BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
+      base::Bind(
+          &BrowsingDataIndexedDBHelperImpl::FetchIndexedDBInfoInWebKitThread,
+          this));
 }
 
 void BrowsingDataIndexedDBHelperImpl::CancelNotification() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  completion_callback_.reset();
+  completion_callback_.Reset();
 }
 
-void BrowsingDataIndexedDBHelperImpl::DeleteIndexedDBFile(
-    const FilePath& file_path) {
+void BrowsingDataIndexedDBHelperImpl::DeleteIndexedDB(
+    const GURL& origin) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   BrowserThread::PostTask(
-      BrowserThread::WEBKIT, FROM_HERE,
-       NewRunnableMethod(
-           this,
-           &BrowsingDataIndexedDBHelperImpl::
-              DeleteIndexedDBFileInWebKitThread,
-           file_path));
+      BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
+      base::Bind(
+          &BrowsingDataIndexedDBHelperImpl::DeleteIndexedDBInWebKitThread, this,
+          origin));
 }
 
 void BrowsingDataIndexedDBHelperImpl::FetchIndexedDBInfoInWebKitThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
-  file_util::FileEnumerator file_enumerator(
-      profile_->GetWebKitContext()->data_path().Append(
-          IndexedDBContext::kIndexedDBDirectory),
-      false, file_util::FileEnumerator::FILES);
-  for (FilePath file_path = file_enumerator.Next(); !file_path.empty();
-       file_path = file_enumerator.Next()) {
-    if (file_path.Extension() == IndexedDBContext::kIndexedDBExtension) {
-      WebSecurityOrigin web_security_origin =
-          WebSecurityOrigin::createFromDatabaseIdentifier(
-              webkit_glue::FilePathToWebString(file_path.BaseName()));
-      if (EqualsASCII(web_security_origin.protocol(),
-                      chrome::kExtensionScheme)) {
-        // Extension state is not considered browsing data.
-        continue;
-      }
-      base::PlatformFileInfo file_info;
-      bool ret = file_util::GetFileInfo(file_path, &file_info);
-      if (ret) {
-        indexed_db_info_.push_back(IndexedDBInfo(
-            web_security_origin.protocol().utf8(),
-            web_security_origin.host().utf8(),
-            web_security_origin.port(),
-            web_security_origin.databaseIdentifier().utf8(),
-            web_security_origin.toString().utf8(),
-            file_path,
-            file_info.size,
-            file_info.last_modified));
-      }
-    }
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  std::vector<GURL> origins;
+  indexed_db_context_->GetAllOrigins(&origins);
+  for (std::vector<GURL>::const_iterator iter = origins.begin();
+       iter != origins.end(); ++iter) {
+    const GURL& origin = *iter;
+    if (origin.SchemeIs(chrome::kExtensionScheme))
+      continue;  // Extension state is not considered browsing data.
+    indexed_db_info_.push_back(IndexedDBInfo(
+        origin,
+        indexed_db_context_->GetOriginDiskUsage(origin),
+        indexed_db_context_->GetOriginLastModified(origin)));
   }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &BrowsingDataIndexedDBHelperImpl::NotifyInUIThread));
+      base::Bind(&BrowsingDataIndexedDBHelperImpl::NotifyInUIThread, this));
 }
 
 void BrowsingDataIndexedDBHelperImpl::NotifyInUIThread() {
@@ -144,36 +125,26 @@ void BrowsingDataIndexedDBHelperImpl::NotifyInUIThread() {
   DCHECK(is_fetching_);
   // Note: completion_callback_ mutates only in the UI thread, so it's safe to
   // test it here.
-  if (completion_callback_ != NULL) {
-    completion_callback_->Run(indexed_db_info_);
-    completion_callback_.reset();
+  if (!completion_callback_.is_null()) {
+    completion_callback_.Run(indexed_db_info_);
+    completion_callback_.Reset();
   }
   is_fetching_ = false;
 }
 
-void BrowsingDataIndexedDBHelperImpl::DeleteIndexedDBFileInWebKitThread(
-    const FilePath& file_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT));
-  // TODO(jochen): implement this once it's possible to delete indexed DBs.
+void BrowsingDataIndexedDBHelperImpl::DeleteIndexedDBInWebKitThread(
+    const GURL& origin) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::WEBKIT_DEPRECATED));
+  indexed_db_context_->DeleteIndexedDBForOrigin(origin);
 }
 
 }  // namespace
 
 BrowsingDataIndexedDBHelper::IndexedDBInfo::IndexedDBInfo(
-    const std::string& protocol,
-    const std::string& host,
-    unsigned short port,
-    const std::string& database_identifier,
-    const std::string& origin,
-    const FilePath& file_path,
+    const GURL& origin,
     int64 size,
     base::Time last_modified)
-    : protocol(protocol),
-      host(host),
-      port(port),
-      database_identifier(database_identifier),
-      origin(origin),
-      file_path(file_path),
+    : origin(origin),
       size(size),
       last_modified(last_modified) {
 }
@@ -201,18 +172,14 @@ CannedBrowsingDataIndexedDBHelper::
 PendingIndexedDBInfo::~PendingIndexedDBInfo() {
 }
 
-CannedBrowsingDataIndexedDBHelper::CannedBrowsingDataIndexedDBHelper(
-    Profile* profile)
-    : profile_(profile),
-      completion_callback_(NULL),
-      is_fetching_(false) {
-  DCHECK(profile);
+CannedBrowsingDataIndexedDBHelper::CannedBrowsingDataIndexedDBHelper()
+    : is_fetching_(false) {
 }
 
 CannedBrowsingDataIndexedDBHelper* CannedBrowsingDataIndexedDBHelper::Clone() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   CannedBrowsingDataIndexedDBHelper* clone =
-      new CannedBrowsingDataIndexedDBHelper(profile_);
+      new CannedBrowsingDataIndexedDBHelper();
 
   base::AutoLock auto_lock(lock_);
   clone->pending_indexed_db_info_ = pending_indexed_db_info_;
@@ -238,34 +205,32 @@ bool CannedBrowsingDataIndexedDBHelper::empty() const {
 }
 
 void CannedBrowsingDataIndexedDBHelper::StartFetching(
-    Callback1<const std::vector<IndexedDBInfo>& >::Type* callback) {
+    const base::Callback<void(const std::list<IndexedDBInfo>&)>& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!is_fetching_);
-  DCHECK(callback);
+  DCHECK_EQ(false, callback.is_null());
+
   is_fetching_ = true;
-  completion_callback_.reset(callback);
-  BrowserThread::PostTask(BrowserThread::WEBKIT, FROM_HERE, NewRunnableMethod(
-      this,
-      &CannedBrowsingDataIndexedDBHelper::ConvertPendingInfoInWebKitThread));
+  completion_callback_ = callback;
+  BrowserThread::PostTask(
+      BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
+      base::Bind(
+          &CannedBrowsingDataIndexedDBHelper::ConvertPendingInfoInWebKitThread,
+          this));
 }
 
 CannedBrowsingDataIndexedDBHelper::~CannedBrowsingDataIndexedDBHelper() {}
 
 void CannedBrowsingDataIndexedDBHelper::ConvertPendingInfoInWebKitThread() {
   base::AutoLock auto_lock(lock_);
-  for (std::vector<PendingIndexedDBInfo>::const_iterator
+  for (std::list<PendingIndexedDBInfo>::const_iterator
        info = pending_indexed_db_info_.begin();
        info != pending_indexed_db_info_.end(); ++info) {
-    WebSecurityOrigin web_security_origin =
-        WebSecurityOrigin::createFromString(
-            UTF8ToUTF16(info->origin.spec()));
-    std::string security_origin(web_security_origin.toString().utf8());
-
     bool duplicate = false;
-    for (std::vector<IndexedDBInfo>::iterator
+    for (std::list<IndexedDBInfo>::iterator
          indexed_db = indexed_db_info_.begin();
          indexed_db != indexed_db_info_.end(); ++indexed_db) {
-      if (indexed_db->origin == security_origin) {
+      if (indexed_db->origin == info->origin) {
         duplicate = true;
         break;
       }
@@ -274,13 +239,7 @@ void CannedBrowsingDataIndexedDBHelper::ConvertPendingInfoInWebKitThread() {
       continue;
 
     indexed_db_info_.push_back(IndexedDBInfo(
-        web_security_origin.protocol().utf8(),
-        web_security_origin.host().utf8(),
-        web_security_origin.port(),
-        web_security_origin.databaseIdentifier().utf8(),
-        security_origin,
-        profile_->GetWebKitContext()->indexed_db_context()->
-            GetIndexedDBFilePath(web_security_origin.databaseIdentifier()),
+        info->origin,
         0,
         base::Time()));
   }
@@ -288,23 +247,23 @@ void CannedBrowsingDataIndexedDBHelper::ConvertPendingInfoInWebKitThread() {
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &CannedBrowsingDataIndexedDBHelper::NotifyInUIThread));
+      base::Bind(&CannedBrowsingDataIndexedDBHelper::NotifyInUIThread, this));
 }
 
 void CannedBrowsingDataIndexedDBHelper::NotifyInUIThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(is_fetching_);
-  // Note: completion_callback_ mutates only in the UI thread, so it's safe to
-  // test it here.
-  if (completion_callback_ != NULL) {
-    completion_callback_->Run(indexed_db_info_);
-    completion_callback_.reset();
+
+  // Completion_callback_ mutates only in the UI thread, so it's safe to test it
+  // here.
+  if (!completion_callback_.is_null()) {
+    completion_callback_.Run(indexed_db_info_);
+    completion_callback_.Reset();
   }
   is_fetching_ = false;
 }
 
 void CannedBrowsingDataIndexedDBHelper::CancelNotification() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  completion_callback_.reset();
+  completion_callback_.Reset();
 }

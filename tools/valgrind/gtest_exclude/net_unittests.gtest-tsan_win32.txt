@@ -33,12 +33,11 @@ X509CertificateTest.IntermediateCARequireExplicitPolicy
 SSLServerSocketTest.*
 X509CertificateTest.TestKnownRoot
 
-#########################################
-# These tests fail if you don't have our SSL certificate installed.
-# Please see http://dev.chromium.org/developers/testing#TOC-SSL-tests
-# if you think you want to un-comment one of the following lines.
-#SSLClientSocketTest.*
-#URLRequestTest*
-#HTTPSRequestTest.*
-#X509CertificateTest.*
-#ProxyScriptFetcherTest.*
+# See http://crbug.com/102330
+SSLClientSocketTest.*
+
+# See http://crbug.com/104805
+HostResolverImplTest.OnlyAbortExistingRequestsOnIPAddressChange
+
+# See http://crbug.com/50346
+DiskCacheEntryTest.*

@@ -4,210 +4,86 @@
 
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/debug/trace_event.h"
 #include "base/message_loop.h"
-#include "ui/gfx/gl/gl_context.h"
+#include "base/time.h"
 #include "ui/gfx/gl/gl_bindings.h"
-#include "ui/gfx/gl/gl_surface.h"
+#include "ui/gfx/gl/gl_fence.h"
 #include "ui/gfx/gl/gl_switches.h"
 
 using ::base::SharedMemory;
 
 namespace gpu {
 
-GpuScheduler::GpuScheduler(CommandBuffer* command_buffer,
-                           SurfaceManager* surface_manager,
-                           gles2::ContextGroup* group)
-    : command_buffer_(command_buffer),
-      commands_per_update_(100),
-      unscheduled_count_(0),
-#if defined(OS_MACOSX)
-      swap_buffers_count_(0),
-      acknowledged_swap_buffers_count_(0),
-#endif
-      method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  DCHECK(command_buffer);
-  decoder_.reset(gles2::GLES2Decoder::Create(surface_manager, group));
-  decoder_->set_engine(this);
+namespace {
+const int64 kRescheduleTimeOutDelay = 100;
 }
 
-GpuScheduler::GpuScheduler(CommandBuffer* command_buffer,
-                           gles2::GLES2Decoder* decoder,
-                           CommandParser* parser,
-                           int commands_per_update)
+GpuScheduler::GpuScheduler(
+    CommandBuffer* command_buffer,
+    AsyncAPIInterface* handler,
+    gles2::GLES2Decoder* decoder)
     : command_buffer_(command_buffer),
-      commands_per_update_(commands_per_update),
+      handler_(handler),
+      decoder_(decoder),
+      parser_(NULL),
       unscheduled_count_(0),
-#if defined(OS_MACOSX)
-      swap_buffers_count_(0),
-      acknowledged_swap_buffers_count_(0),
-#endif
-      method_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
-  DCHECK(command_buffer);
-  decoder_.reset(decoder);
-  parser_.reset(parser);
+      rescheduled_count_(0),
+      reschedule_task_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 GpuScheduler::~GpuScheduler() {
-  Destroy();
 }
 
-bool GpuScheduler::InitializeCommon(
-    const scoped_refptr<gfx::GLSurface>& surface,
-    const scoped_refptr<gfx::GLContext>& context,
-    const gfx::Size& size,
-    const gles2::DisallowedExtensions& disallowed_extensions,
-    const char* allowed_extensions,
-    const std::vector<int32>& attribs,
-    gles2::GLES2Decoder* parent_decoder,
-    uint32 parent_texture_id) {
-  DCHECK(context);
-
-  if (!context->MakeCurrent(surface))
-    return false;
-
-#if !defined(OS_MACOSX)
-  // Set up swap interval for onscreen contexts.
-  if (!surface->IsOffscreen()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
-      context->SetSwapInterval(0);
-    else
-      context->SetSwapInterval(1);
-  }
-#endif
-
-  // Do not limit to a certain number of commands before scheduling another
-  // update when rendering onscreen.
-  if (!surface->IsOffscreen())
-    commands_per_update_ = INT_MAX;
-
-  // Map the ring buffer and create the parser.
-  Buffer ring_buffer = command_buffer_->GetRingBuffer();
-  if (ring_buffer.ptr) {
-    parser_.reset(new CommandParser(ring_buffer.ptr,
-                                    ring_buffer.size,
-                                    0,
-                                    ring_buffer.size,
-                                    0,
-                                    decoder_.get()));
-  } else {
-    parser_.reset(new CommandParser(NULL, 0, 0, 0, 0,
-                                    decoder_.get()));
-  }
-
-  // Initialize the decoder with either the view or pbuffer GLContext.
-  // TODO(apatrick): The GpuScheduler should know nothing about the surface the
-  // decoder is rendering to. Get rid of the surface parameter.
-  if (!decoder_->Initialize(surface,
-                            context,
-                            size,
-                            disallowed_extensions,
-                            allowed_extensions,
-                            attribs,
-                            parent_decoder,
-                            parent_texture_id)) {
-    LOG(ERROR) << "GpuScheduler::InitializeCommon failed because decoder "
-               << "failed to initialize.";
-    Destroy();
-    return false;
-  }
-
-  return true;
-}
-
-void GpuScheduler::DestroyCommon() {
-  bool have_context = false;
-  if (decoder_.get()) {
-    have_context = decoder_->MakeCurrent();
-    decoder_->Destroy();
-    decoder_.reset();
-  }
-
-  parser_.reset();
-}
-
-#if defined(OS_MACOSX)
-namespace {
-const unsigned int kMaxOutstandingSwapBuffersCallsPerOnscreenContext = 1;
-}
-#endif
-
-void GpuScheduler::PutChanged(bool sync) {
+void GpuScheduler::PutChanged() {
   TRACE_EVENT1("gpu", "GpuScheduler:PutChanged", "this", this);
+
   CommandBuffer::State state = command_buffer_->GetState();
+
+  // If there is no parser, exit.
+  if (!parser_.get()) {
+    DCHECK_EQ(state.get_offset, state.put_offset);
+    return;
+  }
+
   parser_->set_put(state.put_offset);
-
-  if (sync)
-    ProcessCommands();
-  else
-    ScheduleProcessCommands();
-}
-
-void GpuScheduler::ProcessCommands() {
-  TRACE_EVENT1("gpu", "GpuScheduler:ProcessCommands", "this", this);
-  CommandBuffer::State state = command_buffer_->GetState();
   if (state.error != error::kNoError)
     return;
 
-  if (unscheduled_count_ > 0)
+  // Check that the GPU has passed all fences.
+  if (!PollUnscheduleFences())
     return;
 
-  if (decoder_.get()) {
-    if (!decoder_->MakeCurrent()) {
-      LOG(ERROR) << "Context lost because MakeCurrent failed.";
-      command_buffer_->SetParseError(error::kLostContext);
-      return;
-    }
-  }
-
-#if defined(OS_MACOSX)
-  bool do_rate_limiting = surface_.get() != NULL;
-  // Don't swamp the browser process with SwapBuffers calls it can't handle.
-  if (do_rate_limiting &&
-      swap_buffers_count_ - acknowledged_swap_buffers_count_ >=
-      kMaxOutstandingSwapBuffersCallsPerOnscreenContext) {
-    TRACE_EVENT0("gpu", "EarlyOut_OSX_Throttle");
-    // Stop doing work on this command buffer. In the GPU process,
-    // receipt of the GpuMsg_AcceleratedSurfaceBuffersSwappedACK
-    // message causes ProcessCommands to be scheduled again.
+  // One of the unschedule fence tasks might have unscheduled us.
+  if (!IsScheduled())
     return;
-  }
-#endif
 
   error::Error error = error::kNoError;
-  int commands_processed = 0;
-  while (commands_processed < commands_per_update_ &&
-         !parser_->IsEmpty()) {
+  while (!parser_->IsEmpty()) {
+    DCHECK(IsScheduled());
+    DCHECK(unschedule_fences_.empty());
+
     error = parser_->ProcessCommand();
 
     // TODO(piman): various classes duplicate various pieces of state, leading
-    // to needlessly complex update logic. It should be possible to simply share
-    // the state across all of them.
+    // to needlessly complex update logic. It should be possible to simply
+    // share the state across all of them.
     command_buffer_->SetGetOffset(static_cast<int32>(parser_->get()));
 
-    if (error == error::kWaiting || error == error::kYield) {
-      break;
-    } else if (error::IsError(error)) {
+    if (error::IsError(error)) {
+      command_buffer_->SetContextLostReason(decoder_->GetContextLostReason());
       command_buffer_->SetParseError(error);
       return;
     }
 
+    if (!command_processed_callback_.is_null())
+      command_processed_callback_.Run();
+
     if (unscheduled_count_ > 0)
-      break;
-
-    ++commands_processed;
-    if (command_processed_callback_.get()) {
-      command_processed_callback_->Run();
-    }
-  }
-
-  if (unscheduled_count_ == 0 &&
-      error != error::kWaiting &&
-      !parser_->IsEmpty()) {
-    ScheduleProcessCommands();
+      return;
   }
 }
 
@@ -216,16 +92,40 @@ void GpuScheduler::SetScheduled(bool scheduled) {
                "new unscheduled_count_",
                unscheduled_count_ + (scheduled? -1 : 1));
   if (scheduled) {
-    --unscheduled_count_;
+    // If the scheduler was rescheduled after a timeout, ignore the subsequent
+    // calls to SetScheduled when they eventually arrive until they are all
+    // accounted for.
+    if (rescheduled_count_ > 0) {
+      --rescheduled_count_;
+      return;
+    } else {
+      --unscheduled_count_;
+    }
+
     DCHECK_GE(unscheduled_count_, 0);
 
     if (unscheduled_count_ == 0) {
-      if (scheduled_callback_.get())
-        scheduled_callback_->Run();
+      // When the scheduler transitions from the unscheduled to the scheduled
+      // state, cancel the task that would reschedule it after a timeout.
+      reschedule_task_factory_.InvalidateWeakPtrs();
 
-      ScheduleProcessCommands();
+      if (!scheduled_callback_.is_null())
+        scheduled_callback_.Run();
     }
   } else {
+    if (unscheduled_count_ == 0) {
+#if defined(OS_WIN)
+      // When the scheduler transitions from scheduled to unscheduled, post a
+      // delayed task that it will force it back into a scheduled state after a
+      // timeout.
+      MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&GpuScheduler::RescheduleTimeOut,
+                     reschedule_task_factory_.GetWeakPtr()),
+          base::TimeDelta::FromMilliseconds(kRescheduleTimeOutDelay));
+#endif
+    }
+
     ++unscheduled_count_;
   }
 }
@@ -234,8 +134,13 @@ bool GpuScheduler::IsScheduled() {
   return unscheduled_count_ == 0;
 }
 
-void GpuScheduler::SetScheduledCallback(Callback0::Type* scheduled_callback) {
-  scheduled_callback_.reset(scheduled_callback);
+bool GpuScheduler::HasMoreWork() {
+  return !unschedule_fences_.empty();
+}
+
+void GpuScheduler::SetScheduledCallback(
+    const base::Closure& scheduled_callback) {
+  scheduled_callback_ = scheduled_callback;
 }
 
 Buffer GpuScheduler::GetSharedMemoryBuffer(int32 shm_id) {
@@ -244,6 +149,26 @@ Buffer GpuScheduler::GetSharedMemoryBuffer(int32 shm_id) {
 
 void GpuScheduler::set_token(int32 token) {
   command_buffer_->SetToken(token);
+}
+
+bool GpuScheduler::SetGetBuffer(int32 transfer_buffer_id) {
+  Buffer ring_buffer = command_buffer_->GetTransferBuffer(transfer_buffer_id);
+  if (!ring_buffer.ptr) {
+    return false;
+  }
+
+  if (!parser_.get()) {
+    parser_.reset(new CommandParser(handler_));
+  }
+
+  parser_->SetBuffer(
+      ring_buffer.ptr,
+      ring_buffer.size,
+      0,
+      ring_buffer.size);
+
+  SetGetOffset(0);
+  return true;
 }
 
 bool GpuScheduler::SetGetOffset(int32 offset) {
@@ -258,31 +183,57 @@ int32 GpuScheduler::GetGetOffset() {
   return parser_->get();
 }
 
-void GpuScheduler::ResizeOffscreenFrameBuffer(const gfx::Size& size) {
-  decoder_->ResizeOffscreenFrameBuffer(size);
-}
-
-void GpuScheduler::SetResizeCallback(Callback1<gfx::Size>::Type* callback) {
-  decoder_->SetResizeCallback(callback);
-}
-
-void GpuScheduler::SetSwapBuffersCallback(
-    Callback0::Type* callback) {
-  wrapped_swap_buffers_callback_.reset(callback);
-  decoder_->SetSwapBuffersCallback(
-      NewCallback(this,
-                  &GpuScheduler::WillSwapBuffers));
-}
-
 void GpuScheduler::SetCommandProcessedCallback(
-    Callback0::Type* callback) {
-  command_processed_callback_.reset(callback);
+    const base::Closure& callback) {
+  command_processed_callback_ = callback;
 }
 
-void GpuScheduler::ScheduleProcessCommands() {
-  MessageLoop::current()->PostTask(
-      FROM_HERE,
-      method_factory_.NewRunnableMethod(&GpuScheduler::ProcessCommands));
+void GpuScheduler::DeferToFence(base::Closure task) {
+  unschedule_fences_.push(make_linked_ptr(
+       new UnscheduleFence(gfx::GLFence::Create(), task)));
+}
+
+bool GpuScheduler::PollUnscheduleFences() {
+  if (unschedule_fences_.empty())
+    return true;
+
+  if (unschedule_fences_.front()->fence.get()) {
+    while (!unschedule_fences_.empty()) {
+      if (unschedule_fences_.front()->fence->HasCompleted()) {
+        unschedule_fences_.front()->task.Run();
+        unschedule_fences_.pop();
+      } else {
+        return false;
+      }
+    }
+  } else {
+    glFinish();
+
+    while (!unschedule_fences_.empty()) {
+      unschedule_fences_.front()->task.Run();
+      unschedule_fences_.pop();
+    }
+  }
+
+  return true;
+}
+
+void GpuScheduler::RescheduleTimeOut() {
+  int new_count = unscheduled_count_ + rescheduled_count_;
+
+  rescheduled_count_ = 0;
+
+  while (unscheduled_count_)
+    SetScheduled(true);
+
+  rescheduled_count_ = new_count;
+}
+
+GpuScheduler::UnscheduleFence::UnscheduleFence(
+    gfx::GLFence* fence_, base::Closure task_): fence(fence_), task(task_) {
+}
+
+GpuScheduler::UnscheduleFence::~UnscheduleFence() {
 }
 
 }  // namespace gpu

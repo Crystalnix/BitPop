@@ -7,19 +7,22 @@
 #pragma once
 
 #include <map>
+#include <string>
+#include <vector>
 
 #include "base/atomicops.h"
 #include "base/lazy_instance.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "net/base/completion_callback.h"
-#include "net/base/cookie_store.h"
 
 class GURL;
-class BrowserMessageFilter;
 class URLRequestAutomationJob;
 
+namespace content {
+class BrowserMessageFilter;
+}  // namespace content
+
 namespace net {
-class CookieStore;
 class URLRequestContext;
 }  // namespace net
 
@@ -39,23 +42,12 @@ class AutomationResourceMessageFilter
                       bool pending_view);
     ~AutomationDetails();
 
-    void set_cookie_store(net::CookieStore* cookie_store) {
-      cookie_store_ = cookie_store;
-    }
-
-    net::CookieStore* cookie_store() {
-      return cookie_store_.get();
-    }
-
     int tab_handle;
     int ref_count;
     scoped_refptr<AutomationResourceMessageFilter> filter;
     // Indicates whether network requests issued by this render view need to
     // be executed later.
     bool is_pending_render_view;
-
-    // The cookie store associated with this render view.
-    scoped_refptr<net::CookieStore> cookie_store_;
   };
 
   // Create the filter.
@@ -72,9 +64,10 @@ class AutomationResourceMessageFilter
   virtual void OnFilterAdded(IPC::Channel* channel);
   virtual void OnFilterRemoved();
 
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OnChannelClosing();
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  // IPC::Channel::Listener implementation.
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelClosing() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // ResourceDispatcherHost::Receiver methods:
   virtual bool Send(IPC::Message* message);
@@ -119,7 +112,7 @@ class AutomationResourceMessageFilter
 
   // Retrieves cookies for the url passed in from the external host. The
   // callback passed in is notified on success or failure asynchronously.
-  static void GetCookiesForUrl(BrowserMessageFilter* filter,
+  static void GetCookiesForUrl(content::BrowserMessageFilter* filter,
                                net::URLRequestContext* context,
                                int render_process_id,
                                IPC::Message* reply_msg,
@@ -150,7 +143,7 @@ class AutomationResourceMessageFilter
       bool pending_view);
   static void UnRegisterRenderViewInIOThread(int renderer_pid, int renderer_id);
 
-  static bool ResumePendingRenderViewInIOThread(
+  static void ResumePendingRenderViewInIOThread(
       int renderer_pid, int renderer_id, int tab_handle,
       AutomationResourceMessageFilter* filter);
 

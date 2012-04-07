@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,9 @@
 
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
-#include "content/browser/worker_host/worker_service.h"
+#include "content/browser/worker_host/worker_service_impl.h"
+
+using content::WorkerServiceImpl;
 
 ResourceRequestDetails::ResourceRequestDetails(const net::URLRequest* request,
                                                int cert_id)
@@ -18,11 +20,12 @@ ResourceRequestDetails::ResourceRequestDetails(const net::URLRequest* request,
       load_flags_(request->load_flags()),
       status_(request->status()),
       ssl_cert_id_(cert_id),
-      ssl_cert_status_(request->ssl_info().cert_status) {
+      ssl_cert_status_(request->ssl_info().cert_status),
+      socket_address_(request->GetSocketAddress()) {
   const ResourceDispatcherHostRequestInfo* info =
       ResourceDispatcherHost::InfoForRequest(request);
-  DCHECK(info);
   resource_type_ = info->resource_type();
+  frame_id_ = info->frame_id();
 
   // If request is from the worker process on behalf of a renderer, use
   // the renderer process id, since it consumes the notification response
@@ -32,7 +35,7 @@ ResourceRequestDetails::ResourceRequestDetails(const net::URLRequest* request,
   // the first one (works for dedicated workers and shared workers with
   // a single process).
   int temp;
-  if (!WorkerService::GetInstance()->GetRendererForWorker(
+  if (!WorkerServiceImpl::GetInstance()->GetRendererForWorker(
           info->child_id(), &origin_child_id_, &temp)) {
     origin_child_id_ = info->child_id();
   }

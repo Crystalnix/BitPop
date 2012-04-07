@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/process_util.h"
 #include "base/test/multiprocess_test.h"
 #include "base/test/test_timeouts.h"
+#include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -24,6 +25,7 @@
 #include <errno.h>
 #include <malloc.h>
 #include <glib.h>
+#include <sched.h>
 #endif
 #if defined(OS_POSIX)
 #include <dlfcn.h>
@@ -31,6 +33,7 @@
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #endif
 #if defined(OS_WIN)
 #include <windows.h>
@@ -48,6 +51,14 @@ const wchar_t kProcessName[] = L"base_unittests.exe";
 const wchar_t kProcessName[] = L"base_unittests";
 #endif  // defined(OS_WIN)
 
+#if defined(OS_ANDROID)
+const char kShellPath[] = "/system/bin/sh";
+const char kPosixShell[] = "sh";
+#else
+const char kShellPath[] = "/bin/sh";
+const char kPosixShell[] = "bash";
+#endif
+
 const char kSignalFileSlow[] = "SlowChildProcess.die";
 const char kSignalFileCrash[] = "CrashingChildProcess.die";
 const char kSignalFileKill[] = "KilledChildProcess.die";
@@ -59,14 +70,11 @@ const int kExpectedKilledExitCode = 1;
 const int kExpectedStillRunningExitCode = 0;
 #endif
 
-// The longest we'll wait for a process, in milliseconds.
-const int kMaxWaitTimeMs = TestTimeouts::action_max_timeout_ms();
-
 // Sleeps until file filename is created.
 void WaitToDie(const char* filename) {
   FILE *fp;
   do {
-    base::PlatformThread::Sleep(10);
+    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(10));
     fp = fopen(filename, "r");
   } while (!fp);
   fclose(fp);
@@ -87,14 +95,14 @@ base::TerminationStatus WaitForChildTermination(base::ProcessHandle handle,
                                                 int* exit_code) {
   // Now we wait until the result is something other than STILL_RUNNING.
   base::TerminationStatus status = base::TERMINATION_STATUS_STILL_RUNNING;
-  const int kIntervalMs = 20;
-  int waited = 0;
+  const base::TimeDelta kInterval = base::TimeDelta::FromMilliseconds(20);
+  base::TimeDelta waited;
   do {
     status = base::GetTerminationStatus(handle, exit_code);
-    base::PlatformThread::Sleep(kIntervalMs);
-    waited += kIntervalMs;
+    base::PlatformThread::Sleep(kInterval);
+    waited += kInterval;
   } while (status == base::TERMINATION_STATUS_STILL_RUNNING &&
-           waited < kMaxWaitTimeMs);
+           waited.InMilliseconds() < TestTimeouts::action_max_timeout_ms());
 
   return status;
 }
@@ -116,7 +124,8 @@ MULTIPROCESS_TEST_MAIN(SimpleChildProcess) {
 TEST_F(ProcessUtilTest, SpawnChild) {
   base::ProcessHandle handle = this->SpawnChild("SimpleChildProcess", false);
   ASSERT_NE(base::kNullProcessHandle, handle);
-  EXPECT_TRUE(base::WaitForSingleProcess(handle, kMaxWaitTimeMs));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+                  handle, TestTimeouts::action_max_timeout_ms()));
   base::CloseProcessHandle(handle);
 }
 
@@ -130,12 +139,20 @@ TEST_F(ProcessUtilTest, KillSlowChild) {
   base::ProcessHandle handle = this->SpawnChild("SlowChildProcess", false);
   ASSERT_NE(base::kNullProcessHandle, handle);
   SignalChildren(kSignalFileSlow);
-  EXPECT_TRUE(base::WaitForSingleProcess(handle, kMaxWaitTimeMs));
+  EXPECT_TRUE(base::WaitForSingleProcess(
+                  handle, TestTimeouts::action_max_timeout_ms()));
   base::CloseProcessHandle(handle);
   remove(kSignalFileSlow);
 }
 
-TEST_F(ProcessUtilTest, GetTerminationStatusExit) {
+// Times out on Linux and Win, flakes on other platforms, http://crbug.com/95058
+#if defined(OS_LINUX) || defined(OS_WIN)
+#define MAYBE_GetTerminationStatusExit DISABLED_GetTerminationStatusExit
+#else
+#define MAYBE_GetTerminationStatusExit FLAKY_GetTerminationStatusExit
+#endif
+
+TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusExit) {
   remove(kSignalFileSlow);
   base::ProcessHandle handle = this->SpawnChild("SlowChildProcess", false);
   ASSERT_NE(base::kNullProcessHandle, handle);
@@ -155,6 +172,20 @@ TEST_F(ProcessUtilTest, GetTerminationStatusExit) {
   remove(kSignalFileSlow);
 }
 
+#if defined(OS_WIN)
+// TODO(cpu): figure out how to test this in other platforms.
+TEST_F(ProcessUtilTest, GetProcId) {
+  base::ProcessId id1 = base::GetProcId(GetCurrentProcess());
+  EXPECT_NE(0ul, id1);
+  base::ProcessHandle handle = this->SpawnChild("SimpleChildProcess", false);
+  ASSERT_NE(base::kNullProcessHandle, handle);
+  base::ProcessId id2 = base::GetProcId(handle);
+  EXPECT_NE(0ul, id2);
+  EXPECT_NE(id1, id2);
+  base::CloseProcessHandle(handle);
+}
+#endif
+
 #if !defined(OS_MACOSX)
 // This test is disabled on Mac, since it's flaky due to ReportCrash
 // taking a variable amount of time to parse and load the debug and
@@ -173,12 +204,19 @@ MULTIPROCESS_TEST_MAIN(CrashingChildProcess) {
   ::signal(SIGSEGV, SIG_DFL);
 #endif
   // Make this process have a segmentation fault.
-  int* oops = NULL;
+  volatile int* oops = NULL;
   *oops = 0xDEAD;
   return 1;
 }
 
-TEST_F(ProcessUtilTest, GetTerminationStatusCrash) {
+// This test intentionally crashes, so we don't need to run it under
+// AddressSanitizer.
+#if defined(ADDRESS_SANITIZER)
+#define MAYBE_GetTerminationStatusCrash DISABLED_GetTerminationStatusCrash
+#else
+#define MAYBE_GetTerminationStatusCrash GetTerminationStatusCrash
+#endif
+TEST_F(ProcessUtilTest, MAYBE_GetTerminationStatusCrash) {
   remove(kSignalFileCrash);
   base::ProcessHandle handle = this->SpawnChild("CrashingChildProcess",
                                                 false);
@@ -388,11 +426,28 @@ TEST_F(ProcessUtilTest, LaunchAsUser) {
   base::UserTokenHandle token;
   ASSERT_TRUE(OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &token));
   std::wstring cmdline =
-      this->MakeCmdLine("SimpleChildProcess", false).command_line_string();
-  EXPECT_TRUE(base::LaunchAppAsUser(token, cmdline, false, NULL));
+      this->MakeCmdLine("SimpleChildProcess", false).GetCommandLineString();
+  base::LaunchOptions options;
+  options.as_user = token;
+  EXPECT_TRUE(base::LaunchProcess(cmdline, options, NULL));
 }
 
 #endif  // defined(OS_WIN)
+
+#if defined(OS_MACOSX)
+
+TEST_F(ProcessUtilTest, MacTerminateOnHeapCorruption) {
+  // Note that base::EnableTerminationOnHeapCorruption() is called as part of
+  // test suite setup and does not need to be done again, else mach_override
+  // will fail.
+
+  char buf[3];
+  ASSERT_DEATH(free(buf), "being freed.*"
+      "\\*\\*\\* set a breakpoint in malloc_error_break to debug.*"
+      "Terminating process due to a potential for future heap corruption");
+}
+
+#endif  // defined(OS_MACOSX)
 
 #if defined(OS_POSIX)
 
@@ -496,12 +551,12 @@ TEST_F(ProcessUtilTest, FDRemapping) {
 
 namespace {
 
-std::string TestLaunchApp(const base::environment_vector& env_changes) {
+std::string TestLaunchProcess(const base::environment_vector& env_changes,
+                              const int clone_flags) {
   std::vector<std::string> args;
   base::file_handle_mapping_vector fds_to_remap;
-  base::ProcessHandle handle;
 
-  args.push_back("bash");
+  args.push_back(kPosixShell);
   args.push_back("-c");
   args.push_back("echo $BASE_TEST");
 
@@ -509,8 +564,16 @@ std::string TestLaunchApp(const base::environment_vector& env_changes) {
   PCHECK(pipe(fds) == 0);
 
   fds_to_remap.push_back(std::make_pair(fds[1], 1));
-  EXPECT_TRUE(base::LaunchApp(args, env_changes, fds_to_remap,
-                              true /* wait for exit */, &handle));
+  base::LaunchOptions options;
+  options.wait = true;
+  options.environ = &env_changes;
+  options.fds_to_remap = &fds_to_remap;
+#if defined(OS_LINUX)
+  options.clone_flags = clone_flags;
+#else
+  CHECK_EQ(0, clone_flags);
+#endif  // OS_LINUX
+  EXPECT_TRUE(base::LaunchProcess(args, options, NULL));
   PCHECK(HANDLE_EINTR(close(fds[1])) == 0);
 
   char buf[512];
@@ -533,31 +596,41 @@ const char kLargeString[] =
 
 }  // namespace
 
-TEST_F(ProcessUtilTest, LaunchApp) {
+TEST_F(ProcessUtilTest, LaunchProcess) {
   base::environment_vector env_changes;
+  const int no_clone_flags = 0;
 
   env_changes.push_back(std::make_pair(std::string("BASE_TEST"),
                                        std::string("bar")));
-  EXPECT_EQ("bar\n", TestLaunchApp(env_changes));
+  EXPECT_EQ("bar\n", TestLaunchProcess(env_changes, no_clone_flags));
   env_changes.clear();
 
   EXPECT_EQ(0, setenv("BASE_TEST", "testing", 1 /* override */));
-  EXPECT_EQ("testing\n", TestLaunchApp(env_changes));
+  EXPECT_EQ("testing\n", TestLaunchProcess(env_changes, no_clone_flags));
 
   env_changes.push_back(std::make_pair(std::string("BASE_TEST"),
                                        std::string("")));
-  EXPECT_EQ("\n", TestLaunchApp(env_changes));
+  EXPECT_EQ("\n", TestLaunchProcess(env_changes, no_clone_flags));
 
   env_changes[0].second = "foo";
-  EXPECT_EQ("foo\n", TestLaunchApp(env_changes));
+  EXPECT_EQ("foo\n", TestLaunchProcess(env_changes, no_clone_flags));
 
   env_changes.clear();
   EXPECT_EQ(0, setenv("BASE_TEST", kLargeString, 1 /* override */));
-  EXPECT_EQ(std::string(kLargeString) + "\n", TestLaunchApp(env_changes));
+  EXPECT_EQ(std::string(kLargeString) + "\n",
+            TestLaunchProcess(env_changes, no_clone_flags));
 
   env_changes.push_back(std::make_pair(std::string("BASE_TEST"),
                                        std::string("wibble")));
-  EXPECT_EQ("wibble\n", TestLaunchApp(env_changes));
+  EXPECT_EQ("wibble\n", TestLaunchProcess(env_changes, no_clone_flags));
+
+#if defined(OS_LINUX)
+  // Test a non-trival value for clone_flags.
+  // Don't test on Valgrind as it has limited support for clone().
+  if (!RunningOnValgrind()) {
+    EXPECT_EQ("wibble\n", TestLaunchProcess(env_changes, CLONE_FS | SIGCHLD));
+  }
+#endif
 }
 
 TEST_F(ProcessUtilTest, AlterEnvironment) {
@@ -604,6 +677,24 @@ TEST_F(ProcessUtilTest, AlterEnvironment) {
 
 TEST_F(ProcessUtilTest, GetAppOutput) {
   std::string output;
+
+#if defined(OS_ANDROID)
+  std::vector<std::string> argv;
+  argv.push_back("sh");  // Instead of /bin/sh, force path search to find it.
+  argv.push_back("-c");
+
+  argv.push_back("exit 0");
+  EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_STREQ("", output.c_str());
+
+  argv[2] = "exit 1";
+  EXPECT_FALSE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_STREQ("", output.c_str());
+
+  argv[2] = "echo foobar42";
+  EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
+  EXPECT_STREQ("foobar42\n", output.c_str());
+#else
   EXPECT_TRUE(base::GetAppOutput(CommandLine(FilePath("true")), &output));
   EXPECT_STREQ("", output.c_str());
 
@@ -615,6 +706,7 @@ TEST_F(ProcessUtilTest, GetAppOutput) {
   argv.push_back("foobar42");
   EXPECT_TRUE(base::GetAppOutput(CommandLine(argv), &output));
   EXPECT_STREQ("foobar42", output.c_str());
+#endif  // defined(OS_ANDROID)
 }
 
 TEST_F(ProcessUtilTest, GetAppOutputRestricted) {
@@ -622,8 +714,8 @@ TEST_F(ProcessUtilTest, GetAppOutputRestricted) {
   // everything is. So let's use /bin/sh, which is on every POSIX system, and
   // its built-ins.
   std::vector<std::string> argv;
-  argv.push_back("/bin/sh");  // argv[0]
-  argv.push_back("-c");       // argv[1]
+  argv.push_back(std::string(kShellPath));  // argv[0]
+  argv.push_back("-c");  // argv[1]
 
   // On success, should set |output|. We use |/bin/sh -c 'exit 0'| instead of
   // |true| since the location of the latter may be |/bin| or |/usr/bin| (and we
@@ -661,10 +753,32 @@ TEST_F(ProcessUtilTest, GetAppOutputRestricted) {
   EXPECT_STREQ("", output.c_str());
 }
 
+#if !defined(OS_MACOSX) && !defined(OS_OPENBSD)
+// TODO(benwells): GetAppOutputRestricted should terminate applications
+// with SIGPIPE when we have enough output. http://crbug.com/88502
+TEST_F(ProcessUtilTest, GetAppOutputRestrictedSIGPIPE) {
+  std::vector<std::string> argv;
+  std::string output;
+
+  argv.push_back(std::string(kShellPath));  // argv[0]
+  argv.push_back("-c");
+#if defined(OS_ANDROID)
+  argv.push_back("while echo 12345678901234567890; do :; done");
+  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+  EXPECT_STREQ("1234567890", output.c_str());
+#else
+  argv.push_back("yes");
+  EXPECT_TRUE(base::GetAppOutputRestricted(CommandLine(argv), &output, 10));
+  EXPECT_STREQ("y\ny\ny\ny\ny\n", output.c_str());
+#endif
+}
+#endif
+
 TEST_F(ProcessUtilTest, GetAppOutputRestrictedNoZombies) {
   std::vector<std::string> argv;
-  argv.push_back("/bin/sh");  // argv[0]
-  argv.push_back("-c");       // argv[1]
+
+  argv.push_back(std::string(kShellPath));  // argv[0]
+  argv.push_back("-c");  // argv[1]
   argv.push_back("echo 123456789012345678901234567890");  // argv[2]
 
   // Run |GetAppOutputRestricted()| 300 (> default per-user processes on Mac OS
@@ -683,12 +797,35 @@ TEST_F(ProcessUtilTest, GetAppOutputRestrictedNoZombies) {
   }
 }
 
+TEST_F(ProcessUtilTest, GetAppOutputWithExitCode) {
+  // Test getting output from a successful application.
+  std::vector<std::string> argv;
+  std::string output;
+  int exit_code;
+  argv.push_back(std::string(kShellPath));  // argv[0]
+  argv.push_back("-c");  // argv[1]
+  argv.push_back("echo foo");  // argv[2];
+  EXPECT_TRUE(base::GetAppOutputWithExitCode(CommandLine(argv), &output,
+                                             &exit_code));
+  EXPECT_STREQ("foo\n", output.c_str());
+  EXPECT_EQ(exit_code, 0);
+
+  // Test getting output from an application which fails with a specific exit
+  // code.
+  output.clear();
+  argv[2] = "echo foo; exit 2";
+  EXPECT_TRUE(base::GetAppOutputWithExitCode(CommandLine(argv), &output,
+                                             &exit_code));
+  EXPECT_STREQ("foo\n", output.c_str());
+  EXPECT_EQ(exit_code, 2);
+}
+
 TEST_F(ProcessUtilTest, GetParentProcessId) {
   base::ProcessId ppid = base::GetParentProcessId(base::GetCurrentProcId());
   EXPECT_EQ(ppid, getppid());
 }
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_ANDROID)
 TEST_F(ProcessUtilTest, ParseProcStatCPU) {
   // /proc/self/stat for a process running "top".
   const char kTopStat[] = "960 (top) S 16230 960 16230 34818 960 "
@@ -708,12 +845,64 @@ TEST_F(ProcessUtilTest, ParseProcStatCPU) {
 
   EXPECT_EQ(0, base::ParseProcStatCPU(kSelfStat));
 }
-#endif  // defined(OS_LINUX)
+#endif  // defined(OS_LINUX) || defined(OS_ANDROID)
+
+// TODO(port): port those unit tests.
+bool IsProcessDead(base::ProcessHandle child) {
+  // waitpid() will actually reap the process which is exactly NOT what we
+  // want to test for.  The good thing is that if it can't find the process
+  // we'll get a nice value for errno which we can test for.
+  const pid_t result = HANDLE_EINTR(waitpid(child, NULL, WNOHANG));
+  return result == -1 && errno == ECHILD;
+}
+
+TEST_F(ProcessUtilTest, DelayedTermination) {
+  base::ProcessHandle child_process =
+      SpawnChild("process_util_test_never_die", false);
+  ASSERT_TRUE(child_process);
+  base::EnsureProcessTerminated(child_process);
+  base::WaitForSingleProcess(child_process, 5000);
+
+  // Check that process was really killed.
+  EXPECT_TRUE(IsProcessDead(child_process));
+  base::CloseProcessHandle(child_process);
+}
+
+MULTIPROCESS_TEST_MAIN(process_util_test_never_die) {
+  while (1) {
+    sleep(500);
+  }
+  return 0;
+}
+
+TEST_F(ProcessUtilTest, ImmediateTermination) {
+  base::ProcessHandle child_process =
+      SpawnChild("process_util_test_die_immediately", false);
+  ASSERT_TRUE(child_process);
+  // Give it time to die.
+  sleep(2);
+  base::EnsureProcessTerminated(child_process);
+
+  // Check that process was really killed.
+  EXPECT_TRUE(IsProcessDead(child_process));
+  base::CloseProcessHandle(child_process);
+}
+
+MULTIPROCESS_TEST_MAIN(process_util_test_die_immediately) {
+  return 0;
+}
 
 #endif  // defined(OS_POSIX)
 
+// Android doesn't implement set_new_handler, so we can't use the
+// OutOfMemoryTest cases.
+// OpenBSD does not support these tests either.
+// AddressSanitizer defines the malloc()/free()/etc. functions so that they
+// don't crash if the program is out of memory, so the OOM tests aren't supposed
+// to work.
 // TODO(vandebo) make this work on Windows too.
-#if !defined(OS_WIN)
+#if !defined(OS_ANDROID) && !defined(OS_OPENBSD) && \
+    !defined(OS_WIN) && !defined(ADDRESS_SANITIZER)
 
 #if defined(USE_TCMALLOC)
 extern "C" {
@@ -825,7 +1014,8 @@ TEST_F(OutOfMemoryDeathTest, ViaSharedLibraries) {
 }
 #endif  // OS_LINUX
 
-#if defined(OS_POSIX)
+// Android doesn't implement posix_memalign().
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 TEST_F(OutOfMemoryDeathTest, Posix_memalign) {
   typedef int (*memalign_t)(void **, size_t, size_t);
 #if defined(OS_MACOSX)
@@ -835,7 +1025,7 @@ TEST_F(OutOfMemoryDeathTest, Posix_memalign) {
       reinterpret_cast<memalign_t>(dlsym(RTLD_DEFAULT, "posix_memalign"));
 #else
   memalign_t memalign = posix_memalign;
-#endif  // OS_*
+#endif  // defined(OS_MACOSX)
   if (memalign) {
     // Grab the return value of posix_memalign to silence a compiler warning
     // about unused return values. We don't actually care about the return
@@ -846,7 +1036,7 @@ TEST_F(OutOfMemoryDeathTest, Posix_memalign) {
       }, "");
   }
 }
-#endif  // OS_POSIX
+#endif  // defined(OS_POSIX) && !defined(OS_ANDROID)
 
 #if defined(OS_MACOSX)
 
@@ -952,4 +1142,5 @@ TEST_F(OutOfMemoryDeathTest, PsychoticallyBigObjCObject) {
 #endif  // !ARCH_CPU_64_BITS
 #endif  // OS_MACOSX
 
-#endif  // !defined(OS_WIN)
+#endif  // !defined(OS_ANDROID) && !defined(OS_OPENBSD) &&
+        // !defined(OS_WIN) && !defined(ADDRESS_SANITIZER)

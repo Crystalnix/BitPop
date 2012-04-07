@@ -12,6 +12,7 @@
 #include "base/base64.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
@@ -23,7 +24,6 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/common/web_apps.h"
-#include "content/common/json_value_serializer.h"
 #include "crypto/sha2.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -46,12 +46,11 @@ const char kIconsDirName[] = "icons";
 // auto-updated using ExtensionUpdater. But Chrome does notice updates to the
 // manifest and regenerates these extensions.
 std::string GenerateKey(const GURL& manifest_url) {
-  char raw[crypto::SHA256_LENGTH] = {0};
+  char raw[crypto::kSHA256Length] = {0};
   std::string key;
-  crypto::SHA256HashString(manifest_url.spec().c_str(),
-                           raw,
-                           crypto::SHA256_LENGTH);
-  base::Base64Encode(std::string(raw, crypto::SHA256_LENGTH), &key);
+  crypto::SHA256HashString(manifest_url.spec().c_str(), raw,
+                           crypto::kSHA256Length);
+  base::Base64Encode(std::string(raw, crypto::kSHA256Length), &key);
   return key;
 }
 
@@ -99,7 +98,10 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
 
   // Create the manifest
   scoped_ptr<DictionaryValue> root(new DictionaryValue);
-  root->SetString(keys::kPublicKey, GenerateKey(web_app.manifest_url));
+  if (!web_app.is_bookmark_app)
+    root->SetString(keys::kPublicKey, GenerateKey(web_app.manifest_url));
+  else
+    root->SetString(keys::kPublicKey, GenerateKey(web_app.app_url));
   root->SetString(keys::kName, UTF16ToUTF8(web_app.title));
   root->SetString(keys::kVersion, ConvertTimeToExtensionVersion(create_time));
   root->SetString(keys::kDescription, UTF16ToUTF8(web_app.description));
@@ -148,6 +150,10 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
     return NULL;
   }
   for (size_t i = 0; i < web_app.icons.size(); ++i) {
+    // Skip unfetched bitmaps.
+    if (web_app.icons[i].data.config() == SkBitmap::kNo_Config)
+      continue;
+
     FilePath icon_file = icons_dir.AppendASCII(
         StringPrintf("%i.png", web_app.icons[i].width));
     std::vector<unsigned char> image_data;
@@ -167,11 +173,14 @@ scoped_refptr<Extension> ConvertWebAppToExtension(
 
   // Finally, create the extension object to represent the unpacked directory.
   std::string error;
+  int extension_flags = Extension::STRICT_ERROR_CHECKS;
+  if (web_app.is_bookmark_app)
+    extension_flags |= Extension::FROM_BOOKMARK;
   scoped_refptr<Extension> extension = Extension::Create(
       temp_dir.path(),
       Extension::INTERNAL,
       *root,
-      Extension::STRICT_ERROR_CHECKS,
+      extension_flags,
       &error);
   if (!extension) {
     LOG(ERROR) << error;

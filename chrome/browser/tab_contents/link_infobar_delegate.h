@@ -9,10 +9,9 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/string16.h"
-#include "chrome/browser/tab_contents/infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_delegate.h"
 
-class TabContents;
-class TabContentsWrapper;
+class InfoBarTabHelper;
 
 // An interface derived from InfoBarDelegate implemented by objects wishing to
 // control a LinkInfoBar.
@@ -27,18 +26,18 @@ class LinkInfoBarDelegate : public InfoBarDelegate {
 
   // Called when the Link is clicked. The |disposition| specifies how the
   // resulting document should be loaded (based on the event flags present when
-  // the link was clicked). This function returns true if the InfoBar should be
-  // closed now or false if it should remain until the user explicitly closes
-  // it.
+  // the link was clicked). If this function returns true, the infobar is then
+  // immediately closed. Subclasses MUST NOT return true if in handling this
+  // call something triggers the infobar to begin closing.
   virtual bool LinkClicked(WindowOpenDisposition disposition);
 
  protected:
-  explicit LinkInfoBarDelegate(TabContents* contents);
+  explicit LinkInfoBarDelegate(InfoBarTabHelper* infobar_helper);
   virtual ~LinkInfoBarDelegate();
 
  private:
   // InfoBarDelegate:
-  virtual InfoBar* CreateInfoBar(TabContentsWrapper* owner) OVERRIDE;
+  virtual InfoBar* CreateInfoBar(InfoBarTabHelper* infobar_helper) OVERRIDE;
   virtual LinkInfoBarDelegate* AsLinkInfoBarDelegate() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(LinkInfoBarDelegate);

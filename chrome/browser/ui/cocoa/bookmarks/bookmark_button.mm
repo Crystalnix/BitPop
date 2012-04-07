@@ -4,14 +4,18 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
 
+#include <cmath>
+
 #include "base/logging.h"
 #import "base/memory/scoped_nsobject.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_window.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
+
+using content::UserMetricsAction;
 
 // The opacity of the bookmark button drag image.
 static const CGFloat kDragImageOpacity = 0.7;
@@ -123,23 +127,23 @@ BookmarkButton* gDraggedButton = nil; // Weak
   [super updateTrackingAreas];
 }
 
-- (BOOL)deltaIndicatesDragStartWithXDelta:(float)xDelta
-                                   yDelta:(float)yDelta
-                              xHysteresis:(float)xHysteresis
-                              yHysteresis:(float)yHysteresis {
+- (DraggableButtonResult)deltaIndicatesDragStartWithXDelta:(float)xDelta
+                                                    yDelta:(float)yDelta
+                                               xHysteresis:(float)xHysteresis
+                                               yHysteresis:(float)yHysteresis
+                                                 indicates:(BOOL*)result {
   const float kDownProportion = 1.4142135f; // Square root of 2.
 
   // We want to show a folder menu when you drag down on folder buttons,
   // so don't classify this as a drag for that case.
   if ([self isFolder] &&
-      (yDelta <= -yHysteresis) && // Bottom of hysteresis box was hit.
-      (ABS(yDelta)/ABS(xDelta)) >= kDownProportion)
-    return NO;
+      (yDelta <= -yHysteresis) &&  // Bottom of hysteresis box was hit.
+      (std::abs(yDelta) / std::abs(xDelta)) >= kDownProportion) {
+    *result = NO;
+    return kDraggableButtonMixinDidWork;
+  }
 
-  return [super deltaIndicatesDragStartWithXDelta:xDelta
-                                           yDelta:yDelta
-                                      xHysteresis:xHysteresis
-                                      yHysteresis:yHysteresis];
+  return kDraggableButtonImplUseBase;
 }
 
 
@@ -194,9 +198,9 @@ BookmarkButton* gDraggedButton = nil; // Weak
   const BookmarkNode* node = [self bookmarkNode];
   const BookmarkNode* parent = node ? node->parent() : NULL;
   if (parent && parent->type() == BookmarkNode::FOLDER) {
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBarFolder_DragStart"));
+    content::RecordAction(UserMetricsAction("BookmarkBarFolder_DragStart"));
   } else {
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBar_DragStart"));
+    content::RecordAction(UserMetricsAction("BookmarkBar_DragStart"));
   }
 
   dragMouseOffset_ = [self convertPointFromBase:[event locationInWindow]];
@@ -219,7 +223,7 @@ BookmarkButton* gDraggedButton = nil; // Weak
 }
 
 // Overridden to release bar visibility.
-- (void)endDrag {
+- (DraggableButtonResult)endDrag {
   gDraggedButton = nil;
 
   // visibilityDelegate_ can be nil if we're detached, and that's fine.
@@ -227,7 +231,8 @@ BookmarkButton* gDraggedButton = nil; // Weak
                                       withAnimation:YES
                                               delay:YES];
   visibilityDelegate_ = nil;
-  [super endDrag];
+
+  return kDraggableButtonImplUseBase;
 }
 
 - (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
@@ -256,13 +261,13 @@ BookmarkButton* gDraggedButton = nil; // Weak
   }
 }
 
-- (void)performMouseDownAction:(NSEvent*)theEvent {
+- (DraggableButtonResult)performMouseDownAction:(NSEvent*)theEvent {
   int eventMask = NSLeftMouseUpMask | NSMouseEnteredMask | NSMouseExitedMask |
       NSLeftMouseDraggedMask;
 
   BOOL keepGoing = YES;
   [[self target] performSelector:[self action] withObject:self];
-  self.actionHasFired = YES;
+  self.draggableButton.actionHasFired = YES;
 
   DraggableButton* insideBtn = nil;
 
@@ -301,7 +306,8 @@ BookmarkButton* gDraggedButton = nil; // Weak
         break;
       }
       case NSLeftMouseUp: {
-        self.durationMouseWasDown = [theEvent timestamp] - self.whenMouseDown;
+        self.draggableButton.durationMouseWasDown =
+            [theEvent timestamp] - self.draggableButton.whenMouseDown;
         if (!isInside && insideBtn && insideBtn != self) {
           // Has tracked onto another BookmarkButton menu item, and released,
           // so fire its action.
@@ -321,6 +327,7 @@ BookmarkButton* gDraggedButton = nil; // Weak
         break;
     }
   }
+  return kDraggableButtonMixinDidWork;
 }
 
 
@@ -358,10 +365,11 @@ BookmarkButton* gDraggedButton = nil; // Weak
 }
 
 // This only gets called after a click that wasn't a drag, and only on folders.
-- (void)secondaryMouseUpAction:(BOOL)wasInside {
+- (DraggableButtonResult)secondaryMouseUpAction:(BOOL)wasInside {
   const NSTimeInterval kShortClickLength = 0.5;
   // Long clicks that end over the folder button result in the menu hiding.
-  if (wasInside && ([self durationMouseWasDown] > kShortClickLength)) {
+  if (wasInside &&
+      self.draggableButton.durationMouseWasDown > kShortClickLength) {
     [[self target] performSelector:[self action] withObject:self];
   } else {
     // Mouse tracked out of button during menu track. Hide menus.
@@ -369,6 +377,7 @@ BookmarkButton* gDraggedButton = nil; // Weak
       [delegate_ bookmarkDragDidEnd:self
                           operation:NSDragOperationNone];
   }
+  return kDraggableButtonMixinDidWork;
 }
 
 @end

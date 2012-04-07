@@ -1,14 +1,11 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 cr.define('options', function() {
 
   var OptionsPage = options.OptionsPage;
-
-  // State variables.
-  var syncEnabled = false;
-  var syncSetupCompleted = false;
+  var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
    * Encapsulated handling of personal options page.
@@ -18,6 +15,11 @@ cr.define('options', function() {
     OptionsPage.call(this, 'personal',
                      templateData.personalPageTabTitle,
                      'personal-page');
+    if (cr.isChromeOS) {
+      // Username (canonical email) of the currently logged in user or
+      // |kGuestUser| if a guest session is active.
+      this.username_ = localStrings.getString('username');
+    }
   }
 
   cr.addSingletonGetter(PersonalOptions);
@@ -26,44 +28,81 @@ cr.define('options', function() {
     // Inherit PersonalOptions from OptionsPage.
     __proto__: options.OptionsPage.prototype,
 
+    // State variables.
+    syncEnabled: false,
+    syncSetupCompleted: false,
+
     // Initialize PersonalOptions page.
     initializePage: function() {
       // Call base class implementation to start preference initialization.
       OptionsPage.prototype.initializePage.call(this);
 
       var self = this;
+
+      // Sync.
       $('sync-action-link').onclick = function(event) {
-        chrome.send('showSyncActionDialog');
+        SyncSetupOverlay.showErrorUI();
       };
       $('start-stop-sync').onclick = function(event) {
         if (self.syncSetupCompleted)
-          self.showStopSyncingOverlay_();
+          SyncSetupOverlay.showStopSyncingUI();
         else
-          chrome.send('showSyncLoginDialog');
+          SyncSetupOverlay.showSetupUI();
       };
       $('customize-sync').onclick = function(event) {
-        chrome.send('showCustomizeSyncDialog');
+        SyncSetupOverlay.showSetupUI();
       };
-      $('privacy-dashboard-link').onclick = function(event) {
-        chrome.send('openPrivacyDashboardTabAndActivate');
+
+      // Profiles.
+      var profilesList = $('profiles-list');
+      options.personal_options.ProfileList.decorate(profilesList);
+      profilesList.autoExpands = true;
+
+      profilesList.onchange = self.setProfileViewButtonsStatus_;
+      $('profiles-create').onclick = function(event) {
+        chrome.send('createProfile');
       };
+      $('profiles-manage').onclick = function(event) {
+        var selectedProfile = self.getSelectedProfileItem_();
+        if (selectedProfile)
+          ManageProfileOverlay.showManageDialog(selectedProfile);
+      };
+      $('profiles-delete').onclick = function(event) {
+        var selectedProfile = self.getSelectedProfileItem_();
+        if (selectedProfile)
+          ManageProfileOverlay.showDeleteDialog(selectedProfile);
+      };
+
+      // Passwords.
       $('manage-passwords').onclick = function(event) {
         OptionsPage.navigateToPage('passwords');
         OptionsPage.showTab($('passwords-nav-tab'));
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_ShowPasswordManager']);
       };
+
+      // Autofill.
       $('autofill-settings').onclick = function(event) {
         OptionsPage.navigateToPage('autofill');
         chrome.send('coreOptionsUserMetricsAction',
             ['Options_ShowAutofillSettings']);
       };
+      if (cr.isChromeOS && cr.commandLine && cr.commandLine.options['--bwsi']) {
+        // Hide Autofill options for the guest user.
+        $('autofill-section').hidden = true;
+      }
+
+      // Appearance.
       $('themes-reset').onclick = function(event) {
         chrome.send('themesReset');
       };
 
       if (!cr.isChromeOS) {
         $('import-data').onclick = function(event) {
+          // Make sure that any previous import success message is hidden, and
+          // we're showing the UI to import further data.
+          $('import-data-configure').hidden = false;
+          $('import-data-success').hidden = true;
           OptionsPage.navigateToPage('importData');
           chrome.send('coreOptionsUserMetricsAction', ['Import_ShowDlg']);
         };
@@ -77,9 +116,9 @@ cr.define('options', function() {
         $('change-picture-button').onclick = function(event) {
           OptionsPage.navigateToPage('changePicture');
         };
-        chrome.send('loadAccountPicture');
+        this.updateAccountPicture_();
 
-        if (cr.commandLine.options['--bwsi']) {
+        if (cr.commandLine && cr.commandLine.options['--bwsi']) {
           // Disable the screen lock checkbox and change-picture-button in
           // guest mode.
           $('enable-screen-lock').disabled = true;
@@ -88,12 +127,16 @@ cr.define('options', function() {
       }
 
       if (PersonalOptions.disablePasswordManagement()) {
+        // Disable the Password Manager in guest mode.
         $('passwords-offersave').disabled = true;
         $('passwords-neversave').disabled = true;
         $('passwords-offersave').value = false;
         $('passwords-neversave').value = true;
         $('manage-passwords').disabled = true;
       }
+
+      $('mac-passwords-warning').hidden =
+          !(localStrings.getString('macPasswordsWarning'));
 
       if (PersonalOptions.disableAutofillManagement()) {
         $('autofill-settings').disabled = true;
@@ -106,26 +149,17 @@ cr.define('options', function() {
       }
     },
 
-    showStopSyncingOverlay_: function() {
-      AlertOverlay.show(localStrings.getString('stop_syncing_title'),
-                        localStrings.getString('stop_syncing_explanation'),
-                        localStrings.getString('stop_syncing_confirm'),
-                        localStrings.getString('cancel'),
-                        function() { chrome.send('stopSyncing'); });
-    },
-
     setSyncEnabled_: function(enabled) {
       this.syncEnabled = enabled;
+    },
+
+    setAutoLoginVisible_ : function(visible) {
+      $('enable-auto-login-checkbox').hidden = !visible;
     },
 
     setSyncSetupCompleted_: function(completed) {
       this.syncSetupCompleted = completed;
       $('customize-sync').hidden = !completed;
-      $('privacy-dashboard-link').hidden = !completed;
-    },
-
-    setAccountPicture_: function(image) {
-      $('account-picture').src = image;
     },
 
     setSyncStatus_: function(status) {
@@ -140,6 +174,10 @@ cr.define('options', function() {
                 $('sync-status').classList.remove('sync-error');
     },
 
+    setCustomizeSyncButtonEnabled_: function(enabled) {
+      $('customize-sync').disabled = !enabled;
+    },
+
     setSyncActionLinkEnabled_: function(enabled) {
       $('sync-action-link').disabled = !enabled;
     },
@@ -152,16 +190,80 @@ cr.define('options', function() {
       $('sync-action-link').hidden = !status.length;
     },
 
+    /**
+     * Display or hide the profiles section of the page. This is used for
+     * multi-profile settings.
+     * @param {boolean} visible True to show the section.
+     * @private
+     */
     setProfilesSectionVisible_: function(visible) {
-      $('profiles-create').hidden = !visible;
+      $('profiles-section').hidden = !visible;
     },
 
-    setNewProfileButtonEnabled_: function(enabled) {
-      $('new-profile').disabled = !enabled;
-      if (enabled)
-        $('profiles-create').classList.remove('disabled');
-      else
-        $('profiles-create').classList.add('disabled');
+    /**
+     * Get the selected profile item from the profile list. This also works
+     * correctly if the list is not displayed.
+     * @return {Object} the profile item object, or null if nothing is selected.
+     * @private
+     */
+    getSelectedProfileItem_: function() {
+      var profilesList = $('profiles-list');
+      if (profilesList.hidden) {
+        if (profilesList.dataModel.length > 0)
+          return profilesList.dataModel.item(0);
+      } else {
+        return profilesList.selectedItem;
+      }
+      return null;
+    },
+
+    /**
+     * Helper function to set the status of profile view buttons to disabled or
+     * enabled, depending on the number of profiles and selection status of the
+     * profiles list.
+     */
+    setProfileViewButtonsStatus_: function() {
+      var profilesList = $('profiles-list');
+      var selectedProfile = profilesList.selectedItem;
+      var hasSelection = selectedProfile != null;
+      var hasSingleProfile = profilesList.dataModel.length == 1;
+      $('profiles-manage').disabled = !hasSelection ||
+          !selectedProfile.isCurrentProfile;
+      $('profiles-delete').disabled = !hasSelection && !hasSingleProfile;
+    },
+
+    /**
+     * Display the correct dialog layout, depending on how many profiles are
+     * available.
+     * @param {number} numProfiles The number of profiles to display.
+     */
+    setProfileViewSingle_: function(numProfiles) {
+      var hasSingleProfile = numProfiles == 1;
+      $('profiles-list').hidden = hasSingleProfile;
+      $('profiles-single-message').hidden = !hasSingleProfile;
+      $('profiles-manage').hidden = hasSingleProfile;
+      $('profiles-delete').textContent = hasSingleProfile ?
+          templateData.profilesDeleteSingle :
+          templateData.profilesDelete;
+    },
+
+    /**
+     * Adds all |profiles| to the list.
+     * @param {Array.<Object>} An array of profile info objects.
+     *     each object is of the form:
+     *       profileInfo = {
+     *         name: "Profile Name",
+     *         iconURL: "chrome://path/to/icon/image",
+     *         filePath: "/path/to/profile/data/on/disk",
+     *         isCurrentProfile: false
+     *       };
+     */
+    setProfilesInfo_: function(profiles) {
+      this.setProfileViewSingle_(profiles.length);
+      // add it to the list, even if the list is hidden so we can access it
+      // later.
+      $('profiles-list').dataModel = new ArrayDataModel(profiles);
+      this.setProfileViewButtonsStatus_();
     },
 
     setStartStopButtonVisible_: function(visible) {
@@ -191,21 +293,21 @@ cr.define('options', function() {
     },
 
     /**
-     * Toggles the visibility of the data type checkboxes based on whether they
-     * are enabled on not.
-     * @param {Object} dict A mapping from data type to a boolean indicating
-     *     whether it is enabled.
+     * Get the start/stop sync button DOM element.
+     * @return {DOMElement} The start/stop sync button.
      * @private
      */
-    setRegisteredDataTypes_: function(dict) {
-      for (var type in dict) {
-        if (type.match(/Registered$/) && !dict[type]) {
-          node = $(type.replace(/([a-z]+)Registered$/i, '$1').toLowerCase()
-                   + '-check');
-          if (node)
-            node.parentNode.style.display = 'none';
-        }
-      }
+    getStartStopSyncButton_: function() {
+      return $('start-stop-sync');
+    },
+
+    /**
+     * (Re)loads IMG element with current user account picture.
+     */
+    updateAccountPicture_: function() {
+      $('account-picture').src =
+          'chrome://userimage/' + this.username_ +
+          '?id=' + (new Date()).getTime();
     },
   };
 
@@ -215,7 +317,7 @@ cr.define('options', function() {
    * @return {boolean} True if password management should be disabled.
    */
   PersonalOptions.disablePasswordManagement = function() {
-    return cr.commandLine.options['--bwsi'];
+    return cr.commandLine && cr.commandLine.options['--bwsi'];
   };
 
   /**
@@ -223,30 +325,43 @@ cr.define('options', function() {
    * @return {boolean} True if password management should be disabled.
    */
   PersonalOptions.disableAutofillManagement = function() {
-    return cr.commandLine.options['--bwsi'];
+    return cr.commandLine && cr.commandLine.options['--bwsi'];
   };
+
+  if (cr.isChromeOS) {
+    /**
+     * Returns username (canonical email) of the user logged in (ChromeOS only).
+     * @return {string} user email.
+     */
+    PersonalOptions.getLoggedInUsername = function() {
+      return PersonalOptions.getInstance().username_;
+    };
+  }
 
   // Forward public APIs to private implementations.
   [
-    'setSyncEnabled',
-    'setSyncSetupCompleted',
-    'setAccountPicture',
-    'setSyncStatus',
-    'setSyncStatusErrorVisible',
-    'setSyncActionLinkEnabled',
-    'setSyncActionLinkLabel',
+    'getStartStopSyncButton',
+    'hideSyncSection',
+    'setAutoLoginVisible',
+    'setCustomizeSyncButtonEnabled',
+    'setGtkThemeButtonEnabled',
+    'setProfilesInfo',
     'setProfilesSectionVisible',
-    'setNewProfileButtonEnabled',
-    'setStartStopButtonVisible',
     'setStartStopButtonEnabled',
     'setStartStopButtonLabel',
-    'setGtkThemeButtonEnabled',
+    'setStartStopButtonVisible',
+    'setSyncActionLinkEnabled',
+    'setSyncActionLinkLabel',
+    'setSyncEnabled',
+    'setSyncSetupCompleted',
+    'setSyncStatus',
+    'setSyncStatusErrorVisible',
     'setThemesResetButtonEnabled',
-    'hideSyncSection',
-    'setRegisteredDataTypes',
+    'updateAccountPicture',
   ].forEach(function(name) {
-    PersonalOptions[name] = function(value) {
-      PersonalOptions.getInstance()[name + '_'](value);
+    PersonalOptions[name] = function() {
+      var instance = PersonalOptions.getInstance();
+      return instance[name + '_'].apply(instance, arguments);
     };
   });
 

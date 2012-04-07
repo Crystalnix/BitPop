@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,15 +8,41 @@
 #include <set>
 #include <utility>
 
-#include "content/browser/geolocation/geolocation_permission_context.h"
+#include "base/bind.h"
 #include "content/browser/geolocation/geolocation_provider.h"
 #include "content/browser/renderer_host/render_message_filter.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/public/browser/geolocation_permission_context.h"
 #include "content/common/geolocation_messages.h"
 #include "content/common/geoposition.h"
 
+using content::BrowserThread;
+using content::GeolocationPermissionContext;
+
 namespace {
+
+void NotifyArbitratorPermissionGranted(
+    const GURL& requesting_frame) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  GeolocationProvider::GetInstance()->OnPermissionGranted(requesting_frame);
+}
+
+void SendGeolocationPermissionResponse(
+    const GURL& requesting_frame, int render_process_id, int render_view_id,
+    int bridge_id, bool allowed) {
+  RenderViewHost* r = RenderViewHost::FromID(render_process_id, render_view_id);
+  if (!r)
+    return;
+  r->Send(new GeolocationMsg_PermissionSet(render_view_id, bridge_id, allowed));
+
+  if (allowed) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&NotifyArbitratorPermissionGranted, requesting_frame));
+  }
+}
+
 class GeolocationDispatcherHostImpl : public GeolocationDispatcherHost,
                                       public GeolocationObserver {
  public:
@@ -114,7 +140,10 @@ void GeolocationDispatcherHostImpl::OnRequestPermission(
            << render_view_id << ":" << bridge_id;
   geolocation_permission_context_->RequestGeolocationPermission(
       render_process_id_, render_view_id, bridge_id,
-      requesting_frame);
+      requesting_frame,
+      base::Bind(
+          &SendGeolocationPermissionResponse, requesting_frame,
+          render_process_id_, render_view_id, bridge_id));
 }
 
 void GeolocationDispatcherHostImpl::OnCancelPermissionRequest(

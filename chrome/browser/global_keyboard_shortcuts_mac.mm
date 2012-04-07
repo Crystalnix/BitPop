@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,6 +51,7 @@ const KeyboardShortcutData* GetWindowKeyboardShortcutTable(
     {true,  false, false, false, kVK_ANSI_Keypad8,    0, IDC_SELECT_TAB_7},
     {true,  false, false, false, kVK_ANSI_9,          0, IDC_SELECT_LAST_TAB},
     {true,  false, false, false, kVK_ANSI_Keypad9,    0, IDC_SELECT_LAST_TAB},
+    {true,  true,  false, false, kVK_ANSI_M,          0, IDC_SHOW_AVATAR_MENU},
   };
 
   *num_entries = arraysize(keyboard_shortcuts);
@@ -81,6 +82,8 @@ const KeyboardShortcutData* GetBrowserKeyboardShortcutTable(
     {false, false, false, false, kVK_Delete,       0,   IDC_BACK},
     {false, true,  false, false, kVK_Delete,       0,   IDC_FORWARD},
     {true,  true,  false, false, 0,                'c', IDC_DEV_TOOLS_INSPECT},
+    {true,  true,  false, false, kVK_ANSI_Period,  0,
+     IDC_TOGGLE_SPEECH_INPUT},
   };
 
   *num_entries = arraysize(keyboard_shortcuts);

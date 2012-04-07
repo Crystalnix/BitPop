@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/webdata/web_database_table.h"
 
 class GURL;
@@ -33,10 +34,14 @@ class WebAppsTable : public WebDatabaseTable {
   WebAppsTable(sql::Connection* db, sql::MetaTable* meta_table)
       : WebDatabaseTable(db, meta_table) {}
   virtual ~WebAppsTable() {}
-  virtual bool Init();
-  virtual bool IsSyncable();
+  virtual bool Init() OVERRIDE;
+  virtual bool IsSyncable() OVERRIDE;
 
   bool SetWebAppImage(const GURL& url, const SkBitmap& image);
+
+  // Returns true if all images are retrieved. Returns false if there is a
+  // database error. In this case, the state of images is undefined; it may have
+  // partial results or no results from the call.
   bool GetWebAppImages(const GURL& url, std::vector<SkBitmap>* images);
 
   bool SetWebAppHasAllImages(const GURL& url, bool has_all_images);

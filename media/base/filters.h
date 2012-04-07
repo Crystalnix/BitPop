@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,16 +27,14 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/callback_old.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
-#include "media/base/audio_decoder_config.h"
-#include "media/base/media_format.h"
+#include "media/base/channel_layout.h"
+#include "media/base/media_export.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_frame.h"
-
-struct AVStream;
+#include "ui/gfx/size.h"
 
 namespace media {
 
@@ -48,32 +46,19 @@ class FilterHost;
 
 struct PipelineStatistics;
 
-// Used to specify video preload states. They are "hints" to the browser about
-// how aggressively the browser should load and buffer data.
-// Please see the HTML5 spec for the descriptions of these values:
-// http://www.w3.org/TR/html5/video.html#attr-media-preload
-//
-// Enum values must match the values in WebCore::MediaPlayer::Preload and
-// there will be assertions at compile time if they do not match.
-enum Preload {
-  NONE,
-  METADATA,
-  AUTO,
-};
-
 // Used for completing asynchronous methods.
-typedef Callback0::Type FilterCallback;
 typedef base::Callback<void(PipelineStatus)> FilterStatusCB;
 
-// This function copies |cb|, calls Reset() on |cb|, and then calls Run()
-// on the copy. This is used in the common case where you need to clear
+// These functions copy |*cb|, call Reset() on |*cb|, and then call Run()
+// on the copy.  This is used in the common case where you need to clear
 // a callback member variable before running the callback.
-void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status);
+MEDIA_EXPORT void ResetAndRunCB(FilterStatusCB* cb, PipelineStatus status);
+MEDIA_EXPORT void ResetAndRunCB(base::Closure* cb);
 
 // Used for updating pipeline statistics.
-typedef Callback1<const PipelineStatistics&>::Type StatisticsCallback;
+typedef base::Callback<void(const PipelineStatistics&)> StatisticsCallback;
 
-class Filter : public base::RefCountedThreadSafe<Filter> {
+class MEDIA_EXPORT Filter : public base::RefCountedThreadSafe<Filter> {
  public:
   Filter();
 
@@ -83,27 +68,31 @@ class Filter : public base::RefCountedThreadSafe<Filter> {
   // to be released before the host object is destroyed by the pipeline.
   virtual void set_host(FilterHost* host);
 
+  // Clear |host_| to signal abandonment.  Must be called after set_host() and
+  // before any state-changing method below.
+  virtual void clear_host();
+
   virtual FilterHost* host();
 
   // The pipeline has resumed playback.  Filters can continue requesting reads.
   // Filters may implement this method if they need to respond to this call.
   // TODO(boliu): Check that callback is not NULL in subclasses.
-  virtual void Play(FilterCallback* callback);
+  virtual void Play(const base::Closure& callback);
 
   // The pipeline has paused playback.  Filters should stop buffer exchange.
   // Filters may implement this method if they need to respond to this call.
   // TODO(boliu): Check that callback is not NULL in subclasses.
-  virtual void Pause(FilterCallback* callback);
+  virtual void Pause(const base::Closure& callback);
 
   // The pipeline has been flushed.  Filters should return buffer to owners.
   // Filters may implement this method if they need to respond to this call.
   // TODO(boliu): Check that callback is not NULL in subclasses.
-  virtual void Flush(FilterCallback* callback);
+  virtual void Flush(const base::Closure& callback);
 
   // The pipeline is being stopped either as a result of an error or because
   // the client called Stop().
   // TODO(boliu): Check that callback is not NULL in subclasses.
-  virtual void Stop(FilterCallback* callback);
+  virtual void Stop(const base::Closure& callback);
 
   // The pipeline playback rate has been changed.  Filters may implement this
   // method if they need to respond to this call.
@@ -131,158 +120,95 @@ class Filter : public base::RefCountedThreadSafe<Filter> {
   DISALLOW_COPY_AND_ASSIGN(Filter);
 };
 
-class DataSource : public Filter {
- public:
-  typedef Callback1<size_t>::Type ReadCallback;
-  static const size_t kReadError = static_cast<size_t>(-1);
-
-  // Reads |size| bytes from |position| into |data|. And when the read is done
-  // or failed, |read_callback| is called with the number of bytes read or
-  // kReadError in case of error.
-  // TODO(hclam): should change |size| to int! It makes the code so messy
-  // with size_t and int all over the place..
-  virtual void Read(int64 position, size_t size,
-                    uint8* data, ReadCallback* read_callback) = 0;
-
-  // Returns true and the file size, false if the file size could not be
-  // retrieved.
-  virtual bool GetSize(int64* size_out) = 0;
-
-  // Returns true if we are performing streaming. In this case seeking is
-  // not possible.
-  virtual bool IsStreaming() = 0;
-
-  // Alert the DataSource that the video preload value has been changed.
-  virtual void SetPreload(Preload preload) = 0;
-};
-
-class DemuxerStream : public base::RefCountedThreadSafe<DemuxerStream> {
- public:
-  typedef base::Callback<void(Buffer*)> ReadCallback;
-
-  enum Type {
-    UNKNOWN,
-    AUDIO,
-    VIDEO,
-    NUM_TYPES,  // Always keep this entry as the last one!
-  };
-
-  // Schedules a read.  When the |read_callback| is called, the downstream
-  // filter takes ownership of the buffer by AddRef()'ing the buffer.
-  virtual void Read(const ReadCallback& read_callback) = 0;
-
-  // Returns an |AVStream*| if supported, or NULL.
-  virtual AVStream* GetAVStream();
-
-  // Returns the type of stream.
-  virtual Type type() = 0;
-
-  // Returns the media format of this stream.
-  virtual const MediaFormat& media_format() = 0;
-
-  virtual void EnableBitstreamConverter() = 0;
-
- protected:
-  friend class base::RefCountedThreadSafe<DemuxerStream>;
-  virtual ~DemuxerStream();
-};
-
-class Demuxer : public Filter {
- public:
-  // Returns the given stream type, or NULL if that type is not present.
-  virtual scoped_refptr<DemuxerStream> GetStream(DemuxerStream::Type type) = 0;
-
-  // Alert the Demuxer that the video preload value has been changed.
-  virtual void SetPreload(Preload preload) = 0;
-};
-
-
-class VideoDecoder : public Filter {
+class MEDIA_EXPORT VideoDecoder : public Filter {
  public:
   // Initialize a VideoDecoder with the given DemuxerStream, executing the
   // callback upon completion.
   // stats_callback is used to update global pipeline statistics.
-  virtual void Initialize(DemuxerStream* stream, FilterCallback* callback,
-                          StatisticsCallback* stats_callback) = 0;
+  virtual void Initialize(DemuxerStream* stream,
+                          const PipelineStatusCB& callback,
+                          const StatisticsCallback& stats_callback) = 0;
 
-  // Renderer provides an output buffer for Decoder to write to. These buffers
-  // will be recycled to renderer via the permanent callback.
+  // Request a frame to be decoded and returned via the provided callback.
+  // Only one read may be in flight at any given time.
   //
-  // We could also pass empty pointer here to let decoder provide buffers pool.
-  virtual void ProduceVideoFrame(scoped_refptr<VideoFrame> frame) = 0;
-
-  // Installs a permanent callback for passing decoded video output.
+  // Implementations guarantee that the callback will not be called from within
+  // this method.
   //
-  // A NULL frame represents a decoding error.
-  typedef base::Callback<void(scoped_refptr<VideoFrame>)> ConsumeVideoFrameCB;
-  void set_consume_video_frame_callback(const ConsumeVideoFrameCB& callback) {
-    consume_video_frame_callback_ = callback;
-  }
+  // Non-NULL frames contain decoded video data or may indicate the  end of
+  // the stream. NULL video frames indicate an aborted read. This can happen if
+  // the DemuxerStream gets flushed and doesn't have any more data to return.
+  typedef base::Callback<void(scoped_refptr<VideoFrame>)> ReadCB;
+  virtual void Read(const ReadCB& callback) = 0;
 
-  // Indicate whether decoder provides its own output buffers
-  virtual bool ProvidesBuffer() = 0;
+  // Returns the natural width and height of decoded video in pixels.
+  //
+  // Clients should NOT rely on these values to remain constant. Instead, use
+  // the width/height from decoded video frames themselves.
+  //
+  // TODO(scherkus): why not rely on prerolling and decoding a single frame to
+  // get dimensions?
+  virtual const gfx::Size& natural_size() = 0;
 
-  // Returns the media format produced by this decoder.
-  virtual const MediaFormat& media_format() = 0;
+  // Returns true if the output format has an alpha channel. Most formats do not
+  // have alpha so the default is false. Override and return true for decoders
+  // that return formats with an alpha channel.
+  virtual bool HasAlpha() const;
+
+  // Prepare decoder for shutdown.  This is a HACK needed because
+  // PipelineImpl::Stop() goes through a Pause/Flush/Stop dance to all its
+  // filters, waiting for each state transition to complete before starting the
+  // next, but WebMediaPlayerImpl::Destroy() holds the renderer loop hostage for
+  // the duration.  Default implementation does nothing; derived decoders may
+  // override as needed.  http://crbug.com/110228 tracks removing this.
+  virtual void PrepareForShutdownHack();
 
  protected:
-  // Executes the permanent callback to pass off decoded video.
-  //
-  // TODO(scherkus): name this ConsumeVideoFrame() once we fix the TODO in
-  // VideoDecodeEngine::EventHandler to remove ConsumeVideoFrame() from there.
-  void VideoFrameReady(scoped_refptr<VideoFrame> frame) {
-    consume_video_frame_callback_.Run(frame);
-  }
-
   VideoDecoder();
   virtual ~VideoDecoder();
-
- private:
-  ConsumeVideoFrameCB consume_video_frame_callback_;
 };
 
 
-class AudioDecoder : public Filter {
+class MEDIA_EXPORT AudioDecoder : public Filter {
  public:
   // Initialize a AudioDecoder with the given DemuxerStream, executing the
   // callback upon completion.
   // stats_callback is used to update global pipeline statistics.
-  virtual void Initialize(DemuxerStream* stream, FilterCallback* callback,
-                          StatisticsCallback* stats_callback) = 0;
-
-  virtual AudioDecoderConfig config() = 0;
-
-  // Renderer provides an output buffer for Decoder to write to. These buffers
-  // will be recycled to renderer via the permanent callback.
   //
-  // We could also pass empty pointer here to let decoder provide buffers pool.
-  virtual void ProduceAudioSamples(scoped_refptr<Buffer> buffer) = 0;
+  // TODO(scherkus): switch to PipelineStatus callback.
+  virtual void Initialize(DemuxerStream* stream, const base::Closure& callback,
+                          const StatisticsCallback& stats_callback) = 0;
 
-  // Installs a permanent callback for passing decoded audio output.
-  typedef base::Callback<void(scoped_refptr<Buffer>)> ConsumeAudioSamplesCB;
-  void set_consume_audio_samples_callback(
-      const ConsumeAudioSamplesCB& callback) {
-    consume_audio_samples_callback_ = callback;
-  }
+  // Request samples to be decoded and returned via the provided callback.
+  // Only one read may be in flight at any given time.
+  //
+  // Implementations guarantee that the callback will not be called from within
+  // this method.
+  //
+  // Non-NULL sample buffer pointers will contain decoded audio data or may
+  // indicate the end of the stream. A NULL buffer pointer indicates an aborted
+  // Read(). This can happen if the DemuxerStream gets flushed and doesn't have
+  // any more data to return.
+  typedef base::Callback<void(scoped_refptr<Buffer>)> ReadCB;
+  virtual void Read(const ReadCB& callback) = 0;
+
+  // Returns various information about the decoded audio format.
+  virtual int bits_per_channel() = 0;
+  virtual ChannelLayout channel_layout() = 0;
+  virtual int samples_per_second() = 0;
 
  protected:
   AudioDecoder();
   virtual ~AudioDecoder();
-
-  // Executes the permanent callback to pass off decoded audio.
-  void ConsumeAudioSamples(scoped_refptr<Buffer> buffer);
-
- private:
-  ConsumeAudioSamplesCB consume_audio_samples_callback_;
 };
 
 
-class VideoRenderer : public Filter {
+class MEDIA_EXPORT VideoRenderer : public Filter {
  public:
   // Initialize a VideoRenderer with the given VideoDecoder, executing the
   // callback upon completion.
-  virtual void Initialize(VideoDecoder* decoder, FilterCallback* callback,
-                          StatisticsCallback* stats_callback) = 0;
+  virtual void Initialize(VideoDecoder* decoder, const base::Closure& callback,
+                          const StatisticsCallback& stats_callback) = 0;
 
   // Returns true if this filter has received and processed an end-of-stream
   // buffer.
@@ -290,11 +216,17 @@ class VideoRenderer : public Filter {
 };
 
 
-class AudioRenderer : public Filter {
+class MEDIA_EXPORT AudioRenderer : public Filter {
  public:
   // Initialize a AudioRenderer with the given AudioDecoder, executing the
-  // callback upon completion.
-  virtual void Initialize(AudioDecoder* decoder, FilterCallback* callback) = 0;
+  // |init_callback| upon completion. |underflow_callback| is called when the
+  // renderer runs out of data to pass to the audio card during playback.
+  // If the |underflow_callback| is called ResumeAfterUnderflow() must be called
+  // to resume playback. Pause(), Seek(), or Stop() cancels the underflow
+  // condition.
+  virtual void Initialize(AudioDecoder* decoder,
+                          const base::Closure& init_callback,
+                          const base::Closure& underflow_callback) = 0;
 
   // Returns true if this filter has received and processed an end-of-stream
   // buffer.
@@ -302,6 +234,11 @@ class AudioRenderer : public Filter {
 
   // Sets the output volume.
   virtual void SetVolume(float volume) = 0;
+
+  // Resumes playback after underflow occurs.
+  // |buffer_more_audio| is set to true if you want to increase the size of the
+  // decoded audio buffer.
+  virtual void ResumeAfterUnderflow(bool buffer_more_audio) = 0;
 };
 
 }  // namespace media

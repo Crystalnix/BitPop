@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,11 @@
 #include "base/process.h"
 #include "base/shared_memory.h"
 #include "base/string16.h"
+#include "ui/base/ui_export.h"
+
+#if defined(TOOLKIT_USES_GTK)
+#include <gdk/gdk.h>
+#endif
 
 namespace gfx {
 class Size;
@@ -26,11 +31,54 @@ class SkBitmap;
 typedef struct _GtkClipboard GtkClipboard;
 #endif
 
+#ifdef __OBJC__
+@class NSString;
+#else
+class NSString;
+#endif
+
 namespace ui {
 
-class Clipboard {
+class UI_EXPORT Clipboard {
  public:
-  typedef std::string FormatType;
+  // Platform neutral holder for native data representation of a clipboard type.
+  struct UI_EXPORT FormatType {
+    FormatType();
+    ~FormatType();
+
+    std::string Serialize() const;
+    static FormatType Deserialize(const std::string& serialization);
+
+   private:
+    friend class Clipboard;
+
+    bool Equals(const FormatType& other) const;
+
+#if defined(OS_WIN)
+    explicit FormatType(UINT native_format);
+    UINT ToUINT() const { return data_; }
+    UINT data_;
+#elif defined(OS_MACOSX)
+   public:
+    FormatType(const FormatType& other);
+    FormatType& operator=(const FormatType& other);
+   private:
+    explicit FormatType(NSString* native_format);
+    NSString* ToNSString() const { return data_; }
+    NSString* data_;
+#elif defined(USE_AURA)
+    explicit FormatType(const std::string& native_format);
+    const std::string& ToString() const { return data_; }
+    std::string data_;
+#elif defined(TOOLKIT_USES_GTK)
+    explicit FormatType(const std::string& native_format);
+    explicit FormatType(const GdkAtom& native_format);
+    const GdkAtom& ToGdkAtom() const { return data_; }
+    GdkAtom data_;
+#else
+#error No FormatType definition.
+#endif
+  };
 
   // ObjectType designates the type of data to be stored in the clipboard. This
   // designation is shared across all OSes. The system-specific designation
@@ -88,19 +136,16 @@ class Clipboard {
   enum Buffer {
     BUFFER_STANDARD,
     BUFFER_SELECTION,
-    BUFFER_DRAG,
   };
 
   static bool IsValidBuffer(int32 buffer) {
     switch (buffer) {
       case BUFFER_STANDARD:
         return true;
-#if defined(USE_X11)
+#if defined(USE_X11) && !defined(USE_AURA)
       case BUFFER_SELECTION:
         return true;
 #endif
-      case BUFFER_DRAG:
-        return true;
     }
     return false;
   }
@@ -118,27 +163,21 @@ class Clipboard {
   // kept until the system clipboard is set again.
   void WriteObjects(const ObjectMap& objects);
 
-  // Behaves as above. If there is some shared memory handle passed as one of
-  // the objects, it came from the process designated by |process|. This will
-  // assist in turning it into a shared memory region that the current process
-  // can use.
-  void WriteObjects(const ObjectMap& objects, base::ProcessHandle process);
-
   // On Linux/BSD, we need to know when the clipboard is set to a URL.  Most
   // platforms don't care.
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(USE_AURA)
   void DidWriteURL(const std::string& utf8_text) {}
 #else  // !defined(OS_WIN) && !defined(OS_MACOSX)
   void DidWriteURL(const std::string& utf8_text);
 #endif
 
+  // Returns a sequence number which uniquely identifies clipboard state.
+  // This can be used to version the data on the clipboard and determine
+  // whether it has changed.
+  uint64 GetSequenceNumber(Buffer buffer);
+
   // Tests whether the clipboard contains a certain format
   bool IsFormatAvailable(const FormatType& format, Buffer buffer) const;
-
-  // As above, but instead of interpreting |format| by some platform-specific
-  // definition, interpret it as a literal MIME type.
-  bool IsFormatAvailableByString(const std::string& format,
-                                 Buffer buffer) const;
 
   void ReadAvailableTypes(Buffer buffer, std::vector<string16>* types,
                           bool* contains_filenames) const;
@@ -149,11 +188,19 @@ class Clipboard {
   // Reads ASCII text from the clipboard, if available.
   void ReadAsciiText(Buffer buffer, std::string* result) const;
 
-  // Reads HTML from the clipboard, if available.
-  void ReadHTML(Buffer buffer, string16* markup, std::string* src_url) const;
+  // Reads HTML from the clipboard, if available. If the HTML fragment requires
+  // context to parse, |fragment_start| and |fragment_end| are indexes into
+  // markup indicating the beginning and end of the actual fragment. Otherwise,
+  // they will contain 0 and markup->size().
+  void ReadHTML(Buffer buffer, string16* markup, std::string* src_url,
+                uint32* fragment_start, uint32* fragment_end) const;
 
   // Reads an image from the clipboard, if available.
   SkBitmap ReadImage(Buffer buffer) const;
+
+  void ReadCustomData(Buffer buffer,
+                      const string16& type,
+                      string16* result) const;
 
   // Reads a bookmark from the clipboard, if available.
   void ReadBookmark(string16* title, std::string* url) const;
@@ -165,22 +212,26 @@ class Clipboard {
 
   // Reads raw data from the clipboard with the given format type. Stores result
   // as a byte vector.
-  // TODO(dcheng): Due to platform limitations on Windows, we should make sure
-  // format is never controlled by the user.
-  void ReadData(const std::string& format, std::string* result);
+  void ReadData(const FormatType& format, std::string* result) const;
 
-  // Get format Identifiers for various types.
-  static FormatType GetUrlFormatType();
-  static FormatType GetUrlWFormatType();
-  static FormatType GetMozUrlFormatType();
-  static FormatType GetPlainTextFormatType();
-  static FormatType GetPlainTextWFormatType();
-  static FormatType GetFilenameFormatType();
-  static FormatType GetFilenameWFormatType();
-  static FormatType GetWebKitSmartPasteFormatType();
+  // Gets the FormatType corresponding to an arbitrary format string,
+  // registering it with the system if needed. Due to Windows/Linux
+  // limitiations, |format_string| must never be controlled by the user.
+  static FormatType GetFormatType(const std::string& format_string);
+
+  // Get format identifiers for various types.
+  static const FormatType& GetUrlFormatType();
+  static const FormatType& GetUrlWFormatType();
+  static const FormatType& GetMozUrlFormatType();
+  static const FormatType& GetPlainTextFormatType();
+  static const FormatType& GetPlainTextWFormatType();
+  static const FormatType& GetFilenameFormatType();
+  static const FormatType& GetFilenameWFormatType();
+  static const FormatType& GetWebKitSmartPasteFormatType();
   // Win: MS HTML Format, Other: Generic HTML format
-  static FormatType GetHtmlFormatType();
-  static FormatType GetBitmapFormatType();
+  static const FormatType& GetHtmlFormatType();
+  static const FormatType& GetBitmapFormatType();
+  static const FormatType& GetWebCustomDataFormatType();
 
   // Embeds a pointer to a SharedMemory object pointed to by |bitmap_handle|
   // belonging to |process| into a shared bitmap [CBF_SMBITMAP] slot in
@@ -192,10 +243,10 @@ class Clipboard {
                                      base::ProcessHandle process);
 #if defined(OS_WIN)
   // Firefox text/html
-  static FormatType GetTextHtmlFormatType();
-  static FormatType GetCFHDropFormatType();
-  static FormatType GetFileDescriptorFormatType();
-  static FormatType GetFileContentFormatZeroType();
+  static const FormatType& GetTextHtmlFormatType();
+  static const FormatType& GetCFHDropFormatType();
+  static const FormatType& GetFileDescriptorFormatType();
+  static const FormatType& GetFileContentFormatZeroType();
 #endif
 
  private:
@@ -220,12 +271,9 @@ class Clipboard {
 
   void WriteBitmap(const char* pixel_data, const char* size_data);
 
-#if !defined(OS_MACOSX)
-  // |format_name| is an ASCII string and should be NULL-terminated.
-  // TODO(estade): port to mac.
-  void WriteData(const char* format_name, size_t format_len,
-                 const char* data_data, size_t data_len);
-#endif
+  void WriteData(const FormatType& format,
+                 const char* data_data,
+                 size_t data_len);
 #if defined(OS_WIN)
   void WriteBitmapFromHandle(HBITMAP source_hbitmap,
                              const gfx::Size& size);
@@ -249,7 +297,7 @@ class Clipboard {
 
   // True if we can create a window.
   bool create_window_;
-#elif !defined(OS_MACOSX)
+#elif defined(TOOLKIT_USES_GTK)
   // The public API is via WriteObjects() which dispatches to multiple
   // Write*() calls, but on GTK we must write all the clipboard types
   // in a single GTK call.  To support this we store the current set
@@ -259,7 +307,7 @@ class Clipboard {
   // contents of clipboard_data_.
 
  public:
-  typedef std::map<FormatType, std::pair<char*, size_t> > TargetMap;
+  typedef std::map<std::string, std::pair<char*, size_t> > TargetMap;
 
  private:
   // Write changes to gtk clipboard.

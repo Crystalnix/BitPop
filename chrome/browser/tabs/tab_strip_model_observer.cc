@@ -18,13 +18,18 @@ void TabStripModelObserver::TabDetachedAt(TabContentsWrapper* contents,
                                           int index) {
 }
 
-void TabStripModelObserver::TabDeselected(TabContentsWrapper* contents) {
+void TabStripModelObserver::TabDeactivated(TabContentsWrapper* contents) {
 }
 
 void TabStripModelObserver::ActiveTabChanged(TabContentsWrapper* old_contents,
                                              TabContentsWrapper* new_contents,
                                              int index,
                                              bool user_gesture) {
+}
+
+void TabStripModelObserver::TabSelectionChanged(
+    TabStripModel* tab_strip_model,
+    const TabStripSelectionModel& model) {
 }
 
 void TabStripModelObserver::TabMoved(TabContentsWrapper* contents,

@@ -1,12 +1,14 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/protocol/rtp_video_writer.h"
 
-#include "base/task.h"
+#include "base/bind.h"
+#include "base/callback.h"
 #include "net/base/io_buffer.h"
 #include "remoting/base/compound_buffer.h"
+#include "remoting/base/constants.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/rtp_writer.h"
 #include "remoting/protocol/session.h"
@@ -18,15 +20,73 @@ namespace {
 const int kMtu = 1200;
 }  // namespace
 
-RtpVideoWriter::RtpVideoWriter() { }
-
-RtpVideoWriter::~RtpVideoWriter() { }
-
-void RtpVideoWriter::Init(protocol::Session* session) {
-  rtp_writer_.Init(session->video_rtp_channel());
+RtpVideoWriter::RtpVideoWriter(base::MessageLoopProxy* message_loop)
+    : session_(NULL),
+      initialized_(false),
+      rtp_writer_(message_loop) {
 }
 
-void RtpVideoWriter::ProcessVideoPacket(const VideoPacket* packet, Task* done) {
+RtpVideoWriter::~RtpVideoWriter() {
+  Close();
+}
+
+void RtpVideoWriter::Init(protocol::Session* session,
+                          const InitializedCallback& callback) {
+  session_ = session;
+  initialized_callback_ = callback;
+  session->CreateDatagramChannel(
+      kVideoRtpChannelName,
+      base::Bind(&RtpVideoWriter::OnChannelReady,
+                 base::Unretained(this), true));
+  session->CreateDatagramChannel(
+      kVideoRtcpChannelName,
+      base::Bind(&RtpVideoWriter::OnChannelReady,
+                 base::Unretained(this), false));
+}
+
+void RtpVideoWriter::OnChannelReady(bool rtp, net::Socket* socket) {
+  if (!socket) {
+    if (!initialized_) {
+      initialized_ = true;
+      initialized_callback_.Run(false);
+    }
+    return;
+  }
+
+  if (rtp) {
+    DCHECK(!rtp_channel_.get());
+    rtp_channel_.reset(socket);
+    rtp_writer_.Init(socket);
+  } else {
+    DCHECK(!rtcp_channel_.get());
+    rtcp_channel_.reset(socket);
+    // TODO(sergeyu): Use RTCP channel somehow.
+  }
+
+  if (rtp_channel_.get() && rtcp_channel_.get()) {
+    DCHECK(!initialized_);
+    initialized_ = true;
+    initialized_callback_.Run(true);
+  }
+}
+
+void RtpVideoWriter::Close() {
+  rtp_writer_.Close();
+  rtp_channel_.reset();
+  rtcp_channel_.reset();
+  if (session_) {
+    session_->CancelChannelCreation(kVideoRtpChannelName);
+    session_->CancelChannelCreation(kVideoRtcpChannelName);
+    session_ = NULL;
+  }
+}
+
+bool RtpVideoWriter::is_connected() {
+  return rtp_channel_.get() && rtcp_channel_.get();
+}
+
+void RtpVideoWriter::ProcessVideoPacket(const VideoPacket* packet,
+                                        const base::Closure& done) {
   CHECK(packet->format().encoding() == VideoPacketFormat::ENCODING_VP8)
       << "Only VP8 is supported in RTP.";
 
@@ -80,8 +140,7 @@ void RtpVideoWriter::ProcessVideoPacket(const VideoPacket* packet, Task* done) {
   }
   DCHECK_EQ(position, payload.total_bytes());
 
-  done->Run();
-  delete done;
+  done.Run();
 }
 
 int RtpVideoWriter::GetPendingPackets() {

@@ -2,26 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <set>
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
-#include "chrome/browser/policy/configuration_policy_pref_store.h"
-#include "chrome/browser/policy/dummy_configuration_policy_provider.h"
 #include "chrome/browser/prefs/pref_model_associator.h"
 #include "chrome/browser/prefs/pref_notifier.h"
 #include "chrome/browser/prefs/pref_value_store.h"
 #include "chrome/browser/prefs/testing_pref_store.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using testing::_;
-using testing::AnyNumber;
 using testing::Mock;
-using testing::Invoke;
+using testing::_;
 
 namespace {
 
@@ -365,7 +360,7 @@ TEST_F(PrefValueStoreTest, GetValue) {
 
   // Test getting a preference value that the |PrefValueStore|
   // does not contain.
-  FundamentalValue tmp_dummy_value(true);
+  base::FundamentalValue tmp_dummy_value(true);
   value = &tmp_dummy_value;
   ASSERT_FALSE(pref_value_store_->GetValue(prefs::kMissingPref,
                                            Value::TYPE_STRING, &value));
@@ -612,6 +607,27 @@ TEST_F(PrefValueStoreTest, PrefValueFromUserStore) {
   EXPECT_FALSE(pref_value_store_->PrefValueFromUserStore(
       prefs::kDefaultPref));
   EXPECT_FALSE(pref_value_store_->PrefValueFromUserStore(
+      prefs::kMissingPref));
+}
+
+TEST_F(PrefValueStoreTest, PrefValueFromRecommendedStore) {
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kManagedPlatformPref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kManagedCloudPref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kExtensionPref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kCommandLinePref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kUserPref));
+  EXPECT_TRUE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kRecommendedPlatformPref));
+  EXPECT_TRUE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kRecommendedCloudPref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
+      prefs::kDefaultPref));
+  EXPECT_FALSE(pref_value_store_->PrefValueFromRecommendedStore(
       prefs::kMissingPref));
 }
 

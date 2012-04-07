@@ -2,58 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <string>
-
-#include "base/path_service.h"
-#include "base/file_util.h"
-#include "base/string_util.h"
-
+#include "courgette/base_test_unittest.h"
 #include "courgette/courgette.h"
 #include "courgette/streams.h"
 
-#include "testing/gtest/include/gtest/gtest.h"
-
-class EncodeDecodeTest : public testing::Test {
+class EncodeDecodeTest : public BaseTest {
  public:
-  void TestExe(const char *) const;
-
- private:
-  void SetUp() {
-    PathService::Get(base::DIR_SOURCE_ROOT, &testdata_dir_);
-    testdata_dir_ = testdata_dir_.AppendASCII("courgette");
-    testdata_dir_ = testdata_dir_.AppendASCII("testdata");
-  }
-
-  void TearDown() { }
-
-  // Returns contents of |file_name| as uninterprested bytes stored in a string.
-  std::string FileContents(const char* file_name) const;
-
-  FilePath testdata_dir_;  // Full path name of testdata directory
+  void TestAssembleToStreamDisassemble(std::string file,
+                                       size_t expected_encoded_lenth) const;
 };
 
-//  Reads a test file into a string.
-std::string EncodeDecodeTest::FileContents(const char* file_name) const {
-  FilePath file_path = testdata_dir_;
-  file_path = file_path.AppendASCII(file_name);
-  std::string file_contents;
-  if (!file_util::ReadFileToString(file_path, &file_contents)) {
-    EXPECT_TRUE(!"Could not read test data");
-  }
-  return file_contents;
-}
-
-void EncodeDecodeTest::TestExe(const char* file_name) const {
-  // Test top-level Courgette API for converting an a file to a binary
-  // assembly representation and back.
-  std::string file1 = FileContents(file_name);
-
-  const void* original_buffer = file1.c_str();
-  size_t original_length = file1.size();
+void EncodeDecodeTest::TestAssembleToStreamDisassemble(
+    std::string file,
+    size_t expected_encoded_lenth) const {
+  const void* original_buffer = file.c_str();
+  size_t original_length = file.length();
 
   courgette::AssemblyProgram* program = NULL;
   const courgette::Status parse_status =
-      courgette::ParseWin32X86PE(original_buffer, original_length, &program);
+      courgette::ParseDetectedExecutable(original_buffer,
+                                         original_length,
+                                         &program);
   EXPECT_EQ(courgette::C_OK, parse_status);
 
   courgette::EncodedProgram* encoded = NULL;
@@ -76,7 +45,7 @@ void EncodeDecodeTest::TestExe(const char* file_name) const {
   const void* buffer = sink.Buffer();
   size_t length = sink.Length();
 
-  EXPECT_EQ(971850U, length);
+  EXPECT_EQ(expected_encoded_lenth, length);
 
   courgette::SourceStreamSet sources;
   bool can_get_source_streams = sources.Init(buffer, length);
@@ -99,7 +68,12 @@ void EncodeDecodeTest::TestExe(const char* file_name) const {
   DeleteEncodedProgram(encoded2);
 }
 
+TEST_F(EncodeDecodeTest, PE) {
+  std::string file = FileContents("setup1.exe");
+  TestAssembleToStreamDisassemble(file, 971850);
+}
 
-TEST_F(EncodeDecodeTest, All) {
-  TestExe("setup1.exe");
+TEST_F(EncodeDecodeTest, Elf_Small) {
+  std::string file = FileContents("elf-32-1");
+  TestAssembleToStreamDisassemble(file, 135988);
 }

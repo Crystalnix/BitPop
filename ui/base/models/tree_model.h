@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/string16.h"
+#include "ui/base/ui_export.h"
 
 class SkBitmap;
 
@@ -29,7 +30,7 @@ class TreeModelNode {
 };
 
 // Observer for the TreeModel. Notified of significant events to the model.
-class TreeModelObserver {
+class UI_EXPORT TreeModelObserver {
  public:
   // Notification that nodes were added to the specified parent.
   virtual void TreeNodesAdded(TreeModel* model,
@@ -53,7 +54,7 @@ class TreeModelObserver {
 // TreeModel ------------------------------------------------------------------
 
 // The model for TreeView.
-class TreeModel {
+class UI_EXPORT TreeModel {
  public:
   // Returns the root of the tree. This may or may not be shown in the tree,
   // see SetRootShown for details.

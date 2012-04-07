@@ -7,11 +7,11 @@
     {
       'target_name': 'quota',
       'type': 'static_library',
-      'msvs_guid': '36A9AAD2-10DD-42CF-BF51-3CC79D26FCB4',
+      'variables': { 'enable_wexit_time_destructors': 1, },
       'dependencies': [
-        '<(DEPTH)/app/app.gyp:app_base',
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/sql/sql.gyp:sql',
       ],
       'sources': [
         'quota_client.h',

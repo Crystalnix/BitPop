@@ -13,12 +13,10 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/task.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/net_errors.h"
 #include "net/base/ssl_config_service.h"
@@ -46,7 +44,8 @@ class SocketStreamMetrics;
 // authentication identity for proxy URL first.  If server requires proxy
 // authentication, it will try authentication identity for realm that server
 // requests.
-class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
+class NET_EXPORT SocketStream
+    : public base::RefCountedThreadSafe<SocketStream> {
  public:
   // Derive from this class and add your own data members to associate extra
   // information with a SocketStream.  Use GetUserData(key) and
@@ -57,12 +56,12 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
     virtual ~UserData() {}
   };
 
-  class NET_API Delegate {
+  class NET_EXPORT Delegate {
    public:
     virtual ~Delegate() {}
 
     virtual int OnStartOpenConnection(SocketStream* socket,
-                                      CompletionCallback* callback) {
+                                      const CompletionCallback& callback) {
       return OK;
     }
 
@@ -150,14 +149,14 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
 
   // Restarts with authentication info.
   // Should be used for response of OnAuthRequired.
-  virtual void RestartWithAuth(
-      const string16& username,
-      const string16& password);
+  virtual void RestartWithAuth(const AuthCredentials& credentials);
 
   // Detach delegate.  Call before delegate is deleted.
   // Once delegate is detached, close the socket stream and never call delegate
   // back.
   virtual void DetachDelegate();
+
+  const ProxyServer& proxy_server() const;
 
   // Sets an alternative HostResolver. For testing purposes only.
   void SetHostResolver(HostResolver* host_resolver);
@@ -173,6 +172,9 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   Delegate* delegate_;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(SocketStreamTest, IOPending);
+  FRIEND_TEST_ALL_PREFIXES(SocketStreamTest, SwitchAfterPending);
+
   friend class WebSocketThrottleTest;
 
   typedef std::map<const void*, linked_ptr<UserData> > UserDataMap;
@@ -213,6 +215,8 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
     STATE_RESOLVE_PROXY_COMPLETE,
     STATE_RESOLVE_HOST,
     STATE_RESOLVE_HOST_COMPLETE,
+    STATE_RESOLVE_PROTOCOL,
+    STATE_RESOLVE_PROTOCOL_COMPLETE,
     STATE_TCP_CONNECT,
     STATE_TCP_CONNECT_COMPLETE,
     STATE_WRITE_TUNNEL_HEADERS,
@@ -221,6 +225,8 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
     STATE_READ_TUNNEL_HEADERS_COMPLETE,
     STATE_SOCKS_CONNECT,
     STATE_SOCKS_CONNECT_COMPLETE,
+    STATE_SECURE_PROXY_CONNECT,
+    STATE_SECURE_PROXY_CONNECT_COMPLETE,
     STATE_SSL_CONNECT,
     STATE_SSL_CONNECT_COMPLETE,
     STATE_READ_WRITE,
@@ -248,6 +254,7 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   // notifications will be sent to delegate.
   void Finish(int result);
 
+  int DidEstablishSSL(int result, SSLConfig* ssl_config);
   int DidEstablishConnection();
   int DidReceiveData(int result);
   int DidSendData(int result);
@@ -262,6 +269,8 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   int DoResolveProxyComplete(int result);
   int DoResolveHost();
   int DoResolveHostComplete(int result);
+  int DoResolveProtocol(int result);
+  int DoResolveProtocolComplete(int result);
   int DoTcpConnect(int result);
   int DoTcpConnectComplete(int result);
   int DoWriteTunnelHeaders();
@@ -270,12 +279,15 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   int DoReadTunnelHeadersComplete(int result);
   int DoSOCKSConnect();
   int DoSOCKSConnectComplete(int result);
+  int DoSecureProxyConnect();
+  int DoSecureProxyConnectComplete(int result);
   int DoSSLConnect();
   int DoSSLConnectComplete(int result);
   int DoReadWrite(int result);
 
   GURL ProxyAuthOrigin() const;
   int HandleAuthChallenge(const HttpResponseHeaders* headers);
+  int HandleCertificateRequest(int result);
   void DoAuthRequired();
   void DoRestartWithAuth();
 
@@ -295,6 +307,7 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   State next_state_;
   HostResolver* host_resolver_;
   CertVerifier* cert_verifier_;
+  OriginBoundCertService* origin_bound_cert_service_;
   HttpAuthHandlerFactory* http_auth_handler_factory_;
   ClientSocketFactory* factory_;
 
@@ -319,11 +332,10 @@ class NET_API SocketStream : public base::RefCountedThreadSafe<SocketStream> {
   AddressList addresses_;
   scoped_ptr<StreamSocket> socket_;
 
-  SSLConfig ssl_config_;
+  SSLConfig server_ssl_config_;
+  SSLConfig proxy_ssl_config_;
 
-  CompletionCallbackImpl<SocketStream> io_callback_;
-  CompletionCallbackImpl<SocketStream> read_callback_;
-  CompletionCallbackImpl<SocketStream> write_callback_;
+  CompletionCallback io_callback_;
 
   scoped_refptr<IOBuffer> read_buf_;
   int read_buf_size_;

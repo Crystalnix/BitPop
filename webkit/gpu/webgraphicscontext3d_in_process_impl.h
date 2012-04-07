@@ -11,8 +11,9 @@
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/angle/include/GLSLANG/ShaderLang.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "ui/gfx/native_widget_types.h"
 
 #if !defined(OS_MACOSX)
 #define FLIP_FRAMEBUFFER_VERTICALLY
@@ -20,6 +21,7 @@
 namespace gfx {
 class GLContext;
 class GLSurface;
+class GLShareGroup;
 }
 
 using WebKit::WGC3Dchar;
@@ -51,7 +53,12 @@ namespace gpu {
 
 class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
  public:
-  WebGraphicsContext3DInProcessImpl();
+  // Creates a WebGraphicsContext3DInProcessImpl for a given window. If window
+  // is gfx::kNullPluginWindow, then it creates an offscreen context.
+  // share_group is the group this context shares namespaces with. It's only
+  // used for window-bound countexts.
+  WebGraphicsContext3DInProcessImpl(gfx::PluginWindowHandle window,
+                                    gfx::GLShareGroup* share_group);
   virtual ~WebGraphicsContext3DInProcessImpl();
 
   //----------------------------------------------------------------------
@@ -65,12 +72,17 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 
   virtual bool isGLES2Compliant();
 
+  virtual bool setParentContext(WebGraphicsContext3D* parent_context);
+
   virtual void reshape(int width, int height);
 
   virtual bool readBackFramebuffer(unsigned char* pixels, size_t bufferSize);
+  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
+                                   WebGLId framebuffer, int width, int height);
 
   virtual WebGLId getPlatformTextureId();
   virtual void prepareTexture();
+  virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
 
   virtual void synthesizeGLError(WGC3Denum error);
   virtual void* mapBufferSubDataCHROMIUM(WGC3Denum target, WGC3Dintptr offset,
@@ -87,13 +99,11 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
       WGC3Denum type,
       WGC3Denum access);
   virtual void unmapTexSubImage2DCHROMIUM(const void*);
+
+  virtual void setVisibilityCHROMIUM(bool visible);
+
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
-
-  virtual void getParentToChildLatchCHROMIUM(WGC3Duint* latch_id);
-  virtual void getChildToParentLatchCHROMIUM(WGC3Duint* latch_id);
-  virtual void waitLatchCHROMIUM(WGC3Duint latch_id);
-  virtual void setLatchCHROMIUM(WGC3Duint latch_id);
 
   virtual void rateLimitOffscreenContextCHROMIUM() { }
 
@@ -140,6 +150,25 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
                          WGC3Dboolean blue, WGC3Dboolean alpha);
   virtual void compileShader(WebGLId shader);
 
+  virtual void compressedTexImage2D(
+      WGC3Denum target,
+      WGC3Dint level,
+      WGC3Denum internalformat,
+      WGC3Dsizei width,
+      WGC3Dsizei height,
+      WGC3Dint border,
+      WGC3Dsizei imageSize,
+      const void* data);
+  virtual void compressedTexSubImage2D(
+      WGC3Denum target,
+      WGC3Dint level,
+      WGC3Dint xoffset,
+      WGC3Dint yoffset,
+      WGC3Dsizei width,
+      WGC3Dsizei height,
+      WGC3Denum format,
+      WGC3Dsizei imageSize,
+      const void* data);
   virtual void copyTexImage2D(
       WGC3Denum target,
       WGC3Dint level,
@@ -407,12 +436,33 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 
   virtual void setContextLostCallback(
       WebGraphicsContext3D::WebGraphicsContextLostCallback* callback) {}
+  virtual WGC3Denum getGraphicsResetStatusARB();
+
+  virtual void setSwapBuffersCompleteCallbackCHROMIUM(
+      WebGraphicsContext3D::
+          WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* callback) {}
+
+  virtual void texImageIOSurface2DCHROMIUM(
+      WGC3Denum target, WGC3Dint width, WGC3Dint height,
+      WGC3Duint ioSurfaceId, WGC3Duint plane);
+
+  virtual void texStorage2DEXT(
+      WGC3Denum target, WGC3Dint levels, WGC3Duint internalformat,
+      WGC3Dint width, WGC3Dint height);
+
+ protected:
+#if WEBKIT_USING_SKIA
+  virtual GrGLInterface* onCreateGrGLInterface();
+#endif
 
  private:
   // ANGLE related.
   struct ShaderSourceEntry;
 
   typedef base::hash_map<WebGLId, ShaderSourceEntry*> ShaderSourceMap;
+
+  bool AllocateOffscreenFrameBuffer(int width, int height);
+  void ClearRenderTarget();
 
 #ifdef FLIP_FRAMEBUFFER_VERTICALLY
   void FlipVertically(unsigned char* framebuffer,
@@ -457,9 +507,6 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
   // For tracking which texture is bound
   WebGLId bound_texture_;
 
-  // FBO used for copying child texture to parent texture.
-  WebGLId copy_texture_to_parent_texture_fbo_;
-
 #ifdef FLIP_FRAMEBUFFER_VERTICALLY
   unsigned char* scanline_;
 #endif
@@ -475,6 +522,8 @@ class WebGraphicsContext3DInProcessImpl : public WebGraphicsContext3D {
 
   ShHandle fragment_compiler_;
   ShHandle vertex_compiler_;
+  gfx::PluginWindowHandle window_;
+  scoped_refptr<gfx::GLShareGroup> share_group_;
 };
 
 }  // namespace gpu

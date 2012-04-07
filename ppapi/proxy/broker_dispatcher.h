@@ -8,10 +8,10 @@
 #include "ppapi/c/trusted/ppp_broker.h"
 #include "ppapi/proxy/proxy_channel.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
-class BrokerDispatcher : public ProxyChannel {
+class PPAPI_PROXY_EXPORT BrokerDispatcher : public ProxyChannel {
  public:
   virtual ~BrokerDispatcher();
 
@@ -31,7 +31,8 @@ class BrokerDispatcher : public ProxyChannel {
                    PP_ConnectInstance_Func connect_instance);
 
   void OnMsgConnectToPlugin(PP_Instance instance,
-                            IPC::PlatformFileForTransit handle);
+                            IPC::PlatformFileForTransit handle,
+                            int32_t* result);
 
   PP_ConnectInstance_Func connect_instance_;
 
@@ -40,7 +41,7 @@ class BrokerDispatcher : public ProxyChannel {
 };
 
 // The dispatcher for the browser side of the broker channel.
-class BrokerHostDispatcher : public BrokerDispatcher {
+class PPAPI_PROXY_EXPORT BrokerHostDispatcher : public BrokerDispatcher {
  public:
   BrokerHostDispatcher(base::ProcessHandle remote_process_handle);
 
@@ -49,7 +50,7 @@ class BrokerHostDispatcher : public BrokerDispatcher {
 };
 
 // The dispatcher for the broker side of the broker channel.
-class BrokerSideDispatcher : public BrokerDispatcher {
+class PPAPI_PROXY_EXPORT BrokerSideDispatcher : public BrokerDispatcher {
  public:
   BrokerSideDispatcher(base::ProcessHandle remote_process_handle,
                        PP_ConnectInstance_Func connect_instance);
@@ -59,6 +60,6 @@ class BrokerSideDispatcher : public BrokerDispatcher {
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_BROKER_DISPATCHER_H_

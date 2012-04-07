@@ -13,7 +13,7 @@
 
 #if defined(OS_WIN)
 #include <objidl.h>
-#elif !defined(OS_MACOSX)
+#elif defined(TOOLKIT_USES_GTK)
 #include <gtk/gtk.h>
 #endif
 
@@ -21,6 +21,7 @@
 #include "base/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/base/dragdrop/download_file_interface.h"
+#include "ui/base/ui_export.h"
 
 class GURL;
 class Pickle;
@@ -41,14 +42,16 @@ namespace ui {
 // TabContentsViewGtk uses a different class to handle drag support that does
 // not use OSExchangeData. As such, file contents and html support is only
 // compiled on windows.
-class OSExchangeData {
+class UI_EXPORT OSExchangeData {
  public:
   // CustomFormats are used for non-standard data types. For example, bookmark
   // nodes are written using a CustomFormat.
 #if defined(OS_WIN)
   typedef CLIPFORMAT CustomFormat;
-#elif !defined(OS_MACOSX)
+#elif defined(TOOLKIT_USES_GTK)
   typedef GdkAtom CustomFormat;
+#else
+  typedef void* CustomFormat;
 #endif
 
   // Enumeration of the known formats.
@@ -64,7 +67,7 @@ class OSExchangeData {
   };
 
   // Encapsulates the info about a file to be downloaded.
-  struct DownloadFileInfo {
+  struct UI_EXPORT DownloadFileInfo {
     DownloadFileInfo(const FilePath& filename,
                      DownloadFileProvider* downloader);
     ~DownloadFileInfo();
@@ -75,7 +78,7 @@ class OSExchangeData {
 
   // Provider defines the platform specific part of OSExchangeData that
   // interacts with the native system.
-  class Provider {
+  class UI_EXPORT Provider {
    public:
     Provider() {}
     virtual ~Provider() {}

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,13 +15,14 @@
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
+#include "ui/base/clipboard/custom_data_helper.h"
 
 namespace ui {
 
 namespace {
 
-bool GetUrlFromHDrop(IDataObject* data_object, std::wstring* url,
-                     std::wstring* title) {
+bool GetUrlFromHDrop(IDataObject* data_object, string16* url,
+                     string16* title) {
   DCHECK(data_object && url && title);
 
   STGMEDIUM medium;
@@ -54,22 +55,22 @@ bool GetUrlFromHDrop(IDataObject* data_object, std::wstring* url,
   return success;
 }
 
-void SplitUrlAndTitle(const std::wstring& str,
-                      std::wstring* url,
-                      std::wstring* title) {
+void SplitUrlAndTitle(const string16& str,
+                      string16* url,
+                      string16* title) {
   DCHECK(url && title);
   size_t newline_pos = str.find('\n');
-  if (newline_pos != std::wstring::npos) {
+  if (newline_pos != string16::npos) {
     url->assign(str, 0, newline_pos);
-    title->assign(str, newline_pos + 1, std::wstring::npos);
+    title->assign(str, newline_pos + 1, string16::npos);
   } else {
     url->assign(str);
     title->assign(str);
   }
 }
 
-bool GetFileUrl(IDataObject* data_object, std::wstring* url,
-                std::wstring* title) {
+bool GetFileUrl(IDataObject* data_object, string16* url,
+                string16* title) {
   STGMEDIUM store;
   if (SUCCEEDED(data_object->GetData(ClipboardUtil::GetFilenameWFormat(),
                                      &store))) {
@@ -203,6 +204,14 @@ FORMATETC* ClipboardUtil::GetWebKitSmartPasteFormat() {
   return &format;
 }
 
+FORMATETC* ClipboardUtil::GetWebCustomDataFormat() {
+  // TODO(dcheng): This name is temporary. See crbug.com/106449
+  static UINT cf =
+      RegisterClipboardFormat(L"Chromium Web Custom MIME Data Format");
+  static FORMATETC format = {cf, 0, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+  return &format;
+}
+
 
 bool ClipboardUtil::HasUrl(IDataObject* data_object) {
   DCHECK(data_object);
@@ -237,7 +246,7 @@ bool ClipboardUtil::HasPlainText(IDataObject* data_object) {
 
 
 bool ClipboardUtil::GetUrl(IDataObject* data_object,
-    std::wstring* url, std::wstring* title, bool convert_filenames) {
+    string16* url, string16* title, bool convert_filenames) {
   DCHECK(data_object && url && title);
   if (!HasUrl(data_object))
     return false;
@@ -276,7 +285,7 @@ bool ClipboardUtil::GetUrl(IDataObject* data_object,
 }
 
 bool ClipboardUtil::GetFilenames(IDataObject* data_object,
-                                 std::vector<std::wstring>* filenames) {
+                                 std::vector<string16>* filenames) {
   DCHECK(data_object && filenames);
   if (!HasFilenames(data_object))
     return false;
@@ -306,7 +315,7 @@ bool ClipboardUtil::GetFilenames(IDataObject* data_object,
 }
 
 bool ClipboardUtil::GetPlainText(IDataObject* data_object,
-                                 std::wstring* plain_text) {
+                                 string16* plain_text) {
   DCHECK(data_object && plain_text);
   if (!HasPlainText(data_object))
     return false;
@@ -334,12 +343,12 @@ bool ClipboardUtil::GetPlainText(IDataObject* data_object,
 
   // If a file is dropped on the window, it does not provide either of the
   // plain text formats, so here we try to forcibly get a url.
-  std::wstring title;
+  string16 title;
   return GetUrl(data_object, plain_text, &title, false);
 }
 
 bool ClipboardUtil::GetHtml(IDataObject* data_object,
-                            std::wstring* html, std::string* base_url) {
+                            string16* html, std::string* base_url) {
   DCHECK(data_object && html && base_url);
 
   STGMEDIUM store;
@@ -373,10 +382,10 @@ bool ClipboardUtil::GetHtml(IDataObject* data_object,
 }
 
 bool ClipboardUtil::GetFileContents(IDataObject* data_object,
-    std::wstring* filename, std::string* file_contents) {
+    string16* filename, std::string* file_contents) {
   DCHECK(data_object && filename && file_contents);
-  if (!SUCCEEDED(data_object->QueryGetData(GetFileContentFormatZero())) &&
-      !SUCCEEDED(data_object->QueryGetData(GetFileDescriptorFormat())))
+  if (FAILED(data_object->QueryGetData(GetFileContentFormatZero())) &&
+      FAILED(data_object->QueryGetData(GetFileDescriptorFormat())))
     return false;
 
   STGMEDIUM content;
@@ -403,6 +412,26 @@ bool ClipboardUtil::GetFileContents(IDataObject* data_object,
   }
   return true;
 }
+
+bool ClipboardUtil::GetWebCustomData(
+    IDataObject* data_object, std::map<string16, string16>* custom_data) {
+  DCHECK(data_object && custom_data);
+
+  if (FAILED(data_object->QueryGetData(GetWebCustomDataFormat())))
+    return false;
+
+  STGMEDIUM store;
+  if (SUCCEEDED(data_object->GetData(GetWebCustomDataFormat(), &store))) {
+    {
+      base::win::ScopedHGlobal<char> data(store.hGlobal);
+      ReadCustomDataIntoMap(data.get(), data.Size(), custom_data);
+    }
+    ReleaseStgMedium(&store);
+    return true;
+  }
+  return false;
+}
+
 
 // HtmlToCFHtml and CFHtmlToHtml are based on similar methods in
 // WebCore/platform/win/ClipboardUtilitiesWin.cpp.
@@ -493,6 +522,25 @@ std::string ClipboardUtil::HtmlToCFHtml(const std::string& html,
 void ClipboardUtil::CFHtmlToHtml(const std::string& cf_html,
                                  std::string* html,
                                  std::string* base_url) {
+  size_t fragment_start = std::string::npos;
+  size_t fragment_end = std::string::npos;
+
+  ClipboardUtil::CFHtmlExtractMetadata(
+      cf_html, base_url, NULL, &fragment_start, &fragment_end);
+
+  if (html &&
+      fragment_start != std::string::npos &&
+      fragment_end != std::string::npos) {
+    *html = cf_html.substr(fragment_start, fragment_end - fragment_start);
+    TrimWhitespace(*html, TRIM_ALL, html);
+  }
+}
+
+void ClipboardUtil::CFHtmlExtractMetadata(const std::string& cf_html,
+                                          std::string* base_url,
+                                          size_t* html_start,
+                                          size_t* fragment_start,
+                                          size_t* fragment_end) {
   // Obtain base_url if present.
   if (base_url) {
     static std::string src_url_str("SourceURL:");
@@ -510,38 +558,31 @@ void ClipboardUtil::CFHtmlToHtml(const std::string& cf_html,
   // Find the markup between "<!--StartFragment-->" and "<!--EndFragment-->".
   // If the comments cannot be found, like copying from OpenOffice Writer,
   // we simply fall back to using StartFragment/EndFragment bytecount values
-  // to get the markup.
-  if (html) {
-    size_t fragment_start = std::string::npos;
-    size_t fragment_end = std::string::npos;
-
-    std::string cf_html_lower = StringToLowerASCII(cf_html);
-    size_t markup_start = cf_html_lower.find("<html", 0);
-    size_t tag_start = cf_html.find("<!--StartFragment", markup_start);
-    if (tag_start == std::string::npos) {
-      static std::string start_fragment_str("StartFragment:");
-      size_t start_fragment_start = cf_html.find(start_fragment_str);
-      if (start_fragment_start != std::string::npos) {
-        fragment_start = static_cast<size_t>(atoi(cf_html.c_str() +
-            start_fragment_start + start_fragment_str.length()));
-      }
-
-      static std::string end_fragment_str("EndFragment:");
-      size_t end_fragment_start = cf_html.find(end_fragment_str);
-      if (end_fragment_start != std::string::npos) {
-        fragment_end = static_cast<size_t>(atoi(cf_html.c_str() +
-            end_fragment_start + end_fragment_str.length()));
-      }
-    } else {
-      fragment_start = cf_html.find('>', tag_start) + 1;
-      size_t tag_end = cf_html.rfind("<!--EndFragment", std::string::npos);
-      fragment_end = cf_html.rfind('<', tag_end);
+  // to determine the fragment indexes.
+  std::string cf_html_lower = StringToLowerASCII(cf_html);
+  size_t markup_start = cf_html_lower.find("<html", 0);
+  if (html_start) {
+    *html_start = markup_start;
+  }
+  size_t tag_start = cf_html.find("<!--StartFragment", markup_start);
+  if (tag_start == std::string::npos) {
+    static std::string start_fragment_str("StartFragment:");
+    size_t start_fragment_start = cf_html.find(start_fragment_str);
+    if (start_fragment_start != std::string::npos) {
+      *fragment_start = static_cast<size_t>(atoi(cf_html.c_str() +
+          start_fragment_start + start_fragment_str.length()));
     }
-    if (fragment_start != std::string::npos &&
-        fragment_end != std::string::npos) {
-      *html = cf_html.substr(fragment_start, fragment_end - fragment_start);
-      TrimWhitespace(*html, TRIM_ALL, html);
+
+    static std::string end_fragment_str("EndFragment:");
+    size_t end_fragment_start = cf_html.find(end_fragment_str);
+    if (end_fragment_start != std::string::npos) {
+      *fragment_end = static_cast<size_t>(atoi(cf_html.c_str() +
+          end_fragment_start + end_fragment_str.length()));
     }
+  } else {
+    *fragment_start = cf_html.find('>', tag_start) + 1;
+    size_t tag_end = cf_html.rfind("<!--EndFragment", std::string::npos);
+    *fragment_end = cf_html.rfind('<', tag_end);
   }
 }
 

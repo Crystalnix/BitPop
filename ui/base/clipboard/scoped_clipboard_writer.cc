@@ -88,7 +88,7 @@ void ScopedClipboardWriter::WriteWebSmartPaste() {
 void ScopedClipboardWriter::WriteBitmapFromPixels(const void* pixels,
                                                   const gfx::Size& size) {
   Clipboard::ObjectMapParam pixels_parameter, size_parameter;
-  const char* pixels_data = reinterpret_cast<const char*>(pixels);
+  const char* pixels_data = static_cast<const char*>(pixels);
   size_t pixels_length = 4 * size.width() * size.height();
   for (size_t i = 0; i < pixels_length; i++)
     pixels_parameter.push_back(pixels_data[i]);
@@ -104,9 +104,11 @@ void ScopedClipboardWriter::WriteBitmapFromPixels(const void* pixels,
   objects_[Clipboard::CBF_BITMAP] = parameters;
 }
 
-void ScopedClipboardWriter::WritePickledData(const Pickle& pickle,
-                                             Clipboard::FormatType format) {
-  Clipboard::ObjectMapParam format_parameter(format.begin(), format.end());
+void ScopedClipboardWriter::WritePickledData(
+    const Pickle& pickle, const Clipboard::FormatType& format) {
+  std::string format_string = format.Serialize();
+  Clipboard::ObjectMapParam format_parameter(format_string.begin(),
+                                             format_string.end());
   Clipboard::ObjectMapParam data_parameter;
 
   data_parameter.resize(pickle.size());

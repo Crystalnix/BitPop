@@ -4,69 +4,72 @@
 
 #include "chrome/browser/repost_form_warning_controller.h"
 
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_source.h"
+#if defined(TOOLKIT_USES_GTK)
+#include <gtk/gtk.h>
+#endif
+
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "grit/generated_resources.h"
+#include "ui/base/l10n/l10n_util.h"
+
+using content::NavigationController;
+using content::WebContents;
 
 RepostFormWarningController::RepostFormWarningController(
-    TabContents* tab_contents)
-    : tab_contents_(tab_contents),
-      window_(NULL) {
-  NavigationController* controller = &tab_contents->controller();
-  registrar_.Add(this, NotificationType::LOAD_START,
-                 Source<NavigationController>(controller));
-  registrar_.Add(this, NotificationType::TAB_CLOSING,
-                 Source<NavigationController>(controller));
-  registrar_.Add(this, NotificationType::REPOST_WARNING_SHOWN,
-                 Source<NavigationController>(controller));
+    WebContents* web_contents)
+    : TabModalConfirmDialogDelegate(web_contents),
+      navigation_controller_(&web_contents->GetController()) {
+  registrar_.Add(this, content::NOTIFICATION_REPOST_WARNING_SHOWN,
+                 content::Source<NavigationController>(
+                    navigation_controller_));
 }
 
 RepostFormWarningController::~RepostFormWarningController() {
-  // If we end up here, the constrained window has been closed, so make sure we
-  // don't close it again.
-  window_ = NULL;
-  // Make sure everything is cleaned up.
-  Cancel();
 }
 
-void RepostFormWarningController::Show(
-    ConstrainedWindowDelegate* window_delegate) {
-  window_ = tab_contents_->CreateConstrainedDialog(window_delegate);
+string16 RepostFormWarningController::GetTitle() {
+  return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING_TITLE);
 }
 
-void RepostFormWarningController::Cancel() {
-  if (tab_contents_) {
-    tab_contents_->controller().CancelPendingReload();
-    CloseDialog();
-  }
+string16 RepostFormWarningController::GetMessage() {
+  return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING);
 }
 
-void RepostFormWarningController::Continue() {
-  if (tab_contents_) {
-    tab_contents_->controller().ContinuePendingReload();
-    // If we reload the page, the dialog will be closed anyway.
-  }
+string16 RepostFormWarningController::GetAcceptButtonTitle() {
+  return l10n_util::GetStringUTF16(IDS_HTTP_POST_WARNING_RESEND);
 }
 
-void RepostFormWarningController::Observe(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
-  // Close the dialog if we load a page (because reloading might not apply to
-  // the same page anymore) or if the tab is closed, because then we won't have
-  // a navigation controller anymore.
-  if (tab_contents_ &&
-      (type == NotificationType::LOAD_START ||
-       type == NotificationType::TAB_CLOSING ||
-       type == NotificationType::REPOST_WARNING_SHOWN)) {
-    DCHECK_EQ(Source<NavigationController>(source).ptr(),
-              &tab_contents_->controller());
+#if defined(TOOLKIT_USES_GTK)
+const char* RepostFormWarningController::GetAcceptButtonIcon() {
+  return GTK_STOCK_REFRESH;
+}
+
+const char* RepostFormWarningController::GetCancelButtonIcon() {
+  return GTK_STOCK_CANCEL;
+}
+#endif  // defined(TOOLKIT_USES_GTK)
+
+void RepostFormWarningController::OnAccepted() {
+  navigation_controller_->ContinuePendingReload();
+}
+
+void RepostFormWarningController::OnCanceled() {
+  navigation_controller_->CancelPendingReload();
+}
+
+void RepostFormWarningController::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  // Close the dialog if we show an additional dialog, to avoid them
+  // stacking up.
+  if (type == content::NOTIFICATION_REPOST_WARNING_SHOWN)
     Cancel();
-  }
-}
-
-void RepostFormWarningController::CloseDialog() {
-  // Make sure we won't do anything when |Cancel()| is called again.
-  tab_contents_ = NULL;
-  if (window_) {
-    window_->CloseConstrainedWindow();
-  }
+  else
+    TabModalConfirmDialogDelegate::Observe(type, source, details);
 }

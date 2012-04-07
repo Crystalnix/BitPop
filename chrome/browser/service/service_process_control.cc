@@ -1,35 +1,36 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/service/service_process_control.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/file_path.h"
 #include "base/process_util.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/upgrade_detector.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/service_messages.h"
 #include "chrome/common/service_process_util.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/child_process_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/common/child_process_host.h"
 #include "ui/base/ui_base_switches.h"
 
+using content::BrowserThread;
+using content::ChildProcessHost;
 
 // ServiceProcessControl implementation.
-ServiceProcessControl::ServiceProcessControl(Profile* profile)
-    : profile_(profile) {
+ServiceProcessControl::ServiceProcessControl() {
 }
 
 ServiceProcessControl::~ServiceProcessControl() {
-  STLDeleteElements(&connect_done_tasks_);
-  STLDeleteElements(&connect_success_tasks_);
-  STLDeleteElements(&connect_failure_tasks_);
 }
 
 void ServiceProcessControl::ConnectInternal() {
@@ -45,10 +46,13 @@ void ServiceProcessControl::ConnectInternal() {
 
   // TODO(hclam): Handle error connecting to channel.
   const IPC::ChannelHandle channel_id = GetServiceProcessChannel();
-  channel_.reset(new IPC::SyncChannel(
+  SetChannel(new IPC::ChannelProxy(
       channel_id, IPC::Channel::MODE_NAMED_CLIENT, this,
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO), true,
-      g_browser_process->shutdown_event()));
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
+}
+
+void ServiceProcessControl::SetChannel(IPC::ChannelProxy* channel) {
+  channel_.reset(channel);
 }
 
 void ServiceProcessControl::RunConnectDoneTasks() {
@@ -56,60 +60,47 @@ void ServiceProcessControl::RunConnectDoneTasks() {
   // them to the stack before executing them. This way recursion is
   // avoided.
   TaskList tasks;
-  tasks.swap(connect_done_tasks_);
-  RunAllTasksHelper(&tasks);
-  DCHECK(tasks.empty());
 
-  if (is_connected()) {
+  if (IsConnected()) {
     tasks.swap(connect_success_tasks_);
     RunAllTasksHelper(&tasks);
     DCHECK(tasks.empty());
-
-    STLDeleteElements(&connect_failure_tasks_);
+    connect_failure_tasks_.clear();
   } else {
     tasks.swap(connect_failure_tasks_);
     RunAllTasksHelper(&tasks);
     DCHECK(tasks.empty());
-
-    STLDeleteElements(&connect_success_tasks_);
+    connect_success_tasks_.clear();
   }
-
-  DCHECK(connect_done_tasks_.empty());
-  DCHECK(connect_success_tasks_.empty());
-  DCHECK(connect_failure_tasks_.empty());
 }
 
 // static
 void ServiceProcessControl::RunAllTasksHelper(TaskList* task_list) {
   TaskList::iterator index = task_list->begin();
   while (index != task_list->end()) {
-    (*index)->Run();
-    delete (*index);
+    (*index).Run();
     index = task_list->erase(index);
   }
 }
 
-void ServiceProcessControl::Launch(Task* success_task, Task* failure_task) {
+bool ServiceProcessControl::IsConnected() const {
+  return channel_ != NULL;
+}
+
+void ServiceProcessControl::Launch(const base::Closure& success_task,
+                                   const base::Closure& failure_task) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  if (success_task) {
-    if (success_task == failure_task) {
-      // If the tasks are the same, then the same task needs to be invoked
-      // for success and failure.
-      failure_task = NULL;
-      connect_done_tasks_.push_back(success_task);
-    } else {
-      connect_success_tasks_.push_back(success_task);
-    }
-  }
+  base::Closure failure = failure_task;
+  if (!success_task.is_null())
+    connect_success_tasks_.push_back(success_task);
 
-  if (failure_task)
-    connect_failure_tasks_.push_back(failure_task);
+  if (!failure.is_null())
+    connect_failure_tasks_.push_back(failure);
 
   // If we already in the process of launching, then we are done.
-  if (launcher_) {
+  if (launcher_)
     return;
-  }
 
   // If the service process is already running then connects to it.
   if (CheckServiceProcessReady()) {
@@ -119,10 +110,16 @@ void ServiceProcessControl::Launch(Task* success_task, Task* failure_task) {
 
   // A service process should have a different mechanism for starting, but now
   // we start it as if it is a child process.
-  FilePath exe_path = ChildProcessHost::GetChildPath(true);
-  if (exe_path.empty()) {
+
+#if defined(OS_LINUX)
+  int flags = ChildProcessHost::CHILD_ALLOW_SELF;
+#else
+  int flags = ChildProcessHost::CHILD_NORMAL;
+#endif
+
+  FilePath exe_path = ChildProcessHost::GetChildPath(flags);
+  if (exe_path.empty())
     NOTREACHED() << "Unable to get service process binary name.";
-  }
 
   CommandLine* cmd_line = new CommandLine(exe_path);
   cmd_line->AppendSwitchASCII(switches::kProcessType,
@@ -149,21 +146,24 @@ void ServiceProcessControl::Launch(Task* success_task, Task* failure_task) {
   if (!v_modules.empty())
     cmd_line->AppendSwitchASCII(switches::kVModule, v_modules);
 
-  if (browser_command_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
+  if (browser_command_line.HasSwitch(switches::kWaitForDebuggerChildren))
     cmd_line->AppendSwitch(switches::kWaitForDebugger);
-  }
 
-  if (browser_command_line.HasSwitch(switches::kEnableLogging)) {
+  if (browser_command_line.HasSwitch(switches::kEnableLogging))
     cmd_line->AppendSwitch(switches::kEnableLogging);
-  }
 
   std::string locale = g_browser_process->GetApplicationLocale();
   cmd_line->AppendSwitchASCII(switches::kLang, locale);
 
   // And then start the process asynchronously.
   launcher_ = new Launcher(this, cmd_line);
-  launcher_->Run(
-      NewRunnableMethod(this, &ServiceProcessControl::OnProcessLaunched));
+  launcher_->Run(base::Bind(&ServiceProcessControl::OnProcessLaunched,
+                            base::Unretained(this)));
+}
+
+void ServiceProcessControl::Disconnect() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  channel_.reset();
 }
 
 void ServiceProcessControl::OnProcessLaunched() {
@@ -194,7 +194,6 @@ bool ServiceProcessControl::OnMessageReceived(const IPC::Message& message) {
 
 void ServiceProcessControl::OnChannelConnected(int32 peer_pid) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  channel_->set_sync_messages_with_no_timeout_allowed(false);
 
   // We just established a channel with the service process. Notify it if an
   // upgrade is available.
@@ -202,8 +201,8 @@ void ServiceProcessControl::OnChannelConnected(int32 peer_pid) {
     Send(new ServiceMsg_UpdateAvailable);
   } else {
     if (registrar_.IsEmpty())
-      registrar_.Add(this, NotificationType::UPGRADE_RECOMMENDED,
-                     NotificationService::AllSources());
+      registrar_.Add(this, chrome::NOTIFICATION_UPGRADE_RECOMMENDED,
+                     content::NotificationService::AllSources());
   }
   RunConnectDoneTasks();
 }
@@ -221,11 +220,12 @@ bool ServiceProcessControl::Send(IPC::Message* message) {
   return channel_->Send(message);
 }
 
-// NotificationObserver implementation.
-void ServiceProcessControl::Observe(NotificationType type,
-                                    const NotificationSource& source,
-                                    const NotificationDetails& details) {
-  if (type == NotificationType::UPGRADE_RECOMMENDED) {
+// content::NotificationObserver implementation.
+void ServiceProcessControl::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_UPGRADE_RECOMMENDED) {
     Send(new ServiceMsg_UpdateAvailable);
   }
 }
@@ -233,26 +233,32 @@ void ServiceProcessControl::Observe(NotificationType type,
 void ServiceProcessControl::OnCloudPrintProxyInfo(
     const cloud_print::CloudPrintProxyInfo& proxy_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (cloud_print_info_callback_ != NULL) {
-    cloud_print_info_callback_->Run(proxy_info);
-    cloud_print_info_callback_.reset();
+  if (!cloud_print_info_callback_.is_null()) {
+    cloud_print_info_callback_.Run(proxy_info);
+    cloud_print_info_callback_.Reset();
   }
 }
 
 bool ServiceProcessControl::GetCloudPrintProxyInfo(
-    CloudPrintProxyInfoHandler* cloud_print_info_callback) {
-  DCHECK(cloud_print_info_callback);
-  cloud_print_info_callback_.reset(cloud_print_info_callback);
+    const CloudPrintProxyInfoHandler& cloud_print_info_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_EQ(false, cloud_print_info_callback.is_null());
+
+  cloud_print_info_callback_ = cloud_print_info_callback;
   return Send(new ServiceMsg_GetCloudPrintProxyInfo());
 }
 
 bool ServiceProcessControl::Shutdown() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   bool ret = Send(new ServiceMsg_Shutdown());
   channel_.reset();
   return ret;
 }
 
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ServiceProcessControl);
+// static
+ServiceProcessControl* ServiceProcessControl::GetInstance() {
+  return Singleton<ServiceProcessControl>::get();
+}
 
 ServiceProcessControl::Launcher::Launcher(ServiceProcessControl* process,
                                           CommandLine* cmd_line)
@@ -265,50 +271,55 @@ ServiceProcessControl::Launcher::Launcher(ServiceProcessControl* process,
 // Execute the command line to start the process asynchronously.
 // After the command is executed, |task| is called with the process handle on
 // the UI thread.
-void ServiceProcessControl::Launcher::Run(Task* task) {
+void ServiceProcessControl::Launcher::Run(const base::Closure& task) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  notify_task_.reset(task);
+  notify_task_ = task;
   BrowserThread::PostTask(BrowserThread::PROCESS_LAUNCHER, FROM_HERE,
-                         NewRunnableMethod(this, &Launcher::DoRun));
+                          base::Bind(&Launcher::DoRun, this));
 }
 
 ServiceProcessControl::Launcher::~Launcher() {}
 
 void ServiceProcessControl::Launcher::Notify() {
-  DCHECK(notify_task_.get());
-  notify_task_->Run();
-  notify_task_.reset();
+  DCHECK_EQ(false, notify_task_.is_null());
+  notify_task_.Run();
+  notify_task_.Reset();
 }
 
 #if !defined(OS_MACOSX)
 void ServiceProcessControl::Launcher::DoDetectLaunched() {
-  DCHECK(notify_task_.get());
+  DCHECK_EQ(false, notify_task_.is_null());
+
   const uint32 kMaxLaunchDetectRetries = 10;
   launched_ = CheckServiceProcessReady();
   if (launched_ || (retry_count_ >= kMaxLaunchDetectRetries)) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &Launcher::Notify));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE, base::Bind(&Launcher::Notify, this));
     return;
   }
   retry_count_++;
 
   // If the service process is not launched yet then check again in 2 seconds.
-  const int kDetectLaunchRetry = 2000;
+  const base::TimeDelta kDetectLaunchRetry = base::TimeDelta::FromSeconds(2);
   MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      NewRunnableMethod(this, &Launcher::DoDetectLaunched),
+      FROM_HERE, base::Bind(&Launcher::DoDetectLaunched, this),
       kDetectLaunchRetry);
 }
 
 void ServiceProcessControl::Launcher::DoRun() {
-  DCHECK(notify_task_.get());
-  if (base::LaunchApp(*cmd_line_, false, true, NULL)) {
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-                            NewRunnableMethod(this,
-                                              &Launcher::DoDetectLaunched));
+  DCHECK_EQ(false, notify_task_.is_null());
+
+  base::LaunchOptions options;
+#if defined(OS_WIN)
+  options.start_hidden = true;
+#endif
+  if (base::LaunchProcess(*cmd_line_, options, NULL)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&Launcher::DoDetectLaunched, this));
   } else {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                            NewRunnableMethod(this, &Launcher::Notify));
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE, base::Bind(&Launcher::Notify, this));
   }
 }
 #endif  // !OS_MACOSX

@@ -1,19 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This class is an implementation of the ChromotingView using Pepper devices
-// as the backing stores.  This class is used only on pepper thread.
-// Chromoting objects access this object through PepperViewProxy which
-// delegates method calls on the pepper thread.
+// This class is an implementation of the ChromotingView for Pepper.  It is
+// callable only on the Pepper thread.
 
 #ifndef REMOTING_CLIENT_PLUGIN_PEPPER_VIEW_H_
 #define REMOTING_CLIENT_PLUGIN_PEPPER_VIEW_H_
 
+#include <vector>
+
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "media/base/video_frame.h"
 #include "ppapi/cpp/graphics_2d.h"
+#include "ppapi/cpp/point.h"
 #include "remoting/client/chromoting_view.h"
 #include "remoting/client/frame_consumer.h"
 
@@ -25,8 +26,8 @@ class ClientContext;
 class PepperView : public ChromotingView,
                    public FrameConsumer {
  public:
-  // Constructs a PepperView that draws to the |rendering_device|. The
-  // |rendering_device| instance must outlive this class.
+  // Constructs a PepperView for the |instance|. The |instance| and
+  // |context| must outlive this class.
   PepperView(ChromotingInstance* instance, ClientContext* context);
   virtual ~PepperView();
 
@@ -36,61 +37,49 @@ class PepperView : public ChromotingView,
   virtual void Paint() OVERRIDE;
   virtual void SetSolidFill(uint32 color) OVERRIDE;
   virtual void UnsetSolidFill() OVERRIDE;
-  virtual void SetConnectionState(ConnectionState state) OVERRIDE;
-  virtual void UpdateLoginStatus(bool success, const std::string& info)
-      OVERRIDE;
-  virtual void SetViewport(int x, int y, int width, int height) OVERRIDE;
-  virtual gfx::Point ConvertScreenToHost(const gfx::Point& p) const OVERRIDE;
+  virtual void SetConnectionState(
+      protocol::ConnectionToHost::State state,
+      protocol::ConnectionToHost::Error error) OVERRIDE;
 
   // FrameConsumer implementation.
   virtual void AllocateFrame(media::VideoFrame::Format format,
-                             size_t width,
-                             size_t height,
-                             base::TimeDelta timestamp,
-                             base::TimeDelta duration,
+                             const SkISize& size,
                              scoped_refptr<media::VideoFrame>* frame_out,
-                             Task* done);
-  virtual void ReleaseFrame(media::VideoFrame* frame);
+                             const base::Closure& done) OVERRIDE;
+  virtual void ReleaseFrame(media::VideoFrame* frame) OVERRIDE;
   virtual void OnPartialFrameOutput(media::VideoFrame* frame,
-                                    UpdatedRects* rects,
-                                    Task* done);
+                                    SkRegion* region,
+                                    const base::Closure& done) OVERRIDE;
 
-  // Sets the size of the visible screen area that this object can render into.
-  void SetScreenSize(int width, int height);
+  // Sets the display size of this view.  Returns true if plugin size has
+  // changed, false otherwise.
+  bool SetViewSize(const SkISize& plugin_size);
 
-  // Sets whether the host screen is scaled to fit the visible screen area.
-  void SetScaleToFit(bool enabled);
+  // Return the client view and original host dimensions.
+  const SkISize& get_view_size() const {
+    return view_size_;
+  }
+  const SkISize& get_host_size() const {
+    return host_size_;
+  }
 
  private:
   void OnPaintDone(base::Time paint_start);
-  void OnRefreshPaintDone();
-  void PaintFrame(media::VideoFrame* frame, UpdatedRects* rects);
 
-  // Blits the pixels in |r| in the backing store into the corresponding
-  // rectangle in the scaled backing store. Returns that rectangle.
-  gfx::Rect UpdateScaledBackingStore(const gfx::Rect& r);
+  // Set the dimension of the entire host screen.
+  void SetHostSize(const SkISize& host_size);
+
+  void PaintFrame(media::VideoFrame* frame, const SkRegion& region);
+
+  // Render the rectangle of |frame| to the backing store.
+  // Returns true if this rectangle is not clipped.
+  bool PaintRect(media::VideoFrame* frame, const SkIRect& rect);
 
   // Blanks out a rectangle in an image.
-  void BlankRect(pp::ImageData& image_data, const gfx::Rect& rect);
+  void BlankRect(pp::ImageData& image_data, const pp::Rect& rect);
 
-  // Converts host co-ordinates to screen co-ordinates.
-  gfx::Point ConvertHostToScreen(const gfx::Point& p) const;
-
-  // Sets the screen scale. A value of 1.0 indicates no scaling.
-  void SetScreenScale(double screen_scale);
-
-  // Paints the entire host screen.
-  // This is called, for example, when the screen scale is changed.
-  void RefreshPaint();
-
-  // Resizes internals of this object after the host screen size has changed,
-  // or the scale applied to that screen has changed.
-  // More specifically, pepper's graphics object, the backing stores, and the
-  // scaling cache are resized and/or recalculated.
-  void ResizeInternals();
-
-  // Whether to scale the screen.
-  bool DoScaling() const;
+  // Perform a flush on the graphics context.
+  void FlushGraphics(base::Time paint_start);
 
   // Reference to the creating plugin instance. Needed for interacting with
   // pepper.  Marking explicitly as const since it must be initialized at
@@ -105,33 +94,20 @@ class PepperView : public ChromotingView,
   // A backing store that saves the current desktop image.
   scoped_ptr<pp::ImageData> backing_store_;
 
-  // A scaled copy of the backing store.
-  scoped_ptr<pp::ImageData> scaled_backing_store_;
+  // True if there is pending paint commands in Pepper's queue. This is set to
+  // true if the last flush returns a PP_ERROR_INPROGRESS error.
+  bool flush_blocked_;
 
-  // The factor by which to scale the host screen. A value of 1.0 indicates
-  // no scaling.
-  double screen_scale_;
-
-  // An array containing the x co-ordinate of the point on the host screen
-  // corresponding to the point (i, 0) on the client screen.
-  scoped_array<int> screen_x_to_host_x_;
-
-  // Whether to scale to fit.
-  bool scale_to_fit_;
+  // The size of the plugin element.
+  SkISize view_size_;
 
   // The size of the host screen.
-  int host_width_;
-  int host_height_;
-
-  // The size of the visible area on the client screen that can be used to
-  // display the host screen.
-  int client_width_;
-  int client_height_;
+  SkISize host_size_;
 
   bool is_static_fill_;
   uint32 static_fill_color_;
 
-  ScopedRunnableMethodFactory<PepperView> task_factory_;
+  base::WeakPtrFactory<PepperView> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperView);
 };

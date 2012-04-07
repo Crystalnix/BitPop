@@ -18,12 +18,14 @@
 #include "chrome/browser/ui/content_settings/content_setting_image_model.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/net_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
+
+using content::WebContents;
 
 namespace {
 
@@ -171,11 +173,11 @@ ContentSettingDecoration::~ContentSettingDecoration() {
   [animation_ stopAnimation];
 }
 
-bool ContentSettingDecoration::UpdateFromTabContents(
-    TabContents* tab_contents) {
+bool ContentSettingDecoration::UpdateFromWebContents(
+    WebContents* web_contents) {
   bool was_visible = IsVisible();
   int old_icon = content_setting_image_model_->get_icon();
-  content_setting_image_model_->UpdateFromTabContents(tab_contents);
+  content_setting_image_model_->UpdateFromWebContents(web_contents);
   SetVisible(content_setting_image_model_->is_visible());
   bool decoration_changed = was_visible != IsVisible() ||
       old_icon != content_setting_image_model_->get_icon();
@@ -193,7 +195,7 @@ bool ContentSettingDecoration::UpdateFromTabContents(
 
     // Check if the animation has already run.
     TabSpecificContentSettings* content_settings =
-        TabContentsWrapper::GetCurrentWrapperForContents(tab_contents)->
+        TabContentsWrapper::GetCurrentWrapperForContents(web_contents)->
             content_settings();
     ContentSettingsType content_type =
         content_setting_image_model_->get_content_settings_type();
@@ -263,12 +265,6 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   if (!tabContents)
     return true;
 
-  // Prerender icon does not include a bubble.
-  ContentSettingsType content_settings_type =
-      content_setting_image_model_->get_content_settings_type();
-  if (content_settings_type == CONTENT_SETTINGS_TYPE_PRERENDER)
-    return true;
-
   // Find point for bubble's arrow in screen coordinates.
   // TODO(shess): |owner_| is only being used to fetch |field|.
   // Consider passing in |control_view|.  Or refactoring to be
@@ -282,7 +278,8 @@ bool ContentSettingDecoration::OnMousePressed(NSRect frame) {
   // Open bubble.
   ContentSettingBubbleModel* model =
       ContentSettingBubbleModel::CreateContentSettingBubbleModel(
-          browser, tabContents, profile_, content_settings_type);
+          browser, tabContents, profile_,
+          content_setting_image_model_->get_content_settings_type());
   [ContentSettingBubbleController showForModel:model
                                   parentWindow:[field window]
                                     anchoredAt:anchor];

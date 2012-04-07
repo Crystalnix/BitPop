@@ -10,101 +10,61 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/views/bubble/bubble.h"
-#include "views/controls/button/button.h"
-#include "views/controls/link_listener.h"
-#include "views/view.h"
-#include "views/widget/native_widget_gtk.h"
+#include "ui/views/bubble/bubble_delegate.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/link_listener.h"
+#include "ui/views/view.h"
 
 class SkBitmap;
 
 namespace views {
 class ImageButton;
-class ImageView;
-class Label;
 }
 
 namespace chromeos {
 
-class MessageBubbleDelegate : public BubbleDelegate {
+class MessageBubbleLinkListener {
  public:
-  // Called when the user clicked on help link.
-  // |index| identifies which link was clicked if there's more than one.
+  // Called when the user clicks on help link.
+  // |index| identifies which link was clicked in case there's more than one.
   virtual void OnLinkActivated(size_t index) = 0;
 };
 
 // MessageBubble is used to show error and info messages on OOBE screens.
-class MessageBubble : public Bubble,
+class MessageBubble : public views::BubbleDelegateView,
                       public views::ButtonListener,
                       public views::LinkListener {
  public:
-  // Create and show bubble. position_relative_to must be in screen coordinates.
-  // |links| is an optional vector of links texts.
-  static MessageBubble* Show(views::Widget* parent,
-                             const gfx::Rect& position_relative_to,
-                             BubbleBorder::ArrowLocation arrow_location,
-                             SkBitmap* image,
-                             const std::wstring& text,
-                             const std::wstring& help,
-                             MessageBubbleDelegate* delegate);
+  MessageBubble(views::View* anchor_view,
+                views::BubbleBorder::ArrowLocation arrow_location,
+                SkBitmap* image,
+                const string16& text,
+                const std::vector<string16>& links);
 
-  // Create and show bubble. position_relative_to must be in screen coordinates.
-  // |links| is an optional vector of links texts.
-  static MessageBubble* ShowWithLinks(
-      views::Widget* parent,
-      const gfx::Rect& position_relative_to,
-      BubbleBorder::ArrowLocation arrow_location,
-      SkBitmap* image,
-      const std::wstring& text,
-      const std::vector<std::wstring>& links,
-      MessageBubbleDelegate* delegate);
+  virtual ~MessageBubble();
 
-  // Create and show bubble which does not grab pointer.  This creates
-  // a TYPE_CHILD NativeWidgetGtk and |position_relative_to| must be in parent's
-  // coordinates.
-  static MessageBubble* ShowNoGrab(views::Widget* parent,
-                                   const gfx::Rect& position_relative_to,
-                                   BubbleBorder::ArrowLocation arrow_location,
-                                   SkBitmap* image,
-                                   const std::wstring& text,
-                                   const std::wstring& help,
-                                   MessageBubbleDelegate* delegate);
-
-  // Overridden from NativeWidgetGtk.
-  virtual void Close() OVERRIDE;
-
-  virtual gboolean OnButtonPress(GtkWidget* widget, GdkEventButton* event);
+  void set_link_listener(MessageBubbleLinkListener* link_listener) {
+    link_listener_ = link_listener;
+  }
 
  protected:
-  virtual ~MessageBubble();
+
+  // Overridden from views::BubbleDelegateView:
+  virtual void Init() OVERRIDE;
 
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
-                             const views::Event& event);
+                             const views::Event& event) OVERRIDE;
 
   // Overridden from views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
-  // Overridden from NativeWidgetGtk.
-  virtual void IsActiveChanged();
-  virtual void SetMouseCapture();
-
  private:
-  MessageBubble(views::Widget::InitParams::Type type,
-                views::Widget* parent,
-                SkBitmap* image,
-                const std::wstring& text,
-                const std::vector<std::wstring>& links,
-                bool grab_enabled,
-                MessageBubbleDelegate* delegate);
-
-  views::Widget* parent_;
-  views::ImageView* icon_;
-  views::Label* text_;
+  SkBitmap* image_;
+  string16 text_;
   views::ImageButton* close_button_;
   std::vector<views::Link*> help_links_;
-  MessageBubbleDelegate* message_delegate_;
-  bool grab_enabled_;
+  MessageBubbleLinkListener* link_listener_;
 
   DISALLOW_COPY_AND_ASSIGN(MessageBubble);
 };

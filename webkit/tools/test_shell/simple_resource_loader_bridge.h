@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,10 @@
 #include <string>
 #include "base/message_loop_proxy.h"
 #include "net/http/http_cache.h"
+#include "webkit/glue/resource_loader_bridge.h"
 
 class FilePath;
 class GURL;
-class TestShellRequestContext;
 
 class SimpleResourceLoaderBridge {
  public:
@@ -42,6 +42,20 @@ class SimpleResourceLoaderBridge {
   // Init(), and destroyed upon a call to ShutDown().
   static scoped_refptr<base::MessageLoopProxy> GetCacheThread();
   static scoped_refptr<base::MessageLoopProxy> GetIoThread();
+
+  // Call this function to set up whether using file-over-http feature.
+  // |file_over_http| indicates whether using file-over-http or not.
+  // If yes, when the request url uses file scheme and matches sub string
+  // |file_path_template|, SimpleResourceLoaderBridge will use |http_prefix|
+  // plus string of after |file_path_template| in original request URl to
+  // generate a new http URL to get the data and send back to peer.
+  // That is how we implement file-over-http feature.
+  static void AllowFileOverHTTP(const std::string& file_path_template,
+                                const GURL& http_prefix);
+
+  // Creates a ResourceLoaderBridge instance.
+  static webkit_glue::ResourceLoaderBridge* Create(
+    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info);
 };
 
 #endif  // WEBKIT_TOOLS_TEST_SHELL_SIMPLE_RESOURCE_LOADER_BRIDGE_H__

@@ -7,7 +7,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
@@ -17,12 +18,15 @@
 #include "base/values.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_host.h"
+#include "chrome/browser/importer/importer_list.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-ImportDataHandler::ImportDataHandler() : importer_host_(NULL) {
+ImportDataHandler::ImportDataHandler() : importer_host_(NULL),
+                                         import_did_succeed_(false) {
 }
 
 ImportDataHandler::~ImportDataHandler() {
@@ -33,8 +37,7 @@ ImportDataHandler::~ImportDataHandler() {
     importer_host_->SetObserver(NULL);
 }
 
-void ImportDataHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+void ImportDataHandler::GetLocalizedValues(DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -47,6 +50,8 @@ void ImportDataHandler::GetLocalizedValues(
     { "importPasswords", IDS_IMPORT_PASSWORDS_CHKBOX },
     { "importCommit", IDS_IMPORT_COMMIT },
     { "noProfileFound", IDS_IMPORT_NO_PROFILE_FOUND },
+    { "importSucceeded", IDS_IMPORT_SUCCEEDED },
+    { "findYourImportedBookmarks", IDS_IMPORT_FIND_YOUR_BOOKMARKS },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -55,13 +60,14 @@ void ImportDataHandler::GetLocalizedValues(
 }
 
 void ImportDataHandler::Initialize() {
-  importer_list_ = new ImporterList;
+  Profile* profile = Profile::FromWebUI(web_ui());
+  importer_list_ = new ImporterList(profile->GetRequestContext());
   importer_list_->DetectSourceProfiles(this);
 }
 
 void ImportDataHandler::RegisterMessages() {
-  web_ui_->RegisterMessageCallback(
-      "importData", NewCallback(this, &ImportDataHandler::ImportData));
+  web_ui()->RegisterMessageCallback("importData",
+      base::Bind(&ImportDataHandler::ImportData, base::Unretained(this)));
 }
 
 void ImportDataHandler::ImportData(const ListValue* args) {
@@ -94,9 +100,10 @@ void ImportDataHandler::ImportData(const ListValue* args) {
 
   uint16 import_services = (selected_items & supported_items);
   if (import_services) {
-    FundamentalValue state(true);
-    web_ui_->CallJavascriptFunction("ImportDataOverlay.setImportingState",
-                                    state);
+    base::FundamentalValue state(true);
+    web_ui()->CallJavascriptFunction("ImportDataOverlay.setImportingState",
+                                     state);
+    import_did_succeed_ = false;
 
     // TODO(csilv): Out-of-process import has only been qualified on MacOS X,
     // so we will only use it on that platform since it is required. Remove this
@@ -108,7 +115,7 @@ void ImportDataHandler::ImportData(const ListValue* args) {
     importer_host_ = new ImporterHost;
 #endif
     importer_host_->SetObserver(this);
-    Profile* profile = web_ui_->GetProfile();
+    Profile* profile = Profile::FromWebUI(web_ui());
     importer_host_->StartImportSettings(source_profile, profile,
                                         import_services,
                                         new ProfileWriter(profile), false);
@@ -140,8 +147,8 @@ void ImportDataHandler::OnSourceProfilesLoaded() {
     browser_profiles.Append(browser_profile);
   }
 
-  web_ui_->CallJavascriptFunction(
-      "options.ImportDataOverlay.updateSupportedBrowsers", browser_profiles);
+  web_ui()->CallJavascriptFunction("ImportDataOverlay.updateSupportedBrowsers",
+                                   browser_profiles);
 }
 
 void ImportDataHandler::ImportStarted() {
@@ -153,11 +160,19 @@ void ImportDataHandler::ImportItemStarted(importer::ImportItem item) {
 
 void ImportDataHandler::ImportItemEnded(importer::ImportItem item) {
   // TODO(csilv): show progress detail in the web view.
+  import_did_succeed_ = true;
 }
 
 void ImportDataHandler::ImportEnded() {
   importer_host_->SetObserver(NULL);
   importer_host_ = NULL;
 
-  web_ui_->CallJavascriptFunction("ImportDataOverlay.dismiss");
+  if (import_did_succeed_) {
+    web_ui()->CallJavascriptFunction("ImportDataOverlay.confirmSuccess");
+  } else {
+    base::FundamentalValue state(false);
+    web_ui()->CallJavascriptFunction("ImportDataOverlay.setImportingState",
+                                     state);
+    web_ui()->CallJavascriptFunction("ImportDataOverlay.dismiss");
+  }
 }

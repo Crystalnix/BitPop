@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,8 @@
 
 #include "chrome/browser/chromeos/frame/browser_view.h"
 #include "chrome/browser/chromeos/frame/panel_controller.h"
-#include "third_party/cros/chromeos_wm_ipc_enums.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "third_party/cros_system_api/window_manager/chromeos_wm_ipc_enums.h"
+#include "ui/views/widget/widget.h"
 
 namespace {
 
@@ -89,10 +88,19 @@ void PanelBrowserView::Close() {
     panel_controller_->Close();
 }
 
+void PanelBrowserView::FlashFrame(bool flash) {
+  if (panel_controller_.get())
+    panel_controller_->SetUrgent(flash);
+}
+
 void PanelBrowserView::UpdateTitleBar() {
   ::BrowserView::UpdateTitleBar();
   if (panel_controller_.get())
     panel_controller_->UpdateTitleBar();
+}
+
+bool PanelBrowserView::IsPanel() const {
+  return true;
 }
 
 void PanelBrowserView::SetCreatorView(PanelBrowserView* creator) {
@@ -103,18 +111,30 @@ void PanelBrowserView::SetCreatorView(PanelBrowserView* creator) {
 
 WindowOpenDisposition PanelBrowserView::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
-  return chromeos::BrowserView::DispositionForPopupBounds(bounds);
+  GdkScreen* screen = gdk_screen_get_default();
+  int width = gdk_screen_get_width(screen);
+  int height = gdk_screen_get_height(screen);
+  return browser::DispositionForPopupBounds(bounds, width, height);
 }
 
-bool PanelBrowserView::GetSavedWindowBounds(gfx::Rect* bounds) const {
-  bool res = ::BrowserView::GetSavedWindowBounds(bounds);
-  if (res)
+bool PanelBrowserView::GetSavedWindowPlacement(
+    gfx::Rect* bounds,
+    ui::WindowShowState* show_state) const {
+  bool result = ::BrowserView::GetSavedWindowPlacement(bounds, show_state);
+  if (result) {
     LimitBounds(bounds);
-  return res;
+    // Panels have no maximized state.
+    *show_state = ui::SHOW_STATE_NORMAL;
+  }
+  return result;
 }
 
-void PanelBrowserView::OnWindowActivationChanged(bool active) {
-  ::BrowserView::OnWindowActivationChanged(active);
+////////////////////////////////////////////////////////////////////////////////
+// views::Widget::Observer overrides.
+
+void PanelBrowserView::OnWidgetActivationChanged(views::Widget* widget,
+                                                 bool active) {
+  ::BrowserView::OnWidgetActivationChanged(widget, active);
   if (panel_controller_.get()) {
     if (active)
       panel_controller_->OnFocusIn();

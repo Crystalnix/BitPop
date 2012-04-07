@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,12 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 
 namespace chromeos {
 
@@ -70,8 +71,8 @@ TabCloseableStateWatcher::TabCloseableStateWatcher()
               switches::kGuestSession)),
       waiting_for_browser_(false) {
   BrowserList::AddObserver(this);
-  notification_registrar_.Add(this, NotificationType::APP_EXITING,
-      NotificationService::AllSources());
+  notification_registrar_.Add(this, content::NOTIFICATION_APP_EXITING,
+      content::NotificationService::AllSources());
 }
 
 TabCloseableStateWatcher::~TabCloseableStateWatcher() {
@@ -116,7 +117,7 @@ bool TabCloseableStateWatcher::CanCloseTabs(const Browser* browser,
   // This is the main purpose of this method CanCloseTabs.
   for (size_t i = 0; i < indices->size(); ++i) {
     if ((*indices)[i] == 0) {
-      if (tabstrip_model->GetTabContentsAt(0)->tab_contents()->GetURL() ==
+      if (tabstrip_model->GetTabContentsAt(0)->web_contents()->GetURL() ==
           GURL(chrome::kChromeUINewTabURL)) {  // First tab is NewTabPage.
         indices->erase(indices->begin() + i);  // Don't close it.
         return false;
@@ -185,11 +186,12 @@ void TabCloseableStateWatcher::OnBrowserRemoved(const Browser* browser) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// TabCloseableStateWatcher, NotificationObserver implementation:
+// TabCloseableStateWatcher, content::NotificationObserver implementation:
 
-void TabCloseableStateWatcher::Observe(NotificationType type,
-    const NotificationSource& source, const NotificationDetails& details) {
-  if (type.value != NotificationType::APP_EXITING)
+void TabCloseableStateWatcher::Observe(int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type != content::NOTIFICATION_APP_EXITING)
     NOTREACHED();
   if (!signing_off_) {
     signing_off_ = true;
@@ -241,7 +243,7 @@ void TabCloseableStateWatcher::CheckAndUpdateState(
       TabStripModel* tabstrip_model = browser_to_check->tabstrip_model();
       if (tabstrip_model->count() == 1) {
         new_can_close =
-            tabstrip_model->GetTabContentsAt(0)->tab_contents()->GetURL() !=
+            tabstrip_model->GetTabContentsAt(0)->web_contents()->GetURL() !=
                 GURL(chrome::kChromeUINewTabURL);  // Tab is not NewTabPage.
       } else {
         new_can_close = true;
@@ -259,10 +261,10 @@ void TabCloseableStateWatcher::SetCloseableState(bool closeable) {
   can_close_tab_ = closeable;
 
   // Notify of change in tab closeable state.
-  NotificationService::current()->Notify(
-      NotificationType::TAB_CLOSEABLE_STATE_CHANGED,
-      NotificationService::AllSources(),
-      Details<bool>(&can_close_tab_));
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_TAB_CLOSEABLE_STATE_CHANGED,
+      content::NotificationService::AllSources(),
+      content::Details<bool>(&can_close_tab_));
 }
 
 bool TabCloseableStateWatcher::CanCloseBrowserImpl(

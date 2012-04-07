@@ -15,12 +15,13 @@
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/in_memory_database.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class BookmarkIndexTest : public TestingBrowserProcessTest {
+using content::BrowserThread;
+
+class BookmarkIndexTest : public testing::Test {
  public:
   BookmarkIndexTest() : model_(new BookmarkModel(NULL)) {}
 
@@ -222,8 +223,8 @@ TEST_F(BookmarkIndexTest, GetResultsSortedByTypedCount) {
   // This ensures MessageLoop::current() will exist, which is needed by
   // TestingProfile::BlockUntilHistoryProcessesPendingRequests().
   MessageLoop loop(MessageLoop::TYPE_DEFAULT);
-  BrowserThread ui_thread(BrowserThread::UI, &loop);
-  BrowserThread file_thread(BrowserThread::FILE, &loop);
+  content::TestBrowserThread ui_thread(BrowserThread::UI, &loop);
+  content::TestBrowserThread file_thread(BrowserThread::FILE, &loop);
 
   TestingProfile profile;
   profile.CreateHistoryService(true, false);
@@ -287,17 +288,16 @@ TEST_F(BookmarkIndexTest, GetResultsSortedByTypedCount) {
   // 3. Google Docs (docs.google.com) 50
   // 4. Google Maps (maps.google.com) 40
   EXPECT_EQ(4, static_cast<int>(matches.size()));
-  EXPECT_EQ(data[0].url, matches[0].node->GetURL());
-  EXPECT_EQ(data[3].url, matches[1].node->GetURL());
-  EXPECT_EQ(data[2].url, matches[2].node->GetURL());
-  EXPECT_EQ(data[1].url, matches[3].node->GetURL());
+  EXPECT_EQ(data[0].url, matches[0].node->url());
+  EXPECT_EQ(data[3].url, matches[1].node->url());
+  EXPECT_EQ(data[2].url, matches[2].node->url());
+  EXPECT_EQ(data[1].url, matches[3].node->url());
 
   matches.clear();
   // Select top two matches.
   model->GetBookmarksWithTitlesMatching(ASCIIToUTF16("google"), 2, &matches);
 
   EXPECT_EQ(2, static_cast<int>(matches.size()));
-  EXPECT_EQ(data[0].url, matches[0].node->GetURL());
-  EXPECT_EQ(data[3].url, matches[1].node->GetURL());
+  EXPECT_EQ(data[0].url, matches[0].node->url());
+  EXPECT_EQ(data[3].url, matches[1].node->url());
 }
-

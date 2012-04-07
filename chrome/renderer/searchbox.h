@@ -11,29 +11,29 @@
 
 #include "base/string16.h"
 #include "chrome/common/instant_types.h"
-#include "content/renderer/render_view_observer.h"
-#include "content/renderer/render_view_observer_tracker.h"
+#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer_tracker.h"
 #include "ui/gfx/rect.h"
 
-class SearchBox : public RenderViewObserver,
-                  public RenderViewObserverTracker<SearchBox> {
+class SearchBox : public content::RenderViewObserver,
+                  public content::RenderViewObserverTracker<SearchBox> {
  public:
-  explicit SearchBox(RenderView* render_view);
+  explicit SearchBox(content::RenderView* render_view);
   virtual ~SearchBox();
 
   // Sends ViewHostMsg_SetSuggestions to the browser.
   void SetSuggestions(const std::vector<std::string>& suggestions,
                       InstantCompleteBehavior behavior);
 
-  const string16& value() { return value_; }
-  bool verbatim() { return verbatim_; }
-  uint32 selection_start() { return selection_start_; }
-  uint32 selection_end() { return selection_end_; }
-  const gfx::Rect& rect() { return rect_; }
+  const string16& value() const { return value_; }
+  bool verbatim() const { return verbatim_; }
+  uint32 selection_start() const { return selection_start_; }
+  uint32 selection_end() const { return selection_end_; }
+  gfx::Rect GetRect();
 
  private:
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void OnChange(const string16& value,
                 bool verbatim,

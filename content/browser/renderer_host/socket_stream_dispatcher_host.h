@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/id_map.h"
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "net/socket_stream/socket_stream.h"
 
 class GURL;
@@ -23,7 +23,7 @@ class ResourceContext;
 // Dispatches ViewHostMsg_SocketStream_* messages sent from renderer.
 // It also acts as SocketStream::Delegate so that it sends
 // ViewMsg_SocketStream_* messages back to renderer.
-class SocketStreamDispatcherHost : public BrowserMessageFilter,
+class SocketStreamDispatcherHost : public content::BrowserMessageFilter,
                                    public net::SocketStream::Delegate {
  public:
   SocketStreamDispatcherHost(
@@ -31,25 +31,26 @@ class SocketStreamDispatcherHost : public BrowserMessageFilter,
       const content::ResourceContext* resource_context);
   virtual ~SocketStreamDispatcherHost();
 
-  // BrowserMessageFilter methods.
+  // content::BrowserMessageFilter methods.
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
   // The object died, so cancel and detach all requests associated with it.
   void CancelRequestsForProcess(int host_id);
 
   // SocketStream::Delegate methods.
   virtual void OnConnected(net::SocketStream* socket,
-                           int max_pending_send_allowed);
-  virtual void OnSentData(net::SocketStream* socket, int amount_sent);
+                           int max_pending_send_allowed) OVERRIDE;
+  virtual void OnSentData(net::SocketStream* socket, int amount_sent) OVERRIDE;
   virtual void OnReceivedData(net::SocketStream* socket,
-                              const char* data, int len);
-  virtual void OnClose(net::SocketStream* socket);
-  virtual bool CanGetCookies(net::SocketStream* socket, const GURL& url);
+                              const char* data, int len) OVERRIDE;
+  virtual void OnClose(net::SocketStream* socket) OVERRIDE;
+  virtual bool CanGetCookies(net::SocketStream* socket,
+                             const GURL& url) OVERRIDE;
   virtual bool CanSetCookie(net::SocketStream* request,
                             const GURL& url,
                             const std::string& cookie_line,
-                            net::CookieOptions* options);
+                            net::CookieOptions* options) OVERRIDE;
 
  private:
   // Message handlers called by OnMessageReceived.

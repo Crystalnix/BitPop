@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,15 @@
 
 #include "chrome/browser/chromeos/cros/cros_library.h"
 #include "chrome/browser/chromeos/cros/network_library.h"
-#include "chrome/browser/chromeos/login/background_view.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
+#include "chrome/browser/chromeos/login/base_login_display_host.h"
 #include "chrome/browser/chromeos/options/network_config_view.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/dialog_style.h"
 #include "chrome/browser/ui/views/window.h"
-#include "views/window/dialog_delegate.h"
-#include "views/window/window.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_delegate.h"
 
 namespace chromeos {
 
@@ -26,22 +26,23 @@ NetworkLoginObserver::~NetworkLoginObserver() {
   CrosLibrary::Get()->GetNetworkLibrary()->RemoveNetworkManagerObserver(this);
 }
 
-void NetworkLoginObserver::CreateModalPopup(views::WindowDelegate* view) {
+void NetworkLoginObserver::CreateModalPopup(views::WidgetDelegate* view) {
   Browser* browser = BrowserList::GetLastActive();
   if (browser && !browser->is_type_tabbed()) {
     browser = BrowserList::FindTabbedBrowser(browser->profile(), true);
   }
   if (browser) {
-    views::Window* window = browser::CreateViewsWindow(
-        browser->window()->GetNativeHandle(), gfx::Rect(), view);
+    views::Widget* window = browser::CreateViewsWindow(
+        browser->window()->GetNativeHandle(), view, STYLE_GENERIC);
     window->SetAlwaysOnTop(true);
     window->Show();
   } else {
     // Browser not found, so we should be in login/oobe screen.
-    BackgroundView* background_view = LoginUtils::Get()->GetBackgroundView();
-    if (background_view) {
-      background_view->CreateModalPopup(view);
-    }
+    views::Widget* window = browser::CreateViewsWindow(
+        BaseLoginDisplayHost::default_host()->GetNativeWindow(),
+        view, STYLE_GENERIC);
+    window->SetAlwaysOnTop(true);
+    window->Show();
   }
 }
 
@@ -70,9 +71,8 @@ void NetworkLoginObserver::OnNetworkManagerChanged(NetworkLibrary* cros) {
        it != virtual_networks.end(); it++) {
     VirtualNetwork* vpn = *it;
     if (vpn->notify_failure()) {
-      // Display login dialog again for bad_passphrase and errors.
-      // Always re-display the login dialog for newly added networks.
-      if (vpn->error() == ERROR_BAD_PASSPHRASE || vpn->added()) {
+      // Display login dialog for any error or newly added network.
+      if (vpn->error() != ERROR_NO_ERROR || vpn->added()) {
         CreateModalPopup(new NetworkConfigView(vpn));
         return;  // Only support one failure per notification.
       }

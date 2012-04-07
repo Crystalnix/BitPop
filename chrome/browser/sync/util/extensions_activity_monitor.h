@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,15 @@
 
 #include <map>
 
+#include "base/compiler_specific.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/synchronization/lock.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+
+namespace content {
+class NotificationRegistrar;
+}
 
 namespace browser_sync {
 
@@ -26,7 +31,7 @@ namespace browser_sync {
 //
 // Consider using MessageLoop::DeleteSoon. (Yes, this means if you allocate
 // an ExtensionsActivityMonitor on a thread other than UI, you must 'new' it).
-class ExtensionsActivityMonitor : public NotificationObserver {
+class ExtensionsActivityMonitor : public content::NotificationObserver {
  public:
   // A data record of activity performed by extension |extension_id|.
   struct Record {
@@ -44,7 +49,7 @@ class ExtensionsActivityMonitor : public NotificationObserver {
   typedef std::map<std::string, Record> Records;
 
   // Creates an ExtensionsActivityMonitor to monitor extensions activities on
-  // BrowserThread::UI.
+  // BrowserThread::UI (it is not necessary to construct it on that thread).
   ExtensionsActivityMonitor();
   virtual ~ExtensionsActivityMonitor();
 
@@ -56,16 +61,18 @@ class ExtensionsActivityMonitor : public NotificationObserver {
   // This is done mutually exclusively w.r.t the methods of this class.
   void PutRecords(const Records& records);
 
-  // NotificationObserver implementation.  Called on |ui_loop_|.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.  Called on |ui_loop_|.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
  private:
+  void RegisterNotificationsOnUIThread();
+
   Records records_;
   mutable base::Lock records_lock_;
 
   // Used only from UI loop.
-  NotificationRegistrar registrar_;
+  scoped_ptr<content::NotificationRegistrar> registrar_;
 };
 
 }  // namespace browser_sync

@@ -6,14 +6,20 @@
 #define CHROME_BROWSER_PRINTING_PRINTING_MESSAGE_FILTER_H_
 #pragma once
 
-#include "content/browser/browser_message_filter.h"
+#include <string>
+
+#include "base/compiler_specific.h"
+#include "content/public/browser/browser_message_filter.h"
 
 #if defined(OS_WIN)
 #include "base/shared_memory.h"
 #endif
 
-class DictionaryValue;
 struct PrintHostMsg_ScriptedPrint_Params;
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace printing {
 class PrinterQuery;
@@ -22,15 +28,16 @@ class PrintJobManager;
 
 // This class filters out incoming printing related IPC messages for the
 // renderer process on the IPC thread.
-class PrintingMessageFilter : public BrowserMessageFilter {
+class PrintingMessageFilter : public content::BrowserMessageFilter {
  public:
   PrintingMessageFilter();
 
-  // BrowserMessageFilter methods.
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+  // content::BrowserMessageFilter methods.
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
  private:
   virtual ~PrintingMessageFilter();
@@ -49,34 +56,38 @@ class PrintingMessageFilter : public BrowserMessageFilter {
   void OnTempFileForPrintingWritten(int sequence_number);
 #endif
 
-  // A javascript code requested to print the current page. This is done in two
-  // steps and this is the first step. Get the print setting right here
-  // synchronously. It will hang the I/O completely.
+  // Get the default print setting. The task is handled by the print
+  // worker thread and the UI thread. The reply occurs on the IO thread.
   void OnGetDefaultPrintSettings(IPC::Message* reply_msg);
   void OnGetDefaultPrintSettingsReply(
       scoped_refptr<printing::PrinterQuery> printer_query,
       IPC::Message* reply_msg);
 
-  // A javascript code requested to print the current page. The renderer host
-  // have to show to the user the print dialog and returns the selected print
-  // settings.
+  // The renderer host have to show to the user the print dialog and returns
+  // the selected print settings. The task is handled by the print worker
+  // thread and the UI thread. The reply occurs on the IO thread.
   void OnScriptedPrint(const PrintHostMsg_ScriptedPrint_Params& params,
                        IPC::Message* reply_msg);
   void OnScriptedPrintReply(
       scoped_refptr<printing::PrinterQuery> printer_query,
-      int routing_id,
       IPC::Message* reply_msg);
 
+  // Modify the current print settings based on |job_settings|. The task is
+  // handled by the print worker thread and the UI thread. The reply occurs on
+  // the IO thread.
   void OnUpdatePrintSettings(int document_cookie,
-                             const DictionaryValue& job_settings,
+                             const base::DictionaryValue& job_settings,
                              IPC::Message* reply_msg);
   void OnUpdatePrintSettingsReply(
       scoped_refptr<printing::PrinterQuery> printer_query,
       IPC::Message* reply_msg);
 
-  printing::PrintJobManager* print_job_manager_;
+  // Check to see if print preview has been cancelled.
+  void OnCheckForCancel(const std::string& preview_ui_addr,
+                        int preview_request_id,
+                        bool* cancel);
 
-  bool cloud_print_enabled_;
+  printing::PrintJobManager* print_job_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintingMessageFilter);
 };

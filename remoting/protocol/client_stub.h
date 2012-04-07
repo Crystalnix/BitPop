@@ -12,23 +12,16 @@
 
 #include "base/basictypes.h"
 
-class Task;
-
 namespace remoting {
 namespace protocol {
-
-class LocalLoginStatus;
-class NotifyResolutionRequest;
 
 class ClientStub {
  public:
   ClientStub() {}
   virtual ~ClientStub() {}
 
-  virtual void NotifyResolution(const NotifyResolutionRequest* msg,
-                                Task* done) = 0;
-  virtual void BeginSessionResponse(const LocalLoginStatus* msg,
-                                    Task* done) = 0;
+  // Currently we don't use the control channel for anything. Add new
+  // message handlers here when necessary.
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ClientStub);

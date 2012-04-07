@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,12 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -18,14 +21,17 @@
 #include "chrome/browser/printing/cloud_print/cloud_print_url.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
+using content::WebContents;
+using content::WebUIMessageHandler;
 using testing::A;
 using testing::AtLeast;
 using testing::Eq;
@@ -40,6 +46,8 @@ static const char* const kPDFTestFile = "printing/cloud_print_unittest.pdf";
 static const char* const kEmptyPDFTestFile =
     "printing/cloud_print_emptytest.pdf";
 static const char* const kMockJobTitle = "Mock Job Title";
+static const char* const kMockPrintTicket = "Resolution=300";
+
 
 FilePath GetTestDataFileName() {
   FilePath test_data_directory;
@@ -81,16 +89,21 @@ class MockCloudPrintFlowHandler
     : public CloudPrintFlowHandler,
       public base::SupportsWeakPtr<MockCloudPrintFlowHandler> {
  public:
-  explicit MockCloudPrintFlowHandler(const FilePath& path,
-                                     const string16& title,
-                                     const std::string& file_type)
-      : CloudPrintFlowHandler(path, title, file_type) {}
+  MockCloudPrintFlowHandler(const FilePath& path,
+                            const string16& title,
+                            const string16& print_ticket,
+                            const std::string& file_type,
+                            bool close_after_signin,
+                            const base::Closure& callback
+                            )
+      : CloudPrintFlowHandler(path, title, print_ticket, file_type,
+                              close_after_signin, callback) {}
   MOCK_METHOD0(DestructorCalled, void());
   MOCK_METHOD0(RegisterMessages, void());
   MOCK_METHOD3(Observe,
-               void(NotificationType type,
-                    const NotificationSource& source,
-                    const NotificationDetails& details));
+               void(int type,
+                    const content::NotificationSource& source,
+                    const content::NotificationDetails& details));
   MOCK_METHOD1(SetDialogDelegate,
                void(CloudPrintHtmlDialogDelegate* delegate));
   MOCK_METHOD0(CreateCloudPrintDataSender,
@@ -99,10 +112,10 @@ class MockCloudPrintFlowHandler
 
 class MockCloudPrintHtmlDialogDelegate : public CloudPrintHtmlDialogDelegate {
  public:
-  MOCK_CONST_METHOD0(IsDialogModal,
-      bool());
+  MOCK_CONST_METHOD0(GetDialogModalType,
+      ui::ModalType());
   MOCK_CONST_METHOD0(GetDialogTitle,
-      std::wstring());
+      string16());
   MOCK_CONST_METHOD0(GetDialogContentURL,
       GURL());
   MOCK_CONST_METHOD1(GetWebUIMessageHandlers,
@@ -114,7 +127,7 @@ class MockCloudPrintHtmlDialogDelegate : public CloudPrintHtmlDialogDelegate {
   MOCK_METHOD1(OnDialogClosed,
       void(const std::string& json_retval));
   MOCK_METHOD2(OnCloseContents,
-      void(TabContents* source, bool *out_close_dialog));
+      void(WebContents* source, bool *out_close_dialog));
 };
 
 }  // namespace internal_cloud_print_helpers
@@ -216,10 +229,12 @@ class CloudPrintDataSenderTest : public testing::Test {
  protected:
   virtual void SetUp() {
     string16 mock_job_title(ASCIIToUTF16(kMockJobTitle));
+    string16 mock_print_ticket(ASCIIToUTF16(kMockPrintTicket));
     mock_helper_.reset(new MockCloudPrintDataSenderHelper);
     print_data_sender_ =
         new CloudPrintDataSender(mock_helper_.get(),
                                  mock_job_title,
+                                 mock_print_ticket,
                                  std::string("application/pdf"));
   }
 
@@ -227,8 +242,8 @@ class CloudPrintDataSenderTest : public testing::Test {
   scoped_ptr<MockCloudPrintDataSenderHelper> mock_helper_;
 
   MessageLoop message_loop_;
-  BrowserThread file_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread file_thread_;
+  content::TestBrowserThread io_thread_;
 };
 
 // TODO(scottbyer): DISABLED until the binary test file can get
@@ -240,11 +255,10 @@ TEST_F(CloudPrintDataSenderTest, CanSend) {
       WillOnce(Return());
 
   FilePath test_data_file_name = GetTestDataFileName();
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          NewRunnableMethod(
-                              print_data_sender_.get(),
-                              &CloudPrintDataSender::ReadPrintDataFile,
-                              test_data_file_name));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&CloudPrintDataSender::ReadPrintDataFile,
+                 print_data_sender_.get(), test_data_file_name));
   MessageLoop::current()->RunAllPending();
 }
 
@@ -256,11 +270,10 @@ TEST_F(CloudPrintDataSenderTest, BadFile) {
 #else
   FilePath bad_data_file_name("/some/file/that/isnot/there");
 #endif
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          NewRunnableMethod(
-                              print_data_sender_.get(),
-                              &CloudPrintDataSender::ReadPrintDataFile,
-                             bad_data_file_name));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&CloudPrintDataSender::ReadPrintDataFile,
+                 print_data_sender_.get(), bad_data_file_name));
   MessageLoop::current()->RunAllPending();
 }
 
@@ -268,11 +281,10 @@ TEST_F(CloudPrintDataSenderTest, EmptyFile) {
   EXPECT_CALL(*mock_helper_, CallJavascriptFunction(_, _, _)).Times(0);
 
   FilePath empty_data_file_name = GetEmptyDataFileName();
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          NewRunnableMethod(
-                              print_data_sender_.get(),
-                              &CloudPrintDataSender::ReadPrintDataFile,
-                              empty_data_file_name));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&CloudPrintDataSender::ReadPrintDataFile,
+                 print_data_sender_.get(), empty_data_file_name));
   MessageLoop::current()->RunAllPending();
 }
 
@@ -295,14 +307,17 @@ class CloudPrintHtmlDialogDelegateTest : public testing::Test {
   virtual void SetUp() {
     FilePath mock_path;
     string16 mock_title;
+    string16 mock_print_ticket;
     std::string mock_file_type;
     MockCloudPrintFlowHandler* handler =
-        new MockCloudPrintFlowHandler(mock_path, mock_title, mock_file_type);
+        new MockCloudPrintFlowHandler(mock_path, mock_print_ticket,
+                                      mock_title, mock_file_type,
+                                      false, base::Closure());
     mock_flow_handler_ = handler->AsWeakPtr();
     EXPECT_CALL(*mock_flow_handler_.get(), SetDialogDelegate(_));
     EXPECT_CALL(*mock_flow_handler_.get(), SetDialogDelegate(NULL));
     delegate_.reset(new CloudPrintHtmlDialogDelegate(
-        mock_flow_handler_.get(), 100, 100, std::string(), true));
+        mock_flow_handler_.get(), 100, 100, std::string(), true, false));
   }
 
   virtual void TearDown() {
@@ -312,15 +327,15 @@ class CloudPrintHtmlDialogDelegateTest : public testing::Test {
   }
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
   base::WeakPtr<MockCloudPrintFlowHandler> mock_flow_handler_;
   scoped_ptr<CloudPrintHtmlDialogDelegate> delegate_;
 };
 
 TEST_F(CloudPrintHtmlDialogDelegateTest, BasicChecks) {
-  EXPECT_TRUE(delegate_->IsDialogModal());
+  EXPECT_EQ(ui::MODAL_TYPE_WINDOW, delegate_->GetDialogModalType());
   EXPECT_THAT(delegate_->GetDialogContentURL().spec(),
-              StrEq(chrome::kCloudPrintResourcesURL));
+              StrEq(chrome::kChromeUICloudPrintResourcesURL));
   EXPECT_TRUE(delegate_->GetDialogTitle().empty());
 
   bool close_dialog = false;

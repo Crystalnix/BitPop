@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,14 +10,16 @@
 
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/download/download_shelf.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/gtk/slide_animator_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/native_widget_types.h"
 
 class BaseDownloadItemModel;
@@ -32,36 +34,39 @@ class Point;
 }
 
 class DownloadShelfGtk : public DownloadShelf,
-                         public NotificationObserver,
+                         public content::NotificationObserver,
                          public SlideAnimatorGtk::Delegate,
                          public MessageLoopForUI::Observer {
  public:
-  explicit DownloadShelfGtk(Browser* browser, gfx::NativeView view);
+  DownloadShelfGtk(Browser* browser, gfx::NativeView view);
 
   virtual ~DownloadShelfGtk();
 
   // DownloadShelf implementation.
-  virtual void AddDownload(BaseDownloadItemModel* download_model);
-  virtual bool IsShowing() const;
-  virtual bool IsClosing() const;
-  virtual void Show();
-  virtual void Close();
-  virtual Browser* browser() const;
+  virtual bool IsShowing() const OVERRIDE;
+  virtual bool IsClosing() const OVERRIDE;
+  virtual Browser* browser() const OVERRIDE;
 
   // SlideAnimatorGtk::Delegate implementation.
-  virtual void Closed();
+  virtual void Closed() OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Returns the current height of the shelf.
   int GetHeight() const;
 
   // MessageLoop::Observer implementation:
-  virtual void WillProcessEvent(GdkEvent* event);
-  virtual void DidProcessEvent(GdkEvent* event);
+  virtual void WillProcessEvent(GdkEvent* event) OVERRIDE;
+  virtual void DidProcessEvent(GdkEvent* event) OVERRIDE;
+
+ protected:
+  // DownloadShelf implementation.
+  virtual void DoAddDownload(BaseDownloadItemModel* download_model) OVERRIDE;
+  virtual void DoShow() OVERRIDE;
+  virtual void DoClose() OVERRIDE;
 
  private:
   // Remove |download_item| from the download shelf and delete it.
@@ -107,11 +112,11 @@ class DownloadShelfGtk : public DownloadShelf,
   scoped_ptr<SlideAnimatorGtk> slide_widget_;
 
   // |items_hbox_| holds the download items.
-  OwnedWidgetGtk items_hbox_;
+  ui::OwnedWidgetGtk items_hbox_;
 
   // |shelf_| is the second highest level widget. See the constructor
   // for an explanation of the widget layout.
-  OwnedWidgetGtk shelf_;
+  ui::OwnedWidgetGtk shelf_;
 
   // Top level event box which draws the one pixel border.
   GtkWidget* top_border_;
@@ -134,7 +139,7 @@ class DownloadShelfGtk : public DownloadShelf,
   // Gives us our colors and theme information.
   GtkThemeService* theme_service_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // True if the shelf will automatically close when the user mouses out.
   bool close_on_mouse_out_;
@@ -143,7 +148,7 @@ class DownloadShelfGtk : public DownloadShelf,
   // we received.
   bool mouse_in_shelf_;
 
-  ScopedRunnableMethodFactory<DownloadShelfGtk> auto_close_factory_;
+  base::WeakPtrFactory<DownloadShelfGtk> weak_factory_;
 
   friend class DownloadItemGtk;
 };

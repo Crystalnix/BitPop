@@ -7,20 +7,22 @@
 #include "base/message_loop.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_accessibility_api.h"
+#include "chrome/browser/accessibility/accessibility_extension_api.h"
 #include "chrome/browser/ui/views/accessibility_event_router_views.h"
-#include "chrome/test/testing_profile.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_service.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "views/controls/button/native_button.h"
-#include "views/layout/grid_layout.h"
-#include "views/views_delegate.h"
-#include "views/widget/native_widget.h"
-#include "views/widget/root_view.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
-#include "views/window/window_delegate.h"
+#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/views_delegate.h"
+#include "ui/views/widget/native_widget.h"
+#include "ui/views/widget/root_view.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_delegate.h"
 
 #if defined(TOOLKIT_VIEWS)
 
@@ -30,40 +32,39 @@ class AccessibilityViewsDelegate : public views::ViewsDelegate {
   virtual ~AccessibilityViewsDelegate() {}
 
   // Overridden from views::ViewsDelegate:
-  virtual ui::Clipboard* GetClipboard() const { return NULL; }
-  virtual void SaveWindowPlacement(views::Window* window,
-                                   const std::wstring& window_name,
+  virtual ui::Clipboard* GetClipboard() const OVERRIDE { return NULL; }
+  virtual void SaveWindowPlacement(const views::Widget* window,
+                                   const std::string& window_name,
                                    const gfx::Rect& bounds,
-                                   bool maximized) {
+                                   ui::WindowShowState show_state) OVERRIDE {
   }
-  virtual bool GetSavedWindowBounds(views::Window* window,
-                                    const std::wstring& window_name,
-                                    gfx::Rect* bounds) const {
-    return false;
-  }
-  virtual bool GetSavedMaximizedState(views::Window* window,
-                                      const std::wstring& window_name,
-                                      bool* maximized) const {
+  virtual bool GetSavedWindowPlacement(
+      const std::string& window_name,
+      gfx::Rect* bounds,
+      ui::WindowShowState* show_state) const OVERRIDE {
     return false;
   }
   virtual void NotifyAccessibilityEvent(
-      views::View* view, ui::AccessibilityTypes::Event event_type) {
+      views::View* view, ui::AccessibilityTypes::Event event_type) OVERRIDE {
     AccessibilityEventRouterViews::GetInstance()->HandleAccessibilityEvent(
         view, event_type);
   }
-  virtual void NotifyMenuItemFocused(
-      const std::wstring& menu_name,
-      const std::wstring& menu_item_name,
-      int item_index,
-      int item_count,
-      bool has_submenu) {}
+  virtual void NotifyMenuItemFocused(const string16& menu_name,
+                                     const string16& menu_item_name,
+                                     int item_index,
+                                     int item_count,
+                                     bool has_submenu) OVERRIDE {}
 #if defined(OS_WIN)
-  virtual HICON GetDefaultWindowIcon() const {
+  virtual HICON GetDefaultWindowIcon() const OVERRIDE {
     return NULL;
   }
 #endif
-  virtual void AddRef() {}
-  virtual void ReleaseRef() {}
+  virtual views::NonClientFrameView* CreateDefaultNonClientFrameView(
+      views::Widget* widget) OVERRIDE {
+    return NULL;
+  }
+  virtual void AddRef() OVERRIDE {}
+  virtual void ReleaseRef() OVERRIDE {}
 
   virtual int GetDispositionForEvent(int event_flags) OVERRIDE {
     return 0;
@@ -72,58 +73,84 @@ class AccessibilityViewsDelegate : public views::ViewsDelegate {
   DISALLOW_COPY_AND_ASSIGN(AccessibilityViewsDelegate);
 };
 
-class AccessibilityWindowDelegate : public views::WindowDelegate {
+class AccessibilityWindowDelegate : public views::WidgetDelegate {
  public:
   explicit AccessibilityWindowDelegate(views::View* contents)
       : contents_(contents) { }
 
-  virtual void DeleteDelegate() { delete this; }
-
-  virtual views::View* GetContentsView() { return contents_; }
+  // Overridden from views::WidgetDelegate:
+  virtual void DeleteDelegate() OVERRIDE { delete this; }
+  virtual views::View* GetContentsView() OVERRIDE { return contents_; }
+  virtual const views::Widget* GetWidget() const OVERRIDE {
+    return contents_->GetWidget();
+  }
+  virtual views::Widget* GetWidget() OVERRIDE { return contents_->GetWidget(); }
 
  private:
   views::View* contents_;
 };
 
+class ViewWithNameAndRole : public views::View {
+ public:
+  explicit ViewWithNameAndRole(const string16& name,
+                               ui::AccessibilityTypes::Role role)
+      : name_(name),
+        role_(role) {
+  }
+
+  void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE {
+    views::View::GetAccessibleState(state);
+    state->name = name_;
+    state->role = role_;
+  }
+
+ private:
+  string16 name_;
+  ui::AccessibilityTypes::Role role_;
+};
+
 class AccessibilityEventRouterViewsTest
     : public testing::Test,
-      public NotificationObserver {
+      public content::NotificationObserver {
  public:
   virtual void SetUp() {
     views::ViewsDelegate::views_delegate = new AccessibilityViewsDelegate();
-    window_delegate_ = NULL;
   }
 
   virtual void TearDown() {
     delete views::ViewsDelegate::views_delegate;
     views::ViewsDelegate::views_delegate = NULL;
-    if (window_delegate_)
-      delete window_delegate_;
+
+    // The Widget's FocusManager is deleted using DeleteSoon - this
+    // forces it to be deleted now, so we don't have any memory leaks
+    // when this method exits.
+    MessageLoop::current()->RunAllPending();
   }
 
-  views::Window* CreateWindowWithContents(views::View* contents) {
-    window_delegate_ = new AccessibilityWindowDelegate(contents);
-    return views::Window::CreateChromeWindow(
-        NULL, gfx::Rect(0, 0, 500, 500), window_delegate_);
+  views::Widget* CreateWindowWithContents(views::View* contents) {
+    return views::Widget::CreateWindowWithBounds(
+        new AccessibilityWindowDelegate(contents),
+        gfx::Rect(0, 0, 500, 500));
   }
 
  protected:
   // Implement NotificationObserver::Observe and store information about a
   // ACCESSIBILITY_CONTROL_FOCUSED event.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    ASSERT_EQ(type.value, NotificationType::ACCESSIBILITY_CONTROL_FOCUSED);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) {
+    ASSERT_EQ(type, chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED);
     const AccessibilityControlInfo* info =
-        Details<const AccessibilityControlInfo>(details).ptr();
+        content::Details<const AccessibilityControlInfo>(details).ptr();
     focus_event_count_++;
     last_control_name_ = info->name();
+    last_control_context_ = info->context();
   }
 
   MessageLoopForUI message_loop_;
   int focus_event_count_;
   std::string last_control_name_;
-  AccessibilityWindowDelegate* window_delegate_;
+  std::string last_control_context_;
 };
 
 TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
@@ -134,27 +161,27 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
 
   // Create a contents view with 3 buttons.
   views::View* contents = new views::View();
-  views::NativeButton* button1 = new views::NativeButton(
-      NULL, ASCIIToWide(kButton1ASCII));
+  views::NativeTextButton* button1 = new views::NativeTextButton(
+      NULL, ASCIIToUTF16(kButton1ASCII));
   contents->AddChildView(button1);
-  views::NativeButton* button2 = new views::NativeButton(
-      NULL, ASCIIToWide(kButton2ASCII));
+  views::NativeTextButton* button2 = new views::NativeTextButton(
+      NULL, ASCIIToUTF16(kButton2ASCII));
   contents->AddChildView(button2);
-  views::NativeButton* button3 = new views::NativeButton(
-      NULL, ASCIIToWide(kButton3ASCII));
+  views::NativeTextButton* button3 = new views::NativeTextButton(
+      NULL, ASCIIToUTF16(kButton3ASCII));
   contents->AddChildView(button3);
 
   // Put the view in a window.
-  views::Window* window = CreateWindowWithContents(contents);
+  views::Widget* window = CreateWindowWithContents(contents);
 
   // Set focus to the first button initially.
   button1->RequestFocus();
 
   // Start listening to ACCESSIBILITY_CONTROL_FOCUSED notifications.
-  NotificationRegistrar registrar;
+  content::NotificationRegistrar registrar;
   registrar.Add(this,
-                NotificationType::ACCESSIBILITY_CONTROL_FOCUSED,
-                NotificationService::AllSources());
+                chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
+                content::NotificationService::AllSources());
 
   // Switch on accessibility event notifications.
   ExtensionAccessibilityEventRouter* accessibility_event_router =
@@ -163,8 +190,7 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
 
   // Create a profile and associate it with this window.
   TestingProfile profile;
-  window->AsWidget()->native_widget()->SetNativeWindowProperty(
-      Profile::kProfileKey, &profile);
+  window->SetNativeWindowProperty(Profile::kProfileKey, &profile);
 
   // Change the accessible name of button3.
   button3->SetAccessibleName(ASCIIToUTF16(kButton3NewASCII));
@@ -186,6 +212,94 @@ TEST_F(AccessibilityEventRouterViewsTest, TestFocusNotification) {
   focus_manager->AdvanceFocus(false);
   EXPECT_EQ(3, focus_event_count_);
   EXPECT_EQ(kButton1ASCII, last_control_name_);
+
+  window->CloseNow();
+}
+
+TEST_F(AccessibilityEventRouterViewsTest, TestToolbarContext) {
+  const char kToolbarNameASCII[] = "MyToolbar";
+  const char kButtonNameASCII[] = "MyButton";
+
+  // Create a toolbar with a button.
+  views::View* contents = new ViewWithNameAndRole(
+      ASCIIToUTF16(kToolbarNameASCII),
+      ui::AccessibilityTypes::ROLE_TOOLBAR);
+  views::NativeTextButton* button = new views::NativeTextButton(
+      NULL, ASCIIToUTF16(kButtonNameASCII));
+  contents->AddChildView(button);
+
+  // Put the view in a window.
+  views::Widget* window = CreateWindowWithContents(contents);
+
+  // Start listening to ACCESSIBILITY_CONTROL_FOCUSED notifications.
+  content::NotificationRegistrar registrar;
+  registrar.Add(this,
+                chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
+                content::NotificationService::AllSources());
+
+  // Switch on accessibility event notifications.
+  ExtensionAccessibilityEventRouter* accessibility_event_router =
+      ExtensionAccessibilityEventRouter::GetInstance();
+  accessibility_event_router->SetAccessibilityEnabled(true);
+
+  // Create a profile and associate it with this window.
+  TestingProfile profile;
+  window->SetNativeWindowProperty(Profile::kProfileKey, &profile);
+
+  // Set focus to the button.
+  focus_event_count_ = 0;
+  button->RequestFocus();
+
+  // Test that we got the event with the expected name and context.
+  EXPECT_EQ(1, focus_event_count_);
+  EXPECT_EQ(kButtonNameASCII, last_control_name_);
+  EXPECT_EQ(kToolbarNameASCII, last_control_context_);
+
+  window->CloseNow();
+}
+
+TEST_F(AccessibilityEventRouterViewsTest, TestAlertContext) {
+  const char kAlertTextASCII[] = "MyAlertText";
+  const char kButtonNameASCII[] = "MyButton";
+
+  // Create an alert with static text and a button, similar to an infobar.
+  views::View* contents = new ViewWithNameAndRole(
+      string16(),
+      ui::AccessibilityTypes::ROLE_ALERT);
+  views::Label* label = new views::Label(ASCIIToUTF16(kAlertTextASCII));
+  contents->AddChildView(label);
+  views::NativeTextButton* button = new views::NativeTextButton(
+      NULL, ASCIIToUTF16(kButtonNameASCII));
+  contents->AddChildView(button);
+
+  // Put the view in a window.
+  views::Widget* window = CreateWindowWithContents(contents);
+
+  // Start listening to ACCESSIBILITY_CONTROL_FOCUSED notifications.
+  content::NotificationRegistrar registrar;
+  registrar.Add(this,
+                chrome::NOTIFICATION_ACCESSIBILITY_CONTROL_FOCUSED,
+                content::NotificationService::AllSources());
+
+  // Switch on accessibility event notifications.
+  ExtensionAccessibilityEventRouter* accessibility_event_router =
+      ExtensionAccessibilityEventRouter::GetInstance();
+  accessibility_event_router->SetAccessibilityEnabled(true);
+
+  // Create a profile and associate it with this window.
+  TestingProfile profile;
+  window->SetNativeWindowProperty(Profile::kProfileKey, &profile);
+
+  // Set focus to the button.
+  focus_event_count_ = 0;
+  button->RequestFocus();
+
+  // Test that we got the event with the expected name and context.
+  EXPECT_EQ(1, focus_event_count_);
+  EXPECT_EQ(kButtonNameASCII, last_control_name_);
+  EXPECT_EQ(kAlertTextASCII, last_control_context_);
+
+  window->CloseNow();
 }
 
 #endif  // defined(TOOLKIT_VIEWS)

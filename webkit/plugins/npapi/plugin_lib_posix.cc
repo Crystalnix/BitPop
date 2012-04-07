@@ -9,8 +9,8 @@
 #include <sys/exec_elf.h>
 #else
 #include <elf.h>
-#include <fcntl.h>
 #endif
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -162,7 +162,6 @@ bool PluginLib::ReadWebPluginInfo(const FilePath& filename,
   }
 
   info->path = filename;
-  info->enabled = WebPluginInfo::USER_ENABLED;
 
   // Attempt to swap in the wrapped plugin if this is nspluginwrapper.
   UnwrapNSPluginWrapper(&dl, &info->path);

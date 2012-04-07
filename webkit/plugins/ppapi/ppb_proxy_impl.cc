@@ -5,11 +5,16 @@
 #include "webkit/plugins/ppapi/ppb_proxy_impl.h"
 
 #include "ppapi/c/private/ppb_proxy_private.h"
+#include "ppapi/thunk/enter.h"
+#include "ppapi/thunk/ppb_image_data_api.h"
+#include "webkit/plugins/ppapi/host_globals.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
-#include "webkit/plugins/ppapi/resource.h"
-#include "webkit/plugins/ppapi/resource_tracker.h"
+
+using ppapi::PpapiGlobals;
+using ppapi::thunk::EnterResource;
+using ppapi::thunk::PPB_URLLoader_API;
 
 namespace webkit {
 namespace ppapi {
@@ -17,43 +22,50 @@ namespace ppapi {
 namespace {
 
 void PluginCrashed(PP_Module module) {
-  PluginModule* plugin_module = ResourceTracker::Get()->GetModule(module);
+  PluginModule* plugin_module = HostGlobals::Get()->GetModule(module);
   if (plugin_module)
     plugin_module->PluginCrashed();
 }
 
 PP_Instance GetInstanceForResource(PP_Resource resource) {
-  scoped_refptr<Resource> obj(ResourceTracker::Get()->GetResource(resource));
+  ::ppapi::Resource* obj =
+      PpapiGlobals::Get()->GetResourceTracker()->GetResource(resource);
   if (!obj)
     return 0;
-  return obj->instance()->pp_instance();
+  return obj->pp_instance();
 }
 
 void SetReserveInstanceIDCallback(PP_Module module,
                                   PP_Bool (*reserve)(PP_Module, PP_Instance)) {
-  PluginModule* plugin_module = ResourceTracker::Get()->GetModule(module);
+  PluginModule* plugin_module = HostGlobals::Get()->GetModule(module);
   if (plugin_module)
     plugin_module->SetReserveInstanceIDCallback(reserve);
 }
 
 int32_t GetURLLoaderBufferedBytes(PP_Resource url_loader) {
- scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(url_loader));
-  if (!loader)
-    return 0;
-  return loader->buffer_size();
+  EnterResource<PPB_URLLoader_API> enter(url_loader, true);
+  if (enter.succeeded())
+    return static_cast<PPB_URLLoader_Impl*>(enter.object())->buffer_size();
+  return 0;
 }
 
 void AddRefModule(PP_Module module) {
-  PluginModule* plugin_module = ResourceTracker::Get()->GetModule(module);
+  PluginModule* plugin_module = HostGlobals::Get()->GetModule(module);
   if (plugin_module)
     plugin_module->AddRef();
 }
 
 void ReleaseModule(PP_Module module) {
-  PluginModule* plugin_module = ResourceTracker::Get()->GetModule(module);
+  PluginModule* plugin_module = HostGlobals::Get()->GetModule(module);
   if (plugin_module)
     plugin_module->Release();
+}
+
+PP_Bool IsInModuleDestructor(PP_Module module) {
+  PluginModule* plugin_module = HostGlobals::Get()->GetModule(module);
+  if (plugin_module)
+    return PP_FromBool(plugin_module->is_in_destructor());
+  return PP_FALSE;
 }
 
 const PPB_Proxy_Private ppb_proxy = {
@@ -62,7 +74,8 @@ const PPB_Proxy_Private ppb_proxy = {
   &SetReserveInstanceIDCallback,
   &GetURLLoaderBufferedBytes,
   &AddRefModule,
-  &ReleaseModule
+  &ReleaseModule,
+  &IsInModuleDestructor
 };
 
 }  // namespace

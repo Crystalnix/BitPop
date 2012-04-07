@@ -21,12 +21,19 @@
 #include "base/mac/foundation_util.h"
 #endif  // OS_MACOSX
 
+#if defined(OS_ANDROID)
+#include "base/os_compat_android.h"
+#include "third_party/ashmem/ashmem.h"
+#endif
+
 namespace base {
 
 namespace {
+
 // Paranoia. Semaphores and shared memory segments should live in different
 // namespaces, but who knows what's out there.
 const char kSemaphoreSuffix[] = "-sem";
+
 }
 
 SharedMemory::SharedMemory()
@@ -84,27 +91,23 @@ SharedMemoryHandle SharedMemory::NULLHandle() {
 void SharedMemory::CloseHandle(const SharedMemoryHandle& handle) {
   DCHECK_GE(handle.fd, 0);
   if (HANDLE_EINTR(close(handle.fd)) < 0)
-    PLOG(ERROR) << "close";
+    DPLOG(ERROR) << "close";
 }
 
 bool SharedMemory::CreateAndMapAnonymous(uint32 size) {
   return CreateAnonymous(size) && Map(size);
 }
 
-bool SharedMemory::CreateAnonymous(uint32 size) {
-  return CreateNamed("", false, size);
-}
-
+#if !defined(OS_ANDROID)
 // Chromium mostly only uses the unique/private shmem as specified by
 // "name == L"". The exception is in the StatsTable.
 // TODO(jrg): there is no way to "clean up" all unused named shmem if
 // we restart from a crash.  (That isn't a new problem, but it is a problem.)
 // In case we want to delete it later, it may be useful to save the value
 // of mem_filename after FilePathForMemoryName().
-bool SharedMemory::CreateNamed(const std::string& name,
-                               bool open_existing, uint32 size) {
+bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
   DCHECK_EQ(-1, mapped_file_);
-  if (size == 0) return false;
+  if (options.size == 0) return false;
 
   // This function theoretically can block on the disk, but realistically
   // the temporary files we create will just go into the buffer cache
@@ -115,12 +118,12 @@ bool SharedMemory::CreateNamed(const std::string& name,
   bool fix_size = true;
 
   FilePath path;
-  if (name.empty()) {
+  if (options.name == NULL || options.name->empty()) {
     // It doesn't make sense to have a open-existing private piece of shmem
-    DCHECK(!open_existing);
+    DCHECK(!options.open_existing);
     // Q: Why not use the shm_open() etc. APIs?
     // A: Because they're limited to 4mb on OS X.  FFFFFFFUUUUUUUUUUU
-    fp = file_util::CreateAndOpenTemporaryShmemFile(&path);
+    fp = file_util::CreateAndOpenTemporaryShmemFile(&path, options.executable);
 
     // Deleting the file prevents anyone else from mapping it in
     // (making it private), and prevents the need for cleanup (once
@@ -129,11 +132,11 @@ bool SharedMemory::CreateNamed(const std::string& name,
       file_util::Delete(path, false);
 
   } else {
-    if (!FilePathForMemoryName(name, &path))
+    if (!FilePathForMemoryName(*options.name, &path))
       return false;
 
     fp = file_util::OpenFile(path, "w+x");
-    if (fp == NULL && open_existing) {
+    if (fp == NULL && options.open_existing) {
       // "w+" will truncate if it already exists.
       fp = file_util::OpenFile(path, "a+");
       fix_size = false;
@@ -142,16 +145,22 @@ bool SharedMemory::CreateNamed(const std::string& name,
   if (fp && fix_size) {
     // Get current size.
     struct stat stat;
-    if (fstat(fileno(fp), &stat) != 0)
+    if (fstat(fileno(fp), &stat) != 0) {
+      file_util::CloseFile(fp);
       return false;
-    const uint32 current_size = stat.st_size;
-    if (current_size != size) {
-      if (HANDLE_EINTR(ftruncate(fileno(fp), size)) != 0)
-        return false;
-      if (fseeko(fp, size, SEEK_SET) != 0)
-        return false;
     }
-    created_size_ = size;
+    const uint32 current_size = stat.st_size;
+    if (current_size != options.size) {
+      if (HANDLE_EINTR(ftruncate(fileno(fp), options.size)) != 0) {
+        file_util::CloseFile(fp);
+        return false;
+      }
+      if (fseeko(fp, options.size, SEEK_SET) != 0) {
+        file_util::CloseFile(fp);
+        return false;
+      }
+    }
+    created_size_ = options.size;
   }
   if (fp == NULL) {
 #if !defined(OS_MACOSX)
@@ -161,7 +170,7 @@ bool SharedMemory::CreateNamed(const std::string& name,
       PLOG(ERROR) << "Unable to access(W_OK|X_OK) " << dir.value();
       if (dir.value() == "/dev/shm") {
         LOG(FATAL) << "This is frequently caused by incorrect permissions on "
-        << "/dev/shm.  Try 'sudo chmod 1777 /dev/shm' to fix.";
+                   << "/dev/shm.  Try 'sudo chmod 1777 /dev/shm' to fix.";
       }
     }
 #else
@@ -201,9 +210,27 @@ bool SharedMemory::Open(const std::string& name, bool read_only) {
   return PrepareMapFile(fp);
 }
 
+#endif  // !defined(OS_ANDROID)
+
 bool SharedMemory::Map(uint32 bytes) {
   if (mapped_file_ == -1)
     return false;
+
+#if defined(OS_ANDROID)
+  if (bytes == 0) {
+    int ashmem_bytes = ashmem_get_size_region(mapped_file_);
+    if (ashmem_bytes < 0)
+      return false;
+
+    DCHECK_GE(static_cast<uint32>(ashmem_bytes), bytes);
+    // The caller wants to determine the map region size from ashmem.
+    bytes = ashmem_bytes;
+    // TODO(port): we set the created size here so that it is available in
+    // transport_dib_android.cc. We should use ashmem_get_size_region()
+    // in transport_dib_android.cc.
+    created_size_ = bytes;
+  }
+#endif
 
   memory_ = mmap(NULL, bytes, PROT_READ | (read_only_ ? 0 : PROT_WRITE),
                  MAP_SHARED, mapped_file_, 0);
@@ -248,6 +275,7 @@ void SharedMemory::Unlock() {
   LockOrUnlockCommon(F_ULOCK);
 }
 
+#if !defined(OS_ANDROID)
 bool SharedMemory::PrepareMapFile(FILE *fp) {
   DCHECK_EQ(-1, mapped_file_);
   if (fp == NULL) return false;
@@ -276,6 +304,7 @@ bool SharedMemory::PrepareMapFile(FILE *fp) {
 
   return true;
 }
+#endif
 
 // For the given shmem named |mem_name|, return a filename to mmap()
 // (and possibly create).  Modifies |filename|.  Return false on
@@ -288,7 +317,7 @@ bool SharedMemory::FilePathForMemoryName(const std::string& mem_name,
   DCHECK_EQ(std::string::npos, mem_name.find('\0'));
 
   FilePath temp_dir;
-  if (!file_util::GetShmemTempDir(&temp_dir))
+  if (!file_util::GetShmemTempDir(&temp_dir, false))
     return false;
 
 #if !defined(OS_MACOSX)
@@ -311,7 +340,7 @@ void SharedMemory::LockOrUnlockCommon(int function) {
       continue;
     } else if (errno == ENOLCK) {
       // temporary kernel resource exaustion
-      base::PlatformThread::Sleep(500);
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(500));
       continue;
     } else {
       NOTREACHED() << "lockf() failed."

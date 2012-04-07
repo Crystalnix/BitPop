@@ -4,13 +4,13 @@
 
 #include "chrome/common/service_process_util.h"
 
+#include "base/callback.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/string16.h"
-#include "base/task.h"
 #include "base/utf_string_conversions.h"
 #include "base/win/object_watcher.h"
 #include "base/win/scoped_handle.h"
@@ -20,14 +20,16 @@
 
 namespace {
 
+const char* kTerminateEventSuffix = "_service_terminate_evt";
+
 string16 GetServiceProcessReadyEventName() {
   return UTF8ToWide(
       GetServiceProcessScopedVersionedName("_service_ready"));
 }
 
-string16 GetServiceProcessShutdownEventName() {
+string16 GetServiceProcessTerminateEventName() {
   return UTF8ToWide(
-      GetServiceProcessScopedVersionedName("_service_shutdown_evt"));
+      GetServiceProcessScopedVersionedName(kTerminateEventSuffix));
 }
 
 std::string GetServiceProcessAutoRunKey() {
@@ -46,44 +48,51 @@ std::string GetObsoleteServiceProcessAutoRunKey() {
   return scoped_name;
 }
 
-class ServiceProcessShutdownMonitor
+class ServiceProcessTerminateMonitor
     : public base::win::ObjectWatcher::Delegate {
  public:
-  explicit ServiceProcessShutdownMonitor(Task* shutdown_task)
-      : shutdown_task_(shutdown_task) {
+  explicit ServiceProcessTerminateMonitor(const base::Closure& terminate_task)
+      : terminate_task_(terminate_task) {
   }
   void Start() {
-    string16 event_name = GetServiceProcessShutdownEventName();
-    CHECK(event_name.length() <= MAX_PATH);
-    shutdown_event_.Set(CreateEvent(NULL, TRUE, FALSE, event_name.c_str()));
-    watcher_.StartWatching(shutdown_event_.Get(), this);
+    string16 event_name = GetServiceProcessTerminateEventName();
+    DCHECK(event_name.length() <= MAX_PATH);
+    terminate_event_.Set(CreateEvent(NULL, TRUE, FALSE, event_name.c_str()));
+    watcher_.StartWatching(terminate_event_.Get(), this);
   }
 
   // base::ObjectWatcher::Delegate implementation.
   virtual void OnObjectSignaled(HANDLE object) {
-    shutdown_task_->Run();
-    shutdown_task_.reset();
+    if (!terminate_task_.is_null()) {
+      terminate_task_.Run();
+      terminate_task_.Reset();
+    }
   }
 
  private:
-  base::win::ScopedHandle shutdown_event_;
+  base::win::ScopedHandle terminate_event_;
   base::win::ObjectWatcher watcher_;
-  scoped_ptr<Task> shutdown_task_;
+  base::Closure terminate_task_;
 };
 
 }  // namespace
 
+// Gets the name of the service process IPC channel.
+IPC::ChannelHandle GetServiceProcessChannel() {
+  return GetServiceProcessScopedVersionedName("_service_ipc");
+}
+
 bool ForceServiceProcessShutdown(const std::string& version,
                                  base::ProcessId process_id) {
-  base::win::ScopedHandle shutdown_event;
+  base::win::ScopedHandle terminate_event;
   std::string versioned_name = version;
-  versioned_name.append("_service_shutdown_evt");
+  versioned_name.append(kTerminateEventSuffix);
   string16 event_name =
       UTF8ToWide(GetServiceProcessScopedName(versioned_name));
-  shutdown_event.Set(OpenEvent(EVENT_MODIFY_STATE, FALSE, event_name.c_str()));
-  if (!shutdown_event.IsValid())
+  terminate_event.Set(OpenEvent(EVENT_MODIFY_STATE, FALSE, event_name.c_str()));
+  if (!terminate_event.IsValid())
     return false;
-  SetEvent(shutdown_event.Get());
+  SetEvent(terminate_event.Get());
   return true;
 }
 
@@ -100,18 +109,18 @@ bool CheckServiceProcessReady() {
 struct ServiceProcessState::StateData {
   // An event that is signaled when a service process is ready.
   base::win::ScopedHandle ready_event;
-  scoped_ptr<ServiceProcessShutdownMonitor> shutdown_monitor;
+  scoped_ptr<ServiceProcessTerminateMonitor> terminate_monitor;
 };
 
 void ServiceProcessState::CreateState() {
-  CHECK(!state_);
+  DCHECK(!state_);
   state_ = new StateData;
 }
 
 bool ServiceProcessState::TakeSingletonLock() {
   DCHECK(state_);
   string16 event_name = GetServiceProcessReadyEventName();
-  CHECK(event_name.length() <= MAX_PATH);
+  DCHECK(event_name.length() <= MAX_PATH);
   base::win::ScopedHandle service_process_ready_event;
   service_process_ready_event.Set(
       CreateEvent(NULL, TRUE, FALSE, event_name.c_str()));
@@ -124,17 +133,17 @@ bool ServiceProcessState::TakeSingletonLock() {
 }
 
 bool ServiceProcessState::SignalReady(
-    base::MessageLoopProxy* message_loop_proxy, Task* shutdown_task) {
+    base::MessageLoopProxy* message_loop_proxy,
+    const base::Closure& terminate_task) {
   DCHECK(state_);
   DCHECK(state_->ready_event.IsValid());
-  scoped_ptr<Task> scoped_shutdown_task(shutdown_task);
   if (!SetEvent(state_->ready_event.Get())) {
     return false;
   }
-  if (shutdown_task) {
-    state_->shutdown_monitor.reset(
-        new ServiceProcessShutdownMonitor(scoped_shutdown_task.release()));
-    state_->shutdown_monitor->Start();
+  if (!terminate_task.is_null()) {
+    state_->terminate_monitor.reset(
+        new ServiceProcessTerminateMonitor(terminate_task));
+    state_->terminate_monitor->Start();
   }
   return true;
 }
@@ -148,7 +157,7 @@ bool ServiceProcessState::AddToAutoRun() {
   return base::win::AddCommandToAutoRun(
       HKEY_CURRENT_USER,
       UTF8ToWide(GetServiceProcessAutoRunKey()),
-      autorun_command_line_->command_line_string());
+      autorun_command_line_->GetCommandLineString());
 }
 
 bool ServiceProcessState::RemoveFromAutoRun() {

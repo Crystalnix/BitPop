@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@ cr.define('gpu', function() {
   /**
    * Provides information on the GPU process and underlying graphics hardware.
    * @constructor
-   * @extends {Tab}
+   * @extends {cr.ui.TabPanel}
    */
   var InfoView = cr.ui.define(cr.ui.TabPanel);
 
@@ -51,8 +51,20 @@ cr.define('gpu', function() {
             value: chromeVersion
           },
           {
+            description: 'Operating system',
+            value: clientInfo.operating_system
+          },
+          {
             description: 'Software rendering list version',
             value: clientInfo.blacklist_version
+          },
+          {
+            description: 'ANGLE revision',
+            value: clientInfo.angle_revision
+          },
+          {
+            description: '2D graphics backend',
+            value: clientInfo.graphics_backend
           }]);
       } else {
         this.setText_('client-info', '... loading...');
@@ -62,7 +74,7 @@ cr.define('gpu', function() {
       var featureLabelMap = {
         '2d_canvas': 'Canvas',
         '3d_css': '3D CSS',
-        'compositing': 'Compositing',
+        'compositing': 'HTML Rendering',
         'webgl': 'WebGL',
         'multisampling': 'WebGL multisampling'
       };
@@ -73,6 +85,7 @@ cr.define('gpu', function() {
         'unavailable_off': 'Unavailable. Hardware acceleration unavailable',
         'unavailable_software':
             'Software only, hardware acceleration unavailable',
+        'enabled_readback': 'Hardware accelerated, but at reduced performance',
         'enabled': 'Hardware accelerated'
       };
       var statusClassMap = {
@@ -90,6 +103,7 @@ cr.define('gpu', function() {
       var featureStatusList = this.querySelector('.feature-status-list');
       var problemsDiv = this.querySelector('.problems-div');
       var problemsList = this.querySelector('.problems-list');
+      var performanceDiv = this.querySelector('.performance-div');
       var gpuInfo = browserBridge.gpuInfo;
       var i;
       if (gpuInfo) {
@@ -143,12 +157,18 @@ cr.define('gpu', function() {
         else
           this.setTable_('basic-info', []);
 
+        if (gpuInfo.performance_info) {
+          performanceDiv.hidden = false;
+          this.setTable_('performance-info', gpuInfo.performance_info);
+        } else {
+          performanceDiv.hidden = true;
+        }
+
         if (gpuInfo.diagnostics) {
           diagnosticsDiv.hidden = false;
           diagnosticsLoadingDiv.hidden = true;
           $('diagnostics-table').hidden = false;
           this.setTable_('diagnostics-table', gpuInfo.diagnostics);
-          this.querySelector('diagnostics-status').hidden = true;
         } else if (gpuInfo.diagnostics === null) {
           // gpu_internals.cc sets diagnostics to null when it is being loaded
           diagnosticsDiv.hidden = false;
@@ -225,7 +245,7 @@ cr.define('gpu', function() {
 
     setText_: function(outputElementId, text) {
       var peg = document.getElementById(outputElementId);
-      peg.innerText = text;
+      peg.textContent = text;
     },
 
     setTable_: function(outputElementId, inputData) {

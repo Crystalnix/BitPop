@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "chrome/common/json_pref_store.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/ui/ui_test.h"
@@ -68,8 +69,8 @@ TEST_F(MetricsServiceTest, CloseRenderersNormally) {
   local_state->RegisterIntegerPref(prefs::kStabilityRendererCrashCount, 0);
   EXPECT_TRUE(local_state->GetBoolean(prefs::kStabilityExitedCleanly));
   EXPECT_EQ(1, local_state->GetInteger(prefs::kStabilityLaunchCount));
-#if defined(TOUCH_UI)
-  // The keyboard page loads for touchui.
+#if defined(USE_VIRTUAL_KEYBOARD)
+  // The keyboard page loads.
   EXPECT_EQ(4, local_state->GetInteger(prefs::kStabilityPageLoadCount));
 #else
   EXPECT_EQ(3, local_state->GetInteger(prefs::kStabilityPageLoadCount));
@@ -78,10 +79,6 @@ TEST_F(MetricsServiceTest, CloseRenderersNormally) {
 }
 
 TEST_F(MetricsServiceTest, DISABLED_CrashRenderers) {
-  // This doesn't make sense to test in single process mode.
-  if (ProxyLauncher::in_process_renderer())
-    return;
-
   OpenTabs();
 
   {
@@ -105,7 +102,7 @@ TEST_F(MetricsServiceTest, DISABLED_CrashRenderers) {
   }
 
   // Give the browser a chance to notice the crashed tab.
-  base::PlatformThread::Sleep(TestTimeouts::action_timeout_ms());
+  base::PlatformThread::Sleep(TestTimeouts::action_timeout());
 
   QuitBrowser();
 
@@ -116,8 +113,8 @@ TEST_F(MetricsServiceTest, DISABLED_CrashRenderers) {
   local_state->RegisterIntegerPref(prefs::kStabilityRendererCrashCount, 0);
   EXPECT_TRUE(local_state->GetBoolean(prefs::kStabilityExitedCleanly));
   EXPECT_EQ(1, local_state->GetInteger(prefs::kStabilityLaunchCount));
-#if defined(TOUCH_UI)
-  // The keyboard page loads for touchui.
+#if defined(USE_VIRTUAL_KEYBOARD)
+  // The keyboard page loads.
   EXPECT_EQ(5, local_state->GetInteger(prefs::kStabilityPageLoadCount));
 #else
   EXPECT_EQ(4, local_state->GetInteger(prefs::kStabilityPageLoadCount));

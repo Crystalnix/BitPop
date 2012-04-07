@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,9 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "ui/gfx/surface/surface_export.h"
 
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_ANDROID)
 #include "base/shared_memory.h"
 #endif
 
@@ -27,7 +28,7 @@ class PlatformCanvas;
 // between processes: from the renderer process to the browser, and
 // between renderer and plugin processes.
 // -----------------------------------------------------------------------------
-class TransportDIB {
+class SURFACE_EXPORT TransportDIB {
  public:
   ~TransportDIB();
 
@@ -117,6 +118,20 @@ class TransportDIB {
     static int fake_handle = 10;
     return fake_handle++;
   }
+#elif defined(OS_ANDROID)
+  typedef base::SharedMemoryHandle Handle;
+  typedef base::SharedMemoryHandle Id;
+
+  // Returns a default, invalid handle, that is meant to indicate a missing
+  // Transport DIB.
+  static Handle DefaultHandleValue() { return Handle(); }
+
+  // Returns a value that is ONLY USEFUL FOR TESTS WHERE IT WON'T BE
+  // ACTUALLY USED AS A REAL HANDLE.
+  static Handle GetFakeHandleForTest() {
+    static int fake_handle = 10;
+    return Handle(fake_handle++, false);
+  }
 #endif
 
   // Create a new TransportDIB, returning NULL on failure.
@@ -184,7 +199,7 @@ class TransportDIB {
 
  private:
   TransportDIB();
-#if defined(OS_WIN) || defined(OS_MACOSX)
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_ANDROID)
   explicit TransportDIB(base::SharedMemoryHandle dib);
   base::SharedMemory shared_memory_;
   uint32 sequence_num_;

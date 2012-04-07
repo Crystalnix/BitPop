@@ -4,7 +4,9 @@
 
 #include "remoting/protocol/protobuf_video_reader.h"
 
-#include "base/task.h"
+#include "base/bind.h"
+#include "net/socket/stream_socket.h"
+#include "remoting/base/constants.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/session.h"
 
@@ -12,21 +14,47 @@ namespace remoting {
 namespace protocol {
 
 ProtobufVideoReader::ProtobufVideoReader(VideoPacketFormat::Encoding encoding)
-    : encoding_(encoding),
+    : session_(NULL),
+      encoding_(encoding),
       video_stub_(NULL) {
 }
 
-ProtobufVideoReader::~ProtobufVideoReader() { }
-
-void ProtobufVideoReader::Init(protocol::Session* session,
-                               VideoStub* video_stub) {
-  reader_.Init(
-      session->video_channel(),
-      NewCallback(this, &ProtobufVideoReader::OnNewData));
-  video_stub_ = video_stub;
+ProtobufVideoReader::~ProtobufVideoReader() {
+  if (session_)
+    session_->CancelChannelCreation(kVideoChannelName);
 }
 
-void ProtobufVideoReader::OnNewData(VideoPacket* packet, Task* done_task) {
+void ProtobufVideoReader::Init(protocol::Session* session,
+                               VideoStub* video_stub,
+                               const InitializedCallback& callback) {
+  session_ = session;
+  initialized_callback_ = callback;
+  video_stub_ = video_stub;
+
+  session_->CreateStreamChannel(
+      kVideoChannelName,
+      base::Bind(&ProtobufVideoReader::OnChannelReady, base::Unretained(this)));
+}
+
+bool ProtobufVideoReader::is_connected() {
+  return channel_.get() != NULL;
+}
+
+void ProtobufVideoReader::OnChannelReady(net::StreamSocket* socket) {
+  if (!socket) {
+    initialized_callback_.Run(false);
+    return;
+  }
+
+  DCHECK(!channel_.get());
+  channel_.reset(socket);
+  reader_.Init(socket, base::Bind(&ProtobufVideoReader::OnNewData,
+                                  base::Unretained(this)));
+  initialized_callback_.Run(true);
+}
+
+void ProtobufVideoReader::OnNewData(VideoPacket* packet,
+                                    const base::Closure& done_task) {
   video_stub_->ProcessVideoPacket(packet, done_task);
 }
 

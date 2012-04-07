@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,11 @@
 #include "ppapi/c/dev/ppb_var_deprecated.h"
 #include "ppapi/c/dev/ppp_class_deprecated.h"
 #include "ppapi/proxy/dispatcher.h"
-#include "ppapi/proxy/interface_id.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/serialized_var.h"
+#include "ppapi/shared_impl/api_id.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 namespace {
@@ -41,7 +41,7 @@ bool HasProperty(void* object, PP_Var name, PP_Var* exception) {
   bool result = false;
   ReceiveSerializedException se(obj->dispatcher, exception);
   obj->dispatcher->Send(new PpapiMsg_PPPClass_HasProperty(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, name), &se, &result));
   return result;
 }
@@ -51,7 +51,7 @@ bool HasMethod(void* object, PP_Var name, PP_Var* exception) {
   bool result = false;
   ReceiveSerializedException se(obj->dispatcher, exception);
   obj->dispatcher->Send(new PpapiMsg_PPPClass_HasMethod(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, name), &se, &result));
   return result;
 }
@@ -63,7 +63,7 @@ PP_Var GetProperty(void* object,
   ReceiveSerializedException se(obj->dispatcher, exception);
   ReceiveSerializedVarReturnValue result;
   obj->dispatcher->Send(new PpapiMsg_PPPClass_GetProperty(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, name), &se, &result));
   return result.Return(obj->dispatcher);
 }
@@ -83,7 +83,7 @@ void SetProperty(void* object,
   ObjectProxy* obj = ToObjectProxy(object);
   ReceiveSerializedException se(obj->dispatcher, exception);
   obj->dispatcher->Send(new PpapiMsg_PPPClass_SetProperty(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, name),
       SerializedVarSendInput(obj->dispatcher, value), &se));
 }
@@ -94,7 +94,7 @@ void RemoveProperty(void* object,
   ObjectProxy* obj = ToObjectProxy(object);
   ReceiveSerializedException se(obj->dispatcher, exception);
   obj->dispatcher->Send(new PpapiMsg_PPPClass_RemoveProperty(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, name), &se));
 }
 
@@ -112,7 +112,7 @@ PP_Var Call(void* object,
                                         &argv_vect);
 
   obj->dispatcher->Send(new PpapiMsg_PPPClass_Call(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data,
       SerializedVarSendInput(obj->dispatcher, method_name), argv_vect,
       &se, &result));
   return result.Return(obj->dispatcher);
@@ -131,7 +131,7 @@ PP_Var Construct(void* object,
                                         &argv_vect);
 
   obj->dispatcher->Send(new PpapiMsg_PPPClass_Construct(
-      INTERFACE_ID_PPP_CLASS,
+      API_ID_PPP_CLASS,
       obj->ppp_class, obj->user_data, argv_vect, &se, &result));
   return result.Return(obj->dispatcher);
 }
@@ -139,7 +139,7 @@ PP_Var Construct(void* object,
 void Deallocate(void* object) {
   ObjectProxy* obj = ToObjectProxy(object);
   obj->dispatcher->Send(new PpapiMsg_PPPClass_Deallocate(
-      INTERFACE_ID_PPP_CLASS, obj->ppp_class, obj->user_data));
+      API_ID_PPP_CLASS, obj->ppp_class, obj->user_data));
   delete obj;
 }
 
@@ -175,10 +175,15 @@ void* ToUserData(int64 value) {
 // PPP_Class_Proxy -------------------------------------------------------------
 
 PPP_Class_Proxy::PPP_Class_Proxy(Dispatcher* dispatcher)
-    : InterfaceProxy(dispatcher, NULL) {
+    : InterfaceProxy(dispatcher) {
 }
 
 PPP_Class_Proxy::~PPP_Class_Proxy() {
+}
+
+// static
+InterfaceProxy* PPP_Class_Proxy::Create(Dispatcher* dispatcher) {
+  return new PPP_Class_Proxy(dispatcher);
 }
 
 // static
@@ -190,6 +195,24 @@ PP_Var PPP_Class_Proxy::CreateProxiedObject(const PPB_Var_Deprecated* var,
   ObjectProxy* object_proxy = new ObjectProxy(dispatcher,
                                               ppp_class, class_data);
   return var->CreateObject(module_id, &class_interface, object_proxy);
+}
+
+// static
+PP_Bool PPP_Class_Proxy::IsInstanceOf(const PPB_Var_Deprecated* ppb_var_impl,
+                                      const PP_Var& var,
+                                      int64 ppp_class,
+                                      int64* ppp_class_data) {
+  void* proxied_object = NULL;
+  if (ppb_var_impl->IsInstanceOf(var,
+                                 &class_interface,
+                                 &proxied_object)) {
+    if (static_cast<ObjectProxy*>(proxied_object)->ppp_class == ppp_class) {
+      DCHECK(ppp_class_data);
+      *ppp_class_data = static_cast<ObjectProxy*>(proxied_object)->user_data;
+      return PP_TRUE;
+    }
+  }
+  return PP_FALSE;
 }
 
 bool PPP_Class_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -243,7 +266,7 @@ void PPP_Class_Proxy::OnMsgGetProperty(int64 ppp_class, int64 object,
 
 void PPP_Class_Proxy::OnMsgEnumerateProperties(
     int64 ppp_class, int64 object,
-    std::vector<pp::proxy::SerializedVar>* props,
+    std::vector<SerializedVar>* props,
     SerializedVarOutParam exception) {
   NOTIMPLEMENTED();
   // TODO(brettw) implement this.
@@ -295,4 +318,4 @@ void PPP_Class_Proxy::OnMsgDeallocate(int64 ppp_class, int64 object) {
 }
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

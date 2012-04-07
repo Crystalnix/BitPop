@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_SYNC_GLUE_NON_FRONTEND_DATA_TYPE_CONTROLLER_MOCK_H__
 #pragma once
 
+#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/glue/non_frontend_data_type_controller.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -17,7 +18,7 @@ class NonFrontendDataTypeControllerMock : public NonFrontendDataTypeController {
   virtual ~NonFrontendDataTypeControllerMock();
 
   // DataTypeController mocks.
-  MOCK_METHOD1(Start, void(StartCallback* start_callback));
+  MOCK_METHOD1(Start, void(const StartCallback& start_callback));
   MOCK_METHOD0(Stop, void());
   MOCK_METHOD0(enabled, bool());
   MOCK_CONST_METHOD0(type, syncable::ModelType());
@@ -33,13 +34,13 @@ class NonFrontendDataTypeControllerMock : public NonFrontendDataTypeController {
   MOCK_METHOD0(StartAssociation, void());
   MOCK_METHOD0(CreateSyncComponents, void());
   MOCK_METHOD2(StartFailed, void(StartResult result,
-                                 const tracked_objects::Location& from_here));
+                                 const SyncError& error));
   MOCK_METHOD3(StartDone, void(DataTypeController::StartResult result,
                                DataTypeController::State new_state,
-                               const tracked_objects::Location& location));
+                               const SyncError& error));
   MOCK_METHOD3(StartDoneImpl, void(DataTypeController::StartResult result,
                                    DataTypeController::State new_state,
-                                   const tracked_objects::Location& location));
+                                   const SyncError& error));
   MOCK_METHOD0(StopModels, void());
   MOCK_METHOD0(StopAssociationAsync, bool());
   MOCK_METHOD0(StopAssociation, void());

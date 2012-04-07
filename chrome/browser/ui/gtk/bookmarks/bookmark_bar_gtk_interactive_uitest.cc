@@ -8,8 +8,8 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/gtk/view_id_util.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
 #include "net/test/test_server.h"
 
 namespace {
@@ -36,7 +36,7 @@ IN_PROC_BROWSER_TEST_F(BookmarkBarGtkInteractiveUITest, FindBarTest) {
 
   // Create new tab with an arbitrary URL.
   GURL url = test_server()->GetURL(kSimplePage);
-  browser()->AddSelectedTabWithURL(url, PageTransition::TYPED);
+  browser()->AddSelectedTabWithURL(url, content::PAGE_TRANSITION_TYPED);
 
   // Switch back to the NTP with the active findbar.
   browser()->ActivateTabAt(1, false);
@@ -52,7 +52,9 @@ IN_PROC_BROWSER_TEST_F(BookmarkBarGtkInteractiveUITest, FindBarTest) {
 }
 
 // Makes sure that you can click on the floating bookmark bar.
-IN_PROC_BROWSER_TEST_F(BookmarkBarGtkInteractiveUITest, ClickOnFloatingTest) {
+// Disabled due to http://crbug.com/88933.
+IN_PROC_BROWSER_TEST_F(
+    BookmarkBarGtkInteractiveUITest, DISABLED_ClickOnFloatingTest) {
   ASSERT_TRUE(test_server()->Start());
 
   GtkWidget* other_bookmarks =

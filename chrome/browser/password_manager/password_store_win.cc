@@ -6,6 +6,7 @@
 
 #include <map>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -14,7 +15,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/webdata/web_data_service.h"
 
-using webkit_glue::PasswordForm;
+using content::BrowserThread;
+using webkit::forms::PasswordForm;
 
 namespace {
 // Subclass GetLoginsRequest in order to hold a copy of the form information
@@ -23,7 +25,8 @@ namespace {
 // not set.
 class FormGetLoginsRequest : public PasswordStore::GetLoginsRequest {
  public:
-  explicit FormGetLoginsRequest(PasswordStore::GetLoginsCallback* callback)
+  explicit FormGetLoginsRequest(
+      const PasswordStore::GetLoginsCallback& callback)
       : GetLoginsRequest(callback) {}
 
   // We hold a copy of the |form| used in GetLoginsImpl as a pointer.  If the
@@ -159,8 +162,7 @@ void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
   if (ie7_form)
     request->value.push_back(ie7_form);
 
-  request->ForwardResult(GetLoginsRequest::TupleType(request->handle(),
-                                                     request->value));
+  request->ForwardResult(request->handle(), request->value);
 }
 
 PasswordStoreWin::PasswordStoreWin(LoginDatabase* login_database,
@@ -179,14 +181,14 @@ void PasswordStoreWin::ShutdownOnDBThread() {
 }
 
 PasswordStore::GetLoginsRequest* PasswordStoreWin::NewGetLoginsRequest(
-    GetLoginsCallback* callback) {
+    const GetLoginsCallback& callback) {
   return new FormGetLoginsRequest(callback);
 }
 
 void PasswordStoreWin::Shutdown() {
   BrowserThread::PostTask(
       BrowserThread::DB, FROM_HERE,
-      NewRunnableMethod(this, &PasswordStoreWin::ShutdownOnDBThread));
+      base::Bind(&PasswordStoreWin::ShutdownOnDBThread, this));
   PasswordStoreDefault::Shutdown();
 }
 

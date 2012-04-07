@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 #define MEDIA_BASE_PIPELINE_STATUS_H_
 
 #include "base/callback.h"
-#include "base/callback_old.h"
 
 namespace media {
 
@@ -30,11 +29,12 @@ enum PipelineStatus {
   DEMUXER_ERROR_COULD_NOT_PARSE,
   DEMUXER_ERROR_NO_SUPPORTED_STREAMS,
   DEMUXER_ERROR_COULD_NOT_CREATE_THREAD,
+  // Decoder related errors.
+  DECODER_ERROR_NOT_SUPPORTED,
   // DataSourceFactory errors.
   DATASOURCE_ERROR_URL_NOT_SUPPORTED,
 };
 
-typedef Callback1<media::PipelineStatus>::Type PipelineStatusCallback;
 typedef base::Callback<void(PipelineStatus)> PipelineStatusCB;
 
 }  // namespace media

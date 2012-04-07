@@ -21,8 +21,7 @@
 
   'targets': [
     {
-      'target_name': 'ssl',
-      'product_name': 'ssl',
+      'target_name': 'libssl',
       'type': 'static_library',
       'sources': [
         'ssl/authcert.c',
@@ -34,7 +33,6 @@
         'ssl/os2_err.h',
         'ssl/preenc.h',
         'ssl/prelib.c',
-        'ssl/snapstart.c',
         'ssl/ssl.h',
         'ssl/ssl3con.c',
         'ssl/ssl3ecc.c',
@@ -82,6 +80,9 @@
       'defines!': [
         # Regrettably, NSS can't be compiled with NO_NSPR_10_SUPPORT yet.
         'NO_NSPR_10_SUPPORT',
+      ],
+      'dependencies': [
+        '../../../third_party/zlib/zlib.gyp:zlib',
       ],
       'msvs_disabled_warnings': [4018, 4244],
       'conditions': [
@@ -135,7 +136,7 @@
             'NSS_PLATFORM_CLIENT_AUTH',
           ],
           'dependencies': [
-            '../../../third_party/zlib/zlib.gyp:zlib',
+            '../../../third_party/nss/nss.gyp:nspr',
             '../../../third_party/nss/nss.gyp:nss',
           ],
           'direct_dependent_settings': {
@@ -158,9 +159,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

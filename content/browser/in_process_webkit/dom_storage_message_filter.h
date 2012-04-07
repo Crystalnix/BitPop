@@ -7,12 +7,12 @@
 #pragma once
 
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_helpers.h"
 #include "base/process.h"
-#include "base/tracked.h"
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/in_process_webkit/dom_storage_area.h"
 #include "content/browser/in_process_webkit/webkit_context.h"
 #include "content/common/dom_storage_common.h"
+#include "content/public/browser/browser_message_filter.h"
 
 class DOMStorageContext;
 class GURL;
@@ -21,18 +21,19 @@ struct DOMStorageMsg_Event_Params;
 // This class handles the logistics of DOM Storage within the browser process.
 // It mostly ferries information between IPCs and the WebKit implementations,
 // but it also handles some special cases like when renderer processes die.
-class DOMStorageMessageFilter : public BrowserMessageFilter {
+class DOMStorageMessageFilter : public content::BrowserMessageFilter {
  public:
   // Only call the constructor from the UI thread.
   DOMStorageMessageFilter(int process_id, WebKitContext* webkit_context);
 
-  // BrowserMessageFilter implementation
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+  // content::BrowserMessageFilter implementation
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
-  virtual void OnDestruct() const;
+                                 bool* message_was_ok) OVERRIDE;
+  virtual void OnDestruct() const OVERRIDE;
 
   // Only call on the WebKit thread.
   static void DispatchStorageEvent(const NullableString16& key,
@@ -40,8 +41,8 @@ class DOMStorageMessageFilter : public BrowserMessageFilter {
       const string16& origin, const GURL& url, bool is_local_storage);
 
  private:
-  friend class BrowserThread;
-  friend class DeleteTask<DOMStorageMessageFilter>;
+  friend class content::BrowserThread;
+  friend class base::DeleteHelper<DOMStorageMessageFilter>;
   virtual ~DOMStorageMessageFilter();
 
   // Message Handlers.
@@ -80,7 +81,7 @@ class DOMStorageMessageFilter : public BrowserMessageFilter {
   static DOMStorageMessageFilter* storage_event_message_filter;
   static const GURL* storage_event_url_;
 
-  // Data shared between renderer processes with the same profile.
+  // Data shared between renderer processes with the same browser context.
   scoped_refptr<WebKitContext> webkit_context_;
 
   // Used to dispatch messages to the correct view host.

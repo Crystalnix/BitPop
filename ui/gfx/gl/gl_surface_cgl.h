@@ -23,25 +23,27 @@ class GLSurfaceCGL : public GLSurface {
   DISALLOW_COPY_AND_ASSIGN(GLSurfaceCGL);
 };
 
-// A surface used to render to an offscreen pbuffer.
-class PbufferGLSurfaceCGL : public GLSurfaceCGL {
+// A "no-op" surface. It is not required that a CGLContextObj have an
+// associated drawable (pbuffer or fullscreen context) in order to be
+// made current. Everywhere this surface type is used, we allocate an
+// FBO at the user level as the drawable of the associated context.
+class NoOpGLSurfaceCGL : public GLSurfaceCGL {
  public:
-  explicit PbufferGLSurfaceCGL(const gfx::Size& size);
-  virtual ~PbufferGLSurfaceCGL();
+  explicit NoOpGLSurfaceCGL(const gfx::Size& size);
+  virtual ~NoOpGLSurfaceCGL();
 
   // Implement GLSurface.
-  virtual bool Initialize();
-  virtual void Destroy();
-  virtual bool IsOffscreen();
-  virtual bool SwapBuffers();
-  virtual gfx::Size GetSize();
-  virtual void* GetHandle();
+  virtual bool Initialize() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+  virtual gfx::Size GetSize() OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
 
  private:
   gfx::Size size_;
-  void* pbuffer_;
 
-  DISALLOW_COPY_AND_ASSIGN(PbufferGLSurfaceCGL);
+  DISALLOW_COPY_AND_ASSIGN(NoOpGLSurfaceCGL);
 };
 
 }  // namespace gfx

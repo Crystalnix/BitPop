@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,28 +6,34 @@
 
 #include <iterator>
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "skia/ext/platform_canvas.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/ppb_graphics_2d.h"
-#include "ppapi/cpp/common.h"
+#include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/thunk.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/blit.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "webkit/plugins/ppapi/common.h"
+#include "webkit/plugins/ppapi/gfx_conversion.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_image_data_impl.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #endif
+
+using ppapi::thunk::EnterResourceNoLock;
+using ppapi::thunk::PPB_ImageData_API;
+using ppapi::TrackedCallback;
 
 namespace webkit {
 namespace ppapi {
@@ -147,25 +153,36 @@ struct PPB_Graphics2D_Impl::QueuedOperation {
   scoped_refptr<PPB_ImageData_Impl> replace_image;
 };
 
-PPB_Graphics2D_Impl::PPB_Graphics2D_Impl(PluginInstance* instance)
+PPB_Graphics2D_Impl::PPB_Graphics2D_Impl(PP_Instance instance)
     : Resource(instance),
       bound_instance_(NULL),
-      flushed_any_data_(false),
       offscreen_flush_pending_(false),
-      is_always_opaque_(false) {
+      is_always_opaque_(false),
+      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
 }
 
 PPB_Graphics2D_Impl::~PPB_Graphics2D_Impl() {
+  // LastPluginRefWasDeleted should have aborted all pending callbacks.
+  DCHECK(painted_flush_callback_.is_null());
+  DCHECK(unpainted_flush_callback_.is_null());
 }
 
 // static
-const PPB_Graphics2D* PPB_Graphics2D_Impl::GetInterface() {
-  return ::ppapi::thunk::GetPPB_Graphics2D_Thunk();
+PP_Resource PPB_Graphics2D_Impl::Create(PP_Instance instance,
+                                        const PP_Size& size,
+                                        PP_Bool is_always_opaque) {
+  scoped_refptr<PPB_Graphics2D_Impl> graphics_2d(
+      new PPB_Graphics2D_Impl(instance));
+  if (!graphics_2d->Init(size.width, size.height,
+                         PPBoolToBool(is_always_opaque))) {
+    return 0;
+  }
+  return graphics_2d->GetReference();
 }
 
 bool PPB_Graphics2D_Impl::Init(int width, int height, bool is_always_opaque) {
   // The underlying PPB_ImageData_Impl will validate the dimensions.
-  image_data_ = new PPB_ImageData_Impl(instance());
+  image_data_ = new PPB_ImageData_Impl(pp_instance());
   if (!image_data_->Init(PPB_ImageData_Impl::GetNativeImageDataFormat(),
                          width, height, true) ||
       !image_data_->Map()) {
@@ -181,15 +198,19 @@ PPB_Graphics2D_Impl::AsPPB_Graphics2D_API() {
   return this;
 }
 
-PPB_Graphics2D_Impl* PPB_Graphics2D_Impl::AsPPB_Graphics2D_Impl() {
-  return this;
+void PPB_Graphics2D_Impl::LastPluginRefWasDeleted() {
+  Resource::LastPluginRefWasDeleted();
+
+  // Abort any pending callbacks.
+  unpainted_flush_callback_.PostAbort();
+  painted_flush_callback_.PostAbort();
 }
 
 PP_Bool PPB_Graphics2D_Impl::Describe(PP_Size* size,
                                       PP_Bool* is_always_opaque) {
   size->width = image_data_->width();
   size->height = image_data_->height();
-  *is_always_opaque = pp::BoolToPPBool(is_always_opaque_);
+  *is_always_opaque = PP_FromBool(is_always_opaque_);
   return PP_TRUE;
 }
 
@@ -199,17 +220,24 @@ void PPB_Graphics2D_Impl::PaintImageData(PP_Resource image_data,
   if (!top_left)
     return;
 
-  scoped_refptr<PPB_ImageData_Impl> image_resource(
-      Resource::GetAs<PPB_ImageData_Impl>(image_data));
-  if (!image_resource)
+  EnterResourceNoLock<PPB_ImageData_API> enter(image_data, true);
+  if (enter.failed()) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.PaintImageData: Bad image resource.");
     return;
+  }
+  PPB_ImageData_Impl* image_resource =
+      static_cast<PPB_ImageData_Impl*>(enter.object());
 
   QueuedOperation operation(QueuedOperation::PAINT);
   operation.paint_image = image_resource;
   if (!ValidateAndConvertRect(src_rect, image_resource->width(),
                               image_resource->height(),
-                              &operation.paint_src_rect))
+                              &operation.paint_src_rect)) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.PaintImageData: Rectangle is outside bounds.");
     return;
+  }
 
   // Validate the bitmap position using the previously-validated rect, there
   // should be no painted area outside of the image.
@@ -235,16 +263,22 @@ void PPB_Graphics2D_Impl::Scroll(const PP_Rect* clip_rect,
   if (!ValidateAndConvertRect(clip_rect,
                               image_data_->width(),
                               image_data_->height(),
-                              &operation.scroll_clip_rect))
+                              &operation.scroll_clip_rect)) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.Scroll: Rectangle is outside bounds.");
     return;
+  }
 
   // If we're being asked to scroll by more than the clip rect size, just
   // ignore this scroll command and say it worked.
   int32 dx = amount->x;
   int32 dy = amount->y;
   if (dx <= -image_data_->width() || dx >= image_data_->width() ||
-      dy <= -image_data_->height() || dy >= image_data_->height())
+      dy <= -image_data_->height() || dy >= image_data_->height()) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.Scroll: Scroll amount is larger than image size.");
     return;
+  }
 
   operation.scroll_dx = dx;
   operation.scroll_dy = dy;
@@ -253,17 +287,26 @@ void PPB_Graphics2D_Impl::Scroll(const PP_Rect* clip_rect,
 }
 
 void PPB_Graphics2D_Impl::ReplaceContents(PP_Resource image_data) {
-  scoped_refptr<PPB_ImageData_Impl> image_resource(
-      Resource::GetAs<PPB_ImageData_Impl>(image_data));
-  if (!image_resource)
+  EnterResourceNoLock<PPB_ImageData_API> enter(image_data, true);
+  if (enter.failed())
     return;
+  PPB_ImageData_Impl* image_resource =
+      static_cast<PPB_ImageData_Impl*>(enter.object());
+
   if (!PPB_ImageData_Impl::IsImageDataFormatSupported(
-          image_resource->format()))
+          image_resource->format())) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.ReplaceContents: Image data format is not supported.");
     return;
+  }
 
   if (image_resource->width() != image_data_->width() ||
-      image_resource->height() != image_data_->height())
+      image_resource->height() != image_data_->height()) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics2D.ReplaceContents: Image size doesn't match "
+        "Graphics2D size.");
     return;
+  }
 
   QueuedOperation operation(QueuedOperation::REPLACE);
   operation.replace_image = image_resource;
@@ -271,14 +314,12 @@ void PPB_Graphics2D_Impl::ReplaceContents(PP_Resource image_data) {
 }
 
 int32_t PPB_Graphics2D_Impl::Flush(PP_CompletionCallback callback) {
+  if (!callback.func)
+    return PP_ERROR_BLOCKS_MAIN_THREAD;
+
   // Don't allow more than one pending flush at a time.
   if (HasPendingFlush())
     return PP_ERROR_INPROGRESS;
-
-  // TODO(brettw) check that the current thread is not the main one and
-  // implement blocking flushes in this case.
-  if (!callback.func)
-    return PP_ERROR_BADARGUMENT;
 
   bool nothing_visible = true;
   for (size_t i = 0; i < queued_operations_.size(); i++) {
@@ -304,10 +345,12 @@ int32_t PPB_Graphics2D_Impl::Flush(PP_CompletionCallback callback) {
     // We need the rect to be in terms of the current clip rect of the plugin
     // since that's what will actually be painted. If we issue an invalidate
     // for a clipped-out region, WebKit will do nothing and we won't get any
-    // ViewInitiatedPaint/ViewFlushedPaint calls, leaving our callback stranded.
+    // ViewWillInitiatePaint/ViewFlushedPaint calls, leaving our callback
+    // stranded.
     gfx::Rect visible_changed_rect;
     if (bound_instance_ && !op_rect.IsEmpty())
-      visible_changed_rect = bound_instance_->clip().Intersect(op_rect);
+      visible_changed_rect =PP_ToGfxRect(bound_instance_->view_data().clip_rect).
+          Intersect(op_rect);
 
     if (bound_instance_ && !visible_changed_rect.IsEmpty()) {
       if (operation.type == QueuedOperation::SCROLL) {
@@ -320,14 +363,15 @@ int32_t PPB_Graphics2D_Impl::Flush(PP_CompletionCallback callback) {
     }
   }
   queued_operations_.clear();
-  flushed_any_data_ = true;
 
   if (nothing_visible) {
     // There's nothing visible to invalidate so just schedule the callback to
     // execute in the next round of the message loop.
-    ScheduleOffscreenCallback(FlushCallbackData(callback));
+    ScheduleOffscreenCallback(FlushCallbackData(
+        scoped_refptr<TrackedCallback>(new TrackedCallback(this, callback))));
   } else {
-    unpainted_flush_callback_.Set(callback);
+    unpainted_flush_callback_.Set(
+        scoped_refptr<TrackedCallback>(new TrackedCallback(this, callback)));
   }
   return PP_OK_COMPLETIONPENDING;
 }
@@ -335,10 +379,11 @@ int32_t PPB_Graphics2D_Impl::Flush(PP_CompletionCallback callback) {
 bool PPB_Graphics2D_Impl::ReadImageData(PP_Resource image,
                                         const PP_Point* top_left) {
   // Get and validate the image object to paint into.
-  scoped_refptr<PPB_ImageData_Impl> image_resource(
-      Resource::GetAs<PPB_ImageData_Impl>(image));
-  if (!image_resource)
+  EnterResourceNoLock<PPB_ImageData_API> enter(image, true);
+  if (enter.failed())
     return false;
+  PPB_ImageData_Impl* image_resource =
+      static_cast<PPB_ImageData_Impl*>(enter.object());
   if (!PPB_ImageData_Impl::IsImageDataFormatSupported(
           image_resource->format()))
     return false;  // Must be in the right format.
@@ -369,9 +414,9 @@ bool PPB_Graphics2D_Impl::ReadImageData(PP_Resource image,
 
   if (image_resource->format() != image_data_->format()) {
     // Convert the image data if the format does not match.
-    ConvertImageData(image_data_, src_irect, image_resource.get(), dest_rect);
+    ConvertImageData(image_data_, src_irect, image_resource, dest_rect);
   } else {
-    skia::PlatformCanvas* dest_canvas = image_resource->mapped_canvas();
+    skia::PlatformCanvas* dest_canvas = image_resource->GetPlatformCanvas();
 
     // We want to replace the contents of the bitmap rather than blend.
     SkPaint paint;
@@ -402,15 +447,8 @@ bool PPB_Graphics2D_Impl::BindToInstance(PluginInstance* new_instance) {
       std::swap(callback, painted_flush_callback_);
       ScheduleOffscreenCallback(callback);
     }
-  } else if (flushed_any_data_) {
-    // Only schedule a paint if this backing store has had any data flushed to
-    // it. This is an optimization. A "normal" plugin will first allocated a
-    // backing store, bind it, and then execute their normal painting and
-    // update loop. If binding a device always invalidated, it would mean we
-    // would get one paint for the bind, and one for the first time the plugin
-    // actually painted something. By not bothering to schedule an invalidate
-    // when an empty device is initially bound, we can save an extra paint for
-    // many plugins during the critical page initialization phase.
+  } else {
+    // Devices being replaced, redraw the plugin.
     new_instance->InvalidateRect(gfx::Rect());
   }
 
@@ -474,19 +512,45 @@ void PPB_Graphics2D_Impl::Paint(WebKit::WebCanvas* canvas,
   CGContextDrawImage(canvas, bitmap_rect, image);
   CGContextRestoreGState(canvas);
 #else
+  SkRect sk_plugin_rect = SkRect::MakeXYWH(
+      SkIntToScalar(plugin_rect.origin().x()),
+      SkIntToScalar(plugin_rect.origin().y()),
+      SkIntToScalar(plugin_rect.width()),
+      SkIntToScalar(plugin_rect.height()));
+  canvas->save();
+  canvas->clipRect(sk_plugin_rect);
+
+  PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(this);
+  if (!plugin_instance)
+    return;
+  if (plugin_instance->IsFullPagePlugin()) {
+    // When we're resizing a window with a full-frame plugin, the plugin may
+    // not yet have bound a new device, which will leave parts of the
+    // background exposed if the window is getting larger. We want this to
+    // show white (typically less jarring) rather than black or uninitialized.
+    // We don't do this for non-full-frame plugins since we specifically want
+    // the page background to show through.
+    canvas->save();
+    SkRect image_data_rect = SkRect::MakeXYWH(
+        SkIntToScalar(plugin_rect.origin().x()),
+        SkIntToScalar(plugin_rect.origin().y()),
+        SkIntToScalar(image_data_->width()),
+        SkIntToScalar(image_data_->height()));
+    canvas->clipRect(image_data_rect, SkRegion::kDifference_Op);
+
+    SkPaint paint;
+    paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+    paint.setColor(SK_ColorWHITE);
+    canvas->drawRect(sk_plugin_rect, paint);
+    canvas->restore();
+  }
+
   SkPaint paint;
   if (is_always_opaque_) {
     // When we know the device is opaque, we can disable blending for slightly
     // more optimized painting.
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
   }
-
-  canvas->save();
-  SkRect clip_rect = SkRect::MakeXYWH(SkIntToScalar(plugin_rect.origin().x()),
-                                      SkIntToScalar(plugin_rect.origin().y()),
-                                      SkIntToScalar(plugin_rect.width()),
-                                      SkIntToScalar(plugin_rect.height()));
-  canvas->clipRect(clip_rect);
   canvas->drawBitmap(backing_bitmap,
                      SkIntToScalar(plugin_rect.x()),
                      SkIntToScalar(plugin_rect.y()),
@@ -495,7 +559,7 @@ void PPB_Graphics2D_Impl::Paint(WebKit::WebCanvas* canvas,
 #endif
 }
 
-void PPB_Graphics2D_Impl::ViewInitiatedPaint() {
+void PPB_Graphics2D_Impl::ViewWillInitiatePaint() {
   // Move any "unpainted" callback to the painted state. See
   // |unpainted_flush_callback_| in the header for more.
   if (!unpainted_flush_callback_.is_null()) {
@@ -504,17 +568,14 @@ void PPB_Graphics2D_Impl::ViewInitiatedPaint() {
   }
 }
 
+void PPB_Graphics2D_Impl::ViewInitiatedPaint() {
+}
+
 void PPB_Graphics2D_Impl::ViewFlushedPaint() {
   // Notify any "painted" callback. See |unpainted_flush_callback_| in the
   // header for more.
-  if (!painted_flush_callback_.is_null()) {
-    // We must clear this variable before issuing the callback. It will be
-    // common for the plugin to issue another invalidate in response to a flush
-    // callback, and we don't want to think that a callback is already pending.
-    FlushCallbackData callback;
-    std::swap(callback, painted_flush_callback_);
-    callback.Execute(PP_OK);
-  }
+  if (!painted_flush_callback_.is_null())
+    painted_flush_callback_.Execute(PP_OK);
 }
 
 void PPB_Graphics2D_Impl::ExecutePaintImageData(PPB_ImageData_Impl* image,
@@ -543,7 +604,7 @@ void PPB_Graphics2D_Impl::ExecutePaintImageData(PPB_ImageData_Impl* image,
     ConvertImageData(image, src_irect, image_data_, dest_rect);
   } else {
     // We're guaranteed to have a mapped canvas since we mapped it in Init().
-    skia::PlatformCanvas* backing_canvas = image_data_->mapped_canvas();
+    skia::PlatformCanvas* backing_canvas = image_data_->GetPlatformCanvas();
 
     // We want to replace the contents of the bitmap rather than blend.
     SkPaint paint;
@@ -556,7 +617,7 @@ void PPB_Graphics2D_Impl::ExecutePaintImageData(PPB_ImageData_Impl* image,
 void PPB_Graphics2D_Impl::ExecuteScroll(const gfx::Rect& clip,
                                         int dx, int dy,
                                         gfx::Rect* invalidated_rect) {
-  gfx::ScrollCanvas(image_data_->mapped_canvas(),
+  gfx::ScrollCanvas(image_data_->GetPlatformCanvas(),
                     clip, gfx::Point(dx, dy));
   *invalidated_rect = clip;
 }
@@ -591,9 +652,9 @@ void PPB_Graphics2D_Impl::ScheduleOffscreenCallback(
   offscreen_flush_pending_ = true;
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &PPB_Graphics2D_Impl::ExecuteOffscreenCallback,
-                        callback));
+      base::Bind(&PPB_Graphics2D_Impl::ExecuteOffscreenCallback,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 callback));
 }
 
 void PPB_Graphics2D_Impl::ExecuteOffscreenCallback(FlushCallbackData data) {

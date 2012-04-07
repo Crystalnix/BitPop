@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/message_loop_proxy.h"
 #include "base/memory/ref_counted.h"
 #include "base/platform_file.h"
@@ -15,6 +15,7 @@
 #include "base/sync_socket.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
+#include "media/video/capture/video_capture.h"
 #include "media/video/video_decode_accelerator.h"
 #include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/pp_completion_callback.h"
@@ -24,11 +25,12 @@
 #include "ui/gfx/size.h"
 #include "webkit/fileapi/file_system_types.h"
 #include "webkit/plugins/ppapi/dir_contents.h"
+#include "webkit/quota/quota_types.h"
 
-class AudioMessageFilter;
 class GURL;
-class P2PSocketDispatcher;
+struct PP_NetAddress_Private;
 class SkBitmap;
+class TransportDIB;
 
 namespace base {
 class MessageLoopProxy;
@@ -41,7 +43,6 @@ class FileSystemCallbackDispatcher;
 
 namespace gfx {
 class Point;
-class Rect;
 }
 
 namespace gpu {
@@ -58,16 +59,14 @@ class PlatformCanvas;
 
 namespace WebKit {
 class WebFileChooserCompletion;
+class WebGamepads;
+struct WebCursorInfo;
 struct WebFileChooserParams;
 }
 
 namespace webkit_glue {
 class P2PTransport;
 }  // namespace webkit_glue
-
-struct PP_Flash_NetAddress;
-
-class TransportDIB;
 
 namespace webkit {
 namespace ppapi {
@@ -80,6 +79,8 @@ class PluginModule;
 class PPB_Broker_Impl;
 class PPB_Flash_Menu_Impl;
 class PPB_Flash_NetConnector_Impl;
+class PPB_TCPSocket_Private_Impl;
+class PPB_UDPSocket_Private_Impl;
 
 // Virtual interface that the browser implements to implement features for
 // PPAPI plugins.
@@ -158,12 +159,7 @@ class PluginDelegate {
     virtual ~PlatformContext3D() {}
 
     // Initialize the context.
-    virtual bool Init() = 0;
-
-    // Set an optional callback that will be invoked when the side effects of
-    // a SwapBuffers call become visible to the compositor. Takes ownership
-    // of the callback.
-    virtual void SetSwapBuffersCallback(Callback0::Type* callback) = 0;
+    virtual bool Init(const int32* attrib_list) = 0;
 
     // If the plugin instance is backed by an OpenGL, return its ID in the
     // compositors namespace. Otherwise return 0. Returns 0 by default.
@@ -172,26 +168,36 @@ class PluginDelegate {
     // This call will return the address of the command buffer for this context
     // that is constructed in Initialize() and is valid until this context is
     // destroyed.
-    virtual gpu::CommandBuffer* GetCommandBuffer() = 0;
+    virtual ::gpu::CommandBuffer* GetCommandBuffer() = 0;
+
+    // If the command buffer is routed in the GPU channel, return the route id.
+    // Otherwise return 0.
+    virtual int GetCommandBufferRouteId() = 0;
 
     // Set an optional callback that will be invoked when the context is lost
     // (e.g. gpu process crash). Takes ownership of the callback.
-    virtual void SetContextLostCallback(Callback0::Type* callback) = 0;
+    virtual void SetContextLostCallback(
+        const base::Callback<void()>& callback) = 0;
+
+    // Run the callback once the channel has been flushed.
+    virtual bool Echo(const base::Callback<void()>& callback) = 0;
+  };
+
+  // The (interface for the) client used by |PlatformAudio| and
+  // |PlatformAudioInput|.
+  class PlatformAudioCommonClient {
+   protected:
+    virtual ~PlatformAudioCommonClient() {}
+
+   public:
+    // Called when the stream is created.
+    virtual void StreamCreated(base::SharedMemoryHandle shared_memory_handle,
+                               size_t shared_memory_size,
+                               base::SyncSocket::Handle socket) = 0;
   };
 
   class PlatformAudio {
    public:
-    class Client {
-     protected:
-      virtual ~Client() {}
-
-     public:
-      // Called when the stream is created.
-      virtual void StreamCreated(base::SharedMemoryHandle shared_memory_handle,
-                                 size_t shared_memory_size,
-                                 base::SyncSocket::Handle socket) = 0;
-    };
-
     // Starts the playback. Returns false on error or if called before the
     // stream is created or after the stream is closed.
     virtual bool StartPlayback() = 0;
@@ -208,11 +214,34 @@ class PluginDelegate {
     virtual ~PlatformAudio() {}
   };
 
+  class PlatformAudioInput {
+   public:
+    // Starts the playback. Returns false on error or if called before the
+    // stream is created or after the stream is closed.
+    virtual bool StartCapture() = 0;
+
+    // Stops the capture. Returns false on error or if called before the stream
+    // is created or after the stream is closed.
+    virtual bool StopCapture() = 0;
+
+    // Closes the stream. Make sure to call this before the object is
+    // destructed.
+    virtual void ShutDown() = 0;
+
+   protected:
+    virtual ~PlatformAudioInput() {}
+  };
+
   // Interface for PlatformVideoDecoder is directly inherited from general media
   // VideoDecodeAccelerator interface.
   class PlatformVideoDecoder : public media::VideoDecodeAccelerator {
-   public:
+   protected:
     virtual ~PlatformVideoDecoder() {}
+  };
+
+  class PlatformVideoCapture : public media::VideoCapture {
+   public:
+    virtual ~PlatformVideoCapture() {}
   };
 
   // Provides access to the ppapi broker.
@@ -231,7 +260,17 @@ class PluginDelegate {
   };
 
   // Notification that the given plugin is focused or unfocused.
-  virtual void PluginFocusChanged(bool focused) = 0;
+  virtual void PluginFocusChanged(webkit::ppapi::PluginInstance* instance,
+                                  bool focused) = 0;
+  // Notification that the text input status of the given plugin is changed.
+  virtual void PluginTextInputTypeChanged(
+      webkit::ppapi::PluginInstance* instance) = 0;
+  // Notification that the caret position in the given plugin is changed.
+  virtual void PluginCaretPositionChanged(
+      webkit::ppapi::PluginInstance* instance) = 0;
+  // Notification that the plugin requested to cancel the current composition.
+  virtual void PluginRequestedCancelComposition(
+      webkit::ppapi::PluginInstance* instance) = 0;
 
   // Notification that the given plugin has crashed. When a plugin crashes, all
   // instances associated with that plugin will notify that they've crashed via
@@ -257,14 +296,25 @@ class PluginDelegate {
   virtual PlatformContext3D* CreateContext3D() = 0;
 
   // The caller will own the pointer returned from this.
+  virtual PlatformVideoCapture* CreateVideoCapture(
+      media::VideoCapture::EventHandler* handler) = 0;
+
+  // The caller will own the pointer returned from this.
   virtual PlatformVideoDecoder* CreateVideoDecoder(
-      media::VideoDecodeAccelerator::Client* client) = 0;
+      media::VideoDecodeAccelerator::Client* client,
+      int32 command_buffer_route_id) = 0;
 
   // The caller is responsible for calling Shutdown() on the returned pointer
   // to clean up the corresponding resources allocated during this call.
   virtual PlatformAudio* CreateAudio(uint32_t sample_rate,
                                      uint32_t sample_count,
-                                     PlatformAudio::Client* client) = 0;
+                                     PlatformAudioCommonClient* client) = 0;
+
+  // The caller is responsible for calling Shutdown() on the returned pointer
+  // to clean up the corresponding resources allocated during this call.
+  virtual PlatformAudioInput* CreateAudioInput(uint32_t sample_rate,
+      uint32_t sample_count,
+      PlatformAudioCommonClient* client) = 0;
 
   // A pointer is returned immediately, but it is not ready to be used until
   // BrokerConnected has been called.
@@ -287,14 +337,15 @@ class PluginDelegate {
       WebKit::WebFileChooserCompletion* chooser_completion) = 0;
 
   // Sends an async IPC to open a file.
-  typedef Callback2<base::PlatformFileError, base::PlatformFile
-                    >::Type AsyncOpenFileCallback;
+  typedef base::Callback<void (base::PlatformFileError, base::PassPlatformFile)>
+      AsyncOpenFileCallback;
   virtual bool AsyncOpenFile(const FilePath& path,
                              int flags,
-                             AsyncOpenFileCallback* callback) = 0;
-  virtual bool AsyncOpenFileSystemURL(const GURL& path,
-                                      int flags,
-                                      AsyncOpenFileCallback* callback) = 0;
+                             const AsyncOpenFileCallback& callback) = 0;
+  virtual bool AsyncOpenFileSystemURL(
+      const GURL& path,
+      int flags,
+      const AsyncOpenFileCallback& callback) = 0;
 
   virtual bool OpenFileSystem(
       const GURL& url,
@@ -320,6 +371,14 @@ class PluginDelegate {
       const GURL& directory_path,
       fileapi::FileSystemCallbackDispatcher* dispatcher) = 0;
 
+  // For quota handlings for FileIO API.
+  typedef base::Callback<void (int64)> AvailableSpaceCallback;
+  virtual void QueryAvailableSpace(const GURL& origin,
+                                   quota::StorageType type,
+                                   const AvailableSpaceCallback& callback) = 0;
+  virtual void WillUpdateFile(const GURL& file_path) = 0;
+  virtual void DidUpdateFile(const GURL& file_path, int64_t delta) = 0;
+
   virtual base::PlatformFileError OpenFile(const PepperFilePath& path,
                                            int flags,
                                            base::PlatformFile* file) = 0;
@@ -333,6 +392,10 @@ class PluginDelegate {
   virtual base::PlatformFileError GetDirContents(const PepperFilePath& path,
                                                  DirContents* contents) = 0;
 
+  // Synchronously returns the platform file path for a filesystem URL.
+  virtual void SyncGetFileSystemPlatformPath(const GURL& url,
+                                             FilePath* platform_path) = 0;
+
   // Returns a MessageLoopProxy instance associated with the message loop
   // of the file thread in this renderer.
   virtual scoped_refptr<base::MessageLoopProxy>
@@ -344,7 +407,35 @@ class PluginDelegate {
       uint16_t port) = 0;
   virtual int32_t ConnectTcpAddress(
       webkit::ppapi::PPB_Flash_NetConnector_Impl* connector,
-      const struct PP_Flash_NetAddress* addr) = 0;
+      const PP_NetAddress_Private* addr) = 0;
+
+  // For PPB_TCPSocket_Private.
+  virtual uint32 TCPSocketCreate() = 0;
+  virtual void TCPSocketConnect(PPB_TCPSocket_Private_Impl* socket,
+                                uint32 socket_id,
+                                const std::string& host,
+                                uint16_t port) = 0;
+  virtual void TCPSocketConnectWithNetAddress(
+      PPB_TCPSocket_Private_Impl* socket,
+      uint32 socket_id,
+      const PP_NetAddress_Private& addr) = 0;
+  virtual void TCPSocketSSLHandshake(uint32 socket_id,
+                                     const std::string& server_name,
+                                     uint16_t server_port) = 0;
+  virtual void TCPSocketRead(uint32 socket_id, int32_t bytes_to_read) = 0;
+  virtual void TCPSocketWrite(uint32 socket_id, const std::string& buffer) = 0;
+  virtual void TCPSocketDisconnect(uint32 socket_id) = 0;
+
+  // For PPB_UDPSocket_Private.
+  virtual uint32 UDPSocketCreate() = 0;
+  virtual void UDPSocketBind(PPB_UDPSocket_Private_Impl* socket,
+                             uint32 socket_id,
+                             const PP_NetAddress_Private& addr) = 0;
+  virtual void UDPSocketRecvFrom(uint32 socket_id, int32_t num_bytes) = 0;
+  virtual void UDPSocketSendTo(uint32 socket_id,
+                               const std::string& buffer,
+                               const PP_NetAddress_Private& addr) = 0;
+  virtual void UDPSocketClose(uint32 socket_id) = 0;
 
   // Show the given context menu at the given position (in the plugin's
   // coordinates).
@@ -365,7 +456,7 @@ class PluginDelegate {
   // Returns a string with the name of the default 8-bit char encoding.
   virtual std::string GetDefaultEncoding() = 0;
 
-  // Sets the mininum and maximium zoom factors.
+  // Sets the minimum and maximum zoom factors.
   virtual void ZoomLimitsChanged(double minimum_factor,
                                  double maximum_factor) = 0;
 
@@ -380,18 +471,8 @@ class PluginDelegate {
   // Sets restrictions on how the content can be used (i.e. no print/copy).
   virtual void SetContentRestriction(int restrictions) = 0;
 
-  // Tells the browser that the PDF has an unsupported feature.
-  virtual void HasUnsupportedFeature() = 0;
-
   // Tells the browser to bring up SaveAs dialog to save specified URL.
   virtual void SaveURLAs(const GURL& url) = 0;
-
-  // Socket dispatcher for P2P connections. Returns to NULL if P2P API
-  // is disabled.
-  //
-  // TODO(sergeyu): Stop using GetP2PSocketDispatcher() in remoting
-  // client and remove it from here.
-  virtual P2PSocketDispatcher* GetP2PSocketDispatcher() = 0;
 
   // Creates P2PTransport object.
   virtual webkit_glue::P2PTransport* CreateP2PTransport() = 0;
@@ -408,6 +489,41 @@ class PluginDelegate {
 
   // Returns the current preferences.
   virtual ::ppapi::Preferences GetPreferences() = 0;
+
+  // Locks the mouse for |instance|. If false is returned, the lock is not
+  // possible. If true is returned then the lock is pending. Success or
+  // failure will be delivered asynchronously via
+  // PluginInstance::OnLockMouseACK().
+  virtual bool LockMouse(PluginInstance* instance) = 0;
+
+  // Unlocks the mouse if |instance| currently owns the mouse lock. Whenever an
+  // plugin instance has lost the mouse lock, it will be notified by
+  // PluginInstance::OnMouseLockLost(). Please note that UnlockMouse() is not
+  // the only cause of losing mouse lock. For example, a user may press the Esc
+  // key to quit the mouse lock mode, which also results in an OnMouseLockLost()
+  // call to the current mouse lock owner.
+  virtual void UnlockMouse(PluginInstance* instance) = 0;
+
+  // Returns true iff |instance| currently owns the mouse lock.
+  virtual bool IsMouseLocked(PluginInstance* instance) = 0;
+
+  // Notifies that |instance| has changed the cursor.
+  // This will update the cursor appearance if it is currently over the plugin
+  // instance.
+  virtual void DidChangeCursor(PluginInstance* instance,
+                               const WebKit::WebCursorInfo& cursor) = 0;
+
+  // Notifies that |instance| has received a mouse event.
+  virtual void DidReceiveMouseEvent(PluginInstance* instance) = 0;
+
+  // Determines if the browser entered fullscreen mode.
+  virtual bool IsInFullscreenMode() = 0;
+
+  // Retrieve current gamepad data.
+  virtual void SampleGamepads(WebKit::WebGamepads* data) = 0;
+
+  // Returns true if the containing page is visible.
+  virtual bool IsPageVisible() const = 0;
 };
 
 }  // namespace ppapi

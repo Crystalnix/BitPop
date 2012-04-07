@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,25 +8,20 @@
 
 #include "build/build_config.h"
 
-#if defined(USE_NSS)
-#include <cryptoht.h>
-#elif defined(OS_MACOSX)
-#include <Security/cssm.h>
-#endif
-
 #include <vector>
 
 #include "base/basictypes.h"
+#include "crypto/crypto_export.h"
 
-#if defined(OS_WIN)
-#include "crypto/scoped_capi_types.h"
+#if !defined(USE_OPENSSL)
+typedef struct VFYContextStr VFYContext;
 #endif
 
 namespace crypto {
 
 // The SignatureVerifier class verifies a signature using a bare public key
 // (as opposed to a certificate).
-class SignatureVerifier {
+class CRYPTO_EXPORT SignatureVerifier {
  public:
   SignatureVerifier();
   ~SignatureVerifier();
@@ -86,20 +81,8 @@ class SignatureVerifier {
 #if defined(USE_OPENSSL)
   struct VerifyContext;
   VerifyContext* verify_context_;
-#elif defined(USE_NSS)
+#else
   VFYContext* vfy_context_;
-#elif defined(OS_MACOSX)
-  std::vector<uint8> public_key_info_;
-
-  CSSM_CC_HANDLE sig_handle_;
-
-  CSSM_KEY public_key_;
-#elif defined(OS_WIN)
-  ScopedHCRYPTPROV provider_;
-
-  ScopedHCRYPTHASH hash_object_;
-
-  ScopedHCRYPTKEY public_key_;
 #endif
 };
 

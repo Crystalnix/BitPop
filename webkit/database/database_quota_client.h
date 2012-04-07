@@ -31,18 +31,18 @@ class DatabaseQuotaClient : public quota::QuotaClient,
 
   // QuotaClient method overrides
   virtual ID id() const OVERRIDE;
-  virtual void OnQuotaManagerDestroyed();
+  virtual void OnQuotaManagerDestroyed() OVERRIDE;
   virtual void GetOriginUsage(const GURL& origin_url,
                               quota::StorageType type,
-                              GetUsageCallback* callback) OVERRIDE;
+                              const GetUsageCallback& callback) OVERRIDE;
   virtual void GetOriginsForType(quota::StorageType type,
-                                 GetOriginsCallback* callback) OVERRIDE;
+                                 const GetOriginsCallback& callback) OVERRIDE;
   virtual void GetOriginsForHost(quota::StorageType type,
                                  const std::string& host,
-                                 GetOriginsCallback* callback)  OVERRIDE;
+                                 const GetOriginsCallback& callback)  OVERRIDE;
   virtual void DeleteOriginData(const GURL& origin,
                                 quota::StorageType type,
-                                DeletionCallback* callback) OVERRIDE;
+                                const DeletionCallback& callback) OVERRIDE;
  private:
   class HelperTask;
   class GetOriginUsageTask;
@@ -52,24 +52,27 @@ class DatabaseQuotaClient : public quota::QuotaClient,
   class DeleteOriginTask;
 
   typedef quota::CallbackQueueMap1
-      <GetUsageCallback*,
+      <GetUsageCallback,
        GURL,  // origin
        int64
       > UsageForOriginCallbackMap;
-  typedef quota::CallbackQueue1
-      <GetOriginsCallback*,
-       const std::set<GURL>&
+  typedef quota::CallbackQueue2
+      <GetOriginsCallback,
+       const std::set<GURL>&,
+       quota::StorageType
       > OriginsForTypeCallbackQueue;
-  typedef quota::CallbackQueueMap1
-      <GetOriginsCallback*,
+  typedef quota::CallbackQueueMap2
+      <GetOriginsCallback,
        std::string,  // host
-       const std::set<GURL>&
+       const std::set<GURL>&,
+       quota::StorageType
       > OriginsForHostCallbackMap;
 
   void DidGetOriginUsage(const GURL& origin_url, int64 usage);
-  void DidGetAllOrigins(const std::set<GURL>& origins);
-  void DidGetOriginsForHost(
-      const std::string& host, const std::set<GURL>& origins);
+  void DidGetAllOrigins(const std::set<GURL>& origins, quota::StorageType type);
+  void DidGetOriginsForHost(const std::string& host,
+                            const std::set<GURL>& origins,
+                            quota::StorageType type);
 
   scoped_refptr<base::MessageLoopProxy> db_tracker_thread_;
   scoped_refptr<DatabaseTracker> db_tracker_;  // only used on its thread

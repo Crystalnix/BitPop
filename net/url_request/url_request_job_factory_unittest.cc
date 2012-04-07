@@ -4,7 +4,8 @@
 
 #include "net/url_request/url_request_job_factory.h"
 
-#include "base/task.h"
+#include "base/bind.h"
+#include "base/memory/weak_ptr.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -18,14 +19,15 @@ class MockURLRequestJob : public URLRequestJob {
   MockURLRequestJob(URLRequest* request, const URLRequestStatus& status)
       : URLRequestJob(request),
         status_(status),
-        ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {}
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {}
 
   virtual void Start() {
     // Start reading asynchronously so that all error reporting and data
     // callbacks happen as they would for network requests.
     MessageLoop::current()->PostTask(
         FROM_HERE,
-        method_factory_.NewRunnableMethod(&MockURLRequestJob::StartAsync));
+        base::Bind(&MockURLRequestJob::StartAsync,
+                   weak_factory_.GetWeakPtr()));
   }
 
  private:
@@ -35,7 +37,7 @@ class MockURLRequestJob : public URLRequestJob {
   }
 
   URLRequestStatus status_;
-  ScopedRunnableMethodFactory<MockURLRequestJob> method_factory_;
+  base::WeakPtrFactory<MockURLRequestJob> weak_factory_;
 };
 
 class DummyProtocolHandler : public URLRequestJobFactory::ProtocolHandler {
@@ -88,7 +90,7 @@ TEST(URLRequestJobFactoryTest, NoProtocolHandler) {
 
   MessageLoop::current()->Run();
   EXPECT_EQ(URLRequestStatus::FAILED, request.status().status());
-  EXPECT_EQ(ERR_UNKNOWN_URL_SCHEME, request.status().os_error());
+  EXPECT_EQ(ERR_UNKNOWN_URL_SCHEME, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, BasicProtocolHandler) {
@@ -103,7 +105,7 @@ TEST(URLRequestJobFactoryTest, BasicProtocolHandler) {
 
   MessageLoop::current()->Run();
   EXPECT_EQ(URLRequestStatus::SUCCESS, request.status().status());
-  EXPECT_EQ(OK, request.status().os_error());
+  EXPECT_EQ(OK, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, DeleteProtocolHandler) {
@@ -126,7 +128,7 @@ TEST(URLRequestJobFactoryTest, BasicInterceptor) {
 
   MessageLoop::current()->Run();
   EXPECT_EQ(URLRequestStatus::FAILED, request.status().status());
-  EXPECT_EQ(ERR_FAILED, request.status().os_error());
+  EXPECT_EQ(ERR_FAILED, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, InterceptorNeedsValidSchemeStill) {
@@ -141,7 +143,7 @@ TEST(URLRequestJobFactoryTest, InterceptorNeedsValidSchemeStill) {
 
   MessageLoop::current()->Run();
   EXPECT_EQ(URLRequestStatus::FAILED, request.status().status());
-  EXPECT_EQ(ERR_UNKNOWN_URL_SCHEME, request.status().os_error());
+  EXPECT_EQ(ERR_UNKNOWN_URL_SCHEME, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, InterceptorOverridesProtocolHandler) {
@@ -157,7 +159,7 @@ TEST(URLRequestJobFactoryTest, InterceptorOverridesProtocolHandler) {
 
   MessageLoop::current()->Run();
   EXPECT_EQ(URLRequestStatus::FAILED, request.status().status());
-  EXPECT_EQ(ERR_FAILED, request.status().os_error());
+  EXPECT_EQ(ERR_FAILED, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, InterceptorDoesntInterceptUnknownProtocols) {
@@ -190,7 +192,7 @@ TEST(URLRequestJobFactoryTest, InterceptorInterceptsHandledUnknownProtocols) {
   MessageLoop::current()->Run();
   EXPECT_TRUE(interceptor->did_intercept_);
   EXPECT_EQ(URLRequestStatus::FAILED, request.status().status());
-  EXPECT_EQ(ERR_FAILED, request.status().os_error());
+  EXPECT_EQ(ERR_FAILED, request.status().error());
 }
 
 TEST(URLRequestJobFactoryTest, InterceptorAffectsIsHandledProtocol) {

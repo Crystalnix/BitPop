@@ -5,7 +5,6 @@
 #define CONTENT_RENDERER_PEPPER_PLATFORM_CONTEXT_3D_IMPL_H_
 
 #include "base/callback.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
@@ -20,30 +19,35 @@ class CommandBuffer;
 
 class CommandBufferProxy;
 class GpuChannelHost;
+class PepperParentContextProvider;
 class RendererGLContext;
 
 class PlatformContext3DImpl
     : public webkit::ppapi::PluginDelegate::PlatformContext3D {
  public:
-  explicit PlatformContext3DImpl(RendererGLContext* parent_context);
+  explicit PlatformContext3DImpl(
+      PepperParentContextProvider* parent_context_provider);
   virtual ~PlatformContext3DImpl();
 
-  virtual bool Init();
-  virtual void SetSwapBuffersCallback(Callback0::Type* callback);
-  virtual unsigned GetBackingTextureId();
-  virtual gpu::CommandBuffer* GetCommandBuffer();
-  virtual void SetContextLostCallback(Callback0::Type* callback);
+  virtual bool Init(const int32* attrib_list) OVERRIDE;
+  virtual unsigned GetBackingTextureId() OVERRIDE;
+  virtual gpu::CommandBuffer* GetCommandBuffer() OVERRIDE;
+  virtual int GetCommandBufferRouteId() OVERRIDE;
+  virtual void SetContextLostCallback(const base::Closure& callback) OVERRIDE;
+  virtual bool Echo(const base::Closure& task) OVERRIDE;
 
  private:
   bool InitRaw();
   void OnContextLost();
 
+  // Implicitly weak pointer; must outlive this instance.
+  PepperParentContextProvider* parent_context_provider_;
   base::WeakPtr<RendererGLContext> parent_context_;
   scoped_refptr<GpuChannelHost> channel_;
   unsigned int parent_texture_id_;
   CommandBufferProxy* command_buffer_;
-  scoped_ptr<Callback0::Type> context_lost_callback_;
-  base::ScopedCallbackFactory<PlatformContext3DImpl> callback_factory_;
+  base::Closure context_lost_callback_;
+  base::WeakPtrFactory<PlatformContext3DImpl> weak_ptr_factory_;
 };
 
 #endif  // ENABLE_GPU

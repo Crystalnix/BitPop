@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,22 +7,20 @@
 
 #include "content/browser/geolocation/mock_location_provider.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "base/message_loop.h"
 #include "base/message_loop_proxy.h"
-#include "base/task.h"
-
-// The provider will always be destroyed before the thread it runs on, so ref
-// counting is not required.
-DISABLE_RUNNABLE_METHOD_REFCOUNT(MockLocationProvider);
 
 MockLocationProvider* MockLocationProvider::instance_ = NULL;
 
 MockLocationProvider::MockLocationProvider(MockLocationProvider** self_ref)
     : state_(STOPPED),
       self_ref_(self_ref),
-      provider_loop_(base::MessageLoopProxy::CreateForCurrentThread()) {
+      provider_loop_(base::MessageLoopProxy::current()) {
   CHECK(self_ref_);
   CHECK(*self_ref_ == NULL);
   *self_ref_ = this;
@@ -40,9 +38,10 @@ void MockLocationProvider::HandlePositionChanged(const Geoposition& position) {
     position_ = position;
     UpdateListeners();
   } else {
-    Task* task = NewRunnableMethod(
-        this, &MockLocationProvider::HandlePositionChanged, position);
-    provider_loop_->PostTask(FROM_HERE, task);
+    provider_loop_->PostTask(
+        FROM_HERE,
+        base::Bind(&MockLocationProvider::HandlePositionChanged,
+                   base::Unretained(this), position));
   }
 }
 
@@ -71,7 +70,7 @@ class AutoMockLocationProvider : public MockLocationProvider {
   AutoMockLocationProvider(bool has_valid_location,
                            bool requires_permission_to_start)
       : MockLocationProvider(&instance_),
-        ALLOW_THIS_IN_INITIALIZER_LIST(task_factory_(this)),
+        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
         requires_permission_to_start_(requires_permission_to_start),
         listeners_updated_(false) {
     if (has_valid_location) {
@@ -104,12 +103,13 @@ class AutoMockLocationProvider : public MockLocationProvider {
     if (!listeners_updated_) {
       listeners_updated_ = true;
       MessageLoop::current()->PostTask(
-          FROM_HERE, task_factory_.NewRunnableMethod(
-          &MockLocationProvider::HandlePositionChanged, position_));
+          FROM_HERE,
+          base::Bind(&MockLocationProvider::HandlePositionChanged,
+                     weak_factory_.GetWeakPtr(), position_));
     }
   }
 
-  ScopedRunnableMethodFactory<MockLocationProvider> task_factory_;
+  base::WeakPtrFactory<MockLocationProvider> weak_factory_;
   const bool requires_permission_to_start_;
   bool listeners_updated_;
 };

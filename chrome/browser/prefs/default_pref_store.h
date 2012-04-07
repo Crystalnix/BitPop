@@ -21,9 +21,12 @@ class DefaultPrefStore : public ValueMapPrefStore {
   // Stores a new |value| for |key|. Assumes ownership of |value|.
   void SetDefaultValue(const std::string& key, Value* value);
 
+  // Removes the value for |key|.
+  void RemoveDefaultValue(const std::string& key);
+
   // Returns the registered type for |key| or Value::TYPE_NULL if the |key|
   // has not been registered.
-  Value::ValueType GetType(const std::string& key) const;
+  base::Value::Type GetType(const std::string& key) const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DefaultPrefStore);

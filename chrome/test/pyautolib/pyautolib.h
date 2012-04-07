@@ -9,11 +9,15 @@
 #define CHROME_TEST_PYAUTOLIB_PYAUTOLIB_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/test/test_timeouts.h"
 #include "chrome/test/ui/ui_test.h"
 #include "chrome/test/ui/ui_test_suite.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/scoped_nsautorelease_pool.h"
+#endif
 
 // The C++ style guide forbids using default arguments but I'm taking the
 // liberty of allowing it in this file. The sole purpose of this (and the
@@ -33,7 +37,9 @@ class PyUITestSuiteBase : public UITestSuite {
   void SetCrSourceRoot(const FilePath& path);
 
  private:
+#if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool_;
+#endif
 };
 
 // The primary class that interfaces with Automation Proxy.
@@ -55,11 +61,11 @@ class PyUITestBase : public UITestBase {
     launcher_.reset(CreateProxyLauncher());
   }
 
-  virtual ProxyLauncher* CreateProxyLauncher();
+  virtual ProxyLauncher* CreateProxyLauncher() OVERRIDE;
 
   // SetUp,TearDown is redeclared as public to make it accessible from swig.
-  virtual void SetUp();
-  virtual void TearDown();
+  virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
   // Navigate to the given URL in the active tab. Blocks until page loaded.
   void NavigateToURL(const char* url_string);
@@ -84,7 +90,7 @@ class PyUITestBase : public UITestBase {
   bool AppendTab(const GURL& tab_url, int window_index = 0);
 
   // Activate the tab at the given zero-based index in the given or first
-  // browser window.
+  // browser window.  Also brings the window to front.
   bool ActivateTab(int tab_index, int window_index = 0);
 
   // Apply the accelerator with given id (IDC_BACK, IDC_NEWTAB ...) to the
@@ -95,6 +101,9 @@ class PyUITestBase : public UITestBase {
 
   // Like ApplyAccelerator except that it waits for the command to execute.
   bool RunCommand(int browser_command, int window_index = 0);
+
+  // Returns true if the given command id is enabled on the given window.
+  bool IsMenuCommandEnabled(int browser_command, int window_index = 0);
 
   // Shows or hides the download shelf.
   void SetDownloadShelfVisible(bool is_visible, int window_index = 0);
@@ -122,13 +131,11 @@ class PyUITestBase : public UITestBase {
   // Fetch the number of browser windows. Includes popups.
   int GetBrowserWindowCount();
 
-  // Installs the extension crx.  Returns the extension ID only if the extension
-  // was installed and loaded successfully.  Otherwise, returns the empty
-  // string.  Overinstalls will fail.
-  std::string InstallExtension(const FilePath& crx_file, bool with_ui);
-
   // Returns bookmark bar visibility state.
   bool GetBookmarkBarVisibility();
+
+  // Returns true if the bookmark bar is visible in the detached state.
+  bool IsBookmarkBarDetached();
 
   // Returns bookmark bar animation state.  Warning: timing issues may
   // change this return value unexpectedly.
@@ -173,25 +180,6 @@ class PyUITestBase : public UITestBase {
                                const std::string& request,
                                int timeout);
 
-  // Execute javascript in a given tab, and return the response. This is
-  // a low-level method intended for use mostly by GetDOMValue(). Note that
-  // any complicated manipulation of the page should be done by something
-  // like WebDriver, not PyAuto. Also note that in order for the script to
-  // return a value to the calling code, it invokes
-  // window.domAutomationController.send(), passing in the intended return
-  // value.
-  std::wstring ExecuteJavascript(const std::wstring& script,
-                                 int window_index = 0,
-                                 int tab_index = 0,
-                                 const std::wstring& frame_xpath = L"");
-
-  // Evaluate a Javascript expression and return the result as a string. This
-  // method is intended largely to read values out of the frame DOM.
-  std::wstring GetDOMValue(const std::wstring& expr,
-                           int window_index = 0,
-                           int tab_index = 0,
-                           const std::wstring& frame_xpath = L"");
-
   // Resets to the default theme. Returns true on success.
   bool ResetToDefaultTheme();
 
@@ -211,6 +199,9 @@ class PyUITestBase : public UITestBase {
   }
 
  private:
+  // Gets the current state of the bookmark bar. Returns false if it failed.
+  bool GetBookmarkBarState(bool* visible, bool* detached);
+
   // Enables PostTask to main thread.
   // Should be shared across multiple instances of PyUITestBase so that this
   // class is re-entrant and multiple instances can be created.

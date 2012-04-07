@@ -7,15 +7,22 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/values.h"
+#include "chrome/browser/chromeos/cros_settings.h"
+#include "chrome/browser/chromeos/proxy_config_service_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/options/chromeos/core_chromeos_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/proxy_handler.h"
 #include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace {
 
@@ -52,54 +59,52 @@ void ProxySettingsHTMLSource::StartDataRequest(const std::string& path,
   static const base::StringPiece html(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_PROXY_SETTINGS_HTML));
-  const std::string full_html = jstemplate_builder::GetI18nTemplateHtml(
+  std::string full_html = jstemplate_builder::GetI18nTemplateHtml(
       html, localized_strings_.get());
 
-  scoped_refptr<RefCountedBytes> html_bytes(new RefCountedBytes);
-  html_bytes->data.resize(full_html.size());
-  std::copy(full_html.begin(), full_html.end(), html_bytes->data.begin());
-
-  SendResponse(request_id, html_bytes);
+  SendResponse(request_id, base::RefCountedString::TakeString(&full_html));
 }
 
 }  // namespace
 
 namespace chromeos {
 
-ProxySettingsUI::ProxySettingsUI(TabContents* contents) : WebUI(contents) {
+ProxySettingsUI::ProxySettingsUI(content::WebUI* web_ui)
+    : WebUIController(web_ui),
+      proxy_handler_(new ProxyHandler()),
+      core_handler_(new CoreChromeOSOptionsHandler()) {
   // |localized_strings| will be owned by ProxySettingsHTMLSource.
   DictionaryValue* localized_strings = new DictionaryValue();
 
-  CoreChromeOSOptionsHandler* core_handler = new CoreChromeOSOptionsHandler();
-  core_handler->set_handlers_host(this);
-  core_handler->GetLocalizedValues(localized_strings);
-  AddMessageHandler(core_handler->Attach(this));
+  core_handler_->set_handlers_host(this);
+  core_handler_->GetLocalizedValues(localized_strings);
+  web_ui->AddMessageHandler(core_handler_);
 
-  OptionsPageUIHandler* proxy_handler = new ProxyHandler();
-  proxy_handler->GetLocalizedValues(localized_strings);
-  AddMessageHandler(proxy_handler->Attach(this));
+  proxy_handler_->GetLocalizedValues(localized_strings);
+  web_ui->AddMessageHandler(proxy_handler_);
 
   ProxySettingsHTMLSource* source =
       new ProxySettingsHTMLSource(localized_strings);
-  contents->profile()->GetChromeURLDataManager()->AddDataSource(source);
+  Profile* profile = Profile::FromWebUI(web_ui);
+  profile->GetChromeURLDataManager()->AddDataSource(source);
 }
 
 ProxySettingsUI::~ProxySettingsUI() {
   // Uninitialize all registered handlers. The base class owns them and it will
-  // eventually delete them. Skip over the generic handler.
-  for (std::vector<WebUIMessageHandler*>::iterator iter = handlers_.begin() + 1;
-       iter != handlers_.end();
-       ++iter) {
-    static_cast<OptionsPageUIHandler*>(*iter)->Uninitialize();
-  }
+  // eventually delete them.
+  core_handler_->Uninitialize();
+  proxy_handler_->Uninitialize();
 }
 
 void ProxySettingsUI::InitializeHandlers() {
-  std::vector<WebUIMessageHandler*>::iterator iter;
-  // Skip over the generic handler.
-  for (iter = handlers_.begin() + 1; iter != handlers_.end(); ++iter) {
-    (static_cast<OptionsPageUIHandler*>(*iter))->Initialize();
-  }
+  core_handler_->Initialize();
+  proxy_handler_->Initialize();
+  Profile* profile = Profile::FromWebUI(web_ui());
+  PrefProxyConfigTracker* proxy_tracker = profile->GetProxyConfigTracker();
+  proxy_tracker->UIMakeActiveNetworkCurrent();
+  std::string network_name;
+  proxy_tracker->UIGetCurrentNetworkName(&network_name);
+  proxy_handler_->SetNetworkName(network_name);
 }
 
 }  // namespace chromeos

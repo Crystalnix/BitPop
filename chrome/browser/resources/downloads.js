@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,8 @@ function showInlineBlock(node, isShow) {
 
 /**
  * Creates an element of a specified type with a specified class name.
- * @param {String} type The node type.
- * @param {String} className The class name to use.
+ * @param {string} type The node type.
+ * @param {string} className The class name to use.
  */
 function createElementWithClassName(type, className) {
   var elm = document.createElement(type);
@@ -30,21 +30,22 @@ function createElementWithClassName(type, className) {
 
 /**
  * Creates a link with a specified onclick handler and content
- * @param {String} onclick The onclick handler
- * @param {String} value The link text
+ * @param {function()} onclick The onclick handler
+ * @param {string} value The link text
  */
 function createLink(onclick, value) {
   var link = document.createElement('a');
   link.onclick = onclick;
   link.href = '#';
-  link.innerHTML = value;
+  link.textContent = value;
+  link.oncontextmenu = function() { return false; };
   return link;
 }
 
 /**
  * Creates a button with a specified onclick handler and content
- * @param {String} onclick The onclick handler
- * @param {String} value The button text
+ * @param {function()} onclick The onclick handler
+ * @param {string} value The button text
  */
 function createButton(onclick, value) {
   var button = document.createElement('input');
@@ -68,6 +69,10 @@ function Downloads() {
   // Keep track of the dates of the newest and oldest downloads so that we
   // know where to insert them.
   this.newestTime_ = -1;
+
+  // Icon load request queue.
+  this.iconLoadQueue_ = [];
+  this.isIconLoading_ = false;
 }
 
 /**
@@ -96,7 +101,7 @@ Downloads.prototype.updated = function(download) {
 
 /**
  * Set our display search text.
- * @param {String} searchText The string we're searching for.
+ * @param {string} searchText The string we're searching for.
  */
 Downloads.prototype.setSearchText = function(searchText) {
   this.searchText_ = searchText;
@@ -110,7 +115,7 @@ Downloads.prototype.updateSummary = function() {
     this.summary_.textContent = localStrings.getStringF('searchresultsfor',
                                                         this.searchText_);
   } else {
-    this.summary_.innerHTML = localStrings.getString('downloads');
+    this.summary_.textContent = localStrings.getString('downloads');
   }
 
   var hasDownloads = false;
@@ -120,7 +125,7 @@ Downloads.prototype.updateSummary = function() {
   }
 
   if (!hasDownloads) {
-    this.node_.innerHTML = localStrings.getString('noresults');
+    this.node_.textContent = localStrings.getString('noresults');
   }
 }
 
@@ -144,7 +149,7 @@ Downloads.prototype.updateDateDisplay_ = function() {
 
 /**
  * Remove a download.
- * @param {Number} id The id of the download to remove.
+ * @param {number} id The id of the download to remove.
  */
 Downloads.prototype.remove = function(id) {
   this.node_.removeChild(this.downloads_[id].node);
@@ -160,6 +165,39 @@ Downloads.prototype.clear = function() {
     this.downloads_[id].clear();
     this.remove(id);
   }
+}
+
+/**
+ * Schedule icon load.
+ * @param {HTMLImageElement} elem Image element that should contain the icon.
+ * @param {string} iconURL URL to the icon.
+ */
+Downloads.prototype.scheduleIconLoad = function(elem, iconURL) {
+  var self = this;
+
+  // Sends request to the next icon in the queue and schedules
+  // call to itself when the icon is loaded.
+  function loadNext() {
+    self.isIconLoading_ = true;
+    while (self.iconLoadQueue_.length > 0) {
+      var request = self.iconLoadQueue_.shift();
+      var oldSrc = request.element.src;
+      request.element.onabort = request.element.onerror =
+          request.element.onload = loadNext;
+      request.element.src = request.url;
+      if (oldSrc != request.element.src)
+        return;
+    }
+    self.isIconLoading_ = false;
+  }
+
+  // Create new request
+  var loadRequest = {element: elem, url: iconURL};
+  this.iconLoadQueue_.push(loadRequest);
+
+  // Start loading if none scheduled yet
+  if (!this.isIconLoading_)
+    loadNext();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -304,6 +342,7 @@ Download.DangerType = {
   NOT_DANGEROUS: "NOT_DANGEROUS",
   DANGEROUS_FILE: "DANGEROUS_FILE",
   DANGEROUS_URL: "DANGEROUS_URL",
+  DANGEROUS_CONTENT: "DANGEROUS_CONTENT"
 }
 
 /**
@@ -326,9 +365,11 @@ Download.Progress = {
 Download.prototype.update = function(download) {
   this.id_ = download.id;
   this.filePath_ = download.file_path;
+  this.fileUrl_ = download.file_url;
   this.fileName_ = download.file_name;
   this.url_ = download.url;
   this.state_ = download.state;
+  this.fileExternallyRemoved_ = download.file_externally_removed;
   this.dangerType_ = download.danger_type;
 
   this.since_ = download.since_string;
@@ -341,29 +382,39 @@ Download.prototype.update = function(download) {
 
   if (this.state_ == Download.States.DANGEROUS) {
     if (this.dangerType_ == Download.DangerType.DANGEROUS_FILE) {
-      this.dangerDesc_.innerHTML = localStrings.getStringF('danger_file_desc',
-                                                           this.fileName_);
-    } else {
-      this.dangerDesc_.innerHTML = localStrings.getString('danger_url_desc');
+      this.dangerDesc_.textContent = localStrings.getStringF('danger_file_desc',
+                                                             this.fileName_);
+    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_URL) {
+      this.dangerDesc_.textContent = localStrings.getString('danger_url_desc');
+    } else if (this.dangerType_ == Download.DangerType.DANGEROUS_CONTENT) {
+      this.dangerDesc_.textContent = localStrings.getStringF(
+          'danger_content_desc', this.fileName_);
     }
     this.danger_.style.display = 'block';
     this.safe_.style.display = 'none';
   } else {
-    this.nodeImg_.src = 'chrome://fileicon/' + this.filePath_;
+    downloads.scheduleIconLoad(this.nodeImg_,
+                               'chrome://fileicon/' + this.filePath_);
 
-    if (this.state_ == Download.States.COMPLETE) {
-      this.nodeFileLink_.innerHTML = this.fileName_;
-      this.nodeFileLink_.href = this.filePath_;
-    } else {
-      this.nodeFileName_.innerHTML = this.fileName_;
+    if (this.state_ == Download.States.COMPLETE &&
+        !this.fileExternallyRemoved_) {
+      this.nodeFileLink_.textContent = this.fileName_;
+      this.nodeFileLink_.href = this.fileUrl_;
+      this.nodeFileLink_.oncontextmenu = null;
+    } else if (this.nodeFileName_.textContent != this.fileName_) {
+      this.nodeFileName_.textContent = this.fileName_;
     }
 
-    showInline(this.nodeFileLink_, this.state_ == Download.States.COMPLETE);
+    showInline(this.nodeFileLink_,
+               this.state_ == Download.States.COMPLETE &&
+                   !this.fileExternallyRemoved_);
     // nodeFileName_ has to be inline-block to avoid the 'interaction' with
     // nodeStatus_. If both are inline, it appears that their text contents
     // are merged before the bidi algorithm is applied leading to an
     // undesirable reordering. http://crbug.com/13216
-    showInlineBlock(this.nodeFileName_, this.state_ != Download.States.COMPLETE);
+    showInlineBlock(this.nodeFileName_,
+                    this.state_ != Download.States.COMPLETE ||
+                        this.fileExternallyRemoved_);
 
     if (this.state_ == Download.States.IN_PROGRESS) {
       this.nodeProgressForeground_.style.display = 'block';
@@ -396,7 +447,9 @@ Download.prototype.update = function(download) {
     }
 
     if (this.controlShow_) {
-      showInline(this.controlShow_, this.state_ == Download.States.COMPLETE);
+      showInline(this.controlShow_,
+                 this.state_ == Download.States.COMPLETE &&
+                     !this.fileExternallyRemoved_);
     }
     showInline(this.controlRetry_, this.state_ == Download.States.CANCELLED);
     this.controlRetry_.href = this.url_;
@@ -407,15 +460,15 @@ Download.prototype.update = function(download) {
     showInline(this.controlCancel_, showCancel);
     showInline(this.controlRemove_, !showCancel);
 
-    this.nodeSince_.innerHTML = this.since_;
-    this.nodeDate_.innerHTML = this.date_;
+    this.nodeSince_.textContent = this.since_;
+    this.nodeDate_.textContent = this.date_;
     // Don't unnecessarily update the url, as doing so will remove any
     // text selection the user has started (http://crbug.com/44982).
     if (this.nodeURL_.textContent != this.url_) {
       this.nodeURL_.textContent = this.url_;
       this.nodeURL_.href = this.url_;
     }
-    this.nodeStatus_.innerHTML = this.getStatusText_();
+    this.nodeStatus_.textContent = this.getStatusText_();
 
     this.danger_.style.display = 'none';
     this.safe_.style.display = 'block';
@@ -440,7 +493,7 @@ Download.prototype.clear = function() {
 }
 
 /**
- * @return {String} User-visible status update text.
+ * @return {string} User-visible status update text.
  */
 Download.prototype.getStatusText_ = function() {
   switch (this.state_) {
@@ -451,13 +504,15 @@ Download.prototype.getStatusText_ = function() {
     case Download.States.PAUSED:
       return localStrings.getString('status_paused');
     case Download.States.DANGEROUS:
+      // danger_url_desc is also used by DANGEROUS_CONTENT.
       var desc = this.dangerType_ == Download.DangerType.DANGEROUS_FILE ?
           'danger_file_desc' : 'danger_url_desc';
       return localStrings.getString(desc);
     case Download.States.INTERRUPTED:
       return localStrings.getString('status_interrupted');
     case Download.States.COMPLETE:
-      return '';
+      return this.fileExternallyRemoved_ ?
+          localStrings.getString('status_removed') : '';
   }
 }
 
@@ -532,23 +587,43 @@ Download.prototype.cancel_ = function() {
 // Page:
 var downloads, localStrings, resultsTimeout;
 
+// TODO(benjhayden): Rename Downloads to DownloadManager, downloads to
+// downloadManager or theDownloadManager or DownloadManager.get() to prevent
+// confusing Downloads with Download.
+
+/**
+ * The FIFO array that stores updates of download files to be appeared
+ * on the download page. It is guaranteed that the updates in this array
+ * are reflected to the download page in a FIFO order.
+*/
+var fifo_results;
+
 function load() {
+  fifo_results = new Array();
   localStrings = new LocalStrings();
   downloads = new Downloads();
   $('term').focus();
+  $('term').setAttribute('aria-labelledby', 'search-submit');
   setSearch('');
 }
 
 function setSearch(searchText) {
+  fifo_results.length = 0;
   downloads.clear();
   downloads.setSearchText(searchText);
   chrome.send('getDownloads', [searchText.toString()]);
 }
 
 function clearAll() {
+  fifo_results.length = 0;
   downloads.clear();
   downloads.setSearchText('');
   chrome.send('clearAll', []);
+  return false;
+}
+
+function openDownloadsFolder() {
+  chrome.send('openDownloadsFolder');
   return false;
 }
 
@@ -561,7 +636,7 @@ function clearAll() {
 function downloadsList(results) {
   if (resultsTimeout)
     clearTimeout(resultsTimeout);
-  window.console.log('results');
+  fifo_results.length = 0;
   downloads.clear();
   downloadUpdated(results);
   downloads.updateSummary();
@@ -575,13 +650,23 @@ function downloadUpdated(results) {
   if (!downloads)
     return;
 
+  fifo_results = fifo_results.concat(results);
+  tryDownloadUpdatedPeriodically();
+}
+
+/**
+ * Try to reflect as much updates as possible within 50ms.
+ * This function is scheduled again and again until all updates are reflected.
+ */
+function tryDownloadUpdatedPeriodically() {
   var start = Date.now();
-  for (var i = 0; i < results.length; i++) {
-    downloads.updated(results[i]);
+  while (fifo_results.length) {
+    var result = fifo_results.shift();
+    downloads.updated(result);
     // Do as much as we can in 50ms.
     if (Date.now() - start > 50) {
       clearTimeout(resultsTimeout);
-      resultsTimeout = setTimeout(downloadUpdated, 5, results.slice(i + 1));
+      resultsTimeout = setTimeout(tryDownloadUpdatedPeriodically, 5);
       break;
     }
   }
@@ -589,7 +674,15 @@ function downloadUpdated(results) {
 
 // Add handlers to HTML elements.
 document.body.onload = load;
-$('clear-all').onclick = function () { clearAll(''); };
+
+var clearAllLink = $('clear-all');
+clearAllLink.onclick = function () { clearAll(''); };
+clearAllLink.oncontextmenu = function() { return false; };
+
+var openDownloadsFolderLink = $('open-downloads-folder');
+openDownloadsFolderLink.onclick = openDownloadsFolder;
+openDownloadsFolderLink.oncontextmenu = function() { return false; };
+
 $('search-link').onclick = function () {
   setSearch('');
   return false;
@@ -598,4 +691,3 @@ $('search-form').onsubmit = function () {
   setSearch(this.term.value);
   return false;
 };
-

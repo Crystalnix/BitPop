@@ -11,10 +11,12 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/test/in_process_browser_test.h"
-#include "chrome/test/ui_test_utils.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/page_transition_types.h"
+#include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/common/page_transition_types.h"
 
 namespace {
 
@@ -105,7 +107,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest,
   ASSERT_EQ(1, new_browser->tab_count());
 
   // And the first url should be url.
-  EXPECT_EQ(url, new_browser->GetTabContentsAt(0)->GetURL());
+  EXPECT_EQ(url, new_browser->GetWebContentsAt(0)->GetURL());
 }
 
 IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreIndividualTabFromWindow) {
@@ -121,11 +123,20 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreIndividualTabFromWindow) {
 
   // Add and navigate three tabs.
   ui_test_utils::NavigateToURL(browser(), url1);
-  browser()->AddSelectedTabWithURL(url2, PageTransition::LINK);
-  ui_test_utils::WaitForNavigationInCurrentTab(browser());
-
-  browser()->AddSelectedTabWithURL(url3, PageTransition::LINK);
-  ui_test_utils::WaitForNavigationInCurrentTab(browser());
+  {
+    ui_test_utils::WindowedNotificationObserver observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::NotificationService::AllSources());
+    browser()->AddSelectedTabWithURL(url2, content::PAGE_TRANSITION_LINK);
+    observer.Wait();
+  }
+  {
+    ui_test_utils::WindowedNotificationObserver observer(
+        content::NOTIFICATION_LOAD_STOP,
+        content::NotificationService::AllSources());
+    browser()->AddSelectedTabWithURL(url3, content::PAGE_TRANSITION_LINK);
+    observer.Wait();
+  }
 
   TabRestoreService* service =
       TabRestoreServiceFactory::GetForProfile(browser()->profile());
@@ -147,7 +158,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, RestoreIndividualTabFromWindow) {
     const TabRestoreService::Tab& tab = *it;
     // If this tab held url2, then restore this single tab.
     if (tab.navigations[0].virtual_url() == url2) {
-      service->RestoreEntryById(NULL, tab.id, false);
+      service->RestoreEntryById(NULL, tab.id, UNKNOWN);
       break;
     }
   }
@@ -182,7 +193,7 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, WindowWithOneTab) {
       static_cast<TabRestoreService::Tab*>(service->entries().front());
 
   // Restore the tab.
-  service->RestoreEntryById(NULL, tab->id, false);
+  service->RestoreEntryById(NULL, tab->id, UNKNOWN);
 
   // Make sure the restore was successful.
   EXPECT_EQ(0U, service->entries().size());
@@ -221,5 +232,5 @@ IN_PROC_BROWSER_TEST_F(SessionRestoreTest, IncognitotoNonIncognito) {
   // The first tab should have 'url' as its url.
   Browser* new_browser = ui_test_utils::WaitForNewBrowser();
   ASSERT_TRUE(new_browser);
-  EXPECT_EQ(url, new_browser->GetTabContentsAt(0)->GetURL());
+  EXPECT_EQ(url, new_browser->GetWebContentsAt(0)->GetURL());
 }

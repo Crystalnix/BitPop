@@ -4,15 +4,17 @@
 
 #include "chrome/browser/tab_contents/web_drag_source_win.h"
 
-#include "base/task.h"
+#include "base/bind.h"
 #include "chrome/browser/tab_contents/web_drag_utils_win.h"
-#include "content/browser/browser_thread.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
 
 using WebKit::WebDragOperationNone;
+using content::BrowserThread;
+using content::WebContents;
 
 namespace {
 
@@ -31,15 +33,15 @@ static void GetCursorPositions(gfx::NativeWindow wnd, gfx::Point* client,
 // WebDragSource, public:
 
 WebDragSource::WebDragSource(gfx::NativeWindow source_wnd,
-                             TabContents* tab_contents)
+                             WebContents* web_contents)
     : ui::DragSource(),
       source_wnd_(source_wnd),
-      render_view_host_(tab_contents->render_view_host()),
+      render_view_host_(web_contents->GetRenderViewHost()),
       effect_(DROPEFFECT_NONE) {
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_SWAPPED,
-                 Source<TabContents>(tab_contents));
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_DISCONNECTED,
-                 Source<TabContents>(tab_contents));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_SWAPPED,
+                 content::Source<WebContents>(web_contents));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
+                 content::Source<WebContents>(web_contents));
 }
 
 WebDragSource::~WebDragSource() {
@@ -50,7 +52,7 @@ void WebDragSource::OnDragSourceCancel() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &WebDragSource::OnDragSourceCancel));
+        base::Bind(&WebDragSource::OnDragSourceCancel, this));
     return;
   }
 
@@ -73,7 +75,7 @@ void WebDragSource::OnDragSourceDrop() {
   // OnDragSourceDrop after the current task.
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &WebDragSource::DelayedOnDragSourceDrop));
+      base::Bind(&WebDragSource::DelayedOnDragSourceDrop, this));
 }
 
 void WebDragSource::DelayedOnDragSourceDrop() {
@@ -93,7 +95,7 @@ void WebDragSource::OnDragSourceMove() {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(
         BrowserThread::UI, FROM_HERE,
-        NewRunnableMethod(this, &WebDragSource::OnDragSourceMove));
+        base::Bind(&WebDragSource::OnDragSourceMove, this));
     return;
   }
 
@@ -107,14 +109,15 @@ void WebDragSource::OnDragSourceMove() {
                                        screen.x(), screen.y());
 }
 
-void WebDragSource::Observe(NotificationType type,
-    const NotificationSource& source, const NotificationDetails& details) {
-  if (NotificationType::TAB_CONTENTS_SWAPPED == type) {
+void WebDragSource::Observe(int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (content::NOTIFICATION_WEB_CONTENTS_SWAPPED == type) {
     // When the tab contents get swapped, our render view host goes away.
     // That's OK, we can continue the drag, we just can't send messages back to
     // our drag source.
     render_view_host_ = NULL;
-  } else if (NotificationType::TAB_CONTENTS_DISCONNECTED == type) {
+  } else if (content::NOTIFICATION_WEB_CONTENTS_DISCONNECTED == type) {
     // This could be possible when we close the tab and the source is still
     // being used in DoDragDrop at the time that the virtual file is being
     // downloaded.

@@ -21,10 +21,6 @@
 
 namespace webkit_glue {
 
-// Forward declare GetProductVersionInfo.  This is implemented in
-// renderer_glue.cc as part of the renderer lib.
-std::string GetProductVersion();
-
 std::string GetWebKitVersion() {
   return base::StringPrintf("%d.%d (%s)",
                             WEBKIT_VERSION_MAJOR,
@@ -91,9 +87,6 @@ std::string BuildOSCpuInfo() {
       os_bugfix_version
 #elif defined(OS_CHROMEOS)
       "CrOS "
-#if defined(TOUCH_UI)
-      "Touch "
-#endif
       "%s %d.%d.%d",
       cputype.c_str(),   // e.g. i686
       os_major_version,
@@ -109,7 +102,15 @@ std::string BuildOSCpuInfo() {
   return os_cpu;
 }
 
-void BuildUserAgent(bool mimic_windows, std::string* result) {
+int GetWebKitMajorVersion() {
+  return WEBKIT_VERSION_MAJOR;
+}
+
+int GetWebKitMinorVersion() {
+  return WEBKIT_VERSION_MINOR;
+}
+
+std::string BuildUserAgentFromProduct(const std::string& product) {
   const char kUserAgentPlatform[] =
 #if defined(OS_WIN)
       "";
@@ -121,23 +122,24 @@ void BuildUserAgent(bool mimic_windows, std::string* result) {
       "Unknown; ";
 #endif
 
-  // Get the product name and version, and replace Safari's Version/X string
-  // with it.  This is done to expose our product name in a manner that is
-  // maximally compatible with Safari, we hope!!
-  std::string product = GetProductVersion();
+  std::string user_agent;
+
+  // This is done to expose our product name in a manner that is maximally
+  // compatible with Safari, we hope!!
 
   // Derived from Safari's UA string.
   base::StringAppendF(
-      result,
+      &user_agent,
       "Mozilla/5.0 (%s%s) AppleWebKit/%d.%d"
       " (KHTML, like Gecko) %s Safari/%d.%d",
-      mimic_windows ? "Windows " : kUserAgentPlatform,
-      BuildOSCpuInfo().c_str(),
+      kUserAgentPlatform,
+      webkit_glue::BuildOSCpuInfo().c_str(),
       WEBKIT_VERSION_MAJOR,
       WEBKIT_VERSION_MINOR,
       product.c_str(),
       WEBKIT_VERSION_MAJOR,
       WEBKIT_VERSION_MINOR);
+  return user_agent;
 }
 
 }  // namespace webkit_glue

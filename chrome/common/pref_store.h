@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,9 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 
+namespace base {
 class Value;
+}
 
 // This is an abstract interface for reading and writing from/to a persistent
 // preference store, used by PrefService. An implementation using a JSON file
@@ -48,15 +50,16 @@ class PrefStore : public base::RefCounted<PrefStore> {
   // Add and remove observers.
   virtual void AddObserver(Observer* observer) {}
   virtual void RemoveObserver(Observer* observer) {}
+  virtual size_t NumberOfObservers() const;
 
   // Whether the store has completed all asynchronous initialization.
   virtual bool IsInitializationComplete() const;
 
-  // Get the value for a given preference |key| and stores it in |result|.
-  // |result| is only modified if the return value is READ_OK. Ownership of the
-  // |result| value remains with the PrefStore.
+  // Get the value for a given preference |key| and stores it in |*result|.
+  // |*result| is only modified if the return value is READ_OK and if |result|
+  // is not NULL. Ownership of the |*result| value remains with the PrefStore.
   virtual ReadResult GetValue(const std::string& key,
-                              const Value** result) const = 0;
+                              const base::Value** result) const = 0;
 
  protected:
   friend class base::RefCounted<PrefStore>;

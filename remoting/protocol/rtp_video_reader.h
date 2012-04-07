@@ -1,27 +1,38 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef REMOTING_PROTOCOL_RTP_VIDEO_READER_H_
 #define REMOTING_PROTOCOL_RTP_VIDEO_READER_H_
 
+#include "base/compiler_specific.h"
 #include "base/time.h"
+#include "base/memory/scoped_ptr.h"
 #include "remoting/protocol/rtcp_writer.h"
 #include "remoting/protocol/rtp_reader.h"
 #include "remoting/protocol/video_reader.h"
 
+namespace base {
+class MessageLoopProxy;
+}  // namespace base
+
 namespace remoting {
 namespace protocol {
 
+class RtcpWriter;
+class RtpReader;
 class Session;
 
 class RtpVideoReader : public VideoReader {
  public:
-  RtpVideoReader();
+  RtpVideoReader(base::MessageLoopProxy* message_loop);
   virtual ~RtpVideoReader();
 
   // VideoReader interface.
-  virtual void Init(protocol::Session* session, VideoStub* video_stub);
+  virtual void Init(protocol::Session* session,
+                    VideoStub* video_stub,
+                    const InitializedCallback& callback) OVERRIDE;
+  virtual bool is_connected() OVERRIDE;
 
  private:
   friend class RtpVideoReaderTest;
@@ -44,10 +55,12 @@ class RtpVideoReader : public VideoReader {
 
   typedef std::deque<PacketsQueueEntry> PacketsQueue;
 
+  void OnChannelReady(bool rtp, net::Socket* socket);
+
   void OnRtpPacket(const RtpPacket* rtp_packet);
-  void CheckFullPacket(PacketsQueue::iterator pos);
-  void RebuildVideoPacket(PacketsQueue::iterator from,
-                          PacketsQueue::iterator to);
+  void CheckFullPacket(const PacketsQueue::iterator& pos);
+  void RebuildVideoPacket(const PacketsQueue::iterator& from,
+                          const PacketsQueue::iterator& to);
   void ResetQueue();
 
   // Helper method that sends RTCP receiver reports if enough time has
@@ -56,7 +69,14 @@ class RtpVideoReader : public VideoReader {
   // |kReceiverReportsIntervalMs|.
   void SendReceiverReportIf();
 
+  Session* session_;
+
+  bool initialized_;
+  InitializedCallback initialized_callback_;
+
+  scoped_ptr<net::Socket> rtp_channel_;
   RtpReader rtp_reader_;
+  scoped_ptr<net::Socket> rtcp_channel_;
   RtcpWriter rtcp_writer_;
 
   PacketsQueue packets_queue_;

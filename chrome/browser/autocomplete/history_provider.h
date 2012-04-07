@@ -9,14 +9,6 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 
-namespace history {
-
-class HistoryBackend;
-class URLDatabase;
-class URLRow;
-
-}  // namespace history
-
 // This class is a base class for the history autocomplete providers and
 // provides functions useful to all derived classes.
 class HistoryProvider : public AutocompleteProvider {
@@ -24,12 +16,6 @@ class HistoryProvider : public AutocompleteProvider {
   virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
 
  protected:
-  enum MatchType {
-    NORMAL,
-    WHAT_YOU_TYPED,
-    INLINE_AUTOCOMPLETE
-  };
-
   HistoryProvider(ACProviderListener* listener,
                   Profile* profile,
                   const char* name);
@@ -44,7 +30,9 @@ class HistoryProvider : public AutocompleteProvider {
   // Note that we don't do this in AutocompleteInput's constructor, because if
   // e.g. we convert a Unicode hostname to punycode, other providers will show
   // output that surprises the user ("Search Google for xn--6ca.com").
-  static string16 FixupUserInput(const AutocompleteInput& input);
+  // Returns false if the fixup attempt resulted in an empty string (which
+  // providers generally can't do anything with).
+  static bool FixupUserInput(AutocompleteInput* input);
 
   // Trims "http:" and up to two subsequent slashes from |url|.  Returns the
   // number of characters that were trimmed.

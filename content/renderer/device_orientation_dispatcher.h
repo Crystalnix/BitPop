@@ -8,7 +8,9 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDeviceOrientationClient.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "content/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer.h"
+
+class RenderViewImpl;
 
 namespace WebKit {
 class WebDeviceOrientation;
@@ -16,15 +18,15 @@ class WebDeviceOrientation;
 
 struct DeviceOrientationMsg_Updated_Params;
 
-class DeviceOrientationDispatcher : public RenderViewObserver,
+class DeviceOrientationDispatcher : public content::RenderViewObserver,
                                     public WebKit::WebDeviceOrientationClient {
  public:
-  explicit DeviceOrientationDispatcher(RenderView* render_view);
+  explicit DeviceOrientationDispatcher(RenderViewImpl* render_view);
   virtual ~DeviceOrientationDispatcher();
 
  private:
   // RenderView::Observer implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // From WebKit::WebDeviceOrientationClient.
   virtual void setController(

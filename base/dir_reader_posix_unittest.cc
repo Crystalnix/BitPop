@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,11 @@
 #include "base/logging.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using base::DirReaderPosix;
+#if defined(OS_ANDROID)
+#include "base/os_compat_android.h"
+#endif
 
-namespace {
-typedef testing::Test DirReaderPosixUnittest;
+namespace base {
 
 TEST(DirReaderPosixUnittest, Read) {
   static const unsigned kNumFiles = 100;
@@ -26,10 +27,10 @@ TEST(DirReaderPosixUnittest, Read) {
 
   char kDirTemplate[] = "/tmp/org.chromium.dir-reader-posix-XXXXXX";
   const char* dir = mkdtemp(kDirTemplate);
-  CHECK(dir);
+  ASSERT_TRUE(dir);
 
   const int prev_wd = open(".", O_RDONLY | O_DIRECTORY);
-  CHECK_GE(prev_wd, 0);
+  DCHECK_GE(prev_wd, 0);
 
   PCHECK(chdir(dir) == 0);
 
@@ -88,4 +89,4 @@ TEST(DirReaderPosixUnittest, Read) {
   EXPECT_EQ(kNumFiles, seen.size());
 }
 
-}  // anonymous namespace
+}  // namespace base

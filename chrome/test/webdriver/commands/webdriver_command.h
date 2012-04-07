@@ -10,7 +10,9 @@
 
 #include "chrome/test/webdriver/commands/command.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace webdriver {
 
@@ -26,14 +28,21 @@ class Session;
 class WebDriverCommand : public Command {
  public:
   WebDriverCommand(const std::vector<std::string>& path_segments,
-                   const DictionaryValue* const parameters);
+                   const base::DictionaryValue* const parameters);
   virtual ~WebDriverCommand();
 
   // Initializes this webdriver command by fetching the command session.
-  virtual bool Init(Response* const response);
+  virtual bool Init(Response* const response) OVERRIDE;
+
+  virtual void Finish(Response* const response) OVERRIDE;
+
+  // Returns whether this command should run the session pre and post
+  // command handlers. These handlers include waiting for the page to load.
+  virtual bool ShouldRunPreAndPostCommandHandlers();
 
  protected:
   Session* session_;
+  std::string session_id_;
 
   DISALLOW_COPY_AND_ASSIGN(WebDriverCommand);
 };

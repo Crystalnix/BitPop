@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,7 @@
 // IPC_MESSAGE_MACROS_LOG_ENABLED doesn't get undefined.
 #if defined(OS_POSIX) && defined(IPC_MESSAGE_LOG_ENABLED)
 #define IPC_MESSAGE_MACROS_LOG_ENABLED
-#include "chrome/common/render_messages.h"
-#include "content/common/devtools_messages.h"
-#include "content/common/plugin_messages.h"
-#include "content/common/worker_messages.h"
+#include "chrome/common/all_messages.h"
 #endif
 
 #if defined(OS_WIN)
@@ -40,6 +37,7 @@
 #include "base/path_service.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
@@ -63,7 +61,7 @@ bool dialogs_are_suppressed_ = false;
 // InitChromeLogging() and the beginning of CleanupChromeLogging().
 bool chrome_logging_initialized_ = false;
 
-// Set if we caled InitChromeLogging() but failed to initialize.
+// Set if we called InitChromeLogging() but failed to initialize.
 bool chrome_logging_failed_ = false;
 
 // This should be true for exactly the period between the end of
@@ -189,15 +187,15 @@ FilePath SetUpSymlinkIfNeeded(const FilePath& symlink_path, bool new_log) {
     // We don't care if the unlink fails; we're going to continue anyway.
     if (::unlink(symlink_path.value().c_str()) == -1) {
       if (symlink_exists) // only warn if we might expect it to succeed.
-        PLOG(WARNING) << "Unable to unlink " << symlink_path.value();
+        DPLOG(WARNING) << "Unable to unlink " << symlink_path.value();
     }
     if (!file_util::CreateSymbolicLink(target_path, symlink_path)) {
-      PLOG(ERROR) << "Unable to create symlink " << symlink_path.value()
-                  << " pointing at " << target_path.value();
+      DPLOG(ERROR) << "Unable to create symlink " << symlink_path.value()
+                   << " pointing at " << target_path.value();
     }
   } else {
     if (!file_util::ReadSymbolicLink(symlink_path, &target_path))
-      PLOG(ERROR) << "Unable to read symlink " << symlink_path.value();
+      DPLOG(ERROR) << "Unable to read symlink " << symlink_path.value();
   }
   return target_path;
 }
@@ -205,9 +203,9 @@ FilePath SetUpSymlinkIfNeeded(const FilePath& symlink_path, bool new_log) {
 void RemoveSymlinkAndLog(const FilePath& link_path,
                          const FilePath& target_path) {
   if (::unlink(link_path.value().c_str()) == -1)
-    PLOG(WARNING) << "Unable to unlink symlink " << link_path.value();
+    DPLOG(WARNING) << "Unable to unlink symlink " << link_path.value();
   if (::unlink(target_path.value().c_str()) == -1)
-    PLOG(WARNING) << "Unable to unlink log file " << target_path.value();
+    DPLOG(WARNING) << "Unable to unlink log file " << target_path.value();
 }
 
 }  // anonymous namespace
@@ -254,7 +252,7 @@ void RedirectChromeLogging(const CommandLine& command_line) {
                    logging::LOCK_LOG_FILE,
                    logging::APPEND_TO_OLD_LOG_FILE,
                    dcheck_state)) {
-    LOG(ERROR) << "Unable to initialize logging to " << log_path.value();
+    DLOG(ERROR) << "Unable to initialize logging to " << log_path.value();
     RemoveSymlinkAndLog(log_path, target_path);
   } else {
     chrome_logging_redirected_ = true;
@@ -271,27 +269,37 @@ void InitChromeLogging(const CommandLine& command_line,
 #if defined(OS_POSIX) && defined(IPC_MESSAGE_LOG_ENABLED)
   IPC::Logging::set_log_function_map(&g_log_function_mapping);
 #endif
+  LoggingDestination logging_dest = DetermineLogMode(command_line);
+  FilePath log_path;
+#if defined(OS_CHROMEOS)
+    FilePath target_path;
+#endif
 
-  FilePath log_path = GetLogFileName();
+  // Don't resolve the log path unless we need to. Otherwise we leave an open
+  // ALPC handle after sandbox lockdown on Windows.
+  if (logging_dest == LOG_ONLY_TO_FILE ||
+      logging_dest == LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG) {
+    log_path = GetLogFileName();
 
 #if defined(OS_CHROMEOS)
-  // For BWSI (Incognito) logins, we want to put the logs in the user
-  // profile directory that is created for the temporary session instead
-  // of in the system log directory, for privacy reasons.
-  if (command_line.HasSwitch(switches::kGuestSession))
-    log_path = GetSessionLogFile(command_line);
+    // For BWSI (Incognito) logins, we want to put the logs in the user
+    // profile directory that is created for the temporary session instead
+    // of in the system log directory, for privacy reasons.
+    if (command_line.HasSwitch(switches::kGuestSession))
+      log_path = GetSessionLogFile(command_line);
 
-  // On ChromeOS we log to the symlink.  We force creation of a new
-  // symlink if we've been asked to delete the old log, since that
-  // indicates the start of a new session.
-  FilePath target_path = SetUpSymlinkIfNeeded(
-      log_path, delete_old_log_file == logging::DELETE_OLD_LOG_FILE);
+    // On ChromeOS we log to the symlink.  We force creation of a new
+    // symlink if we've been asked to delete the old log, since that
+    // indicates the start of a new session.
+    target_path = SetUpSymlinkIfNeeded(
+        log_path, delete_old_log_file == logging::DELETE_OLD_LOG_FILE);
 
-  // Because ChromeOS manages the move to a new session by redirecting
-  // the link, it shouldn't remove the old file in the logging code,
-  // since that will remove the newly created link instead.
-  delete_old_log_file = logging::APPEND_TO_OLD_LOG_FILE;
+    // Because ChromeOS manages the move to a new session by redirecting
+    // the link, it shouldn't remove the old file in the logging code,
+    // since that will remove the newly created link instead.
+    delete_old_log_file = logging::APPEND_TO_OLD_LOG_FILE;
 #endif
+  }
 
   logging::DcheckState dcheck_state =
       command_line.HasSwitch(switches::kEnableDCHECK) ?
@@ -299,14 +307,14 @@ void InitChromeLogging(const CommandLine& command_line,
       logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
 
   bool success = InitLogging(log_path.value().c_str(),
-                             DetermineLogMode(command_line),
+                             logging_dest,
                              logging::LOCK_LOG_FILE,
                              delete_old_log_file,
                              dcheck_state);
 
 #if defined(OS_CHROMEOS)
   if (!success) {
-    PLOG(ERROR) << "Unable to initialize logging to " << log_path.value()
+    DPLOG(ERROR) << "Unable to initialize logging to " << log_path.value()
                 << " (which should be a link to " << target_path.value() << ")";
     RemoveSymlinkAndLog(log_path, target_path);
     chrome_logging_failed_ = true;
@@ -314,7 +322,7 @@ void InitChromeLogging(const CommandLine& command_line,
   }
 #else
   if (!success) {
-    PLOG(ERROR) << "Unable to initialize logging to " << log_path.value();
+    DPLOG(ERROR) << "Unable to initialize logging to " << log_path.value();
     chrome_logging_failed_ = true;
     return;
   }
@@ -349,7 +357,7 @@ void InitChromeLogging(const CommandLine& command_line,
         level >= 0 && level < LOG_NUM_SEVERITIES) {
       logging::SetMinLogLevel(level);
     } else {
-      LOG(WARNING) << "Bad log level: " << log_level;
+      DLOG(WARNING) << "Bad log level: " << log_level;
     }
   }
 
@@ -391,9 +399,9 @@ FilePath GetLogFileName() {
   scoped_ptr<base::Environment> env(base::Environment::Create());
   if (env->GetVar(env_vars::kLogFileName, &filename) && !filename.empty()) {
 #if defined(OS_WIN)
-    return FilePath(UTF8ToWide(filename).c_str());
+    return FilePath(UTF8ToWide(filename));
 #elif defined(OS_POSIX)
-    return FilePath(filename.c_str());
+    return FilePath(filename);
 #endif
   }
 
@@ -439,6 +447,16 @@ size_t GetFatalAssertions(AssertionList* assertions) {
   log_file.close();
 
   return assertion_count;
+}
+
+
+void DumpWithoutCrashing() {
+#if defined(OS_WIN)
+  std::string str;
+  DumpProcessAssertHandler(str);
+#else
+  NOTIMPLEMENTED();
+#endif  // OS_WIN
 }
 
 }  // namespace logging

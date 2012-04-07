@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,14 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
+#include "base/threading/thread.h"
+#include "chrome/browser/sync/notifier/invalidation_version_tracker.h"
 #include "chrome/browser/sync/notifier/mock_sync_notifier_observer.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 #include "chrome/browser/sync/syncable/model_type_payload_map.h"
-#include "chrome/test/test_url_request_context_getter.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/browser/sync/util/weak_handle.h"
+#include "chrome/test/base/test_url_request_context_getter.h"
+#include "content/test/test_browser_thread.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,6 +25,7 @@ namespace {
 
 using ::testing::InSequence;
 using ::testing::StrictMock;
+using content::BrowserThread;
 
 class NonBlockingInvalidationNotifierTest : public testing::Test {
  public:
@@ -32,13 +36,17 @@ class NonBlockingInvalidationNotifierTest : public testing::Test {
   virtual void SetUp() {
     base::Thread::Options options;
     options.message_loop_type = MessageLoop::TYPE_IO;
-    io_thread_.StartWithOptions(options);
+    io_thread_.StartIOThread();
     request_context_getter_ = new TestURLRequestContextGetter;
     notifier::NotifierOptions notifier_options;
     notifier_options.request_context_getter = request_context_getter_;
     invalidation_notifier_.reset(
-        new NonBlockingInvalidationNotifier(notifier_options,
-                                            "fake_client_info"));
+        new NonBlockingInvalidationNotifier(
+            notifier_options,
+            InvalidationVersionMap(),
+            browser_sync::MakeWeakHandle(
+                base::WeakPtr<sync_notifier::InvalidationVersionTracker>()),
+            "fake_client_info"));
     invalidation_notifier_->AddObserver(&mock_observer_);
   }
 
@@ -51,7 +59,7 @@ class NonBlockingInvalidationNotifierTest : public testing::Test {
   }
 
   MessageLoop ui_loop_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread io_thread_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<NonBlockingInvalidationNotifier> invalidation_notifier_;
   StrictMock<MockSyncNotifierObserver> mock_observer_;
@@ -59,17 +67,32 @@ class NonBlockingInvalidationNotifierTest : public testing::Test {
 };
 
 TEST_F(NonBlockingInvalidationNotifierTest, Basic) {
-  syncable::ModelTypeSet types;
-  types.insert(syncable::BOOKMARKS);
-  types.insert(syncable::AUTOFILL);
+  InSequence dummy;
+
+  syncable::ModelTypePayloadMap type_payloads;
+  type_payloads[syncable::PREFERENCES] = "payload";
+  type_payloads[syncable::BOOKMARKS] = "";
+  type_payloads[syncable::AUTOFILL] = "";
+
+  EXPECT_CALL(mock_observer_, OnNotificationStateChange(true));
+  EXPECT_CALL(mock_observer_, StoreState("new_fake_state"));
+  EXPECT_CALL(mock_observer_,
+              OnIncomingNotification(type_payloads,
+                                     REMOTE_NOTIFICATION));
+  EXPECT_CALL(mock_observer_, OnNotificationStateChange(false));
 
   invalidation_notifier_->SetState("fake_state");
+  invalidation_notifier_->SetUniqueId("fake_id");
   invalidation_notifier_->UpdateCredentials("foo@bar.com", "fake_token");
-  invalidation_notifier_->UpdateEnabledTypes(types);
-}
 
-// TODO(akalin): Add synchronous operations for testing to
-// NonBlockingInvalidationNotifierTest and use that to test it.
+  invalidation_notifier_->OnNotificationStateChange(true);
+  invalidation_notifier_->StoreState("new_fake_state");
+  invalidation_notifier_->OnIncomingNotification(type_payloads,
+                                                 REMOTE_NOTIFICATION);
+  invalidation_notifier_->OnNotificationStateChange(false);
+
+  ui_loop_.RunAllPending();
+}
 
 }  // namespace
 

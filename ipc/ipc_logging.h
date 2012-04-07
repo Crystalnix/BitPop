@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop.h"
+#include "ipc/ipc_export.h"
 
 // Logging function. |name| is a string in ASCII and |params| is a string in
 // UTF-8.
@@ -32,7 +33,7 @@ class Message;
 // One instance per process.  Needs to be created on the main thread (the UI
 // thread in the browser) but OnPreDispatchMessage/OnPostDispatchMessage
 // can be called on other threads.
-class Logging {
+class IPC_EXPORT Logging {
  public:
   // Implemented by consumers of log messages.
   class Consumer {
@@ -69,11 +70,6 @@ class Logging {
   void OnPostDispatchMessage(const Message& message,
                              const std::string& channel_id);
 
-  // Returns the name of the logging enabled/disabled events so that the
-  // sandbox can add them to to the policy.  If true, gets the name of the
-  // enabled event, if false, gets the name of the disabled event.
-  static std::wstring GetEventName(bool enabled);
-
   // Like the *MsgLog functions declared for each message class, except this
   // calls the correct one based on the message type automatically.  Defined in
   // ipc_logging.cc.
@@ -89,6 +85,20 @@ class Logging {
   }
 
  private:
+  typedef enum {
+    ANSI_COLOR_RESET = -1,
+    ANSI_COLOR_BLACK,
+    ANSI_COLOR_RED,
+    ANSI_COLOR_GREEN,
+    ANSI_COLOR_YELLOW,
+    ANSI_COLOR_BLUE,
+    ANSI_COLOR_MAGENTA,
+    ANSI_COLOR_CYAN,
+    ANSI_COLOR_WHITE
+  } ANSIColor;
+  const char* ANSIEscape(ANSIColor color);
+  ANSIColor DelayColor(double delay);
+
   friend struct DefaultSingletonTraits<Logging>;
   Logging();
 
@@ -97,6 +107,7 @@ class Logging {
 
   bool enabled_;
   bool enabled_on_stderr_;  // only used on POSIX for now
+  bool enabled_color_; // only used on POSIX for now
 
   std::vector<LogData> queued_logs_;
   bool queue_invoke_later_pending_;

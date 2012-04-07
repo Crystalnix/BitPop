@@ -27,15 +27,17 @@ static std::string Hash32Bit(const std::string& str) {
 
 AutofillField::AutofillField()
     : server_type_(NO_SERVER_DATA),
-      heuristic_type_(UNKNOWN_TYPE) {
+      heuristic_type_(UNKNOWN_TYPE),
+      phone_part_(IGNORED) {
 }
 
-AutofillField::AutofillField(const webkit_glue::FormField& field,
+AutofillField::AutofillField(const webkit::forms::FormField& field,
                              const string16& unique_name)
-    : webkit_glue::FormField(field),
+    : webkit::forms::FormField(field),
       unique_name_(unique_name),
       server_type_(NO_SERVER_DATA),
-      heuristic_type_(UNKNOWN_TYPE) {
+      heuristic_type_(UNKNOWN_TYPE),
+      phone_part_(IGNORED) {
 }
 
 AutofillField::~AutofillField() {}
@@ -49,6 +51,14 @@ void AutofillField::set_heuristic_type(AutofillFieldType type) {
     // implications on data uploaded to the server, better safe than sorry.
     heuristic_type_ = UNKNOWN_TYPE;
   }
+}
+
+void AutofillField::set_server_type(AutofillFieldType type) {
+  // Chrome no longer supports fax numbers, but the server still does.
+  if (type >= PHONE_FAX_NUMBER && type <= PHONE_FAX_WHOLE_NUMBER)
+    return;
+
+  server_type_ = type;
 }
 
 AutofillFieldType AutofillField::type() const {

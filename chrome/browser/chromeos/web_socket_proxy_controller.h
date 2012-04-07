@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace chromeos {
 
@@ -24,12 +25,7 @@ class WebSocketProxyController {
   // All methods can be called on any thread.
   static void Shutdown();
   static bool IsInitiated();
-
-  static bool CheckCredentials(
-      const std::string& extension_id,
-      const std::string& hostname,
-      unsigned short port,
-      ConnectionFlags);
+  static int GetPort();  // Returns port listening websocket connections.
 };
 
 }  // namespace chromeos

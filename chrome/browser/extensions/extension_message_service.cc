@@ -6,20 +6,26 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/json/json_writer.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_tabs_module.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/extensions/process_map.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_messages.h"
 #include "content/browser/child_process_security_policy.h"
-#include "content/browser/renderer_host/render_process_host.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/site_instance.h"
+#include "content/public/browser/web_contents.h"
+
+using content::SiteInstance;
+using content::WebContents;
 
 // Since we have 2 ports for every channel, we just index channels by half the
 // port ID.
@@ -37,7 +43,7 @@ struct ExtensionMessageService::MessagePort {
   IPC::Message::Sender* sender;
   int routing_id;
   explicit MessagePort(IPC::Message::Sender* sender = NULL,
-              int routing_id = MSG_ROUTING_CONTROL)
+                       int routing_id = MSG_ROUTING_CONTROL)
      : sender(sender), routing_id(routing_id) {}
 };
 
@@ -50,8 +56,6 @@ const char ExtensionMessageService::kDispatchOnConnect[] =
     "Port.dispatchOnConnect";
 const char ExtensionMessageService::kDispatchOnDisconnect[] =
     "Port.dispatchOnDisconnect";
-const char ExtensionMessageService::kDispatchOnMessage[] =
-    "Port.dispatchOnMessage";
 
 namespace {
 
@@ -70,8 +74,11 @@ static void DispatchOnConnect(const ExtensionMessageService::MessagePort& port,
   args.Set(3, Value::CreateStringValue(source_extension_id));
   args.Set(4, Value::CreateStringValue(target_extension_id));
   CHECK(port.sender);
-  port.sender->Send(new ExtensionMsg_MessageInvoke(port.routing_id,
-       "", ExtensionMessageService::kDispatchOnConnect, args, GURL()));
+  port.sender->Send(
+      new ExtensionMsg_MessageInvoke(
+          port.routing_id,
+          target_extension_id,
+          ExtensionMessageService::kDispatchOnConnect, args, GURL()));
 }
 
 static void DispatchOnDisconnect(
@@ -85,12 +92,22 @@ static void DispatchOnDisconnect(
 }
 
 static void DispatchOnMessage(const ExtensionMessageService::MessagePort& port,
-                              const std::string& message, int source_port_id) {
-  ListValue args;
-  args.Set(0, Value::CreateStringValue(message));
-  args.Set(1, Value::CreateIntegerValue(source_port_id));
-  port.sender->Send(new ExtensionMsg_MessageInvoke(port.routing_id,
-      "", ExtensionMessageService::kDispatchOnMessage, args, GURL()));
+                              const std::string& message, int target_port_id) {
+  port.sender->Send(
+      new ExtensionMsg_DeliverMessage(
+          port.routing_id, target_port_id, message));
+}
+
+static content::RenderProcessHost* GetExtensionProcess(Profile* profile,
+                                              const std::string& extension_id) {
+  SiteInstance* site_instance =
+      profile->GetExtensionProcessManager()->GetSiteInstanceForURL(
+          Extension::GetBaseURLFromExtensionId(extension_id));
+
+  if (!site_instance->HasProcess())
+    return NULL;
+
+  return site_instance->GetProcess();
 }
 
 }  // namespace
@@ -116,12 +133,12 @@ void ExtensionMessageService::AllocatePortIdPair(int* port1, int* port2) {
 
 ExtensionMessageService::ExtensionMessageService(Profile* profile)
     : profile_(profile) {
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_TERMINATED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_CLOSED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDER_VIEW_HOST_DELETED,
-                 NotificationService::AllSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDER_VIEW_HOST_DELETED,
+                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 ExtensionMessageService::~ExtensionMessageService() {
@@ -140,18 +157,19 @@ void ExtensionMessageService::OpenChannelToExtension(
     const std::string& source_extension_id,
     const std::string& target_extension_id,
     const std::string& channel_name) {
-  RenderProcessHost* source = RenderProcessHost::FromID(source_process_id);
+  content::RenderProcessHost* source =
+      content::RenderProcessHost::FromID(source_process_id);
   if (!source)
     return;
+  Profile* profile = Profile::FromBrowserContext(source->GetBrowserContext());
 
   // Note: we use the source's profile here. If the source is an incognito
   // process, we will use the incognito EPM to find the right extension process,
   // which depends on whether the extension uses spanning or split mode.
   MessagePort receiver(
-      source->profile()->GetExtensionProcessManager()->GetExtensionProcess(
-          target_extension_id),
+      GetExtensionProcess(profile, target_extension_id),
       MSG_ROUTING_CONTROL);
-  TabContents* source_contents = tab_util::GetTabContentsByID(
+  WebContents* source_contents = tab_util::GetWebContentsByID(
       source_process_id, source_routing_id);
 
   // Include info about the opener's tab (if it was a tab).
@@ -170,19 +188,22 @@ void ExtensionMessageService::OpenChannelToTab(
     int source_process_id, int source_routing_id, int receiver_port_id,
     int tab_id, const std::string& extension_id,
     const std::string& channel_name) {
-  RenderProcessHost* source = RenderProcessHost::FromID(source_process_id);
+  content::RenderProcessHost* source =
+      content::RenderProcessHost::FromID(source_process_id);
   if (!source)
     return;
+  Profile* profile = Profile::FromBrowserContext(source->GetBrowserContext());
 
   TabContentsWrapper* contents = NULL;
   MessagePort receiver;
-  if (ExtensionTabUtil::GetTabById(tab_id, source->profile(), true,
+  if (ExtensionTabUtil::GetTabById(tab_id, profile, true,
                                    NULL, NULL, &contents, NULL)) {
-    receiver.sender = contents->render_view_host();
-    receiver.routing_id = contents->render_view_host()->routing_id();
+    receiver.sender = contents->web_contents()->GetRenderViewHost();
+    receiver.routing_id =
+        contents->web_contents()->GetRenderViewHost()->routing_id();
   }
 
-  if (contents && contents->controller().needs_reload()) {
+  if (contents && contents->web_contents()->GetController().NeedsReload()) {
     // The tab isn't loaded yet. Don't attempt to connect. Treat this as a
     // disconnect.
     DispatchOnDisconnect(MessagePort(source, MSG_ROUTING_CONTROL),
@@ -190,7 +211,7 @@ void ExtensionMessageService::OpenChannelToTab(
     return;
   }
 
-  TabContents* source_contents = tab_util::GetTabContentsByID(
+  WebContents* source_contents = tab_util::GetWebContentsByID(
       source_process_id, source_routing_id);
 
   // Include info about the opener's tab (if it was a tab).
@@ -256,7 +277,7 @@ int ExtensionMessageService::OpenSpecialChannelToExtension(
   AllocatePortIdPair(&port1_id, &port2_id);
 
   MessagePort receiver(
-      profile_->GetExtensionProcessManager()->GetExtensionProcess(extension_id),
+      GetExtensionProcess(profile_, extension_id),
       MSG_ROUTING_CONTROL);
   if (!OpenChannelImpl(source, tab_json, receiver, port2_id,
                        extension_id, extension_id, channel_name))
@@ -267,10 +288,10 @@ int ExtensionMessageService::OpenSpecialChannelToExtension(
 
 int ExtensionMessageService::OpenSpecialChannelToTab(
     const std::string& extension_id, const std::string& channel_name,
-    TabContents* target_tab_contents, IPC::Message::Sender* source) {
-  DCHECK(target_tab_contents);
+    WebContents* target_web_contents, IPC::Message::Sender* source) {
+  DCHECK(target_web_contents);
 
-  if (target_tab_contents->controller().needs_reload()) {
+  if (target_web_contents->GetController().NeedsReload()) {
     // The tab isn't loaded yet. Don't attempt to connect.
     return -1;
   }
@@ -281,8 +302,8 @@ int ExtensionMessageService::OpenSpecialChannelToTab(
   AllocatePortIdPair(&port1_id, &port2_id);
 
   MessagePort receiver(
-      target_tab_contents->render_view_host(),
-      target_tab_contents->render_view_host()->routing_id());
+      target_web_contents->GetRenderViewHost(),
+      target_web_contents->GetRenderViewHost()->routing_id());
   if (!OpenChannelImpl(source, "null", receiver, port2_id,
                        extension_id, extension_id, channel_name))
     return -1;
@@ -324,18 +345,20 @@ void ExtensionMessageService::PostMessageFromRenderer(
 
   DispatchOnMessage(port, message, dest_port_id);
 }
-void ExtensionMessageService::Observe(NotificationType type,
-                                      const NotificationSource& source,
-                                      const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::RENDERER_PROCESS_TERMINATED:
-    case NotificationType::RENDERER_PROCESS_CLOSED: {
-      RenderProcessHost* renderer = Source<RenderProcessHost>(source).ptr();
+void ExtensionMessageService::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case content::NOTIFICATION_RENDERER_PROCESS_TERMINATED:
+    case content::NOTIFICATION_RENDERER_PROCESS_CLOSED: {
+      content::RenderProcessHost* renderer =
+          content::Source<content::RenderProcessHost>(source).ptr();
       OnSenderClosed(renderer);
       break;
     }
-    case NotificationType::RENDER_VIEW_HOST_DELETED:
-      OnSenderClosed(Source<RenderViewHost>(source).ptr());
+    case content::NOTIFICATION_RENDER_VIEW_HOST_DELETED:
+      OnSenderClosed(content::Source<RenderViewHost>(source).ptr());
       break;
     default:
       NOTREACHED();

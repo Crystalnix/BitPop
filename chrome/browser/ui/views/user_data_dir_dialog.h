@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -11,14 +11,13 @@
 
 #include "base/basictypes.h"
 #include "base/message_loop.h"
-#include "chrome/browser/ui/shell_dialogs.h"
-#include "views/window/dialog_delegate.h"
+#include "chrome/browser/ui/select_file_dialog.h"
+#include "ui/views/window/dialog_delegate.h"
 
 class FilePath;
 
 namespace views {
 class MessageBoxView;
-class Window;
 }
 
 class UserDataDirDialog : public views::DialogDelegate,
@@ -34,25 +33,26 @@ class UserDataDirDialog : public views::DialogDelegate,
 
   FilePath user_data_dir() const { return user_data_dir_; }
 
-  // views::DialogDelegate Methods:
-  virtual std::wstring GetDialogButtonLabel(
-      MessageBoxFlags::DialogButton button) const;
-  virtual std::wstring GetWindowTitle() const;
-  virtual void DeleteDelegate();
-  virtual bool Accept();
-  virtual bool Cancel();
+  // views::DialogDelegate methods:
+  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual void DeleteDelegate() OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
 
-  // views::WindowDelegate Methods:
-  virtual bool IsAlwaysOnTop() const { return false; }
-  virtual bool IsModal() const { return false; }
-  virtual views::View* GetContentsView();
+  // views::WidgetDelegate methods:
+  virtual views::View* GetContentsView() OVERRIDE;
+  virtual views::Widget* GetWidget() OVERRIDE;
+  virtual const views::Widget* GetWidget() const OVERRIDE;
 
-  // MessageLoop::Dispatcher Method:
-  virtual bool Dispatch(const MSG& msg);
+  // MessageLoop::Dispatcher method:
+  virtual bool Dispatch(const MSG& msg) OVERRIDE;
 
-  // SelectFileDialog::Listener Methods:
-  virtual void FileSelected(const FilePath& path, int index, void* params);
-  virtual void FileSelectionCanceled(void* params);
+  // SelectFileDialog::Listener methods:
+  virtual void FileSelected(const FilePath& path,
+                            int index,
+                            void* params) OVERRIDE;
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
 
  private:
   explicit UserDataDirDialog(const FilePath& user_data_dir);

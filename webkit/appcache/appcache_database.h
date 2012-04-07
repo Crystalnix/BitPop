@@ -5,6 +5,7 @@
 #ifndef WEBKIT_APPCACHE_APPCACHE_DATABASE_H_
 #define WEBKIT_APPCACHE_APPCACHE_DATABASE_H_
 
+#include <map>
 #include <set>
 #include <vector>
 
@@ -14,6 +15,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time.h"
 #include "googleurl/src/gurl.h"
+#include "webkit/appcache/appcache_export.h"
+#include "webkit/appcache/appcache_interfaces.h"
 
 namespace sql {
 class Connection;
@@ -22,15 +25,11 @@ class Statement;
 class StatementID;
 }
 
-namespace webkit_database {
-class QuotaTable;
-}
-
 namespace appcache {
 
-class AppCacheDatabase {
+class APPCACHE_EXPORT AppCacheDatabase {
  public:
-  struct GroupRecord {
+  struct APPCACHE_EXPORT GroupRecord {
     GroupRecord();
     ~GroupRecord();
 
@@ -41,7 +40,7 @@ class AppCacheDatabase {
     base::Time last_access_time;
   };
 
-  struct CacheRecord {
+  struct APPCACHE_EXPORT CacheRecord {
     CacheRecord()
         : cache_id(0), group_id(0), online_wildcard(false), cache_size(0) {}
 
@@ -62,15 +61,18 @@ class AppCacheDatabase {
     int64 response_size;
   };
 
-  struct FallbackNameSpaceRecord {
-    FallbackNameSpaceRecord();
-    ~FallbackNameSpaceRecord();
+  struct APPCACHE_EXPORT NamespaceRecord {
+    NamespaceRecord();
+    ~NamespaceRecord();
 
     int64 cache_id;
-    GURL origin;  // intentionally not normalized
+    GURL origin;
+    NamespaceType type;
     GURL namespace_url;
-    GURL fallback_entry_url;
+    GURL target_url;
   };
+
+  typedef std::vector<NamespaceRecord> NamespaceRecordVector;
 
   struct OnlineWhiteListRecord {
     OnlineWhiteListRecord() : cache_id(0) {}
@@ -86,9 +88,8 @@ class AppCacheDatabase {
   void Disable();
   bool is_disabled() const { return is_disabled_; }
 
-  int64 GetDefaultOriginQuota() { return 5 * 1024 * 1024; }
   int64 GetOriginUsage(const GURL& origin);
-  int64 GetOriginQuota(const GURL& origin);
+  bool GetAllOriginUsage(std::map<GURL, int64>* usage_map);
 
   bool FindOriginsWithGroups(std::set<GURL>* origins);
   bool FindLastStorageIds(
@@ -132,14 +133,18 @@ class AppCacheDatabase {
     return FindResponseIdsForCacheHelper(cache_id, NULL, response_ids);
   }
 
-  bool FindFallbackNameSpacesForOrigin(
-      const GURL& origin, std::vector<FallbackNameSpaceRecord>* records);
-  bool FindFallbackNameSpacesForCache(
-      int64 cache_id, std::vector<FallbackNameSpaceRecord>* records);
-  bool InsertFallbackNameSpace(const FallbackNameSpaceRecord* record);
-  bool InsertFallbackNameSpaceRecords(
-      const std::vector<FallbackNameSpaceRecord>& records);
-  bool DeleteFallbackNameSpacesForCache(int64 cache_id);
+  bool FindNamespacesForOrigin(
+      const GURL& origin,
+      NamespaceRecordVector* intercepts,
+      NamespaceRecordVector* fallbacks);
+  bool FindNamespacesForCache(
+      int64 cache_id,
+      NamespaceRecordVector* intercepts,
+      std::vector<NamespaceRecord>* fallbacks);
+  bool InsertNamespaceRecords(
+      const NamespaceRecordVector& records);
+  bool InsertNamespace(const NamespaceRecord* record);
+  bool DeleteNamespacesForCache(int64 cache_id);
 
   bool FindOnlineWhiteListForCache(
       int64 cache_id, std::vector<OnlineWhiteListRecord>* records);
@@ -177,8 +182,12 @@ class AppCacheDatabase {
   void ReadGroupRecord(const sql::Statement& statement, GroupRecord* record);
   void ReadCacheRecord(const sql::Statement& statement, CacheRecord* record);
   void ReadEntryRecord(const sql::Statement& statement, EntryRecord* record);
-  void ReadFallbackNameSpaceRecord(
-      const sql::Statement& statement, FallbackNameSpaceRecord* record);
+  void ReadNamespaceRecords(
+      sql::Statement* statement,
+      NamespaceRecordVector* intercepts,
+      NamespaceRecordVector* fallbacks);
+  void ReadNamespaceRecord(
+      const sql::Statement* statement, NamespaceRecord* record);
   void ReadOnlineWhiteListRecord(
       const sql::Statement& statement, OnlineWhiteListRecord* record);
 
@@ -198,19 +207,19 @@ class AppCacheDatabase {
   FilePath db_file_path_;
   scoped_ptr<sql::Connection> db_;
   scoped_ptr<sql::MetaTable> meta_table_;
-  scoped_ptr<webkit_database::QuotaTable> quota_table_;
   bool is_disabled_;
   bool is_recreating_;
 
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, CacheRecords);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, EntryRecords);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, FallbackNameSpaceRecords);
+  FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, NamespaceRecords);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, GroupRecords);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, LazyOpen);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, OnlineWhiteListRecords);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, ReCreate);
   FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, DeletableResponseIds);
-  FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, Quotas);
+  FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, OriginUsage);
+  FRIEND_TEST_ALL_PREFIXES(AppCacheDatabaseTest, UpgradeSchema3to4);
 
   DISALLOW_COPY_AND_ASSIGN(AppCacheDatabase);
 };

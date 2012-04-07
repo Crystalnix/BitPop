@@ -11,6 +11,7 @@
 #include <list>
 
 #include "base/memory/singleton.h"
+#include "ui/base/ui_export.h"
 
 typedef struct _GObject GObject;
 
@@ -46,7 +47,7 @@ namespace ui {
 // TODO(glotov): Probably worth adding ScopedGObjectDtor<T>.
 //
 // This class is a singleton. Not thread safe. Must be called within UI thread.
-class GObjectDestructorFILO {
+class UI_EXPORT GObjectDestructorFILO {
  public:
   typedef void (*DestructorHook)(void* context, GObject* where_the_object_was);
 

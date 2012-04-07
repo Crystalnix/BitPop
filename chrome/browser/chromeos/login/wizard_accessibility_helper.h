@@ -9,12 +9,12 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/chromeos/login/wizard_accessibility_handler.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/keycodes/keyboard_codes.h"
 
 class Profile;
 namespace views {
-class Accelerator;
 class View;
 }
 
@@ -28,7 +28,7 @@ class WizardAccessibilityHelper {
   static WizardAccessibilityHelper* GetInstance();
 
   // Get accelerator for enabling accessibility.
-  static views::Accelerator GetAccelerator();
+  static ui::Accelerator GetAccelerator();
 
   // Speak the given text if the accessibility pref is already set. |queue|
   // specifies whether this utterance will be queued or spoken immediately.
@@ -59,14 +59,12 @@ class WizardAccessibilityHelper {
 
   void SetAccessibilityEnabled(bool);
 
-  static scoped_ptr<views::Accelerator> accelerator_;
-
   scoped_ptr<WizardAccessibilityHandler> accessibility_handler_;
 
   Profile* profile_;
 
   // Used for tracking registrations to accessibility notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   bool registered_notifications_;
 

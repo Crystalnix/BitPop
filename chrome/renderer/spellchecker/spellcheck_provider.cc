@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,14 @@
 #include "base/command_line.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/spellcheck_messages.h"
+#include "chrome/renderer/chrome_content_renderer_client.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingType.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebFrame;
@@ -21,17 +23,18 @@ using WebKit::WebTextCheckingCompletion;
 using WebKit::WebTextCheckingResult;
 using WebKit::WebVector;
 
-SpellCheckProvider::SpellCheckProvider(RenderView* render_view,
-                                       SpellCheck* spellcheck)
-    : RenderViewObserver(render_view),
+SpellCheckProvider::SpellCheckProvider(
+    content::RenderView* render_view,
+    chrome::ChromeContentRendererClient* renderer_client)
+    : content::RenderViewObserver(render_view),
 #if defined(OS_MACOSX)
       has_document_tag_(false),
 #endif
       document_tag_(0),
       spelling_panel_visible_(false),
-      spellcheck_(spellcheck) {
+      chrome_content_renderer_client_(renderer_client) {
   if (render_view)  // NULL in unit tests.
-    render_view->webview()->setSpellCheckClient(this);
+    render_view->GetWebView()->setSpellCheckClient(this);
 }
 
 SpellCheckProvider::~SpellCheckProvider() {
@@ -48,21 +51,20 @@ void SpellCheckProvider::RequestTextChecking(
     const WebString& text,
     int document_tag,
     WebTextCheckingCompletion* completion) {
+#if defined(OS_MACOSX)
   // Text check (unified request for grammar and spell check) is only
-  // available for browser process, so we ask the system sellchecker
+  // available for browser process, so we ask the system spellchecker
   // over IPC or return an empty result if the checker is not
   // available.
-  if (!is_using_platform_spelling_engine()) {
-    completion->didFinishCheckingText
-        (std::vector<WebTextCheckingResult>());
-    return;
-  }
-
-  Send(new SpellCheckHostMsg_PlatformRequestTextCheck(
+  Send(new SpellCheckHostMsg_RequestTextCheck(
       routing_id(),
       text_check_completions_.Add(completion),
       document_tag,
       text));
+#else
+    completion->didFinishCheckingText(
+        std::vector<WebTextCheckingResult>());
+#endif  // !OS_MACOSX
 }
 
 bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
@@ -79,19 +81,21 @@ bool SpellCheckProvider::OnMessageReceived(const IPC::Message& message) {
 }
 
 void SpellCheckProvider::FocusedNodeChanged(const WebKit::WebNode& unused) {
+#if defined(OS_MACOSX)
   bool enabled = false;
   WebKit::WebNode node = render_view()->GetFocusedNode();
   if (!node.isNull())
     enabled = render_view()->IsEditableNode(node);
 
   bool checked = false;
-  if (enabled && render_view()->webview()) {
-    WebFrame* frame = render_view()->webview()->focusedFrame();
+  if (enabled && render_view()->GetWebView()) {
+    WebFrame* frame = render_view()->GetWebView()->focusedFrame();
     if (frame->isContinuousSpellCheckingEnabled())
       checked = true;
   }
 
   Send(new SpellCheckHostMsg_ToggleSpellCheck(routing_id(), enabled, checked));
+#endif  // OS_MACOSX
 }
 
 void SpellCheckProvider::spellCheck(
@@ -103,9 +107,9 @@ void SpellCheckProvider::spellCheck(
 
   string16 word(text);
   // Will be NULL during unit tests.
-  if (spellcheck_) {
+  if (chrome_content_renderer_client_) {
     std::vector<string16> suggestions;
-    spellcheck_->SpellCheckWord(
+    chrome_content_renderer_client_->spellcheck()->SpellCheckWord(
         word.c_str(), word.size(), document_tag_,
         &offset, &length, optional_suggestions ? & suggestions : NULL);
     if (optional_suggestions)
@@ -113,9 +117,37 @@ void SpellCheckProvider::spellCheck(
     if (!optional_suggestions) {
       // If optional_suggestions is not requested, the API is called
       // for marking.  So we use this for counting markable words.
-      Send(new SpellCheckHostMsg_NotifyChecked(routing_id(), 0 < length));
+      Send(new SpellCheckHostMsg_NotifyChecked(routing_id(), word, 0 < length));
     }
   }
+}
+
+void SpellCheckProvider::checkTextOfParagraph(
+    const WebKit::WebString& text,
+    WebKit::WebTextCheckingTypeMask mask,
+    WebKit::WebVector<WebKit::WebTextCheckingResult>* results) {
+#if !defined(OS_MACOSX)
+  // Since Mac has its own spell checker, this method will not be used on Mac.
+
+  if (!results)
+    return;
+
+  if (!(mask & WebKit::WebTextCheckingTypeSpelling))
+    return;
+
+  EnsureDocumentTag();
+
+  // Will be NULL during unit tets.
+  if (!chrome_content_renderer_client_)
+    return;
+
+  std::vector<WebKit::WebTextCheckingResult> tmp_results;
+  chrome_content_renderer_client_->spellcheck()->SpellCheckParagraph(
+      string16(text),
+      document_tag_,
+      &tmp_results);
+  *results = tmp_results;
+#endif
 }
 
 void SpellCheckProvider::requestCheckingOfText(
@@ -129,14 +161,18 @@ WebString SpellCheckProvider::autoCorrectWord(const WebString& word) {
   if (command_line.HasSwitch(switches::kExperimentalSpellcheckerFeatures)) {
     EnsureDocumentTag();
     // Will be NULL during unit tests.
-    if (spellcheck_)
-      return spellcheck_->GetAutoCorrectionWord(word, document_tag_);
+    if (chrome_content_renderer_client_) {
+      return chrome_content_renderer_client_->spellcheck()->
+          GetAutoCorrectionWord(word, document_tag_);
+    }
   }
   return string16();
 }
 
 void SpellCheckProvider::showSpellingUI(bool show) {
+#if defined(OS_MACOSX)
   Send(new SpellCheckHostMsg_ShowSpellingPanel(routing_id(), show));
+#endif
 }
 
 bool SpellCheckProvider::isShowingSpellingUI() {
@@ -145,18 +181,16 @@ bool SpellCheckProvider::isShowingSpellingUI() {
 
 void SpellCheckProvider::updateSpellingUIWithMisspelledWord(
     const WebString& word) {
+#if defined(OS_MACOSX)
   Send(new SpellCheckHostMsg_UpdateSpellingPanelWithMisspelledWord(routing_id(),
                                                                    word));
-}
-
-bool SpellCheckProvider::is_using_platform_spelling_engine() const {
-  return spellcheck_ && spellcheck_->is_using_platform_spelling_engine();
+#endif
 }
 
 void SpellCheckProvider::OnAdvanceToNextMisspelling() {
-  if (!render_view()->webview())
+  if (!render_view()->GetWebView())
     return;
-  render_view()->webview()->focusedFrame()->executeCommand(
+  render_view()->GetWebView()->focusedFrame()->executeCommand(
       WebString::fromUTF8("AdvanceToNextMisspelling"));
 }
 
@@ -173,20 +207,20 @@ void SpellCheckProvider::OnRespondTextCheck(
 }
 
 void SpellCheckProvider::OnToggleSpellPanel(bool is_currently_visible) {
-  if (!render_view()->webview())
+  if (!render_view()->GetWebView())
     return;
   // We need to tell the webView whether the spelling panel is visible or not so
   // that it won't need to make ipc calls later.
   spelling_panel_visible_ = is_currently_visible;
-  render_view()->webview()->focusedFrame()->executeCommand(
+  render_view()->GetWebView()->focusedFrame()->executeCommand(
       WebString::fromUTF8("ToggleSpellPanel"));
 }
 
 void SpellCheckProvider::OnToggleSpellCheck() {
-  if (!render_view()->webview())
+  if (!render_view()->GetWebView())
     return;
 
-  WebFrame* frame = render_view()->webview()->focusedFrame();
+  WebFrame* frame = render_view()->GetWebView()->focusedFrame();
   frame->enableContinuousSpellChecking(
       !frame->isContinuousSpellCheckingEnabled());
 }

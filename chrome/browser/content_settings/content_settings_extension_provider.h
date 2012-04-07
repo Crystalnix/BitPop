@@ -5,69 +5,52 @@
 #ifndef CHROME_BROWSER_CONTENT_SETTINGS_CONTENT_SETTINGS_EXTENSION_PROVIDER_H_
 #define CHROME_BROWSER_CONTENT_SETTINGS_CONTENT_SETTINGS_EXTENSION_PROVIDER_H_
 
-#include "chrome/browser/content_settings/content_settings_provider.h"
-#include "chrome/browser/extensions/extension_content_settings_store.h"
-#include "content/common/notification_details.h"
+#include <string>
 
-class ContentSettingsDetails;
-class Profile;
+#include "base/memory/ref_counted.h"
+#include "chrome/browser/content_settings/content_settings_observable_provider.h"
+#include "chrome/browser/extensions/extension_content_settings_store.h"
 
 namespace content_settings {
 
-// A content settings provider which uses settings defined by extensions.
-class ExtensionProvider : public ProviderInterface,
+// A content settings provider which manages settings defined by extensions.
+class ExtensionProvider : public ObservableProvider,
                           public ExtensionContentSettingsStore::Observer {
  public:
-  ExtensionProvider(Profile* profile,
-                    ExtensionContentSettingsStore* extensions_settings,
+  ExtensionProvider(ExtensionContentSettingsStore* extensions_settings,
                     bool incognito);
 
   virtual ~ExtensionProvider();
 
   // ProviderInterface methods:
-  virtual ContentSetting GetContentSetting(
-      const GURL& embedded_url,
-      const GURL& top_level_url,
-      ContentSettingsType content_type,
-      const ResourceIdentifier& resource_identifier) const;
-
-  virtual void SetContentSetting(
-      const ContentSettingsPattern& embedded_url_pattern,
-      const ContentSettingsPattern& top_level_url_pattern,
+  virtual RuleIterator* GetRuleIterator(
       ContentSettingsType content_type,
       const ResourceIdentifier& resource_identifier,
-      ContentSetting content_setting) {}
+      bool incognito) const OVERRIDE;
 
-  // TODO(markusheintz): The UI needs a way to discover that these rules are
-  // managed by an extension.
-  virtual void GetAllContentSettingsRules(
+  virtual bool SetWebsiteSetting(
+      const ContentSettingsPattern& primary_pattern,
+      const ContentSettingsPattern& secondary_pattern,
       ContentSettingsType content_type,
       const ResourceIdentifier& resource_identifier,
-      Rules* content_setting_rules) const;
+      Value* value) OVERRIDE;
 
-  virtual void ClearAllContentSettingsRules(
-      ContentSettingsType content_type) {}
+  virtual void ClearAllContentSettingsRules(ContentSettingsType content_type)
+      OVERRIDE {}
 
-  virtual void ResetToDefaults() {}
+  virtual void ShutdownOnUIThread() OVERRIDE;
 
   // ExtensionContentSettingsStore::Observer methods:
   virtual void OnContentSettingChanged(const std::string& extension_id,
-                                       bool incognito);
-
-  virtual void OnDestruction();
+                                       bool incognito) OVERRIDE;
 
  private:
-  void NotifyObservers(const ContentSettingsDetails& details);
-
-  // TODO(markusheintz): That's only needed to send Notifications about changed
-  // ContentSettings. This will be changed for all ContentSettingsProviders.
-  // The HCSM will become an Observer of the ContentSettings Provider and send
-  // out the Notifications itself.
-  Profile* profile_;
-
+  // Specifies whether this provider manages settings for incognito or regular
+  // sessions.
   bool incognito_;
 
-  ExtensionContentSettingsStore* extensions_settings_;  // Weak Pointer
+  // The backend storing content setting rules defined by extensions.
+  scoped_refptr<ExtensionContentSettingsStore> extensions_settings_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionProvider);
 };

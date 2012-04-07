@@ -1,94 +1,21 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
-  'target_defaults': {
-    'variables': {
-      'chrome_common_target': 0,
-    },
-    'target_conditions': [
-      ['chrome_common_target==1', {
-        'include_dirs': [
-          '..',
-        ],
-        'conditions': [
-          ['OS=="win"', {
-            'include_dirs': [
-              '<(DEPTH)/third_party/wtl/include',
-            ],
-          }],
-        ],
-        'sources': [
-          # .cc, .h, and .mm files under chrome/common that are used on all
-          # platforms, including both 32-bit and 64-bit Windows.
-          # Test files are not included.
-          'common/about_handler.cc',
-          'common/about_handler.h',
-          'common/app_mode_common_mac.h',
-          'common/app_mode_common_mac.mm',
-          'common/attrition_experiments.h',
-          'common/attributed_string_coder_mac.h',
-          'common/attributed_string_coder_mac.mm',
-          'common/auto_start_linux.cc',
-          'common/auto_start_linux.h',
-          'common/autofill_messages.h',
-          'common/child_process_logging.h',
-          'common/child_process_logging_linux.cc',
-          'common/child_process_logging_mac.mm',
-          'common/child_process_logging_win.cc',
-          'common/chrome_version_info.cc',
-          'common/chrome_version_info.h',
-          'common/content_settings.cc',
-          'common/content_settings.h',
-          'common/content_settings_helper.cc',
-          'common/content_settings_helper.h',
-          'common/content_settings_types.h',
-          'common/external_ipc_fuzzer.h',
-          'common/external_ipc_fuzzer.cc',
-          'common/guid.cc',
-          'common/guid.h',
-          'common/guid_posix.cc',
-          'common/guid_win.cc',
-          'common/icon_messages.h',
-          'common/instant_types.h',
-          'common/logging_chrome.cc',
-          'common/logging_chrome.h',
-          'common/metrics_helpers.cc',
-          'common/metrics_helpers.h',
-          'common/multi_process_lock.h',
-          'common/multi_process_lock_linux.cc',
-          'common/multi_process_lock_mac.cc',
-          'common/multi_process_lock_win.cc',
-          'common/nacl_cmd_line.cc',
-          'common/nacl_cmd_line.h',
-          'common/nacl_messages.cc',
-          'common/nacl_messages.h',
-          'common/nacl_types.h',
-          'common/profiling.cc',
-          'common/profiling.h',
-          'common/ref_counted_util.h',
-          'common/safe_browsing/safebrowsing_messages.h',
-          'common/switch_utils.cc',
-          'common/switch_utils.h',
-          'common/time_format.cc',
-          'common/time_format.h',
-          'common/win_safe_util.cc',
-          'common/win_safe_util.h',
-        ],
-      }],
-    ],
-  },
   'targets': [
     {
       'target_name': 'common',
       'type': 'static_library',
-      'msvs_guid': '899F1280-3441-4D1F-BA04-CCD6208D9146',
       'variables': {
         'chrome_common_target': 1,
+        # TODO(thakis): Turn this on. Blocked on g_log_function_mapping in
+        # ipc_message_macros.h. http://crbug.com/101600
+        #'enable_wexit_time_destructors': 1,
       },
-      # TODO(gregoryd): This could be shared with the 64-bit target, but
-      # it does not work due to a gyp issue.
+      'include_dirs': [
+          '..',
+        ],
       'direct_dependent_settings': {
         'include_dirs': [
           '..',
@@ -98,61 +25,90 @@
         # TODO(gregoryd): chrome_resources and chrome_strings could be
         #  shared with the 64-bit target, but it does not work due to a gyp
         # issue.
-        'app/policy/cloud_policy_codegen.gyp:policy',
-        'chrome_resources',
-        'chrome_strings',
         'common_constants',
         'common_net',
-        'default_plugin/default_plugin.gyp:default_plugin',
-        'safe_browsing_csd_proto',
-        'theme_resources',
-        'theme_resources_standard',
-        '../app/app.gyp:app_base',
-        '../app/app.gyp:app_resources',
-        '../base/base.gyp:base',
-        '../base/base.gyp:base_i18n',
-        '../base/base.gyp:base_static',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
-        '../content/content.gyp:content_common',
-        '../ipc/ipc.gyp:ipc',
-        '../net/net.gyp:net',
-        '../printing/printing.gyp:printing',
-        '../skia/skia.gyp:skia',
-        '../third_party/bzip2/bzip2.gyp:bzip2',
-        '../third_party/icu/icu.gyp:icui18n',
-        '../third_party/icu/icu.gyp:icuuc',
-        '../third_party/libxml/libxml.gyp:libxml',
-        '../third_party/sqlite/sqlite.gyp:sqlite',
-        '../third_party/zlib/zlib.gyp:zlib',
-        '../webkit/support/webkit_support.gyp:glue',
+        'common_version',
+        'metrics_proto',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/base/base.gyp:base_i18n',
+        '<(DEPTH)/base/base.gyp:base_static',
+        '<(DEPTH)/build/temp_gyp/googleurl.gyp:googleurl',
+        '<(DEPTH)/chrome/app/policy/cloud_policy_codegen.gyp:policy',
+        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
+        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
+        '<(DEPTH)/chrome/chrome_resources.gyp:theme_resources',
+        '<(DEPTH)/content/content.gyp:content_common',
+        '<(DEPTH)/ipc/ipc.gyp:ipc',
+        '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/printing/printing.gyp:printing',
+        '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/bzip2/bzip2.gyp:bzip2',
+        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+        '<(DEPTH)/third_party/libxml/libxml.gyp:libxml',
+        '<(DEPTH)/third_party/sqlite/sqlite.gyp:sqlite',
+        '<(DEPTH)/third_party/zlib/zlib.gyp:zlib',
+        '<(DEPTH)/ui/ui.gyp:ui_resources',
+        '<(DEPTH)/ui/ui.gyp:ui_resources_standard',
+        '<(DEPTH)/webkit/support/webkit_support.gyp:glue',
       ],
       'sources': [
-        # .cc, .h, and .mm files under chrome/common that are not required for
-        # building 64-bit Windows targets. Test files are not included.
+        'common/about_handler.cc',
+        'common/about_handler.h',
+        'common/all_messages.h',
+        'common/attrition_experiments.h',
+        'common/auto_start_linux.cc',
+        'common/auto_start_linux.h',
+        'common/autofill_messages.h',
         'common/automation_constants.cc',
         'common/automation_constants.h',
+        'common/automation_id.cc',
+        'common/automation_id.h',
         'common/automation_messages.cc',
         'common/automation_messages.h',
         'common/automation_messages_internal.h',
         'common/badge_util.cc',
         'common/badge_util.h',
         'common/bzip2_error_handler.cc',
+        'common/child_process_logging.h',
+        'common/child_process_logging_linux.cc',
+        'common/child_process_logging_mac.mm',
+        'common/child_process_logging_win.cc',
         'common/chrome_content_client.cc',
         'common/chrome_content_client.h',
-        'common/chrome_content_plugin_client.cc',
-        'common/chrome_content_plugin_client.h',
+        'common/chrome_notification_types.h',
+        'common/chrome_plugin_messages.h',
+        'common/chrome_result_codes.h',
+        'common/chrome_sandbox_type_mac.h',
+        'common/chrome_utility_messages.h',
+        'common/chrome_version_info.cc',
+        'common/chrome_version_info_chromeos.cc',
+        'common/chrome_version_info_linux.cc',
+        'common/chrome_version_info_mac.mm',
+        'common/chrome_version_info_win.cc',
+        'common/chrome_version_info.h',
+        'common/cloud_print/cloud_print_class_mac.h',
+        'common/cloud_print/cloud_print_class_mac.mm',
         'common/cloud_print/cloud_print_proxy_info.cc',
         'common/cloud_print/cloud_print_proxy_info.h',
         'common/common_api.h',
-        'common/common_glue.cc',
         'common/common_message_generator.cc',
         'common/common_message_generator.h',
         'common/common_param_traits.cc',
         'common/common_param_traits.h',
-        'common/default_plugin.cc',
-        'common/default_plugin.h',
-        'common/deprecated/event_sys-inl.h',
-        'common/deprecated/event_sys.h',
+        'common/content_settings.cc',
+        'common/content_settings.h',
+        'common/content_settings_helper.cc',
+        'common/content_settings_helper.h',
+        'common/content_settings_pattern.cc',
+        'common/content_settings_pattern.h',
+        'common/content_settings_pattern_parser.cc',
+        'common/content_settings_pattern_parser.h',
+        'common/content_settings_types.h',
+        'common/custom_handlers/protocol_handler.cc',
+        'common/custom_handlers/protocol_handler.h',
+        'common/extensions/csp_validator.cc',
+        'common/extensions/csp_validator.h',
         'common/extensions/extension.cc',
         'common/extensions/extension.h',
         'common/extensions/extension_action.cc',
@@ -173,17 +129,20 @@
         'common/extensions/extension_message_bundle.h',
         'common/extensions/extension_messages.cc',
         'common/extensions/extension_messages.h',
+        'common/extensions/extension_permission_set.cc',
+        'common/extensions/extension_permission_set.h',
+        'common/extensions/extension_process_policy.cc',
+        'common/extensions/extension_process_policy.h',
         'common/extensions/extension_resource.cc',
         'common/extensions/extension_resource.h',
         'common/extensions/extension_set.cc',
         'common/extensions/extension_set.h',
-        'common/extensions/extension_sidebar_defaults.h',
-        'common/extensions/extension_sidebar_utils.cc',
-        'common/extensions/extension_sidebar_utils.h',
         'common/extensions/extension_unpacker.cc',
         'common/extensions/extension_unpacker.h',
         'common/extensions/file_browser_handler.cc',
         'common/extensions/file_browser_handler.h',
+        'common/extensions/manifest.cc',
+        'common/extensions/manifest.h',
         'common/extensions/update_manifest.cc',
         'common/extensions/update_manifest.h',
         'common/extensions/url_pattern.cc',
@@ -192,31 +151,70 @@
         'common/extensions/url_pattern_set.h',
         'common/extensions/user_script.cc',
         'common/extensions/user_script.h',
+        'common/extensions/api/extension_api.cc',
+        'common/extensions/api/extension_api.h',
+        'common/external_ipc_fuzzer.h',
+        'common/external_ipc_fuzzer.cc',
         'common/favicon_url.cc',
         'common/favicon_url.h',
+        'common/guid.cc',
+        'common/guid.h',
+        'common/guid_posix.cc',
+        'common/guid_win.cc',
+        'common/icon_messages.h',
         'common/important_file_writer.cc',
         'common/important_file_writer.h',
+        'common/instant_types.h',
         'common/json_pref_store.cc',
         'common/json_pref_store.h',
         'common/json_schema_validator.cc',
         'common/json_schema_validator.h',
         'common/jstemplate_builder.cc',
         'common/jstemplate_builder.h',
-        'common/launchd_mac.h',
-        'common/launchd_mac.mm',
+        'common/logging_chrome.cc',
+        'common/logging_chrome.h',
+        'common/mac/app_mode_common.h',
+        'common/mac/app_mode_common.mm',
+        'common/mac/cfbundle_blocker.h',
+        'common/mac/cfbundle_blocker.mm',
+        'common/mac/launchd.h',
+        'common/mac/launchd.mm',
+        'common/mac/objc_method_swizzle.h',
+        'common/mac/objc_method_swizzle.mm',
+        'common/mac/objc_zombie.h',
+        'common/mac/objc_zombie.mm',
+        'common/metrics/histogram_sender.cc',
+        'common/metrics/histogram_sender.h',
+        'common/metrics/metrics_log_base.cc',
+        'common/metrics/metrics_log_base.h',
+        'common/metrics/metrics_log_manager.cc',
+        'common/metrics/metrics_log_manager.h',
+        'common/metrics/metrics_service_base.cc',
+        'common/metrics/metrics_service_base.h',
+        'common/multi_process_lock.h',
+        'common/multi_process_lock_linux.cc',
+        'common/multi_process_lock_mac.cc',
+        'common/multi_process_lock_win.cc',
+        'common/nacl_cmd_line.cc',
+        'common/nacl_cmd_line.h',
+        'common/nacl_messages.cc',
+        'common/nacl_messages.h',
+        'common/nacl_types.h',
         'common/libxml_utils.cc',
         'common/libxml_utils.h',
-        'common/native_window_notification_source.h',
         'common/persistent_pref_store.h',
         'common/pref_store.cc',
         'common/pref_store.h',
+        'common/print_messages.cc',
         'common/print_messages.h',
+        'common/profiling.cc',
+        'common/profiling.h',
         'common/random.cc',
         'common/random.h',
+        'common/ref_counted_util.h',
         'common/render_messages.cc',
         'common/render_messages.h',
-        '<(protoc_out_dir)/chrome/common/safe_browsing/csd.pb.cc',
-        '<(protoc_out_dir)/chrome/common/safe_browsing/csd.pb.h',
+        'common/safe_browsing/safebrowsing_messages.h',
         'common/search_provider.h',
         'common/service_messages.h',
         'common/service_process_util.cc',
@@ -229,15 +227,18 @@
         'common/spellcheck_common.cc',
         'common/spellcheck_common.h',
         'common/spellcheck_messages.h',
-        'common/sqlite_utils.cc',
-        'common/sqlite_utils.h',
-        'common/text_input_client_messages.cc',
-        'common/text_input_client_messages.h',
+        'common/string_ordinal.cc',
+        'common/string_ordinal.h',
+        'common/switch_utils.cc',
+        'common/switch_utils.h',
         'common/thumbnail_score.cc',
         'common/thumbnail_score.h',
+        'common/time_format.cc',
+        'common/time_format.h',
         'common/url_constants.cc',
         'common/url_constants.h',
-        'common/utility_messages.h',
+        'common/chrome_view_type.cc',
+        'common/chrome_view_type.h',
         'common/visitedlink_common.cc',
         'common/visitedlink_common.h',
         'common/web_apps.cc',
@@ -248,8 +249,17 @@
         'common/worker_thread_ticker.h',
         'common/zip.cc',  # Requires zlib directly.
         'common/zip.h',
+        'common/zip_internal.cc',
+        'common/zip_internal.h',
+        'common/zip_reader.cc',
+        'common/zip_reader.h',
       ],
       'conditions': [
+        ['OS=="win"', {
+          'include_dirs': [
+            '<(DEPTH)/third_party/wtl/include',
+          ]
+        }],
         ['toolkit_uses_gtk == 1', {
           'dependencies': [
             '../build/linux/system.gyp:gtk',
@@ -265,11 +275,49 @@
               '-lXext',
             ],
           },
-        },],
-        ['os_posix == 1 and OS != "mac"', {
-          'include_dirs': [
-            '<(SHARED_INTERMEDIATE_DIR)',
+        }],
+        ['OS=="linux" and selinux==1', {
+          'dependencies': [
+            '../build/linux/system.gyp:selinux',
           ],
+        }],
+        ['chromeos==0', {
+          'sources!': [
+            'common/chrome_version_info_chromeos.cc',
+          ],
+        }, {
+          'sources!': [
+            'common/chrome_version_info_linux.cc',
+          ],
+        }],
+        ['OS=="mac"', {
+          'dependencies': [
+            '../third_party/mach_override/mach_override.gyp:mach_override',
+          ],
+          'include_dirs': [
+            '../third_party/GTM',
+          ],
+        }],
+        ['remoting==1', {
+          'dependencies': [
+            '../remoting/remoting.gyp:remoting_client_plugin',
+          ],
+        }],
+      ],
+      'export_dependent_settings': [
+        '../base/base.gyp:base',
+      ],
+    },
+    {
+      'target_name': 'common_version',
+      'type': 'none',
+      'conditions': [
+        ['os_posix == 1 and OS != "mac"', {
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '<(SHARED_INTERMEDIATE_DIR)',
+            ],
+          },
           # Because posix_version generates a header, we must set the
           # hard_dependency flag.
           'hard_dependency': 1,
@@ -318,25 +366,6 @@
             },
           ],
         }],
-        ['OS=="linux" and selinux==1', {
-          'dependencies': [
-            '../build/linux/system.gyp:selinux',
-          ],
-        }],
-        ['OS=="mac"', {
-          'include_dirs': [
-            '../third_party/GTM',
-          ],
-        }],
-        ['remoting==1', {
-          'dependencies': [
-            '../remoting/remoting.gyp:remoting_client_plugin',
-          ],
-        }],
-      ],
-      'export_dependent_settings': [
-        '../app/app.gyp:app_base',
-        '../base/base.gyp:base',
       ],
     },
     {
@@ -355,26 +384,36 @@
         'common/net/gaia/gaia_authenticator.h',
         'common/net/gaia/gaia_oauth_client.cc',
         'common/net/gaia/gaia_oauth_client.h',
+        'common/net/gaia/gaia_urls.cc',
+        'common/net/gaia/gaia_urls.h',
         'common/net/gaia/google_service_auth_error.cc',
         'common/net/gaia/google_service_auth_error.h',
+        'common/net/gaia/oauth_request_signer.cc',
+        'common/net/gaia/oauth_request_signer.h',
+        'common/net/gaia/oauth2_access_token_consumer.h',
+        'common/net/gaia/oauth2_access_token_fetcher.cc',
+        'common/net/gaia/oauth2_access_token_fetcher.h',
+        'common/net/gaia/oauth2_revocation_consumer.h',
+        'common/net/gaia/oauth2_revocation_fetcher.cc',
+        'common/net/gaia/oauth2_revocation_fetcher.h',
         'common/net/x509_certificate_model.cc',
         'common/net/x509_certificate_model_nss.cc',
         'common/net/x509_certificate_model_openssl.cc',
         'common/net/x509_certificate_model.h',
       ],
       'dependencies': [
-        'chrome_resources',
-        'chrome_strings',
-        '../app/app.gyp:app_base',
-        '../base/base.gyp:base',
-        '../gpu/gpu.gyp:gpu_ipc',
-        '../net/net.gyp:net_resources',
-        '../net/net.gyp:net',
-        '../third_party/icu/icu.gyp:icui18n',
-        '../third_party/icu/icu.gyp:icuuc',
+        '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
+        '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
+        '<(DEPTH)/crypto/crypto.gyp:crypto',
+        '<(DEPTH)/gpu/gpu.gyp:gpu_ipc',
+        '<(DEPTH)/net/net.gyp:net_resources',
+        '<(DEPTH)/net/net.gyp:net',
+        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
+        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
       ],
       'conditions': [
-        ['os_posix == 1 and OS != "mac"', {
+        ['os_posix == 1 and OS != "mac" and OS != "android"', {
             'dependencies': [
               '../build/linux/system.gyp:ssl',
             ],
@@ -400,121 +439,37 @@
        ],
     },
     {
-      # Protobuf compiler / generator for the safebrowsing client-side detection
-      # (csd) request protocol buffer which is used both in the renderer and in
-      # the browser.
-      'target_name': 'safe_browsing_csd_proto',
-      'type': 'none',
-      'sources': [ 'common/safe_browsing/csd.proto' ],
-      'rules': [
-        {
-          'rule_name': 'genproto',
-          'extension': 'proto',
-          'inputs': [
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)protoc<(EXECUTABLE_SUFFIX)',
-          ],
-          'variables': {
-            # The protoc compiler requires a proto_path argument with the
-            # directory containing the .proto file.
-            # There's no generator variable that corresponds to this, so fake
-            # it.
-            'rule_input_relpath': 'common/safe_browsing',
-          },
-          'outputs': [
-            '<(protoc_out_dir)/chrome/<(rule_input_relpath)/<(RULE_INPUT_ROOT).pb.h',
-            '<(protoc_out_dir)/chrome/<(rule_input_relpath)/<(RULE_INPUT_ROOT).pb.cc',
-          ],
-          'action': [
-            '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)protoc<(EXECUTABLE_SUFFIX)',
-            '--proto_path=./<(rule_input_relpath)',
-            './<(rule_input_relpath)/<(RULE_INPUT_ROOT)<(RULE_INPUT_EXT)',
-            '--cpp_out=<(protoc_out_dir)/chrome/<(rule_input_relpath)',
-          ],
-          'message': 'Generating C++ code from <(RULE_INPUT_PATH)',
-        },
+      # Protobuf compiler / generator for the safebrowsing client
+      # model proto and the client-side detection (csd) request
+      # protocol buffer.
+      'target_name': 'safe_browsing_proto',
+      'type': 'static_library',
+      'sources': [
+        'common/safe_browsing/client_model.proto',
+        'common/safe_browsing/csd.proto'
       ],
-      'dependencies': [
-        '../third_party/protobuf/protobuf.gyp:protobuf_lite',
-        '../third_party/protobuf/protobuf.gyp:protoc#host',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(protoc_out_dir)',
-        ]
+      'variables': {
+        'proto_in_dir': 'common/safe_browsing',
+        'proto_out_dir': 'chrome/common/safe_browsing',
       },
-      'export_dependent_settings': [
-        '../third_party/protobuf/protobuf.gyp:protobuf_lite',
-      ],
-      'hard_dependency': 1,
+      'includes': [ '../build/protoc.gypi' ],
     },
-  ],
-  'conditions': [
-    ['OS=="win"', {
-      'targets': [
-        {
-          'target_name': 'common_nacl_win64',
-          'type': 'static_library',
-          'msvs_guid': '3AB5C5E9-470C-419B-A0AE-C7381FB632FA',
-          'variables': {
-            'chrome_common_target': 1,
-          },
-          'dependencies': [
-            # TODO(gregoryd): chrome_resources and chrome_strings could be
-            #  shared with the 32-bit target, but it does not work due to a gyp
-            # issue.
-            'chrome_resources',
-            'chrome_strings',
-            'common_constants_win64',
-            'app/policy/cloud_policy_codegen.gyp:policy_win64',
-            '../app/app.gyp:app_base_nacl_win64',
-            '../app/app.gyp:app_resources',
-            '../base/base.gyp:base_nacl_win64',
-            '../ipc/ipc.gyp:ipc_win64',
-            '../third_party/libxml/libxml.gyp:libxml',
-          ],
-          'include_dirs': [
-            '../third_party/icu/public/i18n',
-            '../third_party/icu/public/common',
-            # We usually get these skia directories by adding a dependency on
-            # skia, bu we don't need it for NaCl's 64-bit Windows support. The
-            # directories are required for resolving the includes in any case.
-            '../third_party/skia/include/config',
-            '../third_party/skia/include/core',
-            '../skia/config',
-            '../skia/config/win',
-          ],
-          'defines': [
-            '<@(nacl_win64_defines)',
-          ],
-          'sources': [
-            '../webkit/glue/webkit_glue_dummy.cc',
-            'common/url_constants.cc',
-            # TODO(bradnelson): once automatic generation of 64 bit targets on
-            # Windows is ready, take this out and add a dependency on
-            # content_common.gypi.
-            '../content/common/file_system/file_system_dispatcher_dummy.cc',
-            '../content/common/message_router.cc',
-            '../content/common/quota_dispatcher_dummy.cc',
-            '../content/common/resource_dispatcher_dummy.cc',
-            '../content/common/socket_stream_dispatcher_dummy.cc',
-          ],
-          'export_dependent_settings': [
-            'app/policy/cloud_policy_codegen.gyp:policy_win64',
-          ],
-          # TODO(gregoryd): This could be shared with the 32-bit target, but
-          # it does not work due to a gyp issue.
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '..',
-            ],
-          },
-          'configurations': {
-            'Common_Base': {
-              'msvs_target_platform': 'x64',
-            },
-          },
-        },
+    {
+      # Protobuf compiler / generator for UMA (User Metrics Analysis).
+      'target_name': 'metrics_proto',
+      'type': 'static_library',
+      'sources': [
+        'common/metrics/proto/chrome_user_metrics_extension.proto',
+        'common/metrics/proto/histogram_event.proto',
+        'common/metrics/proto/omnibox_event.proto',
+        'common/metrics/proto/system_profile.proto',
+        'common/metrics/proto/user_action_event.proto',
       ],
-    }],
+      'variables': {
+        'proto_in_dir': 'common/metrics/proto',
+        'proto_out_dir': 'chrome/common/metrics/proto',
+      },
+      'includes': [ '../build/protoc.gypi' ],
+    },
   ],
 }

@@ -9,14 +9,14 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/debugger/devtools_client_host.h"
 #include "chrome/browser/extensions/extension_devtools_manager.h"
 #include "chrome/browser/extensions/extension_message_service.h"
+#include "content/public/browser/devtools_client_host.h"
 
 class Profile;
 
 // This class is a DevToolsClientHost that fires extension events.
-class ExtensionDevToolsBridge : public DevToolsClientHost {
+class ExtensionDevToolsBridge : public content::DevToolsClientHost {
  public:
   ExtensionDevToolsBridge(int tab_id, Profile* profile);
   virtual ~ExtensionDevToolsBridge();
@@ -26,23 +26,20 @@ class ExtensionDevToolsBridge : public DevToolsClientHost {
 
   // DevToolsClientHost, called when the tab inspected by this client is
   // closing.
-  virtual void InspectedTabClosing();
+  virtual void InspectedTabClosing() OVERRIDE;
 
-  // DevToolsClientHost, called to send a message to this host.
-  virtual void SendMessageToClient(const IPC::Message& msg);
+  // DevToolsClientHost, called to dispatch a message on this client.
+  virtual void DispatchOnInspectorFrontend(const std::string& message) OVERRIDE;
 
-  virtual void TabReplaced(TabContentsWrapper* new_tab);
+  virtual void TabReplaced(content::WebContents* new_tab) OVERRIDE;
 
  private:
-  void OnDispatchOnInspectorFrontend(const std::string& data);
-
-  virtual void FrameNavigating(const std::string& url) {}
+  virtual void FrameNavigating(const std::string& url) OVERRIDE {}
 
   // ID of the tab we are monitoring.
   int tab_id_;
 
   scoped_refptr<ExtensionDevToolsManager> extension_devtools_manager_;
-  scoped_refptr<ExtensionMessageService> extension_message_service_;
 
   // Profile that owns our tab
   Profile* profile_;
@@ -56,4 +53,3 @@ class ExtensionDevToolsBridge : public DevToolsClientHost {
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_DEVTOOLS_BRIDGE_H_
-

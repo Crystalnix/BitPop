@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,25 +9,30 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/browser/renderer_host/render_view_host_delegate.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/browser/site_instance.h"
+#include "content/browser/site_instance_impl.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_view_host_delegate.h"
 
-class WebUI;
 class InterstitialPage;
-class NavigationController;
-class NavigationEntry;
-class Profile;
-class RenderWidgetHostView;
+class NavigationControllerImpl;
 class RenderViewHost;
+class RenderWidgetHostView;
+class WebUIImpl;
+
+namespace content {
+class BrowserContext;
+class NavigationEntry;
+class NavigationEntryImpl;
+}
 
 // Manages RenderViewHosts for a TabContents. Normally there is only one and
 // it is easy to do. But we can also have transitions of processes (and hence
 // RenderViewHosts) that can get complex.
-class RenderViewHostManager
-    : public RenderViewHostDelegate::RendererManagement,
-      public NotificationObserver {
+class CONTENT_EXPORT RenderViewHostManager
+    : public content::RenderViewHostDelegate::RendererManagement,
+      public content::NotificationObserver {
  public:
   // Functions implemented by our owner that we need.
   //
@@ -38,9 +43,16 @@ class RenderViewHostManager
   // There is additional complexity that some of the functions we need in
   // TabContents are inherited and non-virtual. These are named with
   // "RenderManager" so that the duplicate implementation of them will be clear.
-  class Delegate {
+  class CONTENT_EXPORT Delegate {
    public:
-    // See tab_contents.h's implementation for more.
+    // Initializes the given renderer if necessary and creates the view ID
+    // corresponding to this view host. If this method is not called and the
+    // process is not shared, then the TabContents will act as though the
+    // renderer is not running (i.e., it will render "sad tab"). This method is
+    // automatically called from LoadURL.
+    //
+    // If you are attaching to an already-existing RenderView, you should call
+    // InitWithExistingID.
     virtual bool CreateRenderViewForRenderManager(
         RenderViewHost* render_view_host) = 0;
     virtual void BeforeUnloadFiredFromRenderManager(
@@ -51,20 +63,21 @@ class RenderViewHostManager
         RenderViewHost* render_view_host) = 0;
     virtual void UpdateRenderViewSizeForRenderManager() = 0;
     virtual void NotifySwappedFromRenderManager() = 0;
-    virtual NavigationController& GetControllerForRenderManager() = 0;
+    virtual NavigationControllerImpl& GetControllerForRenderManager() = 0;
 
     // Creates a WebUI object for the given URL if one applies. Ownership of the
     // returned pointer will be passed to the caller. If no WebUI applies,
     // returns NULL.
-    virtual WebUI* CreateWebUIForRenderManager(const GURL& url) = 0;
+    virtual WebUIImpl* CreateWebUIForRenderManager(const GURL& url) = 0;
 
     // Returns the navigation entry of the current navigation, or NULL if there
     // is none.
-    virtual NavigationEntry*
+    virtual content::NavigationEntry*
         GetLastCommittedNavigationEntryForRenderManager() = 0;
 
     // Returns true if the location bar should be focused by default rather than
-    // the page contents.
+    // the page contents. The view calls this function when the tab is focused
+    // to see what it should do.
     virtual bool FocusLocationBarByDefault() = 0;
 
     // Focuses the location bar.
@@ -82,16 +95,16 @@ class RenderViewHostManager
   // installed into all RenderViewHosts that are created.
   //
   // You must call Init() before using this class.
-  RenderViewHostManager(RenderViewHostDelegate* render_view_delegate,
+  RenderViewHostManager(content::RenderViewHostDelegate* render_view_delegate,
                         Delegate* delegate);
   virtual ~RenderViewHostManager();
 
   // For arguments, see TabContents constructor.
-  void Init(Profile* profile,
-            SiteInstance* site_instance,
+  void Init(content::BrowserContext* browser_context,
+            content::SiteInstance* site_instance,
             int routing_id);
 
-  // Returns the currently actuive RenderViewHost.
+  // Returns the currently active RenderViewHost.
   //
   // This will be non-NULL between Init() and Shutdown(). You may want to NULL
   // check it in many cases, however. Windows can send us messages during the
@@ -110,16 +123,16 @@ class RenderViewHostManager
   }
 
   // Returns the current committed Web UI or NULL if none applies.
-  WebUI* web_ui() const { return web_ui_.get(); }
+  WebUIImpl* web_ui() const { return web_ui_.get(); }
 
   // Returns the Web UI for the pending navigation, or NULL of none applies.
-  WebUI* pending_web_ui() const { return pending_web_ui_.get(); }
+  WebUIImpl* pending_web_ui() const { return pending_web_ui_.get(); }
 
   // Called when we want to instruct the renderer to navigate to the given
   // navigation entry. It may create a new RenderViewHost or re-use an existing
   // one. The RenderViewHost to navigate will be returned. Returns NULL if one
   // could not be created.
-  RenderViewHost* Navigate(const NavigationEntry& entry);
+  RenderViewHost* Navigate(const content::NavigationEntryImpl& entry);
 
   // Instructs the various live views to stop. Called when the user directed the
   // page to stop loading.
@@ -141,7 +154,7 @@ class RenderViewHostManager
   // Set the WebUI after committing a page load. This is useful for navigations
   // initiated from a renderer, where we want to give the new renderer WebUI
   // privileges from the originating renderer.
-  void SetWebUIPostCommit(WebUI* web_ui);
+  void SetWebUIPostCommit(WebUIImpl* web_ui);
 
   // Called when a provisional load on the given renderer is aborted.
   void RendererAbortedProvisionalLoad(RenderViewHost* render_view_host);
@@ -168,23 +181,18 @@ class RenderViewHostManager
   }
 
   // RenderViewHostDelegate::RendererManagement implementation.
-  virtual void ShouldClosePage(bool for_cross_site_transition, bool proceed);
+  virtual void ShouldClosePage(bool for_cross_site_transition,
+                               bool proceed) OVERRIDE;
   virtual void OnCrossSiteResponse(int new_render_process_host_id,
-                                   int new_request_id);
-  virtual void OnCrossSiteNavigationCanceled();
+                                   int new_request_id) OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Called when a RenderViewHost is about to be deleted.
   void RenderViewDeleted(RenderViewHost* rvh);
-
-  // Allows a caller to swap in a provided RenderViewHost to replace the
-  // current RenderViewHost.  The current RVH will be shutdown and ultimately
-  // deleted.
-  void SwapInRenderViewHost(RenderViewHost* rvh);
 
   // Returns whether the given RenderViewHost is on the list of swapped out
   // RenderViewHosts.
@@ -206,24 +214,25 @@ class RenderViewHostManager
   // As part of this, we'll also force new SiteInstances and BrowsingInstances.
   // Either of the entries may be NULL.
   bool ShouldSwapProcessesForNavigation(
-      const NavigationEntry* cur_entry,
-      const NavigationEntry* new_entry) const;
+      const content::NavigationEntry* cur_entry,
+      const content::NavigationEntryImpl* new_entry) const;
 
   // Returns an appropriate SiteInstance object for the given NavigationEntry,
   // possibly reusing the current SiteInstance.
   // Never called if --process-per-tab is used.
-  SiteInstance* GetSiteInstanceForEntry(const NavigationEntry& entry,
-                                        SiteInstance* curr_instance);
+  content::SiteInstance* GetSiteInstanceForEntry(
+      const content::NavigationEntryImpl& entry,
+      content::SiteInstance* curr_instance);
 
   // Helper method to create a pending RenderViewHost for a cross-site
   // navigation.
-  bool CreatePendingRenderView(const NavigationEntry& entry,
-                               SiteInstance* instance);
+  bool CreatePendingRenderView(const content::NavigationEntryImpl& entry,
+                               content::SiteInstance* instance);
 
   // Sets up the necessary state for a new RenderViewHost navigating to the
   // given entry.
   bool InitRenderView(RenderViewHost* render_view_host,
-                      const NavigationEntry& entry);
+                      const content::NavigationEntryImpl& entry);
 
   // Sets the pending RenderViewHost/WebUI to be the active one. Note that this
   // doesn't require the pending render_view_host_ pointer to be non-NULL, since
@@ -233,11 +242,12 @@ class RenderViewHostManager
   // Helper method to terminate the pending RenderViewHost.
   void CancelPending();
 
-  RenderViewHost* UpdateRendererStateForNavigate(const NavigationEntry& entry);
+  RenderViewHost* UpdateRendererStateForNavigate(
+      const content::NavigationEntryImpl& entry);
 
   // Called when a renderer process is starting to close.  We should not
   // schedule new navigations in its swapped out RenderViewHosts after this.
-  void RendererProcessClosing(RenderProcessHost* render_process_host);
+  void RendererProcessClosing(content::RenderProcessHost* render_process_host);
 
   // Our delegate, not owned by us. Guaranteed non-NULL.
   Delegate* delegate_;
@@ -249,13 +259,13 @@ class RenderViewHostManager
 
   // Implemented by the owner of this class, this delegate is installed into all
   // the RenderViewHosts that we create.
-  RenderViewHostDelegate* render_view_delegate_;
+  content::RenderViewHostDelegate* render_view_delegate_;
 
   // Our RenderView host and its associated Web UI (if any, will be NULL for
   // non-DOM-UI pages). This object is responsible for all communication with
   // a child RenderView instance.
   RenderViewHost* render_view_host_;
-  scoped_ptr<WebUI> web_ui_;
+  scoped_ptr<WebUIImpl> web_ui_;
 
   // A RenderViewHost used to load a cross-site page. This remains hidden
   // while a cross-site request is pending until it calls DidNavigate. It may
@@ -267,7 +277,7 @@ class RenderViewHostManager
   // the RVH won't be swapped, so the pending pointer will be unused, but there
   // will be a pending Web UI associated with the navigation.
   RenderViewHost* pending_render_view_host_;
-  scoped_ptr<WebUI> pending_web_ui_;
+  scoped_ptr<WebUIImpl> pending_web_ui_;
 
   // A map of site instance ID to swapped out RenderViewHosts.
   typedef base::hash_map<int32, RenderViewHost*> RenderViewHostMap;
@@ -277,16 +287,9 @@ class RenderViewHostManager
   // (the InterstitialPage is self-owned, it deletes itself when hidden).
   InterstitialPage* interstitial_page_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostManager);
-};
-
-// The "details" for a NOTIFY_RENDER_VIEW_HOST_CHANGED notification. The old
-// host can be NULL when the first RenderViewHost is set.
-struct RenderViewHostSwitchedDetails {
-  RenderViewHost* old_host;
-  RenderViewHost* new_host;
 };
 
 #endif  // CONTENT_BROWSER_TAB_CONTENTS_RENDER_VIEW_HOST_MANAGER_H_

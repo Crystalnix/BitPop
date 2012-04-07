@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -19,31 +19,27 @@
 #include "base/path_service.h"
 #include "base/string16.h"
 #include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
 #include "base/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/download/download_create_info.h"
 #include "chrome/browser/download/download_extensions.h"
-#include "chrome/browser/download/download_item.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_manager.h"
-#include "chrome/browser/download/download_types.h"
-#include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/extension_install_ui.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/time_format.h"
-#include "content/browser/browser_thread.h"
+#include "content/browser/download/download_create_info.h"
+#include "content/browser/download/download_file.h"
+#include "content/browser/download/download_types.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/renderer_host/resource_dispatcher_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/download_item.h"
+#include "content/public/browser/download_manager.h"
+#include "content/public/common/url_constants.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
@@ -54,26 +50,27 @@
 #include "third_party/skia/include/core/SkShader.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/text/bytes_formatting.h"
 #include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "views/drag_utils.h"
+#include "ui/views/drag_utils.h"
 #endif
 
 #if defined(TOOLKIT_USES_GTK)
 #if defined(TOOLKIT_VIEWS)
 #include "ui/base/dragdrop/drag_drop_types.h"
-#include "views/widget/native_widget_gtk.h"
+#include "ui/views/widget/native_widget_gtk.h"
 #elif defined(TOOLKIT_GTK)
 #include "chrome/browser/ui/gtk/custom_drag.h"
 #include "chrome/browser/ui/gtk/unity_service.h"
 #endif  // defined(TOOLKIT_GTK)
 #endif  // defined(TOOLKIT_USES_GTK)
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 #include "base/win/scoped_comptr.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -85,121 +82,38 @@
 // the same value on all platforms.
 static const double PI = 3.141592653589793;
 
+using content::DownloadFile;
+using content::DownloadItem;
+
+namespace {
+
+// Returns a string constant to be used as the |danger_type| value in
+// CreateDownloadItemValue().  We only return strings for DANGEROUS_FILE,
+// DANGEROUS_URL and DANGEROUS_CONTENT because the |danger_type| value is only
+// defined if the value of |state| is |DANGEROUS|.
+const char* GetDangerTypeString(content::DownloadDangerType danger_type) {
+  switch (danger_type) {
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE:
+      return "DANGEROUS_FILE";
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL:
+      return "DANGEROUS_URL";
+    case content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT:
+      return "DANGEROUS_CONTENT";
+    default:
+      // We shouldn't be returning a danger type string if it is
+      // NOT_DANGEROUS or MAYBE_DANGEROUS_CONTENT.
+      NOTREACHED();
+      return "";
+  }
+}
+
+}  // namespace
+
 namespace download_util {
 
 // How many times to cycle the complete animation. This should be an odd number
 // so that the animation ends faded out.
 static const int kCompleteAnimationCycles = 5;
-
-// The maximum number of 'uniquified' files we will try to create.
-// This is used when the filename we're trying to download is already in use,
-// so we create a new unique filename by appending " (nnn)" before the
-// extension, where 1 <= nnn <= kMaxUniqueFiles.
-// Also used by code that cleans up said files.
-static const int kMaxUniqueFiles = 100;
-
-namespace {
-
-#if defined(OS_WIN)
-// Returns whether the specified extension is automatically integrated into the
-// windows shell.
-bool IsShellIntegratedExtension(const string16& extension) {
-  string16 extension_lower = StringToLowerASCII(extension);
-
-  static const wchar_t* const integrated_extensions[] = {
-    // See <http://msdn.microsoft.com/en-us/library/ms811694.aspx>.
-    L"local",
-    // Right-clicking on shortcuts can be magical.
-    L"lnk",
-  };
-
-  for (int i = 0; i < arraysize(integrated_extensions); ++i) {
-    if (extension_lower == integrated_extensions[i])
-      return true;
-  }
-
-  // See <http://www.juniper.net/security/auto/vulnerabilities/vuln2612.html>.
-  // That vulnerability report is not exactly on point, but files become magical
-  // if their end in a CLSID.  Here we block extensions that look like CLSIDs.
-  if (!extension_lower.empty() && extension_lower[0] == L'{' &&
-      extension_lower[extension_lower.length() - 1] == L'}')
-    return true;
-
-  return false;
-}
-
-// Returns whether the specified file name is a reserved name on windows.
-// This includes names like "com2.zip" (which correspond to devices) and
-// desktop.ini and thumbs.db which have special meaning to the windows shell.
-bool IsReservedName(const string16& filename) {
-  // This list is taken from the MSDN article "Naming a file"
-  // http://msdn2.microsoft.com/en-us/library/aa365247(VS.85).aspx
-  // I also added clock$ because GetSaveFileName seems to consider it as a
-  // reserved name too.
-  static const wchar_t* const known_devices[] = {
-    L"con", L"prn", L"aux", L"nul", L"com1", L"com2", L"com3", L"com4", L"com5",
-    L"com6", L"com7", L"com8", L"com9", L"lpt1", L"lpt2", L"lpt3", L"lpt4",
-    L"lpt5", L"lpt6", L"lpt7", L"lpt8", L"lpt9", L"clock$"
-  };
-  string16 filename_lower = StringToLowerASCII(filename);
-
-  for (int i = 0; i < arraysize(known_devices); ++i) {
-    // Exact match.
-    if (filename_lower == known_devices[i])
-      return true;
-    // Starts with "DEVICE.".
-    if (filename_lower.find(string16(known_devices[i]) + L".") == 0)
-      return true;
-  }
-
-  static const wchar_t* const magic_names[] = {
-    // These file names are used by the "Customize folder" feature of the shell.
-    L"desktop.ini",
-    L"thumbs.db",
-  };
-
-  for (int i = 0; i < arraysize(magic_names); ++i) {
-    if (filename_lower == magic_names[i])
-      return true;
-  }
-
-  return false;
-}
-#endif  // OS_WIN
-
-void GenerateFileNameInternal(const GURL& url,
-                              const std::string& content_disposition,
-                              const std::string& referrer_charset,
-                              const std::string& suggested_name,
-                              const std::string& mime_type,
-                              FilePath* generated_name) {
-
-  string16 default_file_name(
-      l10n_util::GetStringUTF16(IDS_DEFAULT_DOWNLOAD_FILENAME));
-
-  string16 new_name = net::GetSuggestedFilename(GURL(url),
-                                                content_disposition,
-                                                referrer_charset,
-                                                suggested_name,
-                                                default_file_name);
-
-  // TODO(evan): this code is totally wrong -- we should just generate
-  // Unicode filenames and do all this encoding switching at the end.
-  // However, I'm just shuffling wrong code around, at least not adding
-  // to it.
-#if defined(OS_WIN)
-  *generated_name = FilePath(new_name);
-#else
-  *generated_name = FilePath(
-      base::SysWideToNativeMB(UTF16ToWide(new_name)));
-#endif
-
-  DCHECK(!generated_name->empty());
-
-  GenerateSafeFileName(mime_type, generated_name);
-}
-
-}  // namespace
 
 // Download temporary file creation --------------------------------------------
 
@@ -222,17 +136,10 @@ class DefaultDownloadDirectory {
 };
 
 static base::LazyInstance<DefaultDownloadDirectory>
-    g_default_download_directory(base::LINKER_INITIALIZED);
+    g_default_download_directory = LAZY_INSTANCE_INITIALIZER;
 
 const FilePath& GetDefaultDownloadDirectory() {
   return g_default_download_directory.Get().path();
-}
-
-bool CreateTemporaryFileForDownload(FilePath* temp_file) {
-  if (file_util::CreateTemporaryFileInDir(GetDefaultDownloadDirectory(),
-                                          temp_file))
-    return true;
-  return file_util::CreateTemporaryFile(temp_file);
 }
 
 bool DownloadPathIsDangerous(const FilePath& download_path) {
@@ -244,135 +151,17 @@ bool DownloadPathIsDangerous(const FilePath& download_path) {
   return (download_path == desktop_dir);
 }
 
-void GenerateExtension(const FilePath& file_name,
-                       const std::string& mime_type,
-                       FilePath::StringType* generated_extension) {
-  // We're worried about two things here:
-  //
-  // 1) Usability.  If the site fails to provide a file extension, we want to
-  //    guess a reasonable file extension based on the content type.
-  //
-  // 2) Shell integration.  Some file extensions automatically integrate with
-  //    the shell.  We block these extensions to prevent a malicious web site
-  //    from integrating with the user's shell.
-
-  // See if our file name already contains an extension.
-  FilePath::StringType extension = file_name.Extension();
-  if (!extension.empty())
-    extension.erase(extension.begin());  // Erase preceding '.'.
-
-#if defined(OS_WIN)
-  static const FilePath::CharType default_extension[] =
-      FILE_PATH_LITERAL("download");
-
-  // Rename shell-integrated extensions.
-  if (IsShellIntegratedExtension(extension))
-    extension.assign(default_extension);
-#endif
-
-  if (extension.empty()) {
-    // The GetPreferredExtensionForMimeType call will end up going to disk.  Do
-    // this on another thread to avoid slowing the IO thread.
-    // http://crbug.com/61827
-    base::ThreadRestrictions::ScopedAllowIO allow_io;
-    net::GetPreferredExtensionForMimeType(mime_type, &extension);
-  }
-
-  generated_extension->swap(extension);
-}
-
-void GenerateFileNameFromRequest(const GURL& url,
-                                 const std::string& content_disposition,
-                                 const std::string& referrer_charset,
-                                 const std::string& mime_type,
+void GenerateFileNameFromRequest(const DownloadItem& download_item,
                                  FilePath* generated_name) {
-  GenerateFileNameInternal(url,
-                           content_disposition,
-                           referrer_charset,
-                           std::string(),
-                           mime_type,
-                           generated_name);
-}
+  std::string default_file_name(
+      l10n_util::GetStringUTF8(IDS_DEFAULT_DOWNLOAD_FILENAME));
 
-void GenerateFileNameFromSuggestedName(const GURL& url,
-                                       const std::string& suggested_name,
-                                       const std::string& mime_type,
-                                       FilePath* generated_name) {
-  GenerateFileNameInternal(url, std::string(), std::string(),
-                           suggested_name, mime_type, generated_name);
-}
-
-void GenerateFileName(const GURL& url,
-                      const std::string& content_disposition,
-                      const std::string& referrer_charset,
-                      const std::string& mime_type,
-                      FilePath* generated_name) {
-  GenerateFileNameInternal(url, content_disposition, referrer_charset,
-                           std::string(), mime_type, generated_name);
-}
-
-void GenerateSafeFileName(const std::string& mime_type, FilePath* file_name) {
-  // Make sure we get the right file extension
-  FilePath::StringType extension;
-  GenerateExtension(*file_name, mime_type, &extension);
-  *file_name = file_name->ReplaceExtension(extension);
-
-#if defined(OS_WIN)
-  // Prepend "_" to the file name if it's a reserved name
-  FilePath::StringType leaf_name = file_name->BaseName().value();
-  DCHECK(!leaf_name.empty());
-  if (IsReservedName(leaf_name)) {
-    leaf_name = FilePath::StringType(FILE_PATH_LITERAL("_")) + leaf_name;
-    *file_name = file_name->DirName();
-    if (file_name->value() == FilePath::kCurrentDirectory) {
-      *file_name = FilePath(leaf_name);
-    } else {
-      *file_name = file_name->Append(leaf_name);
-    }
-  }
-#endif
-}
-
-scoped_refptr<CrxInstaller> OpenChromeExtension(
-    Profile* profile,
-    const DownloadItem& download_item) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(download_item.is_extension_install());
-
-  ExtensionService* service = profile->GetExtensionService();
-  CHECK(service);
-  NotificationService* nservice = NotificationService::current();
-  GURL nonconst_download_url = download_item.GetURL();
-  nservice->Notify(NotificationType::EXTENSION_READY_FOR_INSTALL,
-                   Source<DownloadManager>(profile->GetDownloadManager()),
-                   Details<GURL>(&nonconst_download_url));
-
-  scoped_refptr<CrxInstaller> installer(
-      service->MakeCrxInstaller(new ExtensionInstallUI(profile)));
-  installer->set_delete_source(true);
-
-  if (UserScript::IsURLUserScript(download_item.GetURL(),
-                                  download_item.mime_type())) {
-    installer->InstallUserScript(download_item.full_path(),
-                                 download_item.GetURL());
-  } else {
-    bool is_gallery_download = service->IsDownloadFromGallery(
-        download_item.GetURL(), download_item.referrer_url());
-    installer->set_original_mime_type(download_item.original_mime_type());
-    installer->set_apps_require_extension_mime_type(true);
-    installer->set_original_url(download_item.GetURL());
-    installer->set_is_gallery_install(is_gallery_download);
-    installer->set_allow_silent_install(is_gallery_download);
-    installer->set_install_cause(extension_misc::INSTALL_CAUSE_USER_DOWNLOAD);
-    installer->InstallCrx(download_item.full_path());
-  }
-
-  return installer;
-}
-
-void RecordDownloadCount(DownloadCountTypes type) {
-  UMA_HISTOGRAM_ENUMERATION(
-      "Download.Counts", type, DOWNLOAD_COUNT_TYPES_LAST_ENTRY);
+  *generated_name = net::GenerateFileName(download_item.GetURL(),
+                                          download_item.GetContentDisposition(),
+                                          download_item.GetReferrerCharset(),
+                                          download_item.GetSuggestedFilename(),
+                                          download_item.GetMimeType(),
+                                          default_file_name);
 }
 
 // Download progress painting --------------------------------------------------
@@ -474,7 +263,7 @@ void PaintDownloadProgress(gfx::Canvas* canvas,
     foreground_paint.setShader(shader);
     foreground_paint.setAntiAlias(true);
     shader->unref();
-    canvas->AsCanvasSkia()->drawPath(path, foreground_paint);
+    canvas->GetSkCanvas()->drawPath(path, foreground_paint);
     return;
   }
 
@@ -514,7 +303,7 @@ void PaintDownloadComplete(gfx::Canvas* canvas,
                    PI/2) / 2 + 0.5;
 
   canvas->SaveLayerAlpha(static_cast<int>(255.0 * opacity), complete_bounds);
-  canvas->AsCanvasSkia()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
   canvas->DrawBitmapInt(*complete, complete_bounds.x(), complete_bounds.y());
   canvas->Restore();
 }
@@ -550,7 +339,7 @@ void PaintDownloadInterrupted(gfx::Canvas* canvas,
           0.5;
 
   canvas->SaveLayerAlpha(static_cast<int>(255.0 * opacity), complete_bounds);
-  canvas->AsCanvasSkia()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
+  canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255, SkXfermode::kClear_Mode);
   canvas->DrawBitmapInt(*complete, complete_bounds.x(), complete_bounds.y());
   canvas->Restore();
 }
@@ -591,20 +380,23 @@ void DragDownload(const DownloadItem* download,
         download->GetFileNameToReportUser(), *icon, &data);
   }
 
-  const FilePath full_path = download->full_path();
+  const FilePath full_path = download->GetFullPath();
   data.SetFilename(full_path);
 
-  std::string mime_type = download->mime_type();
+  std::string mime_type = download->GetMimeType();
   if (mime_type.empty())
     net::GetMimeTypeFromFile(full_path, &mime_type);
 
-  // Add URL so that we can load supported files when dragged to TabContents.
+  // Add URL so that we can load supported files when dragged to WebContents.
   if (net::IsSupportedMimeType(mime_type)) {
     data.SetURL(net::FilePathToFileURL(full_path),
                 download->GetFileNameToReportUser().LossyDisplayName());
   }
 
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+  // TODO(beng):
+  NOTIMPLEMENTED();
+#elif defined(OS_WIN)
   scoped_refptr<ui::DragSource> drag_source(new ui::DragSource);
 
   // Run the drag and drop loop
@@ -617,7 +409,7 @@ void DragDownload(const DownloadItem* download,
     return;
 
   views::NativeWidgetGtk* widget = static_cast<views::NativeWidgetGtk*>(
-      views::NativeWidget::GetNativeWidgetForNativeView(root));
+      views::Widget::GetWidgetForNativeView(root)->native_widget());
   if (!widget)
     return;
 
@@ -637,32 +429,43 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
   DictionaryValue* file_value = new DictionaryValue();
 
   file_value->SetInteger("started",
-      static_cast<int>(download->start_time().ToTimeT()));
+      static_cast<int>(download->GetStartTime().ToTimeT()));
   file_value->SetString("since_string",
-      TimeFormat::RelativeDate(download->start_time(), NULL));
+      TimeFormat::RelativeDate(download->GetStartTime(), NULL));
   file_value->SetString("date_string",
-      base::TimeFormatShortDate(download->start_time()));
+      base::TimeFormatShortDate(download->GetStartTime()));
   file_value->SetInteger("id", id);
-  file_value->Set("file_path",
-                  base::CreateFilePathValue(download->GetTargetFilePath()));
+
+  FilePath download_path(download->GetTargetFilePath());
+  file_value->Set("file_path", base::CreateFilePathValue(download_path));
+  file_value->SetString("file_url",
+                        net::FilePathToFileURL(download_path).spec());
+
   // Keep file names as LTR.
   string16 file_name = download->GetFileNameToReportUser().LossyDisplayName();
   file_name = base::i18n::GetDisplayStringInLTRDirectionality(file_name);
   file_value->SetString("file_name", file_name);
   file_value->SetString("url", download->GetURL().spec());
-  file_value->SetBoolean("otr", download->is_otr());
-  file_value->SetInteger("total", static_cast<int>(download->total_bytes()));
+  file_value->SetBoolean("otr", download->IsOtr());
+  file_value->SetInteger("total", static_cast<int>(download->GetTotalBytes()));
+  file_value->SetBoolean("file_externally_removed",
+                         download->GetFileExternallyRemoved());
 
   if (download->IsInProgress()) {
-    if (download->safety_state() == DownloadItem::DANGEROUS) {
+    if (download->GetSafetyState() == DownloadItem::DANGEROUS) {
       file_value->SetString("state", "DANGEROUS");
-      DCHECK(download->GetDangerType() == DownloadItem::DANGEROUS_FILE ||
-             download->GetDangerType() == DownloadItem::DANGEROUS_URL);
+      // These are the only danger states we expect to see (and the UI is
+      // equipped to handle):
+      DCHECK(download->GetDangerType() ==
+                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_FILE ||
+             download->GetDangerType() ==
+                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_URL ||
+             download->GetDangerType() ==
+                 content::DOWNLOAD_DANGER_TYPE_DANGEROUS_CONTENT);
       const char* danger_type_value =
-          download->GetDangerType() == DownloadItem::DANGEROUS_FILE ?
-          "DANGEROUS_FILE" : "DANGEROUS_URL";
+          GetDangerTypeString(download->GetDangerType());
       file_value->SetString("danger_type", danger_type_value);
-    } else if (download->is_paused()) {
+    } else if (download->IsPaused()) {
       file_value->SetString("state", "PAUSED");
     } else {
       file_value->SetString("state", "IN_PROGRESS");
@@ -674,7 +477,7 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
     file_value->SetInteger("percent",
         static_cast<int>(download->PercentComplete()));
     file_value->SetInteger("received",
-        static_cast<int>(download->received_bytes()));
+        static_cast<int>(download->GetReceivedBytes()));
   } else if (download->IsInterrupted()) {
     file_value->SetString("state", "INTERRUPTED");
 
@@ -684,16 +487,15 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
     file_value->SetInteger("percent",
         static_cast<int>(download->PercentComplete()));
     file_value->SetInteger("received",
-        static_cast<int>(download->received_bytes()));
+        static_cast<int>(download->GetReceivedBytes()));
   } else if (download->IsCancelled()) {
     file_value->SetString("state", "CANCELLED");
   } else if (download->IsComplete()) {
-    if (download->safety_state() == DownloadItem::DANGEROUS) {
+    if (download->GetSafetyState() == DownloadItem::DANGEROUS)
       file_value->SetString("state", "DANGEROUS");
-    } else {
+    else
       file_value->SetString("state", "COMPLETE");
-    }
-  } else if (download->state() == DownloadItem::REMOVING) {
+  } else if (download->GetState() == DownloadItem::REMOVING) {
     file_value->SetString("state", "REMOVING");
   } else {
     NOTREACHED() << "state undefined";
@@ -703,10 +505,9 @@ DictionaryValue* CreateDownloadItemValue(DownloadItem* download, int id) {
 }
 
 string16 GetProgressStatusText(DownloadItem* download) {
-  int64 total = download->total_bytes();
-  int64 size = download->received_bytes();
-  DataUnits amount_units = GetByteDisplayUnits(size);
-  string16 received_size = FormatBytes(size, amount_units, true);
+  int64 total = download->GetTotalBytes();
+  int64 size = download->GetReceivedBytes();
+  string16 received_size = ui::FormatBytes(size);
   string16 amount = received_size;
 
   // Adjust both strings for the locale direction since we don't yet know which
@@ -714,8 +515,7 @@ string16 GetProgressStatusText(DownloadItem* download) {
   base::i18n::AdjustStringForLocaleDirection(&amount);
 
   if (total) {
-    amount_units = GetByteDisplayUnits(total);
-    string16 total_text = FormatBytes(total, amount_units, true);
+    string16 total_text = ui::FormatBytes(total);
     base::i18n::AdjustStringForLocaleDirection(&total_text);
 
     base::i18n::AdjustStringForLocaleDirection(&received_size);
@@ -726,13 +526,12 @@ string16 GetProgressStatusText(DownloadItem* download) {
     amount.assign(received_size);
   }
   int64 current_speed = download->CurrentSpeed();
-  amount_units = GetByteDisplayUnits(current_speed);
-  string16 speed_text = FormatSpeed(current_speed, amount_units, true);
+  string16 speed_text = ui::FormatSpeed(current_speed);
   base::i18n::AdjustStringForLocaleDirection(&speed_text);
 
   base::TimeDelta remaining;
   string16 time_remaining;
-  if (download->is_paused())
+  if (download->IsPaused())
     time_remaining = l10n_util::GetStringUTF16(IDS_DOWNLOAD_PROGRESS_PAUSED);
   else if (download->TimeRemaining(&remaining))
     time_remaining = TimeFormat::TimeRemaining(remaining);
@@ -750,7 +549,9 @@ string16 GetProgressStatusText(DownloadItem* download) {
 void UpdateAppIconDownloadProgress(int download_count,
                                    bool progress_known,
                                    float progress) {
-#if defined(OS_WIN)
+#if defined(USE_AURA)
+  // TODO(davemoore) Implement once UX for download is decided <104742>
+#elif defined(OS_WIN)
   // Taskbar progress bar is only supported on Win7.
   if (base::win::GetVersion() < base::win::VERSION_WIN7)
     return;
@@ -791,129 +592,47 @@ void UpdateAppIconDownloadProgress(int download_count,
 }
 #endif
 
-// Appends the passed the number between parenthesis the path before the
-// extension.
-void AppendNumberToPath(FilePath* path, int number) {
-  *path = path->InsertBeforeExtensionASCII(StringPrintf(" (%d)", number));
-}
-
-// Attempts to find a number that can be appended to that path to make it
-// unique. If |path| does not exist, 0 is returned.  If it fails to find such
-// a number, -1 is returned.
-int GetUniquePathNumber(const FilePath& path) {
-  if (!file_util::PathExists(path))
-    return 0;
-
-  FilePath new_path;
-  for (int count = 1; count <= kMaxUniqueFiles; ++count) {
-    new_path = FilePath(path);
-    AppendNumberToPath(&new_path, count);
-
-    if (!file_util::PathExists(new_path))
-      return count;
-  }
-
-  return -1;
-}
-
-void DownloadUrl(
-    const GURL& url,
-    const GURL& referrer,
-    const std::string& referrer_charset,
-    const DownloadSaveInfo& save_info,
-    ResourceDispatcherHost* rdh,
-    int render_process_host_id,
-    int render_view_id,
-    const content::ResourceContext* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  rdh->BeginDownload(url,
-                     referrer,
-                     save_info,
-                     true,  // Show "Save as" UI.
-                     render_process_host_id,
-                     render_view_id,
-                     *context);
-}
-
-static void CancelDownloadRequestOnIOThread(
-    ResourceDispatcherHost* rdh, DownloadProcessHandle process_handle) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  // |rdh| may be NULL in unit tests.
-  if (!rdh)
-    return;
-
-  rdh->CancelRequest(process_handle.child_id(),
-                     process_handle.request_id(),
-                     false);
-}
-
-void CancelDownloadRequest(ResourceDispatcherHost* rdh,
-                           DownloadProcessHandle process_handle) {
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(&download_util::CancelDownloadRequestOnIOThread,
-                          rdh, process_handle));
-}
-
-void NotifyDownloadInitiated(int render_process_id, int render_view_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  RenderViewHost* rvh = RenderViewHost::FromID(render_process_id,
-                                               render_view_id);
-  if (!rvh)
-    return;
-
-  NotificationService::current()->Notify(NotificationType::DOWNLOAD_INITIATED,
-                                         Source<RenderViewHost>(rvh),
-                                         NotificationService::NoDetails());
-}
-
 int GetUniquePathNumberWithCrDownload(const FilePath& path) {
-  if (!file_util::PathExists(path) &&
-      !file_util::PathExists(GetCrDownloadPath(path)))
-    return 0;
-
-  FilePath new_path;
-  for (int count = 1; count <= kMaxUniqueFiles; ++count) {
-    new_path = FilePath(path);
-    AppendNumberToPath(&new_path, count);
-
-    if (!file_util::PathExists(new_path) &&
-        !file_util::PathExists(GetCrDownloadPath(new_path)))
-      return count;
-  }
-
-  return -1;
-}
-
-namespace {
-
-// NOTE: If index is 0, deletes files that do not have the " (nnn)" appended.
-void DeleteUniqueDownloadFile(const FilePath& path, int index) {
-  FilePath new_path(path);
-  if (index > 0)
-    AppendNumberToPath(&new_path, index);
-  file_util::Delete(new_path, false);
-}
-
-}  // namespace
-
-void EraseUniqueDownloadFiles(const FilePath& path) {
-  FilePath cr_path = GetCrDownloadPath(path);
-
-  for (int index = 0; index <= kMaxUniqueFiles; ++index) {
-    DeleteUniqueDownloadFile(path, index);
-    DeleteUniqueDownloadFile(cr_path, index);
-  }
+  return DownloadFile::GetUniquePathNumberWithSuffix(
+      path, FILE_PATH_LITERAL(".crdownload"));
 }
 
 FilePath GetCrDownloadPath(const FilePath& suggested_path) {
-  FilePath::StringType file_name;
-  base::SStringPrintf(
-      &file_name,
-      PRFilePathLiteral FILE_PATH_LITERAL(".crdownload"),
-      suggested_path.value().c_str());
-  return FilePath(file_name);
+  return DownloadFile::AppendSuffixToPath(
+      suggested_path, FILE_PATH_LITERAL(".crdownload"));
+}
+
+bool IsSavableURL(const GURL& url) {
+  for (int i = 0; chrome::GetSavableSchemes()[i] != NULL; ++i) {
+    if (url.SchemeIs(chrome::GetSavableSchemes()[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void RecordShelfClose(int size, int in_progress, bool autoclose) {
+  static const int kMaxShelfSize = 16;
+  if (autoclose) {
+    UMA_HISTOGRAM_ENUMERATION("Download.ShelfSizeOnAutoClose",
+                              size,
+                              kMaxShelfSize);
+    UMA_HISTOGRAM_ENUMERATION("Download.ShelfInProgressSizeOnAutoClose",
+                              in_progress,
+                              kMaxShelfSize);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Download.ShelfSizeOnUserClose",
+                              size,
+                              kMaxShelfSize);
+    UMA_HISTOGRAM_ENUMERATION("Download.ShelfInProgressSizeOnUserClose",
+                              in_progress,
+                              kMaxShelfSize);
+  }
+}
+
+void RecordDownloadCount(ChromeDownloadCountTypes type) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Download.CountsChrome", type, DOWNLOAD_COUNT_TYPES_LAST_ENTRY);
 }
 
 }  // namespace download_util

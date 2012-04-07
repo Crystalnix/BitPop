@@ -6,10 +6,13 @@
 #include "net/udp/udp_server_socket.h"
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/metrics/histogram.h"
+#include "base/stl_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
+#include "net/base/net_log_unittest.h"
 #include "net/base/net_test_suite.h"
 #include "net/base/net_util.h"
 #include "net/base/sys_addrinfo.h"
@@ -32,7 +35,7 @@ class UDPSocketTest : public PlatformTest {
     TestCompletionCallback callback;
 
     int rv = socket->RecvFrom(buffer_, kMaxRead, &recv_from_address_,
-                              &callback);
+                              callback.callback());
     if (rv == ERR_IO_PENDING)
       rv = callback.WaitForResult();
     if (rv < 0)
@@ -62,7 +65,7 @@ class UDPSocketTest : public PlatformTest {
     int bytes_sent = 0;
     while (buffer->BytesRemaining()) {
       int rv = socket->SendTo(buffer, buffer->BytesRemaining(),
-                              address, &callback);
+                              address, callback.callback());
       if (rv == ERR_IO_PENDING)
         rv = callback.WaitForResult();
       if (rv <= 0)
@@ -76,7 +79,7 @@ class UDPSocketTest : public PlatformTest {
   std::string ReadSocket(UDPClientSocket* socket) {
     TestCompletionCallback callback;
 
-    int rv = socket->Read(buffer_, kMaxRead, &callback);
+    int rv = socket->Read(buffer_, kMaxRead, callback.callback());
     if (rv == ERR_IO_PENDING)
       rv = callback.WaitForResult();
     if (rv < 0)
@@ -96,7 +99,8 @@ class UDPSocketTest : public PlatformTest {
 
     int bytes_sent = 0;
     while (buffer->BytesRemaining()) {
-      int rv = socket->Write(buffer, buffer->BytesRemaining(), &callback);
+      int rv = socket->Write(buffer, buffer->BytesRemaining(),
+                             callback.callback());
       if (rv == ERR_IO_PENDING)
         rv = callback.WaitForResult();
       if (rv <= 0)
@@ -129,32 +133,152 @@ TEST_F(UDPSocketTest, Connect) {
   // Setup the server to listen.
   IPEndPoint bind_address;
   CreateUDPAddress("0.0.0.0", kPort, &bind_address);
-  UDPServerSocket server(NULL, NetLog::Source());
-  int rv = server.Listen(bind_address);
+  CapturingNetLog server_log(CapturingNetLog::kUnbounded);
+  scoped_ptr<UDPServerSocket> server(
+      new UDPServerSocket(&server_log, NetLog::Source()));
+  int rv = server->Listen(bind_address);
   EXPECT_EQ(OK, rv);
 
   // Setup the client.
   IPEndPoint server_address;
   CreateUDPAddress("127.0.0.1", kPort, &server_address);
-  UDPClientSocket client(NULL, NetLog::Source());
-  rv = client.Connect(server_address);
+  CapturingNetLog client_log(CapturingNetLog::kUnbounded);
+  scoped_ptr<UDPClientSocket> client(
+      new UDPClientSocket(DatagramSocket::DEFAULT_BIND,
+                          RandIntCallback(),
+                          &client_log,
+                          NetLog::Source()));
+  rv = client->Connect(server_address);
   EXPECT_EQ(OK, rv);
 
   // Client sends to the server.
-  rv = WriteSocket(&client, simple_message);
+  rv = WriteSocket(client.get(), simple_message);
   EXPECT_EQ(simple_message.length(), static_cast<size_t>(rv));
 
   // Server waits for message.
-  std::string str = RecvFromSocket(&server);
+  std::string str = RecvFromSocket(server.get());
   DCHECK(simple_message == str);
 
   // Server echoes reply.
-  rv = SendToSocket(&server, simple_message);
+  rv = SendToSocket(server.get(), simple_message);
   EXPECT_EQ(simple_message.length(), static_cast<size_t>(rv));
 
   // Client waits for response.
-  str = ReadSocket(&client);
+  str = ReadSocket(client.get());
   DCHECK(simple_message == str);
+
+  // Delete sockets so they log their final events.
+  server.reset();
+  client.reset();
+
+  // Check the server's log.
+  CapturingNetLog::EntryList server_entries;
+  server_log.GetEntries(&server_entries);
+  EXPECT_EQ(4u, server_entries.size());
+  EXPECT_TRUE(LogContainsBeginEvent(
+      server_entries, 0, NetLog::TYPE_SOCKET_ALIVE));
+  EXPECT_TRUE(LogContainsEvent(
+      server_entries, 1, NetLog::TYPE_UDP_BYTES_RECEIVED, NetLog::PHASE_NONE));
+  EXPECT_TRUE(LogContainsEvent(
+      server_entries, 2, NetLog::TYPE_UDP_BYTES_SENT, NetLog::PHASE_NONE));
+  EXPECT_TRUE(LogContainsEndEvent(
+      server_entries, 3, NetLog::TYPE_SOCKET_ALIVE));
+
+  // Check the client's log.
+  CapturingNetLog::EntryList client_entries;
+  client_log.GetEntries(&client_entries);
+  EXPECT_EQ(6u, client_entries.size());
+  EXPECT_TRUE(LogContainsBeginEvent(
+      client_entries, 0, NetLog::TYPE_SOCKET_ALIVE));
+  EXPECT_TRUE(LogContainsBeginEvent(
+      client_entries, 1, NetLog::TYPE_UDP_CONNECT));
+  EXPECT_TRUE(LogContainsEndEvent(
+      client_entries, 2, NetLog::TYPE_UDP_CONNECT));
+  EXPECT_TRUE(LogContainsEvent(
+      client_entries, 3, NetLog::TYPE_UDP_BYTES_SENT, NetLog::PHASE_NONE));
+  EXPECT_TRUE(LogContainsEvent(
+      client_entries, 4, NetLog::TYPE_UDP_BYTES_RECEIVED, NetLog::PHASE_NONE));
+  EXPECT_TRUE(LogContainsEndEvent(
+      client_entries, 5, NetLog::TYPE_SOCKET_ALIVE));
+}
+
+// In this test, we verify that random binding logic works, which attempts
+// to bind to a random port and returns if succeeds, otherwise retries for
+// |kBindRetries| number of times.
+
+// To generate the scenario, we first create |kBindRetries| number of
+// UDPClientSockets with default binding policy and connect to the same
+// peer and save the used port numbers.  Then we get rid of the last
+// socket, making sure that the local port it was bound to is available.
+// Finally, we create a socket with random binding policy, passing it a
+// test PRNG that would serve used port numbers in the array, one after
+// another.  At the end, we make sure that the test socket was bound to the
+// port that became available after deleting the last socket with default
+// binding policy.
+
+// We do not test the randomness of bound ports, but that we are using
+// passed in PRNG correctly, thus, it's the duty of PRNG to produce strong
+// random numbers.
+static const int kBindRetries = 10;
+
+class TestPrng {
+ public:
+  explicit TestPrng(const std::deque<int>& numbers) : numbers_(numbers) {}
+  int GetNext(int /* min */, int /* max */) {
+    DCHECK(!numbers_.empty());
+    int rv = numbers_.front();
+    numbers_.pop_front();
+    return rv;
+  }
+ private:
+  std::deque<int> numbers_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestPrng);
+};
+
+TEST_F(UDPSocketTest, ConnectRandomBind) {
+  std::vector<UDPClientSocket*> sockets;
+  IPEndPoint peer_address;
+  CreateUDPAddress("192.168.1.13", 53, &peer_address);
+
+  // Create and connect sockets and save port numbers.
+  std::deque<int> used_ports;
+  for (int i = 0; i < kBindRetries; ++i) {
+    UDPClientSocket* socket =
+        new UDPClientSocket(DatagramSocket::DEFAULT_BIND,
+                            RandIntCallback(),
+                            NULL,
+                            NetLog::Source());
+    sockets.push_back(socket);
+    EXPECT_EQ(OK, socket->Connect(peer_address));
+
+    IPEndPoint client_address;
+    EXPECT_EQ(OK, socket->GetLocalAddress(&client_address));
+    used_ports.push_back(client_address.port());
+  }
+
+  // Free the last socket, its local port is still in |used_ports|.
+  delete sockets.back();
+  sockets.pop_back();
+
+  TestPrng test_prng(used_ports);
+  RandIntCallback rand_int_cb =
+      base::Bind(&TestPrng::GetNext, base::Unretained(&test_prng));
+
+  // Create a socket with random binding policy and connect.
+  scoped_ptr<UDPClientSocket> test_socket(
+      new UDPClientSocket(DatagramSocket::RANDOM_BIND,
+                          rand_int_cb,
+                          NULL,
+                          NetLog::Source()));
+  EXPECT_EQ(OK, test_socket->Connect(peer_address));
+
+  // Make sure that the last port number in the |used_ports| was used.
+  IPEndPoint client_address;
+  EXPECT_EQ(OK, test_socket->GetLocalAddress(&client_address));
+  EXPECT_EQ(used_ports.back(), client_address.port());
+
+  STLDeleteElements(&sockets);
 }
 
 // In this test, we verify that connect() on a socket will have the effect
@@ -187,7 +311,10 @@ TEST_F(UDPSocketTest, VerifyConnectBindsAddr) {
   // Setup the client, connected to server 1.
   IPEndPoint server_address;
   CreateUDPAddress("127.0.0.1", kPort1, &server_address);
-  UDPClientSocket client(NULL, NetLog::Source());
+  UDPClientSocket client(DatagramSocket::DEFAULT_BIND,
+                         RandIntCallback(),
+                         NULL,
+                         NetLog::Source());
   rv = client.Connect(server_address);
   EXPECT_EQ(OK, rv);
 
@@ -234,13 +361,16 @@ TEST_F(UDPSocketTest, ClientGetLocalPeerAddresses) {
     SCOPED_TRACE(std::string("Connecting from ") +  tests[i].local_address +
                  std::string(" to ") + tests[i].remote_address);
 
-    net::IPAddressNumber ip_number;
-    net::ParseIPLiteralToNumber(tests[i].remote_address, &ip_number);
-    net::IPEndPoint remote_address(ip_number, 80);
-    net::ParseIPLiteralToNumber(tests[i].local_address, &ip_number);
-    net::IPEndPoint local_address(ip_number, 80);
+    IPAddressNumber ip_number;
+    ParseIPLiteralToNumber(tests[i].remote_address, &ip_number);
+    IPEndPoint remote_address(ip_number, 80);
+    ParseIPLiteralToNumber(tests[i].local_address, &ip_number);
+    IPEndPoint local_address(ip_number, 80);
 
-    UDPClientSocket client(NULL, NetLog::Source());
+    UDPClientSocket client(DatagramSocket::DEFAULT_BIND,
+                           RandIntCallback(),
+                           NULL,
+                           NetLog::Source());
     int rv = client.Connect(remote_address);
     if (tests[i].may_fail && rv == ERR_ADDRESS_UNREACHABLE) {
       // Connect() may return ERR_ADDRESS_UNREACHABLE for IPv6
@@ -306,7 +436,7 @@ TEST_F(UDPSocketTest, CloseWithPendingRead) {
 
   TestCompletionCallback callback;
   IPEndPoint from;
-  rv = server.RecvFrom(buffer_, kMaxRead, &from, &callback);
+  rv = server.RecvFrom(buffer_, kMaxRead, &from, callback.callback());
   EXPECT_EQ(rv, ERR_IO_PENDING);
 
   server.Close();

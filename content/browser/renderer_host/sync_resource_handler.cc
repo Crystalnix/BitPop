@@ -5,14 +5,16 @@
 #include "content/browser/renderer_host/sync_resource_handler.h"
 
 #include "base/logging.h"
-#include "chrome/browser/debugger/devtools_netlog_observer.h"
-#include "chrome/browser/net/load_timing_observer.h"
-#include "content/browser/renderer_host/global_request_id.h"
+#include "content/browser/debugger/devtools_netlog_observer.h"
 #include "content/browser/renderer_host/resource_dispatcher_host.h"
 #include "content/browser/renderer_host/resource_message_filter.h"
 #include "content/common/resource_messages.h"
+#include "content/public/browser/global_request_id.h"
+#include "content/public/browser/resource_dispatcher_host_delegate.h"
 #include "net/base/io_buffer.h"
 #include "net/http/http_response_headers.h"
+
+using content::GlobalRequestID;
 
 SyncResourceHandler::SyncResourceHandler(
     ResourceMessageFilter* filter,
@@ -35,13 +37,16 @@ bool SyncResourceHandler::OnUploadProgress(int request_id,
   return true;
 }
 
-bool SyncResourceHandler::OnRequestRedirected(int request_id,
-                                              const GURL& new_url,
-                                              ResourceResponse* response,
-                                              bool* defer) {
+bool SyncResourceHandler::OnRequestRedirected(
+    int request_id,
+    const GURL& new_url,
+    content::ResourceResponse* response,
+    bool* defer) {
   net::URLRequest* request = rdh_->GetURLRequest(
       GlobalRequestID(filter_->child_id(), request_id));
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  if (rdh_->delegate())
+    rdh_->delegate()->OnRequestRedirected(request, response);
+
   DevToolsNetLogObserver::PopulateResponseInfo(request, response);
   // TODO(darin): It would be much better if this could live in WebCore, but
   // doing so requires API changes at all levels.  Similar code exists in
@@ -54,24 +59,27 @@ bool SyncResourceHandler::OnRequestRedirected(int request_id,
   return true;
 }
 
-bool SyncResourceHandler::OnResponseStarted(int request_id,
-                                            ResourceResponse* response) {
+bool SyncResourceHandler::OnResponseStarted(
+    int request_id,
+    content::ResourceResponse* response) {
   net::URLRequest* request = rdh_->GetURLRequest(
       GlobalRequestID(filter_->child_id(), request_id));
-  LoadTimingObserver::PopulateTimingInfo(request, response);
+  if (rdh_->delegate())
+    rdh_->delegate()->OnResponseStarted(request, response, filter_);
+
   DevToolsNetLogObserver::PopulateResponseInfo(request, response);
 
   // We don't care about copying the status here.
-  result_.headers = response->response_head.headers;
-  result_.mime_type = response->response_head.mime_type;
-  result_.charset = response->response_head.charset;
-  result_.download_file_path = response->response_head.download_file_path;
-  result_.request_time = response->response_head.request_time;
-  result_.response_time = response->response_head.response_time;
-  result_.connection_id = response->response_head.connection_id;
-  result_.connection_reused = response->response_head.connection_reused;
-  result_.load_timing = response->response_head.load_timing;
-  result_.devtools_info = response->response_head.devtools_info;
+  result_.headers = response->headers;
+  result_.mime_type = response->mime_type;
+  result_.charset = response->charset;
+  result_.download_file_path = response->download_file_path;
+  result_.request_time = response->request_time;
+  result_.response_time = response->response_time;
+  result_.connection_id = response->connection_id;
+  result_.connection_reused = response->connection_reused;
+  result_.load_timing = response->load_timing;
+  result_.devtools_info = response->devtools_info;
   return true;
 }
 

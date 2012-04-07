@@ -12,13 +12,13 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
-#include "views/background.h"
-#include "views/border.h"
-#include "views/controls/button/image_button.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/controls/throbber.h"
-#include "views/layout/grid_layout.h"
+#include "ui/views/background.h"
+#include "ui/views/border.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/throbber.h"
+#include "ui/views/layout/grid_layout.h"
 
 namespace {
 
@@ -90,7 +90,7 @@ class CameraImageView : public views::ImageView {
   }
 
   bool HasSnapshot() const {
-    return !throbber_->IsVisible() && !message_->IsVisible();
+    return !throbber_->visible() && !message_->visible();
   }
 
  private:
@@ -108,7 +108,7 @@ class CameraImageView : public views::ImageView {
 
   void SetMessage(const std::wstring& message) {
     DCHECK(message_);
-    message_->SetText(message);
+    message_->SetText(WideToUTF16Hack(message));
     message_->SetVisible(!message.empty());
     Layout();
   }
@@ -116,7 +116,7 @@ class CameraImageView : public views::ImageView {
   // views::View override:
   virtual void Layout() {
     gfx::Size size = GetPreferredSize();
-    if (throbber_->IsVisible()) {
+    if (throbber_->visible()) {
       gfx::Size throbber_size = throbber_->GetPreferredSize();
       int throbber_x = (size.width() - throbber_size.width()) / 2;
       int throbber_y = (size.height() - throbber_size.height()) / 2;
@@ -125,7 +125,7 @@ class CameraImageView : public views::ImageView {
                            throbber_size.width(),
                            throbber_size.height());
     }
-    if (message_->IsVisible()) {
+    if (message_->visible()) {
       message_->SizeToFit(size.width() - kHorizontalPadding * 2);
       gfx::Size message_size = message_->GetPreferredSize();
       int message_y = size.height() - kVerticalPadding - message_size.height();
@@ -161,7 +161,7 @@ TakePhotoView::~TakePhotoView() {
 void TakePhotoView::Init() {
   if (show_title_) {
     title_label_ = new views::Label(
-        UTF16ToWide(l10n_util::GetStringUTF16(IDS_USER_IMAGE_SCREEN_TITLE)));
+        l10n_util::GetStringUTF16(IDS_USER_IMAGE_SCREEN_TITLE));
     title_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
     title_label_->SetMultiLine(true);
     CorrectLabelFontSize(title_label_);
@@ -173,7 +173,7 @@ void TakePhotoView::Init() {
   user_image_->Init();
 
   snapshot_button_ = new views::ImageButton(this);
-  snapshot_button_->SetFocusable(true);
+  snapshot_button_->set_focusable(true);
   snapshot_button_->SetImage(views::CustomButton::BS_NORMAL,
                              ResourceBundle::GetSharedInstance().GetBitmapNamed(
                                  IDR_USER_IMAGE_CAPTURE));
@@ -224,7 +224,7 @@ void TakePhotoView::UpdateVideoFrame(const SkBitmap& frame) {
   if (!is_capturing_)
     return;
 
-  if (!snapshot_button_->IsEnabled()) {
+  if (!snapshot_button_->enabled()) {
     user_image_->SetNormalState();
     snapshot_button_->SetEnabled(true);
     snapshot_button_->RequestFocus();
@@ -290,6 +290,10 @@ void TakePhotoView::ButtonPressed(
     views::Button* sender, const views::Event& event) {
   DCHECK(delegate_);
   DCHECK(sender == snapshot_button_);
+  FlipCapturingState();
+}
+
+void TakePhotoView::FlipCapturingState() {
   if (is_capturing_) {
     CaptureImage();
   } else {

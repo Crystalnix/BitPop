@@ -50,20 +50,16 @@ cr.define('options', function() {
 
     /**
      * Creates, decorates and initializes the multi-value lists for full name,
-     * phone, fax, and email.
+     * phone, and email.
      * @private
      */
     createMultiValueLists_: function() {
       var list = $('full-name-list');
-      options.autofillOptions.AutofillValuesList.decorate(list);
+      options.autofillOptions.AutofillNameValuesList.decorate(list);
       list.autoExpands = true;
 
       list = $('phone-list');
       options.autofillOptions.AutofillPhoneValuesList.decorate(list);
-      list.autoExpands = true;
-
-      list = $('fax-list');
-      options.autofillOptions.AutofillFaxValuesList.decorate(list);
       list.autoExpands = true;
 
       list = $('email-list');
@@ -78,10 +74,31 @@ cr.define('options', function() {
      * @param {Array} entries The list of items to be added to the list.
      */
     setMultiValueList_: function(listName, entries) {
-      // Add data entries, filtering null or empty strings.
+      // Add data entries.
       var list = $(listName);
-      list.dataModel = new ArrayDataModel(
-          entries.filter(function(i) {return i}));
+      list.dataModel = new ArrayDataModel(entries);
+
+      // Add special entry for adding new values.
+      list.dataModel.splice(list.dataModel.length, 0, null);
+
+      // Update the status of the 'OK' button.
+      this.inputFieldChanged_();
+
+      var self = this;
+      list.dataModel.addEventListener(
+        'splice', function(event) { self.inputFieldChanged_(); });
+      list.dataModel.addEventListener(
+        'change', function(event) { self.inputFieldChanged_(); });
+    },
+
+    /**
+     * Updates the data model for the name list with the values from |entries|.
+     * @param {Array} names The list of names to be added to the list.
+     */
+    setNameList_: function(names) {
+      // Add the given |names| as backing data for the list.
+      var list = $('full-name-list');
+      list.dataModel = new ArrayDataModel(names);
 
       // Add special entry for adding new values.
       list.dataModel.splice(list.dataModel.length, 0, null);
@@ -123,10 +140,8 @@ cr.define('options', function() {
       address[8] = $('country').value;
       list = $('phone-list');
       address[9] = list.dataModel.slice(0, list.dataModel.length - 1);
-      list = $('fax-list');
-      address[10] = list.dataModel.slice(0, list.dataModel.length - 1);
       list = $('email-list');
-      address[11] = list.dataModel.slice(0, list.dataModel.length - 1);
+      address[10] = list.dataModel.slice(0, list.dataModel.length - 1);
 
       chrome.send('setAddress', address);
     },
@@ -164,7 +179,7 @@ cr.define('options', function() {
           !$('addr-line-1').value && !$('addr-line-2').value &&
           !$('city').value && !$('state').value && !$('postal-code').value &&
           !$('country').value && $('phone-list').items.length <= 1 &&
-          $('fax-list').items.length <= 1 && $('email-list').items.length <= 1;
+          $('email-list').items.length <= 1;
       $('autofill-edit-address-apply-button').disabled = disabled;
     },
 
@@ -222,7 +237,8 @@ cr.define('options', function() {
       };
       var separator = {
         countryCode: '',
-        name: '---'
+        name: '---',
+        disabled: true
       }
       countries.unshift(emptyCountry, defaultCountry, separator);
 
@@ -230,6 +246,7 @@ cr.define('options', function() {
       var countryList = $('country');
       for (var i = 0; i < countries.length; i++) {
         var country = new Option(countries[i].name, countries[i].countryCode);
+        country.disabled = countries[i].disabled;
         countryList.appendChild(country)
       }
     },
@@ -239,7 +256,7 @@ cr.define('options', function() {
      * @private
      */
     clearInputFields_: function() {
-      this.setMultiValueList_('full-name-list', []);
+      this.setNameList_([]);
       $('company-name').value = '';
       $('addr-line-1').value = '';
       $('addr-line-2').value = '';
@@ -248,7 +265,6 @@ cr.define('options', function() {
       $('postal-code').value = '';
       $('country').value = '';
       this.setMultiValueList_('phone-list', []);
-      this.setMultiValueList_('fax-list', []);
       this.setMultiValueList_('email-list', []);
 
       this.countryChanged_();
@@ -270,7 +286,7 @@ cr.define('options', function() {
      * @private
      */
     setInputFields_: function(address) {
-      this.setMultiValueList_('full-name-list', address['fullName']);
+      this.setNameList_(address['fullName']);
       $('company-name').value = address['companyName'];
       $('addr-line-1').value = address['addrLine1'];
       $('addr-line-2').value = address['addrLine2'];
@@ -279,7 +295,6 @@ cr.define('options', function() {
       $('postal-code').value = address['postalCode'];
       $('country').value = address['country'];
       this.setMultiValueList_('phone-list', address['phone']);
-      this.setMultiValueList_('fax-list', address['fax']);
       this.setMultiValueList_('email-list', address['email']);
 
       this.countryChanged_();
@@ -300,11 +315,6 @@ cr.define('options', function() {
 
   AutofillEditAddressOverlay.setValidatedPhoneNumbers = function(numbers) {
     AutofillEditAddressOverlay.getInstance().setMultiValueList_('phone-list',
-                                                                numbers);
-  };
-
-  AutofillEditAddressOverlay.setValidatedFaxNumbers = function(numbers) {
-    AutofillEditAddressOverlay.getInstance().setMultiValueList_('fax-list',
                                                                 numbers);
   };
 

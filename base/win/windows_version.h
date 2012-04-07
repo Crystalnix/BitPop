@@ -6,8 +6,8 @@
 #define BASE_WIN_WINDOWS_VERSION_H_
 #pragma once
 
-#include "base/base_api.h"
-#include "base/memory/singleton.h"
+#include "base/base_export.h"
+#include "base/basictypes.h"
 
 typedef void* HANDLE;
 
@@ -25,11 +25,14 @@ enum Version {
   VERSION_VISTA,
   VERSION_SERVER_2008,
   VERSION_WIN7,
+  VERSION_WIN8,
+  VERSION_WIN_LAST,  // Indicates error condition.
 };
 
-// A Singleton that can be used to query various pieces of information about the
-// OS and process state.
-class BASE_API OSInfo {
+// A singleton that can be used to query various pieces of information about the
+// OS and process state. Note that this doesn't use the base Singleton class, so
+// it can be used without an AtExitManager.
+class BASE_EXPORT OSInfo {
  public:
   struct VersionNumber {
     int major;
@@ -92,13 +95,12 @@ class BASE_API OSInfo {
   size_t allocation_granularity_;
   WOW64Status wow64_status_;
 
-  friend struct DefaultSingletonTraits<OSInfo>;
   DISALLOW_COPY_AND_ASSIGN(OSInfo);
 };
 
 // Because this is by far the most commonly-requested value from the above
 // singleton, we add a global-scope accessor here as syntactic sugar.
-BASE_API Version GetVersion();
+BASE_EXPORT Version GetVersion();
 
 }  // namespace win
 }  // namespace base

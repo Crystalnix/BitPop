@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,19 @@
 #pragma once
 
 #include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/common/page_transition_types.h"
 #include "webkit/glue/webpreferences.h"
 
-class Profile;
+class SiteInstanceImpl;
 class TestRenderViewHost;
 
 // Subclass TabContents to ensure it creates TestRenderViewHosts and does
 // not do anything involving views.
 class TestTabContents : public TabContents {
  public:
-  // The render view host factory will be passed on to the
-  TestTabContents(Profile* profile, SiteInstance* instance);
+  TestTabContents(content::BrowserContext* browser_context,
+                  content::SiteInstance* instance);
+  virtual ~TestTabContents();
 
   TestRenderViewHost* pending_rvh() const;
 
@@ -30,11 +32,15 @@ class TestTabContents : public TabContents {
   // alternatives without using command-line switches.
   bool ShouldTransitionCrossSite() { return transition_cross_site; }
 
-  // Promote DidNavigate to public.
   void TestDidNavigate(RenderViewHost* render_view_host,
-                       const ViewHostMsg_FrameNavigate_Params& params) {
-    DidNavigate(render_view_host, params);
-  }
+                       int page_id,
+                       const GURL& url,
+                       content::PageTransition transition);
+  void TestDidNavigateWithReferrer(RenderViewHost* render_view_host,
+                                   int page_id,
+                                   const GURL& url,
+                                   const content::Referrer& referrer,
+                                   content::PageTransition transition);
 
   // Promote GetWebkitPrefs to public.
   WebPreferences TestGetWebkitPrefs() {
@@ -43,12 +49,12 @@ class TestTabContents : public TabContents {
 
   // Prevent interaction with views.
   virtual bool CreateRenderViewForRenderManager(
-      RenderViewHost* render_view_host);
-  virtual void UpdateRenderViewSizeForRenderManager() {}
+      RenderViewHost* render_view_host) OVERRIDE;
+  virtual void UpdateRenderViewSizeForRenderManager() OVERRIDE {}
 
   // Returns a clone of this TestTabContents. The returned object is also a
   // TestTabContents. The caller owns the returned object.
-  virtual TabContents* Clone();
+  virtual content::WebContents* Clone() OVERRIDE;
 
   // Creates a pending navigation to the given URL with the default parameters
   // and then commits the load with a page ID one larger than any seen. This
@@ -68,12 +74,35 @@ class TestTabContents : public TabContents {
   bool transition_cross_site;
 
   // Allow mocking of the RenderViewHostDelegate::View.
-  virtual RenderViewHostDelegate::View* GetViewDelegate();
-  void set_view_delegate(RenderViewHostDelegate::View* view) {
+  virtual content::RenderViewHostDelegate::View* GetViewDelegate() OVERRIDE;
+  void set_view_delegate(content::RenderViewHostDelegate::View* view) {
     delegate_view_override_ = view;
   }
+
+  // Establish expected arguments for |SetHistoryLengthAndPrune()|. When
+  // |SetHistoryLengthAndPrune()| is called, the arguments are compared
+  // with the expected arguments specified here.
+  void ExpectSetHistoryLengthAndPrune(
+      const content::SiteInstance* site_instance,
+      int history_length,
+      int32 min_page_id);
+
+  // Compares the arguments passed in with the expected arguments passed in
+  // to |ExpectSetHistoryLengthAndPrune()|.
+  virtual void SetHistoryLengthAndPrune(
+      const content::SiteInstance* site_instance,
+      int history_length,
+      int32 min_page_id) OVERRIDE;
+
  private:
-  RenderViewHostDelegate::View* delegate_view_override_;
+  content::RenderViewHostDelegate::View* delegate_view_override_;
+
+  // Expectations for arguments of |SetHistoryLengthAndPrune()|.
+  bool expect_set_history_length_and_prune_;
+  scoped_refptr<const SiteInstanceImpl>
+    expect_set_history_length_and_prune_site_instance_;
+  int expect_set_history_length_and_prune_history_length_;
+  int32 expect_set_history_length_and_prune_min_page_id_;
 };
 
 #endif  // CONTENT_BROWSER_TAB_CONTENTS_TEST_TAB_CONTENTS_H_

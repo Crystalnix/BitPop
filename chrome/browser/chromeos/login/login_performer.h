@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,14 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/authenticator.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/signed_settings_helper.h"
+#include "chrome/browser/chromeos/login/online_attempt_host.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/net/gaia/google_service_auth_error.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 namespace chromeos {
 
@@ -51,16 +50,17 @@ namespace chromeos {
 // 2 things make LoginPerfrormer instance exist longer:
 // 1. ScreenLock active (pending correct new password input)
 // 2. Pending online auth request.
+// TODO(nkostylev): Cleanup ClientLogin related code, update class description.
 class LoginPerformer : public LoginStatusConsumer,
-                       public SignedSettingsHelper::Callback,
-                       public NotificationObserver,
-                       public ProfileManagerObserver {
+                       public content::NotificationObserver,
+                       public OnlineAttemptHost::Delegate {
  public:
   // Delegate class to get notifications from the LoginPerformer.
   class Delegate : public LoginStatusConsumer {
    public:
     virtual ~Delegate() {}
     virtual void WhiteListCheckFailed(const std::string& email) = 0;
+    virtual void OnOnlineChecked(const std::string& email, bool success) = 0;
   };
 
   explicit LoginPerformer(Delegate* delegate);
@@ -74,24 +74,20 @@ class LoginPerformer : public LoginStatusConsumer,
   }
 
   // LoginStatusConsumer implementation:
-  virtual void OnLoginFailure(const LoginFailure& error);
+  virtual void OnLoginFailure(const LoginFailure& error) OVERRIDE;
   virtual void OnLoginSuccess(
       const std::string& username,
       const std::string& password,
       const GaiaAuthConsumer::ClientLoginResult& credentials,
-      bool pending_requests);
-  virtual void OnOffTheRecordLoginSuccess();
+      bool pending_requests,
+      bool using_oauth) OVERRIDE;
+  virtual void OnOffTheRecordLoginSuccess() OVERRIDE;
   virtual void OnPasswordChangeDetected(
-      const GaiaAuthConsumer::ClientLoginResult& credentials);
+      const GaiaAuthConsumer::ClientLoginResult& credentials) OVERRIDE;
 
-  // SignedSettingsHelper::Callback implementation:
-  virtual void OnCheckWhitelistCompleted(SignedSettings::ReturnCode code,
-                                         const std::string& email);
-
-  // NotificationObserver implementation:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Completes login process that has already been authenticated with
+  // provided |username| and |password|.
+  void CompleteLogin(const std::string& username, const std::string& password);
 
   // Performs login with the |username| and |password| specified.
   void Login(const std::string& username, const std::string& password);
@@ -115,12 +111,29 @@ class LoginPerformer : public LoginStatusConsumer,
     return last_login_failure_.reason() == LoginFailure::LOGIN_TIMED_OUT;
   }
 
-  void set_captcha(const std::string& captcha) { captcha_ = captcha; }
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
 
+  typedef enum AuthorizationMode {
+    // Authorization performed internally by Chrome.
+    AUTH_MODE_INTERNAL,
+    // Authorization performed by an extension.
+    AUTH_MODE_EXTENSION
+  } AuthorizationMode;
+  AuthorizationMode auth_mode() const { return auth_mode_; }
+
+ protected:
+  // Implements OnlineAttemptHost::Delegate.
+  virtual void OnChecked(const std::string& username, bool success) OVERRIDE;
+
  private:
-  // ProfileManager::Observer implementation:
-  virtual void OnProfileCreated(Profile* profile);
+  // content::NotificationObserver implementation:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // Callback for asynchronous profile creation.
+  void OnProfileCreated(Profile* profile,
+                        Profile::CreateStatus status);
 
   // Requests screen lock and subscribes to screen lock notifications.
   void RequestScreenLock();
@@ -143,6 +156,9 @@ class LoginPerformer : public LoginStatusConsumer,
   void ResolveScreenLocked();
   void ResolveScreenUnlocked();
 
+  // Starts login completion of externally authenticated user.
+  void StartLoginCompletion();
+
   // Starts authentication.
   void StartAuthentication();
 
@@ -152,15 +168,12 @@ class LoginPerformer : public LoginStatusConsumer,
   // Used for logging in.
   scoped_refptr<Authenticator> authenticator_;
 
+  // Used to make auxiliary online check.
+  OnlineAttemptHost online_attempt_host_;
+
   // Represents last login failure that was encountered when communicating to
   // sign-in server. LoginFailure.None() by default.
   LoginFailure last_login_failure_;
-
-  // String entered by the user as an answer to a CAPTCHA challenge.
-  std::string captcha_;
-
-  // Token representing the specific CAPTCHA challenge.
-  std::string captcha_token_;
 
   // Cached credentials data when password change is detected.
   GaiaAuthConsumer::ClientLoginResult cached_credentials_;
@@ -177,7 +190,7 @@ class LoginPerformer : public LoginStatusConsumer,
   bool password_changed_;
 
   // Used for ScreenLock notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // True if LoginPerformer has requested screen lock. Used to distinguish
   // such requests with cases when screen is locked on its own.
@@ -190,7 +203,13 @@ class LoginPerformer : public LoginStatusConsumer,
 
   GaiaAuthConsumer::ClientLoginResult credentials_;
 
-  ScopedRunnableMethodFactory<LoginPerformer> method_factory_;
+  // Authorization mode type.
+  AuthorizationMode auth_mode_;
+
+  // True if we use OAuth during authorization process.
+  bool using_oauth_;
+
+  base::WeakPtrFactory<LoginPerformer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginPerformer);
 };

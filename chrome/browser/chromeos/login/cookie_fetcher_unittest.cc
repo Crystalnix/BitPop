@@ -6,17 +6,21 @@
 
 #include <string>
 
+#include "base/message_loop.h"
 #include "chrome/browser/chromeos/login/client_login_response_handler.h"
 #include "chrome/browser/chromeos/login/cookie_fetcher.h"
 #include "chrome/browser/chromeos/login/issue_response_handler.h"
 #include "chrome/browser/chromeos/login/mock_auth_response_handler.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/common/net/gaia/gaia_urls.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/common/url_fetcher.h"
+#include "content/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace chromeos {
 using ::testing::Return;
@@ -24,11 +28,11 @@ using ::testing::Invoke;
 using ::testing::Unused;
 using ::testing::_;
 
-class CookieFetcherTest : public ::testing::Test {
+class CookieFetcherTest : public testing::Test {
  public:
   CookieFetcherTest()
-      : iat_url_(AuthResponseHandler::kIssueAuthTokenUrl),
-        ta_url_(AuthResponseHandler::kTokenAuthUrl),
+      : iat_url_(GaiaUrls::GetInstance()->issue_auth_token_url()),
+        ta_url_(GaiaUrls::GetInstance()->token_auth_url()),
         client_login_data_("SID n' LSID"),
         token_("auth token"),
         ui_thread_(BrowserThread::UI, &message_loop_) {
@@ -39,7 +43,7 @@ class CookieFetcherTest : public ::testing::Test {
   const std::string client_login_data_;
   const std::string token_;
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
+  content::TestBrowserThread ui_thread_;
   TestingProfile profile_;
 };
 
@@ -175,17 +179,17 @@ TEST_F(CookieFetcherTest, ClientLoginResponseHandlerTest) {
   std::string expected("a&b&");
   expected.append(ClientLoginResponseHandler::kService);
 
-  scoped_ptr<URLFetcher> fetcher(handler.Handle(input, NULL));
+  scoped_ptr<content::URLFetcher> fetcher(handler.Handle(input, NULL));
   EXPECT_EQ(expected, handler.payload());
 }
 
 TEST_F(CookieFetcherTest, IssueResponseHandlerTest) {
   IssueResponseHandler handler(NULL);
-  std::string input("a\n");
-  std::string expected(IssueResponseHandler::kTokenAuthUrl);
-  expected.append(input);
+  std::string expected(IssueResponseHandler::BuildTokenAuthUrlWithToken(
+      std::string("a\n")));
 
-  scoped_ptr<URLFetcher> fetcher(handler.Handle(input, NULL));
+  scoped_ptr<content::URLFetcher> fetcher(
+      handler.Handle(std::string("a\n"), NULL));
   EXPECT_EQ(expected, handler.token_url());
 }
 

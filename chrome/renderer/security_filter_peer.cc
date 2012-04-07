@@ -38,7 +38,9 @@ SecurityFilterPeer*
     case net::ERR_CERT_REVOKED:
     case net::ERR_CERT_INVALID:
     case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
+    case net::ERR_CERT_WEAK_KEY:
     case net::ERR_INSECURE_RESPONSE:
+    case net::ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
       if (ResourceType::IsFrame(resource_type))
         return CreateSecurityFilterPeerForFrame(peer, os_error);
       // Any other content is entirely filtered-out.
@@ -86,9 +88,10 @@ void SecurityFilterPeer::OnReceivedData(const char* data,
   NOTREACHED();
 }
 
-void SecurityFilterPeer::OnCompletedRequest(const net::URLRequestStatus& status,
-                                            const std::string& security_info,
-                                            const base::Time& completion_time) {
+void SecurityFilterPeer::OnCompletedRequest(
+    const net::URLRequestStatus& status,
+    const std::string& security_info,
+    const base::TimeTicks& completion_time) {
   NOTREACHED();
 }
 
@@ -148,7 +151,7 @@ void BufferedPeer::OnReceivedData(const char* data,
 
 void BufferedPeer::OnCompletedRequest(const net::URLRequestStatus& status,
                                       const std::string& security_info,
-                                      const base::Time& completion_time) {
+                                      const base::TimeTicks& completion_time) {
   // Make sure we delete ourselves at the end of this call.
   scoped_ptr<BufferedPeer> this_deleter(this);
 
@@ -200,7 +203,7 @@ void ReplaceContentPeer::OnReceivedData(const char* data,
 void ReplaceContentPeer::OnCompletedRequest(
     const net::URLRequestStatus& status,
     const std::string& security_info,
-    const base::Time& completion_time) {
+    const base::TimeTicks& completion_time) {
   webkit_glue::ResourceResponseInfo info;
   ProcessResponseInfo(info, &info, mime_type_);
   info.security_info = security_info;

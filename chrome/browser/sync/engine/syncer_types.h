@@ -14,7 +14,6 @@
 #include "chrome/browser/sync/syncable/model_type.h"
 
 namespace syncable {
-class BaseTransaction;
 class Id;
 }
 
@@ -81,12 +80,13 @@ enum VerifyCommitResult {
 struct SyncEngineEvent {
   enum EventCause {
     ////////////////////////////////////////////////////////////////
+    // Sent on entry of Syncer state machine
+    SYNC_CYCLE_BEGIN,
+
     // SyncerCommand generated events.
     STATUS_CHANGED,
 
     // We have reached the SYNCER_END state in the main sync loop.
-    // Check the SyncerSession for information like whether we need to continue
-    // syncing (SyncerSession::HasMoreToSync).
     SYNC_CYCLE_ENDED,
 
     ////////////////////////////////////////////////////////////////
@@ -105,6 +105,10 @@ struct SyncEngineEvent {
     // server data have failed or succeeded.
     CLEAR_SERVER_DATA_SUCCEEDED,
     CLEAR_SERVER_DATA_FAILED,
+
+    // This event is sent when we receive an actionable error. It is upto
+    // the listeners to figure out the action to take using the snapshot sent.
+    ACTIONABLE_ERROR,
   };
 
   explicit SyncEngineEvent(EventCause cause);

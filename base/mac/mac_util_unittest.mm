@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_nsobject.h"
 #include "base/scoped_temp_dir.h"
+#include "base/sys_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -120,21 +121,6 @@ TEST_F(MacUtilTest, TestExcludeFileFromBackups) {
   EXPECT_FALSE(excluded_by_path);
 }
 
-TEST_F(MacUtilTest, TestGetValueFromDictionary) {
-  ScopedCFTypeRef<CFMutableDictionaryRef> dict(
-      CFDictionaryCreateMutable(0, 0,
-                                &kCFTypeDictionaryKeyCallBacks,
-                                &kCFTypeDictionaryValueCallBacks));
-  CFDictionarySetValue(dict.get(), CFSTR("key"), CFSTR("value"));
-
-  EXPECT_TRUE(CFEqual(CFSTR("value"),
-                      GetValueFromDictionary(
-                          dict, CFSTR("key"), CFStringGetTypeID())));
-  EXPECT_FALSE(GetValueFromDictionary(dict, CFSTR("key"), CFNumberGetTypeID()));
-  EXPECT_FALSE(GetValueFromDictionary(
-                   dict, CFSTR("no-exist"), CFStringGetTypeID()));
-}
-
 TEST_F(MacUtilTest, CopyNSImageToCGImage) {
   scoped_nsobject<NSImage> nsImage(
       [[NSImage alloc] initWithSize:NSMakeSize(20, 20)]);
@@ -158,6 +144,69 @@ TEST_F(MacUtilTest, NSObjectRetainRelease) {
 
   NSObjectRelease(array);
   EXPECT_EQ(1U, [array retainCount]);
+}
+
+TEST_F(MacUtilTest, IsOSEllipsis) {
+  int32 major, minor, bugfix;
+  base::SysInfo::OperatingSystemVersionNumbers(&major, &minor, &bugfix);
+
+  if (major == 10) {
+    if (minor == 5) {
+      EXPECT_TRUE(IsOSLeopard());
+      EXPECT_TRUE(IsOSLeopardOrEarlier());
+      EXPECT_FALSE(IsOSSnowLeopard());
+      EXPECT_TRUE(IsOSSnowLeopardOrEarlier());
+      EXPECT_FALSE(IsOSSnowLeopardOrLater());
+      EXPECT_FALSE(IsOSLion());
+      EXPECT_FALSE(IsOSLionOrLater());
+      EXPECT_FALSE(IsOSLaterThanLion());
+    } else if (minor == 6) {
+      EXPECT_FALSE(IsOSLeopard());
+      EXPECT_FALSE(IsOSLeopardOrEarlier());
+      EXPECT_TRUE(IsOSSnowLeopard());
+      EXPECT_TRUE(IsOSSnowLeopardOrEarlier());
+      EXPECT_TRUE(IsOSSnowLeopardOrLater());
+      EXPECT_FALSE(IsOSLion());
+      EXPECT_FALSE(IsOSLionOrLater());
+      EXPECT_FALSE(IsOSLaterThanLion());
+    } else if (minor == 7) {
+      EXPECT_FALSE(IsOSLeopard());
+      EXPECT_FALSE(IsOSLeopardOrEarlier());
+      EXPECT_FALSE(IsOSSnowLeopard());
+      EXPECT_FALSE(IsOSSnowLeopardOrEarlier());
+      EXPECT_TRUE(IsOSSnowLeopardOrLater());
+      EXPECT_TRUE(IsOSLion());
+      EXPECT_TRUE(IsOSLionOrLater());
+      EXPECT_FALSE(IsOSLaterThanLion());
+    } else {
+      // Not five, six, or seven. Ah, ah, ah.
+      EXPECT_TRUE(false);
+    }
+  } else {
+    // Not ten. What you gonna do?
+    EXPECT_FALSE(true);
+  }
+}
+
+TEST_F(MacUtilTest, ParseModelIdentifier) {
+  std::string model;
+  int32 major = 1, minor = 2;
+
+  EXPECT_FALSE(ParseModelIdentifier("", &model, &major, &minor));
+  EXPECT_EQ(0U, model.length());
+  EXPECT_EQ(1, major);
+  EXPECT_EQ(2, minor);
+  EXPECT_FALSE(ParseModelIdentifier("FooBar", &model, &major, &minor));
+
+  EXPECT_TRUE(ParseModelIdentifier("MacPro4,1", &model, &major, &minor));
+  EXPECT_EQ(model, "MacPro");
+  EXPECT_EQ(4, major);
+  EXPECT_EQ(1, minor);
+
+  EXPECT_TRUE(ParseModelIdentifier("MacBookPro6,2", &model, &major, &minor));
+  EXPECT_EQ(model, "MacBookPro");
+  EXPECT_EQ(6, major);
+  EXPECT_EQ(2, minor);
 }
 
 }  // namespace

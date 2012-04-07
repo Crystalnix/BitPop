@@ -11,6 +11,7 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/ui/gtk/bookmarks/bookmark_utils_gtk.h"
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
+#include "ui/gfx/image/image.h"
 
 namespace {
 
@@ -25,7 +26,8 @@ void AddSingleNodeToTreeStore(GtkTreeStore* store, const BookmarkNode* node,
   // (and indeed, Nautilus does not render an expanded directory any
   // differently).
   gtk_tree_store_set(store, iter,
-      bookmark_utils::FOLDER_ICON, GtkThemeService::GetFolderIcon(true),
+      bookmark_utils::FOLDER_ICON,
+      GtkThemeService::GetFolderIcon(true)->ToGdkPixbuf(),
       bookmark_utils::FOLDER_NAME,
       UTF16ToUTF8(node->GetTitle()).c_str(),
       bookmark_utils::ITEM_ID, node->id(),
@@ -38,25 +40,39 @@ void AddSingleNodeToTreeStore(GtkTreeStore* store, const BookmarkNode* node,
 // Helper function for CommitTreeStoreDifferencesBetween() which recursively
 // merges changes back from a GtkTreeStore into a tree of BookmarkNodes. This
 // function only works on non-root nodes; our caller handles that special case.
-void RecursiveResolve(BookmarkModel* bb_model, const BookmarkNode* bb_node,
-                      GtkTreeModel* tree_model, GtkTreeIter* parent_iter,
+void RecursiveResolve(BookmarkModel* bb_model,
+                      const BookmarkNode* bb_node,
+                      GtkTreeStore* tree_store,
+                      GtkTreeIter* parent_iter,
                       GtkTreePath* selected_path,
                       const BookmarkNode** selected_node) {
-  GtkTreePath* current_path = gtk_tree_model_get_path(tree_model, parent_iter);
+  GtkTreePath* current_path =
+      gtk_tree_model_get_path(GTK_TREE_MODEL(tree_store), parent_iter);
   if (gtk_tree_path_compare(current_path, selected_path) == 0)
     *selected_node = bb_node;
   gtk_tree_path_free(current_path);
 
   GtkTreeIter child_iter;
-  if (gtk_tree_model_iter_children(tree_model, &child_iter, parent_iter)) {
+  if (gtk_tree_model_iter_children(GTK_TREE_MODEL(tree_store), &child_iter,
+                                   parent_iter)) {
     do {
-      int64 id = bookmark_utils::GetIdFromTreeIter(tree_model, &child_iter);
+      int64 id = bookmark_utils::GetIdFromTreeIter(GTK_TREE_MODEL(tree_store),
+                                                   &child_iter);
       string16 title =
-          bookmark_utils::GetTitleFromTreeIter(tree_model, &child_iter);
+          bookmark_utils::GetTitleFromTreeIter(GTK_TREE_MODEL(tree_store),
+                                               &child_iter);
       const BookmarkNode* child_bb_node = NULL;
       if (id == 0) {
         child_bb_node = bb_model->AddFolder(
             bb_node, bb_node->child_count(), title);
+
+        // Set the value in the model so if we lookup the id later we get the
+        // real id and not 0.
+        GValue value  = { 0 };
+        g_value_init(&value, G_TYPE_INT64);
+        g_value_set_int64(&value, child_bb_node->id());
+        gtk_tree_store_set_value(tree_store, &child_iter,
+                                 bookmark_utils::ITEM_ID, &value);
       } else {
         // Existing node, reset the title (BookmarkModel ignores changes if the
         // title is the same).
@@ -70,10 +86,9 @@ void RecursiveResolve(BookmarkModel* bb_model, const BookmarkNode* bb_node,
         DCHECK(child_bb_node);
         bb_model->SetTitle(child_bb_node, title);
       }
-      RecursiveResolve(bb_model, child_bb_node,
-                       tree_model, &child_iter,
+      RecursiveResolve(bb_model, child_bb_node, tree_store, &child_iter,
                        selected_path, selected_node);
-    } while (gtk_tree_model_iter_next(tree_model, &child_iter));
+    } while (gtk_tree_model_iter_next(GTK_TREE_MODEL(tree_store), &child_iter));
   }
 }
 
@@ -105,9 +120,8 @@ void AddToTreeStore(BookmarkModel* model, int64 selected_id,
   const BookmarkNode* root_node = model->root_node();
   for (int i = 0; i < root_node->child_count(); ++i) {
     const BookmarkNode* child = root_node->GetChild(i);
-    if (child->IsVisible()) {
+    if (child->IsVisible())
       AddToTreeStoreAt(child, selected_id, store, selected_iter, NULL);
-    }
   }
 }
 
@@ -195,7 +209,7 @@ const BookmarkNode* CommitTreeStoreDifferencesBetween(
     DCHECK(child_node);
 
     GtkTreeIter child_iter = tree_root;
-    RecursiveResolve(bb_model, child_node, tree_model, &child_iter,
+    RecursiveResolve(bb_model, child_node, tree_store, &child_iter,
                      selected_path, &node_to_return);
   } while (gtk_tree_model_iter_next(tree_model, &tree_root));
 

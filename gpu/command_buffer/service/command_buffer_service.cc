@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 
 #include <limits>
 
-#include "base/callback.h"
 #include "base/process_util.h"
+#include "base/debug/trace_event.h"
 #include "gpu/command_buffer/common/cmd_buffer_common.h"
 
 using ::base::SharedMemory;
@@ -15,80 +15,31 @@ using ::base::SharedMemory;
 namespace gpu {
 
 CommandBufferService::CommandBufferService()
-    : num_entries_(0),
+    : ring_buffer_id_(-1),
+      num_entries_(0),
       get_offset_(0),
       put_offset_(0),
       token_(0),
       generation_(0),
-      error_(error::kNoError) {
+      error_(error::kNoError),
+      context_lost_reason_(error::kUnknown),
+      shared_memory_bytes_allocated_(0) {
   // Element zero is always NULL.
   registered_objects_.push_back(Buffer());
 }
 
 CommandBufferService::~CommandBufferService() {
-  delete ring_buffer_.shared_memory;
-
   for (size_t i = 0; i < registered_objects_.size(); ++i) {
-    if (registered_objects_[i].shared_memory)
+    if (registered_objects_[i].shared_memory) {
+      shared_memory_bytes_allocated_ -= registered_objects_[i].size;
       delete registered_objects_[i].shared_memory;
+    }
   }
+  // TODO(gman): Should we report 0 bytes to TRACE here?
 }
 
-bool CommandBufferService::Initialize(int32 size) {
-  // Fail if already initialized.
-  if (ring_buffer_.shared_memory) {
-    LOG(ERROR) << "Failed because already initialized.";
-    return false;
-  }
-
-  if (size <= 0 || size > kMaxCommandBufferSize) {
-    LOG(ERROR) << "Failed because command buffer size was invalid.";
-    return false;
-  }
-
-  num_entries_ = size / sizeof(CommandBufferEntry);
-
-  SharedMemory shared_memory;
-  if (!shared_memory.CreateAnonymous(size)) {
-    LOG(ERROR) << "Failed to create shared memory for command buffer.";
-    return true;
-  }
-
-  return Initialize(&shared_memory, size);
-}
-
-bool CommandBufferService::Initialize(base::SharedMemory* buffer, int32 size) {
-  // Fail if already initialized.
-  if (ring_buffer_.shared_memory) {
-    LOG(ERROR) << "Failed because already initialized.";
-    return false;
-  }
-
-  base::SharedMemoryHandle shared_memory_handle;
-  if (!buffer->ShareToProcess(base::GetCurrentProcessHandle(),
-                              &shared_memory_handle)) {
-    LOG(ERROR) << "Failed to duplicate command buffer shared memory handle.";
-    return false;
-  }
-
-  ring_buffer_.shared_memory = new base::SharedMemory(shared_memory_handle,
-                                                      false);
-  if (!ring_buffer_.shared_memory->Map(size)) {
-    LOG(ERROR) << "Failed because ring buffer could not be created or mapped ";
-    delete ring_buffer_.shared_memory;
-    ring_buffer_.shared_memory = NULL;
-    return false;
-  }
-
-  ring_buffer_.ptr = ring_buffer_.shared_memory->memory();
-  ring_buffer_.size = size;
-  num_entries_ = size / sizeof(CommandBufferEntry);
-
+bool CommandBufferService::Initialize() {
   return true;
-}
-
-Buffer CommandBufferService::GetRingBuffer() {
-  return ring_buffer_;
 }
 
 CommandBufferService::State CommandBufferService::GetState() {
@@ -98,9 +49,14 @@ CommandBufferService::State CommandBufferService::GetState() {
   state.put_offset = put_offset_;
   state.token = token_;
   state.error = error_;
+  state.context_lost_reason = context_lost_reason_;
   state.generation = ++generation_;
 
   return state;
+}
+
+CommandBufferService::State CommandBufferService::GetLastState() {
+  return GetState();
 }
 
 CommandBufferService::State CommandBufferService::FlushSync(
@@ -112,9 +68,8 @@ CommandBufferService::State CommandBufferService::FlushSync(
 
   put_offset_ = put_offset;
 
-  if (put_offset_change_callback_.get()) {
-    put_offset_change_callback_->Run(last_known_get == get_offset_);
-  }
+  if (!put_offset_change_callback_.is_null())
+    put_offset_change_callback_.Run();
 
   return GetState();
 }
@@ -127,8 +82,21 @@ void CommandBufferService::Flush(int32 put_offset) {
 
   put_offset_ = put_offset;
 
-  if (put_offset_change_callback_.get()) {
-    put_offset_change_callback_->Run(false);
+  if (!put_offset_change_callback_.is_null())
+    put_offset_change_callback_.Run();
+}
+
+void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
+  DCHECK_EQ(-1, ring_buffer_id_);
+  DCHECK_EQ(put_offset_, get_offset_);  // Only if it's empty.
+  ring_buffer_ = GetTransferBuffer(transfer_buffer_id);
+  DCHECK(ring_buffer_.ptr);
+  ring_buffer_id_ = transfer_buffer_id;
+  num_entries_ = ring_buffer_.size / sizeof(CommandBufferEntry);
+  put_offset_ = 0;
+  SetGetOffset(0);
+  if (!get_buffer_change_callback_.is_null()) {
+    get_buffer_change_callback_.Run(ring_buffer_id_);
   }
 }
 
@@ -142,6 +110,10 @@ int32 CommandBufferService::CreateTransferBuffer(size_t size,
   SharedMemory buffer;
   if (!buffer.CreateAnonymous(size))
     return -1;
+
+  shared_memory_bytes_allocated_ += size;
+  TRACE_COUNTER_ID1(
+      "CommandBuffer", "SharedMemory", this, shared_memory_bytes_allocated_);
 
   return RegisterTransferBuffer(&buffer, size, id_request);
 }
@@ -217,9 +189,21 @@ void CommandBufferService::DestroyTransferBuffer(int32 handle) {
   if (static_cast<size_t>(handle) >= registered_objects_.size())
     return;
 
+  shared_memory_bytes_allocated_ -= registered_objects_[handle].size;
+  TRACE_COUNTER_ID1(
+      "CommandBuffer", "SharedMemory", this, shared_memory_bytes_allocated_);
+
   delete registered_objects_[handle].shared_memory;
   registered_objects_[handle] = Buffer();
   unused_registered_object_elements_.insert(handle);
+
+  if (handle == ring_buffer_id_) {
+    ring_buffer_id_ = -1;
+    ring_buffer_ = Buffer();
+    num_entries_ = 0;
+    get_offset_ = 0;
+    put_offset_ = 0;
+  }
 
   // Remove all null objects from the end of the vector. This allows the vector
   // to shrink when, for example, all objects are unregistered. Note that this
@@ -249,19 +233,29 @@ void CommandBufferService::SetToken(int32 token) {
 void CommandBufferService::SetParseError(error::Error error) {
   if (error_ == error::kNoError) {
     error_ = error;
-    if (parse_error_callback_.get())
-      parse_error_callback_->Run();
+    if (!parse_error_callback_.is_null())
+      parse_error_callback_.Run();
   }
 }
 
+void CommandBufferService::SetContextLostReason(
+    error::ContextLostReason reason) {
+  context_lost_reason_ = reason;
+}
+
 void CommandBufferService::SetPutOffsetChangeCallback(
-    Callback1<bool>::Type* callback) {
-  put_offset_change_callback_.reset(callback);
+    const base::Closure& callback) {
+  put_offset_change_callback_ = callback;
+}
+
+void CommandBufferService::SetGetBufferChangeCallback(
+    const GetBufferChangedCallback& callback) {
+  get_buffer_change_callback_ = callback;
 }
 
 void CommandBufferService::SetParseErrorCallback(
-    Callback0::Type* callback) {
-  parse_error_callback_.reset(callback);
+    const base::Closure& callback) {
+  parse_error_callback_ = callback;
 }
 
 }  // namespace gpu

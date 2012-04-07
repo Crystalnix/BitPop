@@ -1,9 +1,10 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/renderer/safe_browsing/phishing_dom_feature_extractor.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/hash_tables.h"
 #include "base/logging.h"
@@ -13,13 +14,12 @@
 #include "base/time.h"
 #include "chrome/renderer/safe_browsing/feature_extractor_clock.h"
 #include "chrome/renderer/safe_browsing/features.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
 #include "net/base/registry_controlled_domain.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeCollection.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 namespace safe_browsing {
@@ -99,11 +99,11 @@ struct PhishingDOMFeatureExtractor::FrameData {
 };
 
 PhishingDOMFeatureExtractor::PhishingDOMFeatureExtractor(
-    RenderView* render_view,
+    content::RenderView* render_view,
     FeatureExtractorClock* clock)
     : render_view_(render_view),
       clock_(clock),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   Clear();
 }
 
@@ -115,7 +115,7 @@ PhishingDOMFeatureExtractor::~PhishingDOMFeatureExtractor() {
 
 void PhishingDOMFeatureExtractor::ExtractFeatures(
     FeatureMap* features,
-    DoneCallback* done_callback) {
+    const DoneCallback& done_callback) {
   // The RenderView should have called CancelPendingExtraction() before
   // starting a new extraction, so DCHECK this.
   CheckNoPendingExtraction();
@@ -124,18 +124,23 @@ void PhishingDOMFeatureExtractor::ExtractFeatures(
   CancelPendingExtraction();
 
   features_ = features;
-  done_callback_.reset(done_callback);
+  done_callback_ = done_callback;
 
   page_feature_state_.reset(new PageFeatureState(clock_->Now()));
+  WebKit::WebView* web_view = render_view_->GetWebView();
+  if (web_view && web_view->mainFrame()) {
+    cur_document_ = web_view->mainFrame()->document();
+  }
+
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      method_factory_.NewRunnableMethod(
-          &PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout));
+      base::Bind(&PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout,
+                 weak_factory_.GetWeakPtr()));
 }
 
 void PhishingDOMFeatureExtractor::CancelPendingExtraction() {
   // Cancel any pending callbacks, and clear our state.
-  method_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
   Clear();
 }
 
@@ -144,18 +149,15 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
   ++page_feature_state_->num_iterations;
   base::TimeTicks current_chunk_start_time = clock_->Now();
 
-  if (!cur_frame_) {
-    WebKit::WebView* web_view = render_view_->webview();
-    if (!web_view) {
-      RunCallback(false);  // The WebView is going away.
-      return;
-    }
-    cur_frame_ = web_view->mainFrame();
+  if (cur_document_.isNull()) {
+    // This will only happen if we weren't able to get the document for the
+    // main frame.  We'll treat this as an extraction failure.
+    RunCallback(false);
+    return;
   }
 
   int num_elements = 0;
-  for (; cur_frame_;
-       cur_frame_ = cur_frame_->traverseNext(false /* don't wrap around */)) {
+  for (; !cur_document_.isNull(); cur_document_ = GetNextDocument()) {
     WebKit::WebNode cur_node;
     if (cur_frame_data_.get()) {
       // We're resuming traversal of a frame, so just advance to the next node.
@@ -169,11 +171,7 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
     } else {
       // We just moved to a new frame, so update our frame state
       // and advance to the first element.
-      if (!ResetFrameData()) {
-        // Nothing in this frame, move on to the next one.
-        DLOG(WARNING) << "No content in frame, skipping";
-        continue;
-      }
+      ResetFrameData();
       cur_node = cur_frame_data_->elements.firstItem();
     }
 
@@ -219,8 +217,9 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
                               chunk_elapsed);
           MessageLoop::current()->PostTask(
               FROM_HERE,
-              method_factory_.NewRunnableMethod(
-                  &PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout));
+              base::Bind(
+                  &PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout,
+                  weak_factory_.GetWeakPtr()));
           return;
         }
         // Otherwise, continue.
@@ -349,10 +348,11 @@ void PhishingDOMFeatureExtractor::HandleScript(
 }
 
 void PhishingDOMFeatureExtractor::CheckNoPendingExtraction() {
-  DCHECK(!done_callback_.get());
+  DCHECK(done_callback_.is_null());
   DCHECK(!cur_frame_data_.get());
-  DCHECK(!cur_frame_);
-  if (done_callback_.get() || cur_frame_data_.get() || cur_frame_) {
+  DCHECK(cur_document_.isNull());
+  if (!done_callback_.is_null() || cur_frame_data_.get() ||
+      !cur_document_.isNull()) {
     LOG(ERROR) << "Extraction in progress, missing call to "
                << "CancelPendingExtraction";
   }
@@ -367,32 +367,45 @@ void PhishingDOMFeatureExtractor::RunCallback(bool success) {
   UMA_HISTOGRAM_TIMES("SBClientPhishing.DOMFeatureTotalTime",
                       clock_->Now() - page_feature_state_->start_time);
 
-  DCHECK(done_callback_.get());
-  done_callback_->Run(success);
+  DCHECK(!done_callback_.is_null());
+  done_callback_.Run(success);
   Clear();
 }
 
 void PhishingDOMFeatureExtractor::Clear() {
   features_ = NULL;
-  done_callback_.reset(NULL);
+  done_callback_.Reset();
   cur_frame_data_.reset(NULL);
-  cur_frame_ = NULL;
+  cur_document_.reset();
 }
 
-bool PhishingDOMFeatureExtractor::ResetFrameData() {
-  DCHECK(cur_frame_);
+void PhishingDOMFeatureExtractor::ResetFrameData() {
+  DCHECK(!cur_document_.isNull());
   DCHECK(!cur_frame_data_.get());
 
-  WebKit::WebDocument doc = cur_frame_->document();
-  if (doc.isNull()) {
-    return false;
-  }
   cur_frame_data_.reset(new FrameData());
-  cur_frame_data_->elements = doc.all();
+  cur_frame_data_->elements = cur_document_.all();
   cur_frame_data_->domain =
       net::RegistryControlledDomainService::GetDomainAndRegistry(
-          cur_frame_->url());
-  return true;
+          cur_document_.url());
+}
+
+WebKit::WebDocument PhishingDOMFeatureExtractor::GetNextDocument() {
+  DCHECK(!cur_document_.isNull());
+  WebKit::WebFrame* frame = cur_document_.frame();
+  // Advance to the next frame that contains a document, with no wrapping.
+  if (frame) {
+    while ((frame = frame->traverseNext(false))) {
+      if (!frame->document().isNull()) {
+        return frame->document();
+      }
+    }
+  } else {
+    // Keep track of how often frame traversal got "stuck" due to the
+    // current subdocument getting removed from the frame tree.
+    UMA_HISTOGRAM_COUNTS("SBClientPhishing.DOMFeatureFrameRemoved", 1);
+  }
+  return WebKit::WebDocument();
 }
 
 bool PhishingDOMFeatureExtractor::IsExternalDomain(const GURL& url,

@@ -8,11 +8,16 @@
 
 #include <vector>
 
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/sync/engine/syncapi.h"
-#include "chrome/browser/sync/glue/change_processor.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
+#include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+
+namespace sync_api {
+class WriteNode;
+class WriteTransaction;
+}  // namespace sync_api
 
 namespace browser_sync {
 
@@ -29,7 +34,7 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
 
   // BookmarkModelObserver implementation.
   // BookmarkModel -> sync_api model change application.
-  virtual void Loaded(BookmarkModel* model) OVERRIDE;
+  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
@@ -54,8 +59,7 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
   // the sync model to the bookmarks model.
   virtual void ApplyChangesFromSyncModel(
       const sync_api::BaseTransaction* trans,
-      const sync_api::SyncManager::ChangeRecord* changes,
-      int change_count);
+      const sync_api::ImmutableChangeRecordList& changes) OVERRIDE;
 
   // The following methods are static and hence may be invoked at any time,
   // and do not depend on having a running ChangeProcessor.
@@ -101,8 +105,8 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                               UnrecoverableErrorHandler* error_handler);
 
  protected:
-  virtual void StartImpl(Profile* profile);
-  virtual void StopImpl();
+  virtual void StartImpl(Profile* profile) OVERRIDE;
+  virtual void StopImpl() OVERRIDE;
 
  private:
   enum MoveOrCreate {

@@ -4,7 +4,8 @@
 
 #include "webkit/glue/alt_error_page_resource_fetcher.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "webkit/glue/resource_fetcher.h"
 
 using WebKit::WebFrame;
@@ -22,13 +23,14 @@ AltErrorPageResourceFetcher::AltErrorPageResourceFetcher(
     const GURL& url,
     WebFrame* frame,
     const WebURLError& original_error,
-    Callback* callback)
+    const Callback& callback)
     : frame_(frame),
       callback_(callback),
       original_error_(original_error) {
   fetcher_.reset(new ResourceFetcherWithTimeout(
       url, frame, WebURLRequest::TargetIsMainFrame, kDownloadTimeoutSec,
-      NewCallback(this, &AltErrorPageResourceFetcher::OnURLFetchComplete)));
+      base::Bind(&AltErrorPageResourceFetcher::OnURLFetchComplete,
+                 base::Unretained(this))));
 }
 
 AltErrorPageResourceFetcher::~AltErrorPageResourceFetcher() {
@@ -43,9 +45,9 @@ void AltErrorPageResourceFetcher::OnURLFetchComplete(
     const std::string& data) {
   // A null response indicates a network error.
   if (!response.isNull() && response.httpStatusCode() == 200) {
-    callback_->Run(frame_, original_error_, data);
+    callback_.Run(frame_, original_error_, data);
   } else {
-    callback_->Run(frame_, original_error_, std::string());
+    callback_.Run(frame_, original_error_, std::string());
   }
 }
 

@@ -6,14 +6,18 @@
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/browser_with_test_window_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/web_contents.h"
+#include "content/test/test_browser_thread.h"
 
 typedef BrowserWithTestWindowTest BrowserCommandsTest;
+
+using content::OpenURLParams;
+using content::Referrer;
+using content::WebContents;
 
 // Tests IDC_SELECT_TAB_0, IDC_SELECT_NEXT_TAB, IDC_SELECT_PREVIOUS_TAB and
 // IDC_SELECT_LAST_TAB.
@@ -69,13 +73,13 @@ TEST_F(BrowserCommandsTest, DuplicateTab) {
   ASSERT_EQ(2, browser()->tab_count());
 
   // Verify the stack of urls.
-  NavigationController& controller =
-      browser()->GetTabContentsAt(1)->controller();
-  ASSERT_EQ(3, controller.entry_count());
+  content::NavigationController& controller =
+      browser()->GetWebContentsAt(1)->GetController();
+  ASSERT_EQ(3, controller.GetEntryCount());
   ASSERT_EQ(2, controller.GetCurrentEntryIndex());
-  ASSERT_TRUE(url1 == controller.GetEntryAtIndex(0)->url());
-  ASSERT_TRUE(url2 == controller.GetEntryAtIndex(1)->url());
-  ASSERT_TRUE(url3 == controller.GetEntryAtIndex(2)->url());
+  ASSERT_TRUE(url1 == controller.GetEntryAtIndex(0)->GetURL());
+  ASSERT_TRUE(url2 == controller.GetEntryAtIndex(1)->GetURL());
+  ASSERT_TRUE(url3 == controller.GetEntryAtIndex(2)->GetURL());
 }
 
 TEST_F(BrowserCommandsTest, BookmarkCurrentPage) {
@@ -86,7 +90,8 @@ TEST_F(BrowserCommandsTest, BookmarkCurrentPage) {
   // Navigate to a url.
   GURL url1("http://foo/1");
   AddTab(browser(), url1);
-  browser()->OpenURL(url1, GURL(), CURRENT_TAB, PageTransition::TYPED);
+  browser()->OpenURL(OpenURLParams(
+      url1, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false));
 
   // TODO(beng): remove this once we can use TabContentses directly in testing
   //             instead of the TestTabContents which causes this command not to
@@ -116,16 +121,16 @@ TEST_F(BrowserCommandsTest, BackForwardInNewTab) {
   ASSERT_EQ(2, browser()->tab_count());
 
   // The original tab should be unchanged.
-  TabContents* zeroth = browser()->GetTabContentsAt(0);
+  WebContents* zeroth = browser()->GetWebContentsAt(0);
   EXPECT_EQ(url2, zeroth->GetURL());
-  EXPECT_TRUE(zeroth->controller().CanGoBack());
-  EXPECT_FALSE(zeroth->controller().CanGoForward());
+  EXPECT_TRUE(zeroth->GetController().CanGoBack());
+  EXPECT_FALSE(zeroth->GetController().CanGoForward());
 
   // The new tab should be like the first one but navigated back.
-  TabContents* first = browser()->GetTabContentsAt(1);
-  EXPECT_EQ(url1, browser()->GetTabContentsAt(1)->GetURL());
-  EXPECT_FALSE(first->controller().CanGoBack());
-  EXPECT_TRUE(first->controller().CanGoForward());
+  WebContents* first = browser()->GetWebContentsAt(1);
+  EXPECT_EQ(url1, browser()->GetWebContentsAt(1)->GetURL());
+  EXPECT_FALSE(first->GetController().CanGoBack());
+  EXPECT_TRUE(first->GetController().CanGoForward());
 
   // Select the second tab and make it go forward in a new background tab.
   browser()->ActivateTabAt(1, true);
@@ -133,36 +138,63 @@ TEST_F(BrowserCommandsTest, BackForwardInNewTab) {
   // but because of this bug, it will assert later if we don't. When the bug is
   // fixed, one of the three commits here related to this bug should be removed
   // (to test both codepaths).
-  CommitPendingLoad(&first->controller());
+  CommitPendingLoad(&first->GetController());
   EXPECT_EQ(1, browser()->active_index());
   browser()->GoForward(NEW_BACKGROUND_TAB);
 
   // The previous tab should be unchanged and still in the foreground.
   EXPECT_EQ(url1, first->GetURL());
-  EXPECT_FALSE(first->controller().CanGoBack());
-  EXPECT_TRUE(first->controller().CanGoForward());
+  EXPECT_FALSE(first->GetController().CanGoBack());
+  EXPECT_TRUE(first->GetController().CanGoForward());
   EXPECT_EQ(1, browser()->active_index());
 
   // There should be a new tab navigated forward.
   ASSERT_EQ(3, browser()->tab_count());
-  TabContents* second = browser()->GetTabContentsAt(2);
+  WebContents* second = browser()->GetWebContentsAt(2);
   EXPECT_EQ(url2, second->GetURL());
-  EXPECT_TRUE(second->controller().CanGoBack());
-  EXPECT_FALSE(second->controller().CanGoForward());
+  EXPECT_TRUE(second->GetController().CanGoBack());
+  EXPECT_FALSE(second->GetController().CanGoForward());
 
   // Now do back in a new foreground tab. Don't bother re-checking every sngle
   // thing above, just validate that it's opening properly.
   browser()->ActivateTabAt(2, true);
   // TODO(brettw) bug 11055: see the comment above about why we need this.
-  CommitPendingLoad(&second->controller());
+  CommitPendingLoad(&second->GetController());
   browser()->GoBack(NEW_FOREGROUND_TAB);
   ASSERT_EQ(3, browser()->active_index());
-  ASSERT_EQ(url1, browser()->GetSelectedTabContents()->GetURL());
+  ASSERT_EQ(url1, browser()->GetSelectedWebContents()->GetURL());
 
   // Same thing again for forward.
   // TODO(brettw) bug 11055: see the comment above about why we need this.
-  CommitPendingLoad(&browser()->GetSelectedTabContents()->controller());
+  CommitPendingLoad(&browser()->GetSelectedWebContents()->GetController());
   browser()->GoForward(NEW_FOREGROUND_TAB);
   ASSERT_EQ(4, browser()->active_index());
-  ASSERT_EQ(url2, browser()->GetSelectedTabContents()->GetURL());
+  ASSERT_EQ(url2, browser()->GetSelectedWebContents()->GetURL());
 }
+
+// Tests IDC_SEARCH (the Search key on Chrome OS devices).
+#if defined(OS_CHROMEOS)
+TEST_F(BrowserCommandsTest, Search) {
+  // Load a non-NTP URL.
+  GURL non_ntp_url("http://foo/");
+  AddTab(browser(), non_ntp_url);
+  ASSERT_EQ(1, browser()->tab_count());
+  EXPECT_EQ(non_ntp_url, browser()->GetSelectedWebContents()->GetURL());
+
+  // Pressing the Search key should open a new tab containing the NTP.
+  browser()->Search();
+  ASSERT_EQ(2, browser()->tab_count());
+  ASSERT_EQ(1, browser()->active_index());
+  GURL current_url = browser()->GetSelectedWebContents()->GetURL();
+  EXPECT_TRUE(current_url.SchemeIs(chrome::kChromeUIScheme));
+  EXPECT_EQ(chrome::kChromeUINewTabHost, current_url.host());
+
+  // Pressing it a second time while the NTP is open shouldn't change anything.
+  browser()->Search();
+  ASSERT_EQ(2, browser()->tab_count());
+  ASSERT_EQ(1, browser()->active_index());
+  current_url = browser()->GetSelectedWebContents()->GetURL();
+  EXPECT_TRUE(current_url.SchemeIs(chrome::kChromeUIScheme));
+  EXPECT_EQ(chrome::kChromeUINewTabHost, current_url.host());
+}
+#endif

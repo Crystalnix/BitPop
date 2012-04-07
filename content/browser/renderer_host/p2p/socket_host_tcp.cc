@@ -4,30 +4,24 @@
 
 #include "content/browser/renderer_host/p2p/socket_host_tcp.h"
 
+#include "base/sys_byteorder.h"
 #include "content/common/p2p_messages.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/sys_byteorder.h"
 #include "net/socket/tcp_client_socket.h"
 
 namespace {
-
 const int kReadBufferSize = 4096;
 const int kPacketHeaderSize = sizeof(uint16);
-
 }  // namespace
+
+namespace content {
 
 P2PSocketHostTcp::P2PSocketHostTcp(IPC::Message::Sender* message_sender,
                                    int routing_id, int id)
     : P2PSocketHost(message_sender, routing_id, id),
-      authorized_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          connect_callback_(this, &P2PSocketHostTcp::OnConnected)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &P2PSocketHostTcp::OnRead)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          write_callback_(this, &P2PSocketHostTcp::OnWritten)) {
+      connected_(false) {
 }
 
 P2PSocketHostTcp::~P2PSocketHostTcp() {
@@ -65,7 +59,11 @@ bool P2PSocketHostTcp::Init(const net::IPEndPoint& local_address,
   }
   socket_.reset(tcp_socket.release());
 
-  int result = socket_->Connect(&connect_callback_);
+  if (socket_->SetSendBufferSize(kMaxSendBufferSize))
+    LOG(WARNING) << "Failed to set send buffer size for TCP socket.";
+
+  int result = socket_->Connect(
+      base::Bind(&P2PSocketHostTcp::OnConnected, base::Unretained(this)));
   if (result != net::ERR_IO_PENDING) {
     OnConnected(result);
   }
@@ -122,7 +120,8 @@ void P2PSocketHostTcp::DoRead() {
                                 read_buffer_->RemainingCapacity());
     }
     result = socket_->Read(read_buffer_, read_buffer_->RemainingCapacity(),
-                           &read_callback_);
+                           base::Bind(&P2PSocketHostTcp::OnRead,
+                                      base::Unretained(this)));
     DidCompleteRead(result);
   } while (result > 0);
 }
@@ -135,12 +134,11 @@ void P2PSocketHostTcp::OnRead(int result) {
 }
 
 void P2PSocketHostTcp::OnPacket(std::vector<char>& data) {
-  if (!authorized_) {
+  if (!connected_) {
     P2PSocketHost::StunMessageType type;
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
-    if (stun && (type == STUN_BINDING_REQUEST ||
-                 type == STUN_BINDING_RESPONSE)) {
-      authorized_ = true;
+    if (stun && IsRequestOrResponse(type)) {
+      connected_ = true;
     } else if (!stun || type == STUN_DATA_INDICATION) {
       LOG(ERROR) << "Received unexpected data packet from "
                  << remote_address_.ToString()
@@ -208,7 +206,7 @@ void P2PSocketHostTcp::Send(const net::IPEndPoint& to,
     return;
   }
 
-  if (!authorized_) {
+  if (!connected_) {
     P2PSocketHost::StunMessageType type;
     bool stun = GetStunPacketType(&*data.begin(), data.size(), &type);
     if (!stun || type == STUN_DATA_INDICATION) {
@@ -230,7 +228,8 @@ void P2PSocketHostTcp::Send(const net::IPEndPoint& to,
 void P2PSocketHostTcp::DoWrite() {
   while (true) {
     int result = socket_->Write(write_buffer_, write_buffer_->BytesRemaining(),
-                                &write_callback_);
+                                base::Bind(&P2PSocketHostTcp::OnWritten,
+                                           base::Unretained(this)));
     if (result >= 0) {
       write_buffer_->DidConsume(result);
       if (write_buffer_->BytesRemaining() == 0) {
@@ -272,3 +271,5 @@ P2PSocketHost* P2PSocketHostTcp::AcceptIncomingTcpConnection(
   OnError();
   return NULL;
 }
+
+} // namespace content

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,43 +8,49 @@
 #include "base/basictypes.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_resource.h"
-#include "ppapi/proxy/host_resource.h"
+#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/shared_impl/host_resource.h"
 
 struct PP_Point;
-struct PPB_Testing_Dev;
 
-namespace pp {
+namespace ppapi {
+
+struct InputEventData;
+
 namespace proxy {
 
 class PPB_Testing_Proxy : public InterfaceProxy {
  public:
-  PPB_Testing_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  PPB_Testing_Proxy(Dispatcher* dispatcher);
   virtual ~PPB_Testing_Proxy();
 
   static const Info* GetInfo();
-
-  const PPB_Testing_Dev* ppb_testing_target() const {
-    return static_cast<const PPB_Testing_Dev*>(target_interface());
-  }
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
 
  private:
   // Message handlers.
-  void OnMsgReadImageData(const HostResource& device_context_2d,
-                          const HostResource& image,
+  void OnMsgReadImageData(const ppapi::HostResource& device_context_2d,
+                          const ppapi::HostResource& image,
                           const PP_Point& top_left,
                           PP_Bool* result);
   void OnMsgRunMessageLoop(PP_Instance instance);
   void OnMsgQuitMessageLoop(PP_Instance instance);
   void OnMsgGetLiveObjectsForInstance(PP_Instance instance, uint32_t* result);
+  void OnMsgSimulateInputEvent(PP_Instance instance,
+                               const ppapi::InputEventData& input_event);
+
+  // When this proxy is in the host side, this value caches the interface
+  // pointer so we don't have to retrieve it from the dispatcher each time.
+  // In the plugin, this value is always NULL.
+  const PPB_Testing_Dev* ppb_testing_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_Testing_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPB_TESTING_PROXY_H_

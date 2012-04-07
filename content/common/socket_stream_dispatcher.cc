@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,11 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/id_map.h"
+#include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "content/common/child_thread.h"
 #include "content/common/socket_stream.h"
 #include "content/common/socket_stream_messages.h"
@@ -49,22 +50,25 @@ class IPCWebSocketStreamHandleBridge
   virtual ~IPCWebSocketStreamHandleBridge();
 
   void DoConnect(const GURL& url);
+  void DoClose();
   int socket_id_;
 
   ChildThread* child_thread_;
   WebKit::WebSocketStreamHandle* handle_;
   webkit_glue::WebSocketStreamHandleDelegate* delegate_;
 
-  static IDMap<IPCWebSocketStreamHandleBridge> all_bridges;
+  static base::LazyInstance<IDMap<IPCWebSocketStreamHandleBridge> >::Leaky
+      all_bridges;
 };
 
-IDMap<IPCWebSocketStreamHandleBridge>
-IPCWebSocketStreamHandleBridge::all_bridges;
+// static
+base::LazyInstance<IDMap<IPCWebSocketStreamHandleBridge> >::Leaky
+    IPCWebSocketStreamHandleBridge::all_bridges = LAZY_INSTANCE_INITIALIZER;
 
 /* static */
 IPCWebSocketStreamHandleBridge* IPCWebSocketStreamHandleBridge::FromSocketId(
     int id) {
-  return all_bridges.Lookup(id);
+  return all_bridges.Get().Lookup(id);
 }
 
 IPCWebSocketStreamHandleBridge::~IPCWebSocketStreamHandleBridge() {
@@ -81,8 +85,7 @@ void IPCWebSocketStreamHandleBridge::Connect(const GURL& url) {
   DVLOG(1) << "Connect url=" << url;
   child_thread_->message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &IPCWebSocketStreamHandleBridge::DoConnect,
-                        url));
+      base::Bind(&IPCWebSocketStreamHandleBridge::DoConnect, this, url));
 }
 
 bool IPCWebSocketStreamHandleBridge::Send(
@@ -99,7 +102,10 @@ bool IPCWebSocketStreamHandleBridge::Send(
 
 void IPCWebSocketStreamHandleBridge::Close() {
   DVLOG(1) << "Close socket_id" << socket_id_;
-  child_thread_->Send(new SocketStreamHostMsg_Close(socket_id_));
+  AddRef();  // Released in DoClose().
+  child_thread_->message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(&IPCWebSocketStreamHandleBridge::DoClose, this));
 }
 
 void IPCWebSocketStreamHandleBridge::OnConnected(int max_pending_send_allowed) {
@@ -123,7 +129,7 @@ void IPCWebSocketStreamHandleBridge::OnReceivedData(
 void IPCWebSocketStreamHandleBridge::OnClosed() {
   DVLOG(1) << "IPCWebSocketStreamHandleBridge::OnClosed";
   if (socket_id_ != content_common::kNoSocketId) {
-    all_bridges.Remove(socket_id_);
+    all_bridges.Get().Remove(socket_id_);
     socket_id_ = content_common::kNoSocketId;
   }
   if (delegate_)
@@ -138,16 +144,21 @@ void IPCWebSocketStreamHandleBridge::DoConnect(const GURL& url) {
   if (delegate_)
     delegate_->WillOpenStream(handle_, url);
 
-  socket_id_ = all_bridges.Add(this);
+  socket_id_ = all_bridges.Get().Add(this);
   DCHECK_NE(socket_id_, content_common::kNoSocketId);
   AddRef();  // Released in OnClosed().
   if (child_thread_->Send(new SocketStreamHostMsg_Connect(url, socket_id_))) {
     DVLOG(1) << "Connect socket_id=" << socket_id_;
     // TODO(ukai): timeout to OnConnected.
   } else {
-    LOG(ERROR) << "IPC SocketStream_Connect failed.";
+    DLOG(ERROR) << "IPC SocketStream_Connect failed.";
     OnClosed();
   }
+}
+
+void IPCWebSocketStreamHandleBridge::DoClose() {
+  child_thread_->Send(new SocketStreamHostMsg_Close(socket_id_));
+  Release();
 }
 
 SocketStreamDispatcher::SocketStreamDispatcher() {

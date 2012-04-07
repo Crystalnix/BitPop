@@ -21,7 +21,9 @@ namespace sync_pb {
 class PreferenceSpecifics;
 }
 
+namespace base {
 class Value;
+}
 
 // Contains all preference sync related logic.
 // TODO(sync): Merge this into PrefService once we separate the profile
@@ -30,13 +32,15 @@ class PrefModelAssociator
     : public SyncableService,
       public base::NonThreadSafe {
  public:
-  explicit PrefModelAssociator(PrefService* pref_service);
+  PrefModelAssociator();
   virtual ~PrefModelAssociator();
 
   // SyncableService implementation.
   virtual SyncDataList GetAllSyncData(syncable::ModelType type) const OVERRIDE;
-  virtual void ProcessSyncChanges(const SyncChangeList& change_list) OVERRIDE;
-  virtual bool MergeDataAndStartSyncing(
+  virtual SyncError ProcessSyncChanges(
+      const tracked_objects::Location& from_here,
+      const SyncChangeList& change_list) OVERRIDE;
+  virtual SyncError MergeDataAndStartSyncing(
       syncable::ModelType type,
       const SyncDataList& initial_sync_data,
       SyncChangeProcessor* sync_processor) OVERRIDE;
@@ -45,10 +49,6 @@ class PrefModelAssociator
   // Returns the list of preference names that are registered as syncable, and
   // hence should be monitored for changes.
   std::set<std::string> registered_preferences() const;
-
-  // Returns the list of preferences actually being synced (which is a subset
-  // of those registered as syncable).
-  std::set<std::string> synced_preferences() const;
 
   // Register a preference with the specified name for syncing. We do not care
   // about the type at registration time, but when changes arrive from the
@@ -60,26 +60,33 @@ class PrefModelAssociator
   // Returns true if the specified preference is registered for syncing.
   virtual bool IsPrefRegistered(const char* name);
 
+  // Unregisters a previously registered preference. This must be called
+  // prior to making the first sync.
+  virtual void UnregisterPref(const char* name);
+
   // Process a local preference change. This can trigger new SyncChanges being
   // sent to the syncer.
   virtual void ProcessPrefChange(const std::string& name);
+
+  void SetPrefService(PrefService* pref_service);
 
   // Merges the value of local_pref into the supplied server_value and returns
   // the result (caller takes ownership). If there is a conflict, the server
   // value always takes precedence. Note that only certain preferences will
   // actually be merged, all others will return a copy of the server value. See
   // the method's implementation for details.
-  static Value* MergePreference(const PrefService::Preference& local_pref,
-                                const Value& server_value);
+  static base::Value* MergePreference(
+      const PrefService::Preference& local_pref,
+      const base::Value& server_value);
 
   // Fills |sync_data| with a sync representation of the preference data
   // provided.
   static bool CreatePrefSyncData(const std::string& name,
-                                 const Value& value,
+                                 const base::Value& value,
                                  SyncData* sync_data);
 
   // Extract preference value and name from sync specifics.
-  Value* ReadPreferenceSpecifics(
+  base::Value* ReadPreferenceSpecifics(
       const sync_pb::PreferenceSpecifics& specifics,
       std::string* name);
 
@@ -87,9 +94,6 @@ class PrefModelAssociator
   friend class ProfileSyncServicePreferenceTest;
 
   typedef std::map<std::string, SyncData> SyncDataMap;
-
-  // For testing.
-  PrefModelAssociator();
 
   // Create an association for a given preference. If |sync_pref| is valid,
   // signifying that sync has data for this preference, we reconcile their data
@@ -103,13 +107,10 @@ class PrefModelAssociator
                             const std::string& pref_name,
                             SyncChangeList* sync_changes);
 
-  // Perform any additional local operations that need to happen after a
-  // preference has been updated.
-  void SendUpdateNotificationsIfNecessary(const std::string& pref_name);
-
-  static Value* MergeListValues(const Value& from_value, const Value& to_value);
-  static Value* MergeDictionaryValues(const Value& from_value,
-                                      const Value& to_value);
+  static base::Value* MergeListValues(
+      const base::Value& from_value, const base::Value& to_value);
+  static base::Value* MergeDictionaryValues(const base::Value& from_value,
+                                            const base::Value& to_value);
 
   // Do we have an active association between the preferences and sync models?
   // Set when start syncing, reset in StopSyncing. While this is not set, we
@@ -127,22 +128,14 @@ class PrefModelAssociator
   // All preferences that have registered as being syncable with this profile.
   PreferenceSet registered_preferences_;
 
-  // The preferences we are currently actually syncing (i.e. those the server
-  // is aware of). This is a subset of |registered_preferences_|, but excludes
-  // those with default values or not modifiable by the user (for example due
-  // to being controlled by policy)
+  // The preferences that are currently synced (excludes those preferences
+  // that have never had sync data and currently have default values or are
+  // policy controlled).
+  // Note: this set never decreases, only grows to eventually match
+  // registered_preferences_ as more preferences are synced. It determines
+  // whether a preference change should update an existing sync node or create
+  // a new sync node.
   PreferenceSet synced_preferences_;
-
-  // We keep track of the most recent sync data we've received those
-  // preferences registered as syncable but not in our synced_preferences_ list.
-  // These are used if at a later time the preference in question should be
-  // synced (for example the pref policy changes), and we need to get the
-  // most recent sync data.
-  // TODO(zea): See if we can get rid of the difference between
-  // synced_preferences_ and registered_preferences_ by always updating the
-  // local user pref store with pref data and letting the PrefStoreKeeper
-  // handle ensuring the appropriate policy value is used.
-  SyncDataMap untracked_pref_sync_data_;
 
   // The PrefService we are syncing to.
   PrefService* pref_service_;

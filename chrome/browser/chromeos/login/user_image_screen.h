@@ -6,47 +6,52 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_SCREEN_H_
 #pragma once
 
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/camera_controller.h"
-#include "chrome/browser/chromeos/login/user_image_view.h"
-#include "chrome/browser/chromeos/login/view_screen.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "chrome/browser/chromeos/login/user_image_screen_actor.h"
+#include "chrome/browser/chromeos/login/wizard_screen.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 namespace chromeos {
 
-class UserImageScreen: public ViewScreen<UserImageView>,
+class UserImageScreen: public WizardScreen,
                        public CameraController::Delegate,
-                       public UserImageView::Delegate,
-                       public NotificationObserver {
+                       public UserImageScreenActor::Delegate,
+                       public content::NotificationObserver {
  public:
-  explicit UserImageScreen(ViewScreenDelegate* delegate);
+  UserImageScreen(ScreenObserver* screen_observer,
+                  UserImageScreenActor* actor);
   virtual ~UserImageScreen();
 
-  // Overridden from ViewScreen:
-  virtual void Refresh();
-  virtual void Hide();
-  virtual UserImageView* AllocateView();
+  // WizardScreen implementation:
+  virtual void PrepareToShow() OVERRIDE;
+  virtual void Show() OVERRIDE;
+  virtual void Hide() OVERRIDE;
 
   // CameraController::Delegate implementation:
-  virtual void OnCaptureSuccess();
-  virtual void OnCaptureFailure();
+  virtual void OnCaptureSuccess() OVERRIDE;
+  virtual void OnCaptureFailure() OVERRIDE;
 
-  // UserImageView::Delegate implementation:
-  virtual void StartCamera();
-  virtual void StopCamera();
-  virtual void OnPhotoTaken(const SkBitmap& image);
-  virtual void OnDefaultImageSelected(int index);
+  // UserImageScreenActor::Delegate implementation:
+  virtual void StartCamera() OVERRIDE;
+  virtual void StopCamera() OVERRIDE;
+  virtual void OnPhotoTaken(const SkBitmap& image) OVERRIDE;
+  virtual void OnProfileImageSelected() OVERRIDE;
+  virtual void OnDefaultImageSelected(int index) OVERRIDE;
+  virtual void OnActorDestroyed(UserImageScreenActor* actor) OVERRIDE;
 
-  // NotificationObserver implementation:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   CameraController camera_controller_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
+
+  UserImageScreenActor* actor_;
 
   DISALLOW_COPY_AND_ASSIGN(UserImageScreen);
 };
@@ -54,5 +59,3 @@ class UserImageScreen: public ViewScreen<UserImageView>,
 }  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_SCREEN_H_
-
-

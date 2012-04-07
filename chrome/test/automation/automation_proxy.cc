@@ -4,16 +4,15 @@
 
 #include "chrome/test/automation/automation_proxy.h"
 
-#include <gtest/gtest.h>
-
 #include <sstream>
 
 #include "base/basictypes.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/threading/platform_thread.h"
 #include "base/process_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/threading/platform_thread.h"
 #include "chrome/common/automation_constants.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_version_info.h"
@@ -25,13 +24,15 @@
 #include "ipc/ipc_descriptors.h"
 #if defined(OS_WIN)
 // TODO(port): Enable when dialog_delegate is ported.
-#include "views/window/dialog_delegate.h"
+#include "ui/views/window/dialog_delegate.h"
 #endif
 
 using base::TimeDelta;
 using base::TimeTicks;
 
 namespace {
+
+const char kChannelErrorVersionString[] = "***CHANNEL_ERROR***";
 
 // This object allows messages received on the background thread to be
 // properly triaged.
@@ -41,7 +42,7 @@ class AutomationMessageFilter : public IPC::ChannelProxy::MessageFilter {
 
   // Return true to indicate that the message was handled, or false to let
   // the message be handled in the default way.
-  virtual bool OnMessageReceived(const IPC::Message& message) {
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(AutomationMessageFilter, message)
       IPC_MESSAGE_HANDLER_GENERIC(AutomationMsg_Hello,
@@ -58,14 +59,20 @@ class AutomationMessageFilter : public IPC::ChannelProxy::MessageFilter {
     return handled;
   }
 
-  virtual void OnFilterAdded(IPC::Channel* channel) {
+  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
     server_->SetChannel(channel);
   }
 
-  virtual void OnFilterRemoved() {
+  virtual void OnFilterRemoved() OVERRIDE {
     server_->ResetChannel();
   }
 
+  virtual void OnChannelError() OVERRIDE {
+    server_->SignalAppLaunch(kChannelErrorVersionString);
+    server_->SignalNewTabUITab(-1);
+  }
+
+ private:
   void NewTabLoaded(int load_time) {
     server_->SignalNewTabUITab(load_time);
   }
@@ -83,8 +90,9 @@ class AutomationMessageFilter : public IPC::ChannelProxy::MessageFilter {
     server_->SignalAppLaunch(server_version);
   }
 
- private:
   AutomationProxy* server_;
+
+  DISALLOW_COPY_AND_ASSIGN(AutomationMessageFilter);
 };
 
 }  // anonymous namespace
@@ -96,9 +104,9 @@ AutomationProxy::AutomationProxy(int action_timeout_ms,
       initial_loads_complete_(true, false),
       new_tab_ui_load_complete_(true, false),
       shutdown_event_(new base::WaitableEvent(true, false)),
-      app_launch_signaled_(0),
       perform_version_check_(false),
       disconnect_on_failure_(disconnect_on_failure),
+      channel_disconnected_on_failure_(false),
       action_timeout_(
           TimeDelta::FromMilliseconds(action_timeout_ms)),
       listener_thread_id_(0) {
@@ -153,14 +161,20 @@ void AutomationProxy::InitializeChannel(const std::string& channel_id,
   // provider, where we use the shutdown event provided by the chrome browser
   // process.
   channel_.reset(new IPC::SyncChannel(
-    channel_id,
-    use_named_interface ? IPC::Channel::MODE_NAMED_CLIENT
-                        : IPC::Channel::MODE_SERVER,
-    this,  // we are the listener
-    thread_->message_loop_proxy(),
-    true,
-    shutdown_event_.get()));
+      this,  // we are the listener
+      thread_->message_loop_proxy(),
+      shutdown_event_.get()));
   channel_->AddFilter(new AutomationMessageFilter(this));
+
+  // Create the pipe synchronously so that Chrome doesn't try to connect to an
+  // unready server. Note this is done after adding a message filter to
+  // guarantee that it doesn't miss any messages when we are the client.
+  // See crbug.com/102894.
+  channel_->Init(
+      channel_id,
+      use_named_interface ? IPC::Channel::MODE_NAMED_CLIENT
+                          : IPC::Channel::MODE_SERVER,
+      true /* create_pipe_now */);
 }
 
 void AutomationProxy::InitializeHandleTracker() {
@@ -170,7 +184,9 @@ void AutomationProxy::InitializeHandleTracker() {
 AutomationLaunchResult AutomationProxy::WaitForAppLaunch() {
   AutomationLaunchResult result = AUTOMATION_SUCCESS;
   if (app_launched_.TimedWait(action_timeout_)) {
-    if (perform_version_check_) {
+    if (server_version_ == kChannelErrorVersionString) {
+      result = AUTOMATION_CHANNEL_ERROR;
+    } else if (perform_version_check_) {
       // Obtain our own version number and compare it to what the automation
       // provider sent.
       chrome::VersionInfo version_info;
@@ -190,16 +206,6 @@ AutomationLaunchResult AutomationProxy::WaitForAppLaunch() {
 }
 
 void AutomationProxy::SignalAppLaunch(const std::string& version_string) {
-  // The synchronization of the reading / writing of server_version_ is a bit
-  // messy but does work as long as SignalAppLaunch is only called once.
-  // Review this if we ever want an AutomationProxy instance to launch
-  // multiple AutomationProviders.
-  app_launch_signaled_++;
-  if (app_launch_signaled_ > 1) {
-    NOTREACHED();
-    LOG(ERROR) << "Multiple AutomationMsg_Hello messages received";
-    return;
-  }
   server_version_ = version_string;
   app_launched_.Signal();
 }
@@ -235,24 +241,18 @@ bool AutomationProxy::SavePackageShouldPromptUser(bool should_prompt) {
 }
 
 scoped_refptr<ExtensionProxy> AutomationProxy::InstallExtension(
-    const FilePath& crx_file, bool with_ui) {
+    const FilePath& extension_path, bool with_ui) {
   int handle = 0;
-  if (!Send(new AutomationMsg_InstallExtensionAndGetHandle(crx_file, with_ui,
-                                                           &handle)))
+  if (!Send(new AutomationMsg_InstallExtension(extension_path,
+                                               with_ui, &handle)))
     return NULL;
 
   return ProxyObjectFromHandle<ExtensionProxy>(handle);
 }
 
-void AutomationProxy::EnsureExtensionTestResult() {
-  bool result;
-  std::string message;
-  if (!Send(new AutomationMsg_WaitForExtensionTestResult(&result,
-                                                         &message))) {
-    FAIL() << "Could not send WaitForExtensionTestResult message";
-    return;
-  }
-  ASSERT_TRUE(result) << "Extension test message: " << message;
+bool AutomationProxy::GetExtensionTestResult(
+    bool* result, std::string* message) {
+  return Send(new AutomationMsg_WaitForExtensionTestResult(result, message));
 }
 
 bool AutomationProxy::GetBrowserWindowCount(int* num_windows) {
@@ -282,9 +282,8 @@ bool AutomationProxy::WaitForWindowCountToBecome(int count) {
   return wait_success;
 }
 
-bool AutomationProxy::GetShowingAppModalDialog(
-    bool* showing_app_modal_dialog,
-    ui::MessageBoxFlags::DialogButton* button) {
+bool AutomationProxy::GetShowingAppModalDialog(bool* showing_app_modal_dialog,
+                                               ui::DialogButton* button) {
   if (!showing_app_modal_dialog || !button) {
     NOTREACHED();
     return false;
@@ -297,12 +296,11 @@ bool AutomationProxy::GetShowingAppModalDialog(
     return false;
   }
 
-  *button = static_cast<ui::MessageBoxFlags::DialogButton>(button_int);
+  *button = static_cast<ui::DialogButton>(button_int);
   return true;
 }
 
-bool AutomationProxy::ClickAppModalDialogButton(
-    ui::MessageBoxFlags::DialogButton button) {
+bool AutomationProxy::ClickAppModalDialogButton(ui::DialogButton button) {
   bool succeeded = false;
 
   if (!Send(new AutomationMsg_ClickAppModalDialogButton(
@@ -432,15 +430,9 @@ scoped_refptr<BrowserProxy> AutomationProxy::GetLastActiveBrowserWindow() {
   return ProxyObjectFromHandle<BrowserProxy>(handle);
 }
 
-#if defined(OS_POSIX)
-base::file_handle_mapping_vector AutomationProxy::fds_to_map() const {
-  base::file_handle_mapping_vector map;
-  const int ipcfd = channel_->GetClientFileDescriptor();
-  if (ipcfd > -1)
-    map.push_back(std::make_pair(ipcfd, kPrimaryIPCChannel + 3));
-  return map;
+IPC::SyncChannel* AutomationProxy::channel() {
+  return channel_.get();
 }
-#endif  // defined(OS_POSIX)
 
 bool AutomationProxy::Send(IPC::Message* message) {
   return Send(message,
@@ -461,6 +453,7 @@ bool AutomationProxy::Send(IPC::Message* message, int timeout_ms) {
     // state, and further IPC requests are extremely likely to fail (possibly
     // timeout, which would make tests slower). Disconnect the channel now
     // to avoid the slowness.
+    channel_disconnected_on_failure_ = true;
     LOG(ERROR) << "Disconnecting channel after error!";
     Disconnect();
   }
@@ -499,7 +492,7 @@ scoped_refptr<TabProxy> AutomationProxy::CreateExternalTab(
     return NULL;
   }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   DCHECK(IsWindow(*external_tab_container));
 #else  // defined(OS_WIN)
   DCHECK(*external_tab_container);
@@ -547,6 +540,43 @@ bool AutomationProxy::LoginWithUserAndPass(const std::string& username,
   return sent && success;
 }
 #endif
+
+bool AutomationProxy::BeginTracing(const std::string& categories) {
+  bool result = false;
+  bool send_success = Send(new AutomationMsg_BeginTracing(categories,
+                                                          &result));
+  return send_success && result;
+}
+
+bool AutomationProxy::EndTracing(std::string* json_trace_output) {
+  bool success = false;
+  size_t num_trace_chunks = 0;
+  if (!Send(new AutomationMsg_EndTracing(&num_trace_chunks, &success)) ||
+      !success)
+    return false;
+
+  std::string chunk;
+  base::debug::TraceResultBuffer buffer;
+  base::debug::TraceResultBuffer::SimpleOutput output;
+  buffer.SetOutputCallback(output.GetCallback());
+
+  // TODO(jbates): See bug 100255, IPC send fails if message is too big. This
+  // code can be simplified if that limitation is fixed.
+  // Workaround IPC payload size limitation by getting chunks.
+  buffer.Start();
+  for (size_t i = 0; i < num_trace_chunks; ++i) {
+    // The broswer side AutomationProvider resets state at BeginTracing,
+    // so it can recover even after this fails mid-way.
+    if (!Send(new AutomationMsg_GetTracingOutput(&chunk, &success)) ||
+        !success)
+      return false;
+    buffer.AddFragment(chunk);
+  }
+  buffer.Finish();
+
+  *json_trace_output = output.json_output;
+  return true;
+}
 
 bool AutomationProxy::ResetToDefaultTheme() {
   return Send(new AutomationMsg_ResetToDefaultTheme());

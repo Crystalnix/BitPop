@@ -17,6 +17,13 @@ extern const char kChromotingTokenDefaultServiceName[];
 // Namespace used for chromoting XMPP stanzas.
 extern const char kChromotingXmlNamespace[];
 
+// Channel names.
+extern const char kControlChannelName[];
+extern const char kEventChannelName[];
+extern const char kVideoChannelName[];
+extern const char kVideoRtpChannelName[];
+extern const char kVideoRtcpChannelName[];
+
 }  // namespace remoting
 
 #endif  // REMOTING_BASE_CONSTANTS_H_

@@ -1,22 +1,8 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Defines the IPC messages used by the automation interface.
-
-#include <string>
-#include <vector>
-
-#include "base/string16.h"
-#include "chrome/common/content_settings.h"
-#include "chrome/test/automation/autocomplete_edit_proxy.h"
-#include "content/common/navigation_types.h"
-#include "googleurl/src/gurl.h"
-#include "ipc/ipc_message_macros.h"
-#include "net/url_request/url_request_status.h"
-#include "ui/gfx/rect.h"
-#include "webkit/glue/window_open_disposition.h"
-
 
 // NOTE: All IPC messages have either a routing_id of 0 (for asynchronous
 //       messages), or one that's been assigned by the proxy (for calls
@@ -24,12 +10,26 @@
 //       any other purpose in these message types.
 
 // NOTE: All the new IPC messages should go at the end.
-//       The IPC message IDs need to match the reference builds.  Since we now
-//       define the IDs based on __LINE__, to allow these IPC messages to be
-//       used to control an old version of Chrome we need the message IDs to
-//       remain the same.  This means that you should not change the line number
-//       of any of the messages below.  This will be fixed once Xcode supports
-//       __COUNTER__, in which case we can get rid of the __LINE__.
+//       The test <--> browser IPC message IDs need to match the reference
+//       builds.  Since we now define the IDs based on __LINE__, to allow these
+//       IPC messages to be used to control an old version of Chrome we need
+//       the message IDs to remain the same.  This means that you should not
+//       change the line number of these types of messages. You can, however,
+//       change the browser <--> renderer messages.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 #define IPC_MESSAGE_START AutomationMsgStart
 
@@ -341,10 +341,10 @@ IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_WindowForBrowser,
                             bool /* success flag */,
                             int /* window handle */)
 
-// This message requests the AutocompleteEdit associated with the specified
-// browser handle.
-// The return value contains a success flag and the handle of the omnibox.
-IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_AutocompleteEditForBrowser,
+// TODO(phajdan.jr): Remove when the reference build is updated (this and
+// all others marked "DEPRECATED MESSAGE").
+// (intentionally blank line)
+IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_DEPRECATED_AutocompleteEditForBrowser,
                             int /* browser handle */,
                             bool /* success flag */,
                             int /* AutocompleteEdit handle */)
@@ -552,15 +552,15 @@ IPC_MESSAGE_ROUTED1(AutomationMsg_DidNavigate,
 // Response:
 //  - bool: whether the operation was successful.
 //  - SecurityStyle: the security style of the tab.
-//  - int: the status of the server's ssl cert (0 means no errors or no ssl
-//         was used).
+//  - net::CertStatus: the status of the server's ssl cert (0 means no errors or
+//                     no ssl was used).
 //  - int: the insecure content state, 0 means no insecure contents.
 
 IPC_SYNC_MESSAGE_CONTROL1_4(AutomationMsg_GetSecurityState,
                             int,
                             bool,
-                            SecurityStyle,
-                            int,
+                            content::SecurityStyle,
+                            net::CertStatus,
                             int)
 
 // This message requests the page type of the page displayed in the specified
@@ -573,7 +573,7 @@ IPC_SYNC_MESSAGE_CONTROL1_4(AutomationMsg_GetSecurityState,
 IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_GetPageType,
                             int,
                             bool,
-                            PageType)
+                            content::PageType)
 
 // This message simulates the user action on the SSL blocking page showing in
 // the specified tab.  This message is only effective if an interstitial page
@@ -647,44 +647,44 @@ IPC_SYNC_MESSAGE_CONTROL4_1(AutomationMsg_SavePage,
                             int,
                             bool)
 
-// This message requests the text currently being displayed in the
-// AutocompleteEdit.  The parameter is the handle to the AutocompleteEdit.
-// The return value is a string indicating the text in the AutocompleteEdit.
-IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_AutocompleteEditGetText,
+// TODO(phajdan.jr): Remove when the reference build is updated (this and
+// all others marked "DEPRECATED MESSAGE").
+// (intentionally blank line)
+IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_DEPRECATED_AutocompleteEditGetText,
                             int /* autocomplete edit handle */,
                             bool /* the requested autocomplete edit exists */,
                             string16 /* omnibox text */)
 
-// This message sets the text being displayed in the AutocompleteEdit.  The
-// first parameter is the handle to the omnibox and the second parameter is
-// the text to be displayed in the AutocompleteEdit.
-// The return value has no parameters and is returned when the operation has
-// completed.
-IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_AutocompleteEditSetText,
+// TODO(phajdan.jr): Remove when the reference build is updated (this and
+// all others marked "DEPRECATED MESSAGE").
+// (intentionally blank line)
+// (intentionally blank line)
+// (intentionally blank line)
+IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_DEPRECATED_AutocompleteEditSetText,
                             int /* autocomplete edit handle */,
                             string16 /* text to set */,
                             bool /* the requested autocomplete edit exists */)
 
-// This message requests if a query to a autocomplete provider is still in
-// progress.  The first parameter in the request is the handle to the
-// autocomplete edit.
-// The first return value indicates if the request succeeded.
-// The second return value indicates if a query is still in progress.
+// TODO(phajdan.jr): Remove when the reference build is updated (this and
+// all others marked "DEPRECATED MESSAGE").
+// (intentionally blank line)
+// (intentionally blank line)
+// (intentionally blank line)
 IPC_SYNC_MESSAGE_CONTROL1_2( \
-    AutomationMsg_AutocompleteEditIsQueryInProgress,
+    AutomationMsg_DEPRECATED_AutocompleteEditIsQueryInProgress,
     int /* autocomplete edit handle*/,
     bool /* the requested autocomplete edit exists */,
     bool /* indicates if a query is in progress */)
 
-// This message requests a list of the autocomplete messages currently being
-// displayed by the popup.  The parameter in the request is a handle to the
-// autocomplete edit.
-// The first return value indicates if the request was successful, while
-// while the second is the actual list of matches.
-IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_AutocompleteEditGetMatches,
+// TODO(phajdan.jr): Remove when the reference build is updated (this and
+// all others marked "DEPRECATED MESSAGE").
+// (intentionally blank line)
+// (intentionally blank line)
+// (intentionally blank line)
+IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_DEPRECATED_AutocompleteEditGetMatches,
                             int /* autocomplete edit handle*/,
                             bool /* the requested autocomplete edit exists */,
-                            std::vector<AutocompleteMatchData> /* matches */)
+                            std::vector<int> /* matches */)
 
 // This message requests the execution of a browser command in the browser
 // for which the handle is specified.
@@ -744,12 +744,12 @@ IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_FindWindowLocation,
                             int /* x */,
                             int /* y */)
 
-// Is the Bookmark bar visible? The return value will indicate whether it is
-// visible or not and whether it is being animated into (or out of its place).
-IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_BookmarkBarVisibility,
+// Gets the bookmark bar visibility, animating and detached states.
+// TODO(phajdan.jr): Adjust the last param when the reference build is updated.
+IPC_SYNC_MESSAGE_CONTROL1_3(AutomationMsg_BookmarkBarVisibility,
                             int /* browser_handle */,
                             bool, /* is_visible */
-                            bool  /* still_animating */)
+                            bool, /* still_animating */ bool /* is_detached */)
 
 // This message requests the number of related info bars opened.  It
 // returns -1 if an error occurred.
@@ -764,7 +764,7 @@ IPC_SYNC_MESSAGE_CONTROL3_1(AutomationMsg_ClickInfoBarAccept,
                             int /* tab_handle */,
                             size_t /* info bar index */,
                             bool /* wait for navigation */,
-// This line blank on purpose, see comment atop file about __LINE__.
+// (intentionally blank line), see comment atop file about __LINE__.
                             /* navigation result */
                             AutomationMsg_NavigationResponseValues)
 
@@ -779,7 +779,7 @@ IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_GetLastNavigationTime,
 IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_WaitForNavigation,
                             int /* tab_handle */,
                             int64 /* last navigation time */,
-// This line blank on purpose, see comment atop file about __LINE__.
+// (intentionally blank line), see comment atop file about __LINE__.
                             /* navigation result */
                             AutomationMsg_NavigationResponseValues)
 
@@ -852,7 +852,7 @@ IPC_MESSAGE_ROUTED2(AutomationMsg_NavigationFailed,
                     int,
                     GURL)
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
 // This message is an outgoing message from an automation client to Chrome.
 // It is used to reposition a chrome tab window.
 IPC_MESSAGE_CONTROL2(AutomationMsg_TabReposition,
@@ -927,7 +927,7 @@ IPC_SYNC_MESSAGE_CONTROL0_1(AutomationMsg_GetBrowserLocale,
 
 #if defined(OS_WIN)
 IPC_MESSAGE_ROUTED3(AutomationMsg_ForwardContextMenuToExternalHost,
-                    HANDLE /* source menu handle */,
+                    ContextMenuModel /* description of menu */,
                     int    /* align flags */,
                     MiniContextMenuParams /* params */)
 
@@ -1128,10 +1128,10 @@ IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_GetMetricEventDuration,
 IPC_MESSAGE_ROUTED1(AutomationMsg_RequestGoToHistoryEntryOffset,
                     int)   // numbers of entries (negative or positive)
 
-// Silently install the extension in the given crx file.
-IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_InstallExtension,
+// DEPRECATED MESSAGE.
+IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_DEPRECATED_InstallExtension,
                             FilePath /* full path to crx file */,
-                            AutomationMsg_ExtensionResponseValues)
+                            int)
 
 // DEPRECATED MESSAGE - But we must leave this comment and message so as
 // not to perturb line numbers (see comment at top of file re __LINE__).
@@ -1300,12 +1300,12 @@ IPC_SYNC_MESSAGE_CONTROL2_2(AutomationMsg_SendJSONRequest,
                             std::string /* JSON response */,
                             bool /* success */)
 
-// Installs an extension from the crx file and returns its id.
-// On error, |extension handle| will be 0.
-IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_InstallExtensionAndGetHandle,
-                            FilePath     /* full path to crx file */,
-                            bool         /* with UI */,
-                            int          /* extension handle */)
+// Installs an extension from a crx file or unpacked extension folder
+// and returns its id. On error, |extension handle| will be 0.
+IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_InstallExtension,
+                            FilePath /* full path to crx or unpacked dir */,
+                            bool     /* with UI */,
+                            int      /* extension handle */)
 
 // Waits for the next extension test result. Sets |test result| as the
 // received result and |message| as any accompanying message with the
@@ -1417,8 +1417,8 @@ IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_WaitForInfoBarCount,
                             size_t /* target count */,
                             bool /* success */)
 
-// Waits for the autocomplete edit to receive focus.
-IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_WaitForAutocompleteEditFocus,
+// TODO(phajdan.jr): Remove this message.
+IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_DEPRECATED_WaitForAutocompleteEditFocus,
                             int /* autocomplete edit handle */,
                             bool /* success */)
 
@@ -1476,7 +1476,53 @@ IPC_SYNC_MESSAGE_CONTROL1_2(AutomationMsg_IsBrowserInApplicationMode,
                             bool /* is_application */,
                             bool /* success */)
 
+// Call BeginTracing on the browser TraceController. This will tell all
+// processes to start collecting trace events via base/debug/trace_event.h.
+IPC_SYNC_MESSAGE_CONTROL1_1(AutomationMsg_BeginTracing,
+                            std::string /* categories */,
+                            bool /* success */)
+
+// End tracing (called after BeginTracing). This blocks until tracing has
+// stopped on all processes and all the events are ready to be retrieved.
+IPC_SYNC_MESSAGE_CONTROL0_2(AutomationMsg_EndTracing,
+                            size_t /* num_trace_chunks */,
+                            bool /* success */)
+
+// Retrieve trace event data (called after EndTracing). Must call exactly
+// |num_trace_chunks| times.
+// TODO(jbates): See bug 100255, IPC send fails if message is too big. This
+// code can be removed if that limitation is fixed.
+IPC_SYNC_MESSAGE_CONTROL0_2(AutomationMsg_GetTracingOutput,
+                            std::string /* trace_chunk */,
+                            bool /* success */)
+
+// This message notifies the AutomationProvider to append a new tab to the
+// window with the given handle. The tab will be opened in the background
+// like it was middle-clicked.  The return value contains the index of
+// the new tab, or -1 if the request failed.
+// The second parameter is the url to be loaded in the new tab.
+IPC_SYNC_MESSAGE_CONTROL2_1(AutomationMsg_AppendBackgroundTab,
+                            int,
+                            GURL,
+                            int)
+
+// Used on Mac OS X to read the number of active Mach ports used in the browser
+// process.
+IPC_SYNC_MESSAGE_CONTROL0_1(AutomationMsg_GetMachPortCount,
+                            int /* number of Mach ports */)
+
+// Browser -> renderer messages.
+
+// Requests a snapshot.
+IPC_MESSAGE_ROUTED0(AutomationMsg_SnapshotEntirePage)
+
 // Renderer -> browser messages.
+
+// Sent as a response to |AutomationMsg_Snapshot|.
+IPC_MESSAGE_ROUTED3(AutomationMsg_SnapshotEntirePageACK,
+                    bool /* success */,
+                    std::vector<unsigned char> /* png bytes */,
+                    std::string /* error message */)
 
 // Sent when the renderer has scheduled a client redirect to occur.
 IPC_MESSAGE_ROUTED2(AutomationMsg_WillPerformClientRedirect,
@@ -1489,7 +1535,7 @@ IPC_MESSAGE_ROUTED2(AutomationMsg_WillPerformClientRedirect,
 IPC_MESSAGE_ROUTED1(AutomationMsg_DidCompleteOrCancelClientRedirect,
                     int64 /* frame_id */)
 
-
 // YOUR NEW MESSAGE MIGHT NOT BELONG HERE.
 // This is the section for renderer -> browser automation messages. If it is
-// an automation <-> browser message, put it above this section.
+// an automation <-> browser message, put it above this section. The "no line
+// number change" applies only to the automation <-> browser messages.

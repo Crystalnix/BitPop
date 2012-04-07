@@ -4,6 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/mac_util.h"
 #include "base/memory/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/hover_image_button.h"
@@ -12,7 +13,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 namespace {
 
@@ -28,6 +29,11 @@ class HoverImageButtonTest : public CocoaTest {
 
   virtual void SetUp() {
     CocoaTest::BootstrapCocoa();
+
+    // This test crashes when run on Lion. Fail early.
+    if (base::mac::IsOSLionOrLater()) {
+      FAIL() << "This test crashes on Lion; http://crbug.com/93926";
+    }
   }
 
   HoverImageButton* button_;

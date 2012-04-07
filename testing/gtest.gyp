@@ -1,4 +1,4 @@
-# Copyright (c) 2009 The Chromium Authors. All rights reserved.
+# Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,7 +7,6 @@
     {
       'target_name': 'gtest',
       'type': 'static_library',
-      'msvs_guid': 'BFE8E2A7-3B3B-43B0-A994-3058B852DB8B',
       'sources': [
         'gtest/include/gtest/gtest-death-test.h',
         'gtest/include/gtest/gtest-message.h',
@@ -18,7 +17,6 @@
         'gtest/include/gtest/gtest-typed-test.h',
         'gtest/include/gtest/gtest.h',
         'gtest/include/gtest/gtest_pred_impl.h',
-        'gtest/include/gtest/gtest_prod.h',
         'gtest/include/gtest/internal/gtest-death-test-internal.h',
         'gtest/include/gtest/internal/gtest-filepath.h',
         'gtest/include/gtest/internal/gtest-internal.h',
@@ -48,6 +46,9 @@
       'include_dirs': [
         'gtest',
         'gtest/include',
+      ],
+      'dependencies': [
+        'gtest_prod',
       ],
       'conditions': [
         ['OS == "mac"', {
@@ -79,10 +80,10 @@
             ],
           },
         }],
-        ['clang==1', {
-          # We want gtest features that use tr1::tuple, but clang currently
-          # doesn't support the variadic templates used by libstdc++'s
-          # implementation.  gtest supports this scenario by providing its
+        ['clang==1 or OS=="android"', {
+          # We want gtest features that use tr1::tuple, but we currently
+          # don't support the variadic templates used by libstdc++'s
+          # implementation. gtest supports this scenario by providing its
           # own implementation but we must opt in to it.
           'defines': [
             'GTEST_USE_OWN_TR1_TUPLE=1',
@@ -131,11 +132,13 @@
         'gtest/src/gtest_main.cc',
       ],
     },
+    {
+      'target_name': 'gtest_prod',
+      'toolsets': ['host', 'target'],
+      'type': 'none',
+      'sources': [
+        'gtest/include/gtest/gtest_prod.h',
+      ],
+    },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

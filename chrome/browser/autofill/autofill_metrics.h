@@ -12,6 +12,10 @@
 #include "base/basictypes.h"
 #include "chrome/browser/autofill/field_types.h"
 
+namespace base {
+class TimeDelta;
+}
+
 class AutofillMetrics {
  public:
   enum InfoBarMetric {
@@ -79,6 +83,43 @@ class AutofillMetrics {
     NUM_SERVER_QUERY_METRICS
   };
 
+  // Each of these metrics is logged only for potentially autofillable forms,
+  // i.e. forms with at least three fields, etc.
+  // These are used to derive certain "user happiness" metrics.  For example, we
+  // can compute the ratio (USER_DID_EDIT_AUTOFILLED_FIELD / USER_DID_AUTOFILL)
+  // to see how often users have to correct autofilled data.
+  enum UserHappinessMetric {
+    // Loaded a page containing forms.
+    FORMS_LOADED,
+    // Submitted a fillable form -- i.e. one with at least three field values
+    // that match the user's stored Autofill data -- and all matching fields
+    // were autofilled.
+    SUBMITTED_FILLABLE_FORM_AUTOFILLED_ALL,
+    // Submitted a fillable form and some (but not all) matching fields were
+    // autofilled.
+    SUBMITTED_FILLABLE_FORM_AUTOFILLED_SOME,
+    // Submitted a fillable form and no fields were autofilled.
+    SUBMITTED_FILLABLE_FORM_AUTOFILLED_NONE,
+    // Submitted a non-fillable form.
+    SUBMITTED_NON_FILLABLE_FORM,
+
+    // User manually filled one of the form fields.
+    USER_DID_TYPE,
+    // We showed a popup containing Autofill suggestions.
+    SUGGESTIONS_SHOWN,
+    // Same as above, but only logged once per page load.
+    SUGGESTIONS_SHOWN_ONCE,
+    // User autofilled at least part of the form.
+    USER_DID_AUTOFILL,
+    // Same as above, but only logged once per page load.
+    USER_DID_AUTOFILL_ONCE,
+    // User edited a previously autofilled field.
+    USER_DID_EDIT_AUTOFILLED_FIELD,
+    // Same as above, but only logged once per page load.
+    USER_DID_EDIT_AUTOFILLED_FIELD_ONCE,
+    NUM_USER_HAPPINESS_METRICS
+  };
+
   AutofillMetrics();
   virtual ~AutofillMetrics();
 
@@ -101,6 +142,30 @@ class AutofillMetrics {
 
   virtual void LogServerQueryMetric(ServerQueryMetric metric) const;
 
+  virtual void LogUserHappinessMetric(UserHappinessMetric metric) const;
+
+  // This should be called when a form that has been Autofilled is submitted.
+  // |duration| should be the time elapsed between form load and submission.
+  virtual void LogFormFillDurationFromLoadWithAutofill(
+      const base::TimeDelta& duration) const;
+
+  // This should be called when a fillable form that has not been Autofilled is
+  // submitted.  |duration| should be the time elapsed between form load and
+  // submission.
+  virtual void LogFormFillDurationFromLoadWithoutAutofill(
+      const base::TimeDelta& duration) const;
+
+  // This should be called when a form that has been Autofilled is submitted.
+  // |duration| should be the time elapsed between the initial form interaction
+  // and submission.
+  virtual void LogFormFillDurationFromInteractionWithAutofill(
+      const base::TimeDelta& duration) const;
+
+  // This should be called when a fillable form that has not been Autofilled is
+  // submitted.  |duration| should be the time elapsed between the initial form
+  // interaction and submission.
+  virtual void LogFormFillDurationFromInteractionWithoutAutofill(
+      const base::TimeDelta& duration) const;
 
   // This should be called each time a page containing forms is loaded.
   virtual void LogIsAutofillEnabledAtPageLoad(bool enabled) const;
@@ -114,6 +179,14 @@ class AutofillMetrics {
   // Log the number of Autofill suggestions presented to the user when filling a
   // form.
   virtual void LogAddressSuggestionsCount(size_t num_suggestions) const;
+
+  // Logs the experiment id corresponding to a server query response.
+  virtual void LogServerExperimentIdForQuery(
+      const std::string& experiment_id) const;
+
+  // Logs the experiment id corresponding to an upload to the server.
+  virtual void LogServerExperimentIdForUpload(
+      const std::string& experiment_id) const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AutofillMetrics);

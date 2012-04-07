@@ -1,20 +1,27 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/sessions/session_types.h"
-#include "chrome/browser/sessions/session_service.h"
+#include "base/stringprintf.h"
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/sessions/session_service_factory.h"
+#include "chrome/browser/sessions/session_service.h"
+#include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/render_view_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/chrome_render_view_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/test/render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+
+typedef TabRestoreService::Tab Tab;
+
+using content::NavigationEntry;
 
 // Create subclass that overrides TimeNow so that we can control the time used
 // for closed tabs and windows.
@@ -32,7 +39,7 @@ class TabRestoreTimeFactory : public TabRestoreService::TimeFactory {
   base::Time time_;
 };
 
-class TabRestoreServiceTest : public RenderViewHostTestHarness {
+class TabRestoreServiceTest : public ChromeRenderViewHostTestHarness {
  public:
   TabRestoreServiceTest() {
     url1_ = GURL("http://1");
@@ -46,16 +53,17 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
  protected:
   // testing::Test overrides
   virtual void SetUp() {
-    RenderViewHostTestHarness::SetUp();
+    WebKit::initialize(&webkit_platform_support_);
+    ChromeRenderViewHostTestHarness::SetUp();
     time_factory_ = new TabRestoreTimeFactory();
     service_.reset(new TabRestoreService(profile(), time_factory_));
-    WebKit::initialize(&webkitclient_);
   }
 
   virtual void TearDown() {
+    service_->Shutdown();
     service_.reset();
     delete time_factory_;
-    RenderViewHostTestHarness::TearDown();
+    ChromeRenderViewHostTestHarness::TearDown();
     WebKit::shutdown();
   }
 
@@ -76,6 +84,7 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   void RecreateService() {
     // Must set service to null first so that it is destroyed before the new
     // one is created.
+    service_->Shutdown();
     service_.reset();
     service_.reset(new TabRestoreService(profile(), time_factory_));
     service_->LoadTabsFromLastSession();
@@ -94,9 +103,9 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
     session_service->SetSelectedTabInWindow(window_id, 0);
     if (pinned)
       session_service->SetPinnedState(window_id, tab_id, true);
-    NavigationEntry entry;
-    entry.set_url(url1_);
-    session_service->UpdateTabNavigation(window_id, tab_id, 0, entry);
+    scoped_ptr<NavigationEntry> entry(NavigationEntry::Create());;
+    entry->SetURL(url1_);
+    session_service->UpdateTabNavigation(window_id, tab_id, 0, *entry.get());
   }
 
   // Creates a SessionService and assigns it to the Profile. The SessionService
@@ -119,7 +128,8 @@ class TabRestoreServiceTest : public RenderViewHostTestHarness {
   GURL url3_;
   scoped_ptr<TabRestoreService> service_;
   TabRestoreTimeFactory* time_factory_;
-  RenderViewTest::RendererWebKitClientImplNoSandbox webkitclient_;
+  content::RenderViewTest::RendererWebKitPlatformSupportImplNoSandbox
+      webkit_platform_support_;
 };
 
 TEST_F(TabRestoreServiceTest, Basic) {
@@ -134,7 +144,7 @@ TEST_F(TabRestoreServiceTest, Basic) {
   // Make sure the entry matches.
   TabRestoreService::Entry* entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   EXPECT_FALSE(tab->pinned);
   EXPECT_TRUE(tab->extension_app_id.empty());
   ASSERT_EQ(3U, tab->navigations.size());
@@ -156,7 +166,7 @@ TEST_F(TabRestoreServiceTest, Basic) {
   // Make sure the entry matches
   entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  tab = static_cast<TabRestoreService::Tab*>(entry);
+  tab = static_cast<Tab*>(entry);
   EXPECT_FALSE(tab->pinned);
   ASSERT_EQ(3U, tab->navigations.size());
   EXPECT_EQ(url1_, tab->navigations[0].virtual_url());
@@ -172,40 +182,6 @@ TEST_F(TabRestoreServiceTest, Basic) {
 TEST_F(TabRestoreServiceTest, DontCreateEmptyTab) {
   service_->CreateHistoricalTab(&controller(), -1);
   EXPECT_TRUE(service_->entries().empty());
-}
-
-// Make sure TabRestoreService doesn't create an entry for print preview tab.
-TEST_F(TabRestoreServiceTest, DontRestorePrintPreviewTab) {
-  AddThreeNavigations();
-
-  // Navigate to a print preview tab.
-  GURL printPreviewURL(chrome::kChromeUIPrintURL);
-  NavigateAndCommit(printPreviewURL);
-  EXPECT_EQ(printPreviewURL, contents()->GetURL());
-  EXPECT_EQ(4, controller().entry_count());
-
-  // Have the service record the tab.
-  service_->CreateHistoricalTab(&controller(), -1);
-
-  // Recreate the service and have it load the tabs.
-  RecreateService();
-
-  // One entry should be created.
-  ASSERT_EQ(1U, service_->entries().size());
-
-  // And verify the entry.
-  TabRestoreService::Entry* entry = service_->entries().front();
-  ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
-  EXPECT_FALSE(tab->pinned);
-
-  // Verify that print preview tab is not restored.
-  ASSERT_EQ(3U, tab->navigations.size());
-  EXPECT_NE(printPreviewURL, tab->navigations[0].virtual_url());
-  EXPECT_NE(printPreviewURL, tab->navigations[1].virtual_url());
-  EXPECT_NE(printPreviewURL, tab->navigations[2].virtual_url());
-  EXPECT_EQ(time_factory_->TimeNow().ToInternalValue(),
-            tab->timestamp.ToInternalValue());
 }
 
 // Tests restoring a single tab.
@@ -224,7 +200,7 @@ TEST_F(TabRestoreServiceTest, Restore) {
   // And verify the entry.
   TabRestoreService::Entry* entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   EXPECT_FALSE(tab->pinned);
   ASSERT_EQ(3U, tab->navigations.size());
   EXPECT_TRUE(url1_ == tab->navigations[0].virtual_url());
@@ -249,7 +225,7 @@ TEST_F(TabRestoreServiceTest, RestorePinnedAndApp) {
   // these tests.
   TabRestoreService::Entry* entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   tab->pinned = true;
   const std::string extension_app_id("test");
   tab->extension_app_id = extension_app_id;
@@ -263,7 +239,7 @@ TEST_F(TabRestoreServiceTest, RestorePinnedAndApp) {
   // And verify the entry.
   entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  tab = static_cast<TabRestoreService::Tab*>(entry);
+  tab = static_cast<Tab*>(entry);
   EXPECT_TRUE(tab->pinned);
   ASSERT_EQ(3U, tab->navigations.size());
   EXPECT_TRUE(url1_ == tab->navigations[0].virtual_url());
@@ -276,9 +252,9 @@ TEST_F(TabRestoreServiceTest, RestorePinnedAndApp) {
 // Make sure we persist entries to disk that have post data.
 TEST_F(TabRestoreServiceTest, DontPersistPostData) {
   AddThreeNavigations();
-  controller().GetEntryAtIndex(0)->set_has_post_data(true);
-  controller().GetEntryAtIndex(1)->set_has_post_data(true);
-  controller().GetEntryAtIndex(2)->set_has_post_data(true);
+  controller().GetEntryAtIndex(0)->SetHasPostData(true);
+  controller().GetEntryAtIndex(1)->SetHasPostData(true);
+  controller().GetEntryAtIndex(2)->SetHasPostData(true);
 
   // Have the service record the tab.
   service_->CreateHistoricalTab(&controller(), -1);
@@ -293,8 +269,8 @@ TEST_F(TabRestoreServiceTest, DontPersistPostData) {
   const TabRestoreService::Entry* restored_entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, restored_entry->type);
 
-  const TabRestoreService::Tab* restored_tab =
-      static_cast<const TabRestoreService::Tab*>(restored_entry);
+  const Tab* restored_tab =
+      static_cast<const Tab*>(restored_entry);
   // There should be 3 navs.
   ASSERT_EQ(3U, restored_tab->navigations.size());
   EXPECT_EQ(time_factory_->TimeNow().ToInternalValue(),
@@ -404,7 +380,7 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabs) {
   // Then the closed tab.
   entry = *(++service_->entries().begin());
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   ASSERT_FALSE(tab->pinned);
   ASSERT_EQ(3U, tab->navigations.size());
   EXPECT_EQ(2, tab->current_navigation_index);
@@ -446,7 +422,7 @@ TEST_F(TabRestoreServiceTest, LoadPreviousSessionAndTabsPinned) {
   // Then the closed tab.
   entry = *(++service_->entries().begin());
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   ASSERT_FALSE(tab->pinned);
   ASSERT_EQ(3U, tab->navigations.size());
   EXPECT_EQ(2, tab->current_navigation_index);
@@ -505,7 +481,7 @@ TEST_F(TabRestoreServiceTest, TimestampSurvivesRestore) {
   // Make sure the entry matches.
   TabRestoreService::Entry* entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, entry->type);
-  TabRestoreService::Tab* tab = static_cast<TabRestoreService::Tab*>(entry);
+  Tab* tab = static_cast<Tab*>(entry);
   tab->timestamp = tab_timestamp;
 
   // Set this, otherwise previous session won't be loaded.
@@ -519,8 +495,115 @@ TEST_F(TabRestoreServiceTest, TimestampSurvivesRestore) {
   // And verify the entry.
   TabRestoreService::Entry* restored_entry = service_->entries().front();
   ASSERT_EQ(TabRestoreService::TAB, restored_entry->type);
-  TabRestoreService::Tab* restored_tab =
-      static_cast<TabRestoreService::Tab*>(restored_entry);
+  Tab* restored_tab =
+      static_cast<Tab*>(restored_entry);
   EXPECT_EQ(tab_timestamp.ToInternalValue(),
             restored_tab->timestamp.ToInternalValue());
+}
+
+TEST_F(TabRestoreServiceTest, PruneEntries) {
+  service_->ClearEntries();
+  ASSERT_TRUE(service_->entries().empty());
+
+  const size_t max_entries = TabRestoreService::kMaxEntries;
+  for (size_t i = 0; i < max_entries + 5; i++) {
+    TabNavigation navigation;
+    navigation.set_virtual_url(GURL(StringPrintf("http://%d",
+                                                 static_cast<int>(i))));
+    navigation.set_title(ASCIIToUTF16(StringPrintf("%d", static_cast<int>(i))));
+
+    Tab* tab = new Tab();
+    tab->navigations.push_back(navigation);
+    tab->current_navigation_index = 0;
+
+    service_->entries_.push_back(tab);
+  }
+
+  // Only keep kMaxEntries around.
+  EXPECT_EQ(max_entries + 5, service_->entries_.size());
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  // Pruning again does nothing.
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+
+  // Prune older first.
+  TabNavigation navigation;
+  navigation.set_virtual_url(GURL("http://recent"));
+  navigation.set_title(ASCIIToUTF16("Most recent"));
+  Tab* tab = new Tab();
+  tab->navigations.push_back(navigation);
+  tab->current_navigation_index = 0;
+  service_->entries_.push_front(tab);
+  EXPECT_EQ(max_entries + 1, service_->entries_.size());
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  EXPECT_EQ(GURL("http://recent"),
+      static_cast<Tab*>(service_->entries_.front())->
+          navigations[0].virtual_url());
+
+  // Ignore NTPs.
+  navigation.set_virtual_url(GURL(chrome::kChromeUINewTabURL));
+  navigation.set_title(ASCIIToUTF16("New tab"));
+
+  tab = new Tab();
+  tab->navigations.push_back(navigation);
+  tab->current_navigation_index = 0;
+  service_->entries_.push_front(tab);
+
+  EXPECT_EQ(max_entries + 1, service_->entries_.size());
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  EXPECT_EQ(GURL("http://recent"),
+      static_cast<Tab*>(service_->entries_.front())->
+          navigations[0].virtual_url());
+
+  // Don't prune pinned NTPs.
+  tab = new Tab();
+  tab->pinned = true;
+  tab->current_navigation_index = 0;
+  tab->navigations.push_back(navigation);
+  service_->entries_.push_front(tab);
+  EXPECT_EQ(max_entries + 1, service_->entries_.size());
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  EXPECT_EQ(GURL(chrome::kChromeUINewTabURL),
+      static_cast<Tab*>(service_->entries_.front())->
+          navigations[0].virtual_url());
+
+  // Don't prune NTPs that have multiple navigations.
+  // (Erase the last NTP first.)
+  service_->entries_.erase(service_->entries_.begin());
+  tab = new Tab();
+  tab->current_navigation_index = 1;
+  tab->navigations.push_back(navigation);
+  tab->navigations.push_back(navigation);
+  service_->entries_.push_front(tab);
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  service_->PruneEntries();
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  EXPECT_EQ(GURL(chrome::kChromeUINewTabURL),
+      static_cast<Tab*>(service_->entries_.front())->
+          navigations[1].virtual_url());
+}
+
+// Regression test for crbug.com/106082
+TEST_F(TabRestoreServiceTest, PruneIsCalled) {
+  CreateSessionServiceWithOneWindow(false);
+
+  SessionServiceFactory::GetForProfile(profile())->
+      MoveCurrentSessionToLastSession();
+
+  profile()->set_restored_last_session(true);
+
+  const size_t max_entries = TabRestoreService::kMaxEntries;
+  for (size_t i = 0; i < max_entries + 5; i++) {
+    NavigateAndCommit(GURL(StringPrintf("http://%d", static_cast<int>(i))));
+    service_->CreateHistoricalTab(&controller(), -1);
+  }
+
+  EXPECT_EQ(max_entries, service_->entries_.size());
+  // This should not crash.
+  service_->LoadTabsFromLastSession();
+  EXPECT_EQ(max_entries, service_->entries_.size());
 }

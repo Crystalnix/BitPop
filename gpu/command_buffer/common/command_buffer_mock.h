@@ -21,12 +21,12 @@ class MockCommandBuffer : public CommandBuffer {
   MockCommandBuffer();
   virtual ~MockCommandBuffer();
 
-  MOCK_METHOD1(Initialize, bool(int32 size));
-  MOCK_METHOD2(Initialize, bool(base::SharedMemory* buffer, int32 size));
-  MOCK_METHOD0(GetRingBuffer, Buffer());
+  MOCK_METHOD0(Initialize, bool());
   MOCK_METHOD0(GetState, State());
+  MOCK_METHOD0(GetLastState, State());
   MOCK_METHOD1(Flush, void(int32 put_offset));
   MOCK_METHOD2(FlushSync, State(int32 put_offset, int32 last_known_get));
+  MOCK_METHOD1(SetGetBuffer, void(int32 transfer_buffer_id));
   MOCK_METHOD1(SetGetOffset, void(int32 get_offset));
   MOCK_METHOD2(CreateTransferBuffer, int32(size_t size, int32 id_request));
   MOCK_METHOD1(DestroyTransferBuffer, void(int32 handle));
@@ -36,6 +36,8 @@ class MockCommandBuffer : public CommandBuffer {
                                              int32 id_request));
   MOCK_METHOD1(SetToken, void(int32 token));
   MOCK_METHOD1(SetParseError, void(error::Error error));
+  MOCK_METHOD1(SetContextLostReason,
+               void(error::ContextLostReason context_lost_reason));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockCommandBuffer);

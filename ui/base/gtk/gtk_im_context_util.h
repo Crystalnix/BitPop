@@ -8,16 +8,19 @@
 
 #include <pango/pango-attributes.h>
 
+#include "ui/base/ui_export.h"
+
 namespace ui {
 
 struct CompositionText;
 
 // Extracts composition text information (text, underlines, selection range)
 // from given Gtk preedit data (utf-8 text, pango attributes, cursor position).
-void ExtractCompositionTextFromGtkPreedit(const gchar* utf8_text,
-                                          PangoAttrList* attrs,
-                                          int cursor_position,
-                                          CompositionText* composition);
+UI_EXPORT void ExtractCompositionTextFromGtkPreedit(
+    const gchar* utf8_text,
+    PangoAttrList* attrs,
+    int cursor_position,
+    CompositionText* composition);
 
 }  // namespace ui
 

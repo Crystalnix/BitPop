@@ -5,22 +5,24 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/search_engines/search_provider_install_data.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
-#include "chrome/browser/search_engines/template_url_model_test_util.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_test_util.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 // Create a TemplateURL. The caller owns the returned TemplateURL*.
 static TemplateURL* CreateTemplateURL(const std::string& url,
@@ -92,7 +94,7 @@ bool TestGetInstallState::RunTests() {
 
   BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &TestGetInstallState::StartTestOnIOThread));
+      base::Bind(&TestGetInstallState::StartTestOnIOThread, this));
   // Run the current message loop. When the test is finished on the I/O thread,
   // it invokes Quit, which unblocks this.
   MessageLoop::current()->Run();
@@ -107,8 +109,7 @@ TestGetInstallState::~TestGetInstallState() {
 
 void TestGetInstallState::StartTestOnIOThread() {
   install_data_->CallWhenLoaded(
-      NewRunnableMethod(this,
-                        &TestGetInstallState::DoInstallStateTests));
+      base::Bind(&TestGetInstallState::DoInstallStateTests, this));
 }
 
 void TestGetInstallState::DoInstallStateTests() {
@@ -137,7 +138,7 @@ void TestGetInstallState::DoInstallStateTests() {
   }
 
   // All done.
-  main_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+  main_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
 }
 
 void TestGetInstallState::VerifyInstallState(
@@ -155,7 +156,7 @@ void TestGetInstallState::VerifyInstallState(
 }
 
 // Provides basic test set-up/tear-down functionality needed by all tests
-// that use TemplateURLModelTestUtil.
+// that use TemplateURLServiceTestUtil.
 class SearchProviderInstallDataTest : public testing::Test {
  public:
   SearchProviderInstallDataTest()
@@ -167,22 +168,20 @@ class SearchProviderInstallDataTest : public testing::Test {
     util_.StartIOThread();
     install_data_ = new SearchProviderInstallData(
         util_.GetWebDataService(),
-        NotificationType::RENDERER_PROCESS_TERMINATED,
-        Source<SearchProviderInstallDataTest>(this));
+        content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+        content::Source<SearchProviderInstallDataTest>(this));
   }
 
   virtual void TearDown() {
-    BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)->PostTask(
-        FROM_HERE,
-        new DeleteTask<SearchProviderInstallData>(install_data_));
+    BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, install_data_);
     install_data_ = NULL;
 
     // Make sure that the install data class on the UI thread gets cleaned up.
     // It doesn't matter that this happens after install_data_ is deleted.
-    NotificationService::current()->Notify(
-        NotificationType::RENDERER_PROCESS_TERMINATED,
-        Source<SearchProviderInstallDataTest>(this),
-        NotificationService::NoDetails());
+    content::NotificationService::current()->Notify(
+        content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+        content::Source<SearchProviderInstallDataTest>(this),
+        content::NotificationService::NoDetails());
 
     util_.TearDown();
     testing::Test::TearDown();
@@ -206,13 +205,13 @@ class SearchProviderInstallDataTest : public testing::Test {
     service->SetManagedPref(
         prefs::kDefaultSearchProviderPrepopulateID, new StringValue(""));
     util_.model()->Observe(
-        NotificationType::PREF_CHANGED,
-        Source<PrefService>(util_.profile()->GetTestingPrefService()),
-        Details<std::string>(NULL));
+        chrome::NOTIFICATION_PREF_CHANGED,
+        content::Source<PrefService>(util_.profile()->GetTestingPrefService()),
+        content::Details<std::string>(NULL));
   }
 
  protected:
-  TemplateURLModelTestUtil util_;
+  TemplateURLServiceTestUtil util_;
 
   // Provides the search provider install state on the I/O thread. It must be
   // deleted on the I/O thread, which is why it isn't a scoped_ptr.
@@ -230,7 +229,7 @@ TEST_F(SearchProviderInstallDataTest, GetInstallState) {
   util_.model()->Add(t_url);
 
   // Wait for the changes to be saved.
-  TemplateURLModelTestUtil::BlockTillServiceProcessesRequests();
+  TemplateURLServiceTestUtil::BlockTillServiceProcessesRequests();
 
   // Verify the search providers install state (with no default set).
   scoped_refptr<TestGetInstallState> test_get_install_state(
@@ -285,7 +284,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   std::string google_host = "w.com";
   util_.SetGoogleBaseURL("http://" + google_host + "/");
   // Wait for the I/O thread to process the update notification.
-  TemplateURLModelTestUtil::BlockTillIOThreadProcessesRequests();
+  TemplateURLServiceTestUtil::BlockTillIOThreadProcessesRequests();
 
   TemplateURL* t_url = CreateTemplateURL("{google:baseURL}?q={searchTerms}",
                                          "t");
@@ -296,7 +295,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   util_.model()->SetDefaultSearchProvider(default_url);
 
   // Wait for the changes to be saved.
-  TemplateURLModelTestUtil::BlockTillServiceProcessesRequests();
+  TemplateURLServiceTestUtil::BlockTillServiceProcessesRequests();
 
   // Verify the search providers install state (with no default set).
   test_get_install_state->set_search_provider_host(google_host);
@@ -306,7 +305,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   google_host = "foo.com";
   util_.SetGoogleBaseURL("http://" + google_host + "/");
   // Wait for the I/O thread to process the update notification.
-  TemplateURLModelTestUtil::BlockTillIOThreadProcessesRequests();
+  TemplateURLServiceTestUtil::BlockTillIOThreadProcessesRequests();
 
   // Verify that the change got picked up.
   test_get_install_state->set_search_provider_host(google_host);

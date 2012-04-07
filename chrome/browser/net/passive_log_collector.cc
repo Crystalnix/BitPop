@@ -50,7 +50,7 @@ PassiveLogCollector::SourceInfo::~SourceInfo() {}
 //----------------------------------------------------------------------------
 
 PassiveLogCollector::PassiveLogCollector()
-    : ThreadSafeObserver(net::NetLog::LOG_BASIC),
+    : ThreadSafeObserverImpl(net::NetLog::LOG_BASIC),
       ALLOW_THIS_IN_INITIALIZER_LIST(connect_job_tracker_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(url_request_tracker_(this)),
       ALLOW_THIS_IN_INITIALIZER_LIST(socket_stream_tracker_(this)),
@@ -66,8 +66,8 @@ PassiveLogCollector::PassiveLogCollector()
   trackers_[net::NetLog::SOURCE_SOCKET_STREAM] = &socket_stream_tracker_;
   trackers_[net::NetLog::SOURCE_CONNECT_JOB] = &connect_job_tracker_;
   trackers_[net::NetLog::SOURCE_SOCKET] = &socket_tracker_;
-  trackers_[net::NetLog::SOURCE_INIT_PROXY_RESOLVER] =
-      &init_proxy_resolver_tracker_;
+  trackers_[net::NetLog::SOURCE_PROXY_SCRIPT_DECIDER] =
+      &proxy_script_decider_tracker_;
   trackers_[net::NetLog::SOURCE_SPDY_SESSION] = &spdy_session_tracker_;
   trackers_[net::NetLog::SOURCE_HOST_RESOLVER_IMPL_REQUEST] =
       &dns_request_tracker_;
@@ -77,6 +77,14 @@ PassiveLogCollector::PassiveLogCollector()
   trackers_[net::NetLog::SOURCE_HTTP_STREAM_JOB] = &http_stream_job_tracker_;
   trackers_[net::NetLog::SOURCE_EXPONENTIAL_BACKOFF_THROTTLING] =
       &exponential_backoff_throttling_tracker_;
+  trackers_[net::NetLog::SOURCE_DNS_TRANSACTION] = &dns_transaction_tracker_;
+  trackers_[net::NetLog::SOURCE_ASYNC_HOST_RESOLVER_REQUEST] =
+      &async_host_resolver_request_tracker_;
+  trackers_[net::NetLog::SOURCE_UDP_SOCKET] = &udp_socket_tracker_;
+  trackers_[net::NetLog::SOURCE_CERT_VERIFIER_JOB] =
+      &cert_verifier_job_tracker_;
+  trackers_[net::NetLog::SOURCE_HTTP_PIPELINED_CONNECTION] =
+      &http_pipelined_connection_tracker_;
   // Make sure our mapping is up-to-date.
   for (size_t i = 0; i < arraysize(trackers_); ++i)
     DCHECK(trackers_[i]) << "Unhandled SourceType: " << i;
@@ -423,7 +431,9 @@ PassiveLogCollector::SocketTracker::DoAddEntry(const ChromeNetLog::Entry& entry,
   //               to summarize transaction read/writes for each SOCKET_IN_USE
   //               section.
   if (entry.type == net::NetLog::TYPE_SOCKET_BYTES_SENT ||
-      entry.type == net::NetLog::TYPE_SOCKET_BYTES_RECEIVED) {
+      entry.type == net::NetLog::TYPE_SOCKET_BYTES_RECEIVED ||
+      entry.type == net::NetLog::TYPE_SSL_SOCKET_BYTES_SENT ||
+      entry.type == net::NetLog::TYPE_SSL_SOCKET_BYTES_RECEIVED) {
     return ACTION_NONE;
   }
 
@@ -457,6 +467,12 @@ PassiveLogCollector::RequestTracker::DoAddEntry(
     AddReferenceToSourceDependency(source_dependency, out_info);
   }
 
+  // Don't keep read bytes around in the log, to save memory.
+  if (entry.type == net::NetLog::TYPE_URL_REQUEST_JOB_BYTES_READ ||
+      entry.type == net::NetLog::TYPE_URL_REQUEST_JOB_FILTERED_BYTES_READ) {
+    return ACTION_NONE;
+  }
+
   AddEntryToSourceInfo(entry, out_info);
 
   // If the request has ended, move it to the graveyard.
@@ -474,27 +490,27 @@ PassiveLogCollector::RequestTracker::DoAddEntry(
 }
 
 //----------------------------------------------------------------------------
-// InitProxyResolverTracker
+// ProxyScriptDeciderTracker
 //----------------------------------------------------------------------------
 
-const size_t PassiveLogCollector::InitProxyResolverTracker::kMaxNumSources = 20;
-const size_t PassiveLogCollector::InitProxyResolverTracker::kMaxGraveyardSize =
-    3;
+const size_t PassiveLogCollector::ProxyScriptDeciderTracker::kMaxNumSources
+    = 20;
+const size_t PassiveLogCollector::ProxyScriptDeciderTracker::kMaxGraveyardSize
+    = 3;
 
-PassiveLogCollector::InitProxyResolverTracker::InitProxyResolverTracker()
+PassiveLogCollector::ProxyScriptDeciderTracker::ProxyScriptDeciderTracker()
     : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
 }
 
 PassiveLogCollector::SourceTracker::Action
-PassiveLogCollector::InitProxyResolverTracker::DoAddEntry(
+PassiveLogCollector::ProxyScriptDeciderTracker::DoAddEntry(
     const ChromeNetLog::Entry& entry, SourceInfo* out_info) {
   AddEntryToSourceInfo(entry, out_info);
-  if (entry.type == net::NetLog::TYPE_INIT_PROXY_RESOLVER &&
+  if (entry.type == net::NetLog::TYPE_PROXY_SCRIPT_DECIDER &&
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
-  } else {
-    return ACTION_NONE;
   }
+  return ACTION_NONE;
 }
 
 //----------------------------------------------------------------------------
@@ -515,9 +531,8 @@ PassiveLogCollector::SpdySessionTracker::DoAddEntry(
   if (entry.type == net::NetLog::TYPE_SPDY_SESSION &&
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
-  } else {
-    return ACTION_NONE;
   }
+  return ACTION_NONE;
 }
 
 //----------------------------------------------------------------------------
@@ -538,9 +553,8 @@ PassiveLogCollector::DNSRequestTracker::DoAddEntry(
   if (entry.type == net::NetLog::TYPE_HOST_RESOLVER_IMPL_REQUEST &&
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
-  } else {
-    return ACTION_NONE;
   }
+  return ACTION_NONE;
 }
 
 //----------------------------------------------------------------------------
@@ -561,9 +575,8 @@ PassiveLogCollector::DNSJobTracker::DoAddEntry(const ChromeNetLog::Entry& entry,
   if (entry.type == net::NetLog::TYPE_HOST_RESOLVER_IMPL_JOB &&
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
-  } else {
-    return ACTION_NONE;
   }
+  return ACTION_NONE;
 }
 
 //----------------------------------------------------------------------------
@@ -587,7 +600,6 @@ PassiveLogCollector::DiskCacheEntryTracker::DoAddEntry(
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
   }
-
   return ACTION_NONE;
 }
 
@@ -612,7 +624,6 @@ PassiveLogCollector::MemCacheEntryTracker::DoAddEntry(
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
   }
-
   return ACTION_NONE;
 }
 
@@ -645,7 +656,6 @@ PassiveLogCollector::HttpStreamJobTracker::DoAddEntry(
       entry.phase == net::NetLog::PHASE_END) {
     return ACTION_MOVE_TO_GRAVEYARD;
   }
-
   return ACTION_NONE;
 }
 
@@ -668,5 +678,139 @@ PassiveLogCollector::SourceTracker::Action
 PassiveLogCollector::ExponentialBackoffThrottlingTracker::DoAddEntry(
     const ChromeNetLog::Entry& entry, SourceInfo* out_info) {
   AddEntryToSourceInfo(entry, out_info);
+  return ACTION_NONE;
+}
+
+//----------------------------------------------------------------------------
+// DnsTransactionTracker
+//----------------------------------------------------------------------------
+
+const size_t PassiveLogCollector::DnsTransactionTracker::kMaxNumSources = 100;
+const size_t PassiveLogCollector::DnsTransactionTracker::kMaxGraveyardSize = 15;
+
+PassiveLogCollector::DnsTransactionTracker::DnsTransactionTracker()
+    : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
+}
+
+PassiveLogCollector::SourceTracker::Action
+PassiveLogCollector::DnsTransactionTracker::DoAddEntry(
+    const ChromeNetLog::Entry& entry,
+    SourceInfo* out_info) {
+  AddEntryToSourceInfo(entry, out_info);
+  if (entry.type == net::NetLog::TYPE_DNS_TRANSACTION &&
+      entry.phase == net::NetLog::PHASE_END) {
+    return ACTION_MOVE_TO_GRAVEYARD;
+  }
+  return ACTION_NONE;
+}
+
+//----------------------------------------------------------------------------
+// AsyncHostResolverRequestTracker
+//----------------------------------------------------------------------------
+
+const size_t
+PassiveLogCollector::AsyncHostResolverRequestTracker::kMaxNumSources = 100;
+
+const size_t
+PassiveLogCollector::AsyncHostResolverRequestTracker::kMaxGraveyardSize = 15;
+
+PassiveLogCollector::
+    AsyncHostResolverRequestTracker::AsyncHostResolverRequestTracker()
+        : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
+}
+
+PassiveLogCollector::SourceTracker::Action
+PassiveLogCollector::AsyncHostResolverRequestTracker::DoAddEntry(
+    const ChromeNetLog::Entry& entry,
+    SourceInfo* out_info) {
+  AddEntryToSourceInfo(entry, out_info);
+  if (entry.type == net::NetLog::TYPE_ASYNC_HOST_RESOLVER_REQUEST &&
+      entry.phase == net::NetLog::PHASE_END) {
+    return ACTION_MOVE_TO_GRAVEYARD;
+  }
+  return ACTION_NONE;
+}
+
+//----------------------------------------------------------------------------
+// UDPSocketTracker
+//----------------------------------------------------------------------------
+
+const size_t PassiveLogCollector::UDPSocketTracker::kMaxNumSources = 200;
+const size_t PassiveLogCollector::UDPSocketTracker::kMaxGraveyardSize = 15;
+
+PassiveLogCollector::UDPSocketTracker::UDPSocketTracker()
+    : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
+}
+
+PassiveLogCollector::UDPSocketTracker::Action
+PassiveLogCollector::UDPSocketTracker::DoAddEntry(
+    const ChromeNetLog::Entry& entry,
+    SourceInfo* out_info) {
+  if (entry.type == net::NetLog::TYPE_UDP_BYTES_SENT ||
+      entry.type == net::NetLog::TYPE_UDP_BYTES_RECEIVED) {
+    return ACTION_NONE;
+  }
+
+  AddEntryToSourceInfo(entry, out_info);
+
+  if (entry.type == net::NetLog::TYPE_SOCKET_ALIVE &&
+      entry.phase == net::NetLog::PHASE_END) {
+    return ACTION_MOVE_TO_GRAVEYARD;
+  }
+
+  return ACTION_NONE;
+}
+
+//----------------------------------------------------------------------------
+// CertVerifierJobTracker
+//----------------------------------------------------------------------------
+
+const size_t
+PassiveLogCollector::CertVerifierJobTracker::kMaxNumSources = 100;
+
+const size_t
+PassiveLogCollector::CertVerifierJobTracker::kMaxGraveyardSize = 15;
+
+PassiveLogCollector::
+    CertVerifierJobTracker::CertVerifierJobTracker()
+        : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
+}
+
+PassiveLogCollector::SourceTracker::Action
+PassiveLogCollector::CertVerifierJobTracker::DoAddEntry(
+    const ChromeNetLog::Entry& entry,
+    SourceInfo* out_info) {
+  AddEntryToSourceInfo(entry, out_info);
+  if (entry.type == net::NetLog::TYPE_CERT_VERIFIER_JOB &&
+      entry.phase == net::NetLog::PHASE_END) {
+    return ACTION_MOVE_TO_GRAVEYARD;
+  }
+  return ACTION_NONE;
+}
+
+//----------------------------------------------------------------------------
+// HttpPipelinedConnectionTracker
+//----------------------------------------------------------------------------
+
+const size_t
+PassiveLogCollector::HttpPipelinedConnectionTracker::kMaxNumSources = 100;
+
+const size_t
+PassiveLogCollector::HttpPipelinedConnectionTracker::kMaxGraveyardSize = 25;
+
+PassiveLogCollector::
+    HttpPipelinedConnectionTracker::HttpPipelinedConnectionTracker()
+        : SourceTracker(kMaxNumSources, kMaxGraveyardSize, NULL) {
+}
+
+PassiveLogCollector::SourceTracker::Action
+PassiveLogCollector::HttpPipelinedConnectionTracker::DoAddEntry(
+    const ChromeNetLog::Entry& entry,
+    SourceInfo* out_info) {
+  AddEntryToSourceInfo(entry, out_info);
+  if (entry.type == net::NetLog::TYPE_HTTP_PIPELINED_CONNECTION &&
+      entry.phase == net::NetLog::PHASE_END) {
+    return ACTION_MOVE_TO_GRAVEYARD;
+  }
   return ACTION_NONE;
 }

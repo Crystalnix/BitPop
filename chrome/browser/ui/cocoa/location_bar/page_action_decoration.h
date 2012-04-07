@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,17 @@ class ExtensionAction;
 @class ExtensionActionContextMenu;
 class LocationBarViewMac;
 class Profile;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 // PageActionDecoration is used to display the icon for a given Page
 // Action and notify the extension when the icon is clicked.
 
 class PageActionDecoration : public ImageDecoration,
                              public ImageLoadingTracker::Observer,
-                             public NotificationObserver {
+                             public content::NotificationObserver {
  public:
   PageActionDecoration(LocationBarViewMac* owner,
                        Profile* profile,
@@ -35,12 +38,12 @@ class PageActionDecoration : public ImageDecoration,
 
   // Overridden from |ImageLoadingTracker::Observer|.
   virtual void OnImageLoaded(
-      SkBitmap* image, const ExtensionResource& resource, int index);
+      SkBitmap* image, const ExtensionResource& resource, int index) OVERRIDE;
 
   // Called to notify the Page Action that it should determine whether
-  // to be visible or hidden. |contents| is the TabContents that is
+  // to be visible or hidden. |contents| is the WebContents that is
   // active, |url| is the current page URL.
-  void UpdateVisibility(TabContents* contents, const GURL& url);
+  void UpdateVisibility(content::WebContents* contents, const GURL& url);
 
   // Sets the tooltip for this Page Action image.
   void SetToolTip(NSString* tooltip);
@@ -51,17 +54,17 @@ class PageActionDecoration : public ImageDecoration,
   NSPoint GetBubblePointInFrame(NSRect frame);
 
   // Overridden from |LocationBarDecoration|
-  virtual CGFloat GetWidthForSpace(CGFloat width);
-  virtual bool AcceptsMousePress();
-  virtual bool OnMousePressed(NSRect frame);
-  virtual NSString* GetToolTip();
-  virtual NSMenu* GetMenu();
+  virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
+  virtual bool AcceptsMousePress() OVERRIDE;
+  virtual bool OnMousePressed(NSRect frame) OVERRIDE;
+  virtual NSString* GetToolTip() OVERRIDE;
+  virtual NSMenu* GetMenu() OVERRIDE;
 
  private:
   // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // The location bar view that owns us.
   LocationBarViewMac* owner_;
@@ -102,7 +105,7 @@ class PageActionDecoration : public ImageDecoration,
 
   // Used to register for notifications received by
   // NotificationObserver.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(PageActionDecoration);
 };

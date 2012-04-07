@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_vector.h"
+#include "base/message_loop.h"
 #include "base/path_service.h"
 #include "base/scoped_temp_dir.h"
 #include "base/utf_string_conversions.h"
@@ -13,16 +14,18 @@
 #include "chrome/browser/extensions/extension_event_router.h"
 #include "chrome/browser/extensions/extension_menu_manager.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_service.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/glue/context_menu.h"
 
+using content::BrowserThread;
 using testing::_;
 using testing::AtLeast;
 using testing::Return;
@@ -34,6 +37,7 @@ class ExtensionMenuManagerTest : public testing::Test {
   ExtensionMenuManagerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
+        manager_(&profile_),
         next_id_(1) {
   }
 
@@ -54,9 +58,10 @@ class ExtensionMenuManagerTest : public testing::Test {
   }
 
  protected:
+  TestingProfile profile_;
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   ExtensionMenuManager manager_;
   ExtensionList extensions_;
@@ -308,7 +313,8 @@ TEST_F(ExtensionMenuManagerTest, ChangeParent) {
 // Tests that we properly remove an extension's menu item when that extension is
 // unloaded.
 TEST_F(ExtensionMenuManagerTest, ExtensionUnloadRemovesMenuItems) {
-  NotificationService* notifier = NotificationService::current();
+  content::NotificationService* notifier =
+      content::NotificationService::current();
   ASSERT_TRUE(notifier != NULL);
 
   // Create a test extension.
@@ -329,10 +335,11 @@ TEST_F(ExtensionMenuManagerTest, ExtensionUnloadRemovesMenuItems) {
 
   // Notify that the extension was unloaded, and make sure the right item is
   // gone.
-  UnloadedExtensionInfo details(extension1, UnloadedExtensionInfo::DISABLE);
-  notifier->Notify(NotificationType::EXTENSION_UNLOADED,
-                   Source<Profile>(NULL),
-                   Details<UnloadedExtensionInfo>(&details));
+  UnloadedExtensionInfo details(
+      extension1, extension_misc::UNLOAD_REASON_DISABLE);
+  notifier->Notify(chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                   content::Source<Profile>(&profile_),
+                   content::Details<UnloadedExtensionInfo>(&details));
   ASSERT_EQ(NULL, manager_.MenuItems(extension1->id()));
   ASSERT_EQ(1u, manager_.MenuItems(extension2->id())->size());
   ASSERT_TRUE(manager_.GetItemById(id1) == NULL);
@@ -345,11 +352,12 @@ class MockExtensionEventRouter : public ExtensionEventRouter {
   explicit MockExtensionEventRouter(Profile* profile) :
       ExtensionEventRouter(profile) {}
 
-  MOCK_METHOD5(DispatchEventImpl, void(const std::string& extension_id,
-                                       const std::string& event_name,
-                                       const std::string& event_args,
-                                       Profile* source_profile,
-                                       const GURL& event_url));
+  MOCK_METHOD5(DispatchEventToExtension, void(const std::string& extension_id,
+                                              const std::string& event_name,
+                                              const std::string& event_args,
+                                              Profile* source_profile,
+                                              const GURL& event_url));
+
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockExtensionEventRouter);
@@ -438,15 +446,15 @@ TEST_F(ExtensionMenuManagerTest, ExecuteCommand) {
       .WillOnce(Return(mock_event_router.get()));
 
   // Use the magic of googlemock to save a parameter to our mock's
-  // DispatchEventImpl method into event_args.
+  // DispatchEventToExtension method into event_args.
   std::string event_args;
   std::string expected_event_name = "contextMenus";
   EXPECT_CALL(*mock_event_router.get(),
-              DispatchEventImpl(item->extension_id(),
-                                expected_event_name,
-                                _,
-                                &profile,
-                                GURL()))
+              DispatchEventToExtension(item->extension_id(),
+                                       expected_event_name,
+                                       _,
+                                       &profile,
+                                       GURL()))
       .Times(1)
       .WillOnce(SaveArg<2>(&event_args));
 
@@ -485,3 +493,95 @@ TEST_F(ExtensionMenuManagerTest, ExecuteCommand) {
   ASSERT_TRUE(info->GetBoolean("editable", &bool_tmp));
   ASSERT_EQ(params.is_editable, bool_tmp);
 }
+
+// Test that there is always only one radio item selected.
+TEST_F(ExtensionMenuManagerTest, SanitizeRadioButtons) {
+  Extension* extension = AddExtension("test");
+
+  // A single unchecked item should get checked
+  ExtensionMenuItem* item1 = CreateTestItem(extension);
+
+  item1->set_type(ExtensionMenuItem::RADIO);
+  item1->SetChecked(false);
+  ASSERT_FALSE(item1->checked());
+  manager_.AddContextItem(extension, item1);
+  ASSERT_TRUE(item1->checked());
+
+  // In a run of two unchecked items, the first should get selected.
+  item1->SetChecked(false);
+  ExtensionMenuItem* item2 = CreateTestItem(extension);
+  item2->set_type(ExtensionMenuItem::RADIO);
+  item2->SetChecked(false);
+  ASSERT_FALSE(item1->checked());
+  ASSERT_FALSE(item2->checked());
+  manager_.AddContextItem(extension, item2);
+  ASSERT_TRUE(item1->checked());
+  ASSERT_FALSE(item2->checked());
+
+  // If multiple items are checked, only the last item should get checked.
+  item1->SetChecked(true);
+  item2->SetChecked(true);
+  ASSERT_TRUE(item1->checked());
+  ASSERT_TRUE(item2->checked());
+  manager_.ItemUpdated(item1->id());
+  ASSERT_FALSE(item1->checked());
+  ASSERT_TRUE(item2->checked());
+
+  // If the checked item is removed, the new first item should get checked.
+  item1->SetChecked(false);
+  item2->SetChecked(true);
+  ASSERT_FALSE(item1->checked());
+  ASSERT_TRUE(item2->checked());
+  manager_.RemoveContextMenuItem(item2->id());
+  item2 = NULL;
+  ASSERT_TRUE(item1->checked());
+
+  // If a checked item is added to a run that already has a checked item,
+  // then the new item should get checked.
+  item1->SetChecked(true);
+  ExtensionMenuItem* new_item = CreateTestItem(extension);
+  new_item->set_type(ExtensionMenuItem::RADIO);
+  new_item->SetChecked(true);
+  ASSERT_TRUE(item1->checked());
+  ASSERT_TRUE(new_item->checked());
+  manager_.AddContextItem(extension, new_item);
+  ASSERT_FALSE(item1->checked());
+  ASSERT_TRUE(new_item->checked());
+  // Make sure that children are checked as well.
+  ExtensionMenuItem* parent = CreateTestItem(extension);
+  manager_.AddContextItem(extension, parent);
+  ExtensionMenuItem* child1 = CreateTestItem(extension);
+  child1->set_type(ExtensionMenuItem::RADIO);
+  child1->SetChecked(false);
+  ExtensionMenuItem* child2 = CreateTestItem(extension);
+  child2->set_type(ExtensionMenuItem::RADIO);
+  child2->SetChecked(true);
+  ASSERT_FALSE(child1->checked());
+  ASSERT_TRUE(child2->checked());
+
+  manager_.AddChildItem(parent->id(), child1);
+  ASSERT_TRUE(child1->checked());
+
+  manager_.AddChildItem(parent->id(), child2);
+  ASSERT_FALSE(child1->checked());
+  ASSERT_TRUE(child2->checked());
+
+  // Removing the checked item from the children should cause the
+  // remaining child to be checked.
+  manager_.RemoveContextMenuItem(child2->id());
+  child2 = NULL;
+  ASSERT_TRUE(child1->checked());
+
+  // This should NOT cause |new_item| to be deseleted because
+  // |parent| will be seperating the two runs of radio items.
+  manager_.ChangeParent(child1->id(), NULL);
+  ASSERT_TRUE(new_item->checked());
+  ASSERT_TRUE(child1->checked());
+
+  // Removing |parent| should cause only |child1| to be selected.
+  manager_.RemoveContextMenuItem(parent->id());
+  parent = NULL;
+  ASSERT_FALSE(new_item->checked());
+  ASSERT_TRUE(child1->checked());
+}
+

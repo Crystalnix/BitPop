@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebImage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebImageDecoder.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSize.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebSize.h"
 
 using base::Time;
 
@@ -34,7 +34,7 @@ bool ShouldSkipFile(const FilePath& path,
   return (file_selection == TEST_SMALLER) == (image_size > threshold);
 }
 
-}  // anonymous namespace
+}  // namespace
 
 void ReadFileToVector(const FilePath& path, std::vector<char>* contents) {
   std::string raw_image_data;
@@ -50,11 +50,11 @@ FilePath GetMD5SumPath(const FilePath& path) {
 }
 
 #if defined(CALCULATE_MD5_SUMS)
-void SaveMD5Sum(const std::wstring& path, const WebKit::WebImage& web_image) {
+void SaveMD5Sum(const FilePath& path, const WebKit::WebImage& web_image) {
   // Calculate MD5 sum.
-  MD5Digest digest;
+  base::MD5Digest digest;
   web_image.getSkBitmap().lockPixels();
-  MD5Sum(web_image.getSkBitmap().getPixels(),
+  base::MD5Sum(web_image.getSkBitmap().getPixels(),
          web_image.getSkBitmap().width() * web_image.getSkBitmap().height() *
          sizeof(uint32_t),
          &digest);
@@ -79,10 +79,10 @@ void VerifyImage(const WebKit::WebImageDecoder& decoder,
   EXPECT_FALSE(decoder.isFailed());
 
   // Calculate MD5 sum.
-  MD5Digest actual_digest;
+  base::MD5Digest actual_digest;
   WebKit::WebImage web_image = decoder.getFrameAtIndex(frame_index);
   web_image.getSkBitmap().lockPixels();
-  MD5Sum(web_image.getSkBitmap().getPixels(),
+  base::MD5Sum(web_image.getSkBitmap().getPixels(),
          web_image.getSkBitmap().width() * web_image.getSkBitmap().height() *
          sizeof(uint32_t),
          &actual_digest);
@@ -90,12 +90,13 @@ void VerifyImage(const WebKit::WebImageDecoder& decoder,
   // Read the MD5 sum off disk.
   std::string file_bytes;
   file_util::ReadFileToString(md5_sum_path, &file_bytes);
-  MD5Digest expected_digest;
+  base::MD5Digest expected_digest;
   ASSERT_EQ(sizeof expected_digest, file_bytes.size()) << path.value();
   memcpy(&expected_digest, file_bytes.data(), sizeof expected_digest);
 
   // Verify that the sums are the same.
-  EXPECT_EQ(0, memcmp(&expected_digest, &actual_digest, sizeof(MD5Digest)))
+  EXPECT_EQ(0,
+            memcmp(&expected_digest, &actual_digest, sizeof(base::MD5Digest)))
     << path.value();
   web_image.getSkBitmap().unlockPixels();
 }
@@ -208,7 +209,7 @@ void  ImageDecoderTest::TestWebKitImageDecoder(const FilePath& image_path,
   // image dats to the size is returned.
   WebKit::WebSize size(decoder->getImage(desired_frame_index).size());
   const WebKit::WebImage& image = WebKit::WebImage::fromData(data, size);
-  SaveMD5Sum(md5_sum_path.value(), image);
+  SaveMD5Sum(md5_sum_path, image);
 #else
   VerifyImage(*decoder, image_path, md5_sum_path, desired_frame_index);
 #endif

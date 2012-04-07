@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,15 +15,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/string_util.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/rect.h"
 #include "webkit/glue/window_open_disposition.h"
 
@@ -31,7 +30,6 @@ class AutocompleteEditController;
 class AutocompleteEditModel;
 class AutocompletePopupView;
 class Profile;
-class TabContents;
 
 namespace gfx {
 class Font;
@@ -50,7 +48,7 @@ class GtkThemeService;
 #endif
 
 class OmniboxViewGtk : public OmniboxView,
-                       public NotificationObserver,
+                       public content::NotificationObserver,
                        public ui::AnimationDelegate {
  public:
   // Modeled like the Windows CHARRANGE.  Represent a pair of cursor position
@@ -92,44 +90,33 @@ class OmniboxViewGtk : public OmniboxView,
   // OmniboxView:
   virtual AutocompleteEditModel* model() OVERRIDE;
   virtual const AutocompleteEditModel* model() const OVERRIDE;
-
-  virtual void SaveStateToTab(TabContents* tab) OVERRIDE;
-
-  virtual void Update(const TabContents* tab_for_state_restoring) OVERRIDE;
-
+  virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
+  virtual void Update(
+      const content::WebContents* tab_for_state_restoring) OVERRIDE;
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
                          size_t index,
                          const string16& keyword) OVERRIDE;
-
   virtual string16 GetText() const OVERRIDE;
-
   virtual bool IsEditingOrEmpty() const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
-
   virtual void SetUserText(const string16& text) OVERRIDE;
   virtual void SetUserText(const string16& text,
                            const string16& display_text,
                            bool update_popup) OVERRIDE;
-
   virtual void SetWindowTextAndCaretPos(const string16& text,
                                         size_t caret_pos) OVERRIDE;
-
   virtual void SetForcedQuery() OVERRIDE;
-
   virtual bool IsSelectAll() OVERRIDE;
   virtual bool DeleteAtEndPressed() OVERRIDE;
   virtual void GetSelectionBounds(string16::size_type* start,
-                                  string16::size_type* end) OVERRIDE;
+                                  string16::size_type* end) const OVERRIDE;
   virtual void SelectAll(bool reversed) OVERRIDE;
   virtual void RevertAll() OVERRIDE;
-
   virtual void UpdatePopup() OVERRIDE;
   virtual void ClosePopup() OVERRIDE;
-
   virtual void SetFocus() OVERRIDE;
-
   virtual void OnTemporaryTextMaybeChanged(
       const string16& display_text,
       bool save_original_selection) OVERRIDE;
@@ -139,6 +126,7 @@ class OmniboxViewGtk : public OmniboxView,
   virtual void OnBeforePossibleChange() OVERRIDE;
   virtual bool OnAfterPossibleChange() OVERRIDE;
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
+  virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE;
   virtual CommandUpdater* GetCommandUpdater() OVERRIDE;
   virtual void SetInstantSuggestion(const string16& suggestion,
                                     bool animate_to_complete) OVERRIDE;
@@ -147,25 +135,15 @@ class OmniboxViewGtk : public OmniboxView,
   virtual bool IsImeComposing() const OVERRIDE;
 
 #if defined(TOOLKIT_VIEWS)
+  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE;
   virtual views::View* AddToView(views::View* parent) OVERRIDE;
   virtual int OnPerformDrop(const views::DropTargetEvent& event) OVERRIDE;
-
-  // A factory method to create an OmniboxView instance initialized for
-  // linux_views.  This currently returns an instance of OmniboxViewGtk only,
-  // but OmniboxViewViews will be added as an option when TextfieldViews is
-  // enabled.
-  static OmniboxView* Create(AutocompleteEditController* controller,
-                             ToolbarModel* toolbar_model,
-                             Profile* profile,
-                             CommandUpdater* command_updater,
-                             bool popup_window_mode,
-                             views::View* location_bar);
 #endif
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Overridden from ui::AnimationDelegate.
   virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
@@ -229,6 +207,10 @@ class OmniboxViewGtk : public OmniboxView,
                        guint, guint);
   CHROMEGTK_CALLBACK_4(OmniboxViewGtk, void, HandleDragDataGet,
                        GdkDragContext*, GtkSelectionData*, guint, guint);
+  CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandleDragBegin,
+                       GdkDragContext*);
+  CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandleDragEnd,
+                       GdkDragContext*);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleBackSpace);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleCopyClipboard);
   CHROMEGTK_CALLBACK_0(OmniboxViewGtk, void, HandleCutClipboard);
@@ -243,10 +225,8 @@ class OmniboxViewGtk : public OmniboxView,
   // listen to focus change events on it.
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandleHierarchyChanged,
                        GtkWidget*);
-#if GTK_CHECK_VERSION(2, 20, 0)
   CHROMEGTK_CALLBACK_1(OmniboxViewGtk, void, HandlePreEditChanged,
                        const gchar*);
-#endif
   // Undo/redo operations won't trigger "begin-user-action" and
   // "end-user-action" signals, so we need to hook into "undo" and "redo"
   // signals and call OnBeforePossibleChange()/OnAfterPossibleChange() by
@@ -368,7 +348,7 @@ class OmniboxViewGtk : public OmniboxView,
 
   // The widget we expose, used for vertically centering the real text edit,
   // since the height will change based on the font / font size, etc.
-  OwnedWidgetGtk alignment_;
+  ui::OwnedWidgetGtk alignment_;
 
   // The actual text entry which will be owned by the alignment_.  The
   // reference will be set to NULL upon destruction to tell if the gtk
@@ -430,6 +410,7 @@ class OmniboxViewGtk : public OmniboxView,
   // pass this string to SavePrimarySelection()).
   std::string selected_text_;
 
+  std::string dragged_text_;
   // When we own the X clipboard, this is the text for it.
   std::string primary_selection_text_;
 
@@ -437,15 +418,15 @@ class OmniboxViewGtk : public OmniboxView,
   gulong mark_set_handler_id_;
   gulong mark_set_handler_id2_;
 
-#if defined(OS_CHROMEOS)
-  // The following variables are used to implement select-all-on-mouse-up, which
-  // is disabled in the standard Linux build due to poor interaction with the
-  // PRIMARY X selection.
-
   // Is the first mouse button currently down?  When selection marks get moved,
   // we use this to determine if the user was highlighting text with the mouse
   // -- if so, we avoid selecting all the text on mouse-up.
   bool button_1_pressed_;
+
+#if defined(OS_CHROMEOS)
+  // The following variables are used to implement select-all-on-mouse-up, which
+  // is disabled in the standard Linux build due to poor interaction with the
+  // PRIMARY X selection.
 
   // Did the user change the selected text in the middle of the current click?
   // If so, we don't select all of the text when the button is released -- we
@@ -464,7 +445,7 @@ class OmniboxViewGtk : public OmniboxView,
   // Supplies colors, et cetera.
   GtkThemeService* theme_service_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 #endif
 
   // Indicates if Enter key was pressed.
@@ -526,14 +507,15 @@ class OmniboxViewGtk : public OmniboxView,
   // the focus with model_->has_focus().
   bool update_popup_without_focus_;
 
-#if GTK_CHECK_VERSION(2, 20, 0)
+  // On GTK 2.20+ |pre_edit_| and |pre_edit_size_before_change_| will be used.
+  const bool supports_pre_edit_;
+
   // Stores the text being composed by the input method.
   string16 pre_edit_;
 
   // Tracking pre-edit state before and after a possible change. We don't need
   // to track pre-edit_'s content, as it'll be treated as part of text content.
   size_t pre_edit_size_before_change_;
-#endif
 
   // The view that is going to be focused next. Only valid while handling
   // "focus-out" events.

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,24 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/message_loop.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
 
 class EncodingMenuControllerTest : public testing::Test {
+ public:
+  EncodingMenuControllerTest()
+      : ui_thread_(BrowserThread::UI, &message_loop_) {}
+ private:
+  MessageLoop message_loop_;
+  content::TestBrowserThread ui_thread_;
 };
 
 TEST_F(EncodingMenuControllerTest, EncodingIDsBelongTest) {

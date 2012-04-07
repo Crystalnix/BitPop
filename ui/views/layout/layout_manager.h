@@ -6,31 +6,35 @@
 #define UI_VIEWS_LAYOUT_LAYOUT_MANAGER_H_
 #pragma once
 
+#include "ui/views/views_export.h"
+
 namespace gfx {
 class Size;
 }
 
-namespace ui {
+namespace views {
 
 class View;
 
-////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+//
 // LayoutManager interface
 //
-//  An interface implemented by an object that manages sizing of a View's
-//  children.
+//   The LayoutManager interface provides methods to handle the sizing of
+//   the children of a View according to implementation-specific heuristics.
 //
-class LayoutManager {
+/////////////////////////////////////////////////////////////////////////////
+class VIEWS_EXPORT LayoutManager {
  public:
-  virtual ~LayoutManager() {}
+  virtual ~LayoutManager();
 
   // Notification that this LayoutManager has been installed on a particular
   // host.
-  virtual void Installed(View* host) {}
+  virtual void Installed(View* host);
 
   // Notification that this LayoutManager has been uninstalled on a particular
   // host.
-  virtual void Uninstalled(View* host) {}
+  virtual void Uninstalled(View* host);
 
   // Lay out the children of |host| according to implementation-specific
   // heuristics. The graphics used during painting is provided to allow for
@@ -46,12 +50,12 @@ class LayoutManager {
   virtual int GetPreferredHeightForWidth(View* host, int width);
 
   // Notification that a view has been added.
-  virtual void ViewAdded(View* host, View* view) {}
+  virtual void ViewAdded(View* host, View* view);
 
   // Notification that a view has been removed.
-  virtual void ViewRemoved(View* host, View* view) {}
+  virtual void ViewRemoved(View* host, View* view);
 };
 
-}  // namespace ui
+}  // namespace views
 
-#endif // UI_VIEWS_LAYOUT_LAYOUT_MANAGER_H_
+#endif  // UI_VIEWS_LAYOUT_LAYOUT_MANAGER_H_

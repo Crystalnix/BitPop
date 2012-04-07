@@ -9,21 +9,29 @@
 #include <map>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/common/favicon_url.h"
 #include "chrome/common/ref_counted_util.h"
-#include "content/browser/cancelable_request.h"
 #include "googleurl/src/gurl.h"
 #include "ui/gfx/favicon_size.h"
 
-class NavigationEntry;
+class FaviconHandlerDelegate;
 class Profile;
 class RefCountedMemory;
 class SkBitmap;
 class TabContents;
+
+namespace content {
+class NavigationEntry;
+}
+
+namespace gfx {
+class Image;
+}
 
 // FaviconHandler works with FaviconTabHelper to fetch the specific type of
 // favicon.
@@ -64,7 +72,7 @@ class TabContents;
 // db knew about the favicon), or requests the renderer to download the
 // favicon.
 //
-// When the renderer downloads the favicon SetFaviconImageData is invoked,
+// When the renderer downloads the favicon SetFavicon is invoked,
 // at which point we update the favicon of the NavigationEntry and notify
 // the database to save the favicon.
 
@@ -75,7 +83,9 @@ class FaviconHandler {
     TOUCH,
   };
 
-  FaviconHandler(TabContents* tab_contents, Type icon_type);
+  FaviconHandler(Profile* profile,
+                 FaviconHandlerDelegate* delegate,
+                 Type icon_type);
   virtual ~FaviconHandler();
 
   // Initiates loading the favicon for the specified url.
@@ -91,7 +101,7 @@ class FaviconHandler {
   int DownloadImage(const GURL& image_url,
                     int image_size,
                     history::IconType icon_type,
-                    FaviconTabHelper::ImageDownloadCallback* callback);
+                    const FaviconTabHelper::ImageDownloadCallback& callback);
 
   // Message Handler.  Must be public, because also called from
   // PrerenderContents.
@@ -101,7 +111,7 @@ class FaviconHandler {
   void OnDidDownloadFavicon(int id,
                             const GURL& image_url,
                             bool errored,
-                            const SkBitmap& image);
+                            const gfx::Image& image);
 
  protected:
   // These virtual methods make FaviconHandler testable and are overridden by
@@ -109,7 +119,7 @@ class FaviconHandler {
 
   // Return the NavigationEntry for the active entry, or NULL if the active
   // entries URL does not match that of the URL last passed to FetchFavicon.
-  virtual NavigationEntry* GetEntry();
+  virtual content::NavigationEntry* GetEntry();
 
   // Asks the render to download favicon, returns the request id.
   virtual int DownloadFavicon(const GURL& image_url, int image_size);
@@ -120,19 +130,19 @@ class FaviconHandler {
       const GURL& icon_url,
       history::IconType icon_type,
       CancelableRequestConsumerBase* consumer,
-      FaviconService::FaviconDataCallback* callback);
+      const FaviconService::FaviconDataCallback& callback);
 
   virtual void GetFavicon(
       const GURL& icon_url,
       history::IconType icon_type,
       CancelableRequestConsumerBase* consumer,
-      FaviconService::FaviconDataCallback* callback);
+      const FaviconService::FaviconDataCallback& callback);
 
   virtual void GetFaviconForURL(
       const GURL& page_url,
       int icon_types,
       CancelableRequestConsumerBase* consumer,
-      FaviconService::FaviconDataCallback* callback);
+      const FaviconService::FaviconDataCallback& callback);
 
   virtual void SetHistoryFavicon(const GURL& page_url,
                                  const GURL& icon_url,
@@ -149,15 +159,16 @@ class FaviconHandler {
 
   struct DownloadRequest {
     DownloadRequest();
+    ~DownloadRequest();
 
     DownloadRequest(const GURL& url,
                     const GURL& image_url,
-                    FaviconTabHelper::ImageDownloadCallback* callback,
+                    const FaviconTabHelper::ImageDownloadCallback& callback,
                     history::IconType icon_type);
 
     GURL url;
     GURL image_url;
-    FaviconTabHelper::ImageDownloadCallback* callback;
+    FaviconTabHelper::ImageDownloadCallback callback;
     history::IconType icon_type;
   };
 
@@ -182,26 +193,27 @@ class FaviconHandler {
                        const GURL& image_url,
                        int image_size,
                        history::IconType icon_type,
-                       FaviconTabHelper::ImageDownloadCallback* callback);
+                       const FaviconTabHelper::ImageDownloadCallback& callback);
 
   // Sets the image data for the favicon. This is invoked asynchronously after
   // we request the TabContents to download the favicon.
   void SetFavicon(const GURL& url,
                   const GURL& icon_url,
-                  const SkBitmap& image,
+                  const gfx::Image& image,
                   history::IconType icon_type);
 
   // Converts the FAVICON's image data to an SkBitmap and sets it on the
   // NavigationEntry.
   // If the TabContents has a delegate, it is notified of the new favicon
   // (INVALIDATE_FAVICON).
-  void UpdateFavicon(NavigationEntry* entry,
+  void UpdateFavicon(content::NavigationEntry* entry,
                      scoped_refptr<RefCountedMemory> data);
-  void UpdateFavicon(NavigationEntry* entry, const SkBitmap& image);
+  void UpdateFavicon(content::NavigationEntry* entry, const gfx::Image* image);
 
-  // Scales the image such that either the width and/or height is 16 pixels
-  // wide. Does nothing if the image is empty.
-  SkBitmap ConvertToFaviconSize(const SkBitmap& image);
+  // If the image is not already at its preferred size, scales the image such
+  // that either the width and/or height is 16 pixels wide. Does nothing if the
+  // image is empty.
+  gfx::Image ResizeFaviconIfNeeded(const gfx::Image& image);
 
   void FetchFaviconInternal();
 
@@ -214,11 +226,7 @@ class FaviconHandler {
   // Returns the preferred_icon_size according icon_types_, 0 means no
   // preference.
   int preferred_icon_size() {
-    return icon_types_ == history::FAVICON ? kFaviconSize : 0;
-  }
-
-  TabContents* tab_contents() {
-    return tab_contents_;
+    return icon_types_ == history::FAVICON ? gfx::kFaviconSize : 0;
   }
 
   // Used for history requests.
@@ -253,7 +261,11 @@ class FaviconHandler {
   // The FaviconData from history.
   history::FaviconData history_icon_;
 
-  TabContents* tab_contents_;
+  // The Profile associated with this handler.
+  Profile* profile_;
+
+  // This handler's delegate.
+  FaviconHandlerDelegate* delegate_;  // weak
 
   DISALLOW_COPY_AND_ASSIGN(FaviconHandler);
 };

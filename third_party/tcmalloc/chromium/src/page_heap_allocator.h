@@ -33,6 +33,13 @@
 #ifndef TCMALLOC_PAGE_HEAP_ALLOCATOR_H_
 #define TCMALLOC_PAGE_HEAP_ALLOCATOR_H_
 
+#include <stddef.h>                     // for NULL, size_t
+
+#include "common.h"            // for MetaDataAlloc
+#include "free_list.h"          // for FL_Push/FL_Pop
+#include "internal_logging.h"  // for ASSERT, CRASH
+#include "system-alloc.h"      // for TCMalloc_SystemAddGuard
+
 namespace tcmalloc {
 
 // Simple allocator for objects of a specified type.  External locking
@@ -57,8 +64,7 @@ class PageHeapAllocator {
     // Consult free list
     void* result;
     if (free_list_ != NULL) {
-      result = free_list_;
-      free_list_ = *(reinterpret_cast<void**>(result));
+      result = FL_Pop(&free_list_);
     } else {
       if (free_avail_ < sizeof(T)) {
         // Need more room. We assume that MetaDataAlloc returns
@@ -69,7 +75,20 @@ class PageHeapAllocator {
                 "tcmalloc data (%d bytes, object-size %d)\n",
                 kAllocIncrement, static_cast<int>(sizeof(T)));
         }
-        free_avail_ = kAllocIncrement;
+
+        // This guard page protects the metadata from being corrupted by a
+        // buffer overrun. We currently have no mechanism for freeing it, since
+        // we never release the metadata buffer. If that changes we'll need to
+        // add something like TCMalloc_SystemRemoveGuard.
+        size_t guard_size = TCMalloc_SystemAddGuard(free_area_,
+                                                    kAllocIncrement);
+        free_area_ += guard_size;
+        free_avail_ = kAllocIncrement - guard_size;
+        if (free_avail_ < sizeof(T)) {
+          CRASH("FATAL ERROR: Insufficient memory to guard internal tcmalloc "
+                "data (%d bytes, object-size %d, guard-size %d)\n",
+                kAllocIncrement, static_cast<int>(sizeof(T)), guard_size);
+        }
       }
       result = free_area_;
       free_area_ += sizeof(T);
@@ -80,8 +99,7 @@ class PageHeapAllocator {
   }
 
   void Delete(T* p) {
-    *(reinterpret_cast<void**>(p)) = free_list_;
-    free_list_ = p;
+    FL_Push(&free_list_, p);
     inuse_--;
   }
 

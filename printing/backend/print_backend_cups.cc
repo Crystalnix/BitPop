@@ -1,15 +1,20 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "printing/backend/print_backend.h"
 
+#include "build/build_config.h"
+
 #include <dlfcn.h>
 #include <errno.h>
-#if !defined(OS_MACOSX)
+#include <pthread.h>
+
+#if defined(OS_MACOSX)
+#include <AvailabilityMacros.h>
+#else
 #include <gcrypt.h>
 #endif
-#include <pthread.h>
 
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
@@ -20,6 +25,13 @@
 #include "googleurl/src/gurl.h"
 #include "printing/backend/cups_helper.h"
 #include "printing/backend/print_backend_consts.h"
+
+#if (defined(OS_MACOSX) && \
+     MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_5) || \
+    (defined(OS_LINUX) && \
+     CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR < 4)
+const int CUPS_PRINTER_SCANNER = 0x2000000;  // Scanner-only device
+#endif
 
 #if !defined(OS_MACOSX)
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
@@ -47,36 +59,45 @@ class GcryptInitializer {
 
  private:
   void Init() {
+    const char* kGnuTlsFiles[] = {
+      "libgnutls.so.28",
+      "libgnutls.so.26",
+      "libgnutls.so",
+    };
     gcry_control(GCRYCTL_SET_THREAD_CBS, &gcry_threads_pthread);
-    const char* kGnuTlsFile = "libgnutls.so";
-    void* gnutls_lib = dlopen(kGnuTlsFile, RTLD_NOW);
-    if (!gnutls_lib) {
-      LOG(ERROR) << "Cannot load " << kGnuTlsFile;
+    for (size_t i = 0; i < arraysize(kGnuTlsFiles); ++i) {
+      void* gnutls_lib = dlopen(kGnuTlsFiles[i], RTLD_NOW);
+      if (!gnutls_lib) {
+        VLOG(1) << "Cannot load " << kGnuTlsFiles[i];
+        continue;
+      }
+      const char* kGnuTlsInitFuncName = "gnutls_global_init";
+      int (*pgnutls_global_init)(void) = reinterpret_cast<int(*)()>(
+          dlsym(gnutls_lib, kGnuTlsInitFuncName));
+      if (!pgnutls_global_init) {
+        VLOG(1) << "Could not find " << kGnuTlsInitFuncName
+                << " in " << kGnuTlsFiles[i];
+        continue;
+      }
+      if ((*pgnutls_global_init)() != 0)
+        LOG(ERROR) << "gnutls_global_init() failed";
       return;
     }
-    const char* kGnuTlsInitFuncName = "gnutls_global_init";
-    int (*pgnutls_global_init)(void) = reinterpret_cast<int(*)()>(
-        dlsym(gnutls_lib, kGnuTlsInitFuncName));
-    if (!pgnutls_global_init) {
-      LOG(ERROR) << "Could not find " << kGnuTlsInitFuncName
-                 << " in " << kGnuTlsFile;
-      return;
-    }
-    if ((*pgnutls_global_init)() != 0)
-      LOG(ERROR) << "Gnutls initialization failed";
+    LOG(ERROR) << "Cannot find libgnutls";
   }
 };
 
-static base::LazyInstance<GcryptInitializer> g_gcrypt_initializer(
-    base::LINKER_INITIALIZED);
+base::LazyInstance<GcryptInitializer> g_gcrypt_initializer =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
-#endif
+#endif  // !defined(OS_MACOSX)
 
 namespace printing {
 
 static const char kCUPSPrinterInfoOpt[] = "printer-info";
 static const char kCUPSPrinterStateOpt[] = "printer-state";
+static const char kCUPSPrinterTypeOpt[] = "printer-type";
 
 class PrintBackendCUPS : public PrintBackend {
  public:
@@ -84,14 +105,15 @@ class PrintBackendCUPS : public PrintBackend {
   virtual ~PrintBackendCUPS() {}
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list);
+  virtual bool EnumeratePrinters(PrinterList* printer_list) OVERRIDE;
 
-  virtual std::string GetDefaultPrinterName();
+  virtual std::string GetDefaultPrinterName() OVERRIDE;
 
-  virtual bool GetPrinterCapsAndDefaults(const std::string& printer_name,
-                                         PrinterCapsAndDefaults* printer_info);
+  virtual bool GetPrinterCapsAndDefaults(
+      const std::string& printer_name,
+      PrinterCapsAndDefaults* printer_info) OVERRIDE;
 
-  virtual bool IsValidPrinter(const std::string& printer_name);
+  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
 
  private:
   // Following functions are wrappers around corresponding CUPS functions.
@@ -126,6 +148,16 @@ bool PrintBackendCUPS::EnumeratePrinters(PrinterList* printer_list) {
   for (int printer_index = 0; printer_index < num_dests; printer_index++) {
     const cups_dest_t& printer = destinations[printer_index];
 
+    // CUPS can have 'printers' that are actually scanners. (not MFC)
+    // At least on Mac. Check for scanners and skip them.
+    const char* type_str = cupsGetOption(kCUPSPrinterTypeOpt,
+        printer.num_options, printer.options);
+    if (type_str != NULL) {
+      int type;
+      if (base::StringToInt(type_str, &type) && (type & CUPS_PRINTER_SCANNER))
+        continue;
+    }
+
     PrinterBasicInfo printer_info;
     printer_info.printer_name = printer.name;
     printer_info.is_default = printer.is_default;
@@ -156,10 +188,11 @@ bool PrintBackendCUPS::EnumeratePrinters(PrinterList* printer_list) {
 }
 
 std::string PrintBackendCUPS::GetDefaultPrinterName() {
-  // TODO(thestig) Figure out why cupsGetDefault() lies about the default
-  // printer. :-(
-  // Return an empty string for now.
-  return std::string();
+  // Not using cupsGetDefault() because it lies about the default printer.
+  cups_dest_t* dests;
+  int num_dests = GetDests(&dests);
+  cups_dest_t* dest = cupsGetDest(NULL, NULL, num_dests, dests);
+  return dest ? std::string(dest->name) : std::string();
 }
 
 bool PrintBackendCUPS::GetPrinterCapsAndDefaults(
@@ -238,7 +271,7 @@ int PrintBackendCUPS::GetDests(cups_dest_t** dests) {
 FilePath PrintBackendCUPS::GetPPD(const char* name) {
   // cupsGetPPD returns a filename stored in a static buffer in CUPS.
   // Protect this code with lock.
-  static base::Lock ppd_lock;
+  CR_DEFINE_STATIC_LOCAL(base::Lock, ppd_lock, ());
   base::AutoLock ppd_autolock(ppd_lock);
   FilePath ppd_path;
   const char* ppd_file_path = NULL;

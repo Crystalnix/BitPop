@@ -4,8 +4,10 @@
 
 #include "chrome/browser/sync/profile_sync_test_util.h"
 
-#include "base/task.h"
+#include "base/bind.h"
 #include "base/threading/thread.h"
+
+using content::BrowserThread;
 
 ProfileSyncServiceObserverMock::ProfileSyncServiceObserverMock() {}
 
@@ -20,7 +22,7 @@ void ThreadNotificationService::Init() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   notification_thread_->message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this, &ThreadNotificationService::InitTask));
+      base::Bind(&ThreadNotificationService::InitTask, this));
   done_event_.Wait();
 }
 
@@ -28,15 +30,14 @@ void ThreadNotificationService::TearDown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   notification_thread_->message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &ThreadNotificationService::TearDownTask));
+      base::Bind(&ThreadNotificationService::TearDownTask, this));
   done_event_.Wait();
 }
 
 ThreadNotificationService::~ThreadNotificationService() {}
 
 void ThreadNotificationService::InitTask() {
-  service_.reset(new NotificationService());
+  service_.reset(content::NotificationService::Create());
   done_event_.Signal();
 }
 
@@ -49,30 +50,26 @@ ThreadNotifier::ThreadNotifier(base::Thread* notify_thread)
     : done_event_(false, false),
       notify_thread_(notify_thread) {}
 
-void ThreadNotifier::Notify(NotificationType type,
-                            const NotificationDetails& details) {
-  Notify(type, NotificationService::AllSources(), details);
+void ThreadNotifier::Notify(int type,
+                            const content::NotificationDetails& details) {
+  Notify(type, content::NotificationService::AllSources(), details);
 }
 
-void ThreadNotifier::Notify(NotificationType type,
-                            const NotificationSource& source,
-                            const NotificationDetails& details) {
+void ThreadNotifier::Notify(int type,
+                            const content::NotificationSource& source,
+                            const content::NotificationDetails& details) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   notify_thread_->message_loop()->PostTask(
       FROM_HERE,
-      NewRunnableMethod(this,
-                        &ThreadNotifier::NotifyTask,
-                        type,
-                        source,
-                        details));
+      base::Bind(&ThreadNotifier::NotifyTask, this, type, source, details));
   done_event_.Wait();
 }
 
 ThreadNotifier::~ThreadNotifier() {}
 
-void ThreadNotifier::NotifyTask(NotificationType type,
-                                const NotificationSource& source,
-                                const NotificationDetails& details) {
-  NotificationService::current()->Notify(type, source, details);
+void ThreadNotifier::NotifyTask(int type,
+                                const content::NotificationSource& source,
+                                const content::NotificationDetails& details) {
+  content::NotificationService::current()->Notify(type, source, details);
   done_event_.Signal();
 }

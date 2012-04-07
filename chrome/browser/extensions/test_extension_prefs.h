@@ -12,10 +12,13 @@
 #include "base/scoped_temp_dir.h"
 #include "chrome/common/extensions/extension.h"
 
-class DictionaryValue;
 class ExtensionPrefs;
 class ExtensionPrefValueMap;
 class PrefService;
+
+namespace base {
+class DictionaryValue;
+}
 
 // This is a test class intended to make it easier to work with ExtensionPrefs
 // in tests.
@@ -37,9 +40,19 @@ class TestExtensionPrefs {
   // our ExtensionPrefs, and returns it.
   scoped_refptr<Extension> AddExtension(std::string name);
 
+  // As above, but the extension is an app.
+  scoped_refptr<Extension> AddApp(std::string name);
+
   // Similar to AddExtension, but takes a dictionary with manifest values.
   scoped_refptr<Extension> AddExtensionWithManifest(
-      const DictionaryValue& manifest, Extension::Location location);
+      const base::DictionaryValue& manifest, Extension::Location location);
+
+  // Similar to AddExtension, but takes a dictionary with manifest values
+  // and extension flags.
+  scoped_refptr<Extension> AddExtensionWithManifestAndFlags(
+      const base::DictionaryValue& manifest,
+      Extension::Location location,
+      int extra_flags);
 
   // Similar to AddExtension, this adds a new test Extension. This is useful for
   // cases when you don't need the Extension object, but just the id it was
@@ -47,6 +60,10 @@ class TestExtensionPrefs {
   std::string AddExtensionAndReturnId(std::string name);
 
   PrefService* CreateIncognitoPrefService() const;
+
+  // Allows disabling the loading of preferences of extensions. Becomes
+  // active after calling RecreateExtensionPrefs(). Defaults to false.
+  void set_extensions_disabled(bool extensions_disabled);
 
  protected:
   ScopedTempDir temp_dir_;
@@ -57,6 +74,7 @@ class TestExtensionPrefs {
   scoped_ptr<ExtensionPrefValueMap> extension_pref_value_map_;
 
  private:
+  bool extensions_disabled_;
   DISALLOW_COPY_AND_ASSIGN(TestExtensionPrefs);
 };
 

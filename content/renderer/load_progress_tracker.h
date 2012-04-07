@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 #define CONTENT_RENDERER_LOAD_PROGRESS_TRACKER_H_
 
 #include "base/logging.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time.h"
 
-class RenderView;
+class RenderViewImpl;
 
 namespace WebKit {
 class WebFrame;
@@ -17,7 +17,7 @@ class WebFrame;
 
 class LoadProgressTracker {
  public:
-  explicit LoadProgressTracker(RenderView* render_view);
+  explicit LoadProgressTracker(RenderViewImpl* render_view);
   ~LoadProgressTracker();
 
   void DidStopLoading();
@@ -29,7 +29,7 @@ class LoadProgressTracker {
 
   void SendChangeLoadProgress();
 
-  RenderView* render_view_;
+  RenderViewImpl* render_view_;
 
   WebKit::WebFrame* tracked_frame_;
 
@@ -37,7 +37,7 @@ class LoadProgressTracker {
 
   base::TimeTicks last_time_progress_sent_;
 
-  ScopedRunnableMethodFactory<LoadProgressTracker> method_factory_;
+  base::WeakPtrFactory<LoadProgressTracker> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(LoadProgressTracker);
 };

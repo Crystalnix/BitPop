@@ -9,8 +9,6 @@
 #include <vector>
 #include <string>
 
-#include "chrome_tab.h"  // Generated from chrome_tab.idl.
-
 #include "base/debug/trace_event_win.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
@@ -31,8 +29,10 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
-#include "chrome/test/chrome_process_util.h"
+#include "chrome/test/base/chrome_process_util.h"
+#include "chrome/test/perf/perf_test.h"
 #include "chrome/test/ui/ui_perf_test.h"
+#include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test_utils.h"
 #include "chrome_frame/utils.h"
 
@@ -292,12 +292,11 @@ class ChromeFrameStartupTest : public ChromeFramePerfTestBase {
 
     chrome_dll_ = dir_app_.Append(L"chrome.dll");
     chrome_exe_ = dir_app_.Append(chrome::kBrowserProcessExecutableName);
-    chrome_frame_dll_ = dir_app_.Append(L"servers");
-    chrome_frame_dll_ = chrome_frame_dll_.Append(kChromeFrameDllName);
+    chrome_frame_dll_ = dir_app_.Append(kChromeFrameDllName);
     icu_dll_ = dir_app_.Append(L"icudt.dll");
-    avcodec52_dll_ = dir_app_.Append(L"avcodec-52.dll");
-    avformat52_dll_ = dir_app_.Append(L"avformat-52.dll");
-    avutil50_dll_ = dir_app_.Append(L"avutil-50.dll");
+    avcodec_dll_ = dir_app_.Append(L"avcodec-53.dll");
+    avformat_dll_ = dir_app_.Append(L"avformat-53.dll");
+    avutil_dll_ = dir_app_.Append(L"avutil-51.dll");
   }
 
   // TODO(iyengar)
@@ -347,7 +346,7 @@ class ChromeFrameStartupTest : public ChromeFramePerfTestBase {
     for (int i = 0; i < kNumCycles; ++i)
       base::StringAppendF(&times, "%.2f,", timings[i].InMillisecondsF());
 
-    PrintResultList(graph, "", trace, times, "ms", important);
+    perf_test::PrintResultList(graph, "", trace, times, "ms", important);
   }
 
   FilePath dir_app_;
@@ -355,9 +354,9 @@ class ChromeFrameStartupTest : public ChromeFramePerfTestBase {
   FilePath chrome_exe_;
   FilePath chrome_frame_dll_;
   FilePath icu_dll_;
-  FilePath avcodec52_dll_;
-  FilePath avformat52_dll_;
-  FilePath avutil50_dll_;
+  FilePath avcodec_dll_;
+  FilePath avformat_dll_;
+  FilePath avutil_dll_;
 
  protected:
   // Individual startup tests should implement this function.
@@ -526,18 +525,14 @@ class ChromeFrameMemoryTest : public ChromeFramePerfTestBase {
       ASSERT_TRUE(chrome_frame_memory_test_instance_ != NULL);
 
       if (chrome_browser_process_) {
-         chrome_frame_memory_test_instance_->PrintResult(
-             "vm_final_browser", "", trace_name + "_vm_b",
+         perf_test::PrintResult("vm_final_browser", "", trace_name + "_vm_b",
              virtual_size_ / 1024, "KB", false /* not important */);
-         chrome_frame_memory_test_instance_->PrintResult(
-             "ws_final_browser", "", trace_name + "_ws_b",
+         perf_test::PrintResult("ws_final_browser", "", trace_name + "_ws_b",
              working_set_size_ / 1024, "KB", false /* not important */);
       } else if (process_id_ == base::GetCurrentProcId()) {
-        chrome_frame_memory_test_instance_->PrintResult(
-            "vm_current_process", "", trace_name + "_vm_c",
+        perf_test::PrintResult("vm_current_process", "", trace_name + "_vm_c",
             virtual_size_ / 1024, "KB", false /* not important */);
-        chrome_frame_memory_test_instance_->PrintResult(
-            "ws_current_process", "", trace_name + "_ws_c",
+        perf_test::PrintResult("ws_current_process", "", trace_name + "_ws_c",
             working_set_size_ / 1024, "KB", false /* not important */);
       }
 
@@ -652,8 +647,8 @@ class ChromeFrameMemoryTest : public ChromeFramePerfTestBase {
     std::string trace_name(test_name);
     trace_name.append("_cc");
 
-    PrintResult("commit_charge", "", trace_name,
-                commit_size / 1024, "KB", true /* important */);
+    perf_test::PrintResult("commit_charge", "", trace_name,
+                           commit_size / 1024, "KB", true /* important */);
     printf("\n");
   }
 
@@ -707,12 +702,12 @@ class ChromeFrameMemoryTest : public ChromeFramePerfTestBase {
 
     printf("\n");
 
-    PrintResult("vm_final_total", "", trace_name + "_vm",
-                total_virtual_size / 1024, "KB",
-                false /* not important */);
-    PrintResult("ws_final_total", "", trace_name + "_ws",
-                total_working_set_size / 1024, "KB",
-                true /* important */);
+    perf_test::PrintResult("vm_final_total", "", trace_name + "_vm",
+                           total_virtual_size / 1024, "KB",
+                           false /* not important */);
+    perf_test::PrintResult("ws_final_total", "", trace_name + "_ws",
+                           total_working_set_size / 1024, "KB",
+                           true /* important */);
   }
 
   // Should never get called.
@@ -964,7 +959,7 @@ TEST_F(ChromeFrameBinariesLoadTest, PerfWarm) {
 TEST_F(ChromeFrameStartupTestActiveX, PerfCold) {
   SetConfigInt(L"PreRead", 0);
   FilePath binaries_to_evict[] = {
-    avcodec52_dll_, avformat52_dll_, avutil50_dll_, chrome_exe_, chrome_dll_,
+    avcodec_dll_, avformat_dll_, avutil_dll_, chrome_exe_, chrome_dll_,
     chrome_frame_dll_
   };
   RunStartupTest("cold", "t", "about:blank", true /* cold */,
@@ -976,7 +971,7 @@ TEST_F(ChromeFrameStartupTestActiveX, PerfCold) {
 TEST_F(ChromeFrameStartupTestActiveX, PerfColdPreRead) {
   SetConfigInt(L"PreRead", 1);
   FilePath binaries_to_evict[] = {
-    avcodec52_dll_, avformat52_dll_, avutil50_dll_, chrome_exe_, chrome_dll_,
+    avcodec_dll_, avformat_dll_, avutil_dll_, chrome_exe_, chrome_dll_,
     chrome_frame_dll_
   };
   RunStartupTest("cold_preread", "t", "about:blank", true /* cold */,
@@ -1369,7 +1364,7 @@ bool RunSingleTestOutOfProc(const std::string& test_name) {
   cmd_line.AppendSwitchASCII("gtest_filter", test_name);
 
   base::ProcessHandle process_handle;
-  if (!base::LaunchApp(cmd_line, false, false, &process_handle))
+  if (!base::LaunchProcess(cmd_line, base::LaunchOptions(), &process_handle))
     return false;
 
   int test_terminate_timeout_ms = 60 * 1000;

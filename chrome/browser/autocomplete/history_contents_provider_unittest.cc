@@ -10,15 +10,17 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/history_contents_provider.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history.h"
-#include "chrome/test/testing_browser_process.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
 using base::TimeDelta;
+
+using content::BrowserThread;
 
 namespace {
 
@@ -32,7 +34,7 @@ struct TestEntry {
   {"http://www.google.com/3", "PAGETHREE 3", "BAR some hello world for you"},
 };
 
-class HistoryContentsProviderTest : public TestingBrowserProcessTest,
+class HistoryContentsProviderTest : public testing::Test,
                                     public ACProviderListener {
  public:
   HistoryContentsProviderTest()
@@ -77,7 +79,8 @@ class HistoryContentsProviderTest : public TestingBrowserProcessTest,
       Time t = Time::Now() - TimeDelta::FromDays(arraysize(test_entries) + i);
 
       history_service->AddPage(url, t, id_scope, i, GURL(),
-                               PageTransition::LINK, history::RedirectList(),
+                               content::PAGE_TRANSITION_LINK,
+                               history::RedirectList(),
                                history::SOURCE_BROWSED, false);
       history_service->SetPageTitle(url, UTF8ToUTF16(test_entries[i].title));
       history_service->SetPageContents(url, UTF8ToUTF16(test_entries[i].body));
@@ -96,12 +99,12 @@ class HistoryContentsProviderTest : public TestingBrowserProcessTest,
     // We must quit the message loop (if running) to return control to the test.
     // Note, calling Quit() directly will checkfail if the loop isn't running,
     // so we post a task, which is safe for either case.
-    MessageLoop::current()->PostTask(FROM_HERE, new MessageLoop::QuitTask());
+    MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
 
   scoped_ptr<TestingProfile> profile_;
   scoped_refptr<HistoryContentsProvider> provider_;
@@ -194,8 +197,9 @@ TEST_F(HistoryContentsProviderTest, Bookmarks) {
 
   // Add a bookmark.
   GURL bookmark_url("http://www.google.com/4");
-  profile()->GetBookmarkModel()->SetURLStarred(bookmark_url,
-                                               ASCIIToUTF16("bar"), true);
+  bookmark_utils::AddIfNotBookmarked(profile()->GetBookmarkModel(),
+                                     bookmark_url,
+                                     ASCIIToUTF16("bar"));
 
   // Ask for synchronous. This should only get the bookmark.
   AutocompleteInput sync_input(ASCIIToUTF16("bar"), string16(), true, false,
@@ -252,8 +256,9 @@ TEST_F(HistoryContentsProviderTest, DeleteStarredMatch) {
 
   // Bookmark a history item.
   GURL bookmark_url(test_entries[2].url);
-  profile()->GetBookmarkModel()->SetURLStarred(bookmark_url,
-                                               ASCIIToUTF16("bar"), true);
+  bookmark_utils::AddIfNotBookmarked(profile()->GetBookmarkModel(),
+                                     bookmark_url,
+                                     ASCIIToUTF16("bar"));
 
   // Get the match to delete its history
   AutocompleteInput input(ASCIIToUTF16("bar"), string16(), true, false, true,

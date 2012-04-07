@@ -9,8 +9,9 @@
 #include <map>
 #include <string>
 
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "base/compiler_specific.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 class Profile;
 class TabContentsWrapper;
@@ -20,15 +21,15 @@ class TabContentsWrapper;
 // It is displayed when the user visits a known search engine URL and has not
 // searched from the omnibox before, or has not previously dismissed a similar
 // info-bar.
-class OmniboxSearchHint : public NotificationObserver {
+class OmniboxSearchHint : public content::NotificationObserver {
  public:
   explicit OmniboxSearchHint(TabContentsWrapper* tab);
   virtual ~OmniboxSearchHint();
 
-  // NotificationObserver method:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver method:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Focus the location bar and displays a message instructing that search
   // queries can be typed directly in there.
@@ -46,7 +47,7 @@ class OmniboxSearchHint : public NotificationObserver {
  private:
   void ShowInfoBar();
 
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
 
   // The tab we are associated with.
   TabContentsWrapper* tab_;

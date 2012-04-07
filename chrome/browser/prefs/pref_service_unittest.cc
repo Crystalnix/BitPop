@@ -1,12 +1,12 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <string>
 
-#include "app/test/data/resource.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/policy/configuration_policy_pref_store.h"
 #include "chrome/browser/policy/mock_configuration_policy_provider.h"
@@ -16,42 +16,22 @@
 #include "chrome/browser/prefs/pref_observer_mock.h"
 #include "chrome/browser/prefs/pref_service_mock_builder.h"
 #include "chrome/browser/prefs/pref_value_store.h"
-#include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chrome/browser/prefs/testing_pref_store.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
+#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/browser/tab_contents/test_tab_contents.h"
+#include "content/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/test/data/resource.h"
 
+using content::BrowserThread;
 using testing::_;
 using testing::Mock;
-
-// TODO(port): port this test to POSIX.
-#if defined(OS_WIN)
-TEST(PrefServiceTest, LocalizedPrefs) {
-  TestingPrefService prefs;
-  const char kBoolean[] = "boolean";
-  const char kInteger[] = "integer";
-  const char kString[] = "string";
-  prefs.RegisterLocalizedBooleanPref(kBoolean, IDS_LOCALE_BOOL);
-  prefs.RegisterLocalizedIntegerPref(kInteger, IDS_LOCALE_INT);
-  prefs.RegisterLocalizedStringPref(kString, IDS_LOCALE_STRING);
-
-  // The locale default should take preference over the user default.
-  EXPECT_FALSE(prefs.GetBoolean(kBoolean));
-  EXPECT_EQ(1, prefs.GetInteger(kInteger));
-  EXPECT_EQ("hello", prefs.GetString(kString));
-
-  prefs.SetBoolean(kBoolean, true);
-  EXPECT_TRUE(prefs.GetBoolean(kBoolean));
-  prefs.SetInteger(kInteger, 5);
-  EXPECT_EQ(5, prefs.GetInteger(kInteger));
-  prefs.SetString(kString, "foo");
-  EXPECT_EQ("foo", prefs.GetString(kString));
-}
-#endif
 
 TEST(PrefServiceTest, NoObserverFire) {
   TestingPrefService prefs;
@@ -169,184 +149,35 @@ TEST(PrefServiceTest, GetValueChangedType) {
   EXPECT_EQ(kTestValue, actual_int_value);
 }
 
-void assertProxyMode(const ProxyConfigDictionary& dict,
-                     ProxyPrefs::ProxyMode expected_mode) {
-  ProxyPrefs::ProxyMode actual_mode;
-  ASSERT_TRUE(dict.GetMode(&actual_mode));
-  EXPECT_EQ(expected_mode, actual_mode);
-}
+TEST(PrefServiceTest, UpdateCommandLinePrefStore) {
+  TestingPrefService prefs;
+  prefs.RegisterBooleanPref(prefs::kCloudPrintProxyEnabled, false);
 
-void assertProxyServer(const ProxyConfigDictionary& dict,
-                       const std::string& expected) {
-  std::string actual;
-  if (!expected.empty()) {
-    ASSERT_TRUE(dict.GetProxyServer(&actual));
-    EXPECT_EQ(expected, actual);
-  } else {
-    EXPECT_FALSE(dict.GetProxyServer(&actual));
-  }
-}
+  // Check to make sure the value is as expected.
+  const PrefService::Preference* pref =
+      prefs.FindPreference(prefs::kCloudPrintProxyEnabled);
+  ASSERT_TRUE(pref);
+  const Value* value = pref->GetValue();
+  ASSERT_TRUE(value);
+  EXPECT_EQ(Value::TYPE_BOOLEAN, value->GetType());
+  bool actual_bool_value = true;
+  EXPECT_TRUE(value->GetAsBoolean(&actual_bool_value));
+  EXPECT_FALSE(actual_bool_value);
 
-void assertPacUrl(const ProxyConfigDictionary& dict,
-                  const std::string& expected) {
-  std::string actual;
-  if (!expected.empty()) {
-    ASSERT_TRUE(dict.GetPacUrl(&actual));
-    EXPECT_EQ(expected, actual);
-  } else {
-    EXPECT_FALSE(dict.GetPacUrl(&actual));
-  }
-}
+  // Change the command line.
+  CommandLine cmd_line(CommandLine::NO_PROGRAM);
+  cmd_line.AppendSwitch(switches::kEnableCloudPrintProxy);
 
-void assertBypassList(const ProxyConfigDictionary& dict,
-                      const std::string& expected) {
-  std::string actual;
-  if (!expected.empty()) {
-    ASSERT_TRUE(dict.GetBypassList(&actual));
-    EXPECT_EQ(expected, actual);
-  } else {
-    EXPECT_FALSE(dict.GetBypassList(&actual));
-  }
-}
-
-void assertProxyModeWithoutParams(const ProxyConfigDictionary& dict,
-                                  ProxyPrefs::ProxyMode proxy_mode) {
-  assertProxyMode(dict, proxy_mode);
-  assertProxyServer(dict, "");
-  assertPacUrl(dict, "");
-  assertBypassList(dict, "");
-}
-
-TEST(PrefServiceTest, ProxyPolicyOverridesCommandLineOptions) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitchASCII(switches::kProxyBypassList, "123");
-  command_line.AppendSwitchASCII(switches::kProxyServer, "789");
-  scoped_ptr<policy::MockConfigurationPolicyProvider> provider(
-      new policy::MockConfigurationPolicyProvider());
-  Value* mode_name = Value::CreateStringValue(
-      ProxyPrefs::kFixedServersProxyModeName);
-  provider->AddPolicy(policy::kPolicyProxyMode, mode_name);
-  provider->AddPolicy(policy::kPolicyProxyBypassList,
-                      Value::CreateStringValue("abc"));
-  provider->AddPolicy(policy::kPolicyProxyServer,
-                      Value::CreateStringValue("ghi"));
-
-  // First verify that command-line options are set correctly when
-  // there is no policy in effect.
-  PrefServiceMockBuilder builder;
-  builder.WithCommandLine(&command_line);
-  scoped_ptr<PrefService> prefs(builder.Create());
-  browser::RegisterUserPrefs(prefs.get());
-  ProxyConfigDictionary dict(prefs->GetDictionary(prefs::kProxy));
-  assertProxyMode(dict, ProxyPrefs::MODE_FIXED_SERVERS);
-  assertProxyServer(dict, "789");
-  assertPacUrl(dict, "");
-  assertBypassList(dict, "123");
-
-  // Try a second time time with the managed PrefStore in place, the
-  // manual proxy policy should have removed all traces of the command
-  // line and replaced them with the policy versions.
-  builder.WithCommandLine(&command_line);
-  builder.WithManagedPlatformProvider(provider.get());
-  scoped_ptr<PrefService> prefs2(builder.Create());
-  browser::RegisterUserPrefs(prefs2.get());
-  ProxyConfigDictionary dict2(prefs2->GetDictionary(prefs::kProxy));
-  assertProxyMode(dict2, ProxyPrefs::MODE_FIXED_SERVERS);
-  assertProxyServer(dict2, "ghi");
-  assertPacUrl(dict2, "");
-  assertBypassList(dict2, "abc");
-}
-
-TEST(PrefServiceTest, ProxyPolicyOverridesUnrelatedCommandLineOptions) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitchASCII(switches::kProxyBypassList, "123");
-  command_line.AppendSwitchASCII(switches::kProxyServer, "789");
-  scoped_ptr<policy::MockConfigurationPolicyProvider> provider(
-      new policy::MockConfigurationPolicyProvider());
-  Value* mode_name = Value::CreateStringValue(
-      ProxyPrefs::kAutoDetectProxyModeName);
-  provider->AddPolicy(policy::kPolicyProxyMode, mode_name);
-
-  // First verify that command-line options are set correctly when
-  // there is no policy in effect.
-  PrefServiceMockBuilder builder;
-  builder.WithCommandLine(&command_line);
-  scoped_ptr<PrefService> prefs(builder.Create());
-  browser::RegisterUserPrefs(prefs.get());
-  ProxyConfigDictionary dict(prefs->GetDictionary(prefs::kProxy));
-  assertProxyMode(dict, ProxyPrefs::MODE_FIXED_SERVERS);
-  assertProxyServer(dict, "789");
-  assertPacUrl(dict, "");
-  assertBypassList(dict, "123");
-
-  // Try a second time time with the managed PrefStore in place, the
-  // no proxy policy should have removed all traces of the command
-  // line proxy settings, even though they were not the specific one
-  // set in policy.
-  builder.WithCommandLine(&command_line);
-  builder.WithManagedPlatformProvider(provider.get());
-  scoped_ptr<PrefService> prefs2(builder.Create());
-  browser::RegisterUserPrefs(prefs2.get());
-  ProxyConfigDictionary dict2(prefs2->GetDictionary(prefs::kProxy));
-  assertProxyModeWithoutParams(dict2, ProxyPrefs::MODE_AUTO_DETECT);
-}
-
-TEST(PrefServiceTest, ProxyPolicyOverridesCommandLineNoProxy) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitch(switches::kNoProxyServer);
-  scoped_ptr<policy::MockConfigurationPolicyProvider> provider(
-      new policy::MockConfigurationPolicyProvider());
-  Value* mode_name = Value::CreateStringValue(
-      ProxyPrefs::kAutoDetectProxyModeName);
-  provider->AddPolicy(policy::kPolicyProxyMode, mode_name);
-
-  // First verify that command-line options are set correctly when
-  // there is no policy in effect.
-  PrefServiceMockBuilder builder;
-  builder.WithCommandLine(&command_line);
-  scoped_ptr<PrefService> prefs(builder.Create());
-  browser::RegisterUserPrefs(prefs.get());
-  ProxyConfigDictionary dict(prefs->GetDictionary(prefs::kProxy));
-  assertProxyModeWithoutParams(dict, ProxyPrefs::MODE_DIRECT);
-
-  // Try a second time time with the managed PrefStore in place, the
-  // auto-detect should be overridden. The default pref store must be
-  // in place with the appropriate default value for this to work.
-  builder.WithCommandLine(&command_line);
-  builder.WithManagedPlatformProvider(provider.get());
-  scoped_ptr<PrefService> prefs2(builder.Create());
-  browser::RegisterUserPrefs(prefs2.get());
-  ProxyConfigDictionary dict2(prefs2->GetDictionary(prefs::kProxy));
-  assertProxyModeWithoutParams(dict2, ProxyPrefs::MODE_AUTO_DETECT);
-}
-
-TEST(PrefServiceTest, ProxyPolicyOverridesCommandLineAutoDetect) {
-  CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitch(switches::kProxyAutoDetect);
-  scoped_ptr<policy::MockConfigurationPolicyProvider> provider(
-      new policy::MockConfigurationPolicyProvider());
-  Value* mode_name = Value::CreateStringValue(
-      ProxyPrefs::kDirectProxyModeName);
-  provider->AddPolicy(policy::kPolicyProxyMode, mode_name);
-
-  // First verify that the auto-detect is set if there is no managed
-  // PrefStore.
-  PrefServiceMockBuilder builder;
-  builder.WithCommandLine(&command_line);
-  scoped_ptr<PrefService> prefs(builder.Create());
-  browser::RegisterUserPrefs(prefs.get());
-  ProxyConfigDictionary dict(prefs->GetDictionary(prefs::kProxy));
-  assertProxyModeWithoutParams(dict, ProxyPrefs::MODE_AUTO_DETECT);
-
-  // Try a second time time with the managed PrefStore in place, the
-  // auto-detect should be overridden. The default pref store must be
-  // in place with the appropriate default value for this to work.
-  builder.WithCommandLine(&command_line);
-  builder.WithManagedPlatformProvider(provider.get());
-  scoped_ptr<PrefService> prefs2(builder.Create());
-  browser::RegisterUserPrefs(prefs2.get());
-  ProxyConfigDictionary dict2(prefs2->GetDictionary(prefs::kProxy));
-  assertProxyModeWithoutParams(dict2, ProxyPrefs::MODE_DIRECT);
+  // Call UpdateCommandLinePrefStore and check to see if the value has changed.
+  prefs.UpdateCommandLinePrefStore(&cmd_line);
+  pref = prefs.FindPreference(prefs::kCloudPrintProxyEnabled);
+  ASSERT_TRUE(pref);
+  value = pref->GetValue();
+  ASSERT_TRUE(value);
+  EXPECT_EQ(Value::TYPE_BOOLEAN, value->GetType());
+  actual_bool_value = false;
+  EXPECT_TRUE(value->GetAsBoolean(&actual_bool_value));
+  EXPECT_TRUE(actual_bool_value);
 }
 
 class PrefServiceSetValueTest : public testing::Test {
@@ -435,4 +266,60 @@ TEST_F(PrefServiceSetValueTest, SetListValue) {
   observer_.Expect(&prefs_, kName, &empty);
   prefs_.Set(kName, empty);
   Mock::VerifyAndClearExpectations(&observer_);
+}
+
+class PrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {
+ protected:
+  PrefServiceWebKitPrefs() : ui_thread_(BrowserThread::UI, &message_loop_) {
+  }
+
+  virtual void SetUp() {
+    ChromeRenderViewHostTestHarness::SetUp();
+
+    // Supply our own profile so we use the correct profile data. The test
+    // harness is not supposed to overwrite a profile if it's already created.
+
+    // Set some (WebKit) user preferences.
+    TestingPrefService* pref_services = profile()->GetTestingPrefService();
+#if defined(TOOLKIT_USES_GTK)
+    pref_services->SetUserPref(prefs::kUsesSystemTheme,
+                               Value::CreateBooleanValue(false));
+#endif
+    pref_services->SetUserPref(prefs::kGlobalDefaultCharset,
+                               Value::CreateStringValue("utf8"));
+    pref_services->SetUserPref(prefs::kWebKitGlobalDefaultFontSize,
+                               Value::CreateIntegerValue(20));
+    pref_services->SetUserPref(prefs::kWebKitTextAreasAreResizable,
+                               Value::CreateBooleanValue(false));
+    pref_services->SetUserPref(prefs::kWebKitUsesUniversalDetector,
+                               Value::CreateBooleanValue(true));
+    pref_services->SetUserPref("webkit.webprefs.foo",
+                               Value::CreateStringValue("bar"));
+  }
+
+ private:
+  content::TestBrowserThread ui_thread_;
+};
+
+// Tests to see that webkit preferences are properly loaded and copied over
+// to a WebPreferences object.
+TEST_F(PrefServiceWebKitPrefs, PrefsCopied) {
+  WebPreferences webkit_prefs = contents()->TestGetWebkitPrefs();
+
+  // These values have been overridden by the profile preferences.
+  EXPECT_EQ("UTF-8", webkit_prefs.default_encoding);
+  EXPECT_EQ(20, webkit_prefs.default_font_size);
+  EXPECT_FALSE(webkit_prefs.text_areas_are_resizable);
+  EXPECT_TRUE(webkit_prefs.uses_universal_detector);
+
+  // These should still be the default values.
+#if defined(OS_MACOSX)
+  const char kDefaultFont[] = "Times";
+#elif defined(OS_CHROMEOS)
+  const char kDefaultFont[] = "Tinos";
+#else
+  const char kDefaultFont[] = "Times New Roman";
+#endif
+  EXPECT_EQ(ASCIIToUTF16(kDefaultFont), webkit_prefs.standard_font_family);
+  EXPECT_TRUE(webkit_prefs.javascript_enabled);
 }

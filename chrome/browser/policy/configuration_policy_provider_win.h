@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,9 @@
 #define CHROME_BROWSER_POLICY_CONFIGURATION_POLICY_PROVIDER_WIN_H_
 #pragma once
 
+#include "base/string16.h"
 #include "chrome/browser/policy/asynchronous_policy_provider.h"
+#include "chrome/browser/policy/policy_map.h"
 
 namespace policy {
 
@@ -18,8 +20,9 @@ namespace policy {
 // the latest version of the policy set by administrators.
 class ConfigurationPolicyProviderWin : public AsynchronousPolicyProvider {
  public:
-  explicit ConfigurationPolicyProviderWin(
-      const PolicyDefinitionList* policy_list);
+  ConfigurationPolicyProviderWin(const PolicyDefinitionList* policy_list,
+                                 const string16& registry_key,
+                                 PolicyLevel level);
   virtual ~ConfigurationPolicyProviderWin() {}
 
  private:

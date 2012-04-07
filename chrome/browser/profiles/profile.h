@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,103 +8,89 @@
 #define CHROME_BROWSER_PROFILES_PROFILE_H_
 #pragma once
 
+#include <string>
+
 #include "base/basictypes.h"
+#include "base/hash_tables.h"
 #include "base/logging.h"
-#include "chrome/common/extensions/extension.h"
-
-namespace base {
-class Time;
-}
-
-namespace content {
-class ResourceContext;
-}
-
-namespace fileapi {
-class FileSystemContext;
-class SandboxedFileSystemContext;
-}
-
-namespace history {
-class TopSites;
-}
-
-namespace net {
-class TransportSecurityState;
-class SSLConfigService;
-}
-
-
-namespace prerender {
-class PrerenderManager;
-}
-
-namespace quota {
-class QuotaManager;
-}
-
-namespace webkit_database {
-class DatabaseTracker;
-}
+#include "chrome/browser/net/preconnect.h" // TODO: remove this.
+#include "chrome/browser/net/pref_proxy_config_tracker.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/browser_context.h"
 
 class AutocompleteClassifier;
 class BookmarkModel;
-class BrowserSignin;
 class ChromeAppCacheService;
-class ChromeBlobStorageContext;
 class ChromeURLDataManager;
-class CloudPrintProxyService;
-class DownloadManager;
 class Extension;
 class ExtensionDevToolsManager;
 class ExtensionEventRouter;
 class ExtensionInfoMap;
 class ExtensionMessageService;
-class ExtensionPrefValueMap;
 class ExtensionProcessManager;
 class ExtensionService;
 class ExtensionSpecialStoragePolicy;
 class FaviconService;
-class FilePath;
-class FindBarState;
-class GeolocationContentSettingsMap;
-class GeolocationPermissionContext;
+class GAIAInfoUpdateService;
 class HistoryService;
 class HostContentSettingsMap;
-class HostZoomMap;
-class NTPResourceCache;
-class NavigationController;
 class PasswordStore;
-class PersonalDataManager;
-class PrefProxyConfigTracker;
 class PrefService;
-class ProfileSyncFactory;
 class ProfileSyncService;
 class PromoCounter;
 class ProtocolHandlerRegistry;
-class SQLitePersistentCookieStore;
-class SSLConfigServiceManager;
-class SSLHostState;
-class SpellCheckHost;
+class SpeechInputPreferences;
 class TemplateURLFetcher;
-class TemplateURLModel;
+class TestingProfile;
 class TokenService;
-class TransportSecurityPersister;
 class UserScriptMaster;
 class UserStyleSheetWatcher;
-class VisitedLinkEventListener;
 class VisitedLinkMaster;
 class WebDataService;
-class WebKitContext;
-class PromoResourceService;
 
-namespace net {
-class URLRequestContextGetter;
+namespace base {
+class Time;
 }
 
-typedef intptr_t ProfileId;
+namespace chromeos {
+class LibCrosServiceLibraryImpl;
+class ResetDefaultProxyConfigServiceTask;
+}
 
-class Profile {
+namespace chrome_browser_net {
+class Predictor;
+}
+
+namespace content {
+class WebUI;
+}
+
+namespace android {
+class TabContentsProvider;
+}
+
+namespace fileapi {
+class FileSystemContext;
+}
+
+namespace history {
+class TopSites;
+class ShortcutsBackend;
+}
+
+namespace net {
+class SSLConfigService;
+}
+
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
+// Local profile ids are used to associate resources stored outside the profile
+// directory, like saved passwords in GNOME Keyring / KWallet, with a profile.
+// With high probability, they are unique on the local machine. They are almost
+// certainly not unique globally, by design. Do not send them over the network.
+typedef int LocalProfileId;
+#endif
+
+class Profile : public content::BrowserContext {
  public:
   // Profile services are accessed with the following parameter. This parameter
   // defines what the caller plans to do with the service.
@@ -131,17 +117,50 @@ class Profile {
     IMPLICIT_ACCESS
   };
 
+  enum CreateStatus {
+    // Profile services were not created.
+    CREATE_STATUS_FAIL,
+    // Profile created but before initializing extensions and promo resources.
+    CREATE_STATUS_CREATED,
+    // Profile is created, extensions and promo resources are initialized.
+    CREATE_STATUS_INITIALIZED,
+  };
+
   class Delegate {
    public:
     // Called when creation of the profile is finished.
     virtual void OnProfileCreated(Profile* profile, bool success) = 0;
   };
 
-  // Key used to bind profile to the widget with which it is associated.
-  static const char* kProfileKey;
+  // Whitelist access to deprecated API in order to prevent new regressions.
+  class Deprecated {
+   private:
+    friend bool IsGoogleGAIACookieInstalled();
 
-  // Value that represents no profile Id.
-  static const ProfileId kInvalidProfileId;
+    friend class AutofillDownloadManager;
+    friend class BrowserListTabContentsProvider;
+    friend class MetricsService;
+    friend class SafeBrowsingServiceTestHelper;
+    friend class SdchDictionaryFetcher;
+    friend class SyncTest;
+    friend class Toolbar5Importer;
+    friend class TranslateManager;
+    friend class android::TabContentsProvider;
+    friend class chromeos::LibCrosServiceLibraryImpl;
+    friend class chromeos::ResetDefaultProxyConfigServiceTask;
+
+    static net::URLRequestContextGetter* GetDefaultRequestContext() {
+      return Profile::GetDefaultRequestContext();
+    }
+  };
+
+  // Key used to bind profile to the widget with which it is associated.
+  static const char* const kProfileKey;
+
+#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
+  // Value that represents no local profile id.
+  static const LocalProfileId kInvalidLocalProfileId;
+#endif
 
   Profile();
   virtual ~Profile() {}
@@ -157,22 +176,41 @@ class Profile {
   static Profile* CreateProfileAsync(const FilePath& path,
                                      Delegate* delegate);
 
-  // Returns the request context for the "default" profile.  This may be called
-  // from any thread.  This CAN return NULL if a first request context has not
-  // yet been created.  If necessary, listen on the UI thread for
-  // NOTIFY_DEFAULT_REQUEST_CONTEXT_AVAILABLE.
-  static net::URLRequestContextGetter* GetDefaultRequestContext();
+  // Returns the profile corresponding to the given browser context.
+  static Profile* FromBrowserContext(content::BrowserContext* browser_context);
+
+  // Returns the profile corresponding to the given WebUI.
+  static Profile* FromWebUI(content::WebUI* web_ui);
+
+  // content::BrowserContext implementation ------------------------------------
+
+  virtual FilePath GetPath() = 0;
+  virtual SSLHostState* GetSSLHostState() = 0;
+  virtual content::DownloadManager* GetDownloadManager() = 0;
+  virtual net::URLRequestContextGetter* GetRequestContext() = 0;
+  virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
+      int renderer_child_id) = 0;
+  virtual net::URLRequestContextGetter* GetRequestContextForMedia() = 0;
+  virtual const content::ResourceContext& GetResourceContext() = 0;
+  virtual content::HostZoomMap* GetHostZoomMap() = 0;
+  virtual content::GeolocationPermissionContext*
+      GetGeolocationPermissionContext() = 0;
+  virtual SpeechInputPreferences* GetSpeechInputPreferences() = 0;
+  virtual quota::QuotaManager* GetQuotaManager() = 0;
+  virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
+  virtual WebKitContext* GetWebKitContext() = 0;
+  virtual ChromeAppCacheService* GetAppCacheService() = 0;
+  virtual ChromeBlobStorageContext* GetBlobStorageContext() = 0;
+  virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
+
+  // content::BrowserContext implementation ------------------------------------
+
+  // Typesafe upcast.
+  virtual TestingProfile* AsTestingProfile();
 
   // Returns the name associated with this profile. This name is displayed in
   // the browser frame.
   virtual std::string GetProfileName() = 0;
-
-  // Returns a unique Id that can be used to identify this profile at runtime.
-  // This Id is not persistent and will not survive a restart of the browser.
-  virtual ProfileId GetRuntimeId() = 0;
-
-  // Returns the path of the directory where this profile's data is stored.
-  virtual FilePath GetPath() = 0;
 
   // Return whether this profile is incognito. Default is false.
   virtual bool IsOffTheRecord() = 0;
@@ -180,6 +218,10 @@ class Profile {
   // Return the incognito version of this profile. The returned pointer
   // is owned by the receiving profile. If the receiving profile is off the
   // record, the same profile is returned.
+  //
+  // WARNING: This will create the OffTheRecord profile if it doesn't already
+  // exist. If this isn't what you want, you need to check
+  // HasOffTheRecordProfile() first.
   virtual Profile* GetOffTheRecordProfile() = 0;
 
   // Destroys the incognito profile.
@@ -191,12 +233,6 @@ class Profile {
   // Return the original "recording" profile. This method returns this if the
   // profile is not incognito.
   virtual Profile* GetOriginalProfile() = 0;
-
-  // Returns a pointer to the ChromeAppCacheService instance for this profile.
-  virtual ChromeAppCacheService* GetAppCacheService() = 0;
-
-  // Returns a pointer to the DatabaseTracker instance for this profile.
-  virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
 
   // Returns a pointer to the TopSites (thumbnail manager) instance
   // for this profile.
@@ -238,16 +274,6 @@ class Profile {
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() = 0;
 
-  // Retrieves a pointer to the SSLHostState associated with this profile.
-  // The SSLHostState is lazily created the first time that this method is
-  // called.
-  virtual SSLHostState* GetSSLHostState() = 0;
-
-  // Retrieves a pointer to the TransportSecurityState associated with
-  // this profile.  The TransportSecurityState is lazily created the
-  // first time that this method is called.
-  virtual net::TransportSecurityState* GetTransportSecurityState() = 0;
-
   // Retrieves a pointer to the FaviconService associated with this
   // profile.  The FaviconService is lazily created the first time
   // that this method is called.
@@ -260,6 +286,9 @@ class Profile {
   // |access| defines what the caller plans to do with the service. See
   // the ServiceAccessType definition above.
   virtual FaviconService* GetFaviconService(ServiceAccessType access) = 0;
+
+  // Accessor. The instance is created upon first access.
+  virtual GAIAInfoUpdateService* GetGAIAInfoUpdateService() = 0;
 
   // Retrieves a pointer to the HistoryService associated with this
   // profile.  The HistoryService is lazily created the first time
@@ -282,6 +311,11 @@ class Profile {
   // profile. The AutocompleteClassifier is lazily created the first time that
   // this method is called.
   virtual AutocompleteClassifier* GetAutocompleteClassifier() = 0;
+
+  // Returns the ShortcutsBackend for this profile. This is owned by
+  // the Profile and created on the first call. Callers that outlive the life of
+  // this profile need to be sure they refcount the returned value.
+  virtual history::ShortcutsBackend* GetShortcutsBackend() = 0;
 
   // Returns the WebDataService for this profile. This is owned by
   // the Profile. Callers that outlive the life of this profile need to be
@@ -310,48 +344,9 @@ class Profile {
   // time that this method is called.
   virtual PrefService* GetOffTheRecordPrefs() = 0;
 
-  // Returns the TemplateURLModel for this profile. This is owned by the
-  // the Profile.
-  virtual TemplateURLModel* GetTemplateURLModel() = 0;
-
   // Returns the TemplateURLFetcher for this profile. This is owned by the
   // profile.
   virtual TemplateURLFetcher* GetTemplateURLFetcher() = 0;
-
-  // Returns the DownloadManager associated with this profile.
-  virtual DownloadManager* GetDownloadManager() = 0;
-  virtual bool HasCreatedDownloadManager() const = 0;
-
-  // Returns the PersonalDataManager associated with this profile.
-  virtual PersonalDataManager* GetPersonalDataManager() = 0;
-
-  // Returns the FileSystemContext associated to this profile.  The context
-  // is lazily created the first time this method is called.  This is owned
-  // by the profile.
-  virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
-
-  virtual quota::QuotaManager* GetQuotaManager() = 0;
-
-  // Returns the BrowserSignin object assigned to this profile.
-  virtual BrowserSignin* GetBrowserSignin() = 0;
-
-  // Returns the request context information associated with this profile.  Call
-  // this only on the UI thread, since it can send notifications that should
-  // happen on the UI thread.
-  virtual net::URLRequestContextGetter* GetRequestContext() = 0;
-
-  // Returns the request context appropriate for the given renderer. If the
-  // renderer process doesn't have an assosicated installed app, or if the
-  // installed app's is_storage_isolated() returns false, this is equivalent to
-  // calling GetRequestContext().
-  // TODO(creis): After isolated app storage is no longer an experimental
-  // feature, consider making this the default contract for GetRequestContext.
-  virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
-      int renderer_child_id) = 0;
-
-  // Returns the request context for media resources asociated with this
-  // profile.
-  virtual net::URLRequestContextGetter* GetRequestContextForMedia() = 0;
 
   // Returns the request context used for extension-related requests.  This
   // is only used for a separate cookie store currently.
@@ -361,8 +356,6 @@ class Profile {
   // requested isolated storage.
   virtual net::URLRequestContextGetter* GetRequestContextForIsolatedApp(
       const std::string& app_id) = 0;
-
-  virtual const content::ResourceContext& GetResourceContext() = 0;
 
   // Called by the ExtensionService that lives in this profile. Gives the
   // profile a chance to react to the load event before the EXTENSION_LOADED
@@ -377,7 +370,7 @@ class Profile {
   // EXTENSION_UNLOADED notification have finished running.
   virtual void UnregisterExtensionWithRequestContexts(
       const std::string& extension_id,
-      const UnloadedExtensionInfo::Reason) {}
+      const extension_misc::UnloadedExtensionReason) {}
 
   // Returns the SSLConfigService for this profile.
   virtual net::SSLConfigService* GetSSLConfigService() = 0;
@@ -385,24 +378,12 @@ class Profile {
   // Returns the Hostname <-> Content settings map for this profile.
   virtual HostContentSettingsMap* GetHostContentSettingsMap() = 0;
 
-  // Returns the Hostname <-> Zoom Level map for this profile.
-  virtual HostZoomMap* GetHostZoomMap() = 0;
-
-  // Returns the geolocation settings map for this profile.
-  virtual GeolocationContentSettingsMap* GetGeolocationContentSettingsMap() = 0;
-
-  // Returns the geolocation permission context for this profile.
-  virtual GeolocationPermissionContext* GetGeolocationPermissionContext() = 0;
-
   // Returns the user style sheet watcher.
   virtual UserStyleSheetWatcher* GetUserStyleSheetWatcher() = 0;
 
-  // Returns the find bar state for this profile.  The find bar state is lazily
-  // created the first time that this method is called.
-  virtual FindBarState* GetFindBarState() = 0;
-
   // Returns true if this profile has a profile sync service.
-  virtual bool HasProfileSyncService() const = 0;
+  // TODO(tim): Bug 93922 - remove this.
+  virtual bool HasProfileSyncService() = 0;
 
   // Returns true if the last time this profile was open it was exited cleanly.
   virtual bool DidLastSessionExitCleanly() = 0;
@@ -417,15 +398,8 @@ class Profile {
   virtual TokenService* GetTokenService() = 0;
 
   // Returns the ProfileSyncService, creating if not yet created.
+  // TODO(tim): Bug 93922 - remove this.
   virtual ProfileSyncService* GetProfileSyncService() = 0;
-
-  // Returns the ProfileSyncService, creating if not yet created, with
-  // the specified CrOS username.
-  virtual ProfileSyncService* GetProfileSyncService(
-      const std::string& cros_user) = 0;
-
-  // Returns the CloudPrintProxyService, creating if not yet created.
-  virtual CloudPrintProxyService* GetCloudPrintProxyService() = 0;
 
   // Return whether 2 profiles are the same. 2 profiles are the same if they
   // represent the same profile. This can happen if there is pointer equality
@@ -438,17 +412,6 @@ class Profile {
   // this profile. For the single profile case, this corresponds to the time
   // the user started chrome.
   virtual base::Time GetStartTime() const = 0;
-
-  // May return NULL.
-  virtual SpellCheckHost* GetSpellCheckHost() = 0;
-
-  // If |force| is false, and the spellchecker is already initialized (or is in
-  // the process of initializing), then do nothing. Otherwise clobber the
-  // current spellchecker and replace it with a new one.
-  virtual void ReinitializeSpellCheckHost(bool force) = 0;
-
-  // Returns the WebKitContext assigned to this profile.
-  virtual WebKitContext* GetWebKitContext() = 0;
 
   // Marks the profile as cleanly shutdown.
   //
@@ -468,16 +431,9 @@ class Profile {
   // registerProtocolHandler.
   virtual void InitRegisteredProtocolHandlers() = 0;
 
-  // Returns the new tab page resource cache.
-  virtual NTPResourceCache* GetNTPResourceCache() = 0;
-
   // Returns the last directory that was chosen for uploading or opening a file.
   virtual FilePath last_selected_directory() = 0;
   virtual void set_last_selected_directory(const FilePath& path) = 0;
-
-  // Returns a pointer to the ChromeBlobStorageContext instance for this
-  // profile.
-  virtual ChromeBlobStorageContext* GetBlobStorageContext() = 0;
 
   // Returns the IO-thread-accessible profile data for this profile.
   virtual ExtensionInfoMap* GetExtensionInfoMap() = 0;
@@ -518,9 +474,22 @@ class Profile {
   // access to the the proxy configuration possibly defined by preferences.
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() = 0;
 
-  // Returns the PrerenderManager used to prerender entire webpages for this
-  // profile.
-  virtual prerender::PrerenderManager* GetPrerenderManager() = 0;
+  // Returns the Predictor object used for dns prefetch.
+  virtual chrome_browser_net::Predictor* GetNetworkPredictor() = 0;
+
+  // Deletes all network related data since |time|. It deletes transport
+  // security state since |time| and it also delete HttpServerProperties data.
+  // The implementation is free to run this on a background thread, so when this
+  // method returns data is not guaranteed to be deleted.
+  virtual void ClearNetworkingHistorySince(base::Time time) = 0;
+
+  // Returns the home page for this profile.
+  virtual GURL GetHomePage() = 0;
+
+  // Makes the session state, e.g., cookies, persistent across the next restart.
+  virtual void SaveSessionState() {}
+
+  std::string GetDebugName();
 
   // Returns whether it is a guest session.
   static bool IsGuestSession();
@@ -569,6 +538,15 @@ class Profile {
   static net::URLRequestContextGetter* default_request_context_;
 
  private:
+  // ***DEPRECATED**: You should be passing in the specific profile's
+  // URLRequestContextGetter or using the system URLRequestContextGetter.
+  //
+  // Returns the request context for the "default" profile.  This may be called
+  // from any thread.  This CAN return NULL if a first request context has not
+  // yet been created.  If necessary, listen on the UI thread for
+  // NOTIFY_DEFAULT_REQUEST_CONTEXT_AVAILABLE.
+  static net::URLRequestContextGetter* GetDefaultRequestContext();
+
   bool restored_last_session_;
 
   // Accessibility events will only be propagated when the pause
@@ -577,5 +555,18 @@ class Profile {
   // true or false, so that calls can be nested.
   int accessibility_pause_level_;
 };
+
+#if defined(COMPILER_GCC)
+namespace BASE_HASH_NAMESPACE {
+
+template<>
+struct hash<Profile*> {
+  std::size_t operator()(Profile* const& p) const {
+    return reinterpret_cast<std::size_t>(p);
+  }
+};
+
+}  // namespace BASE_HASH_NAMESPACE
+#endif
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_H_

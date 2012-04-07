@@ -10,8 +10,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/tabs/tab_renderer_data.h"
 #include "ui/base/animation/animation_delegate.h"
-#include "views/controls/button/button.h"
-#include "views/view.h"
+#include "ui/views/context_menu_controller.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/controls/glow_hover_controller.h"
+#include "ui/views/view.h"
 
 class BaseTab;
 class TabController;
@@ -22,7 +24,6 @@ class Font;
 
 namespace ui {
 class AnimationContainer;
-class SlideAnimation;
 class ThrobAnimation;
 }
 
@@ -91,7 +92,7 @@ class BaseTab : public ui::AnimationDelegate,
   virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
-                              std::wstring* tooltip) OVERRIDE;
+                              string16* tooltip) const OVERRIDE;
   virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
 
  protected:
@@ -108,9 +109,9 @@ class BaseTab : public ui::AnimationDelegate,
   // has been invoked.
   ui::ThrobAnimation* pulse_animation() const { return pulse_animation_.get(); }
 
-  // Returns the hover animation. This may return null.
-  const ui::SlideAnimation* hover_animation() const {
-    return hover_animation_.get();
+  // Returns the hover controller.
+  views::GlowHoverController& hover_controller() {
+    return hover_controller_;
   }
 
   views::ImageButton* close_button() const { return close_button_; }
@@ -191,9 +192,6 @@ class BaseTab : public ui::AnimationDelegate,
   // Pulse animation.
   scoped_ptr<ui::ThrobAnimation> pulse_animation_;
 
-  // Hover animation.
-  scoped_ptr<ui::SlideAnimation> hover_animation_;
-
   // Crash animation.
   scoped_ptr<FaviconCrashAnimation> crash_animation_;
 
@@ -207,6 +205,8 @@ class BaseTab : public ui::AnimationDelegate,
   bool throbber_disabled_;
 
   ui::ThemeProvider* theme_provider_;
+
+  views::GlowHoverController hover_controller_;
 
   static gfx::Font* font_;
   static int font_height_;

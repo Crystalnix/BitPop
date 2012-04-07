@@ -1,18 +1,25 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'no_libjingle_logging%': 0,
-  },
+  'includes': [
+    '../../build/win_precompile.gypi',
+  ],
   'target_defaults': {
     'defines': [
       'FEATURE_ENABLE_SSL',
       'FEATURE_ENABLE_VOICEMAIL',  # TODO(ncarter): Do we really need this?
       '_USE_32BIT_TIME_T',
-      'SAFE_TO_DEFINE_TALK_BASE_LOGGING_MACROS',
+      'LOGGING_INSIDE_LIBJINGLE',
       'EXPAT_RELATIVE_PATH',
+      'JSONCPP_RELATIVE_PATH',
+      'WEBRTC_RELATIVE_PATH',
+      'HAVE_WEBRTC_VIDEO',
+      'HAVE_WEBRTC_VOICE',
+      'NO_SOUND_SYSTEM',
+      'HAVE_SRTP',
+      'SRTP_RELATIVE_PATH',
     ],
     'configurations': {
       'Debug': {
@@ -26,23 +33,28 @@
     'include_dirs': [
       './overrides',
       './source',
-      '../../third_party/expat/files'
+      '../../third_party/libyuv/include',
     ],
     'dependencies': [
-      '../expat/expat.gyp:expat',
-      '../../base/base.gyp:base',
-      '../../net/net.gyp:net',
+      '<(DEPTH)/base/base.gyp:base',
+      '<(DEPTH)/net/net.gyp:net',
+      '<(DEPTH)/third_party/expat/expat.gyp:expat',
+    ],
+    'export_dependent_settings': [
+      '<(DEPTH)/third_party/expat/expat.gyp:expat',
     ],
     'direct_dependent_settings': {
       'include_dirs': [
         './overrides',
         './source',
-        '../../third_party/expat/files'
       ],
       'defines': [
         'FEATURE_ENABLE_SSL',
         'FEATURE_ENABLE_VOICEMAIL',
         'EXPAT_RELATIVE_PATH',
+        'JSONCPP_RELATIVE_PATH',
+        'WEBRTC_RELATIVE_PATH',
+        'NO_SOUND_SYSTEM',
       ],
       'conditions': [
         ['OS=="win"', {
@@ -72,19 +84,29 @@
             'OSX',
           ],
         }],
+        ['OS=="android"', {
+          'defines': [
+            'ANDROID',
+          ],
+        }],
         ['os_posix == 1', {
           'defines': [
             'POSIX',
           ],
         }],
-        ['OS=="openbsd" or OS=="freebsd"', {
+        ['os_bsd==1', {
           'defines': [
             'BSD',
           ],
         }],
-        ['no_libjingle_logging==1', {
+        ['OS=="openbsd"', {
           'defines': [
-            'NO_LIBJINGLE_LOGGING',
+            'OPENBSD',
+          ],
+        }],
+        ['OS=="freebsd"', {
+          'defines': [
+            'FREEBSD',
           ],
         }],
       ],
@@ -121,9 +143,19 @@
           'POSIX',
         ],
       }],
-      ['OS=="openbsd" or OS=="freebsd"', {
+      ['os_bsd==1', {
         'defines': [
           'BSD',
+        ],
+      }],
+      ['OS=="openbsd"', {
+        'defines': [
+          'OPENBSD',
+        ],
+      }],
+      ['OS=="freebsd"', {
+        'defines': [
+          'FREEBSD',
         ],
       }],
     ],
@@ -136,19 +168,12 @@
         'overrides/talk/base/basictypes.h',
         'overrides/talk/base/constructormagic.h',
 
-        # Need to override logging.h because we need
-        # SAFE_TO_DEFINE_TALK_BASE_LOGGING_MACROS to work.
-        # TODO(sergeyu): push SAFE_TO_DEFINE_TALK_BASE_LOGGING_MACROS to
-        # libjingle and remove this override.
+        # Overrides logging.h/.cc because libjingle logging should be done to
+        # the same place as the chromium logging.
+        'overrides/talk/base/logging.cc',
         'overrides/talk/base/logging.h',
 
         'overrides/talk/base/scoped_ptr.h',
-
-        # Libjingle's QName is not threadsafe, so we need to use our own version
-        # here.
-        # TODO(sergeyu): Fix QName in Libjingle.
-        'overrides/talk/xmllite/qname.cc',
-        'overrides/talk/xmllite/qname.h',
 
         'source/talk/base/Equifax_Secure_Global_eBusiness_CA-1.h',
         'source/talk/base/asyncfile.cc',
@@ -201,8 +226,11 @@
         'source/talk/base/httpcommon.h',
         'source/talk/base/httprequest.cc',
         'source/talk/base/httprequest.h',
+        'source/talk/base/ipaddress.cc',
+        'source/talk/base/ipaddress.h',
+        'source/talk/base/json.cc',
+        'source/talk/base/json.h',
         'source/talk/base/linked_ptr.h',
-        'source/talk/base/logging.cc',
         'source/talk/base/md5.h',
         'source/talk/base/md5c.c',
         'source/talk/base/messagehandler.cc',
@@ -261,10 +289,16 @@
         'source/talk/base/taskrunner.h',
         'source/talk/base/thread.cc',
         'source/talk/base/thread.h',
-        'source/talk/base/time.cc',
-        'source/talk/base/time.h',
+        'source/talk/base/timeutils.cc',
+        'source/talk/base/timeutils.h',
+        'source/talk/base/timing.cc',
+        'source/talk/base/timing.h',
         'source/talk/base/urlencode.cc',
         'source/talk/base/urlencode.h',
+        'source/talk/base/worker.cc',
+        'source/talk/base/worker.h',
+        'source/talk/xmllite/qname.cc',
+        'source/talk/xmllite/qname.h',
         'source/talk/xmllite/xmlbuilder.cc',
         'source/talk/xmllite/xmlbuilder.h',
         'source/talk/xmllite/xmlconstants.cc',
@@ -284,8 +318,6 @@
         'source/talk/xmpp/jid.h',
         'source/talk/xmpp/plainsaslhandler.h',
         'source/talk/xmpp/prexmppauth.h',
-        'source/talk/xmpp/ratelimitmanager.cc',
-        'source/talk/xmpp/ratelimitmanager.h',
         'source/talk/xmpp/saslcookiemechanism.h',
         'source/talk/xmpp/saslhandler.h',
         'source/talk/xmpp/saslmechanism.cc',
@@ -304,6 +336,12 @@
         'source/talk/xmpp/xmppstanzaparser.h',
         'source/talk/xmpp/xmpptask.cc',
         'source/talk/xmpp/xmpptask.h',
+      ],
+      'dependencies': [
+        '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
+      ],
+      'export_dependent_settings': [
+        '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
       ],
       'conditions': [
         ['OS=="win"', {
@@ -334,6 +372,8 @@
         }],
         ['OS=="linux"', {
           'sources': [
+            'source/talk/base/latebindingsymboltable.cc',
+            'source/talk/base/latebindingsymboltable.h',
             'source/talk/base/linux.cc',
             'source/talk/base/linux.h',
           ],
@@ -346,8 +386,19 @@
             'source/talk/base/macutils.h',
           ],
         }],
+        ['OS=="android"', {
+          'sources!': [
+            # These depend on jsoncpp which we don't load because we probably
+            # don't actually need this code at all.
+            'source/talk/base/json.cc',
+            'source/talk/base/json.h',
+          ],
+          'dependencies!': [
+            '<(DEPTH)/third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
+          ],
+        }],
       ],
-    },
+    },  # target libjingle
     # This has to be is a separate project due to a bug in MSVS:
     # https://connect.microsoft.com/VisualStudio/feedback/details/368272/duplicate-cpp-filename-in-c-project-visual-studio-2008
     # We have two files named "constants.cc" and MSVS doesn't handle this
@@ -367,6 +418,11 @@
         'source/talk/p2p/base/port.cc',
         'source/talk/p2p/base/port.h',
         'source/talk/p2p/base/portallocator.h',
+        'source/talk/p2p/base/portallocator.cc',
+        'source/talk/p2p/base/portallocatorsessionproxy.cc',
+        'source/talk/p2p/base/portallocatorsessionproxy.h',
+        'source/talk/p2p/base/portproxy.cc',
+        'source/talk/p2p/base/portproxy.h',
         'source/talk/p2p/base/pseudotcp.cc',
         'source/talk/p2p/base/pseudotcp.h',
         'source/talk/p2p/base/rawtransport.cc',
@@ -418,14 +474,132 @@
         'source/talk/session/tunnel/tunnelsessionclient.h',
       ],
       'dependencies': [
-          'libjingle',
+        'libjingle',
       ],
-    },
+    },  # target libjingle_p2p
+    {
+      'target_name': 'libjingle_peerconnection',
+      'type': 'static_library',
+      'sources': [
+        'source/talk/app/webrtc/audiotrackimpl.cc',
+        'source/talk/app/webrtc/audiotrackimpl.h',
+        'source/talk/app/webrtc/mediastream.h',
+        'source/talk/app/webrtc/mediastreamhandler.cc',
+        'source/talk/app/webrtc/mediastreamhandler.h',
+        'source/talk/app/webrtc/mediastreamimpl.cc',
+        'source/talk/app/webrtc/mediastreamimpl.h',
+        'source/talk/app/webrtc/mediastreamprovider.h',
+        'source/talk/app/webrtc/mediastreamproxy.cc',
+        'source/talk/app/webrtc/mediastreamproxy.h',
+        'source/talk/app/webrtc/mediastreamtrackproxy.cc',
+        'source/talk/app/webrtc/mediastreamtrackproxy.h',
+        'source/talk/app/webrtc/mediatrackimpl.h',
+        'source/talk/app/webrtc/notifierimpl.h',
+        'source/talk/app/webrtc/peerconnection.h',
+        'source/talk/app/webrtc/peerconnectionfactoryimpl.cc',
+        'source/talk/app/webrtc/peerconnectionfactoryimpl.h',
+        'source/talk/app/webrtc/peerconnectionimpl.cc',
+        'source/talk/app/webrtc/peerconnectionimpl.h',
+        'source/talk/app/webrtc/peerconnectionsignaling.cc',
+        'source/talk/app/webrtc/peerconnectionsignaling.h',
+        'source/talk/app/webrtc/portallocatorfactory.cc',
+        'source/talk/app/webrtc/portallocatorfactory.h',
+        'source/talk/app/webrtc/roaperrorcodes.h',
+        'source/talk/app/webrtc/roapmessages.cc',
+        'source/talk/app/webrtc/roapmessages.h',
+        'source/talk/app/webrtc/roapsession.cc',
+        'source/talk/app/webrtc/roapsession.h',
+        'source/talk/app/webrtc/sessiondescriptionprovider.h',
+        'source/talk/app/webrtc/streamcollectionimpl.h',
+        'source/talk/app/webrtc/videorendererimpl.cc',
+        'source/talk/app/webrtc/videotrackimpl.cc',
+        'source/talk/app/webrtc/videotrackimpl.h',
+        'source/talk/app/webrtc/webrtcjson.cc',
+        'source/talk/app/webrtc/webrtcjson.h',
+        'source/talk/app/webrtc/webrtcsdp.cc',
+        'source/talk/app/webrtc/webrtcsdp.h',
+        'source/talk/app/webrtc/webrtcsession.cc',
+        'source/talk/app/webrtc/webrtcsession.h',
+        'source/talk/app/webrtc/webrtcsessionobserver.h',
+        'source/talk/session/phone/audiomonitor.cc',
+        'source/talk/session/phone/audiomonitor.h',
+        'source/talk/session/phone/call.cc',
+        'source/talk/session/phone/call.h',
+        'source/talk/session/phone/channel.cc',
+        'source/talk/session/phone/channel.h',
+        'source/talk/session/phone/channelmanager.cc',
+        'source/talk/session/phone/channelmanager.h',
+        'source/talk/session/phone/codec.cc',
+        'source/talk/session/phone/codec.h',
+        'source/talk/session/phone/cryptoparams.h',
+        'source/talk/session/phone/currentspeakermonitor.cc',
+        'source/talk/session/phone/currentspeakermonitor.h',
+        'source/talk/session/phone/devicemanager.cc',
+        'source/talk/session/phone/devicemanager.h',
+        'source/talk/session/phone/dummydevicemanager.cc',
+        'source/talk/session/phone/dummydevicemanager.h',
+        'source/talk/session/phone/filemediaengine.cc',
+        'source/talk/session/phone/filemediaengine.h',
+        'source/talk/session/phone/mediachannel.h',
+        'source/talk/session/phone/mediaengine.cc',
+        'source/talk/session/phone/mediaengine.h',
+        'source/talk/session/phone/mediamessages.cc',
+        'source/talk/session/phone/mediamessages.h',
+        'source/talk/session/phone/mediamonitor.cc',
+        'source/talk/session/phone/mediamonitor.h',
+        'source/talk/session/phone/mediasession.cc',
+        'source/talk/session/phone/mediasession.h',
+        'source/talk/session/phone/mediasessionclient.cc',
+        'source/talk/session/phone/mediasessionclient.h',
+        'source/talk/session/phone/mediasink.h',
+        'source/talk/session/phone/rtcpmuxfilter.cc',
+        'source/talk/session/phone/rtcpmuxfilter.h',
+        'source/talk/session/phone/rtpdump.cc',
+        'source/talk/session/phone/rtpdump.h',
+        'source/talk/session/phone/rtputils.cc',
+        'source/talk/session/phone/rtputils.h',
+        'source/talk/session/phone/soundclip.cc',
+        'source/talk/session/phone/soundclip.h',
+        'source/talk/session/phone/srtpfilter.cc',
+        'source/talk/session/phone/srtpfilter.h',
+        'source/talk/session/phone/ssrcmuxfilter.cc',
+        'source/talk/session/phone/ssrcmuxfilter.h',
+        'source/talk/session/phone/streamparams.cc',
+        'source/talk/session/phone/videocapturer.cc',
+        'source/talk/session/phone/videocapturer.h',
+        'source/talk/session/phone/videocommon.cc',
+        'source/talk/session/phone/videocommon.h',
+        'source/talk/session/phone/videoframe.cc',
+        'source/talk/session/phone/videoframe.h',
+        'source/talk/session/phone/voicechannel.h',
+        'source/talk/session/phone/webrtccommon.h',
+        'source/talk/session/phone/webrtcpassthroughrender.cc',
+        'source/talk/session/phone/webrtcvideocapturer.cc',
+        'source/talk/session/phone/webrtcvideocapturer.h',
+        'source/talk/session/phone/webrtcvideoengine.cc',
+        'source/talk/session/phone/webrtcvideoengine.h',
+        'source/talk/session/phone/webrtcvideoframe.cc',
+        'source/talk/session/phone/webrtcvideoframe.h',
+        'source/talk/session/phone/webrtcvie.h',
+        'source/talk/session/phone/webrtcvoe.h',
+        'source/talk/session/phone/webrtcvoiceengine.cc',
+        'source/talk/session/phone/webrtcvoiceengine.h',
+      ],
+      'conditions': [
+        ['OS!="android"', {
+          'dependencies': [
+            # We won't build with WebRTC on Android.
+            '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module',
+            '<(DEPTH)/third_party/webrtc/video_engine/video_engine.gyp:video_engine_core',
+            '<(DEPTH)/third_party/webrtc/voice_engine/voice_engine.gyp:voice_engine_core',
+            '<(DEPTH)/third_party/webrtc/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+            'libjingle',
+            'libjingle_p2p',
+          ],
+        }],
+      ],
+    },  # target libjingle_peerconnection
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

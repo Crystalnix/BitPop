@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,7 @@ class BufferManager {
    public:
     typedef scoped_refptr<BufferInfo> Ref;
 
-    explicit BufferInfo(GLuint service_id);
+    BufferInfo(BufferManager* manager, GLuint service_id);
 
     GLuint service_id() const {
       return service_id_;
@@ -36,6 +36,10 @@ class BufferManager {
 
     GLsizeiptr size() const {
       return size_;
+    }
+
+    GLenum usage() const {
+      return usage_;
     }
 
     // Sets a range of data for this buffer. Returns false if the offset or size
@@ -111,14 +115,15 @@ class BufferManager {
 
     void MarkAsDeleted() {
       service_id_ = 0;
-      shadow_.reset();
-      ClearCache();
     }
 
-    void SetSize(GLsizeiptr size, bool shadow);
+    void SetInfo(GLsizeiptr size, GLenum usage, bool shadow);
 
     // Clears any cache of index ranges.
     void ClearCache();
+
+    // The manager that owns this BufferInfo.
+    BufferManager* manager_;
 
     // Service side buffer id.
     GLuint service_id_;
@@ -130,6 +135,9 @@ class BufferManager {
 
     // Size of buffer.
     GLsizeiptr size_;
+
+    // Usage of buffer.
+    GLenum usage_;
 
     // Whether or not the data is shadowed.
     bool shadowed_;
@@ -161,8 +169,8 @@ class BufferManager {
   // Gets a client id for a given service id.
   bool GetClientId(GLuint service_id, GLuint* client_id) const;
 
-  // Sets the size of a buffer.
-  void SetSize(BufferInfo* info, GLsizeiptr size);
+  // Sets the size and usage of a buffer.
+  void SetInfo(BufferInfo* info, GLsizeiptr size, GLenum usage);
 
   // Sets the target of a buffer. Returns false if the target can not be set.
   bool SetTarget(BufferInfo* info, GLenum target);
@@ -172,12 +180,19 @@ class BufferManager {
   }
 
  private:
+  void UpdateMemRepresented();
+
+  void StopTracking(BufferInfo* info);
+
   // Info for each buffer in the system.
   typedef base::hash_map<GLuint, BufferInfo::Ref> BufferInfoMap;
   BufferInfoMap buffer_infos_;
 
   // Whether or not buffers can be bound to multiple targets.
   bool allow_buffers_on_multiple_targets_;
+
+  size_t mem_represented_;
+  size_t last_reported_mem_represented_;
 
   DISALLOW_COPY_AND_ASSIGN(BufferManager);
 };

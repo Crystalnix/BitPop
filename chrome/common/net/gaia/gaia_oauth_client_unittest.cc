@@ -11,9 +11,9 @@
 #include "base/string_util.h"
 #include "chrome/common/net/gaia/gaia_oauth_client.h"
 #include "chrome/common/net/http_return.h"
-#include "chrome/test/testing_profile.h"
-#include "content/common/test_url_fetcher_factory.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
@@ -24,61 +24,59 @@ using ::testing::_;
 
 namespace {
 // Responds as though OAuth returned from the server.
-class MockOAuthFetcher : public URLFetcher {
+class MockOAuthFetcher : public TestURLFetcher {
  public:
   MockOAuthFetcher(int response_code,
                    int max_failure_count,
                    const GURL& url,
                    const std::string& results,
-                   URLFetcher::RequestType request_type,
-                   URLFetcher::Delegate* d)
-    : URLFetcher(url, request_type, d),
-      response_code_(response_code),
+                   content::URLFetcher::RequestType request_type,
+                   content::URLFetcherDelegate* d)
+    : TestURLFetcher(0, url, d),
       max_failure_count_(max_failure_count),
-      current_failure_count_(0),
-      url_(url),
-      results_(results) { }
+      current_failure_count_(0) {
+    set_url(url);
+    set_response_code(response_code);
+    SetResponseString(results);
+  }
+
   virtual ~MockOAuthFetcher() { }
 
   virtual void Start() {
-    if ((response_code_ != RC_REQUEST_OK) && (max_failure_count_ != -1) &&
+    if ((GetResponseCode() != RC_REQUEST_OK) && (max_failure_count_ != -1) &&
         (current_failure_count_ == max_failure_count_)) {
-      response_code_ = RC_REQUEST_OK;
+      set_response_code(RC_REQUEST_OK);
     }
 
     net::URLRequestStatus::Status code = net::URLRequestStatus::SUCCESS;
-    if (response_code_ != RC_REQUEST_OK) {
+    if (GetResponseCode() != RC_REQUEST_OK) {
       code = net::URLRequestStatus::FAILED;
       current_failure_count_++;
     }
-    net::URLRequestStatus status(code, 0);
-    delegate()->OnURLFetchComplete(this,
-                                   url_,
-                                   status,
-                                   response_code_,
-                                   net::ResponseCookies(),
-                                   results_);
+    set_status(net::URLRequestStatus(code, 0));
+
+    delegate()->OnURLFetchComplete(this);
   }
 
  private:
-  int response_code_;
   int max_failure_count_;
   int current_failure_count_;
-  GURL url_;
-  std::string results_;
   DISALLOW_COPY_AND_ASSIGN(MockOAuthFetcher);
 };
 
-class MockOAuthFetcherFactory : public URLFetcher::Factory {
+class MockOAuthFetcherFactory : public content::URLFetcherFactory,
+                                public ScopedURLFetcherFactory {
  public:
   MockOAuthFetcherFactory()
-      : response_code_(RC_REQUEST_OK) {}
+      : ScopedURLFetcherFactory(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+        response_code_(RC_REQUEST_OK) {
+  }
   ~MockOAuthFetcherFactory() {}
-  virtual URLFetcher* CreateURLFetcher(
+  virtual content::URLFetcher* CreateURLFetcher(
       int id,
       const GURL& url,
-      URLFetcher::RequestType request_type,
-      URLFetcher::Delegate* d) {
+      content::URLFetcher::RequestType request_type,
+      content::URLFetcherDelegate* d) {
     return new MockOAuthFetcher(
         response_code_,
         max_failure_count_,
@@ -152,7 +150,6 @@ TEST_F(GaiaOAuthClientTest, NetworkFailure) {
   TestingProfile profile;
 
   MockOAuthFetcherFactory factory;
-  URLFetcher::set_factory(&factory);
   factory.set_response_code(response_code);
   factory.set_max_failure_count(4);
 
@@ -162,7 +159,6 @@ TEST_F(GaiaOAuthClientTest, NetworkFailure) {
   GaiaOAuthClient auth(kGaiaOAuth2Url,
                        profile_.GetRequestContext());
   auth.GetTokensFromAuthCode(client_info, "auth_code", 2, &delegate);
-  URLFetcher::set_factory(NULL);
 }
 
 TEST_F(GaiaOAuthClientTest, NetworkFailureRecover) {
@@ -175,7 +171,6 @@ TEST_F(GaiaOAuthClientTest, NetworkFailureRecover) {
   TestingProfile profile;
 
   MockOAuthFetcherFactory factory;
-  URLFetcher::set_factory(&factory);
   factory.set_response_code(response_code);
   factory.set_max_failure_count(4);
   factory.set_results(kDummyGetTokensResult);
@@ -186,7 +181,6 @@ TEST_F(GaiaOAuthClientTest, NetworkFailureRecover) {
   GaiaOAuthClient auth(kGaiaOAuth2Url,
                        profile_.GetRequestContext());
   auth.GetTokensFromAuthCode(client_info, "auth_code", -1, &delegate);
-  URLFetcher::set_factory(NULL);
 }
 
 TEST_F(GaiaOAuthClientTest, OAuthFailure) {
@@ -198,7 +192,6 @@ TEST_F(GaiaOAuthClientTest, OAuthFailure) {
   TestingProfile profile;
 
   MockOAuthFetcherFactory factory;
-  URLFetcher::set_factory(&factory);
   factory.set_response_code(response_code);
   factory.set_max_failure_count(-1);
   factory.set_results(kDummyGetTokensResult);
@@ -209,7 +202,6 @@ TEST_F(GaiaOAuthClientTest, OAuthFailure) {
   GaiaOAuthClient auth(kGaiaOAuth2Url,
                        profile_.GetRequestContext());
   auth.GetTokensFromAuthCode(client_info, "auth_code", -1, &delegate);
-  URLFetcher::set_factory(NULL);
 }
 
 
@@ -221,7 +213,6 @@ TEST_F(GaiaOAuthClientTest, GetTokensSuccess) {
   TestingProfile profile;
 
   MockOAuthFetcherFactory factory;
-  URLFetcher::set_factory(&factory);
   factory.set_results(kDummyGetTokensResult);
 
   OAuthClientInfo client_info;
@@ -230,7 +221,6 @@ TEST_F(GaiaOAuthClientTest, GetTokensSuccess) {
   GaiaOAuthClient auth(kGaiaOAuth2Url,
                        profile_.GetRequestContext());
   auth.GetTokensFromAuthCode(client_info, "auth_code", -1, &delegate);
-  URLFetcher::set_factory(NULL);
 }
 
 TEST_F(GaiaOAuthClientTest, RefreshTokenSuccess) {
@@ -241,7 +231,6 @@ TEST_F(GaiaOAuthClientTest, RefreshTokenSuccess) {
   TestingProfile profile;
 
   MockOAuthFetcherFactory factory;
-  URLFetcher::set_factory(&factory);
   factory.set_results(kDummyRefreshTokenResult);
 
   OAuthClientInfo client_info;
@@ -250,6 +239,5 @@ TEST_F(GaiaOAuthClientTest, RefreshTokenSuccess) {
   GaiaOAuthClient auth(kGaiaOAuth2Url,
                        profile_.GetRequestContext());
   auth.GetTokensFromAuthCode(client_info, "auth_code", -1, &delegate);
-  URLFetcher::set_factory(NULL);
 }
 }  // namespace gaia

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include <string>
 
 #include "content/browser/renderer_host/resource_handler.h"
+#include "googleurl/src/gurl.h"
 
-class HostZoomMap;
 class ResourceDispatcherHost;
 class ResourceMessageFilter;
 class SharedIOBuffer;
@@ -22,23 +22,33 @@ class AsyncResourceHandler : public ResourceHandler {
   AsyncResourceHandler(ResourceMessageFilter* filter,
                        int routing_id,
                        const GURL& url,
-                       HostZoomMap* host_zoom_map,
                        ResourceDispatcherHost* resource_dispatcher_host);
 
   // ResourceHandler implementation:
-  virtual bool OnUploadProgress(int request_id, uint64 position, uint64 size);
-  virtual bool OnRequestRedirected(int request_id, const GURL& new_url,
-                                   ResourceResponse* response, bool* defer);
-  virtual bool OnResponseStarted(int request_id, ResourceResponse* response);
-  virtual bool OnWillStart(int request_id, const GURL& url, bool* defer);
-  virtual bool OnWillRead(int request_id, net::IOBuffer** buf, int* buf_size,
-                          int min_size);
-  virtual bool OnReadCompleted(int request_id, int* bytes_read);
+  virtual bool OnUploadProgress(int request_id,
+                                uint64 position,
+                                uint64 size) OVERRIDE;
+  virtual bool OnRequestRedirected(int request_id,
+                                   const GURL& new_url,
+                                   content::ResourceResponse* response,
+                                   bool* defer) OVERRIDE;
+  virtual bool OnResponseStarted(int request_id,
+                                 content::ResourceResponse* response) OVERRIDE;
+  virtual bool OnWillStart(int request_id,
+                           const GURL& url,
+                           bool* defer) OVERRIDE;
+  virtual bool OnWillRead(int request_id,
+                          net::IOBuffer** buf,
+                          int* buf_size,
+                          int min_size) OVERRIDE;
+  virtual bool OnReadCompleted(int request_id,
+                               int* bytes_read) OVERRIDE;
   virtual bool OnResponseCompleted(int request_id,
                                    const net::URLRequestStatus& status,
-                                   const std::string& security_info);
-  virtual void OnRequestClosed();
-  virtual void OnDataDownloaded(int request_id, int bytes_downloaded);
+                                   const std::string& security_info) OVERRIDE;
+  virtual void OnRequestClosed() OVERRIDE;
+  virtual void OnDataDownloaded(int request_id,
+                                int bytes_downloaded) OVERRIDE;
 
   static void GlobalCleanup();
 
@@ -46,9 +56,8 @@ class AsyncResourceHandler : public ResourceHandler {
   virtual ~AsyncResourceHandler();
 
   scoped_refptr<SharedIOBuffer> read_buffer_;
-  ResourceMessageFilter* filter_;
+  scoped_refptr<ResourceMessageFilter> filter_;
   int routing_id_;
-  HostZoomMap* host_zoom_map_;
   ResourceDispatcherHost* rdh_;
 
   // |next_buffer_size_| is the size of the buffer to be allocated on the next
@@ -57,6 +66,10 @@ class AsyncResourceHandler : public ResourceHandler {
   // allocate a buffer of 32k and double it in OnReadCompleted() if the buffer
   // was filled, up to a maximum size of 512k.
   int next_buffer_size_;
+
+  // TODO(battre): Remove url. This is only for debugging
+  // http://crbug.com/107692.
+  GURL url_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncResourceHandler);
 };

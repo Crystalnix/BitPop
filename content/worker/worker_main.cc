@@ -10,16 +10,16 @@
 #include "base/threading/platform_thread.h"
 #include "content/common/child_process.h"
 #include "content/common/hi_res_timer_manager.h"
-#include "content/common/main_function_params.h"
+#include "content/public/common/main_function_params.h"
 #include "content/worker/worker_thread.h"
 
 #if defined(OS_WIN)
-#include "content/common/sandbox_init_wrapper.h"
+#include "content/public/common/sandbox_init.h"
 #include "sandbox/src/sandbox.h"
 #endif
 
 // Mainline routine for running as the worker process.
-int WorkerMain(const MainFunctionParams& parameters) {
+int WorkerMain(const content::MainFunctionParams& parameters) {
   // The main message loop of the worker process.
   MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrWorkerMain");
@@ -31,18 +31,21 @@ int WorkerMain(const MainFunctionParams& parameters) {
   worker_process.set_main_thread(new WorkerThread());
 #if defined(OS_WIN)
   sandbox::TargetServices* target_services =
-      parameters.sandbox_info_.TargetServices();
+      parameters.sandbox_info->target_services;
   if (!target_services)
     return false;
 
   // Cause advapi32 to load before the sandbox is turned on.
   unsigned int dummy_rand;
   rand_s(&dummy_rand);
+  // Warm up language subsystems before the sandbox is turned on.
+  ::GetUserDefaultLangID();
+  ::GetUserDefaultLCID();
 
   target_services->LowerToken();
 #endif
 
-  const CommandLine& parsed_command_line = parameters.command_line_;
+  const CommandLine& parsed_command_line = parameters.command_line;
   if (parsed_command_line.HasSwitch(switches::kWaitForDebugger)) {
     ChildProcess::WaitForDebugger("Worker");
   }

@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/string16.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
@@ -17,9 +17,10 @@ class HostResolver;
 class NetLog;
 class ProxyResolverErrorObserver;
 struct ProxyResolverRequestContext;
+class SyncHostResolver;
 
 // Interface for the javascript bindings.
-class NET_TEST ProxyResolverJSBindings {
+class NET_EXPORT_PRIVATE ProxyResolverJSBindings {
  public:
   ProxyResolverJSBindings() : current_request_context_(NULL) {}
 
@@ -65,10 +66,10 @@ class NET_TEST ProxyResolverJSBindings {
   //   - Send script alert()s to both VLOG(1) and the NetLog.
   //   - Use the provided host resolver to service dnsResolve().
   //
-  // Note that |host_resolver| will be used in sync mode mode.
-  // Takes ownership of |error_observer| which might be NULL.
+  // Takes ownership of |host_resolver| and |error_observer| (the latter can
+  // be NULL).
   static ProxyResolverJSBindings* CreateDefault(
-      HostResolver* host_resolver,
+      SyncHostResolver* host_resolver,
       NetLog* net_log,
       ProxyResolverErrorObserver* error_observer);
 

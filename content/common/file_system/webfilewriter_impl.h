@@ -9,8 +9,6 @@
 #include "base/memory/weak_ptr.h"
 #include "webkit/fileapi/webfilewriter_base.h"
 
-class FileSystemDispatcher;
-
 // An implementation of WebFileWriter for use in chrome renderers and workers.
 class WebFileWriterImpl : public fileapi::WebFileWriterBase,
                           public base::SupportsWeakPtr<WebFileWriterImpl> {
@@ -20,10 +18,10 @@ class WebFileWriterImpl : public fileapi::WebFileWriterBase,
 
  protected:
   // WebFileWriterBase overrides
-  virtual void DoTruncate(const GURL& path, int64 offset);
+  virtual void DoTruncate(const GURL& path, int64 offset) OVERRIDE;
   virtual void DoWrite(const GURL& path, const GURL& blob_url,
-                       int64 offset);
-  virtual void DoCancel();
+                       int64 offset) OVERRIDE;
+  virtual void DoCancel() OVERRIDE;
 
  private:
   class CallbackDispatcher;

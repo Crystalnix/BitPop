@@ -1,17 +1,18 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/blob/view_blob_internals_job.h"
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/logging.h"
 #include "base/format_macros.h"
 #include "base/i18n/number_formatting.h"
 #include "base/i18n/time_formatting.h"
+#include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/stringprintf.h"
 #include "base/string_util.h"
+#include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
@@ -37,27 +38,16 @@ void StartHTML(std::string* out) {
   out->append(
       "<!DOCTYPE HTML>"
       "<html><title>Blob Storage Internals</title>"
-      "<style>"
+      "<meta http-equiv=\"X-WebKit-CSP\""
+      "  content=\"obejct-src 'none'; script-src 'none'\">\n"
+      "<style>\n"
       "body { font-family: sans-serif; font-size: 0.8em; }\n"
       "tt, code, pre { font-family: WebKitHack, monospace; }\n"
+      "form { display: inline }\n"
       ".subsection_body { margin: 10px 0 10px 2em; }\n"
       ".subsection_title { font-weight: bold; }\n"
-      "</style>"
-      "<script>\n"
-      // Unfortunately we can't do XHR from chrome://blob-internals
-      // because the chrome:// protocol restricts access.
-      //
-      // So instead, we will send commands by doing a form
-      // submission (which as a side effect will reload the page).
-      "function SubmitCommand(command) {\n"
-      "  document.getElementById('cmd').value = command;\n"
-      "  document.getElementById('cmdsender').submit();\n"
-      "}\n"
-      "</script>\n"
-      "</head><body>"
-      "<form action='' method=GET id=cmdsender>"
-      "<input type='hidden' id=cmd name='remove'>"
-      "</form>");
+      "</style>\n"
+      "</head><body>\n");
 }
 
 void EndHTML(std::string* out) {
@@ -66,7 +56,7 @@ void EndHTML(std::string* out) {
 
 void AddHTMLBoldText(const std::string& text, std::string* out) {
   out->append("<b>");
-  out->append(EscapeForHTML(text));
+  out->append(net::EscapeForHTML(text));
   out->append("</b>");
 }
 
@@ -84,7 +74,7 @@ void AddHTMLListItem(const std::string& element_title,
   out->append("<li>");
   // No need to escape element_title since constant string is passed.
   out->append(element_title);
-  out->append(EscapeForHTML(element_data));
+  out->append(net::EscapeForHTML(element_data));
   out->append("</li>");
 }
 
@@ -92,12 +82,14 @@ void AddHTMLButton(const std::string& title,
                    const std::string& command,
                    std::string* out) {
   // No need to escape title since constant string is passed.
-  std::string escaped_command = EscapeForHTML(command.c_str());
+  std::string escaped_command = net::EscapeForHTML(command.c_str());
   base::StringAppendF(out,
-                      "<input type=\"button\" value=\"%s\" "
-                      "onclick=\"SubmitCommand('%s')\" />",
-                      title.c_str(),
-                      escaped_command.c_str());
+                      "<form action=\"\" method=\"GET\">\n"
+                      "<input type=\"hidden\" name=\"remove\" value=\"%s\">\n"
+                      "<input type=\"submit\" value=\"%s\">\n"
+                      "</form><br/>\n",
+                      escaped_command.c_str(),
+                      title.c_str());
 }
 
 }  // namespace
@@ -108,7 +100,7 @@ ViewBlobInternalsJob::ViewBlobInternalsJob(
     net::URLRequest* request, BlobStorageController* blob_storage_controller)
     : net::URLRequestSimpleJob(request),
       blob_storage_controller_(blob_storage_controller),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
 }
 
 ViewBlobInternalsJob::~ViewBlobInternalsJob() {
@@ -116,8 +108,8 @@ ViewBlobInternalsJob::~ViewBlobInternalsJob() {
 
 void ViewBlobInternalsJob::Start() {
   MessageLoop::current()->PostTask(
-      FROM_HERE,
-      method_factory_.NewRunnableMethod(&ViewBlobInternalsJob::DoWorkAsync));
+      FROM_HERE, base::Bind(&ViewBlobInternalsJob::DoWorkAsync,
+                            weak_factory_.GetWeakPtr()));
 }
 
 bool ViewBlobInternalsJob::IsRedirectResponse(GURL* location,
@@ -135,16 +127,16 @@ bool ViewBlobInternalsJob::IsRedirectResponse(GURL* location,
 
 void ViewBlobInternalsJob::Kill() {
   net::URLRequestSimpleJob::Kill();
-  method_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void ViewBlobInternalsJob::DoWorkAsync() {
   if (request_->url().has_query() &&
       StartsWithASCII(request_->url().query(), "remove=", true)) {
     std::string blob_url = request_->url().query().substr(strlen("remove="));
-    blob_url = UnescapeURLComponent(blob_url,
-        UnescapeRule::NORMAL | UnescapeRule::URL_SPECIAL_CHARS);
-    blob_storage_controller_->UnregisterBlobUrl(GURL(blob_url));
+    blob_url = net::UnescapeURLComponent(blob_url,
+        net::UnescapeRule::NORMAL | net::UnescapeRule::URL_SPECIAL_CHARS);
+    blob_storage_controller_->RemoveBlob(GURL(blob_url));
   }
 
   StartAsync();
@@ -173,7 +165,6 @@ void ViewBlobInternalsJob::GenerateHTML(std::string* out) const {
        ++iter) {
     AddHTMLBoldText(iter->first, out);
     AddHTMLButton(kRemove, iter->first, out);
-    out->append("<br/>");
     GenerateHTMLForBlobData(*iter->second, out);
   }
 }
@@ -200,37 +191,38 @@ void ViewBlobInternalsJob::GenerateHTMLForBlobData(const BlobData& blob_data,
     }
     const BlobData::Item& item = blob_data.items().at(i);
 
-    switch (item.type()) {
+    switch (item.type) {
       case BlobData::TYPE_DATA:
+      case BlobData::TYPE_DATA_EXTERNAL:
         AddHTMLListItem(kType, "data", out);
         break;
       case BlobData::TYPE_FILE:
         AddHTMLListItem(kType, "file", out);
         AddHTMLListItem(kPath,
 #if defined(OS_WIN)
-                 EscapeForHTML(WideToUTF8(item.file_path().value())),
+                 net::EscapeForHTML(WideToUTF8(item.file_path.value())),
 #else
-                 EscapeForHTML(item.file_path().value()),
+                 net::EscapeForHTML(item.file_path.value()),
 #endif
                  out);
-        if (!item.expected_modification_time().is_null()) {
+        if (!item.expected_modification_time.is_null()) {
           AddHTMLListItem(kModificationTime, UTF16ToUTF8(
-              TimeFormatFriendlyDateAndTime(item.expected_modification_time())),
+              TimeFormatFriendlyDateAndTime(item.expected_modification_time)),
               out);
         }
         break;
       case BlobData::TYPE_BLOB:
         AddHTMLListItem(kType, "blob", out);
-        AddHTMLListItem(kURL, item.blob_url().spec(), out);
+        AddHTMLListItem(kURL, item.blob_url.spec(), out);
         break;
     }
-    if (item.offset()) {
+    if (item.offset) {
       AddHTMLListItem(kOffset, UTF16ToUTF8(base::FormatNumber(
-          static_cast<int64>(item.offset()))), out);
+          static_cast<int64>(item.offset))), out);
     }
-    if (static_cast<int64>(item.length()) != -1) {
+    if (static_cast<int64>(item.length) != -1) {
       AddHTMLListItem(kLength, UTF16ToUTF8(base::FormatNumber(
-          static_cast<int64>(item.length()))), out);
+          static_cast<int64>(item.length))), out);
     }
 
     if (has_multi_items)

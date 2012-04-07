@@ -6,11 +6,17 @@
 #define CHROME_BROWSER_UI_WEBUI_COOKIES_TREE_MODEL_ADAPTER_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/cookies_tree_model.h"
 
+namespace base {
 class ListValue;
 class Value;
+}
+
+namespace content {
 class WebUI;
+}
 
 // CookiesTreeModelAdapter binds a CookiesTreeModel with a JS tree. It observes
 // tree model changes and forwards them to JS tree. It also provides a
@@ -21,7 +27,7 @@ class CookiesTreeModelAdapter : public CookiesTreeModel::Observer {
   virtual ~CookiesTreeModelAdapter();
 
   // Initializes with given WebUI.
-  void Init(WebUI* web_ui);
+  void Init(content::WebUI* web_ui);
 
   // Sets up the bindings between js tree and |model|.
   // Note that this class does not take ownership of the model.
@@ -32,18 +38,19 @@ class CookiesTreeModelAdapter : public CookiesTreeModel::Observer {
   virtual void TreeNodesAdded(ui::TreeModel* model,
                               ui::TreeModelNode* parent,
                               int start,
-                              int count);
+                              int count) OVERRIDE;
   virtual void TreeNodesRemoved(ui::TreeModel* model,
                                 ui::TreeModelNode* parent,
                                 int start,
-                                int count);
-  virtual void TreeNodeChanged(ui::TreeModel* model, ui::TreeModelNode* node) {}
-  virtual void TreeModelBeginBatch(CookiesTreeModel* model);
-  virtual void TreeModelEndBatch(CookiesTreeModel* model);
+                                int count) OVERRIDE;
+  virtual void TreeNodeChanged(ui::TreeModel* model,
+                               ui::TreeModelNode* node) OVERRIDE {}
+  virtual void TreeModelBeginBatch(CookiesTreeModel* model) OVERRIDE;
+  virtual void TreeModelEndBatch(CookiesTreeModel* model) OVERRIDE;
 
   // JS callback that gets the tree node using the tree path info in |args| and
   // call SendChildren to pass back children nodes data to WebUI.
-  void RequestChildren(const ListValue* args);
+  void RequestChildren(const base::ListValue* args);
 
   // Get children nodes data and pass it to 'CookiesTree.loadChildren' to
   // update the WebUI.
@@ -51,10 +58,10 @@ class CookiesTreeModelAdapter : public CookiesTreeModel::Observer {
 
   // Helper function to get a Value* representing id of |node|.
   // Caller needs to free the returned Value.
-  Value* GetTreeNodeId(CookieTreeNode* node);
+  base::Value* GetTreeNodeId(CookieTreeNode* node);
 
   // Hosting WebUI of the js tree.
-  WebUI* web_ui_;
+  content::WebUI* web_ui_;
 
   // Id of JS tree that is managed by this handler.
   std::string tree_id_;

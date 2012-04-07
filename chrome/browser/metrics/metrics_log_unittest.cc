@@ -11,7 +11,7 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -148,8 +148,9 @@ TEST(MetricsLogTest, LoadEvent) {
       "</log>", MetricsLog::GetVersionString().c_str());
 
   NoTimeMetricsLog log("bogus client ID", 0);
-  log.RecordLoadEvent(3, GURL("http://google.com"), PageTransition::LINK,
-                      1, TimeDelta::FromMilliseconds(7219));
+  log.RecordLoadEvent(3, GURL("http://google.com"),
+                      content::PAGE_TRANSITION_LINK, 1,
+                      TimeDelta::FromMilliseconds(7219));
 
   log.CloseLog();
 
@@ -178,8 +179,9 @@ TEST(MetricsLogTest, ChromeOSLoadEvent) {
       "</log>", MetricsLog::GetVersionString().c_str());
 
   NoTimeMetricsLog log("bogus client ID", 0);
-  log.RecordLoadEvent(3, GURL("http://google.com"), PageTransition::LINK,
-                      1, TimeDelta::FromMilliseconds(7219));
+  log.RecordLoadEvent(3, GURL("http://google.com"),
+                      content::PAGE_TRANSITION_LINK, 1,
+                      TimeDelta::FromMilliseconds(7219));
   log.set_hardware_class("sample-class");
   log.CloseLog();
 

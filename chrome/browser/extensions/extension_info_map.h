@@ -6,77 +6,89 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_INFO_MAP_H_
 #pragma once
 
-#include <map>
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/time.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/url_pattern_set.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/browser/extensions/extensions_quota_service.h"
+#include "chrome/browser/extensions/process_map.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/extension_set.h"
 
 class Extension;
 
 // Contains extension data that needs to be accessed on the IO thread. It can
 // be created/destroyed on any thread, but all other methods must be called on
 // the IO thread.
-//
-// TODO(mpcomplete): consider simplifying this class to return the StaticData
-// object itself, since most methods are simple property accessors.
 class ExtensionInfoMap : public base::RefCountedThreadSafe<ExtensionInfoMap> {
  public:
   ExtensionInfoMap();
   ~ExtensionInfoMap();
 
+  const ExtensionSet& extensions() const { return extensions_; }
+  const ExtensionSet& disabled_extensions() const {
+    return disabled_extensions_;
+  }
+
+  const extensions::ProcessMap& process_map() const;
+
   // Callback for when new extensions are loaded.
-  void AddExtension(const Extension* extension);
+  void AddExtension(const Extension* extension,
+                    base::Time install_time,
+                    bool incognito_enabled);
 
   // Callback for when an extension is unloaded.
-  void RemoveExtension(const std::string& id,
-                       const UnloadedExtensionInfo::Reason reason);
+  void RemoveExtension(const std::string& extension_id,
+                       const extension_misc::UnloadedExtensionReason reason);
 
-  // Gets the name for the specified extension.
-  std::string GetNameForExtension(const std::string& id) const;
+  // Returns the time the extension was installed, or base::Time() if not found.
+  base::Time GetInstallTime(const std::string& extension_id) const;
 
-  // Gets the path to the directory for the specified extension.
-  FilePath GetPathForExtension(const std::string& id) const;
+  // Returns true if the user has allowed this extension to run in incognito
+  // mode.
+  bool IsIncognitoEnabled(const std::string& extension_id) const;
 
-  // Gets the path to the directory for the specified disabled extension.
-  FilePath GetPathForDisabledExtension(const std::string& id) const;
+  // Returns true if the given extension can see events and data from another
+  // sub-profile (incognito to original profile, or vice versa).
+  bool CanCrossIncognito(const Extension* extension);
 
-  std::string GetContentSecurityPolicyForExtension(
-      const std::string& id) const;
+  // Adds an entry to process_map_.
+  void RegisterExtensionProcess(const std::string& extension_id,
+                                int process_id,
+                                int site_instance_id);
 
-  // Returns true if the specified extension exists and has a non-empty web
-  // extent.
-  bool ExtensionHasWebExtent(const std::string& id) const;
+  // Removes an entry from process_map_.
+  void UnregisterExtensionProcess(const std::string& extension_id,
+                                  int process_id,
+                                  int site_instance_id);
+  void UnregisterAllExtensionsInProcess(int process_id);
 
-  // Returns true if the specified extension exists and can load in incognito
-  // contexts.
-  bool ExtensionCanLoadInIncognito(const std::string& id) const;
+  // Returns true if there is exists an extension with the same origin as
+  // |origin| in |process_id| with |permission|.
+  bool SecurityOriginHasAPIPermission(
+      const GURL& origin, int process_id,
+      ExtensionAPIPermission::ID permission) const;
 
-  // Returns an empty string if the extension with |id| doesn't have a default
-  // locale.
-  std::string GetDefaultLocaleForExtension(const std::string& id) const;
-
-  // Gets the effective host permissions for the extension with |id|.
-  URLPatternSet
-      GetEffectiveHostPermissionsForExtension(const std::string& id) const;
-
-  // Determine whether a URL has access to the specified extension permission.
-  bool CheckURLAccessToExtensionPermission(const GURL& url,
-                                           const char* permission_name) const;
-
-  // Returns true if the specified URL references the icon for an extension.
-  bool URLIsForExtensionIcon(const GURL& url) const;
+  ExtensionsQuotaService* quota_service() { return &quota_service_; }
 
  private:
-  // Map of extension info by extension id.
-  typedef std::map<std::string, scoped_refptr<const Extension> > Map;
+  // Extra dynamic data related to an extension.
+  struct ExtraData;
+  // Map of extension_id to ExtraData.
+  typedef std::map<std::string, ExtraData> ExtraDataMap;
 
-  Map extension_info_;
-  Map disabled_extension_info_;
+  ExtensionSet extensions_;
+  ExtensionSet disabled_extensions_;
+
+  // Extra data associated with enabled extensions.
+  ExtraDataMap extra_data_;
+
+  // Used by dispatchers to limit API quota for individual extensions.
+  ExtensionsQuotaService quota_service_;
+
+  // Assignment of extensions to processes.
+  extensions::ProcessMap process_map_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_INFO_MAP_H_

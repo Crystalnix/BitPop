@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "base/basictypes.h"
 #include "base/port.h"
 #include "base/string_split.h"
-#include "chrome/common/deprecated/event_sys-inl.h"
 #include "chrome/common/net/http_return.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
@@ -47,13 +46,9 @@ GaiaAuthenticator::GaiaAuthenticator(const string& user_agent,
       next_allowed_auth_attempt_time_(0),
       early_auth_attempt_count_(0),
       message_loop_(NULL) {
-  GaiaAuthEvent done = { GaiaAuthEvent::GAIA_AUTHENTICATOR_DESTROYED, None,
-                         this };
-  channel_ = new Channel(done);
 }
 
 GaiaAuthenticator::~GaiaAuthenticator() {
-  delete channel_;
 }
 
 // mutex_ must be entered before calling this function.
@@ -98,13 +93,6 @@ bool GaiaAuthenticator::AuthenticateImpl(const AuthParams& params) {
   DCHECK_EQ(MessageLoop::current(), message_loop_);
   AuthResults results;
   const bool succeeded = AuthenticateImpl(params, &results);
-  if (params.request_id == request_count_) {
-    auth_results_ = results;
-    GaiaAuthEvent event = { succeeded ? GaiaAuthEvent::GAIA_AUTH_SUCCEEDED
-                                      : GaiaAuthEvent::GAIA_AUTH_FAILED,
-                                      results.auth_error, this };
-    channel_->NotifyListeners(event);
-  }
   return succeeded;
 }
 
@@ -158,13 +146,15 @@ bool GaiaAuthenticator::PerformGaiaRequest(const AuthParams& params,
   GURL gaia_auth_url(gaia_url_);
 
   string post_body;
-  post_body += "Email=" + EscapeUrlEncodedData(params.email);
-  post_body += "&Passwd=" + EscapeUrlEncodedData(params.password);
-  post_body += "&source=" + EscapeUrlEncodedData(user_agent_);
+  post_body += "Email=" + net::EscapeUrlEncodedData(params.email, true);
+  post_body += "&Passwd=" + net::EscapeUrlEncodedData(params.password, true);
+  post_body += "&source=" + net::EscapeUrlEncodedData(user_agent_, true);
   post_body += "&service=" + service_id_;
   if (!params.captcha_token.empty() && !params.captcha_value.empty()) {
-    post_body += "&logintoken=" + EscapeUrlEncodedData(params.captcha_token);
-    post_body += "&logincaptcha=" + EscapeUrlEncodedData(params.captcha_value);
+    post_body += "&logintoken=" +
+                 net::EscapeUrlEncodedData(params.captcha_token, true);
+    post_body += "&logincaptcha=" +
+                 net::EscapeUrlEncodedData(params.captcha_value, true);
   }
   post_body += "&PersistentCookie=true";
   // We set it to GOOGLE (and not HOSTED or HOSTED_OR_GOOGLE) because we only
@@ -215,7 +205,7 @@ bool GaiaAuthenticator::LookupEmail(AuthResults* results) {
 
   string post_body;
   post_body += "LSID=";
-  post_body += EscapeUrlEncodedData(results->lsid);
+  post_body += net::EscapeUrlEncodedData(results->lsid, true);
 
   unsigned long server_response_code;
   string message_text;
@@ -265,7 +255,7 @@ bool GaiaAuthenticator::IssueAuthToken(AuthResults* results,
 
   string post_body;
   post_body += "LSID=";
-  post_body += EscapeUrlEncodedData(results->lsid);
+  post_body += net::EscapeUrlEncodedData(results->lsid, true);
   post_body += "&service=" + service_id;
   post_body += "&Session=true";
 
@@ -393,5 +383,4 @@ bool GaiaAuthenticator::Authenticate(const string& user_name,
                       empty);
 }
 
-}  // namepace gaia
-
+}  // namespace gaia

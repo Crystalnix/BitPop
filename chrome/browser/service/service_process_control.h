@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,15 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/id_map.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/singleton.h"
 #include "base/process.h"
-#include "base/task.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "ipc/ipc_sync_channel.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ipc/ipc_channel_proxy.h"
 
-class Profile;
 class CommandLine;
 
 namespace cloud_print {
@@ -39,27 +38,23 @@ struct CloudPrintProxyInfo;
 // talks to the IPC channel on the IO thread.
 class ServiceProcessControl : public IPC::Channel::Sender,
                               public IPC::Channel::Listener,
-                              public NotificationObserver {
+                              public content::NotificationObserver {
  public:
   typedef IDMap<ServiceProcessControl>::iterator iterator;
   typedef std::queue<IPC::Message> MessageQueue;
-  typedef Callback1<const cloud_print::CloudPrintProxyInfo&>::Type
+  typedef base::Callback<void(const cloud_print::CloudPrintProxyInfo&)>
       CloudPrintProxyInfoHandler;
 
-  // Construct a ServiceProcessControl with |profile|..
-  explicit ServiceProcessControl(Profile* profile);
-  virtual ~ServiceProcessControl();
-
-  // Return the user profile associated with this service process.
-  Profile* profile() const { return profile_; }
+  // Returns the singleton instance of this class.
+  static ServiceProcessControl* GetInstance();
 
   // Return true if this object is connected to the service.
-  bool is_connected() const { return channel_.get() != NULL; }
+  // Virtual for testing.
+  virtual bool IsConnected() const;
 
   // If no service process is currently running, creates a new service process
-  // and connects to it.
-  // If a service process is already running this method will try to connect
-  // to it.
+  // and connects to it. If a service process is already running this method
+  // will try to connect to it.
   // |success_task| is called when we have successfully launched the process
   // and connected to it.
   // |failure_task| is called when we failed to connect to the service process.
@@ -67,21 +62,26 @@ class ServiceProcessControl : public IPC::Channel::Sender,
   // this case, the task is invoked on success or failure.
   // Note that if we are already connected to service process then
   // |success_task| can be invoked in the context of the Launch call.
-  // Takes ownership of |success_task| and |failure_task|.
-  void Launch(Task* success_task, Task* failure_task);
+  // Virtual for testing.
+  virtual void Launch(const base::Closure& success_task,
+                      const base::Closure& failure_task);
+
+  // Disconnect the IPC channel from the service process.
+  // Virtual for testing.
+  virtual void Disconnect();
 
   // IPC::Channel::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
-  virtual void OnChannelConnected(int32 peer_pid);
-  virtual void OnChannelError();
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
 
   // IPC::Channel::Sender implementation
-  virtual bool Send(IPC::Message* message);
+  virtual bool Send(IPC::Message* message) OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Message handlers
   void OnCloudPrintProxyInfo(
@@ -90,12 +90,13 @@ class ServiceProcessControl : public IPC::Channel::Sender,
   // Send a shutdown message to the service process. IPC channel will be
   // destroyed after calling this method.
   // Return true if the message was sent.
-  bool Shutdown();
+  // Virtual for testing.
+  virtual bool Shutdown();
 
   // Send request for cloud print proxy info (enabled state, email, proxy id).
   // The callback gets the information when received.
   bool GetCloudPrintProxyInfo(
-      CloudPrintProxyInfoHandler* cloud_print_status_callback);
+      const CloudPrintProxyInfoHandler& cloud_print_status_callback);
 
  private:
   // This class is responsible for launching the service process on the
@@ -104,10 +105,10 @@ class ServiceProcessControl : public IPC::Channel::Sender,
       : public base::RefCountedThreadSafe<ServiceProcessControl::Launcher> {
    public:
     Launcher(ServiceProcessControl* process, CommandLine* cmd_line);
-    // Execute the command line to start the process asynchronously.
-    // After the comamnd is executed |task| is called with the process handle on
-    // the UI thread.
-    void Run(Task* task);
+    // Execute the command line to start the process asynchronously. After the
+    // command is executed |task| is called with the process handle on the UI
+    // thread.
+    void Run(const base::Closure& task);
 
     bool launched() const { return launched_; }
 
@@ -123,14 +124,22 @@ class ServiceProcessControl : public IPC::Channel::Sender,
     void Notify();
     ServiceProcessControl* process_;
     scoped_ptr<CommandLine> cmd_line_;
-    scoped_ptr<Task> notify_task_;
+    base::Closure notify_task_;
     bool launched_;
     uint32 retry_count_;
   };
 
-  typedef std::vector<Task*> TaskList;
+  friend class MockServiceProcessControl;
+  friend class CloudPrintProxyPolicyStartupTest;
 
-  // Helper method to invoke all the callbacks based on success on failure.
+  ServiceProcessControl();
+  virtual ~ServiceProcessControl();
+
+  friend struct DefaultSingletonTraits<ServiceProcessControl>;
+
+  typedef std::vector<base::Closure> TaskList;
+
+  // Helper method to invoke all the callbacks based on success or failure.
   void RunConnectDoneTasks();
 
   // Method called by Launcher when the service process is launched.
@@ -139,29 +148,27 @@ class ServiceProcessControl : public IPC::Channel::Sender,
   // Used internally to connect to the service process.
   void ConnectInternal();
 
+  // Takes ownership of the pointer. Split out for testing.
+  void SetChannel(IPC::ChannelProxy* channel);
+
   static void RunAllTasksHelper(TaskList* task_list);
 
-  Profile* profile_;
-
   // IPC channel to the service process.
-  scoped_ptr<IPC::SyncChannel> channel_;
+  scoped_ptr<IPC::ChannelProxy> channel_;
 
   // Service process launcher.
   scoped_refptr<Launcher> launcher_;
 
-  // Callbacks that get invoked when the channel is successfully connected or
-  // if there was a failure in connecting.
-  TaskList connect_done_tasks_;
-  // Callbacks that get invoked ONLY when the channel is successfully connected.
+  // Callbacks that get invoked when the channel is successfully connected.
   TaskList connect_success_tasks_;
-  // Callbacks that get invoked ONLY when there was a connection failure.
+  // Callbacks that get invoked when there was a connection failure.
   TaskList connect_failure_tasks_;
 
   // Callback that gets invoked when a status message is received from
   // the cloud print proxy.
-  scoped_ptr<CloudPrintProxyInfoHandler> cloud_print_info_callback_;
+  CloudPrintProxyInfoHandler cloud_print_info_callback_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 #endif  // CHROME_BROWSER_SERVICE_SERVICE_PROCESS_CONTROL_H_

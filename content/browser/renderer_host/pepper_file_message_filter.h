@@ -11,14 +11,16 @@
 
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/message_loop_helpers.h"
 #include "base/process.h"
-#include "base/task.h"
 #include "build/build_config.h"
-#include "content/browser/browser_message_filter.h"
+#include "content/public/browser/browser_message_filter.h"
 #include "ipc/ipc_platform_file.h"
 #include "webkit/plugins/ppapi/dir_contents.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace webkit {
 namespace ppapi {
@@ -27,22 +29,24 @@ class PepperFilePath;
 }
 
 // A message filter for Pepper-specific File I/O messages.
-class PepperFileMessageFilter : public BrowserMessageFilter {
+class PepperFileMessageFilter : public content::BrowserMessageFilter {
  public:
-  PepperFileMessageFilter(int child_id, Profile* profile);
+  PepperFileMessageFilter(int child_id,
+                          content::BrowserContext* browser_context);
 
-  // BrowserMessageFilter methods:
-  virtual void OverrideThreadForMessage(const IPC::Message& message,
-                                        BrowserThread::ID* thread);
+  // content::BrowserMessageFilter methods:
+  virtual void OverrideThreadForMessage(
+      const IPC::Message& message,
+      content::BrowserThread::ID* thread) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
-  virtual void OnDestruct() const;
+                                 bool* message_was_ok) OVERRIDE;
+  virtual void OnDestruct() const OVERRIDE;
 
   int child_id() const { return child_id_; }
 
  private:
-  friend class BrowserThread;
-  friend class DeleteTask<PepperFileMessageFilter>;
+  friend class content::BrowserThread;
+  friend class base::DeleteHelper<PepperFileMessageFilter>;
   virtual ~PepperFileMessageFilter();
 
   // Called on the FILE thread:

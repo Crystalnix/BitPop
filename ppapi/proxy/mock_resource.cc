@@ -1,22 +1,17 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ppapi/proxy/mock_resource.h"
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
-MockResource::MockResource(const HostResource& resource)
-    : PluginResource(resource) {
+MockResource::MockResource(const HostResource& resource) : Resource(resource) {
 }
 
 MockResource::~MockResource() {
 }
 
-MockResource* MockResource::AsMockResource() {
-  return this;
-}
-
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi

@@ -6,13 +6,14 @@
 #define WEBKIT_APPCACHE_APPCACHE_BACKEND_IMPL_H_
 
 #include "base/hash_tables.h"
+#include "webkit/appcache/appcache_export.h"
 #include "webkit/appcache/appcache_host.h"
 
 namespace appcache {
 
 class AppCacheService;
 
-class AppCacheBackendImpl {
+class APPCACHE_EXPORT AppCacheBackendImpl {
  public:
   AppCacheBackendImpl();
   ~AppCacheBackendImpl();
@@ -40,11 +41,11 @@ class AppCacheBackendImpl {
   bool SelectCacheForSharedWorker(int host_id, int64 appcache_id);
   bool MarkAsForeignEntry(int host_id, const GURL& document_url,
                           int64 cache_document_was_loaded_from);
-  bool GetStatusWithCallback(int host_id, GetStatusCallback* callback,
+  bool GetStatusWithCallback(int host_id, const GetStatusCallback& callback,
                              void* callback_param);
-  bool StartUpdateWithCallback(int host_id, StartUpdateCallback* callback,
+  bool StartUpdateWithCallback(int host_id, const StartUpdateCallback& callback,
                                void* callback_param);
-  bool SwapCacheWithCallback(int host_id, SwapCacheCallback* callback,
+  bool SwapCacheWithCallback(int host_id, const SwapCacheCallback& callback,
                              void* callback_param);
 
   // Returns a pointer to a registered host. The backend retains ownership.

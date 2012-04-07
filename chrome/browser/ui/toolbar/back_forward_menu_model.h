@@ -18,8 +18,11 @@
 
 class Browser;
 class SkBitmap;
-class TabContents;
+
+namespace content {
 class NavigationEntry;
+class WebContents;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -41,34 +44,36 @@ class BackForwardMenuModel : public ui::MenuModel {
   virtual ~BackForwardMenuModel();
 
   // MenuModel implementation.
-  virtual bool HasIcons() const;
+  virtual bool HasIcons() const OVERRIDE;
   // Returns how many items the menu should show, including history items,
   // chapter-stops, separators and the Show Full History link. This function
   // uses GetHistoryItemCount() and GetChapterStopCount() internally to figure
   // out the total number of items to show.
-  virtual int GetItemCount() const;
-  virtual ItemType GetTypeAt(int index) const;
-  virtual int GetCommandIdAt(int index) const;
-  virtual string16 GetLabelAt(int index) const;
-  virtual bool IsItemDynamicAt(int index) const;
+  virtual int GetItemCount() const OVERRIDE;
+  virtual ItemType GetTypeAt(int index) const OVERRIDE;
+  virtual int GetCommandIdAt(int index) const OVERRIDE;
+  virtual string16 GetLabelAt(int index) const OVERRIDE;
+  virtual bool IsItemDynamicAt(int index) const OVERRIDE;
   virtual bool GetAcceleratorAt(int index,
-                                ui::Accelerator* accelerator) const;
-  virtual bool IsItemCheckedAt(int index) const;
-  virtual int GetGroupIdAt(int index) const;
-  virtual bool GetIconAt(int index, SkBitmap* icon);
-  virtual ui::ButtonMenuItemModel* GetButtonMenuItemAt(int index) const;
-  virtual bool IsEnabledAt(int index) const;
-  virtual MenuModel* GetSubmenuModelAt(int index) const;
-  virtual void HighlightChangedTo(int index);
-  virtual void ActivatedAt(int index);
-  virtual void ActivatedAtWithDisposition(int index, int disposition);
-  virtual void MenuWillShow();
+                                ui::Accelerator* accelerator) const OVERRIDE;
+  virtual bool IsItemCheckedAt(int index) const OVERRIDE;
+  virtual int GetGroupIdAt(int index) const OVERRIDE;
+  virtual bool GetIconAt(int index, SkBitmap* icon) OVERRIDE;
+  virtual ui::ButtonMenuItemModel* GetButtonMenuItemAt(
+      int index) const OVERRIDE;
+  virtual bool IsEnabledAt(int index) const OVERRIDE;
+  virtual MenuModel* GetSubmenuModelAt(int index) const OVERRIDE;
+  virtual void HighlightChangedTo(int index) OVERRIDE;
+  virtual void ActivatedAt(int index) OVERRIDE;
+  virtual void ActivatedAt(int index, int event_flags) OVERRIDE;
+  virtual void MenuWillShow() OVERRIDE;
 
   // Is the item at |index| a separator?
   bool IsSeparator(int index) const;
 
   // Set the delegate for triggering OnIconChanged.
-  virtual void SetMenuModelDelegate(ui::MenuModelDelegate* menu_model_delegate);
+  virtual void SetMenuModelDelegate(
+      ui::MenuModelDelegate* menu_model_delegate) OVERRIDE;
 
  protected:
    ui::MenuModelDelegate* menu_model_delegate() { return menu_model_delegate_; }
@@ -83,15 +88,15 @@ class BackForwardMenuModel : public ui::MenuModel {
 
   // Requests a favicon from the FaviconService. Called by GetIconAt if the
   // NavigationEntry has an invalid favicon.
-  void FetchFavicon(NavigationEntry* entry);
+  void FetchFavicon(content::NavigationEntry* entry);
 
   // Callback from the favicon service.
   void OnFavIconDataAvailable(FaviconService::Handle handle,
                               history::FaviconData favicon);
 
   // Allows the unit test to use its own dummy tab contents.
-  void set_test_tab_contents(TabContents* test_tab_contents) {
-    test_tab_contents_ = test_tab_contents;
+  void set_test_web_contents(content::WebContents* test_web_contents) {
+    test_web_contents_ = test_web_contents;
   }
 
   // Returns how many history items the menu should show. For example, if the
@@ -161,12 +166,12 @@ class BackForwardMenuModel : public ui::MenuModel {
   string16 GetShowFullHistoryLabel() const;
 
   // Looks up a NavigationEntry by menu id.
-  NavigationEntry* GetNavigationEntry(int index) const;
+  content::NavigationEntry* GetNavigationEntry(int index) const;
 
-  // Retrieves the TabContents pointer to use, which is either the one that
-  // the unit test sets (using SetTabContentsForUnitTest) or the one from
+  // Retrieves the WebContents pointer to use, which is either the one that
+  // the unit test sets (using set_test_web_contents) or the one from
   // the browser window.
-  TabContents* GetTabContents() const;
+  content::WebContents* GetWebContents() const;
 
   // Build a string version of a user action on this menu, used as an
   // identifier for logging user behavior.
@@ -176,15 +181,16 @@ class BackForwardMenuModel : public ui::MenuModel {
 
   Browser* browser_;
 
-  // The unit tests will provide their own TabContents to use.
-  TabContents* test_tab_contents_;
+  // The unit tests will provide their own WebContents to use.
+  content::WebContents* test_web_contents_;
 
   // Represents whether this is the delegate for the forward button or the
   // back button.
   ModelType model_type_;
 
   // Keeps track of which favicons have already been requested from the history
-  // to prevent duplicate requests, identified by NavigationEntry->unique_id().
+  // to prevent duplicate requests, identified by
+  // NavigationEntry->GetUniqueID().
   std::set<int> requested_favicons_;
 
   // Used for loading favicons from history.

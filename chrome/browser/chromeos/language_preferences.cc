@@ -18,13 +18,12 @@ const char kHotKeySectionName[] = "general/hotkey";
 const char kPreloadEnginesConfigName[] = "preload_engines";
 const char kNextEngineInMenuConfigName[] = "next_engine_in_menu";
 const char kPreviousEngineConfigName[] = "previous_engine";
-const char kHotkeyNextEngineInMenu[] =
-    "Shift+Alt+Release+Shift_L,Shift+Alt+Release+Meta_L,Control+Shift+space,"
-    "Shift+Alt+Release+Shift_R,Shift+Alt+Release+Meta_R,Zenkaku_Hankaku,Hangul";
-const char kHotkeyPreviousEngine[] = "Control+space";
+// The following two variables are for deleting ibus-daemon's default hotkeys.
+const char kHotkeyNextEngineInMenu[] = "";
+const char kHotkeyPreviousEngine[] = "";
 
 // ---------------------------------------------------------------------------
-// For Traditional Chinese input method (ibus-chewing)
+// For Traditional Chinese input method (ibus-mozc-chewing)
 // ---------------------------------------------------------------------------
 const char kChewingSectionName[] = "engine/Chewing";
 
@@ -137,24 +136,27 @@ const LanguageMultipleChoicePreference<int> kChewingHsuSelKeyType = {
 };
 
 // ---------------------------------------------------------------------------
-// For Korean input method (ibus-hangul)
+// For Korean input method (ibus-mozc-hangul)
 // ---------------------------------------------------------------------------
 const char kHangulSectionName[] = "engine/Hangul";
 const char kHangulKeyboardConfigName[] = "HangulKeyboard";
-const char kHangulHanjaKeysConfigName[] = "HanjaKeys";
+
+const char kHangulHanjaBindingKeysConfigName[] = "HanjaKeyBindings";
+// Mozc-hangul treats Hangul_Hanja key as hanja key event even if it is not set.
 // We add Control+9 since F9 key is reserved by the window manager.
-// TODO: HanjaKeys are not configurable yet (and we're not sure if it should.)
-const char kHangulHanjaKeys[] = "F9,Hangul_Hanja,Control+9";
+// TODO(nona): Hanja keys are not configurable yet (and we're not sure if it
+// should.)
+const char kHangulHanjaBindingKeys[] = "F9,Ctrl 9";
 
 const HangulKeyboardNameIDPair kHangulKeyboardNameIDPairs[] = {
-  // We have to sync the |keyboard_id|s with those in
-  // ibus-hangul/files/setup/main.py.
+  // We have to sync the |keyboard_id|s with those in libhangul.
   { IDS_OPTIONS_SETTINGS_LANGUAGES_HANGUL_SETTINGS_KEYBOARD_2_SET, "2" },
   { IDS_OPTIONS_SETTINGS_LANGUAGES_HANGUL_SETTINGS_KEYBOARD_3_SET_FINAL,
     "3f" },
   { IDS_OPTIONS_SETTINGS_LANGUAGES_HANGUL_SETTINGS_KEYBOARD_3_SET_390, "39" },
   { IDS_OPTIONS_SETTINGS_LANGUAGES_HANGUL_SETTINGS_KEYBOARD_3_SET_NO_SHIFT,
     "3s" },
+  { IDS_OPTIONS_SETTINGS_LANGUAGES_HANGUL_SETTINGS_KEYBOARD_ROMAJA, "ro" },
   // We don't support "Sebeolsik 2 set" keyboard.
 };
 COMPILE_ASSERT(kNumHangulKeyboardNameIDPairs ==
@@ -235,49 +237,26 @@ COMPILE_ASSERT(kNumPinyinIntegerPrefs == arraysize(kPinyinIntegerPrefs),
 // ---------------------------------------------------------------------------
 const char kMozcSectionName[] = "engine/Mozc";
 
-#define IDS_MOZC(suffix) \
-    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_##suffix
-
 const LanguageBooleanPrefs kMozcBooleanPrefs[] = {
   { prefs::kLanguageMozcIncognitoMode,
     false,
     "incognito_mode",
-    IDS_MOZC(INCOGNITO_MODE),
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_INCOGNITO_MODE,
     PrefService::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseAutoImeTurnOff,
     true,
     "use_auto_ime_turn_off",
-    IDS_MOZC(USE_AUTO_IME_TURN_OFF),
-    PrefService::SYNCABLE_PREF },
-  { prefs::kLanguageMozcUseDateConversion,
-    true,
-    "use_date_conversion",
-    IDS_MOZC(USE_DATE_CONVERSION),
-    PrefService::SYNCABLE_PREF },
-  { prefs::kLanguageMozcUseSingleKanjiConversion,
-    true,
-    "use_single_kanji_conversion",
-    IDS_MOZC(USE_SINGLE_KANJI_CONVERSION),
-    PrefService::SYNCABLE_PREF },
-  { prefs::kLanguageMozcUseSymbolConversion,
-    true,
-    "use_symbol_conversion",
-    IDS_MOZC(USE_SYMBOL_CONVERSION),
-    PrefService::SYNCABLE_PREF },
-  { prefs::kLanguageMozcUseNumberConversion,
-    true,
-    "use_number_conversion",
-    IDS_MOZC(USE_NUMBER_CONVERSION),
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_AUTO_IME_TURN_OFF,
     PrefService::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseHistorySuggest,
     true,
     "use_history_suggest",
-    IDS_MOZC(USE_HISTORY_SUGGEST),
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_HISTORY_SUGGEST,
     PrefService::SYNCABLE_PREF },
   { prefs::kLanguageMozcUseDictionarySuggest,
     true,
     "use_dictionary_suggest",
-    IDS_MOZC(USE_DICTIONARY_SUGGEST),
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_USE_DICTIONARY_SUGGEST,
     PrefService::SYNCABLE_PREF },
 };
 COMPILE_ASSERT(kNumMozcBooleanPrefs == arraysize(kMozcBooleanPrefs),
@@ -288,71 +267,71 @@ extern const LanguageMultipleChoicePreference<const char*>
   { prefs::kLanguageMozcPreeditMethod,
     "ROMAN",
     "preedit_method",
-    {{ "ROMAN", IDS_MOZC(PREEDIT_METHOD_ROMAN) },
-     { "KANA", IDS_MOZC(PREEDIT_METHOD_KANA) }},
-    IDS_MOZC(PREEDIT_METHOD),
+    {{ "ROMAN", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD_ROMAN },
+     { "KANA", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD_KANA }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PREEDIT_METHOD,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSessionKeymap,
     "MSIME",
     "session_keymap",
-    {{ "ATOK", IDS_MOZC(SESSION_KEYMAP_ATOK) },
-     { "MSIME", IDS_MOZC(SESSION_KEYMAP_MSIME) },
-     { "KOTOERI", IDS_MOZC(SESSION_KEYMAP_KOTOERI) }},
+    {{ "ATOK", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP_ATOK },
+     { "MSIME", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP_MSIME },
+     { "KOTOERI", IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP_KOTOERI }},
     // TODO: Support "CUSTOM" keymap.
-    IDS_MOZC(SESSION_KEYMAP),
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SESSION_KEYMAP,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcPunctuationMethod,
     "KUTEN_TOUTEN",
     "punctuation_method",
     {{ "KUTEN_TOUTEN",
-       IDS_MOZC(PUNCTUATION_METHOD_KUTEN_TOUTEN) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD_KUTEN_TOUTEN },
      { "COMMA_PERIOD",
-       IDS_MOZC(PUNCTUATION_METHOD_COMMA_PERIOD) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD_COMMA_PERIOD },
      { "KUTEN_PERIOD",
-       IDS_MOZC(PUNCTUATION_METHOD_KUTEN_PERIOD) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD_KUTEN_PERIOD },
      { "COMMA_TOUTEN",
-       IDS_MOZC(PUNCTUATION_METHOD_COMMA_TOUTEN) }},
-    IDS_MOZC(PUNCTUATION_METHOD),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD_COMMA_TOUTEN }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_PUNCTUATION_METHOD,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSymbolMethod,
     "CORNER_BRACKET_MIDDLE_DOT",
     "symbol_method",
     {{ "CORNER_BRACKET_MIDDLE_DOT",
-       IDS_MOZC(SYMBOL_METHOD_CORNER_BRACKET_MIDDLE_DOT) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD_CORNER_BRACKET_MIDDLE_DOT },
      { "SQUARE_BRACKET_SLASH",
-       IDS_MOZC(SYMBOL_METHOD_SQUARE_BRACKET_SLASH) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD_SQUARE_BRACKET_SLASH },
      { "CORNER_BRACKET_SLASH",
-       IDS_MOZC(SYMBOL_METHOD_CORNER_BRACKET_SLASH) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD_CORNER_BRACKET_SLASH },
      { "SQUARE_BRACKET_MIDDLE_DOT",
-       IDS_MOZC(SYMBOL_METHOD_SQUARE_BRACKET_MIDDLE_DOT) }},
-    IDS_MOZC(SYMBOL_METHOD),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD_SQUARE_BRACKET_MIDDLE_DOT }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SYMBOL_METHOD,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcSpaceCharacterForm,
     "FUNDAMENTAL_INPUT_MODE",
     "space_character_form",
     {{ "FUNDAMENTAL_INPUT_MODE",
-       IDS_MOZC(SPACE_CHARACTER_FORM_FUNDAMENTAL_INPUT_MODE) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM_FUNDAMENTAL_INPUT_MODE },
      { "FUNDAMENTAL_FULL_WIDTH",
-       IDS_MOZC(SPACE_CHARACTER_FORM_FUNDAMENTAL_FULL_WIDTH) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM_FUNDAMENTAL_FULL_WIDTH },
      { "FUNDAMENTAL_HALF_WIDTH",
-       IDS_MOZC(SPACE_CHARACTER_FORM_FUNDAMENTAL_HALF_WIDTH) }},
-    IDS_MOZC(SPACE_CHARACTER_FORM),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM_FUNDAMENTAL_HALF_WIDTH }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SPACE_CHARACTER_FORM,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcHistoryLearningLevel,
     "DEFAULT_HISTORY",
     "history_learning_level",
     {{ "DEFAULT_HISTORY",
-       IDS_MOZC(HISTORY_LEARNING_LEVEL_DEFAULT_HISTORY) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL_DEFAULT_HISTORY },
      { "READ_ONLY",
-       IDS_MOZC(HISTORY_LEARNING_LEVEL_READ_ONLY) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL_READ_ONLY },
      { "NO_HISTORY",
-       IDS_MOZC(HISTORY_LEARNING_LEVEL_NO_HISTORY) }},
-    IDS_MOZC(HISTORY_LEARNING_LEVEL),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL_NO_HISTORY }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_HISTORY_LEARNING_LEVEL,
     PrefService::SYNCABLE_PREF,
   },
   // TODO(mazda): Uncomment this block once the candidate window in Chrome OS
@@ -361,38 +340,38 @@ extern const LanguageMultipleChoicePreference<const char*>
   //   "SHORTCUT_123456789",
   //   "selection_shortcut",
   //   {{ "NO_SHORTCUT",
-  //      IDS_MOZC(SELECTION_SHORTCUT_NO_SHORTCUT) },
+  //      IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT_NO_SHORTCUT },
   //    { "SHORTCUT_123456789",
-  //      IDS_MOZC(SELECTION_SHORTCUT_SHORTCUT_123456789) },
+  //      IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT_SHORTCUT_123456789 },
   //    { "SHORTCUT_ASDFGHJKL",
-  //      IDS_MOZC(SELECTION_SHORTCUT_SHORTCUT_ASDFGHJKL) }},
-  //   IDS_MOZC(SELECTION_SHORTCUT),
+  //      IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT_SHORTCUT_ASDFGHJKL }},
+  //   IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SELECTION_SHORTCUT,
   //   PrefService::SYNCABLE_PREF,
   // },
   { prefs::kLanguageMozcShiftKeyModeSwitch,
     "ASCII_INPUT_MODE",
     "shift_key_mode_switch",
     {{ "OFF",
-       IDS_MOZC(SHIFT_KEY_MODE_SWITCH_OFF) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH_OFF },
      { "ASCII_INPUT_MODE",
-       IDS_MOZC(SHIFT_KEY_MODE_SWITCH_ASCII_INPUT_MODE) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH_ASCII_INPUT_MODE },
      { "KATAKANA_INPUT_MODE",
-       IDS_MOZC(SHIFT_KEY_MODE_SWITCH_KATAKANA_INPUT_MODE) }},
-    IDS_MOZC(SHIFT_KEY_MODE_SWITCH),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH_KATAKANA_INPUT_MODE }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SHIFT_KEY_MODE_SWITCH,
     PrefService::SYNCABLE_PREF,
   },
   { prefs::kLanguageMozcNumpadCharacterForm,
     "NUMPAD_HALF_WIDTH",
     "numpad_character_form",
     {{ "NUMPAD_INPUT_MODE",
-       IDS_MOZC(NUMPAD_CHARACTER_FORM_NUMPAD_INPUT_MODE) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM_NUMPAD_INPUT_MODE },
      { "NUMPAD_FULL_WIDTH",
-       IDS_MOZC(NUMPAD_CHARACTER_FORM_NUMPAD_FULL_WIDTH) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM_NUMPAD_FULL_WIDTH },
      { "NUMPAD_HALF_WIDTH",
-       IDS_MOZC(NUMPAD_CHARACTER_FORM_NUMPAD_HALF_WIDTH) },
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM_NUMPAD_HALF_WIDTH },
      { "NUMPAD_DIRECT_INPUT",
-       IDS_MOZC(NUMPAD_CHARACTER_FORM_NUMPAD_DIRECT_INPUT) }},
-    IDS_MOZC(NUMPAD_CHARACTER_FORM),
+       IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM_NUMPAD_DIRECT_INPUT }},
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_NUMPAD_CHARACTER_FORM,
     PrefService::SYNCABLE_PREF,
   },
 };
@@ -402,17 +381,16 @@ COMPILE_ASSERT(kNumMozcMultipleChoicePrefs ==
 
 const LanguageIntegerRangePreference kMozcIntegerPrefs[] = {
   { prefs::kLanguageMozcSuggestionsSize, 3, 1, 9, "suggestions_size",
-    IDS_MOZC(SUGGESTIONS_SIZE), PrefService::SYNCABLE_PREF }
+    IDS_OPTIONS_SETTINGS_LANGUAGES_MOZC_SUGGESTIONS_SIZE,
+    PrefService::SYNCABLE_PREF }
 };
 COMPILE_ASSERT(kNumMozcIntegerPrefs == arraysize(kMozcIntegerPrefs),
                TheSizeShouldMatch);
 
-#undef IDS_MOZC
-
 // ---------------------------------------------------------------------------
 // For keyboard stuff
 // ---------------------------------------------------------------------------
-const int kXkbAutoRepeatDelayInMs = 500;
+const int kXkbAutoRepeatDelayInMs = 750;
 const int kXkbAutoRepeatIntervalInMs = 50;
 const char kPreferredKeyboardLayout[] = "PreferredKeyboardLayout";
 

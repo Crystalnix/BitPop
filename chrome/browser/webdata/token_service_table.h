@@ -6,6 +6,10 @@
 #define CHROME_BROWSER_WEBDATA_TOKEN_SERVICE_TABLE_H_
 #pragma once
 
+#include <map>
+#include <string>
+
+#include "base/compiler_specific.h"
 #include "chrome/browser/webdata/web_database_table.h"
 
 class TokenServiceTable : public WebDatabaseTable {
@@ -13,8 +17,8 @@ class TokenServiceTable : public WebDatabaseTable {
   TokenServiceTable(sql::Connection* db, sql::MetaTable* meta_table)
       : WebDatabaseTable(db, meta_table) {}
   virtual ~TokenServiceTable() {}
-  virtual bool Init();
-  virtual bool IsSyncable();
+  virtual bool Init() OVERRIDE;
+  virtual bool IsSyncable() OVERRIDE;
 
   // Remove all tokens previously set with SetTokenForService.
   bool RemoveAllTokens();
@@ -33,6 +37,5 @@ class TokenServiceTable : public WebDatabaseTable {
  private:
   DISALLOW_COPY_AND_ASSIGN(TokenServiceTable);
 };
-
 
 #endif  // CHROME_BROWSER_WEBDATA_TOKEN_SERVICE_TABLE_H_

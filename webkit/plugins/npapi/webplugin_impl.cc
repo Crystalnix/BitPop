@@ -4,36 +4,40 @@
 
 #include "webkit/plugins/npapi/webplugin_impl.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/message_loop.h"
+#include "base/metrics/histogram.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
 #include "base/utf_string_conversions.h"
 #include "googleurl/src/gurl.h"
+#include "googleurl/src/url_util.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCookieJar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCookieJar.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHTTPBody.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPBody.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPHeaderVisitor.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKitClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoader.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/rect.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
@@ -65,6 +69,7 @@ using WebKit::WebURL;
 using WebKit::WebURLError;
 using WebKit::WebURLLoader;
 using WebKit::WebURLLoaderClient;
+using WebKit::WebURLLoaderOptions;
 using WebKit::WebURLRequest;
 using WebKit::WebURLResponse;
 using WebKit::WebVector;
@@ -75,6 +80,22 @@ namespace webkit {
 namespace npapi {
 
 namespace {
+
+const char kFlashMimeType[] = "application/x-shockwave-flash";
+const char kOctetStreamMimeType[] = "application/octet-stream";
+const char kHTMLMimeType[] = "text/html";
+const char kPlainTextMimeType[] = "text/plain";
+const char kPluginFlashMimeType[] = "Plugin.FlashMIMEType";
+
+enum {
+  MIME_TYPE_OK = 0,
+  MIME_TYPE_EMPTY,
+  MIME_TYPE_OCTETSTREAM,
+  MIME_TYPE_HTML,
+  MIME_TYPE_PLAINTEXT,
+  MIME_TYPE_OTHER,
+  MIME_TYPE_NUM_EVENTS
+};
 
 // This class handles individual multipart responses. It is instantiated when
 // we receive HTTP status code 206 in the HTTP response. This indicates
@@ -96,7 +117,7 @@ class MultiPartResponseClient : public WebURLLoaderClient {
   // response.
   virtual void didReceiveResponse(
       WebURLLoader*, const WebURLResponse& response) {
-    int instance_size;
+    int64 instance_size;
     if (!MultipartResponseDelegate::ReadContentRanges(
             response,
             &byte_range_lower_bound_,
@@ -134,9 +155,9 @@ class MultiPartResponseClient : public WebURLLoaderClient {
  private:
   WebURLResponse resource_response_;
   // The lower bound of the byte range.
-  int byte_range_lower_bound_;
+  int64 byte_range_lower_bound_;
   // The upper bound of the byte range.
-  int byte_range_upper_bound_;
+  int64 byte_range_upper_bound_;
   // The handler for the data.
   WebPluginResourceClient* resource_client_;
 };
@@ -222,6 +243,7 @@ struct WebPluginImpl::ClientInfo {
   bool pending_failure_notification;
   linked_ptr<WebKit::WebURLLoader> loader;
   bool notify_redirects;
+  bool is_plugin_src_load;
 };
 
 bool WebPluginImpl::initialize(WebPluginContainer* container) {
@@ -256,6 +278,16 @@ void WebPluginImpl::destroy() {
 
 NPObject* WebPluginImpl::scriptableObject() {
   return delegate_->GetPluginScriptableObject();
+}
+
+bool WebPluginImpl::getFormValue(WebKit::WebString& value) {
+  if (!delegate_)
+    return false;
+  string16 form_value;
+  if (!delegate_->GetFormValue(&form_value))
+    return false;
+  value = form_value;
+  return true;
 }
 
 void WebPluginImpl::paint(WebCanvas* canvas, const WebRect& paint_rect) {
@@ -317,9 +349,9 @@ void WebPluginImpl::updateGeometry(
       // geometry received by a call to setFrameRect in the Webkit
       // layout code path. To workaround this issue we download the
       // plugin source url on a timer.
-      MessageLoop::current()->PostDelayedTask(
-          FROM_HERE, method_factory_.NewRunnableMethod(
-              &WebPluginImpl::OnDownloadPluginSrcUrl), 0);
+      MessageLoop::current()->PostTask(
+          FROM_HERE, base::Bind(&WebPluginImpl::OnDownloadPluginSrcUrl,
+                                weak_factory_.GetWeakPtr()));
     }
   }
 
@@ -424,86 +456,12 @@ void WebPluginImpl::didFailLoadingFrameRequest(
       url, reason, reinterpret_cast<intptr_t>(notify_data));
 }
 
-bool WebPluginImpl::supportsPaginatedPrint() {
-  if (!delegate_)
-    return false;
-  return delegate_->PrintSupportsPrintExtension();
-}
-
-int WebPluginImpl::printBegin(const WebRect& printable_area, int printer_dpi) {
-  if (!delegate_)
-    return 0;
-
-  if (!supportsPaginatedPrint())
-    return 0;
-
-  return delegate_->PrintBegin(printable_area, printer_dpi);
-}
-
-bool WebPluginImpl::printPage(int page_number, WebCanvas* canvas) {
-  if (!delegate_)
-    return false;
-
-  return delegate_->PrintPage(page_number, canvas);
-}
-
-void WebPluginImpl::printEnd() {
-  if (delegate_)
-    delegate_->PrintEnd();
-}
-
-bool WebPluginImpl::hasSelection() const {
-  if (!delegate_)
-    return false;
-
-  return delegate_->HasSelection();
-}
-
-WebKit::WebString WebPluginImpl::selectionAsText() const {
-  if (!delegate_)
-    return WebString();
-
-  return delegate_->GetSelectionAsText();
-}
-
-WebKit::WebString WebPluginImpl::selectionAsMarkup() const {
-  if (!delegate_)
-    return WebString();
-
-  return delegate_->GetSelectionAsMarkup();
-}
-
-void WebPluginImpl::setZoomFactor(float scale, bool text_only) {
-  if (delegate_)
-    delegate_->SetZoomFactor(scale, text_only);
-}
-
-bool WebPluginImpl::startFind(const WebKit::WebString& search_text,
-                         bool case_sensitive,
-                         int identifier) {
-  if (!delegate_)
-    return false;
-  return delegate_->StartFind(search_text, case_sensitive, identifier);
-}
-
-void WebPluginImpl::selectFindResult(bool forward) {
-  if (delegate_)
-    delegate_->SelectFindResult(forward);
-}
-
-void WebPluginImpl::stopFind() {
-  if (delegate_)
-    delegate_->StopFind();
-}
-
-
 // -----------------------------------------------------------------------------
 
 WebPluginImpl::WebPluginImpl(
     WebFrame* webframe,
     const WebPluginParams& params,
     const FilePath& file_path,
-    const std::string& mime_type,
     const base::WeakPtr<WebPluginPageDelegate>& page_delegate)
     : windowless_(false),
       window_(gfx::kNullPluginWindow),
@@ -517,8 +475,8 @@ WebPluginImpl::WebPluginImpl(
       first_geometry_update_(true),
       ignore_response_error_(false),
       file_path_(file_path),
-      mime_type_(mime_type),
-      ALLOW_THIS_IN_INITIALIZER_LIST(method_factory_(this)) {
+      mime_type_(UTF16ToASCII(params.mimeType)),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
   StringToLowerASCII(&mime_type_);
 
@@ -532,38 +490,31 @@ WebPluginImpl::~WebPluginImpl() {
 }
 
 void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
-#if defined(OS_MACOSX)
-  // The only time this is called twice, and the second time with a
-  // non-zero PluginWindowHandle, is the case when this WebPluginImpl
-  // is created on behalf of the GPU plugin. This entire code path
-  // will go away soon, as soon as the GPU plugin becomes the GPU
-  // process, so it is being separated out for easy deletion.
-
-  // The logic we want here is: if (window) DCHECK(!window_);
-  DCHECK(!(window_ && window));
-  window_ = window;
-  // Lie to ourselves about being windowless even if we got a fake
-  // plugin window handle, so we continue to get input events.
-  windowless_ = true;
-  accepts_input_events_ = true;
-  // We do not really need to notify the page delegate that a plugin
-  // window was created -- so don't.
-#else
   if (window) {
     DCHECK(!windowless_);
     window_ = window;
+#if defined(OS_MACOSX)
+    // TODO(kbr): remove. http://crbug.com/105344
+
+    // Lie to ourselves about being windowless even if we got a fake
+    // plugin window handle, so we continue to get input events.
+    windowless_ = true;
+    accepts_input_events_ = true;
+    // We do not really need to notify the page delegate that a plugin
+    // window was created -- so don't.
+#else
     accepts_input_events_ = false;
     if (page_delegate_) {
       // Tell the view delegate that the plugin window was created, so that it
       // can create necessary container widgets.
       page_delegate_->CreatedPluginWindow(window);
     }
+#endif
   } else {
     DCHECK(!window_);  // Make sure not called twice.
     windowless_ = true;
     accepts_input_events_ = true;
   }
-#endif
 }
 
 void WebPluginImpl::SetAcceptsInputEvents(bool accepts) {
@@ -637,7 +588,7 @@ WebPluginDelegate* WebPluginImpl::delegate() {
 
 bool WebPluginImpl::IsValidUrl(const GURL& url, Referrer referrer_flag) {
   if (referrer_flag == PLUGIN_SRC &&
-      mime_type_ == "application/x-shockwave-flash" &&
+      mime_type_ == kFlashMimeType &&
       url.GetOrigin() != plugin_url_.GetOrigin()) {
     // Do url check to make sure that there are no @, ;, \ chars in between url
     // scheme and url path.
@@ -745,6 +696,11 @@ NPObject* WebPluginImpl::GetPluginElement() {
   return container_->scriptableObjectForElement();
 }
 
+bool WebPluginImpl::FindProxyForUrl(const GURL& url, std::string* proxy_list) {
+  // Proxy resolving doesn't work in single-process mode.
+  return false;
+}
+
 void WebPluginImpl::SetCookie(const GURL& url,
                               const GURL& first_party_for_cookies,
                               const std::string& cookie) {
@@ -775,10 +731,6 @@ std::string WebPluginImpl::GetCookies(const GURL& url,
   return UTF16ToUTF8(cookie_jar->cookies(url, first_party_for_cookies));
 }
 
-void WebPluginImpl::OnMissingPluginStatus(int status) {
-  NOTREACHED();
-}
-
 void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {
   for (size_t i = 0; i < clients_.size(); ++i) {
     if (clients_[i].id == static_cast<unsigned long>(resource_id)) {
@@ -787,13 +739,47 @@ void WebPluginImpl::URLRedirectResponse(bool allow, int resource_id) {
           clients_[i].loader->setDefersLoading(false);
         } else {
           clients_[i].loader->cancel();
-          clients_[i].client->DidFail();
+          if (clients_[i].client)
+            clients_[i].client->DidFail();
         }
       }
       break;
     }
   }
 }
+
+#if defined(OS_MACOSX)
+void WebPluginImpl::AcceleratedPluginEnabledRendering() {
+}
+
+void WebPluginImpl::AcceleratedPluginAllocatedIOSurface(int32 width,
+                                                        int32 height,
+                                                        uint32 surface_id) {
+  next_io_surface_allocated_ = true;
+  next_io_surface_width_ = width;
+  next_io_surface_height_ = height;
+  next_io_surface_id_ = surface_id;
+}
+
+void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
+  if (container_) {
+    // Deferring the call to setBackingIOSurfaceId is an attempt to
+    // work around garbage occasionally showing up in the plugin's
+    // area during live resizing of Core Animation plugins. The
+    // assumption was that by the time this was called, the plugin
+    // process would have populated the newly allocated IOSurface. It
+    // is not 100% clear at this point why any garbage is getting
+    // through. More investigation is needed. http://crbug.com/105346
+    if (next_io_surface_allocated_) {
+      container_->setBackingIOSurfaceId(next_io_surface_width_,
+                                        next_io_surface_height_,
+                                        next_io_surface_id_);
+      next_io_surface_allocated_ = false;
+    }
+    container_->commitBackingTexture();
+  }
+}
+#endif
 
 void WebPluginImpl::Invalidate() {
   if (container_)
@@ -808,7 +794,7 @@ void WebPluginImpl::InvalidateRect(const gfx::Rect& rect) {
 void WebPluginImpl::OnDownloadPluginSrcUrl() {
   HandleURLRequestInternal(
       plugin_url_.spec().c_str(), "GET", NULL, NULL, 0, 0, false, DOCUMENT_URL,
-      false);
+      false, true);
 }
 
 WebPluginResourceClient* WebPluginImpl::GetClientFromLoader(
@@ -835,6 +821,17 @@ void WebPluginImpl::willSendRequest(WebURLLoader* loader,
                                     const WebURLResponse& response) {
   WebPluginImpl::ClientInfo* client_info = GetClientInfoFromLoader(loader);
   if (client_info) {
+    // Currently this check is just to catch an https -> http redirect when
+    // loading the main plugin src URL. Longer term, we could investigate
+    // firing mixed diplay or scripting issues for subresource loads
+    // initiated by plug-ins.
+    if (client_info->is_plugin_src_load &&
+        webframe_ &&
+        !webframe_->checkIfRunInsecureContent(request.url())) {
+      loader->cancel();
+      client_info->client->DidFail();
+      return;
+    }
     if (net::HttpResponseHeaders::IsRedirectResponseCode(
             response.httpStatusCode())) {
       // If the plugin does not participate in url redirect notifications then
@@ -876,6 +873,53 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
 
   ResponseInfo response_info;
   GetResponseInfo(response, &response_info);
+
+  ClientInfo* client_info = GetClientInfoFromLoader(loader);
+  if (!client_info)
+    return;
+
+  // Defend against content confusion by the Flash plug-in.
+  if (client_info->is_plugin_src_load &&
+      mime_type_ == kFlashMimeType) {
+    std::string sniff =
+        response.httpHeaderField("X-Content-Type-Options").utf8();
+    std::string content_type =
+        response.httpHeaderField("Content-Type").utf8();
+    StringToLowerASCII(&sniff);
+    StringToLowerASCII(&content_type);
+    if (content_type.find(kFlashMimeType) != std::string::npos) {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_OK,
+                                MIME_TYPE_NUM_EVENTS);
+    } else if (content_type.empty()) {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_EMPTY,
+                                MIME_TYPE_NUM_EVENTS);
+    } else if (content_type.find(kOctetStreamMimeType) != std::string::npos) {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_OCTETSTREAM,
+                                MIME_TYPE_NUM_EVENTS);
+    } else if (content_type.find(kHTMLMimeType) != std::string::npos) {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_HTML,
+                                MIME_TYPE_NUM_EVENTS);
+    } else if (content_type.find(kPlainTextMimeType) != std::string::npos) {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_PLAINTEXT,
+                                MIME_TYPE_NUM_EVENTS);
+    } else {
+      UMA_HISTOGRAM_ENUMERATION(kPluginFlashMimeType,
+                                MIME_TYPE_OTHER,
+                                MIME_TYPE_NUM_EVENTS);
+    }
+    if (sniff.find("nosniff") != std::string::npos &&
+        !content_type.empty() &&
+        content_type.find(kFlashMimeType) == std::string::npos) {
+      loader->cancel();
+      client_info->client->DidFail();
+      return;
+    }
+  }
 
   bool request_is_seekable = true;
   if (client->IsMultiByteResponseExpected()) {
@@ -1037,7 +1081,7 @@ void WebPluginImpl::HandleURLRequest(const char* url,
   // plugin SRC url as the referrer if it is available.
   HandleURLRequestInternal(
       url, method, target, buf, len, notify_id, popups_allowed, PLUGIN_SRC,
-      notify_redirects);
+      notify_redirects, false);
 }
 
 void WebPluginImpl::HandleURLRequestInternal(const char* url,
@@ -1048,7 +1092,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
                                              int notify_id,
                                              bool popups_allowed,
                                              Referrer referrer_flag,
-                                             bool notify_redirects) {
+                                             bool notify_redirects,
+                                             bool is_plugin_src_load) {
   // For this request, we either route the output to a frame
   // because a target has been specified, or we handle the request
   // here, i.e. by executing the script if it is a javascript url
@@ -1056,7 +1101,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   // case in that the request is a javascript url and the target is "_self",
   // in which case we route the output to the plugin rather than routing it
   // to the plugin's frame.
-  bool is_javascript_url = StartsWithASCII(url, "javascript:", false);
+  bool is_javascript_url = url_util::FindAndCompareScheme(
+      url, strlen(url), "javascript", NULL);
   RoutingStatus routing_status = RouteToFrame(
       url, is_javascript_url, popups_allowed, method, target, buf, len,
       notify_id, referrer_flag);
@@ -1106,7 +1152,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
     return;
 
   InitiateHTTPRequest(resource_id, resource_client, complete_url, method, buf,
-                      len, NULL, referrer_flag, notify_redirects);
+                      len, NULL, referrer_flag, notify_redirects,
+                      is_plugin_src_load);
 }
 
 unsigned long WebPluginImpl::GetNextResourceId() {
@@ -1126,7 +1173,8 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
                                         int buf_len,
                                         const char* range_info,
                                         Referrer referrer_flag,
-                                        bool notify_redirects) {
+                                        bool notify_redirects,
+                                        bool is_plugin_src_load) {
   if (!client) {
     NOTREACHED();
     return false;
@@ -1144,6 +1192,7 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.request.setHTTPMethod(WebString::fromUTF8(method));
   info.pending_failure_notification = false;
   info.notify_redirects = notify_redirects;
+  info.is_plugin_src_load = is_plugin_src_load;
 
   if (range_info) {
     info.request.addHTTPHeaderField(WebString::fromUTF8("Range"),
@@ -1158,7 +1207,11 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
 
   SetReferrer(&info.request, referrer_flag);
 
-  info.loader.reset(webframe_->createAssociatedURLLoader());
+  WebURLLoaderOptions options;
+  options.allowCredentials = true;
+  options.crossOriginRequestPolicy =
+      WebURLLoaderOptions::CrossOriginRequestPolicyAllow;
+  info.loader.reset(webframe_->createAssociatedURLLoader(options));
   if (!info.loader.get())
     return false;
   info.loader->loadAsynchronously(info.request, this);
@@ -1190,7 +1243,7 @@ void WebPluginImpl::InitiateHTTPRangeRequest(
       delegate_->CreateSeekableResourceClient(resource_id, range_request_id);
   InitiateHTTPRequest(
       resource_id, resource_client, complete_url, "GET", NULL, 0, range_info,
-      load_manually_ ? NO_REFERRER : PLUGIN_SRC, false);
+      load_manually_ ? NO_REFERRER : PLUGIN_SRC, false, false);
 }
 
 void WebPluginImpl::SetDeferResourceLoading(unsigned long resource_id,
@@ -1325,7 +1378,7 @@ void WebPluginImpl::TearDownPluginInstance(
   // This needs to be called now and not in the destructor since the
   // webframe_ might not be valid anymore.
   webframe_ = NULL;
-  method_factory_.RevokeAll();
+  weak_factory_.InvalidateWeakPtrs();
 }
 
 void WebPluginImpl::SetReferrer(WebKit::WebURLRequest* request,

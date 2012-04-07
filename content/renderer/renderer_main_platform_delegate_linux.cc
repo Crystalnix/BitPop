@@ -1,15 +1,15 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/renderer/renderer_main_platform_delegate.h"
 
 #include "base/command_line.h"
-#include "content/common/content_switches.h"
-#include "seccompsandbox/sandbox.h"
+#include "content/common/seccomp_sandbox.h"
+#include "content/public/common/content_switches.h"
 
 RendererMainPlatformDelegate::RendererMainPlatformDelegate(
-    const MainFunctionParams& parameters)
+    const content::MainFunctionParams& parameters)
     : parameters_(parameters) {
 }
 
@@ -34,13 +34,11 @@ bool RendererMainPlatformDelegate::EnableSandbox() {
   //
   // The seccomp sandbox is started in the renderer.
   // http://code.google.com/p/seccompsandbox/
-#if defined(ARCH_CPU_X86_FAMILY) && !defined(CHROMIUM_SELINUX) && \
-    !defined(__clang__)
+#if defined(SECCOMP_SANDBOX)
   // N.b. SupportsSeccompSandbox() returns a cached result, as we already
   // called it earlier in the zygote. Thus, it is OK for us to not pass in
   // a file descriptor for "/proc".
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableSeccompSandbox) && SupportsSeccompSandbox(-1))
+  if (SeccompSandboxEnabled() && SupportsSeccompSandbox(-1))
     StartSeccompSandbox();
 #endif
   return true;

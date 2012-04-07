@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,64 +10,57 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/observer_list.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/signed_settings.h"
-#include "net/proxy/proxy_config.h"
-#include "net/proxy/proxy_config_service.h"
-#include "net/proxy/proxy_server.h"
+#include "chrome/browser/chromeos/cros/network_library.h"
+#include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
+#include "chrome/browser/prefs/pref_member.h"
 
 namespace chromeos {
 
 // Implementation of proxy config service for chromeos that:
-// - is RefCountedThreadSafe
-// - is wrapped by chromeos::ProxyConfigService which implements
-//   net::ProxyConfigService interface by fowarding the methods to this class
+// - extends PrefProxyConfigTrackerImpl (and so lives and runs entirely on UI
+//   thread) to handle proxy from prefs (via PrefProxyConfigTrackerImpl) and
+//   system i.e. network (via flimflam notifications)
+// - exists one per profile and one per local state
 // - retrieves initial system proxy configuration from cros settings persisted
-//   on chromeos device
-// - provides network stack with latest system proxy configuration for use on
-//   IO thread
-// - provides UI with methods to retrieve and modify system proxy configuration
-//   on UI thread
-// - TODO(kuan): persists proxy configuration settings on chromeos device using
-//   cros settings
+//   on chromeos device from chromeos revisions before migration to flimflam,
+// - persists proxy setting per network in flimflim
+// - provides network stack with latest effective proxy configuration for
+//   currently active network via PrefProxyConfigTrackerImpl's mechanism of
+//   pushing config to ChromeProxyConfigService
+// - provides UI with methods to retrieve and modify proxy configuration for
+//   any remembered network (either currently active or non-active) of current
+//   user profile
 class ProxyConfigServiceImpl
-    : public base::RefCountedThreadSafe<ProxyConfigServiceImpl>,
-      public SignedSettings::Delegate<bool>,
-      public SignedSettings::Delegate<std::string> {
+    : public PrefProxyConfigTrackerImpl,
+      public NetworkLibrary::NetworkManagerObserver,
+      public NetworkLibrary::NetworkObserver {
  public:
-  // ProxyConfigServiceImpl is created on the UI thread in
-  // chrome/browser/net/proxy_service_factory.cc::CreateProxyConfigService
-  // via BrowserProcess::chromeos_proxy_config_service_impl, and stored in
-  // g_browser_process as a scoped_refptr (because it's RefCountedThreadSafe).
+  // ProxyConfigServiceImpl is created in ProxyServiceFactory::
+  // CreatePrefProxyConfigTrackerImpl via Profile::GetProxyConfigTracker() for
+  // profile or IOThread constructor for local state and is owned by the
+  // respective classes.
   //
-  // Past that point, it can be accessed from the IO or UI threads.
-  //
-  // From the IO thread, it is accessed periodically through the wrapper class
-  // chromeos::ProxyConfigService via net::ProxyConfigService interface
-  // (GetLatestProxyConfig, AddObserver, RemoveObserver).
-  //
-  // From the UI thread, it is accessed via
-  // BrowserProcess::chromeos_proxy_config_service_impl to allow user to read
-  // or modify the proxy configuration via UIGetProxyConfig or
+  // From the UI, it is accessed via Profile::GetProxyConfigTracker to allow
+  // user to read or modify the proxy configuration via UIGetProxyConfig or
   // UISetProxyConfigTo* respectively.
-  // The new modified proxy config is posted to the IO thread through
-  // SetNewProxyConfig().  We then notify observers on the IO thread of the
-  // configuration change.
-
+  // The new modified proxy config, together with proxy from prefs if available,
+  // are used to determine the effective proxy config, which is then pushed
+  // through PrefProxyConfigTrackerImpl to ChromeProxyConfigService to the
+  // network stack.
+  //
   // In contrary to other platforms which simply use the systems' UI to allow
   // users to configure proxies, we have to implement our own UI on the chromeos
   // device.  This requires extra and specific UI requirements that
   // net::ProxyConfig does not suffice.  So we create an augmented analog to
   // net:ProxyConfig here to include and handle these UI requirements, e.g.
-  // - where configuration was picked up from - policy or owner
+  // - state of configuration e.g. where it was picked up from - policy,
+  //   extension, etc (refer to ProxyPrefs::ConfigState)
   // - the read/write access of a proxy setting
   // - may add more stuff later.
-  // This is then converted to the common net::ProxyConfig before being returned
-  // to ProxyService::GetLatestProxyConfig on the IO thread to be used on the
-  // network stack.
+  // This is then converted to the common net::ProxyConfig before being pushed
+  // to PrefProxyConfigTrackerImpl::OnProxyConfigChanged and then to the network
+  // stack.
   struct ProxyConfig {
     // Specifies if proxy config is direct, auto-detect, using pac script,
     // single-proxy, or proxy-per-scheme.
@@ -79,56 +72,54 @@ class ProxyConfigServiceImpl
       MODE_PROXY_PER_SCHEME,
     };
 
-    // Specifies where proxy configuration was picked up from.
-    enum Source {
-      SOURCE_NONE,    // No default configuration.
-      SOURCE_POLICY,  // Configuration is from policy.
-      SOURCE_OWNER,   // Configuration is from owner.
-    };
-
-    struct Setting {
-      Setting() : source(SOURCE_NONE) {}
-      bool CanBeWrittenByUser(bool user_is_owner);
-
-      Source source;
-    };
-
     // Proxy setting for mode = direct or auto-detect or using pac script.
-    struct AutomaticProxy : public Setting {
-      GURL    pac_url;  // Set if proxy is using pac script.
+    struct AutomaticProxy {
+      GURL pac_url;  // Set if proxy is using pac script.
     };
 
     // Proxy setting for mode = single-proxy or proxy-per-scheme.
-    struct ManualProxy : public Setting {
-      net::ProxyServer  server;
+    struct ManualProxy {
+      net::ProxyServer server;
     };
 
     ProxyConfig();
     ~ProxyConfig();
 
-    // Converts |this| to net::ProxyConfig.
-    void ToNetProxyConfig(net::ProxyConfig* net_config);
+    // Converts net::ProxyConfig to |this|.
+    bool FromNetProxyConfig(const net::ProxyConfig& net_config);
 
-    // Returns true if proxy config can be written by user.
-    // If mode is MODE_PROXY_PER_SCHEME, |scheme| is one of "http", "https",
-    // "ftp" or "socks"; otherwise, it should be empty or will be ignored.
-    bool CanBeWrittenByUser(bool user_is_owner, const std::string& scheme);
+    // Converts |this| to Dictionary of ProxyConfigDictionary format (which
+    // is the same format used by prefs).
+    DictionaryValue* ToPrefProxyConfig();
 
     // Map |scheme| (one of "http", "https", "ftp" or "socks") to the correct
     // ManualProxy.  Returns NULL if scheme is invalid.
     ManualProxy* MapSchemeToProxy(const std::string& scheme);
 
-    // Serializes config into a DictionaryValue and then into std::string
-    // persisted as property on device.
-    bool Serialize(std::string* output);
-    // Deserializes from property value on device as std::string into a
-    // DictionaryValue and then into the config.  Opposite of Serialize.
-    bool Deserialize(const std::string& input);
+    // We've migrated device settings to flimflam, so we only need to
+    // deserialize previously persisted device settings.
+    // Deserializes from signed setting on device as std::string into a
+    // protobuf and then into the config.
+    bool DeserializeForDevice(const std::string& input);
 
-    // Creates a textual dump of the configuration.
-    std::string ToString() const;
+    // Serializes config into a ProxyConfigDictionary and then std::string
+    // persisted as string property in flimflam for a network.
+    bool SerializeForNetwork(std::string* output);
+
+    // Encodes the proxy server as "<url-scheme>=<proxy-scheme>://<proxy>"
+    static void EncodeAndAppendProxyServer(const std::string& scheme,
+                                           const net::ProxyServer& server,
+                                           std::string* spec);
 
     Mode mode;
+
+    ProxyPrefs::ConfigState state;
+
+    // True if user can modify proxy settings via UI.
+    // If proxy is managed by policy or extension or other_precde or is for
+    // shared network but kUseSharedProxies is turned off, it can't be modified
+    // by user.
+    bool user_modifiable;
 
     // Set if mode is MODE_DIRECT or MODE_AUTO_DETECT or MODE_PAC_SCRIPT.
     AutomaticProxy  automatic_proxy;
@@ -145,42 +136,34 @@ class ProxyConfigServiceImpl
 
     // Exceptions for when not to use a proxy.
     net::ProxyBypassRules  bypass_rules;
-
-   private:
-    // Encodes the proxy server as "<url-scheme>=<proxy-scheme>://<proxy>"
-    static void EncodeAndAppendProxyServer(const std::string& scheme,
-                                           const net::ProxyServer& server,
-                                           std::string* spec);
   };
 
-  // Usual constructor.
-  ProxyConfigServiceImpl();
-  // Constructor for testing.
-  // |init_config| specifies the ProxyConfig to use for initialization.
-  explicit ProxyConfigServiceImpl(const ProxyConfig& init_config);
+  // Constructor.
+  explicit ProxyConfigServiceImpl(PrefService* pref_service);
   virtual ~ProxyConfigServiceImpl();
 
-  // Methods called on IO thread from wrapper class chromeos::ProxyConfigService
-  // as ProxyConfigService methods.
-  void AddObserver(net::ProxyConfigService::Observer* observer);
-  void RemoveObserver(net::ProxyConfigService::Observer* observer);
-  // Called from GetLatestProxyConfig.
-  net::ProxyConfigService::ConfigAvailability IOGetProxyConfig(
-      net::ProxyConfig* config);
+  // Called by UI to set service path of |network| to be displayed or edited.
+  // Subsequent UISet* methods will use this network, until UI calls it again
+  // with a different network.
+  void UISetCurrentNetwork(const std::string& current_network);
 
-  // Called from UI thread to retrieve proxy configuration in |config|.
+  // Called from UI to make the currently active network the one to be displayed
+  // or edited. Subsequent UISet* methods will use this network until UI calls
+  // it again when the active network has changed.
+  void UIMakeActiveNetworkCurrent();
+
+  // Called from UI to get name of the current network set via
+  // UISetCurrentNetwork or UIMakeActiveNetworkCurrent.
+  void UIGetCurrentNetworkName(std::string* network_name);
+
+  // Called from UI to retrieve proxy configuration in |current_ui_config_|.
   void UIGetProxyConfig(ProxyConfig* config);
 
-  // Called from UI thread to set flag to persist settings to device.
-  // Subsequent UISet* methods will use this flag, until UI calls it again with
-  // a different flag.
-  void UISetPersistToDevice(bool persist) {
-    persist_to_device_ = persist;
-  }
-
-  // Called from UI thread to update proxy configuration for different modes.
-  // Returns true if config is set properly and config service has proceeded to
-  // start activating it on network stack and persisting it to device.
+  // Called from UI to update proxy configuration for different modes.
+  // Returns true if config is set properly and persisted to flimflam for the
+  // current network (set via UISetCurrentNetwork/UIMakeActiveNetworkCurrent).
+  // If this network is also currently active, config service proceeds to start
+  // activating it on network stack.
   // Returns false if config is not set properly, probably because information
   // is incomplete or invalid; while config service won't proceed to activate or
   // persist this config, the information is "cached" in the service, so that
@@ -195,67 +178,120 @@ class ProxyConfigServiceImpl
   // Only valid for MODE_SINGLE_PROXY or MODE_PROXY_PER_SCHEME.
   bool UISetProxyConfigBypassRules(const net::ProxyBypassRules& bypass_rules);
 
-  // Implementation for SignedSettings::Delegate
-  virtual void OnSettingsOpCompleted(SignedSettings::ReturnCode code,
-                                     std::string value);
-  virtual void OnSettingsOpCompleted(SignedSettings::ReturnCode code,
-                                     bool value);
+  // Add/Remove callback functions for notification when network to be viewed is
+  // changed by the UI.
+  void AddNotificationCallback(base::Closure callback);
+  void RemoveNotificationCallback(base::Closure callback);
+
+  // PrefProxyConfigTrackerImpl implementation.
+  virtual void OnProxyConfigChanged(ProxyPrefs::ConfigState config_state,
+                                    const net::ProxyConfig& config) OVERRIDE;
+
+  // NetworkLibrary::NetworkManagerObserver implementation.
+  virtual void OnNetworkManagerChanged(NetworkLibrary* cros) OVERRIDE;
+
+  // NetworkLibrary::NetworkObserver implementation.
+  virtual void OnNetworkChanged(NetworkLibrary* cros,
+                                const Network* network) OVERRIDE;
+
+  // Register UseShardProxies preference.
+  static void RegisterPrefs(PrefService* pref_service);
+
+#if defined(UNIT_TEST)
+  void SetTesting(ProxyConfig* test_config) {
+    UIMakeActiveNetworkCurrent();
+    if (test_config) {
+      std::string value;
+      test_config->SerializeForNetwork(&value);
+      SetProxyConfigForNetwork(active_network_, value, false);
+    }
+  }
+#endif  // defined(UNIT_TEST)
 
  private:
-  friend class base::RefCountedThreadSafe<ProxyConfigServiceImpl>;
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // Persists proxy config to device.
-  void PersistConfigToDevice();
+  // Called from the various UISetProxyConfigTo*.
+  void OnUISetProxyConfig();
 
-  // Called from UI thread from the various UISetProxyConfigTo*
-  // |update_to_device| is true to persist new proxy config to device.
-  void OnUISetProxyConfig(bool update_to_device);
+  // Called from OnNetworkManagerChanged and OnNetworkChanged for currently
+  // active network, to handle previously active network, new active network,
+  // and if necessary, migrates device settings to flimflam and/or activates
+  // proxy setting of new network.
+  void OnActiveNetworkChanged(NetworkLibrary* cros,
+                              const Network* active_network);
 
-  // Posted from UI thread to IO thread to carry the new config information.
-  void IOSetProxyConfig(
-      const ProxyConfig& new_config,
-      net::ProxyConfigService::ConfigAvailability new_availability);
+  // Sets proxy config for |network_path| into flimflam and activates setting
+  // if the network is currently active.  If |only_set_if_empty| is true,
+  // proxy will be set and saved only if network has no proxy.
+  void SetProxyConfigForNetwork(const std::string& network_path,
+                                const std::string& value,
+                                bool only_set_if_empty);
 
-  // Checks that method is called on BrowserThread::IO thread.
-  void CheckCurrentlyOnIOThread();
+  // Returns value of UseSharedProxies preference if it's not default, else
+  // returns false if user is logged in and true otherwise.
+  bool GetUseSharedProxies();
 
-  // Checks that method is called on BrowserThread::UI thread.
-  void CheckCurrentlyOnUIThread();
+  // Determines effective proxy config based on prefs from config tracker,
+  // |network| and if user is using shared proxies.
+  // If |activate| is true, effective config is stored in |active_config_| and
+  // activated on network stack, and hence, picked up by observers.
+  // if |activate| is false, effective config is stored in |current_ui_config_|
+  // but not activated on network stack, and hence, not picked up by observers.
+  void DetermineEffectiveConfig(const Network* network, bool activate);
+
+  // Determines |current_ui_config_| based on |network|, called from
+  // UISetCurrentNetwork and UIMakeActiveNetworkActive.
+  void OnUISetCurrentNetwork(const Network* network);
+
+  // Returns true if proxy is to be ignored for network, which happens if
+  // network is shared and use-shared-proxies is turned off.
+  bool IgnoreProxy(const Network* network) {
+    return network->profile_type() == PROFILE_SHARED && !GetUseSharedProxies();
+  }
+
+  // Reset UI cache variables that keep track of UI activities.
+  void ResetUICache();
+
+  void FetchProxyPolicy();
 
   // Data members.
 
-  // True if tasks can be posted, which can only happen if constructor has
-  // completed (NewRunnableMethod cannot be created for a RefCountedThreadBase's
-  // method until the class's ref_count is at least one).
-  bool can_post_task_;
+  // Service path of currently active network (determined via flimflam
+  // notifications); if effective proxy config is from system, proxy of this
+  // network will be the one taking effect.
+  std::string active_network_;
 
-  // Availability status of the configuration.
-  net::ProxyConfigService::ConfigAvailability config_availability_;
+  // State of |active_config_|.  |active_config_| is only valid if
+  // |active_config_state_| is not ProxyPrefs::CONFIG_UNSET.
+  ProxyPrefs::ConfigState active_config_state_;
 
-  // True if settings are to be persisted to device.
-  bool persist_to_device_;
+  // Active proxy configuration, which could be from prefs or network.
+  net::ProxyConfig active_config_;
 
-  // True if there's a pending operation to store proxy setting to device.
-  bool persist_to_device_pending_;
+  // Proxy config retreived from device, in format generated from
+  // SerializeForNetwork, that can be directly set into flimflam.
+  std::string device_config_;
 
-  // Cached proxy configuration, to be converted to net::ProxyConfig and
-  // returned by IOGetProxyConfig.
-  // Initially populated from the UI thread, but afterwards only accessed from
-  // the IO thread.
-  ProxyConfig cached_config_;
+  // Service path of network whose proxy configuration is being displayed or
+  // edited via UI, separate from |active_network_| which may be same or
+  // different.
+  std::string current_ui_network_;
 
-  // Copy of the proxy configuration kept on the UI thread of the last seen
-  // proxy config, so as to avoid posting a call to SetNewProxyConfig when we
-  // are called by UI to set new proxy but the config has not actually changed.
-  ProxyConfig reference_config_;
+  // Proxy configuration of |current_ui_network_|.
+  ProxyConfig current_ui_config_;
 
-  // List of observers for changes in proxy config.
-  ObserverList<net::ProxyConfigService::Observer> observers_;
+  // Track changes in UseSharedProxies user preference.
+  BooleanPrefMember use_shared_proxies_;
 
-  // Operations to retrieve and store proxy setting from and to device
-  // respectively.
-  scoped_refptr<SignedSettings> retrieve_property_op_;
-  scoped_refptr<SignedSettings> store_property_op_;
+  // Callbacks for notification when network to be viewed has been changed from
+  // the UI.
+  std::vector<base::Closure> callbacks_;
+
+  base::WeakPtrFactory<ProxyConfigServiceImpl> pointer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyConfigServiceImpl);
 };

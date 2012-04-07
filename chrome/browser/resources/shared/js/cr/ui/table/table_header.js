@@ -80,7 +80,9 @@ cr.define('cr.ui.table', function() {
         var cell = this.ownerDocument.createElement('div');
         cell.style.width = cm.getWidth(i) + '%';
         cell.className = 'table-header-cell';
-        cell.addEventListener('click', this.createSortFunction_(i).bind(this));
+        if (dm.isSortable(cm.getId(i)))
+          cell.addEventListener('click',
+                                this.createSortFunction_(i).bind(this));
 
         cell.appendChild(this.createHeaderLabel_(i));
         this.headerInner_.appendChild(cell);
@@ -122,7 +124,7 @@ cr.define('cr.ui.table', function() {
       labelDiv.className = 'table-header-label';
 
       var span = this.ownerDocument.createElement('span');
-      span.textContent = cm.getName(index);
+      span.appendChild(cm.renderHeader(index, this.table_));
       var rtl = this.ownerDocument.defaultView.getComputedStyle(this).
           direction == 'rtl';
       if (rtl) {

@@ -20,7 +20,7 @@
 // --noclearprofile: do not clear profile dir before firing up each time.
 // --savedebuglog: save Chrome, V8, and test debug log for each page loaded.
 #include <fstream>
-#include <iostream>
+#include <ostream>
 
 #include "base/command_line.h"
 #include "base/file_path.h"
@@ -49,12 +49,12 @@
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
-#include "chrome/test/reliability/page_load_test.h"
 #include "chrome/test/ui/ui_test.h"
 #include "chrome_frame/test/chrome_frame_test_utils.h"
 #include "chrome_frame/test/ie_event_sink.h"
+#include "chrome_frame/test/reliability/page_load_test.h"
 #include "chrome_frame/utils.h"
-#include "content/browser/browser_thread.h"
+#include "content/test/test_browser_thread.h"
 #include "net/base/net_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"

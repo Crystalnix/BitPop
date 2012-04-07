@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,10 @@
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_H_
 #pragma once
 
-#include "views/window/non_client_view.h"
+#include "base/memory/scoped_ptr.h"
+#include "ui/views/window/non_client_view.h"
 
+class AvatarMenuButton;
 class BrowserFrame;
 class BrowserView;
 
@@ -15,8 +17,10 @@ class BrowserView;
 // Browser-specific methods.
 class BrowserNonClientFrameView : public views::NonClientFrameView {
  public:
-  BrowserNonClientFrameView() : NonClientFrameView() {}
-  virtual ~BrowserNonClientFrameView() {}
+  BrowserNonClientFrameView(BrowserFrame* frame, BrowserView* browser_view);
+  virtual ~BrowserNonClientFrameView();
+
+  AvatarMenuButton* avatar_button() const { return avatar_button_.get(); }
 
   // Returns the bounds within which the TabStrip should be laid out.
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const = 0;
@@ -29,6 +33,32 @@ class BrowserNonClientFrameView : public views::NonClientFrameView {
 
   // Updates the throbber.
   virtual void UpdateThrobber(bool running) = 0;
+
+#if defined(OS_WIN)
+  // Overriden from views::View. For some reason just the do-nothing override
+  // causes view's gtk version to crash. TODO(cpu): remove ifdef when
+  // views:gtk is gone.
+  virtual void VisibilityChanged(views::View* starting_from,
+                                 bool is_visible) OVERRIDE;
+#endif
+
+ protected:
+  BrowserView* browser_view() const { return browser_view_; }
+  BrowserFrame* frame() const { return frame_; }
+
+  // Updates the title and icon of the avatar button.
+  void UpdateAvatarInfo();
+
+ private:
+  // The frame that hosts this view.
+  BrowserFrame* frame_;
+
+  // The BrowserView hosted within this View.
+  BrowserView* browser_view_;
+
+  // Menu button that displays that either the incognito icon or the profile
+  // icon.  May be NULL for some frame styles.
+  scoped_ptr<AvatarMenuButton> avatar_button_;
 };
 
 namespace browser {

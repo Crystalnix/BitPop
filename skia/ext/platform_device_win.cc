@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,9 +51,8 @@ void InitializeDC(HDC context) {
   SkASSERT(res != 0);
 }
 
-PlatformDevice::PlatformDevice(const SkBitmap& bitmap)
-    : SkDevice(NULL, bitmap, /*isForLayer=*/false) {
-  SetPlatformDevice(this, this);
+PlatformSurface PlatformDevice::BeginPlatformPaint() {
+  return 0;
 }
 
 void PlatformDevice::EndPlatformPaint() {
@@ -61,8 +60,12 @@ void PlatformDevice::EndPlatformPaint() {
   // Flushing will be done in onAccessBitmap.
 }
 
+void PlatformDevice::DrawToNativeContext(PlatformSurface surface, int x, int y,
+                                         const PlatformRect* src_rect) {
+}
+
 // static
-void PlatformDevice::LoadPathToDC(HDC context, const SkPath& path) {
+bool PlatformDevice::LoadPathToDC(HDC context, const SkPath& path) {
   switch (path.getFillType()) {
     case SkPath::kWinding_FillType: {
       int res = SetPolyFillMode(context, WINDING);
@@ -80,11 +83,13 @@ void PlatformDevice::LoadPathToDC(HDC context, const SkPath& path) {
     }
   }
   BOOL res = BeginPath(context);
-  SkASSERT(res != 0);
+  if (!res) {
+      return false;
+  }
 
   CubicPaths paths;
   if (!SkPathToCubicPaths(&paths, path))
-    return;
+    return false;
 
   std::vector<POINT> points;
   for (CubicPaths::const_iterator path(paths.begin()); path != paths.end();
@@ -119,6 +124,7 @@ void PlatformDevice::LoadPathToDC(HDC context, const SkPath& path) {
     res = EndPath(context);
     SkASSERT(res != 0);
   }
+  return true;
 }
 
 // static
@@ -179,7 +185,6 @@ bool PlatformDevice::SkPathToCubicPaths(CubicPaths* paths,
         current_path = &paths->back();
         continue;
       }
-      case SkPath::kDone_Verb:  // iter.next returns 0 points
       default: {
         current_path = NULL;
         // Will return false.
@@ -230,4 +235,3 @@ void PlatformDevice::LoadClippingRegionToDC(HDC context,
 }
 
 }  // namespace skia
-

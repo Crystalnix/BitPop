@@ -4,9 +4,10 @@
 
 #include "chrome/browser/chromeos/login/username_view.h"
 
+#include <algorithm>
+
 #include "base/logging.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/rounded_view.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkColorShader.h"
 #include "third_party/skia/include/core/SkComposeShader.h"
@@ -25,58 +26,11 @@ namespace {
 const SkColor kLabelBackgoundColor = 0x55000000;
 // Holds margin to height ratio.
 const double kMarginRatio = 1.0 / 3.0;
-// Holds the frame width for the small shaped username view.
-const SkScalar kSmallShapeFrameWidth = SkIntToScalar(1);
-
-// Class that sets up half rounded rectangle (only the bottom corners are
-// rounded) as a clip region of the view.
-// For more info see the file "chrome/browser/chromeos/login/rounded_view.h".
-template<typename C>
-class HalfRoundedView : public RoundedView<C> {
- public:
-  HalfRoundedView(const std::wstring &text, bool use_small_shape)
-      : RoundedView<C>(text, use_small_shape) {
-  }
-
- protected:
-  // Overrides ViewFilter.
-  virtual SkPath GetClipPath() const {
-    if (!C::use_small_shape()) {
-      return RoundedView<C>::GetClipPath();
-    } else {
-      SkPath path;
-      gfx::Rect frame_bounds = this->bounds();
-      frame_bounds.Inset(kSmallShapeFrameWidth, kSmallShapeFrameWidth,
-                   kSmallShapeFrameWidth, kSmallShapeFrameWidth);
-      path.addRect(SkIntToScalar(frame_bounds.x()),
-                   SkIntToScalar(frame_bounds.y()),
-                   SkIntToScalar(frame_bounds.x() + frame_bounds.width()),
-                   SkIntToScalar(frame_bounds.y() + frame_bounds.height()));
-      return path;
-    }
-  }
-
-  virtual void DrawFrame(gfx::Canvas* canvas) {
-    // No frame is needed.
-  }
-
-  virtual SkRect GetViewRect() const {
-    SkRect view_rect;
-    // The rectangle will be intersected with the bounds, so the correct half
-    // of the round rectangle will be obtained.
-    view_rect.iset(this->x(),
-                   this->y() - this->height(),
-                   this->x() + this->width(),
-                   this->y() + this->height());
-    return view_rect;
-  }
-};
-
 }  // namespace
 
 UsernameView::UsernameView(const std::wstring& username, bool use_small_shape)
     : views::Label(username.empty()
-          ? UTF16ToWide(l10n_util::GetStringUTF16(IDS_GUEST)) : username),
+          ? l10n_util::GetStringUTF16(IDS_GUEST) : WideToUTF16Hack(username)),
       use_small_shape_(use_small_shape),
       is_guest_(username.empty()) {
 }
@@ -96,7 +50,7 @@ void UsernameView::OnPaint(gfx::Canvas* canvas) {
 // static
 UsernameView* UsernameView::CreateShapedUsernameView(
     const std::wstring& username, bool use_small_shape) {
-  return new HalfRoundedView<UsernameView>(username, use_small_shape);
+  return new UsernameView(username, use_small_shape);
 }
 
 gfx::NativeCursor UsernameView::GetCursor(const views::MouseEvent& event) {
@@ -105,16 +59,16 @@ gfx::NativeCursor UsernameView::GetCursor(const views::MouseEvent& event) {
 
 void UsernameView::PaintUsername(const gfx::Rect& bounds) {
   margin_width_ = bounds.height() * kMarginRatio;
-  gfx::CanvasSkia canvas(bounds.width(), bounds.height(), false);
+  gfx::CanvasSkia canvas(bounds.size(), false);
   // Draw transparent background.
-  canvas.drawColor(0);
+  canvas.sk_canvas()->drawColor(0);
 
   // Calculate needed space.
   int flags = gfx::Canvas::TEXT_ALIGN_LEFT |
       gfx::Canvas::TEXT_VALIGN_MIDDLE |
       gfx::Canvas::NO_ELLIPSIS;
   int text_height, text_width;
-  gfx::CanvasSkia::SizeStringInt(WideToUTF16Hack(GetText()), font(),
+  gfx::CanvasSkia::SizeStringInt(GetText(), font(),
                                  &text_width, &text_height,
                                  flags);
   text_width += margin_width_;
@@ -152,14 +106,15 @@ void UsernameView::PaintUsername(const gfx::Rect& bounds) {
 
     SkPaint paint;
     paint.setShader(composite_shader)->unref();
-    canvas.drawPaint(paint);
+    canvas.sk_canvas()->drawPaint(paint);
   }
 
   // Draw the text.
   // Note, direct call of the DrawStringInt method produces the green dots
   // along the text perimeter (when the label is place on the white background).
+  SkColor text_color = enabled() ? enabled_color() : disabled_color();
   SkColor kInvisibleHaloColor = 0x00000000;
-  canvas.DrawStringWithHalo(WideToUTF16Hack(GetText()), font(), GetColor(),
+  canvas.DrawStringWithHalo(GetText(), font(), text_color,
                             kInvisibleHaloColor, bounds.x() + margin_width_,
                             bounds.y(), bounds.width() - 2 * margin_width_,
                             bounds.height(), flags);
@@ -168,7 +123,7 @@ void UsernameView::PaintUsername(const gfx::Rect& bounds) {
 
   if (use_fading_for_text) {
     // Fade out only the text in the end. Use regular background.
-    canvas.drawColor(kLabelBackgoundColor, SkXfermode::kSrc_Mode);
+    canvas.sk_canvas()->drawColor(kLabelBackgoundColor, SkXfermode::kSrc_Mode);
     SkShader* image_shader = SkShader::CreateBitmapShader(
         *text_image_,
         SkShader::kRepeat_TileMode,
@@ -181,14 +136,14 @@ void UsernameView::PaintUsername(const gfx::Rect& bounds) {
 
     SkPaint paint;
     paint.setShader(composite_shader)->unref();
-    canvas.drawPaint(paint);
+    canvas.sk_canvas()->drawPaint(paint);
     text_image_.reset(new SkBitmap(canvas.ExtractBitmap()));
   }
 }
 
 void UsernameView::OnLocaleChanged() {
   if (is_guest_) {
-    SetText(UTF16ToWide(l10n_util::GetStringUTF16(IDS_GUEST)));
+    SetText(l10n_util::GetStringUTF16(IDS_GUEST));
   }
   // Repaint because the font may have changed.
   text_image_.reset();

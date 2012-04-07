@@ -6,25 +6,30 @@
 
 #include <set>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/memory/scoped_callback_factory.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "chrome/common/safe_browsing/safebrowsing_messages.h"
 #include "chrome/renderer/safe_browsing/feature_extractor_clock.h"
 #include "chrome/renderer/safe_browsing/phishing_classifier.h"
 #include "chrome/renderer/safe_browsing/scorer.h"
-#include "content/renderer/navigation_state.h"
-#include "content/renderer/render_thread.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/document_state.h"
+#include "content/public/renderer/navigation_state.h"
+#include "content/public/renderer/render_thread.h"
+#include "content/public/renderer/render_view.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
-namespace safe_browsing {
+using content::DocumentState;
+using content::NavigationState;
+using content::RenderThread;
 
+namespace safe_browsing {
 
 static GURL StripRef(const GURL& url) {
   GURL::Replacements replacements;
@@ -34,43 +39,10 @@ static GURL StripRef(const GURL& url) {
 
 typedef std::set<PhishingClassifierDelegate*> PhishingClassifierDelegates;
 static base::LazyInstance<PhishingClassifierDelegates>
-    g_delegates(base::LINKER_INITIALIZED);
+    g_delegates = LAZY_INSTANCE_INITIALIZER;
 
 static base::LazyInstance<scoped_ptr<const safe_browsing::Scorer> >
-    g_phishing_scorer(base::LINKER_INITIALIZED);
-
-class ScorerCallback {
- public:
-  static Scorer::CreationCallback* CreateCallback() {
-    ScorerCallback* scorer_callback = new ScorerCallback();
-    return scorer_callback->callback_factory_->NewCallback(
-        &ScorerCallback::PhishingScorerCreated);
-  }
-
- private:
-  ScorerCallback() {
-    callback_factory_.reset(
-        new base::ScopedCallbackFactory<ScorerCallback>(this));
-  }
-
-  // Callback to be run once the phishing Scorer has been created.
-  void PhishingScorerCreated(safe_browsing::Scorer* scorer) {
-    if (!scorer) {
-      DLOG(ERROR) << "Unable to create a PhishingScorer - corrupt model?";
-      return;
-    }
-
-    g_phishing_scorer.Get().reset(scorer);
-
-    PhishingClassifierDelegates::iterator i;
-    for (i = g_delegates.Get().begin(); i != g_delegates.Get().end(); ++i)
-      (*i)->SetPhishingScorer(scorer);
-
-    delete this;
-  }
-
-  scoped_ptr<base::ScopedCallbackFactory<ScorerCallback> > callback_factory_;
-};
+    g_phishing_scorer = LAZY_INSTANCE_INITIALIZER;
 
 // static
 PhishingClassifierFilter* PhishingClassifierFilter::Create() {
@@ -94,27 +66,37 @@ bool PhishingClassifierFilter::OnControlMessageReceived(
   return handled;
 }
 
-void PhishingClassifierFilter::OnSetPhishingModel(
-    IPC::PlatformFileForTransit model_file) {
-  safe_browsing::Scorer::CreateFromFile(
-      IPC::PlatformFileForTransitToPlatformFile(model_file),
-      RenderThread::current()->GetFileThreadMessageLoopProxy(),
-      ScorerCallback::CreateCallback());
+void PhishingClassifierFilter::OnSetPhishingModel(const std::string& model) {
+  safe_browsing::Scorer* scorer = NULL;
+  // An empty model string means we should disable client-side phishing
+  // detection.
+  if (!model.empty()) {
+    scorer = safe_browsing::Scorer::Create(model);
+    if (!scorer) {
+      DLOG(ERROR) << "Unable to create a PhishingScorer - corrupt model?";
+      return;
+    }
+  }
+  PhishingClassifierDelegates::iterator i;
+  for (i = g_delegates.Get().begin(); i != g_delegates.Get().end(); ++i) {
+    (*i)->SetPhishingScorer(scorer);
+  }
+  g_phishing_scorer.Get().reset(scorer);
 }
 
 // static
 PhishingClassifierDelegate* PhishingClassifierDelegate::Create(
-    RenderView* render_view, PhishingClassifier* classifier) {
+    content::RenderView* render_view, PhishingClassifier* classifier) {
   // Private constructor and public static Create() method to facilitate
   // stubbing out this class for binary-size reduction purposes.
   return new PhishingClassifierDelegate(render_view, classifier);
 }
 
 PhishingClassifierDelegate::PhishingClassifierDelegate(
-    RenderView* render_view,
+    content::RenderView* render_view,
     PhishingClassifier* classifier)
-    : RenderViewObserver(render_view),
-      last_main_frame_transition_(PageTransition::LINK),
+    : content::RenderViewObserver(render_view),
+      last_main_frame_transition_(content::PAGE_TRANSITION_LINK),
       have_page_text_(false),
       is_classifying_(false) {
   g_delegates.Get().insert(this);
@@ -136,15 +118,22 @@ PhishingClassifierDelegate::~PhishingClassifierDelegate() {
 
 void PhishingClassifierDelegate::SetPhishingScorer(
     const safe_browsing::Scorer* scorer) {
-  if (!render_view()->webview())
+  if (!render_view()->GetWebView())
     return;  // RenderView is tearing down.
-
+  if (is_classifying_) {
+    // If there is a classification going on right now it means we're
+    // actually replacing an existing scorer with a new model.  In
+    // this case we simply cancel the current classification.
+    // TODO(noelutz): if this happens too frequently we could also
+    // replace the old scorer with the new one once classification is done
+    // but this would complicate the code somewhat.
+    CancelPendingClassification(NEW_PHISHING_SCORER);
+  }
   classifier_->set_phishing_scorer(scorer);
   // Start classifying the current page if all conditions are met.
   // See MaybeStartClassification() for details.
   MaybeStartClassification();
 }
-
 
 void PhishingClassifierDelegate::OnStartPhishingDetection(const GURL& url) {
   last_url_received_from_browser_ = StripRef(url);
@@ -162,12 +151,13 @@ void PhishingClassifierDelegate::DidCommitProvisionalLoad(
   // this case, we need to properly deal with the fact that PageCaptured will
   // be called again for the in-page navigation.  We need to be sure not to
   // swap out the page text while the term feature extractor is still running.
-  NavigationState* state = NavigationState::FromDataSource(
+  DocumentState* document_state = DocumentState::FromDataSource(
       frame->dataSource());
-  CancelPendingClassification(state->was_within_same_page() ?
+  NavigationState* navigation_state = document_state->navigation_state();
+  CancelPendingClassification(navigation_state->was_within_same_page() ?
                               NAVIGATE_WITHIN_PAGE : NAVIGATE_AWAY);
-  if (frame == render_view()->webview()->mainFrame()) {
-    last_main_frame_transition_ = state->transition_type();
+  if (frame == render_view()->GetWebView()->mainFrame()) {
+    last_main_frame_transition_ = navigation_state->transition_type();
   }
 }
 
@@ -220,16 +210,15 @@ void PhishingClassifierDelegate::ClassificationDone(
   classifier_page_text_.clear();
   VLOG(2) << "Phishy verdict = " << verdict.is_phishing()
           << " score = " << verdict.client_score();
-  if (!verdict.is_phishing()) {
-    return;
+  if (verdict.client_score() != PhishingClassifier::kInvalidScore) {
+    DCHECK_EQ(last_url_sent_to_classifier_.spec(), verdict.url());
+    RenderThread::Get()->Send(new SafeBrowsingHostMsg_PhishingDetectionDone(
+        routing_id(), verdict.SerializeAsString()));
   }
-  DCHECK(last_url_sent_to_classifier_.spec() == verdict.url());
-  Send(new SafeBrowsingHostMsg_DetectedPhishingSite(
-      routing_id(), verdict.SerializeAsString()));
 }
 
 GURL PhishingClassifierDelegate::GetToplevelUrl() {
-  return render_view()->webview()->mainFrame()->url();
+  return render_view()->GetWebView()->mainFrame()->document().url();
 }
 
 void PhishingClassifierDelegate::MaybeStartClassification() {
@@ -251,7 +240,7 @@ void PhishingClassifierDelegate::MaybeStartClassification() {
     return;
   }
 
-  if (last_main_frame_transition_ & PageTransition::FORWARD_BACK) {
+  if (last_main_frame_transition_ & content::PAGE_TRANSITION_FORWARD_BACK) {
     // Skip loads from session history navigation.  However, update the
     // last URL sent to the classifier, so that we'll properly detect
     // in-page navigations.
@@ -296,7 +285,8 @@ void PhishingClassifierDelegate::MaybeStartClassification() {
   is_classifying_ = true;
   classifier_->BeginClassification(
       &classifier_page_text_,
-      NewCallback(this, &PhishingClassifierDelegate::ClassificationDone));
+      base::Bind(&PhishingClassifierDelegate::ClassificationDone,
+                 base::Unretained(this)));
 }
 
 }  // namespace safe_browsing

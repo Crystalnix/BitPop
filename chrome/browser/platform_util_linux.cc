@@ -1,16 +1,17 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/platform_util.h"
 
-#include <gtk/gtk.h>
-
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/process_util.h"
 #include "base/utf_string_conversions.h"
-#include "content/common/process_watcher.h"
+#include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -35,10 +36,11 @@ void XDGUtil(const std::string& util, const std::string& arg) {
     env.push_back(std::make_pair("GNOME_DISABLE_CRASH_DIALOG", ""));
   }
 
-  base::file_handle_mapping_vector no_files;
   base::ProcessHandle handle;
-  if (base::LaunchApp(argv, env, no_files, false, &handle))
-    ProcessWatcher::EnsureProcessGetsReaped(handle);
+  base::LaunchOptions options;
+  options.environ = &env;
+  if (base::LaunchProcess(argv, options, &handle))
+    base::EnsureProcessGetsReaped(handle);
 }
 
 void XDGOpen(const std::string& path) {
@@ -49,14 +51,10 @@ void XDGEmail(const std::string& email) {
   XDGUtil("xdg-email", email);
 }
 
-}  // namespace
-
-namespace platform_util {
-
 // TODO(estade): It would be nice to be able to select the file in the file
 // manager, but that probably requires extending xdg-open. For now just
 // show the folder.
-void ShowItemInFolder(const FilePath& full_path) {
+void ShowItemInFolderOnFileThread(const FilePath& full_path) {
   FilePath dir = full_path.DirName();
   if (!file_util::DirectoryExists(dir))
     return;
@@ -64,8 +62,20 @@ void ShowItemInFolder(const FilePath& full_path) {
   XDGOpen(dir.value());
 }
 
+}  // namespace
+
+namespace platform_util {
+
+void ShowItemInFolder(const FilePath& full_path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+      base::Bind(&ShowItemInFolderOnFileThread, full_path));
+}
+
 void OpenItem(const FilePath& full_path) {
-  XDGOpen(full_path.value());
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+      base::Bind(&XDGOpen, full_path.value()));
 }
 
 void OpenExternal(const GURL& url) {

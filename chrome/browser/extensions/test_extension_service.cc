@@ -9,7 +9,7 @@
 
 TestExtensionService::~TestExtensionService() {}
 
-const ExtensionList* TestExtensionService::extensions() const {
+const ExtensionSet* TestExtensionService::extensions() const {
   ADD_FAILURE();
   return NULL;
 }
@@ -65,21 +65,42 @@ void TestExtensionService::CheckForUpdatesSoon() {
   ADD_FAILURE();
 }
 
-bool TestExtensionService::GetSyncData(
-    const Extension& extension, ExtensionFilter filter,
-    ExtensionSyncData* extension_sync_data) const {
+SyncError TestExtensionService::MergeDataAndStartSyncing(
+    syncable::ModelType type,
+    const SyncDataList& initial_sync_data,
+    SyncChangeProcessor* sync_processor) {
+  ADD_FAILURE();
+  return SyncError();
+}
+
+void TestExtensionService::StopSyncing(syncable::ModelType type) {
+  ADD_FAILURE();
+}
+
+SyncDataList TestExtensionService::GetAllSyncData(
+    syncable::ModelType type) const {
+  ADD_FAILURE();
+  return SyncDataList();
+}
+
+SyncError TestExtensionService::ProcessSyncChanges(
+    const tracked_objects::Location& from_here,
+    const SyncChangeList& change_list) {
+  ADD_FAILURE();
+  return SyncError();
+}
+
+bool TestExtensionService::is_ready() {
   ADD_FAILURE();
   return false;
 }
 
-std::vector<ExtensionSyncData> TestExtensionService::GetSyncDataList(
-    ExtensionFilter filter) const {
+void TestExtensionService::AddExtension(const Extension* extension) {
   ADD_FAILURE();
-  return std::vector<ExtensionSyncData>();
 }
 
-void TestExtensionService::ProcessSyncData(
-    const ExtensionSyncData& extension_sync_data,
-    ExtensionFilter filter) {
+void TestExtensionService::UnloadExtension(
+    const std::string& extension_id,
+    extension_misc::UnloadedExtensionReason reason) {
   ADD_FAILURE();
 }

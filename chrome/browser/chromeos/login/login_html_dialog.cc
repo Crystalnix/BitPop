@@ -1,46 +1,40 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/chromeos/login/login_html_dialog.h"
 
+#include "base/utf_string_conversions.h"
 #include "chrome/browser/chromeos/frame/bubble_frame_view.h"
 #include "chrome/browser/chromeos/frame/bubble_window.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/views/html_dialog_view.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "views/window/window.h"
+#include "ui/views/widget/widget.h"
+
+using content::WebContents;
+using content::WebUIMessageHandler;
 
 namespace chromeos {
 
 namespace {
+
 // Default width/height ratio of screen size.
 const double kDefaultWidthRatio = 0.6;
 const double kDefaultHeightRatio = 0.6;
-
-// Custom HtmlDialogView with disabled context menu.
-class HtmlDialogWithoutContextMenuView : public HtmlDialogView {
- public:
-  HtmlDialogWithoutContextMenuView(Profile* profile,
-                                   HtmlDialogUIDelegate* delegate)
-      : HtmlDialogView(profile, delegate) {}
-  virtual ~HtmlDialogWithoutContextMenuView() {}
-
-  // TabContentsDelegate implementation.
-  bool HandleContextMenu(const ContextMenuParams& params) {
-    // Disable context menu.
-    return true;
-  }
-};
 
 }  // namespace
 
 ///////////////////////////////////////////////////////////////////////////////
 // LoginHtmlDialog, public:
+
+void LoginHtmlDialog::Delegate::OnDialogClosed() {
+}
 
 LoginHtmlDialog::LoginHtmlDialog(Delegate* delegate,
                                  gfx::NativeWindow parent_window,
@@ -49,7 +43,7 @@ LoginHtmlDialog::LoginHtmlDialog(Delegate* delegate,
                                  Style style)
     : delegate_(delegate),
       parent_window_(parent_window),
-      title_(title),
+      title_(WideToUTF16Hack(title)),
       url_(url),
       style_(style),
       bubble_frame_view_(NULL),
@@ -64,28 +58,32 @@ LoginHtmlDialog::~LoginHtmlDialog() {
 }
 
 void LoginHtmlDialog::Show() {
-  HtmlDialogWithoutContextMenuView* html_view =
-      new HtmlDialogWithoutContextMenuView(ProfileManager::GetDefaultProfile(),
-                                           this);
+  HtmlDialogView* html_view =
+      new HtmlDialogView(ProfileManager::GetDefaultProfile(), NULL, this);
+#if defined(USE_AURA)
+  // TODO(saintlou): Until the new Bubble have been landed.
+  views::Widget::CreateWindowWithParent(html_view, parent_window_);
+  html_view->InitDialog();
+#else
   if (style_ & STYLE_BUBBLE) {
-    views::Window* bubble_window = BubbleWindow::Create(
-        parent_window_, gfx::Rect(),
-        static_cast<BubbleWindow::Style>(
-            BubbleWindow::STYLE_XBAR | BubbleWindow::STYLE_THROBBER),
+    views::Widget* bubble_window = BubbleWindow::Create(parent_window_,
+        static_cast<DialogStyle>(STYLE_XBAR | STYLE_THROBBER),
         html_view);
     bubble_frame_view_ = static_cast<BubbleFrameView*>(
         bubble_window->non_client_view()->frame_view());
   } else {
-    views::Window::CreateChromeWindow(parent_window_, gfx::Rect(), html_view);
-  }
-  if (bubble_frame_view_) {
-    bubble_frame_view_->StartThrobber();
-    notification_registrar_.Add(this,
-                                NotificationType::LOAD_COMPLETED_MAIN_FRAME,
-                                NotificationService::AllSources());
+    views::Widget::CreateWindowWithParent(html_view, parent_window_);
   }
   html_view->InitDialog();
-  html_view->window()->Show();
+  if (bubble_frame_view_) {
+    bubble_frame_view_->StartThrobber();
+    notification_registrar_.Add(
+        this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
+        content::Source<WebContents>(
+            html_view->dom_contents()->web_contents()));
+  }
+#endif
+  html_view->GetWidget()->Show();
   is_open_ = true;
 }
 
@@ -95,14 +93,18 @@ void LoginHtmlDialog::SetDialogSize(int width, int height) {
   height_ = height;
 }
 
+void LoginHtmlDialog::SetDialogTitle(const string16& title) {
+  title_ = title;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // LoginHtmlDialog, protected:
 
-bool LoginHtmlDialog::IsDialogModal() const {
-  return true;
+ui::ModalType LoginHtmlDialog::GetDialogModalType() const {
+  return ui::MODAL_TYPE_SYSTEM;
 }
 
-std::wstring LoginHtmlDialog::GetDialogTitle() const {
+string16 LoginHtmlDialog::GetDialogTitle() const {
   return title_;
 }
 
@@ -129,7 +131,7 @@ void LoginHtmlDialog::OnDialogClosed(const std::string& json_retval) {
     delegate_->OnDialogClosed();
 }
 
-void LoginHtmlDialog::OnCloseContents(TabContents* source,
+void LoginHtmlDialog::OnCloseContents(WebContents* source,
                                       bool* out_close_dialog) {
   if (out_close_dialog)
     *out_close_dialog = true;
@@ -139,12 +141,22 @@ bool LoginHtmlDialog::ShouldShowDialogTitle() const {
   return true;
 }
 
-void LoginHtmlDialog::Observe(NotificationType type,
-                              const NotificationSource& source,
-                              const NotificationDetails& details) {
-  DCHECK(type.value == NotificationType::LOAD_COMPLETED_MAIN_FRAME);
+bool LoginHtmlDialog::HandleContextMenu(const ContextMenuParams& params) {
+  // Disable context menu.
+  return true;
+}
+
+void LoginHtmlDialog::Observe(int type,
+                              const content::NotificationSource& source,
+                              const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME);
+#if defined(USE_AURA)
+  // TODO(saintlou): Do we need a throbber for Aura?
+  NOTIMPLEMENTED();
+#else
   if (bubble_frame_view_)
     bubble_frame_view_->StopThrobber();
+#endif
 }
 
 }  // namespace chromeos

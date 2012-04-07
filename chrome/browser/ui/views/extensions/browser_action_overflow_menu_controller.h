@@ -9,16 +9,17 @@
 #include <set>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
-#include "views/controls/menu/menu_delegate.h"
+#include "base/message_loop_helpers.h"
+#include "ui/views/controls/menu/menu_delegate.h"
 
 class BrowserActionsContainer;
 class BrowserActionView;
-class ExtensionContextMenuModel;
 
 namespace views {
-class Menu2;
+class MenuRunner;
+class Widget;
 }
 
 // This class handles the overflow menu for browser actions (showing the menu,
@@ -41,37 +42,39 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
   void set_observer(Observer* observer) { observer_ = observer; }
 
   // Shows the overflow menu.
-  bool RunMenu(gfx::NativeWindow window, bool for_drop);
+  bool RunMenu(views::Widget* widget, bool for_drop);
 
   // Closes the overflow menu (and its context menu if open as well).
   void CancelMenu();
 
   // Overridden from views::MenuDelegate:
-  virtual void ExecuteCommand(int id);
+  virtual void ExecuteCommand(int id) OVERRIDE;
   virtual bool ShowContextMenu(views::MenuItemView* source,
                                int id,
                                const gfx::Point& p,
-                               bool is_mouse_gesture);
-  virtual void DropMenuClosed(views::MenuItemView* menu);
+                               bool is_mouse_gesture) OVERRIDE;
+  virtual void DropMenuClosed(views::MenuItemView* menu) OVERRIDE;
   // These drag functions offer support for dragging icons into the overflow
   // menu.
   virtual bool GetDropFormats(
       views::MenuItemView* menu,
       int* formats,
-      std::set<ui::OSExchangeData::CustomFormat>* custom_formats);
-  virtual bool AreDropTypesRequired(views::MenuItemView* menu);
-  virtual bool CanDrop(views::MenuItemView* menu, const ui::OSExchangeData& data);
+      std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
+  virtual bool AreDropTypesRequired(views::MenuItemView* menu) OVERRIDE;
+  virtual bool CanDrop(views::MenuItemView* menu,
+                       const ui::OSExchangeData& data) OVERRIDE;
   virtual int GetDropOperation(views::MenuItemView* item,
                                const views::DropTargetEvent& event,
-                               DropPosition* position);
+                               DropPosition* position) OVERRIDE;
   virtual int OnPerformDrop(views::MenuItemView* menu,
                             DropPosition position,
-                            const views::DropTargetEvent& event);
+                            const views::DropTargetEvent& event) OVERRIDE;
   // These three drag functions offer support for dragging icons out of the
   // overflow menu.
-  virtual bool CanDrag(views::MenuItemView* menu);
-  virtual void WriteDragData(views::MenuItemView* sender, ui::OSExchangeData* data);
-  virtual int GetDragOperations(views::MenuItemView* sender);
+  virtual bool CanDrag(views::MenuItemView* menu) OVERRIDE;
+  virtual void WriteDragData(views::MenuItemView* sender,
+                             ui::OSExchangeData* data) OVERRIDE;
+  virtual int GetDragOperations(views::MenuItemView* sender) OVERRIDE;
 
  private:
   // This class manages its own lifetime.
@@ -91,8 +94,11 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
   // A pointer to the overflow menu button that we are showing the menu for.
   views::MenuButton* menu_button_;
 
-  // The overflow menu for the menu button.
-  scoped_ptr<views::MenuItemView> menu_;
+  // The overflow menu for the menu button. Owned by |menu_runner_|.
+  views::MenuItemView* menu_;
+
+  // Resposible for running the menu.
+  scoped_ptr<views::MenuRunner> menu_runner_;
 
   // The views vector of all the browser actions the container knows about. We
   // won't show all items, just the one starting at |start_index| and above.
@@ -105,11 +111,7 @@ class BrowserActionOverflowMenuController : public views::MenuDelegate {
   // Whether this controller is being used for drop.
   bool for_drop_;
 
-  // The browser action context menu and model.
-  scoped_refptr<ExtensionContextMenuModel> context_menu_contents_;
-  scoped_ptr<views::Menu2> context_menu_menu_;
-
-  friend class DeleteTask<BrowserActionOverflowMenuController>;
+  friend class base::DeleteHelper<BrowserActionOverflowMenuController>;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionOverflowMenuController);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,8 @@
 #include <gtk/gtk.h>
 
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
-#include "chrome/common/pref_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -41,8 +39,9 @@ UpdateRecommendedDialog::UpdateRecommendedDialog(GtkWindow* parent) {
                                 l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
   GtkWidget* label = gtk_label_new(text.c_str());
   gtk_util::SetLabelWidth(label, kMessageWidth);
-  gtk_box_pack_start(GTK_BOX(GTK_DIALOG(dialog_)->vbox), label,
-                     FALSE, FALSE, 0);
+
+  GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog_));
+  gtk_box_pack_start(GTK_BOX(content_area), label, FALSE, FALSE, 0);
 
   gtk_window_set_resizable(GTK_WINDOW(dialog_), FALSE);
 
@@ -56,11 +55,7 @@ void UpdateRecommendedDialog::OnResponse(GtkWidget* dialog, int response_id) {
   gtk_widget_destroy(dialog_);
 
   if (response_id == GTK_RESPONSE_ACCEPT) {
-    // Set the flag to restore the last session on shutdown.
-    PrefService* pref_service = g_browser_process->local_state();
-    pref_service->SetBoolean(prefs::kRestartLastSessionOnShutdown, true);
-
-    BrowserList::CloseAllBrowsersAndExit();
+    BrowserList::AttemptRestart();
   }
 
   delete this;

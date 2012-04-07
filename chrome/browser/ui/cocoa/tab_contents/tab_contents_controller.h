@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,12 @@
 
 #include <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_ptr.h"
+namespace content {
+class WebContents;
+}
 
-class TabContents;
-class TabContentsNotificationBridge;
-@class TabContentsController;
-
-// The interface for the tab contents view controller's delegate.
-
-@protocol TabContentsControllerDelegate
-
-// Tells the delegate when the tab contents view's frame is about to change.
-- (void)tabContentsViewFrameWillChange:(TabContentsController*)source
-                             frameRect:(NSRect)frameRect;
-
-@end
-
-// A class that controls the TabContents view. It manages displaying the
-// native view for a given TabContents.
+// A class that controls the WebContents view. It manages displaying the
+// native view for a given WebContents.
 // Note that just creating the class does not display the view. We defer
 // inserting it until the box is the correct size to avoid multiple resize
 // messages to the renderer. You must call |-ensureContentsVisible| to display
@@ -33,15 +21,12 @@ class TabContentsNotificationBridge;
 
 @interface TabContentsController : NSViewController {
  @private
-  TabContents* contents_;  // weak
-  // Delegate to be notified about size changes.
-  id<TabContentsControllerDelegate> delegate_;  // weak
-  scoped_ptr<TabContentsNotificationBridge> tabContentsBridge_;
+   content::WebContents* contents_;  // weak
 }
-@property(readonly, nonatomic) TabContents* tabContents;
+@property(readonly, nonatomic) content::WebContents* webContents;
 
-- (id)initWithContents:(TabContents*)contents
-              delegate:(id<TabContentsControllerDelegate>)delegate;
+// Create the contents of a tab represented by |contents|.
+- (id)initWithContents:(content::WebContents*)contents;
 
 // Call when the tab contents is about to be replaced with the currently
 // selected tab contents to do not trigger unnecessary content relayout.
@@ -51,10 +36,10 @@ class TabContentsNotificationBridge;
 // should be put into the view hierarchy.
 - (void)ensureContentsVisible;
 
-// Call to change the underlying tab contents object. View is not changed,
+// Call to change the underlying web contents object. View is not changed,
 // call |-ensureContentsVisible| to display the |newContents|'s render widget
 // host view.
-- (void)changeTabContents:(TabContents*)newContents;
+- (void)changeWebContents:(content::WebContents*)newContents;
 
 // Called when the tab contents is the currently selected tab and is about to be
 // removed from the view hierarchy.
@@ -68,7 +53,7 @@ class TabContentsNotificationBridge;
 // Called when the tab contents is updated in some non-descript way (the
 // notification from the model isn't specific). |updatedContents| could reflect
 // an entirely new tab contents object.
-- (void)tabDidChange:(TabContents*)updatedContents;
+- (void)tabDidChange:(content::WebContents*)updatedContents;
 
 @end
 

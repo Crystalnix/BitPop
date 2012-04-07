@@ -4,6 +4,7 @@
 
 #include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
@@ -14,7 +15,6 @@
 #include "chrome/browser/bookmarks/bookmark_model_test_utils.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/common/json_value_serializer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -31,31 +31,31 @@ const char kFolder1Title[] = "folder1";
 const char kFolder2Title[] = "folder2";
 
 // Helper to get a mutable bookmark node.
-static BookmarkNode* AsMutable(const BookmarkNode* node) {
+BookmarkNode* AsMutable(const BookmarkNode* node) {
   return const_cast<BookmarkNode*>(node);
 }
 
-}  // anonymous namespace
+}  // namespace
 
 class BookmarkCodecTest : public testing::Test {
  protected:
   // Helpers to create bookmark models with different data.
   BookmarkModel* CreateTestModel1() {
     scoped_ptr<BookmarkModel> model(new BookmarkModel(NULL));
-    const BookmarkNode* bookmark_bar = model->GetBookmarkBarNode();
+    const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
     model->AddURL(bookmark_bar, 0, ASCIIToUTF16(kUrl1Title), GURL(kUrl1Url));
     return model.release();
   }
   BookmarkModel* CreateTestModel2() {
     scoped_ptr<BookmarkModel> model(new BookmarkModel(NULL));
-    const BookmarkNode* bookmark_bar = model->GetBookmarkBarNode();
+    const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
     model->AddURL(bookmark_bar, 0, ASCIIToUTF16(kUrl1Title), GURL(kUrl1Url));
     model->AddURL(bookmark_bar, 1, ASCIIToUTF16(kUrl2Title), GURL(kUrl2Url));
     return model.release();
   }
   BookmarkModel* CreateTestModel3() {
     scoped_ptr<BookmarkModel> model(new BookmarkModel(NULL));
-    const BookmarkNode* bookmark_bar = model->GetBookmarkBarNode();
+    const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
     model->AddURL(bookmark_bar, 0, ASCIIToUTF16(kUrl1Title), GURL(kUrl1Url));
     const BookmarkNode* folder1 = model->AddFolder(bookmark_bar, 1,
                                                    ASCIIToUTF16(kFolder1Title));
@@ -114,9 +114,9 @@ class BookmarkCodecTest : public testing::Test {
 
   bool Decode(BookmarkCodec* codec, BookmarkModel* model, const Value& value) {
     int64 max_id;
-    bool result = codec->Decode(AsMutable(model->GetBookmarkBarNode()),
+    bool result = codec->Decode(AsMutable(model->bookmark_bar_node()),
                                 AsMutable(model->other_node()),
-                                AsMutable(model->synced_node()),
+                                AsMutable(model->mobile_node()),
                                 &max_id, value);
     model->set_next_node_id(max_id);
     return result;
@@ -165,9 +165,9 @@ class BookmarkCodecTest : public testing::Test {
 
   void ExpectIDsUnique(BookmarkModel* model) {
     std::set<int64> assigned_ids;
-    CheckIDs(model->GetBookmarkBarNode(), &assigned_ids);
+    CheckIDs(model->bookmark_bar_node(), &assigned_ids);
     CheckIDs(model->other_node(), &assigned_ids);
-    CheckIDs(model->synced_node(), &assigned_ids);
+    CheckIDs(model->mobile_node(), &assigned_ids);
   }
 };
 
@@ -228,7 +228,7 @@ TEST_F(BookmarkCodecTest, ChecksumManualEditIDsTest) {
 
   // The test depends on existence of multiple children under bookmark bar, so
   // make sure that's the case.
-  int bb_child_count = model_to_encode->GetBookmarkBarNode()->child_count();
+  int bb_child_count = model_to_encode->bookmark_bar_node()->child_count();
   ASSERT_GT(bb_child_count, 1);
 
   std::string enc_checksum;
@@ -252,7 +252,7 @@ TEST_F(BookmarkCodecTest, ChecksumManualEditIDsTest) {
   ExpectIDsUnique(decoded_model.get());
 
   // add a few extra nodes to bookmark model and make sure IDs are still uniuqe.
-  const BookmarkNode* bb_node = decoded_model->GetBookmarkBarNode();
+  const BookmarkNode* bb_node = decoded_model->bookmark_bar_node();
   decoded_model->AddURL(bb_node, 0, ASCIIToUTF16("new url1"),
                         GURL("http://newurl1.com"));
   decoded_model->AddURL(bb_node, 0, ASCIIToUTF16("new url2"),
@@ -275,7 +275,7 @@ TEST_F(BookmarkCodecTest, PersistIDsTest) {
 
   // Add a couple of more items to the decoded bookmark model and make sure
   // ID persistence is working properly.
-  const BookmarkNode* bookmark_bar = decoded_model.GetBookmarkBarNode();
+  const BookmarkNode* bookmark_bar = decoded_model.bookmark_bar_node();
   decoded_model.AddURL(
       bookmark_bar, bookmark_bar->child_count(), ASCIIToUTF16(kUrl3Title),
       GURL(kUrl3Url));
@@ -295,7 +295,7 @@ TEST_F(BookmarkCodecTest, PersistIDsTest) {
                                             true);
 }
 
-TEST_F(BookmarkCodecTest, CanDecodeModelWithoutSyncedBookmarks) {
+TEST_F(BookmarkCodecTest, CanDecodeModelWithoutMobileBookmarks) {
   FilePath test_data_directory;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data_directory));
   FilePath test_file = test_data_directory.AppendASCII(
@@ -310,7 +310,7 @@ TEST_F(BookmarkCodecTest, CanDecodeModelWithoutSyncedBookmarks) {
   ASSERT_TRUE(Decode(&decoder, &decoded_model, *root.get()));
   ExpectIDsUnique(&decoded_model);
 
-  const BookmarkNode* bbn = decoded_model.GetBookmarkBarNode();
+  const BookmarkNode* bbn = decoded_model.bookmark_bar_node();
   ASSERT_EQ(1, bbn->child_count());
 
   const BookmarkNode* child = bbn->GetChild(0);
@@ -334,5 +334,5 @@ TEST_F(BookmarkCodecTest, CanDecodeModelWithoutSyncedBookmarks) {
   EXPECT_EQ(BookmarkNode::URL, child->type());
   EXPECT_EQ(ASCIIToUTF16("Get started with Google Chrome"), child->GetTitle());
 
-  ASSERT_TRUE(decoded_model.synced_node() != NULL);
+  ASSERT_TRUE(decoded_model.mobile_node() != NULL);
 }

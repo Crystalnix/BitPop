@@ -5,10 +5,11 @@
 #ifndef WEBKIT_GLUE_ALT_ERROR_PAGE_RESOURCE_FETCHER_H_
 #define WEBKIT_GLUE_ALT_ERROR_PAGE_RESOURCE_FETCHER_H_
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace WebKit {
 class WebFrame;
@@ -25,14 +26,15 @@ class AltErrorPageResourceFetcher {
   // This will be called when the alternative error page has been fetched,
   // successfully or not.  If there is a failure, the third parameter (the
   // data) will be empty.
-  typedef Callback3<WebKit::WebFrame*, const WebKit::WebURLError&,
-                    const std::string&>::Type Callback;
+  typedef base::Callback<void(WebKit::WebFrame*, const WebKit::WebURLError&,
+                    const std::string&)> Callback;
 
-  AltErrorPageResourceFetcher(const GURL& url,
-                              WebKit::WebFrame* frame,
-                              const WebKit::WebURLError& original_error,
-                              Callback* callback);
-  ~AltErrorPageResourceFetcher();
+  WEBKIT_GLUE_EXPORT AltErrorPageResourceFetcher(
+      const GURL& url,
+      WebKit::WebFrame* frame,
+      const WebKit::WebURLError& original_error,
+      const Callback& callback);
+  WEBKIT_GLUE_EXPORT ~AltErrorPageResourceFetcher();
 
   // Stop any pending loads.
   void Cancel();
@@ -45,7 +47,7 @@ class AltErrorPageResourceFetcher {
   scoped_ptr<ResourceFetcherWithTimeout> fetcher_;
 
   WebKit::WebFrame* frame_;
-  scoped_ptr<Callback> callback_;
+  Callback callback_;
 
   // The error associated with this load.  If there's an error talking with the
   // alt error page server, we need this to complete the original load.

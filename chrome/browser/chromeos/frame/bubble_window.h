@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,47 +6,31 @@
 #define CHROME_BROWSER_CHROMEOS_FRAME_BUBBLE_WINDOW_H_
 #pragma once
 
-#include "third_party/skia/include/core/SkColor.h"
-#include "views/window/native_window_gtk.h"
-
-namespace gfx {
-class Rect;
-}
-
-namespace views {
-class Throbber;
-class WindowDelegate;
-}
+#include "chrome/browser/ui/dialog_style.h"
+#include "ui/views/widget/widget.h"
 
 namespace chromeos {
 
+extern const SkColor kBubbleWindowBackgroundColor;
+
 // A window that uses BubbleFrameView as its frame.
-class BubbleWindow : public views::NativeWindowGtk {
+class BubbleWindow : public views::Widget {
  public:
-  enum Style {
-    STYLE_GENERIC = 0, // Default style.
-    STYLE_XBAR = 1 << 0, // Show close button at the top right (left for RTL).
-    STYLE_THROBBER = 1 << 1, // Show throbber for slow rendering.
-    STYLE_XSHAPE = 1 << 2 // Trim the window margins and round corners.
-  };
+  static views::Widget* Create(gfx::NativeWindow parent,
+                               DialogStyle style,
+                               views::WidgetDelegate* widget_delegate);
 
-  static views::Window* Create(gfx::NativeWindow parent,
-                               const gfx::Rect& bounds,
-                               Style style,
-                               views::WindowDelegate* window_delegate);
+  virtual ~BubbleWindow();
 
-  static const SkColor kBackgroundColor;
+  // Overridden from views::Widget:
+  virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
 
- protected:
-  explicit BubbleWindow(views::Window* window);
+ private:
+  explicit BubbleWindow(DialogStyle style);
 
-  // Overidden from views::NativeWindowGtk:
-  virtual void InitNativeWidget(
-      const views::Widget::InitParams& params) OVERRIDE;
+  DialogStyle style_;
 
-  // Trims the window margins and rounds off the corners.
-  void TrimMargins(int margin_left, int margin_right, int margin_top,
-                   int margin_bottom, int border_radius);
+  DISALLOW_COPY_AND_ASSIGN(BubbleWindow);
 };
 
 }  // namespace chromeos

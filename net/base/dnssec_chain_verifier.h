@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "base/string_piece.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
@@ -19,7 +19,7 @@ namespace net {
 // name. For example, if the fingerprint of a certificate was stored in a CERT
 // record for a given domain, then a chain could prove the validity of that
 // fingerprint.
-class NET_TEST DNSSECChainVerifier {
+class NET_EXPORT_PRIVATE DNSSECChainVerifier {
  public:
   enum Error {
     OK = 0,
@@ -54,13 +54,6 @@ class NET_TEST DNSSECChainVerifier {
   // rrdatas returns the contents of the proven resource records. Only call
   // this after Verify has returned OK.
   const std::vector<base::StringPiece>& rrdatas() const;
-
-  // ParseTLSTXTRecord parses a TXT record which should contain TLS fingerprint
-  // information.
-  //   rrdata: the raw TXT RRDATA from DNS
-  //   returns: an empty map on failure, or the result of the parse.
-  static std::map<std::string, std::string>
-  ParseTLSTXTRecord(base::StringPiece rrdata);
 
   // Exposed for testing only.
   static unsigned MatchingLabels(base::StringPiece a,
@@ -104,6 +97,51 @@ class NET_TEST DNSSECChainVerifier {
   std::vector<base::StringPiece> rrdatas_;
   // A list of pointers which need to be free()ed on destruction.
   std::vector<void*> scratch_pool_;
+};
+
+// DnsCAARecord encapsulates code and types for dealing with Certificate
+// Authority Authorization records. These are DNS records which can express
+// limitations regarding acceptable certificates for a domain. See
+// http://tools.ietf.org/html/draft-hallambaker-donotissue-04
+class NET_EXPORT_PRIVATE DnsCAARecord {
+ public:
+  enum ParseResult {
+    SUCCESS,  // parse successful.
+    DISCARD,  // no policies applying to this client were found.
+    SYNTAX_ERROR,  // the record was syntactically invalid.
+    UNKNOWN_CRITICAL,  // a critical record was not understood.
+  };
+
+  // A CAAPolicy is the result of parsing a set of CAA records. It describes a
+  // number of properies of certificates in a chain, any of which is sufficient
+  // to validate the chain.
+  struct NET_EXPORT_PRIVATE Policy {
+   public:
+    Policy();
+    ~Policy();
+
+    // A HashTarget identifies the object that we are hashing.
+    enum HashTarget {
+      USER_CERTIFICATE,
+      CA_CERTIFICATE,
+      SUBJECT_PUBLIC_KEY_INFO,
+    };
+
+    // A Hash is a digest of some property of a certificate.
+    struct Hash {
+      HashTarget target;  // what do we hash?
+      int algorithm;  // NSS value, i.e. HASH_AlgSHA1.
+      std::string data;  // digest, i.e. 20 bytes for SHA1.
+      unsigned port;  // port number or 0 for any.
+    };
+
+    std::vector<Hash> authorized_hashes;
+  };
+
+  // Parse parses a series of DNS resource records and sets |output| to the
+  // result.
+  static ParseResult Parse(const std::vector<base::StringPiece>& rrdatas,
+                           Policy* output);
 };
 
 }  // namespace net

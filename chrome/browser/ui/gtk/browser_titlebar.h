@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -13,13 +13,16 @@
 
 #include <gtk/gtk.h>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "chrome/browser/prefs/pref_member.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/base/x/active_window_watcher_x.h"
+#include "ui/base/x/active_window_watcher_x_observer.h"
 
+class AvatarMenuButtonGtk;
 class BrowserWindowGtk;
 class CustomDrawButton;
 class GtkThemeService;
@@ -27,8 +30,12 @@ class MenuGtk;
 class PopupPageMenuModel;
 class TabContents;
 
-class BrowserTitlebar : public NotificationObserver,
-                        public ui::ActiveWindowWatcherX::Observer,
+namespace content {
+class WebContents;
+}
+
+class BrowserTitlebar : public content::NotificationObserver,
+                        public ui::ActiveWindowWatcherXObserver,
                         public ui::SimpleMenuModel::Delegate {
  public:
   // A default button order string for when we aren't asking gconf for the
@@ -47,6 +54,9 @@ class BrowserTitlebar : public NotificationObserver,
   // Builds the buttons based on the metacity |button_string|.
   void BuildButtons(const std::string& button_string);
 
+  // Updates the theme supplied background color and image.
+  void UpdateButtonBackground(CustomDrawButton* button);
+
   // Update the appearance of the title bar based on whether we're showing a
   // custom frame or not.  If |use_custom_frame| is true, we show an extra
   // tall titlebar and the min/max/close buttons.
@@ -56,14 +66,28 @@ class BrowserTitlebar : public NotificationObserver,
   void UpdateTitleAndIcon();
 
   // Called by the browser asking us to update the loading throbber.
-  // |tab_contents| is the tab that is associated with the window throbber.
-  // |tab_contents| can be null.
-  void UpdateThrobber(TabContents* tab_contents);
+  // |web_contents| is the tab that is associated with the window throbber.
+  // |web_contents| can be null.
+  void UpdateThrobber(content::WebContents* web_contents);
 
   // On Windows, right clicking in the titlebar background brings up the system
   // menu.  There's no such thing on linux, so we just show the menu items we
   // add to the menu.
   void ShowContextMenu(GdkEventButton* event);
+
+  // When a panel slides into a new position and the cursor is on the close
+  // button, the close button does not become clickable. The gtk_widget_show()
+  // call on panel_wrench_button_ in OnEnterNotify on window_ prevents the
+  // close_button_ from getting the enter-notify-event, making it unclickable.
+  // This creates a bad experience when a user has multiple panels of the same
+  // size (which is typical) and tries closing them all by repeatedly clicking
+  // in the same place on the screen.
+  //
+  // Opened a gtk bug for this -
+  //   https://bugzilla.gnome.org/show_bug.cgi?id=667841
+  void SendEnterNotifyToCloseButtonIfUnderMouse();
+
+  AvatarMenuButtonGtk* avatar_button() { return avatar_button_.get(); }
 
  private:
   // A helper class to keep track of which frame of the throbber animation
@@ -92,9 +116,9 @@ class BrowserTitlebar : public NotificationObserver,
     explicit ContextMenuModel(ui::SimpleMenuModel::Delegate* delegate);
   };
 
-  // Build the titlebar, the space above the tab
-  // strip, and (maybe) the min, max, close buttons.  |container| is the gtk
-  // continer that we put the widget into.
+  // Build the titlebar, the space above the tab strip, and (maybe) the min,
+  // max, close buttons. |container_| is the gtk container that we put the
+  // widget into.
   void Init();
 
   // Lazily builds and returns |titlebar_{left,right}_buttons_vbox_| and their
@@ -107,7 +131,7 @@ class BrowserTitlebar : public NotificationObserver,
   // the button into, and a tooltip id (IDS_).
   CustomDrawButton* BuildTitlebarButton(int image, int image_pressed,
                                         int image_hot, GtkWidget* box,
-                                        int tooltip);
+                                        bool start, int tooltip);
 
   // Update the titlebar spacing based on the custom frame and maximized state.
   void UpdateTitlebarAlignment();
@@ -115,6 +139,10 @@ class BrowserTitlebar : public NotificationObserver,
   // Updates the color of the title bar. Called whenever we have a state
   // change in the window.
   void UpdateTextColor();
+
+  // Updates the avatar image displayed, either a multi-profile avatar or the
+  // incognito spy guy.
+  void UpdateAvatar();
 
   // Show the menu that the user gets from left-clicking the favicon.
   void ShowFaviconMenu(GdkEventButton* event);
@@ -136,29 +164,47 @@ class BrowserTitlebar : public NotificationObserver,
   CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean, OnScroll,
                        GdkEventScroll*);
 
+  // Callbacks for mouse enter leave events.
+  CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean, OnEnterNotify,
+                       GdkEventCrossing*);
+  CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean, OnLeaveNotify,
+                       GdkEventCrossing*);
+
   // Callback for min/max/close buttons.
   CHROMEGTK_CALLBACK_0(BrowserTitlebar, void, OnButtonClicked);
 
-  // Callback for favicon.
-  CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean, OnButtonPressed,
-                       GdkEventButton*);
+  // Callback for favicon/settings buttons.
+  CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean,
+                       OnFaviconMenuButtonPressed, GdkEventButton*);
+  CHROMEGTK_CALLBACK_1(BrowserTitlebar, gboolean,
+                       OnPanelSettingsMenuButtonPressed, GdkEventButton*);
 
   // -- Context Menu -----------------------------------------------------------
 
   // SimpleMenuModel::Delegate implementation:
-  virtual bool IsCommandIdEnabled(int command_id) const;
-  virtual bool IsCommandIdChecked(int command_id) const;
-  virtual void ExecuteCommand(int command_id);
-  virtual bool GetAcceleratorForCommandId(int command_id,
-                                          ui::Accelerator* accelerator);
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
+  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual bool GetAcceleratorForCommandId(
+      int command_id,
+      ui::Accelerator* accelerator) OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // Overriden from ActiveWindowWatcher::Observer.
-  virtual void ActiveWindowChanged(GdkWindow* active_window);
+  // Overriden from ActiveWindowWatcherXObserver.
+  virtual void ActiveWindowChanged(GdkWindow* active_window) OVERRIDE;
+
+  bool IsTypePanel();
+
+  // Whether to display the avatar image.
+  bool ShouldDisplayAvatar();
+
+  // Returns true if the profile associated with this BrowserWindow is off the
+  // record.
+  bool IsOffTheRecord();
 
   // Pointers to the browser window that owns us and it's GtkWindow.
   BrowserWindowGtk* browser_window_;
@@ -181,11 +227,15 @@ class BrowserTitlebar : public NotificationObserver,
   GtkWidget* titlebar_left_buttons_hbox_;
   GtkWidget* titlebar_right_buttons_hbox_;
 
-  // Spy frame. One of these frames holds the spy guy in incognito mode. It's
-  // the side with the least buttons. These are NULL when we aren't in
-  // incognito mode.
-  GtkWidget* titlebar_left_spy_frame_;
-  GtkWidget* titlebar_right_spy_frame_;
+  // Avatar frame. One of these frames holds either the spy guy in incognito
+  // mode, or the avatar image when using multiple-profiles. It's the side with
+  // the least window control buttons (close, maximize, minimize).
+  // These pointers are never NULL.
+  GtkWidget* titlebar_left_avatar_frame_;
+  GtkWidget* titlebar_right_avatar_frame_;
+
+  // The avatar image widget. It will be NULL if there is no avatar displayed.
+  GtkWidget* avatar_;
 
   // Padding between the titlebar buttons and the top of the screen. Only show
   // when not maximized.
@@ -200,12 +250,23 @@ class BrowserTitlebar : public NotificationObserver,
   GtkWidget* app_mode_favicon_;
   GtkWidget* app_mode_title_;
 
+  // Wrench icon for panels. This'll only appear when a panel window has focus
+  // or mouse is in a panel window.
+  scoped_ptr<CustomDrawButton> panel_wrench_button_;
+
   // Whether we are using a custom frame.
   bool using_custom_frame_;
 
   // Whether we have focus (gtk_window_is_active() sometimes returns the wrong
   // value, so manually track the focus-in and focus-out events.)
   bool window_has_focus_;
+
+  // Whether mouse is in the window. We show the wrench icon when a panel
+  // window has focus or mouse is in a panel window.
+  bool window_has_mouse_;
+
+  // Whether to display the avatar image on the left or right of the titlebar.
+  bool display_avatar_on_left_;
 
   // We change the size of these three buttons when the window is maximized, so
   // we use these structs to keep track of their original size.
@@ -230,10 +291,13 @@ class BrowserTitlebar : public NotificationObserver,
   // The throbber used when the window is in app mode or popup window mode.
   Throbber throbber_;
 
+  // The avatar button.
+  scoped_ptr<AvatarMenuButtonGtk> avatar_button_;
+
   // Theme provider for building buttons.
   GtkThemeService* theme_service_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 #endif  // CHROME_BROWSER_UI_GTK_BROWSER_TITLEBAR_H_

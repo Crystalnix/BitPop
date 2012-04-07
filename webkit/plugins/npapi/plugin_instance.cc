@@ -1,9 +1,10 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/plugins/npapi/plugin_instance.h"
 
+#include "base/bind.h"
 #include "build/build_config.h"
 #include "base/file_util.h"
 #include "base/message_loop.h"
@@ -35,6 +36,7 @@ PluginInstance::PluginInstance(PluginLib *plugin, const std::string &mime_type)
       transparent_(true),
       webplugin_(0),
       mime_type_(mime_type),
+      get_notify_data_(0),
       use_mozilla_user_agent_(false),
 #if defined (OS_MACOSX)
 #ifdef NP_NO_QUICKDRAW
@@ -169,6 +171,19 @@ NPObject *PluginInstance::GetPluginScriptableObject() {
   if (error != NPERR_NO_ERROR || value == NULL)
     return NULL;
   return value;
+}
+
+bool PluginInstance::GetFormValue(string16* value) {
+  // Plugins will allocate memory for the return value by using NPN_MemAlloc().
+  char *plugin_value = NULL;
+  NPError error = NPP_GetValue(NPPVformValue, &plugin_value);
+  if (error != NPERR_NO_ERROR || !plugin_value) {
+    return false;
+  }
+  // Assumes the result is UTF8 text, as Firefox does.
+  *value = UTF8ToUTF16(plugin_value);
+  host_->host_functions()->memfree(plugin_value);
+  return true;
 }
 
 // WebPluginLoadDelegate methods
@@ -417,8 +432,8 @@ void PluginInstance::DidManualLoadFail() {
 void PluginInstance::PluginThreadAsyncCall(void (*func)(void *),
                                            void *user_data) {
   message_loop_->PostTask(
-      FROM_HERE, NewRunnableMethod(
-          this, &PluginInstance::OnPluginThreadAsyncCall, func, user_data));
+      FROM_HERE, base::Bind(&PluginInstance::OnPluginThreadAsyncCall, this,
+                            func, user_data));
 }
 
 void PluginInstance::OnPluginThreadAsyncCall(void (*func)(void *),
@@ -446,9 +461,8 @@ uint32 PluginInstance::ScheduleTimer(uint32 interval,
   // Schedule the callback.
   MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      NewRunnableMethod(
-          this, &PluginInstance::OnTimerCall, func, npp_, timer_id),
-      interval);
+      base::Bind(&PluginInstance::OnTimerCall, this, func, npp_, timer_id),
+      base::TimeDelta::FromMilliseconds(interval));
   return timer_id;
 }
 
@@ -485,13 +499,12 @@ void PluginInstance::OnTimerCall(void (*func)(NPP id, uint32 timer_id),
     return;
 
   // Reschedule repeating timers after invoking the callback so callback is not
-  // re-entered if it pumps the messager loop.
+  // re-entered if it pumps the message loop.
   if (info.repeat) {
     MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
-        NewRunnableMethod(
-            this, &PluginInstance::OnTimerCall, func, npp_, timer_id),
-        info.interval);
+        base::Bind(&PluginInstance::OnTimerCall, this, func, npp_, timer_id),
+        base::TimeDelta::FromMilliseconds(info.interval));
   } else {
     timers_.erase(it);
   }

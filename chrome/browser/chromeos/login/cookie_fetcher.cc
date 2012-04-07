@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/path_service.h"
-#include "chrome/browser/chromeos/boot_times_loader.h"
 #include "chrome/browser/chromeos/login/client_login_response_handler.h"
 #include "chrome/browser/chromeos/login/issue_response_handler.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
@@ -14,6 +13,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_paths.h"
+#include "content/public/common/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
 
 namespace chromeos {
@@ -41,20 +41,17 @@ void CookieFetcher::AttemptFetch(const std::string& credentials) {
   fetcher_.reset(client_login_handler_->Handle(credentials, this));
 }
 
-void CookieFetcher::OnURLFetchComplete(const URLFetcher* source,
-                                       const GURL& url,
-                                       const net::URLRequestStatus& status,
-                                       int response_code,
-                                       const net::ResponseCookies& cookies,
-                                       const std::string& data) {
-  if (status.is_success() && response_code == kHttpSuccess) {
-    if (issue_handler_->CanHandle(url)) {
+void CookieFetcher::OnURLFetchComplete(const content::URLFetcher* source) {
+  if (source->GetStatus().is_success() &&
+      source->GetResponseCode() == kHttpSuccess) {
+    if (issue_handler_->CanHandle(source->GetURL())) {
       VLOG(1) << "Handling auth token";
+      std::string data;
+      source->GetResponseAsString(&data);
       fetcher_.reset(issue_handler_->Handle(data, this));
       return;
     }
   }
-  BootTimesLoader::Get()->AddLoginTimeMarker("CookiesFetched", false);
   delete this;
 }
 

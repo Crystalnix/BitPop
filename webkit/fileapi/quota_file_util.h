@@ -5,6 +5,7 @@
 #ifndef WEBKIT_FILEAPI_QUOTA_FILE_UTIL_H_
 #define WEBKIT_FILEAPI_QUOTA_FILE_UTIL_H_
 
+#include "base/memory/scoped_ptr.h"
 #include "webkit/fileapi/file_system_file_util.h"
 #include "webkit/fileapi/file_system_operation_context.h"
 #pragma once
@@ -13,33 +14,36 @@ namespace fileapi {
 
 class QuotaFileUtil : public FileSystemFileUtil {
  public:
-  static QuotaFileUtil* GetInstance();
-  ~QuotaFileUtil() {}
-
   static const int64 kNoLimit;
 
-  virtual base::PlatformFileError CopyOrMoveFile(
-    FileSystemOperationContext* fs_context,
-    const FilePath& src_file_path,
-    const FilePath& dest_file_path,
-    bool copy);
+  // |underlying_file_util| is owned by the instance.  It will be deleted by
+  // the owner instance.  For example, it can be instanciated as follows:
+  // FileSystemFileUtil* file_util = new QuotaFileUtil(new SomeFileUtil());
+  //
+  // To instanciate an object whose underlying file_util is FileSystemFileUtil,
+  // QuotaFileUtil::CreateDefault() can be used.
+  explicit QuotaFileUtil(FileSystemFileUtil* underlying_file_util);
+  virtual ~QuotaFileUtil();
 
-  virtual base::PlatformFileError DeleteFile(
-      FileSystemOperationContext* fs_context,
-      const FilePath& file_path);
-
-  // TODO(dmikurube): Charge some amount of quota for directories.
+  // Creates a QuotaFileUtil instance with an underlying NativeFileUtil
+  // instance.
+  static QuotaFileUtil* CreateDefault();
 
   virtual base::PlatformFileError Truncate(
       FileSystemOperationContext* fs_context,
       const FilePath& path,
-      int64 length);
+      int64 length) OVERRIDE;
+  virtual base::PlatformFileError CopyOrMoveFile(
+      FileSystemOperationContext* fs_context,
+      const FilePath& src_file_path,
+      const FilePath& dest_file_path,
+      bool copy) OVERRIDE;
+  virtual base::PlatformFileError DeleteFile(
+      FileSystemOperationContext* fs_context,
+      const FilePath& file_path) OVERRIDE;
 
-  friend struct DefaultSingletonTraits<QuotaFileUtil>;
+ private:
   DISALLOW_COPY_AND_ASSIGN(QuotaFileUtil);
-
- protected:
-  QuotaFileUtil() {}
 };
 
 }  // namespace fileapi

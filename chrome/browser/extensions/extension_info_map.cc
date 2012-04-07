@@ -5,16 +5,38 @@
 #include "chrome/browser/extensions/extension_info_map.h"
 
 #include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/url_constants.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
 
 namespace {
 
-static void CheckOnValidThread() {
+void CheckOnValidThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 }
 
 }  // namespace
+
+
+struct ExtensionInfoMap::ExtraData {
+  // When the extension was installed.
+  base::Time install_time;
+
+  // True if the user has allowed this extension to run in incognito mode.
+  bool incognito_enabled;
+
+  ExtraData();
+  ~ExtraData();
+};
+
+ExtensionInfoMap::ExtraData::ExtraData() : incognito_enabled(false) {
+}
+
+ExtensionInfoMap::ExtraData::~ExtraData() {
+}
+
 
 ExtensionInfoMap::ExtensionInfoMap() {
 }
@@ -22,138 +44,107 @@ ExtensionInfoMap::ExtensionInfoMap() {
 ExtensionInfoMap::~ExtensionInfoMap() {
 }
 
-void ExtensionInfoMap::AddExtension(const Extension* extension) {
-  CheckOnValidThread();
-  extension_info_[extension->id()] = extension;
-  Map::iterator iter = disabled_extension_info_.find(extension->id());
-  if (iter != disabled_extension_info_.end())
-    disabled_extension_info_.erase(iter);
+const extensions::ProcessMap& ExtensionInfoMap::process_map() const {
+  return process_map_;
 }
 
-void ExtensionInfoMap::RemoveExtension(const std::string& id,
-    const UnloadedExtensionInfo::Reason reason) {
+void ExtensionInfoMap::AddExtension(const Extension* extension,
+                                    base::Time install_time,
+                                    bool incognito_enabled) {
   CheckOnValidThread();
-  Map::iterator iter = extension_info_.find(id);
-  if (iter != extension_info_.end()) {
-    if (reason == UnloadedExtensionInfo::DISABLE)
-      disabled_extension_info_[id] = (*iter).second;
-    extension_info_.erase(iter);
-  } else if (reason != UnloadedExtensionInfo::DISABLE) {
+  extensions_.Insert(extension);
+  disabled_extensions_.Remove(extension->id());
+
+  extra_data_[extension->id()].install_time = install_time;
+  extra_data_[extension->id()].incognito_enabled = incognito_enabled;
+}
+
+void ExtensionInfoMap::RemoveExtension(const std::string& extension_id,
+    const extension_misc::UnloadedExtensionReason reason) {
+  CheckOnValidThread();
+  const Extension* extension = extensions_.GetByID(extension_id);
+  extra_data_.erase(extension_id);  // we don't care about disabled extra data
+  bool was_uninstalled = (reason != extension_misc::UNLOAD_REASON_DISABLE &&
+                          reason != extension_misc::UNLOAD_REASON_TERMINATE);
+  if (extension) {
+    if (!was_uninstalled)
+      disabled_extensions_.Insert(extension);
+    extensions_.Remove(extension_id);
+  } else if (was_uninstalled) {
     // If the extension was uninstalled, make sure it's removed from the map of
     // disabled extensions.
-    disabled_extension_info_.erase(id);
+    disabled_extensions_.Remove(extension_id);
   } else {
     // NOTE: This can currently happen if we receive multiple unload
     // notifications, e.g. setting incognito-enabled state for a
     // disabled extension (e.g., via sync).  See
     // http://code.google.com/p/chromium/issues/detail?id=50582 .
-    NOTREACHED() << id;
+    NOTREACHED() << extension_id;
   }
 }
 
-
-std::string ExtensionInfoMap::GetNameForExtension(const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  if (iter != extension_info_.end())
-    return iter->second->name();
-  else
-    return std::string();
+base::Time ExtensionInfoMap::GetInstallTime(
+    const std::string& extension_id) const {
+  ExtraDataMap::const_iterator iter = extra_data_.find(extension_id);
+  if (iter != extra_data_.end())
+    return iter->second.install_time;
+  return base::Time();
 }
 
-FilePath ExtensionInfoMap::GetPathForExtension(const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  if (iter != extension_info_.end())
-    return iter->second->path();
-  else
-    return FilePath();
+bool ExtensionInfoMap::IsIncognitoEnabled(
+    const std::string& extension_id) const {
+  // Keep in sync with duplicate in extension_process_manager.cc.
+  ExtraDataMap::const_iterator iter = extra_data_.find(extension_id);
+  if (iter != extra_data_.end())
+    return iter->second.incognito_enabled;
+  return false;
 }
 
-FilePath ExtensionInfoMap::GetPathForDisabledExtension(
-    const std::string& id) const {
-  Map::const_iterator iter = disabled_extension_info_.find(id);
-  if (iter != disabled_extension_info_.end())
-    return iter->second->path();
-  else
-    return FilePath();
+bool ExtensionInfoMap::CanCrossIncognito(const Extension* extension) {
+  // This is duplicated from ExtensionService :(.
+  return IsIncognitoEnabled(extension->id()) &&
+      !extension->incognito_split_mode();
 }
 
-std::string ExtensionInfoMap::GetContentSecurityPolicyForExtension(
-    const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  if (iter != extension_info_.end())
-    return iter->second->content_security_policy();
-  else
-    return std::string();
+void ExtensionInfoMap::RegisterExtensionProcess(const std::string& extension_id,
+                                                int process_id,
+                                                int site_instance_id) {
+  if (!process_map_.Insert(extension_id, process_id, site_instance_id)) {
+    NOTREACHED() << "Duplicate extension process registration for: "
+                 << extension_id << "," << process_id << ".";
+  }
 }
 
-bool ExtensionInfoMap::ExtensionHasWebExtent(const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  return iter != extension_info_.end() &&
-      !iter->second->web_extent().is_empty();
+void ExtensionInfoMap::UnregisterExtensionProcess(
+    const std::string& extension_id,
+    int process_id,
+    int site_instance_id) {
+  if (!process_map_.Remove(extension_id, process_id, site_instance_id)) {
+    NOTREACHED() << "Unknown extension process registration for: "
+                 << extension_id << "," << process_id << ".";
+  }
 }
 
-bool ExtensionInfoMap::ExtensionCanLoadInIncognito(
-    const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  // Only split-mode extensions can load in incognito profiles.
-  return iter != extension_info_.end() && iter->second->incognito_split_mode();
+void ExtensionInfoMap::UnregisterAllExtensionsInProcess(int process_id) {
+  process_map_.RemoveAllFromProcess(process_id);
 }
 
-std::string ExtensionInfoMap::GetDefaultLocaleForExtension(
-    const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  std::string result;
-  if (iter != extension_info_.end())
-    result = iter->second->default_locale();
-
-  return result;
-}
-
-URLPatternSet ExtensionInfoMap::GetEffectiveHostPermissionsForExtension(
-    const std::string& id) const {
-  Map::const_iterator iter = extension_info_.find(id);
-  URLPatternSet result;
-  if (iter != extension_info_.end())
-    result = iter->second->GetEffectiveHostPermissions();
-
-  return result;
-}
-
-bool ExtensionInfoMap::CheckURLAccessToExtensionPermission(
-    const GURL& url,
-    const char* permission_name) const {
-  Map::const_iterator info;
-  if (url.SchemeIs(chrome::kExtensionScheme)) {
-    // If the url is an extension scheme, we just look it up by extension id.
-    std::string id = url.host();
-    info = extension_info_.find(id);
-  } else {
-    // Otherwise, we scan for a matching extent. Overlapping extents are
-    // disallowed, so only one will match.
-    info = extension_info_.begin();
-    while (info != extension_info_.end() &&
-           !info->second->web_extent().MatchesURL(url))
-      ++info;
+bool ExtensionInfoMap::SecurityOriginHasAPIPermission(
+    const GURL& origin, int process_id,
+    ExtensionAPIPermission::ID permission) const {
+  if (origin.SchemeIs(chrome::kExtensionScheme)) {
+    const std::string& id = origin.host();
+    return extensions_.GetByID(id)->HasAPIPermission(permission) &&
+        process_map_.Contains(id, process_id);
   }
 
-  if (info == extension_info_.end())
-    return false;
-
-  return info->second->api_permissions().count(permission_name) != 0;
-}
-
-bool ExtensionInfoMap::URLIsForExtensionIcon(const GURL& url) const {
-  DCHECK(url.SchemeIs(chrome::kExtensionScheme));
-
-  Map::const_iterator iter = extension_info_.find(url.host());
-  if (iter == extension_info_.end()) {
-    iter = disabled_extension_info_.find(url.host());
-    if (iter == disabled_extension_info_.end())
-      return false;
+  ExtensionSet::const_iterator i = extensions_.begin();
+  for (; i != extensions_.end(); ++i) {
+    if ((*i)->web_extent().MatchesSecurityOrigin(origin) &&
+        process_map_.Contains((*i)->id(), process_id) &&
+        (*i)->HasAPIPermission(permission)) {
+      return true;
+    }
   }
-
-  std::string path = url.path();
-  DCHECK(path.length() > 0 && path[0] == '/');
-  path = path.substr(1);
-  return iter->second->icons().ContainsPath(path);
+  return false;
 }

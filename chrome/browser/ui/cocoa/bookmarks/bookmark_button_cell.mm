@@ -4,20 +4,23 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
 
-#include "app/mac/nsimage_cache.h"
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
 #import "chrome/browser/bookmarks/bookmark_model.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
-#include "content/browser/user_metrics.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/gfx/mac/nsimage_cache.h"
+
+using content::UserMetricsAction;
 
 
 @interface BookmarkButtonCell(Private)
 - (void)configureBookmarkButtonCell;
+- (void)applyTextColor;
 @end
 
 
@@ -45,7 +48,7 @@
         cellImage:(NSImage*)cellImage {
   if ((self = [super initTextCell:cellText])) {
     [self configureBookmarkButtonCell];
-
+    [self setTextColor:[NSColor blackColor]];
     [self setBookmarkNode:node];
 
     if (node) {
@@ -117,12 +120,19 @@
                                            withString:@" "];
   title = [title stringByReplacingOccurrencesOfString:@"\r"
                                            withString:@" "];
-  // If there is no title, squeeze things tight by displaying only the image; by
-  // default, Cocoa leaves extra space in an attempt to display an empty title.
+
   if ([title length]) {
     [self setImagePosition:NSImageLeft];
     [self setTitle:title];
+  } else if ([self isFolderButtonCell]) {
+    // Left-align icons for bookmarks within folders, regardless of whether
+    // there is a title.
+    [self setImagePosition:NSImageLeft];
   } else {
+    // For bookmarks without a title that aren't visible directly in the
+    // bookmarks bar, squeeze things tighter by displaying only the image.
+    // By default, Cocoa leaves extra space in an attempt to display an
+    // empty title.
     [self setImagePosition:NSImageOnly];
   }
 
@@ -150,9 +160,9 @@
       static_cast<const BookmarkNode*>([[self representedObject] pointerValue]);
 
   if (node->parent() && node->parent()->type() == BookmarkNode::FOLDER) {
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBarFolder_CtxMenu"));
+    content::RecordAction(UserMetricsAction("BookmarkBarFolder_CtxMenu"));
   } else {
-    UserMetrics::RecordAction(UserMetricsAction("BookmarkBar_CtxMenu"));
+    content::RecordAction(UserMetricsAction("BookmarkBar_CtxMenu"));
   }
 
   [menu setRepresentedObject:[NSNumber numberWithLongLong:node->id()]];
@@ -160,32 +170,35 @@
   return menu;
 }
 
-// Unfortunately, NSCell doesn't already have something like this.
-// TODO(jrg): consider placing in GTM.
+- (void)setTitle:(NSString*)title {
+  if ([[self title] isEqualTo:title])
+    return;
+  [super setTitle:title];
+  [self applyTextColor];
+}
+
 - (void)setTextColor:(NSColor*)color {
+  if ([textColor_ isEqualTo:color])
+    return;
+  textColor_.reset([color copy]);
+  [self applyTextColor];
+}
 
-  // We can't properly set the cell's text color without a control.
-  // In theory we could just save the next for later and wait until
-  // the cell is moved to a control, but there is no obvious way to
-  // accomplish that (e.g. no "cellDidMoveToControl" notification.)
-  DCHECK([self controlView]);
-
+// We must reapply the text color after any setTitle: call
+- (void)applyTextColor {
   scoped_nsobject<NSMutableParagraphStyle> style([NSMutableParagraphStyle new]);
   [style setAlignment:NSLeftTextAlignment];
   NSDictionary* dict = [NSDictionary
-                         dictionaryWithObjectsAndKeys:color,
+                         dictionaryWithObjectsAndKeys:textColor_,
                          NSForegroundColorAttributeName,
                          [self font], NSFontAttributeName,
                          style.get(), NSParagraphStyleAttributeName,
+                         [NSNumber numberWithFloat:0.2], NSKernAttributeName,
                          nil];
   scoped_nsobject<NSAttributedString> ats([[NSAttributedString alloc]
                                             initWithString:[self title]
                                                 attributes:dict]);
-  NSButton* button = static_cast<NSButton*>([self controlView]);
-  if (button) {
-    DCHECK([button isKindOfClass:[NSButton class]]);
-    [button setAttributedTitle:ats.get()];
-  }
+  [self setAttributedTitle:ats.get()];
 }
 
 // To implement "hover open a bookmark button to open the folder"
@@ -208,7 +221,7 @@
   drawFolderArrow_ = draw;
   if (draw && !arrowImage_) {
     arrowImage_.reset(
-        [app::mac::GetCachedImageWithName(@"menu_hierarchy_arrow.pdf") retain]);
+        [gfx::GetCachedImageWithName(@"menu_hierarchy_arrow.pdf") retain]);
   }
 }
 
@@ -246,6 +259,10 @@
                     fraction:[self isEnabled] ? 1.0 : 0.5
                 neverFlipped:YES];
   }
+}
+
+- (int)verticalTextOffset {
+  return 0;
 }
 
 @end

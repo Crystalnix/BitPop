@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_SYNC_GLUE_FRONTEND_DATA_TYPE_CONTROLLER_MOCK_H__
 #pragma once
 
+#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/glue/frontend_data_type_controller.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -17,7 +18,7 @@ class FrontendDataTypeControllerMock : public FrontendDataTypeController {
   virtual ~FrontendDataTypeControllerMock();
 
   // DataTypeController mocks.
-  MOCK_METHOD1(Start, void(StartCallback* start_callback));
+  MOCK_METHOD1(Start, void(const StartCallback& start_callback));
   MOCK_METHOD0(Stop, void());
   MOCK_METHOD0(enabled, bool());
   MOCK_CONST_METHOD0(type, syncable::ModelType());
@@ -32,9 +33,8 @@ class FrontendDataTypeControllerMock : public FrontendDataTypeController {
   MOCK_METHOD0(Associate, bool());
   MOCK_METHOD0(CreateSyncComponents, void());
   MOCK_METHOD2(StartFailed, void(StartResult result,
-                                 const tracked_objects::Location& from_here));
-  MOCK_METHOD2(FinishStart, void(StartResult result,
-                                 const tracked_objects::Location& from_here));
+                                 const SyncError& error));
+  MOCK_METHOD1(FinishStart, void(StartResult result));
   MOCK_METHOD0(CleanUpState, void());
   MOCK_CONST_METHOD0(model_associator, AssociatorInterface*());
   MOCK_METHOD1(set_model_associator, void(AssociatorInterface* associator));

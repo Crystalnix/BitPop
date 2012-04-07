@@ -7,13 +7,13 @@
 #pragma once
 
 #include "base/memory/scoped_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/login/login_model.h"
-#include "content/browser/tab_contents/tab_contents_observer.h"
-#include "webkit/glue/password_form.h"
-#include "webkit/glue/password_form_dom_manager.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "webkit/forms/password_form.h"
+#include "webkit/forms/password_form_dom_manager.h"
 
 class PasswordManagerDelegate;
 class PasswordManagerTest;
@@ -25,41 +25,41 @@ class PrefService;
 // database through the WebDataService. The PasswordManager is a LoginModel
 // for purposes of supporting HTTP authentication dialogs.
 class PasswordManager : public LoginModel,
-                        public TabContentsObserver {
+                        public content::WebContentsObserver {
  public:
   static void RegisterUserPrefs(PrefService* prefs);
 
   // The delegate passed in is required to outlive the PasswordManager.
-  PasswordManager(TabContents* tab_contents,
+  PasswordManager(content::WebContents* web_contents,
                   PasswordManagerDelegate* delegate);
   virtual ~PasswordManager();
 
   // Called by a PasswordFormManager when it decides a form can be autofilled
   // on the page.
-  void Autofill(const webkit_glue::PasswordForm& form_for_autofill,
-                const webkit_glue::PasswordFormMap& best_matches,
-                const webkit_glue::PasswordForm* const preferred_match,
+  void Autofill(const webkit::forms::PasswordForm& form_for_autofill,
+                const webkit::forms::PasswordFormMap& best_matches,
+                const webkit::forms::PasswordForm* const preferred_match,
                 bool wait_for_username) const;
 
   // LoginModel implementation.
-  virtual void SetObserver(LoginModelObserver* observer);
+  virtual void SetObserver(LoginModelObserver* observer) OVERRIDE;
 
   // When a form is submitted, we prepare to save the password but wait
   // until we decide the user has successfully logged in. This is step 1
   // of 2 (see SavePassword).
-  void ProvisionallySavePassword(webkit_glue::PasswordForm form);
+  void ProvisionallySavePassword(webkit::forms::PasswordForm form);
 
-  // TabContentsObserver overrides.
-  virtual void DidStopLoading();
-  virtual void DidNavigateAnyFramePostCommit(
+  // content::WebContentsObserver overrides.
+  virtual void DidStopLoading() OVERRIDE;
+  virtual void DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params);
-  virtual bool OnMessageReceived(const IPC::Message& message);
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void OnPasswordFormsFound(
-      const std::vector<webkit_glue::PasswordForm>& forms);
+      const std::vector<webkit::forms::PasswordForm>& forms);
   void OnPasswordFormsVisible(
-      const std::vector<webkit_glue::PasswordForm>& visible_forms);
+      const std::vector<webkit::forms::PasswordForm>& visible_forms);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PasswordManagerTest, FormSeenThenLeftPage);

@@ -5,9 +5,10 @@
 #include "chrome/browser/ui/gtk/unity_service.h"
 
 #include <dlfcn.h>
+#include <string>
 
 #include "base/environment.h"
-#include "base/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/shell_integration.h"
 
 // Unity data typedefs.
@@ -52,7 +53,11 @@ void EnsureMethodsLoaded() {
     return;
   attempted_load = true;
 
+  // TODO(erg): When unity stabilizes its interface, switch all this to looking
+  // up just ".so" instead of specific versions.
   void* unity_lib = dlopen("libunity.so.4", RTLD_LAZY);
+  if (!unity_lib)
+    unity_lib = dlopen("libunity.so.6", RTLD_LAZY);
   if (!unity_lib)
     return;
 

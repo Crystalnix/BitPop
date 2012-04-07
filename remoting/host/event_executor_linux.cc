@@ -10,10 +10,10 @@
 #include <X11/extensions/XTest.h>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "remoting/proto/internal.pb.h"
 
 namespace remoting {
@@ -29,11 +29,14 @@ class EventExecutorLinux : public EventExecutor {
   EventExecutorLinux(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorLinux() {};
 
-  virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
-  virtual void InjectMouseEvent(const MouseEvent* event, Task* done) OVERRIDE;
+  bool Init();
+
+  virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
+  virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
 
  private:
-  bool Init();
+  void InjectScrollWheelClicks(int button, int count);
+
   MessageLoop* message_loop_;
   Capturer* capturer_;
 
@@ -64,6 +67,17 @@ int MouseButtonToX11ButtonNumber(MouseEvent::MouseButton button) {
     default:
       return -1;
   }
+}
+
+int HorizontalScrollWheelToX11ButtonNumber(int dx) {
+  return (dx > 0 ? 6 : 7);
+}
+
+
+int VerticalScrollWheelToX11ButtonNumber(int dy) {
+  // Positive y-values are wheel scroll-up events (button 4), negative y-values
+  // are wheel scroll-down events (button 5).
+  return (dy > 0 ? 4 : 5);
 }
 
 // Hard-coded mapping from Virtual Key codes to X11 KeySyms.
@@ -233,15 +247,14 @@ int ChromotocolKeycodeToX11Keysym(int32_t keycode) {
   return kUsVkeyToKeysym[keycode];
 }
 
-EventExecutorLinux::EventExecutorLinux(
-    MessageLoop* message_loop, Capturer* capturer)
+EventExecutorLinux::EventExecutorLinux(MessageLoop* message_loop,
+                                       Capturer* capturer)
     : message_loop_(message_loop),
       capturer_(capturer),
       display_(XOpenDisplay(NULL)),
       root_window_(BadValue),
       width_(0),
       height_(0) {
-  CHECK(Init());
 }
 
 bool EventExecutorLinux::Init() {
@@ -276,22 +289,20 @@ bool EventExecutorLinux::Init() {
   return true;
 }
 
-void EventExecutorLinux::InjectKeyEvent(const KeyEvent* event, Task* done) {
-  base::ScopedTaskRunner done_runner(done);
-
+void EventExecutorLinux::InjectKeyEvent(const KeyEvent& event) {
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &EventExecutorLinux::InjectKeyEvent,
-                          event, done_runner.Release()));
+        base::Bind(&EventExecutorLinux::InjectKeyEvent, base::Unretained(this),
+                   event));
     return;
   }
 
   // TODO(ajwong): This will only work for QWERTY keyboards.
-  int keysym = ChromotocolKeycodeToX11Keysym(event->keycode());
+  int keysym = ChromotocolKeycodeToX11Keysym(event.keycode());
 
   if (keysym == -1) {
-    LOG(WARNING) << "Ignoring unknown key: " << event->keycode();
+    LOG(WARNING) << "Ignoring unknown key: " << event.keycode();
     return;
   }
 
@@ -299,64 +310,77 @@ void EventExecutorLinux::InjectKeyEvent(const KeyEvent* event, Task* done) {
   int keycode = XKeysymToKeycode(display_, keysym);
   if (keycode == 0) {
     LOG(WARNING) << "Ignoring undefined keysym: " << keysym
-                 << " for key: " << event->keycode();
+                 << " for key: " << event.keycode();
     return;
   }
 
-  VLOG(3) << "Got pepper key: " << event->keycode()
+  VLOG(3) << "Got pepper key: " << event.keycode()
           << " sending keysym: " << keysym
           << " to keycode: " << keycode;
-  XTestFakeKeyEvent(display_, keycode, event->pressed(), CurrentTime);
+  XTestFakeKeyEvent(display_, keycode, event.pressed(), CurrentTime);
   XFlush(display_);
 }
 
-void EventExecutorLinux::InjectMouseEvent(const MouseEvent* event,
-                                          Task* done) {
-  base::ScopedTaskRunner done_runner(done);
+void EventExecutorLinux::InjectScrollWheelClicks(int button, int count) {
+  for (int i = 0; i < count; i++) {
+    // Generate a button-down and a button-up to simulate a wheel click.
+    XTestFakeButtonEvent(display_, button, true, CurrentTime);
+    XTestFakeButtonEvent(display_, button, false, CurrentTime);
+  }
+  XFlush(display_);
+}
 
+void EventExecutorLinux::InjectMouseEvent(const MouseEvent& event) {
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &EventExecutorLinux::InjectMouseEvent,
-                          event, done_runner.Release()));
+        base::Bind(&EventExecutorLinux::InjectMouseEvent,
+                   base::Unretained(this), event));
     return;
   }
 
-  if (event->has_x() && event->has_y()) {
-    if (event->x() < 0 || event->y() < 0 ||
-        event->x() > width_ || event->y() > height_) {
+  if (event.has_x() && event.has_y()) {
+    if (event.x() < 0 || event.y() < 0 ||
+        event.x() > width_ || event.y() > height_) {
       // A misbehaving client may send these. Drop events that are out of range.
       // TODO(ajwong): How can we log this sanely? We don't want to DOS the
       // server with a misbehaving client by logging like crazy.
       return;
     }
 
-    VLOG(3) << "Moving mouse to " << event->x()
-            << "," << event->y();
+    VLOG(3) << "Moving mouse to " << event.x()
+            << "," << event.y();
     XTestFakeMotionEvent(display_, DefaultScreen(display_),
-                         event->x(), event->y(),
+                         event.x(), event.y(),
                          CurrentTime);
     XFlush(display_);
   }
 
-  if (event->has_button() && event->has_button_down()) {
-    int button_number = MouseButtonToX11ButtonNumber(event->button());
+  if (event.has_button() && event.has_button_down()) {
+    int button_number = MouseButtonToX11ButtonNumber(event.button());
 
     if (button_number < 0) {
-      LOG(WARNING) << "Ignoring unknown button type: "
-                   << event->button();
+      LOG(WARNING) << "Ignoring unknown button type: " << event.button();
       return;
     }
 
-    VLOG(3) << "Button " << event->button()
-            << " received, sending down " << button_number;
-    XTestFakeButtonEvent(display_, button_number, event->button_down(),
+    VLOG(3) << "Button " << event.button()
+            << " received, sending "
+            << (event.button_down() ? "down " : "up ")
+            << button_number;
+    XTestFakeButtonEvent(display_, button_number, event.button_down(),
                          CurrentTime);
     XFlush(display_);
   }
 
-  if (event->has_wheel_offset_x() && event->has_wheel_offset_y()) {
-    NOTIMPLEMENTED() << "No scroll wheel support yet.";
+  if (event.has_wheel_offset_y() && event.wheel_offset_y() != 0) {
+    int dy = event.wheel_offset_y();
+    InjectScrollWheelClicks(VerticalScrollWheelToX11ButtonNumber(dy), abs(dy));
+  }
+  if (event.has_wheel_offset_x() && event.wheel_offset_x() != 0) {
+    int dx = event.wheel_offset_x();
+    InjectScrollWheelClicks(HorizontalScrollWheelToX11ButtonNumber(dx),
+                            abs(dx));
   }
 }
 
@@ -364,9 +388,12 @@ void EventExecutorLinux::InjectMouseEvent(const MouseEvent* event,
 
 EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
                                      Capturer* capturer) {
-  return new EventExecutorLinux(message_loop, capturer);
+  EventExecutorLinux* executor = new EventExecutorLinux(message_loop, capturer);
+  if (!executor->Init()) {
+    delete executor;
+    executor = NULL;
+  }
+  return executor;
 }
 
 }  // namespace remoting
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::EventExecutorLinux);

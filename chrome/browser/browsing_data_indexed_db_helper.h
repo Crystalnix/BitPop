@@ -6,10 +6,11 @@
 #define CHROME_BROWSER_BROWSING_DATA_INDEXED_DB_HELPER_H_
 #pragma once
 
+#include <list>
 #include <string>
-#include <vector>
 
-#include "base/callback_old.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -32,26 +33,16 @@ class BrowsingDataIndexedDBHelper
   // Contains detailed information about an indexed database.
   struct IndexedDBInfo {
     IndexedDBInfo(
-        const std::string& protocol,
-        const std::string& host,
-        unsigned short port,
-        const std::string& database_identifier,
-        const std::string& origin,
-        const FilePath& file_path,
+        const GURL& origin,
         int64 size,
         base::Time last_modified);
     ~IndexedDBInfo();
 
     bool IsFileSchemeData() {
-      return protocol == chrome::kFileScheme;
+      return origin.SchemeIsFile();
     }
 
-    std::string protocol;
-    std::string host;
-    unsigned short port;
-    std::string database_identifier;
-    std::string origin;
-    FilePath file_path;
+    GURL origin;
     int64 size;
     base::Time last_modified;
   };
@@ -64,13 +55,14 @@ class BrowsingDataIndexedDBHelper
   // callback.
   // This must be called only in the UI thread.
   virtual void StartFetching(
-      Callback1<const std::vector<IndexedDBInfo>& >::Type* callback) = 0;
+      const base::Callback<void(const std::list<IndexedDBInfo>&)>&
+          callback) = 0;
   // Cancels the notification callback (i.e., the window that created it no
   // longer exists).
   // This must be called only in the UI thread.
   virtual void CancelNotification() = 0;
-  // Requests a single indexed database file to be deleted in the WEBKIT thread.
-  virtual void DeleteIndexedDBFile(const FilePath& file_path) = 0;
+  // Requests a single indexed database to be deleted in the WEBKIT thread.
+  virtual void DeleteIndexedDB(const GURL& origin) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<BrowsingDataIndexedDBHelper>;
@@ -83,11 +75,11 @@ class BrowsingDataIndexedDBHelper
 class CannedBrowsingDataIndexedDBHelper
     : public BrowsingDataIndexedDBHelper {
  public:
-  explicit CannedBrowsingDataIndexedDBHelper(Profile* profile);
+  CannedBrowsingDataIndexedDBHelper();
 
   // Return a copy of the IndexedDB helper. Only one consumer can use the
   // StartFetching method at a time, so we need to create a copy of the helper
-  // everytime we instantiate a cookies tree model for it.
+  // every time we instantiate a cookies tree model for it.
   CannedBrowsingDataIndexedDBHelper* Clone();
 
   // Add a indexed database to the set of canned indexed databases that is
@@ -103,9 +95,10 @@ class CannedBrowsingDataIndexedDBHelper
 
   // BrowsingDataIndexedDBHelper methods.
   virtual void StartFetching(
-      Callback1<const std::vector<IndexedDBInfo>& >::Type* callback);
-  virtual void CancelNotification();
-  virtual void DeleteIndexedDBFile(const FilePath& file_path) {}
+      const base::Callback<void(const std::list<IndexedDBInfo>&)>&
+          callback) OVERRIDE;
+  virtual void CancelNotification() OVERRIDE;
+  virtual void DeleteIndexedDB(const GURL& origin) OVERRIDE {}
 
  private:
   struct PendingIndexedDBInfo {
@@ -124,20 +117,17 @@ class CannedBrowsingDataIndexedDBHelper
 
   void NotifyInUIThread();
 
-  Profile* profile_;
-
   // Lock to protect access to pending_indexed_db_info_;
   mutable base::Lock lock_;
 
   // This may mutate on WEBKIT and UI threads.
-  std::vector<PendingIndexedDBInfo> pending_indexed_db_info_;
+  std::list<PendingIndexedDBInfo> pending_indexed_db_info_;
 
   // This only mutates on the WEBKIT thread.
-  std::vector<IndexedDBInfo> indexed_db_info_;
+  std::list<IndexedDBInfo> indexed_db_info_;
 
   // This only mutates on the UI thread.
-  scoped_ptr<Callback1<const std::vector<IndexedDBInfo>& >::Type >
-      completion_callback_;
+  base::Callback<void(const std::list<IndexedDBInfo>&)> completion_callback_;
 
   // Indicates whether or not we're currently fetching information:
   // it's true when StartFetching() is called in the UI thread, and it's reset

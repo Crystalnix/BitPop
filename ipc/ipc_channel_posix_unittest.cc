@@ -23,9 +23,7 @@
 
 namespace {
 
-enum {
-  QUIT_MESSAGE = 47
-};
+static const uint32 kQuitMessage = 47;
 
 class IPCChannelPosixTestListener : public IPC::Channel::Listener {
  public:
@@ -43,35 +41,35 @@ class IPCChannelPosixTestListener : public IPC::Channel::Listener {
 
   virtual ~IPCChannelPosixTestListener() {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) {
-    EXPECT_EQ(message.type(), QUIT_MESSAGE);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+    EXPECT_EQ(message.type(), kQuitMessage);
     status_ = MESSAGE_RECEIVED;
     QuitRunLoop();
     return true;
   }
 
-  virtual void OnChannelConnected(int32 peer_pid) {
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
     status_ = CONNECTED;
     if (!quit_only_on_message_) {
       QuitRunLoop();
     }
   }
 
-  virtual void OnChannelError()  {
+  virtual void OnChannelError() OVERRIDE {
     status_ = CHANNEL_ERROR;
     if (!quit_only_on_message_) {
       QuitRunLoop();
     }
   }
 
-  virtual void OnChannelDenied() {
+  virtual void OnChannelDenied() OVERRIDE {
     status_ = DENIED;
     if (!quit_only_on_message_) {
       QuitRunLoop();
     }
   }
 
-  virtual void OnChannelListenError() {
+  virtual void OnChannelListenError() OVERRIDE {
     status_ = LISTEN_ERROR;
     if (!quit_only_on_message_) {
       QuitRunLoop();
@@ -88,7 +86,7 @@ class IPCChannelPosixTestListener : public IPC::Channel::Listener {
   // The current status of the listener.
   STATUS status_;
   // If |quit_only_on_message_| then the listener will only break out of
-  // the run loop when the QUIT_MESSAGE is received.
+  // the run loop when kQuitMessage is received.
   bool quit_only_on_message_;
 };
 
@@ -109,8 +107,13 @@ private:
   scoped_ptr<MessageLoopForIO> message_loop_;
 };
 
+#if defined(OS_ANDROID)
+const char IPCChannelPosixTest::kConnectionSocketTestName[] =
+    "/data/local/chrome_IPCChannelPosixTest__ConnectionSocket";
+#else
 const char IPCChannelPosixTest::kConnectionSocketTestName[] =
     "/var/tmp/chrome_IPCChannelPosixTest__ConnectionSocket";
+#endif
 
 void IPCChannelPosixTest::SetUp() {
   MultiProcessTest::SetUp();
@@ -144,7 +147,7 @@ void IPCChannelPosixTest::SetUpSocket(IPC::ChannelHandle *handle,
   if (mode == IPC::Channel::MODE_NAMED_SERVER) {
     // Only one server at a time. Cleanup garbage if it exists.
     unlink(name.c_str());
-      // Make sure the path we need exists.
+    // Make sure the path we need exists.
     FilePath path(name);
     FilePath dir_path = path.DirName();
     ASSERT_TRUE(file_util::CreateDirectory(dir_path));
@@ -174,13 +177,19 @@ void IPCChannelPosixTest::SpinRunLoop(int milliseconds) {
   // in the case of a bad test. Usually, the run loop will quit sooner than
   // that because all tests use a IPCChannelPosixTestListener which quits the
   // current run loop on any channel activity.
-  loop->PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask(), milliseconds);
+  loop->PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(), milliseconds);
   loop->Run();
 }
 
 TEST_F(IPCChannelPosixTest, BasicListen) {
+
+#if defined(OS_ANDROID)
+  const char* kChannelName = "/data/local/IPCChannelPosixTest_BasicListen";
+#else
+  const char* kChannelName = "/var/tmp/IPCChannelPosixTest_BasicListen";
+#endif
   // Test creating a socket that is listening.
-  IPC::ChannelHandle handle("/var/tmp/IPCChannelPosixTest_BasicListen");
+  IPC::ChannelHandle handle(kChannelName);
   SetUpSocket(&handle, IPC::Channel::MODE_NAMED_SERVER);
   unlink(handle.name.c_str());
   IPC::Channel channel(handle, IPC::Channel::MODE_NAMED_SERVER, NULL);
@@ -229,8 +238,8 @@ TEST_F(IPCChannelPosixTest, AdvancedConnected) {
   SpinRunLoop(TestTimeouts::action_max_timeout_ms());
   ASSERT_EQ(IPCChannelPosixTestListener::CONNECTED, listener.status());
   ASSERT_TRUE(channel.HasAcceptedConnection());
-  IPC::Message* message = new IPC::Message(0, // routing_id
-                                           QUIT_MESSAGE, // message type
+  IPC::Message* message = new IPC::Message(0,  // routing_id
+                                           kQuitMessage,  // message type
                                            IPC::Message::PRIORITY_NORMAL);
   channel.Send(message);
   SpinRunLoop(TestTimeouts::action_timeout_ms());
@@ -268,8 +277,8 @@ TEST_F(IPCChannelPosixTest, ResetState) {
   SpinRunLoop(TestTimeouts::action_max_timeout_ms());
   ASSERT_EQ(IPCChannelPosixTestListener::CONNECTED, listener.status());
   ASSERT_TRUE(channel.HasAcceptedConnection());
-  IPC::Message* message = new IPC::Message(0, // routing_id
-                                           QUIT_MESSAGE, // message type
+  IPC::Message* message = new IPC::Message(0,  // routing_id
+                                           kQuitMessage,  // message type
                                            IPC::Message::PRIORITY_NORMAL);
   channel.Send(message);
   SpinRunLoop(TestTimeouts::action_timeout_ms());
@@ -279,6 +288,26 @@ TEST_F(IPCChannelPosixTest, ResetState) {
   EXPECT_EQ(0, exit_code);
   ASSERT_EQ(IPCChannelPosixTestListener::CHANNEL_ERROR, listener.status());
   ASSERT_FALSE(channel.HasAcceptedConnection());
+}
+
+TEST_F(IPCChannelPosixTest, BadChannelName) {
+  // Test empty name
+  IPC::ChannelHandle handle("");
+  IPC::Channel channel(handle, IPC::Channel::MODE_NAMED_SERVER, NULL);
+  ASSERT_FALSE(channel.Connect());
+
+  // Test name that is too long.
+  const char *kTooLongName = "This_is_a_very_long_name_to_proactively_implement"
+                             "client-centered_synergy_through_top-line"
+                             "platforms_Phosfluorescently_disintermediate_"
+                             "clicks-and-mortar_best_practices_without_"
+                             "future-proof_growth_strategies_Continually"
+                             "pontificate_proactive_potentialities_before"
+                             "leading-edge_processes";
+  EXPECT_GE(strlen(kTooLongName), IPC::kMaxPipeNameLength);
+  IPC::ChannelHandle handle2(kTooLongName);
+  IPC::Channel channel2(handle2, IPC::Channel::MODE_NAMED_SERVER, NULL);
+  EXPECT_FALSE(channel2.Connect());
 }
 
 TEST_F(IPCChannelPosixTest, MultiConnection) {
@@ -307,8 +336,8 @@ TEST_F(IPCChannelPosixTest, MultiConnection) {
   EXPECT_EQ(exit_code, 0);
   ASSERT_EQ(IPCChannelPosixTestListener::DENIED, listener.status());
   ASSERT_TRUE(channel.HasAcceptedConnection());
-  IPC::Message* message = new IPC::Message(0, // routing_id
-                                           QUIT_MESSAGE, // message type
+  IPC::Message* message = new IPC::Message(0,  // routing_id
+                                           kQuitMessage,  // message type
                                            IPC::Message::PRIORITY_NORMAL);
   channel.Send(message);
   SpinRunLoop(TestTimeouts::action_timeout_ms());
@@ -335,6 +364,20 @@ TEST_F(IPCChannelPosixTest, BadMode) {
   IPC::ChannelHandle chan_handle(kConnectionSocketTestName);
   IPC::Channel channel(chan_handle, IPC::Channel::MODE_NONE, &listener);
   ASSERT_FALSE(channel.Connect());
+}
+
+TEST_F(IPCChannelPosixTest, IsNamedServerInitialized) {
+  IPCChannelPosixTestListener listener(false);
+  IPC::ChannelHandle chan_handle(kConnectionSocketTestName);
+  ASSERT_TRUE(file_util::Delete(FilePath(kConnectionSocketTestName), false));
+  ASSERT_FALSE(IPC::Channel::IsNamedServerInitialized(
+      kConnectionSocketTestName));
+  IPC::Channel channel(chan_handle, IPC::Channel::MODE_NAMED_SERVER, &listener);
+  ASSERT_TRUE(IPC::Channel::IsNamedServerInitialized(
+      kConnectionSocketTestName));
+  channel.Close();
+  ASSERT_FALSE(IPC::Channel::IsNamedServerInitialized(
+      kConnectionSocketTestName));
 }
 
 // A long running process that connects to us
@@ -372,4 +415,3 @@ MULTIPROCESS_TEST_MAIN(IPCChannelPosixFailConnectionProc) {
   }
   return 0;
 }
-

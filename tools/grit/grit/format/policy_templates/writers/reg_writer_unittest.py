@@ -56,6 +56,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         '    {'
         '      "name": "MainPolicy",'
         '      "type": "main",'
+        '      "features": { "can_be_recommended": True },'
         '      "caption": "",'
         '      "desc": "",'
         '      "supported_on": ["chrome.win:8-"],'
@@ -70,6 +71,9 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'Windows Registry Editor Version 5.00',
         '',
         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Google\\Chrome]',
+        '"MainPolicy"=dword:00000001',
+        '',
+        '[HKEY_LOCAL_MACHINE\\Software\\Policies\\Google\\Chrome\\Recommended]',
         '"MainPolicy"=dword:00000001'])
     self.CompareOutputs(output, expected_output)
 

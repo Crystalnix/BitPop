@@ -9,13 +9,13 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/themes/theme_service.h"
-#include "grit/app_resources.h"
+#include "chrome/browser/ui/tabs/tab_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/animation/multi_animation.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/animation/throb_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
@@ -23,11 +23,10 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/skbitmap_operations.h"
-#include "views/controls/button/image_button.h"
-#include "views/widget/tooltip_manager.h"
-#include "views/widget/widget.h"
-#include "views/window/non_client_view.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/widget/tooltip_manager.h"
+#include "ui/views/widget/widget.h"
+#include "ui/views/window/non_client_view.h"
 
 static const int kLeftPadding = 16;
 static const int kTopPadding = 6;
@@ -39,6 +38,7 @@ static const int kFaviconTitleSpacing = 4;
 static const int kTitleCloseButtonSpacing = 3;
 static const int kStandardTitleWidth = 175;
 static const int kCloseButtonVertFuzz = 0;
+static const int kTabIconSize = gfx::kFaviconSize;
 static const int kCloseButtonHorzFuzz = 5;
 
 // Vertical adjustment to the favicon when the tab has a large icon.
@@ -84,11 +84,6 @@ static const int kMiniTitleChangeGradientRadius = 20;
 static const SkColor kMiniTitleChangeGradientColor1 = SK_ColorWHITE;
 static const SkColor kMiniTitleChangeGradientColor2 =
     SkColorSetARGB(0, 255, 255, 255);
-
-// Hit mask constants.
-static const SkScalar kTabCapWidth = 15;
-static const SkScalar kTabTopCurveWidth = 4;
-static const SkScalar kTabBottomCurveWidth = 3;
 
 // static
 const char Tab::kViewClassName[] = "browser/tabs/Tab";
@@ -150,7 +145,7 @@ gfx::Size Tab::GetMinimumUnselectedSize() {
 // static
 gfx::Size Tab::GetMinimumSelectedSize() {
   gfx::Size minimum_size = GetMinimumUnselectedSize();
-  minimum_size.set_width(kLeftPadding + kFaviconSize + kRightPadding);
+  minimum_size.set_width(kLeftPadding + gfx::kFaviconSize + kRightPadding);
   return minimum_size;
 }
 
@@ -234,7 +229,7 @@ void Tab::Layout() {
 
   // The height of the content of the Tab is the largest of the favicon,
   // the title text and the close button graphic.
-  int content_height = std::max(kFaviconSize, font_height());
+  int content_height = std::max(kTabIconSize, font_height());
   gfx::Size close_button_size(close_button()->GetPreferredSize());
   content_height = std::max(content_height, close_button_size.height());
 
@@ -242,17 +237,17 @@ void Tab::Layout() {
   showing_icon_ = ShouldShowIcon();
   if (showing_icon_) {
     // Use the size of the favicon as apps use a bigger favicon size.
-    int favicon_top = kTopPadding + content_height / 2 - kFaviconSize / 2;
+    int favicon_top = kTopPadding + content_height / 2 - kTabIconSize / 2;
     int favicon_left = lb.x();
     favicon_bounds_.SetRect(favicon_left, favicon_top,
-                            kFaviconSize, kFaviconSize);
+                            kTabIconSize, kTabIconSize);
     if (data().mini && width() < kMiniTabRendererAsNormalTabWidth) {
       // Adjust the location of the favicon when transitioning from a normal
       // tab to a mini-tab.
       int mini_delta = kMiniTabRendererAsNormalTabWidth - GetMiniWidth();
       int ideal_delta = width() - GetMiniWidth();
       if (ideal_delta < mini_delta) {
-        int ideal_x = (GetMiniWidth() - kFaviconSize) / 2;
+        int ideal_x = (GetMiniWidth() - kTabIconSize) / 2;
         int x = favicon_bounds_.x() + static_cast<int>(
             (1 - static_cast<float>(ideal_delta) /
              static_cast<float>(mini_delta)) *
@@ -292,7 +287,7 @@ void Tab::Layout() {
       title_top -= (text_height - minimum_size.height()) / 2;
 
     int title_width;
-    if (close_button()->IsVisible()) {
+    if (close_button()->visible()) {
       title_width = std::max(close_button()->x() -
                              kTitleCloseButtonSpacing - title_left, 0);
     } else {
@@ -326,42 +321,17 @@ bool Tab::HasHitTestMask() const {
 }
 
 void Tab::GetHitTestMask(gfx::Path* path) const {
-  DCHECK(path);
-
-  SkScalar h = SkIntToScalar(height());
-  SkScalar w = SkIntToScalar(width());
-
-  path->moveTo(0, h);
-
-  // Left end cap.
-  path->lineTo(kTabBottomCurveWidth, h - kTabBottomCurveWidth);
-  path->lineTo(kTabCapWidth - kTabTopCurveWidth, kTabTopCurveWidth);
-  path->lineTo(kTabCapWidth, 0);
-
-  // Connect to the right cap.
-  path->lineTo(w - kTabCapWidth, 0);
-
-  // Right end cap.
-  path->lineTo(w - kTabCapWidth + kTabTopCurveWidth, kTabTopCurveWidth);
-  path->lineTo(w - kTabBottomCurveWidth, h - kTabBottomCurveWidth);
-  path->lineTo(w, h);
-
-  // Close out the path.
-  path->lineTo(0, h);
-  path->close();
+  TabResources::GetHitTestMask(width(), height(), path);
 }
 
-bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) {
+bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
   origin->set_x(title_bounds_.x() + 10);
   origin->set_y(-views::TooltipManager::GetTooltipHeight() - 4);
   return true;
 }
 
 void Tab::OnMouseMoved(const views::MouseEvent& event) {
-  hover_point_ = event.location();
-  // We need to redraw here because otherwise the hover glow does not update
-  // and follow the new mouse position.
-  SchedulePaint();
+  hover_controller().SetLocation(event.location());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -380,8 +350,8 @@ void Tab::PaintTabBackground(gfx::Canvas* canvas) {
     if (throb_value > 0) {
       canvas->SaveLayerAlpha(static_cast<int>(throb_value * 0xff),
                              gfx::Rect(width(), height()));
-      canvas->AsCanvasSkia()->drawARGB(0, 255, 255, 255,
-                                       SkXfermode::kClear_Mode);
+      canvas->GetSkCanvas()->drawARGB(0, 255, 255, 255,
+                                      SkXfermode::kClear_Mode);
       PaintActiveTabBackground(canvas);
       canvas->Restore();
     }
@@ -390,13 +360,13 @@ void Tab::PaintTabBackground(gfx::Canvas* canvas) {
 
 void Tab::PaintInactiveTabBackgroundWithTitleChange(gfx::Canvas* canvas) {
   // Render the inactive tab background. We'll use this for clipping.
-  gfx::CanvasSkia background_canvas(width(), height(), false);
+  gfx::CanvasSkia background_canvas(size(), false);
   PaintInactiveTabBackground(&background_canvas);
 
   SkBitmap background_image = background_canvas.ExtractBitmap();
 
   // Draw a radial gradient to hover_canvas.
-  gfx::CanvasSkia hover_canvas(width(), height(), false);
+  gfx::CanvasSkia hover_canvas(size(), false);
   int radius = kMiniTitleChangeGradientRadius;
   int x0 = width() + radius - kMiniTitleChangeInitialXOffset;
   int x1 = radius;
@@ -423,7 +393,8 @@ void Tab::PaintInactiveTabBackgroundWithTitleChange(gfx::Canvas* canvas) {
       SkShader::kClamp_TileMode);
   paint.setShader(shader);
   shader->unref();
-  hover_canvas.DrawRectInt(x - radius, -radius, radius * 2, radius * 2, paint);
+  hover_canvas.DrawRect(gfx::Rect(x - radius, -radius, radius * 2, radius * 2),
+                        paint);
 
   // Draw the radial gradient clipped to the background into hover_image.
   SkBitmap hover_image = SkBitmapOperations::CreateMaskedBitmap(
@@ -449,8 +420,7 @@ void Tab::PaintInactiveTabBackground(gfx::Canvas* canvas) {
   int offset = GetMirroredX() + background_offset_.x();
 
   int tab_id;
-  if (GetWidget() &&
-      GetWidget()->GetContainingWindow()->ShouldUseNativeFrame()) {
+  if (GetWidget() && GetWidget()->GetTopLevelWidget()->ShouldUseNativeFrame()) {
     tab_id = IDR_THEME_TAB_BACKGROUND_V;
   } else {
     tab_id = data().incognito ? IDR_THEME_TAB_BACKGROUND_INCOGNITO :
@@ -472,7 +442,7 @@ void Tab::PaintInactiveTabBackground(gfx::Canvas* canvas) {
   // We need a CanvasSkia object to be able to extract the bitmap from.
   // We draw everything to this canvas and then output it to the canvas
   // parameter in addition to using it to mask the hover glow if needed.
-  gfx::CanvasSkia background_canvas(width(), height(), false);
+  gfx::CanvasSkia background_canvas(size(), false);
 
   // Draw left edge.  Don't draw over the toolbar, as we're not the foreground
   // tab.
@@ -510,13 +480,8 @@ void Tab::PaintInactiveTabBackground(gfx::Canvas* canvas) {
   canvas->DrawBitmapInt(background_canvas.ExtractBitmap(), 0, 0);
 
   if (!GetThemeProvider()->HasCustomImage(tab_id) &&
-      hover_animation() &&
-      (hover_animation()->IsShowing() || hover_animation()->is_animating())) {
-    SkBitmap hover_glow = DrawHoverGlowBitmap(width(), height());
-    // Draw the hover glow clipped to the background into hover_image.
-    SkBitmap hover_image = SkBitmapOperations::CreateMaskedBitmap(
-        hover_glow, background_canvas.ExtractBitmap());
-    canvas->DrawBitmapInt(hover_image, 0, 0);
+      hover_controller().ShouldDraw()) {
+    hover_controller().Draw(canvas, background_canvas.ExtractBitmap());
   }
 
   // Now draw the highlights/shadows around the tab edge.
@@ -571,50 +536,10 @@ void Tab::PaintActiveTabBackground(gfx::Canvas* canvas) {
   canvas->DrawBitmapInt(*tab_image->image_r, width() - tab_image->r_width, 0);
 }
 
-SkBitmap Tab::DrawHoverGlowBitmap(int width_input, int height_input) {
-  // Draw a radial gradient to hover_canvas so we can export the bitmap.
-  gfx::CanvasSkia hover_canvas(width_input, height_input, false);
-
-  // Draw a radial gradient to hover_canvas.
-  int radius = width() / 3;
-
-  SkPaint paint;
-  paint.setStyle(SkPaint::kFill_Style);
-  paint.setFlags(SkPaint::kAntiAlias_Flag);
-  SkPoint loc = { SkIntToScalar(hover_point_.x()),
-                  SkIntToScalar(hover_point_.y()) };
-  SkColor colors[2];
-  const ui::SlideAnimation* hover_slide = hover_animation();
-  int hover_alpha = 0;
-  if (hover_slide) {
-    hover_alpha = static_cast<int>(255 * kHoverSlideOpacity *
-                                   hover_slide->GetCurrentValue());
-  }
-  colors[0] = SkColorSetARGB(hover_alpha, 255, 255, 255);
-  colors[1] = SkColorSetARGB(0, 255, 255, 255);
-  SkShader* shader = SkGradientShader::CreateRadial(
-      loc,
-      SkIntToScalar(radius),
-      colors,
-      NULL,
-      2,
-      SkShader::kClamp_TileMode);
-  // Shader can end up null when radius = 0.
-  // If so, this results in default full tab glow behavior.
-  if (shader) {
-    paint.setShader(shader);
-    shader->unref();
-    hover_canvas.DrawRectInt(hover_point_.x() - radius,
-                             hover_point_.y() - radius,
-                             radius * 2, radius * 2, paint);
-  }
-  return hover_canvas.ExtractBitmap();
-}
-
 int Tab::IconCapacity() const {
   if (height() < GetMinimumUnselectedSize().height())
     return 0;
-  return (width() - kLeftPadding - kRightPadding) / kFaviconSize;
+  return (width() - kLeftPadding - kRightPadding) / kTabIconSize;
 }
 
 bool Tab::ShouldShowIcon() const {
@@ -643,8 +568,10 @@ double Tab::GetThrobValue() {
   if (pulse_animation() && pulse_animation()->is_animating())
     return pulse_animation()->GetCurrentValue() * kHoverOpacity * scale + min;
 
-  if (hover_animation())
-    return kHoverOpacity * hover_animation()->GetCurrentValue() * scale + min;
+  if (hover_controller().ShouldDraw()) {
+    return kHoverOpacity * hover_controller().GetAnimationValue() * scale +
+        min;
+  }
 
   return is_selected ? kSelectedTabOpacity : 0;
 }

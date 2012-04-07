@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/process.h"
 #include "base/process_util.h"
 #include "base/synchronization/lock.h"
+#include "content/common/content_export.h"
 
 template<typename Type>
 struct DefaultSingletonTraits;
@@ -25,17 +26,19 @@ static const char kZygoteMagic[] = "ZYGOTE_OK";
 
 // The zygote host is the interface, in the browser process, to the zygote
 // process.
-class ZygoteHost {
+class CONTENT_EXPORT ZygoteHost {
  public:
   // Returns the singleton instance.
   static ZygoteHost* GetInstance();
 
   void Init(const std::string& sandbox_cmd);
 
-  // Tries to start a renderer process.  Returns its pid on success, otherwise
+  // Tries to start a process of type indicated by process_type.
+  // Returns its pid on success, otherwise
   // base::kNullProcessHandle;
-  pid_t ForkRenderer(const std::vector<std::string>& command_line,
-                     const base::GlobalDescriptors::Mapping& mapping);
+  pid_t ForkRequest(const std::vector<std::string>& command_line,
+                    const base::GlobalDescriptors::Mapping& mapping,
+                    const std::string& process_type);
   void EnsureProcessTerminated(pid_t process);
 
   // Get the termination status (and, optionally, the exit code) of
@@ -72,7 +75,9 @@ class ZygoteHost {
     return 0;
   }
 
-  // Adjust the OOM score of the given renderer's PID.
+  // Adjust the OOM score of the given renderer's PID.  The allowed
+  // range for the score is [0, 1000], where higher values are more
+  // likely to be killed by the OOM killer.
   void AdjustRendererOOMScore(base::ProcessHandle process_handle, int score);
 
  private:

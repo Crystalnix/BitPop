@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
@@ -21,13 +21,14 @@
 #include "chrome/browser/extensions/extension_updater.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
 #include "chrome/browser/extensions/test_extension_service.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_profile.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/test_url_fetcher_factory.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
+#include "content/test/test_url_fetcher_factory.h"
 #include "libxml/globals.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
@@ -36,6 +37,7 @@
 
 using base::Time;
 using base::TimeDelta;
+using content::BrowserThread;
 
 namespace {
 
@@ -151,16 +153,10 @@ class ServiceForManifestTests : public MockService {
 
   virtual const Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE {
-    for (ExtensionList::const_iterator iter = extensions_.begin();
-        iter != extensions_.end(); ++iter) {
-      if ((*iter)->id() == id) {
-        return *iter;
-      }
-    }
-    return NULL;
+    return extensions_.GetByID(id);
   }
 
-  virtual const ExtensionList* extensions() const OVERRIDE {
+  virtual const ExtensionSet* extensions() const OVERRIDE {
     return &extensions_;
   }
 
@@ -169,11 +165,14 @@ class ServiceForManifestTests : public MockService {
   }
 
   void set_extensions(ExtensionList extensions) {
-    extensions_ = extensions;
+    for (ExtensionList::const_iterator it = extensions.begin();
+         it != extensions.end(); ++it) {
+      extensions_.Insert(*it);
+    }
   }
 
  private:
-  ExtensionList extensions_;
+  ExtensionSet extensions_;
 };
 
 class ServiceForDownloadTests : public MockService {
@@ -315,9 +314,9 @@ class ExtensionUpdaterTest : public testing::Test {
 
   static void TestExtensionUpdateCheckRequests(bool pending) {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     // Create an extension with an update_url.
@@ -337,7 +336,6 @@ class ExtensionUpdaterTest : public testing::Test {
 
     // Set up and start the updater.
     TestURLFetcherFactory factory;
-    URLFetcher::set_factory(&factory);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), 60*60*24);
@@ -352,7 +350,7 @@ class ExtensionUpdaterTest : public testing::Test {
     // Get the url our mock fetcher was asked to fetch.
     TestURLFetcher* fetcher =
         factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
-    const GURL& url = fetcher->original_url();
+    const GURL& url = fetcher->GetOriginalURL();
     EXPECT_FALSE(url.is_empty());
     EXPECT_TRUE(url.is_valid());
     EXPECT_TRUE(url.SchemeIs("http"));
@@ -366,12 +364,12 @@ class ExtensionUpdaterTest : public testing::Test {
     base::SplitString(url.query(), '=', &parts);
     EXPECT_EQ(2u, parts.size());
     EXPECT_EQ("x", parts[0]);
-    std::string decoded = UnescapeURLComponent(parts[1],
-                                               UnescapeRule::URL_SPECIAL_CHARS);
+    std::string decoded = net::UnescapeURLComponent(
+        parts[1], net::UnescapeRule::URL_SPECIAL_CHARS);
     std::map<std::string, std::string> params;
     ExtractParameters(decoded, &params);
     if (pending) {
-      EXPECT_EQ(pending_extension_manager->begin()->first, params["id"]);
+      EXPECT_TRUE(pending_extension_manager->IsIdPending(params["id"]));
       EXPECT_EQ("0.0.0.0", params["v"]);
     } else {
       EXPECT_EQ(extensions[0]->id(), params["id"]);
@@ -385,12 +383,11 @@ class ExtensionUpdaterTest : public testing::Test {
 
     // Setup and start the updater.
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     TestURLFetcherFactory factory;
-    URLFetcher::set_factory(&factory);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), 60*60*24);
@@ -403,7 +400,7 @@ class ExtensionUpdaterTest : public testing::Test {
     TestURLFetcher* fetcher =
         factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
     ASSERT_FALSE(fetcher == NULL);
-    const GURL& url = fetcher->original_url();
+    const GURL& url = fetcher->GetOriginalURL();
 
     EXPECT_FALSE(url.is_empty());
     EXPECT_TRUE(url.is_valid());
@@ -418,8 +415,8 @@ class ExtensionUpdaterTest : public testing::Test {
     base::SplitString(url.query(), '=', &parts);
     EXPECT_EQ(2u, parts.size());
     EXPECT_EQ("x", parts[0]);
-    std::string decoded = UnescapeURLComponent(parts[1],
-                                               UnescapeRule::URL_SPECIAL_CHARS);
+    std::string decoded = net::UnescapeURLComponent(
+        parts[1], net::UnescapeRule::URL_SPECIAL_CHARS);
     std::map<std::string, std::string> params;
     ExtractParameters(decoded, &params);
     EXPECT_EQ("com.google.crx.blacklist", params["id"]);
@@ -494,8 +491,8 @@ class ExtensionUpdaterTest : public testing::Test {
 
   static void TestDetermineUpdates() {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
     // Create a set of test extensions
     ServiceForManifestTests service;
@@ -543,7 +540,7 @@ class ExtensionUpdaterTest : public testing::Test {
     SetupPendingExtensionManagerForTest(3, GURL(), pending_extension_manager);
 
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), kUpdateFrequencySecs);
@@ -551,14 +548,19 @@ class ExtensionUpdaterTest : public testing::Test {
 
     ManifestFetchData fetch_data(GURL("http://localhost/foo"));
     UpdateManifest::Results updates;
-    PendingExtensionManager::const_iterator it;
-    for (it = pending_extension_manager->begin();
-         it != pending_extension_manager->end(); ++it) {
-      fetch_data.AddExtension(it->first, "1.0.0.0",
+
+    std::set<std::string> ids_for_update_check;
+    pending_extension_manager->GetPendingIdsForUpdateCheck(
+        &ids_for_update_check);
+
+    std::set<std::string>::const_iterator it;
+    for (it = ids_for_update_check.begin();
+         it != ids_for_update_check.end(); ++it) {
+      fetch_data.AddExtension(*it,
+                              "1.0.0.0",
                               kNeverPingedData,
                               kEmptyUpdateUrlData);
-      AddParseResult(it->first,
-                     "1.1", "http://localhost/e1_1.1.crx", &updates);
+      AddParseResult(*it, "1.1", "http://localhost/e1_1.1.crx", &updates);
     }
     std::vector<int> updateable =
         updater.DetermineUpdates(fetch_data, updates);
@@ -571,15 +573,14 @@ class ExtensionUpdaterTest : public testing::Test {
 
   static void TestMultipleManifestDownloading() {
     MessageLoop ui_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &ui_loop);
-    BrowserThread file_thread(BrowserThread::FILE);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &ui_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE);
     file_thread.Start();
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     TestURLFetcherFactory factory;
     TestURLFetcher* fetcher = NULL;
-    URLFetcher::set_factory(&factory);
     scoped_ptr<ServiceForDownloadTests> service(new ServiceForDownloadTests);
     ExtensionUpdater updater(service.get(),
                              service->extension_prefs(),
@@ -605,7 +606,7 @@ class ExtensionUpdaterTest : public testing::Test {
     std::string invalid_xml = "invalid xml";
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     fetcher->set_url(url1);
     fetcher->set_status(net::URLRequestStatus());
@@ -626,7 +627,7 @@ class ExtensionUpdaterTest : public testing::Test {
         "</gupdate>";
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     fetcher->set_url(url2);
     fetcher->set_status(net::URLRequestStatus());
@@ -651,15 +652,14 @@ class ExtensionUpdaterTest : public testing::Test {
 
   static void TestSingleExtensionDownloading(bool pending) {
     MessageLoop ui_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &ui_loop);
-    BrowserThread file_thread(BrowserThread::FILE);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &ui_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE);
     file_thread.Start();
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     TestURLFetcherFactory factory;
     TestURLFetcher* fetcher = NULL;
-    URLFetcher::set_factory(&factory);
     scoped_ptr<ServiceForDownloadTests> service(new ServiceForDownloadTests);
     ExtensionUpdater updater(service.get(), service->extension_prefs(),
                              service->pref_service(),
@@ -691,7 +691,7 @@ class ExtensionUpdaterTest : public testing::Test {
     FilePath extension_file_path(FILE_PATH_LITERAL("/whatever"));
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     fetcher->set_url(test_url);
     fetcher->set_status(net::URLRequestStatus());
@@ -714,20 +714,17 @@ class ExtensionUpdaterTest : public testing::Test {
     // because of ImportantFileWriter.
     file_thread.Start();
     service.reset();
-
-    URLFetcher::set_factory(NULL);
   }
 
   static void TestBlacklistDownloading() {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     TestURLFetcherFactory factory;
     TestURLFetcher* fetcher = NULL;
-    URLFetcher::set_factory(&factory);
     ServiceForBlacklistTests service;
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
@@ -748,7 +745,7 @@ class ExtensionUpdaterTest : public testing::Test {
 
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     fetcher->set_url(test_url);
     fetcher->set_status(net::URLRequestStatus());
@@ -764,8 +761,6 @@ class ExtensionUpdaterTest : public testing::Test {
 
     EXPECT_EQ(version, service.pref_service()->
       GetString(prefs::kExtensionBlacklistUpdateVersion));
-
-    URLFetcher::set_factory(NULL);
   }
 
   // Two extensions are updated.  If |updates_start_running| is true, the
@@ -774,14 +769,13 @@ class ExtensionUpdaterTest : public testing::Test {
   // UpdateExtension() returns false, signaling install failures.
   static void TestMultipleExtensionDownloading(bool updates_start_running) {
     MessageLoopForUI message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
-    BrowserThread io_thread(BrowserThread::IO);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread io_thread(BrowserThread::IO);
     io_thread.Start();
 
     TestURLFetcherFactory factory;
     TestURLFetcher* fetcher = NULL;
-    URLFetcher::set_factory(&factory);
     ServiceForDownloadTests service;
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
@@ -810,7 +804,7 @@ class ExtensionUpdaterTest : public testing::Test {
 
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     // We need some CrxInstallers, and CrxInstallers require a real
     // ExtensionService.  Create one on the testing profile.  Any action
@@ -826,9 +820,9 @@ class ExtensionUpdaterTest : public testing::Test {
     profile.GetExtensionService()->set_show_extensions_prompts(false);
 
     scoped_refptr<CrxInstaller> fake_crx1(
-        profile.GetExtensionService()->MakeCrxInstaller(NULL));
+        CrxInstaller::Create(profile.GetExtensionService(), NULL));
     scoped_refptr<CrxInstaller> fake_crx2(
-        profile.GetExtensionService()->MakeCrxInstaller(NULL));
+        CrxInstaller::Create(profile.GetExtensionService(), NULL));
 
     if (updates_start_running) {
       // Add fake CrxInstaller to be returned by service.UpdateExtension().
@@ -859,7 +853,7 @@ class ExtensionUpdaterTest : public testing::Test {
     FilePath extension_file_path2(FILE_PATH_LITERAL("/whatever2"));
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kExtensionFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->load_flags() == expected_load_flags);
+    EXPECT_TRUE(fetcher->GetLoadFlags() == expected_load_flags);
 
     fetcher->set_url(url2);
     fetcher->set_status(net::URLRequestStatus());
@@ -878,7 +872,7 @@ class ExtensionUpdaterTest : public testing::Test {
 
       // Fake install notice.  This should start the second installation,
       // which will be checked below.
-      fake_crx1->NotifyCrxInstallComplete();
+      fake_crx1->NotifyCrxInstallComplete(NULL);
 
       EXPECT_TRUE(updater.crx_install_is_running_);
     }
@@ -892,9 +886,43 @@ class ExtensionUpdaterTest : public testing::Test {
 
     if (updates_start_running) {
       EXPECT_TRUE(updater.crx_install_is_running_);
-      fake_crx2->NotifyCrxInstallComplete();
+      fake_crx2->NotifyCrxInstallComplete(NULL);
     }
     EXPECT_FALSE(updater.crx_install_is_running_);
+  }
+
+  static void TestGalleryRequestsWithBrand(bool use_organic_brand_code) {
+    google_util::BrandForTesting brand_for_testing(
+        use_organic_brand_code ? "GGLS" : "TEST");
+
+    // We want to test a variety of combinations of expected ping conditions for
+    // rollcall and active pings.
+    int ping_cases[] = { ManifestFetchData::kNeverPinged, 0, 1, 5 };
+
+    for (size_t i = 0; i < arraysize(ping_cases); i++) {
+      for (size_t j = 0; j < arraysize(ping_cases); j++) {
+        for (size_t k = 0; k < 2; k++) {
+          int rollcall_ping_days = ping_cases[i];
+          int active_ping_days = ping_cases[j];
+          // Skip cases where rollcall_ping_days == -1, but
+          // active_ping_days > 0, because rollcall_ping_days == -1 means the
+          // app was just installed and this is the first update check after
+          // installation.
+          if (rollcall_ping_days == ManifestFetchData::kNeverPinged &&
+              active_ping_days > 0)
+            continue;
+
+          bool active_bit = k > 0;
+          ExtensionUpdaterTest::TestGalleryRequests(
+              rollcall_ping_days, active_ping_days, active_bit,
+              !use_organic_brand_code);
+          ASSERT_FALSE(HasFailure()) <<
+            " rollcall_ping_days=" << ping_cases[i] <<
+            " active_ping_days=" << ping_cases[j] <<
+            " active_bit=" << active_bit;
+        }
+      }
+    }
   }
 
   // Test requests to both a Google server and a non-google server. This allows
@@ -905,13 +933,13 @@ class ExtensionUpdaterTest : public testing::Test {
   // pings, that delta plus whether the app has been active).
   static void TestGalleryRequests(int rollcall_ping_days,
                                   int active_ping_days,
-                                  bool active_bit) {
+                                  bool active_bit,
+                                  bool expect_brand_code) {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
     TestURLFetcherFactory factory;
-    URLFetcher::set_factory(&factory);
 
     // Set up 2 mock extensions, one with a google.com update url and one
     // without.
@@ -963,7 +991,7 @@ class ExtensionUpdaterTest : public testing::Test {
     TestURLFetcher* fetcher =
       factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
     EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    fetched_urls.push_back(fetcher->original_url());
+    fetched_urls.push_back(fetcher->GetOriginalURL());
 
     fetcher->set_url(fetched_urls[0]);
     fetcher->set_status(net::URLRequestStatus());
@@ -972,7 +1000,7 @@ class ExtensionUpdaterTest : public testing::Test {
     fetcher->delegate()->OnURLFetchComplete(fetcher);
 
     fetcher = factory.GetFetcherByID(ExtensionUpdater::kManifestFetcherId);
-    fetched_urls.push_back(fetcher->original_url());
+    fetched_urls.push_back(fetcher->GetOriginalURL());
 
     // The urls could have been fetched in either order, so use the host to
     // tell them apart and note the query each used.
@@ -1009,6 +1037,24 @@ class ExtensionUpdaterTest : public testing::Test {
     bool ping_found = url1_query.find(search_string) != std::string::npos;
     EXPECT_EQ(ping_expected, ping_found) << "query was: " << url1_query
         << " was looking for " << search_string;
+
+    // Make sure the non-google query has no brand parameter.
+    const std::string brand_string = "brand%3D";
+    EXPECT_TRUE(url2_query.find(brand_string) == std::string::npos);
+
+#if defined(GOOGLE_CHROME_BUILD)
+    // Make sure the google query has a brand parameter, but only if the
+    // brand is non-organic.
+    if (expect_brand_code) {
+      EXPECT_TRUE(url1_query.find(brand_string) != std::string::npos);
+    } else {
+      EXPECT_TRUE(url1_query.find(brand_string) == std::string::npos);
+    }
+#else
+    // Chromium builds never add the brand to the parameter, even for google
+    // queries.
+    EXPECT_TRUE(url1_query.find(brand_string) == std::string::npos);
+#endif
   }
 
   // This makes sure that the extension updater properly stores the results
@@ -1018,7 +1064,7 @@ class ExtensionUpdaterTest : public testing::Test {
   static void TestHandleManifestResults() {
     ServiceForManifestTests service;
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), kUpdateFrequencySecs);
@@ -1051,100 +1097,77 @@ class ExtensionUpdaterTest : public testing::Test {
 // actual test code to live in ExtenionUpdaterTest methods instead of TEST_F
 // subclasses where friendship with ExtenionUpdater is not inherited.
 
-TEST(ExtensionUpdaterTest, TestExtensionUpdateCheckRequests) {
+TEST_F(ExtensionUpdaterTest, TestExtensionUpdateCheckRequests) {
   ExtensionUpdaterTest::TestExtensionUpdateCheckRequests(false);
 }
 
-TEST(ExtensionUpdaterTest, TestExtensionUpdateCheckRequestsPending) {
+TEST_F(ExtensionUpdaterTest, TestExtensionUpdateCheckRequestsPending) {
   ExtensionUpdaterTest::TestExtensionUpdateCheckRequests(true);
 }
 
-// This test is disabled on Mac, see http://crbug.com/26035.
-TEST(ExtensionUpdaterTest, TestBlacklistUpdateCheckRequests) {
+TEST_F(ExtensionUpdaterTest, TestBlacklistUpdateCheckRequests) {
   ExtensionUpdaterTest::TestBlacklistUpdateCheckRequests();
 }
 
-TEST(ExtensionUpdaterTest, TestUpdateUrlData) {
+TEST_F(ExtensionUpdaterTest, TestUpdateUrlData) {
   MessageLoop message_loop;
-  BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+  content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
   ExtensionUpdaterTest::TestUpdateUrlDataEmpty();
   ExtensionUpdaterTest::TestUpdateUrlDataSimple();
   ExtensionUpdaterTest::TestUpdateUrlDataCompound();
   ExtensionUpdaterTest::TestUpdateUrlDataFromGallery(
-      Extension::GalleryUpdateUrl(false).spec());
+      extension_urls::GetWebstoreUpdateUrl(false).spec());
   ExtensionUpdaterTest::TestUpdateUrlDataFromGallery(
-      Extension::GalleryUpdateUrl(true).spec());
+      extension_urls::GetWebstoreUpdateUrl(true).spec());
 }
 
-TEST(ExtensionUpdaterTest, TestDetermineUpdates) {
+TEST_F(ExtensionUpdaterTest, TestDetermineUpdates) {
   ExtensionUpdaterTest::TestDetermineUpdates();
 }
 
-TEST(ExtensionUpdaterTest, TestDetermineUpdatesPending) {
+TEST_F(ExtensionUpdaterTest, TestDetermineUpdatesPending) {
   ExtensionUpdaterTest::TestDetermineUpdatesPending();
 }
 
-TEST(ExtensionUpdaterTest, TestMultipleManifestDownloading) {
+TEST_F(ExtensionUpdaterTest, TestMultipleManifestDownloading) {
   ExtensionUpdaterTest::TestMultipleManifestDownloading();
 }
 
-TEST(ExtensionUpdaterTest, TestSingleExtensionDownloading) {
+TEST_F(ExtensionUpdaterTest, TestSingleExtensionDownloading) {
   ExtensionUpdaterTest::TestSingleExtensionDownloading(false);
 }
 
-TEST(ExtensionUpdaterTest, TestSingleExtensionDownloadingPending) {
+TEST_F(ExtensionUpdaterTest, TestSingleExtensionDownloadingPending) {
   ExtensionUpdaterTest::TestSingleExtensionDownloading(true);
 }
 
-// This test is disabled on Mac, see http://crbug.com/26035.
-TEST(ExtensionUpdaterTest, TestBlacklistDownloading) {
+TEST_F(ExtensionUpdaterTest, TestBlacklistDownloading) {
   ExtensionUpdaterTest::TestBlacklistDownloading();
 }
 
-TEST(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesFail) {
+TEST_F(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesFail) {
   ExtensionUpdaterTest::TestMultipleExtensionDownloading(false);
 }
-TEST(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesSucceed) {
+TEST_F(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesSucceed) {
   ExtensionUpdaterTest::TestMultipleExtensionDownloading(true);
 }
 
-TEST(ExtensionUpdaterTest, TestGalleryRequests) {
-  // We want to test a variety of combinations of expected ping conditions for
-  // rollcall and active pings.
-  int ping_cases[] = { ManifestFetchData::kNeverPinged, 0, 1, 5 };
-
-  for (size_t i = 0; i < arraysize(ping_cases); i++) {
-    for (size_t j = 0; j < arraysize(ping_cases); j++) {
-      for (size_t k = 0; k < 2; k++) {
-        int rollcall_ping_days = ping_cases[i];
-        int active_ping_days = ping_cases[j];
-        // Skip cases where rollcall_ping_days == -1, but active_ping_days > 0,
-        // because rollcall_ping_days == -1 means the app was just installed and
-        // this is the first update check after installation.
-        if (rollcall_ping_days == ManifestFetchData::kNeverPinged &&
-            active_ping_days > 0)
-          continue;
-
-        bool active_bit = k > 0;
-        ExtensionUpdaterTest::TestGalleryRequests(
-            rollcall_ping_days, active_ping_days, active_bit);
-        ASSERT_FALSE(HasFailure()) <<
-          " rollcall_ping_days=" << ping_cases[i] <<
-          " active_ping_days=" << ping_cases[j] <<
-          " active_bit=" << active_bit;
-      }
-    }
-  }
+TEST_F(ExtensionUpdaterTest, TestGalleryRequestsWithOrganicBrand) {
+  ExtensionUpdaterTest::TestGalleryRequestsWithBrand(true);
 }
 
-TEST(ExtensionUpdaterTest, TestHandleManifestResults) {
+TEST_F(ExtensionUpdaterTest, TestGalleryRequestsWithNonOrganicBrand) {
+  ExtensionUpdaterTest::TestGalleryRequestsWithBrand(false);
+}
+
+TEST_F(ExtensionUpdaterTest, TestHandleManifestResults) {
   ExtensionUpdaterTest::TestHandleManifestResults();
 }
 
-TEST(ExtensionUpdaterTest, TestManifestFetchesBuilderAddExtension) {
+TEST_F(ExtensionUpdaterTest, TestManifestFetchesBuilderAddExtension) {
   MessageLoop message_loop;
-  BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+  content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
   MockService service;
   ManifestFetchesBuilder builder(&service, service.extension_prefs());
@@ -1160,17 +1183,16 @@ TEST(ExtensionUpdaterTest, TestManifestFetchesBuilderAddExtension) {
 
   // Extensions with invalid update URLs should be rejected.
   builder.AddPendingExtension(
-      GenerateId("foo"), PendingExtensionInfo(GURL("http:google.com:foo"),
-                                              &ShouldInstallExtensionsOnly,
-                                              false, false,
-                                              Extension::INTERNAL));
+      GenerateId("foo"),
+      Extension::INTERNAL,
+      GURL("http:google.com:foo"));
   EXPECT_TRUE(builder.GetFetches().empty());
 
   // Extensions with empty IDs should be rejected.
   builder.AddPendingExtension(
-      "", PendingExtensionInfo(GURL(), &ShouldInstallExtensionsOnly,
-                               false, false,
-                               Extension::INTERNAL));
+      "",
+      Extension::INTERNAL,
+      GURL());
   EXPECT_TRUE(builder.GetFetches().empty());
 
   // TODO(akalin): Test that extensions with empty update URLs
@@ -1179,10 +1201,10 @@ TEST(ExtensionUpdaterTest, TestManifestFetchesBuilderAddExtension) {
   // Extensions with empty update URLs should have a default one
   // filled in.
   builder.AddPendingExtension(
-      GenerateId("foo"), PendingExtensionInfo(GURL(),
-                                              &ShouldInstallExtensionsOnly,
-                                              false, false,
-                                              Extension::INTERNAL));
+      GenerateId("foo"),
+      Extension::INTERNAL,
+      GURL());
+
   std::vector<ManifestFetchData*> fetches = builder.GetFetches();
   ASSERT_EQ(1u, fetches.size());
   scoped_ptr<ManifestFetchData> fetch(fetches[0]);
@@ -1191,14 +1213,13 @@ TEST(ExtensionUpdaterTest, TestManifestFetchesBuilderAddExtension) {
   EXPECT_FALSE(fetch->full_url().is_empty());
 }
 
-TEST(ExtensionUpdaterTest, TestStartUpdateCheckMemory) {
+TEST_F(ExtensionUpdaterTest, TestStartUpdateCheckMemory) {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
     ServiceForManifestTests service;
     TestURLFetcherFactory factory;
-    URLFetcher::set_factory(&factory);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), kUpdateFrequencySecs);
@@ -1213,14 +1234,13 @@ TEST(ExtensionUpdaterTest, TestStartUpdateCheckMemory) {
     updater.Stop();
 }
 
-TEST(ExtensionUpdaterTest, TestCheckSoon) {
+TEST_F(ExtensionUpdaterTest, TestCheckSoon) {
     MessageLoop message_loop;
-    BrowserThread ui_thread(BrowserThread::UI, &message_loop);
-    BrowserThread file_thread(BrowserThread::FILE, &message_loop);
+    content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+    content::TestBrowserThread file_thread(BrowserThread::FILE, &message_loop);
 
     ServiceForManifestTests service;
     TestURLFetcherFactory factory;
-    URLFetcher::set_factory(&factory);
     ExtensionUpdater updater(
         &service, service.extension_prefs(), service.pref_service(),
         service.profile(), kUpdateFrequencySecs);

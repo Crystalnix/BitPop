@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 {
+  'include': [
+    '../native_client/build/untrusted.gypi',
+  ],
   'target_defaults': {
     'variables': {
       'nacl_target': 0,
@@ -15,8 +18,6 @@
           '<(INTERMEDIATE_DIR)',
         ],
         'defines': [
-          'NACL_BLOCK_SHIFT=5',
-          'NACL_BLOCK_SIZE=32',
           '<@(nacl_defines)',
         ],
         'sources': [
@@ -28,8 +29,8 @@
           'nacl/nacl_main_platform_delegate_linux.cc',
           'nacl/nacl_main_platform_delegate_mac.mm',
           'nacl/nacl_main_platform_delegate_win.cc',
-          'nacl/nacl_launcher_thread.cc',
-          'nacl/nacl_launcher_thread.h',
+          'nacl/nacl_listener.cc',
+          'nacl/nacl_listener.h',
         ],
         # TODO(gregoryd): consider switching NaCl to use Chrome OS defines
         'conditions': [
@@ -45,103 +46,148 @@
             'defines': [
               '__STDC_LIMIT_MACROS=1',
             ],
+            'sources': [
+              'app/nacl_fork_delegate_linux.cc',
+              'app/nacl_fork_delegate_linux.h',
+            ],
           },],
         ],
       }],
     ],
   },
-  'targets': [
-    {
-      'target_name': 'nacl',
-      'type': 'static_library',
-      'msvs_guid': '83E86DAF-5763-4711-AD34-5FDAE395560C',
-      'variables': {
-        'nacl_target': 1,
-      },
-      'dependencies': [
-        # TODO(gregoryd): chrome_resources and chrome_strings could be
-        # shared with the 64-bit target, but it does not work due to a gyp
-        #issue
-        'chrome_resources',
-        'chrome_strings',
-        'common',
-        '../webkit/support/webkit_support.gyp:glue',
-        '../native_client/src/trusted/plugin/plugin.gyp:ppGoogleNaClPluginChrome',
-        '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel',
-        '../native_client/src/trusted/validator_x86/validator_x86.gyp:ncvalidate',
-        '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib',
-      ],
-      'direct_dependent_settings': {
-        'defines': [
-          'NACL_BLOCK_SHIFT=5',
-          'NACL_BLOCK_SIZE=32',
-          '<@(nacl_defines)',
-        ],
-      },
-      'conditions': [
-        ['target_arch=="ia32"', {
-           'copies': [
-             {
-               'destination': '<(PRODUCT_DIR)',
-               'files': [
-                 '../native_client/irt_binaries/nacl_irt_x86_32.nexe',
-               ],
-             },
-           ],
-        }],
-        ['target_arch=="x64" or OS=="win"', {
-           'copies': [
-             {
-               'destination': '<(PRODUCT_DIR)',
-               'files': [
-                 '../native_client/irt_binaries/nacl_irt_x86_64.nexe',
-               ],
-             },
-           ],
-        }],
-      ],
-    },
-  ],
   'conditions': [
-    ['OS=="win"', {
+    ['disable_nacl!=1', {
       'targets': [
         {
-          'target_name': 'nacl_win64',
+          'target_name': 'nacl',
           'type': 'static_library',
-          'msvs_guid': '14135464-9FB9-42E3-99D8-791116FA1204',
           'variables': {
             'nacl_target': 1,
           },
           'dependencies': [
-            # TODO(gregoryd): chrome_resources and chrome_strings could be
-            # shared with the 32-bit target, but it does not work due to a gyp
-            #issue
-            'chrome_resources',
-            'chrome_strings',
-            'common_nacl_win64',
-            '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel64',
-            '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib64',
+            '../base/base.gyp:base',
+            '../ipc/ipc.gyp:ipc',
+            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:ppGoogleNaClPluginChrome',
+            '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel',
+            '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib',
           ],
-          'sources': [
-            'nacl/broker_thread.cc',
-            'nacl/broker_thread.h',
+          'conditions': [
+            ['disable_nacl_untrusted==0', {
+              'dependencies': [
+                '../ppapi/native_client/native_client.gyp:nacl_irt',
+              ],
+            }],
           ],
-          'defines': [
-            '<@(nacl_win64_defines)',
-          ],
-          'configurations': {
-            'Common_Base': {
-              'msvs_target_platform': 'x64',
-            },
-          },
           'direct_dependent_settings': {
             'defines': [
-              'NACL_BLOCK_SHIFT=5',
-              'NACL_BLOCK_SIZE=32',
               '<@(nacl_defines)',
             ],
           },
         },
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'targets': [
+            {
+              'target_name': 'nacl_win64',
+              'type': 'static_library',
+              'variables': {
+                'nacl_target': 1,
+              },
+              'dependencies': [
+                '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel64',
+                '../native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib64',
+              ],
+              'sources': [
+                'common/nacl_cmd_line.cc',
+                'common/nacl_messages.cc',
+                'nacl/nacl_broker_listener.cc',
+                'nacl/nacl_broker_listener.h',
+              ],
+              'include_dirs': [
+                '..',
+              ],
+              'defines': [
+                '<@(nacl_win64_defines)',
+                'COMPILE_CONTENT_STATICALLY',
+              ],
+              'configurations': {
+                'Common_Base': {
+                  'msvs_target_platform': 'x64',
+                },
+              },
+              'direct_dependent_settings': {
+                'defines': [
+                  '<@(nacl_defines)',
+                ],
+              },
+            },
+          ],
+        }],
+        ['OS=="linux" and coverage==0', {
+          'targets': [
+            {
+              'target_name': 'nacl_helper',
+              'type': 'executable',
+              'include_dirs': [
+                '..',
+              ],
+              'dependencies': [
+                'nacl',
+              ],
+              'sources': [
+                'nacl/nacl_helper_linux.cc',
+                '../chrome/common/nacl_messages.cc',
+                '../content/common/child_process_sandbox_support_impl_shm_linux.cc',
+                '../content/common/unix_domain_socket_posix.cc',
+              ],
+              'conditions': [
+                ['toolkit_uses_gtk == 1', {
+                  'dependencies': [
+                    '../build/linux/system.gyp:gtk',
+                  ],
+                }],
+                ['use_glib == 1', {
+                  'dependencies': [
+                    '../build/linux/system.gyp:glib',
+                  ],
+                }],
+                ['os_posix == 1 and OS != "mac"', {
+                  'conditions': [
+                    ['linux_use_tcmalloc==1', {
+                      'dependencies': [
+                        '../base/allocator/allocator.gyp:allocator',
+                      ],
+                    }],
+                  ],
+                }],
+              ],
+              'cflags': ['-fPIE'],
+              'link_settings': {
+                'ldflags': ['-pie'],
+              },
+            },
+          ],
+        }],
+      ],
+    }, {  # else (disable_nacl==1)
+      'targets': [
+        {
+          'target_name': 'nacl',
+          'type': 'none',
+          'sources': [],
+        },
+      ],
+      'conditions': [
+        ['OS=="win"', {
+          'targets': [
+            {
+              'target_name': 'nacl_win64',
+              'type': 'none',
+              'sources': [],
+            },
+          ],
+        }],
       ],
     }],
   ],

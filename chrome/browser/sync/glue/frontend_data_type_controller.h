@@ -9,12 +9,14 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 
 class Profile;
 class ProfileSyncService;
-class ProfileSyncFactory;
+class ProfileSyncComponentsFactory;
+class SyncError;
 
 namespace base { class TimeDelta; }
 namespace browser_sync {
@@ -39,22 +41,22 @@ class ChangeProcessor;
 class FrontendDataTypeController : public DataTypeController {
  public:
   FrontendDataTypeController(
-      ProfileSyncFactory* profile_sync_factory,
+      ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
   virtual ~FrontendDataTypeController();
 
   // DataTypeController interface.
-  virtual void Start(StartCallback* start_callback);
-  virtual void Stop();
+  virtual void Start(const StartCallback& start_callback) OVERRIDE;
+  virtual void Stop() OVERRIDE;
   virtual syncable::ModelType type() const = 0;
-  virtual browser_sync::ModelSafeGroup model_safe_group() const;
-  virtual std::string name() const;
-  virtual State state() const;
+  virtual browser_sync::ModelSafeGroup model_safe_group() const OVERRIDE;
+  virtual std::string name() const OVERRIDE;
+  virtual State state() const OVERRIDE;
 
   // UnrecoverableErrorHandler interface.
   virtual void OnUnrecoverableError(const tracked_objects::Location& from_here,
-                                    const std::string& message);
+                                    const std::string& message) OVERRIDE;
 
  protected:
   // For testing only.
@@ -82,13 +84,9 @@ class FrontendDataTypeController : public DataTypeController {
   // the datatype controller. The default implementation is a no-op.
   virtual void CleanUpState();
 
-  // Cleans up state and calls callback when start fails.
-  virtual void StartFailed(StartResult result,
-      const tracked_objects::Location& from_here);
-
-  // Helper method to run the stashed start callback with a given result.
-  virtual void FinishStart(StartResult result,
-      const tracked_objects::Location& from_here);
+  // Helper methods for cleaning up state an running the start callback.
+  virtual void StartFailed(StartResult result, const SyncError& error);
+  virtual void FinishStart(StartResult result);
 
   // DataType specific histogram methods. Because histograms use static's, the
   // specific datatype controllers must implement this themselves.
@@ -106,13 +104,13 @@ class FrontendDataTypeController : public DataTypeController {
   virtual ChangeProcessor* change_processor() const;
   virtual void set_change_processor(ChangeProcessor* processor);
 
-  ProfileSyncFactory* const profile_sync_factory_;
+  ProfileSyncComponentsFactory* const profile_sync_factory_;
   Profile* const profile_;
   ProfileSyncService* const sync_service_;
 
   State state_;
 
-  scoped_ptr<StartCallback> start_callback_;
+  StartCallback start_callback_;
   // TODO(sync): transition all datatypes to SyncableService and deprecate
   // AssociatorInterface.
   scoped_ptr<AssociatorInterface> model_associator_;

@@ -342,7 +342,8 @@ int HeapProfileTable::FillOrderedProfile(char buf[], int size) const {
   // any gaps.  Whew!
   int map_length = snprintf(buf, size, "%s", kProcSelfMapsHeader);
   if (map_length < 0 || map_length >= size) return 0;
-  map_length += FillProcSelfMaps(buf + map_length, size - map_length);
+  bool dummy;   // "wrote_all" -- did /proc/self/maps fit in its entirety?
+  map_length += FillProcSelfMaps(buf + map_length, size - map_length, &dummy);
   RAW_DCHECK(map_length <= size, "");
   char* const map_start = buf + size - map_length;      // move to end
   memmove(map_start, buf, map_length);
@@ -430,7 +431,10 @@ bool HeapProfileTable::WriteProfile(const char* file_name,
 void HeapProfileTable::CleanupOldProfiles(const char* prefix) {
   if (!FLAGS_cleanup_old_heap_profiles)
     return;
-  string pattern = string(prefix) + ".*" + kFileExt;
+  char buf[1000];
+  snprintf(buf, 1000,"%s.%05d.", prefix, getpid());
+  string pattern = string(buf) + ".*" + kFileExt;
+
 #if defined(HAVE_GLOB_H)
   glob_t g;
   const int r = glob(pattern.c_str(), GLOB_ERR, NULL, &g);

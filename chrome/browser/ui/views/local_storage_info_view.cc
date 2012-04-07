@@ -10,11 +10,12 @@
 #include "base/utf_string_conversions.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/text/bytes_formatting.h"
 #include "ui/gfx/color_utils.h"
-#include "views/controls/label.h"
-#include "views/controls/textfield/textfield.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
 
 static const int kLocalStorageInfoViewBorderSize = 1;
 static const int kLocalStorageInfoViewInsetSize = 3;
@@ -35,10 +36,7 @@ void LocalStorageInfoView::SetLocalStorageInfo(
     const BrowsingDataLocalStorageHelper::LocalStorageInfo&
     local_storage_info) {
   origin_value_field_->SetText(UTF8ToWide(local_storage_info.origin));
-  size_value_field_->SetText(
-      FormatBytes(local_storage_info.size,
-                  GetByteDisplayUnits(local_storage_info.size),
-                  true));
+  size_value_field_->SetText(ui::FormatBytes(local_storage_info.size));
   last_modified_value_field_->SetText(
       base::TimeFormatFriendlyDateAndTime(local_storage_info.last_modified));
   EnableLocalStorageDisplay(true);
@@ -78,15 +76,15 @@ void LocalStorageInfoView::Init() {
       kLocalStorageInfoViewBorderSize, border_color);
   set_border(border);
 
-  views::Label* origin_label = new views::Label(UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_COOKIES_LOCAL_STORAGE_ORIGIN_LABEL)));
+  views::Label* origin_label = new views::Label(
+      l10n_util::GetStringUTF16(IDS_COOKIES_LOCAL_STORAGE_ORIGIN_LABEL));
   origin_value_field_ = new views::Textfield;
-  views::Label* size_label = new views::Label(UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_COOKIES_LOCAL_STORAGE_SIZE_ON_DISK_LABEL)));
+  views::Label* size_label = new views::Label(
+      l10n_util::GetStringUTF16(IDS_COOKIES_LOCAL_STORAGE_SIZE_ON_DISK_LABEL));
   size_value_field_ = new views::Textfield;
-  views::Label* last_modified_label = new views::Label(UTF16ToWide(
+  views::Label* last_modified_label = new views::Label(
       l10n_util::GetStringUTF16(
-          IDS_COOKIES_LOCAL_STORAGE_LAST_MODIFIED_LABEL)));
+          IDS_COOKIES_LOCAL_STORAGE_LAST_MODIFIED_LABEL));
   last_modified_value_field_ = new views::Textfield;
 
   using views::GridLayout;

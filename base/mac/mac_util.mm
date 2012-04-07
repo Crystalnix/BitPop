@@ -1,17 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/mac/mac_util.h"
 
 #import <Cocoa/Cocoa.h>
+#import <IOKit/IOKitLib.h>
+#include <string.h>
+#include <sys/utsname.h>
 
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
+#include "base/mac/mac_logging.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/memory/scoped_generic_obj.h"
 #include "base/memory/scoped_nsobject.h"
-#include "base/sys_info.h"
+#include "base/string_number_conversions.h"
+#include "base/string_piece.h"
 #include "base/sys_string_conversions.h"
 
 namespace base {
@@ -54,44 +61,22 @@ void SetUIMode() {
     SetSystemUIMode(desired_mode, desired_options);
 }
 
-bool WasLaunchedAsLoginItem() {
-  ProcessSerialNumber psn = { 0, kCurrentProcess };
-
-  scoped_nsobject<NSDictionary> process_info(
-      CFToNSCast(ProcessInformationCopyDictionary(&psn,
-                     kProcessDictionaryIncludeAllInformationMask)));
-
-  long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
-  ProcessSerialNumber parent_psn =
-      { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
-
-  scoped_nsobject<NSDictionary> parent_info(
-      CFToNSCast(ProcessInformationCopyDictionary(&parent_psn,
-                     kProcessDictionaryIncludeAllInformationMask)));
-
-  // Check that creator process code is that of loginwindow.
-  BOOL result =
-      [[parent_info objectForKey:@"FileCreator"] isEqualToString:@"lgnw"];
-
-  return result == YES;
-}
-
 // Looks into Shared File Lists corresponding to Login Items for the item
-// representing the current application. If such an item is found, returns a
+// representing the current application.  If such an item is found, returns a
 // retained reference to it. Caller is responsible for releasing the reference.
 LSSharedFileListItemRef GetLoginItemForApp() {
   ScopedCFTypeRef<LSSharedFileListRef> login_items(LSSharedFileListCreate(
       NULL, kLSSharedFileListSessionLoginItems, NULL));
 
   if (!login_items.get()) {
-    LOG(ERROR) << "Couldn't get a Login Items list.";
+    DLOG(ERROR) << "Couldn't get a Login Items list.";
     return NULL;
   }
 
   scoped_nsobject<NSArray> login_items_array(
       CFToNSCast(LSSharedFileListCopySnapshot(login_items, NULL)));
 
-  NSURL* url = [NSURL fileURLWithPath:[[NSBundle mainBundle] bundlePath]];
+  NSURL* url = [NSURL fileURLWithPath:[base::mac::MainBundle() bundlePath]];
 
   for(NSUInteger i = 0; i < [login_items_array count]; ++i) {
     LSSharedFileListItemRef item = reinterpret_cast<LSSharedFileListItemRef>(
@@ -146,7 +131,7 @@ CGColorSpaceRef GetSRGBColorSpace() {
   // Leaked.  That's OK, it's scoped to the lifetime of the application.
   static CGColorSpaceRef g_color_space_sRGB =
       CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-  LOG_IF(ERROR, !g_color_space_sRGB) << "Couldn't get the sRGB color space";
+  DLOG_IF(ERROR, !g_color_space_sRGB) << "Couldn't get the sRGB color space";
   return g_color_space_sRGB;
 }
 
@@ -161,10 +146,10 @@ CGColorSpaceRef GetSystemColorSpace() {
     g_system_color_space = CGColorSpaceCreateDeviceRGB();
 
     if (g_system_color_space) {
-      LOG(WARNING) <<
+      DLOG(WARNING) <<
           "Couldn't get the main display's color space, using generic";
     } else {
-      LOG(ERROR) << "Couldn't get any color space";
+      DLOG(ERROR) << "Couldn't get any color space";
     }
   }
 
@@ -236,8 +221,28 @@ void ActivateProcess(pid_t pid) {
   if (status == noErr) {
     SetFrontProcess(&process);
   } else {
-    LOG(WARNING) << "Unable to get process for pid " << pid;
+    OSSTATUS_DLOG(WARNING, status) << "Unable to get process for pid " << pid;
   }
+}
+
+bool AmIForeground() {
+  ProcessSerialNumber foreground_psn = { 0 };
+  OSErr err = GetFrontProcess(&foreground_psn);
+  if (err != noErr) {
+    OSSTATUS_DLOG(WARNING, err) << "GetFrontProcess";
+    return false;
+  }
+
+  ProcessSerialNumber my_psn = { 0, kCurrentProcess };
+
+  Boolean result = FALSE;
+  err = SameProcess(&foreground_psn, &my_psn, &result);
+  if (err != noErr) {
+    OSSTATUS_DLOG(WARNING, err) << "SameProcess";
+    return false;
+  }
+
+  return result;
 }
 
 bool SetFileBackupExclusion(const FilePath& file_path) {
@@ -254,11 +259,9 @@ bool SetFileBackupExclusion(const FilePath& file_path) {
   OSStatus os_err =
       CSBackupSetItemExcluded(base::mac::NSToCFCast(file_url), TRUE, FALSE);
   if (os_err != noErr) {
-    LOG(WARNING) << "Failed to set backup exclusion for file '"
-                 << file_path.value().c_str() << "' with error "
-                 << os_err << " (" << GetMacOSStatusErrorString(os_err)
-                 << ": " << GetMacOSStatusCommentString(os_err)
-                 << ").  Continuing.";
+    OSSTATUS_DLOG(WARNING, os_err)
+        << "Failed to set backup exclusion for file '"
+        << file_path.value().c_str() << "'";
   }
   return os_err == noErr;
 }
@@ -300,7 +303,7 @@ void SetProcessName(CFStringRef process_name) {
     CFBundleRef launch_services_bundle =
         CFBundleGetBundleWithIdentifier(CFSTR("com.apple.LaunchServices"));
     if (!launch_services_bundle) {
-      LOG(ERROR) << "Failed to look up LaunchServices bundle";
+      DLOG(ERROR) << "Failed to look up LaunchServices bundle";
       return;
     }
 
@@ -309,7 +312,7 @@ void SetProcessName(CFStringRef process_name) {
             CFBundleGetFunctionPointerForName(
                 launch_services_bundle, CFSTR("_LSGetCurrentApplicationASN")));
     if (!ls_get_current_application_asn_func)
-      LOG(ERROR) << "Could not find _LSGetCurrentApplicationASN";
+      DLOG(ERROR) << "Could not find _LSGetCurrentApplicationASN";
 
     ls_set_application_information_item_func =
         reinterpret_cast<LSSetApplicationInformationItemType>(
@@ -317,14 +320,14 @@ void SetProcessName(CFStringRef process_name) {
                 launch_services_bundle,
                 CFSTR("_LSSetApplicationInformationItem")));
     if (!ls_set_application_information_item_func)
-      LOG(ERROR) << "Could not find _LSSetApplicationInformationItem";
+      DLOG(ERROR) << "Could not find _LSSetApplicationInformationItem";
 
     CFStringRef* key_pointer = reinterpret_cast<CFStringRef*>(
         CFBundleGetDataPointerForName(launch_services_bundle,
                                       CFSTR("_kLSDisplayNameKey")));
     ls_display_name_key = key_pointer ? *key_pointer : NULL;
     if (!ls_display_name_key)
-      LOG(ERROR) << "Could not find _kLSDisplayNameKey";
+      DLOG(ERROR) << "Could not find _kLSDisplayNameKey";
 
     // Internally, this call relies on the Mach ports that are started up by the
     // Carbon Process Manager.  In debug builds this usually happens due to how
@@ -349,7 +352,8 @@ void SetProcessName(CFStringRef process_name) {
                                                ls_display_name_key,
                                                process_name,
                                                NULL /* optional out param */);
-  LOG_IF(ERROR, err) << "Call to set process name failed, err " << err;
+  OSSTATUS_DLOG_IF(ERROR, err != noErr, err)
+      << "Call to set process name failed";
 }
 
 // Converts a NSImage to a CGImageRef.  Normally, the system frameworks can do
@@ -406,7 +410,7 @@ void AddToLoginItems(bool hide_on_startup) {
       NULL, kLSSharedFileListSessionLoginItems, NULL));
 
   if (!login_items.get()) {
-    LOG(ERROR) << "Couldn't get a Login Items list.";
+    DLOG(ERROR) << "Couldn't get a Login Items list.";
     return;
   }
 
@@ -415,7 +419,7 @@ void AddToLoginItems(bool hide_on_startup) {
     LSSharedFileListItemRemove(login_items, item);
   }
 
-  NSURL* url = [NSURL fileURLWithPath:[[NSBundle mainBundle] bundlePath]];
+  NSURL* url = [NSURL fileURLWithPath:[base::mac::MainBundle() bundlePath]];
 
   BOOL hide = hide_on_startup ? YES : NO;
   NSDictionary* properties =
@@ -430,7 +434,7 @@ void AddToLoginItems(bool hide_on_startup) {
       reinterpret_cast<CFDictionaryRef>(properties), NULL));
 
   if (!new_item.get()) {
-    LOG(ERROR) << "Couldn't insert current app into Login Items list.";
+    DLOG(ERROR) << "Couldn't insert current app into Login Items list.";
   }
 }
 
@@ -443,23 +447,234 @@ void RemoveFromLoginItems() {
       NULL, kLSSharedFileListSessionLoginItems, NULL));
 
   if (!login_items.get()) {
-    LOG(ERROR) << "Couldn't get a Login Items list.";
+    DLOG(ERROR) << "Couldn't get a Login Items list.";
     return;
   }
 
   LSSharedFileListItemRemove(login_items, item);
 }
 
+bool WasLaunchedAsLoginOrResumeItem() {
+  ProcessSerialNumber psn = { 0, kCurrentProcess };
+
+  scoped_nsobject<NSDictionary> process_info(
+      CFToNSCast(ProcessInformationCopyDictionary(&psn,
+                     kProcessDictionaryIncludeAllInformationMask)));
+
+  long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
+  ProcessSerialNumber parent_psn =
+      { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
+
+  scoped_nsobject<NSDictionary> parent_info(
+      CFToNSCast(ProcessInformationCopyDictionary(&parent_psn,
+                     kProcessDictionaryIncludeAllInformationMask)));
+
+  // Check that creator process code is that of loginwindow.
+  BOOL result =
+      [[parent_info objectForKey:@"FileCreator"] isEqualToString:@"lgnw"];
+
+  return result == YES;
+}
+
 bool WasLaunchedAsHiddenLoginItem() {
-  if (!WasLaunchedAsLoginItem())
+  if (!WasLaunchedAsLoginOrResumeItem())
     return false;
 
   ScopedCFTypeRef<LSSharedFileListItemRef> item(GetLoginItemForApp());
   if (!item.get()) {
-    LOG(ERROR) << "Process launched at Login but can't access Login Item List.";
+    // Lion can launch items for the resume feature.  So log an error only for
+    // Snow Leopard or earlier.
+    if (IsOSSnowLeopardOrEarlier())
+      DLOG(ERROR) <<
+          "Process launched at Login but can't access Login Item List.";
+
     return false;
   }
   return IsHiddenLoginItem(item);
+}
+
+namespace {
+
+// Returns the running system's Darwin major version. Don't call this, it's
+// an implementation detail and its result is meant to be cached by
+// MacOSXMinorVersion.
+int DarwinMajorVersionInternal() {
+  // base::OperatingSystemVersionNumbers calls Gestalt, which is a
+  // higher-level operation than is needed. It might perform unnecessary
+  // operations. On 10.6, it was observed to be able to spawn threads (see
+  // http://crbug.com/53200). It might also read files or perform other
+  // blocking operations. Actually, nobody really knows for sure just what
+  // Gestalt might do, or what it might be taught to do in the future.
+  //
+  // uname, on the other hand, is implemented as a simple series of sysctl
+  // system calls to obtain the relevant data from the kernel. The data is
+  // compiled right into the kernel, so no threads or blocking or other
+  // funny business is necessary.
+
+  struct utsname uname_info;
+  if (uname(&uname_info) != 0) {
+    DPLOG(ERROR) << "uname";
+    return 0;
+  }
+
+  if (strcmp(uname_info.sysname, "Darwin") != 0) {
+    DLOG(ERROR) << "unexpected uname sysname " << uname_info.sysname;
+    return 0;
+  }
+
+  int darwin_major_version = 0;
+  char* dot = strchr(uname_info.release, '.');
+  if (dot) {
+    if (!base::StringToInt(base::StringPiece(uname_info.release,
+                                             dot - uname_info.release),
+                           &darwin_major_version)) {
+      dot = NULL;
+    }
+  }
+
+  if (!dot) {
+    DLOG(ERROR) << "could not parse uname release " << uname_info.release;
+    return 0;
+  }
+
+  return darwin_major_version;
+}
+
+// Returns the running system's Mac OS X minor version. This is the |y| value
+// in 10.y or 10.y.z. Don't call this, it's an implementation detail and the
+// result is meant to be cached by MacOSXMinorVersion.
+int MacOSXMinorVersionInternal() {
+  int darwin_major_version = DarwinMajorVersionInternal();
+
+  // The Darwin major version is always 4 greater than the Mac OS X minor
+  // version for Darwin versions beginning with 6, corresponding to Mac OS X
+  // 10.2. Since this correspondence may change in the future, warn when
+  // encountering a version higher than anything seen before. Older Darwin
+  // versions, or versions that can't be determined, result in
+  // immediate death.
+  CHECK(darwin_major_version >= 6);
+  int mac_os_x_minor_version = darwin_major_version - 4;
+  DLOG_IF(WARNING, darwin_major_version > 11) << "Assuming Darwin "
+      << base::IntToString(darwin_major_version) << " is Mac OS X 10."
+      << base::IntToString(mac_os_x_minor_version);
+
+  return mac_os_x_minor_version;
+}
+
+// Returns the running system's Mac OS X minor version. This is the |y| value
+// in 10.y or 10.y.z.
+int MacOSXMinorVersion() {
+  static int mac_os_x_minor_version = MacOSXMinorVersionInternal();
+  return mac_os_x_minor_version;
+}
+
+enum {
+  LEOPARD_MINOR_VERSION = 5,
+  SNOW_LEOPARD_MINOR_VERSION = 6,
+  LION_MINOR_VERSION = 7
+};
+
+}  // namespace
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_6)
+bool IsOSLeopard() {
+  return MacOSXMinorVersion() == LEOPARD_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_6)
+bool IsOSLeopardOrEarlier() {
+  return MacOSXMinorVersion() <= LEOPARD_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_7)
+bool IsOSSnowLeopard() {
+  return MacOSXMinorVersion() == SNOW_LEOPARD_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_7)
+bool IsOSSnowLeopardOrEarlier() {
+  return MacOSXMinorVersion() <= SNOW_LEOPARD_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_6)
+bool IsOSSnowLeopardOrLater() {
+  return MacOSXMinorVersion() >= SNOW_LEOPARD_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
+bool IsOSLion() {
+  return MacOSXMinorVersion() == LION_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GE_10_7)
+bool IsOSLionOrLater() {
+  return MacOSXMinorVersion() >= LION_MINOR_VERSION;
+}
+#endif
+
+#if !defined(BASE_MAC_MAC_UTIL_H_INLINED_GT_10_7)
+bool IsOSLaterThanLion() {
+  return MacOSXMinorVersion() > LION_MINOR_VERSION;
+}
+#endif
+
+namespace {
+
+// ScopedGenericObj functor for IOObjectRelease().
+class ScopedReleaseIOObject {
+ public:
+  void operator()(io_object_t x) const {
+    IOObjectRelease(x);
+  }
+};
+
+}  // namespace
+
+std::string GetModelIdentifier() {
+  ScopedGenericObj<io_service_t, ScopedReleaseIOObject>
+      platform_expert(IOServiceGetMatchingService(
+          kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice")));
+  if (!platform_expert)
+    return "";
+  ScopedCFTypeRef<CFDataRef> model_data(
+      static_cast<CFDataRef>(IORegistryEntryCreateCFProperty(
+          platform_expert,
+          CFSTR("model"),
+          kCFAllocatorDefault,
+          0)));
+  if (!model_data)
+    return "";
+  return reinterpret_cast<const char*>(
+      CFDataGetBytePtr(model_data));
+}
+
+bool ParseModelIdentifier(const std::string& ident,
+                          std::string* type,
+                          int32* major,
+                          int32* minor) {
+  size_t number_loc = ident.find_first_of("0123456789");
+  if (number_loc == std::string::npos)
+    return false;
+  size_t comma_loc = ident.find(',', number_loc);
+  if (comma_loc == std::string::npos)
+    return false;
+  int32 major_tmp, minor_tmp;
+  std::string::const_iterator begin = ident.begin();
+  if (!StringToInt(
+          StringPiece(begin + number_loc, begin + comma_loc), &major_tmp) ||
+      !StringToInt(
+          StringPiece(begin + comma_loc + 1, ident.end()), &minor_tmp))
+    return false;
+  *type = ident.substr(0, number_loc);
+  *major = major_tmp;
+  *minor = minor_tmp;
+  return true;
 }
 
 }  // namespace mac

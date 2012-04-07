@@ -32,9 +32,10 @@
 
 #include "config.h"
 #include "central_freelist.h"
-
-#include "linked_list.h"
-#include "static_vars.h"
+#include "free_list.h"         // for FL_Next, FL_Push, etc
+#include "internal_logging.h"  // for ASSERT, MESSAGE
+#include "page_heap.h"         // for PageHeap
+#include "static_vars.h"       // for Static
 
 namespace tcmalloc {
 
@@ -44,22 +45,40 @@ void CentralFreeList::Init(size_t cl) {
   tcmalloc::DLL_Init(&nonempty_);
   counter_ = 0;
 
-  cache_size_ = 1;
+#ifdef TCMALLOC_SMALL_BUT_SLOW
+  // Disable the transfer cache for the small footprint case.
+  cache_size_ = 0;
+#else
+  cache_size_ = 16;
+#endif
   used_slots_ = 0;
   ASSERT(cache_size_ <= kNumTransferEntries);
 }
 
 void CentralFreeList::ReleaseListToSpans(void* start) {
   while (start) {
-    void *next = SLL_Next(start);
+    void *next = FL_Next(start);
     ReleaseToSpans(start);
     start = next;
   }
 }
 
-void CentralFreeList::ReleaseToSpans(void* object) {
+// MapObjectToSpan should logically be part of ReleaseToSpans.  But
+// this triggers an optimization bug in gcc 4.5.0.  Moving to a
+// separate function, and making sure that function isn't inlined,
+// seems to fix the problem.  It also should be fixed for gcc 4.5.1.
+static
+#if __GNUC__ == 4 && __GNUC_MINOR__ == 5 && __GNUC_PATCHLEVEL__ == 0
+__attribute__ ((noinline))
+#endif
+Span* MapObjectToSpan(void* object) {
   const PageID p = reinterpret_cast<uintptr_t>(object) >> kPageShift;
   Span* span = Static::pageheap()->GetDescriptor(p);
+  return span;
+}
+
+void CentralFreeList::ReleaseToSpans(void* object) {
+  Span* span = MapObjectToSpan(object);
   ASSERT(span != NULL);
   ASSERT(span->refcount > 0);
 
@@ -74,7 +93,7 @@ void CentralFreeList::ReleaseToSpans(void* object) {
   if (false) {
     // Check that object does not occur in list
     int got = 0;
-    for (void* p = span->objects; p != NULL; p = *((void**) p)) {
+    for (void* p = span->objects; p != NULL; p = FL_Next(p)){
       ASSERT(p != object);
       got++;
     }
@@ -99,8 +118,7 @@ void CentralFreeList::ReleaseToSpans(void* object) {
     }
     lock_.Lock();
   } else {
-    *(reinterpret_cast<void**>(object)) = span->objects;
-    span->objects = object;
+    FL_Push(&(span->objects), object);
   }
 }
 
@@ -129,8 +147,14 @@ bool CentralFreeList::MakeCacheSpace() {
   if (EvictRandomSizeClass(size_class_, false) ||
       EvictRandomSizeClass(size_class_, true)) {
     // Succeeded in evicting, we're going to make our cache larger.
-    cache_size_++;
-    return true;
+    // However, we may have dropped and re-acquired the lock in
+    // EvictRandomSizeClass (via ShrinkCache and the LockInverter), so the
+    // cache_size may have changed.  Therefore, check and verify that it is
+    // still OK to increase the cache_size.
+    if (cache_size_ < kNumTransferEntries) {
+      cache_size_++;
+      return true;
+    }
   }
   return false;
 }
@@ -213,13 +237,12 @@ int CentralFreeList::RemoveRange(void **start, void **end, int N) {
   // TODO: Prefetch multiple TCEntries?
   tail = FetchFromSpansSafe();
   if (tail != NULL) {
-    SLL_SetNext(tail, NULL);
-    head = tail;
+    FL_Push(&head, tail);
     result = 1;
     while (result < N) {
       void *t = FetchFromSpans();
       if (!t) break;
-      SLL_Push(&head, t);
+      FL_Push(&head, t);
       result++;
     }
   }
@@ -245,8 +268,7 @@ void* CentralFreeList::FetchFromSpans() {
 
   ASSERT(span->objects != NULL);
   span->refcount++;
-  void* result = span->objects;
-  span->objects = *(reinterpret_cast<void**>(result));
+  void *result = FL_Pop(&(span->objects));
   if (span->objects == NULL) {
     // Move to empty list
     tcmalloc::DLL_Remove(span);
@@ -284,19 +306,18 @@ void CentralFreeList::Populate() {
 
   // Split the block into pieces and add to the free-list
   // TODO: coloring of objects to avoid cache conflicts?
-  void** tail = &span->objects;
+  void* list = NULL;
   char* ptr = reinterpret_cast<char*>(span->start << kPageShift);
   char* limit = ptr + (npages << kPageShift);
   const size_t size = Static::sizemap()->ByteSizeForClass(size_class_);
   int num = 0;
   while (ptr + size <= limit) {
-    *tail = ptr;
-    tail = reinterpret_cast<void**>(ptr);
+    FL_Push(&list, ptr);
     ptr += size;
     num++;
   }
   ASSERT(ptr <= limit);
-  *tail = NULL;
+  span->objects = list;
   span->refcount = 0; // No sub-object in use yet
 
   // Add span to list of non-empty spans

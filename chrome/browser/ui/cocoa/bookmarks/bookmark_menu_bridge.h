@@ -25,6 +25,7 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "chrome/browser/bookmarks/bookmark_model_observer.h"
+#import "chrome/browser/ui/cocoa/main_menu_item.h"
 
 class BookmarkNode;
 class Profile;
@@ -33,13 +34,14 @@ class Profile;
 @class NSMenuItem;
 @class BookmarkMenuCocoaController;
 
-class BookmarkMenuBridge : public BookmarkModelObserver {
+class BookmarkMenuBridge : public BookmarkModelObserver,
+                           public MainMenuItem {
  public:
   BookmarkMenuBridge(Profile* profile, NSMenu* menu);
   virtual ~BookmarkMenuBridge();
 
-  // Overridden from BookmarkModelObserver
-  virtual void Loaded(BookmarkModel* model) OVERRIDE;
+  // BookmarkModelObserver:
+  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
@@ -59,6 +61,10 @@ class BookmarkMenuBridge : public BookmarkModelObserver {
                                           const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,
                                              const BookmarkNode* node) OVERRIDE;
+
+  // MainMenuItem:
+  virtual void ResetMenu() OVERRIDE;
+  virtual void BuildMenu() OVERRIDE;
 
   // Rebuilds the main bookmark menu, if it has been marked invalid.
   void UpdateMenu(NSMenu* bookmark_menu);
@@ -86,7 +92,6 @@ class BookmarkMenuBridge : public BookmarkModelObserver {
   // menu, such as "Open All Bookmarks".
   void AddNodeAsSubmenu(NSMenu* menu,
                         const BookmarkNode* node,
-                        NSString* title,
                         bool add_extra_items);
 
   // Helper for recursively adding items to our bookmark menu.

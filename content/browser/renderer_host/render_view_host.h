@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,28 +9,32 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/process_util.h"
+#include "base/values.h"
 #include "content/browser/renderer_host/render_widget_host.h"
-#include "content/common/window_container_type.h"
+#include "content/browser/site_instance_impl.h"
+#include "content/common/content_export.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/common/stop_find_action.h"
+#include "content/public/common/window_container_type.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupType.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebTextDirection.h"
+#include "ui/base/javascript_message_type.h"
 #include "webkit/glue/webaccessibility.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class ChildProcessSecurityPolicy;
 class FilePath;
 class GURL;
-class ListValue;
-class RenderViewHostDelegate;
-class RenderViewHostObserver;
+class PowerSaveBlocker;
 class SessionStorageNamespace;
-class SiteInstance;
 class SkBitmap;
 class ViewMsg_Navigate;
 struct ContextMenuParams;
@@ -39,8 +43,21 @@ struct ViewHostMsg_AccessibilityNotification_Params;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewHostMsg_ShowPopup_Params;
 struct ViewMsg_Navigate_Params;
+struct ViewMsg_StopFinding_Params;
 struct WebDropData;
-struct UserMetricsAction;
+struct WebPreferences;
+
+namespace base {
+class ListValue;
+}
+
+namespace content {
+struct FileChooserParams;
+struct Referrer;
+class RenderViewHostDelegate;
+class RenderViewHostObserver;
+struct ShowDesktopNotificationHostMsgParams;
+}
 
 namespace gfx {
 class Point;
@@ -52,15 +69,35 @@ class Range;
 
 namespace webkit_glue {
 struct WebAccessibility;
+struct CustomContextMenuContext;
 }  // namespace webkit_glue
 
 namespace WebKit {
+struct WebFindOptions;
 struct WebMediaPlayerAction;
+struct WebPluginAction;
 }  // namespace WebKit
 
-namespace net {
-class URLRequestContextGetter;
-}
+// NotificationObserver used to listen for EXECUTE_JAVASCRIPT_RESULT
+// notifications.
+class ExecuteNotificationObserver : public content::NotificationObserver {
+ public:
+  explicit ExecuteNotificationObserver(int id);
+  virtual ~ExecuteNotificationObserver();
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  int id() const { return id_; }
+
+  Value* value() const { return value_.get(); }
+
+ private:
+  int id_;
+  scoped_ptr<Value> value_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExecuteNotificationObserver);
+};
 
 //
 // RenderViewHost
@@ -89,7 +126,7 @@ class URLRequestContextGetter;
 //  if we want to bring that and other functionality down into this object so
 //  it can be shared by others.
 //
-class RenderViewHost : public RenderWidgetHost {
+class CONTENT_EXPORT RenderViewHost : public RenderWidgetHost {
  public:
   // Returns the RenderViewHost given its ID and the ID of its render process.
   // Returns NULL if the IDs do not correspond to a live RenderViewHost.
@@ -102,23 +139,24 @@ class RenderViewHost : public RenderWidgetHost {
   // tab contentses to share the same session storage (part of the WebStorage
   // spec) space. This is useful when restoring tabs, but most callers should
   // pass in NULL which will cause a new SessionStorageNamespace to be created.
-  RenderViewHost(SiteInstance* instance,
-                 RenderViewHostDelegate* delegate,
+  RenderViewHost(content::SiteInstance* instance,
+                 content::RenderViewHostDelegate* delegate,
                  int routing_id,
                  SessionStorageNamespace* session_storage_namespace);
   virtual ~RenderViewHost();
 
-  SiteInstance* site_instance() const { return instance_; }
-  RenderViewHostDelegate* delegate() const { return delegate_; }
-  void set_delegate(RenderViewHostDelegate* d) {
+  content::SiteInstance* site_instance() const { return instance_; }
+  content::RenderViewHostDelegate* delegate() const { return delegate_; }
+  void set_delegate(content::RenderViewHostDelegate* d) {
     CHECK(d);  // http://crbug.com/82827
     delegate_ = d;
   }
 
   // Set up the RenderView child process. Virtual because it is overridden by
   // TestRenderViewHost. If the |frame_name| parameter is non-empty, it is used
-  // as the name of the new top-level frame.
-  virtual bool CreateRenderView(const string16& frame_name);
+  // as the name of the new top-level frame.  If |max_page_id| is larger than
+  // -1, the RenderView is told to start issuing page IDs at |max_page_id| + 1.
+  virtual bool CreateRenderView(const string16& frame_name, int32 max_page_id);
 
   // Returns true if the RenderView is active and has not crashed. Virtual
   // because it is overridden by TestRenderViewHost.
@@ -231,6 +269,14 @@ class RenderViewHost : public RenderWidgetHost {
   void DragTargetDrop(const gfx::Point& client_pt,
                       const gfx::Point& screen_pt);
 
+  // Notifies the renderer about the result of a desktop notification.
+  void DesktopNotificationPermissionRequestDone(int callback_context);
+  void DesktopNotificationPostDisplay(int callback_context);
+  void DesktopNotificationPostError(int notification_id,
+                                    const string16& message);
+  void DesktopNotificationPostClose(int notification_id, bool by_user);
+  void DesktopNotificationPostClick(int notification_id);
+
   // Runs some javascript within the context of a frame in the page.
   void ExecuteJavascriptInWebFrame(const string16& frame_xpath,
                                    const string16& jscript);
@@ -240,15 +286,9 @@ class RenderViewHost : public RenderWidgetHost {
   int ExecuteJavascriptInWebFrameNotifyResult(const string16& frame_xpath,
                                               const string16& jscript);
 
-  // Edit operations.
-  void Undo();
-  void Redo();
-  void Cut();
-  void Copy();
-  void CopyToFindPboard();
-  void Paste();
-  void Delete();
-  void SelectAll();
+  Value* ExecuteJavascriptAndGetValue(const string16& frame_xpath,
+                                      const string16& jscript);
+
 
   // Notifies the RenderView that the JavaScript message that was shown was
   // closed by the user.
@@ -299,35 +339,40 @@ class RenderViewHost : public RenderWidgetHost {
       const FilePath& local_directory_name);
 
   // Notifies the Listener that one or more files have been chosen by the user
-  // from an Open File dialog for the form.
-  void FilesSelectedInChooser(const std::vector<FilePath>& files);
+  // from a file chooser dialog for the form. |permissions| are flags from the
+  // base::PlatformFileFlags enum which specify which file permissions should
+  // be granted to the renderer.
+  void FilesSelectedInChooser(const std::vector<FilePath>& files,
+                              int permissions);
 
   // Notifies the listener that a directory enumeration is complete.
   void DirectoryEnumerationFinished(int request_id,
                                     const std::vector<FilePath>& files);
 
   // Notifies the RenderViewHost that its load state changed.
-  void LoadStateChanged(const GURL& url, net::LoadState load_state,
-                        uint64 upload_position, uint64 upload_size);
+  void LoadStateChanged(const GURL& url,
+                        const net::LoadStateWithParam& load_state,
+                        uint64 upload_position,
+                        uint64 upload_size);
 
   bool SuddenTerminationAllowed() const;
   void set_sudden_termination_allowed(bool enabled) {
     sudden_termination_allowed_ = enabled;
   }
 
-  // Message the renderer that we should be counted as a new document and not
-  // as a popup.
-  void DisassociateFromPopupCount();
-
   // RenderWidgetHost public overrides.
-  virtual void Shutdown();
-  virtual bool IsRenderView() const;
-  virtual bool OnMessageReceived(const IPC::Message& msg);
-  virtual void GotFocus();
-  virtual void LostCapture();
-  virtual void ForwardMouseEvent(const WebKit::WebMouseEvent& mouse_event);
-  virtual void OnMouseActivate();
-  virtual void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event);
+  virtual void Shutdown() OVERRIDE;
+  virtual bool IsRenderView() const OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual void GotFocus() OVERRIDE;
+  virtual void LostCapture() OVERRIDE;
+  virtual void LostMouseLock() OVERRIDE;
+  virtual void ForwardMouseEvent(
+      const WebKit::WebMouseEvent& mouse_event) OVERRIDE;
+  virtual void OnMouseActivate() OVERRIDE;
+  virtual void ForwardKeyboardEvent(
+      const NativeWebKeyboardEvent& key_event) OVERRIDE;
+  virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
 
   // Creates a new RenderView with the given route id.
   void CreateNewWindow(int route_id,
@@ -346,46 +391,131 @@ class RenderViewHost : public RenderWidgetHost {
   void DidCancelPopupMenu();
 #endif
 
-#if defined(UNIT_TEST)
-  // These functions shouldn't be necessary outside of testing.
+  void ToggleSpeechInput();
 
   void set_save_accessibility_tree_for_testing(bool save) {
     save_accessibility_tree_for_testing_ = save;
   }
 
-  const webkit_glue::WebAccessibility& accessibility_tree() {
+  const webkit_glue::WebAccessibility& accessibility_tree_for_testing() {
     return accessibility_tree_;
   }
 
-  bool is_waiting_for_unload_ack() { return is_waiting_for_unload_ack_; }
-#endif
+  bool is_waiting_for_unload_ack_for_testing() {
+    return is_waiting_for_unload_ack_;
+  }
 
-  // Checks that the given renderer can request |url|, if not it sets it to an
-  // empty url.
+  // Checks that the given renderer can request |url|, if not it sets it to
+  // about:blank.
+  // empty_allowed must be set to false for navigations for security reasons.
   static void FilterURL(ChildProcessSecurityPolicy* policy,
                         int renderer_id,
+                        bool empty_allowed,
                         GURL* url);
+
+  // Sets the alternate error page URL (link doctor) for the renderer process.
+  void SetAltErrorPageURL(const GURL& url);
+
+  // Asks the renderer to exit fullscreen
+  void ExitFullscreen();
+
+  // Passes a list of Webkit preferences to the renderer.
+  void UpdateWebkitPreferences(const WebPreferences& prefs);
+
+  // Tells the renderer to clear the focused node (if any).
+  void ClearFocusedNode();
+
+  // Set the zoom level for the current main frame
+  void SetZoomLevel(double level);
+
+  // Changes the zoom level for the current main frame.
+  void Zoom(content::PageZoom zoom);
+
+  // Reloads the current focused frame.
+  void ReloadFrame();
+
+  // Finds text on a page.
+  void Find(int request_id, const string16& search_text,
+            const WebKit::WebFindOptions& options);
+
+  // Requests the renderer to evaluate an xpath to a frame and insert css
+  // into that frame's document.
+  void InsertCSS(const string16& frame_xpath, const std::string& css);
+
+  // Tells the renderer not to add scrollbars with height and width below a
+  // threshold.
+  void DisableScrollbarsForThreshold(const gfx::Size& size);
+
+  // Instructs the RenderView to send back updates to the preferred size.
+  void EnablePreferredSizeMode();
+
+  // Instructs the RenderView to automatically resize and send back updates
+  // for the new size.
+  void EnableAutoResize(const gfx::Size& min_size, const gfx::Size& max_size);
+
+  // Executes custom context menu action that was provided from WebKit.
+  void ExecuteCustomContextMenuCommand(
+      int action, const webkit_glue::CustomContextMenuContext& context);
+
+  // Let the renderer know that the menu has been closed.
+  void NotifyContextMenuClosed(
+      const webkit_glue::CustomContextMenuContext& context);
+
+  // Copies the image at location x, y to the clipboard (if there indeed is an
+  // image at that location).
+  void CopyImageAt(int x, int y);
+
+  // Tells the renderer to perform the given action on the media player
+  // located at the given point.
+  void ExecuteMediaPlayerActionAtLocation(
+      const gfx::Point& location, const WebKit::WebMediaPlayerAction& action);
+
+  // Tells the renderer to perform the given action on the plugin located at
+  // the given point.
+  void ExecutePluginActionAtLocation(
+      const gfx::Point& location, const WebKit::WebPluginAction& action);
+
+  // Sent to the renderer when a popup window should no longer count against
+  // the current popup count (either because it's not a popup or because it was
+  // a generated by a user action).
+  void DisassociateFromPopupCount();
+
+  // Notification that a move or resize renderer's containing window has
+  // started.
+  void NotifyMoveOrResizeStarted();
+
+  // Notifies the renderer that the user has closed the FindInPage window
+  // (and what action to take regarding the selection).
+  void StopFinding(content::StopFindAction action);
+
+  SessionStorageNamespace* session_storage_namespace() {
+    return session_storage_namespace_.get();
+  }
 
   // NOTE: Do not add functions that just send an IPC message that are called in
   // one or two places.  Have the caller send the IPC message directly.
 
  protected:
-  friend class RenderViewHostObserver;
+  friend class content::RenderViewHostObserver;
 
   // Add and remove observers for filtering IPC messages.  Clients must be sure
   // to remove the observer before they go away.
-  void AddObserver(RenderViewHostObserver* observer);
-  void RemoveObserver(RenderViewHostObserver* observer);
+  void AddObserver(content::RenderViewHostObserver* observer);
+  void RemoveObserver(content::RenderViewHostObserver* observer);
 
   // RenderWidgetHost protected overrides.
   virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut);
-  virtual void UnhandledKeyboardEvent(const NativeWebKeyboardEvent& event);
-  virtual void OnUserGesture();
-  virtual void NotifyRendererUnresponsive();
-  virtual void NotifyRendererResponsive();
-  virtual void OnMsgFocus();
-  virtual void OnMsgBlur();
+                                      bool* is_keyboard_shortcut) OVERRIDE;
+  virtual void UnhandledKeyboardEvent(
+      const NativeWebKeyboardEvent& event) OVERRIDE;
+  virtual void OnUserGesture() OVERRIDE;
+  virtual void NotifyRendererUnresponsive() OVERRIDE;
+  virtual void NotifyRendererResponsive() OVERRIDE;
+  virtual void OnRenderAutoResized(const gfx::Size& size) OVERRIDE;
+  virtual void RequestToLockMouse() OVERRIDE;
+  virtual bool IsFullscreen() const OVERRIDE;
+  virtual void OnMsgFocus() OVERRIDE;
+  virtual void OnMsgBlur() OVERRIDE;
 
   // IPC message handlers.
   void OnMsgShowView(int route_id,
@@ -400,7 +530,9 @@ class RenderViewHost : public RenderWidgetHost {
   void OnMsgNavigate(const IPC::Message& msg);
   void OnMsgUpdateState(int32 page_id,
                         const std::string& state);
-  void OnMsgUpdateTitle(int32 page_id, const std::wstring& title);
+  void OnMsgUpdateTitle(int32 page_id,
+                        const string16& title,
+                        WebKit::WebTextDirection title_direction);
   void OnMsgUpdateEncoding(const std::string& encoding);
   void OnMsgUpdateTargetURL(int32 page_id, const GURL& url);
   void OnMsgClose();
@@ -411,17 +543,27 @@ class RenderViewHost : public RenderWidgetHost {
   void OnMsgDocumentAvailableInMainFrame();
   void OnMsgDocumentOnLoadCompletedInMainFrame(int32 page_id);
   void OnMsgContextMenu(const ContextMenuParams& params);
-  void OnMsgOpenURL(const GURL& url, const GURL& referrer,
-                    WindowOpenDisposition disposition);
+  void OnMsgToggleFullscreen(bool enter_fullscreen);
+  void OnMsgOpenURL(const GURL& url,
+                    const content::Referrer& referrer,
+                    WindowOpenDisposition disposition,
+                    int64 source_frame_id);
   void OnMsgDidContentsPreferredSizeChange(const gfx::Size& new_size);
-  void OnMsgSetTooltipText(const std::wstring& tooltip_text,
-                           WebKit::WebTextDirection text_direction_hint);
-  void OnMsgSelectionChanged(const std::string& text, const ui::Range& range);
+  void OnMsgDidChangeScrollbarsForMainFrame(bool has_horizontal_scrollbar,
+                                            bool has_vertical_scrollbar);
+  void OnMsgDidChangeScrollOffsetPinningForMainFrame(bool is_pinned_to_left,
+                                                     bool is_pinned_to_right);
+  void OnMsgDidChangeNumWheelEvents(int count);
+  void OnMsgSelectionChanged(const string16& text,
+                             size_t offset,
+                             const ui::Range& range);
+  void OnMsgSelectionBoundsChanged(const gfx::Rect& start_rect,
+                                   const gfx::Rect& end_rect);
   void OnMsgPasteFromSelectionClipboard();
   void OnMsgRunJavaScriptMessage(const string16& message,
                                  const string16& default_prompt,
                                  const GURL& frame_url,
-                                 const int flags,
+                                 ui::JavascriptMessageType type,
                                  IPC::Message* reply_msg);
   void OnMsgRunBeforeUnloadConfirm(const GURL& frame_url,
                                    const string16& message,
@@ -431,20 +573,34 @@ class RenderViewHost : public RenderWidgetHost {
                           const SkBitmap& image,
                           const gfx::Point& image_offset);
   void OnUpdateDragCursor(WebKit::WebDragOperation drag_operation);
+  void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
+  void OnFocusedNodeChanged(bool is_editable_node);
   void OnAddMessageToConsole(int32 level,
-                             const std::wstring& message,
+                             const string16& message,
                              int32 line_no,
-                             const std::wstring& source_id);
+                             const string16& source_id);
   void OnUpdateInspectorSetting(const std::string& key,
                                 const std::string& value);
   void OnMsgShouldCloseACK(bool proceed);
   void OnMsgClosePageACK();
-
   void OnAccessibilityNotifications(
       const std::vector<ViewHostMsg_AccessibilityNotification_Params>& params);
-  void OnScriptEvalResponse(int id, const ListValue& result);
+  void OnScriptEvalResponse(int id, const base::ListValue& result);
   void OnDidZoomURL(double zoom_level, bool remember, const GURL& url);
+  void OnMediaNotification(int64 player_cookie,
+                           bool has_video,
+                           bool has_audio,
+                           bool is_playing);
+  void OnRequestDesktopNotificationPermission(const GURL& origin,
+                                              int callback_id);
+  void OnShowDesktopNotification(
+      const content::ShowDesktopNotificationHostMsgParams& params);
+  void OnCancelDesktopNotification(int notification_id);
+  void OnRunFileChooser(const content::FileChooserParams& params);
+
+  void OnWebUISend(const GURL& source_url, const std::string& name,
+                   const base::ListValue& args);
 
 #if defined(OS_MACOSX)
   void OnMsgShowPopup(const ViewHostMsg_ShowPopup_Params& params);
@@ -453,13 +609,19 @@ class RenderViewHost : public RenderWidgetHost {
  private:
   friend class TestRenderViewHost;
 
+  // Sets whether this RenderViewHost is swapped out in favor of another,
+  // and clears any waiting state that is no longer relevant.
+  void SetSwappedOut(bool is_swapped_out);
+
+  void ClearPowerSaveBlockers();
+
   // The SiteInstance associated with this RenderViewHost.  All pages drawn
   // in this RenderViewHost are part of this SiteInstance.  Should not change
   // over time.
-  scoped_refptr<SiteInstance> instance_;
+  scoped_refptr<SiteInstanceImpl> instance_;
 
   // Our delegate, which wants to know about changes in the RenderView.
-  RenderViewHostDelegate* delegate_;
+  content::RenderViewHostDelegate* delegate_;
 
   // true if we are currently waiting for a response for drag context
   // information.
@@ -530,8 +692,13 @@ class RenderViewHost : public RenderWidgetHost {
   // The termination status of the last render view that terminated.
   base::TerminationStatus render_view_termination_status_;
 
+  // Holds PowerSaveBlockers for the media players in use. Key is the
+  // player_cookie passed to OnMediaNotification, value is the PowerSaveBlocker.
+  typedef std::map<int64, PowerSaveBlocker*> PowerSaveBlockerMap;
+  PowerSaveBlockerMap power_save_blockers_;
+
   // A list of observers that filter messages.  Weak references.
-  ObserverList<RenderViewHostObserver> observers_;
+  ObserverList<content::RenderViewHostObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHost);
 };

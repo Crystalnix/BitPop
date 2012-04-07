@@ -2,28 +2,39 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// The id of the extension we're using for install tests.
+// The id of an extension we're using for install tests.
 var extensionId = "enfkhcelefdadlmkffamgdlgplcionje";
+
+// The id of an app we're using for install tests.
+var appId = "iladmdjkfniedhfhcfoefgojhgaiaccc";
 
 var assertEq = chrome.test.assertEq;
 var assertNoLastError = chrome.test.assertNoLastError;
+var assertTrue = chrome.test.assertTrue;
 var callbackFail = chrome.test.callbackFail;
 var callbackPass = chrome.test.callbackPass;
 var listenOnce = chrome.test.listenOnce;
 var runTests = chrome.test.runTests;
 var succeed = chrome.test.succeed;
 
-// Calls |callback| with true/false indicating whether an item with an id of
-// extensionId is installed.
-function checkInstalled(callback) {
+// Calls |callback| with true/false indicating whether an item with the |id|
+// is installed.
+function checkItemInstalled(id, callback) {
   chrome.management.getAll(function(extensions) {
     callback(extensions.some(function(ext) {
-      return ext.id == extensionId;
+      return ext.id == id;
     }));
   });
 }
 
+// Calls |callback| with true/false indicating whether an item with an id of
+// extensionId is installed.
+function checkInstalled(callback) {
+  checkItemInstalled(extensionId, callback);
+}
+
 var cachedIcon = null;
+var img = null;
 
 // This returns the base64-encoded content of the extension's image.
 function getIconData(callback) {
@@ -34,8 +45,9 @@ function getIconData(callback) {
   canvas.style.display = "none";
   canvas.width = 128;
   canvas.height = 128;
-  var img = new Image();
+  img = new Image();
   img.onload = function() {
+    console.log('img.onload called');
     var ctx = canvas.getContext("2d");
     ctx.drawImage(img, 0, 0);
     var tmp = canvas.toDataURL();

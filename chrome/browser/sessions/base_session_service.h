@@ -7,22 +7,23 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/file_path.h"
+#include "base/location.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "content/browser/cancelable_request.h"
 #include "googleurl/src/gurl.h"
 
-class NavigationEntry;
 class Profile;
 class SessionBackend;
 class SessionCommand;
 class TabNavigation;
 
-namespace base {
-class Thread;
+namespace content {
+class NavigationEntry;
 }
 
 // BaseSessionService is the super class of both tab restore service and
@@ -55,7 +56,8 @@ class BaseSessionService : public CancelableRequestProvider,
 
   class InternalGetCommandsRequest;
 
-  typedef Callback2<Handle, scoped_refptr<InternalGetCommandsRequest> >::Type
+  typedef base::Callback<void(Handle,
+                              scoped_refptr<InternalGetCommandsRequest>)>
       InternalGetCommandsCallback;
 
   // Callback used when fetching the last session. The last session consists
@@ -63,7 +65,7 @@ class BaseSessionService : public CancelableRequestProvider,
   class InternalGetCommandsRequest :
       public CancelableRequest<InternalGetCommandsCallback> {
    public:
-    explicit InternalGetCommandsRequest(CallbackType* callback)
+    explicit InternalGetCommandsRequest(const CallbackType& callback)
         : CancelableRequest<InternalGetCommandsCallback>(callback) {
     }
 
@@ -82,9 +84,6 @@ class BaseSessionService : public CancelableRequestProvider,
 
   // Returns the backend.
   SessionBackend* backend() const { return backend_; }
-
-  // Returns the thread the backend runs on. This returns NULL during testing.
-  base::Thread* backend_thread() const { return backend_thread_; }
 
   // Returns the set of commands that needed to be scheduled. The commands
   // in the vector are owned by BaseSessionService, until they are scheduled
@@ -117,7 +116,7 @@ class BaseSessionService : public CancelableRequestProvider,
       SessionID::id_type command_id,
       SessionID::id_type tab_id,
       int index,
-      const NavigationEntry& entry);
+      const content::NavigationEntry& entry);
 
   // Creates a SessionCommand that represents marking a tab as an application.
   SessionCommand* CreateSetTabExtensionAppIDCommand(
@@ -149,11 +148,16 @@ class BaseSessionService : public CancelableRequestProvider,
       InternalGetCommandsRequest* request,
       CancelableRequestConsumerBase* consumer);
 
-  // Invokes ReadCurrentSessionCommands with request on the backend thread.
-  // If testing, ReadLastSessionCommands is invoked directly.
-  Handle ScheduleGetCurrentSessionCommands(
-      InternalGetCommandsRequest* request,
-      CancelableRequestConsumerBase* consumer);
+  // Returns true if we appear to be running in production, false if
+  // we appear to be running as part of a unit test or if the FILE
+  // thread has gone away.
+  bool RunningInProduction() const;
+
+  // In production, this posts the task to the FILE thread.  For
+  // tests, it immediately runs the specified task on the current
+  // thread.
+  bool RunTaskOnBackendThread(const tracked_objects::Location& from_here,
+                              const base::Closure& task);
 
   // Max number of navigation entries in each direction we'll persist.
   static const int max_persist_navigation_count;
@@ -168,11 +172,8 @@ class BaseSessionService : public CancelableRequestProvider,
   // The backend.
   scoped_refptr<SessionBackend> backend_;
 
-  // Thread backend tasks are run on, is NULL during testing.
-  base::Thread* backend_thread_;
-
   // Used to invoke Save.
-  ScopedRunnableMethodFactory<BaseSessionService> save_factory_;
+  base::WeakPtrFactory<BaseSessionService> weak_factory_;
 
   // Commands we need to send over to the backend.
   std::vector<SessionCommand*>  pending_commands_;

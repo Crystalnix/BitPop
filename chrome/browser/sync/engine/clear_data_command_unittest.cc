@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,9 @@
 #include "chrome/browser/sync/protocol/preference_specifics.pb.h"
 #include "chrome/browser/sync/protocol/sync.pb.h"
 #include "chrome/browser/sync/syncable/directory_manager.h"
-#include "chrome/test/sync/engine/proto_extension_validator.h"
-#include "chrome/test/sync/engine/syncer_command_test.h"
-#include "chrome/test/sync/sessions/test_scoped_session_event_listener.h"
+#include "chrome/browser/sync/test/engine/proto_extension_validator.h"
+#include "chrome/browser/sync/test/engine/syncer_command_test.h"
+#include "chrome/browser/sync/test/sessions/test_scoped_session_event_listener.h"
 
 namespace browser_sync {
 
@@ -106,8 +106,7 @@ TEST_F(ClearDataCommandTest, ClearDataCommandExpectSuccess) {
   TestScopedSessionEventListener reg(context(), handler.get());
 
   dir->set_store_birthday(mock_server()->store_birthday());
-  mock_server()->SetClearUserDataResponseStatus(
-      sync_pb::ClientToServerResponse::SUCCESS);
+  mock_server()->SetClearUserDataResponseStatus(sync_pb::SyncEnums::SUCCESS);
   on_should_stop_syncing_permanently_called_ = false;
 
   command_.Execute(session());
@@ -124,4 +123,3 @@ TEST_F(ClearDataCommandTest, ClearDataCommandExpectSuccess) {
 }
 
 }  // namespace browser_sync
-

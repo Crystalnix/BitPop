@@ -4,6 +4,8 @@
 
 #include "net/url_request/view_cache_helper.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/stringprintf.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
@@ -15,7 +17,9 @@
 #include "net/url_request/url_request_context.h"
 
 #define VIEW_CACHE_HEAD \
-  "<html><body><table>"
+  "<html><meta charset=\"utf-8\"><meta http-equiv=\"X-WebKit-CSP\" " \
+  "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">" \
+  "<body><table>"
 
 #define VIEW_CACHE_TAIL \
   "</table></body></html>"
@@ -24,7 +28,51 @@ namespace net {
 
 namespace {
 
-void HexDump(const char *buf, size_t buf_len, std::string* result) {
+std::string FormatEntryInfo(disk_cache::Entry* entry,
+                            const std::string& url_prefix) {
+  std::string key = entry->GetKey();
+  GURL url = GURL(url_prefix + key);
+  std::string row =
+      "<tr><td><a href=\"" + url.spec() + "\">" + EscapeForHTML(key) +
+      "</a></td></tr>";
+  return row;
+}
+
+}  // namespace.
+
+ViewCacheHelper::ViewCacheHelper()
+    : disk_cache_(NULL),
+      entry_(NULL),
+      iter_(NULL),
+      buf_len_(0),
+      index_(0),
+      data_(NULL),
+      next_state_(STATE_NONE),
+      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+}
+
+ViewCacheHelper::~ViewCacheHelper() {
+  if (entry_)
+    entry_->Close();
+}
+
+int ViewCacheHelper::GetEntryInfoHTML(const std::string& key,
+                                      const URLRequestContext* context,
+                                      std::string* out,
+                                      const CompletionCallback& callback) {
+  return GetInfoHTML(key, context, std::string(), out, callback);
+}
+
+int ViewCacheHelper::GetContentsHTML(const URLRequestContext* context,
+                                     const std::string& url_prefix,
+                                     std::string* out,
+                                     const CompletionCallback& callback) {
+  return GetInfoHTML(std::string(), context, url_prefix, out, callback);
+}
+
+// static
+void ViewCacheHelper::HexDump(const char *buf, size_t buf_len,
+                              std::string* result) {
   const size_t kMaxRows = 16;
   int offset = 0;
 
@@ -61,64 +109,14 @@ void HexDump(const char *buf, size_t buf_len, std::string* result) {
   }
 }
 
-std::string FormatEntryInfo(disk_cache::Entry* entry,
-                            const std::string& url_prefix) {
-  std::string key = entry->GetKey();
-  GURL url = GURL(url_prefix + key);
-  std::string row =
-      "<tr><td><a href=\"" + url.spec() + "\">" + EscapeForHTML(key) +
-      "</a></td></tr>";
-  return row;
-}
-
-}  // namespace.
-
-ViewCacheHelper::ViewCacheHelper()
-    : disk_cache_(NULL),
-      entry_(NULL),
-      iter_(NULL),
-      buf_len_(0),
-      index_(0),
-      data_(NULL),
-      callback_(NULL),
-      next_state_(STATE_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          cache_callback_(this, &ViewCacheHelper::OnIOComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          entry_callback_(new CancelableCompletionCallback<ViewCacheHelper>(
-              this, &ViewCacheHelper::OnIOComplete))) {
-}
-
-ViewCacheHelper::~ViewCacheHelper() {
-  if (entry_)
-    entry_->Close();
-
-  // Cancel any pending entry callback.
-  entry_callback_->Cancel();
-}
-
-int ViewCacheHelper::GetEntryInfoHTML(const std::string& key,
-                                      URLRequestContext* context,
-                                      std::string* out,
-                                      CompletionCallback* callback) {
-  return GetInfoHTML(key, context, std::string(), out, callback);
-}
-
-int ViewCacheHelper::GetContentsHTML(URLRequestContext* context,
-                                     const std::string& url_prefix,
-                                     std::string* out,
-                                     CompletionCallback* callback) {
-  return GetInfoHTML(std::string(), context, url_prefix, out, callback);
-}
-
 //-----------------------------------------------------------------------------
 
 int ViewCacheHelper::GetInfoHTML(const std::string& key,
-                                 URLRequestContext* context,
+                                 const URLRequestContext* context,
                                  const std::string& url_prefix,
                                  std::string* out,
-                                 CompletionCallback* callback) {
-  DCHECK(!callback_);
+                                 const CompletionCallback& callback) {
+  DCHECK(callback_.is_null());
   DCHECK(context);
   key_ = key;
   context_ = context;
@@ -135,18 +133,17 @@ int ViewCacheHelper::GetInfoHTML(const std::string& key,
 
 void ViewCacheHelper::DoCallback(int rv) {
   DCHECK_NE(ERR_IO_PENDING, rv);
-  DCHECK(callback_);
+  DCHECK(!callback_.is_null());
 
-  CompletionCallback* c = callback_;
-  callback_ = NULL;
-  c->Run(rv);
+  callback_.Run(rv);
+  callback_.Reset();
 }
 
 void ViewCacheHelper::HandleResult(int rv) {
   DCHECK_NE(ERR_IO_PENDING, rv);
   DCHECK_NE(ERR_FAILED, rv);
   context_ = NULL;
-  if (callback_)
+  if (!callback_.is_null())
     DoCallback(rv);
 }
 
@@ -217,7 +214,9 @@ int ViewCacheHelper::DoGetBackend() {
   if (!http_cache)
     return ERR_FAILED;
 
-  return http_cache->GetBackend(&disk_cache_, &cache_callback_);
+  return http_cache->GetBackend(
+      &disk_cache_, base::Bind(&ViewCacheHelper::OnIOComplete,
+                               base::Unretained(this)));
 }
 
 int ViewCacheHelper::DoGetBackendComplete(int result) {
@@ -240,7 +239,9 @@ int ViewCacheHelper::DoGetBackendComplete(int result) {
 
 int ViewCacheHelper::DoOpenNextEntry() {
   next_state_ = STATE_OPEN_NEXT_ENTRY_COMPLETE;
-  return disk_cache_->OpenNextEntry(&iter_, &entry_, &cache_callback_);
+  return disk_cache_->OpenNextEntry(
+      &iter_, &entry_,
+      base::Bind(&ViewCacheHelper::OnIOComplete, base::Unretained(this)));
 }
 
 int ViewCacheHelper::DoOpenNextEntryComplete(int result) {
@@ -260,7 +261,9 @@ int ViewCacheHelper::DoOpenNextEntryComplete(int result) {
 
 int ViewCacheHelper::DoOpenEntry() {
   next_state_ = STATE_OPEN_ENTRY_COMPLETE;
-  return disk_cache_->OpenEntry(key_, &entry_, &cache_callback_);
+  return disk_cache_->OpenEntry(
+      key_, &entry_,
+      base::Bind(&ViewCacheHelper::OnIOComplete, base::Unretained(this)));
 }
 
 int ViewCacheHelper::DoOpenEntryComplete(int result) {
@@ -278,16 +281,16 @@ int ViewCacheHelper::DoOpenEntryComplete(int result) {
 int ViewCacheHelper::DoReadResponse() {
   next_state_ = STATE_READ_RESPONSE_COMPLETE;
   buf_len_ = entry_->GetDataSize(0);
-  entry_callback_->AddRef();
   if (!buf_len_)
     return buf_len_;
 
   buf_ = new IOBuffer(buf_len_);
-  return entry_->ReadData(0, 0, buf_, buf_len_, entry_callback_);
+  return entry_->ReadData(
+      0, 0, buf_, buf_len_,
+      base::Bind(&ViewCacheHelper::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 
 int ViewCacheHelper::DoReadResponseComplete(int result) {
-  entry_callback_->Release();
   if (result && result == buf_len_) {
     HttpResponseInfo response;
     bool truncated;
@@ -323,16 +326,16 @@ int ViewCacheHelper::DoReadData() {
 
   next_state_ = STATE_READ_DATA_COMPLETE;
   buf_len_ = entry_->GetDataSize(index_);
-  entry_callback_->AddRef();
   if (!buf_len_)
     return buf_len_;
 
   buf_ = new IOBuffer(buf_len_);
-  return entry_->ReadData(index_, 0, buf_, buf_len_, entry_callback_);
+  return entry_->ReadData(
+      index_, 0, buf_, buf_len_,
+      base::Bind(&ViewCacheHelper::OnIOComplete, weak_factory_.GetWeakPtr()));
 }
 
 int ViewCacheHelper::DoReadDataComplete(int result) {
-  entry_callback_->Release();
   if (result && result == buf_len_) {
     HexDump(buf_->data(), buf_len_, data_);
   }

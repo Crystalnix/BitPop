@@ -8,14 +8,19 @@
 
 #include <string>
 
-#include "base/scoped_ptr.h"
-#include "chrome/browser/tab_contents/link_infobar_delegate.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/url_fetcher.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/public/common/url_fetcher_delegate.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
 
+namespace content {
 class NavigationController;
+}
+
+namespace net {
+class URLRequestStatus;
+}
 
 // Attempts to get the HEAD of a host name and displays an info bar if the
 // request was successful. This is used for single-word queries where we can't
@@ -27,11 +32,14 @@ class NavigationController;
 // will create us and be responsible for us until we attach as an observer
 // after a pending load starts (it will delete us if this doesn't happen).
 // Once this pending load starts, we're responsible for deleting ourselves.
-// We'll do this when the load commits, or when the navigation controller
-// itself is deleted.
-class AlternateNavURLFetcher : public NotificationObserver,
-                               public URLFetcher::Delegate,
-                               public LinkInfoBarDelegate {
+// We'll do this in the following cases:
+//   * The tab is navigated again once we start listening (so the fetch is no
+//     longer useful)
+//   * The tab is closed before we show an infobar
+//   * The intranet fetch fails
+//   * None of the above apply, so we successfully show an infobar
+class AlternateNavURLFetcher : public content::NotificationObserver,
+                               public content::URLFetcherDelegate {
  public:
   enum State {
     NOT_STARTED,
@@ -46,25 +54,17 @@ class AlternateNavURLFetcher : public NotificationObserver,
   State state() const { return state_; }
 
  private:
-  // NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
-  // URLFetcher::Delegate
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data) OVERRIDE;
+  // content::URLFetcherDelegate
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
-  // LinkInfoBarDelegate
-  virtual gfx::Image* GetIcon() const OVERRIDE;
-  virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageTextWithOffset(size_t* link_offset) const OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
+  // Sets |controller_| to the supplied pointer and begins fetching
+  // |alternate_nav_url_|.
+  void StartFetch(content::NavigationController* controller);
 
   // Sets |state_| to either SUCCEEDED or FAILED depending on the result of the
   // fetch.
@@ -73,19 +73,18 @@ class AlternateNavURLFetcher : public NotificationObserver,
                              int response_code);
 
   // Displays the infobar if all conditions are met (the page has loaded and
-  // the fetch of the alternate URL succeeded).
+  // the fetch of the alternate URL succeeded).  Unless we're still waiting on
+  // one of the above conditions to finish, this will also delete us, as whether
+  // or not we show an infobar, there is no reason to live further.
   void ShowInfobarIfPossible();
 
   GURL alternate_nav_url_;
-  scoped_ptr<URLFetcher> fetcher_;
-  NavigationController* controller_;
+  scoped_ptr<content::URLFetcher> fetcher_;
+  content::NavigationController* controller_;
   State state_;
   bool navigated_to_entry_;
 
-  // The TabContents the InfoBarDelegate was added to.
-  TabContents* infobar_contents_;
-
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AlternateNavURLFetcher);
 };

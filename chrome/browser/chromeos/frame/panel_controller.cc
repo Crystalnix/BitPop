@@ -4,13 +4,6 @@
 
 #include "chrome/browser/chromeos/frame/panel_controller.h"
 
-#if defined(TOUCH_UI)
-#include <X11/Xlib.h>
-#if defined(HAVE_XINPUT2)
-#include <X11/extensions/XInput2.h>
-#endif
-#endif
-
 #include <vector>
 
 #include "base/logging.h"
@@ -19,59 +12,28 @@
 #include "base/string_util.h"
 #include "base/time.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/chromeos/wm_ipc.h"
-#include "content/common/notification_service.h"
-#include "grit/app_resources.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "third_party/cros/chromeos_wm_ipc_enums.h"
+#include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
+#include "third_party/cros_system_api/window_manager/chromeos_wm_ipc_enums.h"
 #include "third_party/skia/include/effects/SkBlurMaskFilter.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
-#include "views/controls/button/image_button.h"
-#include "views/controls/image_view.h"
-#include "views/controls/label.h"
-#include "views/events/event.h"
-#include "views/painter.h"
-#include "views/view.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/controls/label.h"
+#include "ui/views/events/event.h"
+#include "ui/views/painter.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 
-#if defined(TOUCH_UI)
-namespace {
-
-gfx::Point RootLocationFromXEvent(const XEvent* xev) {
-  switch (xev->type) {
-    case ButtonPress:
-    case ButtonRelease:
-      return gfx::Point(xev->xbutton.x_root, xev->xbutton.y_root);
-    case MotionNotify:
-      return gfx::Point(xev->xmotion.x_root, xev->xmotion.y_root);
-
-#if defined(HAVE_XINPUT2)
-    case GenericEvent: {
-      const XIDeviceEvent* xiev =
-          static_cast<XIDeviceEvent*>(xev->xcookie.data);
-      switch (xiev->evtype) {
-        case XI_ButtonPress:
-        case XI_ButtonRelease:
-        case XI_Motion:
-          return gfx::Point(static_cast<int>(xiev->root_x),
-                            static_cast<int>(xiev->root_y));
-      }
-    }
-#endif  // defined(HAVE_XINPUT2)
-
-    default:
-      NOTREACHED();
-  }
-
-  return gfx::Point();
-}
-
-}  // namespace
-#endif  // defined(TOUCH_UI)
+#if defined(TOOLKIT_USES_GTK)
+#include "chrome/browser/chromeos/legacy_window_manager/wm_ipc.h"
+#endif
 
 namespace chromeos {
 
@@ -96,8 +58,9 @@ const SkColor kTitleActiveGradientStart = SK_ColorWHITE;
 const SkColor kTitleActiveGradientEnd = 0xffe7edf1;
 const SkColor kTitleUrgentGradientStart = 0xfffea044;
 const SkColor kTitleUrgentGradientEnd = 0xfffa983a;
-const SkColor kTitleActiveColor = SK_ColorBLACK;
-const SkColor kTitleInactiveColor = SK_ColorBLACK;
+const SkColor kTitleActiveTextColor = SK_ColorBLACK;
+const SkColor kTitleInactiveTextColor = SK_ColorBLACK;
+const SkColor kTitleUrgentTextColor = SK_ColorWHITE;
 const SkColor kTitleCloseButtonColor = SK_ColorBLACK;
 // Delay before the urgency can be set after it has been cleared.
 const base::TimeDelta kSetUrgentDelay = base::TimeDelta::FromMilliseconds(500);
@@ -133,7 +96,7 @@ class TitleBackgroundPainter : public views::Painter {
     paint.setShader(s);
     // Need to unref shader, otherwise never deleted.
     s->unref();
-    canvas->AsCanvasSkia()->drawPath(path, paint);
+    canvas->GetSkCanvas()->drawPath(path, paint);
   }
 
   PanelController* panel_controller_;
@@ -184,10 +147,13 @@ void PanelController::Init(bool initial_focus,
   gfx::Rect title_bounds(0, 0, window_bounds.width(), kTitleHeight);
 
   title_window_ = new views::Widget;
-  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  views::Widget::InitParams params(
+      views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.transparent = true;
   params.bounds = title_bounds;
   title_window_->Init(params);
+
+#if defined(TOOLKIT_USES_GTK)
   gtk_widget_set_size_request(title_window_->GetNativeView(),
                               title_bounds.width(), title_bounds.height());
   title_ = title_window_->GetNativeView();
@@ -210,6 +176,7 @@ void PanelController::Init(bool initial_focus,
 
   client_event_handler_id_ = g_signal_connect(
       panel_, "client-event", G_CALLBACK(OnPanelClientEvent), this);
+#endif
 
   title_content_ = new TitleContentView(this);
   title_window_->SetContentsView(title_content_);
@@ -220,8 +187,7 @@ void PanelController::Init(bool initial_focus,
 void PanelController::UpdateTitleBar() {
   if (!delegate_ || !title_window_)
     return;
-  title_content_->title_label()->SetText(
-      UTF16ToWideHack(delegate_->GetPanelTitle()));
+  title_content_->title_label()->SetText(delegate_->GetPanelTitle());
   title_content_->title_icon()->SetImage(delegate_->GetPanelIcon());
 }
 
@@ -237,6 +203,8 @@ void PanelController::SetUrgent(bool urgent) {
   urgent_ = urgent;
   if (title_window_) {
     gtk_window_set_urgency_hint(panel_, urgent ? TRUE : FALSE);
+    title_content_->title_label()->SetDisabledColor(urgent ?
+        kTitleUrgentTextColor : kTitleInactiveTextColor);
     title_content_->SchedulePaint();
   }
 }
@@ -261,13 +229,13 @@ bool PanelController::TitleMousePressed(const views::MouseEvent& event) {
   mouse_down_offset_y_ = event.y();
   dragging_ = false;
 
-#if !defined(TOUCH_UI)
-  const GdkEvent* gdk_event = event.native_event();
+#if defined(TOOLKIT_USES_GTK)
+  const GdkEvent* gdk_event = event.gdk_event();
   GdkEventButton last_button_event = gdk_event->button;
   mouse_down_abs_x_ = last_button_event.x_root;
   mouse_down_abs_y_ = last_button_event.y_root;
 #else
-  const XEvent* xev = event.native_event_2();
+  const XEvent* xev = event.native_event();
   gfx::Point abs_location = RootLocationFromXEvent(xev);
   mouse_down_abs_x_ = abs_location.x();
   mouse_down_abs_y_ = abs_location.y();
@@ -302,18 +270,22 @@ void PanelController::TitleMouseCaptureLost() {
       delegate_->ActivatePanel();
     }
   } else {
+#if defined(TOOLKIT_USES_GTK)
     WmIpc::Message msg(WM_IPC_MESSAGE_WM_NOTIFY_PANEL_DRAG_COMPLETE);
     msg.set_param(0, panel_xid_);
     WmIpc::instance()->SendMessage(msg);
+#endif
     dragging_ = false;
   }
 }
 
 void PanelController::SetState(State state) {
+#if defined(TOOLKIT_USES_GTK)
   WmIpc::Message msg(WM_IPC_MESSAGE_WM_SET_PANEL_STATE);
   msg.set_param(0, panel_xid_);
   msg.set_param(1, state == EXPANDED);
   WmIpc::instance()->SendMessage(msg);
+#endif
 }
 
 bool PanelController::TitleMouseDragged(const views::MouseEvent& event) {
@@ -325,17 +297,10 @@ bool PanelController::TitleMouseDragged(const views::MouseEvent& event) {
     return false;
   }
 
-#if !defined(TOUCH_UI)
-  const GdkEvent* gdk_event = event.native_event();
+  const GdkEvent* gdk_event = event.gdk_event();
   GdkEventMotion last_motion_event = gdk_event->motion;
   int x_root = last_motion_event.x_root;
   int y_root = last_motion_event.y_root;
-#else
-  const XEvent* xev = event.native_event_2();
-  gfx::Point abs_location = RootLocationFromXEvent(xev);
-  int x_root = abs_location.x();
-  int y_root = abs_location.y();
-#endif
 
   if (!dragging_) {
     if (views::View::ExceededDragThreshold(x_root - mouse_down_abs_x_,
@@ -343,6 +308,7 @@ bool PanelController::TitleMouseDragged(const views::MouseEvent& event) {
       dragging_ = true;
     }
   }
+#if defined(TOOLKIT_USES_GTK)
   if (dragging_) {
     WmIpc::Message msg(WM_IPC_MESSAGE_WM_NOTIFY_PANEL_DRAGGED);
     msg.set_param(0, panel_xid_);
@@ -350,6 +316,7 @@ bool PanelController::TitleMouseDragged(const views::MouseEvent& event) {
     msg.set_param(2, y_root - mouse_down_offset_y_);
     WmIpc::instance()->SendMessage(msg);
   }
+#endif
   return true;
 }
 
@@ -376,6 +343,7 @@ void PanelController::OnFocusOut() {
 }
 
 bool PanelController::PanelClientEvent(GdkEventClient* event) {
+#if defined(TOOLKIT_USES_GTK)
   WmIpc::Message msg;
   WmIpc::instance()->DecodeMessage(*event, &msg);
   if (msg.type() == WM_IPC_MESSAGE_CHROME_NOTIFY_PANEL_STATE) {
@@ -383,12 +351,13 @@ bool PanelController::PanelClientEvent(GdkEventClient* event) {
     if (expanded_ != new_state) {
       expanded_ = new_state;
       State state = new_state ? EXPANDED : MINIMIZED;
-      NotificationService::current()->Notify(
-          NotificationType::PANEL_STATE_CHANGED,
-          Source<PanelController>(this),
-          Details<State>(&state));
+      content::NotificationService::current()->Notify(
+          chrome::NOTIFICATION_PANEL_STATE_CHANGED,
+          content::Source<PanelController>(this),
+          content::Details<State>(&state));
     }
   }
+#endif
   return true;
 }
 
@@ -434,8 +403,12 @@ PanelController::TitleContentView::TitleContentView(
 
   title_icon_ = new views::ImageView();
   AddChildView(title_icon_);
-  title_label_ = new views::Label(std::wstring());
+  title_label_ = new views::Label(string16());
   title_label_->SetHorizontalAlignment(views::Label::ALIGN_LEFT);
+  title_label_->SetAutoColorReadabilityEnabled(false);
+  title_label_->SetEnabledColor(kTitleActiveTextColor);
+  title_label_->SetDisabledColor(kTitleInactiveTextColor);
+  title_label_->SetEnabled(false);
   AddChildView(title_label_);
 
   set_background(
@@ -485,14 +458,14 @@ bool PanelController::TitleContentView::OnMouseDragged(
 }
 
 void PanelController::TitleContentView::OnFocusIn() {
-  title_label_->SetColor(kTitleActiveColor);
+  title_label_->SetEnabled(true);
   title_label_->SetFont(*active_font);
   Layout();
   SchedulePaint();
 }
 
 void PanelController::TitleContentView::OnFocusOut() {
-  title_label_->SetColor(kTitleInactiveColor);
+  title_label_->SetEnabled(false);
   title_label_->SetFont(*inactive_font);
   Layout();
   SchedulePaint();

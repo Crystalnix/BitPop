@@ -48,16 +48,18 @@ function NavigationCollector() {
   // Bind handlers to the 'webNavigation' events that we're interested
   // in handling in order to build up a complete picture of the whole
   // navigation event.
-  chrome.experimental.webNavigation.onBeforeRetarget.addListener(
-      this.onBeforeRetargetListener_.bind(this));
-  chrome.experimental.webNavigation.onBeforeNavigate.addListener(
+  chrome.webNavigation.onCreatedNavigationTarget.addListener(
+      this.onCreatedNavigationTargetListener_.bind(this));
+  chrome.webNavigation.onBeforeNavigate.addListener(
       this.onBeforeNavigateListener_.bind(this));
-  chrome.experimental.webNavigation.onCompleted.addListener(
+  chrome.webNavigation.onCompleted.addListener(
       this.onCompletedListener_.bind(this));
-  chrome.experimental.webNavigation.onCommitted.addListener(
+  chrome.webNavigation.onCommitted.addListener(
       this.onCommittedListener_.bind(this));
-  chrome.experimental.webNavigation.onErrorOccurred.addListener(
+  chrome.webNavigation.onErrorOccurred.addListener(
       this.onErrorOccurredListener_.bind(this));
+  chrome.webNavigation.onReferenceFragmentUpdated.addListener(
+      this.onReferenceFragmentUpdatedListener_.bind(this));
 
   // Bind handler to extension messages for communication from popup.
   chrome.extension.onRequest.addListener(this.onRequestListener_.bind(this));
@@ -109,7 +111,8 @@ NavigationCollector.NavigationQualifier = {
 /**
  * @typedef {{url: string, transitionType: NavigationCollector.NavigationType,
  *     transitionQualifier: Array.<NavigationCollector.NavigationQualifier>,
- *     openedInNewTab: boolean, sourceUrl: ?string, duration: number}}
+ *     openedInNewTab: boolean, source: {frameId: ?number, tabId: ?number},
+ *     duration: number}}
  */
 NavigationCollector.Request;
 
@@ -119,21 +122,22 @@ NavigationCollector.prototype = {
   /**
    * Returns a somewhat unique ID for a given WebNavigation request.
    *
-   * @param {!{tabId: number, frameId: number, url: string}} data Information
+   * @param {!{tabId: ?number, frameId: ?number}} data Information
    *     about the navigation event we'd like an ID for.
-   * @return {!string} ID created by combining the tab ID and frame ID (as the
-   *     API ensures that these will be unique across a single navigation
-   *     event)
+   * @return {!string} ID created by combining the source tab ID and frame ID
+   *     (or target tab/frame IDs if there's no source), as the API ensures
+   *     that these will be unique across a single navigation event.
    * @private
    */
   parseId_: function(data) {
-    return data.tabId + '-' + data.frameId;
+    return data.tabId + '-' + (data.frameId ? data.frameId : 0);
   },
 
 
   /**
-   * Creates an empty entry in the pending array, and prepopulates the
-   * errored and completed arrays for ease of insertion later.
+   * Creates an empty entry in the pending array if one doesn't already exist,
+   * and prepopulates the errored and completed arrays for ease of insertion
+   * later.
    *
    * @param {!string} id The request's ID, as produced by parseId_.
    * @param {!string} url The request's URL.
@@ -141,7 +145,10 @@ NavigationCollector.prototype = {
   prepareDataStorage_: function(id, url) {
     this.pending_[id] = this.pending_[id] || {
       openedInNewTab: false,
-      sourceUrl: null,
+      source: {
+        frameId: null,
+        tabId: null
+      },
       start: null,
       transitionQualifiers: [],
       transitionType: null
@@ -152,8 +159,9 @@ NavigationCollector.prototype = {
 
 
   /**
-   * Handler for the 'onBeforeRetarget' event. Updates the pending request
-   * with a sourceUrl, and notes that it was opened in a new tab.
+   * Handler for the 'onCreatedNavigationTarget' event. Updates the
+   * pending request with a source frame/tab, and notes that it was opened in a
+   * new tab.
    *
    * Pushes the request onto the
    * 'pending_' object, and stores it for later use.
@@ -161,11 +169,14 @@ NavigationCollector.prototype = {
    * @param {!Object} data The event data generated for this request.
    * @private
    */
-  onBeforeRetargetListener_: function(data) {
+  onCreatedNavigationTargetListener_: function(data) {
     var id = this.parseId_(data);
     this.prepareDataStorage_(id, data.url);
-    this.pending_[id].openedInNewTab = true;
-    this.pending_[id].sourceUrl = data.sourceUrl;
+    this.pending_[id].openedInNewTab = data.tabId;
+    this.pending_[id].source = {
+      tabId: data.sourceTabId,
+      frameId: data.sourceFrameId
+    };
     this.pending_[id].start = data.timeStamp;
   },
 
@@ -202,6 +213,41 @@ NavigationCollector.prototype = {
           data.url,
           data);
     } else {
+      this.prepareDataStorage_(id, data.url);
+      this.pending_[id].transitionType = data.transitionType;
+      this.pending_[id].transitionQualifiers =
+          data.transitionQualifiers;
+    }
+  },
+
+
+  /**
+   * Handler for the 'onReferenceFragmentUpdated' event. Updates the pending
+   * request with transition information.
+   *
+   * Pushes the request onto the
+   * 'pending_' object, and stores it for later use.
+   *
+   * @param {!Object} data The event data generated for this request.
+   * @private
+   */
+  onReferenceFragmentUpdatedListener_: function(data) {
+    var id = this.parseId_(data);
+    if (!this.pending_[id]) {
+      this.completed_[data.url] = this.completed_[data.url] || [];
+      this.completed_[data.url].push({
+        duration: 0,
+        openedInNewWindow: false,
+        source: {
+          frameId: null,
+          tabId: null
+        },
+        transitionQualifiers: data.transitionQualifiers,
+        transitionType: data.transitionType,
+        url: data.url
+      });
+    } else {
+      this.prepareDataStorage_(id, data.url);
       this.pending_[id].transitionType = data.transitionType;
       this.pending_[id].transitionQualifiers =
           data.transitionQualifiers;
@@ -228,7 +274,7 @@ NavigationCollector.prototype = {
       this.completed_[data.url].push({
         duration: (data.timeStamp - this.pending_[id].start),
         openedInNewWindow: this.pending_[id].openedInNewWindow,
-        sourceUrl: this.pending_[id].sourceUrl,
+        source: this.pending_[id].source,
         transitionQualifiers: this.pending_[id].transitionQualifiers,
         transitionType: this.pending_[id].transitionType,
         url: data.url
@@ -254,10 +300,11 @@ NavigationCollector.prototype = {
           data.url,
           data);
     } else {
+      this.prepareDataStorage_(id, data.url);
       this.errored_[data.url].push({
         duration: (data.timeStamp - this.pending_[id].start),
         openedInNewWindow: this.pending_[id].openedInNewWindow,
-        sourceUrl: this.pending_[id].sourceUrl,
+        source: this.pending_[id].source,
         transitionQualifiers: this.pending_[id].transitionQualifiers,
         transitionType: this.pending_[id].transitionType,
         url: data.url
@@ -348,7 +395,7 @@ NavigationCollector.prototype = {
     // Convert the 'completed_' object to an array.
     for (var x in list) {
       avg = 0;
-      if (list.hasOwnProperty(x)) {
+      if (list.hasOwnProperty(x) && list[x].length) {
         list[x].forEach(function(o) {
           avg += o.duration;
         });

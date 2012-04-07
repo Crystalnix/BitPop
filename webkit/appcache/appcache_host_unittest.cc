@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "net/url_request/url_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -10,6 +11,7 @@
 #include "webkit/appcache/appcache_backend_impl.h"
 #include "webkit/appcache/appcache_group.h"
 #include "webkit/appcache/appcache_host.h"
+#include "webkit/appcache/mock_appcache_policy.h"
 #include "webkit/appcache/mock_appcache_service.h"
 #include "webkit/quota/quota_manager.h"
 
@@ -18,12 +20,15 @@ namespace appcache {
 class AppCacheHostTest : public testing::Test {
  public:
   AppCacheHostTest() {
-    get_status_callback_.reset(
-        NewCallback(this, &AppCacheHostTest::GetStatusCallback));
-    start_update_callback_.reset(
-        NewCallback(this, &AppCacheHostTest::StartUpdateCallback));
-    swap_cache_callback_.reset(
-        NewCallback(this, &AppCacheHostTest::SwapCacheCallback));
+    get_status_callback_ =
+        base::Bind(&AppCacheHostTest::GetStatusCallback,
+                   base::Unretained(this));
+    start_update_callback_ =
+        base::Bind(&AppCacheHostTest::StartUpdateCallback,
+                   base::Unretained(this));
+    swap_cache_callback_ =
+        base::Bind(&AppCacheHostTest::SwapCacheCallback,
+                   base::Unretained(this));
   }
 
   class MockFrontend : public AppCacheFrontend {
@@ -32,7 +37,8 @@ class AppCacheHostTest : public testing::Test {
         : last_host_id_(-222), last_cache_id_(-222),
           last_status_(appcache::OBSOLETE),
           last_status_changed_(appcache::OBSOLETE),
-          last_event_id_(appcache::OBSOLETE_EVENT) {
+          last_event_id_(appcache::OBSOLETE_EVENT),
+          content_blocked_(false) {
     }
 
     virtual void OnCacheSelected(
@@ -68,6 +74,7 @@ class AppCacheHostTest : public testing::Test {
     }
 
     virtual void OnContentBlocked(int host_id, const GURL& manifest_url) {
+      content_blocked_ = true;
     }
 
     int last_host_id_;
@@ -75,6 +82,7 @@ class AppCacheHostTest : public testing::Test {
     appcache::Status last_status_;
     appcache::Status last_status_changed_;
     appcache::EventID last_event_id_;
+    bool content_blocked_;
   };
 
   class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
@@ -131,9 +139,9 @@ class AppCacheHostTest : public testing::Test {
   MockFrontend mock_frontend_;
 
   // Mock callbacks we expect to receive from the 'host'
-  scoped_ptr<appcache::GetStatusCallback> get_status_callback_;
-  scoped_ptr<appcache::StartUpdateCallback> start_update_callback_;
-  scoped_ptr<appcache::SwapCacheCallback> swap_cache_callback_;
+  appcache::GetStatusCallback get_status_callback_;
+  appcache::StartUpdateCallback start_update_callback_;
+  appcache::SwapCacheCallback swap_cache_callback_;
 
   Status last_status_result_;
   bool last_swap_result_;
@@ -153,20 +161,18 @@ TEST_F(AppCacheHostTest, Basic) {
   // See that the callbacks are delivered immediately
   // and respond as if there is no cache selected.
   last_status_result_ = OBSOLETE;
-  host.GetStatusWithCallback(get_status_callback_.get(),
-                             reinterpret_cast<void*>(1));
+  host.GetStatusWithCallback(get_status_callback_, reinterpret_cast<void*>(1));
   EXPECT_EQ(UNCACHED, last_status_result_);
   EXPECT_EQ(reinterpret_cast<void*>(1), last_callback_param_);
 
   last_start_result_ = true;
-  host.StartUpdateWithCallback(start_update_callback_.get(),
+  host.StartUpdateWithCallback(start_update_callback_,
                                reinterpret_cast<void*>(2));
   EXPECT_FALSE(last_start_result_);
   EXPECT_EQ(reinterpret_cast<void*>(2), last_callback_param_);
 
   last_swap_result_ = true;
-  host.SwapCacheWithCallback(swap_cache_callback_.get(),
-                             reinterpret_cast<void*>(3));
+  host.SwapCacheWithCallback(swap_cache_callback_, reinterpret_cast<void*>(3));
   EXPECT_FALSE(last_swap_result_);
   EXPECT_EQ(reinterpret_cast<void*>(3), last_callback_param_);
 }
@@ -248,7 +254,7 @@ TEST_F(AppCacheHostTest, ForeignFallbackEntry) {
   cache->AddEntry(kFallbackURL, AppCacheEntry(AppCacheEntry::FALLBACK));
 
   AppCacheHost host(1, &mock_frontend_, &service_);
-  host.NotifyMainResourceFallback(kFallbackURL);
+  host.NotifyMainResourceIsNamespaceEntry(kFallbackURL);
   host.MarkAsForeignEntry(GURL("http://origin/missing_document"), kCacheId);
 
   // We should have received an OnCacheSelected msg for kNoCacheId.
@@ -279,8 +285,7 @@ TEST_F(AppCacheHostTest, FailedCacheLoad) {
   // The callback should not occur until we finish cache selection.
   last_status_result_ = OBSOLETE;
   last_callback_param_ = reinterpret_cast<void*>(-1);
-  host.GetStatusWithCallback(get_status_callback_.get(),
-                             reinterpret_cast<void*>(1));
+  host.GetStatusWithCallback(get_status_callback_, reinterpret_cast<void*>(1));
   EXPECT_EQ(OBSOLETE, last_status_result_);
   EXPECT_EQ(reinterpret_cast<void*>(-1), last_callback_param_);
 
@@ -311,8 +316,7 @@ TEST_F(AppCacheHostTest, FailedGroupLoad) {
   // The callback should not occur until we finish cache selection.
   last_status_result_ = OBSOLETE;
   last_callback_param_ = reinterpret_cast<void*>(-1);
-  host.GetStatusWithCallback(get_status_callback_.get(),
-                             reinterpret_cast<void*>(1));
+  host.GetStatusWithCallback(get_status_callback_, reinterpret_cast<void*>(1));
   EXPECT_EQ(OBSOLETE, last_status_result_);
   EXPECT_EQ(reinterpret_cast<void*>(-1), last_callback_param_);
 
@@ -348,7 +352,7 @@ TEST_F(AppCacheHostTest, SetSwappableCache) {
 
   mock_frontend_.last_host_id_ = -222;  // to verify we received OnCacheSelected
 
-  host.AssociateCache(cache1);
+  host.AssociateCompleteCache(cache1);
   EXPECT_FALSE(host.swappable_cache_.get());  // was same as associated cache
   EXPECT_EQ(appcache::IDLE, host.GetStatus());
   // verify OnCacheSelected was called
@@ -373,11 +377,11 @@ TEST_F(AppCacheHostTest, SetSwappableCache) {
   group2->AddCache(cache4);
   EXPECT_EQ(cache2, host.swappable_cache_.get());  // unchanged
 
-  host.AssociateCache(cache3);
+  host.AssociateCompleteCache(cache3);
   EXPECT_EQ(cache4, host.swappable_cache_.get());  // newest cache in group2
   EXPECT_FALSE(group1->HasCache());  // both caches in group1 have refcount 0
 
-  host.AssociateCache(NULL);
+  host.AssociateNoCache(GURL());
   EXPECT_FALSE(host.swappable_cache_.get());
   EXPECT_FALSE(group2->HasCache());  // both caches in group2 have refcount 0
 
@@ -432,5 +436,86 @@ TEST_F(AppCacheHostTest, ForDedicatedWorker) {
   EXPECT_EQ(NULL, worker_host->GetParentAppCacheHost());
 }
 
-}  // namespace appcache
+TEST_F(AppCacheHostTest, SelectCacheAllowed) {
+  scoped_refptr<MockQuotaManagerProxy> mock_quota_proxy(
+      new MockQuotaManagerProxy);
+  MockAppCachePolicy mock_appcache_policy;
+  mock_appcache_policy.can_create_return_value_ = true;
+  service_.set_quota_manager_proxy(mock_quota_proxy);
+  service_.set_appcache_policy(&mock_appcache_policy);
 
+  // Reset our mock frontend
+  mock_frontend_.last_cache_id_ = -333;
+  mock_frontend_.last_host_id_ = -333;
+  mock_frontend_.last_status_ = OBSOLETE;
+  mock_frontend_.last_event_id_ = OBSOLETE_EVENT;
+  mock_frontend_.content_blocked_ = false;
+
+  const GURL kDocAndOriginUrl(GURL("http://whatever/").GetOrigin());
+  const GURL kManifestUrl(GURL("http://whatever/cache.manifest"));
+  {
+    AppCacheHost host(1, &mock_frontend_, &service_);
+    host.first_party_url_ = kDocAndOriginUrl;
+    host.SelectCache(kDocAndOriginUrl, kNoCacheId, kManifestUrl);
+    EXPECT_EQ(1, mock_quota_proxy->GetInUseCount(kDocAndOriginUrl));
+
+    // MockAppCacheService::LoadOrCreateGroup is asynchronous, so we shouldn't
+    // have received an OnCacheSelected msg yet.
+    EXPECT_EQ(-333, mock_frontend_.last_host_id_);
+    EXPECT_EQ(-333, mock_frontend_.last_cache_id_);
+    EXPECT_EQ(OBSOLETE, mock_frontend_.last_status_);
+    // No error events either
+    EXPECT_EQ(OBSOLETE_EVENT, mock_frontend_.last_event_id_);
+    EXPECT_FALSE(mock_frontend_.content_blocked_);
+
+    EXPECT_TRUE(host.is_selection_pending());
+  }
+  EXPECT_EQ(0, mock_quota_proxy->GetInUseCount(kDocAndOriginUrl));
+  service_.set_quota_manager_proxy(NULL);
+}
+
+TEST_F(AppCacheHostTest, SelectCacheBlocked) {
+  scoped_refptr<MockQuotaManagerProxy> mock_quota_proxy(
+      new MockQuotaManagerProxy);
+  MockAppCachePolicy mock_appcache_policy;
+  mock_appcache_policy.can_create_return_value_ = false;
+  service_.set_quota_manager_proxy(mock_quota_proxy);
+  service_.set_appcache_policy(&mock_appcache_policy);
+
+  // Reset our mock frontend
+  mock_frontend_.last_cache_id_ = -333;
+  mock_frontend_.last_host_id_ = -333;
+  mock_frontend_.last_status_ = OBSOLETE;
+  mock_frontend_.last_event_id_ = OBSOLETE_EVENT;
+  mock_frontend_.content_blocked_ = false;
+
+  const GURL kDocAndOriginUrl(GURL("http://whatever/").GetOrigin());
+  const GURL kManifestUrl(GURL("http://whatever/cache.manifest"));
+  {
+    AppCacheHost host(1, &mock_frontend_, &service_);
+    host.first_party_url_ = kDocAndOriginUrl;
+    host.SelectCache(kDocAndOriginUrl, kNoCacheId, kManifestUrl);
+    EXPECT_EQ(1, mock_quota_proxy->GetInUseCount(kDocAndOriginUrl));
+
+    // We should have received an OnCacheSelected msg
+    EXPECT_EQ(1, mock_frontend_.last_host_id_);
+    EXPECT_EQ(kNoCacheId, mock_frontend_.last_cache_id_);
+    EXPECT_EQ(UNCACHED, mock_frontend_.last_status_);
+
+    // Also, an error event was raised
+    EXPECT_EQ(ERROR_EVENT, mock_frontend_.last_event_id_);
+    EXPECT_TRUE(mock_frontend_.content_blocked_);
+
+    // Otherwise, see that it respond as if there is no cache selected.
+    EXPECT_EQ(1, host.host_id());
+    EXPECT_EQ(&service_, host.service());
+    EXPECT_EQ(&mock_frontend_, host.frontend());
+    EXPECT_EQ(NULL, host.associated_cache());
+    EXPECT_FALSE(host.is_selection_pending());
+    EXPECT_TRUE(host.preferred_manifest_url().is_empty());
+  }
+  EXPECT_EQ(0, mock_quota_proxy->GetInUseCount(kDocAndOriginUrl));
+  service_.set_quota_manager_proxy(NULL);
+}
+
+}  // namespace appcache

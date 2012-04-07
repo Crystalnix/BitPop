@@ -10,7 +10,9 @@
 
 #include "chrome/test/webdriver/commands/webdriver_command.h"
 
+namespace base {
 class DictionaryValue;
+}
 
 namespace webdriver {
 
@@ -19,11 +21,11 @@ class Response;
 class SetTimeoutCommand : public WebDriverCommand {
  public:
   SetTimeoutCommand(const std::vector<std::string>& path_segments,
-                    const DictionaryValue* const parameters);
+                    const base::DictionaryValue* const parameters);
   virtual ~SetTimeoutCommand();
 
-  virtual bool DoesPost();
-  virtual void ExecutePost(Response* const response);
+  virtual bool DoesPost() OVERRIDE;
+  virtual void ExecutePost(Response* const response) OVERRIDE;
   virtual void SetTimeout(int timeout_ms) = 0;
 
  private:
@@ -34,9 +36,9 @@ class SetTimeoutCommand : public WebDriverCommand {
 class SetAsyncScriptTimeoutCommand : public SetTimeoutCommand {
  public:
   SetAsyncScriptTimeoutCommand(const std::vector<std::string>& path_segments,
-                               const DictionaryValue* const parameters);
+                               const base::DictionaryValue* const parameters);
   virtual ~SetAsyncScriptTimeoutCommand();
-  virtual void SetTimeout(int timeout_ms);
+  virtual void SetTimeout(int timeout_ms) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SetAsyncScriptTimeoutCommand);
@@ -46,9 +48,9 @@ class SetAsyncScriptTimeoutCommand : public SetTimeoutCommand {
 class ImplicitWaitCommand : public SetTimeoutCommand {
  public:
   ImplicitWaitCommand(const std::vector<std::string>& path_segments,
-                      const DictionaryValue* const parameters);
+                      const base::DictionaryValue* const parameters);
   virtual ~ImplicitWaitCommand();
-  virtual void SetTimeout(int timeout_ms);
+  virtual void SetTimeout(int timeout_ms) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ImplicitWaitCommand);
@@ -57,4 +59,3 @@ class ImplicitWaitCommand : public SetTimeoutCommand {
 }  // namespace webdriver
 
 #endif  // CHROME_TEST_WEBDRIVER_COMMANDS_SET_TIMEOUT_COMMANDS_H_
-

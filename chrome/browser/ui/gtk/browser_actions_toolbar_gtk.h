@@ -9,19 +9,20 @@
 #include <map>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/linked_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "chrome/browser/ui/gtk/overflow_button.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/base/models/simple_menu_model.h"
 
 class Browser;
@@ -37,7 +38,7 @@ class BrowserActionsToolbarGtk : public ExtensionToolbarModel::Observer,
                                  public ui::AnimationDelegate,
                                  public MenuGtk::Delegate,
                                  public ui::SimpleMenuModel::Delegate,
-                                 public NotificationObserver {
+                                 public content::NotificationObserver {
  public:
   explicit BrowserActionsToolbarGtk(Browser* browser);
   virtual ~BrowserActionsToolbarGtk();
@@ -60,10 +61,10 @@ class BrowserActionsToolbarGtk : public ExtensionToolbarModel::Observer,
   // Update the display of all buttons.
   void Update();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   bool animating() {
     return resize_animation_.is_animating();
@@ -106,27 +107,29 @@ class BrowserActionsToolbarGtk : public ExtensionToolbarModel::Observer,
   bool ShouldDisplayBrowserAction(const Extension* extension);
 
   // ExtensionToolbarModel::Observer implementation.
-  virtual void BrowserActionAdded(const Extension* extension, int index);
-  virtual void BrowserActionRemoved(const Extension* extension);
-  virtual void BrowserActionMoved(const Extension* extension, int index);
-  virtual void ModelLoaded();
+  virtual void BrowserActionAdded(const Extension* extension,
+                                  int index) OVERRIDE;
+  virtual void BrowserActionRemoved(const Extension* extension) OVERRIDE;
+  virtual void BrowserActionMoved(const Extension* extension,
+                                  int index) OVERRIDE;
+  virtual void ModelLoaded() OVERRIDE;
 
   // ui::AnimationDelegate implementation.
-  virtual void AnimationProgressed(const ui::Animation* animation);
-  virtual void AnimationEnded(const ui::Animation* animation);
+  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
 
   // SimpleMenuModel::Delegate implementation.
   // In our case, |command_id| is be the index into the model's extension list.
-  virtual bool IsCommandIdChecked(int command_id) const;
-  virtual bool IsCommandIdEnabled(int command_id) const;
+  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
+  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
       int command_id,
-      ui::Accelerator* accelerator);
-  virtual void ExecuteCommand(int command_id);
+      ui::Accelerator* accelerator) OVERRIDE;
+  virtual void ExecuteCommand(int command_id) OVERRIDE;
 
   // MenuGtk::Delegate implementation.
-  virtual void StoppedShowing();
-  virtual bool AlwaysShowIconForCmd(int command_id) const;
+  virtual void StoppedShowing() OVERRIDE;
+  virtual bool AlwaysShowIconForCmd(int command_id) const OVERRIDE;
 
   // Called by the BrowserActionButton in response to drag-begin.
   void DragStarted(BrowserActionButton* button, GdkDragContext* drag_context);
@@ -175,10 +178,10 @@ class BrowserActionsToolbarGtk : public ExtensionToolbarModel::Observer,
   ExtensionToolbarModel* model_;
 
   // Contains the drag gripper, browser action buttons, and overflow chevron.
-  OwnedWidgetGtk hbox_;
+  ui::OwnedWidgetGtk hbox_;
 
   // Contains the browser action buttons.
-  OwnedWidgetGtk button_hbox_;
+  ui::OwnedWidgetGtk button_hbox_;
 
   // The overflow button for chrome theme mode.
   scoped_ptr<CustomDrawButton> overflow_button_;
@@ -213,9 +216,9 @@ class BrowserActionsToolbarGtk : public ExtensionToolbarModel::Observer,
 
   ui::GtkSignalRegistrar signals_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
-  ScopedRunnableMethodFactory<BrowserActionsToolbarGtk> method_factory_;
+  base::WeakPtrFactory<BrowserActionsToolbarGtk> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionsToolbarGtk);
 };

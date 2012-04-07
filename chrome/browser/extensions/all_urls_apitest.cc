@@ -8,7 +8,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/extensions/extension.h"
-#include "chrome/test/ui_test_utils.h"
+#include "chrome/test/base/ui_test_utils.h"
 
 const std::string kAllUrlsTarget =
     "files/extensions/api_test/all_urls/index.html";
@@ -53,8 +53,8 @@ IN_PROC_BROWSER_TEST_F(AllUrlsApiTest, WhitelistedExtension) {
   ASSERT_TRUE(listener2a.WaitUntilSatisfied());
   ASSERT_TRUE(listener2b.WaitUntilSatisfied());
 
-  // Now verify about:version.
-  url = "about:version";
+  // Now verify chrome://version/.
+  url = "chrome://version/";
   ExtensionTestMessageListener listener3a("content script: " + url, false);
   ExtensionTestMessageListener listener3b("execute: " + url, false);
   ui_test_utils::NavigateToURL(browser(), GURL(url));

@@ -7,11 +7,11 @@
 #include <deque>
 #include <vector>
 
+#include "base/sys_byteorder.h"
 #include "content/browser/renderer_host/p2p/socket_host_test_utils.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
-#include "net/base/sys_byteorder.h"
 #include "net/udp/datagram_server_socket.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,7 +30,7 @@ class FakeDatagramServerSocket : public net::DatagramServerSocket {
   // P2PSocketHostUdp destroyes a socket on errors so sent packets
   // need to be stored outside of this object.
   explicit FakeDatagramServerSocket(std::deque<UDPPacket>* sent_packets)
-      : sent_packets_(sent_packets), recv_callback_(NULL) {
+      : sent_packets_(sent_packets) {
   }
 
   virtual void Close() OVERRIDE {
@@ -53,8 +53,8 @@ class FakeDatagramServerSocket : public net::DatagramServerSocket {
 
   virtual int RecvFrom(net::IOBuffer* buf, int buf_len,
                        net::IPEndPoint* address,
-                       net::CompletionCallback* callback) OVERRIDE {
-    CHECK(!recv_callback_);
+                       const net::CompletionCallback& callback) OVERRIDE {
+    CHECK(recv_callback_.is_null());
     if (incoming_packets_.size() > 0) {
       scoped_refptr<net::IOBuffer> buffer(buf);
       int size = std::min(
@@ -74,39 +74,54 @@ class FakeDatagramServerSocket : public net::DatagramServerSocket {
 
   virtual int SendTo(net::IOBuffer* buf, int buf_len,
                      const net::IPEndPoint& address,
-                     net::CompletionCallback* callback) OVERRIDE {
+                     const net::CompletionCallback& callback) OVERRIDE {
     scoped_refptr<net::IOBuffer> buffer(buf);
     std::vector<char> data_vector(buffer->data(), buffer->data() + buf_len);
     sent_packets_->push_back(UDPPacket(address, data_vector));
     return buf_len;
   }
 
+  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
+    return true;
+  }
+
+  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
+    return true;
+  }
+
   void ReceivePacket(const net::IPEndPoint& address, std::vector<char> data) {
-    if (recv_callback_) {
+    if (!recv_callback_.is_null()) {
       int size = std::min(recv_size_, static_cast<int>(data.size()));
       memcpy(recv_buffer_->data(), &*data.begin(), size);
       *recv_address_ = address;
-      net::CompletionCallback* cb = recv_callback_;
-      recv_callback_ = NULL;
+      net::CompletionCallback cb = recv_callback_;
+      recv_callback_.Reset();
       recv_buffer_ = NULL;
-      cb->Run(size);
+      cb.Run(size);
     } else {
       incoming_packets_.push_back(UDPPacket(address, data));
     }
+  }
+
+  virtual const net::BoundNetLog& NetLog() const {
+    return net_log_;
   }
 
  private:
   net::IPEndPoint address_;
   std::deque<UDPPacket>* sent_packets_;
   std::deque<UDPPacket> incoming_packets_;
+  net::BoundNetLog net_log_;
 
   scoped_refptr<net::IOBuffer> recv_buffer_;
   net::IPEndPoint* recv_address_;
   int recv_size_;
-  net::CompletionCallback* recv_callback_;
+  net::CompletionCallback recv_callback_;
 };
 
 }  // namespace
+
+namespace content {
 
 class P2PSocketHostUdpTest : public testing::Test {
  protected:
@@ -231,3 +246,5 @@ TEST_F(P2PSocketHostUdpTest, SendAfterStunResponseDifferentHost) {
       .WillOnce(DoAll(DeleteArg<0>(), Return(true)));
   socket_host_->Send(dest2_, packet);
 }
+
+}  // namespace content

@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/process.h"
+#include "content/common/content_export.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/surface/transport_dib.h"
@@ -49,7 +51,9 @@ class BackingStoreManager {
       TransportDIB::Id bitmap,
       const gfx::Rect& bitmap_rect,
       const std::vector<gfx::Rect>& copy_rects,
-      bool* needs_full_paint);
+      const base::Closure& completion_callback,
+      bool* needs_full_paint,
+      bool* scheduled_completion_callback);
 
   // Returns a matching backing store for the host.
   // Returns NULL if we fail to find one.
@@ -59,15 +63,15 @@ class BackingStoreManager {
   static void RemoveBackingStore(RenderWidgetHost* host);
 
   // Removes all backing stores.
-  static void RemoveAllBackingStores();
+  CONTENT_EXPORT static void RemoveAllBackingStores();
 
   // Expires the given backing store. This emulates something getting evicted
   // from the cache for the purpose of testing. Returns true if the host was
   // removed, false if it wasn't found.
-  static bool ExpireBackingStoreForTest(RenderWidgetHost* host);
+  CONTENT_EXPORT static bool ExpireBackingStoreForTest(RenderWidgetHost* host);
 
   // Current size in bytes of the backing store cache.
-  static size_t MemorySize();
+  CONTENT_EXPORT static size_t MemorySize();
 
  private:
   // Not intended for instantiation.

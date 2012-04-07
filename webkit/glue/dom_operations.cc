@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,8 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeCollection.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebAnimationController;
@@ -107,7 +107,7 @@ void GetAllSavableResourceLinksForFrame(WebFrame* current_frame,
     webkit_glue::SavableResourcesResult* result,
     const char** savable_schemes) {
   // Get current frame's URL.
-  GURL current_frame_url = current_frame->url();
+  GURL current_frame_url = current_frame->document().url();
 
   // If url of current frame is invalid, ignore it.
   if (!current_frame_url.is_valid())
@@ -207,7 +207,7 @@ bool GetAllSavableResourceLinksForCurrentPage(WebView* view,
                                            &frames_set,
                                            &frames);
 
-  GURL main_page_gurl(main_frame->url());
+  GURL main_page_gurl(main_frame->document().url());
 
   // Make sure we are saving same page between embedder and webkit.
   // If page has being navigated, embedder will get three empty vector,

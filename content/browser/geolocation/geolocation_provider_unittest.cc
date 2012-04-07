@@ -3,12 +3,22 @@
 // found in the LICENSE file.
 
 #include "base/memory/singleton.h"
+#include "base/synchronization/waitable_event.h"
 #include "content/browser/geolocation/arbitrator_dependency_factories_for_test.h"
 #include "content/browser/geolocation/fake_access_token_store.h"
 #include "content/browser/geolocation/geolocation_provider.h"
 #include "content/browser/geolocation/location_arbitrator.h"
 #include "content/browser/geolocation/mock_location_provider.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::AccessTokenStore;
+using content::FakeAccessTokenStore;
+using testing::_;
+using testing::DoAll;
+using testing::DoDefault;
+using testing::Invoke;
+using testing::InvokeWithoutArgs;
 
 namespace {
 
@@ -68,15 +78,21 @@ class StartStopMockLocationProvider : public MockLocationProvider {
         test_loop_(test_loop) {
   }
 
+  virtual ~StartStopMockLocationProvider() {
+    Die();
+  }
+
+  MOCK_METHOD0(Die, void());
+
   virtual bool StartProvider(bool high_accuracy) {
     bool result = MockLocationProvider::StartProvider(high_accuracy);
-    test_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask);
+    test_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
     return result;
   }
 
   virtual void StopProvider() {
     MockLocationProvider::StopProvider();
-    test_loop_->PostTask(FROM_HERE, new MessageLoop::QuitTask);
+    test_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
   }
 
  private:
@@ -125,6 +141,13 @@ TEST_F(GeolocationProviderTest, StartStop) {
       new FakeAccessTokenStore;
   scoped_refptr<GeolocationArbitratorDependencyFactory> dependency_factory =
       new MockDependencyFactory(&message_loop_, fake_access_token_store.get());
+  base::WaitableEvent event(false, false);
+
+  EXPECT_CALL(*(fake_access_token_store.get()), LoadAccessTokens(_))
+      .Times(1)
+      .WillOnce(DoAll(Invoke(fake_access_token_store.get(),
+                             &FakeAccessTokenStore::DefaultLoadAccessTokens),
+                      InvokeWithoutArgs(&event, &base::WaitableEvent::Signal)));
 
   GeolocationArbitrator::SetDependencyFactoryForTest(dependency_factory.get());
 
@@ -132,17 +155,25 @@ TEST_F(GeolocationProviderTest, StartStop) {
   NullGeolocationObserver null_observer;
   GeolocationObserverOptions options;
   provider_->AddObserver(&null_observer, options);
+  EXPECT_TRUE(provider_->IsRunning());
+  // Wait for token load request from the arbitrator to come through.
+  event.Wait();
+  event.Reset();
   // The GeolocationArbitrator won't start the providers until it has
   // finished loading access tokens.
   fake_access_token_store->NotifyDelegateTokensLoaded();
-  EXPECT_TRUE(provider_->IsRunning());
   message_loop_.Run();
   EXPECT_EQ(MockLocationProvider::instance_->state_,
             MockLocationProvider::LOW_ACCURACY);
+  EXPECT_CALL(*(static_cast<StartStopMockLocationProvider*>(
+                  MockLocationProvider::instance_)),
+              Die())
+      .Times(1)
+      .WillOnce(InvokeWithoutArgs(&event, &base::WaitableEvent::Signal));
   provider_->RemoveObserver(&null_observer);
-  message_loop_.Run();
-  EXPECT_EQ(MockLocationProvider::instance_->state_,
-            MockLocationProvider::STOPPED);
+  // Wait for the providers to be stopped.
+  event.Wait();
+  event.Reset();
   EXPECT_TRUE(provider_->IsRunning());
 
   GeolocationArbitrator::SetDependencyFactoryForTest(NULL);

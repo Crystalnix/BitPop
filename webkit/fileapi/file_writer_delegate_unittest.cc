@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/file_util_proxy.h"
 #include "base/message_loop.h"
 #include "base/scoped_temp_dir.h"
@@ -25,7 +26,6 @@
 #include "webkit/fileapi/file_system_context.h"
 #include "webkit/fileapi/file_system_operation.h"
 #include "webkit/fileapi/file_system_operation_context.h"
-#include "webkit/fileapi/file_system_path_manager.h"
 #include "webkit/fileapi/file_system_test_helper.h"
 #include "webkit/fileapi/file_system_usage_cache.h"
 #include "webkit/fileapi/file_writer_delegate.h"
@@ -82,7 +82,8 @@ class FileWriterDelegateTest : public PlatformTest {
   virtual void TearDown();
 
   virtual void SetUpTestHelper(const FilePath& base_dir) {
-    test_helper_.SetUp(base_dir, QuotaFileUtil::GetInstance());
+    quota_file_util_.reset(QuotaFileUtil::CreateDefault());
+    test_helper_.SetUp(base_dir, quota_file_util_.get());
   }
 
   int64 ComputeCurrentOriginUsage() {
@@ -107,7 +108,7 @@ class FileWriterDelegateTest : public PlatformTest {
     result_.reset(new Result());
     file_writer_delegate_.reset(new FileWriterDelegate(
         CreateNewOperation(result_.get(), allowed_growth),
-        offset, base::MessageLoopProxy::CreateForCurrentThread()));
+        offset, base::MessageLoopProxy::current()));
     request_.reset(new net::URLRequest(blob_url, file_writer_delegate_.get()));
   }
 
@@ -115,6 +116,7 @@ class FileWriterDelegateTest : public PlatformTest {
 
   static net::URLRequest::ProtocolFactory Factory;
 
+  scoped_ptr<QuotaFileUtil> quota_file_util_;
   scoped_ptr<FileWriterDelegate> file_writer_delegate_;
   scoped_ptr<net::URLRequest> request_;
   scoped_ptr<Result> result_;
@@ -143,12 +145,14 @@ class FileWriterDelegateTestJob : public net::URLRequestJob {
         cursor_(0) {
   }
 
-  void Start() {
-    MessageLoop::current()->PostTask(FROM_HERE, NewRunnableMethod(
-        this, &FileWriterDelegateTestJob::NotifyHeadersComplete));
+  virtual void Start() OVERRIDE {
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&FileWriterDelegateTestJob::NotifyHeadersComplete, this));
   }
 
-  bool ReadRawData(net::IOBuffer* buf, int buf_size, int *bytes_read) {
+  virtual bool ReadRawData(net::IOBuffer* buf, int buf_size, int *bytes_read)
+      OVERRIDE {
     if (remaining_bytes_ < buf_size)
       buf_size = static_cast<int>(remaining_bytes_);
 
@@ -159,6 +163,10 @@ class FileWriterDelegateTestJob : public net::URLRequestJob {
     SetStatus(net::URLRequestStatus());
     *bytes_read = buf_size;
     return true;
+  }
+
+  virtual int GetResponseCode() const OVERRIDE {
+    return 200;
   }
 
  private:
@@ -222,11 +230,11 @@ void FileWriterDelegateTest::SetUp() {
   SetUpTestHelper(base_dir);
   ASSERT_TRUE(file_util::CreateTemporaryFileInDir(
       test_helper_.GetOriginRootPath(), &file_path_));
-  net::URLRequest::RegisterProtocolFactory("blob", &Factory);
+  net::URLRequest::Deprecated::RegisterProtocolFactory("blob", &Factory);
 }
 
 void FileWriterDelegateTest::TearDown() {
-  net::URLRequest::RegisterProtocolFactory("blob", NULL);
+  net::URLRequest::Deprecated::RegisterProtocolFactory("blob", NULL);
   base::ClosePlatformFile(file_);
   test_helper_.TearDown();
 }
@@ -345,7 +353,7 @@ TEST_F(FileWriterDelegateTest, WriteSuccessWithoutQuotaLimitConcurrent) {
   result2.reset(new Result());
   file_writer_delegate2.reset(new FileWriterDelegate(
       CreateNewOperation(result2.get(), QuotaFileUtil::kNoLimit),
-      0, base::MessageLoopProxy::CreateForCurrentThread()));
+      0, base::MessageLoopProxy::current()));
   request2.reset(new net::URLRequest(kBlobURL2, file_writer_delegate2.get()));
 
   ASSERT_EQ(0, test_helper_.GetCachedOriginUsage());
@@ -452,31 +460,5 @@ class FileWriterDelegateUnlimitedTest : public FileWriterDelegateTest {
  protected:
   virtual void SetUpTestHelper(const FilePath& path) OVERRIDE;
 };
-
-void FileWriterDelegateUnlimitedTest::SetUpTestHelper(const FilePath& path) {
-  test_helper_.SetUp(
-      path,
-      false /* incognito */,
-      true /* unlimited */,
-      NULL /* quota manager proxy */,
-      QuotaFileUtil::GetInstance());
-}
-
-TEST_F(FileWriterDelegateUnlimitedTest, WriteWithQuota) {
-  const GURL kBlobURL("blob:with-unlimited");
-  content_ = kData;
-
-  // Set small allowed_growth bytes
-  PrepareForWrite(kBlobURL, 0, 10);
-
-  // We shouldn't fail as the context is configured as 'unlimited'.
-  file_writer_delegate_->Start(file_, request_.get());
-  MessageLoop::current()->Run();
-  EXPECT_EQ(kDataSize, test_helper_.GetCachedOriginUsage());
-  EXPECT_EQ(ComputeCurrentOriginUsage(), test_helper_.GetCachedOriginUsage());
-  EXPECT_EQ(kDataSize, result_->bytes_written());
-  EXPECT_EQ(base::PLATFORM_FILE_OK, result_->status());
-  EXPECT_TRUE(result_->complete());
-}
 
 }  // namespace fileapi

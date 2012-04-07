@@ -1,21 +1,29 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/download/download_request_limiter.h"
 
-#include "base/stl_util-inl.h"
+#include "base/bind.h"
+#include "base/stl_util.h"
 #include "chrome/browser/download/download_request_infobar_delegate.h"
+#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper.h"
+#include "chrome/browser/ui/blocked_content/blocked_content_tab_helper_delegate.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
-#include "chrome/browser/ui/download/download_tab_helper.h"
-#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
+
+using content::BrowserThread;
+using content::NavigationController;
+using content::NavigationEntry;
+using content::WebContents;
 
 // TabDownloadState ------------------------------------------------------------
 
@@ -28,15 +36,15 @@ DownloadRequestLimiter::TabDownloadState::TabDownloadState(
       status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
       download_count_(0),
       infobar_(NULL) {
-  Source<NavigationController> notification_source(controller);
-  registrar_.Add(this, NotificationType::NAV_ENTRY_PENDING,
+  content::Source<NavigationController> notification_source(controller);
+  registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
                  notification_source);
-  registrar_.Add(this, NotificationType::TAB_CLOSED, notification_source);
+  registrar_.Add(this, content::NOTIFICATION_TAB_CLOSED, notification_source);
 
   NavigationEntry* active_entry = originating_controller ?
       originating_controller->GetActiveEntry() : controller->GetActiveEntry();
   if (active_entry)
-    initial_page_host_ = active_entry->url().host();
+    initial_page_host_ = active_entry->GetURL().host();
 }
 
 DownloadRequestLimiter::TabDownloadState::~TabDownloadState() {
@@ -63,8 +71,8 @@ void DownloadRequestLimiter::TabDownloadState::OnUserGesture() {
 }
 
 void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
-    TabContents* tab,
-    DownloadRequestLimiter::Callback* callback) {
+    WebContents* tab,
+    const DownloadRequestLimiter::Callback& callback) {
   callbacks_.push_back(callback);
 
   if (is_showing_prompt())
@@ -73,10 +81,11 @@ void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
   if (DownloadRequestLimiter::delegate_) {
     NotifyCallbacks(DownloadRequestLimiter::delegate_->ShouldAllowDownload());
   } else {
-    infobar_ = new DownloadRequestInfoBarDelegate(tab, this);
-    TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(tab);
-    wrapper->AddInfoBar(infobar_);
+    InfoBarTabHelper* infobar_helper =
+        TabContentsWrapper::GetCurrentWrapperForContents(tab)->
+            infobar_tab_helper();
+    infobar_ = new DownloadRequestInfoBarDelegate(infobar_helper, this);
+    infobar_helper->AddInfoBar(infobar_);
   }
 }
 
@@ -89,29 +98,29 @@ void DownloadRequestLimiter::TabDownloadState::Accept() {
 }
 
 void DownloadRequestLimiter::TabDownloadState::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  if ((type != NotificationType::NAV_ENTRY_PENDING &&
-       type != NotificationType::TAB_CLOSED) ||
-      Source<NavigationController>(source).ptr() != controller_) {
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if ((type != content::NOTIFICATION_NAV_ENTRY_PENDING &&
+       type != content::NOTIFICATION_TAB_CLOSED) ||
+      content::Source<NavigationController>(source).ptr() != controller_) {
     NOTREACHED();
     return;
   }
 
-  switch (type.value) {
-    case NotificationType::NAV_ENTRY_PENDING: {
+  switch (type) {
+    case content::NOTIFICATION_NAV_ENTRY_PENDING: {
       // NOTE: resetting state on a pending navigate isn't ideal. In particular
       // it is possible that queued up downloads for the page before the
       // pending navigate will be delivered to us after we process this
       // request. If this happens we may let a download through that we
       // shouldn't have. But this is rather rare, and it is difficult to get
       // 100% right, so we don't deal with it.
-      NavigationEntry* entry = controller_->pending_entry();
+      NavigationEntry* entry = controller_->GetPendingEntry();
       if (!entry)
         return;
 
-      if (PageTransition::IsRedirect(entry->transition_type())) {
+      if (content::PageTransitionIsRedirect(entry->GetTransitionType())) {
         // Redirects don't count.
         return;
       }
@@ -121,15 +130,15 @@ void DownloadRequestLimiter::TabDownloadState::Observe(
         // User has either allowed all downloads or canceled all downloads. Only
         // reset the download state if the user is navigating to a different
         // host (or host is empty).
-        if (!initial_page_host_.empty() && !entry->url().host().empty() &&
-            entry->url().host() == initial_page_host_) {
+        if (!initial_page_host_.empty() && !entry->GetURL().host().empty() &&
+            entry->GetURL().host() == initial_page_host_) {
           return;
         }
       }
       break;
     }
 
-    case NotificationType::TAB_CLOSED:
+    case content::NOTIFICATION_TAB_CLOSED:
       // Tab closed, no need to handle closing the dialog as it's owned by the
       // TabContents, break so that we get deleted after switch.
       break;
@@ -146,7 +155,7 @@ void DownloadRequestLimiter::TabDownloadState::NotifyCallbacks(bool allow) {
   status_ = allow ?
       DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS :
       DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED;
-  std::vector<DownloadRequestLimiter::Callback*> callbacks;
+  std::vector<DownloadRequestLimiter::Callback> callbacks;
   bool change_status = false;
 
   // Selectively send first few notifications only if number of downloads exceed
@@ -161,7 +170,7 @@ void DownloadRequestLimiter::TabDownloadState::NotifyCallbacks(bool allow) {
     }
     callbacks.swap(callbacks_);
   } else {
-    std::vector<DownloadRequestLimiter::Callback*>::iterator start, end;
+    std::vector<DownloadRequestLimiter::Callback>::iterator start, end;
     start = callbacks_.begin();
     end = callbacks_.begin() + kMaxDownloadsAtOnce;
     callbacks.assign(start, end);
@@ -188,27 +197,27 @@ DownloadRequestLimiter::~DownloadRequestLimiter() {
 }
 
 DownloadRequestLimiter::DownloadStatus
-    DownloadRequestLimiter::GetDownloadStatus(TabContents* tab) {
-  TabDownloadState* state = GetDownloadState(&tab->controller(), NULL, false);
+    DownloadRequestLimiter::GetDownloadStatus(WebContents* tab) {
+  TabDownloadState* state = GetDownloadState(&tab->GetController(), NULL, false);
   return state ? state->download_status() : ALLOW_ONE_DOWNLOAD;
 }
 
 void DownloadRequestLimiter::CanDownloadOnIOThread(int render_process_host_id,
                                                    int render_view_id,
                                                    int request_id,
-                                                   Callback* callback) {
+                                                   const Callback& callback) {
   // This is invoked on the IO thread. Schedule the task to run on the UI
   // thread so that we can query UI state.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(this, &DownloadRequestLimiter::CanDownload,
-                        render_process_host_id, render_view_id, request_id,
-                        callback));
+      base::Bind(&DownloadRequestLimiter::CanDownload, this,
+                 render_process_host_id, render_view_id, request_id, callback));
 }
 
-void DownloadRequestLimiter::OnUserGesture(TabContents* tab) {
-  TabDownloadState* state = GetDownloadState(&tab->controller(), NULL, false);
+void DownloadRequestLimiter::OnUserGesture(WebContents* tab) {
+  TabDownloadState* state =
+      GetDownloadState(&tab->GetController(), NULL, false);
   if (!state)
     return;
 
@@ -241,43 +250,49 @@ DownloadRequestLimiter::TabDownloadState* DownloadRequestLimiter::
 void DownloadRequestLimiter::CanDownload(int render_process_host_id,
                                          int render_view_id,
                                          int request_id,
-                                         Callback* callback) {
+                                         const Callback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  TabContents* originating_tab =
-      tab_util::GetTabContentsByID(render_process_host_id, render_view_id);
+  WebContents* originating_tab =
+      tab_util::GetWebContentsByID(render_process_host_id, render_view_id);
   if (!originating_tab) {
     // The tab was closed, don't allow the download.
     ScheduleNotification(callback, false);
     return;
   }
-  CanDownloadImpl(originating_tab, request_id, callback);
+
+  CanDownloadImpl(
+      TabContentsWrapper::GetCurrentWrapperForContents(originating_tab),
+      request_id,
+      callback);
 }
 
 void DownloadRequestLimiter::CanDownloadImpl(
-    TabContents* originating_tab,
+    TabContentsWrapper* originating_tab,
     int request_id,
-    Callback* callback) {
+    const Callback& callback) {
+  DCHECK(originating_tab);
+
   // FYI: Chrome Frame overrides CanDownload in ExternalTabContainer in order
   // to cancel the download operation in chrome and let the host browser
   // take care of it.
-  TabContentsWrapper* wrapper =
-      TabContentsWrapper::GetCurrentWrapperForContents(originating_tab);
-  if (!wrapper->download_tab_helper()->CanDownload(request_id)) {
+  WebContents* tab = originating_tab->web_contents();
+  if (tab->GetDelegate() && !tab->GetDelegate()->CanDownload(tab, request_id)) {
     ScheduleNotification(callback, false);
     return;
   }
 
   // If the tab requesting the download is a constrained popup that is not
   // shown, treat the request as if it came from the parent.
-  TabContents* effective_tab = originating_tab;
-  if (effective_tab->delegate()) {
-    effective_tab =
-        effective_tab->delegate()->GetConstrainingContents(effective_tab);
+  TabContentsWrapper* effective_wrapper = originating_tab;
+  if (effective_wrapper->blocked_content_tab_helper()->delegate()) {
+    effective_wrapper = effective_wrapper->blocked_content_tab_helper()->
+        delegate()->GetConstrainingContentsWrapper(effective_wrapper);
   }
 
   TabDownloadState* state = GetDownloadState(
-      &effective_tab->controller(), &originating_tab->controller(), true);
+      &effective_wrapper->web_contents()->GetController(),
+      &tab->GetController(), true);
   switch (state->download_status()) {
     case ALLOW_ALL_DOWNLOADS:
       if (state->download_count() && !(state->download_count() %
@@ -297,7 +312,7 @@ void DownloadRequestLimiter::CanDownloadImpl(
       break;
 
     case PROMPT_BEFORE_DOWNLOAD:
-      state->PromptUserForDownload(effective_tab, callback);
+      state->PromptUserForDownload(effective_wrapper->web_contents(), callback);
       state->increment_download_count();
       break;
 
@@ -306,20 +321,10 @@ void DownloadRequestLimiter::CanDownloadImpl(
   }
 }
 
-void DownloadRequestLimiter::ScheduleNotification(Callback* callback,
+void DownloadRequestLimiter::ScheduleNotification(const Callback& callback,
                                                   bool allow) {
   BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          this, &DownloadRequestLimiter::NotifyCallback, callback, allow));
-}
-
-void DownloadRequestLimiter::NotifyCallback(Callback* callback, bool allow) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  if (allow)
-    callback->ContinueDownload();
-  else
-    callback->CancelDownload();
+      BrowserThread::IO, FROM_HERE, base::Bind(callback, allow));
 }
 
 void DownloadRequestLimiter::Remove(TabDownloadState* state) {

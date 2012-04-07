@@ -5,14 +5,14 @@
 #include "base/basictypes.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/test/testing_browser_process_test.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/extension_app_provider.h"
 #include "chrome/browser/history/history.h"
 #include "chrome/browser/history/url_database.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-class ExtensionAppProviderTest : public TestingBrowserProcessTest {
+class ExtensionAppProviderTest : public testing::Test {
  protected:
   struct test_data {
     const string16 input;
@@ -105,3 +105,26 @@ TEST_F(ExtensionAppProviderTest, BasicMatching) {
 
   RunTest(edit_cases, ARRAYSIZE_UNSAFE(edit_cases));
 }
+
+TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
+  struct TestData {
+    const char* name;
+    const char* match_contents;
+  } cases[] = {
+    { "Test", "Test" },
+    { "Test \n Test", "Test  Test" },
+    { "Test\r\t\nTest", "TestTest" },
+  };
+
+  AutocompleteInput input(ASCIIToUTF16("Test"), string16(),
+                          true, true, true, AutocompleteInput::BEST_MATCH);
+  string16 url(ASCIIToUTF16("http://example.com"));
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    AutocompleteMatch match =
+        app_provider_->CreateAutocompleteMatch(input,
+                                               ASCIIToUTF16(cases[i].name),
+                                               url, 0, string16::npos);
+    EXPECT_EQ(ASCIIToUTF16(cases[i].match_contents), match.contents);
+  }
+}
+

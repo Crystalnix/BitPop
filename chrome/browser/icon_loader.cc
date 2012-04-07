@@ -5,12 +5,15 @@
 #include "chrome/browser/icon_loader.h"
 
 #include "base/basictypes.h"
-#include "content/browser/browser_thread.h"
+#include "base/bind.h"
+#include "content/public/browser/browser_thread.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
-#if defined(TOOLKIT_GTK)
-#include "base/mime_util.h"
+#if defined(TOOLKIT_USES_GTK)
+#include "base/nix/mime_util_xdg.h"
 #endif
+
+using content::BrowserThread;
 
 IconLoader::IconLoader(const IconGroupID& group, IconSize size,
                        Delegate* delegate)
@@ -25,15 +28,15 @@ IconLoader::~IconLoader() {
 }
 
 void IconLoader::Start() {
-  target_message_loop_ = base::MessageLoopProxy::CreateForCurrentThread();
+  target_message_loop_ = base::MessageLoopProxy::current();
 
-#if defined(TOOLKIT_GTK)
+#if defined(TOOLKIT_USES_GTK)
   // This call must happen on the UI thread before we can start loading icons.
-  mime_util::DetectGtkTheme();
+  base::nix::DetectGtkTheme();
 #endif
 
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(this, &IconLoader::ReadIcon));
+      base::Bind(&IconLoader::ReadIcon, this));
 }
 
 void IconLoader::NotifyDelegate() {

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/shell_integration.h"
 
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
@@ -13,7 +14,15 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+
+using content::BrowserThread;
+
+bool ShellIntegration::CanSetAsDefaultProtocolClient() {
+  // Allowed as long as the browser can become the operating system default
+  // browser.
+  return CanSetAsDefaultBrowser();
+}
 
 ShellIntegration::ShortcutInfo::ShortcutInfo()
     : create_on_desktop(false),
@@ -74,8 +83,8 @@ void ShellIntegration::DefaultWebClientWorker::StartCheckIsDefault() {
     observer_->SetDefaultWebClientUIState(STATE_PROCESSING);
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(
-            this, &DefaultWebClientWorker::ExecuteCheckIsDefault));
+        base::Bind(
+            &DefaultWebClientWorker::ExecuteCheckIsDefault, this));
   }
 }
 
@@ -85,8 +94,8 @@ void ShellIntegration::DefaultWebClientWorker::StartSetAsDefault() {
   }
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE,
-      NewRunnableMethod(
-          this, &DefaultWebClientWorker::ExecuteSetAsDefault));
+      base::Bind(
+          &DefaultWebClientWorker::ExecuteSetAsDefault, this));
 }
 
 void ShellIntegration::DefaultWebClientWorker::ObserverDestroyed() {
@@ -104,14 +113,20 @@ void ShellIntegration::DefaultWebClientWorker::ExecuteCheckIsDefault() {
   DefaultWebClientState state = CheckIsDefault();
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &DefaultWebClientWorker::CompleteCheckIsDefault, state));
+      base::Bind(
+          &DefaultWebClientWorker::CompleteCheckIsDefault, this, state));
 }
 
 void ShellIntegration::DefaultWebClientWorker::CompleteCheckIsDefault(
     DefaultWebClientState state) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   UpdateUI(state);
+  // The worker has finished everything it needs to do, so free the observer
+  // if we own it.
+  if (observer_ && observer_->IsOwnedByWorker()) {
+    delete observer_;
+    observer_ = NULL;
+  }
 }
 
 void ShellIntegration::DefaultWebClientWorker::ExecuteSetAsDefault() {
@@ -119,8 +134,8 @@ void ShellIntegration::DefaultWebClientWorker::ExecuteSetAsDefault() {
   SetAsDefault();
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
-      NewRunnableMethod(
-          this, &DefaultWebClientWorker::CompleteSetAsDefault));
+      base::Bind(
+          &DefaultWebClientWorker::CompleteSetAsDefault, this));
 }
 
 void ShellIntegration::DefaultWebClientWorker::CompleteSetAsDefault() {

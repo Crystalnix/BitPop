@@ -9,15 +9,19 @@
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
 #include "skia/ext/skia_utils_mac.h"
+
+using content::WebContents;
 
 namespace {
 
@@ -58,8 +62,8 @@ PageActionDecoration::PageActionDecoration(
                        ImageLoadingTracker::DONT_CACHE);
   }
 
-  registrar_.Add(this, NotificationType::EXTENSION_HOST_VIEW_SHOULD_CLOSE,
-      Source<Profile>(profile_));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
+      content::Source<Profile>(profile_));
 
   // We set the owner last of all so that we can determine whether we are in
   // the process of initializing this class or not.
@@ -135,7 +139,7 @@ void PageActionDecoration::OnImageLoaded(
     owner_->UpdatePageActions();
 }
 
-void PageActionDecoration::UpdateVisibility(TabContents* contents,
+void PageActionDecoration::UpdateVisibility(WebContents* contents,
                                             const GURL& url) {
   // Save this off so we can pass it back to the extension when the action gets
   // executed. See PageActionDecoration::OnMousePressed.
@@ -184,10 +188,10 @@ void PageActionDecoration::UpdateVisibility(TabContents* contents,
 
   if (IsVisible() != visible) {
     SetVisible(visible);
-    NotificationService::current()->Notify(
-        NotificationType::EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
-        Source<ExtensionAction>(page_action_),
-        Details<TabContents>(contents));
+    content::NotificationService::current()->Notify(
+        chrome::NOTIFICATION_EXTENSION_PAGE_ACTION_VISIBILITY_CHANGED,
+        content::Source<ExtensionAction>(page_action_),
+        content::Details<WebContents>(contents));
   }
 }
 
@@ -239,11 +243,11 @@ NSMenu* PageActionDecoration::GetMenu() {
 }
 
 void PageActionDecoration::Observe(
-    NotificationType type,
-    const NotificationSource& source,
-    const NotificationDetails& details) {
-  switch (type.value) {
-    case NotificationType::EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  switch (type) {
+    case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
       ExtensionPopupController* popup = [ExtensionPopupController popup];
       if (popup && ![popup isClosing])
         [popup close];

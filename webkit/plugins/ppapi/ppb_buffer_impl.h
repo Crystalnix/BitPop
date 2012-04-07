@@ -9,17 +9,15 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/shared_memory.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
-#include "webkit/plugins/ppapi/resource.h"
-
-struct PPB_Buffer_Dev;
+#include "ppapi/thunk/ppb_buffer_trusted_api.h"
+#include "ppapi/shared_impl/resource.h"
 
 namespace webkit {
 namespace ppapi {
 
-class PluginInstance;
-
-class PPB_Buffer_Impl : public Resource,
-                        public ::ppapi::thunk::PPB_Buffer_API {
+class PPB_Buffer_Impl : public ::ppapi::Resource,
+                        public ::ppapi::thunk::PPB_Buffer_API,
+                        public ::ppapi::thunk::PPB_BufferTrusted_API {
  public:
   virtual ~PPB_Buffer_Impl();
 
@@ -30,8 +28,9 @@ class PPB_Buffer_Impl : public Resource,
   base::SharedMemory* shared_memory() const { return shared_memory_.get(); }
   uint32_t size() const { return size_; }
 
-  // ResourceObjectBase overries.
+  // Resource overrides.
   virtual ::ppapi::thunk::PPB_Buffer_API* AsPPB_Buffer_API() OVERRIDE;
+  virtual ::ppapi::thunk::PPB_BufferTrusted_API* AsPPB_BufferTrusted_API();
 
   // PPB_Buffer_API implementation.
   virtual PP_Bool Describe(uint32_t* size_in_bytes) OVERRIDE;
@@ -39,21 +38,25 @@ class PPB_Buffer_Impl : public Resource,
   virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
 
+  // PPB_BufferTrusted_API implementation.
+  virtual int32_t GetSharedMemory(int* handle) OVERRIDE;
+
  private:
-  explicit PPB_Buffer_Impl(PluginInstance* instance);
+  explicit PPB_Buffer_Impl(PP_Instance instance);
   bool Init(uint32_t size);
 
   scoped_ptr<base::SharedMemory> shared_memory_;
   uint32_t size_;
+  int map_count_;
 
   DISALLOW_COPY_AND_ASSIGN(PPB_Buffer_Impl);
 };
 
-// Ensures that the given buffer is mapped, and retursn it to its previous
+// Ensures that the given buffer is mapped, and returns it to its previous
 // mapped state in the destructor.
 class BufferAutoMapper {
  public:
-  BufferAutoMapper(::ppapi::thunk::PPB_Buffer_API* api);
+  explicit BufferAutoMapper(::ppapi::thunk::PPB_Buffer_API* api);
   ~BufferAutoMapper();
 
   // Will be NULL on failure to map.

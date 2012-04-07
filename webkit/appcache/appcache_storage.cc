@@ -4,8 +4,13 @@
 
 #include "webkit/appcache/appcache_storage.h"
 
-#include "base/stl_util-inl.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/stl_util.h"
 #include "webkit/appcache/appcache_response.h"
+#include "webkit/appcache/appcache_service.h"
+#include "webkit/quota/quota_client.h"
+#include "webkit/quota/quota_manager.h"
 
 namespace appcache {
 
@@ -36,14 +41,14 @@ AppCacheStorage::DelegateReference::~DelegateReference() {
 
 AppCacheStorage::ResponseInfoLoadTask::ResponseInfoLoadTask(
     const GURL& manifest_url,
+    int64 group_id,
     int64 response_id,
     AppCacheStorage* storage)
     : storage_(storage),
       manifest_url_(manifest_url),
+      group_id_(group_id),
       response_id_(response_id),
-      info_buffer_(new HttpResponseInfoIOBuffer),
-      ALLOW_THIS_IN_INITIALIZER_LIST(read_callback_(
-          this, &ResponseInfoLoadTask::OnReadComplete)) {
+      info_buffer_(new HttpResponseInfoIOBuffer) {
   storage_->pending_info_loads_.insert(
       PendingResponseInfoLoads::value_type(response_id, this));
 }
@@ -55,8 +60,10 @@ void AppCacheStorage::ResponseInfoLoadTask::StartIfNeeded() {
   if (reader_.get())
     return;
   reader_.reset(
-      storage_->CreateResponseReader(manifest_url_, response_id_));
-  reader_->ReadInfo(info_buffer_, &read_callback_);
+      storage_->CreateResponseReader(manifest_url_, group_id_, response_id_));
+  reader_->ReadInfo(
+      info_buffer_, base::Bind(&ResponseInfoLoadTask::OnReadComplete,
+                               base::Unretained(this)));
 }
 
 void AppCacheStorage::ResponseInfoLoadTask::OnReadComplete(int result) {
@@ -73,18 +80,56 @@ void AppCacheStorage::ResponseInfoLoadTask::OnReadComplete(int result) {
 }
 
 void AppCacheStorage::LoadResponseInfo(
-    const GURL& manifest_url, int64 id, Delegate* delegate) {
+    const GURL& manifest_url, int64 group_id, int64 id, Delegate* delegate) {
   AppCacheResponseInfo* info = working_set_.GetResponseInfo(id);
   if (info) {
     delegate->OnResponseInfoLoaded(info, id);
     return;
   }
   ResponseInfoLoadTask* info_load =
-      GetOrCreateResponseInfoLoadTask(manifest_url, id);
+      GetOrCreateResponseInfoLoadTask(manifest_url, group_id, id);
   DCHECK(manifest_url == info_load->manifest_url());
+  DCHECK(group_id == info_load->group_id());
   DCHECK(id == info_load->response_id());
   info_load->AddDelegate(GetOrCreateDelegateReference(delegate));
   info_load->StartIfNeeded();
+}
+
+void AppCacheStorage::UpdateUsageMapAndNotify(
+    const GURL& origin, int64 new_usage) {
+  DCHECK_GE(new_usage, 0);
+  int64 old_usage = usage_map_[origin];
+  if (new_usage > 0)
+    usage_map_[origin] = new_usage;
+  else
+    usage_map_.erase(origin);
+  if (new_usage != old_usage && service()->quota_manager_proxy()) {
+    service()->quota_manager_proxy()->NotifyStorageModified(
+        quota::QuotaClient::kAppcache,
+        origin, quota::kStorageTypeTemporary,
+        new_usage - old_usage);
+  }
+}
+
+void AppCacheStorage::ClearUsageMapAndNotify() {
+  if (service()->quota_manager_proxy()) {
+    for (UsageMap::const_iterator iter = usage_map_.begin();
+         iter != usage_map_.end(); ++iter) {
+      service()->quota_manager_proxy()->NotifyStorageModified(
+          quota::QuotaClient::kAppcache,
+          iter->first, quota::kStorageTypeTemporary,
+          -(iter->second));
+    }
+  }
+  usage_map_.clear();
+}
+
+void AppCacheStorage::NotifyStorageAccessed(const GURL& origin) {
+  if (service()->quota_manager_proxy() &&
+      usage_map_.find(origin) != usage_map_.end())
+    service()->quota_manager_proxy()->NotifyStorageAccessed(
+        quota::QuotaClient::kAppcache,
+        origin, quota::kStorageTypeTemporary);
 }
 
 }  // namespace appcache

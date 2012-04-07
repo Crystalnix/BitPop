@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <set>
 
 #include "base/file_util.h"
+#include "base/json/json_value_serializer.h"
 #include "base/memory/scoped_handle.h"
 #include "base/scoped_temp_dir.h"
 #include "base/string_util.h"
@@ -19,8 +20,7 @@
 #include "chrome/common/extensions/extension_l10n_util.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/zip.h"
-#include "content/common/common_param_traits.h"
-#include "content/common/json_value_serializer.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_utils.h"
 #include "net/base/file_stream.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -84,8 +84,14 @@ bool PathContainsParentDirectory(const FilePath& path) {
 
 }  // namespace
 
-ExtensionUnpacker::ExtensionUnpacker(const FilePath& extension_path)
-    : extension_path_(extension_path) {
+ExtensionUnpacker::ExtensionUnpacker(const FilePath& extension_path,
+                                     const std::string& extension_id,
+                                     Extension::Location location,
+                                     int creation_flags)
+    : extension_path_(extension_path),
+      extension_id_(extension_id),
+      location_(location),
+      creation_flags_(creation_flags) {
 }
 
 ExtensionUnpacker::~ExtensionUnpacker() {
@@ -144,7 +150,7 @@ bool ExtensionUnpacker::ReadAllMessageCatalogs(
 }
 
 bool ExtensionUnpacker::Run() {
-  VLOG(1) << "Installing extension " << extension_path_.value();
+  DVLOG(1) << "Installing extension " << extension_path_.value();
 
   // <profile>/Extensions/INSTALL_TEMP/<version>
   temp_install_dir_ =
@@ -161,7 +167,7 @@ bool ExtensionUnpacker::Run() {
     return false;
   }
 
-  if (!Unzip(extension_path_, temp_install_dir_)) {
+  if (!zip::Unzip(extension_path_, temp_install_dir_)) {
     SetError(kCouldNotUnzipExtension);
     return false;
   }
@@ -171,16 +177,13 @@ bool ExtensionUnpacker::Run() {
   if (!parsed_manifest_.get())
     return false;  // Error was already reported.
 
-  // NOTE: Since the unpacker doesn't have the extension's public_id, the
-  // InitFromValue is allowed to generate a temporary id for the extension.
-  // ANY CODE THAT FOLLOWS SHOULD NOT DEPEND ON THE CORRECT ID OF THIS
-  // EXTENSION.
   std::string error;
   scoped_refptr<Extension> extension(Extension::Create(
       temp_install_dir_,
-      Extension::INVALID,
+      location_,
       *parsed_manifest_,
-      Extension::NO_FLAGS,
+      creation_flags_,
+      extension_id_,
       &error));
   if (!extension.get()) {
     SetError(error);
@@ -321,5 +324,5 @@ bool ExtensionUnpacker::ReadMessageCatalog(const FilePath& message_path) {
 }
 
 void ExtensionUnpacker::SetError(const std::string &error) {
-  error_message_ = error;
+  error_message_ = UTF8ToUTF16(error);
 }

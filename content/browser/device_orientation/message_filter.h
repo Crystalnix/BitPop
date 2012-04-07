@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,20 +7,18 @@
 
 #include <map>
 
-#include "content/browser/browser_message_filter.h"
 #include "content/browser/device_orientation/provider.h"
+#include "content/public/browser/browser_message_filter.h"
 
 namespace device_orientation {
 
-class Orientation;
-
-class MessageFilter : public BrowserMessageFilter {
+class MessageFilter : public content::BrowserMessageFilter {
  public:
   MessageFilter();
 
-  // BrowserMessageFilter implementation.
+  // content::BrowserMessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
  private:
   virtual ~MessageFilter();

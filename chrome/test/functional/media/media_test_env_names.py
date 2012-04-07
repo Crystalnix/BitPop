@@ -1,11 +1,9 @@
-#!/usr/bin/python
-
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 
-class MediaTestEnvNames:
+class MediaTestEnvNames(object):
   """Class that contains all environment names used in media tests.
 
   Since PyAuto does not support commandline arguments, we have to rely on
@@ -26,7 +24,8 @@ class MediaTestEnvNames:
   EXTRA_NICKNAME_ENV_NAME = 'EXTRA_NICKNAME'
 
   # Define this environment variable when you do not want to report
-  # the first result output. First result includes time to start up the browser.
+  # the first result output. First result includes time to start up the
+  # browser.
   REMOVE_FIRST_RESULT_ENV_NAME = 'REMOVE_FIRST_RESULT'
 
   # Add t=Data() parameter in query string to disable media cache
@@ -60,3 +59,21 @@ class MediaTestEnvNames:
 
   # Define the path to the directory that contains binaries of reference build.
   REFERENCE_BUILD_DIR_ENV_NAME = 'REFERENCE_BUILD_DIR'
+
+  # Define track(caption) file.
+  TRACK_FILE_ENV_NAME = 'TRACK_FILE'
+
+  # Define the number of additional players shown for stress testing.
+  N_EXTRA_PLAYERS_ENV_NAME = 'N_EXTRA_PLAYERS'
+
+  # Define this if this is jerky test.
+  JERKY_TEST_ENV_NAME = 'JERKY_TEST'
+
+  # Define location of the jerky tool binary.
+  JERKY_TOOL_BINARY_LOCATION_ENV_NAME = 'JERKY_TOOL_LOC'
+
+  # Define output directory of the jerky tool.
+  JERKY_TOOL_OUTPUT_DIR_ENV_NAME = 'JERKY_TOOL_OUTPUT_DIR'
+
+  # Define baseline directory of the jerky tool.
+  JERKY_TOOL_BASELINE_DIR_ENV_NAME = 'JERKY_TOOL_BASELINE_DIR'

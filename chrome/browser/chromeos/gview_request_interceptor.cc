@@ -6,29 +6,40 @@
 
 #include "base/file_path.h"
 #include "base/path_service.h"
+#include "chrome/browser/chrome_plugin_service_filter.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/url_constants.h"
+#include "content/browser/renderer_host/resource_dispatcher_host.h"
+#include "content/browser/renderer_host/resource_dispatcher_host_request_info.h"
+#include "content/public/browser/plugin_service.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_redirect_job.h"
-#include "webkit/glue/plugins/plugin_list.h"
+#include "webkit/plugins/webplugininfo.h"
+
+using content::PluginService;
 
 namespace chromeos {
+
+namespace {
 
 // The PDF mime type is treated special if the browser has a built-in
 // PDF viewer plug-in installed - we want to intercept only if we're
 // told to.
-static const char kPdfMimeType[] = "application/pdf";
+const char kPdfMimeType[] = "application/pdf";
 
 // This is the list of mime types currently supported by the Google
 // Document Viewer.
-static const char* const kSupportedMimeTypeList[] = {
+const char* const kSupportedMimeTypeList[] = {
   kPdfMimeType,
   "application/vnd.ms-powerpoint"
 };
 
-static const char kGViewUrlPrefix[] = "http://docs.google.com/gview?url=";
+const char kGViewUrlPrefix[] = "http://docs.google.com/gview?url=";
+
+}  // namespace
 
 GViewRequestInterceptor::GViewRequestInterceptor() {
   for (size_t i = 0; i < arraysize(kSupportedMimeTypeList); ++i) {
@@ -52,6 +63,30 @@ net::URLRequestJob* GViewRequestInterceptor::MaybeInterceptRedirect(
   return NULL;
 }
 
+bool GViewRequestInterceptor::ShouldUsePdfPlugin(
+    net::URLRequest* request) const {
+  FilePath pdf_path;
+  PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_path);
+  ResourceDispatcherHostRequestInfo* info =
+      ResourceDispatcherHost::InfoForRequest(request);
+  if (!info)
+    return false;
+
+  webkit::WebPluginInfo plugin;
+  if (!PluginService::GetInstance()->GetPluginInfoByPath(pdf_path, &plugin)) {
+    return false;
+  }
+
+  return ChromePluginServiceFilter::GetInstance()->ShouldUsePlugin(
+      info->child_id(), info->route_id(), info->context(),
+      request->url(), GURL(), &plugin);
+}
+
+bool GViewRequestInterceptor::ShouldInterceptScheme(
+    const std::string& scheme) const {
+  return scheme == chrome::kHttpScheme;
+}
+
 net::URLRequestJob* GViewRequestInterceptor::MaybeInterceptResponse(
     net::URLRequest* request) const {
   // Do not intercept this request if it is a download.
@@ -61,23 +96,23 @@ net::URLRequestJob* GViewRequestInterceptor::MaybeInterceptResponse(
 
   std::string mime_type;
   request->GetMimeType(&mime_type);
+
+  if (request->method() != "GET" ||
+      !ShouldInterceptScheme(request->original_url().scheme())) {
+    return NULL;
+  }
+
   // If the local PDF viewing plug-in is installed and enabled, don't
   // redirect PDF files to Google Document Viewer.
-  if (mime_type == kPdfMimeType) {
-    FilePath pdf_path;
-    webkit::npapi::WebPluginInfo info;
-    PathService::Get(chrome::FILE_PDF_PLUGIN, &pdf_path);
-    if (webkit::npapi::PluginList::Singleton()->GetPluginInfoByPath(
-            pdf_path, &info) &&
-            webkit::npapi::IsPluginEnabled(info))
-      return NULL;
-  }
+  if (mime_type == kPdfMimeType && ShouldUsePdfPlugin(request))
+    return NULL;
+
   // If supported, build the URL to the Google Document Viewer
   // including the origial document's URL, then create a new job that
   // will redirect the browser to this new URL.
   if (supported_mime_types_.count(mime_type) > 0) {
     std::string url(kGViewUrlPrefix);
-    url += EscapePath(request->url().spec());
+    url += net::EscapePath(request->url().spec());
     return new net::URLRequestRedirectJob(request, GURL(url));
   }
   return NULL;

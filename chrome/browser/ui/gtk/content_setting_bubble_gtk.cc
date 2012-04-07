@@ -17,15 +17,19 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/common/content_settings.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
+#include "content/public/browser/plugin_service.h"
+#include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
+#include "grit/ui_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/text_elider.h"
 #include "ui/gfx/gtk_util.h"
-#include "webkit/plugins/npapi/plugin_list.h"
+
+using content::PluginService;
+using content::WebContents;
 
 namespace {
 
@@ -41,7 +45,7 @@ std::string BuildElidedText(const std::string& input) {
       UTF8ToUTF16(input),
       gfx::Font(),
       kMaxLinkPixelSize,
-      false));
+      ui::ELIDE_AT_END));
 }
 
 }  // namespace
@@ -51,15 +55,15 @@ ContentSettingBubbleGtk::ContentSettingBubbleGtk(
     BubbleDelegateGtk* delegate,
     ContentSettingBubbleModel* content_setting_bubble_model,
     Profile* profile,
-    TabContents* tab_contents)
+    WebContents* web_contents)
     : anchor_(anchor),
       profile_(profile),
-      tab_contents_(tab_contents),
+      web_contents_(web_contents),
       delegate_(delegate),
       content_setting_bubble_model_(content_setting_bubble_model),
       bubble_(NULL) {
-  registrar_.Add(this, NotificationType::TAB_CONTENTS_DESTROYED,
-                 Source<TabContents>(tab_contents));
+  registrar_.Add(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                 content::Source<WebContents>(web_contents));
   BuildBubble();
 }
 
@@ -77,18 +81,19 @@ void ContentSettingBubbleGtk::BubbleClosing(BubbleGtk* bubble,
   delete this;
 }
 
-void ContentSettingBubbleGtk::Observe(NotificationType type,
-                                      const NotificationSource& source,
-                                      const NotificationDetails& details) {
-  DCHECK(type == NotificationType::TAB_CONTENTS_DESTROYED);
-  DCHECK(source == Source<TabContents>(tab_contents_));
-  tab_contents_ = NULL;
+void ContentSettingBubbleGtk::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_WEB_CONTENTS_DESTROYED);
+  DCHECK(source == content::Source<WebContents>(web_contents_));
+  web_contents_ = NULL;
 }
 
 void ContentSettingBubbleGtk::BuildBubble() {
   GtkThemeService* theme_provider = GtkThemeService::GetFrom(profile_);
 
-  GtkWidget* bubble_content = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+  GtkWidget* bubble_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
   gtk_container_set_border_width(GTK_CONTAINER(bubble_content), kContentBorder);
 
   const ContentSettingBubbleModel::BubbleContent& content =
@@ -102,12 +107,12 @@ void ContentSettingBubbleGtk::BuildBubble() {
 
   const std::set<std::string>& plugins = content.resource_identifiers;
   if (!plugins.empty()) {
-    GtkWidget* list_content = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+    GtkWidget* list_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
     for (std::set<std::string>::const_iterator it = plugins.begin();
         it != plugins.end(); ++it) {
       std::string name = UTF16ToUTF8(
-          webkit::npapi::PluginList::Singleton()->GetPluginGroupName(*it));
+          PluginService::GetInstance()->GetPluginGroupName(*it));
       if (name.empty())
         name = *it;
 
@@ -120,7 +125,7 @@ void ContentSettingBubbleGtk::BuildBubble() {
                          FALSE, FALSE, 0);
     }
     gtk_box_pack_start(GTK_BOX(bubble_content), list_content, FALSE, FALSE,
-                       gtk_util::kControlSpacing);
+                       ui::kControlSpacing);
   }
 
   if (content_setting_bubble_model_->content_type() ==
@@ -146,8 +151,8 @@ void ContentSettingBubbleGtk::BuildBubble() {
         g_signal_connect(event_box, "button_press_event",
                          G_CALLBACK(OnPopupIconButtonPressThunk), this);
         gtk_table_attach(GTK_TABLE(table), event_box, 0, 1, row, row + 1,
-                         GTK_FILL, GTK_FILL, gtk_util::kControlSpacing / 2,
-                         gtk_util::kControlSpacing / 2);
+                         GTK_FILL, GTK_FILL, ui::kControlSpacing / 2,
+                         ui::kControlSpacing / 2);
       }
 
       GtkWidget* button = gtk_chrome_link_button_new(
@@ -156,8 +161,8 @@ void ContentSettingBubbleGtk::BuildBubble() {
       g_signal_connect(button, "clicked", G_CALLBACK(OnPopupLinkClickedThunk),
                        this);
       gtk_table_attach(GTK_TABLE(table), button, 1, 2, row, row + 1,
-                       GTK_FILL, GTK_FILL, gtk_util::kControlSpacing / 2,
-                       gtk_util::kControlSpacing / 2);
+                       GTK_FILL, GTK_FILL, ui::kControlSpacing / 2,
+                       ui::kControlSpacing / 2);
     }
 
     gtk_box_pack_start(GTK_BOX(bubble_content), table, FALSE, FALSE, 0);
@@ -181,6 +186,8 @@ void ContentSettingBubbleGtk::BuildBubble() {
       // or pain occurs.
       gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(radio), TRUE);
     }
+    if (!content.radio_group_enabled)
+      gtk_widget_set_sensitive(radio, FALSE);
     radio_group_gtk_.push_back(radio);
   }
   for (std::vector<GtkWidget*>::const_iterator i = radio_group_gtk_.begin();
@@ -193,7 +200,7 @@ void ContentSettingBubbleGtk::BuildBubble() {
        content.domain_lists.begin();
        i != content.domain_lists.end(); ++i) {
     // Put each list into its own vbox to allow spacing between lists.
-    GtkWidget* list_content = gtk_vbox_new(FALSE, gtk_util::kControlSpacing);
+    GtkWidget* list_content = gtk_vbox_new(FALSE, ui::kControlSpacing);
 
     GtkWidget* label = gtk_label_new(BuildElidedText(i->title).c_str());
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
@@ -207,7 +214,7 @@ void ContentSettingBubbleGtk::BuildBubble() {
                          FALSE, FALSE, 0);
     }
     gtk_box_pack_start(GTK_BOX(bubble_content), list_content, FALSE, FALSE,
-                       gtk_util::kControlSpacing);
+                       ui::kControlSpacing);
   }
 
   if (!content.custom_link.empty()) {

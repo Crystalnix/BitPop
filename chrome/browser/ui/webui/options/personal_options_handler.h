@@ -7,58 +7,59 @@
 #pragma once
 
 #include "base/basictypes.h"
-#include "chrome/browser/browser_signin.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 #if defined(OS_CHROMEOS)
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_registrar.h"
 #endif
-
-class OptionsManagedBannerHandler;
 
 // Chrome personal options page UI handler.
 class PersonalOptionsHandler : public OptionsPageUIHandler,
-                               public ProfileSyncServiceObserver,
-                               public BrowserSignin::SigninDelegate {
+                               public ProfileSyncServiceObserver {
  public:
   PersonalOptionsHandler();
   virtual ~PersonalOptionsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
-  virtual void Initialize();
+  virtual void GetLocalizedValues(DictionaryValue* localized_strings) OVERRIDE;
+  virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // ProfileSyncServiceObserver implementation.
-  virtual void OnStateChanged();
-
-  // BrowserSignin::SigninDelegate implementation.
-  virtual void OnLoginSuccess();
-  virtual void OnLoginFailure(const GoogleServiceAuthError& error);
+  virtual void OnStateChanged() OVERRIDE;
 
  private:
   void ObserveThemeChanged();
-  void ShowSyncActionDialog(const ListValue* args);
-  void ShowSyncLoginDialog(const ListValue* args);
-  void ShowCustomizeSyncDialog(const ListValue* args);
   void ThemesReset(const ListValue* args);
 #if defined(TOOLKIT_GTK)
   void ThemesSetGTK(const ListValue* args);
 #endif
 
 #if defined(OS_CHROMEOS)
-  void LoadAccountPicture(const ListValue* args);
-  NotificationRegistrar registrar_;
+  void UpdateAccountPicture();
+  content::NotificationRegistrar registrar_;
 #endif
 
-  scoped_ptr<OptionsManagedBannerHandler> banner_handler_;
+  // Sends an array of Profile objects to javascript.
+  // Each object is of the form:
+  //   profileInfo = {
+  //     name: "Profile Name",
+  //     iconURL: "chrome://path/to/icon/image",
+  //     filePath: "/path/to/profile/data/on/disk",
+  //     isCurrentProfile: false
+  //   };
+  void SendProfilesInfo();
+
+  // Asynchronously opens a new browser window to create a new profile.
+  // |args| is not used.
+  void CreateProfile(const ListValue* args);
 
   // True if the multiprofiles switch is enabled.
   bool multiprofile_;

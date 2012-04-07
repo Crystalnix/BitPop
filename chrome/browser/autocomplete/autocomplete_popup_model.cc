@@ -16,7 +16,8 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "ui/gfx/rect.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -24,11 +25,9 @@
 
 AutocompletePopupModel::AutocompletePopupModel(
     AutocompletePopupView* popup_view,
-    AutocompleteEditModel* edit_model,
-    Profile* profile)
+    AutocompleteEditModel* edit_model)
     : view_(popup_view),
       edit_model_(edit_model),
-      profile_(profile),
       hovered_line_(kNoMatch),
       selected_line_(kNoMatch) {
   edit_model->set_popup_model(this);
@@ -130,8 +129,13 @@ void AutocompletePopupModel::ResetToDefaultMatch() {
 
 bool AutocompletePopupModel::GetKeywordForMatch(const AutocompleteMatch& match,
                                                 string16* keyword) const {
-  // If the current match is a keyword, return that as the selected keyword.
-  if (TemplateURL::SupportsReplacement(match.template_url)) {
+  // Assume we have no keyword until we find otherwise.
+  keyword->clear();
+
+  if (match.template_url &&
+      TemplateURL::SupportsReplacement(match.template_url) &&
+      match.transition == content::PAGE_TRANSITION_KEYWORD) {
+    // The current match is a keyword, return that as the selected keyword.
     keyword->assign(match.template_url->keyword());
     return false;
   }
@@ -143,31 +147,32 @@ bool AutocompletePopupModel::GetKeywordForMatch(const AutocompleteMatch& match,
 bool AutocompletePopupModel::GetKeywordForText(const string16& text,
                                                string16* keyword) const {
   // Creates keyword_hint first in case |keyword| is a pointer to |text|.
-  const string16 keyword_hint(TemplateURLModel::CleanUserInputKeyword(text));
+  const string16 keyword_hint(TemplateURLService::CleanUserInputKeyword(text));
 
   // Assume we have no keyword until we find otherwise.
   keyword->clear();
 
   if (keyword_hint.empty())
     return false;
-  if (!profile_->GetTemplateURLModel())
+  Profile* profile = edit_model_->profile();
+  TemplateURLService* url_service =
+      TemplateURLServiceFactory::GetForProfile(profile);
+  if (!url_service)
     return false;
-  profile_->GetTemplateURLModel()->Load();
+  url_service->Load();
 
   // Don't provide a hint if this keyword doesn't support replacement.
   const TemplateURL* const template_url =
-      profile_->GetTemplateURLModel()->GetTemplateURLForKeyword(keyword_hint);
+      url_service->GetTemplateURLForKeyword(keyword_hint);
   if (!TemplateURL::SupportsReplacement(template_url))
     return false;
 
   // Don't provide a hint for inactive/disabled extension keywords.
   if (template_url->IsExtensionKeyword()) {
-    const Extension* extension = profile_->GetExtensionService()->
+    const Extension* extension = profile->GetExtensionService()->
         GetExtensionById(template_url->GetExtensionId(), false);
-    if (!extension ||
-        (profile_->IsOffTheRecord() &&
-         !profile_->GetExtensionService()->
-             IsIncognitoEnabled(extension->id())))
+    if (!extension || (profile->IsOffTheRecord() &&
+        !profile->GetExtensionService()->IsIncognitoEnabled(extension->id())))
       return false;
   }
 
@@ -227,7 +232,7 @@ const SkBitmap* AutocompletePopupModel::GetIconIfExtensionMatch(
   if (!match.template_url || !match.template_url->IsExtensionKeyword())
     return NULL;
 
-  return &profile_->GetExtensionService()->GetOmniboxPopupIcon(
+  return &edit_model_->profile()->GetExtensionService()->GetOmniboxPopupIcon(
       match.template_url->GetExtensionId());
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,20 +12,24 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
 #include "chrome/common/extensions/url_pattern_set.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 
 struct ContextMenuParams;
 
 class Extension;
 class Profile;
 class SkBitmap;
-class TabContents;
+
+namespace content {
+class WebContents;
+}
 
 // Represents a menu item added by an extension.
 class ExtensionMenuItem {
@@ -191,13 +195,9 @@ class ExtensionMenuItem {
 };
 
 // This class keeps track of menu items added by extensions.
-class ExtensionMenuManager : public NotificationObserver {
+class ExtensionMenuManager : public content::NotificationObserver {
  public:
-  // A bitmask of values from URLPattern::SchemeMasks indicating the schemes
-  // of pages where we'll show extension menu items.
-  static const int kAllowedSchemes;
-
-  ExtensionMenuManager();
+  explicit ExtensionMenuManager(Profile* profile);
   virtual ~ExtensionMenuManager();
 
   // Returns the ids of extensions which have menu items registered.
@@ -239,8 +239,14 @@ class ExtensionMenuManager : public NotificationObserver {
   // Returns the item with the given |id| or NULL.
   ExtensionMenuItem* GetItemById(const ExtensionMenuItem::Id& id) const;
 
+  // Notify the ExtensionMenuManager that an item has been updated not through
+  // an explicit call into ExtensionMenuManager. For example, if an item is
+  // acquired by a call to GetItemById and changed, then this should be called.
+  // Returns true if the item was found or false otherwise.
+  bool ItemUpdated(const ExtensionMenuItem::Id& id);
+
   // Called when a menu item is clicked on by the user.
-  void ExecuteCommand(Profile* profile, TabContents* tab_contents,
+  void ExecuteCommand(Profile* profile, content::WebContents* web_contents,
                       const ContextMenuParams& params,
                       const ExtensionMenuItem::Id& menuItemId);
 
@@ -249,13 +255,9 @@ class ExtensionMenuManager : public NotificationObserver {
   // default extension icon.
   const SkBitmap& GetIconForExtension(const std::string& extension_id);
 
-  // Implements the NotificationObserver interface.
-  virtual void Observe(NotificationType type, const NotificationSource& source,
-                       const NotificationDetails& details);
-
-  // Returns true if |url| has an allowed scheme for extension context menu
-  // items. This checks against kAllowedSchemes.
-  static bool HasAllowedScheme(const GURL& url);
+  // Implements the content::NotificationObserver interface.
+  virtual void Observe(int type, const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ExtensionMenuManagerTest, DeleteParent);
@@ -264,6 +266,12 @@ class ExtensionMenuManager : public NotificationObserver {
   // This is a helper function which takes care of de-selecting any other radio
   // items in the same group (i.e. that are adjacent in the list).
   void RadioItemSelected(ExtensionMenuItem* item);
+
+  // Make sure that there is only one radio item selected at once in any run.
+  // If there are no radio items selected, then the first item in the run
+  // will get selected. If there are multiple radio items selected, then only
+  // the last one will get selcted.
+  void SanitizeRadioList(const ExtensionMenuItem::List& item_list);
 
   // Returns true if item is a descendant of an item with id |ancestor_id|.
   bool DescendantOf(ExtensionMenuItem* item,
@@ -278,7 +286,7 @@ class ExtensionMenuManager : public NotificationObserver {
   // items.
   std::map<ExtensionMenuItem::Id, ExtensionMenuItem*> items_by_id_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   ExtensionIconManager icon_manager_;
 

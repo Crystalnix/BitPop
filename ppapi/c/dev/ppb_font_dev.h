@@ -1,30 +1,42 @@
-/* Copyright (c) 2010 The Chromium Authors. All rights reserved.
+/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+/* From dev/ppb_font_dev.idl modified Tue Oct 11 10:01:39 2011. */
+
 #ifndef PPAPI_C_DEV_PPB_FONT_DEV_H_
 #define PPAPI_C_DEV_PPB_FONT_DEV_H_
 
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_macros.h"
+#include "ppapi/c/pp_point.h"
+#include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_resource.h"
+#include "ppapi/c/pp_size.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_var.h"
 
 #define PPB_FONT_DEV_INTERFACE_0_6 "PPB_Font(Dev);0.6"
 #define PPB_FONT_DEV_INTERFACE PPB_FONT_DEV_INTERFACE_0_6
 
-struct PP_Point;
-struct PP_Rect;
+/**
+ * @file
+ * This file defines the <code>PPB_Font_Dev</code> interface.
+ */
 
+
+/**
+ * @addtogroup Enums
+ * @{
+ */
 typedef enum {
   /**
    * Uses the user's default web page font (normally either the default serif
    * or sans serif font).
    */
   PP_FONTFAMILY_DEFAULT = 0,
-
   /**
    * These families will use the default web page font corresponding to the
    * given family.
@@ -40,19 +52,26 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FontFamily_Dev, 4);
  */
 typedef enum {
   PP_FONTWEIGHT_100 = 0,
-  PP_FONTWEIGHT_200,
-  PP_FONTWEIGHT_300,
-  PP_FONTWEIGHT_400,
-  PP_FONTWEIGHT_500,
-  PP_FONTWEIGHT_600,
-  PP_FONTWEIGHT_700,
-  PP_FONTWEIGHT_800,
-  PP_FONTWEIGHT_900,
+  PP_FONTWEIGHT_200 = 1,
+  PP_FONTWEIGHT_300 = 2,
+  PP_FONTWEIGHT_400 = 3,
+  PP_FONTWEIGHT_500 = 4,
+  PP_FONTWEIGHT_600 = 5,
+  PP_FONTWEIGHT_700 = 6,
+  PP_FONTWEIGHT_800 = 7,
+  PP_FONTWEIGHT_900 = 8,
   PP_FONTWEIGHT_NORMAL = PP_FONTWEIGHT_400,
   PP_FONTWEIGHT_BOLD = PP_FONTWEIGHT_700
 } PP_FontWeight_Dev;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FontWeight_Dev, 4);
+/**
+ * @}
+ */
 
+/**
+ * @addtogroup Structs
+ * @{
+ */
 struct PP_FontDescription_Dev {
   /**
    * Font face name as a string. This can also be an undefined var, in which
@@ -61,7 +80,6 @@ struct PP_FontDescription_Dev {
    * font.
    */
   struct PP_Var face;
-
   /**
    * When Create()ing a font and the face is an undefined var, the family
    * specifies the generic font family type to use. If the face is specified,
@@ -73,7 +91,6 @@ struct PP_FontDescription_Dev {
    * is serif or sans serif.
    */
   PP_FontFamily_Dev family;
-
   /**
    * Size in pixels.
    *
@@ -83,15 +100,12 @@ struct PP_FontDescription_Dev {
    * give it a similar optical size to the proportionally spaced fonts.
    */
   uint32_t size;
-
   /**
    * Normally you will use either PP_FONTWEIGHT_NORMAL or PP_FONTWEIGHT_BOLD.
    */
   PP_FontWeight_Dev weight;
-
   PP_Bool italic;
   PP_Bool small_caps;
-
   /**
    * Adjustment to apply to letter and word spacing, respectively. Initialize
    * to 0 to get normal spacing. Negative values bring letters/words closer
@@ -99,7 +113,6 @@ struct PP_FontDescription_Dev {
    */
   int32_t letter_spacing;
   int32_t word_spacing;
-
   /**
    * Ensure that this struct is 48-bytes wide by padding the end.  In some
    * compilers, PP_Var is 8-byte aligned, so those compilers align this struct
@@ -126,12 +139,10 @@ struct PP_TextRun_Dev {
    * treated as a 0-length string).
    */
   struct PP_Var text;
-
   /**
    * Set to PP_TRUE if the text is right-to-left.
    */
   PP_Bool rtl;
-
   /**
    * Set to PP_TRUE to force the directionality of the text regardless of
    * content
@@ -139,8 +150,15 @@ struct PP_TextRun_Dev {
   PP_Bool override_direction;
 };
 PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_TextRun_Dev, 24);
+/**
+ * @}
+ */
 
-struct PPB_Font_Dev {
+/**
+ * @addtogroup Interfaces
+ * @{
+ */
+struct PPB_Font_Dev_0_6 {
   /**
    * Returns a list of all available font families on the system. You can use
    * this list to decide whether to Create() a font.
@@ -152,20 +170,17 @@ struct PPB_Font_Dev {
    * invalid instance).
    */
   struct PP_Var (*GetFontFamilies)(PP_Instance instance);
-
   /**
    * Returns a font which best matches the given description. The return value
    * will have a non-zero ID on success, or zero on failure.
    */
   PP_Resource (*Create)(PP_Instance instance,
                         const struct PP_FontDescription_Dev* description);
-
   /**
    * Returns PP_TRUE if the given resource is a Font. Returns PP_FALSE if the
    * resource is invalid or some type other than a Font.
    */
   PP_Bool (*IsFont)(PP_Resource resource);
-
   /**
    * Loads the description and metrics of the font into the given structures.
    * The description will be different than the description the font was
@@ -182,7 +197,6 @@ struct PPB_Font_Dev {
   PP_Bool (*Describe)(PP_Resource font,
                       struct PP_FontDescription_Dev* description,
                       struct PP_FontMetrics_Dev* metrics);
-
   /**
    * Draws the text to the image buffer.
    *
@@ -208,7 +222,6 @@ struct PPB_Font_Dev {
                         uint32_t color,
                         const struct PP_Rect* clip,
                         PP_Bool image_data_is_opaque);
-
   /**
    * Returns the width of the given string. If the font is invalid or the var
    * isn't a valid string, this will return -1.
@@ -219,9 +232,7 @@ struct PPB_Font_Dev {
    *
    * Returns -1 on failure.
    */
-  int32_t (*MeasureText)(PP_Resource font,
-                         const struct PP_TextRun_Dev* text);
-
+  int32_t (*MeasureText)(PP_Resource font, const struct PP_TextRun_Dev* text);
   /**
    * Returns the character at the given pixel X position from the beginning of
    * the string. This handles complex scripts such as Arabic, where characters
@@ -231,7 +242,6 @@ struct PPB_Font_Dev {
   uint32_t (*CharacterOffsetForPixel)(PP_Resource font,
                                       const struct PP_TextRun_Dev* text,
                                       int32_t pixel_position);
-
   /**
    * Returns the horizontal advance to the given character if the string was
    * placed at the given position. This handles complex scripts such as Arabic,
@@ -241,9 +251,12 @@ struct PPB_Font_Dev {
   int32_t (*PixelOffsetForCharacter)(PP_Resource font,
                                      const struct PP_TextRun_Dev* text,
                                      uint32_t char_offset);
-
-
 };
+
+typedef struct PPB_Font_Dev_0_6 PPB_Font_Dev;
+/**
+ * @}
+ */
 
 #endif  /* PPAPI_C_DEV_PPB_FONT_DEV_H_ */
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,13 @@
 #include <algorithm>
 #include <functional>
 
-#include "base/stl_util-inl.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "base/bind.h"
+#include "base/stl_util.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/common/notification_service.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 
 template <typename T>
 struct MatchSecond {
@@ -29,24 +32,35 @@ CertStore* CertStore::GetInstance() {
 }
 
 CertStore::CertStore() : next_cert_id_(1) {
+  if (content::BrowserThread::CurrentlyOn(content::BrowserThread::UI)) {
+    RegisterForNotification();
+  } else {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::UI, FROM_HERE,
+        base::Bind(&CertStore::RegisterForNotification,
+                   base::Unretained(this)));
+  }
+}
+
+CertStore::~CertStore() {
+}
+
+void CertStore::RegisterForNotification() {
   // We watch for RenderProcess termination, as this is how we clear
   // certificates for now.
   // TODO(jcampan): we should be listening to events such as resource cached/
   //                removed from cache, and remove the cert when we know it
   //                is not used anymore.
 
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_TERMINATED,
-                 NotificationService::AllSources());
-  registrar_.Add(this, NotificationType::RENDERER_PROCESS_CLOSED,
-                 NotificationService::AllSources());
-}
-
-CertStore::~CertStore() {
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
+                 content::NotificationService::AllBrowserContextsAndSources());
 }
 
 int CertStore::StoreCert(net::X509Certificate* cert, int process_id) {
   DCHECK(cert);
-  base::AutoLock autoLock(cert_lock_);
+  base::AutoLock auto_lock(cert_lock_);
 
   int cert_id;
 
@@ -66,18 +80,18 @@ int CertStore::StoreCert(net::X509Certificate* cert, int process_id) {
   }
 
   // Let's update process_id_to_cert_id_.
-  if (std::find_if(process_id_to_cert_id_.lower_bound(process_id),
-                   process_id_to_cert_id_.upper_bound(process_id),
-                   MatchSecond<int>(cert_id)) ==
-        process_id_to_cert_id_.upper_bound(process_id)) {
+  std::pair<IDMap::iterator, IDMap::iterator> process_ids =
+      process_id_to_cert_id_.equal_range(process_id);
+  if (std::find_if(process_ids.first, process_ids.second,
+                   MatchSecond<int>(cert_id)) == process_ids.second) {
     process_id_to_cert_id_.insert(std::make_pair(process_id, cert_id));
   }
 
   // And cert_id_to_process_id_.
-  if (std::find_if(cert_id_to_process_id_.lower_bound(cert_id),
-                   cert_id_to_process_id_.upper_bound(cert_id),
-                   MatchSecond<int>(process_id)) ==
-        cert_id_to_process_id_.upper_bound(cert_id)) {
+  std::pair<IDMap::iterator, IDMap::iterator> cert_ids =
+      cert_id_to_process_id_.equal_range(cert_id);
+  if (std::find_if(cert_ids.first, cert_ids.second,
+                   MatchSecond<int>(process_id)) == cert_ids.second) {
     cert_id_to_process_id_.insert(std::make_pair(cert_id, process_id));
   }
 
@@ -86,7 +100,7 @@ int CertStore::StoreCert(net::X509Certificate* cert, int process_id) {
 
 bool CertStore::RetrieveCert(int cert_id,
                              scoped_refptr<net::X509Certificate>* cert) {
-  base::AutoLock autoLock(cert_lock_);
+  base::AutoLock auto_lock(cert_lock_);
 
   CertMap::iterator iter = id_to_cert_.find(cert_id);
   if (iter == id_to_cert_.end())
@@ -109,38 +123,52 @@ void CertStore::RemoveCertInternal(int cert_id) {
 }
 
 void CertStore::RemoveCertsForRenderProcesHost(int process_id) {
-  base::AutoLock autoLock(cert_lock_);
+  base::AutoLock auto_lock(cert_lock_);
 
   // We iterate through all the cert ids for that process.
-  IDMap::iterator ids_iter;
-  for (ids_iter = process_id_to_cert_id_.lower_bound(process_id);
-       ids_iter != process_id_to_cert_id_.upper_bound(process_id);) {
+  std::pair<IDMap::iterator, IDMap::iterator> process_ids =
+      process_id_to_cert_id_.equal_range(process_id);
+  for (IDMap::iterator ids_iter = process_ids.first;
+       ids_iter != process_ids.second; ++ids_iter) {
     int cert_id = ids_iter->second;
-    // Remove this process from cert_id_to_process_id_.
+    // Find all the processes referring to this cert id in
+    // cert_id_to_process_id_, then locate the process being removed within
+    // that range.
+    std::pair<IDMap::iterator, IDMap::iterator> cert_ids =
+        cert_id_to_process_id_.equal_range(cert_id);
     IDMap::iterator proc_iter =
-        std::find_if(cert_id_to_process_id_.lower_bound(cert_id),
-                     cert_id_to_process_id_.upper_bound(cert_id),
+        std::find_if(cert_ids.first, cert_ids.second,
                      MatchSecond<int>(process_id));
-    DCHECK(proc_iter != cert_id_to_process_id_.upper_bound(cert_id));
+    DCHECK(proc_iter != cert_ids.second);
+
+    // Before removing, determine if no other processes refer to the current
+    // cert id. If |proc_iter| (the current process) is the lower bound of
+    // processes containing the current cert id and if |next_proc_iter| is the
+    // upper bound (the first process that does not), then only one process,
+    // the one being removed, refers to the cert id.
+    IDMap::iterator next_proc_iter = proc_iter;
+    ++next_proc_iter;
+    bool last_process_for_cert_id =
+        (proc_iter == cert_ids.first && next_proc_iter == cert_ids.second);
     cert_id_to_process_id_.erase(proc_iter);
 
-    if (cert_id_to_process_id_.count(cert_id) == 0) {
-      // This cert is not referenced by any process, remove it from id_to_cert_
-      // and cert_to_id_.
+    if (last_process_for_cert_id) {
+      // The current cert id is not referenced by any other processes, so
+      // remove it from id_to_cert_ and cert_to_id_.
       RemoveCertInternal(cert_id);
     }
-
-    // Erase the current item but keep the iterator valid.
-    process_id_to_cert_id_.erase(ids_iter++);
   }
+  if (process_ids.first != process_ids.second)
+    process_id_to_cert_id_.erase(process_ids.first, process_ids.second);
 }
 
-void CertStore::Observe(NotificationType type,
-                        const NotificationSource& source,
-                        const NotificationDetails& details) {
-  DCHECK(type == NotificationType::RENDERER_PROCESS_TERMINATED ||
-         type == NotificationType::RENDERER_PROCESS_CLOSED);
-  RenderProcessHost* rph = Source<RenderProcessHost>(source).ptr();
+void CertStore::Observe(int type,
+                        const content::NotificationSource& source,
+                        const content::NotificationDetails& details) {
+  DCHECK(type == content::NOTIFICATION_RENDERER_PROCESS_TERMINATED ||
+         type == content::NOTIFICATION_RENDERER_PROCESS_CLOSED);
+  content::RenderProcessHost* rph =
+      content::Source<content::RenderProcessHost>(source).ptr();
   DCHECK(rph);
-  RemoveCertsForRenderProcesHost(rph->id());
+  RemoveCertsForRenderProcesHost(rph->GetID());
 }

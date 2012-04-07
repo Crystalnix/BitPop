@@ -1,33 +1,42 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "webkit/plugins/ppapi/ppb_url_loader_impl.h"
 
 #include "base/logging.h"
+#include "net/base/net_errors.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_url_loader.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
+#include "ppapi/thunk/enter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKitClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginContainer.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoader.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoader.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderOptions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/plugins/ppapi/common.h"
 #include "webkit/plugins/ppapi/plugin_module.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
 #include "webkit/plugins/ppapi/ppb_url_request_info_impl.h"
 #include "webkit/plugins/ppapi/ppb_url_response_info_impl.h"
+#include "webkit/plugins/ppapi/resource_helper.h"
 
 using appcache::WebApplicationCacheHostImpl;
+using ppapi::Resource;
+using ppapi::thunk::EnterResourceNoLock;
+using ppapi::thunk::PPB_URLLoader_API;
+using ppapi::thunk::PPB_URLRequestInfo_API;
+using ppapi::TrackedCallback;
 using WebKit::WebFrame;
 using WebKit::WebString;
 using WebKit::WebURL;
@@ -47,156 +56,16 @@ namespace ppapi {
 
 namespace {
 
-PP_Resource Create(PP_Instance instance_id) {
-  PluginInstance* instance = ResourceTracker::Get()->GetInstance(instance_id);
-  if (!instance)
-    return 0;
-
-  PPB_URLLoader_Impl* loader = new PPB_URLLoader_Impl(instance, false);
-  return loader->GetReference();
-}
-
-PP_Bool IsURLLoader(PP_Resource resource) {
-  return BoolToPPBool(!!Resource::GetAs<PPB_URLLoader_Impl>(resource));
-}
-
-int32_t Open(PP_Resource loader_id,
-             PP_Resource request_id,
-             PP_CompletionCallback callback) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_ERROR_BADRESOURCE;
-
-  scoped_refptr<PPB_URLRequestInfo_Impl> request(
-      Resource::GetAs<PPB_URLRequestInfo_Impl>(request_id));
-  if (!request)
-    return PP_ERROR_BADRESOURCE;
-
-  return loader->Open(request, callback);
-}
-
-int32_t FollowRedirect(PP_Resource loader_id,
-                       PP_CompletionCallback callback) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_ERROR_BADRESOURCE;
-
-  return loader->FollowRedirect(callback);
-}
-
-PP_Bool GetUploadProgress(PP_Resource loader_id,
-                          int64_t* bytes_sent,
-                          int64_t* total_bytes_to_be_sent) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_FALSE;
-
-  return BoolToPPBool(loader->GetUploadProgress(bytes_sent,
-                                                total_bytes_to_be_sent));
-}
-
-PP_Bool GetDownloadProgress(PP_Resource loader_id,
-                            int64_t* bytes_received,
-                            int64_t* total_bytes_to_be_received) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_FALSE;
-
-  return BoolToPPBool(loader->GetDownloadProgress(bytes_received,
-                                                  total_bytes_to_be_received));
-}
-
-PP_Resource GetResponseInfo(PP_Resource loader_id) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return 0;
-
-  PPB_URLResponseInfo_Impl* response_info = loader->response_info();
-  if (!response_info)
-    return 0;
-
-  return response_info->GetReference();
-}
-
-int32_t ReadResponseBody(PP_Resource loader_id,
-                         void* buffer,
-                         int32_t bytes_to_read,
-                         PP_CompletionCallback callback) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_ERROR_BADRESOURCE;
-
-  return loader->ReadResponseBody(buffer, bytes_to_read, callback);
-}
-
-int32_t FinishStreamingToFile(PP_Resource loader_id,
-                              PP_CompletionCallback callback) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return PP_ERROR_BADRESOURCE;
-
-  return loader->FinishStreamingToFile(callback);
-}
-
-void Close(PP_Resource loader_id) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return;
-
-  loader->Close();
-}
-
-const PPB_URLLoader ppb_urlloader = {
-  &Create,
-  &IsURLLoader,
-  &Open,
-  &FollowRedirect,
-  &GetUploadProgress,
-  &GetDownloadProgress,
-  &GetResponseInfo,
-  &ReadResponseBody,
-  &FinishStreamingToFile,
-  &Close
-};
-
-void GrantUniversalAccess(PP_Resource loader_id) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return;
-
-  loader->GrantUniversalAccess();
-}
-
-void SetStatusCallback(PP_Resource loader_id,
-                       PP_URLLoaderTrusted_StatusCallback cb) {
-  scoped_refptr<PPB_URLLoader_Impl> loader(
-      Resource::GetAs<PPB_URLLoader_Impl>(loader_id));
-  if (!loader)
-    return;
-  loader->SetStatusCallback(cb);
-}
-
-const PPB_URLLoaderTrusted ppb_urlloadertrusted = {
-  &GrantUniversalAccess,
-  &SetStatusCallback
-};
-
-WebFrame* GetFrame(PluginInstance* instance) {
-  return instance->container()->element().document().frame();
+WebFrame* GetFrameForResource(const Resource* resource) {
+  PluginInstance* plugin_instance = ResourceHelper::GetPluginInstance(resource);
+  if (!plugin_instance)
+    return NULL;
+  return plugin_instance->container()->element().document().frame();
 }
 
 }  // namespace
 
-PPB_URLLoader_Impl::PPB_URLLoader_Impl(PluginInstance* instance,
+PPB_URLLoader_Impl::PPB_URLLoader_Impl(PP_Instance instance,
                                        bool main_document_loader)
     : Resource(instance),
       main_document_loader_(main_document_loader),
@@ -217,53 +86,78 @@ PPB_URLLoader_Impl::PPB_URLLoader_Impl(PluginInstance* instance,
 PPB_URLLoader_Impl::~PPB_URLLoader_Impl() {
 }
 
-// static
-const PPB_URLLoader* PPB_URLLoader_Impl::GetInterface() {
-  return &ppb_urlloader;
-}
-
-// static
-const PPB_URLLoaderTrusted* PPB_URLLoader_Impl::GetTrustedInterface() {
-  return &ppb_urlloadertrusted;
-}
-
-PPB_URLLoader_Impl* PPB_URLLoader_Impl::AsPPB_URLLoader_Impl() {
+PPB_URLLoader_API* PPB_URLLoader_Impl::AsPPB_URLLoader_API() {
   return this;
 }
 
-void PPB_URLLoader_Impl::ClearInstance() {
-  Resource::ClearInstance();
+void PPB_URLLoader_Impl::InstanceWasDeleted() {
+  Resource::InstanceWasDeleted();
   loader_.reset();
 }
 
-int32_t PPB_URLLoader_Impl::Open(PPB_URLRequestInfo_Impl* request,
+int32_t PPB_URLLoader_Impl::Open(PP_Resource request_id,
                                  PP_CompletionCallback callback) {
+  // Main document loads are already open, so don't allow people to open them
+  // again.
+  if (main_document_loader_)
+    return PP_ERROR_INPROGRESS;
+
+  EnterResourceNoLock<PPB_URLRequestInfo_API> enter_request(request_id, true);
+  if (enter_request.failed()) {
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_URLLoader.Open: invalid request resource ID. (Hint to C++ wrapper"
+        " users: use the ResourceRequest constructor that takes an instance or"
+        " else the request will be null.)");
+    return PP_ERROR_BADARGUMENT;
+  }
+  PPB_URLRequestInfo_Impl* request = static_cast<PPB_URLRequestInfo_Impl*>(
+      enter_request.object());
+
   int32_t rv = ValidateCallback(callback);
   if (rv != PP_OK)
     return rv;
 
-  if (request->RequiresUniversalAccess() && !has_universal_access_)
-    return PP_ERROR_BADARGUMENT;
+  if (request->RequiresUniversalAccess() && !has_universal_access_) {
+    Log(PP_LOGLEVEL_ERROR, "PPB_URLLoader.Open: The URL you're requesting is "
+        " on a different security origin than your plugin. To request "
+        " cross-origin resources, see "
+        " PP_URLREQUESTPROPERTY_ALLOWCROSSORIGINREQUESTS.");
+    return PP_ERROR_NOACCESS;
+  }
 
   if (loader_.get())
     return PP_ERROR_INPROGRESS;
 
-  WebFrame* frame = GetFrame(instance());
+  WebFrame* frame = GetFrameForResource(this);
   if (!frame)
     return PP_ERROR_FAILED;
-  WebURLRequest web_request(request->ToWebURLRequest(frame));
+  WebURLRequest web_request;
+  if (!request->ToWebURLRequest(frame, &web_request))
+    return PP_ERROR_FAILED;
+
+  // Save a copy of the request info so the plugin can continue to use and
+  // change it while we're doing the request without affecting us. We must do
+  // this after ToWebURLRequest since that fills out the file refs.
+  request_data_ = request->GetData();
 
   WebURLLoaderOptions options;
   if (has_universal_access_) {
-    // Universal access allows cross-origin requests and sends credentials.
+    options.allowCredentials = true;
     options.crossOriginRequestPolicy =
         WebURLLoaderOptions::CrossOriginRequestPolicyAllow;
-    options.allowCredentials = true;
-  } else if (request->allow_cross_origin_requests()) {
-    // Otherwise, allow cross-origin requests with access control.
-    options.crossOriginRequestPolicy =
-        WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
-    options.allowCredentials = request->allow_credentials();
+  } else {
+    // All other HTTP requests are untrusted.
+    options.untrustedHTTP = true;
+    if (request_data_.allow_cross_origin_requests) {
+      // Allow cross-origin requests with access control. The request specifies
+      // if credentials are to be sent.
+      options.allowCredentials = request_data_.allow_credentials;
+      options.crossOriginRequestPolicy =
+          WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
+    } else {
+      // Same-origin requests can always send credentials.
+      options.allowCredentials = true;
+    }
   }
 
   is_asynchronous_load_suspended_ = false;
@@ -272,15 +166,6 @@ int32_t PPB_URLLoader_Impl::Open(PPB_URLRequestInfo_Impl* request,
     return PP_ERROR_FAILED;
 
   loader_->loadAsynchronously(web_request, this);
-  // Check for immediate failure; The AssociatedURLLoader will call our
-  // didFail method synchronously for certain kinds of access violations
-  // so we must return an error to the caller.
-  // TODO(bbudge) Modify the underlying AssociatedURLLoader to only call
-  // back asynchronously.
-  if (done_status_ == PP_ERROR_FAILED)
-    return PP_ERROR_NOACCESS;
-
-  request_info_ = scoped_refptr<PPB_URLRequestInfo_Impl>(request);
 
   // Notify completion when we receive a redirect or response headers.
   RegisterCallback(callback);
@@ -294,34 +179,40 @@ int32_t PPB_URLLoader_Impl::FollowRedirect(PP_CompletionCallback callback) {
 
   WebURL redirect_url = GURL(response_info_->redirect_url());
 
-  loader_->setDefersLoading(false);  // Allow the redirect to continue.
+  SetDefersLoading(false);  // Allow the redirect to continue.
   RegisterCallback(callback);
   return PP_OK_COMPLETIONPENDING;
 }
 
-bool PPB_URLLoader_Impl::GetUploadProgress(int64_t* bytes_sent,
-                                           int64_t* total_bytes_to_be_sent) {
+PP_Bool PPB_URLLoader_Impl::GetUploadProgress(int64_t* bytes_sent,
+                                              int64_t* total_bytes_to_be_sent) {
   if (!RecordUploadProgress()) {
     *bytes_sent = 0;
     *total_bytes_to_be_sent = 0;
-    return false;
+    return PP_FALSE;
   }
   *bytes_sent = bytes_sent_;
   *total_bytes_to_be_sent = total_bytes_to_be_sent_;
-  return true;
+  return PP_TRUE;
 }
 
-bool PPB_URLLoader_Impl::GetDownloadProgress(
+PP_Bool PPB_URLLoader_Impl::GetDownloadProgress(
     int64_t* bytes_received,
     int64_t* total_bytes_to_be_received) {
   if (!RecordDownloadProgress()) {
     *bytes_received = 0;
     *total_bytes_to_be_received = 0;
-    return false;
+    return PP_FALSE;
   }
   *bytes_received = bytes_received_;
   *total_bytes_to_be_received = total_bytes_to_be_received_;
-  return true;
+  return PP_TRUE;
+}
+
+PP_Resource PPB_URLLoader_Impl::GetResponseInfo() {
+  if (!response_info_)
+    return 0;
+  return response_info_->GetReference();
 }
 
 int32_t PPB_URLLoader_Impl::ReadResponseBody(void* buffer,
@@ -365,10 +256,8 @@ int32_t PPB_URLLoader_Impl::FinishStreamingToFile(
     return done_status_;
 
   is_streaming_to_file_ = true;
-  if (is_asynchronous_load_suspended_) {
-    loader_->setDefersLoading(false);
-    is_asynchronous_load_suspended_ = false;
-  }
+  if (is_asynchronous_load_suspended_)
+    SetDefersLoading(false);
 
   // Wait for didFinishLoading / didFail.
   RegisterCallback(callback);
@@ -376,12 +265,10 @@ int32_t PPB_URLLoader_Impl::FinishStreamingToFile(
 }
 
 void PPB_URLLoader_Impl::Close() {
-  if (loader_.get()) {
+  if (loader_.get())
     loader_->cancel();
-  } else if (main_document_loader_) {
-    WebFrame* frame = instance()->container()->element().document().frame();
-    frame->stopLoading();
-  }
+  else if (main_document_loader_)
+    GetFrameForResource(this)->stopLoading();
   // TODO(viettrungluu): Check what happens to the callback (probably the
   // wrong thing). May need to post abort here. crbug.com/69457
 }
@@ -399,9 +286,9 @@ void PPB_URLLoader_Impl::willSendRequest(
     WebURLLoader* loader,
     WebURLRequest& new_request,
     const WebURLResponse& redirect_response) {
-  if (!request_info_->follow_redirects()) {
+  if (!request_data_.follow_redirects) {
     SaveResponse(redirect_response);
-    loader_->setDefersLoading(true);
+    SetDefersLoading(true);
     RunCallback(PP_OK);
   }
 }
@@ -437,51 +324,83 @@ void PPB_URLLoader_Impl::didReceiveData(WebURLLoader* loader,
                                         const char* data,
                                         int data_length,
                                         int encoded_data_length) {
+  // Note that |loader| will be NULL for document loads.
   bytes_received_ += data_length;
+  UpdateStatus();
 
   buffer_.insert(buffer_.end(), data, data + data_length);
-  if (user_buffer_) {
-    RunCallback(FillUserBuffer());
-  } else {
-    DCHECK(!pending_callback_.get() || pending_callback_->completed());
-  }
 
   // To avoid letting the network stack download an entire stream all at once,
   // defer loading when we have enough buffer.
-  // Check the buffer size after potentially moving some to the user buffer.
-  DCHECK(!request_info_ ||
-         (request_info_->prefetch_buffer_lower_threshold() <
-          request_info_->prefetch_buffer_upper_threshold()));
+  // Check for this before we run the callback, even though that could move
+  // data out of the buffer. Doing anything after the callback is unsafe.
+  DCHECK(request_data_.prefetch_buffer_lower_threshold <
+         request_data_.prefetch_buffer_upper_threshold);
   if (!is_streaming_to_file_ &&
       !is_asynchronous_load_suspended_ &&
-      request_info_ &&
       (buffer_.size() >= static_cast<size_t>(
-          request_info_->prefetch_buffer_upper_threshold()))) {
+          request_data_.prefetch_buffer_upper_threshold))) {
     DVLOG(1) << "Suspending async load - buffer size: " << buffer_.size();
-    loader->setDefersLoading(true);
-    is_asynchronous_load_suspended_ = true;
+    SetDefersLoading(true);
+  }
+
+  if (user_buffer_) {
+    RunCallback(FillUserBuffer());
+  } else {
+    DCHECK(!TrackedCallback::IsPending(pending_callback_));
   }
 }
 
 void PPB_URLLoader_Impl::didFinishLoading(WebURLLoader* loader,
                                           double finish_time) {
-  done_status_ = PP_OK;
-  RunCallback(done_status_);
+  FinishLoading(PP_OK);
 }
 
 void PPB_URLLoader_Impl::didFail(WebURLLoader* loader,
                                  const WebURLError& error) {
-  // TODO(darin): Provide more detailed error information.
-  done_status_ = PP_ERROR_FAILED;
-  RunCallback(done_status_);
+  int32_t pp_error = PP_ERROR_FAILED;
+  if (error.domain.equals(WebString::fromUTF8(net::kErrorDomain))) {
+    // TODO(bbudge): Extend pp_errors.h to cover interesting network errors
+    // from the net error domain.
+    switch (error.reason) {
+      case net::ERR_ACCESS_DENIED:
+      case net::ERR_NETWORK_ACCESS_DENIED:
+        pp_error = PP_ERROR_NOACCESS;
+        break;
+    }
+  } else {
+    // It's a WebKit error.
+    pp_error = PP_ERROR_NOACCESS;
+  }
+
+  FinishLoading(pp_error);
+}
+
+void PPB_URLLoader_Impl::SetDefersLoading(bool defers_loading) {
+  if (loader_.get()) {
+    loader_->setDefersLoading(defers_loading);
+    is_asynchronous_load_suspended_ = defers_loading;
+  }
+
+  // TODO(brettw) bug 96770: We need a way to set the defers loading flag on
+  // main document loads (when the loader_ is null).
+}
+
+void PPB_URLLoader_Impl::FinishLoading(int32_t done_status) {
+  done_status_ = done_status;
+  // If the client hasn't called any function that takes a callback since
+  // the initial call to Open, or called ReadResponseBody and got a
+  // synchronous return, then the callback will be NULL.
+  if (TrackedCallback::IsPending(pending_callback_))
+    RunCallback(done_status_);
 }
 
 int32_t PPB_URLLoader_Impl::ValidateCallback(PP_CompletionCallback callback) {
   // We only support non-blocking calls.
   if (!callback.func)
-    return PP_ERROR_BADARGUMENT;
+    return PP_ERROR_BLOCKS_MAIN_THREAD;
 
-  if (pending_callback_.get() && !pending_callback_->completed())
+  if (TrackedCallback::IsPending(pending_callback_))
     return PP_ERROR_INPROGRESS;
 
   return PP_OK;
@@ -489,26 +408,22 @@ int32_t PPB_URLLoader_Impl::ValidateCallback(PP_CompletionCallback callback) {
 
 void PPB_URLLoader_Impl::RegisterCallback(PP_CompletionCallback callback) {
   DCHECK(callback.func);
-  DCHECK(!pending_callback_.get() || pending_callback_->completed());
+  DCHECK(!TrackedCallback::IsPending(pending_callback_));
 
-  PP_Resource resource_id = GetReferenceNoAddRef();
-  CHECK(resource_id);
-  pending_callback_ = new TrackedCompletionCallback(
-      instance()->module()->GetCallbackTracker(), resource_id, callback);
+  PluginModule* plugin_module = ResourceHelper::GetPluginModule(this);
+  if (!plugin_module)
+    return;
+
+  pending_callback_ = new TrackedCallback(this, callback);
 }
 
 void PPB_URLLoader_Impl::RunCallback(int32_t result) {
   // This may be null only when this is a main document loader.
   if (!pending_callback_.get()) {
-    // TODO(viettrungluu): put this CHECK back when the callback race condition
-    // is fixed: http://code.google.com/p/chromium/issues/detail?id=70347.
-    //CHECK(main_document_loader_);
+    CHECK(main_document_loader_);
     return;
   }
-
-  scoped_refptr<TrackedCompletionCallback> callback;
-  callback.swap(pending_callback_);
-  callback->Run(result);  // Will complete abortively if necessary.
+  TrackedCallback::ClearAndRun(&pending_callback_, result);
 }
 
 size_t PPB_URLLoader_Impl::FillUserBuffer() {
@@ -520,13 +435,11 @@ size_t PPB_URLLoader_Impl::FillUserBuffer() {
   buffer_.erase(buffer_.begin(), buffer_.begin() + bytes_to_copy);
 
   // If the buffer is getting too empty, resume asynchronous loading.
-  DCHECK(!is_asynchronous_load_suspended_ || request_info_);
   if (is_asynchronous_load_suspended_ &&
       buffer_.size() <= static_cast<size_t>(
-          request_info_->prefetch_buffer_lower_threshold())) {
+          request_data_.prefetch_buffer_lower_threshold)) {
     DVLOG(1) << "Resuming async load - buffer size: " << buffer_.size();
-    loader_->setDefersLoading(false);
-    is_asynchronous_load_suspended_ = false;
+    SetDefersLoading(false);
   }
 
   // Reset for next time.
@@ -537,7 +450,7 @@ size_t PPB_URLLoader_Impl::FillUserBuffer() {
 
 void PPB_URLLoader_Impl::SaveResponse(const WebURLResponse& response) {
   scoped_refptr<PPB_URLResponseInfo_Impl> response_info(
-      new PPB_URLResponseInfo_Impl(instance()));
+      new PPB_URLResponseInfo_Impl(pp_instance()));
   if (response_info->Initialize(response))
     response_info_ = response_info;
 }
@@ -545,33 +458,26 @@ void PPB_URLLoader_Impl::SaveResponse(const WebURLResponse& response) {
 void PPB_URLLoader_Impl::UpdateStatus() {
   if (status_callback_ &&
       (RecordDownloadProgress() || RecordUploadProgress())) {
-    PP_Resource pp_resource = GetReferenceNoAddRef();
-    if (pp_resource) {
-      // The PP_Resource on the plugin will be NULL if the plugin has no
-      // reference to this object. That's fine, because then we don't need to
-      // call UpdateStatus.
-      //
-      // Here we go through some effort to only send the exact information that
-      // the requestor wanted in the request flags. It would be just as
-      // efficient to send all of it, but we don't want people to rely on
-      // getting download progress when they happen to set the upload progress
-      // flag.
-      status_callback_(
-          instance()->pp_instance(), pp_resource,
-          RecordUploadProgress() ? bytes_sent_ : -1,
-          RecordUploadProgress() ?  total_bytes_to_be_sent_ : -1,
-          RecordDownloadProgress() ? bytes_received_ : -1,
-          RecordDownloadProgress() ? total_bytes_to_be_received_ : -1);
-    }
+    // Here we go through some effort to only send the exact information that
+    // the requestor wanted in the request flags. It would be just as
+    // efficient to send all of it, but we don't want people to rely on
+    // getting download progress when they happen to set the upload progress
+    // flag.
+    status_callback_(
+        pp_instance(), pp_resource(),
+        RecordUploadProgress() ? bytes_sent_ : -1,
+        RecordUploadProgress() ?  total_bytes_to_be_sent_ : -1,
+        RecordDownloadProgress() ? bytes_received_ : -1,
+        RecordDownloadProgress() ? total_bytes_to_be_received_ : -1);
   }
 }
 
 bool PPB_URLLoader_Impl::RecordDownloadProgress() const {
-  return request_info_ && request_info_->record_download_progress();
+  return request_data_.record_download_progress;
 }
 
 bool PPB_URLLoader_Impl::RecordUploadProgress() const {
-  return request_info_ && request_info_->record_upload_progress();
+  return request_data_.record_upload_progress;
 }
 
 }  // namespace ppapi

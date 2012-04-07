@@ -24,25 +24,20 @@ void TopSitesCache::SetThumbnails(const URLToImagesMap& images) {
   images_ = images;
 }
 
-void TopSitesCache::SetPageThumbnail(const GURL& url,
-                                     RefCountedBytes* thumbnail,
-                                     const ThumbnailScore& score) {
-  Images& img = images_[GetCanonicalURL(url)];
-  img.thumbnail = thumbnail;
-  img.thumbnail_score = score;
-}
-
 Images* TopSitesCache::GetImage(const GURL& url) {
   return &images_[GetCanonicalURL(url)];
 }
 
 bool TopSitesCache::GetPageThumbnail(const GURL& url,
-                                     scoped_refptr<RefCountedBytes>* bytes) {
+                                     scoped_refptr<RefCountedMemory>* bytes) {
   std::map<GURL, Images>::const_iterator found =
       images_.find(GetCanonicalURL(url));
   if (found != images_.end()) {
-    *bytes = found->second.thumbnail.get();
-    return true;
+    RefCountedBytes* data = found->second.thumbnail.get();
+    if (data) {
+      *bytes = data;
+      return true;
+    }
   }
   return false;
 }
@@ -70,19 +65,6 @@ bool TopSitesCache::IsKnownURL(const GURL& url) {
 size_t TopSitesCache::GetURLIndex(const GURL& url) {
   DCHECK(IsKnownURL(url));
   return GetCanonicalURLsIterator(url)->second;
-}
-
-void TopSitesCache::RemoveUnreferencedThumbnails() {
-  for (URLToImagesMap::iterator i = images_.begin(); i != images_.end(); ) {
-    if (IsKnownURL(i->first)) {
-      ++i;
-    } else {
-      URLToImagesMap::iterator next_i = i;
-      ++next_i;
-      images_.erase(i);
-      i = next_i;
-    }
-  }
 }
 
 void TopSitesCache::GenerateCanonicalURLs() {

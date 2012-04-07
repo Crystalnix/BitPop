@@ -4,10 +4,13 @@
 
 #include "chrome/browser/prefs/pref_member.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/prefs/pref_service.h"
-#include "content/common/notification_type.h"
+#include "chrome/common/chrome_notification_types.h"
+
+using content::BrowserThread;
 
 namespace subtle {
 
@@ -22,15 +25,17 @@ PrefMemberBase::~PrefMemberBase() {
 }
 
 
-void PrefMemberBase::Init(const char* pref_name, PrefService* prefs,
-                          NotificationObserver* observer) {
+void PrefMemberBase::Init(const char* pref_name,
+                          PrefService* prefs,
+                          content::NotificationObserver* observer) {
   DCHECK(pref_name);
   DCHECK(prefs);
   DCHECK(pref_name_.empty());  // Check that Init is only called once.
   observer_ = observer;
   prefs_ = prefs;
   pref_name_ = pref_name;
-  DCHECK(!pref_name_.empty());
+  // Check that the preference is registered.
+  DCHECK(prefs_->FindPreference(pref_name_.c_str()));
 
   // Add ourselves as a pref observer so we can keep our local value in sync.
   prefs_->AddPrefObserver(pref_name, this);
@@ -51,11 +56,11 @@ void PrefMemberBase::MoveToThread(BrowserThread::ID thread_id) {
   internal()->MoveToThread(thread_id);
 }
 
-void PrefMemberBase::Observe(NotificationType type,
-                             const NotificationSource& source,
-                             const NotificationDetails& details) {
+void PrefMemberBase::Observe(int type,
+                             const content::NotificationSource& source,
+                             const content::NotificationDetails& details) {
   VerifyValuePrefName();
-  DCHECK(NotificationType::PREF_CHANGED == type);
+  DCHECK(chrome::NOTIFICATION_PREF_CHANGED == type);
   UpdateValueFromPref();
   if (!setting_value_ && observer_)
     observer_->Observe(type, source, details);
@@ -77,7 +82,10 @@ void PrefMemberBase::VerifyPref() const {
     UpdateValueFromPref();
 }
 
-PrefMemberBase::Internal::Internal() : thread_id_(BrowserThread::UI) { }
+PrefMemberBase::Internal::Internal()
+    : thread_id_(BrowserThread::UI),
+      is_managed_(false) {
+}
 PrefMemberBase::Internal::~Internal() { }
 
 bool PrefMemberBase::Internal::IsOnCorrectThread() const {
@@ -96,9 +104,8 @@ void PrefMemberBase::Internal::UpdateValue(Value* v, bool is_managed) const {
   } else {
     bool rv = BrowserThread::PostTask(
         thread_id_, FROM_HERE,
-        NewRunnableMethod(this,
-                          &PrefMemberBase::Internal::UpdateValue,
-                          value.release(), is_managed));
+        base::Bind(&PrefMemberBase::Internal::UpdateValue, this,
+                   value.release(), is_managed));
     DCHECK(rv);
   }
 }

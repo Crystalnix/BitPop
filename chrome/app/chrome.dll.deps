@@ -2,7 +2,6 @@
 
 dependents = [
   'KERNEL32.dll',
-  'USER32.dll',
   'ADVAPI32.dll',
   'WINMM.dll',
   'COMCTL32.dll',
@@ -21,6 +20,7 @@ dependents = [
 ]
 
 delay_loaded = [
+  'USER32.dll',
   'CRYPTUI.dll',
   'IMM32.dll',
   'CRYPT32.dll',
@@ -31,9 +31,9 @@ delay_loaded = [
   'dbghelp.dll',
   'COMDLG32.dll',
   'urlmon.dll',
-  'avcodec-52.dll',
-  'avformat-52.dll',
-  'avutil-50.dll',
+  'avcodec-53.dll',
+  'avformat-53.dll',
+  'avutil-51.dll',
   'pthreads.dll',
   'IPHLPAPI.dll',
 ]

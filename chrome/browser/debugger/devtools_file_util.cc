@@ -1,18 +1,24 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/debugger/devtools_file_util.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
-
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/shell_dialogs.h"
+#include "chrome/browser/ui/select_file_dialog.h"
+
+using content::BrowserThread;
 
 namespace {
+
+base::LazyInstance<FilePath>::Leaky
+    g_last_save_path = LAZY_INSTANCE_INITIALIZER;
 
 class SaveAsDialog : public SelectFileDialog::Listener,
                      public base::RefCounted<SaveAsDialog> {
@@ -36,8 +42,9 @@ class SaveAsDialog : public SelectFileDialog::Listener,
     else
       file_name = suggested_file_name;
 
-    if (!last_save_path_.empty()) {
-      default_path = last_save_path_.DirName().AppendASCII(suggested_file_name);
+    if (!g_last_save_path.Pointer()->empty()) {
+      default_path = g_last_save_path.Pointer()->DirName().AppendASCII(
+          suggested_file_name);
     } else {
       DownloadPrefs prefs(profile->GetPrefs());
       default_path = prefs.download_path().AppendASCII(suggested_file_name);
@@ -57,14 +64,11 @@ class SaveAsDialog : public SelectFileDialog::Listener,
   // SelectFileDialog::Listener implementation.
   virtual void FileSelected(const FilePath& path,
                             int index, void* params) {
-    last_save_path_ = path;
+    *g_last_save_path.Pointer() = path;
 
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableFunction(
-            &SaveAsDialog::WriteFile,
-            path,
-            content_));
+        base::Bind(&SaveAsDialog::WriteFile, path, content_));
     Release();  // Balanced in ::Show.
   }
 
@@ -82,19 +86,15 @@ class SaveAsDialog : public SelectFileDialog::Listener,
   friend class base::RefCounted<SaveAsDialog>;
   virtual ~SaveAsDialog() {}
 
-  static void WriteFile(FilePath path, const std::string& content) {
+  static void WriteFile(const FilePath& path, const std::string& content) {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     DCHECK(!path.empty());
 
     file_util::WriteFile(path, content.c_str(), content.length());
   }
   scoped_refptr<SelectFileDialog> select_file_dialog_;
-  static FilePath last_save_path_;
   std::string content_;
 };
-
-// static
-FilePath SaveAsDialog::last_save_path_;
 
 }  // namespace
 

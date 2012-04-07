@@ -2,15 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined(OS_MACOSX)
-#include <signal.h>
-#include <unistd.h>
-#endif  // OS_MACOSX
-
+#include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/debug/debugger.h"
 #include "base/debug/trace_event.h"
 #include "base/i18n/rtl.h"
-#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/field_trial.h"
 #include "base/message_loop.h"
@@ -23,22 +19,31 @@
 #include "base/threading/platform_thread.h"
 #include "base/time.h"
 #include "content/common/content_counters.h"
-#include "content/common/content_switches.h"
-#include "content/common/main_function_params.h"
 #include "content/common/hi_res_timer_manager.h"
 #include "content/common/pepper_plugin_registry.h"
+#include "content/public/common/content_switches.h"
+#include "content/public/common/main_function_params.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "content/renderer/render_process_impl.h"
-#include "content/renderer/render_thread.h"
+#include "content/renderer/render_thread_impl.h"
 #include "content/renderer/renderer_main_platform_delegate.h"
 #include "ui/base/ui_base_switches.h"
+#include "webkit/plugins/ppapi/ppapi_interface_factory.h"
 
 #if defined(OS_MACOSX)
-#include <Carbon/Carbon.h>  // TISCreateInputSourceList
+#include <Carbon/Carbon.h>
+#include <signal.h>
+#include <unistd.h>
 
-#include "base/sys_info.h"
+#include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
 #include "third_party/mach_override/mach_override.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #endif  // OS_MACOSX
+
+#if defined(OS_WIN)
+#include <signal.h>
+#endif  // OS_WIN
 
 #if defined(OS_MACOSX)
 namespace {
@@ -52,14 +57,10 @@ CFArrayRef ChromeTISCreateInputSourceList(
 }
 
 void InstallFrameworkHacks() {
-  int32 os_major, os_minor, os_bugfix;
-  base::SysInfo::OperatingSystemVersionNumbers(
-      &os_major, &os_minor, &os_bugfix);
-
   // See http://crbug.com/31225
   // TODO: Don't do this on newer OS X revisions that have a fix for
   // http://openradar.appspot.com/radar?id=1156410
-  if (os_major == 10 && os_minor >= 6) {
+  if (base::mac::IsOSSnowLeopardOrLater()) {
     // Chinese Handwriting was introduced in 10.6. Since doing this override
     // regresses page cycler memory usage on 10.5, don't do the unnecessary
     // override there.
@@ -97,9 +98,11 @@ static void HandleRendererErrorTestParameters(const CommandLine& command_line) {
     *bad_pointer = 0;
   }
 
-  if (command_line.HasSwitch(switches::kRendererStartupDialog)) {
+  if (command_line.HasSwitch(switches::kWaitForDebugger))
+    base::debug::WaitForDebugger(60, true);
+
+  if (command_line.HasSwitch(switches::kRendererStartupDialog))
     ChildProcess::WaitForDebugger("Renderer");
-  }
 }
 
 // This is a simplified version of the browser Jankometer, which measures
@@ -127,14 +130,25 @@ class RendererMessageLoopObserver : public MessageLoop::TaskObserver {
   DISALLOW_COPY_AND_ASSIGN(RendererMessageLoopObserver);
 };
 
+#if defined(OS_WIN)
+void __cdecl ForceCrashForAbort(int) {
+  *((int*)0) = 0xDEAD;  // Crash.
+}
+#endif
+
 // mainline routine for running as the Renderer process
-int RendererMain(const MainFunctionParams& parameters) {
+int RendererMain(const content::MainFunctionParams& parameters) {
   TRACE_EVENT_BEGIN_ETW("RendererMain", 0, "");
 
-  const CommandLine& parsed_command_line = parameters.command_line_;
-  base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool_;
+#if defined(OS_WIN)
+  // Force a crash whenever abort() is called.
+  signal(SIGABRT, ForceCrashForAbort);
+#endif
+
+  const CommandLine& parsed_command_line = parameters.command_line;
 
 #if defined(OS_MACOSX)
+  base::mac::ScopedNSAutoreleasePool* pool = parameters.autorelease_pool;
   InstallFrameworkHacks();
 #endif  // OS_MACOSX
 
@@ -157,6 +171,11 @@ int RendererMain(const MainFunctionParams& parameters) {
   HandleRendererErrorTestParameters(parsed_command_line);
 
   RendererMainPlatformDelegate platform(parameters);
+
+  webkit::ppapi::PpapiInterfaceFactoryManager* factory_manager =
+      webkit::ppapi::PpapiInterfaceFactoryManager::GetInstance();
+  content::GetContentClient()->renderer()->RegisterPPAPIInterfaceFactories(
+      factory_manager);
 
   base::StatsScope<base::StatsCounterTimer>
       startup_timer(content::Counters::renderer_main());
@@ -211,7 +230,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     // TODO(markus): Check if it is OK to unconditionally move this
     // instruction down.
     RenderProcessImpl render_process;
-    render_process.set_main_thread(new RenderThread());
+    render_process.set_main_thread(new RenderThreadImpl());
 #endif
     bool run_loop = true;
     if (!no_sandbox) {
@@ -221,7 +240,7 @@ int RendererMain(const MainFunctionParams& parameters) {
     }
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
     RenderProcessImpl render_process;
-    render_process.set_main_thread(new RenderThread());
+    render_process.set_main_thread(new RenderThreadImpl());
 #endif
 
     platform.RunSandboxTests();
@@ -229,8 +248,10 @@ int RendererMain(const MainFunctionParams& parameters) {
     startup_timer.Stop();  // End of Startup Time Measurement.
 
     if (run_loop) {
+#if defined(OS_MACOSX)
       if (pool)
         pool->Recycle();
+#endif
       TRACE_EVENT_BEGIN_ETW("RendererMain.START_MSG_LOOP", 0, 0);
       MessageLoop::current()->Run();
       TRACE_EVENT_END_ETW("RendererMain.START_MSG_LOOP", 0, 0);

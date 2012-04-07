@@ -9,15 +9,12 @@
 
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_stdint.h"
+#include "ppapi/shared_impl/ppapi_shared_export.h"
 
 struct PP_FontDescription_Dev;
 struct PP_FontMetrics_Dev;
 struct PP_Point;
 struct PP_Rect;
-
-namespace base {
-class WaitableEvent;
-}
 
 namespace skia {
 class PlatformCanvas;
@@ -27,9 +24,9 @@ namespace ppapi {
 
 struct Preferences;
 
-class WebKitForwarding {
+class PPAPI_SHARED_EXPORT WebKitForwarding {
  public:
-  class Font {
+  class PPAPI_SHARED_EXPORT Font {
    public:
     // C++ version of PP_TextRun_Dev. Since the functions below will be called
     // on an alternate thread in the proxy, and since there are different
@@ -43,7 +40,7 @@ class WebKitForwarding {
 
     // DoDrawText takes too many arguments to be used with base::Bind, so we
     // use this struct to hold them.
-    struct DrawTextParams {
+    struct PPAPI_SHARED_EXPORT DrawTextParams {
       DrawTextParams(skia::PlatformCanvas* destination_arg,
                      const TextRun& text_arg,
                      const PP_Point* position_arg,
@@ -66,37 +63,22 @@ class WebKitForwarding {
     // on creating vars. Instead, the face name is placed into the given
     // string. See class description for waitable_event documentation. If
     // non-null, the given event will be set on completion.
-    virtual void Describe(base::WaitableEvent* event,
-                          PP_FontDescription_Dev* description,
+    virtual void Describe(PP_FontDescription_Dev* description,
                           std::string* face,
                           PP_FontMetrics_Dev* metrics,
                           PP_Bool* result) = 0;
-    virtual void DrawTextAt(base::WaitableEvent* event,
-                            const DrawTextParams& params) = 0;
-    virtual void MeasureText(base::WaitableEvent* event,
-                             const TextRun& text,
+    virtual void DrawTextAt(const DrawTextParams& params) = 0;
+    virtual void MeasureText(const TextRun& text,
                              int32_t* result) = 0;
-    virtual void CharacterOffsetForPixel(base::WaitableEvent* event,
-                                         const TextRun& text,
+    virtual void CharacterOffsetForPixel(const TextRun& text,
                                          int32_t pixel_position,
                                          uint32_t* result) = 0;
-    virtual void PixelOffsetForCharacter(base::WaitableEvent* event,
-                                         const TextRun& text,
+    virtual void PixelOffsetForCharacter(const TextRun& text,
                                          uint32_t char_offset,
                                          int32_t* result) = 0;
   };
 
   virtual ~WebKitForwarding();
-
-  // Creates a new font with the given description. The desc_face is the face
-  // name already extracted from the description. The caller owns the result
-  // pointer, which will never be NULL. If non-null, the given event will be
-  // set on completion.
-  virtual void CreateFontForwarding(base::WaitableEvent* event,
-                                    const PP_FontDescription_Dev& desc,
-                                    const std::string& desc_face,
-                                    const Preferences& prefs,
-                                    Font** result) = 0;
 };
 
 }  // namespace ppapi

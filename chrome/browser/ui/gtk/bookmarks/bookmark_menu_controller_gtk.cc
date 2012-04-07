@@ -16,19 +16,19 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
-#include "content/browser/tab_contents/page_navigator.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "grit/ui_resources.h"
 #include "ui/base/dragdrop/gtk_dnd_util.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/gtk_util.h"
 #include "webkit/glue/window_open_disposition.h"
 
-namespace {
+using content::OpenURLParams;
+using content::PageNavigator;
 
-// TODO(estade): It might be a good idea to vary this by locale.
-const int kMaxChars = 50;
+namespace {
 
 void SetImageMenuItem(GtkWidget* menu_item,
                       const BookmarkNode* node,
@@ -64,14 +64,12 @@ void OnContextMenuHide(GtkWidget* context_menu, GtkWidget* grab_menu) {
 
 }  // namespace
 
-BookmarkMenuController::BookmarkMenuController(Browser* browser,
-                                               Profile* profile,
+BookmarkMenuController::BookmarkMenuController(Profile* profile,
                                                PageNavigator* navigator,
                                                GtkWindow* window,
                                                const BookmarkNode* node,
                                                int start_child_index)
-    : browser_(browser),
-      profile_(profile),
+    : profile_(profile),
       page_navigator_(navigator),
       parent_window_(window),
       model_(profile->GetBookmarkModel()),
@@ -82,13 +80,12 @@ BookmarkMenuController::BookmarkMenuController(Browser* browser,
   menu_ = gtk_menu_new();
   g_object_ref_sink(menu_);
   BuildMenu(node, start_child_index, menu_);
-  signals_.Connect(menu_, "hide",
-                   G_CALLBACK(OnMenuHiddenThunk), this);
+  signals_.Connect(menu_, "hide", G_CALLBACK(OnMenuHiddenThunk), this);
   gtk_widget_show_all(menu_);
 }
 
 BookmarkMenuController::~BookmarkMenuController() {
-  profile_->GetBookmarkModel()->RemoveObserver(this);
+  model_->RemoveObserver(this);
   // Make sure the hide handler runs.
   gtk_widget_hide(menu_);
   gtk_widget_destroy(menu_);
@@ -97,7 +94,7 @@ BookmarkMenuController::~BookmarkMenuController() {
 
 void BookmarkMenuController::Popup(GtkWidget* widget, gint button_type,
                                    guint32 timestamp) {
-  profile_->GetBookmarkModel()->AddObserver(this);
+  model_->AddObserver(this);
 
   triggering_widget_ = widget;
   signals_.Connect(triggering_widget_, "destroy",
@@ -135,15 +132,15 @@ void BookmarkMenuController::NavigateToMenuItem(
   const BookmarkNode* node = GetNodeFromMenuItem(menu_item);
   DCHECK(node);
   DCHECK(page_navigator_);
-  page_navigator_->OpenURL(
-      node->GetURL(), GURL(), disposition, PageTransition::AUTO_BOOKMARK);
+  page_navigator_->OpenURL(OpenURLParams(
+      node->url(), content::Referrer(), disposition,
+      content::PAGE_TRANSITION_AUTO_BOOKMARK, false));
 }
 
 void BookmarkMenuController::BuildMenu(const BookmarkNode* parent,
                                        int start_child_index,
                                        GtkWidget* menu) {
-  DCHECK(!parent->child_count() ||
-         start_child_index < parent->child_count());
+  DCHECK(parent->empty() || start_child_index < parent->child_count());
 
   signals_.Connect(menu, "button-press-event",
                    G_CALLBACK(OnMenuButtonPressedOrReleasedThunk), this);
@@ -156,7 +153,7 @@ void BookmarkMenuController::BuildMenu(const BookmarkNode* parent,
     GtkWidget* menu_item = gtk_image_menu_item_new_with_label(
         bookmark_utils::BuildMenuLabelFor(node).c_str());
     g_object_set_data(G_OBJECT(menu_item), "bookmark-node", AsVoid(node));
-    SetImageMenuItem(menu_item, node, profile_->GetBookmarkModel());
+    SetImageMenuItem(menu_item, node, model_);
     gtk_util::SetAlwaysShowImage(menu_item);
 
     signals_.Connect(menu_item, "button-release-event",
@@ -197,7 +194,7 @@ void BookmarkMenuController::BuildMenu(const BookmarkNode* parent,
     node_to_menu_widget_map_[node] = menu_item;
   }
 
-  if (parent->child_count() == 0) {
+  if (parent->empty()) {
     GtkWidget* empty_menu = gtk_menu_item_new_with_label(
         l10n_util::GetStringUTF8(IDS_MENU_EMPTY_SUBMENU).c_str());
     gtk_widget_set_sensitive(empty_menu, FALSE);
@@ -293,7 +290,8 @@ gboolean BookmarkMenuController::OnButtonReleased(
     // The menu item is a link node.
     if (event->button == 1 || event->button == 2) {
       WindowOpenDisposition disposition =
-          event_utils::DispositionFromEventFlags(event->state);
+        event_utils::DispositionFromGdkState(event->state);
+
       NavigateToMenuItem(sender, disposition);
 
       // We need to manually dismiss the popup menu because we're overriding

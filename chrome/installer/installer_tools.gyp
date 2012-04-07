@@ -16,7 +16,6 @@
       'targets': [
         {
           'target_name': 'validate_installation',
-          'msvs_guid': '7CC08DA8-E9CA-4573-A8C4-E7F0D0CF8EBA',
           'type': 'executable',
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
@@ -46,9 +45,3 @@
     }],
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -1,12 +1,15 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 
 #include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/renderer_host/render_widget_host_view_mac.h"
+#include "chrome/browser/tab_contents/moving_to_content/tab_contents_view_mac.h"
 #include "content/browser/renderer_host/render_view_host.h"
+#include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 
 // The minimum/maximum dimensions of the popup.
 const CGFloat ExtensionViewMac::kMinWidth = 25.0;
@@ -16,16 +19,13 @@ const CGFloat ExtensionViewMac::kMaxHeight = 600.0;
 
 ExtensionViewMac::ExtensionViewMac(ExtensionHost* extension_host,
                                    Browser* browser)
-    : is_toolstrip_(true),
-      browser_(browser),
-      extension_host_(extension_host),
-      render_widget_host_view_(NULL) {
+    : browser_(browser),
+      extension_host_(extension_host) {
   DCHECK(extension_host_);
+  [native_view() setHidden:YES];
 }
 
 ExtensionViewMac::~ExtensionViewMac() {
-  if (render_widget_host_view_)
-    [render_widget_host_view_->native_view() release];
 }
 
 void ExtensionViewMac::Init() {
@@ -33,26 +33,32 @@ void ExtensionViewMac::Init() {
 }
 
 gfx::NativeView ExtensionViewMac::native_view() {
-  DCHECK(render_widget_host_view_);
-  return render_widget_host_view_->native_view();
+  return extension_host_->host_contents()->GetView()->GetNativeView();
 }
 
 RenderViewHost* ExtensionViewMac::render_view_host() const {
   return extension_host_->render_view_host();
 }
 
+void ExtensionViewMac::DidStopLoading() {
+  ShowIfCompletelyLoaded();
+}
+
 void ExtensionViewMac::SetBackground(const SkBitmap& background) {
-  DCHECK(render_widget_host_view_);
-  if (render_view_host()->IsRenderViewLive()) {
-    render_widget_host_view_->SetBackground(background);
+  if (!pending_background_.empty() && render_view_host()->view()) {
+    render_view_host()->view()->SetBackground(background);
   } else {
     pending_background_ = background;
   }
+  ShowIfCompletelyLoaded();
 }
 
 void ExtensionViewMac::UpdatePreferredSize(const gfx::Size& new_size) {
-  // TODO(thakis, erikkay): Windows does some tricks to resize the extension
-  // view not before it's visible. Do something similar here.
+  // When we update the size, our container becomes visible. Stay hidden until
+  // the host is loaded.
+  pending_preferred_size_ = new_size;
+  if (!extension_host_->did_stop_loading())
+    return;
 
   // No need to use CA here, our caller calls us repeatedly to animate the
   // resizing.
@@ -72,10 +78,10 @@ void ExtensionViewMac::UpdatePreferredSize(const gfx::Size& new_size) {
   if (NSIsEmptyRect(frame))
     return;
 
-  DCHECK([view isKindOfClass:[RenderWidgetHostViewCocoa class]]);
-  RenderWidgetHostViewCocoa* hostView = (RenderWidgetHostViewCocoa*)view;
+  DCHECK([view isKindOfClass:[TabContentsViewCocoa class]]);
+  TabContentsViewCocoa* hostView = (TabContentsViewCocoa*)view;
 
-  // RenderWidgetHostViewCocoa overrides setFrame but not setFrameSize.
+  // TabContentsViewCocoa overrides setFrame but not setFrameSize.
   // We need to defer the update back to the RenderWidgetHost so we don't
   // get the flickering effect on 10.5 of http://crbug.com/31970
   [hostView setFrameWithDeferredUpdate:frame];
@@ -92,24 +98,25 @@ void ExtensionViewMac::RenderViewCreated() {
   extension_host_->DisableScrollbarsForSmallWindows(largest_popup_size);
 
   if (!pending_background_.empty() && render_view_host()->view()) {
-    render_widget_host_view_->SetBackground(pending_background_);
+    render_view_host()->view()->SetBackground(pending_background_);
     pending_background_.reset();
   }
 }
 
 void ExtensionViewMac::WindowFrameChanged() {
-  if (render_widget_host_view_)
-    render_widget_host_view_->WindowFrameChanged();
+  if (render_view_host()->view())
+    render_view_host()->view()->WindowFrameChanged();
 }
 
 void ExtensionViewMac::CreateWidgetHostView() {
-  DCHECK(!render_widget_host_view_);
-  render_widget_host_view_ = new RenderWidgetHostViewMac(render_view_host());
+  extension_host_->CreateRenderViewSoon();
+}
 
-  // The RenderWidgetHostViewMac is owned by its native view, which is created
-  // in an autoreleased state. retain it, so that it doesn't immediately
-  // disappear.
-  [render_widget_host_view_->native_view() retain];
-
-  extension_host_->CreateRenderViewSoon(render_widget_host_view_);
+void ExtensionViewMac::ShowIfCompletelyLoaded() {
+  // We wait to show the ExtensionView until it has loaded, and the view has
+  // actually been created. These can happen in different orders.
+  if (extension_host_->did_stop_loading()) {
+    [native_view() setHidden:NO];
+    UpdatePreferredSize(pending_preferred_size_);
+  }
 }

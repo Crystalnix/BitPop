@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/message_loop.h"
-#include "base/task.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/history/history.h"
 
@@ -16,12 +15,15 @@ namespace browser_sync {
 
 class WorkerTask : public HistoryDBTask {
  public:
-  WorkerTask(Callback0::Type* work, WaitableEvent* done)
-    : work_(work), done_(done) {}
+  WorkerTask(
+      const WorkCallback& work,
+      WaitableEvent* done,
+      SyncerError* error)
+    : work_(work), done_(done), error_(error) {}
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
                              history::HistoryDatabase* db) {
-    work_->Run();
+    *error_ = work_.Run();
     done_->Signal();
     return true;
   }
@@ -31,32 +33,32 @@ class WorkerTask : public HistoryDBTask {
   virtual void DoneRunOnMainThread() {}
 
  protected:
-  Callback0::Type* work_;
+  WorkCallback work_;
   WaitableEvent* done_;
+  SyncerError* error_;
 };
 
 
 HistoryModelWorker::HistoryModelWorker(HistoryService* history_service)
   : history_service_(history_service) {
+  CHECK(history_service);
 }
 
 HistoryModelWorker::~HistoryModelWorker() {
 }
 
-void HistoryModelWorker::DoWorkAndWaitUntilDone(Callback0::Type* work) {
+SyncerError HistoryModelWorker::DoWorkAndWaitUntilDone(
+    const WorkCallback& work) {
   WaitableEvent done(false, false);
-  scoped_refptr<WorkerTask> task(new WorkerTask(work, &done));
+  SyncerError error = UNSET;
+  scoped_refptr<WorkerTask> task(new WorkerTask(work, &done, &error));
   history_service_->ScheduleDBTask(task.get(), &cancelable_consumer_);
   done.Wait();
+  return error;
 }
 
 ModelSafeGroup HistoryModelWorker::GetModelSafeGroup() {
   return GROUP_HISTORY;
-}
-
-bool HistoryModelWorker::CurrentThreadIsWorkThread() {
-  // TODO(ncarter): How to determine this?
-  return true;
 }
 
 }  // namespace browser_sync

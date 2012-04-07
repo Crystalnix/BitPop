@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,14 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/string16.h"
 
-class DictionaryValue;
 class Extension;
 class GURL;
+
+namespace base {
+class DictionaryValue;
+}
 
 namespace WebKit {
 struct WebURLError;
@@ -23,7 +27,10 @@ class LocalizedError {
   // Fills |error_strings| with values to be used to build an error page used
   // on HTTP errors, like 404 or connection reset.
   static void GetStrings(const WebKit::WebURLError& error,
-                         DictionaryValue* strings);
+                         base::DictionaryValue* strings);
+
+  // Returns a description of the encountered error.
+  static string16 GetErrorDetails(const WebKit::WebURLError& error);
 
   // Returns true if an error page exists for the specified parameters.
   static bool HasStrings(const std::string& error_domain, int error_code);
@@ -33,7 +40,7 @@ class LocalizedError {
   // repost "error page" has no real error associated with it, and doesn't have
   // enough strings localized to meaningfully fill the net error template.
   static void GetFormRepostStrings(const GURL& display_url,
-                                   DictionaryValue* error_strings);
+                                   base::DictionaryValue* error_strings);
 
   // Fills |error_strings| with values to be used to build an error page used
   // on HTTP errors, like 404 or connection reset, but using information from
@@ -42,7 +49,7 @@ class LocalizedError {
   static void GetAppErrorStrings(const WebKit::WebURLError& error,
                                  const GURL& display_url,
                                  const Extension* app,
-                                 DictionaryValue* error_strings);
+                                 base::DictionaryValue* error_strings);
 
   static const char kHttpErrorDomain[];
 

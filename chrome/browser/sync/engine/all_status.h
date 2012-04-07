@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -11,32 +11,38 @@
 
 #include <map>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/sync/engine/syncapi.h"
 #include "chrome/browser/sync/engine/syncer_types.h"
+#include "chrome/browser/sync/internal_api/sync_manager.h"
+#include "chrome/browser/sync/syncable/model_type.h"
 
 namespace browser_sync {
 
 class ScopedStatusLock;
-class ServerConnectionManager;
-class Syncer;
-class SyncerThread;
-struct AuthWatcherEvent;
 struct ServerConnectionEvent;
+
+// TODO(rlarocque):
+// Most of this data ends up on the about:sync page.  But the page is only
+// 'pinged' to update itself at the end of a sync cycle.  A user could refresh
+// manually, but unless their timing is excellent it's unlikely that a user will
+// see any state in mid-sync cycle.  We have no plans to change this.
+//
+// What we do intend to do is improve the UI so that changes following a sync
+// cycle are more visible.  Without such a change, the status summary for a
+// healthy syncer will constantly display as "READY" and never provide any
+// indication of a sync cycle being performed.  See crbug.com/108100.
 
 class AllStatus : public SyncEngineEventListener {
   friend class ScopedStatusLock;
  public:
-
   AllStatus();
   virtual ~AllStatus();
 
   void HandleServerConnectionEvent(const ServerConnectionEvent& event);
 
-  void HandleAuthWatcherEvent(const AuthWatcherEvent& event);
-
-  virtual void OnSyncEngineEvent(const SyncEngineEvent& event);
+  virtual void OnSyncEngineEvent(const SyncEngineEvent& event) OVERRIDE;
 
   sync_api::SyncManager::Status status() const;
 
@@ -45,6 +51,12 @@ class AllStatus : public SyncEngineEventListener {
   void IncrementNotifiableCommits();
 
   void IncrementNotificationsReceived();
+
+  void SetEncryptedTypes(syncable::ModelTypeSet types);
+  void SetCryptographerReady(bool ready);
+  void SetCryptoHasPendingKeys(bool has_pending_keys);
+
+  void SetUniqueId(const std::string& guid);
 
  protected:
   // Examines syncer to calculate syncing and the unsynced count,

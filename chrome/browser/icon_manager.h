@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -48,11 +48,10 @@
 
 #include <map>
 
-#include "base/callback_old.h"
 #include "base/hash_tables.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/icon_loader.h"
-#include "content/browser/cancelable_request.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 class FilePath;
 
@@ -71,7 +70,7 @@ class IconManager : public IconLoader::Delegate,
                          IconLoader::IconSize size);
 
   typedef CancelableRequestProvider::Handle Handle;
-  typedef Callback2<Handle, gfx::Image*>::Type IconRequestCallback;
+  typedef base::Callback<void(Handle, gfx::Image*)> IconRequestCallback;
 
   // Asynchronous call to lookup and return the icon associated with file. The
   // work is done on the file thread, with the callbacks running on the UI
@@ -82,10 +81,10 @@ class IconManager : public IconLoader::Delegate,
   Handle LoadIcon(const FilePath& file_name,
                   IconLoader::IconSize size,
                   CancelableRequestConsumerBase* consumer,
-                  IconRequestCallback* callback);
+                  const IconRequestCallback& callback);
 
   // IconLoader::Delegate interface.
-  virtual bool OnImageLoaded(IconLoader* source, gfx::Image* result);
+  virtual bool OnImageLoaded(IconLoader* source, gfx::Image* result) OVERRIDE;
 
   // Get the identifying string for the given file. The implementation
   // is in icon_manager_[platform].cc.

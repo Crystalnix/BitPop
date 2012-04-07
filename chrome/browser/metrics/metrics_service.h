@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,11 +15,18 @@
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/weak_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/metrics_helpers.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/url_fetcher.h"
+#include "base/memory/weak_ptr.h"
+#include "base/process_util.h"
+#include "chrome/browser/io_thread.h"
+#include "chrome/common/metrics/metrics_service_base.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/common/process_type.h"
+#include "content/public/common/url_fetcher_delegate.h"
+
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/external_metrics.h"
@@ -27,50 +34,33 @@
 
 class BookmarkModel;
 class BookmarkNode;
-class DictionaryValue;
-class ListValue;
-class HistogramSynchronizer;
-class MetricsLogBase;
 class MetricsReportingScheduler;
 class PrefService;
-class TemplateURLModel;
+class Profile;
+class TemplateURLService;
+
+namespace base {
+class DictionaryValue;
+class MessageLoopProxy;
+}
+
+namespace content {
+class RenderProcessHost;
+}
+
+namespace prerender {
+bool IsOmniboxEnabled(Profile* profile);
+}
 
 namespace webkit {
-namespace npapi {
 struct WebPluginInfo;
 }
-}
 
 
-class MetricsService : public NotificationObserver,
-                       public URLFetcher::Delegate,
+class MetricsService : public content::NotificationObserver,
+                       public content::URLFetcherDelegate,
                        public MetricsServiceBase {
  public:
-  // Used to produce a historgram that keeps track of the status of recalling
-  // persisted per logs.
-  enum LogRecallStatus {
-    RECALL_SUCCESS,         // We were able to correctly recall a persisted log.
-    LIST_EMPTY,             // Attempting to recall from an empty list.
-    LIST_SIZE_MISSING,      // Failed to recover list size using GetAsInteger().
-    LIST_SIZE_TOO_SMALL,    // Too few elements in the list (less than 3).
-    LIST_SIZE_CORRUPTION,   // List size is not as expected.
-    LOG_STRING_CORRUPTION,  // Failed to recover log string using GetAsString().
-    CHECKSUM_CORRUPTION,    // Failed to verify checksum.
-    CHECKSUM_STRING_CORRUPTION,  // Failed to recover checksum string using
-                                 // GetAsString().
-    DECODE_FAIL,            // Failed to decode log.
-    END_RECALL_STATUS       // Number of bins to use to create the histogram.
-  };
-
-  // TODO(ziadh): This is here temporarily for a side experiment. Remove later
-  // on.
-  enum LogStoreStatus {
-    STORE_SUCCESS,    // Successfully presisted log.
-    ENCODE_FAIL,      // Failed to encode log.
-    COMPRESS_FAIL,    // Failed to compress log.
-    END_STORE_STATUS  // Number of bins to use to create the histogram.
-  };
-
   MetricsService();
   virtual ~MetricsService();
 
@@ -86,6 +76,10 @@ class MetricsService : public NotificationObserver,
   // recording is not currently running.
   std::string GetClientId();
 
+  // Force the client ID to be generated. This is useful in case it's needed
+  // before recording.
+  void ForceClientIdCreation();
+
   // At startup, prefs needs to be called with a list of all the pref names and
   // types we'll be using.
   static void RegisterPrefs(PrefService* local_state);
@@ -93,13 +87,13 @@ class MetricsService : public NotificationObserver,
   // Set up notifications which indicate that a user is performing work. This is
   // useful to allow some features to sleep, until the machine becomes active,
   // such as precluding UMA uploads unless there was recent activity.
-  static void SetUpNotifications(NotificationRegistrar* registrar,
-                                 NotificationObserver* observer);
+  static void SetUpNotifications(content::NotificationRegistrar* registrar,
+                                 content::NotificationObserver* observer);
 
-  // Implementation of NotificationObserver
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Implementation of content::NotificationObserver
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Invoked when we get a WM_SESSIONEND. This places a value in prefs that is
   // reset when RecordCompletedSessionEnd is invoked.
@@ -133,6 +127,13 @@ class MetricsService : public NotificationObserver,
   bool recording_active() const;
   bool reporting_active() const;
 
+  // Redundant test to ensure that we are notified of a clean exit.
+  // This value should be true when process has completed shutdown.
+  static bool UmaMetricsProperlyShutdown();
+
+  // Set the dirty flag, which will require a later call to LogCleanShutdown().
+  static void LogNeedForCleanShutdown();
+
  private:
   // The MetricsService has a lifecycle that is stored as a state.
   // See metrics_service.cc for description of this lifecycle.
@@ -141,18 +142,27 @@ class MetricsService : public NotificationObserver,
     INIT_TASK_SCHEDULED,    // Waiting for deferred init tasks to complete.
     INIT_TASK_DONE,         // Waiting for timer to send initial log.
     INITIAL_LOG_READY,      // Initial log generated, and waiting for reply.
-    SEND_OLD_INITIAL_LOGS,  // Sending unsent logs from previous session.
     SENDING_OLD_LOGS,       // Sending unsent logs from previous session.
     SENDING_CURRENT_LOGS,   // Sending standard current logs as they acrue.
   };
 
-  class InitTask;
-  class InitTaskComplete;
+  enum ShutdownCleanliness {
+    CLEANLY_SHUTDOWN = 0xdeadbeef,
+    NEED_TO_SHUTDOWN = ~CLEANLY_SHUTDOWN
+  };
 
-  // Callback to let us know that the init task is done.
-  void OnInitTaskComplete(
-      const std::string& hardware_class,
-      const std::vector<webkit::npapi::WebPluginInfo>& plugins);
+  // First part of the init task. Called on the FILE thread to load hardware
+  // class information.
+  void InitTaskGetHardwareClass(base::MessageLoopProxy* target_loop);
+
+  // Callback from InitTaskGetHardwareClass() that continues the init task by
+  // loading plugin information.
+  void OnInitTaskGotHardwareClass(const std::string& hardware_class);
+
+  // Callback from PluginService::GetPlugins() that moves the state to
+  // INIT_TASK_DONE.
+  void OnInitTaskGotPluginInfo(
+      const std::vector<webkit::WebPluginInfo>& plugins);
 
   // When we start a new version of Chromium (different from our last run), we
   // need to discard the old crash stats so that we don't attribute crashes etc.
@@ -196,17 +206,12 @@ class MetricsService : public NotificationObserver,
   void StartRecording();
 
   // Called to stop recording user experience metrics.
-  // Adds any last information to current_log_ and then moves it to pending_log_
-  // for upload.
+  // Adds any last information to current_log_ and then stages it for upload.
   void StopRecording();
 
-  // Deletes pending_log_ and current_log_, and pushes their text into the
-  // appropriate unsent_log vectors.  Called when Chrome shuts down.
-  void PushPendingLogsToUnsentLists();
-
-  // Save the pending_log_text_ persistently in a pref for transmission when we
-  // next run.  Note that IF this text is "too large," we just dicard it.
-  void PushPendingLogTextToUnsentOngoingLogs();
+  // Pushes the text of the current and staged logs into persistent storage.
+  // Called when Chrome shuts down.
+  void PushPendingLogsToPersistentStorage();
 
   // Ensures that scheduler is running, assuming the current settings are such
   // that metrics should be reported. If not, this is a no-op.
@@ -222,52 +227,30 @@ class MetricsService : public NotificationObserver,
   void OnHistogramSynchronizationDone();
 
   // Takes whatever log should be uploaded next (according to the state_)
-  // and makes it the pending log.  If pending_log_ is not NULL,
-  // MakePendingLog does nothing and returns.
-  void MakePendingLog();
+  // and makes it the staged log.  If there is already a staged log, this is a
+  // no-op.
+  void MakeStagedLog();
 
-  // Check to see if there are any unsent logs from previous sessions.
-  bool unsent_logs() const {
-    return !unsent_initial_logs_.empty() || !unsent_ongoing_logs_.empty();
-  }
   // Record stats, client ID, Session ID, etc. in a special "first" log.
   void PrepareInitialLog();
-  // Pull copies of unsent logs from prefs into instance variables.
-  void RecallUnsentLogs();
-  // Decode and verify written pref log data.
-  static MetricsService::LogRecallStatus RecallUnsentLogsHelper(
-      const ListValue& list,
-      std::vector<std::string>* local_list);
-  // Encode and write list size and checksum for perf log data.
-  static void StoreUnsentLogsHelper(const std::vector<std::string>& local_list,
-                                    const size_t kMaxLocalListSize,
-                                    ListValue* list);
-  // Convert |pending_log_| to XML in |compressed_log_|, and compress it for
-  // transmission.
-  void PreparePendingLogText();
 
-  // Convert pending_log_ to XML, compress it, and prepare to pass to server.
-  // Upon return, current_fetch_ should be reset with its upload data set to
-  // a compressed copy of the pending log.
-  void PrepareFetchWithPendingLog();
+  // Prepared the staged log to be passed to the server. Upon return,
+  // current_fetch_ should be reset with its upload data set to a compressed
+  // copy of the staged log.
+  void PrepareFetchWithStagedLog();
 
-  // Implementation of URLFetcher::Delegate. Called after transmission
+  // Implementation of content::URLFetcherDelegate. Called after transmission
   // completes (either successfully or with failure).
-  virtual void OnURLFetchComplete(const URLFetcher* source,
-                                  const GURL& url,
-                                  const net::URLRequestStatus& status,
-                                  int response_code,
-                                  const net::ResponseCookies& cookies,
-                                  const std::string& data);
+  virtual void OnURLFetchComplete(const content::URLFetcher* source) OVERRIDE;
 
   // Logs debugging details, for the case where the server returns a response
   // code other than 200.
   void LogBadResponseCode();
 
   // Records a window-related notification.
-  void LogWindowChange(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  void LogWindowChange(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
 
   // Reads, increments and then sets the specified integer preference.
   void IncrementPrefValue(const char* path);
@@ -277,10 +260,9 @@ class MetricsService : public NotificationObserver,
   void IncrementLongPrefsValue(const char* path);
 
   // Records a renderer process crash.
-  void LogRendererCrash();
-
-  // Records an extension renderer process crash.
-  void LogExtensionRendererCrash();
+  void LogRendererCrash(
+      content::RenderProcessHost* host,
+      const content::RenderProcessHost::RendererClosedDetails& process_details);
 
   // Records a renderer process hang.
   void LogRendererHang();
@@ -301,13 +283,13 @@ class MetricsService : public NotificationObserver,
   // Records a child process related notification.  These are recorded to an
   // in-object buffer because these notifications are sent on page load, and we
   // don't want to slow that down.
-  void LogChildProcessChange(NotificationType type,
-                             const NotificationSource& source,
-                             const NotificationDetails& details);
+  void LogChildProcessChange(int type,
+                             const content::NotificationSource& source,
+                             const content::NotificationDetails& details);
 
   // Logs keywords specific metrics. Keyword metrics are recorded in the
   // profile specific metrics.
-  void LogKeywords(const TemplateURLModel* url_model);
+  void LogKeywords(const TemplateURLService* url_model);
 
   // Saves plugin-related updates from the in-object buffer to Local State
   // for retrieval next time we send a Profile log (generally next launch).
@@ -321,19 +303,23 @@ class MetricsService : public NotificationObserver,
   void LogLoadStarted();
 
   // Records a page load notification.
-  void LogLoadComplete(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  void LogLoadComplete(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details);
 
   // Checks whether a notification can be logged.
-  bool CanLogNotification(NotificationType type,
-                          const NotificationSource& source,
-                          const NotificationDetails& details);
+  bool CanLogNotification(int type,
+                          const content::NotificationSource& source,
+                          const content::NotificationDetails& details);
 
   // Sets the value of the specified path in prefs and schedules a save.
   void RecordBooleanPrefValue(const char* path, bool value);
 
-  NotificationRegistrar registrar_;
+  // Returns true if process of type |type| should be counted as a plugin
+  // process, and false otherwise.
+  static bool IsPluginProcess(content::ProcessType type);
+
+  content::NotificationRegistrar registrar_;
 
   // Indicate whether recording and reporting are currently happening.
   // These should not be set directly, but by calling SetRecording and
@@ -352,13 +338,21 @@ class MetricsService : public NotificationObserver,
   std::string hardware_class_;
 
   // The list of plugins which was retrieved on the file thread.
-  std::vector<webkit::npapi::WebPluginInfo> plugins_;
+  std::vector<webkit::WebPluginInfo> plugins_;
 
   // The outstanding transmission appears as a URL Fetch operation.
-  scoped_ptr<URLFetcher> current_fetch_;
+  scoped_ptr<content::URLFetcher> current_fetch_;
 
   // The URL for the metrics server.
   std::wstring server_url_;
+
+  // The TCP/UDP echo server to collect network connectivity stats.
+  std::string network_stats_server_;
+
+  // The IOThread for accessing global HostResolver to resolve
+  // network_stats_server_ host. |io_thread_| is accessed on IO thread and it is
+  // safe to access it on IO thread.
+  IOThread* io_thread_;
 
   // The identifier that's sent to the server with the log reports.
   std::string client_id_;
@@ -370,16 +364,6 @@ class MetricsService : public NotificationObserver,
   // A number that identifies the how many times the app has been launched.
   int session_id_;
 
-  // When logs were not sent during a previous session they are queued to be
-  // sent instead of currently accumulating logs.  We give preference to sending
-  // our inital log first, then unsent intial logs, then unsent ongoing logs.
-  // Unsent logs are gathered at shutdown, and save in a persistent pref, one
-  // log in each string in the following arrays.
-  // Note that the vector has the oldest logs listed first (early in the
-  // vector), and we'll discard old logs if we have gathered too many logs.
-  std::vector<std::string> unsent_initial_logs_;
-  std::vector<std::string> unsent_ongoing_logs_;
-
   // Maps NavigationControllers (corresponding to tabs) or Browser
   // (corresponding to Windows) to a unique integer that we will use to identify
   // it. |next_window_id_| is used to track which IDs we have used so far.
@@ -390,14 +374,14 @@ class MetricsService : public NotificationObserver,
   // Buffer of child process notifications for quick access.  See
   // ChildProcessStats documentation above for more details.
   struct ChildProcessStats;
-  std::map<std::wstring, ChildProcessStats> child_process_stats_buffer_;
+  std::map<string16, ChildProcessStats> child_process_stats_buffer_;
 
-  ScopedRunnableMethodFactory<MetricsService> log_sender_factory_;
-  ScopedRunnableMethodFactory<MetricsService> state_saver_factory_;
+  base::WeakPtrFactory<MetricsService> log_sender_factory_;
+  base::WeakPtrFactory<MetricsService> state_saver_factory_;
 
   // Dictionary containing all the profile specific metrics. This is set
   // at creation time from the prefs.
-  scoped_ptr<DictionaryValue> profile_dictionary_;
+  scoped_ptr<base::DictionaryValue> profile_dictionary_;
 
   // The scheduler for determining when uploads should happen.
   scoped_ptr<MetricsReportingScheduler> scheduler_;
@@ -411,18 +395,28 @@ class MetricsService : public NotificationObserver,
   scoped_refptr<chromeos::ExternalMetrics> external_metrics_;
 #endif
 
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, EmptyLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, SingleElementLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, OverLimitLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, SmallRecoveredListSize);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, RemoveSizeFromLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, CorruptSizeOfLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, CorruptChecksumOfLogList);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, ClientIdGeneratesAllZeroes);
-  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, ClientIdGeneratesCorrectly);
+  // Reduntant marker to check that we completed our shutdown, and set the
+  // exited-cleanly bit in the prefs.
+  static ShutdownCleanliness clean_shutdown_status_;
+
   FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, ClientIdCorrectlyFormatted);
+  FRIEND_TEST_ALL_PREFIXES(MetricsServiceTest, IsPluginProcess);
 
   DISALLOW_COPY_AND_ASSIGN(MetricsService);
+};
+
+// This class limits and documents access to the IsMetricsReportingEnabled()
+// method. Since the method is private, each user has to be explicitly declared
+// as a 'friend' below.
+class MetricsServiceHelper {
+ private:
+  friend class InstantFieldTrial;
+  friend bool prerender::IsOmniboxEnabled(Profile* profile);
+
+  // Returns true if prefs::kMetricsReportingEnabled is set.
+  static bool IsMetricsReportingEnabled();
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(MetricsServiceHelper);
 };
 
 #endif  // CHROME_BROWSER_METRICS_METRICS_SERVICE_H_

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "remoting/base/compressor_zlib.h"
 #include "remoting/base/util.h"
 #include "remoting/proto/video.pb.h"
-#include "ui/gfx/rect.h"
 
 namespace remoting {
 
@@ -42,7 +41,7 @@ EncoderRowBased::EncoderRowBased(Compressor* compressor,
                                  VideoPacketFormat::Encoding encoding)
     : encoding_(encoding),
       compressor_(compressor),
-      screen_size_(0, 0),
+      screen_size_(SkISize::Make(0,0)),
       packet_size_(kPacketSize) {
 }
 
@@ -51,31 +50,35 @@ EncoderRowBased::EncoderRowBased(Compressor* compressor,
                                  int packet_size)
     : encoding_(encoding),
       compressor_(compressor),
-      screen_size_(0, 0),
+      screen_size_(SkISize::Make(0,0)),
       packet_size_(packet_size) {
 }
 
 EncoderRowBased::~EncoderRowBased() {}
 
-void EncoderRowBased::Encode(scoped_refptr<CaptureData> capture_data,
-                             bool key_frame,
-                             DataAvailableCallback* data_available_callback) {
+void EncoderRowBased::Encode(
+    scoped_refptr<CaptureData> capture_data,
+    bool key_frame,
+    const DataAvailableCallback& data_available_callback) {
   CHECK(capture_data->pixel_format() == media::VideoFrame::RGB32)
       << "RowBased Encoder only works with RGB32. Got "
       << capture_data->pixel_format();
   capture_data_ = capture_data;
-  callback_.reset(data_available_callback);
+  callback_ = data_available_callback;
 
-  const InvalidRects& rects = capture_data->dirty_rects();
-  for (InvalidRects::const_iterator r = rects.begin(); r != rects.end(); ++r) {
-    EncodeRect(*r, r == --rects.end());
+  const SkRegion& region = capture_data->dirty_region();
+  SkRegion::Iterator iter(region);
+  while (!iter.done()) {
+    SkIRect rect = iter.rect();
+    iter.next();
+    EncodeRect(rect, iter.done());
   }
 
   capture_data_ = NULL;
-  callback_.reset();
+  callback_.Reset();
 }
 
-void EncoderRowBased::EncodeRect(const gfx::Rect& rect, bool last) {
+void EncoderRowBased::EncodeRect(const SkIRect& rect, bool last) {
   CHECK(capture_data_->data_planes().data[0]);
   const int strides = capture_data_->data_planes().strides[0];
   const int bytes_per_pixel = GetBytesPerPixel(capture_data_->pixel_format());
@@ -86,7 +89,7 @@ void EncoderRowBased::EncodeRect(const gfx::Rect& rect, bool last) {
   VideoPacket* packet = new VideoPacket();
   PrepareUpdateStart(rect, packet);
   const uint8* in = capture_data_->data_planes().data[0] +
-      rect.y() * strides + rect.x() * bytes_per_pixel;
+      rect.fTop * strides + rect.fLeft * bytes_per_pixel;
   // TODO(hclam): Fill in the sequence number.
   uint8* out = GetOutputBuffer(packet, packet_size_);
   int filled = 0;
@@ -129,7 +132,7 @@ void EncoderRowBased::EncodeRect(const gfx::Rect& rect, bool last) {
     // If we have filled the message or we have reached the end of stream.
     if (filled == packet_size_ || !compress_again) {
       packet->mutable_data()->resize(filled);
-      callback_->Run(packet);
+      callback_.Run(packet);
       packet = NULL;
     }
 
@@ -142,13 +145,13 @@ void EncoderRowBased::EncodeRect(const gfx::Rect& rect, bool last) {
   }
 }
 
-void EncoderRowBased::PrepareUpdateStart(const gfx::Rect& rect,
+void EncoderRowBased::PrepareUpdateStart(const SkIRect& rect,
                                          VideoPacket* packet) {
   packet->set_flags(packet->flags() | VideoPacket::FIRST_PACKET);
 
   VideoPacketFormat* format = packet->mutable_format();
-  format->set_x(rect.x());
-  format->set_y(rect.y());
+  format->set_x(rect.fLeft);
+  format->set_y(rect.fTop);
   format->set_width(rect.width());
   format->set_height(rect.height());
   format->set_encoding(encoding_);

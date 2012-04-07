@@ -12,24 +12,27 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/string16.h"
 #include "base/threading/thread.h"
 #include "content/browser/geolocation/device_data_provider.h"
 #include "content/browser/geolocation/location_provider.h"
 #include "content/browser/geolocation/network_location_request.h"
+#include "content/common/content_export.h"
 #include "content/common/geoposition.h"
 
-class URLFetcherProtectEntry;
+namespace content {
+class AccessTokenStore;
+}
 
 class NetworkLocationProvider
     : public LocationProviderBase,
-      public GatewayDataProvider::ListenerInterface,
       public RadioDataProvider::ListenerInterface,
       public WifiDataProvider::ListenerInterface,
       public NetworkLocationRequest::ListenerInterface {
  public:
   // Cache of recently resolved locations. Public for tests.
-  class PositionCache {
+  class CONTENT_EXPORT PositionCache {
    public:
     // The maximum size of the cache of positions for previously requested
     // device data.
@@ -42,21 +45,18 @@ class NetworkLocationProvider
     // WiFi data. In the case of the cache exceeding kMaximumSize this will
     // evict old entries in FIFO orderer of being added.
     // Returns true on success, false otherwise.
-    bool CachePosition(const GatewayData& gateway_data,
-                       const WifiData& wifi_data,
+    bool CachePosition(const WifiData& wifi_data,
                        const Geoposition& position);
 
     // Searches for a cached position response for the current set of device
     // data. Returns NULL if the position is not in the cache, or the cached
     // position if available. Ownership remains with the cache.
-    const Geoposition* FindPosition(const GatewayData& gateway_data,
-                                    const WifiData& wifi_data);
+    const Geoposition* FindPosition(const WifiData& wifi_data);
 
    private:
     // Makes the key for the map of cached positions, using a set of
     // device data. Returns true if a good key was generated, false otherwise.
-    static bool MakeKey(const GatewayData& gateway_data,
-                        const WifiData& wifi_data,
+    static bool MakeKey(const WifiData& wifi_data,
                         string16* key);
 
     // The cache of positions. This is stored as a map keyed on a string that
@@ -68,18 +68,18 @@ class NetworkLocationProvider
     CacheAgeList cache_age_list_;  // Oldest first.
   };
 
-  NetworkLocationProvider(AccessTokenStore* access_token_store,
+  NetworkLocationProvider(content::AccessTokenStore* access_token_store,
                           net::URLRequestContextGetter* context,
                           const GURL& url,
                           const string16& access_token);
   virtual ~NetworkLocationProvider();
 
   // LocationProviderBase implementation
-  virtual bool StartProvider(bool high_accuracy);
-  virtual void StopProvider();
-  virtual void GetPosition(Geoposition *position);
-  virtual void UpdatePosition();
-  virtual void OnPermissionGranted(const GURL& requesting_frame);
+  virtual bool StartProvider(bool high_accuracy) OVERRIDE;
+  virtual void StopProvider() OVERRIDE;
+  virtual void GetPosition(Geoposition *position) OVERRIDE;
+  virtual void UpdatePosition() OVERRIDE;
+  virtual void OnPermissionGranted(const GURL& requesting_frame) OVERRIDE;
 
  private:
   // Satisfies a position request from cache or network.
@@ -91,30 +91,25 @@ class NetworkLocationProvider
   bool IsStarted() const;
 
   // DeviceDataProvider::ListenerInterface implementation.
-  virtual void DeviceDataUpdateAvailable(GatewayDataProvider* provider);
-  virtual void DeviceDataUpdateAvailable(RadioDataProvider* provider);
-  virtual void DeviceDataUpdateAvailable(WifiDataProvider* provider);
+  virtual void DeviceDataUpdateAvailable(RadioDataProvider* provider) OVERRIDE;
+  virtual void DeviceDataUpdateAvailable(WifiDataProvider* provider) OVERRIDE;
 
   // NetworkLocationRequest::ListenerInterface implementation.
   virtual void LocationResponseAvailable(const Geoposition& position,
                                          bool server_error,
                                          const string16& access_token,
-                                         const GatewayData& gateway_data,
                                          const RadioData& radio_data,
-                                         const WifiData& wifi_data);
+                                         const WifiData& wifi_data) OVERRIDE;
 
-  scoped_refptr<AccessTokenStore> access_token_store_;
+  scoped_refptr<content::AccessTokenStore> access_token_store_;
 
   // The device data providers, acquired via global factories.
-  GatewayDataProvider* gateway_data_provider_;
   RadioDataProvider* radio_data_provider_;
   WifiDataProvider* wifi_data_provider_;
 
   // The radio and wifi data, flags to indicate if each data set is complete.
-  GatewayData gateway_data_;
   RadioData radio_data_;
   WifiData wifi_data_;
-  bool is_gateway_data_complete_;
   bool is_radio_data_complete_;
   bool is_wifi_data_complete_;
 
@@ -135,7 +130,7 @@ class NetworkLocationProvider
   // The network location request object, and the url it uses.
   scoped_ptr<NetworkLocationRequest> request_;
 
-  ScopedRunnableMethodFactory<NetworkLocationProvider> delayed_start_task_;
+  base::WeakPtrFactory<NetworkLocationProvider> weak_factory_;
   // The cache of positions.
   scoped_ptr<PositionCache> position_cache_;
 

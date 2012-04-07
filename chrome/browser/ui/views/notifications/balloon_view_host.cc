@@ -7,17 +7,9 @@
 #include "chrome/browser/notifications/balloon.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
-#if defined(OS_WIN)
-#include "chrome/browser/renderer_host/render_widget_host_view_win.h"
-#endif
-#if defined(TOOLKIT_USES_GTK)
-#if defined(TOUCH_UI)
-#include "chrome/browser/renderer_host/render_widget_host_view_views.h"
-#else
-#include "chrome/browser/renderer_host/render_widget_host_view_gtk.h"
-#endif
-#endif
-#include "views/widget/widget.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/web_contents.h"
+#include "ui/views/widget/widget.h"
 
 class BalloonViewHostView : public views::NativeViewHost {
  public:
@@ -55,40 +47,9 @@ BalloonViewHost::~BalloonViewHost() {
 void BalloonViewHost::Init(gfx::NativeView parent_native_view) {
   parent_native_view_ = parent_native_view;
   BalloonHost::Init();
-}
 
-void BalloonViewHost::InitRenderWidgetHostView() {
-  DCHECK(render_view_host_);
+  RenderWidgetHostView* render_widget_host_view =
+      web_contents_->GetRenderViewHost()->view();
 
-  render_widget_host_view_ =
-      RenderWidgetHostView::CreateViewForWidget(render_view_host_);
-
-  // TODO(johnnyg): http://crbug.com/23954.  Need a cross-platform solution.
-#if defined(OS_WIN)
-  RenderWidgetHostViewWin* view_win =
-      static_cast<RenderWidgetHostViewWin*>(render_widget_host_view_);
-
-  // Create the HWND.
-  HWND hwnd = view_win->Create(parent_native_view_);
-  view_win->ShowWindow(SW_SHOW);
-  native_host_->Attach(hwnd);
-#elif defined(TOOLKIT_USES_GTK)
-#if defined(TOUCH_UI)
-  RenderWidgetHostViewViews* view_views =
-      static_cast<RenderWidgetHostViewViews*>(render_widget_host_view_);
-  view_views->InitAsChild();
-  native_host_->AttachToView(view_views);
-#else
-  RenderWidgetHostViewGtk* view_gtk =
-      static_cast<RenderWidgetHostViewGtk*>(render_widget_host_view_);
-  view_gtk->InitAsChild();
-  native_host_->Attach(view_gtk->native_view());
-#endif
-#else
-  NOTIMPLEMENTED();
-#endif
-}
-
-RenderWidgetHostView* BalloonViewHost::render_widget_host_view() const {
-  return render_widget_host_view_;
+  native_host_->Attach(render_widget_host_view->GetNativeView());
 }

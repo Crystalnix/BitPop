@@ -8,12 +8,20 @@
 
 namespace chromeos {
 
-class WizardScreen;
-class ScreenObserver;
-
 class UpdateScreenActor {
  public:
+  class Delegate {
+   public:
+    virtual ~Delegate() {}
+    // Force cancel update.
+    virtual void CancelUpdate() = 0;
+    virtual void OnActorDestroyed(UpdateScreenActor* actor) = 0;
+  };
+
   virtual ~UpdateScreenActor() {}
+
+  // Sets screen this actor belongs to.
+  virtual void SetDelegate(Delegate* screen) = 0;
 
   // Shows the screen.
   virtual void Show() = 0;

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -462,7 +462,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
   // Constants from Cole.  Will kConstant them once the feedback loop
   // is complete.
   NSRect drawFrame = NSInsetRect(cellFrame, 1.5 * lineWidth, 1.5 * lineWidth);
-  NSRect innerFrame = NSInsetRect(cellFrame, 2 * lineWidth, lineWidth);
+  NSRect innerFrame = NSInsetRect(cellFrame, lineWidth, lineWidth);
   const CGFloat radius = 3.5;
 
   ButtonType type = [[(NSControl*)controlView cell] tag];
@@ -627,6 +627,10 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
   }
 }
 
+- (int)verticalTextOffset {
+  return 1;
+}
+
 // Overriden from NSButtonCell so we can display a nice fadeout effect for
 // button titles that overflow.
 // This method is copied in the most part from GTMFadeTruncatingTextFieldCell,
@@ -645,6 +649,9 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
   const CGFloat kOverflowBeforeClip = 2;
   // Don't complicate drawing unless we need to clip.
   if (floor(size.width) <= (NSWidth(cellFrame) + kOverflowBeforeClip)) {
+    cellFrame.origin.y += ([self verticalTextOffset] - 1);
+    // The super is called to provide the background shadow "highlight" for
+    // non-clipping text.
     return [super drawTitle:title withFrame:cellFrame inView:controlView];
   }
 
@@ -670,9 +677,10 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     // view.
     NSRect buttonFrame = [[self controlView] frame];
 
-    // Off-by-one to match native NSButtonCell's version.
+    // Call the vertical offset to match native NSButtonCell's version.
     textOffset = NSMakePoint(textLeft,
-                             (NSHeight(buttonFrame) - size.height)/2 + 1);
+                             (NSHeight(buttonFrame) - size.height) / 2 +
+                             [self verticalTextOffset]);
     [title drawAtPoint:textOffset];
   }
 
@@ -686,8 +694,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
                                           NSRectToCGRect(gradientPart), 0);
   [title drawAtPoint:textOffset];
 
-  // TODO(alcor): switch this to GTMLinearRGBShading if we ever need on 10.4
-  NSColor *color = [NSColor textColor]; //[self textColor];
+  NSColor *color = [NSColor textColor];
   NSColor *alphaColor = [color colorWithAlphaComponent:0.0];
   NSGradient *mask = [[NSGradient alloc] initWithStartingColor:color
                                                    endingColor:alphaColor];

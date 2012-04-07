@@ -1,13 +1,14 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_image_data.h"
-#include "ppapi/shared_impl/image_data_impl.h"
+#include "ppapi/shared_impl/ppb_image_data_shared.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_image_data_api.h"
 #include "ppapi/thunk/resource_creation_api.h"
+#include "ppapi/thunk/thunk.h"
 
 namespace ppapi {
 namespace thunk {
@@ -15,11 +16,11 @@ namespace thunk {
 namespace {
 
 PP_ImageDataFormat GetNativeImageDataFormat() {
-  return ppapi::ImageDataImpl::GetNativeImageDataFormat();
+  return ppapi::PPB_ImageData_Shared::GetNativeImageDataFormat();
 }
 
 PP_Bool IsImageDataFormatSupported(PP_ImageDataFormat format) {
-  return ppapi::ImageDataImpl::IsImageDataFormatSupported(format)
+  return ppapi::PPB_ImageData_Shared::IsImageDataFormatSupported(format)
       ? PP_TRUE : PP_FALSE;
 }
 
@@ -75,7 +76,7 @@ const PPB_ImageData g_ppb_image_data_thunk = {
 
 }  // namespace
 
-const PPB_ImageData* GetPPB_ImageData_Thunk() {
+const PPB_ImageData_1_0* GetPPB_ImageData_1_0_Thunk() {
   return &g_ppb_image_data_thunk;
 }
 

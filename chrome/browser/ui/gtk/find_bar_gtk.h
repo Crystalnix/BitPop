@@ -9,14 +9,15 @@
 #include <gtk/gtk.h>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
-#include "chrome/browser/ui/gtk/focus_store_gtk.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/gtk/slide_animator_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/base/gtk/focus_store_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/gfx/point.h"
 
 class Browser;
@@ -26,7 +27,6 @@ class FindBarController;
 class GtkThemeService;
 class NineBox;
 class SlideAnimatorGtk;
-class TabContentsContainerGtk;
 
 typedef struct _GtkFloatingContainer GtkFloatingContainer;
 
@@ -34,43 +34,44 @@ typedef struct _GtkFloatingContainer GtkFloatingContainer;
 // eventually pull out the model specific bits and share with Windows.
 class FindBarGtk : public FindBar,
                    public FindBarTesting,
-                   public NotificationObserver {
+                   public content::NotificationObserver {
  public:
-  explicit FindBarGtk(Browser* browser);
+  explicit FindBarGtk(BrowserWindowGtk* window);
   virtual ~FindBarGtk();
 
   GtkWidget* widget() const { return slide_widget_->widget(); }
 
   // Methods from FindBar.
-  virtual FindBarController* GetFindBarController() const;
-  virtual void SetFindBarController(FindBarController* find_bar_controller);
-  virtual void Show(bool animate);
-  virtual void Hide(bool animate);
-  virtual void SetFocusAndSelection();
-  virtual void ClearResults(const FindNotificationDetails& results);
-  virtual void StopAnimation();
+  virtual FindBarController* GetFindBarController() const OVERRIDE;
+  virtual void SetFindBarController(
+      FindBarController* find_bar_controller) OVERRIDE;
+  virtual void Show(bool animate) OVERRIDE;
+  virtual void Hide(bool animate) OVERRIDE;
+  virtual void SetFocusAndSelection() OVERRIDE;
+  virtual void ClearResults(const FindNotificationDetails& results) OVERRIDE;
+  virtual void StopAnimation() OVERRIDE;
   virtual void MoveWindowIfNecessary(const gfx::Rect& selection_rect,
-                                     bool no_redraw);
-  virtual void SetFindText(const string16& find_text);
+                                     bool no_redraw) OVERRIDE;
+  virtual void SetFindText(const string16& find_text) OVERRIDE;
   virtual void UpdateUIForFindResult(const FindNotificationDetails& result,
-                                     const string16& find_text);
-  virtual void AudibleAlert();
-  virtual bool IsFindBarVisible();
-  virtual void RestoreSavedFocus();
-  virtual FindBarTesting* GetFindBarTesting();
+                                     const string16& find_text) OVERRIDE;
+  virtual void AudibleAlert() OVERRIDE;
+  virtual bool IsFindBarVisible() OVERRIDE;
+  virtual void RestoreSavedFocus() OVERRIDE;
+  virtual FindBarTesting* GetFindBarTesting() OVERRIDE;
 
   // Methods from FindBarTesting.
   virtual bool GetFindBarWindowInfo(gfx::Point* position,
-                                    bool* fully_visible);
-  virtual string16 GetFindText();
-  virtual string16 GetFindSelectedText();
-  virtual string16 GetMatchCountText();
-  virtual int GetWidth();
+                                    bool* fully_visible) OVERRIDE;
+  virtual string16 GetFindText() OVERRIDE;
+  virtual string16 GetFindSelectedText() OVERRIDE;
+  virtual string16 GetMatchCountText() OVERRIDE;
+  virtual int GetWidth() OVERRIDE;
 
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   void InitWidgets();
@@ -151,7 +152,7 @@ class FindBarGtk : public FindBar,
                            gboolean selection, FindBarGtk* bar);
 
   // Handles Enter key.
-  static void OnActivate(GtkEntry* entry, FindBarGtk* bar);
+  CHROMEGTK_CALLBACK_0(FindBarGtk, void, OnActivate);
 
   static void OnWidgetDirectionChanged(GtkWidget* widget,
                                        GtkTextDirection previous_direction,
@@ -164,11 +165,8 @@ class FindBarGtk : public FindBar,
     find_bar->AdjustTextAlignment();
   }
 
-  static gboolean OnFocusIn(GtkWidget* entry, GdkEventFocus* event,
-                            FindBarGtk* find_bar);
-
-  static gboolean OnFocusOut(GtkWidget* entry, GdkEventFocus* event,
-                             FindBarGtk* find_bar);
+  CHROMEGTK_CALLBACK_1(FindBarGtk, gboolean, OnFocusIn, GdkEventFocus*);
+  CHROMEGTK_CALLBACK_1(FindBarGtk, gboolean, OnFocusOut, GdkEventFocus*);
 
   Browser* browser_;
   BrowserWindowGtk* window_;
@@ -219,7 +217,7 @@ class FindBarGtk : public FindBar,
   FindBarController* find_bar_controller_;
 
   // Saves where the focus used to be whenever we get it.
-  FocusStoreGtk focus_store_;
+  ui::FocusStoreGtk focus_store_;
 
   // If true, the change signal for the text entry is ignored.
   bool ignore_changed_signal_;
@@ -234,7 +232,7 @@ class FindBarGtk : public FindBar,
   // it up.
   gfx::Rect selection_rect_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(FindBarGtk);
 };

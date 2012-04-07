@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "grit/app_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#include "grit/ui_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using testing::HasSubstr;
@@ -26,8 +26,8 @@ TEST(CloudPrintResources, SharedStringsCheck) {
   TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_SIGNIN_PREFIX);
   TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_SIGNIN_SUFFIX);
   TestStringStillOkForCloudPrint(IDS_SYNC_CANNOT_BE_BLANK);
-  TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_EMAIL);
-  TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_PASSWORD);
+  TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_EMAIL_SAME_LINE);
+  TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_PASSWORD_SAME_LINE);
   TestStringStillOkForCloudPrint(IDS_SYNC_INVALID_USER_CREDENTIALS);
   TestStringStillOkForCloudPrint(IDS_SYNC_SIGNIN);
   TestStringStillOkForCloudPrint(IDS_SYNC_LOGIN_COULD_NOT_CONNECT);

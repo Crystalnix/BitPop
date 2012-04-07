@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,12 @@
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 
 #include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/cancelable_request.h"
+#include "chrome/browser/cancelable_request.h"
 
 class HistoryService;
-
-namespace base {
-class WaitableEvent;
-}
 
 namespace browser_sync {
 
@@ -29,9 +26,9 @@ class HistoryModelWorker : public browser_sync::ModelSafeWorker {
   virtual ~HistoryModelWorker();
 
   // ModelSafeWorker implementation. Called on syncapi SyncerThread.
-  virtual void DoWorkAndWaitUntilDone(Callback0::Type* work);
-  virtual ModelSafeGroup GetModelSafeGroup();
-  virtual bool CurrentThreadIsWorkThread();
+  virtual SyncerError DoWorkAndWaitUntilDone(
+      const WorkCallback& work) OVERRIDE;
+  virtual ModelSafeGroup GetModelSafeGroup() OVERRIDE;
 
  private:
   scoped_refptr<HistoryService> history_service_;

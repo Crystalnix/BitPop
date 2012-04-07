@@ -6,9 +6,10 @@
 
 #include "base/i18n/time_formatting.h"
 #include "base/utf_string_conversions.h"
-#include "chrome/browser/ui/gtk/gtk_util.h"
 #include "grit/generated_resources.h"
+#include "ui/base/gtk/gtk_hig_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/text/bytes_formatting.h"
 
 namespace {
 
@@ -43,7 +44,7 @@ GtkWidget* InitDetailRow(int row, int label_id,
   GtkWidget* name_label = InitRowLabel(row, label_id, details_table);
 
   *entry = gtk_entry_new();
-  gtk_entry_set_editable(GTK_ENTRY(*entry), FALSE);
+  gtk_editable_set_editable(GTK_EDITABLE(*entry), FALSE);
   gtk_entry_set_has_frame(GTK_ENTRY(*entry), FALSE);
   gtk_table_attach_defaults(GTK_TABLE(details_table), *entry,
                             1, 2, row, row + 1);
@@ -294,7 +295,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->cookie_details_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->cookie_details_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   int row = 0;
   self->first_label_ = InitDetailRow(row++, IDS_COOKIES_COOKIE_NAME_LABEL,
@@ -324,7 +325,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->database_details_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->database_details_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   InitDetailRow(row++, IDS_COOKIES_COOKIE_NAME_LABEL,
                 self->database_details_table_, &self->database_name_entry_);
@@ -342,7 +343,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->local_storage_details_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->local_storage_details_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_LOCAL_STORAGE_ORIGIN_LABEL,
@@ -360,7 +361,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->appcache_details_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->appcache_details_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_APPLICATION_CACHE_MANIFEST_LABEL,
@@ -379,7 +380,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->indexed_db_details_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->indexed_db_details_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_LOCAL_STORAGE_ORIGIN_LABEL,
@@ -396,7 +397,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->local_storage_item_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->local_storage_item_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_COOKIE_DOMAIN_LABEL,
@@ -414,7 +415,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->database_accessed_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->local_storage_item_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
 
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_COOKIE_DOMAIN_LABEL,
@@ -435,7 +436,7 @@ void BuildWidgets(GtkChromeCookieView *self, gboolean editable_expiration) {
   gtk_container_add(GTK_CONTAINER(self->table_box_),
                     self->appcache_created_table_);
   gtk_table_set_col_spacing(GTK_TABLE(self->appcache_created_table_), 0,
-                            gtk_util::kLabelSpacing);
+                            ui::kLabelSpacing);
   row = 0;
   InitDetailRow(row++, IDS_COOKIES_APPLICATION_CACHE_MANIFEST_LABEL,
                 self->appcache_created_table_,
@@ -540,10 +541,7 @@ void gtk_chrome_cookie_view_display_database(
   gtk_entry_set_text(GTK_ENTRY(self->database_description_entry_),
                      database_info.description.c_str());
   gtk_entry_set_text(GTK_ENTRY(self->database_size_entry_),
-                     UTF16ToUTF8(FormatBytes(
-                         database_info.size,
-                         GetByteDisplayUnits(database_info.size),
-                         true)).c_str());
+                     UTF16ToUTF8(ui::FormatBytes(database_info.size)).c_str());
   gtk_entry_set_text(GTK_ENTRY(self->database_last_modified_entry_),
                      UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(
                          database_info.last_modified)).c_str());
@@ -560,10 +558,8 @@ void gtk_chrome_cookie_view_display_local_storage(
   gtk_entry_set_text(GTK_ENTRY(self->local_storage_origin_entry_),
                      local_storage_info.origin.c_str());
   gtk_entry_set_text(GTK_ENTRY(self->local_storage_size_entry_),
-                     UTF16ToUTF8(FormatBytes(
-                         local_storage_info.size,
-                         GetByteDisplayUnits(local_storage_info.size),
-                         true)).c_str());
+                     UTF16ToUTF8(ui::FormatBytes(
+                         local_storage_info.size)).c_str());
   gtk_entry_set_text(GTK_ENTRY(self->local_storage_last_modified_entry_),
                      UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(
                          local_storage_info.last_modified)).c_str());
@@ -579,10 +575,7 @@ void gtk_chrome_cookie_view_display_app_cache(
   gtk_entry_set_text(GTK_ENTRY(self->appcache_manifest_entry_),
                      info.manifest_url.spec().c_str());
   gtk_entry_set_text(GTK_ENTRY(self->appcache_size_entry_),
-                     UTF16ToUTF8(FormatBytes(
-                         info.size,
-                         GetByteDisplayUnits(info.size),
-                         true)).c_str());
+                     UTF16ToUTF8(ui::FormatBytes(info.size)).c_str());
   gtk_entry_set_text(GTK_ENTRY(self->appcache_created_entry_),
                      UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(
                          info.creation_time)).c_str());
@@ -599,12 +592,10 @@ void gtk_chrome_cookie_view_display_indexed_db(
   UpdateVisibleDetailedInfo(self, self->indexed_db_details_table_);
 
   gtk_entry_set_text(GTK_ENTRY(self->indexed_db_origin_entry_),
-                     indexed_db_info.origin.c_str());
+                     indexed_db_info.origin.spec().c_str());
   gtk_entry_set_text(GTK_ENTRY(self->indexed_db_size_entry_),
-                     UTF16ToUTF8(FormatBytes(
-                         indexed_db_info.size,
-                         GetByteDisplayUnits(indexed_db_info.size),
-                         true)).c_str());
+                     UTF16ToUTF8(ui::FormatBytes(
+                         indexed_db_info.size)).c_str());
   gtk_entry_set_text(GTK_ENTRY(self->indexed_db_last_modified_entry_),
                      UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(
                          indexed_db_info.last_modified)).c_str());
@@ -642,10 +633,7 @@ void gtk_chrome_cookie_view_display_database_accessed(
   gtk_entry_set_text(GTK_ENTRY(self->database_accessed_description_entry_),
                      UTF16ToUTF8(display_name).c_str());
   gtk_entry_set_text(GTK_ENTRY(self->database_accessed_size_entry_),
-                     UTF16ToUTF8(FormatBytes(
-                         estimated_size,
-                         GetByteDisplayUnits(estimated_size),
-                         true)).c_str());
+                     UTF16ToUTF8(ui::FormatBytes(estimated_size)).c_str());
   SetDatabaseAccessedSensitivity(self, TRUE);
 }
 

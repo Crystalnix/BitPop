@@ -12,17 +12,13 @@
 
 #include "jingle/notifier/communicator/xmpp_connection_generator.h"
 
-#if defined(OS_WIN)
-#include <winsock2.h>
-#elif defined(OS_POSIX)
-#include <arpa/inet.h>
-#endif
-
 #include <vector>
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/sys_byteorder.h"
 #include "jingle/notifier/base/server_information.h"
 #include "jingle/notifier/communicator/connection_options.h"
 #include "jingle/notifier/communicator/connection_settings.h"
@@ -45,10 +41,6 @@ XmppConnectionGenerator::XmppConnectionGenerator(
     const ServerList& servers)
     : delegate_(delegate),
       host_resolver_(host_resolver),
-      resolve_callback_(
-          ALLOW_THIS_IN_INITIALIZER_LIST(
-              NewCallback(this,
-                          &XmppConnectionGenerator::OnServerDNSResolved))),
       settings_list_(new ConnectionSettingsList()),
       settings_index_(0),
       servers_(servers),
@@ -126,12 +118,13 @@ void XmppConnectionGenerator::UseNextConnection() {
       net::HostResolver::RequestInfo request_info(server);
       int status =
           host_resolver_.Resolve(
-              request_info, &address_list_, resolve_callback_.get(),
+              request_info, &address_list_,
+              base::Bind(&XmppConnectionGenerator::OnServerDNSResolved,
+                         base::Unretained(this)),
               bound_net_log_);
-      if (status == net::ERR_IO_PENDING) {
-        // resolve_callback_ will call us when it's called.
+      if (status == net::ERR_IO_PENDING)  // OnServerDNSResolved will be called.
         return;
-      }
+
       HandleServerDNSResolved(status);
     } else {
       // We are not resolving DNS here (DNS will be resolved by a lower layer).

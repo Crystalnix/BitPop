@@ -2,18 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/message_loop.h"
 #include "base/string16.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_model.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/search_engines/keyword_editor_controller.h"
 #include "chrome/browser/ui/search_engines/template_url_table_model.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/testing_pref_service.h"
-#include "chrome/test/testing_profile.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
+#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/models/table_model_observer.h"
 
@@ -23,7 +26,7 @@ static const string16 kB(ASCIIToUTF16("b"));
 static const string16 kB1(ASCIIToUTF16("b1"));
 
 // Base class for keyword editor tests. Creates a profile containing an
-// empty TemplateURLModel.
+// empty TemplateURLService.
 class KeywordEditorControllerTest : public testing::Test,
                                     public ui::TableModelObserver {
  public:
@@ -82,9 +85,9 @@ class KeywordEditorControllerTest : public testing::Test,
     service->SetManagedPref(
         prefs::kDefaultSearchProviderPrepopulateID, new StringValue(""));
     model_->Observe(
-        NotificationType::PREF_CHANGED,
-        Source<PrefService>(profile_->GetTestingPrefService()),
-        Details<std::string>(NULL));
+        chrome::NOTIFICATION_PREF_CHANGED,
+        content::Source<PrefService>(profile_->GetTestingPrefService()),
+        content::Details<std::string>(NULL));
   }
 
   TemplateURLTableModel* table_model() const {
@@ -95,7 +98,7 @@ class KeywordEditorControllerTest : public testing::Test,
   MessageLoopForUI message_loop_;
   scoped_ptr<TestingProfile> profile_;
   scoped_ptr<KeywordEditorController> controller_;
-  TemplateURLModel* model_;
+  TemplateURLService* model_;
 
   int model_changed_count_;
   int items_changed_count_;
@@ -110,9 +113,9 @@ void KeywordEditorControllerTest::Init(bool simulate_load_failure) {
   // the profile is.
   controller_.reset();
   profile_.reset(new TestingProfile());
-  profile_->CreateTemplateURLModel();
+  profile_->CreateTemplateURLService();
 
-  model_ = profile_->GetTemplateURLModel();
+  model_ = TemplateURLServiceFactory::GetForProfile(profile_.get());
   if (simulate_load_failure)
     model_->OnWebDataServiceRequestDone(0, NULL);
 
@@ -132,7 +135,7 @@ TEST_F(KeywordEditorControllerTest, Add) {
   // Verify the TableModel has the new data.
   ASSERT_EQ(1, table_model()->RowCount());
 
-  // Verify the TemplateURLModel has the new entry.
+  // Verify the TemplateURLService has the new entry.
   ASSERT_EQ(1U, model_->GetTemplateURLs().size());
 
   // Verify the entry is what we added.
@@ -241,9 +244,9 @@ TEST_F(KeywordEditorControllerTest, MakeDefaultNoWebData) {
   EXPECT_EQ(0, new_default);
 }
 
-// Mutates the TemplateURLModel and make sure table model is updating
+// Mutates the TemplateURLService and make sure table model is updating
 // appropriately.
-TEST_F(KeywordEditorControllerTest, MutateTemplateURLModel) {
+TEST_F(KeywordEditorControllerTest, MutateTemplateURLService) {
   TemplateURL* turl = new TemplateURL();
   turl->set_keyword(ASCIIToUTF16("a"));
   turl->set_short_name(ASCIIToUTF16("b"));

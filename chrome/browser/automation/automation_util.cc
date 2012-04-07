@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,35 +6,64 @@
 
 #include <string>
 
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/stringprintf.h"
+#include "base/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time.h"
 #include "base/values.h"
 #include "chrome/browser/automation/automation_provider.h"
 #include "chrome/browser/automation/automation_provider_json.h"
+#include "chrome/browser/extensions/extension_host.h"
+#include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/restore_tab_helper.h"
+#include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser.h"
-#include "content/browser/browser_thread.h"
-#include "content/browser/renderer_host/render_process_host.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/automation_id.h"
+#include "chrome/common/chrome_view_type.h"
+#include "chrome/common/extensions/extension.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/cookie_monster.h"
 #include "net/base/cookie_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
+using content::BrowserThread;
+using content::WebContents;
+
 namespace {
+
+void GetCookiesCallback(base::WaitableEvent* event,
+                        std::string* cookies,
+                        const std::string& cookie_line) {
+  *cookies = cookie_line;
+  event->Signal();
+}
 
 void GetCookiesOnIOThread(
     const GURL& url,
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     base::WaitableEvent* event,
     std::string* cookies) {
-  *cookies =
-      context_getter->GetURLRequestContext()->cookie_store()->GetCookies(url);
+  context_getter->GetURLRequestContext()->cookie_store()->
+      GetCookiesWithOptionsAsync(url, net::CookieOptions(),
+                      base::Bind(&GetCookiesCallback, event, cookies));
+}
+
+void GetCanonicalCookiesCallback(
+    base::WaitableEvent* event,
+    net::CookieList* cookie_list,
+    const net::CookieList& cookies) {
+  *cookie_list = cookies;
   event->Signal();
 }
 
@@ -43,9 +72,16 @@ void GetCanonicalCookiesOnIOThread(
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     base::WaitableEvent* event,
     net::CookieList* cookie_list) {
-  *cookie_list =
-      context_getter->GetURLRequestContext()->cookie_store()->
-      GetCookieMonster()->GetAllCookiesForURL(url);
+  context_getter->GetURLRequestContext()->cookie_store()->
+      GetCookieMonster()->GetAllCookiesForURLAsync(
+          url,
+          base::Bind(&GetCanonicalCookiesCallback, event, cookie_list));
+}
+
+void SetCookieCallback(base::WaitableEvent* event,
+                       bool* success,
+                       bool result) {
+  *success = result;
   event->Signal();
 }
 
@@ -55,10 +91,10 @@ void SetCookieOnIOThread(
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     base::WaitableEvent* event,
     bool* success) {
-  *success =
-      context_getter->GetURLRequestContext()->cookie_store()->
-      SetCookie(url, value);
-  event->Signal();
+  context_getter->GetURLRequestContext()->cookie_store()->
+      SetCookieWithOptionsAsync(
+          url, value, net::CookieOptions(),
+          base::Bind(&SetCookieCallback, event, success));
 }
 
 void SetCookieWithDetailsOnIOThread(
@@ -71,10 +107,14 @@ void SetCookieWithDetailsOnIOThread(
   net::CookieMonster* cookie_monster =
       context_getter->GetURLRequestContext()->cookie_store()->
       GetCookieMonster();
-  *success = cookie_monster->SetCookieWithDetails(
+  cookie_monster->SetCookieWithDetailsAsync(
       url, cookie.Name(), cookie.Value(), original_domain,
       cookie.Path(), cookie.ExpiryDate(), cookie.IsSecure(),
-      cookie.IsHttpOnly());
+      cookie.IsHttpOnly(),
+      base::Bind(&SetCookieCallback, event, success));
+}
+
+void DeleteCookieCallback(base::WaitableEvent* event) {
   event->Signal();
 }
 
@@ -84,8 +124,8 @@ void DeleteCookieOnIOThread(
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     base::WaitableEvent* event) {
   context_getter->GetURLRequestContext()->cookie_store()->
-      DeleteCookie(url, name);
-  event->Signal();
+      DeleteCookieAsync(url, name,
+                        base::Bind(&DeleteCookieCallback, event));
 }
 
 }  // namespace
@@ -98,24 +138,36 @@ Browser* GetBrowserAt(int index) {
   return *(BrowserList::begin() + index);
 }
 
-TabContents* GetTabContentsAt(int browser_index, int tab_index) {
+WebContents* GetWebContentsAt(int browser_index, int tab_index) {
   if (tab_index < 0)
     return NULL;
   Browser* browser = GetBrowserAt(browser_index);
   if (!browser || tab_index >= browser->tab_count())
     return NULL;
-  return browser->GetTabContentsAt(tab_index);
+  return browser->GetWebContentsAt(tab_index);
 }
 
-net::URLRequestContextGetter* GetRequestContext(TabContents* contents) {
+Browser* GetBrowserForTab(WebContents* tab) {
+  BrowserList::const_iterator browser_iter = BrowserList::begin();
+  for (; browser_iter != BrowserList::end(); ++browser_iter) {
+    Browser* browser = *browser_iter;
+    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
+      if (browser->GetWebContentsAt(tab_index) == tab)
+        return browser;
+    }
+  }
+  return NULL;
+}
+
+net::URLRequestContextGetter* GetRequestContext(WebContents* contents) {
   // Since we may be on the UI thread don't call GetURLRequestContext().
-  // Get the request context specific to the current TabContents and app.
-  return contents->profile()->GetRequestContextForRenderProcess(
-      contents->render_view_host()->process()->id());
+  // Get the request context specific to the current WebContents and app.
+  return contents->GetBrowserContext()->GetRequestContextForRenderProcess(
+      contents->GetRenderProcessHost()->GetID());
 }
 
 void GetCookies(const GURL& url,
-                TabContents* contents,
+                WebContents* contents,
                 int* value_size,
                 std::string* value) {
   *value_size = -1;
@@ -125,9 +177,8 @@ void GetCookies(const GURL& url,
     base::WaitableEvent event(true /* manual reset */,
                               false /* not initially signaled */);
     CHECK(BrowserThread::PostTask(
-              BrowserThread::IO, FROM_HERE,
-              NewRunnableFunction(&GetCookiesOnIOThread,
-                                  url, context_getter, &event, value)));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&GetCookiesOnIOThread, url, context_getter, &event, value)));
     event.Wait();
 
     *value_size = static_cast<int>(value->size());
@@ -136,7 +187,7 @@ void GetCookies(const GURL& url,
 
 void SetCookie(const GURL& url,
                const std::string& value,
-               TabContents* contents,
+               WebContents* contents,
                int* response_value) {
   *response_value = -1;
 
@@ -147,10 +198,9 @@ void SetCookie(const GURL& url,
                               false /* not initially signaled */);
     bool success = false;
     CHECK(BrowserThread::PostTask(
-              BrowserThread::IO, FROM_HERE,
-              NewRunnableFunction(&SetCookieOnIOThread,
-                                  url, value, context_getter, &event,
-                                  &success)));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&SetCookieOnIOThread, url, value, context_getter, &event,
+                   &success)));
     event.Wait();
     if (success)
       *response_value = 1;
@@ -159,7 +209,7 @@ void SetCookie(const GURL& url,
 
 void DeleteCookie(const GURL& url,
                   const std::string& cookie_name,
-                  TabContents* contents,
+                  WebContents* contents,
                   bool* success) {
   *success = false;
   if (url.is_valid() && contents) {
@@ -168,9 +218,9 @@ void DeleteCookie(const GURL& url,
     base::WaitableEvent event(true /* manual reset */,
                               false /* not initially signaled */);
     CHECK(BrowserThread::PostTask(
-              BrowserThread::IO, FROM_HERE,
-              NewRunnableFunction(&DeleteCookieOnIOThread,
-                                  url, cookie_name, context_getter, &event)));
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&DeleteCookieOnIOThread, url, cookie_name, context_getter,
+                   &event)));
     event.Wait();
     *success = true;
   }
@@ -193,9 +243,8 @@ void GetCookiesJSON(AutomationProvider* provider,
   net::CookieList cookie_list;
   base::WaitableEvent event(true /* manual reset */,
                             false /* not initially signaled */);
-  Task* task = NewRunnableFunction(
-      &GetCanonicalCookiesOnIOThread,
-      GURL(url), context_getter, &event, &cookie_list);
+  base::Closure task = base::Bind(&GetCanonicalCookiesOnIOThread, GURL(url),
+                                  context_getter, &event, &cookie_list);
   if (!BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, task)) {
     reply.SendError("Couldn't post task to get the cookies");
     return;
@@ -241,9 +290,8 @@ void DeleteCookieJSON(AutomationProvider* provider,
 
   base::WaitableEvent event(true /* manual reset */,
                             false /* not initially signaled */);
-  Task* task = NewRunnableFunction(
-      &DeleteCookieOnIOThread,
-      GURL(url), name, context_getter, &event);
+  base::Closure task = base::Bind(&DeleteCookieOnIOThread, GURL(url), name,
+                                  context_getter, &event);
   if (!BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, task)) {
     reply.SendError("Couldn't post task to delete the cookie");
     return;
@@ -318,7 +366,7 @@ void SetCookieJSON(AutomationProvider* provider,
       net::CookieMonster::CanonicalCookie::Create(
           GURL(url), name, value, domain, path,
           mac_key, mac_algorithm, base::Time(),
-          base::Time::FromDoubleT(expiry), secure, http_only));
+          base::Time::FromDoubleT(expiry), secure, http_only, expiry != 0));
   if (!cookie.get()) {
     reply.SendError("given 'cookie' parameters are invalid");
     return;
@@ -331,9 +379,9 @@ void SetCookieJSON(AutomationProvider* provider,
   base::WaitableEvent event(true /* manual reset */,
                             false /* not initially signaled */);
   bool success = false;
-  Task* task = NewRunnableFunction(
-      &SetCookieWithDetailsOnIOThread,
-      GURL(url), *cookie.get(), domain, context_getter, &event, &success);
+  base::Closure task = base::Bind(
+      &SetCookieWithDetailsOnIOThread, GURL(url), *cookie.get(), domain,
+      context_getter, &event, &success);
   if (!BrowserThread::PostTask(BrowserThread::IO, FROM_HERE, task)) {
     reply.SendError("Couldn't post task to set the cookie");
     return;
@@ -345,6 +393,152 @@ void SetCookieJSON(AutomationProvider* provider,
     return;
   }
   reply.SendSuccess(NULL);
+}
+
+bool SendErrorIfModalDialogActive(AutomationProvider* provider,
+                                  IPC::Message* message) {
+  bool active = AppModalDialogQueue::GetInstance()->HasActiveDialog();
+  if (active) {
+    AutomationJSONReply(provider, message).SendErrorCode(
+        automation::kBlockedByModalDialog);
+  }
+  return active;
+}
+
+AutomationId GetIdForTab(const TabContentsWrapper* tab) {
+  return AutomationId(
+      AutomationId::kTypeTab,
+      base::IntToString(tab->restore_tab_helper()->session_id().id()));
+}
+
+AutomationId GetIdForExtensionView(const ExtensionHost* ext_host) {
+  AutomationId::Type type;
+  switch (ext_host->extension_host_type()) {
+    case chrome::VIEW_TYPE_EXTENSION_POPUP:
+      type = AutomationId::kTypeExtensionPopup;
+      break;
+    case chrome::VIEW_TYPE_EXTENSION_BACKGROUND_PAGE:
+      type = AutomationId::kTypeExtensionBgPage;
+      break;
+    case chrome::VIEW_TYPE_EXTENSION_INFOBAR:
+      type = AutomationId::kTypeExtensionInfobar;
+      break;
+    default:
+      type = AutomationId::kTypeInvalid;
+      break;
+  }
+  // Since these extension views do not permit navigation, using the
+  // renderer process and view ID should suffice.
+  std::string id = base::StringPrintf("%d|%d",
+      ext_host->render_view_host()->routing_id(),
+      ext_host->render_process_host()->GetID());
+  return AutomationId(type, id);
+}
+
+AutomationId GetIdForExtension(const Extension* extension) {
+  return AutomationId(AutomationId::kTypeExtension, extension->id());
+}
+
+bool GetTabForId(const AutomationId& id, WebContents** tab) {
+  if (id.type() != AutomationId::kTypeTab)
+    return false;
+
+  BrowserList::const_iterator iter = BrowserList::begin();
+  for (; iter != BrowserList::end(); ++iter) {
+    Browser* browser = *iter;
+    for (int tab_index = 0; tab_index < browser->tab_count(); ++tab_index) {
+      TabContentsWrapper* wrapper = browser->GetTabContentsWrapperAt(tab_index);
+      if (base::IntToString(wrapper->restore_tab_helper()->session_id().id()) ==
+              id.id()) {
+        *tab = wrapper->web_contents();
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+namespace {
+
+bool GetExtensionRenderViewForId(
+    const AutomationId& id,
+    Profile* profile,
+    RenderViewHost** rvh) {
+  ExtensionProcessManager* extension_mgr =
+      profile->GetExtensionProcessManager();
+  ExtensionProcessManager::const_iterator iter;
+  for (iter = extension_mgr->begin(); iter != extension_mgr->end();
+       ++iter) {
+    ExtensionHost* host = *iter;
+    AutomationId this_id = GetIdForExtensionView(host);
+    if (id == this_id) {
+      *rvh = host->render_view_host();
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+bool GetRenderViewForId(
+    const AutomationId& id,
+    Profile* profile,
+    RenderViewHost** rvh) {
+  switch (id.type()) {
+    case AutomationId::kTypeTab: {
+      WebContents* tab;
+      if (!GetTabForId(id, &tab))
+        return false;
+      *rvh = tab->GetRenderViewHost();
+      break;
+    }
+    case AutomationId::kTypeExtensionPopup:
+    case AutomationId::kTypeExtensionBgPage:
+    case AutomationId::kTypeExtensionInfobar:
+      if (!GetExtensionRenderViewForId(id, profile, rvh))
+        return false;
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+bool GetExtensionForId(
+    const AutomationId& id,
+    Profile* profile,
+    const Extension** extension) {
+  if (id.type() != AutomationId::kTypeExtension)
+    return false;
+  ExtensionService* service = profile->GetExtensionService();
+  const Extension* installed_extension =
+      service->GetInstalledExtension(id.id());
+  if (installed_extension)
+    *extension = installed_extension;
+  return !!installed_extension;
+}
+
+bool DoesObjectWithIdExist(const AutomationId& id, Profile* profile) {
+  switch (id.type()) {
+    case AutomationId::kTypeTab: {
+      WebContents* tab;
+      return GetTabForId(id, &tab);
+    }
+    case AutomationId::kTypeExtensionPopup:
+    case AutomationId::kTypeExtensionBgPage:
+    case AutomationId::kTypeExtensionInfobar: {
+      RenderViewHost* rvh;
+      return GetExtensionRenderViewForId(id, profile, &rvh);
+    }
+    case AutomationId::kTypeExtension: {
+      const Extension* extension;
+      return GetExtensionForId(id, profile, &extension);
+    }
+    default:
+      break;
+  }
+  return false;
 }
 
 }  // namespace automation_util

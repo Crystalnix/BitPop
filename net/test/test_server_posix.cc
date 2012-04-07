@@ -122,10 +122,10 @@ bool TestServer::LaunchPython(const FilePath& testserver_path) {
   }
 
   // Launch a new testserver process.
-  if (!base::LaunchApp(python_command.argv(), map_write_fd, false,
-                       &process_handle_)) {
-    LOG(ERROR) << "Failed to launch " << python_command.command_line_string()
-               << " ...";
+  base::LaunchOptions options;
+  options.fds_to_remap = &map_write_fd;
+  if (!base::LaunchProcess(python_command, options, &process_handle_)) {
+    LOG(ERROR) << "Failed to launch " << python_command.GetCommandLineString();
     return false;
   }
 
@@ -136,7 +136,7 @@ bool TestServer::WaitToStart() {
   file_util::ScopedFD child_fd_closer(child_fd_closer_.release());
 
   base::TimeDelta remaining_time = base::TimeDelta::FromMilliseconds(
-      TestTimeouts::action_max_timeout_ms());
+      TestTimeouts::action_timeout_ms());
 
   uint32 server_data_len = 0;
   if (!ReadData(child_fd_, sizeof(server_data_len),

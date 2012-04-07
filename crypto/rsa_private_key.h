@@ -23,6 +23,7 @@ struct SECKEYPublicKeyStr;
 #include <vector>
 
 #include "base/basictypes.h"
+#include "crypto/crypto_export.h"
 
 #if defined(OS_WIN)
 #include "crypto/scoped_capi_types.h"
@@ -170,7 +171,7 @@ class PrivateKeyInfoCodec {
 // Encapsulates an RSA private key. Can be used to generate new keys, export
 // keys to other formats, or to extract a public key.
 // TODO(hclam): This class should be ref-counted so it can be reused easily.
-class RSAPrivateKey {
+class CRYPTO_EXPORT RSAPrivateKey {
  public:
   ~RSAPrivateKey();
 
@@ -222,11 +223,14 @@ class RSAPrivateKey {
   CSSM_KEY_PTR public_key() { return &public_key_; }
 #endif
 
+  // Creates a copy of the object.
+  RSAPrivateKey* Copy() const;
+
   // Exports the private key to a PKCS #1 PrivateKey block.
-  bool ExportPrivateKey(std::vector<uint8>* output);
+  bool ExportPrivateKey(std::vector<uint8>* output) const;
 
   // Exports the public key to an X509 SubjectPublicKeyInfo block.
-  bool ExportPublicKey(std::vector<uint8>* output);
+  bool ExportPublicKey(std::vector<uint8>* output) const;
 
  private:
 #if defined(USE_NSS)

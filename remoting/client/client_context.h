@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
 
 #include <string>
 
+#include "base/message_loop_proxy.h"
 #include "base/threading/thread.h"
-#include "remoting/jingle_glue/jingle_thread.h"
 
 namespace remoting {
 
@@ -16,26 +16,18 @@ namespace remoting {
 // process.
 class ClientContext {
  public:
-  ClientContext();
+  ClientContext(base::MessageLoopProxy* main_message_loop_proxy);
   virtual ~ClientContext();
 
   void Start();
   void Stop();
 
-  JingleThread* jingle_thread();
-  MessageLoop* jingle_message_loop();
-
-  MessageLoop* main_message_loop();
-  MessageLoop* decode_message_loop();
+  base::MessageLoopProxy* main_message_loop();
+  base::MessageLoopProxy* decode_message_loop();
+  base::MessageLoopProxy* network_message_loop();
 
  private:
-  // A thread that handles Jingle network operations (used in
-  // JingleHostConnection).
-  JingleThread jingle_thread_;
-
-  // A thread that handles capture rate control and sending data to the
-  // HostConnection.
-  base::Thread main_thread_;
+  scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
 
   // A thread that handles all decode operations.
   base::Thread decode_thread_;

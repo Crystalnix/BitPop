@@ -30,7 +30,7 @@ BookmarkNodeData::Element::Element() : is_url(false), id_(0) {
 
 BookmarkNodeData::Element::Element(const BookmarkNode* node)
     : is_url(node->is_url()),
-      url(node->GetURL()),
+      url(node->url()),
       title(node->GetTitle()),
       id_(node->id()) {
   for (int i = 0; i < node->child_count(); ++i)
@@ -149,7 +149,7 @@ void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
     const std::string url = elements[0].url.spec();
 
     scw.WriteBookmark(title, url);
-    scw.WriteHyperlink(EscapeForHTML(title), url);
+    scw.WriteHyperlink(net::EscapeForHTML(title), url);
 
     // Also write the URL to the clipboard as text so that it can be pasted
     // into text fields. We use WriteText instead of WriteURL because we don't
@@ -161,13 +161,15 @@ void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
 
   Pickle pickle;
   WriteToPickle(profile, &pickle);
-  scw.WritePickledData(pickle, kClipboardFormatString);
+  scw.WritePickledData(
+      pickle, ui::Clipboard::GetFormatType(kClipboardFormatString));
 }
 
 bool BookmarkNodeData::ReadFromClipboard() {
   std::string data;
   ui::Clipboard* clipboard = g_browser_process->clipboard();
-  clipboard->ReadData(kClipboardFormatString, &data);
+  clipboard->ReadData(ui::Clipboard::GetFormatType(kClipboardFormatString),
+                      &data);
 
   if (!data.empty()) {
     Pickle pickle(data.data(), data.size());
@@ -193,35 +195,47 @@ bool BookmarkNodeData::ReadFromClipboard() {
 }
 
 bool BookmarkNodeData::ClipboardContainsBookmarks() {
-  return g_browser_process->clipboard()->IsFormatAvailableByString(
-      BookmarkNodeData::kClipboardFormatString, ui::Clipboard::BUFFER_STANDARD);
+  return g_browser_process->clipboard()->IsFormatAvailable(
+      ui::Clipboard::GetFormatType(kClipboardFormatString),
+      ui::Clipboard::BUFFER_STANDARD);
 }
 #else
 void BookmarkNodeData::WriteToClipboard(Profile* profile) const {
-  bookmark_pasteboard_helper_mac::WriteToClipboard(elements,
-                                                   profile_path_.value());
+  bookmark_pasteboard_helper_mac::WriteToPasteboard(
+      bookmark_pasteboard_helper_mac::kCopyPastePasteboard,
+      elements,
+      profile_path_.value());
 }
 
 bool BookmarkNodeData::ReadFromClipboard() {
-  // TODO(evan): bookmark_pasteboard_helper_mac should just use FilePaths.
-  FilePath::StringType buf;
-  if (!bookmark_pasteboard_helper_mac::ReadFromClipboard(elements, &buf))
+  FilePath file_path;
+  if (!bookmark_pasteboard_helper_mac::ReadFromPasteboard(
+      bookmark_pasteboard_helper_mac::kCopyPastePasteboard,
+      elements,
+      &file_path)) {
     return false;
-  profile_path_ = FilePath(buf);
+  }
+
+  profile_path_ = file_path;
   return true;
 }
 
 bool BookmarkNodeData::ReadFromDragClipboard() {
-  // TODO(evan): bookmark_pasteboard_helper_mac should just use FilePaths.
-  FilePath::StringType buf;
-  if (!bookmark_pasteboard_helper_mac::ReadFromDragClipboard(elements, &buf))
+  FilePath file_path;
+  if (!bookmark_pasteboard_helper_mac::ReadFromPasteboard(
+      bookmark_pasteboard_helper_mac::kDragPasteboard,
+      elements,
+      &file_path)) {
     return false;
-  profile_path_ = FilePath(buf);
+  }
+
+  profile_path_ = file_path;
   return true;
 }
 
 bool BookmarkNodeData::ClipboardContainsBookmarks() {
-  return bookmark_pasteboard_helper_mac::ClipboardContainsBookmarks();
+  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
+      bookmark_pasteboard_helper_mac::kCopyPastePasteboard);
 }
 #endif  // !defined(OS_MACOSX)
 

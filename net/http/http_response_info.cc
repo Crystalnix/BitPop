@@ -57,6 +57,14 @@ enum {
   // This bit is set if the request was fetched via an explicit proxy.
   RESPONSE_INFO_WAS_PROXY = 1 << 15,
 
+  // This bit is set if the response info has an SSL connection status field.
+  // This contains the ciphersuite used to fetch the resource as well as the
+  // protocol version, compression method and whether SSLv3 fallback was used.
+  RESPONSE_INFO_HAS_SSL_CONNECTION_STATUS = 1 << 16,
+
+  // This bit is set if the response info has protocol version.
+  RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL = 1 << 17,
+
   // TODO(darin): Add other bits to indicate alternate request methods.
   // For now, we don't support storing those.
 };
@@ -74,6 +82,7 @@ HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
       was_npn_negotiated(rhs.was_npn_negotiated),
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
       socket_address(rhs.socket_address),
+      npn_negotiated_protocol(rhs.npn_negotiated_protocol),
       request_time(rhs.request_time),
       response_time(rhs.response_time),
       auth_challenge(rhs.auth_challenge),
@@ -93,6 +102,7 @@ HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
   socket_address = rhs.socket_address;
+  npn_negotiated_protocol = rhs.npn_negotiated_protocol;
   request_time = rhs.request_time;
   response_time = rhs.response_time;
   auth_challenge = rhs.auth_challenge;
@@ -146,8 +156,8 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
       return false;
   }
   if (flags & RESPONSE_INFO_HAS_CERT_STATUS) {
-    int cert_status;
-    if (!pickle.ReadInt(&iter, &cert_status))
+    CertStatus cert_status;
+    if (!pickle.ReadUInt32(&iter, &cert_status))
       return false;
     ssl_info.cert_status = cert_status;
   }
@@ -156,6 +166,13 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
     if (!pickle.ReadInt(&iter, &security_bits))
       return false;
     ssl_info.security_bits = security_bits;
+  }
+
+  if (flags & RESPONSE_INFO_HAS_SSL_CONNECTION_STATUS) {
+    int connection_status;
+    if (!pickle.ReadInt(&iter, &connection_status))
+      return false;
+    ssl_info.connection_status = connection_status;
   }
 
   // read vary-data
@@ -178,6 +195,12 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
     return false;
   }
 
+  // read protocol-version.
+  if (flags & RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL) {
+    if (!pickle.ReadString(&iter, &npn_negotiated_protocol))
+      return false;
+  }
+
   was_fetched_via_spdy = (flags & RESPONSE_INFO_WAS_SPDY) != 0;
 
   was_npn_negotiated = (flags & RESPONSE_INFO_WAS_NPN) != 0;
@@ -198,7 +221,8 @@ void HttpResponseInfo::Persist(Pickle* pickle,
     flags |= RESPONSE_INFO_HAS_CERT_STATUS;
     if (ssl_info.security_bits != -1)
       flags |= RESPONSE_INFO_HAS_SECURITY_BITS;
-    // TODO(wtc): we should persist ssl_info.connection_status.
+    if (ssl_info.connection_status != 0)
+      flags |= RESPONSE_INFO_HAS_SSL_CONNECTION_STATUS;
   }
   if (vary_data.is_valid())
     flags |= RESPONSE_INFO_HAS_VARY_DATA;
@@ -206,8 +230,10 @@ void HttpResponseInfo::Persist(Pickle* pickle,
     flags |= RESPONSE_INFO_TRUNCATED;
   if (was_fetched_via_spdy)
     flags |= RESPONSE_INFO_WAS_SPDY;
-  if (was_npn_negotiated)
+  if (was_npn_negotiated) {
     flags |= RESPONSE_INFO_WAS_NPN;
+    flags |= RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL;
+  }
   if (was_fetched_via_proxy)
     flags |= RESPONSE_INFO_WAS_PROXY;
 
@@ -231,9 +257,11 @@ void HttpResponseInfo::Persist(Pickle* pickle,
 
   if (ssl_info.is_valid()) {
     ssl_info.cert->Persist(pickle);
-    pickle->WriteInt(ssl_info.cert_status);
+    pickle->WriteUInt32(ssl_info.cert_status);
     if (ssl_info.security_bits != -1)
       pickle->WriteInt(ssl_info.security_bits);
+    if (ssl_info.connection_status != 0)
+      pickle->WriteInt(ssl_info.connection_status);
   }
 
   if (vary_data.is_valid())
@@ -241,6 +269,9 @@ void HttpResponseInfo::Persist(Pickle* pickle,
 
   pickle->WriteString(socket_address.host());
   pickle->WriteUInt16(socket_address.port());
+
+  if (was_npn_negotiated)
+    pickle->WriteString(npn_negotiated_protocol);
 }
 
 }  // namespace net

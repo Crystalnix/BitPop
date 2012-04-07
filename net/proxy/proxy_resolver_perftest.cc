@@ -1,8 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/base_paths.h"
+#include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/perftimer.h"
@@ -12,6 +13,7 @@
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_resolver_js_bindings.h"
 #include "net/proxy/proxy_resolver_v8.h"
+#include "net/proxy/sync_host_resolver.h"
 #include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -20,6 +22,17 @@
 #elif defined(OS_MACOSX)
 #include "net/proxy/proxy_resolver_mac.h"
 #endif
+
+class MockSyncHostResolver : public net::SyncHostResolver {
+ public:
+  virtual int Resolve(const net::HostResolver::RequestInfo& info,
+                      net::AddressList* addresses,
+                      const net::BoundNetLog& net_log) OVERRIDE {
+    return net::ERR_NAME_NOT_RESOLVED;
+  }
+
+  virtual void Shutdown() OVERRIDE {}
+};
 
 // This class holds the URL to use for resolving, and the expected result.
 // We track the expected result in order to make sure the performance
@@ -107,7 +120,8 @@ class PacPerfSuiteRunner {
       GURL pac_url =
           test_server_.GetURL(std::string("files/") + script_name);
       int rv = resolver_->SetPacScript(
-          net::ProxyResolverScriptData::FromURL(pac_url), NULL);
+          net::ProxyResolverScriptData::FromURL(pac_url),
+          net::CompletionCallback());
       EXPECT_EQ(net::OK, rv);
     } else {
       LoadPacScriptIntoResolver(script_name);
@@ -119,8 +133,8 @@ class PacPerfSuiteRunner {
     {
       net::ProxyInfo proxy_info;
       int result = resolver_->GetProxyForURL(
-          GURL("http://www.warmup.com"), &proxy_info, NULL, NULL,
-          net::BoundNetLog());
+          GURL("http://www.warmup.com"), &proxy_info, net::CompletionCallback(),
+          NULL, net::BoundNetLog());
       ASSERT_EQ(net::OK, result);
     }
 
@@ -134,9 +148,9 @@ class PacPerfSuiteRunner {
 
       // Resolve.
       net::ProxyInfo proxy_info;
-      int result = resolver_->GetProxyForURL(GURL(query.query_url),
-                                             &proxy_info, NULL, NULL,
-                                             net::BoundNetLog());
+      int result = resolver_->GetProxyForURL(
+          GURL(query.query_url), &proxy_info, net::CompletionCallback(), NULL,
+          net::BoundNetLog());
 
       // Check that the result was correct. Note that ToPacString() and
       // ASSERT_EQ() are fast, so they won't skew the results.
@@ -167,7 +181,8 @@ class PacPerfSuiteRunner {
 
     // Load the PAC script into the ProxyResolver.
     int rv = resolver_->SetPacScript(
-        net::ProxyResolverScriptData::FromUTF8(file_contents), NULL);
+        net::ProxyResolverScriptData::FromUTF8(file_contents),
+        net::CompletionCallback());
     EXPECT_EQ(net::OK, rv);
   }
 
@@ -193,7 +208,7 @@ TEST(ProxyResolverPerfTest, ProxyResolverMac) {
 TEST(ProxyResolverPerfTest, ProxyResolverV8) {
   net::ProxyResolverJSBindings* js_bindings =
       net::ProxyResolverJSBindings::CreateDefault(
-          new net::MockHostResolver, NULL, NULL);
+          new MockSyncHostResolver, NULL, NULL);
 
   net::ProxyResolverV8 resolver(js_bindings);
   PacPerfSuiteRunner runner(&resolver, "ProxyResolverV8");

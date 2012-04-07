@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/gfx/native_theme_chromeos.h"
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "grit/gfx_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
@@ -70,6 +71,32 @@ const SkColor kProgressBarIndicatorInnerStroke =
 const SkColor kProgressBarIndicatorInnerShadow =
     SkColorSetARGB(0x54, 0xFF, 0xFF, 0xFF);  // 0.33 white
 
+// Theme colors returned by GetSystemColor().
+const SkColor kInvalidColorIdColor = SkColorSetRGB(255, 0, 128);
+// Dialogs:
+const SkColor kDialogBackgroundColor = SkColorSetRGB(200, 200, 200);
+// FocusableBorder:
+const SkColor kFocusedBorderColor= SkColorSetRGB(0x4D, 0x90, 0xFE);
+const SkColor kUnfocusedBorderColor = SkColorSetRGB(0xD9, 0xD9, 0xD9);
+// TextButton:
+const SkColor kTextButtonBackgroundColor = SkColorSetRGB(0xDE, 0xDE, 0xDE);
+const SkColor kTextButtonEnabledColor = SkColorSetRGB(6, 45, 117);
+const SkColor kTextButtonDisabledColor = SkColorSetRGB(161, 161, 146);
+const SkColor kTextButtonHighlightColor = SkColorSetARGB(200, 255, 255, 255);
+const SkColor kTextButtonHoverColor = kTextButtonEnabledColor;
+// MenuItem:
+const SkColor kEnabledMenuItemForegroundColor = SK_ColorBLACK;
+const SkColor kDisabledMenuItemForegroundColor =
+    SkColorSetRGB(0x80, 0x80, 0x80);
+const SkColor kFocusedMenuItemBackgroundColor = SkColorSetRGB(0xDC, 0xE4, 0xFA);
+// Textfield:
+const SkColor kTextfieldDefaultColor = SK_ColorBLACK;
+const SkColor kTextfieldDefaultBackground = SK_ColorWHITE;
+const SkColor kTextfieldSelectionColor = SK_ColorWHITE;
+const SkColor kTextfieldSelectionBackgroundFocused =
+    SkColorSetRGB(0x1D, 0x90, 0xFF);
+const SkColor kTextfieldSelectionBackgroundUnfocused = SK_ColorLTGRAY;
+
 // Geometry constants
 
 const int kBorderCornerRadius = 3;
@@ -130,9 +157,9 @@ void GetGradientPaintForRect(const gfx::Rect& rect,
 }
 
 void GetButtonGradientPaint(const gfx::Rect bounds,
-                            gfx::NativeThemeLinux::State state,
+                            gfx::NativeThemeBase::State state,
                             SkPaint* paint) {
-  if (state == gfx::NativeThemeLinux::kPressed) {
+  if (state == gfx::NativeThemeBase::kPressed) {
     static const SkColor kGradientColors[2] = {
         kPressedGradient0,
         kPressedGradient1
@@ -171,29 +198,29 @@ void GetStrokePaint(SkColor color, SkPaint* paint) {
   paint->setColor(color);
 }
 
-void GetStrokePaint(gfx::NativeThemeLinux::State state, SkPaint* paint) {
+void GetStrokePaint(gfx::NativeThemeBase::State state, SkPaint* paint) {
 
-  if (state == gfx::NativeThemeLinux::kDisabled)
+  if (state == gfx::NativeThemeBase::kDisabled)
     GetStrokePaint(kDisabledBaseStroke, paint);
   else
     GetStrokePaint(kBaseStroke, paint);
 }
 
-void GetIndicatorStrokePaint(gfx::NativeThemeLinux::State state,
+void GetIndicatorStrokePaint(gfx::NativeThemeBase::State state,
                              SkPaint* paint) {
   paint->setStyle(SkPaint::kStroke_Style);
   paint->setAntiAlias(true);
 
-  if (state == gfx::NativeThemeLinux::kDisabled)
+  if (state == gfx::NativeThemeBase::kDisabled)
     paint->setColor(kIndicatorStrokeDisabledColor);
-  else if (state == gfx::NativeThemeLinux::kPressed)
+  else if (state == gfx::NativeThemeBase::kPressed)
     paint->setColor(kIndicatorStrokePressedColor);
   else
     paint->setColor(kIndicatorStrokeColor);
 }
 
 void GetRadioIndicatorGradientPaint(const gfx::Rect bounds,
-                                    gfx::NativeThemeLinux::State state,
+                                    gfx::NativeThemeBase::State state,
                                     SkPaint* paint) {
   paint->setStyle(SkPaint::kFill_Style);
   paint->setAntiAlias(true);
@@ -207,7 +234,7 @@ void GetRadioIndicatorGradientPaint(const gfx::Rect bounds,
       SkIntToScalar(1)
   };
 
-  if (state == gfx::NativeThemeLinux::kDisabled) {
+  if (state == gfx::NativeThemeBase::kDisabled) {
     static const SkColor kGradientColors[2] = {
         kRadioIndicatorDisabledGradient0,
         kRadioIndicatorDisabledGradient1
@@ -230,10 +257,16 @@ void GetRadioIndicatorGradientPaint(const gfx::Rect bounds,
 
 }  // namespace
 
-/* static */
-const gfx::NativeThemeLinux* gfx::NativeThemeLinux::instance() {
-  // The global NativeThemeChromeos instance.
-  static NativeThemeChromeos s_native_theme;
+namespace gfx {
+
+// static
+const NativeTheme* NativeTheme::instance() {
+  return NativeThemeChromeos::instance();
+}
+
+// static
+const NativeThemeChromeos* NativeThemeChromeos::instance() {
+  CR_DEFINE_STATIC_LOCAL(NativeThemeChromeos, s_native_theme, ());
   return &s_native_theme;
 }
 
@@ -292,9 +325,65 @@ gfx::Size NativeThemeChromeos::GetPartSize(Part part,
     case kInnerSpinButton:
       return gfx::Size(kScrollbarWidth, 0);
     default:
-      return NativeThemeLinux::GetPartSize(part, state, extra);
+      return NativeThemeBase::GetPartSize(part, state, extra);
   }
   return gfx::Size(width, height);
+}
+
+SkColor NativeThemeChromeos::GetSystemColor(ColorId color_id) const {
+  // Return hard coded values for ChromeOS.
+  // TODO(saintlou) : Remove this module after switch to Aura.
+  switch (color_id) {
+
+    // Dialogs
+    case kColorId_DialogBackground:
+      return kDialogBackgroundColor;
+
+    // FocusableBorder
+    case kColorId_FocusedBorderColor:
+      return kFocusedBorderColor;
+    case kColorId_UnfocusedBorderColor:
+      return kUnfocusedBorderColor;
+
+    // TextButton
+    case kColorId_TextButtonBackgroundColor:
+      return kTextButtonBackgroundColor;
+    case kColorId_TextButtonEnabledColor:
+      return kTextButtonEnabledColor;
+    case kColorId_TextButtonDisabledColor:
+      return kTextButtonDisabledColor;
+    case kColorId_TextButtonHighlightColor:
+      return kTextButtonHighlightColor;
+    case kColorId_TextButtonHoverColor:
+      return kTextButtonHoverColor;
+
+    // MenuItem
+    case kColorId_EnabledMenuItemForegroundColor:
+      return kEnabledMenuItemForegroundColor;
+    case kColorId_DisabledMenuItemForegroundColor:
+      return kDisabledMenuItemForegroundColor;
+    case kColorId_FocusedMenuItemBackgroundColor:
+      return kFocusedMenuItemBackgroundColor;
+
+    // Textfield
+    case kColorId_TextfieldDefaultColor:
+      return kTextfieldDefaultColor;
+    case kColorId_TextfieldDefaultBackground:
+      return kTextfieldDefaultBackground;
+    case kColorId_TextfieldSelectionColor:
+      return kTextfieldSelectionColor;
+    case kColorId_TextfieldSelectionBackgroundFocused:
+      return kTextfieldSelectionBackgroundFocused;
+    case kColorId_TextfieldSelectionBackgroundUnfocused:
+      return kTextfieldSelectionBackgroundUnfocused;
+
+    default:
+      NOTREACHED() << "Invalid color_id: " << color_id;
+      break;
+  }
+
+  // Return InvalidColor
+  return kInvalidColorIdColor;
 }
 
 void NativeThemeChromeos::PaintScrollbarTrack(
@@ -344,6 +433,26 @@ void NativeThemeChromeos::PaintScrollbarTrack(
   }
 }
 
+void NativeThemeChromeos::PaintArrowButton(SkCanvas* canvas,
+    const gfx::Rect& rect, Part part, State state) const {
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  int resource_id =
+      (part == kScrollbarUpArrow || part == kScrollbarLeftArrow) ?
+          IDR_SCROLL_ARROW_UP : IDR_SCROLL_ARROW_DOWN;
+  if (state == kHovered)
+    resource_id++;
+  else if (state == kPressed)
+    resource_id += 2;
+  SkBitmap* bitmap;
+  if (part == kScrollbarUpArrow || part == kScrollbarDownArrow)
+    bitmap = rb.GetBitmapNamed(resource_id);
+  else
+    bitmap = GetHorizontalBitmapNamed(resource_id);
+  DrawBitmapInt(canvas, *bitmap,
+      0, 0, bitmap->width(), bitmap->height(),
+      rect.x(), rect.y(), rect.width(), rect.height());
+}
+
 void NativeThemeChromeos::PaintScrollbarThumb(SkCanvas* canvas,
     Part part, State state, const gfx::Rect& rect) const {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
@@ -387,26 +496,6 @@ void NativeThemeChromeos::PaintScrollbarThumb(SkCanvas* canvas,
         8, 0, 5, bitmap->height(),
         rect.x() + rect.width() - 5, rect.y(), 5, rect.height());
   }
-}
-
-void NativeThemeChromeos::PaintArrowButton(SkCanvas* canvas,
-    const gfx::Rect& rect, Part part, State state) const {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  int resource_id =
-      (part == kScrollbarUpArrow || part == kScrollbarLeftArrow) ?
-          IDR_SCROLL_ARROW_UP : IDR_SCROLL_ARROW_DOWN;
-  if (state == kHovered)
-    resource_id++;
-  else if (state == kPressed)
-    resource_id += 2;
-  SkBitmap* bitmap;
-  if (part == kScrollbarUpArrow || part == kScrollbarDownArrow)
-    bitmap = rb.GetBitmapNamed(resource_id);
-  else
-    bitmap = GetHorizontalBitmapNamed(resource_id);
-  DrawBitmapInt(canvas, *bitmap,
-      0, 0, bitmap->width(), bitmap->height(),
-      rect.x(), rect.y(), rect.width(), rect.height());
 }
 
 void NativeThemeChromeos::PaintCheckbox(SkCanvas* canvas,
@@ -568,7 +657,44 @@ void NativeThemeChromeos::PaintInnerSpinButton(SkCanvas* canvas,
   gfx::Rect bounds = rect;
   bounds.Inset(0, -1, -1, -1);
 
-  NativeThemeLinux::PaintInnerSpinButton(canvas, state, bounds, spin_button);
+  NativeThemeBase::PaintInnerSpinButton(canvas, state, bounds, spin_button);
+}
+
+void NativeThemeChromeos::PaintMenuPopupBackground(
+    SkCanvas* canvas,
+    State state,
+    const gfx::Rect& rect,
+    const MenuListExtraParams& menu_list) const {
+  static const SkColor kGradientColors[2] = {
+      SK_ColorWHITE,
+      SkColorSetRGB(0xF0, 0xF0, 0xF0)
+  };
+
+  static const SkScalar kGradientPoints[2] = {
+      SkIntToScalar(0),
+      SkIntToScalar(1)
+  };
+
+  SkPoint points[2];
+  points[0].set(SkIntToScalar(0), SkIntToScalar(0));
+  points[1].set(SkIntToScalar(0), SkIntToScalar(rect.height()));
+
+  SkShader* shader = SkGradientShader::CreateLinear(points,
+      kGradientColors, kGradientPoints, arraysize(kGradientPoints),
+      SkShader::kRepeat_TileMode);
+  DCHECK(shader);
+
+  SkPaint paint;
+  paint.setShader(shader);
+  shader->unref();
+
+  paint.setStyle(SkPaint::kFill_Style);
+  paint.setXfermodeMode(SkXfermode::kSrc_Mode);
+
+  SkRect sk_rect;
+  sk_rect.set(SkIntToScalar(0), SkIntToScalar(0),
+              SkIntToScalar(rect.width()), SkIntToScalar(rect.height()));
+  canvas->drawRect(sk_rect, paint);
 }
 
 void NativeThemeChromeos::PaintProgressBar(SkCanvas* canvas,
@@ -713,3 +839,6 @@ void NativeThemeChromeos::PaintButtonLike(SkCanvas* canvas,
     canvas->drawPath(border, stroke_paint);
   }
 }
+
+}  // namespace gfx
+

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,13 @@
 
 #import <QuartzCore/QuartzCore.h>
 
+#include <cmath>
 #include <limits>
 #include <string>
 
-#include "app/mac/nsimage_cache.h"
 #include "base/command_line.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
@@ -24,24 +25,25 @@
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/sidebar/sidebar_container.h"
-#include "chrome/browser/sidebar/sidebar_manager.h"
 #include "chrome/browser/tabs/tab_strip_model.h"
 #include "chrome/browser/tabs/tab_strip_selection_model.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/constrained_window_mac.h"
+#include "chrome/browser/ui/cocoa/drag_util.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/new_tab_button.h"
-#import "chrome/browser/ui/cocoa/profile_menu_button.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util.h"
+#import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_controller.h"
+#import "chrome/browser/ui/cocoa/tabs/tab_strip_drag_controller.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_view.h"
 #import "chrome/browser/ui/cocoa/tabs/throbber_view.h"
 #import "chrome/browser/ui/cocoa/tracking_area.h"
+#include "chrome/browser/ui/constrained_window_tab_helper.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
@@ -49,38 +51,27 @@
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/navigation_controller.h"
-#include "content/browser/tab_contents/navigation_entry.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_service.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/mac/nsimage_cache.h"
+
+using content::OpenURLParams;
+using content::Referrer;
+using content::UserMetricsAction;
+using content::WebContents;
 
 NSString* const kTabStripNumberOfTabsChanged = @"kTabStripNumberOfTabsChanged";
-
-// 10.7 adds public APIs for full-screen support. Provide the declaration so it
-// can be called below when building with the 10.5 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionSDKDeclarations)
-- (void)toggleFullScreen:(id)sender;
-@end
-
-enum {
-  NSWindowFullScreenButton = 7
-};
-
-#endif  // MAC_OS_X_VERSION_10_7
 
 namespace {
 
@@ -89,17 +80,16 @@ namespace {
 const CGFloat kUseFullAvailableWidth = -1.0;
 
 // The amount by which tabs overlap.
-const CGFloat kTabOverlap = 20.0;
+const CGFloat kTabOverlap = 19.0;
+
+// The amount by which mini tabs are separated from normal tabs.
+const CGFloat kLastMiniTabSpacing = 3.0;
 
 // The width and height for a tab's icon.
 const CGFloat kIconWidthAndHeight = 16.0;
 
 // The amount by which the new tab button is offset (from the tabs).
 const CGFloat kNewTabButtonOffset = 8.0;
-
-// The amount by which to shrink the tab strip (on the right) when the
-// incognito badge is present.
-const CGFloat kIncognitoBadgeTabStripShrink = 18;
 
 // Time (in seconds) in which tabs animate to their final position.
 const NSTimeInterval kAnimationDuration = 0.125;
@@ -171,8 +161,6 @@ private:
             givesIndex:(NSInteger*)index
            disposition:(WindowOpenDisposition*)disposition;
 - (void)setNewTabButtonHoverState:(BOOL)showHover;
-- (BOOL)shouldShowProfileMenuButton;
-- (void)updateProfileMenuButton;
 @end
 
 // A simple view class that prevents the Window Server from dragging the area
@@ -185,11 +173,21 @@ private:
 
 - (id)initWithFrame:(NSRect)frameRect
          controller:(TabStripController*)controller;
+
+// Runs a nested runloop to do window move tracking. Overriding
+// -mouseDownCanMoveWindow with a dynamic result instead doesn't work:
+// http://www.cocoabuilder.com/archive/cocoa/219261-conditional-mousedowncanmovewindow-for-nsview.html
+// http://www.cocoabuilder.com/archive/cocoa/92973-brushed-metal-window-dragging.html
+- (void)trackClickForWindowMove:(NSEvent*)event;
 @end
 
 @implementation TabStripControllerDragBlockingView
-- (BOOL)mouseDownCanMoveWindow {return NO;}
-- (void)drawRect:(NSRect)rect {}
+- (BOOL)mouseDownCanMoveWindow {
+  return NO;
+}
+
+- (void)drawRect:(NSRect)rect {
+}
 
 - (id)initWithFrame:(NSRect)frameRect
          controller:(TabStripController*)controller {
@@ -205,19 +203,50 @@ private:
 // closure, and if we find that we got a mouse down we shouldn't have, we send
 // it off to the appropriate view.
 - (void)mouseDown:(NSEvent*)event {
+  NSView* superview = [self superview];
+  NSPoint hitLocation =
+      [[superview superview] convertPoint:[event locationInWindow]
+                                 fromView:nil];
+  NSView* hitView = [superview hitTest:hitLocation];
+
   if ([controller_ inRapidClosureMode]) {
-    NSView* superview = [self superview];
-    NSPoint hitLocation =
-        [[superview superview] convertPoint:[event locationInWindow]
-                                   fromView:nil];
-    NSView* hitView = [superview hitTest:hitLocation];
     if (hitView != self) {
       [hitView mouseDown:event];
       return;
     }
   }
+
+  if (hitView == self) {
+    BrowserWindowController* windowController =
+        [BrowserWindowController browserWindowControllerForView:self];
+    if (![windowController isFullscreen]) {
+      [self trackClickForWindowMove:event];
+      return;
+    }
+  }
   [super mouseDown:event];
 }
+
+- (void)trackClickForWindowMove:(NSEvent*)event {
+  NSWindow* window = [self window];
+  NSPoint frameOrigin = [window frame].origin;
+  NSPoint lastEventLoc = [window convertBaseToScreen:[event locationInWindow]];
+  while ((event = [NSApp nextEventMatchingMask:
+      NSLeftMouseDownMask|NSLeftMouseDraggedMask|NSLeftMouseUpMask
+                                    untilDate:[NSDate distantFuture]
+                                       inMode:NSEventTrackingRunLoopMode
+                                      dequeue:YES]) &&
+      [event type] != NSLeftMouseUp) {
+    base::mac::ScopedNSAutoreleasePool pool;
+
+    NSPoint now = [window convertBaseToScreen:[event locationInWindow]];
+    frameOrigin.x += now.x - lastEventLoc.x;
+    frameOrigin.y += now.y - lastEventLoc.y;
+    [window setFrameOrigin:frameOrigin];
+    lastEventLoc = now;
+  }
+}
+
 @end
 
 #pragma mark -
@@ -271,39 +300,6 @@ private:
 
 @end
 
-namespace TabStripControllerInternal {
-
-// Bridges C++ notifications back to the TabStripController.
-class NotificationBridge : public NotificationObserver {
- public:
-  explicit NotificationBridge(TabStripController* controller,
-                              PrefService* prefService)
-      : controller_(controller) {
-    DCHECK(prefService);
-    usernamePref_.Init(prefs::kGoogleServicesUsername, prefService, this);
-  }
-
-  // Overridden from NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) {
-    DCHECK_EQ(NotificationType::PREF_CHANGED, type.value);
-    std::string* name = Details<std::string>(details).ptr();
-    if (prefs::kGoogleServicesUsername == *name) {
-      [controller_ updateProfileMenuButton];
-      [controller_ layoutTabsWithAnimation:NO regenerateSubviews:NO];
-    }
-  }
-
- private:
-  TabStripController* controller_;  // weak, owns us
-
-  // The Google services user name associated with this BrowserView's profile.
-  StringPrefMember usernamePref_;
-};
-
-} // namespace TabStripControllerInternal
-
 #pragma mark -
 
 // In general, there is a one-to-one correspondence between TabControllers,
@@ -344,7 +340,8 @@ class NotificationBridge : public NotificationObserver {
 
 @implementation TabStripController
 
-@synthesize indentForControls = indentForControls_;
+@synthesize leftIndentForControls = leftIndentForControls_;
+@synthesize rightIndentForControls = rightIndentForControls_;
 
 - (id)initWithView:(TabStripView*)view
         switchView:(NSView*)switchView
@@ -359,6 +356,8 @@ class NotificationBridge : public NotificationObserver {
     hoverTabSelector_.reset(new HoverTabSelector(tabStripModel_));
     delegate_ = delegate;
     bridge_.reset(new TabStripModelObserverBridge(tabStripModel_, self));
+    dragController_.reset(
+        [[TabStripDragController alloc] initWithTabStripController:self]);
     tabContentsArray_.reset([[NSMutableArray alloc] init]);
     tabArray_.reset([[NSMutableArray alloc] init]);
     NSWindow* browserWindow = [view window];
@@ -368,26 +367,19 @@ class NotificationBridge : public NotificationObserver {
     permanentSubviews_.reset([[NSMutableArray alloc] init]);
 
     defaultFavicon_.reset(
-        [app::mac::GetCachedImageWithName(@"nav.pdf") retain]);
+        [gfx::GetCachedImageWithName(@"nav.pdf") retain]);
 
-    [self setIndentForControls:[[self class] defaultIndentForControls]];
+    [self setLeftIndentForControls:[[self class] defaultLeftIndentForControls]];
+    [self setRightIndentForControls:0];
 
     // TODO(viettrungluu): WTF? "For some reason, if the view is present in the
     // nib a priori, it draws correctly. If we create it in code and add it to
     // the tab view, it draws with all sorts of crazy artifacts."
-    newTabButton_ = [view newTabButton];
+    newTabButton_ = [view getNewTabButton];
     [self addSubviewToPermanentList:newTabButton_];
     [newTabButton_ setTarget:nil];
     [newTabButton_ setAction:@selector(commandDispatch:)];
     [newTabButton_ setTag:IDC_NEW_TAB];
-
-    profileMenuButton_ = [view profileMenuButton];
-    [self addSubviewToPermanentList:profileMenuButton_];
-    [self updateProfileMenuButton];
-    // Register pref observers for profile name.
-    notificationBridge_.reset(
-        new TabStripControllerInternal::NotificationBridge(
-            self, browser_->profile()->GetPrefs()));
 
     // Set the images from code because Cocoa fails to find them in our sub
     // bundle during tests.
@@ -463,7 +455,7 @@ class NotificationBridge : public NotificationObserver {
     // list and create the UI for each.
     const int existingTabCount = tabStripModel_->count();
     const TabContentsWrapper* selection =
-        tabStripModel_->GetSelectedTabContents();
+        tabStripModel_->GetActiveTabContents();
     for (int i = 0; i < existingTabCount; ++i) {
       TabContentsWrapper* currentContents = tabStripModel_->GetTabContentsAt(i);
       [self insertTabWithContents:currentContents
@@ -479,9 +471,7 @@ class NotificationBridge : public NotificationObserver {
       }
     }
     // Don't lay out the tabs until after the controller has been fully
-    // constructed. The |verticalLayout_| flag has not been initialized by
-    // subclasses at this point, which would cause layout to potentially use
-    // the wrong mode.
+    // constructed.
     if (existingTabCount) {
       [self performSelectorOnMainThread:@selector(layoutTabs)
                              withObject:nil
@@ -510,7 +500,7 @@ class NotificationBridge : public NotificationObserver {
   return 25.0;
 }
 
-+ (CGFloat)defaultIndentForControls {
++ (CGFloat)defaultLeftIndentForControls {
   // Default indentation leaves enough room so tabs don't overlap with the
   // window controls.
   return 70.0;
@@ -554,7 +544,7 @@ class NotificationBridge : public NotificationObserver {
   }
 
   // New content is in place, delegate should adjust itself accordingly.
-  [delegate_ onActivateTabWithContents:[controller tabContents]];
+  [delegate_ onActivateTabWithContents:[controller webContents]];
 
   // It also restores content autoresizing properties.
   [controller ensureContentsVisible];
@@ -569,12 +559,13 @@ class NotificationBridge : public NotificationObserver {
   TabContentsWrapper* newTab = tabStripModel_->GetTabContentsAt(modelIndex);
   DCHECK(newTab);
   if (newTab) {
-    TabContents::ConstrainedWindowList::iterator it, end;
-    end = newTab->tab_contents()->constrained_window_end();
+    ConstrainedWindowTabHelper::ConstrainedWindowList::iterator it, end;
+    end = newTab->constrained_window_tab_helper()->constrained_window_end();
     NSWindowController* controller = [[newView window] windowController];
     DCHECK([controller isKindOfClass:[BrowserWindowController class]]);
 
-    for (it = newTab->tab_contents()->constrained_window_begin();
+    for (it = newTab->constrained_window_tab_helper()->
+              constrained_window_begin();
          it != end;
          ++it) {
       ConstrainedWindow* constrainedWindow = *it;
@@ -749,7 +740,7 @@ class NotificationBridge : public NotificationObserver {
   if (!tabStripModel_->ContainsIndex(index))
     return;
 
-  UserMetrics::RecordAction(UserMetricsAction("CloseTab_Mouse"));
+  content::RecordAction(UserMetricsAction("CloseTab_Mouse"));
   const NSInteger numberOfOpenTabs = [self numberOfOpenTabs];
   if (numberOfOpenTabs > 1) {
     bool isClosingLastTab = index == numberOfOpenTabs - 1;
@@ -811,12 +802,14 @@ class NotificationBridge : public NotificationObserver {
   return new TabMenuModel(delegate, tabStripModel_, index);
 }
 
-- (void)insertPlaceholderForTab:(TabView*)tab
-                          frame:(NSRect)frame
-                  yStretchiness:(CGFloat)yStretchiness {
+// Returns a weak reference to the controller that manages dragging of tabs.
+- (id<TabDraggingEventTarget>)dragController {
+  return dragController_.get();
+}
+
+- (void)insertPlaceholderForTab:(TabView*)tab frame:(NSRect)frame {
   placeholderTab_ = tab;
   placeholderFrame_ = frame;
-  placeholderStretchiness_ = yStretchiness;
   [self layoutTabsWithAnimation:initialLayoutComplete_ regenerateSubviews:NO];
 }
 
@@ -826,8 +819,9 @@ class NotificationBridge : public NotificationObserver {
 
 - (BOOL)isTabFullyVisible:(TabView*)tab {
   NSRect frame = [tab frame];
-  return NSMinX(frame) >= [self indentForControls] &&
-      NSMaxX(frame) <= NSMaxX([tabStripView_ frame]);
+  return NSMinX(frame) >= [self leftIndentForControls] &&
+      NSMaxX(frame) <= (NSMaxX([tabStripView_ frame]) -
+                        [self rightIndentForControls]);
 }
 
 - (void)showNewTabButton:(BOOL)show {
@@ -867,37 +861,42 @@ class NotificationBridge : public NotificationObserver {
   // if the user is quickly closing tabs. This may be negative, but that's okay
   // (taken care of by |MAX()| when calculating tab sizes).
   CGFloat availableSpace = 0;
-  if (verticalLayout_) {
-    availableSpace = NSHeight([tabStripView_ bounds]);
+  if ([self inRapidClosureMode]) {
+    availableSpace = availableResizeWidth_;
   } else {
-    if ([self inRapidClosureMode]) {
-      availableSpace = availableResizeWidth_;
-    } else {
-      availableSpace = NSWidth([tabStripView_ frame]);
+    availableSpace = NSWidth([tabStripView_ frame]);
 
-      // Account for the widths of the new tab button or the avatar, if any/all
-      // are present.
-      availableSpace -= NSWidth([newTabButton_ frame]) + kNewTabButtonOffset;
-      if (browser_->profile()->IsOffTheRecord())
-        availableSpace -= kIncognitoBadgeTabStripShrink;
-    }
-    availableSpace -= [self indentForControls];
+    // Account for the width of the new tab button.
+    availableSpace -= NSWidth([newTabButton_ frame]) + kNewTabButtonOffset;
+
+    // Account for the right-side controls if not in rapid closure mode.
+    // (In rapid closure mode, the available width is set based on the
+    // position of the rightmost tab, not based on the width of the tab strip,
+    // so the right controls have already been accounted for.)
+    availableSpace -= [self rightIndentForControls];
   }
+
+  // Need to leave room for the left-side controls even in rapid closure mode.
+  availableSpace -= [self leftIndentForControls];
+
+  // If there are any mini tabs, account for the extra spacing between the last
+  // mini tab and the first regular tab.
+  if ([self numberOfOpenMiniTabs])
+    availableSpace -= kLastMiniTabSpacing;
 
   // This may be negative, but that's okay (taken care of by |MAX()| when
   // calculating tab sizes). "mini" tabs in horizontal mode just get a special
   // section, they don't change size.
   CGFloat availableSpaceForNonMini = availableSpace;
-  if (!verticalLayout_) {
-      availableSpaceForNonMini -=
-          [self numberOfOpenMiniTabs] * (kMiniTabWidth - kTabOverlap);
-  }
+  availableSpaceForNonMini -=
+      [self numberOfOpenMiniTabs] * (kMiniTabWidth - kTabOverlap);
 
   // Initialize |nonMiniTabWidth| in case there aren't any non-mini-tabs; this
   // value shouldn't actually be used.
   CGFloat nonMiniTabWidth = kMaxTabWidth;
+  CGFloat nonMiniTabWidthFraction = 0;
   const NSInteger numberOfOpenNonMiniTabs = [self numberOfOpenNonMiniTabs];
-  if (!verticalLayout_ && numberOfOpenNonMiniTabs) {
+  if (numberOfOpenNonMiniTabs) {
     // Find the width of a non-mini-tab. This only applies to horizontal
     // mode. Add in the amount we "get back" from the tabs overlapping.
     availableSpaceForNonMini += (numberOfOpenNonMiniTabs - 1) * kTabOverlap;
@@ -907,12 +906,26 @@ class NotificationBridge : public NotificationObserver {
 
     // Clamp the width between the max and min.
     nonMiniTabWidth = MAX(MIN(nonMiniTabWidth, kMaxTabWidth), kMinTabWidth);
+
+    // Separate integral and fractional parts.
+    CGFloat integralPart = std::floor(nonMiniTabWidth);
+    nonMiniTabWidthFraction = nonMiniTabWidth - integralPart;
+    nonMiniTabWidth = integralPart;
   }
 
   BOOL visible = [[tabStripView_ window] isVisible];
 
-  CGFloat offset = [self indentForControls];
+  CGFloat offset = [self leftIndentForControls];
   bool hasPlaceholderGap = false;
+  // Whether or not the last tab processed by the loop was a mini tab.
+  BOOL isLastTabMini = NO;
+  CGFloat tabWidthAccumulatedFraction = 0;
+  NSInteger laidOutNonMiniTabs = 0;
+
+  // Remove all the tooltip rects on the tab strip so that we can re-apply
+  // them to correspond with the new tab positions.
+  [tabStripView_ removeAllToolTips];
+
   for (TabController* tab in tabArray_.get()) {
     // Ignore a tab that is going through a close animation.
     if ([closingControllers_ containsObject:tab])
@@ -921,13 +934,9 @@ class NotificationBridge : public NotificationObserver {
     BOOL isPlaceholder = [[tab view] isEqual:placeholderTab_];
     NSRect tabFrame = [[tab view] frame];
     tabFrame.size.height = [[self class] defaultTabHeight] + 1;
-    if (verticalLayout_) {
-      tabFrame.origin.y = availableSpace - tabFrame.size.height - offset;
-      tabFrame.origin.x = 0;
-    } else {
-      tabFrame.origin.y = 0;
-      tabFrame.origin.x = offset;
-    }
+    tabFrame.origin.y = 0;
+    tabFrame.origin.x = offset;
+
     // If the tab is hidden, we consider it a new tab. We make it visible
     // and animate it in.
     BOOL newTab = [[tab view] isHidden];
@@ -939,12 +948,7 @@ class NotificationBridge : public NotificationObserver {
       // We need a duration or else it doesn't cancel an inflight animation.
       ScopedNSAnimationContextGroup localAnimationGroup(animate);
       localAnimationGroup.SetCurrentContextShortestDuration();
-      if (verticalLayout_)
-        tabFrame.origin.y = availableSpace - tabFrame.size.height - offset;
-      else
-        tabFrame.origin.x = placeholderFrame_.origin.x;
-      // TODO(alcor): reenable this
-      //tabFrame.size.height += 10.0 * placeholderStretchiness_;
+      tabFrame.origin.x = placeholderFrame_.origin.x;
       id target = animate ? [[tab view] animator] : [tab view];
       [target setFrame:tabFrame];
 
@@ -956,37 +960,58 @@ class NotificationBridge : public NotificationObserver {
     }
 
     if (placeholderTab_ && !hasPlaceholderGap) {
-      const CGFloat placeholderMin =
-          verticalLayout_ ? NSMinY(placeholderFrame_) :
-                            NSMinX(placeholderFrame_);
-      if (verticalLayout_) {
-        if (NSMidY(tabFrame) > placeholderMin) {
-          hasPlaceholderGap = true;
-          offset += NSHeight(placeholderFrame_);
-          tabFrame.origin.y = availableSpace - tabFrame.size.height - offset;
-        }
-      } else {
-        // If the left edge is to the left of the placeholder's left, but the
-        // mid is to the right of it slide over to make space for it.
-        if (NSMidX(tabFrame) > placeholderMin) {
-          hasPlaceholderGap = true;
-          offset += NSWidth(placeholderFrame_);
-          offset -= kTabOverlap;
-          tabFrame.origin.x = offset;
-        }
+      const CGFloat placeholderMin = NSMinX(placeholderFrame_);
+      // If the left edge is to the left of the placeholder's left, but the
+      // mid is to the right of it slide over to make space for it.
+      if (NSMidX(tabFrame) > placeholderMin) {
+        hasPlaceholderGap = true;
+        offset += NSWidth(placeholderFrame_);
+        offset -= kTabOverlap;
+        tabFrame.origin.x = offset;
       }
     }
 
     // Set the width. Selected tabs are slightly wider when things get really
     // small and thus we enforce a different minimum width.
-    tabFrame.size.width = [tab mini] ?
-        ([tab app] ? kAppTabWidth : kMiniTabWidth) : nonMiniTabWidth;
+    BOOL isMini = [tab mini];
+    if (isMini) {
+      tabFrame.size.width = [tab app] ? kAppTabWidth : kMiniTabWidth;
+    } else {
+      // Tabs have non-integer widths. Assign the integer part to the tab, and
+      // keep an accumulation of the fractional parts. When the fractional
+      // accumulation gets to be more than one pixel, assign that to the current
+      // tab being laid out. This is vaguely inspired by Bresenham's line
+      // algorithm.
+      tabFrame.size.width = nonMiniTabWidth;
+      tabWidthAccumulatedFraction += nonMiniTabWidthFraction;
+
+      if (tabWidthAccumulatedFraction >= 1.0) {
+        ++tabFrame.size.width;
+        --tabWidthAccumulatedFraction;
+      }
+
+      // In case of rounding error, give any left over pixels to the last tab.
+      if (laidOutNonMiniTabs == numberOfOpenNonMiniTabs - 1 &&
+          tabWidthAccumulatedFraction > 0.5) {
+        ++tabFrame.size.width;
+      }
+
+      ++laidOutNonMiniTabs;
+    }
+
     if ([tab selected])
       tabFrame.size.width = MAX(tabFrame.size.width, kMinSelectedTabWidth);
 
+    // If this is the first non-mini tab, then add a bit of spacing between this
+    // and the last mini tab.
+    if (!isMini && isLastTabMini) {
+      offset += kLastMiniTabSpacing;
+      tabFrame.origin.x = offset;
+    }
+    isLastTabMini = isMini;
+
     // Animate a new tab in by putting it below the horizon unless told to put
     // it in a specific location (i.e., from a drop).
-    // TODO(pinkerton): figure out vertical tab animations.
     if (newTab && visible && animate) {
       if (NSEqualRects(droppedTabFrame_, NSZeroRect)) {
         [[tab view] setFrame:NSOffsetRect(tabFrame, 0, -NSHeight(tabFrame))];
@@ -1009,12 +1034,27 @@ class NotificationBridge : public NotificationObserver {
 
     enclosingRect = NSUnionRect(tabFrame, enclosingRect);
 
-    if (verticalLayout_) {
-      offset += NSHeight(tabFrame);
-    } else {
-      offset += NSWidth(tabFrame);
-      offset -= kTabOverlap;
-    }
+    offset += NSWidth(tabFrame);
+    offset -= kTabOverlap;
+
+    // Create a rect which starts at the point where the tab overlap will end so
+    // that as the mouse cursor crosses over the boundary it will get updated.
+    // The inset is based on a multiplier of the height.
+    float insetWidth = NSHeight(tabFrame) * [TabView insetMultiplier];
+    // NSInsetRect will also expose the "insetWidth" at the right of the tab.
+    NSRect tabToolTipRect = NSInsetRect(tabFrame, insetWidth, 0);
+    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
+
+    // Also create two more rects in the remaining space so that the tooltip
+    // is more likely to get updated crossing tabs.
+    // These rects "cover" the right edge of the previous tab that was exposed
+    // since the tabs overlap.
+    tabToolTipRect = tabFrame;
+    tabToolTipRect.size.width = insetWidth / 2.0;
+    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
+
+    tabToolTipRect = NSOffsetRect(tabToolTipRect, insetWidth / 2.0, 0);
+    [tabStripView_ addToolTipRect:tabToolTipRect owner:self userData:nil];
   }
 
   // Hide the new tab button if we're explicitly told to. It may already
@@ -1061,53 +1101,23 @@ class NotificationBridge : public NotificationObserver {
     }
   }
 
-  if (profileMenuButton_ && ![profileMenuButton_ isHidden]) {
-    CGFloat maxX;
-    if ([newTabButton_ isHidden]) {
-      maxX = std::max(offset, NSMaxX(placeholderFrame_) - kTabOverlap);
-    } else {
-      maxX = NSMaxX(newTabTargetFrame_);
-    }
-    NSRect profileMenuButtonFrame = [profileMenuButton_ frame];
-    NSSize minSize = [profileMenuButton_ minControlSize];
-
-    // Make room for the full screen button if necessary.
-    if (!hasUpdatedProfileMenuButtonXOffset_) {
-      hasUpdatedProfileMenuButtonXOffset_ = YES;
-      if ([[profileMenuButton_ window]
-          respondsToSelector:@selector(toggleFullScreen:)]) {
-        NSButton* fullscreenButton = [[profileMenuButton_ window]
-            standardWindowButton:NSWindowFullScreenButton];
-        if (fullscreenButton) {
-          profileMenuButtonFrame.origin.x = NSMinX([fullscreenButton frame]) -
-              NSWidth(profileMenuButtonFrame) - kProfileMenuButtonOffset;
-        }
-      }
-    }
-
-    // TODO(sail): Animate this.
-    CGFloat availableWidth = NSMaxX(profileMenuButtonFrame) - maxX -
-                             kProfileMenuButtonOffset;
-    if (availableWidth > minSize.width) {
-      [profileMenuButton_ setShouldShowProfileDisplayName:YES];
-    } else {
-      [profileMenuButton_ setShouldShowProfileDisplayName:NO];
-    }
-
-    NSSize desiredSize = [profileMenuButton_ desiredControlSize];
-    NSRect rect;
-    rect.size.width = std::min(desiredSize.width,
-                               std::max(availableWidth, minSize.width));
-    rect.size.height = desiredSize.height;
-    rect.origin.y = NSMaxY(profileMenuButtonFrame) - rect.size.height;
-    rect.origin.x = NSMaxX(profileMenuButtonFrame) - rect.size.width;
-    [profileMenuButton_ setFrame:rect];
-  }
-
   [dragBlockingView_ setFrame:enclosingRect];
+
+  // Add a catch-all tooltip rect which will handle any remaining tab strip
+  // region not covered by tab-specific rects.
+  [tabStripView_ addToolTipRect:enclosingRect owner:self userData:nil];
 
   // Mark that we've successfully completed layout of at least one tab.
   initialLayoutComplete_ = YES;
+}
+
+// Return the current hovered tab's tooltip when requested by the tooltip
+// manager.
+- (NSString*) view:(NSView*)view
+  stringForToolTip:(NSToolTipTag)tag
+             point:(NSPoint)point
+          userData:(void*)data {
+  return [hoveredTab_ toolTipText];
 }
 
 // When we're told to layout from the public API we usually want to animate,
@@ -1116,9 +1126,13 @@ class NotificationBridge : public NotificationObserver {
   [self layoutTabsWithAnimation:initialLayoutComplete_ regenerateSubviews:YES];
 }
 
+- (void)layoutTabsWithoutAnimation {
+  [self layoutTabsWithAnimation:NO regenerateSubviews:YES];
+}
+
 // Handles setting the title of the tab based on the given |contents|. Uses
 // a canned string if |contents| is NULL.
-- (void)setTabTitle:(NSViewController*)tab withContents:(TabContents*)contents {
+- (void)setTabTitle:(NSViewController*)tab withContents:(WebContents*)contents {
   NSString* titleString = nil;
   if (contents)
     titleString = base::SysUTF16ToNSString(contents->GetTitle());
@@ -1146,8 +1160,8 @@ class NotificationBridge : public NotificationObserver {
   // Make a new tab. Load the contents of this tab from the nib and associate
   // the new controller with |contents| so it can be looked up later.
   scoped_nsobject<TabContentsController> contentsController(
-      [[TabContentsController alloc] initWithContents:contents->tab_contents()
-                                             delegate:self]);
+      [[TabContentsController alloc]
+          initWithContents:contents->web_contents()]);
   [tabContentsArray_ insertObject:contentsController atIndex:index];
 
   // Make a new tab and add it to the strip. Keep track of its controller.
@@ -1155,7 +1169,7 @@ class NotificationBridge : public NotificationObserver {
   [newController setMini:tabStripModel_->IsMiniTab(modelIndex)];
   [newController setPinned:tabStripModel_->IsTabPinned(modelIndex)];
   [newController setApp:tabStripModel_->IsAppTab(modelIndex)];
-  [newController setUrl:contents->tab_contents()->GetURL()];
+  [newController setUrl:contents->web_contents()->GetURL()];
   [tabArray_ insertObject:newController atIndex:index];
   NSView* newView = [newController view];
 
@@ -1165,7 +1179,7 @@ class NotificationBridge : public NotificationObserver {
   [newView setFrame:NSOffsetRect([newView frame],
                                  0, -[[self class] defaultTabHeight])];
 
-  [self setTabTitle:newController withContents:contents->tab_contents()];
+  [self setTabTitle:newController withContents:contents->web_contents()];
 
   // If a tab is being inserted, we can again use the entire tab strip width
   // for layout.
@@ -1200,16 +1214,16 @@ class NotificationBridge : public NotificationObserver {
   // Take closing tabs into account.
   NSInteger activeIndex = [self indexFromModelIndex:modelIndex];
 
-  if (oldContents && oldContents != newContents) {
-    int oldModelIndex =
-        browser_->GetIndexOfController(&(oldContents->controller()));
+  if (oldContents) {
+    int oldModelIndex = browser_->GetIndexOfController(
+        &(oldContents->web_contents()->GetController()));
     if (oldModelIndex != -1) {  // When closing a tab, the old tab may be gone.
       NSInteger oldIndex = [self indexFromModelIndex:oldModelIndex];
       TabContentsController* oldController =
           [tabContentsArray_ objectAtIndex:oldIndex];
       [oldController willBecomeUnselectedTab];
-      oldContents->view()->StoreFocus();
-      oldContents->tab_contents()->WasHidden();
+      oldContents->web_contents()->GetView()->StoreFocus();
+      oldContents->web_contents()->WasHidden();
     }
   }
 
@@ -1244,8 +1258,8 @@ class NotificationBridge : public NotificationObserver {
   [self swapInTabAtIndex:modelIndex];
 
   if (newContents) {
-    newContents->tab_contents()->DidBecomeSelected();
-    newContents->view()->RestoreFocus();
+    newContents->web_contents()->DidBecomeSelected();
+    newContents->web_contents()->GetView()->RestoreFocus();
 
     if (newContents->find_tab_helper()->find_ui_active())
       browser_->GetFindBarController()->find_bar()->SetFocusAndSelection();
@@ -1258,20 +1272,19 @@ class NotificationBridge : public NotificationObserver {
   NSInteger index = [self indexFromModelIndex:modelIndex];
   TabContentsController* oldController =
       [tabContentsArray_ objectAtIndex:index];
-  DCHECK_EQ(oldContents->tab_contents(), [oldController tabContents]);
+  DCHECK_EQ(oldContents->web_contents(), [oldController webContents]);
 
   // Simply create a new TabContentsController for |newContents| and place it
   // into the array, replacing |oldContents|.  A ActiveTabChanged notification
   // will follow, at which point we will install the new view.
   scoped_nsobject<TabContentsController> newController(
       [[TabContentsController alloc]
-          initWithContents:newContents->tab_contents()
-                  delegate:self]);
+          initWithContents:newContents->web_contents()]);
 
   // Bye bye, |oldController|.
   [tabContentsArray_ replaceObjectAtIndex:index withObject:newController];
 
-  [delegate_ onReplaceTabWithContents:newContents->tab_contents()];
+  [delegate_ onReplaceTabWithContents:newContents->web_contents()];
 
   // Fake a tab changed notification to force tab titles and favicons to update.
   [self tabChangedWithContents:newContents
@@ -1389,7 +1402,7 @@ class NotificationBridge : public NotificationObserver {
       postNotificationName:kTabStripNumberOfTabsChanged
                     object:self];
 
-  [delegate_ onTabDetachedWithContents:contents->tab_contents()];
+  [delegate_ onTabDetachedWithContents:contents->web_contents()];
 }
 
 // A helper routine for creating an NSImageView to hold the favicon or app icon
@@ -1446,13 +1459,13 @@ class NotificationBridge : public NotificationObserver {
   TabLoadingState oldState = [tabController loadingState];
   TabLoadingState newState = kTabDone;
   NSImage* throbberImage = nil;
-  if (contents->tab_contents()->is_crashed()) {
+  if (contents->web_contents()->IsCrashed()) {
     newState = kTabCrashed;
     newHasIcon = true;
-  } else if (contents->tab_contents()->waiting_for_response()) {
+  } else if (contents->web_contents()->IsWaitingForResponse()) {
     newState = kTabWaiting;
     throbberImage = throbberWaitingImage;
-  } else if (contents->tab_contents()->is_loading()) {
+  } else if (contents->web_contents()->IsLoading()) {
     newState = kTabLoading;
     throbberImage = throbberLoadingImage;
   }
@@ -1499,7 +1512,7 @@ class NotificationBridge : public NotificationObserver {
   NSInteger index = [self indexFromModelIndex:modelIndex];
 
   if (modelIndex == tabStripModel_->active_index())
-    [delegate_ onTabChanged:change withContents:contents->tab_contents()];
+    [delegate_ onTabChanged:change withContents:contents->web_contents()];
 
   if (change == TabStripModelObserver::TITLE_NOT_LOADING) {
     // TODO(sky): make this work.
@@ -1510,13 +1523,13 @@ class NotificationBridge : public NotificationObserver {
   TabController* tabController = [tabArray_ objectAtIndex:index];
 
   if (change != TabStripModelObserver::LOADING_ONLY)
-    [self setTabTitle:tabController withContents:contents->tab_contents()];
+    [self setTabTitle:tabController withContents:contents->web_contents()];
 
   [self updateFaviconForContents:contents atIndex:modelIndex];
 
   TabContentsController* updatedController =
       [tabContentsArray_ objectAtIndex:index];
-  [updatedController tabDidChange:contents->tab_contents()];
+  [updatedController tabDidChange:contents->web_contents()];
 }
 
 // Called when a tab is moved (usually by drag&drop). Keep our parallel arrays
@@ -1566,7 +1579,7 @@ class NotificationBridge : public NotificationObserver {
   [tabController setMini:tabStripModel_->IsMiniTab(modelIndex)];
   [tabController setPinned:tabStripModel_->IsTabPinned(modelIndex)];
   [tabController setApp:tabStripModel_->IsAppTab(modelIndex)];
-  [tabController setUrl:contents->tab_contents()->GetURL()];
+  [tabController setUrl:contents->web_contents()->GetURL()];
   [self updateFaviconForContents:contents atIndex:modelIndex];
   // If the tab is being restored and it's pinned, the mini state is set after
   // the tab has already been rendered, so re-layout the tabstrip. In all other
@@ -1895,8 +1908,9 @@ class NotificationBridge : public NotificationObserver {
   // Either insert a new tab or open in a current tab.
   switch (disposition) {
     case NEW_FOREGROUND_TAB: {
-      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"));
-      browser::NavigateParams params(browser_, *url, PageTransition::TYPED);
+      content::RecordAction(UserMetricsAction("Tab_DropURLBetweenTabs"));
+      browser::NavigateParams params(
+          browser_, *url, content::PAGE_TRANSITION_TYPED);
       params.disposition = disposition;
       params.tabstrip_index = index;
       params.tabstrip_add_types =
@@ -1905,10 +1919,10 @@ class NotificationBridge : public NotificationObserver {
       break;
     }
     case CURRENT_TAB:
-      UserMetrics::RecordAction(UserMetricsAction("Tab_DropURLOnTab"));
-      tabStripModel_->GetTabContentsAt(index)
-          ->tab_contents()->OpenURL(*url, GURL(), CURRENT_TAB,
-                                    PageTransition::TYPED);
+      content::RecordAction(UserMetricsAction("Tab_DropURLOnTab"));
+      OpenURLParams params(
+          *url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
+      tabStripModel_->GetTabContentsAt(index)->web_contents()->OpenURL(params);
       tabStripModel_->ActivateTabAt(index, true);
       break;
     default:
@@ -2016,6 +2030,11 @@ class NotificationBridge : public NotificationObserver {
   }
 }
 
+// (URLDropTargetController protocol)
+- (BOOL)isUnsupportedDropData:(id<NSDraggingInfo>)info {
+  return drag_util::IsUnsupportedDropData(browser_->profile(), info);
+}
+
 - (GTMWindowSheetController*)sheetController {
   if (!sheetController_.get())
     sheetController_.reset([[GTMWindowSheetController alloc]
@@ -2027,14 +2046,6 @@ class NotificationBridge : public NotificationObserver {
   // Make sure there are no open sheets.
   DCHECK_EQ(0U, [[sheetController_ viewsWithAttachedSheets] count]);
   sheetController_.reset();
-}
-
-// TabContentsControllerDelegate protocol.
-- (void)tabContentsViewFrameWillChange:(TabContentsController*)source
-                             frameRect:(NSRect)frameRect {
-  id<TabContentsControllerDelegate> controller =
-      [[switchView_ window] windowController];
-  [controller tabContentsViewFrameWillChange:source frameRect:frameRect];
 }
 
 - (TabContentsController*)activeTabContentsController {
@@ -2072,7 +2083,8 @@ class NotificationBridge : public NotificationObserver {
   // Changing it? Do not forget to modify removeConstrainedWindow too.
   // We use the TabContentsController's view in |swapInTabAtIndex|, so we have
   // to pass it to the sheet controller here.
-  NSView* tabContentsView = [window->owner()->GetNativeView() superview];
+  NSView* tabContentsView =
+      [window->owner()->web_contents()->GetNativeView() superview];
   window->delegate()->RunSheet([self sheetController], tabContentsView);
 
   // TODO(avi, thakis): GTMWindowSheetController has no api to move tabsheets
@@ -2090,12 +2102,18 @@ class NotificationBridge : public NotificationObserver {
 }
 
 - (void)removeConstrainedWindow:(ConstrainedWindowMac*)window {
-  NSView* tabContentsView = [window->owner()->GetNativeView() superview];
+  NSView* tabContentsView =
+      [window->owner()->web_contents()->GetNativeView() superview];
 
   // TODO(avi, thakis): GTMWindowSheetController has no api to move tabsheets
   // between windows. Until then, we have to prevent having to move a tabsheet
   // between windows, e.g. no tearing off of tabs.
   NSInteger modelIndex = [self modelIndexForContentsView:tabContentsView];
+  if (modelIndex < 0) {
+    // This can happen during shutdown where the tab contents view has already
+    // removed itself.
+    return;
+  }
   NSInteger index = [self indexFromModelIndex:modelIndex];
   BrowserWindowController* controller =
       (BrowserWindowController*)[[switchView_ window] windowController];
@@ -2103,28 +2121,6 @@ class NotificationBridge : public NotificationObserver {
   if (index >= 0) {
     [controller setTab:[self viewAtIndex:index] isDraggable:YES];
   }
-}
-
-- (BOOL)shouldShowProfileMenuButton {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles))
-    return NO;
-  if (browser_->profile()->IsOffTheRecord())
-    return NO;
-  return (!browser_->profile()->GetPrefs()->GetString(
-        prefs::kGoogleServicesUsername).empty());
-}
-
-- (void)updateProfileMenuButton {
-  if (![self shouldShowProfileMenuButton]) {
-    [profileMenuButton_ setHidden:YES];
-    return;
-  }
-
-  std::string profileName = browser_->profile()->GetPrefs()->GetString(
-      prefs::kGoogleServicesUsername);
-  [profileMenuButton_ setProfileDisplayName:
-      [NSString stringWithUTF8String:profileName.c_str()]];
-  [profileMenuButton_ setHidden:NO];
 }
 
 @end

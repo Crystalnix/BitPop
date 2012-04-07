@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,10 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 
+#if defined(OS_OPENBSD)
+#include <sys/uio.h>
+#endif
+
 #include <string>
 #include <map>
 
@@ -20,10 +24,12 @@
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/global_descriptors_posix.h"
+#include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/process_util.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/synchronization/lock.h"
 #include "ipc/ipc_descriptors.h"
@@ -101,15 +107,9 @@ class PipeMap {
 
   // Remove the mapping for the given channel id. No error is signaled if the
   // channel_id doesn't exist
-  void RemoveAndClose(const std::string& channel_id) {
+  void Remove(const std::string& channel_id) {
     base::AutoLock locked(lock_);
-
-    ChannelToFDMap::iterator i = map_.find(channel_id);
-    if (i != map_.end()) {
-      if (HANDLE_EINTR(close(i->second)) < 0)
-        PLOG(ERROR) << "close " << channel_id;
-      map_.erase(i);
-    }
+    map_.erase(channel_id);
   }
 
   // Insert a mapping from @channel_id to @fd. It's a fatal error to insert a
@@ -143,10 +143,9 @@ COMPILE_ASSERT(sizeof(((sockaddr_un*)0)->sun_path) >= kMaxPipeNameLength,
 bool CreateServerUnixDomainSocket(const std::string& pipe_name,
                                   int* server_listen_fd) {
   DCHECK(server_listen_fd);
-  DCHECK_GT(pipe_name.length(), 0u);
-  DCHECK_LT(pipe_name.length(), kMaxPipeNameLength);
 
   if (pipe_name.length() == 0 || pipe_name.length() >= kMaxPipeNameLength) {
+    DLOG(ERROR) << "pipe_name.length() == " << pipe_name.length();
     return false;
   }
 
@@ -171,6 +170,8 @@ bool CreateServerUnixDomainSocket(const std::string& pipe_name,
   FilePath path(pipe_name);
   FilePath dir_path = path.DirName();
   if (!file_util::CreateDirectory(dir_path)) {
+    if (HANDLE_EINTR(close(fd)) < 0)
+      PLOG(ERROR) << "close " << pipe_name;
     return false;
   }
 
@@ -293,6 +294,10 @@ bool SocketWriteErrorIsRecoverable() {
 }  // namespace
 //------------------------------------------------------------------------------
 
+#if defined(OS_LINUX)
+int Channel::ChannelImpl::global_pid_ = 0;
+#endif  // OS_LINUX
+
 Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle& channel_handle,
                                   Mode mode, Listener* listener)
     : mode_(mode),
@@ -309,10 +314,11 @@ Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle& channel_handle,
       pipe_name_(channel_handle.name),
       listener_(listener),
       must_unlink_(false) {
+  memset(input_buf_, 0, sizeof(input_buf_));
+  memset(input_cmsg_buf_, 0, sizeof(input_cmsg_buf_));
   if (!CreatePipe(channel_handle)) {
     // The pipe may have been closed already.
     const char *modestr = (mode_ & MODE_SERVER_FLAG) ? "server" : "client";
-    // The pipe may have been closed already.
     LOG(WARNING) << "Unable to create pipe named \"" << channel_handle.name
                  << "\" in " << modestr << " mode";
   }
@@ -398,7 +404,7 @@ bool Channel::ChannelImpl::CreatePipe(
         // Case 3 from comment above.
         // We only allow one connection.
         local_pipe = HANDLE_EINTR(dup(local_pipe));
-        PipeMap::GetInstance()->RemoveAndClose(pipe_name_);
+        PipeMap::GetInstance()->Remove(pipe_name_);
       } else {
         // Case 4a from comment above.
         // Guard against inappropriate reuse of the initial IPC channel.  If
@@ -421,6 +427,7 @@ bool Channel::ChannelImpl::CreatePipe(
         LOG(ERROR) << "Server already exists for " << pipe_name_;
         return false;
       }
+      base::AutoLock lock(client_pipe_lock_);
       if (!SocketPair(&local_pipe, &client_pipe_))
         return false;
       PipeMap::GetInstance()->Insert(pipe_name_, client_pipe_);
@@ -524,10 +531,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
     }
     DCHECK(bytes_read);
 
-    if (client_pipe_ != -1) {
-      PipeMap::GetInstance()->RemoveAndClose(pipe_name_);
-      client_pipe_ = -1;
-    }
+    CloseClientFileDescriptor();
 
     // a pointer to an array of |num_wire_fds| file descriptors from the read
     const int* wire_fds = NULL;
@@ -580,8 +584,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       p = input_buf_;
       end = p + bytes_read;
     } else {
-      if (input_overflow_buf_.size() >
-         static_cast<size_t>(kMaximumMessageSize - bytes_read)) {
+      if (input_overflow_buf_.size() > (kMaximumMessageSize - bytes_read)) {
         input_overflow_buf_.clear();
         LOG(ERROR) << "IPC message is too big";
         return false;
@@ -671,7 +674,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
           }
 
           if (header_fds >
-              FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE) {
+              FileDescriptorSet::kMaxDescriptorsPerMessage) {
             // There are too many descriptors in this message
             error = "Message requires an excessive number of descriptors";
           }
@@ -735,7 +738,7 @@ bool Channel::ChannelImpl::ProcessIncomingMessages() {
       }
       input_overflow_fds_ = std::vector<int>(&fds[fds_i], &fds[num_fds]);
       fds_i = 0;
-      fds = &input_overflow_fds_[0];
+      fds = vector_as_array(&input_overflow_fds_);
       num_fds = input_overflow_fds_.size();
     }
     input_overflow_buf_.assign(p, end - p);
@@ -777,7 +780,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
     msgh.msg_iov = &iov;
     msgh.msg_iovlen = 1;
     char buf[CMSG_SPACE(
-        sizeof(int[FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE]))];
+        sizeof(int) * FileDescriptorSet::kMaxDescriptorsPerMessage)];
 
     ssize_t bytes_written = 1;
     int fd_written = -1;
@@ -788,7 +791,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
       struct cmsghdr *cmsg;
       const unsigned num_fds = msg->file_descriptor_set()->size();
 
-      DCHECK_LE(num_fds, FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE);
+      DCHECK(num_fds <= FileDescriptorSet::kMaxDescriptorsPerMessage);
       if (msg->file_descriptor_set()->ContainsDirectoryDescriptor()) {
         LOG(FATAL) << "Panic: attempting to transport directory descriptor over"
                       " IPC. Aborting to maintain sandbox isolation.";
@@ -810,7 +813,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
       msgh.msg_controllen = cmsg->cmsg_len;
 
       // DCHECK_LE above already checks that
-      // num_fds < MAX_DESCRIPTORS_PER_MESSAGE so no danger of overflow.
+      // num_fds < kMaxDescriptorsPerMessage so no danger of overflow.
       msg->header()->num_fds = static_cast<uint16>(num_fds);
 
 #if defined(IPC_USES_READWRITE)
@@ -912,8 +915,29 @@ bool Channel::ChannelImpl::Send(Message* message) {
   return true;
 }
 
-int Channel::ChannelImpl::GetClientFileDescriptor() const {
+int Channel::ChannelImpl::GetClientFileDescriptor() {
+  base::AutoLock lock(client_pipe_lock_);
   return client_pipe_;
+}
+
+int Channel::ChannelImpl::TakeClientFileDescriptor() {
+  base::AutoLock lock(client_pipe_lock_);
+  int fd = client_pipe_;
+  if (client_pipe_ != -1) {
+    PipeMap::GetInstance()->Remove(pipe_name_);
+    client_pipe_ = -1;
+  }
+  return fd;
+}
+
+void Channel::ChannelImpl::CloseClientFileDescriptor() {
+  base::AutoLock lock(client_pipe_lock_);
+  if (client_pipe_ != -1) {
+    PipeMap::GetInstance()->Remove(pipe_name_);
+    if (HANDLE_EINTR(close(client_pipe_)) < 0)
+      PLOG(ERROR) << "close " << pipe_name_;
+    client_pipe_ = -1;
+  }
 }
 
 bool Channel::ChannelImpl::AcceptsConnections() const {
@@ -926,7 +950,7 @@ bool Channel::ChannelImpl::HasAcceptedConnection() const {
 
 bool Channel::ChannelImpl::GetClientEuid(uid_t* client_euid) const {
   DCHECK(HasAcceptedConnection());
-#if defined(OS_MACOSX)
+#if defined(OS_MACOSX) || defined(OS_OPENBSD)
   uid_t peer_euid;
   gid_t peer_gid;
   if (getpeereid(pipe_, &peer_euid, &peer_gid) != 0) {
@@ -935,6 +959,8 @@ bool Channel::ChannelImpl::GetClientEuid(uid_t* client_euid) const {
   }
   *client_euid = peer_euid;
   return true;
+#elif defined(OS_SOLARIS)
+  return false;
 #else
   struct ucred cred;
   socklen_t cred_len = sizeof(cred);
@@ -942,7 +968,7 @@ bool Channel::ChannelImpl::GetClientEuid(uid_t* client_euid) const {
     PLOG(ERROR) << "getsockopt " << pipe_;
     return false;
   }
-  if (cred_len < sizeof(cred)) {
+  if (static_cast<unsigned>(cred_len) < sizeof(cred)) {
     NOTREACHED() << "Truncated ucred from SO_PEERCRED?";
     return false;
   }
@@ -987,6 +1013,19 @@ void Channel::ChannelImpl::ResetToAcceptingConnectionState() {
   }
   input_overflow_fds_.clear();
 }
+
+// static
+bool Channel::ChannelImpl::IsNamedServerInitialized(
+    const std::string& channel_id) {
+  return file_util::PathExists(FilePath(channel_id));
+}
+
+#if defined(OS_LINUX)
+// static
+void Channel::ChannelImpl::SetGlobalPid(int pid) {
+  global_pid_ = pid;
+}
+#endif  // OS_LINUX
 
 // Called by libevent when we can read from the pipe without blocking.
 void Channel::ChannelImpl::OnFileCanReadWithoutBlocking(int fd) {
@@ -1100,13 +1139,23 @@ void Channel::ChannelImpl::ClosePipeOnError() {
   }
 }
 
+int Channel::ChannelImpl::GetHelloMessageProcId() {
+  int pid = base::GetCurrentProcId();
+#if defined(OS_LINUX)
+  // Our process may be in a sandbox with a separate PID namespace.
+  if (global_pid_) {
+    pid = global_pid_;
+  }
+#endif
+  return pid;
+}
+
 void Channel::ChannelImpl::QueueHelloMessage() {
   // Create the Hello message
   scoped_ptr<Message> msg(new Message(MSG_ROUTING_NONE,
                                       HELLO_MESSAGE_TYPE,
                                       IPC::Message::PRIORITY_NORMAL));
-
-  if (!msg->WriteInt(base::GetCurrentProcId())) {
+  if (!msg->WriteInt(GetHelloMessageProcId())) {
     NOTREACHED() << "Unable to pickle hello message proc id";
   }
 #if defined(IPC_USES_READWRITE)
@@ -1144,10 +1193,7 @@ void Channel::ChannelImpl::Close() {
     server_listen_connection_watcher_.StopWatchingFileDescriptor();
   }
 
-  if (client_pipe_ != -1) {
-    PipeMap::GetInstance()->RemoveAndClose(pipe_name_);
-    client_pipe_ = -1;
-  }
+  CloseClientFileDescriptor();
 }
 
 //------------------------------------------------------------------------------
@@ -1181,6 +1227,10 @@ int Channel::GetClientFileDescriptor() const {
   return channel_impl_->GetClientFileDescriptor();
 }
 
+int Channel::TakeClientFileDescriptor() {
+  return channel_impl_->TakeClientFileDescriptor();
+}
+
 bool Channel::AcceptsConnections() const {
   return channel_impl_->AcceptsConnections();
 }
@@ -1196,5 +1246,17 @@ bool Channel::GetClientEuid(uid_t* client_euid) const {
 void Channel::ResetToAcceptingConnectionState() {
   channel_impl_->ResetToAcceptingConnectionState();
 }
+
+// static
+bool Channel::IsNamedServerInitialized(const std::string& channel_id) {
+  return ChannelImpl::IsNamedServerInitialized(channel_id);
+}
+
+#if defined(OS_LINUX)
+// static
+void Channel::SetGlobalPid(int pid) {
+  ChannelImpl::SetGlobalPid(pid);
+}
+#endif  // OS_LINUX
 
 }  // namespace IPC

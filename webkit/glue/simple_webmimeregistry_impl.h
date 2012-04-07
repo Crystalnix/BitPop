@@ -1,15 +1,18 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef WEBMIMEREGISTRY_IMPL_H_
 #define WEBMIMEREGISTRY_IMPL_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebMimeRegistry.h"
+#include "base/compiler_specific.h"
+#include "third_party/WebKit/Source/Platform/chromium/public/WebMimeRegistry.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 namespace webkit_glue {
 
-class SimpleWebMimeRegistryImpl : public WebKit::WebMimeRegistry {
+class WEBKIT_GLUE_EXPORT SimpleWebMimeRegistryImpl :
+    NON_EXPORTED_BASE(public WebKit::WebMimeRegistry) {
  public:
   SimpleWebMimeRegistryImpl() {}
   virtual ~SimpleWebMimeRegistryImpl() {}

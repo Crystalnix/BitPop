@@ -6,17 +6,27 @@
 #define CHROME_BROWSER_SYNC_GLUE_DATA_TYPE_CONTROLLER_MOCK_H__
 #pragma once
 
+#include "chrome/browser/sync/api/sync_error.h"
 #include "chrome/browser/sync/glue/data_type_controller.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace browser_sync {
+
+class StartCallbackMock {
+ public:
+  StartCallbackMock();
+  virtual ~StartCallbackMock();
+
+  MOCK_METHOD2(Run, void(DataTypeController::StartResult result,
+                         const SyncError& error));
+};
 
 class DataTypeControllerMock : public DataTypeController {
  public:
   DataTypeControllerMock();
   virtual ~DataTypeControllerMock();
 
-  MOCK_METHOD1(Start, void(StartCallback* start_callback));
+  MOCK_METHOD1(Start, void(const StartCallback& start_callback));
   MOCK_METHOD0(Stop, void());
   MOCK_METHOD0(enabled, bool());
   MOCK_CONST_METHOD0(type, syncable::ModelType());

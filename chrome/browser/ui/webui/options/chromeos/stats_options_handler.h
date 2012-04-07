@@ -6,31 +6,29 @@
 #define CHROME_BROWSER_UI_WEBUI_OPTIONS_CHROMEOS_STATS_OPTIONS_HANDLER_H_
 #pragma once
 
-#include "chrome/browser/ui/webui/options/chromeos/cros_options_page_ui_handler.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/ui/webui/options/options_ui.h"
 
 namespace chromeos {
-
-class MetricsCrosSettingsProvider;
 
 // ChromeOS handler for "Stats/crash reporting to Google" option of the Advanced
 // settings page. This handler does only ChromeOS-specific actions while default
 // code is in Chrome's AdvancedOptionsHandler
 // (chrome/browser/webui/advanced_options_handler.cc).
-class StatsOptionsHandler : public CrosOptionsPageUIHandler {
+class StatsOptionsHandler : public OptionsPageUIHandler {
  public:
   StatsOptionsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings);
-  virtual void Initialize();
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
-  MetricsCrosSettingsProvider* provider() const;
-  void HandleMetricsReportingCheckbox(const ListValue* args);
-  void SetupMetricsReportingCheckbox(bool user_changed);
+  void HandleMetricsReportingCheckbox(const base::ListValue* args);
 
   DISALLOW_COPY_AND_ASSIGN(StatsOptionsHandler);
 };

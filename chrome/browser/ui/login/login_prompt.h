@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,27 +9,31 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "chrome/browser/password_manager/password_manager.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-
-namespace net {
-class AuthChallengeInfo;
-class URLRequest;
-}  // namespace net
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 
 class ConstrainedWindow;
 class GURL;
+
+namespace content {
 class RenderViewHostDelegate;
+class NotificationRegistrar;
+}  // namespace content
+
+namespace net {
+class AuthChallengeInfo;
+class HttpNetworkSession;
+class URLRequest;
+}  // namespace net
 
 // This is the base implementation for the OS-specific classes that route
 // authentication info to the net::URLRequest that needs it. These functions
 // must be implemented in a thread safe manner.
-class LoginHandler : public base::RefCountedThreadSafe<LoginHandler>,
+class LoginHandler : public content::ResourceDispatcherHostLoginDelegate,
                      public LoginModelObserver,
-                     public NotificationObserver {
+                     public content::NotificationObserver {
  public:
   LoginHandler(net::AuthChallengeInfo* auth_info, net::URLRequest* request);
   virtual ~LoginHandler();
@@ -39,20 +43,23 @@ class LoginHandler : public base::RefCountedThreadSafe<LoginHandler>,
   static LoginHandler* Create(net::AuthChallengeInfo* auth_info,
                               net::URLRequest* request);
 
+  // ResourceDispatcherHostLoginDelegate implementation:
+  virtual void OnRequestCancelled() OVERRIDE;
+
   // Initializes the underlying platform specific view.
   virtual void BuildViewForPasswordManager(PasswordManager* manager,
                                            const string16& explanation) = 0;
 
   // Sets information about the authentication type (|form|) and the
   // |password_manager| for this profile.
-  void SetPasswordForm(const webkit_glue::PasswordForm& form);
+  void SetPasswordForm(const webkit::forms::PasswordForm& form);
   void SetPasswordManager(PasswordManager* password_manager);
 
-  // Returns the TabContents that needs authentication.
-  TabContents* GetTabContentsForLogin() const;
+  // Returns the WebContents that needs authentication.
+  content::WebContents* GetWebContentsForLogin() const;
 
   // Returns the RenderViewHostDelegate for the page that needs authentication.
-  RenderViewHostDelegate* GetRenderViewHostDelegate() const;
+  content::RenderViewHostDelegate* GetRenderViewHostDelegate() const;
 
   // Resend the request with authentication credentials.
   // This function can be called from either thread.
@@ -62,17 +69,13 @@ class LoginHandler : public base::RefCountedThreadSafe<LoginHandler>,
   // This function can be called from either thread.
   void CancelAuth();
 
-  // Notify the handler that the request was cancelled.
-  // This function can only be called from the IO thread.
-  void OnRequestCancelled();
-
-  // Implements the NotificationObserver interface.
+  // Implements the content::NotificationObserver interface.
   // Listens for AUTH_SUPPLIED and AUTH_CANCELLED notifications from other
   // LoginHandlers so that this LoginHandler has the chance to dismiss itself
   // if it was waiting for the same authentication.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Who/where/what asked for the authentication.
   const net::AuthChallengeInfo* auth_info() const { return auth_info_.get(); }
@@ -134,11 +137,14 @@ class LoginHandler : public base::RefCountedThreadSafe<LoginHandler>,
   // This should only be accessed on the IO loop.
   net::URLRequest* request_;
 
+  // The HttpNetworkSession |request_| is associated with.
+  const net::HttpNetworkSession* http_network_session_;
+
   // The PasswordForm sent to the PasswordManager. This is so we can refer to it
   // when later notifying the password manager if the credentials were accepted
   // or rejected.
   // This should only be accessed on the UI loop.
-  webkit_glue::PasswordForm password_form_;
+  webkit::forms::PasswordForm password_form_;
 
   // Points to the password manager owned by the TabContents requesting auth.
   // Can be null if the TabContents is not a TabContents.
@@ -154,11 +160,12 @@ class LoginHandler : public base::RefCountedThreadSafe<LoginHandler>,
   LoginModel* login_model_;
 
   // Observes other login handlers so this login handler can respond.
-  NotificationRegistrar registrar_;
+  // This is only accessed on the UI thread.
+  scoped_ptr<content::NotificationRegistrar> registrar_;
 };
 
-// Details to provide the NotificationObserver.  Used by the automation proxy
-// for testing.
+// Details to provide the content::NotificationObserver.  Used by the automation
+// proxy for testing.
 class LoginNotificationDetails {
  public:
   explicit LoginNotificationDetails(LoginHandler* handler)

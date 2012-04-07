@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,11 @@
 
 #include "skia/ext/bitmap_platform_device_data.h"
 
+#if defined(OS_OPENBSD)
+#include <cairo.h>
+#else
 #include <cairo/cairo.h>
+#endif
 
 namespace skia {
 
@@ -37,19 +41,11 @@ void LoadClipToContext(cairo_t* context, const SkRegion& clip) {
 
 }  // namespace
 
-SkDevice* BitmapPlatformDeviceFactory::newDevice(SkCanvas* ignored,
-                                                 SkBitmap::Config config,
-                                                 int width, int height,
-                                                 bool isOpaque,
-                                                 bool isForLayer) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::Create(width, height, isOpaque);
-}
-
 BitmapPlatformDevice::BitmapPlatformDeviceData::BitmapPlatformDeviceData(
     cairo_surface_t* surface)
     : surface_(surface),
-      config_dirty_(true) {  // Want to load the config next time.
+      config_dirty_(true),
+      transform_(SkMatrix::I()) {  // Want to load the config next time.
   bitmap_context_ = cairo_create(surface);
 }
 
@@ -100,9 +96,9 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
 
 BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
                                                    bool is_opaque) {
-  cairo_surface_t* surface =
-      cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
-                                 width, height);
+  // This initializes the bitmap to all zeros.
+  cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32,
+                                                        width, height);
 
   BitmapPlatformDevice* device = Create(width, height, is_opaque, surface);
 
@@ -129,22 +125,19 @@ BitmapPlatformDevice* BitmapPlatformDevice::Create(int width, int height,
 BitmapPlatformDevice::BitmapPlatformDevice(
     const SkBitmap& bitmap,
     BitmapPlatformDeviceData* data)
-    : PlatformDevice(bitmap),
+    : SkDevice(bitmap),
       data_(data) {
-}
-
-BitmapPlatformDevice::BitmapPlatformDevice(
-    const BitmapPlatformDevice& other)
-    : PlatformDevice(const_cast<BitmapPlatformDevice&>(
-                          other).accessBitmap(true)),
-      data_(other.data_) {
+  SetPlatformDevice(this, this);
 }
 
 BitmapPlatformDevice::~BitmapPlatformDevice() {
 }
 
-SkDeviceFactory* BitmapPlatformDevice::onNewDeviceFactory() {
-  return SkNEW(BitmapPlatformDeviceFactory);
+SkDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
+    SkBitmap::Config config, int width, int height, bool isOpaque,
+    Usage /*usage*/) {
+  SkASSERT(config == SkBitmap::kARGB_8888_Config);
+  return BitmapPlatformDevice::Create(width, height, isOpaque);
 }
 
 cairo_t* BitmapPlatformDevice::BeginPlatformPaint() {
@@ -159,16 +152,16 @@ cairo_t* BitmapPlatformDevice::BeginPlatformPaint() {
   return cairo;
 }
 
+void BitmapPlatformDevice::DrawToNativeContext(
+    PlatformSurface surface, int x, int y, const PlatformRect* src_rect) {
+  // Should never be called on Linux.
+  SkASSERT(false);
+}
+
 void BitmapPlatformDevice::setMatrixClip(const SkMatrix& transform,
                                          const SkRegion& region,
                                          const SkClipStack&) {
   data_->SetMatrixClip(transform, region);
-}
-
-BitmapPlatformDevice& BitmapPlatformDevice::operator=(
-    const BitmapPlatformDevice& other) {
-  data_ = other.data_;
-  return *this;
 }
 
 }  // namespace skia

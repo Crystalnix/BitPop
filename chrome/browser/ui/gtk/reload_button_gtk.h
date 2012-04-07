@@ -9,19 +9,19 @@
 #include <gtk/gtk.h>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/timer.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
 class Browser;
 class GtkThemeService;
 class LocationBarViewGtk;
-class Task;
 
-class ReloadButtonGtk : public NotificationObserver {
+class ReloadButtonGtk : public content::NotificationObserver {
  public:
   enum Mode { MODE_RELOAD = 0, MODE_STOP };
 
@@ -34,10 +34,10 @@ class ReloadButtonGtk : public NotificationObserver {
   // immediately.
   void ChangeMode(Mode mode, bool force);
 
-  // Provide NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& /* details */);
+  // Provide content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend class ReloadButtonGtkTest;
@@ -75,7 +75,7 @@ class ReloadButtonGtk : public NotificationObserver {
   Mode visible_mode_;
 
   // Used to listen for theme change notifications.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   GtkThemeService* theme_service_;
 
@@ -83,7 +83,7 @@ class ReloadButtonGtk : public NotificationObserver {
   CustomDrawButtonBase stop_;
   CustomDrawHoverController hover_controller_;
 
-  OwnedWidgetGtk widget_;
+  ui::OwnedWidgetGtk widget_;
 
   // The delay times for the timers.  These are members so that tests can modify
   // them.

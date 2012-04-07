@@ -17,7 +17,7 @@ namespace ui {
 // To create a MultiAnimation pass in the parts, invoke Start() and the delegate
 // is notified as the animation progresses. By default MultiAnimation runs until
 // Stop is invoked, see |set_continuous()| for details.
-class MultiAnimation : public Animation {
+class UI_EXPORT MultiAnimation : public Animation {
  public:
   // Defines part of the animation. Each part consists of the following:
   //
@@ -55,15 +55,15 @@ class MultiAnimation : public Animation {
 
   // Returns the current value. The current value for a MultiAnimation is
   // determined from the tween type of the current part.
-  virtual double GetCurrentValue() const;
+  virtual double GetCurrentValue() const OVERRIDE;
 
   // Returns the index of the current part.
   size_t current_part_index() const { return current_part_index_; }
 
  protected:
   // Animation overrides.
-  virtual void Step(base::TimeTicks time_now);
-  virtual void SetStartTime(base::TimeTicks start_time);
+  virtual void Step(base::TimeTicks time_now) OVERRIDE;
+  virtual void SetStartTime(base::TimeTicks start_time) OVERRIDE;
 
  private:
   // Returns the part containing the specified time. |time_ms| is reset to be

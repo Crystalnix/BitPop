@@ -10,6 +10,7 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "grit/generated_resources.h"
@@ -25,10 +26,10 @@ class TaskManagerGtk : public TaskManagerModelObserver {
   virtual ~TaskManagerGtk();
 
   // TaskManagerModelObserver
-  virtual void OnModelChanged();
-  virtual void OnItemsChanged(int start, int length);
-  virtual void OnItemsAdded(int start, int length);
-  virtual void OnItemsRemoved(int start, int length);
+  virtual void OnModelChanged() OVERRIDE;
+  virtual void OnItemsChanged(int start, int length) OVERRIDE;
+  virtual void OnItemsAdded(int start, int length) OVERRIDE;
+  virtual void OnItemsRemoved(int start, int length) OVERRIDE;
 
   // Closes the task manager window.
   void Close();
@@ -111,6 +112,13 @@ class TaskManagerGtk : public TaskManagerModelObserver {
                           GtkTreeIter* b, gpointer task_manager) {
     return reinterpret_cast<TaskManagerGtk*>(task_manager)->
         CompareImpl(model, a, b, IDS_TASK_MANAGER_PAGE_COLUMN);
+  }
+
+  // Profile name sorting callback.
+  static gint CompareProfileName(GtkTreeModel* model, GtkTreeIter* a,
+                                 GtkTreeIter* b, gpointer task_manager) {
+    return reinterpret_cast<TaskManagerGtk*>(task_manager)->
+        CompareImpl(model, a, b, IDS_TASK_MANAGER_PROFILE_NAME_COLUMN);
   }
 
   // Shared memory sorting callback.

@@ -9,29 +9,34 @@
 #include <map>
 
 #include "chrome/common/content_settings.h"
-#include "content/renderer/render_view_observer.h"
-#include "content/renderer/render_view_observer_tracker.h"
+#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_view_observer_tracker.h"
 
 class GURL;
 
 namespace WebKit {
+class WebFrame;
 class WebSecurityOrigin;
+class WebURL;
 }
 
 // Handles blocking content per content settings for each RenderView.
 class ContentSettingsObserver
-    : public RenderViewObserver,
-      public RenderViewObserverTracker<ContentSettingsObserver> {
+    : public content::RenderViewObserver,
+      public content::RenderViewObserverTracker<ContentSettingsObserver> {
  public:
-  explicit ContentSettingsObserver(RenderView* render_view);
+  explicit ContentSettingsObserver(content::RenderView* render_view);
   virtual ~ContentSettingsObserver();
 
-  // Sets the content settings that back allowScripts(), allowImages(), and
-  // allowPlugins().
-  void SetContentSettings(const ContentSettings& settings);
+  // Sets the content setting rules which back |AllowImage()|, |AllowScript()|,
+  // and |AllowScriptFromSource()|. |content_setting_rules| must outlive this
+  // |ContentSettingsObserver|.
+  void SetContentSettingRules(
+      const RendererContentSettingRules* content_setting_rules);
 
-  // Returns the setting for the given type.
-  ContentSetting GetContentSetting(ContentSettingsType type);
+  bool plugins_temporarily_allowed() {
+    return plugins_temporarily_allowed_;
+  }
 
   // Sends an IPC notification that the specified content type was blocked.
   // If the content type requires it, |resource_identifier| names the specific
@@ -46,40 +51,50 @@ class ContentSettingsObserver
                      const WebKit::WebString& display_name,
                      unsigned long estimated_size);
   bool AllowFileSystem(WebKit::WebFrame* frame);
-  bool AllowImages(WebKit::WebFrame* frame, bool enabled_per_settings);
+  bool AllowImage(WebKit::WebFrame* frame,
+                  bool enabled_per_settings,
+                  const WebKit::WebURL& image_url);
   bool AllowIndexedDB(WebKit::WebFrame* frame,
                       const WebKit::WebString& name,
                       const WebKit::WebSecurityOrigin& origin);
   bool AllowPlugins(WebKit::WebFrame* frame, bool enabled_per_settings);
   bool AllowScript(WebKit::WebFrame* frame, bool enabled_per_settings);
+  bool AllowScriptFromSource(WebKit::WebFrame* frame, bool enabled_per_settings,
+                             const WebKit::WebURL& script_url);
   bool AllowStorage(WebKit::WebFrame* frame, bool local);
   void DidNotAllowPlugins(WebKit::WebFrame* frame);
   void DidNotAllowScript(WebKit::WebFrame* frame);
 
+  // Used for allowing scripts and images on views displaying interstitial
+  // pages.
+  void SetAsInterstitial();
+
  private:
+  FRIEND_TEST_ALL_PREFIXES(ContentSettingsObserverTest, WhitelistedSchemes);
+
   // RenderViewObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message);
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
-                                        bool is_new_navigation);
+                                        bool is_new_navigation) OVERRIDE;
 
   // Message handlers.
-  void OnSetContentSettingsForLoadingURL(
-      const GURL& url,
-      const ContentSettings& content_settings);
   void OnLoadBlockedPlugins();
-
-  // Helper method that returns if the user wants to block content of type
-  // |content_type|.
-  bool AllowContentType(ContentSettingsType settings_type);
 
   // Resets the |content_blocked_| array.
   void ClearBlockedContentSettings();
 
-  typedef std::map<GURL, ContentSettings> HostContentSettings;
-  HostContentSettings host_content_settings_;
+  // Helpers.
+  // True if |frame| contains content that is white-listed for content settings.
+  static bool IsWhitelistedForContentSettings(WebKit::WebFrame* frame);
+  static bool IsWhitelistedForContentSettings(
+      const WebKit::WebSecurityOrigin& origin,
+      const GURL& document_url);
 
-  // Stores if loading of images, scripts, and plugins is allowed.
-  ContentSettings current_content_settings_;
+  // A pointer to content setting rules stored by the renderer. Normally, the
+  // |RendererContentSettingRules| object is owned by
+  // |ChromeRenderProcessObserver|. In the tests it is owned by the caller of
+  // |SetContentSettingRules|.
+  const RendererContentSettingRules* content_setting_rules_;
 
   // Stores if images, scripts, and plugins have actually been blocked.
   bool content_blocked_[CONTENT_SETTINGS_NUM_TYPES];
@@ -88,7 +103,11 @@ class ContentSettingsObserver
   typedef std::pair<GURL, bool> StoragePermissionsKey;
   std::map<StoragePermissionsKey, bool> cached_storage_permissions_;
 
+  // Caches the result of |AllowScript|.
+  std::map<WebKit::WebFrame*, bool> cached_script_permissions_;
+
   bool plugins_temporarily_allowed_;
+  bool is_interstitial_page_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingsObserver);
 };

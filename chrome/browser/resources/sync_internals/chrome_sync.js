@@ -67,6 +67,7 @@ chrome.sync.events = {
     'onServiceStateChanged'
   ],
 
+  // See chrome/browser/sync/engine/syncapi.h for docs.
   'notifier': [
     'onNotificationStateChange',
     'onIncomingNotification'
@@ -80,21 +81,17 @@ chrome.sync.events = {
     'onUpdatedToken',
     'onPassphraseRequired',
     'onPassphraseAccepted',
-    'onEncryptionComplete',
-    'onMigrationNeededForTypes',
     'onInitializationComplete',
-    'onPaused',
-    'onResumed',
     'onStopSyncingPermanently',
     'onClearServerDataSucceeded',
-    'onClearServerDataFailed'
+    'onClearServerDataFailed',
+    'onEncryptedTypesChanged',
+    'onEncryptionComplete',
+    'onActionableError'
   ],
 
-  'directory': [
-    'handleCalculateChangesChangeEventFromSyncApi',
-    'handleCalculateChangesChangeEventFromSyncer',
-    'handleTransactionEndingChangeEvent',
-    'handleTransactionCompleteChangeEvent'
+  'transaction': [
+    'onTransactionWrite',
   ]
 };
 
@@ -118,7 +115,7 @@ function makeSyncFunction(name) {
   };
 
   // Handle a reply, assuming that messages are processed in FIFO order.
-  // Called by SyncInternalsUI::HandleJsMessageReply().
+  // Called by SyncInternalsUI::HandleJsReply().
   fn.handleReply = function() {
     var args = Array.prototype.slice.call(arguments);
     // Remove the callback before we call it since the callback may
@@ -134,13 +131,16 @@ var syncFunctions = [
   // Sync service functions.
   'getAboutInfo',
 
-  // Notification functions.
+  // Notification functions.  See chrome/browser/sync/engine/syncapi.h
+  // for docs.
   'getNotificationState',
   'getNotificationInfo',
 
-  // Node lookup functions.
-  'getRootNode',
-  'getNodesById',
+  // Node lookup functions.  See chrome/browser/sync/engine/syncapi.h
+  // for docs.
+  'getRootNodeDetails',
+  'getNodeSummariesById',
+  'getNodeDetailsById',
   'getChildNodeIds',
   'findNodesContainingString'
 ];

@@ -12,8 +12,9 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/i18n/case_conversion.h"
+#include "base/i18n/rtl.h"
 #include "base/path_service.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -65,43 +66,6 @@ TEST_F(L10nUtilTest, DISABLED_GetString) {
 }
 #endif  // defined(OS_WIN)
 
-TEST_F(L10nUtilTest, TruncateString) {
-  string16 string = ASCIIToUTF16("foooooey    bxxxar baz");
-
-  // Make sure it doesn't modify the string if length > string length.
-  EXPECT_EQ(string, l10n_util::TruncateString(string, 100));
-
-  // Test no characters.
-  EXPECT_EQ(L"", UTF16ToWide(l10n_util::TruncateString(string, 0)));
-
-  // Test 1 character.
-  EXPECT_EQ(L"\x2026", UTF16ToWide(l10n_util::TruncateString(string, 1)));
-
-  // Test adds ... at right spot when there is enough room to break at a
-  // word boundary.
-  EXPECT_EQ(L"foooooey\x2026",
-            UTF16ToWide(l10n_util::TruncateString(string, 14)));
-
-  // Test adds ... at right spot when there is not enough space in first word.
-  EXPECT_EQ(L"f\x2026", UTF16ToWide(l10n_util::TruncateString(string, 2)));
-
-  // Test adds ... at right spot when there is not enough room to break at a
-  // word boundary.
-  EXPECT_EQ(L"foooooey\x2026",
-            UTF16ToWide(l10n_util::TruncateString(string, 11)));
-
-  // Test completely truncates string if break is on initial whitespace.
-  EXPECT_EQ(L"\x2026",
-            UTF16ToWide(l10n_util::TruncateString(ASCIIToUTF16("   "), 2)));
-}
-
-void SetICUDefaultLocale(const std::string& locale_string) {
-  icu::Locale locale(locale_string.c_str());
-  UErrorCode error_code = U_ZERO_ERROR;
-  icu::Locale::setDefault(locale, error_code);
-  EXPECT_TRUE(U_SUCCESS(error_code));
-}
-
 #if !defined(OS_MACOSX)
 // We are disabling this test on MacOS because GetApplicationLocale() as an
 // API isn't something that we'll easily be able to unit test in this manner.
@@ -113,14 +77,14 @@ void SetDefaultLocaleForTest(const std::string& tag, base::Environment* env) {
 #if defined(OS_POSIX) && !defined(OS_CHROMEOS)
   env->SetVar("LANGUAGE", tag);
 #else
-  SetICUDefaultLocale(tag);
+  base::i18n::SetICUDefaultLocale(tag);
 #endif
 }
 
 TEST_F(L10nUtilTest, GetAppLocale) {
   scoped_ptr<base::Environment> env;
   // Use a temporary locale dir so we don't have to actually build the locale
-  // dlls for this test.
+  // pak files for this test.
   FilePath orig_locale_dir;
   PathService::Get(ui::DIR_LOCALES, &orig_locale_dir);
   FilePath new_locale_dir;
@@ -141,16 +105,13 @@ TEST_F(L10nUtilTest, GetAppLocale) {
     "fil",
     "nb",
     "am",
+    "ca",
+    "ca@valencia",
   };
 
-#if defined(OS_WIN)
-  static const char kLocaleFileExtension[] = ".dll";
-#elif defined(OS_POSIX)
-  static const char kLocaleFileExtension[] = ".pak";
-#endif
   for (size_t i = 0; i < arraysize(filenames); ++i) {
     FilePath filename = new_locale_dir.AppendASCII(
-        filenames[i] + kLocaleFileExtension);
+        filenames[i] + ".pak");
     file_util::WriteFile(filename, "", 0);
   }
 
@@ -161,7 +122,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   env.reset(base::Environment::Create());
 
   // Test the support of LANGUAGE environment variable.
-  SetICUDefaultLocale("en-US");
+  base::i18n::SetICUDefaultLocale("en-US");
   env->SetVar("LANGUAGE", "xx:fr_CA");
   EXPECT_EQ("fr", l10n_util::GetApplicationLocale(""));
 
@@ -174,7 +135,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   // We emulate gettext's behavior here, which ignores LANG/LC_MESSAGES/LC_ALL
   // when LANGUAGE is specified. If no language specified in LANGUAGE is valid,
   // then just fallback to the default language, which is en-US for us.
-  SetICUDefaultLocale("fr-FR");
+  base::i18n::SetICUDefaultLocale("fr-FR");
   env->SetVar("LANGUAGE", "xx:yy");
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
 
@@ -194,6 +155,21 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   env->UnSetVar("LC_MESSAGES");
   EXPECT_EQ("nb", l10n_util::GetApplicationLocale(""));
   env->UnSetVar("LANG");
+
+  SetDefaultLocaleForTest("ca", env.get());
+  EXPECT_EQ("ca", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("ca-ES", env.get());
+  EXPECT_EQ("ca", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("ca@valencia", env.get());
+  EXPECT_EQ("ca@valencia", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("ca_ES@valencia", env.get());
+  EXPECT_EQ("ca@valencia", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("ca_ES.UTF8@valencia", env.get());
+  EXPECT_EQ("ca@valencia", l10n_util::GetApplicationLocale(""));
 #endif  // defined(OS_POSIX) && !defined(OS_CHROMEOS)
 
   SetDefaultLocaleForTest("en-US", env.get());
@@ -205,12 +181,23 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 #if defined(OS_CHROMEOS)
   // ChromeOS honors preferred locale first in GetApplicationLocale(),
   // defaulting to en-US, while other targets first honor other signals.
-  SetICUDefaultLocale("en-GB");
+  base::i18n::SetICUDefaultLocale("en-GB");
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
 
-  SetICUDefaultLocale("en-US");
+  base::i18n::SetICUDefaultLocale("en-US");
   EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-GB"));
 
+  base::i18n::SetICUDefaultLocale("en-US");
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-AU"));
+
+  base::i18n::SetICUDefaultLocale("en-US");
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-NZ"));
+
+  base::i18n::SetICUDefaultLocale("en-US");
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-CA"));
+
+  base::i18n::SetICUDefaultLocale("en-US");
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("en-ZA"));
 #else  // defined(OS_CHROMEOS)
   SetDefaultLocaleForTest("en-GB", env.get());
   EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
@@ -238,15 +225,27 @@ TEST_F(L10nUtilTest, GetAppLocale) {
 
   SetDefaultLocaleForTest("zh-SG", env.get());
   EXPECT_EQ("zh-CN", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("en-CA", env.get());
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("en-AU", env.get());
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("en-NZ", env.get());
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
+
+  SetDefaultLocaleForTest("en-ZA", env.get());
+  EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale(""));
 #endif  // defined (OS_CHROMEOS)
 
 #if defined(OS_WIN)
   // We don't allow user prefs for locale on linux/mac.
-  SetICUDefaultLocale("en-US");
+  base::i18n::SetICUDefaultLocale("en-US");
   EXPECT_EQ("fr", l10n_util::GetApplicationLocale("fr"));
   EXPECT_EQ("fr", l10n_util::GetApplicationLocale("fr-CA"));
 
-  SetICUDefaultLocale("en-US");
+  base::i18n::SetICUDefaultLocale("en-US");
   // Aliases iw, no, tl to he, nb, fil.
   EXPECT_EQ("he", l10n_util::GetApplicationLocale("iw"));
   EXPECT_EQ("nb", l10n_util::GetApplicationLocale("no"));
@@ -257,25 +256,25 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   EXPECT_EQ("es", l10n_util::GetApplicationLocale("es-ES"));
   EXPECT_EQ("es-419", l10n_util::GetApplicationLocale("es-AR"));
 
-  SetICUDefaultLocale("es-AR");
+  base::i18n::SetICUDefaultLocale("es-AR");
   EXPECT_EQ("es", l10n_util::GetApplicationLocale("es"));
 
-  SetICUDefaultLocale("zh-HK");
+  base::i18n::SetICUDefaultLocale("zh-HK");
   EXPECT_EQ("zh-CN", l10n_util::GetApplicationLocale("zh-CN"));
 
-  SetICUDefaultLocale("he");
+  base::i18n::SetICUDefaultLocale("he");
   EXPECT_EQ("en-US", l10n_util::GetApplicationLocale("en"));
 
   // Amharic should be blocked unless OS is Vista or newer.
   if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    SetICUDefaultLocale("am");
+    base::i18n::SetICUDefaultLocale("am");
     EXPECT_EQ("en-US", l10n_util::GetApplicationLocale(""));
-    SetICUDefaultLocale("en-GB");
+    base::i18n::SetICUDefaultLocale("en-GB");
     EXPECT_EQ("en-GB", l10n_util::GetApplicationLocale("am"));
   } else {
-    SetICUDefaultLocale("am");
+    base::i18n::SetICUDefaultLocale("am");
     EXPECT_EQ("am", l10n_util::GetApplicationLocale(""));
-    SetICUDefaultLocale("en-GB");
+    base::i18n::SetICUDefaultLocale("en-GB");
     EXPECT_EQ("am", l10n_util::GetApplicationLocale("am"));
   }
 #endif  // defined(OS_WIN)

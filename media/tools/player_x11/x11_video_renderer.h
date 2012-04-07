@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,36 +7,28 @@
 
 #include <X11/Xlib.h>
 
-#include "base/memory/scoped_ptr.h"
-#include "media/base/filters.h"
-#include "media/filters/video_renderer_base.h"
+#include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
 
 class MessageLoop;
 
-class X11VideoRenderer : public media::VideoRendererBase {
+namespace media {
+class VideoFrame;
+}
+
+class X11VideoRenderer : public base::RefCountedThreadSafe<X11VideoRenderer> {
  public:
-  X11VideoRenderer(Display* display, Window window, MessageLoop* message_loop);
+  X11VideoRenderer(Display* display, Window window);
 
-  // This method is called to paint the current video frame to the assigned
-  // window.
-  void Paint();
-
-  static X11VideoRenderer* instance() { return instance_; }
-
-  MessageLoop* glx_thread_message_loop() {
-    return glx_thread_message_loop_;
-  }
+  void Paint(media::VideoFrame* video_frame);
 
  protected:
-  // VideoRendererBase implementation.
-  virtual bool OnInitialize(media::VideoDecoder* decoder);
-  virtual void OnStop(media::FilterCallback* callback);
-  virtual void OnFrameAvailable();
+  friend class base::RefCountedThreadSafe<X11VideoRenderer>;
+  ~X11VideoRenderer();
 
  private:
-  // Only allow to be deleted by reference counting.
-  friend class scoped_refptr<X11VideoRenderer>;
-  virtual ~X11VideoRenderer();
+  // Initializes X11 rendering for the given dimensions.
+  void Initialize(int width, int height);
 
   Display* display_;
   Window window_;
@@ -49,9 +41,6 @@ class X11VideoRenderer : public media::VideoRendererBase {
   unsigned long picture_;
 
   bool use_render_;
-
-  MessageLoop* glx_thread_message_loop_;
-  static X11VideoRenderer* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(X11VideoRenderer);
 };

@@ -6,19 +6,16 @@
 #define WEBKIT_PLUGINS_NPAPI_PLUGIN_GROUP_H_
 #pragma once
 
-#include <map>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/string16.h"
-#include "webkit/plugins/npapi/webplugininfo.h"
+#include "webkit/plugins/webkit_plugins_export.h"
+#include "webkit/plugins/webplugininfo.h"
 
-class DictionaryValue;
 class FilePath;
-class TableModelArrayControllerTest;
 class PluginExceptionsTableModelTest;
 class Version;
 
@@ -26,9 +23,7 @@ namespace webkit {
 namespace npapi {
 
 class PluginList;
-namespace plugin_test_internal {
-class PluginListWithoutFileIO;
-}
+class MockPluginList;
 
 // Hard-coded version ranges for plugin groups.
 struct VersionRangeDefinition {
@@ -55,7 +50,7 @@ struct PluginGroupDefinition {
 // Run-time structure to hold version range information.
 struct VersionRange {
  public:
-  explicit VersionRange(VersionRangeDefinition definition);
+  explicit VersionRange(const VersionRangeDefinition& definition);
   VersionRange(const VersionRange& other);
   VersionRange& operator=(const VersionRange& other);
   ~VersionRange();
@@ -78,17 +73,18 @@ struct VersionRange {
 // of a plugin that is needed in order not to exhibit known security
 // vulnerabilities.
 
-class PluginGroup {
+class WEBKIT_PLUGINS_EXPORT PluginGroup {
  public:
   // Used by about:plugins to disable Reader plugin when internal PDF viewer is
   // enabled.
-  static const char* kAdobeReaderGroupName;
-  static const char* kAdobeReaderUpdateURL;
-  static const char* kJavaGroupName;
-  static const char* kQuickTimeGroupName;
-  static const char* kShockwaveGroupName;
-  static const char* kRealPlayerGroupName;
-  static const char* kSilverlightGroupName;
+  static const char kAdobeReaderGroupName[];
+  static const char kAdobeReaderUpdateURL[];
+  static const char kJavaGroupName[];
+  static const char kQuickTimeGroupName[];
+  static const char kShockwaveGroupName[];
+  static const char kRealPlayerGroupName[];
+  static const char kSilverlightGroupName[];
+  static const char kWindowsMediaPlayerGroupName[];
 
   PluginGroup(const PluginGroup& other);
 
@@ -96,50 +92,14 @@ class PluginGroup {
 
   PluginGroup& operator=(const PluginGroup& other);
 
-  // Configures the set of plugin name patterns for enabling and disabling
-  // plugins via enterprise configuration management.
-  static void SetPolicyEnforcedPluginPatterns(
-      const std::set<string16>& plugins_disabled,
-      const std::set<string16>& plugins_disabled_exceptions,
-      const std::set<string16>& plugins_enabled);
-
-  // Tests whether |plugin_name| is disabled by policy.
-  static bool IsPluginNameDisabledByPolicy(const string16& plugin_name);
-
-  // Tests whether |plugin_name| within the plugin group |group_name| is
-  // disabled by policy.
-  static bool IsPluginFileNameDisabledByPolicy(const string16& plugin_name,
-                                               const string16& group_name);
-
-  // Tests whether |plugin_name| is enabled by policy.
-  static bool IsPluginNameEnabledByPolicy(const string16& plugin_name);
-
   // Returns true if the given plugin matches this group.
-  bool Match(const WebPluginInfo& plugin) const;
+  bool Match(const webkit::WebPluginInfo& plugin) const;
 
   // Adds the given plugin to this group.
-  void AddPlugin(const WebPluginInfo& plugin);
+  void AddPlugin(const webkit::WebPluginInfo& plugin);
 
   // Removes a plugin from the group by its path.
   bool RemovePlugin(const FilePath& filename);
-
-  // The two following functions enable/disable a plugin given its filename. The
-  // function returns true if the plugin could be enabled/disabled. Plugins
-  // might not get enabled/disabled if they are controlled by policy or are
-  // already in the wanted state.
-  bool EnablePlugin(const FilePath& filename);
-  bool DisablePlugin(const FilePath& filename);
-
-  // Enables/disables this group. This enables/disables all plugins in the
-  // group.
-  bool EnableGroup(bool enable);
-
-  // Checks whether the group should be disabled/enabled by a policy and puts
-  // it in the needed state. Updates all contained plugins too.
-  void EnforceGroupPolicy();
-
-  // Returns whether the plugin group is enabled or not.
-  bool Enabled() const { return enabled_; }
 
   // Returns a unique identifier for this group, if one is defined, or the empty
   // string otherwise.
@@ -154,22 +114,8 @@ class PluginGroup {
   // is empty.
   string16 GetGroupName() const;
 
-  // Returns all plugins added to the group.
-  const std::vector<WebPluginInfo>& web_plugins_info() const {
-    return web_plugin_infos_;
-  }
-
   // Checks whether a plugin exists in the group with the given path.
   bool ContainsPlugin(const FilePath& path) const;
-
-  // Returns the description of the highest-priority plug-in in the group.
-  const string16& description() const { return description_; }
-
-  // Returns a DictionaryValue with data to display in the UI.
-  DictionaryValue* GetDataForUI() const;
-
-  // Returns a DictionaryValue with data to save in the preferences.
-  DictionaryValue* GetSummary() const;
 
   // Returns the update URL.
   std::string GetUpdateURL() const { return update_url_; }
@@ -177,42 +123,38 @@ class PluginGroup {
   // Returns true if this plugin group is whitelisted.
   bool IsWhitelisted() const;
 
-  // Returns true if the highest-priority plugin in this group has known
-  // security problems.
-  bool IsVulnerable() const;
+  // Returns true if |plugin| in this group has known security problems.
+  bool IsVulnerable(const WebPluginInfo& plugin) const;
 
-  // Returns true if this plug-in group always requires user authorization
-  // to run.
-  bool RequiresAuthorization() const;
+  // Returns true if |plugin| in this plug-in group always requires user
+  // authorization to run.
+  bool RequiresAuthorization(const WebPluginInfo& plugin) const;
 
   // Check if the group has no plugins. Could happen after a reload if the plug-
   // in has disappeared from the pc (or in the process of updating).
   bool IsEmpty() const;
 
-  // Disables all plugins in this group that are older than the
-  // minimum version.
-  void DisableOutdatedPlugins();
-
   // Parse a version string as used by a plug-in. This method is more lenient
   // in accepting weird version strings than Version::GetFromString().
   static Version* CreateVersionFromString(const string16& version_string);
 
-  std::vector<WebPluginInfo> web_plugin_infos() { return web_plugin_infos_; }
+  const std::vector<webkit::WebPluginInfo>& web_plugin_infos() const {
+    return web_plugin_infos_;
+  }
 
  private:
   friend class PluginList;
-  friend class plugin_test_internal::PluginListWithoutFileIO;
+  friend class MockPluginList;
   friend class PluginGroupTest;
-  friend class ::TableModelArrayControllerTest;
   friend class ::PluginExceptionsTableModelTest;
   FRIEND_TEST_ALL_PREFIXES(PluginListTest, DisableOutdated);
 
   // Generates the (short) identifier string for the given plugin.
-  static std::string GetIdentifier(const WebPluginInfo& wpi);
+  static std::string GetIdentifier(const webkit::WebPluginInfo& wpi);
 
   // Generates the long identifier (based on the full file path) for the given
   // plugin, to be called when the short identifier is not unique.
-  static std::string GetLongIdentifier(const WebPluginInfo& wpi);
+  static std::string GetLongIdentifier(const webkit::WebPluginInfo& wpi);
 
   // Creates a PluginGroup from a PluginGroupDefinition. The caller takes
   // ownership of the created PluginGroup.
@@ -221,7 +163,7 @@ class PluginGroup {
 
   // Creates a PluginGroup from a WebPluginInfo. The caller takes ownership of
   // the created PluginGroup.
-  static PluginGroup* FromWebPluginInfo(const WebPluginInfo& wpi);
+  static PluginGroup* FromWebPluginInfo(const webkit::WebPluginInfo& wpi);
 
   // Returns |true| if |version| is contained in [low, high) of |range|.
   static bool IsVersionInRange(const Version& version,
@@ -239,55 +181,18 @@ class PluginGroup {
 
   void InitFrom(const PluginGroup& other);
 
-  // Set the description and version for this plugin group from the
-  // given plug-in.
-  void UpdateDescriptionAndVersion(const WebPluginInfo& plugin);
-
-  // Updates the active plugin in the group. The active plugin is the first
-  // enabled one, or if all plugins are disabled, simply the first one.
-  void UpdateActivePlugin(const WebPluginInfo& plugin);
-
-  // Resets the group state to its default value (as if the group was empty).
-  // After calling this method, calling |UpdateActivePlugin| with all plugins
-  // in a row will correctly set the group state.
-  void ResetGroupState();
-
-  // Enables the plugin if not already enabled and if policy allows it to.
-  // Returns true on success. Does not update the group state.
-  static bool Enable(WebPluginInfo* plugin, int reason);
-
-  // Disables the plugin if not already disabled and if policy allows it to.
-  // Returns true on success. Does not update the group state.
-  static bool Disable(WebPluginInfo* plugin, int reason);
-
-  // Helper function to implement the functions above.
-  static bool SetPluginState(WebPluginInfo* plugin,
-                             int new_reason,
-                             bool state_changes);
-
   // Returns a non-const vector of all plugins in the group. This is only used
   // by PluginList.
-  std::vector<WebPluginInfo>& GetPluginsContainer() {
+  std::vector<webkit::WebPluginInfo>& GetPluginsContainer() {
     return web_plugin_infos_;
   }
-
-  // Checks if |name| matches any of the patterns in |pattern_set|.
-  static bool IsStringMatchedInSet(const string16& name,
-                                   const std::set<string16>* pattern_set);
-
-  static std::set<string16>* policy_disabled_plugin_patterns_;
-  static std::set<string16>* policy_disabled_plugin_exception_patterns_;
-  static std::set<string16>* policy_enabled_plugin_patterns_;
 
   std::string identifier_;
   string16 group_name_;
   string16 name_matcher_;
-  string16 description_;
   std::string update_url_;
-  bool enabled_;
   std::vector<VersionRange> version_ranges_;
-  scoped_ptr<Version> version_;
-  std::vector<WebPluginInfo> web_plugin_infos_;
+  std::vector<webkit::WebPluginInfo> web_plugin_infos_;
 };
 
 }  // namespace npapi

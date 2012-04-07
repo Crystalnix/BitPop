@@ -11,68 +11,20 @@
 
 namespace media {
 
-// Helper class used to test that callbacks are executed.
-//
-// In most cases NewExpectedCallback() can be used but if need be you can
-// manually set expectations on an MockCallback object:
-//
-//   StrictMock<MockCallback>* callback =
-//       new StrictMock<MockCallback>();
-//   EXPECT_CALL(*callback, RunWithParams(_));
-//   EXPECT_CALL(*callback, Destructor());
-//
-// ...or the equivalent and less verbose:
-//   StrictMock<MockCallback>* callback =
-//       new StrictMock<MockCallback>();
-//   callback->ExpectRunAndDelete();
-//
-// ...or if you don't care about verifying callback deletion:
-//
-//   NiceMock<MockCallback>* callback =
-//       new NiceMock<MockCallback>();
-//   EXPECT_CALL(*callback, RunWithParams(_));
-class MockCallback : public CallbackRunner<Tuple0> {
+// Utility mock for testing methods expecting Closures.  See
+// NewExpectedClosure() below for a helper suitable when expectation order is
+// not checked (or when the expectation can be set at mock construction time).
+class MockClosure : public base::RefCountedThreadSafe<MockClosure> {
  public:
-  MockCallback();
-  virtual ~MockCallback();
-
-  MOCK_METHOD1(RunWithParams, void(const Tuple0& params));
-
-  // Can be used to verify the object is destroyed.
-  MOCK_METHOD0(Destructor, void());
-
-  // Convenience function to set expectations for the callback to execute and
-  // deleted.
-  void ExpectRunAndDelete();
-
+  MockClosure();
+  virtual ~MockClosure();
+  MOCK_METHOD0(Run, void());
  private:
-  DISALLOW_COPY_AND_ASSIGN(MockCallback);
+  DISALLOW_COPY_AND_ASSIGN(MockClosure);
 };
 
-// Helper class similar to MockCallback but is used where a
-// PipelineStatusCallback is needed.
-class MockStatusCallback : public CallbackRunner<Tuple1<PipelineStatus> > {
- public:
-  MockStatusCallback();
-  virtual ~MockStatusCallback();
-
-  MOCK_METHOD1(RunWithParams, void(const Tuple1<PipelineStatus>& params));
-
-  // Can be used to verify the object is destroyed.
-  MOCK_METHOD0(Destructor, void());
-
-  // Convenience function to set expectations for the callback to execute and
-  // deleted.
-  void ExpectRunAndDelete(PipelineStatus status);
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MockStatusCallback);
-};
-
-// Convenience functions that automatically create and set an expectation for
-// the callback to run.
-MockCallback* NewExpectedCallback();
-MockStatusCallback* NewExpectedStatusCallback(PipelineStatus status);
+// Return a callback that expects to be run once.
+base::Closure NewExpectedClosure();
 base::Callback<void(PipelineStatus)> NewExpectedStatusCB(PipelineStatus status);
 
 }  // namespace media

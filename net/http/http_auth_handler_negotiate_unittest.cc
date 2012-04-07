@@ -15,7 +15,6 @@
 #include "net/http/mock_sspi_library_win.h"
 #elif defined(OS_POSIX)
 #include "net/http/mock_gssapi_library_posix.h"
-#include "net/third_party/gssapi/gssapi.h"
 #endif
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -25,7 +24,6 @@ typedef net::MockSSPILibrary MockAuthLibrary;
 #elif defined(OS_POSIX)
 typedef net::test::MockGSSAPILibrary MockAuthLibrary;
 #endif
-
 
 namespace net {
 
@@ -100,21 +98,21 @@ class HttpAuthHandlerNegotiateTest : public PlatformTest {
         "\x69\xE3\x55\xF9\x30\xD3\xD4\x08\xC8\xCA\x62\xF8\x64\xEC\x9B\x92"
         "\x1A\xF1\x03\x2E\xCC\xDC\xEB\x17\xDE\x09\xAC\xA9\x58\x86";
     test::GssContextMockImpl context1(
-        "localhost",                    // Source name
-        "example.com",                  // Target name
-        23,                             // Lifetime
-        *GSS_C_NT_HOSTBASED_SERVICE,    // Mechanism
-        0,                              // Context flags
-        1,                              // Locally initiated
-        0);                             // Open
+        "localhost",                         // Source name
+        "example.com",                       // Target name
+        23,                                  // Lifetime
+        *CHROME_GSS_C_NT_HOSTBASED_SERVICE,  // Mechanism
+        0,                                   // Context flags
+        1,                                   // Locally initiated
+        0);                                  // Open
     test::GssContextMockImpl context2(
-        "localhost",                    // Source name
-        "example.com",                  // Target name
-        23,                             // Lifetime
-        *GSS_C_NT_HOSTBASED_SERVICE,    // Mechanism
-        0,                              // Context flags
-        1,                              // Locally initiated
-        1);                             // Open
+        "localhost",                         // Source name
+        "example.com",                       // Target name
+        23,                                  // Lifetime
+        *CHROME_GSS_C_NT_HOSTBASED_SERVICE,  // Mechanism
+        0,                                   // Context flags
+        1,                                   // Locally initiated
+        1);                                  // Open
     test::MockGSSAPILibrary::SecurityContextQuery queries[] = {
     test::MockGSSAPILibrary::SecurityContextQuery(
         "Negotiate",                    // Package name
@@ -225,9 +223,8 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCname) {
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
-  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, NULL,
-                                                &request_info,
-                                                &callback, &token));
+  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
+                                                callback.callback(), &token));
 #if defined(OS_WIN)
   EXPECT_EQ(L"HTTP/alias", auth_handler->spn());
 #elif defined(OS_POSIX)
@@ -244,9 +241,8 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameStandardPort) {
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
-  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, NULL,
-                                                &request_info,
-                                                &callback, &token));
+  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
+                                                callback.callback(), &token));
 #if defined(OS_WIN)
   EXPECT_EQ(L"HTTP/alias", auth_handler->spn());
 #elif defined(OS_POSIX)
@@ -263,9 +259,8 @@ TEST_F(HttpAuthHandlerNegotiateTest, DisableCnameNonstandardPort) {
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
-  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, NULL,
-                                                &request_info,
-                                                &callback, &token));
+  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
+                                                callback.callback(), &token));
 #if defined(OS_WIN)
   EXPECT_EQ(L"HTTP/alias:500", auth_handler->spn());
 #elif defined(OS_POSIX)
@@ -282,9 +277,8 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameSync) {
   TestCompletionCallback callback;
   HttpRequestInfo request_info;
   std::string token;
-  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, NULL,
-                                                &request_info,
-                                                &callback, &token));
+  EXPECT_EQ(OK, auth_handler->GenerateAuthToken(NULL, &request_info,
+                                                callback.callback(), &token));
 #if defined(OS_WIN)
   EXPECT_EQ(L"HTTP/canonical.example.com", auth_handler->spn());
 #elif defined(OS_POSIX)
@@ -302,7 +296,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, CnameAsync) {
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
-      NULL, NULL, &request_info, &callback, &token));
+      NULL, &request_info, callback.callback(), &token));
   EXPECT_EQ(OK, callback.WaitForResult());
 #if defined(OS_WIN)
   EXPECT_EQ(L"HTTP/canonical.example.com", auth_handler->spn());
@@ -325,7 +319,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, ServerNotInKerberosDatabase) {
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
-      NULL, NULL, &request_info, &callback, &token));
+      NULL, &request_info, callback.callback(), &token));
   EXPECT_EQ(ERR_MISSING_AUTH_CREDENTIALS, callback.WaitForResult());
 }
 
@@ -341,10 +335,11 @@ TEST_F(HttpAuthHandlerNegotiateTest, NoKerberosCredentials) {
   HttpRequestInfo request_info;
   std::string token;
   EXPECT_EQ(ERR_IO_PENDING, auth_handler->GenerateAuthToken(
-      NULL, NULL, &request_info, &callback, &token));
+      NULL, &request_info, callback.callback(), &token));
   EXPECT_EQ(ERR_MISSING_AUTH_CREDENTIALS, callback.WaitForResult());
 }
 
+#if defined(DLOPEN_KERBEROS)
 TEST_F(HttpAuthHandlerNegotiateTest, MissingGSSAPI) {
   scoped_ptr<HostResolver> host_resolver(new MockHostResolver());
   MockAllowURLSecurityManager url_security_manager;
@@ -366,6 +361,7 @@ TEST_F(HttpAuthHandlerNegotiateTest, MissingGSSAPI) {
   EXPECT_EQ(ERR_UNSUPPORTED_AUTH_SCHEME, rv);
   EXPECT_TRUE(generic_handler.get() == NULL);
 }
+#endif  // defined(DLOPEN_KERBEROS)
 
 #endif  // defined(OS_POSIX)
 

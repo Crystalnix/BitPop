@@ -4,16 +4,20 @@
 
 #include "chrome/browser/extensions/extension_event_router_forwarder.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "base/system_monitor/system_monitor.h"
+#include "base/test/thread_test_helper.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/test/testing_browser_process_test.h"
-#include "chrome/test/testing_profile.h"
-#include "chrome/test/thread_test_helper.h"
-#include "content/browser/browser_thread.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "content/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using content::BrowserThread;
 
 namespace {
 
@@ -32,41 +36,41 @@ class MockExtensionEventRouterForwarder : public ExtensionEventRouterForwarder {
 
 }  // namespace
 
-class ExtensionEventRouterForwarderTest : public TestingBrowserProcessTest {
+class ExtensionEventRouterForwarderTest : public testing::Test {
  protected:
   ExtensionEventRouterForwarderTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
-        io_thread_(BrowserThread::IO) {
-  }
-
-  ~ExtensionEventRouterForwarderTest() {
+        io_thread_(BrowserThread::IO),
+        profile_manager_(
+            static_cast<TestingBrowserProcess*>(g_browser_process)) {
+#if defined(OS_MACOSX)
+    base::SystemMonitor::AllocateSystemIOPorts();
+#endif
+    dummy.reset(new base::SystemMonitor);
   }
 
   virtual void SetUp() {
+    ASSERT_TRUE(profile_manager_.SetUp());
+
     // Inject a BrowserProcess with a ProfileManager.
     ASSERT_TRUE(io_thread_.Start());
 
-    TestingBrowserProcess* browser_process = testing_browser_process_.get();
-    browser_process->SetProfileManager(new ProfileManager);
-
-    profile1_ = new TestingProfile();
-    profile2_ = new TestingProfile();
-
-    browser_process->profile_manager()->RegisterProfile(profile1_, true);
-    browser_process->profile_manager()->RegisterProfile(profile2_, true);
+    profile1_ = profile_manager_.CreateTestingProfile("one");
+    profile2_ = profile_manager_.CreateTestingProfile("two");
   }
 
   TestingProfile* CreateIncognitoProfile(TestingProfile* base) {
-    TestingProfile* incognito = new TestingProfile();
+    TestingProfile* incognito = new TestingProfile;  // Owned by |base|.
     incognito->set_incognito(true);
     base->SetOffTheRecordProfile(incognito);
     return incognito;
   }
 
   MessageLoopForUI message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread io_thread_;
-  base::SystemMonitor dummy;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread io_thread_;
+  TestingProfileManager profile_manager_;
+  scoped_ptr<base::SystemMonitor> dummy;
   // Profiles are weak pointers, owned by ProfileManager in |browser_process_|.
   TestingProfile* profile1_;
   TestingProfile* profile2_;
@@ -116,14 +120,15 @@ TEST_F(ExtensionEventRouterForwarderTest, BroadcastRendererIO) {
       CallExtensionEventRouter(
           profile2_, "", kEventName, kEventArgs, profile2_, url));
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-      NewRunnableMethod(
-          event_router.get(),
+      base::Bind(
           &MockExtensionEventRouterForwarder::BroadcastEventToRenderers,
+          event_router.get(),
           std::string(kEventName), std::string(kEventArgs), url));
 
   // Wait for IO thread's message loop to be processed
-  scoped_refptr<ThreadTestHelper> helper(
-      new ThreadTestHelper(BrowserThread::IO));
+  scoped_refptr<base::ThreadTestHelper> helper(
+      new base::ThreadTestHelper(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)));
   ASSERT_TRUE(helper->Run());
 
   MessageLoop::current()->RunAllPending();
@@ -140,8 +145,7 @@ TEST_F(ExtensionEventRouterForwarderTest, UnicastRendererUIRestricted) {
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToRenderers(kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         true, url);
+                                         profile1_, true, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest,
@@ -159,8 +163,7 @@ TEST_F(ExtensionEventRouterForwarderTest,
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToRenderers(kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         true, url);
+                                         profile1_, true, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest,
@@ -178,8 +181,7 @@ TEST_F(ExtensionEventRouterForwarderTest,
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToRenderers(kEventName, kEventArgs,
-                                         incognito->GetRuntimeId(),
-                                         true, url);
+                                         incognito, true, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest, UnicastRendererUIUnrestricted) {
@@ -193,8 +195,7 @@ TEST_F(ExtensionEventRouterForwarderTest, UnicastRendererUIUnrestricted) {
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToRenderers(kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         false, url);
+                                         profile1_, false, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest,
@@ -212,8 +213,7 @@ TEST_F(ExtensionEventRouterForwarderTest,
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToRenderers(kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         false, url);
+                                         profile1_, false, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest, BroadcastExtensionUI) {
@@ -240,8 +240,7 @@ TEST_F(ExtensionEventRouterForwarderTest, UnicastExtensionUIRestricted) {
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToExtension(kExt, kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         true, url);
+                                         profile1_, true, url);
 }
 
 TEST_F(ExtensionEventRouterForwarderTest, UnicastExtensionUIUnrestricted) {
@@ -255,6 +254,5 @@ TEST_F(ExtensionEventRouterForwarderTest, UnicastExtensionUIUnrestricted) {
   EXPECT_CALL(*event_router,
       CallExtensionEventRouter(profile2_, _, _, _, _, _)).Times(0);
   event_router->DispatchEventToExtension(kExt, kEventName, kEventArgs,
-                                         profile1_->GetRuntimeId(),
-                                         false, url);
+                                         profile1_, false, url);
 }

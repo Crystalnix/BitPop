@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_AUTOCOMPLETE_AUTOCOMPLETE_POPUP_CONTENTS_VIEW_H_
 #pragma once
 
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/autocomplete/autocomplete.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_model.h"
 #include "chrome/browser/autocomplete/autocomplete_popup_view.h"
@@ -13,18 +14,20 @@
 #include "ui/base/animation/animation_delegate.h"
 #include "ui/base/animation/slide_animation.h"
 #include "ui/gfx/font.h"
-#include "views/view.h"
+#include "ui/views/view.h"
 #include "webkit/glue/window_open_disposition.h"
 
 class AutocompleteEditModel;
 struct AutocompleteMatch;
 class AutocompleteResultView;
-class BubbleBorder;
 class Profile;
 
 namespace gfx {
 class CanvasSkia;
-class Insets;
+}
+
+namespace views {
+class BubbleBorder;
 }
 
 // A view representing the contents of the autocomplete popup.
@@ -36,8 +39,7 @@ class AutocompletePopupContentsView : public views::View,
   AutocompletePopupContentsView(const gfx::Font& font,
                                 OmniboxView* omnibox_view,
                                 AutocompleteEditModel* edit_model,
-                                Profile* profile,
-                                const views::View* location_bar);
+                                views::View* location_bar);
   virtual ~AutocompletePopupContentsView();
 
   // Returns the bounds the popup should be shown at. This is the display bounds
@@ -143,11 +145,13 @@ class AutocompletePopupContentsView : public views::View,
   // The edit view that invokes us.
   OmniboxView* omnibox_view_;
 
+  Profile* profile_;
+
   // An object that the popup positions itself against.
-  const views::View* location_bar_;
+  views::View* location_bar_;
 
   // Our border, which can compute our desired bounds.
-  const BubbleBorder* bubble_border_;
+  const views::BubbleBorder* bubble_border_;
 
   // The font that we should use for result rows. This is based on the font used
   // by the edit that created us.

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -24,17 +24,15 @@ class TranslateTest(pyauto.PyUITest):
 
   def Debug(self):
     """ Test method for experimentation. """
-    import pprint
-    pp = pprint.PrettyPrinter(indent=2)
     while True:
       raw_input('Hit <enter> to dump translate info.. ')
-      pp.pprint(self.GetTranslateInfo())
+      self.pprint(self.GetTranslateInfo())
 
   def _GetDefaultSpanishURL(self):
-    return self.GetFileURLForDataPath('translate', self.spanish, 'google.html')
+    return self.GetHttpURLForDataPath('translate', self.spanish, 'google.html')
 
   def _GetDefaultEnglishURL(self):
-    return self.GetFileURLForDataPath('title1.html')
+    return self.GetHttpURLForDataPath('title1.html')
 
   def _NavigateAndWaitForBar(self, url, window_index=0, tab_index=0):
     self.NavigateToURL(url, window_index, tab_index)
@@ -432,9 +430,11 @@ class TranslateTest(pyauto.PyUITest):
         file_url = self.GetFileURLForPath(file_path)
         downloaded_file = os.path.join(download_dir, filename)
         os.path.exists(downloaded_file) and os.remove(downloaded_file)
+        pre_download_ids = [x['id']
+                            for x in self.GetDownloadsInfo().Downloads()]
         self.DownloadAndWaitForStart(file_url)
         # Wait for files and remove them as we go.
-        self.WaitForAllDownloadsToComplete()
+        self.WaitForAllDownloadsToComplete(pre_download_ids)
         os.path.exists(downloaded_file) and os.remove(downloaded_file)
     finally:
       shutil.rmtree(unicode(temp_dir))  # unicode so that win treats nicely.

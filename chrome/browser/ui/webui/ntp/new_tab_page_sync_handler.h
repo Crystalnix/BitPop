@@ -10,29 +10,30 @@
 
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_message_handler.h"
 
+namespace base {
 class ListValue;
+}
 
 // Sends sync-state changes to the New Tab Page for UI updating and forwards
 // link clicks on the page to the sync service.
-class NewTabPageSyncHandler : public WebUIMessageHandler,
+class NewTabPageSyncHandler : public content::WebUIMessageHandler,
                               public ProfileSyncServiceObserver {
  public:
   NewTabPageSyncHandler();
   virtual ~NewTabPageSyncHandler();
 
   // WebUIMessageHandler implementation.
-  virtual WebUIMessageHandler* Attach(WebUI* web_ui);
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
   // Callback for "GetSyncMessage".
-  void HandleGetSyncMessage(const ListValue* args);
+  void HandleGetSyncMessage(const base::ListValue* args);
   // Callback for "SyncLinkClicked".
-  void HandleSyncLinkClicked(const ListValue* args);
+  void HandleSyncLinkClicked(const base::ListValue* args);
 
   // ProfileSyncServiceObserver
-  virtual void OnStateChanged();
+  virtual void OnStateChanged() OVERRIDE;
 
  private:
   enum MessageType {

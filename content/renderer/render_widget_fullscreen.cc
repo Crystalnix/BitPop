@@ -1,21 +1,19 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/renderer/render_widget_fullscreen.h"
 
 #include "content/common/view_messages.h"
-#include "content/renderer/render_thread.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWidget.h"
 
 using WebKit::WebWidget;
 
 // static
-RenderWidgetFullscreen* RenderWidgetFullscreen::Create(
-    int32 opener_id, RenderThreadBase* render_thread) {
+RenderWidgetFullscreen* RenderWidgetFullscreen::Create(int32 opener_id) {
   DCHECK_NE(MSG_ROUTING_NONE, opener_id);
   scoped_refptr<RenderWidgetFullscreen> widget(
-      new RenderWidgetFullscreen(render_thread));
+      new RenderWidgetFullscreen());
   widget->Init(opener_id);
   return widget.release();
 }
@@ -31,7 +29,8 @@ void RenderWidgetFullscreen::Init(int32 opener_id) {
   RenderWidget::DoInit(
       opener_id,
       CreateWebWidget(),
-      new ViewHostMsg_CreateFullscreenWidget(opener_id, &routing_id_));
+      new ViewHostMsg_CreateFullscreenWidget(
+          opener_id, &routing_id_, &surface_id_));
 }
 
 void RenderWidgetFullscreen::show(WebKit::WebNavigationPolicy) {
@@ -46,6 +45,6 @@ void RenderWidgetFullscreen::show(WebKit::WebNavigationPolicy) {
   }
 }
 
-RenderWidgetFullscreen::RenderWidgetFullscreen(RenderThreadBase* render_thread)
-    : RenderWidget(render_thread, WebKit::WebPopupTypeNone) {
+RenderWidgetFullscreen::RenderWidgetFullscreen()
+    : RenderWidget(WebKit::WebPopupTypeNone) {
 }

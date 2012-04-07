@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,15 @@
 #include "base/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/scoped_temp_dir.h"
-#include "chrome/browser/utility_process_host.h"
+#include "chrome/common/extensions/extension.h"
+#include "content/browser/utility_process_host.h"
 
-class DictionaryValue;
 class Extension;
 class ResourceDispatcherHost;
+
+namespace base {
+class DictionaryValue;
+}
 
 class SandboxedExtensionUnpackerClient
     : public base::RefCountedThreadSafe<SandboxedExtensionUnpackerClient> {
@@ -32,9 +36,9 @@ class SandboxedExtensionUnpackerClient
   // for deleting this memory.
   virtual void OnUnpackSuccess(const FilePath& temp_dir,
                                const FilePath& extension_root,
-                               const DictionaryValue* original_manifest,
+                               const base::DictionaryValue* original_manifest,
                                const Extension* extension) = 0;
-  virtual void OnUnpackFailure(const std::string& error) = 0;
+  virtual void OnUnpackFailure(const string16& error) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<SandboxedExtensionUnpackerClient>;
@@ -98,7 +102,9 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
   // sandboxed subprocess. Otherwise, it is done in-process.
   SandboxedExtensionUnpacker(const FilePath& crx_path,
                              ResourceDispatcherHost* rdh,
-                             SandboxedExtensionUnpackerClient* cilent);
+                             Extension::Location location,
+                             int creation_flags,
+                             SandboxedExtensionUnpackerClient* client);
 
   // Start unpacking the extension. The client is called with the results.
   void Start();
@@ -187,17 +193,21 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
   // Starts the utility process that unpacks our extension.
   void StartProcessOnIOThread(const FilePath& temp_crx_path);
 
-  // SandboxedExtensionUnpacker
-  virtual void OnUnpackExtensionSucceeded(const DictionaryValue& manifest);
-  virtual void OnUnpackExtensionFailed(const std::string& error_message);
-  virtual void OnProcessCrashed(int exit_code);
+  // UtilityProcessHost::Client
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
 
-  void ReportFailure(FailureReason reason, const std::string& message);
-  void ReportSuccess(const DictionaryValue& original_manifest);
+  // IPC message handlers.
+  void OnUnpackExtensionSucceeded(const base::DictionaryValue& manifest);
+  void OnUnpackExtensionFailed(const string16& error_message);
+
+  void ReportFailure(FailureReason reason, const string16& message);
+  void ReportSuccess(const base::DictionaryValue& original_manifest);
 
   // Overwrites original manifest with safe result from utility process.
   // Returns NULL on error. Caller owns the returned object.
-  DictionaryValue* RewriteManifestFile(const DictionaryValue& manifest);
+  base::DictionaryValue* RewriteManifestFile(
+      const base::DictionaryValue& manifest);
 
   // Overwrites original files with safe results from utility process.
   // Reports error and returns false if it fails.
@@ -208,7 +218,7 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
   FilePath crx_path_;
 
   // Our client's thread. This is the thread we respond on.
-  BrowserThread::ID thread_identifier_;
+  content::BrowserThread::ID thread_identifier_;
 
   // ResourceDispatcherHost to pass to the utility process.
   ResourceDispatcherHost* rdh_;
@@ -231,8 +241,19 @@ class SandboxedExtensionUnpacker : public UtilityProcessHost::Client {
   // The public key that was extracted from the CRX header.
   std::string public_key_;
 
+  // The extension's ID. This will be calculated from the public key in the crx
+  // header.
+  std::string extension_id_;
+
   // Time at which unpacking started. Used to compute the time unpacking takes.
   base::TimeTicks unpack_start_time_;
+
+  // Location to use for the unpacked extension.
+  Extension::Location location_;
+
+  // Creation flags to use for the extension.  These flags will be used
+  // when calling Extenion::Create() by the crx installer.
+  int creation_flags_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_SANDBOXED_EXTENSION_UNPACKER_H_

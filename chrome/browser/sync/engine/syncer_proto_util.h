@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,15 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/time.h"
+#include "chrome/browser/sync/internal_api/includes/syncer_error.h"
+#include "chrome/browser/sync/sessions/sync_session.h"
 #include "chrome/browser/sync/syncable/blob.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
 namespace syncable {
 class Directory;
 class Entry;
-class ScopedDirLookup;
-class SyncName;
 }  // namespace syncable
 
 namespace sync_pb {
@@ -27,10 +28,10 @@ class EntitySpecifics;
 namespace browser_sync {
 
 namespace sessions {
-class SyncSession;
+class SyncProtocolError;
+class SyncSessionContext;
 }
 
-class AuthWatcher;
 class ClientToServerMessage;
 class ServerConnectionManager;
 class SyncEntity;
@@ -39,10 +40,9 @@ class CommitResponse_EntryResponse;
 class SyncerProtoUtil {
  public:
   // Posts the given message and fills the buffer with the returned value.
-  // Returns true on success.  Also handles store birthday verification:
-  // session->status()->syncer_stuck_ is set true if the birthday is
-  // incorrect.  A false value will always be returned if birthday is bad.
-  static bool PostClientToServerMessage(
+  // Returns true on success.  Also handles store birthday verification: will
+  // produce a SyncError if the birthday is incorrect.
+  static SyncerError PostClientToServerMessage(
       const ClientToServerMessage& msg,
       sync_pb::ClientToServerResponse* response,
       sessions::SyncSession* session);
@@ -115,10 +115,20 @@ class SyncerProtoUtil {
                                     const ClientToServerMessage& msg,
                                     sync_pb::ClientToServerResponse* response);
 
+  static base::TimeDelta GetThrottleDelay(
+      const sync_pb::ClientToServerResponse& response);
+
+  static void HandleThrottleError(const SyncProtocolError& error,
+                                  const base::TimeTicks& throttled_until,
+                                  sessions::SyncSessionContext* context,
+                                  sessions::SyncSession::Delegate* delegate);
+
   friend class SyncerProtoUtilTest;
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, AddRequestBirthday);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, PostAndProcessHeaders);
   FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, VerifyResponseBirthday);
+  FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingNoDatatypes);
+  FRIEND_TEST_ALL_PREFIXES(SyncerProtoUtilTest, HandleThrottlingWithDatatypes);
 
   DISALLOW_COPY_AND_ASSIGN(SyncerProtoUtil);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,31 +7,32 @@
 #include "base/memory/singleton.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
+#include "media/audio/audio_manager.h"
 #include "media/base/filter_collection.h"
+#include "media/base/media_log.h"
 #include "media/base/message_loop_factory_impl.h"
-#include "media/base/pipeline_impl.h"
-#include "media/filters/adaptive_demuxer.h"
-#include "media/filters/audio_renderer_impl.h"
+#include "media/base/pipeline.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_demuxer_factory.h"
 #include "media/filters/ffmpeg_video_decoder.h"
-#include "media/filters/file_data_source_factory.h"
+#include "media/filters/file_data_source.h"
 #include "media/filters/null_audio_renderer.h"
-#include "media/tools/player_wtl/wtl_renderer.h"
+#include "media/filters/reference_audio_renderer.h"
+#include "media/filters/video_renderer_base.h"
 
-using media::AdaptiveDemuxerFactory;
-using media::AudioRendererImpl;
 using media::FFmpegAudioDecoder;
 using media::FFmpegDemuxerFactory;
 using media::FFmpegVideoDecoder;
-using media::FileDataSourceFactory;
+using media::FileDataSource;
 using media::FilterCollection;
-using media::PipelineImpl;
+using media::Pipeline;
+using media::ReferenceAudioRenderer;
 
 namespace media {
 
 Movie::Movie()
-    : enable_audio_(true),
+    : audio_manager_(AudioManager::Create()),
+      enable_audio_(true),
       enable_draw_(true),
       enable_dump_yuv_file_(false),
       enable_pause_(false),
@@ -57,7 +58,7 @@ void Movie::SetFrameBuffer(HBITMAP hbmp, HWND hwnd) {
   movie_hwnd_ = hwnd;
 }
 
-bool Movie::Open(const wchar_t* url, WtlVideoRenderer* video_renderer) {
+bool Movie::Open(const wchar_t* url, VideoRendererBase* video_renderer) {
   // Close previous movie.
   if (pipeline_) {
     Close();
@@ -67,19 +68,27 @@ bool Movie::Open(const wchar_t* url, WtlVideoRenderer* video_renderer) {
 
   MessageLoop* pipeline_loop =
       message_loop_factory_->GetMessageLoop("PipelineThread");
-  pipeline_ = new PipelineImpl(pipeline_loop);
+  pipeline_ = new Pipeline(pipeline_loop, new media::MediaLog());
+
+  // Open the file.
+  std::string url_utf8 = WideToUTF8(string16(url));
+  scoped_refptr<FileDataSource> data_source = new FileDataSource();
+  if (data_source->Initialize(url_utf8) != PIPELINE_OK) {
+    return false;
+  }
 
   // Create filter collection.
   scoped_ptr<FilterCollection> collection(new FilterCollection());
-  collection->SetDemuxerFactory(new AdaptiveDemuxerFactory(
-      new FFmpegDemuxerFactory(new FileDataSourceFactory(), pipeline_loop)));
+  collection->SetDemuxerFactory(scoped_ptr<DemuxerFactory>(
+      new FFmpegDemuxerFactory(data_source, pipeline_loop)));
   collection->AddAudioDecoder(new FFmpegAudioDecoder(
       message_loop_factory_->GetMessageLoop("AudioDecoderThread")));
   collection->AddVideoDecoder(new FFmpegVideoDecoder(
-      message_loop_factory_->GetMessageLoop("VideoDecoderThread"), NULL));
+      message_loop_factory_->GetMessageLoop("VideoDecoderThread")));
 
   if (enable_audio_) {
-    collection->AddAudioRenderer(new AudioRendererImpl());
+    collection->AddAudioRenderer(
+        new ReferenceAudioRenderer(audio_manager_));
   } else {
     collection->AddAudioRenderer(new media::NullAudioRenderer());
   }
@@ -87,8 +96,14 @@ bool Movie::Open(const wchar_t* url, WtlVideoRenderer* video_renderer) {
 
   // Create and start our pipeline.
   media::PipelineStatusNotification note;
-  pipeline_->Start(collection.release(), WideToUTF8(std::wstring(url)),
-                   note.Callback());
+  pipeline_->Start(
+      collection.Pass(),
+      url_utf8,
+      media::PipelineStatusCB(),
+      media::PipelineStatusCB(),
+      media::NetworkEventCB(),
+      note.Callback());
+
   // Wait until the pipeline is fully initialized.
   note.Wait();
   if (note.status() != PIPELINE_OK)
@@ -131,7 +146,7 @@ void Movie::SetPosition(float position) {
   int64 us = static_cast<int64>(position * 1000000);
   base::TimeDelta time = base::TimeDelta::FromMicroseconds(us);
   if (pipeline_)
-    pipeline_->Seek(time, NULL);
+    pipeline_->Seek(time, media::PipelineStatusCB());
 }
 
 
@@ -173,7 +188,7 @@ bool Movie::GetDumpYuvFileEnable() {
 // Teardown.
 void Movie::Close() {
   if (pipeline_) {
-    pipeline_->Stop(NULL);
+    pipeline_->Stop(media::PipelineStatusCB());
     pipeline_ = NULL;
   }
 

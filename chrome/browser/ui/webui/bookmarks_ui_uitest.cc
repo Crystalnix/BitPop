@@ -7,6 +7,7 @@
 #include "base/test/test_timeouts.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/common/url_constants.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/browser_proxy.h"
 #include "chrome/test/automation/tab_proxy.h"
 #include "chrome/test/automation/window_proxy.h"
@@ -22,7 +23,7 @@ class BookmarksUITest : public UITest {
         L"domAutomationController.send("
         L"    location.protocol == 'chrome-extension:' && "
         L"    document.readyState == 'complete')",
-        TestTimeouts::huge_test_timeout_ms());
+        TestTimeouts::large_test_timeout_ms());
   }
 
   scoped_refptr<TabProxy> GetBookmarksUITab() {
@@ -91,7 +92,7 @@ TEST_F(BookmarksUITest, CommandOpensBookmarksTab) {
   // Bring up the bookmarks manager tab.
   ASSERT_TRUE(browser->RunCommand(IDC_SHOW_BOOKMARK_MANAGER));
   ASSERT_TRUE(browser->GetTabCount(&tab_count));
-  ASSERT_EQ(2, tab_count);
+  ASSERT_EQ(1, tab_count);
 
   scoped_refptr<TabProxy> tab = browser->GetActiveTab();
   ASSERT_TRUE(tab.get());
@@ -101,12 +102,20 @@ TEST_F(BookmarksUITest, CommandOpensBookmarksTab) {
   AssertIsBookmarksPage(tab);
 }
 
-TEST_F(BookmarksUITest, CommandAgainGoesBackToBookmarksTab) {
+// http://crbug.com/91843
+#if defined(OS_LINUX)
+#define MAYBE_CommandAgainGoesBackToBookmarksTab FLAKY_CommandAgainGoesBackToBookmarksTab
+#else
+#define MAYBE_CommandAgainGoesBackToBookmarksTab CommandAgainGoesBackToBookmarksTab
+#endif
+
+TEST_F(BookmarksUITest, MAYBE_CommandAgainGoesBackToBookmarksTab) {
   scoped_refptr<BrowserProxy> browser(automation()->GetBrowserWindow(0));
   ASSERT_TRUE(browser.get());
 
   int tab_count = -1;
   ASSERT_TRUE(browser->GetTabCount(&tab_count));
+  NavigateToURL(GURL("http://www.google.com/"));
   ASSERT_EQ(1, tab_count);
 
   // Bring up the bookmarks manager tab.
@@ -145,9 +154,13 @@ TEST_F(BookmarksUITest, TwoCommandsOneTab) {
   ASSERT_TRUE(browser->RunCommand(IDC_SHOW_BOOKMARK_MANAGER));
   ASSERT_TRUE(browser->RunCommand(IDC_SHOW_BOOKMARK_MANAGER));
   ASSERT_TRUE(browser->GetTabCount(&tab_count));
-  ASSERT_EQ(2, tab_count);
+  ASSERT_EQ(1, tab_count);
 }
 
+#if defined(OS_WIN) || defined(OS_MACOSX)
+// http://crbug.com/104309
+#define BookmarksLoaded FLAKY_BookmarksLoaded
+#endif
 TEST_F(BookmarksUITest, BookmarksLoaded) {
   scoped_refptr<TabProxy> tab = GetBookmarksUITab();
   ASSERT_TRUE(tab.get());

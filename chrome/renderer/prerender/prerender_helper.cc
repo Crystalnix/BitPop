@@ -7,15 +7,18 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "chrome/common/render_messages.h"
-#include "content/renderer/navigation_state.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/document_state.h"
+#include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+
+using content::DocumentState;
 
 // Helper macro for histograms.
 #define RECORD_PLT(tag, perceived_page_load_time) { \
     UMA_HISTOGRAM_CUSTOM_TIMES( \
         base::FieldTrial::MakeName(std::string("Prerender.") + tag, \
-                                   "Prefetch"), \
+                                   "Prerender"), \
         perceived_page_load_time, \
         base::TimeDelta::FromMilliseconds(10), \
         base::TimeDelta::FromSeconds(60), \
@@ -24,28 +27,30 @@
 
 namespace prerender {
 
-PrerenderHelper::PrerenderHelper(RenderView* render_view)
-    : RenderViewObserver(render_view),
-      RenderViewObserverTracker<PrerenderHelper>(render_view),
-      is_prerendering_(true) {
+PrerenderHelper::PrerenderHelper(content::RenderView* render_view)
+    : content::RenderViewObserver(render_view),
+      content::RenderViewObserverTracker<PrerenderHelper>(render_view),
+      is_prerendering_(true),
+      has_unrecorded_data_(false) {
+  UpdateVisibilityState();
 }
 
 PrerenderHelper::~PrerenderHelper() {
 }
 
 // static.
-bool PrerenderHelper::IsPrerendering(const RenderView* render_view) {
+bool PrerenderHelper::IsPrerendering(const content::RenderView* render_view) {
   PrerenderHelper* prerender_helper = PrerenderHelper::Get(render_view);
   return (prerender_helper && prerender_helper->is_prerendering_);
 }
 
 // static.
 void PrerenderHelper::RecordHistograms(
-    RenderView* render_view,
+    content::RenderView* render_view,
     const base::Time& finish_all_loads,
     const base::TimeDelta& begin_to_finish_all_loads) {
   static bool use_prerender_histogram =
-      base::FieldTrialList::TrialExists("Prefetch");
+      base::FieldTrialList::TrialExists("Prerender");
   if (!use_prerender_histogram)
     return;
 
@@ -105,17 +110,6 @@ void PrerenderHelper::RecordHistograms(
   delete prerender_helper;
 }
 
-void PrerenderHelper::WillCreateMediaPlayer(
-    WebKit::WebFrame* frame,
-    WebKit::WebMediaPlayerClient* client) {
-  if (is_prerendering_) {
-    // Cancel prerendering in the case of HTML5 media, to avoid playing sounds
-    // in the background.
-    Send(new ViewHostMsg_MaybeCancelPrerenderForHTML5Media(
-         render_view()->routing_id()));
-  }
-}
-
 void PrerenderHelper::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
   // If this is the first provisional load since prerendering started, get its
   // request time.
@@ -125,9 +119,9 @@ void PrerenderHelper::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
       NOTREACHED();
       return;
     }
-    NavigationState* navigation_state =
-        NavigationState::FromDataSource(data_source);
-    prerender_start_time_ = navigation_state->request_time();
+    DocumentState* document_state =
+        DocumentState::FromDataSource(data_source);
+    prerender_start_time_ = document_state->request_time();
     // The first navigation for prerendering RenderViews can only be triggered
     // from PrerenderContents, so there should be a request_time.
     DCHECK(!prerender_start_time_.is_null());
@@ -137,7 +131,7 @@ void PrerenderHelper::DidStartProvisionalLoad(WebKit::WebFrame* frame) {
 bool PrerenderHelper::OnMessageReceived(
     const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(PrerenderHelper, message)
-    IPC_MESSAGE_HANDLER(ViewMsg_SetIsPrerendering, OnSetIsPrerendering)
+    IPC_MESSAGE_HANDLER(ChromeViewMsg_SetIsPrerendering, OnSetIsPrerendering)
   IPC_END_MESSAGE_MAP()
   // Return false on ViewMsg_SetIsPrerendering so other observers can see the
   // message.
@@ -154,10 +148,18 @@ void PrerenderHelper::OnSetIsPrerendering(bool is_prerendering) {
 
   is_prerendering_ = false;
   prerender_display_time_ = base::Time::Now();
+  UpdateVisibilityState();
 }
 
 bool PrerenderHelper::HasUnrecordedData() const {
   return !prerender_display_time_.is_null();
+}
+
+void PrerenderHelper::UpdateVisibilityState() {
+  if (render_view()->GetWebView()) {
+    render_view()->GetWebView()->setVisibilityState(
+        render_view()->GetVisibilityState(), false);
+  }
 }
 
 }  // namespace prerender

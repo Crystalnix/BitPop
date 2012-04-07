@@ -4,7 +4,9 @@
 
 #include "remoting/protocol/rtp_video_reader.h"
 
-#include "base/task.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "remoting/base/constants.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/session.h"
 
@@ -21,20 +23,68 @@ RtpVideoReader::PacketsQueueEntry::PacketsQueueEntry()
       packet(NULL) {
 }
 
-RtpVideoReader::RtpVideoReader()
-    : last_sequence_number_(0),
+RtpVideoReader::RtpVideoReader(base::MessageLoopProxy* message_loop)
+    : session_(NULL),
+      initialized_(false),
+      rtcp_writer_(message_loop),
+      last_sequence_number_(0),
       video_stub_(NULL) {
 }
 
 RtpVideoReader::~RtpVideoReader() {
+  if (session_) {
+    session_->CancelChannelCreation(kVideoRtpChannelName);
+    session_->CancelChannelCreation(kVideoRtcpChannelName);
+  }
   ResetQueue();
 }
 
-void RtpVideoReader::Init(protocol::Session* session, VideoStub* video_stub) {
-  rtp_reader_.Init(session->video_rtp_channel(),
-                   NewCallback(this, &RtpVideoReader::OnRtpPacket));
-  rtcp_writer_.Init(session->video_rtcp_channel());
+void RtpVideoReader::Init(protocol::Session* session,
+                          VideoStub* video_stub,
+                          const InitializedCallback& callback) {
+  session_ = session;
+  initialized_callback_ = callback;
   video_stub_ = video_stub;
+
+  session_->CreateDatagramChannel(
+      kVideoRtpChannelName,
+      base::Bind(&RtpVideoReader::OnChannelReady,
+                 base::Unretained(this), true));
+  session_->CreateDatagramChannel(
+      kVideoRtcpChannelName,
+      base::Bind(&RtpVideoReader::OnChannelReady,
+                 base::Unretained(this), false));
+}
+
+bool RtpVideoReader::is_connected() {
+  return rtp_channel_.get() && rtcp_channel_.get();
+}
+
+void RtpVideoReader::OnChannelReady(bool rtp, net::Socket* socket) {
+  if (!socket) {
+    if (!initialized_) {
+      initialized_ = true;
+      initialized_callback_.Run(false);
+    }
+    return;
+  }
+
+  if (rtp) {
+    DCHECK(!rtp_channel_.get());
+    rtp_channel_.reset(socket);
+    rtp_reader_.Init(socket, base::Bind(&RtpVideoReader::OnRtpPacket,
+                                        base::Unretained(this)));
+  } else {
+    DCHECK(!rtcp_channel_.get());
+    rtcp_channel_.reset(socket);
+    rtcp_writer_.Init(socket);
+  }
+
+  if (rtp_channel_.get() && rtcp_channel_.get()) {
+    DCHECK(!initialized_);
+    initialized_ = true;
+    initialized_callback_.Run(true);
+  }
 }
 
 void RtpVideoReader::ResetQueue() {
@@ -94,7 +144,7 @@ void RtpVideoReader::OnRtpPacket(const RtpPacket* rtp_packet) {
   CheckFullPacket(packets_queue_.begin() + packet_index);
 }
 
-void RtpVideoReader::CheckFullPacket(PacketsQueue::iterator pos) {
+void RtpVideoReader::CheckFullPacket(const PacketsQueue::iterator& pos) {
   if (pos->packet->vp8_descriptor().fragmentation_info ==
       Vp8Descriptor::NOT_FRAGMENTED) {
     // The packet is not fragmented.
@@ -131,8 +181,8 @@ void RtpVideoReader::CheckFullPacket(PacketsQueue::iterator pos) {
   RebuildVideoPacket(first, last);
 }
 
-void RtpVideoReader::RebuildVideoPacket(PacketsQueue::iterator first,
-                                        PacketsQueue::iterator last) {
+void RtpVideoReader::RebuildVideoPacket(const PacketsQueue::iterator& first,
+                                        const PacketsQueue::iterator& last) {
   VideoPacket* packet = new VideoPacket();
 
   // Set flags.
@@ -165,7 +215,8 @@ void RtpVideoReader::RebuildVideoPacket(PacketsQueue::iterator first,
   // Set format.
   packet->mutable_format()->set_encoding(VideoPacketFormat::ENCODING_VP8);
 
-  video_stub_->ProcessVideoPacket(packet, new DeleteTask<VideoPacket>(packet));
+  video_stub_->ProcessVideoPacket(
+      packet, base::Bind(&base::DeletePointer<VideoPacket>, packet));
 
   SendReceiverReportIf();
 }

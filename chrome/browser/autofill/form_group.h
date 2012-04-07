@@ -20,43 +20,38 @@ class FormGroup {
   virtual ~FormGroup() {}
 
   // Used to determine the type of a field based on the text that a user enters
-  // into the field. The field types can then be reported back to the server.
+  // into the field.  The field types can then be reported back to the server.
   // This method is additive on |matching_types|.
   virtual void GetMatchingTypes(const string16& text,
-                                FieldTypeSet* matching_types) const = 0;
+                                FieldTypeSet* matching_types) const;
 
   // Returns a set of AutofillFieldTypes for which this FormGroup has non-empty
-  // data.
-  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const = 0;
+  // data.  This method is additive on |non_empty_types|.
+  virtual void GetNonEmptyTypes(FieldTypeSet* non_empty_types) const;
 
-  // Returns the string that should be auto-filled into a text field given the
-  // type of that field.
+  // Returns the literal string associated with |type|.
   virtual string16 GetInfo(AutofillFieldType type) const = 0;
 
   // Used to populate this FormGroup object with data.
   virtual void SetInfo(AutofillFieldType type, const string16& value) = 0;
 
-  // Returns the label for this FormGroup item. This should be overridden for
-  // form group items that implement a label.
-  virtual const string16 Label() const;
+  // Returns the string that should be auto-filled into a text field given the
+  // type of that field.
+  virtual string16 GetCanonicalizedInfo(AutofillFieldType type) const;
 
-  // Returns true if the field data in |form_group| does not match the field
-  // data in this FormGroup.
-  virtual bool operator!=(const FormGroup& form_group) const;
+  // Used to populate this FormGroup object with data.  Canonicalizes the data
+  // prior to storing, if appropriate.
+  virtual bool SetCanonicalizedInfo(AutofillFieldType type,
+                                    const string16& value);
 
-  // Returns true if the data in this FormGroup is a subset of the data in
-  // |form_group|.
-  bool IsSubsetOf(const FormGroup& form_group) const;
+ protected:
+  // AutofillProfile needs to call into GetSupportedTypes() for objects of
+  // non-AutofillProfile type, for which mere inheritance is insufficient.
+  friend class AutofillProfile;
 
-  // Returns true if the values of the intersection of the available field types
-  // are equal.  If the intersection is empty, the method returns false.
-  bool IntersectionOfTypesHasEqualValues(const FormGroup& form_group) const;
-
-  // Merges the field data in |form_group| with this FormGroup.
-  void MergeWith(const FormGroup& form_group);
-
-  // Overwrites the field data in |form_group| with this FormGroup.
-  void OverwriteWith(const FormGroup& form_group);
+  // Returns a set of AutofillFieldTypes for which this FormGroup can store
+  // data.  This method is additive on |supported_types|.
+  virtual void GetSupportedTypes(FieldTypeSet* supported_types) const = 0;
 };
 
 #endif  // CHROME_BROWSER_AUTOFILL_FORM_GROUP_H_

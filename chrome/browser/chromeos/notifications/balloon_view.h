@@ -9,28 +9,23 @@
 #pragma once
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/notifications/balloon.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "views/view.h"
+#include "ui/views/view.h"
 
 namespace views {
-class Menu2;
-class MenuButton;
-class MouseEvent;
-class TextButton;
 class Widget;
 }  // namespace views
 
 class Notification;
-class NotificationDetails;
-class NotificationSource;
 
 namespace chromeos {
 
@@ -40,22 +35,25 @@ class NotificationControlView;
 // A balloon view is the UI component for a notification panel.
 class BalloonViewImpl : public BalloonView,
                         public views::View,
-                        public NotificationObserver {
+                        public content::NotificationObserver,
+                        public base::SupportsWeakPtr<BalloonViewImpl> {
  public:
   BalloonViewImpl(bool sticky, bool controls, bool web_ui);
   virtual ~BalloonViewImpl();
 
   // views::View interface.
-  virtual void Layout();
-  virtual void ViewHierarchyChanged(bool is_add, View* parent, View* child);
+  virtual void Layout() OVERRIDE;
+  virtual void ViewHierarchyChanged(bool is_add,
+                                    View* parent,
+                                    View* child) OVERRIDE;
 
   // BalloonView interface.
-  virtual void Show(Balloon* balloon);
-  virtual void Update();
-  virtual void Close(bool by_user);
-  virtual void RepositionToBalloon();
-  virtual gfx::Size GetSize() const;
-  virtual BalloonHost* GetHost() const;
+  virtual void Show(Balloon* balloon) OVERRIDE;
+  virtual void Update() OVERRIDE;
+  virtual void Close(bool by_user) OVERRIDE;
+  virtual void RepositionToBalloon() OVERRIDE;
+  virtual gfx::Size GetSize() const OVERRIDE;
+  virtual BalloonHost* GetHost() const OVERRIDE;
 
   // True if the notification is stale. False if the notification is new.
   bool stale() const { return stale_; }
@@ -82,12 +80,12 @@ class BalloonViewImpl : public BalloonView,
   friend class NotificationControlView;
 
   // views::View interface.
-  virtual gfx::Size GetPreferredSize();
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
 
-  // NotificationObserver interface.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver interface.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Initializes the options menu.
   void CreateOptionsMenu();
@@ -104,17 +102,14 @@ class BalloonViewImpl : public BalloonView,
   // Non-owned pointer to the balloon which owns this object.
   Balloon* balloon_;
 
-  // The renderer of the HTML contents. Pointer owned by the views hierarchy.
-  BalloonViewHost* html_contents_;
-
-  // The following factory is used to call methods at a later time.
-  ScopedRunnableMethodFactory<BalloonViewImpl> method_factory_;
+  // The renderer of the HTML contents.
+  scoped_ptr<BalloonViewHost> html_contents_;
 
   // A widget for ControlView.
   scoped_ptr<views::Widget> control_view_host_;
 
   bool stale_;
-  NotificationRegistrar notification_registrar_;
+  content::NotificationRegistrar notification_registrar_;
   // A sticky flag. A sticky notification cannot be dismissed by a user.
   bool sticky_;
   // True if a notification should have info/option/dismiss label/buttons.

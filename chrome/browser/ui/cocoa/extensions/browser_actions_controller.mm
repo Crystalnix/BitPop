@@ -7,13 +7,13 @@
 #include <cmath>
 #include <string>
 
-#include "app/mac/nsimage_cache.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/extensions/extension_browser_event_router.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sessions/restore_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_action_button.h"
 #import "chrome/browser/ui/cocoa/extensions/browser_actions_container_view.h"
@@ -21,16 +21,18 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
 #import "chrome/browser/ui/cocoa/image_button_cell.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#include "ui/gfx/mac/nsimage_cache.h"
 
 NSString* const kBrowserActionVisibilityChangedNotification =
     @"BrowserActionVisibilityChangedNotification";
@@ -176,21 +178,21 @@ const CGFloat kBrowserActionBubbleYOffset = 3.0;
 
 // A helper class to proxy extension notifications to the view controller's
 // appropriate methods.
-class ExtensionServiceObserverBridge : public NotificationObserver,
-                                        public ExtensionToolbarModel::Observer {
+class ExtensionServiceObserverBridge : public content::NotificationObserver,
+                                       public ExtensionToolbarModel::Observer {
  public:
   ExtensionServiceObserverBridge(BrowserActionsController* owner,
                                   Profile* profile) : owner_(owner) {
-    registrar_.Add(this, NotificationType::EXTENSION_HOST_VIEW_SHOULD_CLOSE,
-                   Source<Profile>(profile));
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
+                   content::Source<Profile>(profile));
   }
 
-  // Overridden from NotificationObserver.
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
-    switch (type.value) {
-      case NotificationType::EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
+  // Overridden from content::NotificationObserver.
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    switch (type) {
+      case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
         ExtensionPopupController* popup = [ExtensionPopupController popup];
         if (popup && ![popup isClosing])
           [popup close];
@@ -218,7 +220,7 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
   BrowserActionsController* owner_;
 
   // Used for registering to receive notifications and automatic clean up.
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionServiceObserverBridge);
 };
@@ -843,11 +845,11 @@ class ExtensionServiceObserverBridge : public NotificationObserver,
 }
 
 - (int)currentTabId {
-  TabContents* selected_tab = browser_->GetSelectedTabContents();
+  TabContentsWrapper* selected_tab = browser_->GetSelectedTabContentsWrapper();
   if (!selected_tab)
     return -1;
 
-  return selected_tab->controller().session_id().id();
+  return selected_tab->restore_tab_helper()->session_id().id();
 }
 
 #pragma mark -

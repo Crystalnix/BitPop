@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,17 +9,19 @@
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/dialog_style.h"
 #include "chrome/browser/ui/views/window.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view.h"
 #include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/message_box_flags.h"
 #include "ui/base/text/text_elider.h"
-#include "views/controls/message_box_view.h"
-#include "views/window/window.h"
+#include "ui/views/controls/message_box_view.h"
+#include "ui/views/widget/widget.h"
+
+using content::WebContents;
 
 namespace {
 
@@ -33,10 +35,10 @@ const int kMessageWidth = 400;
 // static
 void ExternalProtocolHandler::RunExternalProtocolDialog(
     const GURL& url, int render_process_host_id, int routing_id) {
-  TabContents* tab_contents = tab_util::GetTabContentsByID(
+  WebContents* web_contents = tab_util::GetWebContentsByID(
       render_process_host_id, routing_id);
-  DCHECK(tab_contents);
-  new ExternalProtocolDialog(tab_contents, url);
+  DCHECK(web_contents);
+  new ExternalProtocolDialog(web_contents, url);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -49,17 +51,16 @@ ExternalProtocolDialog::~ExternalProtocolDialog() {
 // ExternalProtocolDialog, views::DialogDelegate implementation:
 
 int ExternalProtocolDialog::GetDialogButtons() const {
-  return ui::MessageBoxFlags::DIALOGBUTTON_OK;
+  return ui::DIALOG_BUTTON_OK;
 }
 
-std::wstring ExternalProtocolDialog::GetDialogButtonLabel(
-    ui::MessageBoxFlags::DialogButton button) const {
-  return UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_OK_BUTTON_TEXT));
+string16 ExternalProtocolDialog::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_OK_BUTTON_TEXT);
 }
 
-std::wstring ExternalProtocolDialog::GetWindowTitle() const {
-  return UTF16ToWide(l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_TITLE));
+string16 ExternalProtocolDialog::GetWindowTitle() const {
+  return l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_TITLE);
 }
 
 void ExternalProtocolDialog::DeleteDelegate() {
@@ -79,18 +80,18 @@ views::View* ExternalProtocolDialog::GetContentsView() {
   return message_box_view_;
 }
 
-bool ExternalProtocolDialog::IsAlwaysOnTop() const {
-  return false;
+const views::Widget* ExternalProtocolDialog::GetWidget() const {
+  return message_box_view_->GetWidget();
 }
 
-bool ExternalProtocolDialog::IsModal() const {
-  return false;
+views::Widget* ExternalProtocolDialog::GetWidget() {
+  return message_box_view_->GetWidget();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // ExternalProtocolDialog, private:
 
-ExternalProtocolDialog::ExternalProtocolDialog(TabContents* tab_contents,
+ExternalProtocolDialog::ExternalProtocolDialog(WebContents* web_contents,
                                                const GURL& url)
     : creation_time_(base::TimeTicks::Now()),
       scheme_(url.scheme()) {
@@ -99,25 +100,25 @@ ExternalProtocolDialog::ExternalProtocolDialog(TabContents* tab_contents,
   ui::ElideString(ASCIIToUTF16(url.possibly_invalid_spec()),
       kMaxUrlWithoutSchemeSize, &elided_url_without_scheme);
 
-  std::wstring message_text = UTF16ToWide(l10n_util::GetStringFUTF16(
+  string16 message_text = l10n_util::GetStringFUTF16(
       IDS_EXTERNAL_PROTOCOL_INFORMATION,
       ASCIIToUTF16(url.scheme() + ":"),
-      elided_url_without_scheme) + ASCIIToUTF16("\n\n"));
+      elided_url_without_scheme) + ASCIIToUTF16("\n\n");
 
   message_box_view_ = new views::MessageBoxView(
-      ui::MessageBoxFlags::kIsConfirmMessageBox,
+      views::MessageBoxView::NO_OPTIONS,
       message_text,
-      std::wstring(),
+      string16(),
       kMessageWidth);
-  message_box_view_->SetCheckBoxLabel(UTF16ToWide(
-      l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CHECKBOX_TEXT)));
+  message_box_view_->SetCheckBoxLabel(
+      l10n_util::GetStringUTF16(IDS_EXTERNAL_PROTOCOL_CHECKBOX_TEXT));
 
   gfx::NativeWindow parent_window;
-  if (tab_contents) {
-    parent_window = tab_contents->view()->GetTopLevelNativeWindow();
+  if (web_contents) {
+    parent_window = web_contents->GetView()->GetTopLevelNativeWindow();
   } else {
-    // Dialog is top level if we don't have a tab_contents associated with us.
+    // Dialog is top level if we don't have a web_contents associated with us.
     parent_window = NULL;
   }
-  browser::CreateViewsWindow(parent_window, gfx::Rect(), this)->Show();
+  browser::CreateViewsWindow(parent_window, this, STYLE_GENERIC)->Show();
 }

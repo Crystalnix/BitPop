@@ -6,15 +6,16 @@
 
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
 #import "chrome/browser/ui/cocoa/bubble_view.h"
-#import "chrome/browser/ui/cocoa/browser_test_helper.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
+#include "ui/gfx/point.h"
 
 // The test delegate records all of the status bubble object's state
 // transitions.
@@ -59,16 +60,30 @@
 @end
 
 // This class implements, for testing purposes, a subclass of |StatusBubbleMac|
-// whose |MouseMoved()| method does nothing. (Ideally, we'd have a way of
-// controlling the "mouse" location, but the current implementation of
-// |StatusBubbleMac| uses |[NSEvent mouseLocation]| directly.) Without this,
-// tests can be flaky since results may depend on the mouse location.
+// whose |MouseMoved()| method does nothing. This lets the tests fake the mouse
+// position and avoid being affected by the true mouse position.
 class StatusBubbleMacIgnoreMouseMoved : public StatusBubbleMac {
  public:
   StatusBubbleMacIgnoreMouseMoved(NSWindow* parent, id delegate)
-      : StatusBubbleMac(parent, delegate) {}
+      : StatusBubbleMac(parent, delegate), mouseLocation_(0, 0) {
+    // Set the fake mouse position to the top right of the content area.
+    NSRect contentBounds = [[parent contentView] bounds];
+    mouseLocation_.SetPoint(NSMaxX(contentBounds), NSMaxY(contentBounds));
+  }
 
   virtual void MouseMoved(const gfx::Point& location, bool left_content) {}
+
+  virtual gfx::Point GetMouseLocation() {
+    return mouseLocation_;
+  }
+
+  void SetMouseLocationForTesting(int x, int y) {
+    mouseLocation_.SetPoint(x, y);
+    StatusBubbleMac::MouseMoved(gfx::Point(x, y), false);
+  }
+
+ private:
+  gfx::Point mouseLocation_;
 };
 
 class StatusBubbleMacTest : public CocoaTest {
@@ -133,7 +148,30 @@ class StatusBubbleMacTest : public CocoaTest {
   StatusBubbleMac::StatusBubbleState StateAt(int index) {
     return (*States())[index];
   }
-  BrowserTestHelper browser_helper_;
+
+  bool IsPointInBubble(int x, int y) {
+    return NSPointInRect(NSMakePoint(x, y), [GetWindow() frame]);
+  }
+
+  void SetMouseLocation(int relative_x, int relative_y) {
+    // Convert to screen coordinates.
+    NSRect window_frame = [test_window() frame];
+    int x = relative_x + window_frame.origin.x;
+    int y = relative_y + window_frame.origin.y;
+
+    ((StatusBubbleMacIgnoreMouseMoved*)
+      bubble_)->SetMouseLocationForTesting(x, y);
+  }
+
+  // Test helper for moving the fake mouse location, and checking that
+  // the bubble avoids that location.
+  // For convenience & clarity, coordinates are relative to the main window.
+  bool CheckAvoidsMouse(int relative_x, int relative_y) {
+    SetMouseLocation(relative_x, relative_y);
+    return !IsPointInBubble(relative_x, relative_y);
+  }
+
+  MessageLoop message_loop_;
   scoped_nsobject<StatusBubbleMacTestDelegate> delegate_;
   StatusBubbleMac* bubble_;  // Strong.
 };
@@ -154,20 +192,20 @@ TEST_F(StatusBubbleMacTest, SetStatus) {
 }
 
 TEST_F(StatusBubbleMacTest, SetURL) {
-  bubble_->SetURL(GURL(), string16());
+  bubble_->SetURL(GURL(), std::string());
   EXPECT_FALSE(IsVisible());
-  bubble_->SetURL(GURL("bad url"), string16());
+  bubble_->SetURL(GURL("bad url"), std::string());
   EXPECT_FALSE(IsVisible());
-  bubble_->SetURL(GURL("http://"), string16());
+  bubble_->SetURL(GURL("http://"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"http:", GetURLText());
-  bubble_->SetURL(GURL("about:blank"), string16());
+  bubble_->SetURL(GURL("about:blank"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"about:blank", GetURLText());
-  bubble_->SetURL(GURL("foopy://"), string16());
+  bubble_->SetURL(GURL("foopy://"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"foopy://", GetURLText());
-  bubble_->SetURL(GURL("http://www.cnn.com"), string16());
+  bubble_->SetURL(GURL("http://www.cnn.com"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"www.cnn.com", GetURLText());
 }
@@ -188,15 +226,15 @@ TEST_F(StatusBubbleMacTest, SetStatusAndURL) {
   bubble_->SetStatus(UTF8ToUTF16("Status"));
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"Status", GetBubbleViewText());
-  bubble_->SetURL(GURL("http://www.nytimes.com"), string16());
+  bubble_->SetURL(GURL("http://www.nytimes.com"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"www.nytimes.com", GetBubbleViewText());
-  bubble_->SetURL(GURL(), string16());
+  bubble_->SetURL(GURL(), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"Status", GetBubbleViewText());
   bubble_->SetStatus(string16());
   EXPECT_FALSE(IsVisible());
-  bubble_->SetURL(GURL("http://www.nytimes.com"), string16());
+  bubble_->SetURL(GURL("http://www.nytimes.com"), std::string());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"www.nytimes.com", GetBubbleViewText());
   bubble_->SetStatus(UTF8ToUTF16("Status"));
@@ -205,7 +243,7 @@ TEST_F(StatusBubbleMacTest, SetStatusAndURL) {
   bubble_->SetStatus(string16());
   EXPECT_TRUE(IsVisible());
   EXPECT_NSEQ(@"www.nytimes.com", GetBubbleViewText());
-  bubble_->SetURL(GURL(), string16());
+  bubble_->SetURL(GURL(), std::string());
   EXPECT_FALSE(IsVisible());
 }
 
@@ -545,7 +583,7 @@ TEST_F(StatusBubbleMacTest, ExpandBubble) {
   bubble_->SetStatus(UTF8ToUTF16("Showing"));
   EXPECT_TRUE(IsVisible());
   bubble_->SetURL(GURL("http://www.battersbox.com/peter_paul_and_mary.html"),
-                  string16());
+                  std::string());
   EXPECT_TRUE([GetURLText() hasSuffix:@"\u2026"]);
   bubble_->ExpandBubble();
   EXPECT_TRUE(IsVisible());
@@ -555,14 +593,14 @@ TEST_F(StatusBubbleMacTest, ExpandBubble) {
   // Make sure bubble resets after hide.
   bubble_->SetStatus(UTF8ToUTF16("Showing"));
   bubble_->SetURL(GURL("http://www.snickersnee.com/pioneer_fishstix.html"),
-                  string16());
+                  std::string());
   EXPECT_TRUE([GetURLText() hasSuffix:@"\u2026"]);
   // ...and that it expands again properly.
   bubble_->ExpandBubble();
   EXPECT_NSEQ(@"www.snickersnee.com/pioneer_fishstix.html", GetURLText());
   // ...again, again!
   bubble_->SetURL(GURL("http://www.battersbox.com/peter_paul_and_mary.html"),
-                  string16());
+                  std::string());
   bubble_->ExpandBubble();
   EXPECT_NSEQ(@"www.battersbox.com/peter_paul_and_mary.html", GetURLText());
   bubble_->Hide();
@@ -575,10 +613,48 @@ TEST_F(StatusBubbleMacTest, ExpandBubble) {
   bubble_->SetStatus(UTF8ToUTF16("Showing"));
   const char veryLongUrl[] =
       "http://www.diewahrscheinlichlaengstepralinederwelt.com/duuuuplo.html";
-  bubble_->SetURL(GURL(veryLongUrl), string16());
+  bubble_->SetURL(GURL(veryLongUrl), std::string());
   EXPECT_TRUE([GetURLText() hasSuffix:@"\u2026"]);
   bubble_->ExpandBubble();
   EXPECT_TRUE([GetURLText() hasSuffix:@"\u2026"]);
 }
 
+TEST_F(StatusBubbleMacTest, BubbleAvoidsMouse) {
+  NSWindow* window = test_window();
 
+  // All coordinates here are relative to the window origin.
+
+  // Initially, the bubble should appear in the bottom left.
+  bubble_->SetStatus(UTF8ToUTF16("Showing"));
+  EXPECT_TRUE(IsPointInBubble(0, 0));
+  bubble_->Hide();
+
+  // Check that the bubble doesn't appear in the left corner if the
+  // mouse is currently located there.
+  SetMouseLocation(0, 0);
+  bubble_->SetStatus(UTF8ToUTF16("Showing"));
+  EXPECT_FALSE(IsPointInBubble(0, 0));
+
+  // Leave the bubble visible, and try moving the mouse around.
+  int smallValue = NSHeight([GetWindow() frame]) / 2;
+  EXPECT_TRUE(CheckAvoidsMouse(0, 0));
+  EXPECT_TRUE(CheckAvoidsMouse(smallValue, 0));
+  EXPECT_TRUE(CheckAvoidsMouse(0, smallValue));
+  EXPECT_TRUE(CheckAvoidsMouse(smallValue, smallValue));
+
+  // Simulate moving the mouse down from the top of the window.
+  for (int y = NSHeight([window frame]); y >= 0; y -= smallValue) {
+    ASSERT_TRUE(CheckAvoidsMouse(smallValue, y));
+  }
+
+  // Simulate moving the mouse from left to right.
+  int windowWidth = NSWidth([window frame]);
+  for (int x = 0; x < windowWidth; x += smallValue) {
+    ASSERT_TRUE(CheckAvoidsMouse(x, smallValue));
+  }
+
+  // Simulate moving the mouse from right to left.
+  for (int x = windowWidth; x >= 0; x -= smallValue) {
+    ASSERT_TRUE(CheckAvoidsMouse(x, smallValue));
+  }
+}

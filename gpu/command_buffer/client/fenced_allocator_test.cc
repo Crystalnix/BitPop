@@ -4,9 +4,9 @@
 
 // This file contains the tests for the FencedAllocator class.
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/message_loop.h"
-#include "base/mac/scoped_nsautorelease_pool.h"
 #include "gpu/command_buffer/client/cmd_buffer_helper.h"
 #include "gpu/command_buffer/client/fenced_allocator.h"
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
@@ -14,6 +14,10 @@
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_MACOSX)
+#include "base/mac/scoped_nsautorelease_pool.h"
+#endif
 
 namespace gpu {
 
@@ -41,20 +45,14 @@ class BaseFencedAllocatorTest : public testing::Test {
                               Return(error::kNoError)));
 
     command_buffer_.reset(new CommandBufferService);
-    command_buffer_->Initialize(kBufferSize);
-    Buffer ring_buffer = command_buffer_->GetRingBuffer();
-
-    parser_ = new CommandParser(ring_buffer.ptr,
-                                ring_buffer.size,
-                                0,
-                                ring_buffer.size,
-                                0,
-                                api_mock_.get());
+    command_buffer_->Initialize();
 
     gpu_scheduler_.reset(new GpuScheduler(
-        command_buffer_.get(), NULL, parser_, INT_MAX));
-    command_buffer_->SetPutOffsetChangeCallback(NewCallback(
-        gpu_scheduler_.get(), &GpuScheduler::PutChanged));
+        command_buffer_.get(), api_mock_.get(), NULL));
+    command_buffer_->SetPutOffsetChangeCallback(base::Bind(
+        &GpuScheduler::PutChanged, base::Unretained(gpu_scheduler_.get())));
+    command_buffer_->SetGetBufferChangeCallback(base::Bind(
+        &GpuScheduler::SetGetBuffer, base::Unretained(gpu_scheduler_.get())));
 
     api_mock_->set_engine(gpu_scheduler_.get());
 
@@ -66,12 +64,13 @@ class BaseFencedAllocatorTest : public testing::Test {
     return command_buffer_->GetState().token;
   }
 
+#if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool autorelease_pool_;
+#endif
   MessageLoop message_loop_;
   scoped_ptr<AsyncAPIMock> api_mock_;
   scoped_ptr<CommandBufferService> command_buffer_;
   scoped_ptr<GpuScheduler> gpu_scheduler_;
-  CommandParser* parser_;
   scoped_ptr<CommandBufferHelper> helper_;
 };
 
@@ -105,14 +104,17 @@ class FencedAllocatorTest : public BaseFencedAllocatorTest {
 // Checks basic alloc and free.
 TEST_F(FencedAllocatorTest, TestBasic) {
   allocator_->CheckConsistency();
+  EXPECT_FALSE(allocator_->InUse());
 
   const unsigned int kSize = 16;
   FencedAllocator::Offset offset = allocator_->Alloc(kSize);
+  EXPECT_TRUE(allocator_->InUse());
   EXPECT_NE(FencedAllocator::kInvalidOffset, offset);
   EXPECT_GE(kBufferSize, offset+kSize);
   EXPECT_TRUE(allocator_->CheckConsistency());
 
   allocator_->Free(offset);
+  EXPECT_FALSE(allocator_->InUse());
   EXPECT_TRUE(allocator_->CheckConsistency());
 }
 
@@ -222,6 +224,7 @@ TEST_F(FencedAllocatorTest, FreeUnused) {
     EXPECT_GE(kBufferSize, offsets[i]+kSize);
     EXPECT_TRUE(allocator_->CheckConsistency());
   }
+  EXPECT_TRUE(allocator_->InUse());
 
   // No memory should be available.
   EXPECT_EQ(0u, allocator_->GetLargestFreeSize());
@@ -258,12 +261,14 @@ TEST_F(FencedAllocatorTest, FreeUnused) {
 
   // Check that the new largest free size takes into account the unused blocks.
   EXPECT_EQ(kSize * 3, allocator_->GetLargestFreeSize());
+  EXPECT_TRUE(allocator_->InUse());
 
   // Free up everything.
   for (unsigned int i = 3; i < kAllocCount; ++i) {
     allocator_->Free(offsets[i]);
     EXPECT_TRUE(allocator_->CheckConsistency());
   }
+  EXPECT_FALSE(allocator_->InUse());
 }
 
 // Tests GetLargestFreeSize

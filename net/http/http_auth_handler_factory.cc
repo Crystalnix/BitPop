@@ -4,14 +4,17 @@
 
 #include "net/http/http_auth_handler_factory.h"
 
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_auth_filter.h"
 #include "net/http/http_auth_handler_basic.h"
 #include "net/http/http_auth_handler_digest.h"
-#include "net/http/http_auth_handler_negotiate.h"
 #include "net/http/http_auth_handler_ntlm.h"
+
+#if defined(USE_KERBEROS)
+#include "net/http/http_auth_handler_negotiate.h"
+#endif
 
 namespace net {
 
@@ -49,6 +52,7 @@ HttpAuthHandlerRegistryFactory* HttpAuthHandlerFactory::CreateDefault(
   registry_factory->RegisterSchemeFactory(
       "digest", new HttpAuthHandlerDigest::Factory());
 
+#if defined(USE_KERBEROS)
   HttpAuthHandlerNegotiate::Factory* negotiate_factory =
       new HttpAuthHandlerNegotiate::Factory();
 #if defined(OS_POSIX)
@@ -58,6 +62,7 @@ HttpAuthHandlerRegistryFactory* HttpAuthHandlerFactory::CreateDefault(
 #endif
   negotiate_factory->set_host_resolver(host_resolver);
   registry_factory->RegisterSchemeFactory("negotiate", negotiate_factory);
+#endif  // defined(USE_KERBEROS)
 
   HttpAuthHandlerNTLM::Factory* ntlm_factory =
       new HttpAuthHandlerNTLM::Factory();
@@ -144,6 +149,7 @@ HttpAuthHandlerRegistryFactory* HttpAuthHandlerRegistryFactory::Create(
 #endif
     registry_factory->RegisterSchemeFactory("ntlm", ntlm_factory);
   }
+#if defined(USE_KERBEROS)
   if (IsSupportedScheme(supported_schemes, "negotiate")) {
     HttpAuthHandlerNegotiate::Factory* negotiate_factory =
         new HttpAuthHandlerNegotiate::Factory();
@@ -160,6 +166,7 @@ HttpAuthHandlerRegistryFactory* HttpAuthHandlerRegistryFactory::Create(
     negotiate_factory->set_use_port(negotiate_enable_port);
     registry_factory->RegisterSchemeFactory("negotiate", negotiate_factory);
   }
+#endif  // defined(USE_KERBEROS)
 
   return registry_factory;
 }

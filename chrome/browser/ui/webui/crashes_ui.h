@@ -6,13 +6,13 @@
 #define CHROME_BROWSER_UI_WEBUI_CRASHES_UI_H_
 #pragma once
 
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_controller.h"
 
 class RefCountedMemory;
 
-class CrashesUI : public WebUI {
+class CrashesUI : public content::WebUIController {
  public:
-  explicit CrashesUI(TabContents* contents);
+  explicit CrashesUI(content::WebUI* web_ui);
 
   static RefCountedMemory* GetFaviconResourceBytes();
 

@@ -1,10 +1,15 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 #include "base/message_loop.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/thread.h"
 #include "net/socket/socket.h"
 #include "remoting/protocol/fake_session.h"
 #include "remoting/protocol/message_reader.h"
@@ -25,32 +30,45 @@ const char kTestMessage1[] = "Message1";
 const char kTestMessage2[] = "Message2";
 
 ACTION(CallDoneTask) {
-  arg1->Run();
-  delete arg1;
+  arg1.Run();
 }
 }
 
 class MockMessageReceivedCallback {
  public:
-  MOCK_METHOD2(OnMessage, void(CompoundBuffer*, Task*));
+  MOCK_METHOD2(OnMessage, void(CompoundBuffer*, const base::Closure&));
 };
 
 class MessageReaderTest : public testing::Test {
+ public:
+  MessageReaderTest()
+      : other_thread_("SecondTestThread"),
+        run_task_finished_(false, false) {
+  }
+
+  void RunDoneTaskOnOtherThread(CompoundBuffer* buffer,
+                                const base::Closure& done_task) {
+    other_thread_.message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&MessageReaderTest::RunAndDeleteTask,
+                   base::Unretained(this), done_task));
+  }
+
  protected:
   virtual void SetUp() {
     reader_ = new MessageReader();
   }
 
   void InitReader() {
-    reader_->Init(&socket_, NewCallback(
-        &callback_, &MockMessageReceivedCallback::OnMessage));
+    reader_->Init(&socket_, base::Bind(
+        &MockMessageReceivedCallback::OnMessage, base::Unretained(&callback_)));
   }
 
   void AddMessage(const std::string& message) {
     std::string data = std::string(4, ' ') + message;
     talk_base::SetBE32(const_cast<char*>(data.data()), message.size());
 
-    socket_.AppendInputData(data.data(), data.size());
+    socket_.AppendInputData(std::vector<char>(data.begin(), data.end()));
   }
 
   bool CompareResult(CompoundBuffer* buffer, const std::string& expected) {
@@ -59,14 +77,14 @@ class MessageReaderTest : public testing::Test {
     return result == expected;
   }
 
-  void RunAndDeleteTask(Task* task) {
-    task->Run();
-    delete task;
+  void RunAndDeleteTask(const base::Closure& task) {
+    task.Run();
+    run_task_finished_.Signal();
   }
 
-  // MessageLoop must be first here, so that is is destroyed the last.
   MessageLoop message_loop_;
-
+  base::Thread other_thread_;
+  base::WaitableEvent run_task_finished_;
   scoped_refptr<MessageReader> reader_;
   FakeSocket socket_;
   MockMessageReceivedCallback callback_;
@@ -75,7 +93,7 @@ class MessageReaderTest : public testing::Test {
 // Receive one message and process it with delay
 TEST_F(MessageReaderTest, OneMessage_Delay) {
   CompoundBuffer* buffer;
-  Task* done_task;
+  base::Closure done_task;
 
   AddMessage(kTestMessage1);
 
@@ -116,9 +134,9 @@ TEST_F(MessageReaderTest, OneMessage_Instant) {
 // Receive two messages in one packet.
 TEST_F(MessageReaderTest, TwoMessages_Together) {
   CompoundBuffer* buffer1;
-  Task* done_task1;
+  base::Closure done_task1;
   CompoundBuffer* buffer2;
-  Task* done_task2;
+  base::Closure done_task2;
 
   AddMessage(kTestMessage1);
   AddMessage(kTestMessage2);
@@ -155,7 +173,7 @@ TEST_F(MessageReaderTest, TwoMessages_Together) {
 // instantly.
 TEST_F(MessageReaderTest, TwoMessages_Instant) {
   CompoundBuffer* buffer2;
-  Task* done_task2;
+  base::Closure done_task2;
 
   AddMessage(kTestMessage1);
   AddMessage(kTestMessage2);
@@ -201,7 +219,7 @@ TEST_F(MessageReaderTest, TwoMessages_Instant2) {
 // Receive two messages in separate packets.
 TEST_F(MessageReaderTest, TwoMessages_Separately) {
   CompoundBuffer* buffer;
-  Task* done_task;
+  base::Closure done_task;
 
   AddMessage(kTestMessage1);
 
@@ -241,6 +259,35 @@ TEST_F(MessageReaderTest, TwoMessages_Separately) {
   RunAndDeleteTask(done_task);
 
   EXPECT_TRUE(socket_.read_pending());
+}
+
+// Verify that socket operations occur on same thread, even when the OnMessage()
+// callback triggers |done_task| to run on a different thread.
+TEST_F(MessageReaderTest, UseSocketOnCorrectThread) {
+
+  AddMessage(kTestMessage1);
+  other_thread_.Start();
+
+  EXPECT_CALL(callback_, OnMessage(_, _))
+      .Times(1)
+      .WillOnce(Invoke(this, &MessageReaderTest::RunDoneTaskOnOtherThread));
+
+  InitReader();
+
+  run_task_finished_.Wait();
+  message_loop_.RunAllPending();
+
+  // Write another message and verify that we receive it.
+  CompoundBuffer* buffer;
+  base::Closure done_task;
+  EXPECT_CALL(callback_, OnMessage(_, _))
+      .Times(1)
+      .WillOnce(DoAll(SaveArg<0>(&buffer),
+                      SaveArg<1>(&done_task)));
+  AddMessage(kTestMessage2);
+  EXPECT_TRUE(CompareResult(buffer, kTestMessage2));
+
+  RunAndDeleteTask(done_task);
 }
 
 }  // namespace protocol

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
@@ -14,6 +15,7 @@
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/stringprintf.h"
+#include "base/test/thread_test_helper.h"
 #include "chrome/browser/chromeos/cros/mock_cryptohome_library.h"
 #include "chrome/browser/chromeos/cros/mock_library_loader.h"
 #include "chrome/browser/chromeos/login/mock_auth_response_handler.h"
@@ -22,16 +24,15 @@
 #include "chrome/browser/chromeos/login/test_attempt_state.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/net/gaia/gaia_auth_fetcher_unittest.h"
-#include "chrome/test/testing_profile.h"
-#include "chrome/test/thread_test_helper.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/url_fetcher.h"
+#include "chrome/test/base/testing_profile.h"
+#include "content/test/test_browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using content::BrowserThread;
 using file_util::CloseFile;
 using file_util::CreateAndOpenTemporaryFile;
 using file_util::CreateAndOpenTemporaryFileInDir;
@@ -45,12 +46,14 @@ using ::testing::SetArgumentPointee;
 using ::testing::_;
 
 namespace chromeos {
-class ResolveChecker : public ThreadTestHelper {
+
+class ResolveChecker : public base::ThreadTestHelper {
  public:
   ResolveChecker(TestAttemptState* state,
                  ParallelAuthenticator* auth,
                  ParallelAuthenticator::AuthState expected)
-      : ThreadTestHelper(BrowserThread::IO),
+      : base::ThreadTestHelper(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO)),
         state_(state),
         auth_(auth),
         expected_(expected) {
@@ -68,7 +71,15 @@ class ResolveChecker : public ThreadTestHelper {
   ParallelAuthenticator::AuthState expected_;
 };
 
-class ParallelAuthenticatorTest : public ::testing::Test {
+class TestOnlineAttempt : public OnlineAttempt {
+ public:
+  TestOnlineAttempt(AuthAttemptState* state,
+                    AuthAttemptStateResolver* resolver)
+      : OnlineAttempt(false, state, resolver) {
+  }
+};
+
+class ParallelAuthenticatorTest : public testing::Test {
  public:
   ParallelAuthenticatorTest()
       : message_loop_(MessageLoop::TYPE_UI),
@@ -145,9 +156,7 @@ class ParallelAuthenticatorTest : public ::testing::Test {
                             const std::string& filename) {
     BrowserThread::PostTask(
         BrowserThread::FILE, FROM_HERE,
-        NewRunnableMethod(auth,
-                          &ParallelAuthenticator::LoadLocalaccount,
-                          filename));
+        base::Bind(&ParallelAuthenticator::LoadLocalaccount, auth, filename));
     file_thread_.Stop();
     file_thread_.Start();
   }
@@ -162,7 +171,7 @@ class ParallelAuthenticatorTest : public ::testing::Test {
   // Allow test to fail and exit gracefully, even if OnLoginSuccess()
   // wasn't supposed to happen.
   void FailOnLoginSuccess() {
-    ON_CALL(consumer_, OnLoginSuccess(_, _, _, _))
+    ON_CALL(consumer_, OnLoginSuccess(_, _, _, _, _))
         .WillByDefault(Invoke(MockConsumer::OnSuccessQuitAndFail));
   }
 
@@ -183,7 +192,8 @@ class ParallelAuthenticatorTest : public ::testing::Test {
                           const std::string& password,
                           const GaiaAuthConsumer::ClientLoginResult& result,
                           bool pending) {
-    EXPECT_CALL(consumer_, OnLoginSuccess(username, password, result, pending))
+    EXPECT_CALL(consumer_, OnLoginSuccess(username, password, result, pending,
+                                          false))
         .WillOnce(Invoke(MockConsumer::OnSuccessQuit))
         .RetiresOnSaturation();
   }
@@ -203,7 +213,7 @@ class ParallelAuthenticatorTest : public ::testing::Test {
   void RunResolve(ParallelAuthenticator* auth, MessageLoop* loop) {
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        NewRunnableMethod(auth, &ParallelAuthenticator::Resolve));
+        base::Bind(&ParallelAuthenticator::Resolve, auth));
     loop->Run();
   }
 
@@ -211,15 +221,22 @@ class ParallelAuthenticatorTest : public ::testing::Test {
     auth->set_attempt_state(state);
   }
 
+  void FakeOnlineAttempt() {
+    auth_->set_online_attempt(new TestOnlineAttempt(state_.get(), auth_.get()));
+  }
+
   MessageLoop message_loop_;
-  BrowserThread ui_thread_;
-  BrowserThread file_thread_;
-  BrowserThread io_thread_;
+  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThread file_thread_;
+  content::TestBrowserThread io_thread_;
 
   std::string username_;
   std::string password_;
   std::string hash_ascii_;
   GaiaAuthConsumer::ClientLoginResult result_;
+
+  // Initializes / shuts down a stub CrosLibrary.
+  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
 
   // Mocks, destroyed by CrosLibrary class.
   MockCryptohomeLibrary* mock_library_;
@@ -229,22 +246,6 @@ class ParallelAuthenticatorTest : public ::testing::Test {
   scoped_refptr<ParallelAuthenticator> auth_;
   scoped_ptr<TestAttemptState> state_;
 };
-
-TEST_F(ParallelAuthenticatorTest, SaltToAscii) {
-  unsigned char fake_salt[8] = { 0 };
-  fake_salt[0] = 10;
-  fake_salt[1] = 1;
-  fake_salt[7] = 10 << 4;
-  std::vector<unsigned char> salt_v(fake_salt, fake_salt + sizeof(fake_salt));
-
-  ON_CALL(*mock_library_, GetSystemSalt())
-      .WillByDefault(Return(salt_v));
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .Times(1)
-      .RetiresOnSaturation();
-
-  EXPECT_EQ("0a010000000000a0", auth_->SaltAsAscii());
-}
 
 TEST_F(ParallelAuthenticatorTest, ReadLocalaccount) {
   FilePath tmp_file_path = FakeLocalaccountFile(username_);
@@ -272,7 +273,8 @@ TEST_F(ParallelAuthenticatorTest, ReadNoLocalaccount) {
 }
 
 TEST_F(ParallelAuthenticatorTest, OnLoginSuccess) {
-  EXPECT_CALL(consumer_, OnLoginSuccess(username_, password_, result_, false))
+  EXPECT_CALL(consumer_, OnLoginSuccess(username_, password_, result_, false,
+                                        false))
       .Times(1)
       .RetiresOnSaturation();
 
@@ -297,6 +299,9 @@ TEST_F(ParallelAuthenticatorTest, ResolveNothingDone) {
 }
 
 TEST_F(ParallelAuthenticatorTest, ResolvePossiblePwChange) {
+  // Set a fake online attempt so that we return intermediate cryptohome state.
+  FakeOnlineAttempt();
+
   // Set up state as though a cryptohome mount attempt has occurred
   // and been rejected.
   state_->PresetCryptohomeStatus(false,
@@ -305,6 +310,37 @@ TEST_F(ParallelAuthenticatorTest, ResolvePossiblePwChange) {
       new ResolveChecker(state_.release(),
                          auth_.get(),
                          ParallelAuthenticator::POSSIBLE_PW_CHANGE));
+  EXPECT_TRUE(checker->Run());
+}
+
+TEST_F(ParallelAuthenticatorTest, ResolvePossiblePwChangeToFailedMount) {
+  // Set up state as though a cryptohome mount attempt has occurred
+  // and been rejected.
+  state_->PresetCryptohomeStatus(false,
+                                 chromeos::kCryptohomeMountErrorKeyFailure);
+
+  // When there is no online attempt and online results, POSSIBLE_PW_CHANGE
+  // will be resolved to FAILED_MOUNT.
+  scoped_refptr<ResolveChecker> checker(
+      new ResolveChecker(state_.release(),
+                         auth_.get(),
+                         ParallelAuthenticator::FAILED_MOUNT));
+  EXPECT_TRUE(checker->Run());
+}
+
+TEST_F(ParallelAuthenticatorTest, ResolveNeedOldPw) {
+  // Set up state as though a cryptohome mount attempt has occurred
+  // and been rejected because of unmatched key; additionally,
+  // an online auth attempt has completed successfully.
+  state_->PresetCryptohomeStatus(
+      false,
+      chromeos::kCryptohomeMountErrorKeyFailure);
+  state_->PresetOnlineLoginStatus(GaiaAuthConsumer::ClientLoginResult(),
+                                 LoginFailure::None());
+  scoped_refptr<ResolveChecker> checker(
+      new ResolveChecker(state_.release(),
+                         auth_.get(),
+                         ParallelAuthenticator::NEED_OLD_PW));
   EXPECT_TRUE(checker->Run());
 }
 
@@ -393,7 +429,7 @@ TEST_F(ParallelAuthenticatorTest, DriveRequestOldPassword) {
   ExpectPasswordChange();
 
   state_->PresetCryptohomeStatus(false,
-                                chromeos::kCryptohomeMountErrorKeyFailure);
+                                 chromeos::kCryptohomeMountErrorKeyFailure);
   state_->PresetOnlineLoginStatus(result_, LoginFailure::None());
   SetAttemptState(auth_, state_.release());
 
@@ -412,8 +448,8 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecover) {
   EXPECT_CALL(*mock_library_, AsyncMount(username_, hash_ascii_, false, _))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   state_->PresetOnlineLoginStatus(result_, LoginFailure::None());
@@ -433,8 +469,8 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecoverButFail) {
   EXPECT_CALL(*mock_library_, AsyncMigrateKey(username_, _, hash_ascii_, _))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   SetAttemptState(auth_, state_.release());
@@ -444,6 +480,9 @@ TEST_F(ParallelAuthenticatorTest, DriveDataRecoverButFail) {
 }
 
 TEST_F(ParallelAuthenticatorTest, ResolveNoMount) {
+  // Set a fake online attempt so that we return intermediate cryptohome state.
+  FakeOnlineAttempt();
+
   // Set up state as though a cryptohome mount attempt has occurred
   // and been rejected because the user doesn't exist.
   state_->PresetCryptohomeStatus(
@@ -453,6 +492,22 @@ TEST_F(ParallelAuthenticatorTest, ResolveNoMount) {
       new ResolveChecker(state_.release(),
                          auth_.get(),
                          ParallelAuthenticator::NO_MOUNT));
+  EXPECT_TRUE(checker->Run());
+}
+
+TEST_F(ParallelAuthenticatorTest, ResolveNoMountToFailedMount) {
+  // Set up state as though a cryptohome mount attempt has occurred
+  // and been rejected because the user doesn't exist.
+  state_->PresetCryptohomeStatus(
+      false,
+      chromeos::kCryptohomeMountErrorUserDoesNotExist);
+
+  // When there is no online attempt and online results, NO_MOUNT will be
+  // resolved to FAILED_MOUNT.
+  scoped_refptr<ResolveChecker> checker(
+      new ResolveChecker(state_.release(),
+                         auth_.get(),
+                         ParallelAuthenticator::FAILED_MOUNT));
   EXPECT_TRUE(checker->Run());
 }
 
@@ -545,8 +600,8 @@ TEST_F(ParallelAuthenticatorTest, DriveOfflineLoginGetNewPassword) {
                                               _))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   // Set up state as though a cryptohome mount attempt has occurred and
@@ -569,7 +624,6 @@ TEST_F(ParallelAuthenticatorTest, DriveOfflineLoginGetNewPassword) {
   ExpectLoginSuccess(username_, password_, result_, false);
 
   MockFactory<SuccessFetcher> factory;
-  URLFetcher::set_factory(&factory);
   TestingProfile profile;
 
   auth_->RetryAuth(&profile,
@@ -583,8 +637,8 @@ TEST_F(ParallelAuthenticatorTest, DriveOfflineLoginGetNewPassword) {
 TEST_F(ParallelAuthenticatorTest, DriveOfflineLoginGetCaptchad) {
   ExpectLoginSuccess(username_, password_, result_, true);
   FailOnLoginFailure();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   // Set up state as though a cryptohome mount attempt has occurred and
@@ -612,7 +666,6 @@ TEST_F(ParallelAuthenticatorTest, DriveOfflineLoginGetCaptchad) {
   ExpectLoginFailure(failure);
 
   MockFactory<CaptchaFetcher> factory;
-  URLFetcher::set_factory(&factory);
   TestingProfile profile;
 
   auth_->RetryAuth(&profile,
@@ -637,7 +690,7 @@ TEST_F(ParallelAuthenticatorTest, DriveOnlineLogin) {
   RunResolve(auth_.get(), &message_loop_);
 }
 
-TEST_F(ParallelAuthenticatorTest, DriveNeedNewPassword) {
+TEST_F(ParallelAuthenticatorTest, FLAKY_DriveNeedNewPassword) {
   FailOnLoginSuccess();  // Set failing on success as the default...
   // ...but expect ONE successful login first.
   ExpectLoginSuccess(username_, password_, result_, true);
@@ -697,8 +750,8 @@ TEST_F(ParallelAuthenticatorTest, DriveUnlock) {
   EXPECT_CALL(*mock_library_, AsyncCheckKey(username_, _, _))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   auth_->AuthenticateToUnlock(username_, "");
@@ -715,8 +768,8 @@ TEST_F(ParallelAuthenticatorTest, DriveLocalUnlock) {
   EXPECT_CALL(*mock_library_, AsyncCheckKey(username_, _, _))
       .Times(1)
       .RetiresOnSaturation();
-  EXPECT_CALL(*mock_library_, GetSystemSalt())
-      .WillOnce(Return(CryptohomeBlob(2, 0)))
+  EXPECT_CALL(*mock_library_, HashPassword(_))
+      .WillOnce(Return(std::string()))
       .RetiresOnSaturation();
 
   // Deal with getting the localaccount file

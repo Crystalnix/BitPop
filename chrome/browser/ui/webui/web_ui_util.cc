@@ -7,9 +7,8 @@
 #include <vector>
 
 #include "base/base64.h"
-#include "base/string_util.h"
-#include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
+#include "base/values.h"
+#include "content/browser/disposition_utils.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
 
@@ -42,10 +41,22 @@ std::string GetImageDataUrlFromResource(int res) {
   return str_url;
 }
 
-bool ChromeURLHostEquals(const GURL& url, const char* host) {
-  return (url.SchemeIs(chrome::kChromeUIScheme) ||
-          url.SchemeIs(chrome::kAboutScheme)) &&
-         LowerCaseEqualsASCII(url.host(), host);
+WindowOpenDisposition GetDispositionFromClick(const ListValue* args,
+                                              int start_index) {
+  double button = 0.0;
+  bool alt_key = false;
+  bool ctrl_key = false;
+  bool meta_key = false;
+  bool shift_key = false;
+
+  CHECK(args->GetDouble(start_index++, &button));
+  CHECK(args->GetBoolean(start_index++, &alt_key));
+  CHECK(args->GetBoolean(start_index++, &ctrl_key));
+  CHECK(args->GetBoolean(start_index++, &meta_key));
+  CHECK(args->GetBoolean(start_index++, &shift_key));
+  return disposition_utils::DispositionFromClick(button == 1.0, alt_key,
+                                                 ctrl_key, meta_key, shift_key);
+
 }
 
 }  // namespace web_ui_util

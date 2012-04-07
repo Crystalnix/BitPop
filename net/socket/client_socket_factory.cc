@@ -21,6 +21,7 @@
 #endif
 #include "net/socket/ssl_host_info.h"
 #include "net/socket/tcp_client_socket.h"
+#include "net/udp/udp_client_socket.h"
 
 namespace net {
 
@@ -52,6 +53,14 @@ class DefaultClientSocketFactory : public ClientSocketFactory,
     ClearSSLSessionCache();
   }
 
+  virtual DatagramClientSocket* CreateDatagramClientSocket(
+      DatagramSocket::BindType bind_type,
+      const RandIntCallback& rand_int_cb,
+      NetLog* net_log,
+      const NetLog::Source& source) {
+    return new UDPClientSocket(bind_type, rand_int_cb, net_log, source);
+  }
+
   virtual StreamSocket* CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
@@ -64,60 +73,43 @@ class DefaultClientSocketFactory : public ClientSocketFactory,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       SSLHostInfo* ssl_host_info,
-      CertVerifier* cert_verifier,
-      DnsCertProvenanceChecker* dns_cert_checker) {
+      const SSLClientSocketContext& context) {
     scoped_ptr<SSLHostInfo> shi(ssl_host_info);
+
 #if defined(OS_WIN)
     if (g_use_system_ssl) {
       return new SSLClientSocketWin(transport_socket, host_and_port,
-                                    ssl_config, cert_verifier);
+                                    ssl_config, context);
     }
     return new SSLClientSocketNSS(transport_socket, host_and_port, ssl_config,
-                                  shi.release(), cert_verifier,
-                                  dns_cert_checker);
+                                  shi.release(), context);
 #elif defined(USE_OPENSSL)
     return new SSLClientSocketOpenSSL(transport_socket, host_and_port,
-                                      ssl_config, cert_verifier);
+                                      ssl_config, context);
 #elif defined(USE_NSS)
     return new SSLClientSocketNSS(transport_socket, host_and_port, ssl_config,
-                                  shi.release(), cert_verifier,
-                                  dns_cert_checker);
+                                  shi.release(), context);
 #elif defined(OS_MACOSX)
     if (g_use_system_ssl) {
       return new SSLClientSocketMac(transport_socket, host_and_port,
-                                    ssl_config, cert_verifier);
+                                    ssl_config, context);
     }
     return new SSLClientSocketNSS(transport_socket, host_and_port, ssl_config,
-                                  shi.release(), cert_verifier,
-                                  dns_cert_checker);
+                                  shi.release(), context);
 #else
     NOTIMPLEMENTED();
     return NULL;
 #endif
   }
 
-  // TODO(rch): This is only implemented for the NSS SSL library, which is the
-  /// default for Windows, Mac and Linux, but we should implement it everywhere.
   void ClearSSLSessionCache() {
-#if defined(OS_WIN)
-    if (!g_use_system_ssl)
-      SSLClientSocketNSS::ClearSessionCache();
-#elif defined(USE_OPENSSL)
-    // no-op
-#elif defined(USE_NSS)
-    SSLClientSocketNSS::ClearSessionCache();
-#elif defined(OS_MACOSX)
-    if (!g_use_system_ssl)
-      SSLClientSocketNSS::ClearSessionCache();
-#else
-    NOTIMPLEMENTED();
-#endif
+    SSLClientSocket::ClearSessionCache();
   }
 
 };
 
 static base::LazyInstance<DefaultClientSocketFactory>
-    g_default_client_socket_factory(base::LINKER_INITIALIZED);
+    g_default_client_socket_factory = LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -127,12 +119,11 @@ SSLClientSocket* ClientSocketFactory::CreateSSLClientSocket(
     const HostPortPair& host_and_port,
     const SSLConfig& ssl_config,
     SSLHostInfo* ssl_host_info,
-    CertVerifier* cert_verifier) {
+    const SSLClientSocketContext& context) {
   ClientSocketHandle* socket_handle = new ClientSocketHandle();
   socket_handle->set_socket(transport_socket);
   return CreateSSLClientSocket(socket_handle, host_and_port, ssl_config,
-                               ssl_host_info, cert_verifier,
-                               NULL /* DnsCertProvenanceChecker */);
+                               ssl_host_info, context);
 }
 
 // static

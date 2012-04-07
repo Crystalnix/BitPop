@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,16 @@
 #include "base/base_paths.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/path_service.h"
 #include "base/string16.h"
+#include "base/utf_string_conversions.h"
 #include "grit/webkit_resources.h"
 #include "third_party/WebKit/Source/WebKit/mac/WebCoreSupport/WebSystemInterface.h"
 #include "ui/base/resource/data_pack.h"
 #include "webkit/plugins/npapi/plugin_list.h"
+#include "webkit/support/test_webkit_platform_support.h"
 #import "webkit/support/drt_application_mac.h"
 #import "webkit/tools/test_shell/mac/DumpRenderTreePasteboard.h"
 
@@ -104,8 +107,8 @@ void AfterInitialize(bool unit_test_mode) {
   // Load a data pack.
   g_resource_data_pack = new ui::DataPack;
   NSString* resource_path =
-      [base::mac::MainAppBundle() pathForResource:@"DumpRenderTree"
-                                          ofType:@"pak"];
+      [base::mac::FrameworkBundle() pathForResource:@"DumpRenderTree"
+                                             ofType:@"pak"];
   FilePath resources_pak_path([resource_path fileSystemRepresentation]);
   if (!g_resource_data_pack->Load(resources_pak_path)) {
     LOG(FATAL) << "failed to load DumpRenderTree.pak";
@@ -130,7 +133,7 @@ void AfterInitialize(bool unit_test_mode) {
     }
     if (ATSFontActivateFromFileReference(&resource_ref, kATSFontContextLocal,
         kATSFontFormatUnspecified, 0, kATSOptionFlagsDefault, 0) != noErr) {
-      DLOG(FATAL) << "Fail to activate font: %s" << resource_path;
+      DLOG(FATAL) << "Fail to activate font: " << resource_path;
     }
   }
 
@@ -155,15 +158,28 @@ void AfterShutdown() {
 
 }  // namespace webkit_support
 
-namespace webkit_glue {
-
-string16 GetLocalizedString(int message_id) {
+string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
   base::StringPiece res;
   if (!g_resource_data_pack->GetStringPiece(message_id, &res)) {
     LOG(FATAL) << "failed to load webkit string with id " << message_id;
   }
-  return string16(reinterpret_cast<const char16*>(res.data()),
-                  res.length() / 2);
+
+  // Data packs hold strings as either UTF8 or UTF16.
+  string16 msg;
+  switch (g_resource_data_pack->GetTextEncodingType()) {
+  case ui::DataPack::UTF8:
+    msg = UTF8ToUTF16(res);
+    break;
+  case ui::DataPack::UTF16:
+    msg = string16(reinterpret_cast<const char16*>(res.data()),
+                   res.length() / 2);
+    break;
+  case ui::DataPack::BINARY:
+    NOTREACHED();
+    break;
+  }
+
+  return msg;
 }
 
 // Helper method for getting the path to the test shell resources directory.
@@ -178,11 +194,11 @@ static FilePath GetResourcesFilePath() {
   return path.AppendASCII("Resources");
 }
 
-base::StringPiece GetDataResource(int resource_id) {
+base::StringPiece TestWebKitPlatformSupport::GetDataResource(int resource_id) {
   switch (resource_id) {
   case IDR_BROKENIMAGE: {
     // Use webkit's broken image icon (16x16)
-    static std::string broken_image_data;
+    CR_DEFINE_STATIC_LOCAL(std::string, broken_image_data, ());
     if (broken_image_data.empty()) {
       FilePath path = GetResourcesFilePath();
       // In order to match WebKit's colors for the missing image, we have to
@@ -198,7 +214,7 @@ base::StringPiece GetDataResource(int resource_id) {
   }
   case IDR_TEXTAREA_RESIZER: {
     // Use webkit's text area resizer image.
-    static std::string resize_corner_data;
+    CR_DEFINE_STATIC_LOCAL(std::string, resize_corner_data, ());
     if (resize_corner_data.empty()) {
       FilePath path = GetResourcesFilePath();
       path = path.AppendASCII("textAreaResizeCorner.png");
@@ -211,8 +227,7 @@ base::StringPiece GetDataResource(int resource_id) {
   }
   }
   base::StringPiece res;
-  g_resource_data_pack->GetStringPiece(resource_id, &res);
+  if (g_resource_data_pack)
+    g_resource_data_pack->GetStringPiece(resource_id, &res);
   return res;
 }
-
-}  // namespace webkit_glue

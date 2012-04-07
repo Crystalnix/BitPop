@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,46 +15,42 @@
 #include <set>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/message_loop.h"
+#include "ui/views/views_export.h"
 
-namespace ui {
+namespace views {
 
-#if defined(TOUCH_UI)
+#if defined(USE_AURA) && defined(USE_X11) && !defined(USE_WAYLAND)
 // Dispatch an XEvent to the RootView. Return true if the event was dispatched
 // and handled, false otherwise.
-bool DispatchXEvent(XEvent* xevent);
+bool VIEWS_EXPORT DispatchXEvent(XEvent* xevent);
+#endif  // USE_AURA && USE_X11 && !USE_WAYLAND
 
-#if defined(HAVE_XINPUT2)
-// Keep a list of touch devices so that it is possible to determine if a pointer
-// event is a touch-event or a mouse-event.
-void SetTouchDeviceList(std::vector<unsigned int>& devices);
-#endif  // HAVE_XINPUT2
-#endif  // TOUCH_UI
-
-////////////////////////////////////////////////////////////////////////////////
-// AcceleratorHandler class
-//
-//  An object that pre-screens all UI messages for potential accelerators.
-//  Registered accelerators are processed regardless of focus within a given
-//  Widget or Window.
-//
-//  This processing is done at the Dispatcher level rather than on the Widget
-//  because of the global nature of this processing, and the fact that not all
-//  controls within a window need to be Widgets - some are native controls from
-//  the underlying toolkit wrapped by NativeViewHost.
-//
-class AcceleratorHandler : public MessageLoopForUI::Dispatcher {
+// This class delegates the key messages to the associated FocusManager class
+// for the window that is receiving these messages for accelerator processing.
+#if defined(OS_MACOSX)
+class VIEWS_EXPORT AcceleratorHandler {
+#else
+class VIEWS_EXPORT AcceleratorHandler : public MessageLoop::Dispatcher {
+#endif  // defined(OS_MACOSX)
  public:
-   AcceleratorHandler();
+  AcceleratorHandler();
+
   // Dispatcher method. This returns true if an accelerator was processed by the
   // focus manager
 #if defined(OS_WIN)
-  virtual bool Dispatch(const MSG& msg);
+  virtual bool Dispatch(const MSG& msg) OVERRIDE;
+#elif defined(USE_WAYLAND)
+  virtual base::MessagePumpDispatcher::DispatchStatus Dispatch(
+      base::wayland::WaylandEvent* ev) OVERRIDE;
+#elif defined(OS_MACOSX)
+  // TODO(dhollowa): Implement on Mac.  http://crbug.com/109946
+#elif defined(USE_AURA)
+  virtual base::MessagePumpDispatcher::DispatchStatus Dispatch(
+      XEvent* xev) OVERRIDE;
 #else
-  virtual bool Dispatch(GdkEvent* event);
-#if defined(TOUCH_UI)
-  virtual MessagePumpGlibXDispatcher::DispatchStatus Dispatch(XEvent* xev);
-#endif
+  virtual bool Dispatch(GdkEvent* event) OVERRIDE;
 #endif
 
  private:
@@ -66,6 +62,6 @@ class AcceleratorHandler : public MessageLoopForUI::Dispatcher {
   DISALLOW_COPY_AND_ASSIGN(AcceleratorHandler);
 };
 
-}  // namespace ui
+}  // namespace views
 
 #endif  // UI_VIEWS_FOCUS_ACCELERATOR_HANDLER_H_

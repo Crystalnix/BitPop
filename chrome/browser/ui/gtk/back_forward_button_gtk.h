@@ -6,8 +6,9 @@
 #define CHROME_BROWSER_UI_GTK_BACK_FORWARD_BUTTON_GTK_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/task.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
 #include "ui/base/gtk/gtk_signal.h"
@@ -25,8 +26,8 @@ class BackForwardButtonGtk : MenuGtk::Delegate {
   virtual ~BackForwardButtonGtk();
 
   // MenuGtk::Delegate implementation.
-  virtual void StoppedShowing();
-  virtual bool AlwaysShowIconForCmd(int command_id) const;
+  virtual void StoppedShowing() OVERRIDE;
+  virtual bool AlwaysShowIconForCmd(int command_id) const OVERRIDE;
 
   GtkWidget* widget() { return button_->widget(); }
 
@@ -64,7 +65,7 @@ class BackForwardButtonGtk : MenuGtk::Delegate {
   // The y position of the last mouse down event.
   int y_position_of_last_press_;
 
-  ScopedRunnableMethodFactory<BackForwardButtonGtk> show_menu_factory_;
+  base::WeakPtrFactory<BackForwardButtonGtk> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BackForwardButtonGtk);
 };

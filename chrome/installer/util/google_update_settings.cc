@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,11 +18,11 @@
 #include "chrome/installer/util/channel_info.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/install_util.h"
-#include "chrome/installer/util/installer_state.h"
+#include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/product.h"
 
 using base::win::RegKey;
-using installer::InstallerState;
+using installer::InstallationState;
 
 namespace {
 
@@ -102,7 +102,7 @@ bool RemoveGoogleUpdateStrKey(const wchar_t* const name) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   std::wstring reg_path = dist->GetStateKey();
   RegKey key(HKEY_CURRENT_USER, reg_path.c_str(), KEY_READ | KEY_WRITE);
-  if (!key.ValueExists(name))
+  if (!key.HasValue(name))
     return true;
   return (key.DeleteValue(name) == ERROR_SUCCESS);
 }
@@ -123,24 +123,24 @@ EulaSearchResult HasEULASetting(HKEY root, const std::wstring& state_key,
 
 bool GetChromeChannelInternal(bool system_install,
                               bool add_multi_modifier,
-                              std::wstring* channel) {
+                              string16* channel) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
   if (dist->GetChromeChannel(channel)) {
     return true;
   }
 
   HKEY root_key = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-  std::wstring reg_path = dist->GetStateKey();
+  string16 reg_path = dist->GetStateKey();
   RegKey key(root_key, reg_path.c_str(), KEY_READ);
 
   installer::ChannelInfo channel_info;
   if (!channel_info.Initialize(key)) {
-    channel->assign(L"unknown");
+    channel->assign(installer::kChromeChannelUnknown);
     return false;
   }
 
   if (!channel_info.GetChannelName(channel)) {
-    channel->assign(L"unknown");
+    channel->assign(installer::kChromeChannelUnknown);
   }
 
   // Tag the channel name if this is a multi-install.
@@ -174,13 +174,7 @@ bool GetUpdatePolicyFromDword(
 
 }  // namespace
 
-// Older versions of Chrome unconditionally read from HKCU\...\ClientState\...
-// and then HKLM\...\ClientState\....  This means that system-level Chrome
-// never checked ClientStateMedium (which has priority according to Google
-// Update) and gave preference to a value in HKCU (which was never checked by
-// Google Update).  From now on, Chrome follows Google Update's policy.
-bool GoogleUpdateSettings::GetCollectStatsConsent() {
-  // Determine whether this is a system-level or a user-level install.
+bool GoogleUpdateSettings::IsSystemInstall() {
   bool system_install = false;
   FilePath module_dir;
   if (!PathService::Get(base::DIR_MODULE, &module_dir)) {
@@ -189,6 +183,19 @@ bool GoogleUpdateSettings::GetCollectStatsConsent() {
   } else {
     system_install = !InstallUtil::IsPerUserInstall(module_dir.value().c_str());
   }
+  return system_install;
+}
+
+bool GoogleUpdateSettings::GetCollectStatsConsent() {
+  return GetCollectStatsConsentAtLevel(IsSystemInstall());
+}
+
+// Older versions of Chrome unconditionally read from HKCU\...\ClientState\...
+// and then HKLM\...\ClientState\....  This means that system-level Chrome
+// never checked ClientStateMedium (which has priority according to Google
+// Update) and gave preference to a value in HKCU (which was never checked by
+// Google Update).  From now on, Chrome follows Google Update's policy.
+bool GoogleUpdateSettings::GetCollectStatsConsentAtLevel(bool system_install) {
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
 
   // Consent applies to all products in a multi-install package.
@@ -210,30 +217,28 @@ bool GoogleUpdateSettings::GetCollectStatsConsent() {
                       &value) == ERROR_SUCCESS;
 
   // Otherwise, try ClientState.
-  have_value =
-      !have_value &&
-      key.Open(system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER,
-               dist->GetStateKey().c_str(), KEY_QUERY_VALUE) == ERROR_SUCCESS &&
-      key.ReadValueDW(google_update::kRegUsageStatsField,
-                      &value) == ERROR_SUCCESS;
+  if (!have_value) {
+    have_value =
+        key.Open(system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER,
+                 dist->GetStateKey().c_str(),
+                 KEY_QUERY_VALUE) == ERROR_SUCCESS &&
+        key.ReadValueDW(google_update::kRegUsageStatsField,
+                        &value) == ERROR_SUCCESS;
+  }
 
   // Google Update specifically checks that the value is 1, so we do the same.
   return have_value && value == 1;
 }
 
 bool GoogleUpdateSettings::SetCollectStatsConsent(bool consented) {
+  return SetCollectStatsConsentAtLevel(IsSystemInstall(), consented);
+}
+
+bool GoogleUpdateSettings::SetCollectStatsConsentAtLevel(bool system_install,
+                                                         bool consented) {
   // Google Update writes and expects 1 for true, 0 for false.
   DWORD value = consented ? 1 : 0;
 
-  // Determine whether this is a system-level or a user-level install.
-  bool system_install = false;
-  FilePath module_dir;
-  if (!PathService::Get(base::DIR_MODULE, &module_dir)) {
-    LOG(WARNING)
-        << "Failed to get directory of module; assuming per-user install.";
-  } else {
-    system_install = !InstallUtil::IsPerUserInstall(module_dir.value().c_str());
-  }
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
 
   // Consent applies to all products in a multi-install package.
@@ -268,49 +273,43 @@ bool GoogleUpdateSettings::SetMetricsId(const std::wstring& metrics_id) {
   return WriteGoogleUpdateStrKey(google_update::kRegMetricsId, metrics_id);
 }
 
+// EULA consent is only relevant for system-level installs.
 bool GoogleUpdateSettings::SetEULAConsent(
-    const InstallerState& installer_state,
+    const InstallationState& machine_state,
+    BrowserDistribution* dist,
     bool consented) {
-  // If this is a multi install, Google Update will have put eulaaccepted=0 into
-  // the ClientState key of the multi-installer.  Conduct a brief search for
-  // this value and store the consent in the corresponding location.
-  HKEY root = installer_state.root_key();
-  EulaSearchResult status = NO_SETTING;
-  std::wstring reg_path;
-  std::wstring fallback_reg_path;
+  DCHECK(dist);
+  const DWORD eula_accepted = consented ? 1 : 0;
+  std::wstring reg_path = dist->GetStateMediumKey();
+  bool succeeded = true;
+  RegKey key;
 
-  if (installer_state.package_type() == InstallerState::MULTI_PACKAGE) {
-    BrowserDistribution* binaries_dist =
-        installer_state.multi_package_binaries_distribution();
-    fallback_reg_path = reg_path = binaries_dist->GetStateMediumKey();
-    status = HasEULASetting(root, binaries_dist->GetStateKey(), !consented);
+  // Write the consent value into the product's ClientStateMedium key.
+  if (key.Create(HKEY_LOCAL_MACHINE, reg_path.c_str(),
+                 KEY_SET_VALUE) != ERROR_SUCCESS ||
+      key.WriteValue(google_update::kRegEULAAceptedField,
+                     eula_accepted) != ERROR_SUCCESS) {
+    succeeded = false;
   }
-  if (status != FOUND_SAME_SETTING) {
-    EulaSearchResult new_status = NO_SETTING;
-    installer::Products::const_iterator scan =
-        installer_state.products().begin();
-    installer::Products::const_iterator end =
-        installer_state.products().end();
-    for (; status != FOUND_SAME_SETTING && scan != end; ++scan) {
-      if (fallback_reg_path.empty())
-        fallback_reg_path = (*scan)->distribution()->GetStateMediumKey();
-      new_status = HasEULASetting(root, (*scan)->distribution()->GetStateKey(),
-                                  !consented);
-      if (new_status > status) {
-        status = new_status;
-        reg_path = (*scan)->distribution()->GetStateMediumKey();
-      }
-    }
-    if (status == NO_SETTING) {
-      LOG(WARNING)
-          << "eulaaccepted value not found; setting consent in key "
-          << fallback_reg_path;
-      reg_path = fallback_reg_path;
+
+  // If this is a multi-install, also write it into the binaries' key.
+  // --mutli-install is not provided on the command-line, so deduce it from
+  // the product's state.
+  const installer::ProductState* product_state =
+      machine_state.GetProductState(true, dist->GetType());
+  if (product_state != NULL && product_state->is_multi_install()) {
+    dist = BrowserDistribution::GetSpecificDistribution(
+        BrowserDistribution::CHROME_BINARIES);
+    reg_path = dist->GetStateMediumKey();
+    if (key.Create(HKEY_LOCAL_MACHINE, reg_path.c_str(),
+                   KEY_SET_VALUE) != ERROR_SUCCESS ||
+        key.WriteValue(google_update::kRegEULAAceptedField,
+                       eula_accepted) != ERROR_SUCCESS) {
+        succeeded = false;
     }
   }
-  RegKey key(HKEY_LOCAL_MACHINE, reg_path.c_str(), KEY_SET_VALUE);
-  return (key.WriteValue(google_update::kRegEULAAceptedField,
-                         consented ? 1 : 0) == ERROR_SUCCESS);
+
+  return succeeded;
 }
 
 int GoogleUpdateSettings::GetLastRunTime() {
@@ -347,6 +346,11 @@ bool GoogleUpdateSettings::GetBrand(std::wstring* brand) {
   return ReadGoogleUpdateStrKey(google_update::kRegRLZBrandField, brand);
 }
 
+bool GoogleUpdateSettings::GetReactivationBrand(std::wstring* brand) {
+  return ReadGoogleUpdateStrKey(google_update::kRegRLZReactivationBrandField,
+                                brand);
+}
+
 bool GoogleUpdateSettings::GetClient(std::wstring* client) {
   return ReadGoogleUpdateStrKey(google_update::kRegClientField, client);
 }
@@ -377,7 +381,7 @@ std::wstring GoogleUpdateSettings::GetChromeChannel(bool system_install) {
 }
 
 bool GoogleUpdateSettings::GetChromeChannelAndModifiers(bool system_install,
-                                                        std::wstring* channel) {
+                                                        string16* channel) {
   return GetChromeChannelInternal(system_install, true, channel);
 }
 
@@ -485,35 +489,6 @@ bool GoogleUpdateSettings::WriteGoogleUpdateSystemClientKey(
   LSTATUS status = RegSetValueEx(reg_key, key.c_str(), 0, REG_SZ,
       reinterpret_cast<const BYTE*>(value.c_str()), size);
   return status == ERROR_SUCCESS;
-}
-
-bool GoogleUpdateSettings::IsOrganic(const std::wstring& brand) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kOrganicInstall))
-    return true;
-
-  static const wchar_t* kBrands[] = {
-      L"CHFO", L"CHFT", L"CHHS", L"CHHM", L"CHMA", L"CHMB", L"CHME", L"CHMF",
-      L"CHMG", L"CHMH", L"CHMI", L"CHMQ", L"CHMV", L"CHNB", L"CHNC", L"CHNG",
-      L"CHNH", L"CHNI", L"CHOA", L"CHOB", L"CHOC", L"CHON", L"CHOO", L"CHOP",
-      L"CHOQ", L"CHOR", L"CHOS", L"CHOT", L"CHOU", L"CHOX", L"CHOY", L"CHOZ",
-      L"CHPD", L"CHPE", L"CHPF", L"CHPG", L"EUBB", L"EUBC", L"GGLA", L"GGLS"
-  };
-  const wchar_t** end = &kBrands[arraysize(kBrands)];
-  const wchar_t** found = std::find(&kBrands[0], end, brand);
-  if (found != end)
-    return true;
-  return (StartsWith(brand, L"EUB", true) || StartsWith(brand, L"EUC", true) ||
-          StartsWith(brand, L"GGR", true));
-}
-
-bool GoogleUpdateSettings::IsOrganicFirstRun(const std::wstring& brand) {
-  // Used for testing, to force search engine selector to appear.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kOrganicInstall))
-    return true;
-
-  return (StartsWith(brand, L"GG", true) || StartsWith(brand, L"EU", true));
 }
 
 GoogleUpdateSettings::UpdatePolicy GoogleUpdateSettings::GetAppUpdatePolicy(

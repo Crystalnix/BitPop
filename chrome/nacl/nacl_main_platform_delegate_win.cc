@@ -8,12 +8,11 @@
 #include "base/file_path.h"
 #include "base/logging.h"
 #include "base/native_library.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "sandbox/src/sandbox.h"
 
 NaClMainPlatformDelegate::NaClMainPlatformDelegate(
-    const MainFunctionParams& parameters)
+    const content::MainFunctionParams& parameters)
     : parameters_(parameters), sandbox_test_module_(NULL) {
 }
 
@@ -29,12 +28,12 @@ void NaClMainPlatformDelegate::PlatformUninitialize() {
 }
 
 void NaClMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {
-  const CommandLine& command_line = parameters_.command_line_;
+  const CommandLine& command_line = parameters_.command_line;
 
-  DVLOG(1) << "Started NaClLdr with " << command_line.command_line_string();
+  DVLOG(1) << "Started NaClLdr with " << command_line.GetCommandLineString();
 
   sandbox::TargetServices* target_services =
-      parameters_.sandbox_info_.TargetServices();
+      parameters_.sandbox_info->target_services;
 
   if (target_services && !no_sandbox) {
     FilePath test_dll_name =
@@ -60,12 +59,15 @@ void NaClMainPlatformDelegate::InitSandboxTests(bool no_sandbox) {
 
 void NaClMainPlatformDelegate::EnableSandbox() {
   sandbox::TargetServices* target_services =
-      parameters_.sandbox_info_.TargetServices();
+      parameters_.sandbox_info->target_services;
 
   CHECK(target_services) << "NaCl-Win EnableSandbox: No Target Services!";
   // Cause advapi32 to load before the sandbox is turned on.
   unsigned int dummy_rand;
   rand_s(&dummy_rand);
+  // Warm up language subsystems before the sandbox is turned on.
+  ::GetUserDefaultLangID();
+  ::GetUserDefaultLCID();
   // Turn the sandbox on.
   target_services->LowerToken();
 }

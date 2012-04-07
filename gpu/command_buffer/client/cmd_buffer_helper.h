@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #define GPU_COMMAND_BUFFER_CLIENT_CMD_BUFFER_HELPER_H_
 
 #include <string.h>
+#include <time.h>
 
 #include "../common/logging.h"
 #include "../common/constants.h"
@@ -82,89 +83,104 @@ class CommandBufferHelper {
   //   the value of the token to wait for.
   void WaitForToken(int32 token);
 
-  // Inserts a yield command, signaling the scheduler that this is a good point
-  // to update the state and schedule other command buffers. This is
-  // particularly useful after inserting a token that will be waited on.
-  void YieldScheduler();
-
-  // Waits for a certain amount of space to be available. Returns address
-  // of space.
+  // Called prior to each command being issued. Waits for a certain amount of
+  // space to be available. Returns address of space.
   CommandBufferEntry* GetSpace(uint32 entries);
 
   // Typed version of GetSpace. Gets enough room for the given type and returns
   // a reference to it.
   template <typename T>
-  T& GetCmdSpace() {
+  T* GetCmdSpace() {
     COMPILE_ASSERT(T::kArgFlags == cmd::kFixed, Cmd_kArgFlags_not_kFixed);
     uint32 space_needed = ComputeNumEntries(sizeof(T));
     void* data = GetSpace(space_needed);
-    return *reinterpret_cast<T*>(data);
+    return reinterpret_cast<T*>(data);
   }
 
   // Typed version of GetSpace for immediate commands.
   template <typename T>
-  T& GetImmediateCmdSpace(size_t data_space) {
+  T* GetImmediateCmdSpace(size_t data_space) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     uint32 space_needed = ComputeNumEntries(sizeof(T) + data_space);
     void* data = GetSpace(space_needed);
-    return *reinterpret_cast<T*>(data);
+    return reinterpret_cast<T*>(data);
   }
 
   // Typed version of GetSpace for immediate commands.
   template <typename T>
-  T& GetImmediateCmdSpaceTotalSize(size_t total_space) {
+  T* GetImmediateCmdSpaceTotalSize(size_t total_space) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     uint32 space_needed = ComputeNumEntries(total_space);
     void* data = GetSpace(space_needed);
-    return *reinterpret_cast<T*>(data);
+    return reinterpret_cast<T*>(data);
   }
 
   int32 last_token_read() const {
-    return last_token_read_;
+    return command_buffer_->GetLastState().token;
+  }
+
+  int32 get_offset() const {
+    return command_buffer_->GetLastState().get_offset;
   }
 
   error::Error GetError();
 
   // Common Commands
   void Noop(uint32 skip_count) {
-    cmd::Noop& cmd = GetImmediateCmdSpace<cmd::Noop>(
+    cmd::Noop* cmd = GetImmediateCmdSpace<cmd::Noop>(
         skip_count * sizeof(CommandBufferEntry));
-    cmd.Init(skip_count);
+    if (cmd) {
+      cmd->Init(skip_count);
+    }
   }
 
   void SetToken(uint32 token) {
-    cmd::SetToken& cmd = GetCmdSpace<cmd::SetToken>();
-    cmd.Init(token);
+    cmd::SetToken* cmd = GetCmdSpace<cmd::SetToken>();
+    if (cmd) {
+      cmd->Init(token);
+    }
   }
 
   void Jump(uint32 offset) {
-    cmd::Jump& cmd = GetCmdSpace<cmd::Jump>();
-    cmd.Init(offset);
+    cmd::Jump* cmd = GetCmdSpace<cmd::Jump>();
+    if (cmd) {
+      cmd->Init(offset);
+    }
   }
 
   void JumpRelative(int32 offset) {
-    cmd::JumpRelative& cmd = GetCmdSpace<cmd::JumpRelative>();
-    cmd.Init(offset);
+    cmd::JumpRelative* cmd = GetCmdSpace<cmd::JumpRelative>();
+    if (cmd) {
+      cmd->Init(offset);
+    }
   }
 
   void Call(uint32 offset) {
-    cmd::Call& cmd = GetCmdSpace<cmd::Call>();
-    cmd.Init(offset);
+    cmd::Call* cmd = GetCmdSpace<cmd::Call>();
+    if (cmd) {
+      cmd->Init(offset);
+    }
   }
 
   void CallRelative(int32 offset) {
-    cmd::CallRelative& cmd = GetCmdSpace<cmd::CallRelative>();
-    cmd.Init(offset);
+    cmd::CallRelative* cmd = GetCmdSpace<cmd::CallRelative>();
+    if (cmd) {
+      cmd->Init(offset);
+    }
   }
 
   void Return() {
-    cmd::Return& cmd = GetCmdSpace<cmd::Return>();
-    cmd.Init();
+    cmd::Return* cmd = GetCmdSpace<cmd::Return>();
+    if (cmd) {
+      cmd->Init();
+    }
   }
 
   void SetBucketSize(uint32 bucket_id, uint32 size) {
-    cmd::SetBucketSize& cmd = GetCmdSpace<cmd::SetBucketSize>();
-    cmd.Init(bucket_id, size);
+    cmd::SetBucketSize* cmd = GetCmdSpace<cmd::SetBucketSize>();
+    if (cmd) {
+      cmd->Init(bucket_id, size);
+    }
   }
 
   void SetBucketData(uint32 bucket_id,
@@ -172,29 +188,35 @@ class CommandBufferHelper {
                      uint32 size,
                      uint32 shared_memory_id,
                      uint32 shared_memory_offset) {
-    cmd::SetBucketData& cmd = GetCmdSpace<cmd::SetBucketData>();
-    cmd.Init(bucket_id,
-             offset,
-             size,
-             shared_memory_id,
-             shared_memory_offset);
+    cmd::SetBucketData* cmd = GetCmdSpace<cmd::SetBucketData>();
+    if (cmd) {
+      cmd->Init(bucket_id,
+                offset,
+                size,
+                shared_memory_id,
+                shared_memory_offset);
+    }
   }
 
   void SetBucketDataImmediate(
       uint32 bucket_id, uint32 offset, const void* data, uint32 size) {
-    cmd::SetBucketDataImmediate& cmd =
+    cmd::SetBucketDataImmediate* cmd =
         GetImmediateCmdSpace<cmd::SetBucketDataImmediate>(size);
-    cmd.Init(bucket_id, offset, size);
-    memcpy(ImmediateDataAddress(&cmd), data, size);
+    if (cmd) {
+      cmd->Init(bucket_id, offset, size);
+      memcpy(ImmediateDataAddress(cmd), data, size);
+    }
   }
 
   void GetBucketSize(uint32 bucket_id,
                      uint32 shared_memory_id,
                      uint32 shared_memory_offset) {
-    cmd::GetBucketSize& cmd = GetCmdSpace<cmd::GetBucketSize>();
-    cmd.Init(bucket_id,
-             shared_memory_id,
-             shared_memory_offset);
+    cmd::GetBucketSize* cmd = GetCmdSpace<cmd::GetBucketSize>();
+    if (cmd) {
+      cmd->Init(bucket_id,
+                shared_memory_id,
+                shared_memory_offset);
+    }
   }
 
   void GetBucketData(uint32 bucket_id,
@@ -202,16 +224,36 @@ class CommandBufferHelper {
                      uint32 size,
                      uint32 shared_memory_id,
                      uint32 shared_memory_offset) {
-    cmd::GetBucketData& cmd = GetCmdSpace<cmd::GetBucketData>();
-    cmd.Init(bucket_id,
-             offset,
-             size,
-             shared_memory_id,
-             shared_memory_offset);
+    cmd::GetBucketData* cmd = GetCmdSpace<cmd::GetBucketData>();
+    if (cmd) {
+      cmd->Init(bucket_id,
+                offset,
+                size,
+                shared_memory_id,
+                shared_memory_offset);
+    }
   }
 
   CommandBuffer* command_buffer() const {
     return command_buffer_;
+  }
+
+  Buffer get_ring_buffer() const {
+    return ring_buffer_;
+  }
+
+  void FreeRingBuffer();
+
+  bool HaveRingBuffer() const {
+    return ring_buffer_id_ != -1;
+  }
+
+  bool usable () const {
+    return usable_;
+  }
+
+  void ClearUsable() {
+    usable_ = false;
   }
 
  private:
@@ -220,22 +262,27 @@ class CommandBufferHelper {
 
   // Returns the number of available entries (they may not be contiguous).
   int32 AvailableEntries() {
-    return (get_ - put_ - 1 + usable_entry_count_) % usable_entry_count_;
+    return (get_offset() - put_ - 1 + usable_entry_count_) %
+        usable_entry_count_;
   }
 
-  // Synchronize with current service state.
-  void SynchronizeState(CommandBuffer::State state);
+  bool AllocateRingBuffer();
 
   CommandBuffer* command_buffer_;
+  int32 ring_buffer_id_;
+  int32 ring_buffer_size_;
   Buffer ring_buffer_;
-  CommandBufferEntry *entries_;
+  CommandBufferEntry* entries_;
   int32 total_entry_count_;  // the total number of entries
   int32 usable_entry_count_;  // the usable number (ie, minus space for jump)
   int32 token_;
-  int32 last_token_read_;
-  int32 get_;
   int32 put_;
   int32 last_put_sent_;
+  int commands_issued_;
+  bool usable_;
+
+  // Using C runtime instead of base because this file cannot depend on base.
+  clock_t last_flush_time_;
 
   friend class CommandBufferHelperTest;
   DISALLOW_COPY_AND_ASSIGN(CommandBufferHelper);

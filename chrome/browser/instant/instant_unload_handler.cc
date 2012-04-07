@@ -8,13 +8,15 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "content/browser/renderer_host/render_view_host.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/browser/tab_contents/tab_contents_delegate.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
+
+using content::WebContents;
 
 // TabContentsDelegate implementation. This owns the TabContents supplied to the
 // constructor.
 class InstantUnloadHandler::TabContentsDelegateImpl
-    : public TabContentsDelegate {
+    : public content::WebContentsDelegate {
  public:
   TabContentsDelegateImpl(InstantUnloadHandler* handler,
                           TabContentsWrapper* tab_contents,
@@ -22,7 +24,7 @@ class InstantUnloadHandler::TabContentsDelegateImpl
       : handler_(handler),
         tab_contents_(tab_contents),
         index_(index) {
-    tab_contents->tab_contents()->set_delegate(this);
+    tab_contents->web_contents()->SetDelegate(this);
   }
 
   ~TabContentsDelegateImpl() {
@@ -31,14 +33,14 @@ class InstantUnloadHandler::TabContentsDelegateImpl
   // Releases ownership of the TabContentsWrapper to the caller.
   TabContentsWrapper* ReleaseTab() {
     TabContentsWrapper* tab = tab_contents_.release();
-    tab->tab_contents()->set_delegate(NULL);
+    tab->web_contents()->SetDelegate(NULL);
     return tab;
   }
 
   // See description above field.
   int index() const { return index_; }
 
-  // TabContentsDelegate overrides:
+  // content::WebContentsDelegate overrides:
   virtual void WillRunBeforeUnloadConfirm() {
     handler_->Activate(this);
   }
@@ -47,28 +49,9 @@ class InstantUnloadHandler::TabContentsDelegateImpl
     return true;  // Return true so dialogs are suppressed.
   }
 
-  virtual void CloseContents(TabContents* source) {
+  virtual void CloseContents(WebContents* source) OVERRIDE {
     handler_->Destroy(this);
   }
-
-  // All of the following are overriden to do nothing (they are pure
-  // virtual). When we're attemping to close the tab, none of this matters.
-  virtual void OpenURLFromTab(TabContents* source,
-                              const GURL& url, const GURL& referrer,
-                              WindowOpenDisposition disposition,
-                              PageTransition::Type transition) {}
-  virtual void NavigationStateChanged(const TabContents* source,
-                                      unsigned changed_flags) {}
-  virtual void AddNewContents(TabContents* source,
-                              TabContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture) {}
-  virtual void ActivateContents(TabContents* contents) {}
-  virtual void DeactivateContents(TabContents* contents) {}
-  virtual void LoadingStateChanged(TabContents* source) {}
-  virtual void MoveContents(TabContents* source, const gfx::Rect& pos) {}
-  virtual void UpdateTargetURL(TabContents* source, const GURL& url) {}
 
  private:
   InstantUnloadHandler* handler_;
@@ -90,7 +73,7 @@ InstantUnloadHandler::~InstantUnloadHandler() {
 
 void InstantUnloadHandler::RunUnloadListenersOrDestroy(TabContentsWrapper* tab,
                                                        int index) {
-  if (!tab->tab_contents()->NeedToFireBeforeUnload()) {
+  if (!tab->web_contents()->NeedToFireBeforeUnload()) {
     // Tab doesn't have any before unload listeners and can be safely deleted.
     delete tab;
     return;
@@ -104,7 +87,7 @@ void InstantUnloadHandler::RunUnloadListenersOrDestroy(TabContentsWrapper* tab,
   // TODO: decide if we really want false here. false is used for tab closes,
   // and is needed so that the tab correctly closes but it doesn't really match
   // what's logically happening.
-  tab->tab_contents()->render_view_host()->FirePageBeforeUnload(false);
+  tab->web_contents()->GetRenderViewHost()->FirePageBeforeUnload(false);
 }
 
 void InstantUnloadHandler::Activate(TabContentsDelegateImpl* delegate) {

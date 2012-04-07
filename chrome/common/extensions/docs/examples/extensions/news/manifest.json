@@ -7,12 +7,14 @@
   "browser_action": {
     "default_title": "__MSG_ext_default_title__",
     "default_icon": "images/news_action.png",
-    "popup": "views/feed.html"
+    "default_popup": "views/feed.html"
   },
   "permissions": [
     "tabs",
     "http://news.google.com/*"
   ],
   "options_page": "views/options.html",
-  "background_page": "views/background.html"
+  "background": {
+    "page": "views/background.html"
+  }
 }

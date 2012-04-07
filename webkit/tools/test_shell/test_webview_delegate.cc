@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,28 +17,30 @@
 #include "base/string_number_conversions.h"
 #include "base/utf_string_conversions.h"
 #include "media/base/filter_collection.h"
+#include "media/base/media_log.h"
 #include "media/base/message_loop_factory_impl.h"
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebAccessibilityObject.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebConsoleMessage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDeviceOrientationClientMock.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebCString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDataSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragData.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebDragData.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebHistoryItem.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebImage.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebImage.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileError.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFileSystemCallbacks.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationClientMock.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKitClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebKitPlatformSupport.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebNotificationPresenter.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPluginParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPoint.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebPoint.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPopupMenu.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebRange.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebScreenInfo.h"
@@ -46,23 +48,25 @@
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputControllerMock.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechInputListener.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebStorageNamespace.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLError.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "webkit/appcache/web_application_cache_host_impl.h"
 #include "webkit/glue/glue_serialize.h"
-#include "webkit/glue/media/video_renderer_impl.h"
 #include "webkit/glue/webdropdata.h"
 #include "webkit/glue/webkit_glue.h"
-#include "webkit/glue/webmediaplayer_impl.h"
 #include "webkit/glue/webpreferences.h"
+#include "webkit/glue/weburlrequest_extradata_impl.h"
 #include "webkit/glue/window_open_disposition.h"
+#include "webkit/gpu/webgraphicscontext3d_in_process_impl.h"
+#include "webkit/media/webmediaplayer_impl.h"
 #include "webkit/plugins/npapi/webplugin_impl.h"
 #include "webkit/plugins/npapi/plugin_list.h"
 #include "webkit/plugins/npapi/webplugin_delegate_impl.h"
@@ -72,7 +76,6 @@
 #include "webkit/tools/test_shell/simple_file_system.h"
 #include "webkit/tools/test_shell/test_navigation_controller.h"
 #include "webkit/tools/test_shell/test_shell.h"
-#include "webkit/tools/test_shell/test_web_worker.h"
 
 #if defined(OS_WIN)
 // TODO(port): make these files work everywhere.
@@ -95,6 +98,7 @@ using WebKit::WebFileSystem;
 using WebKit::WebFileSystemCallbacks;
 using WebKit::WebFormElement;
 using WebKit::WebFrame;
+using WebKit::WebGraphicsContext3D;
 using WebKit::WebHistoryItem;
 using WebKit::WebImage;
 using WebKit::WebMediaPlayer;
@@ -124,7 +128,7 @@ using WebKit::WebURLResponse;
 using WebKit::WebWidget;
 using WebKit::WebWindowFeatures;
 using WebKit::WebWorker;
-using WebKit::WebWorkerClient;
+using WebKit::WebVector;
 using WebKit::WebView;
 
 namespace {
@@ -334,6 +338,19 @@ WebStorageNamespace* TestWebViewDelegate::createSessionStorageNamespace(
       WebStorageNamespace::m_sessionStorageQuota);
 }
 
+WebGraphicsContext3D* TestWebViewDelegate::createGraphicsContext3D(
+    const WebGraphicsContext3D::Attributes& attributes,
+    bool direct) {
+  if (!shell_->webView())
+    return NULL;
+  scoped_ptr<WebGraphicsContext3D> context(
+      new webkit::gpu::WebGraphicsContext3DInProcessImpl(
+          gfx::kNullPluginWindow, NULL));
+  if (!context->initialize(attributes, shell_->webView(), direct))
+    return NULL;
+  return context.release();
+}
+
 void TestWebViewDelegate::didAddMessageToConsole(
     const WebConsoleMessage& message, const WebString& source_name,
     unsigned source_line) {
@@ -451,7 +468,7 @@ WebString TestWebViewDelegate::autoCorrectWord(const WebString& word) {
 void TestWebViewDelegate::runModalAlertDialog(
     WebFrame* frame, const WebString& message) {
   if (!shell_->layout_test_mode()) {
-    ShowJavaScriptAlert(UTF16ToWideHack(message));
+    ShowJavaScriptAlert(message);
   } else {
     printf("ALERT: %s\n", message.utf8().data());
   }
@@ -591,20 +608,49 @@ WebScreenInfo TestWebViewDelegate::screenInfo() {
 WebPlugin* TestWebViewDelegate::createPlugin(WebFrame* frame,
                                              const WebPluginParams& params) {
   bool allow_wildcard = true;
-  webkit::npapi::WebPluginInfo info;
-  std::string actual_mime_type;
-  if (!webkit::npapi::PluginList::Singleton()->GetPluginInfo(
-          params.url, params.mimeType.utf8(), allow_wildcard, &info,
-          &actual_mime_type) || !webkit::npapi::IsPluginEnabled(info))
+  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<std::string> mime_types;
+  webkit::npapi::PluginList::Singleton()->GetPluginInfoArray(
+      params.url, params.mimeType.utf8(), allow_wildcard,
+      NULL, &plugins, &mime_types);
+  if (plugins.empty())
     return NULL;
 
-  return new webkit::npapi::WebPluginImpl(
-      frame, params, info.path, actual_mime_type, AsWeakPtr());
-}
+  WebPluginParams params_copy = params;
+  params_copy.mimeType = WebString::fromUTF8(mime_types.front());
 
-WebWorker* TestWebViewDelegate::createWorker(WebFrame* frame,
-                                             WebWorkerClient* client) {
-  return new TestWebWorker();
+#if defined(OS_MACOSX)
+  if (!shell_->layout_test_mode()) {
+    bool flash = LowerCaseEqualsASCII(params_copy.mimeType.utf8(),
+                                      "application/x-shockwave-flash");
+    if (flash) {
+      // Mac does not support windowed plugins. Force Flash plugins to use
+      // windowless mode by setting the wmode="opaque" attribute.
+      DCHECK(params_copy.attributeNames.size() ==
+             params_copy.attributeValues.size());
+      size_t size = params_copy.attributeNames.size();
+
+      WebVector<WebString> new_names(size+1),  new_values(size+1);
+
+      for (size_t i = 0; i < size; ++i) {
+        new_names[i] = params_copy.attributeNames[i];
+        new_values[i] = params_copy.attributeValues[i];
+      }
+
+      new_names[size] = "wmode";
+      new_values[size] = "opaque";
+
+      params_copy.attributeNames.swap(new_names);
+      params_copy.attributeValues.swap(new_values);
+
+      return new webkit::npapi::WebPluginImpl(
+          frame, params_copy, plugins.front().path, AsWeakPtr());
+    }
+  }
+#endif  // defined (OS_MACOSX)
+
+  return new webkit::npapi::WebPluginImpl(
+      frame, params, plugins.front().path, AsWeakPtr());
 }
 
 WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
@@ -615,18 +661,15 @@ WebMediaPlayer* TestWebViewDelegate::createMediaPlayer(
   scoped_ptr<media::FilterCollection> collection(
       new media::FilterCollection());
 
-  scoped_refptr<webkit_glue::VideoRendererImpl> video_renderer(
-      new webkit_glue::VideoRendererImpl(false));
-  collection->AddVideoRenderer(video_renderer);
-
-  scoped_ptr<webkit_glue::WebMediaPlayerImpl> result(
-      new webkit_glue::WebMediaPlayerImpl(client,
-                                          collection.release(),
-                                          message_loop_factory.release()));
-  if (!result->Initialize(frame, false, video_renderer)) {
-    return NULL;
-  }
-  return result.release();
+  return new webkit_media::WebMediaPlayerImpl(
+      frame,
+      client,
+      base::WeakPtr<webkit_media::WebMediaPlayerDelegate>(),
+      collection.release(),
+      NULL,
+      message_loop_factory.release(),
+      NULL,
+      new media::MediaLog());
 }
 
 WebApplicationCacheHost* TestWebViewDelegate::createApplicationCacheHost(
@@ -639,8 +682,9 @@ bool TestWebViewDelegate::allowPlugins(WebFrame* frame,
   return enabled_per_settings && shell_->allow_plugins();
 }
 
-bool TestWebViewDelegate::allowImages(WebFrame* frame,
-                                      bool enabled_per_settings) {
+bool TestWebViewDelegate::allowImage(WebFrame* frame,
+                                     bool enabled_per_settings,
+                                     const WebURL& image_url) {
   return enabled_per_settings && shell_->allow_images();
 }
 
@@ -735,8 +779,8 @@ void TestWebViewDelegate::didStartProvisionalLoad(WebFrame* frame) {
   }
 
   if (shell_->layout_test_controller()->StopProvisionalFrameLoads()) {
-    printf("%S - stopping load in didStartProvisionalLoadForFrame callback\n",
-           GetFrameDescription(frame).c_str());
+    printf("%s - stopping load in didStartProvisionalLoadForFrame callback\n",
+           UTF16ToUTF8(GetFrameDescription(frame)).c_str());
     frame->stopLoading();
   }
   UpdateAddressBar(frame->view());
@@ -797,16 +841,14 @@ void TestWebViewDelegate::didClearWindowObject(WebFrame* frame) {
 
 void TestWebViewDelegate::didReceiveTitle(
     WebFrame* frame, const WebString& title, WebTextDirection direction) {
-  std::wstring wtitle = UTF16ToWideHack(title);
-
-  SetPageTitle(wtitle);
+  SetPageTitle(title);
 }
 
 void TestWebViewDelegate::didFinishDocumentLoad(WebFrame* frame) {
   unsigned pending_unload_events = frame->unloadListenerCount();
   if (pending_unload_events) {
-    printf("%S - has %u onunload handler(s)\n",
-        GetFrameDescription(frame).c_str(), pending_unload_events);
+    printf("%s - has %u onunload handler(s)\n",
+        UTF16ToUTF8(GetFrameDescription(frame)).c_str(), pending_unload_events);
   }
 }
 
@@ -819,7 +861,7 @@ void TestWebViewDelegate::didFailLoad(
 }
 
 void TestWebViewDelegate::didFinishLoad(WebFrame* frame) {
-  TRACE_EVENT_END_ETW("frame.load", this, frame->url().spec());
+  TRACE_EVENT_END_ETW("frame.load", this, frame->document().url().spec());
   UpdateAddressBar(frame->view());
   LocationChangeDone(frame);
 }
@@ -843,6 +885,9 @@ void TestWebViewDelegate::willSendRequest(
     const WebURLResponse& redirect_response) {
   GURL url = request.url();
   std::string request_url = url.possibly_invalid_spec();
+
+  request.setExtraData(
+      new webkit_glue::WebURLRequestExtraDataImpl(frame->referrerPolicy()));
 
   if (!redirect_response.isNull() && block_redirects_) {
     printf("Returning null for this redirect\n");
@@ -913,14 +958,14 @@ void TestWebViewDelegate::openFileSystem(
     WebFrame* frame, WebFileSystem::Type type, long long size, bool create,
     WebFileSystemCallbacks* callbacks) {
   SimpleFileSystem* fileSystem = static_cast<SimpleFileSystem*>(
-      WebKit::webKitClient()->fileSystem());
+      WebKit::webKitPlatformSupport()->fileSystem());
   fileSystem->OpenFileSystem(frame, type, size, create, callbacks);
 }
 
 // WebPluginPageDelegate -----------------------------------------------------
 
 WebCookieJar* TestWebViewDelegate::GetCookieJar() {
-  return WebKit::webKitClient()->cookieJar();
+  return WebKit::webKitPlatformSupport()->cookieJar();
 }
 
 // Public methods ------------------------------------------------------------
@@ -1103,20 +1148,21 @@ void TestWebViewDelegate::UpdateSessionHistory(WebFrame* frame) {
   entry->SetContentState(webkit_glue::HistoryItemToString(history_item));
 }
 
-std::wstring TestWebViewDelegate::GetFrameDescription(WebFrame* webframe) {
-  std::wstring name = UTF16ToWideHack(webframe->name());
+string16 TestWebViewDelegate::GetFrameDescription(WebFrame* webframe) {
+  std::string name = UTF16ToUTF8(webframe->name());
 
   if (webframe == shell_->webView()->mainFrame()) {
     if (name.length())
-      return L"main frame \"" + name + L"\"";
+      name = "main frame \"" + name + "\"";
     else
-      return L"main frame";
+      name = "main frame";
   } else {
     if (name.length())
-      return L"frame \"" + name + L"\"";
+      name = "frame \"" + name + "\"";
     else
-      return L"frame (anonymous)";
+      name = "frame (anonymous)";
   }
+  return UTF8ToUTF16(name);
 }
 
 void TestWebViewDelegate::set_fake_window_rect(const WebRect& rect) {

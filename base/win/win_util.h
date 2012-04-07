@@ -27,7 +27,7 @@
 
 #include <string>
 
-#include "base/base_api.h"
+#include "base/base_export.h"
 #include "base/string16.h"
 
 struct IPropertyStore;
@@ -37,19 +37,27 @@ typedef _tagpropertykey PROPERTYKEY;
 namespace base {
 namespace win {
 
-BASE_API void GetNonClientMetrics(NONCLIENTMETRICS* metrics);
+// A Windows message reflected from other windows. This message is sent
+// with the following arguments:
+// hWnd - Target window
+// uMsg - kReflectedMessage
+// wParam - Should be 0
+// lParam - Pointer to MSG struct containing the original message.
+const int kReflectedMessage = WM_APP + 3;
+
+BASE_EXPORT void GetNonClientMetrics(NONCLIENTMETRICS* metrics);
 
 // Returns the string representing the current user sid.
-BASE_API bool GetUserSidString(std::wstring* user_sid);
+BASE_EXPORT bool GetUserSidString(std::wstring* user_sid);
 
 // Returns true if the shift key is currently pressed.
-BASE_API bool IsShiftPressed();
+BASE_EXPORT bool IsShiftPressed();
 
 // Returns true if the ctrl key is currently pressed.
-BASE_API bool IsCtrlPressed();
+BASE_EXPORT bool IsCtrlPressed();
 
 // Returns true if the alt key is currently pressed.
-BASE_API bool IsAltPressed();
+BASE_EXPORT bool IsAltPressed();
 
 // Returns false if user account control (UAC) has been disabled with the
 // EnableLUA registry flag. Returns true if user account control is enabled.
@@ -57,27 +65,41 @@ BASE_API bool IsAltPressed();
 // machines, might still exist and be set to 0 (UAC disabled), in which case
 // this function will return false. You should therefore check this flag only
 // if the OS is Vista or later.
-BASE_API bool UserAccountControlIsEnabled();
+BASE_EXPORT bool UserAccountControlIsEnabled();
+
+// Sets the string value for given key in given IPropertyStore.
+BASE_EXPORT bool SetStringValueForPropertyStore(
+    IPropertyStore* property_store,
+    const PROPERTYKEY& property_key,
+    const wchar_t* property_string_value);
 
 // Sets the application id in given IPropertyStore. The function is intended
 // for tagging application/chromium shortcut, browser window and jump list for
 // Win7.
-BASE_API bool SetAppIdForPropertyStore(IPropertyStore* property_store,
-                                       const wchar_t* app_id);
+BASE_EXPORT bool SetAppIdForPropertyStore(IPropertyStore* property_store,
+                                          const wchar_t* app_id);
 
 // Adds the specified |command| using the specified |name| to the AutoRun key.
 // |root_key| could be HKCU or HKLM or the root of any user hive.
-BASE_API bool AddCommandToAutoRun(HKEY root_key, const string16& name,
-                                  const string16& command);
+BASE_EXPORT bool AddCommandToAutoRun(HKEY root_key, const string16& name,
+                                     const string16& command);
 // Removes the command specified by |name| from the AutoRun key. |root_key|
 // could be HKCU or HKLM or the root of any user hive.
-BASE_API bool RemoveCommandFromAutoRun(HKEY root_key, const string16& name);
+BASE_EXPORT bool RemoveCommandFromAutoRun(HKEY root_key, const string16& name);
 
 // Reads the command specified by |name| from the AutoRun key. |root_key|
 // could be HKCU or HKLM or the root of any user hive. Used for unit-tests.
-BASE_API bool ReadCommandFromAutoRun(HKEY root_key,
-                                     const string16& name,
-                                     string16* command);
+BASE_EXPORT bool ReadCommandFromAutoRun(HKEY root_key,
+                                        const string16& name,
+                                        string16* command);
+
+// Get the size of a struct up to and including the specified member.
+// This is necessary to set compatible struct sizes for different versions
+// of certain Windows APIs (e.g. SystemParametersInfo).
+#define SIZEOF_STRUCT_WITH_SPECIFIED_LAST_MEMBER(struct_name, member) \
+    offsetof(struct_name, member) + \
+    (sizeof static_cast<struct_name*>(NULL)->member)
+
 }  // namespace win
 }  // namespace base
 

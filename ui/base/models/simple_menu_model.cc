@@ -4,6 +4,7 @@
 
 #include "ui/base/models/simple_menu_model.h"
 
+#include "base/bind.h"
 #include "base/message_loop.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -46,10 +47,15 @@ bool SimpleMenuModel::Delegate::GetIconForCommandId(
 void SimpleMenuModel::Delegate::CommandIdHighlighted(int command_id) {
 }
 
-void SimpleMenuModel::Delegate::MenuWillShow() {
+void SimpleMenuModel::Delegate::ExecuteCommand(
+    int command_id, int event_flags) {
+  ExecuteCommand(command_id);
 }
 
-void SimpleMenuModel::Delegate::MenuClosed() {
+void SimpleMenuModel::Delegate::MenuWillShow(SimpleMenuModel* /*source*/) {
+}
+
+void SimpleMenuModel::Delegate::MenuClosed(SimpleMenuModel* /*source*/) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -80,7 +86,7 @@ void SimpleMenuModel::AddSeparator() {
 }
 
 void SimpleMenuModel::AddCheckItem(int command_id, const string16& label) {
-  Item item = { command_id, label, SkBitmap(), TYPE_CHECK, -1, NULL };
+  Item item = { command_id, label, SkBitmap(), TYPE_CHECK, -1, NULL, NULL };
   AppendItem(item);
 }
 
@@ -290,13 +296,18 @@ void SimpleMenuModel::ActivatedAt(int index) {
     delegate_->ExecuteCommand(GetCommandIdAt(index));
 }
 
+void SimpleMenuModel::ActivatedAt(int index, int event_flags) {
+  if (delegate_)
+    delegate_->ExecuteCommand(GetCommandIdAt(index), event_flags);
+}
+
 MenuModel* SimpleMenuModel::GetSubmenuModelAt(int index) const {
   return items_.at(FlipIndex(index)).submenu;
 }
 
 void SimpleMenuModel::MenuWillShow() {
   if (delegate_)
-    delegate_->MenuWillShow();
+    delegate_->MenuWillShow(this);
 }
 
 void SimpleMenuModel::MenuClosed() {
@@ -305,7 +316,7 @@ void SimpleMenuModel::MenuClosed() {
   // afterwards though, so post a task.
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      method_factory_.NewRunnableMethod(&SimpleMenuModel::OnMenuClosed));
+      base::Bind(&SimpleMenuModel::OnMenuClosed, method_factory_.GetWeakPtr()));
 }
 
 void SimpleMenuModel::SetMenuModelDelegate(
@@ -315,7 +326,7 @@ void SimpleMenuModel::SetMenuModelDelegate(
 
 void SimpleMenuModel::OnMenuClosed() {
   if (delegate_)
-    delegate_->MenuClosed();
+    delegate_->MenuClosed(this);
 }
 
 int SimpleMenuModel::FlipIndex(int index) const {

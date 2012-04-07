@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,29 +15,22 @@ namespace gfx {
 // A surface that the Mesa software renderer draws to. This is actually just a
 // buffer in system memory. GetHandle returns a pointer to the buffer. These
 // surfaces can be resized and resizing preserves the contents.
-class GLSurfaceOSMesa : public GLSurface {
+class GL_EXPORT GLSurfaceOSMesa : public GLSurface {
  public:
-  explicit GLSurfaceOSMesa(unsigned format, const gfx::Size& size);
+  GLSurfaceOSMesa(unsigned format, const gfx::Size& size);
   virtual ~GLSurfaceOSMesa();
 
-  // Resize the back buffer, preserving the old content. Does nothing if the
-  // size is unchanged.
-  void Resize(const gfx::Size& new_size);
-
   // Implement GLSurface.
-  virtual bool Initialize();
-  virtual void Destroy();
-  virtual bool IsOffscreen();
-  virtual bool SwapBuffers();
-  virtual gfx::Size GetSize();
-  virtual void* GetHandle();
-
-  // Get the surface's format.
-  unsigned GetFormat();
+  virtual bool Initialize() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
+  virtual bool Resize(const gfx::Size& new_size) OVERRIDE;
+  virtual bool IsOffscreen() OVERRIDE;
+  virtual bool SwapBuffers() OVERRIDE;
+  virtual gfx::Size GetSize() OVERRIDE;
+  virtual void* GetHandle() OVERRIDE;
+  virtual unsigned GetFormat() OVERRIDE;
 
  private:
-  void AllocateBuffer(const Size& size);
-
   unsigned format_;
   gfx::Size size_;
   scoped_array<int32> buffer_;

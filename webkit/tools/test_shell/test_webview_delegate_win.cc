@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/native_widget_types.h"
@@ -192,16 +192,16 @@ void TestWebViewDelegate::UpdateSelectionClipboard(bool is_empty_selection) {
 
 // Private methods ------------------------------------------------------------
 
-void TestWebViewDelegate::ShowJavaScriptAlert(const std::wstring& message) {
+void TestWebViewDelegate::ShowJavaScriptAlert(const string16& message) {
   MessageBox(NULL, message.c_str(), L"JavaScript Alert", MB_OK);
 }
 
-void TestWebViewDelegate::SetPageTitle(const std::wstring& title) {
+void TestWebViewDelegate::SetPageTitle(const string16& title) {
   // The Windows test shell, pre-refactoring, ignored this.  *shrug*
 }
 
 void TestWebViewDelegate::SetAddressBarURL(const GURL& url) {
-  std::wstring url_string = UTF8ToWide(url.spec());
+  string16 url_string = UTF8ToUTF16(url.spec());
   SendMessage(shell_->editWnd(), WM_SETTEXT, 0,
               reinterpret_cast<LPARAM>(url_string.c_str()));
 }

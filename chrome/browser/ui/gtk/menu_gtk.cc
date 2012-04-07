@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,19 @@
 
 #include <map>
 
+#include "base/bind.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/message_loop.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/ui/gtk/gtk_custom_menu.h"
 #include "chrome/browser/ui/gtk/gtk_custom_menu_item.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
+#include "chrome/browser/ui/views/event_utils.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/base/models/accelerator_gtk.h"
+#include "ui/base/accelerators/accelerator_gtk.h"
 #include "ui/base/models/button_menu_item_model.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/gfx/gtk_util.h"
@@ -94,7 +96,7 @@ void SetupImageIcon(GtkWidget* button,
 // Returns the new Y position of the popup menu.
 int CalculateMenuYPosition(const GdkRectangle* screen_rect,
                            const GtkRequisition* menu_req,
-                           const GtkWidget* widget, const int y) {
+                           GtkWidget* widget, const int y) {
   CHECK(screen_rect);
   CHECK(menu_req);
   // If the menu would run off the bottom of the screen, and there is enough
@@ -105,8 +107,11 @@ int CalculateMenuYPosition(const GdkRectangle* screen_rect,
   const int screen_bottom = screen_rect->y + screen_rect->height;
   const int menu_bottom = y + menu_req->height;
   int alternate_y = y - menu_req->height;
-  if (widget)
-    alternate_y -= widget->allocation.height;
+  if (widget) {
+    GtkAllocation allocation;
+    gtk_widget_get_allocation(widget, &allocation);
+    alternate_y -= allocation.height;
+  }
   if (menu_bottom >= screen_bottom && alternate_y >= screen_top)
     return alternate_y;
   return y;
@@ -280,7 +285,7 @@ MenuGtk::MenuGtk(MenuGtk::Delegate* delegate,
       model_(model),
       dummy_accel_group_(gtk_accel_group_new()),
       menu_(gtk_custom_menu_new()),
-      factory_(this) {
+      weak_factory_(this) {
   DCHECK(model);
   g_object_ref_sink(menu_);
   ConnectSignalHandlers();
@@ -293,7 +298,6 @@ MenuGtk::~MenuGtk() {
   gtk_widget_destroy(menu_);
   g_object_unref(menu_);
 
-  STLDeleteContainerPointers(submenus_we_own_.begin(), submenus_we_own_.end());
   g_object_unref(dummy_accel_group_);
 }
 
@@ -302,6 +306,9 @@ void MenuGtk::ConnectSignalHandlers() {
   // take a long time or even start a nested message loop.
   g_signal_connect(menu_, "show", G_CALLBACK(OnMenuShowThunk), this);
   g_signal_connect(menu_, "hide", G_CALLBACK(OnMenuHiddenThunk), this);
+  GtkWidget *toplevel_window = gtk_widget_get_toplevel(menu_);
+  signal_.Connect(toplevel_window, "focus-out-event",
+                  G_CALLBACK(OnMenuFocusOutThunk), this);
 }
 
 GtkWidget* MenuGtk::AppendMenuItemWithLabel(int command_id,
@@ -405,7 +412,7 @@ void MenuGtk::UpdateMenu() {
 }
 
 GtkWidget* MenuGtk::BuildMenuItemWithImage(const std::string& label,
-                                  GtkWidget* image) {
+                                           GtkWidget* image) {
   GtkWidget* menu_item =
       gtk_image_menu_item_new_with_mnemonic(label.c_str());
   gtk_image_menu_item_set_image(GTK_IMAGE_MENU_ITEM(menu_item), image);
@@ -482,8 +489,9 @@ void MenuGtk::BuildSubmenuFromModel(ui::MenuModel* model, GtkWidget* menu) {
         else
           menu_item = BuildMenuItemWithLabel(label, command_id);
         if (delegate_ && delegate_->AlwaysShowIconForCmd(command_id) &&
-            GTK_IS_IMAGE_MENU_ITEM(menu_item))
+            GTK_IS_IMAGE_MENU_ITEM(menu_item)) {
           gtk_util::SetAlwaysShowImage(menu_item);
+        }
         break;
       }
 
@@ -493,7 +501,9 @@ void MenuGtk::BuildSubmenuFromModel(ui::MenuModel* model, GtkWidget* menu) {
 
     if (model->GetTypeAt(i) == ui::MenuModel::TYPE_SUBMENU) {
       GtkWidget* submenu = gtk_menu_new();
-      BuildSubmenuFromModel(model->GetSubmenuModelAt(i), submenu);
+      ui::MenuModel* submenu_model = model->GetSubmenuModelAt(i);
+      g_object_set_data(G_OBJECT(menu_item), "submenu-model", submenu_model);
+      // We will build the submenu on demand when activated.
       gtk_menu_item_set_submenu(GTK_MENU_ITEM(menu_item), submenu);
     }
 
@@ -574,9 +584,8 @@ GtkWidget* MenuGtk::BuildButtonMenuItem(ui::ButtonMenuItemModel* model,
     }
   }
 
-  if (group) {
+  if (group)
     g_object_unref(group);
-  }
 
   return menu_item;
 }
@@ -585,10 +594,44 @@ void MenuGtk::OnMenuItemActivated(GtkWidget* menuitem) {
   if (block_activation_)
     return;
 
+  ui::MenuModel* model = ModelForMenuItem(GTK_MENU_ITEM(menuitem));
+
   // We receive activation messages when highlighting a menu that has a
-  // submenu. Ignore them.
-  if (gtk_menu_item_get_submenu(GTK_MENU_ITEM(menuitem)))
+  // submenu. We build submenus on demand, and tear them down on hide, to
+  // allow submenu models to be constructed and destroyed on demand.
+  GtkWidget* submenu = gtk_menu_item_get_submenu(GTK_MENU_ITEM(menuitem));
+  if (submenu) {
+    int id;
+    if (!GetMenuItemID(menuitem, &id))
+      return;
+
+    ui::MenuModel* submenu_model = static_cast<ui::MenuModel*>(
+        g_object_get_data(G_OBJECT(menuitem), "submenu-model"));
+    // Some non-dynamic menus might have submenus without submenu models.
+    // (For example, the input methods context menu for input fields.)
+    if (!submenu_model)
+      return;
+
+    // This might be just the temporary stub submenu, or it might be a full
+    // submenu that we built but never destroyed. (This can happen if we briefly
+    // hover over a submenu but never actually show it; we get the activation
+    // event but no hide event.) We want to destroy it either way.
+    gtk_widget_destroy(submenu);
+
+    submenu_model->MenuWillShow();
+
+    submenu = gtk_menu_new();
+    BuildSubmenuFromModel(submenu_model, submenu);
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(menuitem), submenu);
+
+    // Update all the menu item info in the newly-generated menu.
+    gtk_container_foreach(GTK_CONTAINER(submenu), SetMenuItemInfo, this);
+
+    // Hook up the hide signal so the submenu knows when it is hidden.
+    g_signal_connect(submenu, "hide", G_CALLBACK(OnSubmenuHidden),
+                     implicit_cast<gpointer>(menuitem));
     return;
+  }
 
   // The activate signal is sent to radio items as they get deselected;
   // ignore it in this case.
@@ -600,8 +643,6 @@ void MenuGtk::OnMenuItemActivated(GtkWidget* menuitem) {
   int id;
   if (!GetMenuItemID(menuitem, &id))
     return;
-
-  ui::MenuModel* model = ModelForMenuItem(GTK_MENU_ITEM(menuitem));
 
   // The menu item can still be activated by hotkeys even if it is disabled.
   if (model->IsEnabledAt(id))
@@ -650,7 +691,7 @@ void MenuGtk::WidgetMenuPositionFunc(GtkMenu* menu,
 
   gtk_widget_size_request(GTK_WIDGET(menu), &menu_req);
 
-  gdk_window_get_origin(widget->window, x, y);
+  gdk_window_get_origin(gtk_widget_get_window(widget), x, y);
   GdkScreen *screen = gtk_widget_get_screen(widget);
   gint monitor = gdk_screen_get_monitor_at_point(screen, *x, *y);
 
@@ -658,11 +699,14 @@ void MenuGtk::WidgetMenuPositionFunc(GtkMenu* menu,
   gdk_screen_get_monitor_geometry(screen, monitor,
                                   &screen_rect);
 
-  if (GTK_WIDGET_NO_WINDOW(widget)) {
-    *x += widget->allocation.x;
-    *y += widget->allocation.y;
+  GtkAllocation allocation;
+  gtk_widget_get_allocation(widget, &allocation);
+
+  if (!gtk_widget_get_has_window(widget)) {
+    *x += allocation.x;
+    *y += allocation.y;
   }
-  *y += widget->allocation.height;
+  *y += allocation.height;
 
   bool start_align =
     !!g_object_get_data(G_OBJECT(widget), "left-align-popup");
@@ -670,7 +714,7 @@ void MenuGtk::WidgetMenuPositionFunc(GtkMenu* menu,
     start_align = !start_align;
 
   if (!start_align)
-    *x += widget->allocation.width - menu_req.width;
+    *x += allocation.width - menu_req.width;
 
   *y = CalculateMenuYPosition(&screen_rect, &menu_req, widget, *y);
 
@@ -706,12 +750,11 @@ void MenuGtk::ExecuteCommand(ui::MenuModel* model, int id) {
     delegate_->CommandWillBeExecuted();
 
   GdkEvent* event = gtk_get_current_event();
-  if (event && event->type == GDK_BUTTON_RELEASE) {
-    model->ActivatedAtWithDisposition(
-        id, event_utils::DispositionFromEventFlags(event->button.state));
-  } else {
-    model->ActivatedAt(id);
-  }
+  int event_flags = 0;
+
+  if (event && event->type == GDK_BUTTON_RELEASE)
+    event_flags = event_utils::EventFlagsFromGdkState(event->button.state);
+  model->ActivatedAt(id, event_flags);
 
   if (event)
     gdk_event_free(event);
@@ -719,14 +762,64 @@ void MenuGtk::ExecuteCommand(ui::MenuModel* model, int id) {
 
 void MenuGtk::OnMenuShow(GtkWidget* widget) {
   model_->MenuWillShow();
-  MessageLoop::current()->PostTask(FROM_HERE,
-      factory_.NewRunnableMethod(&MenuGtk::UpdateMenu));
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&MenuGtk::UpdateMenu, weak_factory_.GetWeakPtr()));
 }
 
 void MenuGtk::OnMenuHidden(GtkWidget* widget) {
   if (delegate_)
     delegate_->StoppedShowing();
   model_->MenuClosed();
+}
+
+gboolean MenuGtk::OnMenuFocusOut(GtkWidget* widget, GdkEventFocus* event) {
+  gtk_widget_hide(menu_);
+  return TRUE;
+}
+
+// static
+void MenuGtk::OnSubmenuHidden(GtkWidget* widget, gpointer userdata) {
+  GtkWidget* menuitem = static_cast<GtkWidget*>(userdata);
+  GtkWidget* submenu = gtk_menu_item_get_submenu(GTK_MENU_ITEM(menuitem));
+  DCHECK_EQ(widget, submenu);
+  if (widget != submenu)
+    return;
+  // This method is called before we've actually processed menu activations.
+  // If we were to handle it right away, we might lose the activations. So,
+  // we handle it a little later on. We use a weak reference to the menu item
+  // to be sure we won't end up calling this on a destroyed object.
+  MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&MenuGtk::OnSubmenuHiddenCallback, GObjectWeakRef(menuitem)));
+}
+
+// static
+void MenuGtk::OnSubmenuHiddenCallback(const GObjectWeakRef& menuitem) {
+  // Check that the weak reference is still there.
+  if (!menuitem.get())
+    return;
+
+  GtkWidget* submenu = gtk_menu_item_get_submenu(GTK_MENU_ITEM(menuitem.get()));
+  DCHECK(submenu);
+  if (!submenu)
+    return;
+  ui::MenuModel* submenu_model = static_cast<ui::MenuModel*>(
+      g_object_get_data(menuitem.get(), "submenu-model"));
+  DCHECK(submenu_model);
+  if (!submenu_model)
+    return;
+
+  // Destroy the dynamic submenu now so that its model can be safely destroyed
+  // as well (e.g. for the bookmarks model); it will be rebuilt if necessary.
+  gtk_widget_destroy(submenu);
+  submenu = gtk_menu_new();
+  // We don't need to do any further setup here. This temporary submenu
+  // will be destroyed and rebuilt before being shown anyway.
+  gtk_menu_item_set_submenu(GTK_MENU_ITEM(menuitem.get()), submenu);
+
+  // Notify the submenu model that the menu has been hidden.
+  submenu_model->MenuClosed();
 }
 
 // static
@@ -801,11 +894,7 @@ void MenuGtk::SetMenuItemInfo(GtkWidget* widget, gpointer userdata) {
             gfx::ConvertAcceleratorsFromWindowsStyle(
                 UTF16ToUTF8(model->GetLabelAt(id)));
 
-#if GTK_CHECK_VERSION(2, 16, 0)
         gtk_menu_item_set_label(GTK_MENU_ITEM(widget), label.c_str());
-#else
-        gtk_label_set_label(GTK_LABEL(GTK_BIN(widget)->child), label.c_str());
-#endif
         if (GTK_IS_IMAGE_MENU_ITEM(widget)) {
           SkBitmap icon;
           if (model->GetIconAt(id, &icon)) {

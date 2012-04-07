@@ -13,6 +13,7 @@
 #include <list>
 #include <map>
 
+#include "base/bind.h"
 #include "base/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -22,9 +23,8 @@
 #include "base/rand_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
-#include "base/task.h"
-#include "base/values.h"
 #include "base/utf_string_conversions.h"
+#include "base/values.h"
 #include "chrome/service/cloud_print/cloud_print_consts.h"
 #include "chrome/service/cloud_print/cloud_print_helpers.h"
 #include "googleurl/src/gurl.h"
@@ -35,22 +35,23 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
+
 // CUPS specific options.
-static const char kCUPSPrinterInfoOpt[] = "printer-info";
-static const char kCUPSPrinterStateOpt[] = "printer-state";
+const char kCUPSPrinterInfoOpt[] = "printer-info";
+const char kCUPSPrinterStateOpt[] = "printer-state";
 
 // Print system config options.
-static const char kCUPSPrintServerURLs[] = "print_server_urls";
-static const char kCUPSUpdateTimeoutMs[] = "update_timeout_ms";
-static const char kCUPSNotifyDelete[] = "notify_delete";
+const char kCUPSPrintServerURLs[] = "print_server_urls";
+const char kCUPSUpdateTimeoutMs[] = "update_timeout_ms";
+const char kCUPSNotifyDelete[] = "notify_delete";
 
 // Default port for IPP print servers.
-static const int kDefaultIPPServerPort = 631;
+const int kDefaultIPPServerPort = 631;
 
 // Time interval to check for printer's updates.
 const int kCheckForPrinterUpdatesMs = 5*60*1000;
 
-// Job update timeput
+// Job update timeout
 const int kJobUpdateTimeoutMs = 5000;
 
 // Job id for dry run (it should not affect CUPS job ids, since 0 job-id is
@@ -77,29 +78,24 @@ class PrintSystemCUPS : public PrintSystem {
   explicit PrintSystemCUPS(const DictionaryValue* print_system_settings);
 
   // PrintSystem implementation.
-  virtual PrintSystemResult Init();
-
+  virtual PrintSystemResult Init() OVERRIDE;
   virtual PrintSystem::PrintSystemResult EnumeratePrinters(
-      printing::PrinterList* printer_list);
-
+      printing::PrinterList* printer_list) OVERRIDE;
   virtual void GetPrinterCapsAndDefaults(
       const std::string& printer_name,
-      PrinterCapsAndDefaultsCallback* callback);
-
-  virtual bool IsValidPrinter(const std::string& printer_name);
-
-  virtual bool ValidatePrintTicket(const std::string& printer_name,
-                                   const std::string& print_ticket_data);
-
+      const PrinterCapsAndDefaultsCallback& callback) OVERRIDE;
+  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
+  virtual bool ValidatePrintTicket(
+      const std::string& printer_name,
+      const std::string& print_ticket_data) OVERRIDE;
   virtual bool GetJobDetails(const std::string& printer_name,
                              PlatformJobId job_id,
-                             PrintJobDetails *job_details);
-
-  virtual PrintSystem::PrintServerWatcher* CreatePrintServerWatcher();
+                             PrintJobDetails *job_details) OVERRIDE;
+  virtual PrintSystem::PrintServerWatcher* CreatePrintServerWatcher() OVERRIDE;
   virtual PrintSystem::PrinterWatcher* CreatePrinterWatcher(
-      const std::string& printer_name);
-  virtual PrintSystem::JobSpooler* CreateJobSpooler();
-  virtual std::string GetSupportedMimeTypes();
+      const std::string& printer_name) OVERRIDE;
+  virtual PrintSystem::JobSpooler* CreateJobSpooler() OVERRIDE;
+  virtual std::string GetSupportedMimeTypes() OVERRIDE;
 
   // Helper functions.
   PlatformJobId SpoolPrintJob(const std::string& print_ticket,
@@ -153,7 +149,7 @@ class PrintSystemCUPS : public PrintSystem {
 
   // Helper method to invoke a PrinterCapsAndDefaultsCallback.
   static void RunCapsCallback(
-      PrinterCapsAndDefaultsCallback* callback,
+      const PrinterCapsAndDefaultsCallback& callback,
       bool succeeded,
       const std::string& printer_name,
       const printing::PrinterCapsAndDefaults& printer_info);
@@ -180,17 +176,19 @@ class PrintServerWatcherCUPS
     StopWatching();
   }
 
-  // PrintSystem::PrintServerWatcher interface
+  // PrintSystem::PrintServerWatcher implementation.
   virtual bool StartWatching(
-      PrintSystem::PrintServerWatcher::Delegate* delegate) {
+      PrintSystem::PrintServerWatcher::Delegate* delegate) OVERRIDE {
     delegate_ = delegate;
     printers_hash_ = GetPrintersHash();
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrintServerWatcherCUPS::CheckForUpdates),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
         print_system_->GetUpdateTimeoutMs());
     return true;
   }
-  virtual bool StopWatching() {
+
+  virtual bool StopWatching() OVERRIDE {
     delegate_ = NULL;
     return true;
   }
@@ -204,10 +202,12 @@ class PrintServerWatcherCUPS
       printers_hash_ = new_hash;
       delegate_->OnPrinterAdded();
     }
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrintServerWatcherCUPS::CheckForUpdates),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
         print_system_->GetUpdateTimeoutMs());
   }
+
  private:
   std::string GetPrintersHash() {
     printing::PrinterList printer_list;
@@ -224,50 +224,56 @@ class PrintServerWatcherCUPS
     for (size_t i = 0; i < printers.size(); i++)
       to_hash += printers[i];
 
-    return MD5String(to_hash);
+    return base::MD5String(to_hash);
   }
 
   scoped_refptr<PrintSystemCUPS> print_system_;
   PrintSystem::PrintServerWatcher::Delegate* delegate_;
   std::string printers_hash_;
+
   DISALLOW_COPY_AND_ASSIGN(PrintServerWatcherCUPS);
 };
 
 class PrinterWatcherCUPS
     : public PrintSystem::PrinterWatcher {
  public:
-  explicit PrinterWatcherCUPS(PrintSystemCUPS* print_system,
-                             const std::string& printer_name)
+  PrinterWatcherCUPS(PrintSystemCUPS* print_system,
+                     const std::string& printer_name)
       : printer_name_(printer_name),
     delegate_(NULL),
     print_system_(print_system) {
   }
+
   ~PrinterWatcherCUPS() {
     StopWatching();
   }
 
-  // PrintSystem::PrinterWatcher interface
+  // PrintSystem::PrinterWatcher implementation.
   virtual bool StartWatching(
-      PrintSystem::PrinterWatcher::Delegate* delegate) {
+      PrintSystem::PrinterWatcher::Delegate* delegate) OVERRIDE{
     if (delegate_ != NULL)
       StopWatching();
     delegate_ = delegate;
     settings_hash_ = GetSettingsHash();
     // Schedule next job status update.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrinterWatcherCUPS::JobStatusUpdate),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
         kJobUpdateTimeoutMs);
     // Schedule next printer check.
     // TODO(gene): Randomize time for the next printer update.
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrinterWatcherCUPS::PrinterUpdate),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
         print_system_->GetUpdateTimeoutMs());
     return true;
   }
-  virtual bool StopWatching() {
+
+  virtual bool StopWatching() OVERRIDE{
     delegate_ = NULL;
     return true;
   }
+
   bool GetCurrentPrinterInfo(printing::PrinterBasicInfo* printer_info) {
     DCHECK(printer_info);
     return print_system_->GetPrinterInfo(printer_name_, printer_info);
@@ -281,8 +287,9 @@ class PrinterWatcherCUPS
     // jobs for this printer and check their status. If printer has no
     // outstanding jobs, OnJobChanged() will do nothing.
     delegate_->OnJobChanged();
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrinterWatcherCUPS::JobStatusUpdate),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
         kJobUpdateTimeoutMs);
   }
 
@@ -302,10 +309,12 @@ class PrinterWatcherCUPS
         VLOG(1) << "CP_CUPS: Printer update detected for: " << printer_name_;
       }
     }
-    MessageLoop::current()->PostDelayedTask(FROM_HERE,
-        NewRunnableMethod(this, &PrinterWatcherCUPS::PrinterUpdate),
+    MessageLoop::current()->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
         print_system_->GetUpdateTimeoutMs());
   }
+
  private:
   std::string GetSettingsHash() {
     printing::PrinterBasicInfo info;
@@ -329,13 +338,14 @@ class PrinterWatcherCUPS
     to_hash += caps.printer_defaults;
     to_hash += caps.defaults_mime_type;
 
-    return MD5String(to_hash);
+    return base::MD5String(to_hash);
   }
 
   std::string printer_name_;
   PrintSystem::PrinterWatcher::Delegate* delegate_;
   scoped_refptr<PrintSystemCUPS> print_system_;
   std::string settings_hash_;
+
   DISALLOW_COPY_AND_ASSIGN(PrinterWatcherCUPS);
 };
 
@@ -345,6 +355,7 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
       : print_system_(print_system) {
     DCHECK(print_system_.get());
   }
+
   // PrintSystem::JobSpooler implementation.
   virtual bool Spool(const std::string& print_ticket,
                      const FilePath& print_data_file_path,
@@ -352,18 +363,15 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
                      const std::string& printer_name,
                      const std::string& job_title,
                      const std::vector<std::string>& tags,
-                     JobSpooler::Delegate* delegate) {
+                     JobSpooler::Delegate* delegate) OVERRIDE{
     DCHECK(delegate);
     bool dry_run = false;
     int job_id = print_system_->SpoolPrintJob(
         print_ticket, print_data_file_path, print_data_mime_type,
         printer_name, job_title, tags, &dry_run);
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     NewRunnableFunction(
-                                         &JobSpoolerCUPS::NotifyDelegate,
-                                         delegate,
-                                         job_id,
-                                         dry_run));
+    MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&JobSpoolerCUPS::NotifyDelegate, delegate, job_id, dry_run));
     return true;
   }
 
@@ -374,8 +382,10 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
     else
       delegate->OnJobSpoolFailed();
   }
+
  private:
   scoped_refptr<PrintSystemCUPS> print_system_;
+
   DISALLOW_COPY_AND_ASSIGN(JobSpoolerCUPS);
 };
 
@@ -457,9 +467,9 @@ void PrintSystemCUPS::UpdatePrinters() {
   }
 
   // Schedule next update.
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      NewRunnableMethod(this, &PrintSystemCUPS::UpdatePrinters),
-      GetUpdateTimeoutMs());
+  MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&PrintSystemCUPS::UpdatePrinters, this), GetUpdateTimeoutMs());
 }
 
 PrintSystem::PrintSystemResult PrintSystemCUPS::EnumeratePrinters(
@@ -479,16 +489,13 @@ PrintSystem::PrintSystemResult PrintSystemCUPS::EnumeratePrinters(
 
 void PrintSystemCUPS::GetPrinterCapsAndDefaults(
     const std::string& printer_name,
-    PrinterCapsAndDefaultsCallback* callback) {
+    const PrinterCapsAndDefaultsCallback& callback) {
   printing::PrinterCapsAndDefaults printer_info;
   bool succeeded = GetPrinterCapsAndDefaults(printer_name, &printer_info);
   MessageLoop::current()->PostTask(
       FROM_HERE,
-      NewRunnableFunction(&PrintSystemCUPS::RunCapsCallback,
-                          callback,
-                          succeeded,
-                          printer_name,
-                          printer_info));
+      base::Bind(&PrintSystemCUPS::RunCapsCallback, callback, succeeded,
+                 printer_name, printer_info));
 }
 
 bool PrintSystemCUPS::IsValidPrinter(const std::string& printer_name) {
@@ -809,13 +816,11 @@ PrintServerInfoCUPS* PrintSystemCUPS::FindServerByFullName(
 }
 
 void PrintSystemCUPS::RunCapsCallback(
-    PrinterCapsAndDefaultsCallback* callback,
+    const PrinterCapsAndDefaultsCallback& callback,
     bool succeeded,
     const std::string& printer_name,
     const printing::PrinterCapsAndDefaults& printer_info) {
-  callback->Run(succeeded, printer_name, printer_info);
-  delete callback;
+  callback.Run(succeeded, printer_name, printer_info);
 }
 
 }  // namespace cloud_print
-

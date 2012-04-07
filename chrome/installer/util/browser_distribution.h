@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -20,18 +20,12 @@
 #include <windows.h>  // NOLINT
 #endif
 
-class CommandLine;
-
 namespace installer {
-class ChannelInfo;
-class MasterPreferences;
 class Product;
 }
 
 class BrowserDistribution {
  public:
-  virtual ~BrowserDistribution() {}
-
   enum Type {
     CHROME_BROWSER,
     CHROME_FRAME,
@@ -47,10 +41,19 @@ class BrowserDistribution {
                           // also known as the 'TV' part in 'TV80'.
     int flavor;           // The flavor index for this experiment.
     int heading;          // The heading resource ID to use for this experiment.
+    bool compact_bubble;  // Whether to show the compact heading or not.
     int control_group;    // Size of the control group (in percentages). Control
                           // group is the group that qualifies for the
                           // experiment but does not participate.
   };
+
+  // An array of the Types representing products;
+  static const Type kProductTypes[];
+
+  // The number of elements in the array |kProductTypes|.
+  static const size_t kNumProductTypes;
+
+  virtual ~BrowserDistribution() {}
 
   static BrowserDistribution* GetDistribution();
 
@@ -64,8 +67,11 @@ class BrowserDistribution {
 
   virtual std::wstring GetAppGuid();
 
+  // Returns the name by which the program is registered with Default Programs.
+  // This is not a localized string suitable for presenting to a user.
   virtual std::wstring GetApplicationName();
 
+  // Returns the localized name of the program.
   virtual std::wstring GetAppShortCutName();
 
   virtual std::wstring GetAlternateApplicationName();
@@ -88,6 +94,8 @@ class BrowserDistribution {
 
   virtual std::wstring GetStatsServerURL();
 
+  virtual std::string GetNetworkStatsServer() const;
+
 #if defined(OS_WIN)
   virtual std::wstring GetDistributionData(HKEY root_key);
 #endif
@@ -99,6 +107,8 @@ class BrowserDistribution {
   virtual std::wstring GetVersionKey();
 
   virtual bool CanSetAsDefault();
+
+  virtual bool CanCreateDesktopShortcuts();
 
   virtual int GetIconIndex();
 

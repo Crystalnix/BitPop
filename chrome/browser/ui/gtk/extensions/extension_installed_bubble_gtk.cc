@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/i18n/rtl.h"
 #include "base/message_loop.h"
 #include "base/utf_string_conversions.h"
@@ -17,11 +19,12 @@
 #include "chrome/browser/ui/gtk/gtk_theme_service.h"
 #include "chrome/browser/ui/gtk/gtk_util.h"
 #include "chrome/browser/ui/gtk/location_bar_view_gtk.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -89,27 +92,30 @@ ExtensionInstalledBubbleGtk::ExtensionInstalledBubbleGtk(
   // fired, but all of the EXTENSION_LOADED Observers have run. Only then can we
   // be sure that a browser action or page action has had views created which we
   // can inspect for the purpose of pointing to them.
-  registrar_.Add(this, NotificationType::EXTENSION_LOADED,
-      Source<Profile>(browser->profile()));
-  registrar_.Add(this, NotificationType::EXTENSION_UNLOADED,
-      Source<Profile>(browser->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+      content::Source<Profile>(browser->profile()));
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      content::Source<Profile>(browser->profile()));
 }
 
 ExtensionInstalledBubbleGtk::~ExtensionInstalledBubbleGtk() {}
 
-void ExtensionInstalledBubbleGtk::Observe(NotificationType type,
-                                          const NotificationSource& source,
-                                          const NotificationDetails& details) {
-  if (type == NotificationType::EXTENSION_LOADED) {
-    const Extension* extension = Details<const Extension>(details).ptr();
+void ExtensionInstalledBubbleGtk::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  if (type == chrome::NOTIFICATION_EXTENSION_LOADED) {
+    const Extension* extension =
+        content::Details<const Extension>(details).ptr();
     if (extension == extension_) {
       // PostTask to ourself to allow all EXTENSION_LOADED Observers to run.
-      MessageLoopForUI::current()->PostTask(FROM_HERE, NewRunnableMethod(this,
-          &ExtensionInstalledBubbleGtk::ShowInternal));
+      MessageLoopForUI::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal, this));
     }
-  } else if (type == NotificationType::EXTENSION_UNLOADED) {
+  } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
     const Extension* extension =
-        Details<UnloadedExtensionInfo>(details)->extension;
+        content::Details<UnloadedExtensionInfo>(details)->extension;
     if (extension == extension_)
       extension_ = NULL;
   } else {
@@ -131,8 +137,8 @@ void ExtensionInstalledBubbleGtk::ShowInternal() {
     if (toolbar->animating() && animation_wait_retries_-- > 0) {
       MessageLoopForUI::current()->PostDelayedTask(
           FROM_HERE,
-          NewRunnableMethod(this, &ExtensionInstalledBubbleGtk::ShowInternal),
-          kAnimationWaitMS);
+          base::Bind(&ExtensionInstalledBubbleGtk::ShowInternal, this),
+          base::TimeDelta::FromMilliseconds(kAnimationWaitMS));
       return;
     }
 
@@ -144,8 +150,8 @@ void ExtensionInstalledBubbleGtk::ShowInternal() {
     // If the widget is not visible then browser_window could be incognito
     // with this extension disabled. Try showing it on the chevron.
     // If that fails, fall back to default position.
-    if (reference_widget && !GTK_WIDGET_VISIBLE(reference_widget)) {
-      reference_widget = GTK_WIDGET_VISIBLE(toolbar->chevron()) ?
+    if (reference_widget && !gtk_widget_get_visible(reference_widget)) {
+      reference_widget = gtk_widget_get_visible(toolbar->chevron()) ?
           toolbar->chevron() : NULL;
     }
   } else if (type_ == PAGE_ACTION) {
@@ -312,8 +318,9 @@ void ExtensionInstalledBubbleGtk::BubbleClosing(BubbleGtk* bubble,
   // We need to allow the bubble to close and remove the widgets from
   // the window before we call Release() because close_button_ depends
   // on all references being cleared before it is destroyed.
-  MessageLoopForUI::current()->PostTask(FROM_HERE, NewRunnableMethod(this,
-      &ExtensionInstalledBubbleGtk::Close));
+  MessageLoopForUI::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&ExtensionInstalledBubbleGtk::Close, this));
 }
 
 void ExtensionInstalledBubbleGtk::Close() {

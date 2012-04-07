@@ -9,18 +9,19 @@
 #include <gtk/gtk.h>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/prefs/pref_member.h"
 #include "chrome/browser/ui/gtk/custom_button.h"
 #include "chrome/browser/ui/gtk/menu_gtk.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "ui/base/accelerators/accelerator.h"
 #include "ui/base/gtk/gtk_signal.h"
 #include "ui/base/gtk/gtk_signal_registrar.h"
-#include "ui/base/models/accelerator.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 #include "ui/base/models/simple_menu_model.h"
 
 class BackForwardButtonGtk;
@@ -31,24 +32,26 @@ class CustomDrawButton;
 class GtkThemeService;
 class LocationBar;
 class LocationBarViewGtk;
-class Profile;
 class ReloadButtonGtk;
-class TabContents;
 class ToolbarModel;
+
+namespace content {
+class WebContents;
+}
 
 // View class that displays the GTK version of the toolbar and routes gtk
 // events back to the Browser.
 class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
                           public ui::AcceleratorProvider,
                           public MenuGtk::Delegate,
-                          public NotificationObserver {
+                          public content::NotificationObserver {
  public:
-  explicit BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window);
+  BrowserToolbarGtk(Browser* browser, BrowserWindowGtk* window);
   virtual ~BrowserToolbarGtk();
 
   // Create the contents of the toolbar. |top_level_window| is the GtkWindow
   // to which we attach our accelerators.
-  void Init(Profile* profile, GtkWindow* top_level_window);
+  void Init(GtkWindow* top_level_window);
 
   // Set the various widgets' ViewIDs.
   void SetViewIDs();
@@ -85,27 +88,26 @@ class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
   void ShowAppMenu();
 
   // Overridden from CommandUpdater::CommandObserver:
-  virtual void EnabledStateChangedForCommand(int id, bool enabled);
+  virtual void EnabledStateChangedForCommand(int id, bool enabled) OVERRIDE;
 
   // Overridden from MenuGtk::Delegate:
-  virtual void StoppedShowing();
-  virtual GtkIconSet* GetIconSetForId(int idr);
-  virtual bool AlwaysShowIconForCmd(int command_id) const;
+  virtual void StoppedShowing() OVERRIDE;
+  virtual GtkIconSet* GetIconSetForId(int idr) OVERRIDE;
+  virtual bool AlwaysShowIconForCmd(int command_id) const OVERRIDE;
 
   // Overridden from ui::AcceleratorProvider:
-  virtual bool GetAcceleratorForCommandId(int id,
-                                          ui::Accelerator* accelerator);
+  virtual bool GetAcceleratorForCommandId(
+      int id,
+      ui::Accelerator* accelerator) OVERRIDE;
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
-
-  Profile* profile() { return profile_; }
-  void SetProfile(Profile* profile);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Message that we should react to a state change.
-  void UpdateTabContents(TabContents* contents, bool should_restore_state);
+  void UpdateWebContents(content::WebContents* contents,
+                         bool should_restore_state);
 
  private:
   // Connect/Disconnect signals for dragging a url onto the home button.
@@ -147,6 +149,9 @@ class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
   // Sometimes we only want to show the location w/o the toolbar buttons (e.g.,
   // in a popup window).
   bool ShouldOnlyShowLocation() const;
+
+  // Rebuilds the wrench menu.
+  void RebuildWrenchMenu();
 
   // An event box that holds |toolbar_|. We need the toolbar to have its own
   // GdkWindow when we use the GTK drawing because otherwise the color from our
@@ -190,11 +195,13 @@ class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
 
   scoped_ptr<MenuGtk> wrench_menu_;
 
-  WrenchMenuModel wrench_menu_model_;
+  scoped_ptr<WrenchMenuModel> wrench_menu_model_;
+
+  // Flag to invalidate the wrench menu model.
+  bool is_wrench_menu_model_valid_;
 
   Browser* browser_;
   BrowserWindowGtk* window_;
-  Profile* profile_;
 
   // Controls whether or not a home button should be shown on the toolbar.
   BooleanPrefMember show_home_button_;
@@ -203,11 +210,11 @@ class BrowserToolbarGtk : public CommandUpdater::CommandObserver,
   StringPrefMember home_page_;
   BooleanPrefMember home_page_is_new_tab_page_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   // A GtkEntry that isn't part of the hierarchy. We keep this for native
   // rendering.
-  OwnedWidgetGtk offscreen_entry_;
+  ui::OwnedWidgetGtk offscreen_entry_;
 
   // Manages the home button drop signal handler.
   scoped_ptr<ui::GtkSignalRegistrar> drop_handler_;

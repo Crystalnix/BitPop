@@ -1,155 +1,59 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
-  'target_defaults': {
-    'variables': {
-      'chrome_exe_target': 0,
-    },
-    'target_conditions': [
-      ['chrome_exe_target==1', {
-        'sources': [
-          # .cc, .h, and .mm files under app that are used on all
-          # platforms, including both 32-bit and 64-bit Windows.
-          # Test files are not included.
-          'app/breakpad_win.cc',
-          'app/breakpad_win.h',
-          'app/chrome_exe_main_gtk.cc',
-          'app/chrome_exe_main_mac.mm',
-          'app/chrome_exe_main_win.cc',
-          'app/chrome_exe_resource.h',
-          'app/client_util.cc',
-          'app/client_util.h',
-          'app/hard_error_handler_win.cc',
-          'app/hard_error_handler_win.h',
-          'app/scoped_ole_initializer.h',
-          # TODO(bradnelson): once automatic generation of 64 bit targets on
-          # Windows is ready, take this out and add a dependency on
-          # content_common.gypi.
-          '../content/common/content_switches.cc',
-          '../content/common/content_switches.h',
-        ],
-        'mac_bundle_resources': [
-          'app/app-Info.plist',
-        ],
-        # TODO(mark): Come up with a fancier way to do this.  It should only
-        # be necessary to list app-Info.plist once, not the three times it is
-        # listed here.
-        'mac_bundle_resources!': [
-          'app/app-Info.plist',
-        ],
-        'xcode_settings': {
-          'CHROMIUM_STRIP_SAVE_FILE': 'app/app.saves',
-          'INFOPLIST_FILE': 'app/app-Info.plist',
-        },
-        'conditions': [
-          ['OS=="win"', {
-            'sources': [
-              'app/chrome_exe.rc',
-              'app/chrome_exe_version.rc.version',
-            ],
-            'include_dirs': [
-              '<(SHARED_INTERMEDIATE_DIR)/chrome',
-            ],
-            # TODO(scottbyer): This is a temporary workaround.  The right fix
-            # is to change the output file to be in $(IntDir) for this project
-            # and the .dll project and use the hardlink script to link it back
-            # to $(OutDir).
-            'configurations': {
-              'Debug_Base': {
-                'msvs_settings': {
-                  'VCLinkerTool': {
-                    'LinkIncremental': '1',
-                  },
-                },
-              },
-            },
-            'msvs_settings': {
-              'VCLinkerTool': {
-                'DelayLoadDLLs': [
-                  'dbghelp.dll',
-                  'dwmapi.dll',
-                  'uxtheme.dll',
-                  'ole32.dll',
-                  'oleaut32.dll',
-                ],
-                # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
-                'SubSystem': '2',
-              },
-              'VCManifestTool': {
-                'AdditionalManifestFiles': '$(ProjectDir)\\app\\chrome.exe.manifest',
-              },
-            },
-            'actions': [
-              {
-                'action_name': 'version',
-                'variables': {
-                  'template_input_path': 'app/chrome_exe_version.rc.version',
-                },
-                'conditions': [
-                  [ 'branding == "Chrome"', {
-                    'variables': {
-                       'branding_path': 'app/theme/google_chrome/BRANDING',
-                    },
-                  }, { # else branding!="Chrome"
-                    'variables': {
-                       'branding_path': 'app/theme/chromium/BRANDING',
-                    },
-                  }],
-                ],
-                'inputs': [
-                  '<(template_input_path)',
-                  '<(version_path)',
-                  '<(branding_path)',
-                ],
-                'outputs': [
-                  '<(SHARED_INTERMEDIATE_DIR)/chrome/chrome_exe_version.rc',
-                ],
-                'action': [
-                  'python',
-                  '<(version_py_path)',
-                  '-f', '<(version_path)',
-                  '-f', '<(branding_path)',
-                  '<(template_input_path)',
-                  '<@(_outputs)',
-                ],
-                'process_outputs_as_sources': 1,
-                'message': 'Generating version information in <(_outputs)'
-              },
-              {
-                'action_name': 'first_run',
-                'inputs': [
-                    'app/FirstRun',
-                ],
-                'outputs': [
-                    '<(PRODUCT_DIR)/First Run',
-                ],
-                'action': ['cp', '-f', '<@(_inputs)', '<@(_outputs)'],
-                'message': 'Copy first run complete sentinel file',
-              },
-            ],
-          }, {  # 'OS!="win"
-            'sources!': [
-              'app/client_util.cc',
-            ]
-          }],
-        ],
-      }],
-    ],
-  },
   'targets': [
     {
       'target_name': 'chrome',
       'type': 'executable',
       'mac_bundle': 1,
-      'msvs_guid': '7B219FAA-E360-43C8-B341-804A94EEFFAC',
       'variables': {
-        'chrome_exe_target': 1,
         'use_system_xdg_utils%': 0,
-        'disable_pie%': 0,
+        'enable_wexit_time_destructors': 1,
+      },
+      'sources': [
+        'app/breakpad_win.cc',
+        'app/breakpad_win.h',
+        'app/chrome_exe_main_aura.cc',
+        'app/chrome_exe_main_gtk.cc',
+        'app/chrome_exe_main_mac.cc',
+        'app/chrome_exe_main_win.cc',
+        'app/chrome_exe_resource.h',
+        'app/client_util.cc',
+        'app/client_util.h',
+        'app/hard_error_handler_win.cc',
+        'app/hard_error_handler_win.h',
+        'app/scoped_ole_initializer.h',
+        '../content/app/startup_helper_win.cc',
+        '../content/public/common/content_switches.cc',
+      ],
+      'mac_bundle_resources': [
+        'app/app-Info.plist',
+      ],
+      # TODO(mark): Come up with a fancier way to do this.  It should only
+      # be necessary to list app-Info.plist once, not the three times it is
+      # listed here.
+      'mac_bundle_resources!': [
+        'app/app-Info.plist',
+      ],
+      'xcode_settings': {
+        'CHROMIUM_STRIP_SAVE_FILE': 'app/app.saves',
+        'INFOPLIST_FILE': 'app/app-Info.plist',
       },
       'conditions': [
+        ['order_text_section!=""', {
+          'target_conditions' : [
+            ['_toolset=="target"', {
+              'ldflags': [
+                '-Wl,-section-ordering-file=<(order_text_section)' ],
+            }],
+          ]
+        }],
+        ['OS == "android"', {
+          # Don't put the 'chrome' target in 'all' on android
+          'suppress_wildcard': 1,
+        }],
         ['os_posix == 1 and OS != "mac"', {
           'actions': [
             {
@@ -194,11 +98,17 @@
                 ],
               },
             ],
-            # TODO(rkc): Remove this once we have a fix for remote gdb
-            # and are able to correctly get section header offsets for
-            # pie executables. Currently -pie breaks remote debugging.
-            ['disable_pie==1', {
-              'ldflags' : ['-nopie'],
+            # TODO(rkc): Remove once crosbug.com/15266 is fixed.
+            ['profiling==1', {
+              'ldflags': ['-nopie'],
+            }, {
+              # Building with -pie needs investigating on ARM.
+              # For now, at least use it on Linux Intel.
+              'conditions': [
+                ['(target_arch=="x64" or target_arch=="ia32") and linux_disable_pie!=1', {
+                  'ldflags': ['-pie'],
+                }],
+              ],
             }],
             ['use_system_xdg_utils==0', {
               'copies': [
@@ -221,22 +131,35 @@
                 },
               ],
             }],
-          ],
-          'dependencies': [
-            # On Linux, link the dependencies (libraries) that make up actual
-            # Chromium functionality directly into the executable.
-            '<@(chromium_dependencies)',
-            # Needed for chrome_main.cc initialization of libraries.
-            '../build/linux/system.gyp:dbus-glib',
-            '../build/linux/system.gyp:gtk',
-            'packed_resources',
-            # Needed to use the master_preferences functions
-            'installer_util',
+            ['toolkit_uses_gtk == 1', {
+              'dependencies': [
+                # On Linux, link the dependencies (libraries) that make up actual
+                # Chromium functionality directly into the executable.
+                '<@(chromium_dependencies)',
+                # Needed for chrome_main.cc initialization of libraries.
+                '../build/linux/system.gyp:gtk',
+                # Needed to use the master_preferences functions
+                'installer_util',
+              ],
+            }, { # else toolkit_uses_gtk == 1
+              'dependencies': [
+                # On Linux, link the dependencies (libraries) that make up actual
+                # Chromium functionality directly into the executable.
+                '<@(chromium_dependencies)',
+                # Needed for chrome_main.cc initialization of libraries.
+                '../build/linux/system.gyp:x11',
+                '../build/linux/system.gyp:pangocairo',
+                '../build/linux/system.gyp:xext',
+                # Needed to use the master_preferences functions
+                'installer_util',
+              ],
+            }],
           ],
           'sources': [
             'app/chrome_dll_resource.h',
             'app/chrome_main.cc',
-            'app/chrome_main_posix.cc',
+            'app/chrome_main_delegate.cc',
+            'app/chrome_main_delegate.h',
           ],
         }],
         ['OS=="mac"', {
@@ -261,15 +184,26 @@
                 # A real .dSYM is needed for dump_syms to operate on.
                 'mac_real_dsym': 1,
               },
+              'xcode_settings': {
+                # With mac_real_dsym set, strip_from_xcode won't be used.
+                # Specify CHROMIUM_STRIP_SAVE_FILE directly to Xcode.
+                'STRIPFLAGS': '-s $(CHROMIUM_STRIP_SAVE_FILE)',
+              },
               'dependencies': [
                 '../breakpad/breakpad.gyp:dump_syms',
                 '../breakpad/breakpad.gyp:symupload',
+
+                # In order to process symbols for the Remoting Host plugin,
+                # that plugin needs to be built beforehand.  Since the
+                # "Dump Symbols" step hangs off this target, that plugin also
+                # needs to be added as a dependency.
+                '../remoting/remoting.gyp:remoting_host_plugin',
               ],
               # The "Dump Symbols" post-build step is in a target_conditions
               # block so that it will follow the "Strip If Needed" step if that
               # is also being used.  There is no standard configuration where
               # both of these steps occur together, but Mark likes to use this
-              # configuraiton sometimes when testing Breakpad-enabled builds
+              # configuration sometimes when testing Breakpad-enabled builds
               # without the time overhead of creating real .dSYM files.  When
               # both "Dump Symbols" and "Strip If Needed" are present, "Dump
               # Symbols" must come second because "Strip If Needed" creates
@@ -309,6 +243,7 @@
           'dependencies': [
             'helper_app',
             'infoplist_strings_tool',
+            'interpose_dependency_shim',
             'chrome_manifest_bundle',
           ],
           'mac_bundle_resources': [
@@ -363,6 +298,7 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Versions/<(version_full)',
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
+                '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
               ],
             },
           ],
@@ -378,17 +314,18 @@
             {
               # Modify the Info.plist as needed.  The script explains why this
               # is needed.  This is also done in the helper_app and chrome_dll
-              # targets.  Use -b0 to not include any Breakpad information; that
-              # all goes into the framework's Info.plist.  Keystone information
-              # is included if Keystone is enabled.  The application reads
-              # Keystone keys from this plist and not the framework's, and
-              # the ticket will reference this Info.plist to determine the tag
-              # of the installed product.  Use -s1 to include Subversion
-              # information.  The -p flag controls whether to insert PDF as a
-              # supported type identifier that can be opened.
+              # targets.  Use --breakpad=0 to not include any Breakpad
+              # information; that all goes into the framework's Info.plist.
+              # Keystone information is included if Keystone is enabled.  The
+              # application reads Keystone keys from this plist and not the
+              # framework's, and the ticket will reference this Info.plist to
+              # determine the tag of the installed product.  Use -s1 to
+              # include Subversion information.  The -p flag controls whether
+              # to insert PDF as a supported type identifier that can be
+              # opened.
               'postbuild_name': 'Tweak Info.plist',
               'action': ['<(tweak_info_plist_path)',
-                         '-b0',
+                         '--breakpad=0',
                          '-k<(mac_keystone)',
                          '-s1',
                          '-p<(internal_pdf)',
@@ -400,6 +337,47 @@
               'action': [
                 'tools/build/mac/clean_up_old_versions',
                 '<(version_full)'
+              ],
+            },
+            {
+              # This postbuid step is responsible for creating the following
+              # helpers:
+              #
+              # For unofficial Chromium branding, Chromium Helper EH.app and
+              # Chromium Helper NP.app are created from Chromium Helper.app.
+              # For official Google Chrome branding, Google Chrome Helper
+              # EH.app and Google Chrome Helper NP.app are created from
+              # Google Chrome Helper.app.
+              #
+              # The EH helper is marked for an executable heap. The NP helper
+              # is marked for no PIE (ASLR).
+              #
+              # Normally, applications shipping as part of offical builds with
+              # Google Chrome branding have dsymutil (dwarf-with-dsym,
+              # mac_real_dsym) and dump_syms (mac_breakpad) run on them to
+              # produce a .dSYM bundle and a Breakpad .sym file. This is
+              # unnecessary for the "More Helpers" because they're identical
+              # to the original helper except for the bits in their Mach-O
+              # headers that change to enable or disable special features.
+              # Each .dSYM is identified by UUID stored in a Mach-O file's
+              # LC_UUID load command. Because the "More Helpers" share a UUID
+              # with the original helper, there's no need to run dsymutil
+              # again. All helpers can share the same .dSYM. Special handling
+              # is performed in chrome/tools/build/mac/dump_product_syms to
+              # prepare their Breakpad symbol files.
+              'postbuild_name': 'Make More Helpers',
+              'action': [
+                'tools/build/mac/make_more_helpers.sh',
+                '<(version_full)',
+                '<(mac_product_name)',
+              ],
+            },
+            {
+              # Make sure there isn't any Objective-C in the browser app's
+              # executable.
+              'postbuild_name': 'Verify No Objective-C',
+              'action': [
+                'tools/build/mac/verify_no_objc.sh',
               ],
             },
           ],  # postbuilds
@@ -420,18 +398,14 @@
         }],
         ['OS != "mac"', {
           'conditions': [
-            ['branding=="Chrome"', {
-              'product_name': 'chrome'
-            }, {  # else: Branding!="Chrome"
-              # TODO:  change to:
-              #   'product_name': 'chromium'
-              # whenever we convert the rest of the infrastructure
-              # (buildbots etc.) to use "gyp -Dbranding=Chrome".
-              # NOTE: chrome/app/theme/chromium/BRANDING and
-              # chrome/app/theme/google_chrome/BRANDING have the short names,
-              # etc.; should we try to extract from there instead?
-              'product_name': 'chrome'
-            }],
+            # TODO:  add a:
+            #   'product_name': 'chromium'
+            # whenever we convert the rest of the infrastructure
+            # (buildbots etc.) to understand the branding gyp define.
+            # NOTE: chrome/app/theme/chromium/BRANDING and
+            # chrome/app/theme/google_chrome/BRANDING have the short name
+            # "chrome" etc.; should we try to extract from there instead?
+
             # On Mac, this is done in chrome_dll.gypi.
             ['internal_pdf', {
               'dependencies': [
@@ -440,38 +414,95 @@
             }],
           ],
           'dependencies': [
-            'packed_extra_resources',
+            'chrome_resources.gyp:packed_extra_resources',
+            'chrome_resources.gyp:packed_resources',
             # Copy Flash Player files to PRODUCT_DIR if applicable. Let the .gyp
             # file decide what to do on a per-OS basis; on Mac, internal plugins
             # go inside the framework, so this dependency is in chrome_dll.gypi.
             '../third_party/adobe/flash/flash_player.gyp:flash_player',
           ],
         }],
-        ['OS=="mac" or OS=="win"', {
+        ['OS=="linux"', {
+          'conditions': [
+            # For now, do not build nacl_helper when disable_nacl=1
+            # or when arm is enabled
+            # http://code.google.com/p/gyp/issues/detail?id=239
+            ['disable_nacl==0 and target_arch!="arm"', {
+              'dependencies': [
+                '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
+                'nacl_helper',
+                ],
+            }],
+          ],
+        }],
+        ['OS=="mac"', {
           'dependencies': [
-            # On Windows and Mac, make sure we've built chrome_dll, which
-            # contains all of the library code with Chromium functionality.
+            # On Mac, make sure we've built chrome_dll, which contains all of
+            # the library code with Chromium functionality.
             'chrome_dll',
           ],
         }],
+        ['OS=="mac" and asan==1', {
+          'xcode_settings': {
+            # Override the outer definition of CHROMIUM_STRIP_SAVE_FILE.
+            'CHROMIUM_STRIP_SAVE_FILE': 'app/app_asan.saves',
+          },
+        }],
         ['OS=="win"', {
           'dependencies': [
+            'chrome_dll',
+            'chrome_version_resources',
             'installer_util',
             'installer_util_strings',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../sandbox/sandbox.gyp:sandbox',
-            'app/locales/locales.gyp:*',
             'app/policy/cloud_policy_codegen.gyp:policy',
+          ],
+          'sources': [
+            'app/chrome_exe.rc',
+            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\chrome_exe.lib',
               'ProgramDatabaseFile': '$(OutDir)\\chrome_exe.pdb',
+              'DelayLoadDLLs': [
+                'dbghelp.dll',
+                'dwmapi.dll',
+                'uxtheme.dll',
+                'ole32.dll',
+                'oleaut32.dll',
+              ],
+              # Set /SUBSYSTEM:WINDOWS for chrome.exe itself.
+              'SubSystem': '2',
+            },
+            'VCManifestTool': {
+              'AdditionalManifestFiles': '$(ProjectDir)\\app\\chrome.exe.manifest',
             },
           },
+          'actions': [
+            {
+              'action_name': 'first_run',
+              'inputs': [
+                  'app/FirstRun',
+              ],
+              'outputs': [
+                  '<(PRODUCT_DIR)/First Run',
+              ],
+              'action': ['cp', '-f', '<@(_inputs)', '<@(_outputs)'],
+              'message': 'Copy first run complete sentinel file',
+            },
+          ],
+        }, {  # 'OS!="win"
+          'sources!': [
+            'app/client_util.cc',
+          ],
         }],
+        ['OS=="win" and component=="shared_library"', {
+          'defines': ['COMPILE_CONTENT_STATICALLY'],
+        }]
       ],
     },
   ],
@@ -482,25 +513,36 @@
           'target_name': 'chrome_nacl_win64',
           'type': 'executable',
           'product_name': 'nacl64',
-          'msvs_guid': 'BB1AE956-038B-4092-96A2-951D2B418548',
-          'variables': {
-            'chrome_exe_target': 1,
-          },
+          'sources': [
+            'app/breakpad_win.cc',
+            'app/hard_error_handler_win.cc',
+            'nacl/nacl_exe_win_64.cc',
+            '../content/app/startup_helper_win.cc',
+            '../content/common/debug_flags.cc',  # Needed for sandbox_policy.cc
+            '../content/common/hi_res_timer_manager_win.cc',
+            '../content/common/sandbox_init_win.cc',
+            '../content/common/sandbox_policy.cc',
+            '../content/public/common/content_switches.cc',
+            '<(SHARED_INTERMEDIATE_DIR)/chrome_version/nacl64_exe_version.rc',
+          ],
           'dependencies': [
-            # On Windows make sure we've built Win64 version of chrome_dll,
-            # which contains all of the library code with Chromium
-            # functionality.
-            'chrome_dll_nacl_win64',
+            'app/policy/cloud_policy_codegen.gyp:policy_win64',
+            'chrome_version_resources',
             'common_constants_win64',
             'installer_util_nacl_win64',
-            'app/policy/cloud_policy_codegen.gyp:policy_win64',
+            'nacl_win64',
             '../breakpad/breakpad.gyp:breakpad_handler_win64',
             '../breakpad/breakpad.gyp:breakpad_sender_win64',
+            '../base/base.gyp:base_i18n_nacl_win64',
             '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_static_win64',
+            '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
+            '../ipc/ipc.gyp:ipc_win64',
             '../sandbox/sandbox.gyp:sandbox_win64',
           ],
           'defines': [
             '<@(nacl_win64_defines)',
+            'COMPILE_CONTENT_STATICALLY',
           ],
           'include_dirs': [
             '<(SHARED_INTERMEDIATE_DIR)/chrome',
@@ -509,6 +551,7 @@
             'VCLinkerTool': {
               'ImportLibrary': '$(OutDir)\\lib\\nacl64_exe.lib',
               'ProgramDatabaseFile': '$(OutDir)\\nacl64_exe.pdb',
+              'SubSystem': '2',         # Set /SUBSYSTEM:WINDOWS
             },
           },
           'configurations': {

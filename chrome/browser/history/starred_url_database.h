@@ -9,17 +9,13 @@
 #include <set>
 
 #include "base/basictypes.h"
-#include "base/gtest_prod_util.h"
+#include "base/compiler_specific.h"
 #include "base/string16.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/history/url_database.h"
 #include "ui/base/models/tree_node_model.h"
 
 class FilePath;
-
-namespace sql {
-class Connection;
-}
 
 namespace history {
 
@@ -28,24 +24,26 @@ namespace history {
 // contains just enough to allow migration.
 class StarredURLDatabase : public URLDatabase {
  public:
-  // Must call InitStarTable() AND any additional init functions provided by
-  // URLDatabase before using this class' functions.
-  StarredURLDatabase();
+  explicit StarredURLDatabase(sql::Connection* db);
   virtual ~StarredURLDatabase();
-
- protected:
-  // The unit tests poke our innards.
-  friend class HistoryTest;
-  friend class StarredURLDatabaseTest;
-  FRIEND_TEST_ALL_PREFIXES(HistoryTest, CreateStarFolder);
 
   // Writes bookmarks to the specified file.
   bool MigrateBookmarksToFile(const FilePath& path);
 
+ protected:
+  friend class StarredURLDatabaseTest;
+
+  // ID (both star_id and folder_id) of the bookmark bar.
+  // This entry always exists.
+  static const int64 kBookmarkBarID;
+
   // Returns the database for the functions in this interface.
-  virtual sql::Connection& GetDB() = 0;
+  virtual sql::Connection& GetDB() OVERRIDE;
 
  private:
+  // Used when checking integrity of starred table.
+  typedef ui::TreeNodeWithValue<StarredEntry> StarredNode;
+
   // Makes sure the starred table is in a sane state. This does the following:
   // . Makes sure there is a bookmark bar and other nodes. If no bookmark bar
   //   node is found, the table is dropped and recreated.
@@ -114,9 +112,6 @@ class StarredURLDatabase : public URLDatabase {
   // starred when calling this function or it will fail and will return 0.
   StarID CreateStarredEntry(StarredEntry* entry);
 
-  // Used when checking integrity of starred table.
-  typedef ui::TreeNodeWithValue<history::StarredEntry> StarredNode;
-
   // Returns the max folder id, or 0 if there is an error.
   UIStarID GetMaxFolderID();
 
@@ -177,6 +172,8 @@ class StarredURLDatabase : public URLDatabase {
   // Does the work of migrating bookmarks to a temporary file that
   // BookmarkStorage will read from.
   bool MigrateBookmarksToFileImpl(const FilePath& path);
+
+  sql::Connection* db_;
 
   DISALLOW_COPY_AND_ASSIGN(StarredURLDatabase);
 };

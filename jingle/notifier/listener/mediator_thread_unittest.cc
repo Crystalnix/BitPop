@@ -27,7 +27,7 @@ using ::testing::StrictMock;
 class TestURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
   TestURLRequestContextGetter()
-      : message_loop_proxy_(base::MessageLoopProxy::CreateForCurrentThread()) {
+      : message_loop_proxy_(base::MessageLoopProxy::current()) {
   }
   virtual ~TestURLRequestContextGetter() { }
 
@@ -116,7 +116,7 @@ TEST_F(MediatorThreadTest, SendNotificationDelayedTwice) {
     mediator_thread_->SendNotification(Notification());
   }
   mediator_thread_->TriggerOnConnectForTest(
-      base::WeakPtr<talk_base::Task>());
+      base::WeakPtr<buzz::XmppTaskParentInterface>());
   mediator_thread_->TriggerOnConnectForTest(fake_base_task_.AsWeakPtr());
 }
 

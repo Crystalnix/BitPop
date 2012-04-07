@@ -7,7 +7,6 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/message_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
@@ -47,13 +46,6 @@ bool TestServer::Start(int port) {
   return true;
 }
 
-void TestServer::RunWithParams(const Tuple1<int>& params) {
-  int status = params.a;
-  LOG(INFO) << "Callback! " << status;
-  if (status < 0)
-    MessageLoop::current()->Quit();
-}
-
 void TestServer::OnAccept(CurveCPServerSocket* new_socket) {
   DCHECK(new_socket);
   LOG(ERROR) << "Accepted socket! Starting Echo Server";
@@ -63,11 +55,7 @@ void TestServer::OnAccept(CurveCPServerSocket* new_socket) {
 
 EchoServer::EchoServer()
     : socket_(NULL),
-      bytes_received_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          read_callback_(this, &EchoServer::OnReadComplete)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          write_callback_(this, &EchoServer::OnWriteComplete)) {
+      bytes_received_(0) {
 }
 
 EchoServer::~EchoServer() {
@@ -100,7 +88,9 @@ void EchoServer::OnReadComplete(int result) {
   // Echo the read data back here.
   DCHECK(!write_buffer_.get());
   write_buffer_ = new DrainableIOBuffer(read_buffer_, result);
-  int rv = socket_->Write(write_buffer_, result, &write_callback_);
+  int rv = socket_->Write(write_buffer_, result,
+                          base::Bind(&EchoServer::OnWriteComplete,
+                                     base::Unretained(this)));
   if (rv == ERR_IO_PENDING)
     return;
   OnWriteComplete(rv);
@@ -116,7 +106,8 @@ void EchoServer::OnWriteComplete(int result) {
   while (write_buffer_->BytesRemaining()) {
     int rv = socket_->Write(write_buffer_,
                             write_buffer_->BytesRemaining(),
-                            &write_callback_);
+                            base::Bind(&EchoServer::OnWriteComplete,
+                                       base::Unretained(this)));
     if (rv == ERR_IO_PENDING)
       return;
     OnWriteComplete(rv);
@@ -134,7 +125,9 @@ void EchoServer::ReadData() {
 
   int rv;
   do {
-    rv = socket_->Read(read_buffer_, kMaxMessage, &read_callback_);
+    rv = socket_->Read(read_buffer_, kMaxMessage,
+                       base::Bind(&EchoServer::OnReadComplete,
+                                  base::Unretained(this)));
     if (rv == ERR_IO_PENDING)
       return;
     OnReadComplete(rv);  // Complete the read manually

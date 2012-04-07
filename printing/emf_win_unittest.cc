@@ -8,6 +8,8 @@
 #include <wingdi.h>
 #include <winspool.h>
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/file_util.h"
@@ -48,7 +50,7 @@ TEST(EmfTest, DC) {
   uint32 size;
   std::vector<BYTE> data;
   {
-    printing::Emf emf;
+    Emf emf;
     EXPECT_TRUE(emf.Init());
     EXPECT_TRUE(emf.context() != NULL);
     // An empty EMF is invalid, so we put at least a rectangle in it.
@@ -61,7 +63,7 @@ TEST(EmfTest, DC) {
   }
 
   // Playback the data.
-  printing::Emf emf;
+  Emf emf;
   EXPECT_TRUE(emf.InitFromData(&data.front(), size));
   HDC hdc = CreateCompatibleDC(NULL);
   EXPECT_TRUE(hdc);
@@ -75,15 +77,14 @@ TEST_F(EmfPrintingTest, Enumerate) {
   if (IsTestCaseDisabled())
     return;
 
-  printing::PrintSettings settings;
+  PrintSettings settings;
 
   // My test case is a HP Color LaserJet 4550 PCL.
   settings.set_device_name(L"UnitTest Printer");
 
   // Initialize it.
-  scoped_ptr<printing::PrintingContext> context(
-      printing::PrintingContext::Create(std::string()));
-  EXPECT_EQ(context->InitWithSettings(settings), printing::PrintingContext::OK);
+  scoped_ptr<PrintingContext> context(PrintingContext::Create(std::string()));
+  EXPECT_EQ(context->InitWithSettings(settings), PrintingContext::OK);
 
   FilePath emf_file;
   EXPECT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &emf_file));
@@ -92,22 +93,22 @@ TEST_F(EmfPrintingTest, Enumerate) {
                      .Append(FILE_PATH_LITERAL("data"))
                      .Append(FILE_PATH_LITERAL("test4.emf"));
   // Load any EMF with an image.
-  printing::Emf emf;
+  Emf emf;
   std::string emf_data;
   file_util::ReadFileToString(emf_file, &emf_data);
   ASSERT_TRUE(emf_data.size());
   EXPECT_TRUE(emf.InitFromData(&emf_data[0], emf_data.size()));
 
   // This will print to file. The reason is that when running inside a
-  // unit_test, printing::PrintingContext automatically dumps its files to the
+  // unit_test, PrintingContext automatically dumps its files to the
   // current directory.
   // TODO(maruel):  Clean the .PRN file generated in current directory.
   context->NewDocument(L"EmfTest.Enumerate");
   context->NewPage();
   // Process one at a time.
-  printing::Emf::Enumerator emf_enum(emf, context->context(),
-                                &emf.GetPageBounds(1).ToRECT());
-  for (printing::Emf::Enumerator::const_iterator itr = emf_enum.begin();
+  Emf::Enumerator emf_enum(emf, context->context(),
+                           &emf.GetPageBounds(1).ToRECT());
+  for (Emf::Enumerator::const_iterator itr = emf_enum.begin();
        itr != emf_enum.end();
        ++itr) {
     // To help debugging.
@@ -124,14 +125,14 @@ TEST_F(EmfPrintingTest, Enumerate) {
 
 // Disabled if no "UnitTest printer" exists.
 TEST_F(EmfPrintingTest, PageBreak) {
-  base::win::ScopedHDC dc(
+  base::win::ScopedCreateDC dc(
       CreateDC(L"WINSPOOL", L"UnitTest Printer", NULL, NULL));
   if (!dc.Get())
     return;
   uint32 size;
   std::vector<BYTE> data;
   {
-    printing::Emf emf;
+    Emf emf;
     EXPECT_TRUE(emf.Init());
     EXPECT_TRUE(emf.context() != NULL);
     int pages = 3;
@@ -153,7 +154,7 @@ TEST_F(EmfPrintingTest, PageBreak) {
   di.cbSize = sizeof(DOCINFO);
   di.lpszDocName = L"Test Job";
   int job_id = ::StartDoc(dc.Get(), &di);
-  printing::Emf emf;
+  Emf emf;
   EXPECT_TRUE(emf.InitFromData(&data.front(), size));
   EXPECT_TRUE(emf.SafePlayback(dc.Get()));
   ::EndDoc(dc.Get());
@@ -176,7 +177,7 @@ TEST(EmfTest, FileBackedEmf) {
   uint32 size;
   std::vector<BYTE> data;
   {
-    printing::Emf emf;
+    Emf emf;
     EXPECT_TRUE(emf.InitToFile(metafile_path));
     EXPECT_TRUE(emf.context() != NULL);
     // An empty EMF is invalid, so we put at least a rectangle in it.
@@ -194,7 +195,7 @@ TEST(EmfTest, FileBackedEmf) {
   // Playback the data.
   HDC hdc = CreateCompatibleDC(NULL);
   EXPECT_TRUE(hdc);
-  printing::Emf emf;
+  Emf emf;
   EXPECT_TRUE(emf.InitFromFile(metafile_path));
   RECT output_rect = {0, 0, 10, 10};
   EXPECT_TRUE(emf.Playback(hdc, &output_rect));

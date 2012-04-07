@@ -15,13 +15,15 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/callback_old.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLResponse.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLResponse.h"
+#include "webkit/glue/webkit_glue_export.h"
 
 class GURL;
 
@@ -33,19 +35,21 @@ struct WebURLError;
 
 namespace webkit_glue {
 
-class ResourceFetcher : public WebKit::WebURLLoaderClient {
+class WEBKIT_GLUE_EXPORT ResourceFetcher :
+    NON_EXPORTED_BASE(public WebKit::WebURLLoaderClient) {
  public:
   // This will be called when the URL has been fetched, successfully or not.
   // If there is a failure, response and data will both be empty.  |response|
   // and |data| are both valid until the URLFetcher instance is destroyed.
-  typedef Callback2<const WebKit::WebURLResponse&,
-                    const std::string&>::Type Callback;
+  typedef base::Callback<void(const WebKit::WebURLResponse&,
+                              const std::string&)> Callback;
 
   // We need a frame to make requests.
   ResourceFetcher(
       const GURL& url, WebKit::WebFrame* frame,
-      WebKit::WebURLRequest::TargetType target_type, Callback* callback);
-  ~ResourceFetcher();
+      WebKit::WebURLRequest::TargetType target_type,
+      const Callback& callback);
+  virtual ~ResourceFetcher();
 
   // Stop the request and don't call the callback.
   void Cancel();
@@ -95,7 +99,7 @@ class ResourceFetcher : public WebKit::WebURLLoaderClient {
                    const std::string& data);
 
   // Callback when we're done
-  scoped_ptr<Callback> callback_;
+  Callback callback_;
 
   // Buffer to hold the content from the server.
   std::string data_;
@@ -106,13 +110,13 @@ class ResourceFetcher : public WebKit::WebURLLoaderClient {
 
 /////////////////////////////////////////////////////////////////////////////
 // A resource fetcher with a timeout
-class ResourceFetcherWithTimeout : public ResourceFetcher {
+class WEBKIT_GLUE_EXPORT ResourceFetcherWithTimeout : public ResourceFetcher {
  public:
   ResourceFetcherWithTimeout(const GURL& url,
                              WebKit::WebFrame* frame,
                              WebKit::WebURLRequest::TargetType target_type,
                              int timeout_secs,
-                             Callback* callback);
+                             const Callback& callback);
   virtual ~ResourceFetcherWithTimeout();
 
  private:

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,23 @@
 #include <set>
 #include <vector>
 
+#include "base/gtest_prod_util.h"
 #include "base/observer_list.h"
 #include "base/time.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "content/browser/in_process_webkit/session_storage_namespace.h"
+#include "webkit/glue/window_open_disposition.h"
 
-class NavigationController;
 class Profile;
 class TabRestoreServiceDelegate;
 class TabRestoreServiceObserver;
 struct SessionWindow;
+
+namespace content {
+class NavigationController;
+}
 
 // TabRestoreService is responsible for maintaining the most recently closed
 // tabs and windows. When a tab is closed
@@ -117,8 +122,7 @@ class TabRestoreService : public BaseSessionService {
   // Creates a new TabRestoreService and provides an object that provides the
   // current time. The TabRestoreService does not take ownership of the
   // |time_factory_|.
-  explicit TabRestoreService(Profile* profile,
-                             TimeFactory* time_factory_ = NULL);
+  TabRestoreService(Profile* profile, TimeFactory* time_factory_ = NULL);
 
   virtual ~TabRestoreService();
 
@@ -129,7 +133,7 @@ class TabRestoreService : public BaseSessionService {
 
   // Creates a Tab to represent |tab| and notifies observers the list of
   // entries has changed.
-  void CreateHistoricalTab(NavigationController* tab, int index);
+  void CreateHistoricalTab(content::NavigationController* tab, int index);
 
   // Invoked when a browser is closing. If |delegate| is a tabbed browser with
   // at least one tab, a Window is created, added to entries and observers are
@@ -153,12 +157,13 @@ class TabRestoreService : public BaseSessionService {
   void RestoreMostRecentEntry(TabRestoreServiceDelegate* delegate);
 
   // Restores an entry by id. If there is no entry with an id matching |id|,
-  // this does nothing. If |replace_existing_tab| is true and id identifies a
-  // tab, the newly created tab replaces the selected tab in |delegate|. If
-  // |delegate| is NULL, this creates a new window for the entry.
+  // this does nothing. If |delegate| is NULL, this creates a new window for the
+  // entry. |disposition| is respected, but the attributes (tabstrip index,
+  // browser window) of the tab when it was closed will be respected if
+  // disposition is UNKNOWN.
   void RestoreEntryById(TabRestoreServiceDelegate* delegate,
                         SessionID::id_type id,
-                        bool replace_existing_tab);
+                        WindowOpenDisposition disposition);
 
   // Loads the tabs and previous session. This does nothing if the tabs
   // from the previous session have already been loaded.
@@ -172,9 +177,17 @@ class TabRestoreService : public BaseSessionService {
                                 std::vector<Entry*>* entries);
 
  protected:
-  virtual void Save();
+  // ProfileKeyedService:
+  virtual void Shutdown() OVERRIDE;
+
+  // BaseSessionService:
+  virtual void Save() OVERRIDE;
 
  private:
+  friend class TabRestoreServiceTest;
+  FRIEND_TEST_ALL_PREFIXES(TabRestoreServiceTest, PruneEntries);
+  FRIEND_TEST_ALL_PREFIXES(TabRestoreServiceTest, PruneIsCalled);
+
   // Used to indicate what has loaded.
   enum LoadState {
     // Indicates we haven't loaded anything.
@@ -198,7 +211,7 @@ class TabRestoreService : public BaseSessionService {
   void PopulateTab(Tab* tab,
                    int index,
                    TabRestoreServiceDelegate* delegate,
-                   NavigationController* controller);
+                   content::NavigationController* controller);
 
   // Notifies observers the tabs have changed.
   void NotifyTabsChanged();
@@ -209,8 +222,9 @@ class TabRestoreService : public BaseSessionService {
   // tab/window closes from the previous session are added to the back.
   void AddEntry(Entry* entry, bool prune, bool to_front);
 
-  // Prunes entries_ to contain only kMaxEntries and invokes NotifyTabsChanged.
-  void PruneAndNotify();
+  // Prunes entries_ to contain only kMaxEntries, and removes uninteresting
+  // entries.
+  void PruneEntries();
 
   // Returns an iterator into entries_ whose id matches |id|. If |id| identifies
   // a Window, then its iterator position will be returned. If it identifies a
@@ -259,18 +273,34 @@ class TabRestoreService : public BaseSessionService {
       std::vector<Entry*>* loaded_entries);
 
   // This is a helper function for RestoreEntryById() for restoring a single
-  // tab. If |replace_existing_tab| is true, the newly created tab replaces the
-  // selected tab in |delegate|. If |delegate| is NULL, this creates a new
-  // window for the entry. This returns the TabRestoreServiceDelegate into which
-  // the tab was restored.
+  // tab. If |delegate| is NULL, this creates a new window for the entry. This
+  // returns the TabRestoreServiceDelegate into which the tab was restored.
+  // |disposition| will be respected, but if it is UNKNOWN then the tab's
+  // original attributes will be respected instead.
   TabRestoreServiceDelegate* RestoreTab(const Tab& tab,
                                         TabRestoreServiceDelegate* delegate,
-                                        bool replace_existing_tab);
+                                        WindowOpenDisposition disposition);
 
   // Returns true if |tab| has more than one navigation. If |tab| has more
   // than one navigation |tab->current_navigation_index| is constrained based
   // on the number of navigations.
-  bool ValidateTab(Tab* tab);
+  static bool ValidateTab(Tab* tab);
+
+  // Validates all the tabs in a window, plus the window's active tab index.
+  static bool ValidateWindow(Window* window);
+
+  // Calls either ValidateTab or ValidateWindow as appropriate.
+  static bool ValidateEntry(Entry* entry);
+
+  // Returns true if |tab| is one we care about restoring.
+  static bool IsTabInteresting(const Tab* tab);
+
+  // Checks whether |window| is interesting --- if it only contains a single,
+  // uninteresting tab, it's not interesting.
+  static bool IsWindowInteresting(const Window* window);
+
+  // Validates and checks |entry| for interesting.
+  static bool FilterEntry(Entry* entry);
 
   // Validates all entries in |entries|, deleting any with no navigations.
   // This also deletes any entries beyond the max number of entries we can
@@ -301,7 +331,7 @@ class TabRestoreService : public BaseSessionService {
   // Gets the current time. This uses the time_factory_ if there is one.
   base::Time TimeNow() const;
 
-  // Set of entries.
+  // Set of entries. They are ordered from most to least recent.
   Entries entries_;
 
   // Whether we've loaded the last session.
@@ -310,9 +340,6 @@ class TabRestoreService : public BaseSessionService {
   // Are we restoring a tab? If this is true we ignore requests to create a
   // historical tab.
   bool restoring_;
-
-  // Have the max number of entries ever been created?
-  bool reached_max_;
 
   // The number of entries to write.
   int entries_to_write_;
@@ -326,6 +353,9 @@ class TabRestoreService : public BaseSessionService {
   // corresponding BrowserClosed. We cache the set of delegates closing to
   // avoid creating historical tabs for them.
   std::set<TabRestoreServiceDelegate*> closing_delegates_;
+
+  // Used when loading open tabs/session when recovering from a crash.
+  CancelableRequestConsumer crash_consumer_;
 
   // Used when loading previous tabs/session.
   CancelableRequestConsumer load_consumer_;

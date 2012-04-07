@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,19 +13,22 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
+#include "grit/theme_resources.h"
 #include "ui/base/accessibility/accessible_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
-#include "views/controls/button/native_button.h"
-#include "views/layout/grid_layout.h"
-#include "views/layout/layout_constants.h"
-#include "views/widget/widget.h"
-#include "views/window/window.h"
+#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/image_view.h"
+#include "ui/views/layout/grid_layout.h"
+#include "ui/views/layout/layout_constants.h"
+#include "ui/views/widget/widget.h"
 
 namespace chromeos {
 
 // static
-const int ChildNetworkConfigView::kPassphraseWidth = 150;
+const int ChildNetworkConfigView::kInputFieldMinWidth = 270;
 
 NetworkConfigView::NetworkConfigView(Network* network)
     : delegate_(NULL),
@@ -62,17 +65,16 @@ gfx::NativeWindow NetworkConfigView::GetNativeWindow() const {
   return GetWidget()->GetNativeWindow();
 }
 
-std::wstring NetworkConfigView::GetDialogButtonLabel(
-    MessageBoxFlags::DialogButton button) const {
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK)
-    return UTF16ToWide(l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONNECT));
-  return std::wstring();
+string16 NetworkConfigView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  if (button == ui::DIALOG_BUTTON_OK)
+    return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONNECT);
+  return string16();
 }
 
-bool NetworkConfigView::IsDialogButtonEnabled(
-    MessageBoxFlags::DialogButton button) const {
+bool NetworkConfigView::IsDialogButtonEnabled(ui::DialogButton button) const {
   // Disable connect button if cannot login.
-  if (button == MessageBoxFlags::DIALOGBUTTON_OK)
+  if (button == ui::DIALOG_BUTTON_OK)
     return child_config_view_->CanLogin();
   return true;
 }
@@ -98,16 +100,16 @@ views::View* NetworkConfigView::GetExtraView() {
   return advanced_button_container_;
 }
 
-bool NetworkConfigView::IsModal() const {
-  return true;
+ui::ModalType NetworkConfigView::GetModalType() const {
+  return ui::MODAL_TYPE_SYSTEM;
 }
 
 views::View* NetworkConfigView::GetContentsView() {
   return this;
 }
 
-std::wstring NetworkConfigView::GetWindowTitle() const {
-  return UTF16ToWide(child_config_view_->GetTitle());
+string16 NetworkConfigView::GetWindowTitle() const {
+  return child_config_view_->GetTitle();
 }
 
 void NetworkConfigView::GetAccessibleState(ui::AccessibleViewState* state) {
@@ -132,16 +134,16 @@ void NetworkConfigView::ShowAdvancedView() {
   child_config_view_ = new WifiConfigView(this, true /* show_8021x */);
   AddChildView(child_config_view_);
   // Resize the window to be able to hold the new widgets.
-  gfx::Size size = views::Window::GetLocalizedContentsSize(
+  gfx::Size size = views::Widget::GetLocalizedContentsSize(
       IDS_JOIN_WIFI_NETWORK_DIALOG_ADVANCED_WIDTH_CHARS,
       IDS_JOIN_WIFI_NETWORK_DIALOG_ADVANCED_MINIMUM_HEIGHT_LINES);
   // Get the new bounds with desired size at the same center point.
-  gfx::Rect bounds = window()->GetBounds();
+  gfx::Rect bounds = GetWidget()->GetWindowScreenBounds();
   int horiz_padding = bounds.width() - size.width();
   int vert_padding = bounds.height() - size.height();
   bounds.Inset(horiz_padding / 2, vert_padding / 2,
                horiz_padding / 2, vert_padding / 2);
-  window()->SetBoundsConstrained(bounds, NULL);
+  GetWidget()->SetBoundsConstrained(bounds);
   Layout();
   child_config_view_->InitFocus();
 }
@@ -151,7 +153,7 @@ void NetworkConfigView::Layout() {
 }
 
 gfx::Size NetworkConfigView::GetPreferredSize() {
-  gfx::Size result(views::Window::GetLocalizedContentsSize(
+  gfx::Size result(views::Widget::GetLocalizedContentsSize(
       IDS_JOIN_WIFI_NETWORK_DIALOG_WIDTH_CHARS,
       IDS_JOIN_WIFI_NETWORK_DIALOG_MINIMUM_HEIGHT_LINES));
   gfx::Size size = child_config_view_->GetPreferredSize();
@@ -172,9 +174,9 @@ void NetworkConfigView::ViewHierarchyChanged(
 }
 
 void NetworkConfigView::CreateAdvancedButton() {
-  advanced_button_ = new views::NativeButton(this, UTF16ToWide(
+  advanced_button_ = new views::NativeTextButton(this,
       l10n_util::GetStringUTF16(
-          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON)));
+          IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_ADVANCED_BUTTON));
 
   // Wrap the advanced button in a grid layout in order to left-align it.
   advanced_button_container_ = new views::View();
@@ -187,6 +189,64 @@ void NetworkConfigView::CreateAdvancedButton() {
                         0, views::GridLayout::USE_PREF, 0, 0);
   layout->StartRow(0, column_set_id);
   layout->AddView(advanced_button_);
+}
+
+ControlledSettingIndicatorView::ControlledSettingIndicatorView()
+    : managed_(false),
+      image_view_(NULL) {
+  Init();
+}
+
+ControlledSettingIndicatorView::ControlledSettingIndicatorView(
+    const NetworkPropertyUIData& ui_data)
+    : managed_(false),
+      image_view_(NULL) {
+  Init();
+  Update(ui_data);
+}
+
+ControlledSettingIndicatorView::~ControlledSettingIndicatorView() {}
+
+void ControlledSettingIndicatorView::Update(
+    const NetworkPropertyUIData& ui_data) {
+  if (managed_ == ui_data.managed())
+    return;
+
+  managed_ = ui_data.managed();
+  PreferredSizeChanged();
+}
+
+gfx::Size ControlledSettingIndicatorView::GetPreferredSize() {
+  return (managed_ && visible()) ? image_view_->GetPreferredSize()
+                                 : gfx::Size();
+}
+
+void ControlledSettingIndicatorView::Layout() {
+  image_view_->SetBounds(0, 0, width(), height());
+}
+
+void ControlledSettingIndicatorView::OnMouseEntered(
+    const views::MouseEvent& event) {
+  image_view_->SetImage(color_image_);
+}
+
+void ControlledSettingIndicatorView::OnMouseExited(
+    const views::MouseEvent& event) {
+  image_view_->SetImage(gray_image_);
+}
+
+void ControlledSettingIndicatorView::Init() {
+  color_image_ = ResourceBundle::GetSharedInstance().GetImageNamed(
+      IDR_CONTROLLED_SETTING_MANDATORY).ToSkBitmap();
+  gray_image_ = ResourceBundle::GetSharedInstance().GetImageNamed(
+      IDR_CONTROLLED_SETTING_MANDATORY_GRAY).ToSkBitmap();
+  image_view_ = new views::ImageView();
+  // Disable |image_view_| so mouse events propagate to the parent.
+  image_view_->SetEnabled(false);
+  image_view_->SetImage(gray_image_);
+  image_view_->SetTooltipText(
+      l10n_util::GetStringUTF16(IDS_OPTIONS_CONTROLLED_SETTING_POLICY));
+  AddChildView(image_view_);
 }
 
 }  // namespace chromeos

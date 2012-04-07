@@ -21,7 +21,7 @@
 #include "chrome/browser/search_engines/template_url_id.h"
 #include "chrome/common/ref_counted_util.h"
 #include "chrome/common/thumbnail_score.h"
-#include "content/common/page_transition_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "googleurl/src/gurl.h"
 
 namespace history {
@@ -74,6 +74,13 @@ class URLRow {
   URLRow& operator=(const URLRow& other);
 
   URLID id() const { return id_; }
+
+  // Sets the id of the row. The id should only be manually set when a row has
+  // been retrieved from the history database or other dataset based on criteria
+  // other than its id (i.e. by URL) and when the id has not yet been set in the
+  // row.
+  void set_id(URLID id) { id_ = id; }
+
   const GURL& url() const { return url_; }
 
   const string16& title() const {
@@ -140,8 +147,9 @@ class URLRow {
   // This excludes objects which autoinitialize such as strings.
   void Initialize();
 
-  // The row ID of this URL. Immutable except for the database which sets it
-  // when it pulls them out.
+  // The row ID of this URL from the history database. This is immutable except
+  // when retrieving the row from the database or when determining if the URL
+  // referenced by the URLRow already exists in the database.
   URLID id_;
 
   // The URL of this row. Immutable except for the database which sets it
@@ -198,7 +206,7 @@ class VisitRow {
   VisitRow(URLID arg_url_id,
            base::Time arg_visit_time,
            VisitID arg_referring_visit,
-           PageTransition::Type arg_transition,
+           content::PageTransition arg_transition,
            SegmentID arg_segment_id);
   ~VisitRow();
 
@@ -215,7 +223,7 @@ class VisitRow {
   VisitID referring_visit;
 
   // A combination of bits from PageTransition.
-  PageTransition::Type transition;
+  content::PageTransition transition;
 
   // The segment id (see visitsegment_database.*).
   // If 0, the segment id is null in the table.
@@ -238,6 +246,10 @@ class VisitRow {
 
 // We pass around vectors of visits a lot
 typedef std::vector<VisitRow> VisitVector;
+
+// The basic information associated with a visit (timestamp, type of visit),
+// used by HistoryBackend::AddVisits() to create new visits for a URL.
+typedef std::pair<base::Time, content::PageTransition> VisitInfo;
 
 // Favicons -------------------------------------------------------------------
 
@@ -293,8 +305,8 @@ struct StarredEntry {
     // The "other bookmarks" folder that holds uncategorized bookmarks.
     OTHER,
 
-    // The synced folder.
-    SYNCED,
+    // The mobile folder.
+    MOBILE,
   };
 
   StarredEntry();
@@ -524,11 +536,9 @@ struct KeywordSearchTermVisit {
   KeywordSearchTermVisit();
   ~KeywordSearchTermVisit();
 
-  // The time of the visit.
-  base::Time time;
-
-  // The search term that was used.
-  string16 term;
+  string16 term;    // The search term that was used.
+  int visits;       // The visit count.
+  base::Time time;  // The time of the most recent visit.
 };
 
 // KeywordSearchTermRow --------------------------------------------------------
@@ -538,14 +548,9 @@ struct KeywordSearchTermRow {
   KeywordSearchTermRow();
   ~KeywordSearchTermRow();
 
-  // ID of the keyword.
-  TemplateURLID keyword_id;
-
-  // ID of the url.
-  URLID url_id;
-
-  // The search term that was used.
-  string16 term;
+  TemplateURLID keyword_id;  // ID of the keyword.
+  URLID url_id;              // ID of the url.
+  string16 term;             // The search term that was used.
 };
 
 // MostVisitedURL --------------------------------------------------------------
@@ -553,13 +558,10 @@ struct KeywordSearchTermRow {
 // Holds the per-URL information of the most visited query.
 struct MostVisitedURL {
   MostVisitedURL();
-  MostVisitedURL(const GURL& in_url,
-                 const GURL& in_favicon_url,
-                 const string16& in_title);
+  MostVisitedURL(const GURL& url, const string16& title);
   ~MostVisitedURL();
 
   GURL url;
-  GURL favicon_url;
   string16 title;
 
   RedirectList redirects;
@@ -581,7 +583,7 @@ class HistoryAddPageArgs
                      int32 arg_page_id,
                      const GURL& arg_referrer,
                      const history::RedirectList& arg_redirects,
-                     PageTransition::Type arg_transition,
+                     content::PageTransition arg_transition,
                      VisitSource arg_source,
                      bool arg_did_replace_entry);
 
@@ -597,7 +599,7 @@ class HistoryAddPageArgs
 
   GURL referrer;
   history::RedirectList redirects;
-  PageTransition::Type transition;
+  content::PageTransition transition;
   VisitSource visit_source;
   bool did_replace_entry;
 

@@ -17,15 +17,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "base/process_util.h"
+#include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
-
+#include "chrome_frame/chrome_tab.h"
 #include "chrome_frame/test/simulate_input.h"
 #include "chrome_frame/test_utils.h"
 #include "chrome_frame/utils.h"
-
-// Include without path to make GYP build see it.
-#include "chrome_tab.h"  // NOLINT
 
 #include "gtest/gtest.h"
 
@@ -39,10 +37,7 @@ namespace chrome_frame_test {
 
 int CloseVisibleWindowsOnAllThreads(HANDLE process);
 
-base::ProcessHandle LaunchFirefox(const std::wstring& url);
-base::ProcessHandle LaunchOpera(const std::wstring& url);
 base::ProcessHandle LaunchIE(const std::wstring& url);
-base::ProcessHandle LaunchSafari(const std::wstring& url);
 base::ProcessHandle LaunchChrome(const std::wstring& url);
 
 // Attempts to close all open IE windows.
@@ -54,9 +49,6 @@ int CloseAllIEWindows();
 
 extern const wchar_t kIEImageName[];
 extern const wchar_t kIEBrokerImageName[];
-extern const wchar_t kFirefoxImageName[];
-extern const wchar_t kOperaImageName[];
-extern const wchar_t kSafariImageName[];
 extern const char kChromeImageName[];
 extern const wchar_t kChromeLauncher[];
 extern const int kChromeFrameLongNavigationTimeoutInSeconds;
@@ -198,9 +190,14 @@ class TimedMsgLoop {
     loop_.MessageLoop::Run();
   }
 
-  void PostDelayedTask(
-    const tracked_objects::Location& from_here, Task* task, int64 delay_ms) {
-      loop_.PostDelayedTask(from_here, task, delay_ms);
+  void PostTask(const tracked_objects::Location& from_here,
+                const base::Closure& task) {
+    loop_.PostTask(from_here, task);
+  }
+
+  void PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task, int64 delay_ms) {
+    loop_.PostDelayedTask(from_here, task, delay_ms);
   }
 
   void Quit() {
@@ -209,7 +206,8 @@ class TimedMsgLoop {
 
   void QuitAfter(int seconds) {
     quit_loop_invoked_ = true;
-    loop_.PostDelayedTask(FROM_HERE, new MessageLoop::QuitTask, 1000 * seconds);
+    loop_.PostDelayedTask(
+        FROM_HERE, MessageLoop::QuitClosure(), 1000 * seconds);
   }
 
   bool WasTimedOut() const {
@@ -291,21 +289,6 @@ class CloseIeAtEndOfScope {
 // during test runs.
 base::ProcessHandle StartCrashService();
 
-class TempRegKeyOverride {
- public:
-  static const wchar_t kTempTestKeyPath[];
-
-  TempRegKeyOverride(HKEY override, const wchar_t* temp_name);
-  ~TempRegKeyOverride();
-
-  static void DeleteAllTempKeys();
-
- protected:
-  HKEY override_;
-  base::win::RegKey temp_key_;
-  std::wstring temp_name_;
-};
-
 // Used in tests where we reference the registry and don't want to run into
 // problems where existing registry settings might conflict with the
 // expectations of the test.
@@ -314,9 +297,12 @@ class ScopedVirtualizeHklmAndHkcu {
   ScopedVirtualizeHklmAndHkcu();
   ~ScopedVirtualizeHklmAndHkcu();
 
+  // Removes all overrides and deletes all temporary test keys used by the
+  // overrides.
+  void RemoveAllOverrides();
+
  protected:
-  scoped_ptr<TempRegKeyOverride> hklm_;
-  scoped_ptr<TempRegKeyOverride> hkcu_;
+  registry_util::RegistryOverrideManager override_manager_;
 };
 
 // Attempts to kill all the processes on the current machine that were launched

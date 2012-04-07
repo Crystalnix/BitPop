@@ -7,16 +7,16 @@
 
 #include <map>
 
-#include "chrome/browser/favicon/favicon_service.h"
+#include "base/compiler_specific.h"
+#include "chrome/browser/cancelable_request.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 #include "chrome/browser/ui/gtk/global_menu_owner.h"
-#include "chrome/browser/ui/gtk/owned_widget_gtk.h"
-#include "content/browser/cancelable_request.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/gtk/gtk_signal.h"
+#include "ui/base/gtk/owned_widget_gtk.h"
 
 class Browser;
 
@@ -28,7 +28,7 @@ typedef struct _GdkPixbuf GdkPixbuf;
 
 // Controls the History menu.
 class GlobalHistoryMenu : public GlobalMenuOwner,
-                          public NotificationObserver,
+                          public content::NotificationObserver,
                           public TabRestoreServiceObserver {
  public:
   explicit GlobalHistoryMenu(Browser* browser);
@@ -36,7 +36,8 @@ class GlobalHistoryMenu : public GlobalMenuOwner,
 
   // Takes the history menu we need to modify based on the tab restore/most
   // visited state.
-  virtual void Init(GtkWidget* history_menu, GtkWidget* history_menu_item);
+  virtual void Init(GtkWidget* history_menu,
+                    GtkWidget* history_menu_item) OVERRIDE;
 
  private:
   class HistoryItem;
@@ -67,17 +68,6 @@ class GlobalHistoryMenu : public GlobalMenuOwner,
                                   int tag,
                                   int index);
 
-  // Requests a FavIcon; we'll receive the data in the future through the
-  // GotFaviconData() callback.
-  void GetFaviconForHistoryItem(HistoryItem* item);
-
-  // Callback for GetFaviconForHistoryItem().
-  void GotFaviconData(FaviconService::Handle handle,
-                      history::FaviconData favicon);
-
-  // Cancels an outstanding favicon request.
-  void CancelFaviconRequest(HistoryItem* item);
-
   // Find the first index of the item in |menu| with the tag |tag_id|.
   int GetIndexOfMenuItemWithTag(GtkWidget* menu, int tag_id);
 
@@ -92,14 +82,14 @@ class GlobalHistoryMenu : public GlobalMenuOwner,
   // Implementation detail of ClearMenuSection.
   static void ClearMenuCallback(GtkWidget* widget, ClearMenuClosure* closure);
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // For TabRestoreServiceObserver
-  virtual void TabRestoreServiceChanged(TabRestoreService* service);
-  virtual void TabRestoreServiceDestroyed(TabRestoreService* service);
+  virtual void TabRestoreServiceChanged(TabRestoreService* service) OVERRIDE;
+  virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
 
   CHROMEGTK_CALLBACK_0(GlobalHistoryMenu, void, OnRecentlyClosedItemActivated);
 
@@ -116,22 +106,17 @@ class GlobalHistoryMenu : public GlobalMenuOwner,
 
   // The history menu. We keep this since we need to rewrite parts of it
   // periodically.
-  OwnedWidgetGtk history_menu_;
+  ui::OwnedWidgetGtk history_menu_;
 
   history::TopSites* top_sites_;
   CancelableRequestConsumer top_sites_consumer_;
-
-  GdkPixbuf* default_favicon_;
 
   TabRestoreService* tab_restore_service_;  // weak
 
   // A mapping from GtkMenuItems to HistoryItems that maintain data.
   MenuItemToHistoryMap menu_item_history_map_;
 
-  // Maps HistoryItems to favicon request Handles.
-  CancelableRequestConsumerTSimple<HistoryItem*> favicon_consumer_;
-
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 };
 
 #endif  // CHROME_BROWSER_UI_GTK_GLOBAL_HISTORY_MENU_H_

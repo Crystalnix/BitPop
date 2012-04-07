@@ -11,30 +11,28 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sync/glue/model_associator.h"
 #include "chrome/browser/sync/protocol/password_specifics.pb.h"
 
-class GURL;
 class MessageLoop;
 class PasswordStore;
 class ProfileSyncService;
 
-namespace webkit_glue {
+namespace webkit {
+namespace forms {
 struct PasswordForm;
-};
+}
+}
 
 namespace sync_api {
 class WriteNode;
 class WriteTransaction;
-};
+}
 
 namespace browser_sync {
-
-class PasswordChangeProcessor;
-class UnrecoverableErrorHandler;
 
 extern const char kPasswordTag[];
 
@@ -46,7 +44,7 @@ extern const char kPasswordTag[];
 class PasswordModelAssociator
   : public PerDataTypeAssociatorInterface<std::string, std::string> {
  public:
-  typedef std::vector<webkit_glue::PasswordForm> PasswordVector;
+  typedef std::vector<webkit::forms::PasswordForm> PasswordVector;
 
   static syncable::ModelType model_type() { return syncable::PASSWORDS; }
   PasswordModelAssociator(ProfileSyncService* sync_service,
@@ -56,40 +54,40 @@ class PasswordModelAssociator
   // PerDataTypeAssociatorInterface implementation.
   //
   // Iterates through the sync model looking for matched pairs of items.
-  virtual bool AssociateModels();
+  virtual bool AssociateModels(SyncError* error) OVERRIDE;
 
   // Delete all password nodes.
   bool DeleteAllNodes(sync_api::WriteTransaction* trans);
 
   // Clears all associations.
-  virtual bool DisassociateModels();
+  virtual bool DisassociateModels(SyncError* error) OVERRIDE;
 
   // The has_nodes out param is true if the sync model has nodes other
   // than the permanent tagged nodes.
-  virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes);
+  virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes) OVERRIDE;
 
   // See ModelAssociator interface.
-  virtual void AbortAssociation();
+  virtual void AbortAssociation() OVERRIDE;
 
   // See ModelAssociator interface.
-  virtual bool CryptoReadyIfNecessary();
+  virtual bool CryptoReadyIfNecessary() OVERRIDE;
 
   // Not implemented.
-  virtual const std::string* GetChromeNodeFromSyncId(int64 sync_id);
+  virtual const std::string* GetChromeNodeFromSyncId(int64 sync_id) OVERRIDE;
 
   // Not implemented.
   virtual bool InitSyncNodeFromChromeId(const std::string& node_id,
-                                        sync_api::BaseNode* sync_node);
+                                        sync_api::BaseNode* sync_node) OVERRIDE;
 
   // Returns the sync id for the given password name, or sync_api::kInvalidId
   // if the password name is not associated to any sync id.
-  virtual int64 GetSyncIdFromChromeId(const std::string& node_id);
+  virtual int64 GetSyncIdFromChromeId(const std::string& node_id) OVERRIDE;
 
   // Associates the given password name with the given sync id.
-  virtual void Associate(const std::string* node, int64 sync_id);
+  virtual void Associate(const std::string* node, int64 sync_id) OVERRIDE;
 
   // Remove the association that corresponds to the given sync id.
-  virtual void Disassociate(int64 sync_id);
+  virtual void Disassociate(int64 sync_id) OVERRIDE;
 
   // Returns whether a node with the given permanent tag was found and update
   // |sync_id| with that node's id.
@@ -99,7 +97,7 @@ class PasswordModelAssociator
                             const PasswordVector* updated_passwords,
                             const PasswordVector* deleted_passwords);
 
-  static std::string MakeTag(const webkit_glue::PasswordForm& password);
+  static std::string MakeTag(const webkit::forms::PasswordForm& password);
   static std::string MakeTag(const sync_pb::PasswordSpecificsData& password);
   static std::string MakeTag(const std::string& origin_url,
                              const std::string& username_element,
@@ -108,12 +106,12 @@ class PasswordModelAssociator
                              const std::string& signon_realm);
 
   static void CopyPassword(const sync_pb::PasswordSpecificsData& password,
-                           webkit_glue::PasswordForm* new_password);
+                           webkit::forms::PasswordForm* new_password);
 
   static bool MergePasswords(const sync_pb::PasswordSpecificsData& password,
-                             const webkit_glue::PasswordForm& password_form,
-                             webkit_glue::PasswordForm* new_password);
-  static void WriteToSyncNode(const webkit_glue::PasswordForm& password_form,
+                             const webkit::forms::PasswordForm& password_form,
+                             webkit::forms::PasswordForm* new_password);
+  static void WriteToSyncNode(const webkit::forms::PasswordForm& password_form,
                               sync_api::WriteNode* node);
 
   // Called at various points in model association to determine if the

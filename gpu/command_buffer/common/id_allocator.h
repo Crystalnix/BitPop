@@ -9,6 +9,9 @@
 
 #include <set>
 #include <utility>
+
+#include "base/compiler_specific.h"
+
 #include "../common/types.h"
 
 namespace gpu {
@@ -18,27 +21,39 @@ typedef uint32 ResourceId;
 // Invalid resource ID.
 static const ResourceId kInvalidResource = 0u;
 
-// A class to manage the allocation of resource IDs.
-class IdAllocator {
+class IdAllocatorInterface {
  public:
-  IdAllocator();
-  ~IdAllocator();
+  virtual ~IdAllocatorInterface();
 
   // Allocates a new resource ID.
-  ResourceId AllocateID();
+  virtual ResourceId AllocateID() = 0;
 
   // Allocates an Id starting at or above desired_id.
   // Note: may wrap if it starts near limit.
-  ResourceId AllocateIDAtOrAbove(ResourceId desired_id);
+  virtual ResourceId AllocateIDAtOrAbove(ResourceId desired_id) = 0;
 
   // Marks an id as used. Returns false if id was already used.
-  bool MarkAsUsed(ResourceId id);
+  virtual bool MarkAsUsed(ResourceId id) = 0;
 
   // Frees a resource ID.
-  void FreeID(ResourceId id);
+  virtual void FreeID(ResourceId id) = 0;
 
   // Checks whether or not a resource ID is in use.
-  bool InUse(ResourceId id) const;
+  virtual bool InUse(ResourceId id) const = 0;
+};
+
+// A class to manage the allocation of resource IDs.
+class IdAllocator : public IdAllocatorInterface {
+ public:
+  IdAllocator();
+  virtual ~IdAllocator();
+
+  // Implement IdAllocatorInterface.
+  virtual ResourceId AllocateID() OVERRIDE;
+  virtual ResourceId AllocateIDAtOrAbove(ResourceId desired_id) OVERRIDE;
+  virtual bool MarkAsUsed(ResourceId id) OVERRIDE;
+  virtual void FreeID(ResourceId id) OVERRIDE;
+  virtual bool InUse(ResourceId id) const OVERRIDE;
 
  private:
   // TODO(gman): This would work much better with ranges or a hash table.
@@ -54,6 +69,28 @@ class IdAllocator {
   ResourceIdSet free_ids_;
 
   DISALLOW_COPY_AND_ASSIGN(IdAllocator);
+};
+
+// A class to manage the allocation of resource IDs that are never reused. This
+// implementation does not track which IDs are currently used. It is useful for
+// shared and programs which cannot be implicitly created by binding a
+// previously unused ID.
+class NonReusedIdAllocator : public IdAllocatorInterface {
+ public:
+  NonReusedIdAllocator();
+  virtual ~NonReusedIdAllocator();
+
+  // Implement IdAllocatorInterface.
+  virtual ResourceId AllocateID() OVERRIDE;
+  virtual ResourceId AllocateIDAtOrAbove(ResourceId desired_id) OVERRIDE;
+  virtual bool MarkAsUsed(ResourceId id) OVERRIDE;
+  virtual void FreeID(ResourceId id) OVERRIDE;
+  virtual bool InUse(ResourceId id) const OVERRIDE;
+
+ private:
+  ResourceId last_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(NonReusedIdAllocator);
 };
 
 }  // namespace gpu

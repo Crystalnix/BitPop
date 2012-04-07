@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -10,21 +10,27 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "base/callback.h"
 #include "base/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop_helpers.h"
+#include "base/observer_list.h"
 #include "base/synchronization/lock.h"
-#include "base/task.h"
 #include "base/time.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "googleurl/src/gurl.h"
-#include "webkit/glue/resource_type.h"
 
 class MalwareDetails;
+class PrefChangeRegistrar;
 class PrefService;
 class SafeBrowsingDatabase;
 class SafeBrowsingProtocolManager;
@@ -38,9 +44,16 @@ namespace net {
 class URLRequestContextGetter;
 }
 
+namespace safe_browsing {
+class ClientSideDetectionService;
+class DownloadProtectionService;
+}
+
 // Construction needs to happen on the main thread.
 class SafeBrowsingService
-    : public base::RefCountedThreadSafe<SafeBrowsingService> {
+    : public base::RefCountedThreadSafe<
+          SafeBrowsingService, content::BrowserThread::DeleteOnUIThread>,
+      public content::NotificationObserver {
  public:
   class Client;
   // Users of this service implement this interface to be notified
@@ -57,6 +70,10 @@ class SafeBrowsingService
     CLIENT_SIDE_PHISHING_URL,
   };
 
+  // Passed a boolean indicating whether or not it is OK to proceed with
+  // loading an URL.
+  typedef base::Callback<void(bool /*proceed*/)> UrlCheckCallback;
+
   // Structure used to pass parameters between the IO and UI thread when
   // interacting with the blocking page.
   struct UnsafeResource {
@@ -66,9 +83,9 @@ class SafeBrowsingService
     GURL url;
     GURL original_url;
     std::vector<GURL> redirect_urls;
-    ResourceType::Type resource_type;
+    bool is_subresource;
     UrlCheckResult threat_type;
-    Client* client;
+    UrlCheckCallback callback;
     int render_process_host_id;
     int render_view_id;
   };
@@ -90,16 +107,32 @@ class SafeBrowsingService
     std::vector<SBPrefix> prefix_hits;
     std::vector<SBFullHashResult> full_hits;
 
-    // Task to make the callback to safebrowsing clients in case
-    // safebrowsing check takes too long to finish. Not owned by
-    // this class.
+    // Vends weak pointers for TimeoutCallback().  If the response is
+    // received before the timeout fires, factory is destructed and
+    // the timeout won't be fired.
     // TODO(lzheng): We should consider to use this time out check
     // for browsing too (instead of implementin in
     // safe_browsing_resource_handler.cc).
-    CancelableTask* timeout_task;
+    scoped_ptr<base::WeakPtrFactory<SafeBrowsingService> > timeout_factory_;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(SafeBrowsingCheck);
+  };
+
+  // Observer class can be used to get notified when a SafeBrowsing hit
+  // was found.
+  class Observer {
+   public:
+    // The |resource| must not be accessed after OnSafeBrowsingHit returns.
+    // This method will be called on the UI thread.
+    virtual void OnSafeBrowsingHit(const UnsafeResource& resource) = 0;
+
+   protected:
+    Observer() {}
+    virtual ~Observer() {}
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(Observer);
   };
 
   class Client {
@@ -107,10 +140,6 @@ class SafeBrowsingService
     virtual ~Client() {}
 
     void OnSafeBrowsingResult(const SafeBrowsingCheck& check);
-
-    // Called when the user has made a decision about how to handle the
-    // SafeBrowsing interstitial page.
-    virtual void OnBlockingPageComplete(bool proceed) {}
 
    protected:
     // Called when the result of checking a browse URL is known.
@@ -125,7 +154,6 @@ class SafeBrowsingService
     virtual void OnDownloadHashCheckResult(const std::string& hash,
                                            UrlCheckResult result) {}
   };
-
 
   // Makes the passed |factory| the factory used to instanciate
   // a SafeBrowsingService. Useful for tests.
@@ -147,7 +175,7 @@ class SafeBrowsingService
 
   // Called on UI thread to decide if safe browsing related stats
   // could be reported.
-  bool CanReportStats() const;
+  virtual bool CanReportStats() const;
 
   // Called on UI thread to decide if the download file's sha256 hash
   // should be calculated for safebrowsing.
@@ -161,7 +189,8 @@ class SafeBrowsingService
 
   // Check if the prefix for |url| is in safebrowsing download add lists.
   // Result will be passed to callback in |client|.
-  bool CheckDownloadUrl(const std::vector<GURL>& url_chain, Client* client);
+  virtual bool CheckDownloadUrl(const std::vector<GURL>& url_chain,
+                                Client* client);
 
   // Check if the prefix for |full_hash| is in safebrowsing binhash add lists.
   // Result will be passed to callback in |client|.
@@ -174,6 +203,18 @@ class SafeBrowsingService
   // thread.
   virtual bool MatchCsdWhitelistUrl(const GURL& url);
 
+  // Check if the |url| matches any of the full-length hashes from the
+  // download whitelist.  Returns true if there was a match and false otherwise.
+  // To make sure we are conservative we will return true if an error occurs.
+  // This method is expected to be called on the IO thread.
+  virtual bool MatchDownloadWhitelistUrl(const GURL& url);
+
+  // Check if |str| matches any of the full-length hashes from the download
+  // whitelist.  Returns true if there was a match and false otherwise.
+  // To make sure we are conservative we will return true if an error occurs.
+  // This method is expected to be called on the IO thread.
+  virtual bool MatchDownloadWhitelistString(const std::string& str);
+
   // Called on the IO thread to cancel a pending check if the result is no
   // longer needed.
   void CancelCheck(Client* client);
@@ -183,14 +224,21 @@ class SafeBrowsingService
   // If the request contained a chain of redirects, |url| is the last url
   // in the chain, and |original_url| is the first one (the root of the
   // chain). Otherwise, |original_url| = |url|.
-  virtual void DisplayBlockingPage(const GURL& url,
-                                   const GURL& original_url,
-                                   const std::vector<GURL>& redirect_urls,
-                                   ResourceType::Type resource_type,
-                                   UrlCheckResult result,
-                                   Client* client,
-                                   int render_process_host_id,
-                                   int render_view_id);
+  void DisplayBlockingPage(const GURL& url,
+                           const GURL& original_url,
+                           const std::vector<GURL>& redirect_urls,
+                           bool is_subresource,
+                           UrlCheckResult result,
+                           const UrlCheckCallback& callback,
+                           int render_process_host_id,
+                           int render_view_id);
+
+  // Same as above but gets invoked on the UI thread.
+  virtual void DoDisplayBlockingPage(const UnsafeResource& resource);
+
+  // Returns true if we already displayed an interstitial for that resource.
+  // Called on the UI thread.
+  bool IsWhitelisted(const UnsafeResource& resource);
 
   // Called on the IO thread when the SafeBrowsingProtocolManager has received
   // the full hash results for prefix hits detected in the database.
@@ -218,25 +266,26 @@ class SafeBrowsingService
   void OnNewMacKeys(const std::string& client_key,
                     const std::string& wrapped_key);
 
-  // Notification on the UI thread from the advanced options UI.
-  void OnEnable(bool enabled);
-
   bool enabled() const { return enabled_; }
 
   bool download_protection_enabled() const {
     return enabled_ && enable_download_protection_;
   }
 
+  safe_browsing::ClientSideDetectionService*
+      safe_browsing_detection_service() const {
+    return csd_service_.get();
+  }
+
+  // The DownloadProtectionService is not valid after the SafeBrowsingService
+  // is destroyed.
+  safe_browsing::DownloadProtectionService*
+      download_protection_service() const {
+    return download_service_.get();
+  }
+
   // Preference handling.
   static void RegisterPrefs(PrefService* prefs);
-
-  // Called on the IO thread to try to close the database, freeing the memory
-  // associated with it.  The database will be automatically reopened as needed.
-  //
-  // NOTE: Actual database closure is asynchronous, and until it happens, the IO
-  // thread is not allowed to access it; may not actually trigger a close if one
-  // is already pending or doing so would cause problems.
-  void CloseDatabase();
 
   // Called on the IO thread to reset the database.
   void ResetDatabase();
@@ -261,6 +310,10 @@ class SafeBrowsingService
                                      UrlCheckResult threat_type,
                                      const std::string& post_data);
 
+  // Add and remove observers.  These methods must be invoked on the UI thread.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* remove);
+
  protected:
   // Creates the safe browsing service.  Need to initialize before using.
   SafeBrowsingService();
@@ -284,7 +337,9 @@ class SafeBrowsingService
     base::TimeTicks start;  // When check was queued.
   };
 
-  friend class base::RefCountedThreadSafe<SafeBrowsingService>;
+  friend struct content::BrowserThread::DeleteOnThread<
+      content::BrowserThread::UI>;
+  friend class base::DeleteHelper<SafeBrowsingService>;
   friend class SafeBrowsingServiceTest;
 
   // Called to initialize objects that are used on the io_thread.
@@ -304,6 +359,14 @@ class SafeBrowsingService
   // Note that this is only needed outside the db thread, since functions on the
   // db thread can call GetDatabase() directly.
   bool MakeDatabaseAvailable();
+
+  // Called on the IO thread to try to close the database, freeing the memory
+  // associated with it.  The database will be automatically reopened as needed.
+  //
+  // NOTE: Actual database closure is asynchronous, and until it happens, the IO
+  // thread is not allowed to access it; may not actually trigger a close if one
+  // is already pending or doing so would cause problems.
+  void CloseDatabase();
 
   // Should only be called on db thread as SafeBrowsingDatabase is not
   // threadsafe.
@@ -345,6 +408,10 @@ class SafeBrowsingService
   // UI.
   void Start();
 
+  // Stops the SafeBrowsingService. This can be called when the safe browsing
+  // preference is disabled.
+  void Stop();
+
   // Called on the db thread to close the database.  See CloseDatabase().
   void OnCloseDatabase();
 
@@ -364,9 +431,6 @@ class SafeBrowsingService
   // finds a match in |full_hashes|.
   bool HandleOneCheck(SafeBrowsingCheck* check,
                       const std::vector<SBFullHashResult>& full_hashes);
-
-  // Invoked on the UI thread to show the blocking page.
-  void DoDisplayBlockingPage(const UnsafeResource& resource);
 
   // Call protocol manager on IO thread to report hits of unsafe contents.
   void ReportSafeBrowsingHitOnIOThread(const GURL& malicious_url,
@@ -401,8 +465,26 @@ class SafeBrowsingService
   // success, otherwise TimeoutCallback will be called.
   void StartDownloadCheck(SafeBrowsingCheck* check,
                           Client* client,
-                          CancelableTask* task,
+                          const base::Closure& task,
                           int64 timeout_ms);
+
+  // Adds the given entry to the whitelist.  Called on the UI thread.
+  void UpdateWhitelist(const UnsafeResource& resource);
+
+  // content::NotificationObserver override
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
+  // Starts following the safe browsing preference on |pref_service|.
+  void AddPrefService(PrefService* pref_service);
+
+  // Stop following the safe browsing preference on |pref_service|.
+  void RemovePrefService(PrefService* pref_service);
+
+  // Checks if any profile is currently using the safe browsing service, and
+  // starts or stops the service accordingly.
+  void RefreshState();
 
   // The factory used to instanciate a SafeBrowsingService object.
   // Useful for tests, so they can provide their own implementation of
@@ -424,6 +506,7 @@ class SafeBrowsingService
   // Handles interaction with SafeBrowsing servers.
   SafeBrowsingProtocolManager* protocol_manager_;
 
+  // Only access this whitelist from the UI thread.
   std::vector<WhiteListedEntry> white_listed_entries_;
 
   // Whether the service is running. 'enabled_' is used by SafeBrowsingService
@@ -437,6 +520,9 @@ class SafeBrowsingService
   // Indicate if client-side phishing detection whitelist should be enabled
   // or not.
   bool enable_csd_whitelist_;
+
+  // Indicate if the download whitelist should be enabled or not.
+  bool enable_download_whitelist_;
 
   // The SafeBrowsing thread that runs database operations.
   //
@@ -464,6 +550,27 @@ class SafeBrowsingService
 
   // Similar to |download_urlcheck_timeout_ms_|, but for download hash checks.
   int64 download_hashcheck_timeout_ms_;
+
+  ObserverList<Observer> observer_list_;
+
+  // Used to track purge memory notifications. Lives on the IO thread.
+  scoped_ptr<content::NotificationRegistrar> registrar_;
+
+  // Tracks existing PrefServices, and the safe browsing preference on each.
+  // This is used to determine if any profile is currently using the safe
+  // browsing service, and to start it up or shut it down accordingly.
+  std::map<PrefService*, PrefChangeRegistrar*> prefs_map_;
+
+  // Used to track creation and destruction of profiles on the UI thread.
+  content::NotificationRegistrar prefs_registrar_;
+
+  // The ClientSideDetectionService is managed by the SafeBrowsingService,
+  // since its running state and lifecycle depends on SafeBrowsingService's.
+  scoped_ptr<safe_browsing::ClientSideDetectionService> csd_service_;
+
+  // The DownloadProtectionService is managed by the SafeBrowsingService,
+  // since its running state and lifecycle depends on SafeBrowsingService's.
+  scoped_ptr<safe_browsing::DownloadProtectionService> download_service_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingService);
 };

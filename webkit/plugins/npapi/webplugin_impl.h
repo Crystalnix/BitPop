@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,18 +12,16 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/memory/weak_ptr.h"
-#include "base/task.h"
 #include "googleurl/src/gurl.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebPlugin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebRect.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebVector.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLRequest.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
 #include "ui/gfx/native_widget_types.h"
 #include "webkit/plugins/npapi/webplugin.h"
-
-class WebViewDelegate;
+#include "webkit/plugins/webkit_plugins_export.h"
 
 namespace WebKit {
 class WebFrame;
@@ -46,15 +44,15 @@ class WebPluginPageDelegate;
 // This is the WebKit side of the plugin implementation that forwards calls,
 // after changing out of WebCore types, to a delegate.  The delegate may
 // be in a different process.
-class WebPluginImpl : public WebPlugin,
-                      public WebKit::WebPlugin,
-                      public WebKit::WebURLLoaderClient {
+class WEBKIT_PLUGINS_EXPORT WebPluginImpl :
+    NON_EXPORTED_BASE(public WebPlugin),
+    NON_EXPORTED_BASE(public WebKit::WebPlugin),
+    NON_EXPORTED_BASE(public WebKit::WebURLLoaderClient) {
  public:
   WebPluginImpl(
       WebKit::WebFrame* frame,
       const WebKit::WebPluginParams& params,
       const FilePath& file_path,
-      const std::string& mime_type,
       const base::WeakPtr<WebPluginPageDelegate>& page_delegate);
   virtual ~WebPluginImpl();
 
@@ -71,6 +69,7 @@ class WebPluginImpl : public WebPlugin,
       WebKit::WebPluginContainer* container);
   virtual void destroy();
   virtual NPObject* scriptableObject();
+  virtual bool getFormValue(WebKit::WebString& value);
   virtual void paint(
       WebKit::WebCanvas* canvas, const WebKit::WebRect& paint_rect);
   virtual void updateGeometry(
@@ -90,42 +89,36 @@ class WebPluginImpl : public WebPlugin,
   virtual void didFailLoadingFrameRequest(
       const WebKit::WebURL& url, void* notify_data,
       const WebKit::WebURLError& error);
-  virtual bool supportsPaginatedPrint();
-  virtual int printBegin(const WebKit::WebRect& printable_area,
-                         int printer_dpi);
-  virtual bool printPage(int page_number, WebKit::WebCanvas* canvas);
-  virtual void printEnd();
-  virtual bool hasSelection() const;
-  virtual WebKit::WebString selectionAsText() const;
-  virtual WebKit::WebString selectionAsMarkup() const;
-  virtual void setZoomFactor(float scale, bool text_only);
-  virtual bool startFind(const WebKit::WebString& search_text,
-                         bool case_sensitive,
-                         int identifier);
-  virtual void selectFindResult(bool forward);
-  virtual void stopFind();
 
   // WebPlugin implementation:
-  virtual void SetWindow(gfx::PluginWindowHandle window);
-  virtual void SetAcceptsInputEvents(bool accepts);
-  virtual void WillDestroyWindow(gfx::PluginWindowHandle window);
+  virtual void SetWindow(gfx::PluginWindowHandle window) OVERRIDE;
+  virtual void SetAcceptsInputEvents(bool accepts) OVERRIDE;
+  virtual void WillDestroyWindow(gfx::PluginWindowHandle window) OVERRIDE;
 #if defined(OS_WIN)
   void SetWindowlessPumpEvent(HANDLE pump_messages_event) { }
   void ReparentPluginWindow(HWND window, HWND parent) { }
+  void ReportExecutableMemory(size_t size) { }
 #endif
-  virtual void CancelResource(unsigned long id);
-  virtual void Invalidate();
-  virtual void InvalidateRect(const gfx::Rect& rect);
-  virtual NPObject* GetWindowScriptNPObject();
-  virtual NPObject* GetPluginElement();
+  virtual void CancelResource(unsigned long id) OVERRIDE;
+  virtual void Invalidate() OVERRIDE;
+  virtual void InvalidateRect(const gfx::Rect& rect) OVERRIDE;
+  virtual NPObject* GetWindowScriptNPObject() OVERRIDE;
+  virtual NPObject* GetPluginElement() OVERRIDE;
+  virtual bool FindProxyForUrl(const GURL& url,
+                               std::string* proxy_list) OVERRIDE;
   virtual void SetCookie(const GURL& url,
                          const GURL& first_party_for_cookies,
-                         const std::string& cookie);
+                         const std::string& cookie) OVERRIDE;
   virtual std::string GetCookies(const GURL& url,
-                                 const GURL& first_party_for_cookies);
-  virtual void OnMissingPluginStatus(int status);
-
-  virtual void URLRedirectResponse(bool allow, int resource_id);
+                                 const GURL& first_party_for_cookies) OVERRIDE;
+  virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual void AcceleratedPluginEnabledRendering() OVERRIDE;
+  virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
+                                                   int32 height,
+                                                   uint32 surface_id) OVERRIDE;
+  virtual void AcceleratedPluginSwappedIOSurface() OVERRIDE;
+#endif
 
   // Given a (maybe partial) url, completes using the base url.
   GURL CompleteURL(const char* url);
@@ -172,7 +165,8 @@ class WebPluginImpl : public WebPlugin,
                            int len,
                            const char* range_info,
                            Referrer referrer_flag,
-                           bool notify_redirects);
+                           bool notify_redirects,
+                           bool check_mixed_scripting);
 
   gfx::Rect GetWindowClipRect(const gfx::Rect& rect);
 
@@ -218,17 +212,19 @@ class WebPluginImpl : public WebPlugin,
                                 unsigned int len,
                                 int notify_id,
                                 bool popups_allowed,
-                                bool notify_redirects);
+                                bool notify_redirects) OVERRIDE;
 
-  virtual void CancelDocumentLoad();
+  virtual void CancelDocumentLoad() OVERRIDE;
 
-  virtual void InitiateHTTPRangeRequest(
-      const char* url, const char* range_info, int pending_request_id);
+  virtual void InitiateHTTPRangeRequest(const char* url,
+                                        const char* range_info,
+                                        int pending_request_id) OVERRIDE;
 
-  virtual void SetDeferResourceLoading(unsigned long resource_id, bool defer);
+  virtual void SetDeferResourceLoading(unsigned long resource_id,
+                                       bool defer) OVERRIDE;
 
   // Ignore in-process plugins mode for this flag.
-  virtual bool IsOffTheRecord();
+  virtual bool IsOffTheRecord() OVERRIDE;
 
   // Handles HTTP multipart responses, i.e. responses received with a HTTP
   // status code of 206.
@@ -243,7 +239,8 @@ class WebPluginImpl : public WebPlugin,
                                 int notify_id,
                                 bool popups_allowed,
                                 Referrer referrer_flag,
-                                bool notify_redirects);
+                                bool notify_redirects,
+                                bool check_mixed_scripting);
 
   // Tears down the existing plugin instance and creates a new plugin instance
   // to handle the response identified by the loader parameter.
@@ -268,6 +265,12 @@ class WebPluginImpl : public WebPlugin,
 
   bool windowless_;
   gfx::PluginWindowHandle window_;
+#if defined(OS_MACOSX)
+  bool next_io_surface_allocated_;
+  int32 next_io_surface_width_;
+  int32 next_io_surface_height_;
+  uint32 next_io_surface_id_;
+#endif
   bool accepts_input_events_;
   base::WeakPtr<WebPluginPageDelegate> page_delegate_;
   WebKit::WebFrame* webframe_;
@@ -310,7 +313,7 @@ class WebPluginImpl : public WebPlugin,
   std::vector<std::string> arg_names_;
   std::vector<std::string> arg_values_;
 
-  ScopedRunnableMethodFactory<WebPluginImpl> method_factory_;
+  base::WeakPtrFactory<WebPluginImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginImpl);
 };

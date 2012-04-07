@@ -7,15 +7,17 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 #include "webkit/appcache/appcache.h"
+#include "webkit/appcache/appcache_policy.h"
 #include "webkit/appcache/appcache_url_request_job.h"
 
 namespace appcache {
 
-AppCacheRequestHandler::AppCacheRequestHandler(AppCacheHost* host,
-                                               ResourceType::Type resource_type)
+AppCacheRequestHandler::AppCacheRequestHandler(
+    AppCacheHost* host, ResourceType::Type resource_type)
     : host_(host), resource_type_(resource_type),
-      is_waiting_for_cache_selection_(false), found_cache_id_(0),
-      found_network_namespace_(false), cache_entry_not_found_(false) {
+      is_waiting_for_cache_selection_(false), found_group_id_(0),
+      found_cache_id_(0), found_network_namespace_(false),
+      cache_entry_not_found_(false) {
   DCHECK(host_);
   host_->AddObserver(this);
 }
@@ -58,6 +60,7 @@ AppCacheURLRequestJob* AppCacheRequestHandler::MaybeLoadResource(
     if (job_->cache_entry_not_found())
       cache_entry_not_found_ = true;
     job_ = NULL;
+    storage()->CancelDelegateCallbacks(this);
     return NULL;
   }
 
@@ -101,8 +104,8 @@ AppCacheURLRequestJob* AppCacheRequestHandler::MaybeLoadFallbackForRedirect(
     // get the resource of the fallback entry.
     job_ = new AppCacheURLRequestJob(request, storage());
     DeliverAppCachedResponse(
-        found_fallback_entry_, found_cache_id_, found_manifest_url_,
-        true, found_fallback_url_);
+        found_fallback_entry_, found_cache_id_, found_group_id_,
+        found_manifest_url_,  true, found_namespace_entry_url_);
   } else if (!found_network_namespace_) {
     // 6.9.6, step 6: Fail the resource load.
     job_ = new AppCacheURLRequestJob(request, storage());
@@ -153,8 +156,8 @@ AppCacheURLRequestJob* AppCacheRequestHandler::MaybeLoadFallbackForResponse(
   // or there were network errors, get the resource of the fallback entry.
   job_ = new AppCacheURLRequestJob(request, storage());
   DeliverAppCachedResponse(
-      found_fallback_entry_, found_cache_id_,  found_manifest_url_,
-      true, found_fallback_url_);
+      found_fallback_entry_, found_cache_id_, found_group_id_,
+      found_manifest_url_, true, found_namespace_entry_url_);
   return job_;
 }
 
@@ -171,17 +174,17 @@ void AppCacheRequestHandler::OnDestructionImminent(AppCacheHost* host) {
 }
 
 void AppCacheRequestHandler::DeliverAppCachedResponse(
-    const AppCacheEntry& entry, int64 cache_id, const GURL& manifest_url,
-    bool is_fallback, const GURL& fallback_url) {
+    const AppCacheEntry& entry, int64 cache_id, int64 group_id,
+    const GURL& manifest_url,  bool is_fallback,
+    const GURL& namespace_entry_url) {
   DCHECK(host_ && job_ && job_->is_waiting());
   DCHECK(entry.has_response_id());
 
-  if (ResourceType::IsFrame(resource_type_) && is_fallback) {
-    DCHECK(!fallback_url.is_empty());
-    host_->NotifyMainResourceFallback(fallback_url);
-  }
+  if (ResourceType::IsFrame(resource_type_) && !namespace_entry_url.is_empty())
+    host_->NotifyMainResourceIsNamespaceEntry(namespace_entry_url);
 
-  job_->DeliverAppCachedResponse(manifest_url, cache_id, entry, is_fallback);
+  job_->DeliverAppCachedResponse(manifest_url, group_id, cache_id,
+                                 entry, is_fallback);
 }
 
 void AppCacheRequestHandler::DeliverErrorResponse() {
@@ -215,46 +218,57 @@ void AppCacheRequestHandler::MaybeLoadMainResource(net::URLRequest* request) {
 
 void AppCacheRequestHandler::OnMainResponseFound(
     const GURL& url, const AppCacheEntry& entry,
-    const GURL& fallback_url, const AppCacheEntry& fallback_entry,
-    int64 cache_id, const GURL& manifest_url,
-    bool was_blocked_by_policy) {
+    const GURL& namespace_entry_url, const AppCacheEntry& fallback_entry,
+    int64 cache_id, int64 group_id, const GURL& manifest_url) {
+  DCHECK(job_);
   DCHECK(host_);
   DCHECK(is_main_resource());
   DCHECK(!entry.IsForeign());
   DCHECK(!fallback_entry.IsForeign());
   DCHECK(!(entry.has_response_id() && fallback_entry.has_response_id()));
 
-  if (ResourceType::IsFrame(resource_type_)) {
-    if (was_blocked_by_policy)
-      host_->NotifyMainResourceBlocked(manifest_url);
+  if (!job_)
+    return;
 
-    if (cache_id != kNoCacheId) {
-      // AppCacheHost loads and holds a reference to the main resource cache
-      // for two reasons, firstly to preload the cache into the working set
-      // in advance of subresource loads happening, secondly to prevent the
-      // AppCache from falling out of the working set on frame navigations.
-      host_->LoadMainResourceCache(cache_id);
-      host_->set_preferred_manifest_url(manifest_url);
-    }
-  } else {
-    DCHECK(ResourceType::IsSharedWorker(resource_type_));
-    if (was_blocked_by_policy)
+  AppCachePolicy* policy = host_->service()->appcache_policy();
+  bool was_blocked_by_policy = !manifest_url.is_empty() && policy &&
+      !policy->CanLoadAppCache(manifest_url, host_->first_party_url());
+
+  if (was_blocked_by_policy) {
+    if (ResourceType::IsFrame(resource_type_)) {
+      host_->NotifyMainResourceBlocked(manifest_url);
+    } else {
+      DCHECK(ResourceType::IsSharedWorker(resource_type_));
       host_->frontend()->OnContentBlocked(host_->host_id(), manifest_url);
+    }
+    DeliverNetworkResponse();
+    return;
+  }
+
+  if (ResourceType::IsFrame(resource_type_) && cache_id != kNoCacheId) {
+    // AppCacheHost loads and holds a reference to the main resource cache
+    // for two reasons, firstly to preload the cache into the working set
+    // in advance of subresource loads happening, secondly to prevent the
+    // AppCache from falling out of the working set on frame navigations.
+    host_->LoadMainResourceCache(cache_id);
+    host_->set_preferred_manifest_url(manifest_url);
   }
 
   // 6.11.1 Navigating across documents, steps 10 and 14.
 
   found_entry_ = entry;
-  found_fallback_url_ = fallback_url;
+  found_namespace_entry_url_ = namespace_entry_url;
   found_fallback_entry_ = fallback_entry;
   found_cache_id_ = cache_id;
+  found_group_id_ = group_id;
   found_manifest_url_ = manifest_url;
   found_network_namespace_ = false;  // not applicable to main requests
 
   if (found_entry_.has_response_id()) {
+    DCHECK(!found_fallback_entry_.has_response_id());
     DeliverAppCachedResponse(
-        found_entry_, found_cache_id_, found_manifest_url_,
-        false, GURL());
+        found_entry_, found_cache_id_, found_group_id_, found_manifest_url_,
+        false, found_namespace_entry_url_);
   } else {
     DeliverNetworkResponse();
   }
@@ -302,9 +316,10 @@ void AppCacheRequestHandler::ContinueMaybeLoadSubResource() {
     DCHECK(!found_network_namespace_ &&
            !found_fallback_entry_.has_response_id());
     found_cache_id_ = cache->cache_id();
+    found_group_id_ = cache->owning_group()->group_id();
     found_manifest_url_ = cache->owning_group()->manifest_url();
     DeliverAppCachedResponse(
-        found_entry_, found_cache_id_, found_manifest_url_,
+        found_entry_, found_cache_id_, found_group_id_, found_manifest_url_,
         false, GURL());
     return;
   }

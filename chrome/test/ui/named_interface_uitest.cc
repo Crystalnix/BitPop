@@ -5,8 +5,9 @@
 #include "chrome/test/ui/ui_test.h"
 
 #include "chrome/common/url_constants.h"
+#include "chrome/test/automation/automation_proxy.h"
 #include "chrome/test/automation/proxy_launcher.h"
-#include "chrome/test/test_switches.h"
+#include "chrome/test/base/test_switches.h"
 
 // The named testing interface enables the use of a named socket for controlling
 // the browser. This eliminates the dependency that the browser must be forked
@@ -20,13 +21,13 @@ class NamedInterfaceTest : public UITest {
   }
 
   virtual ProxyLauncher *CreateProxyLauncher() {
-    CommandLine::StringType channel_path =
-        CommandLine::ForCurrentProcess()->GetSwitchValueNative(
+    std::string channel_id =
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
             switches::kTestingChannel);
-    if (channel_path.empty())
-      channel_path = ProxyLauncher::kDefaultInterfacePath;
+    if (channel_id.empty())
+      channel_id = ProxyLauncher::kDefaultInterfaceId;
 
-    return new NamedProxyLauncher(channel_path, true, true);
+    return new NamedProxyLauncher(channel_id, true, true);
   }
 };
 

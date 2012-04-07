@@ -1,9 +1,9 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/sync/sessions/sync_session.h"
-#include "chrome/test/sync/engine/test_id_factory.h"
+#include "chrome/browser/sync/test/engine/test_id_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace browser_sync {
@@ -55,16 +55,6 @@ TEST_F(StatusControllerTest, GetsDirty) {
   status.set_invalid_store(false);
   EXPECT_TRUE(status.TestAndClearIsDirty());
 
-  status.set_syncer_stuck(true);
-  EXPECT_TRUE(status.TestAndClearIsDirty());
-  status.set_syncer_stuck(false);
-  EXPECT_TRUE(status.TestAndClearIsDirty());
-
-  status.set_syncing(true);
-  EXPECT_TRUE(status.TestAndClearIsDirty());
-  status.set_syncing(false);
-  EXPECT_TRUE(status.TestAndClearIsDirty());
-
   status.increment_num_successful_commits();
   EXPECT_TRUE(status.TestAndClearIsDirty());
   status.increment_num_successful_commits();
@@ -88,8 +78,6 @@ TEST_F(StatusControllerTest, GetsDirty) {
 
 TEST_F(StatusControllerTest, StaysClean) {
   StatusController status(routes_);
-  status.update_conflict_sets_built(true);
-  EXPECT_FALSE(status.TestAndClearIsDirty());
   status.update_conflicts_resolved(true);
   EXPECT_FALSE(status.TestAndClearIsDirty());
 
@@ -108,21 +96,21 @@ TEST_F(StatusControllerTest, StaysClean) {
 TEST_F(StatusControllerTest, ReadYourWrites) {
   StatusController status(routes_);
   status.increment_num_conflicting_commits_by(1);
-  EXPECT_EQ(1, status.error_counters().num_conflicting_commits);
+  EXPECT_EQ(1, status.error().num_conflicting_commits);
 
   status.set_num_consecutive_transient_error_commits(6);
-  EXPECT_EQ(6, status.error_counters().consecutive_transient_error_commits);
+  EXPECT_EQ(6, status.error().consecutive_transient_error_commits);
   status.increment_num_consecutive_transient_error_commits_by(1);
-  EXPECT_EQ(7, status.error_counters().consecutive_transient_error_commits);
+  EXPECT_EQ(7, status.error().consecutive_transient_error_commits);
   status.increment_num_consecutive_transient_error_commits_by(0);
-  EXPECT_EQ(7, status.error_counters().consecutive_transient_error_commits);
+  EXPECT_EQ(7, status.error().consecutive_transient_error_commits);
 
   status.set_num_consecutive_errors(8);
-  EXPECT_EQ(8, status.error_counters().consecutive_errors);
+  EXPECT_EQ(8, status.error().consecutive_errors);
   status.increment_num_consecutive_errors();
-  EXPECT_EQ(9, status.error_counters().consecutive_errors);
+  EXPECT_EQ(9, status.error().consecutive_errors);
   status.increment_num_consecutive_errors_by(2);
-  EXPECT_EQ(11, status.error_counters().consecutive_errors);
+  EXPECT_EQ(11, status.error().consecutive_errors);
 
   status.set_num_server_changes_remaining(13);
   EXPECT_EQ(13, status.num_server_changes_remaining());
@@ -131,13 +119,19 @@ TEST_F(StatusControllerTest, ReadYourWrites) {
   status.set_invalid_store(true);
   EXPECT_TRUE(status.syncer_status().invalid_store);
 
-  EXPECT_FALSE(status.syncer_status().syncer_stuck);
-  status.set_syncer_stuck(true);
-  EXPECT_TRUE(status.syncer_status().syncer_stuck);
+  EXPECT_FALSE(status.conflicts_resolved());
+  status.update_conflicts_resolved(true);
+  EXPECT_TRUE(status.conflicts_resolved());
 
-  EXPECT_FALSE(status.syncer_status().syncing);
-  status.set_syncing(true);
-  EXPECT_TRUE(status.syncer_status().syncing);
+  status.set_last_download_updates_result(SYNCER_OK);
+  EXPECT_EQ(SYNCER_OK, status.error().last_download_updates_result);
+
+  status.set_last_post_commit_result(SYNC_AUTH_ERROR);
+  EXPECT_EQ(SYNC_AUTH_ERROR, status.error().last_post_commit_result);
+
+  status.set_last_process_commit_response_result(SYNC_SERVER_ERROR);
+  EXPECT_EQ(SYNC_SERVER_ERROR,
+            status.error().last_process_commit_response_result);
 
   for (int i = 0; i < 14; i++)
     status.increment_num_successful_commits();
@@ -154,19 +148,19 @@ TEST_F(StatusControllerTest, HasConflictingUpdates) {
   EXPECT_FALSE(status.HasConflictingUpdates());
   {
     ScopedModelSafeGroupRestriction r(&status, GROUP_UI);
-    EXPECT_FALSE(status.update_progress().HasConflictingUpdates());
+    EXPECT_FALSE(status.update_progress());
     status.mutable_update_progress()->AddAppliedUpdate(SUCCESS,
         syncable::Id());
     status.mutable_update_progress()->AddAppliedUpdate(CONFLICT,
         syncable::Id());
-    EXPECT_TRUE(status.update_progress().HasConflictingUpdates());
+    EXPECT_TRUE(status.update_progress()->HasConflictingUpdates());
   }
 
   EXPECT_TRUE(status.HasConflictingUpdates());
 
   {
     ScopedModelSafeGroupRestriction r(&status, GROUP_PASSIVE);
-    EXPECT_FALSE(status.update_progress().HasConflictingUpdates());
+    EXPECT_FALSE(status.update_progress());
   }
 }
 
@@ -186,17 +180,18 @@ TEST_F(StatusControllerTest, TotalNumConflictingItems) {
   TestIdFactory f;
   {
     ScopedModelSafeGroupRestriction r(&status, GROUP_UI);
+    EXPECT_FALSE(status.conflict_progress());
     status.mutable_conflict_progress()->AddConflictingItemById(f.NewLocalId());
     status.mutable_conflict_progress()->AddConflictingItemById(f.NewLocalId());
-    EXPECT_EQ(2, status.conflict_progress().ConflictingItemsSize());
+    EXPECT_EQ(2, status.conflict_progress()->ConflictingItemsSize());
   }
   EXPECT_EQ(2, status.TotalNumConflictingItems());
   {
     ScopedModelSafeGroupRestriction r(&status, GROUP_DB);
-    EXPECT_EQ(0, status.conflict_progress().ConflictingItemsSize());
+    EXPECT_FALSE(status.conflict_progress());
     status.mutable_conflict_progress()->AddConflictingItemById(f.NewLocalId());
     status.mutable_conflict_progress()->AddConflictingItemById(f.NewLocalId());
-    EXPECT_EQ(2, status.conflict_progress().ConflictingItemsSize());
+    EXPECT_EQ(2, status.conflict_progress()->ConflictingItemsSize());
   }
   EXPECT_EQ(4, status.TotalNumConflictingItems());
 }
@@ -204,14 +199,15 @@ TEST_F(StatusControllerTest, TotalNumConflictingItems) {
 // Basic test that non group-restricted state accessors don't cause violations.
 TEST_F(StatusControllerTest, Unrestricted) {
   StatusController status(routes_);
-  status.GetUnrestrictedUpdateProgress(
-      GROUP_UI)->SuccessfullyAppliedUpdateCount();
+  const UpdateProgress* progress =
+      status.GetUnrestrictedUpdateProgress(GROUP_UI);
+  EXPECT_FALSE(progress);
   status.mutable_commit_message();
   status.commit_response();
   status.mutable_commit_response();
   status.updates_response();
   status.mutable_updates_response();
-  status.error_counters();
+  status.error();
   status.syncer_status();
   status.num_server_changes_remaining();
   status.commit_ids();

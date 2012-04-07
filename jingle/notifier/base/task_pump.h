@@ -1,11 +1,12 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef JINGLE_NOTIFIER_BASE_TASK_PUMP_H_
 #define JINGLE_NOTIFIER_BASE_TASK_PUMP_H_
 
-#include "base/task.h"
+#include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "talk/base/taskrunner.h"
 
@@ -18,15 +19,20 @@ class TaskPump : public talk_base::TaskRunner {
   virtual ~TaskPump();
 
   // talk_base::TaskRunner implementation.
-  virtual void WakeTasks();
-  virtual int64 CurrentTime();
+  virtual void WakeTasks() OVERRIDE;
+  virtual int64 CurrentTime() OVERRIDE;
+
+  // No tasks will be processed after this is called, even if
+  // WakeTasks() is called.
+  void Stop();
 
  private:
   void CheckAndRunTasks();
 
   base::NonThreadSafe non_thread_safe_;
-  ScopedRunnableMethodFactory<TaskPump> scoped_runnable_method_factory_;
+  base::WeakPtrFactory<TaskPump> weak_factory_;
   bool posted_wake_;
+  bool stopped_;
 
   DISALLOW_COPY_AND_ASSIGN(TaskPump);
 };

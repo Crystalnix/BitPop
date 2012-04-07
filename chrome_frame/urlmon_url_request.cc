@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,8 @@
 #include <urlmon.h>
 #include <wininet.h>
 
-#include "base/callback_old.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
@@ -26,6 +27,8 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
+
+#define IS_HTTP_SUCCESS_CODE(code) (code >= 200 && code <= 299)
 
 UrlmonUrlRequest::UrlmonUrlRequest()
     : pending_read_size_(0),
@@ -162,21 +165,20 @@ HRESULT UrlmonUrlRequest::InitPending(const GURL& url, IMoniker* moniker,
   return S_OK;
 }
 
-void UrlmonUrlRequest::TerminateBind(TerminateBindCallback* callback) {
+void UrlmonUrlRequest::TerminateBind(const TerminateBindCallback& callback) {
   DCHECK_EQ(thread_, base::PlatformThread::CurrentId());
   DVLOG(1) << __FUNCTION__ << me();
   cleanup_transaction_ = false;
   if (status_.get_state() == Status::DONE) {
     // Binding is stopped. Note result could be an error.
-    callback->Run(moniker_, bind_context_, upload_data_,
-                  request_headers_.c_str());
-    delete callback;
+    callback.Run(moniker_, bind_context_, upload_data_,
+                 request_headers_.c_str());
   } else {
     // WORKING (ABORTING?). Save the callback.
     // Now we will return INET_TERMINATE_BIND from ::OnDataAvailable() and in
     // ::OnStopBinding will invoke the callback passing our moniker and
     // bind context.
-    terminate_bind_callback_.reset(callback);
+    terminate_bind_callback_ = callback;
     if (pending_data_) {
       // For downloads to work correctly, we must induce a call to
       // OnDataAvailable so that we can download INET_E_TERMINATED_BIND and
@@ -369,8 +371,8 @@ STDMETHODIMP UrlmonUrlRequest::OnStopBinding(HRESULT result, LPCWSTR error) {
 
   if (result == INET_E_TERMINATED_BIND) {
     if (terminate_requested()) {
-      terminate_bind_callback_->Run(moniker_, bind_context_, upload_data_,
-                                    request_headers_.c_str());
+      terminate_bind_callback_.Run(moniker_, bind_context_, upload_data_,
+                                   request_headers_.c_str());
     } else {
       cleanup_transaction_ = true;
     }
@@ -381,13 +383,25 @@ STDMETHODIMP UrlmonUrlRequest::OnStopBinding(HRESULT result, LPCWSTR error) {
   if (state == Status::WORKING) {
     status_.set_result(result);
 
-    // Special case. If the last request was a redirect and the current OS
-    // error value is E_ACCESSDENIED, that means an unsafe redirect was
-    // attempted. In that case, correct the OS error value to be the more
-    // specific ERR_UNSAFE_REDIRECT error value.
-    if (result == E_ACCESSDENIED) {
+    if (FAILED(result)) {
       int http_code = GetHttpResponseStatusFromBinding(binding_);
-      if (300 <= http_code && http_code < 400) {
+      // For certain requests like empty POST requests the server can return
+      // back a HTTP success code in the range 200 to 299. We need to flag
+      // these requests as succeeded.
+      if (IS_HTTP_SUCCESS_CODE(http_code)) {
+        // If this DCHECK fires it means that the server returned a HTTP
+        // success code outside the standard range 200-206. We need to confirm
+        // if the following code path is correct.
+        DCHECK_LE(http_code, 206);
+        status_.set_result(S_OK);
+        std::string headers = GetHttpHeadersFromBinding(binding_);
+        OnResponse(0, UTF8ToWide(headers).c_str(), NULL, NULL);
+      } else if (net::HttpResponseHeaders::IsRedirectResponseCode(http_code) &&
+                 result == E_ACCESSDENIED) {
+        // Special case. If the last request was a redirect and the current OS
+        // error value is E_ACCESSDENIED, that means an unsafe redirect was
+        // attempted. In that case, correct the OS error value to be the more
+        // specific ERR_UNSAFE_REDIRECT error value.
         status_.set_result(net::URLRequestStatus::FAILED,
                            net::ERR_UNSAFE_REDIRECT);
       }
@@ -470,7 +484,8 @@ STDMETHODIMP UrlmonUrlRequest::GetBindInfo(DWORD* bind_flags,
   }
 
   if (bind_info->dwBindVerb == BINDVERB_POST ||
-      bind_info->dwBindVerb == BINDVERB_PUT) {
+      bind_info->dwBindVerb == BINDVERB_PUT ||
+      post_data_len() > 0) {
     // Bypass caching proxies on upload requests and avoid writing responses to
     // the browser's cache.
     *bind_flags |= BINDF_GETNEWESTVERSION | BINDF_PRAGMA_NO_CACHE;
@@ -634,16 +649,19 @@ STDMETHODIMP UrlmonUrlRequest::OnResponse(DWORD dwResponseCode,
     const wchar_t* response_headers, const wchar_t* request_headers,
     wchar_t** additional_headers) {
   DCHECK_EQ(thread_, base::PlatformThread::CurrentId());
-  DVLOG(1) << __FUNCTION__ << me() << "headers: \n" << response_headers;
+  DVLOG(1) << __FUNCTION__ << me() << "headers: \n"
+           << (response_headers == NULL ? L"EMPTY" : response_headers);
 
   if (!delegate_) {
     DLOG(WARNING) << "Invalid delegate";
     return S_OK;
   }
 
-  std::string raw_headers = WideToUTF8(response_headers);
-
   delegate_->AddPrivacyDataForUrl(url(), "", 0);
+
+  std::string raw_headers;
+  if (response_headers)
+    raw_headers = WideToUTF8(response_headers);
 
   // Security check for frame busting headers. We don't honor the headers
   // as-such, but instead simply kill requests which we've been asked to
@@ -993,7 +1011,6 @@ void UrlmonUrlRequestManager::SetInfoForUrl(const std::wstring& url,
 void UrlmonUrlRequestManager::StartRequest(int request_id,
     const AutomationURLRequest& request_info) {
   DVLOG(1) << __FUNCTION__ << " id: " << request_id;
-  DCHECK_EQ(0, calling_delegate_);
 
   if (stopping_) {
     DLOG(WARNING) << __FUNCTION__ << " request not started (stopping)";
@@ -1001,8 +1018,39 @@ void UrlmonUrlRequestManager::StartRequest(int request_id,
   }
 
   DCHECK(request_map_.find(request_id) == request_map_.end());
+#ifndef NDEBUG
+  if (background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    DCHECK(background_request_map_.find(request_id) ==
+           background_request_map_.end());
+  }
+#endif  // NDEBUG
   DCHECK(GURL(request_info.url).is_valid());
 
+  // Non frame requests like sub resources, images, etc are handled on the
+  // background thread.
+  if (background_worker_thread_enabled_ &&
+      !ResourceType::IsFrame(
+          static_cast<ResourceType::Type>(request_info.resource_type))) {
+    DLOG(INFO) << "Downloading resource type "
+               << request_info.resource_type
+               << " on background thread";
+    background_thread_->message_loop()->PostTask(
+        FROM_HERE,
+        base::Bind(&UrlmonUrlRequestManager::StartRequestHelper,
+                   base::Unretained(this), request_id, request_info,
+                   &background_request_map_, &background_resource_map_lock_));
+    return;
+  }
+  StartRequestHelper(request_id, request_info, &request_map_, NULL);
+}
+
+void UrlmonUrlRequestManager::StartRequestHelper(
+    int request_id,
+    const AutomationURLRequest& request_info,
+    RequestMap* request_map,
+    base::Lock* request_map_lock) {
+  DCHECK(request_map);
   scoped_refptr<UrlmonUrlRequest> new_request;
   bool is_started = false;
   if (pending_request_) {
@@ -1041,7 +1089,13 @@ void UrlmonUrlRequestManager::StartRequest(int request_id,
   new_request->set_parent_window(notification_window_);
   new_request->set_privileged_mode(privileged_mode_);
 
-  request_map_[request_id] = new_request;
+  if (request_map_lock)
+    request_map_lock->Acquire();
+
+  (*request_map)[request_id] = new_request;
+
+  if (request_map_lock)
+    request_map_lock->Release();
 
   if (!is_started) {
     // Freshly created, start now.
@@ -1057,28 +1111,59 @@ void UrlmonUrlRequestManager::StartRequest(int request_id,
 
 void UrlmonUrlRequestManager::ReadRequest(int request_id, int bytes_to_read) {
   DVLOG(1) << __FUNCTION__ << " id: " << request_id;
-  DCHECK_EQ(0, calling_delegate_);
-  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id);
-  // if zero, it may just have had network error.
-  if (request)
+  // if we fail to find the request in the normal map and the background
+  // request map, it may mean that the request could have failed with a
+  // network error.
+  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id,
+                                                          &request_map_);
+  if (request) {
     request->Read(bytes_to_read);
+  } else if (background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    request = LookupRequest(request_id, &background_request_map_);
+    if (request) {
+      background_thread_->message_loop()->PostTask(
+          FROM_HERE, base::Bind(base::IgnoreResult(&UrlmonUrlRequest::Read),
+                                request.get(), bytes_to_read));
+    }
+  }
+  if (!request)
+    DLOG(ERROR) << __FUNCTION__ << " no request found for " << request_id;
 }
 
 void UrlmonUrlRequestManager::DownloadRequestInHost(int request_id) {
   DVLOG(1) << __FUNCTION__ << " " << request_id;
-  if (IsWindow(notification_window_)) {
-    scoped_refptr<UrlmonUrlRequest> request(LookupRequest(request_id));
-    if (request) {
-      UrlmonUrlRequest::TerminateBindCallback* callback = NewCallback(this,
-          &UrlmonUrlRequestManager::BindTerminated);
-      request->TerminateBind(callback);
-    } else {
-      NOTREACHED();
-    }
-  } else {
+  if (!IsWindow(notification_window_)) {
     NOTREACHED() << "Cannot handle download if we don't have anyone to hand it "
                     "to.";
+    return;
   }
+
+  scoped_refptr<UrlmonUrlRequest> request(LookupRequest(request_id,
+                                                        &request_map_));
+  if (request) {
+    DownloadRequestInHostHelper(request);
+  } else if (background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    request = LookupRequest(request_id, &background_request_map_);
+    if (request) {
+      background_thread_->message_loop()->PostTask(
+          FROM_HERE,
+          base::Bind(&UrlmonUrlRequestManager::DownloadRequestInHostHelper,
+                     base::Unretained(this), request.get()));
+    }
+  }
+  if (!request)
+    DLOG(ERROR) << __FUNCTION__ << " no request found for " << request_id;
+}
+
+void UrlmonUrlRequestManager::DownloadRequestInHostHelper(
+    UrlmonUrlRequest* request) {
+  DCHECK(request);
+  UrlmonUrlRequest::TerminateBindCallback callback =
+      base::Bind(&UrlmonUrlRequestManager::BindTerminated,
+                 base::Unretained(this));
+  request->TerminateBind(callback);
 }
 
 void UrlmonUrlRequestManager::BindTerminated(IMoniker* moniker,
@@ -1152,14 +1237,22 @@ void UrlmonUrlRequestManager::SetCookiesForUrl(const GURL& url,
 
 void UrlmonUrlRequestManager::EndRequest(int request_id) {
   DVLOG(1) << __FUNCTION__ << " id: " << request_id;
-  DCHECK_EQ(0, calling_delegate_);
-  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id);
+  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id,
+                                                          &request_map_);
   if (request) {
     request_map_.erase(request_id);
     request->Stop();
-  } else {
-    DLOG(ERROR) << __FUNCTION__ << " no request found for " << request_id;
+  } else if (background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    request = LookupRequest(request_id, &background_request_map_);
+    if (request) {
+      background_request_map_.erase(request_id);
+      background_thread_->message_loop()->PostTask(
+          FROM_HERE, base::Bind(&UrlmonUrlRequest::Stop, request.get()));
+    }
   }
+  if (!request)
+    DLOG(ERROR) << __FUNCTION__ << " no request found for " << request_id;
 }
 
 void UrlmonUrlRequestManager::StopAll() {
@@ -1172,13 +1265,39 @@ void UrlmonUrlRequestManager::StopAll() {
   DVLOG(1) << __FUNCTION__ << " stopping " << request_map_.size()
            << " requests";
 
-  for (RequestMap::iterator it = request_map_.begin();
-       it != request_map_.end(); ++it) {
+  StopAllRequestsHelper(&request_map_, NULL);
+
+  if (background_worker_thread_enabled_) {
+    DCHECK(background_thread_.get());
+    background_thread_->message_loop()->PostTask(
+        FROM_HERE, base::Bind(&UrlmonUrlRequestManager::StopAllRequestsHelper,
+                              base::Unretained(this), &background_request_map_,
+                              &background_resource_map_lock_));
+    background_thread_->Stop();
+    background_thread_.reset();
+  }
+}
+
+void UrlmonUrlRequestManager::StopAllRequestsHelper(
+    RequestMap* request_map,
+    base::Lock* request_map_lock) {
+  DCHECK(request_map);
+
+  DVLOG(1) << __FUNCTION__ << " stopping " << request_map->size()
+           << " requests";
+
+  if (request_map_lock)
+    request_map_lock->Acquire();
+
+  for (RequestMap::iterator it = request_map->begin();
+       it != request_map->end(); ++it) {
     DCHECK(it->second != NULL);
     it->second->Stop();
   }
+  request_map->clear();
 
-  request_map_.clear();
+  if (request_map_lock)
+    request_map_lock->Release();
 }
 
 void UrlmonUrlRequestManager::OnResponseStarted(int request_id,
@@ -1187,21 +1306,34 @@ void UrlmonUrlRequestManager::OnResponseStarted(int request_id,
     int redirect_status, const net::HostPortPair& socket_address) {
   DCHECK_NE(request_id, -1);
   DVLOG(1) << __FUNCTION__;
-  DCHECK(LookupRequest(request_id) != NULL);
-  ++calling_delegate_;
+
+#ifndef NDEBUG
+  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id,
+                                                          &request_map_);
+  if (request == NULL && background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    request = LookupRequest(request_id, &background_request_map_);
+  }
+  DCHECK(request != NULL);
+#endif  // NDEBUG
   delegate_->OnResponseStarted(request_id, mime_type, headers, size,
       last_modified, redirect_url, redirect_status, socket_address);
-  --calling_delegate_;
 }
 
 void UrlmonUrlRequestManager::OnReadComplete(int request_id,
                                              const std::string& data) {
   DCHECK_NE(request_id, -1);
   DVLOG(1) << __FUNCTION__ << " id: " << request_id;
-  DCHECK(LookupRequest(request_id) != NULL);
-  ++calling_delegate_;
+#ifndef NDEBUG
+  scoped_refptr<UrlmonUrlRequest> request = LookupRequest(request_id,
+                                                          &request_map_);
+  if (request == NULL && background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    request = LookupRequest(request_id, &background_request_map_);
+  }
+  DCHECK(request != NULL);
+#endif  // NDEBUG
   delegate_->OnReadComplete(request_id, data);
-  --calling_delegate_;
   DVLOG(1) << __FUNCTION__ << " done id: " << request_id;
 }
 
@@ -1211,15 +1343,17 @@ void UrlmonUrlRequestManager::OnResponseEnd(
   DCHECK_NE(request_id, -1);
   DVLOG(1) << __FUNCTION__;
   DCHECK(status.status() != net::URLRequestStatus::CANCELED);
-  RequestMap::size_type n = request_map_.erase(request_id);
-  if (n != 1u) {
-    DLOG(WARNING) << __FUNCTION__
-                  << " Failed to find request id:"
-                  << request_id;
+  RequestMap::size_type erased_count = request_map_.erase(request_id);
+  if (erased_count != 1u && background_worker_thread_enabled_) {
+    base::AutoLock lock(background_resource_map_lock_);
+    erased_count = background_request_map_.erase(request_id);
+    if (erased_count != 1u) {
+      DLOG(WARNING) << __FUNCTION__
+                    << " Failed to find request id:"
+                    << request_id;
+    }
   }
-  ++calling_delegate_;
   delegate_->OnResponseEnd(request_id, status);
-  --calling_delegate_;
 }
 
 void UrlmonUrlRequestManager::OnCookiesRetrieved(bool success, const GURL& url,
@@ -1229,18 +1363,27 @@ void UrlmonUrlRequestManager::OnCookiesRetrieved(bool success, const GURL& url,
 }
 
 scoped_refptr<UrlmonUrlRequest> UrlmonUrlRequestManager::LookupRequest(
-    int request_id) {
-  RequestMap::iterator it = request_map_.find(request_id);
-  if (request_map_.end() != it)
+    int request_id, RequestMap* request_map) {
+  RequestMap::iterator it = request_map->find(request_id);
+  if (request_map->end() != it)
     return it->second;
-  DLOG(ERROR) << __FUNCTION__ << " no request found for " << request_id;
   return NULL;
 }
 
 UrlmonUrlRequestManager::UrlmonUrlRequestManager()
-    : stopping_(false), calling_delegate_(0), notification_window_(NULL),
+    : stopping_(false), notification_window_(NULL),
       privileged_mode_(false),
-      container_(NULL) {
+      container_(NULL),
+      background_worker_thread_enabled_(true) {
+  background_thread_.reset(new ResourceFetcherThread(
+      "cf_iexplore_background_thread"));
+  background_worker_thread_enabled_ =
+      GetConfigBool(true, kUseBackgroundThreadForSubResources);
+  if (background_worker_thread_enabled_) {
+    base::Thread::Options options;
+    options.message_loop_type = MessageLoop::TYPE_UI;
+    background_thread_->StartWithOptions(options);
+  }
 }
 
 UrlmonUrlRequestManager::~UrlmonUrlRequestManager() {
@@ -1275,4 +1418,20 @@ void UrlmonUrlRequestManager::AddPrivacyDataForUrl(
     PostMessage(notification_window_, WM_FIRE_PRIVACY_CHANGE_NOTIFICATION, 1,
                 0);
   }
+}
+
+UrlmonUrlRequestManager::ResourceFetcherThread::ResourceFetcherThread(
+    const char* name) : base::Thread(name) {
+}
+
+UrlmonUrlRequestManager::ResourceFetcherThread::~ResourceFetcherThread() {
+  Stop();
+}
+
+void UrlmonUrlRequestManager::ResourceFetcherThread::Init() {
+  CoInitialize(NULL);
+}
+
+void UrlmonUrlRequestManager::ResourceFetcherThread::CleanUp() {
+  CoUninitialize();
 }

@@ -8,43 +8,15 @@
 
 #include <list>
 #include <map>
-#include <string>
-#include <vector>
 
-#include "base/file_path.h"
-#include "ppapi/proxy/proxy_channel.h"
-#include "webkit/plugins/npapi/webplugininfo.h"
+#include "content/public/common/pepper_plugin_info.h"
 #include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
 
-struct PepperPluginInfo {
-  PepperPluginInfo();
-  ~PepperPluginInfo();
-
-  webkit::npapi::WebPluginInfo ToWebPluginInfo() const;
-
-  // Indicates internal plugins for which there's not actually a library.
-  // These plugins are implemented in the Chrome binary using a separate set
-  // of entry points (see internal_entry_points below).
-  // Defaults to false.
-  bool is_internal;
-
-  // True when this plugin should be run out of process. Defaults to false.
-  bool is_out_of_process;
-
-  // Whether the plugin is enabled.  Defaults to true.
-  bool enabled;
-
-  FilePath path;  // Internal plugins have "internal-[name]" as path.
-  std::string name;
-  std::string description;
-  std::string version;
-  std::vector<webkit::npapi::WebPluginMimeType> mime_types;
-
-  // When is_internal is set, this contains the function pointers to the
-  // entry points for the internal plugins.
-  webkit::ppapi::PluginModule::EntryPoints internal_entry_points;
-};
+// Constructs a PepperPluginInfo from a WebPluginInfo. Returns false if
+// the operation is not possible, in particular the WebPluginInfo::type
+// must be one of the pepper types.
+bool MakePepperPluginInfo(const webkit::WebPluginInfo& webplugin_info,
+                          content::PepperPluginInfo* pepper_info);
 
 // This class holds references to all of the known pepper plugin modules.
 //
@@ -52,8 +24,7 @@ struct PepperPluginInfo {
 // is a list of all live modules (some of which may be out-of-process and hence
 // not preloaded).
 class PepperPluginRegistry
-    : public webkit::ppapi::PluginDelegate::ModuleLifetime,
-      public pp::proxy::ProxyChannel::Delegate {
+    : public webkit::ppapi::PluginDelegate::ModuleLifetime {
  public:
   ~PepperPluginRegistry();
 
@@ -65,18 +36,20 @@ class PepperPluginRegistry
   // has no need to load the pepper plugin modules. It will re-compute the
   // plugin list every time it is called. Generally, code in the registry should
   // be using the cached plugin_list_ instead.
-  static void ComputeList(std::vector<PepperPluginInfo>* plugins);
+  CONTENT_EXPORT static void ComputeList(
+      std::vector<content::PepperPluginInfo>* plugins);
 
   // Loads the (native) libraries but does not initialize them (i.e., does not
   // call PPP_InitializeModule). This is needed by the zygote on Linux to get
   // access to the plugins before entering the sandbox.
   static void PreloadModules();
 
-  // Retrieves the information associated with the given plugin path. The
+  // Retrieves the information associated with the given plugin info. The
   // return value will be NULL if there is no such plugin.
   //
   // The returned pointer is owned by the PluginRegistry.
-  const PepperPluginInfo* GetInfoForPlugin(const FilePath& path) const;
+  const content::PepperPluginInfo* GetInfoForPlugin(
+      const webkit::WebPluginInfo& info);
 
   // Returns an existing loaded module for the given path. It will search for
   // both preloaded in-process or currently active (non crashed) out-of-process
@@ -91,17 +64,14 @@ class PepperPluginRegistry
   void AddLiveModule(const FilePath& path, webkit::ppapi::PluginModule* module);
 
   // ModuleLifetime implementation.
-  virtual void PluginModuleDead(webkit::ppapi::PluginModule* dead_module);
+  virtual void PluginModuleDead(
+      webkit::ppapi::PluginModule* dead_module) OVERRIDE;
 
  private:
   PepperPluginRegistry();
 
-  // ProxyChannel::Delegate implementation.
-  virtual base::MessageLoopProxy* GetIPCMessageLoop();
-  virtual base::WaitableEvent* GetShutdownEvent();
-
   // All known pepper plugins.
-  std::vector<PepperPluginInfo> plugin_list_;
+  std::vector<content::PepperPluginInfo> plugin_list_;
 
   // Plugins that have been preloaded so they can be executed in-process in
   // the renderer (the sandbox prevents on-demand loading).

@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,18 +12,31 @@
 #include "base/basictypes.h"
 #include "base/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/profiles/profile.h"
 #include "googleurl/src/gurl.h"
 
 class Browser;
 class CommandLine;
 class GURL;
-class Profile;
+class PrefService;
 class TabContentsWrapper;
 
 // class containing helpers for BrowserMain to spin up a new instance and
 // initialize the profile.
 class BrowserInit {
  public:
+  typedef std::vector<Profile*> Profiles;
+
+  enum IsProcessStartup {
+    IS_NOT_PROCESS_STARTUP,
+    IS_PROCESS_STARTUP
+  };
+  enum IsFirstRun {
+    IS_NOT_FIRST_RUN,
+    IS_FIRST_RUN
+  };
+
   BrowserInit();
   ~BrowserInit();
 
@@ -33,24 +46,20 @@ class BrowserInit {
 
   // This function is equivalent to ProcessCommandLine but should only be
   // called during actual process startup.
-  bool Start(const CommandLine& cmd_line, const FilePath& cur_dir,
-             Profile* profile, int* return_code) {
-    return ProcessCmdLineImpl(cmd_line, cur_dir, true, profile, return_code,
-                              this);
+  bool Start(const CommandLine& cmd_line,
+             const FilePath& cur_dir,
+             Profile* last_used_profile,
+             const Profiles& last_opened_profiles,
+             int* return_code) {
+    return ProcessCmdLineImpl(cmd_line, cur_dir, true, last_used_profile,
+                              last_opened_profiles, return_code, this);
   }
 
-  // This function performs command-line handling and is invoked when process
-  // starts as well as when we get a start request from another process (via the
-  // WM_COPYDATA message). |command_line| holds the command line we need to
-  // process - either from this process or from some other one (if
-  // |process_startup| is true and we are being called from
-  // ProcessSingleton::OnCopyData).
-  static bool ProcessCommandLine(const CommandLine& cmd_line,
-                                 const FilePath& cur_dir, bool process_startup,
-                                 Profile* profile, int* return_code) {
-    return ProcessCmdLineImpl(cmd_line, cur_dir, process_startup, profile,
-                              return_code, NULL);
-  }
+  // This function performs command-line handling and is invoked only after
+  // start up (for example when we get a start request for another process).
+  // |command_line| holds the command line we need to process
+  static void ProcessCommandLineAlreadyRunning(const CommandLine& cmd_line,
+                                               const FilePath& cur_dir);
 
   template <class AutomationProviderClass>
   static bool CreateAutomationProvider(const std::string& channel_id,
@@ -60,13 +69,28 @@ class BrowserInit {
   // Returns true if the browser is coming up.
   static bool InProcessStartup();
 
+  static void RegisterUserPrefs(PrefService* prefs);
+
   // Launches a browser window associated with |profile|. |command_line| should
   // be the command line passed to this process. |cur_dir| can be empty, which
   // implies that the directory of the executable should be used.
   // |process_startup| indicates whether this is the first browser.
-  bool LaunchBrowser(const CommandLine& command_line, Profile* profile,
-                     const FilePath& cur_dir, bool process_startup,
+  // |is_first_run| indicates that this is a new profile.
+  bool LaunchBrowser(const CommandLine& command_line,
+                     Profile* profile,
+                     const FilePath& cur_dir,
+                     IsProcessStartup is_process_startup,
+                     IsFirstRun is_first_run,
                      int* return_code);
+
+  // When called the first time, reads the value of the preference kWasRestarted
+  // and resets it to false. Subsequent calls return the value which was read
+  // the first time.
+  static bool WasRestarted();
+
+  static SessionStartupPref GetSessionStartupPref(
+      const CommandLine& command_line,
+      Profile* profile);
 
   // LaunchWithProfile ---------------------------------------------------------
   //
@@ -97,10 +121,14 @@ class BrowserInit {
     // There are two ctors. The first one implies a NULL browser_init object
     // and thus no access to distribution-specific first-run behaviors. The
     // second one is always called when the browser starts even if it is not
-    // the first run.
-    LaunchWithProfile(const FilePath& cur_dir, const CommandLine& command_line);
-    LaunchWithProfile(const FilePath& cur_dir, const CommandLine& command_line,
-                      BrowserInit* browser_init);
+    // the first run.  |is_first_run| indicates that this is a new profile.
+    LaunchWithProfile(const FilePath& cur_dir,
+                      const CommandLine& command_line,
+                      IsFirstRun is_first_run);
+    LaunchWithProfile(const FilePath& cur_dir,
+                      const CommandLine& command_line,
+                      BrowserInit* browser_init,
+                      IsFirstRun is_first_run);
     ~LaunchWithProfile();
 
     // Creates the necessary windows for startup. Returns true on success,
@@ -144,10 +172,11 @@ class BrowserInit {
     // should open in a tab, do so.
     bool OpenApplicationTab(Profile* profile);
 
-    // Invoked from OpenURLsInBrowser to handle processing of urls. This may
-    // do any of the following:
+    // Invoked from Launch to handle processing of urls. This may do any of the
+    // following:
     // . Invoke ProcessStartupURLs if |process_startup| is true.
-    // . Restore the last session if necessary.
+    // . If |process_startup| is false, restore the last session if necessary,
+    //   or invoke ProcessSpecifiedURLs.
     // . Open the urls directly.
     void ProcessLaunchURLs(bool process_startup,
                            const std::vector<GURL>& urls_to_open);
@@ -155,15 +184,24 @@ class BrowserInit {
     // Does the following:
     // . If the user's startup pref is to restore the last session (or the
     //   command line flag is present to force using last session), it is
-    //   restored, and true is returned.
-    // . Attempts to restore any pinned tabs from last run of chrome and:
-    //   . If urls_to_open is non-empty, they are opened and true is returned.
-    //   . If the user's startup pref is to launch a specific set of URLs they
-    //     are opened.
-    //
-    // Otherwise false is returned, which indicates the caller must create a
-    // new browser.
+    //   restored.
+    // . Otherwise invoke ProcessSpecifiedURLs
+    // If a browser was created, true is returned.  Otherwise returns false and
+    // the caller must create a new browser.
     bool ProcessStartupURLs(const std::vector<GURL>& urls_to_open);
+
+    // Invoked from either ProcessLaunchURLs or ProcessStartupURLs to handle
+    // processing of URLs where the behavior is common between process startup
+    // and launch via an existing process (i.e. those explicitly specified by
+    // the user somehow).  Does the following:
+    // . Attempts to restore any pinned tabs from last run of chrome.
+    // . If urls_to_open is non-empty, they are opened.
+    // . If the user's startup pref is to launch a specific set of URLs they
+    //   are opened.
+    //
+    // If any tabs were opened, the Browser which was created is returned.
+    // Otherwise null is returned and the caller must create a new browser.
+    Browser* ProcessSpecifiedURLs(const std::vector<GURL>& urls_to_open);
 
     // Adds a Tab to |tabs| for each url in |urls| that doesn't already exist
     // in |tabs|.
@@ -175,7 +213,8 @@ class BrowserInit {
 
     // If the last session didn't exit cleanly and tab is a web contents tab,
     // an infobar is added allowing the user to restore the last session.
-    void AddCrashedInfoBarIfNecessary(TabContentsWrapper* tab);
+    void AddCrashedInfoBarIfNecessary(Browser* browser,
+                                      TabContentsWrapper* tab);
 
     // If we have been started with unsupported flags like --single-process,
     // politely nag the user about it.
@@ -198,14 +237,36 @@ class BrowserInit {
     // previously instructed not to do so) and warns the user if it is not.
     void CheckDefaultBrowser(Profile* profile);
 
+    // Checks whether Chrome should show the 'Chrome was auto-started' infobar.
+    // Returns true if so.
+    bool CheckIfAutoLaunched(Profile* profile);
+
+    // Shows a sync promo dialog if necessary. When called |browser| should be
+    // the browser that's being used for startup. On return |browser| is set
+    // to the browser spawned from the sync promo dialog (if any). On input
+    // |tabs| should be the set of tabs to show on startup.  On return |tabs|
+    // will contain the new set of tabs to show on startup. Returns the index
+    // of the tab to activate.
+    size_t ShowSyncPromoDialog(bool process_startup,
+                               Browser** browser,
+                               std::vector<Tab>* tabs);
+
     const FilePath cur_dir_;
     const CommandLine& command_line_;
     Profile* profile_;
     BrowserInit* browser_init_;
+    bool is_first_run_;
     DISALLOW_COPY_AND_ASSIGN(LaunchWithProfile);
   };
 
  private:
+  friend class CloudPrintProxyPolicyTest;
+  friend class CloudPrintProxyPolicyStartupTest;
+  FRIEND_TEST_ALL_PREFIXES(BrowserInitTest,
+                           ReadingWasRestartedAfterNormalStart);
+  FRIEND_TEST_ALL_PREFIXES(BrowserInitTest, ReadingWasRestartedAfterRestart);
+  FRIEND_TEST_ALL_PREFIXES(BrowserInitTest, UpdateWithTwoProfiles);
+
   // Returns the list of URLs to open from the command line. The returned
   // vector is empty if the user didn't specify any URLs on the command line.
   static std::vector<GURL> GetURLsFromCommandLine(
@@ -214,12 +275,27 @@ class BrowserInit {
       Profile* profile);
 
   static bool ProcessCmdLineImpl(const CommandLine& command_line,
-                                 const FilePath& cur_dir, bool process_startup,
-                                 Profile* profile, int* return_code,
+                                 const FilePath& cur_dir,
+                                 bool process_startup,
+                                 Profile* last_used_profile,
+                                 const Profiles& last_opened_profiles,
+                                 int* return_code,
                                  BrowserInit* browser_init);
+
+  // Callback after a profile has been created.
+  static void ProcessCommandLineOnProfileCreated(
+      const CommandLine& cmd_line,
+      const FilePath& cur_dir,
+      Profile* profile,
+      Profile::CreateStatus status);
 
   // Additional tabs to open during first run.
   std::vector<GURL> first_run_tabs_;
+
+  // True if we have already read and reset the preference kWasRestarted. (A
+  // member variable instead of a static variable inside WasRestarted because
+  // of testing.)
+  static bool was_restarted_read_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserInit);
 };

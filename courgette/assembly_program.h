@@ -12,7 +12,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 
-#include "courgette/image_info.h"
+#include "courgette/disassembler.h"
 #include "courgette/memory_allocator.h"
 
 namespace courgette {
@@ -69,7 +69,10 @@ class AssemblyProgram {
   // Instructions will be assembled in the order they are emitted.
 
   // Generates an entire base relocation table.
-  CheckBool EmitMakeRelocsInstruction() WARN_UNUSED_RESULT;
+  CheckBool EmitPeRelocsInstruction() WARN_UNUSED_RESULT;
+
+  // Generates an ELF style relocation table.
+  CheckBool EmitElfRelocationInstruction() WARN_UNUSED_RESULT;
 
   // Following instruction will be assembled at address 'rva'.
   CheckBool EmitOriginInstruction(RVA rva) WARN_UNUSED_RESULT;

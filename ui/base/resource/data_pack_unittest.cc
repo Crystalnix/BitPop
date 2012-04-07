@@ -12,12 +12,25 @@
 
 namespace ui {
 
-TEST(DataPackTest, Load) {
-  FilePath data_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &data_path);
-  data_path = data_path.Append(
-      FILE_PATH_LITERAL("ui/base/test/data/data_pack_unittest/sample.pak"));
+class DataPackTest
+    : public testing::TestWithParam<DataPack::TextEncodingType> {
+ public:
+  DataPackTest() {}
+};
 
+extern const char kSamplePakContents[];
+extern const size_t kSamplePakSize;
+
+TEST(DataPackTest, Load) {
+  ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+
+  // Dump contents into the pak file.
+  ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
+            static_cast<int>(kSamplePakSize));
+
+  // Load the file through the data pack API.
   DataPack pack;
   ASSERT_TRUE(pack.Load(data_path));
 
@@ -37,7 +50,24 @@ TEST(DataPackTest, Load) {
   ASSERT_FALSE(pack.GetStringPiece(140, &data));
 }
 
-TEST(DataPackTest, Write) {
+INSTANTIATE_TEST_CASE_P(WriteBINARY, DataPackTest, ::testing::Values(
+    DataPack::BINARY));
+INSTANTIATE_TEST_CASE_P(WriteUTF8, DataPackTest, ::testing::Values(
+    DataPack::UTF8));
+INSTANTIATE_TEST_CASE_P(WriteUTF16, DataPackTest, ::testing::Values(
+    DataPack::UTF16));
+
+TEST(DataPackTest, LoadFileWithTruncatedHeader) {
+  FilePath data_path;
+  PathService::Get(base::DIR_SOURCE_ROOT, &data_path);
+  data_path = data_path.Append(FILE_PATH_LITERAL(
+      "ui/base/test/data/data_pack_unittest/truncated-header.pak"));
+
+  DataPack pack;
+  ASSERT_FALSE(pack.Load(data_path));
+}
+
+TEST_P(DataPackTest, Write) {
   ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
   FilePath file = dir.path().Append(FILE_PATH_LITERAL("data.pak"));
@@ -48,17 +78,18 @@ TEST(DataPackTest, Write) {
   std::string four("four");
   std::string fifteen("fifteen");
 
-  std::map<uint32, base::StringPiece> resources;
+  std::map<uint16, base::StringPiece> resources;
   resources.insert(std::make_pair(1, base::StringPiece(one)));
   resources.insert(std::make_pair(2, base::StringPiece(two)));
   resources.insert(std::make_pair(15, base::StringPiece(fifteen)));
   resources.insert(std::make_pair(3, base::StringPiece(three)));
   resources.insert(std::make_pair(4, base::StringPiece(four)));
-  ASSERT_TRUE(DataPack::WritePack(file, resources));
+  ASSERT_TRUE(DataPack::WritePack(file, resources, GetParam()));
 
   // Now try to read the data back in.
   DataPack pack;
   ASSERT_TRUE(pack.Load(file));
+  EXPECT_EQ(pack.GetTextEncodingType(), GetParam());
 
   base::StringPiece data;
   ASSERT_TRUE(pack.GetStringPiece(1, &data));

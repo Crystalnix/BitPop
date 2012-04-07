@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,10 @@
 #include "base/string_util.h"
 #include "net/base/net_util.h"
 #include "net/http/http_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebHTTPHeaderVisitor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderClient.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebHTTPHeaderVisitor.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
 
 using WebKit::WebHTTPHeaderVisitor;
 using WebKit::WebString;
@@ -248,7 +248,7 @@ bool MultipartResponseDelegate::ParseHeaders() {
   std::string charset;
   bool has_charset = false;
   net::HttpUtil::ParseContentType(content_type, &mime_type, &charset,
-                                  &has_charset);
+                                  &has_charset, NULL);
   WebURLResponse response(original_response_.url());
   response.setMIMEType(WebString::fromUTF8(mime_type));
   response.setTextEncodingName(WebString::fromUTF8(charset));
@@ -325,9 +325,9 @@ bool MultipartResponseDelegate::ReadMultipartBoundary(
 
 bool MultipartResponseDelegate::ReadContentRanges(
     const WebURLResponse& response,
-    int* content_range_lower_bound,
-    int* content_range_upper_bound,
-    int* content_range_instance_size) {
+    int64* content_range_lower_bound,
+    int64* content_range_upper_bound,
+    int64* content_range_instance_size) {
 
   std::string content_range = response.httpHeaderField("Content-Range").utf8();
   if (content_range.empty()) {
@@ -390,12 +390,14 @@ bool MultipartResponseDelegate::ReadContentRanges(
       content_range.substr(byte_range_instance_size_start_offset,
                            byte_range_instance_size_characters);
 
-  if (!base::StringToInt(byte_range_lower_bound, content_range_lower_bound))
+  if (!base::StringToInt64(byte_range_lower_bound, content_range_lower_bound))
     return false;
-  if (!base::StringToInt(byte_range_upper_bound, content_range_upper_bound))
+  if (!base::StringToInt64(byte_range_upper_bound, content_range_upper_bound))
     return false;
-  if (!base::StringToInt(byte_range_instance_size, content_range_instance_size))
+  if (!base::StringToInt64(byte_range_instance_size,
+                           content_range_instance_size)) {
     return false;
+  }
   return true;
 }
 

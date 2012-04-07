@@ -6,15 +6,15 @@
 
 #include "build/build_config.h"
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-#include <resolv.h>
-#endif
-
 #include "base/logging.h"
 #include "net/base/address_list.h"
-#include "net/base/dns_reload_timer.h"
+#include "net/base/dns_reloader.h"
 #include "net/base/net_errors.h"
 #include "net/base/sys_addrinfo.h"
+
+#if defined(OS_OPENBSD)
+#define AI_ADDRCONFIG 0
+#endif
 
 namespace net {
 
@@ -122,21 +122,8 @@ int SystemHostResolverProc(const std::string& host,
                            HostResolverFlags host_resolver_flags,
                            AddressList* addrlist,
                            int* os_error) {
-  static const size_t kMaxHostLength = 4096;
-
   if (os_error)
     *os_error = 0;
-
-  // The result of |getaddrinfo| for empty hosts is inconsistent across systems.
-  // On Windows it gives the default interface's address, whereas on Linux it
-  // gives an error. We will make it fail on all platforms for consistency.
-  if (host.empty())
-    return ERR_NAME_NOT_RESOLVED;
-
-  // Limit the size of hostnames that will be resolved to combat issues in some
-  // platform's resolvers.
-  if (host.size() > kMaxHostLength)
-    return ERR_NAME_NOT_RESOLVED;
 
   struct addrinfo* ai = NULL;
   struct addrinfo hints = {0};
@@ -156,7 +143,7 @@ int SystemHostResolverProc(const std::string& host,
       hints.ai_family = AF_UNSPEC;
   }
 
-#if defined(OS_WIN) || defined(OS_OPENBSD)
+#if defined(OS_WIN)
   // DO NOT USE AI_ADDRCONFIG ON WINDOWS.
   //
   // The following comment in <winsock2.h> is the best documentation I found
@@ -196,21 +183,12 @@ int SystemHostResolverProc(const std::string& host,
   // Restrict result set to only this socket type to avoid duplicates.
   hints.ai_socktype = SOCK_STREAM;
 
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD) && \
+    !defined(OS_ANDROID)
+  DnsReloaderMaybeReload();
+#endif
   int err = getaddrinfo(host.c_str(), NULL, &hints, &ai);
   bool should_retry = false;
-#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD)
-  // If we fail, re-initialise the resolver just in case there have been any
-  // changes to /etc/resolv.conf and retry. See http://crbug.com/11380 for info.
-  if (err && DnsReloadTimerHasExpired()) {
-    // When there's no network connection, _res may not be initialized by
-    // getaddrinfo. Therefore, we call res_nclose only when there are ns
-    // entries.
-    if (_res.nscount > 0)
-      res_nclose(&_res);
-    if (!res_ninit(&_res))
-      should_retry = true;
-  }
-#endif
   // If the lookup was restricted (either by address family, or address
   // detection), and the results where all localhost of a single family,
   // maybe we should retry.  There were several bugs related to these
@@ -248,7 +226,7 @@ int SystemHostResolverProc(const std::string& host,
 #if defined(OS_WIN)
     if (err != WSAHOST_NOT_FOUND && err != WSANO_DATA)
       return ERR_NAME_RESOLUTION_FAILED;
-#elif defined(OS_POSIX)
+#elif defined(OS_POSIX) && !defined(OS_FREEBSD)
     if (err != EAI_NONAME && err != EAI_NODATA)
       return ERR_NAME_RESOLUTION_FAILED;
 #endif

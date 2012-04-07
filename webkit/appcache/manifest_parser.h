@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -36,25 +36,28 @@
 #include <vector>
 
 #include "base/hash_tables.h"
+#include "webkit/appcache/appcache_export.h"
+#include "webkit/appcache/appcache_interfaces.h"
 
 class GURL;
 
 namespace appcache {
 
-typedef std::pair<GURL, GURL> FallbackNamespace;
-
-struct Manifest {
+struct APPCACHE_EXPORT Manifest {
   Manifest();
   ~Manifest();
 
   base::hash_set<std::string> explicit_urls;
-  std::vector<FallbackNamespace> fallback_namespaces;
+  NamespaceVector intercept_namespaces;
+  NamespaceVector fallback_namespaces;
   std::vector<GURL> online_whitelist_namespaces;
   bool online_whitelist_all;
 };
 
-bool ParseManifest(const GURL& manifest_url, const char* data, int length,
-                   Manifest& manifest);
+APPCACHE_EXPORT bool ParseManifest(const GURL& manifest_url,
+                                   const char* data,
+                                   int length,
+                                   Manifest& manifest);
 
 }  // namespace appcache
 

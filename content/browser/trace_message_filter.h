@@ -6,35 +6,41 @@
 #define CONTENT_BROWSER_TRACE_MESSAGE_FILTER_H_
 
 #include <string>
+#include <vector>
 
-#include "content/browser/browser_message_filter.h"
+#include "content/public/browser/browser_message_filter.h"
 
 // This class sends and receives trace messages on the browser process.
 // See also: trace_controller.h
 // See also: child_trace_message_filter.h
-class TraceMessageFilter : public BrowserMessageFilter {
+class TraceMessageFilter : public content::BrowserMessageFilter {
  public:
   TraceMessageFilter();
   virtual ~TraceMessageFilter();
 
-  // BrowserMessageFilter override.
-  virtual void OnFilterAdded(IPC::Channel* channel);
+  // content::BrowserMessageFilter override.
+  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
 
-  // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing();
+  // content::BrowserMessageFilter implementation.
+  virtual void OnChannelClosing() OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok);
+                                 bool* message_was_ok) OVERRIDE;
 
-  void SendBeginTracing();
+  void SendBeginTracing(const std::vector<std::string>& included_categories,
+                        const std::vector<std::string>& excluded_categories);
   void SendEndTracing();
   void SendGetTraceBufferPercentFull();
 
  private:
   // Message handlers.
-  void OnEndTracingAck();
+  void OnChildSupportsTracing();
+  void OnEndTracingAck(const std::vector<std::string>& known_categories);
   void OnTraceBufferFull();
   void OnTraceBufferPercentFullReply(float percent_full);
   void OnTraceDataCollected(const std::string& data);
+
+  // ChildTraceMessageFilter exists:
+  bool has_child_;
 
   // Awaiting ack for previously sent SendEndTracing
   bool is_awaiting_end_ack_;

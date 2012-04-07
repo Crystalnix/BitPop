@@ -7,9 +7,11 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/path_service.h"
 #include "base/string_util.h"
 #include "base/sys_info.h"
+#include "base/version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -51,6 +53,24 @@ const FilePath::CharType kInternalNaClPluginFileName[] =
     FILE_PATH_LITERAL("libppGoogleNaClPluginChrome.so");
 #endif
 
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+// File name of the nacl_helper and nacl_helper_bootstrap, Linux only.
+const FilePath::CharType kInternalNaClHelperFileName[] =
+    FILE_PATH_LITERAL("nacl_helper");
+const FilePath::CharType kInternalNaClHelperBootstrapFileName[] =
+    FILE_PATH_LITERAL("nacl_helper_bootstrap");
+#endif
+
+
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+
+const FilePath::CharType kO3DPluginFileName[] =
+    FILE_PATH_LITERAL("pepper/libppo3dautoplugin.so");
+
+const FilePath::CharType kGTalkPluginFileName[] =
+    FILE_PATH_LITERAL("pepper/libppgoogletalk.so");
+
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
 }  // namespace
 
 namespace chrome {
@@ -138,12 +158,17 @@ bool PathProvider(int key, FilePath* result) {
       // and annoyed a lot of users.
       break;
     case chrome::DIR_CRASH_DUMPS:
+#if defined(OS_CHROMEOS)
+      // ChromeOS uses a separate directory. See http://crosbug.com/25089
+      cur = FilePath("/var/log/chrome");
+#else
       // The crash reports are always stored relative to the default user data
       // directory.  This avoids the problem of having to re-initialize the
       // exception handler after parsing command line options, which may
       // override the location of the app's profile directory.
       if (!GetDefaultUserDataDirectory(&cur))
         return false;
+#endif
       cur = cur.Append(FILE_PATH_LITERAL("Crash Reports"));
       create_dir = true;
       break;
@@ -153,7 +178,7 @@ bool PathProvider(int key, FilePath* result) {
       break;
     case chrome::DIR_RESOURCES:
 #if defined(OS_MACOSX)
-      cur = base::mac::MainAppBundlePath();
+      cur = base::mac::FrameworkBundlePath();
       cur = cur.Append(FILE_PATH_LITERAL("Resources"));
 #else
       if (!PathService::Get(chrome::DIR_APP, &cur))
@@ -197,7 +222,7 @@ bool PathProvider(int key, FilePath* result) {
       break;
     case chrome::DIR_MEDIA_LIBS:
 #if defined(OS_MACOSX)
-      *result = base::mac::MainAppBundlePath();
+      *result = base::mac::FrameworkBundlePath();
       *result = result->Append("Libraries");
       return true;
 #else
@@ -220,6 +245,9 @@ bool PathProvider(int key, FilePath* result) {
       if (!file_util::PathExists(cur))
         return false;
       break;
+    case chrome::FILE_PEPPER_FLASH_PLUGIN:
+        return false;
+      break;
     case chrome::FILE_PDF_PLUGIN:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
@@ -230,10 +258,36 @@ bool PathProvider(int key, FilePath* result) {
         return false;
       cur = cur.Append(kInternalNaClPluginFileName);
       break;
+    case chrome::FILE_PNACL_COMPONENT:
+      // TODO(jvoung): Do we want a default value or just the ability to
+      // override immediately when testing on bots to avoid race conditions?
+      return false;
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
+    case chrome::FILE_NACL_HELPER:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(kInternalNaClHelperFileName);
+      break;
+    case chrome::FILE_NACL_HELPER_BOOTSTRAP:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(kInternalNaClHelperBootstrapFileName);
+      break;
+    case chrome::FILE_O3D_PLUGIN:
+        if (!PathService::Get(base::DIR_MODULE, &cur))
+          return false;
+      cur = cur.Append(kO3DPluginFileName);
+      break;
+    case chrome::FILE_GTALK_PLUGIN:
+        if (!PathService::Get(base::DIR_MODULE, &cur))
+          return false;
+      cur = cur.Append(kGTalkPluginFileName);
+      break;
+#endif
     case chrome::FILE_RESOURCES_PACK:
 #if defined(OS_MACOSX)
       if (base::mac::AmIBundled()) {
-        cur = base::mac::MainAppBundlePath();
+        cur = base::mac::FrameworkBundlePath();
         cur = cur.Append(FILE_PATH_LITERAL("Resources"))
                  .Append(FILE_PATH_LITERAL("resources.pak"));
         break;
@@ -256,13 +310,20 @@ bool PathProvider(int key, FilePath* result) {
     // The following are only valid in the development environment, and
     // will fail if executed from an installed executable (because the
     // generated path won't exist).
+    case chrome::DIR_GEN_TEST_DATA:
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("test_data"));
+      if (!file_util::PathExists(cur))  // We don't want to create this.
+        return false;
+      break;
     case chrome::DIR_TEST_DATA:
       if (!PathService::Get(base::DIR_SOURCE_ROOT, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("chrome"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
       cur = cur.Append(FILE_PATH_LITERAL("data"));
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!file_util::PathExists(cur))  // We don't want to create this.
         return false;
       break;
     case chrome::DIR_TEST_TOOLS:
@@ -271,18 +332,29 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("chrome"));
       cur = cur.Append(FILE_PATH_LITERAL("tools"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!file_util::PathExists(cur))  // We don't want to create this
         return false;
       break;
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
+    case chrome::DIR_LAYOUT_TESTS:
+      if (!PathService::Get(base::DIR_SOURCE_ROOT, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("third_party"));
+      cur = cur.Append(FILE_PATH_LITERAL("WebKit"));
+      cur = cur.Append(FILE_PATH_LITERAL("LayoutTests"));
+      if (file_util::DirectoryExists(cur))
+        break;
+      if (!PathService::Get(chrome::DIR_TEST_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("layout_tests"));
+      cur = cur.Append(FILE_PATH_LITERAL("LayoutTests"));
+      break;
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD)
     case chrome::DIR_POLICY_FILES: {
 #if defined(GOOGLE_CHROME_BUILD)
       cur = FilePath(FILE_PATH_LITERAL("/etc/opt/chrome/policies"));
 #else
       cur = FilePath(FILE_PATH_LITERAL("/etc/chromium/policies"));
 #endif
-      if (!file_util::PathExists(cur))  // we don't want to create this
-        return false;
       break;
     }
 #endif
@@ -295,12 +367,12 @@ bool PathProvider(int key, FilePath* result) {
       if (!login)
         return false;
       cur = cur.AppendASCII(login);
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!file_util::PathExists(cur))  // We don't want to create this.
         return false;
       break;
     }
 #endif
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
     case chrome::DIR_USER_EXTERNAL_EXTENSIONS: {
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
@@ -308,6 +380,50 @@ bool PathProvider(int key, FilePath* result) {
       break;
     }
 #endif
+    case chrome::DIR_EXTERNAL_EXTENSIONS:
+#if defined(OS_MACOSX)
+      if (!chrome::GetGlobalApplicationSupportDirectory(&cur))
+        return false;
+
+      cur = cur.Append(FILE_PATH_LITERAL("Google"))
+               .Append(FILE_PATH_LITERAL("Chrome"))
+               .Append(FILE_PATH_LITERAL("External Extensions"));
+      create_dir = false;
+#else
+      if (!PathService::Get(base::DIR_MODULE, &cur))
+        return false;
+
+      cur = cur.Append(FILE_PATH_LITERAL("extensions"));
+      create_dir = true;
+#endif
+      break;
+
+#if defined(OS_MACOSX)
+    case DIR_DEPRECATED_EXTERNAL_EXTENSIONS:
+      // TODO(skerner): Reading external extensions from a file inside the
+      // app budle causes several problems.  Once users have a chance to
+      // migrate, remove this path.  crbug/67203
+      if (!PathService::Get(base::DIR_EXE, &cur))
+        return false;
+
+      cur = cur.DirName();
+      cur = cur.Append(FILE_PATH_LITERAL("Extensions"));
+      create_dir = false;
+
+      break;
+#endif
+
+    case chrome::DIR_DEFAULT_APPS:
+#if defined(OS_MACOSX)
+      cur = base::mac::FrameworkBundlePath();
+      cur = cur.Append(FILE_PATH_LITERAL("Default Apps"));
+#else
+      if (!PathService::Get(chrome::DIR_APP, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("default_apps"));
+#endif
+      break;
+
     default:
       return false;
   }

@@ -1,10 +1,11 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Cocoa/Cocoa.h>
 
 #include "base/debug/debugger.h"
+#include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/ui/cocoa/chrome_browser_window.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -43,3 +44,4 @@ class ChromeBrowserWindowTest : public CocoaTest {
 TEST_F(ChromeBrowserWindowTest, ShowAndClose) {
   [window_ display];
 }
+

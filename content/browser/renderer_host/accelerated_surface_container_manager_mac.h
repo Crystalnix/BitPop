@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,10 @@
 #include "base/synchronization/lock.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/surface/transport_dib.h"
+
+namespace gfx {
+class Rect;
+}
 
 namespace webkit {
 namespace npapi {
@@ -78,7 +82,11 @@ class AcceleratedSurfaceContainerManagerMac {
   void ForceTextureReload();
 
   // Notifies a surface that it has been painted to.
-  void SetSurfaceWasPaintedTo(gfx::PluginWindowHandle id, uint64 surface_id);
+  void SetSurfaceWasPaintedTo(gfx::PluginWindowHandle id,
+                              uint64 surface_handle);
+  void SetSurfaceWasPaintedTo(gfx::PluginWindowHandle id,
+                              uint64 surface_handle,
+                              const gfx::Rect& update_rect);
 
   // Notifies the root container that its surface is invalid.
   void SetRootSurfaceInvalid();

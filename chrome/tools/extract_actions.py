@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -12,7 +12,7 @@ as well as generating the lists of possible actions in situations where
 there are many possible actions.
 
 See also:
-  chrome/browser/user_metrics.h
+  content/browser/user_metrics.h
   http://wiki.corp.google.com/twiki/bin/view/Main/ChromeUserExperienceMetrics
 
 If run with a "--hash" argument, chromeactions.txt will be updated.
@@ -20,15 +20,16 @@ If run with a "--hash" argument, chromeactions.txt will be updated.
 
 __author__ = 'evanm (Evan Martin)'
 
+import hashlib
+from HTMLParser import HTMLParser
 import os
 import re
 import sys
-import hashlib
 
 sys.path.insert(1, os.path.join(sys.path[0], '..', '..', 'tools', 'python'))
 from google import path_utils
 
-# Files that are known to use UserMetrics::RecordComputedAction(), which means
+# Files that are known to use content::RecordComputedAction(), which means
 # they require special handling code in this script.
 # To add a new file, add it to this list and add the appropriate logic to
 # generate the known actions to AddComputedActions() below.
@@ -40,8 +41,12 @@ KNOWN_COMPUTED_USERS = (
   'new_tab_ui.cc',  # most visited clicks 1-9
   'extension_metrics_module.cc', # extensions hook for user metrics
   'safe_browsing_blocking_page.cc', # various interstitial types and actions
-  'language_options_handler.cc', # languages and input methods in chrome os
+  'language_options_handler_common.cc', # languages and input methods in CrOS
+  'cros_language_options_handler.cc', # languages and input methods in CrOS
   'about_flags.cc', # do not generate a warning; see AddAboutFlagsActions()
+  'external_metrics.cc',  # see AddChromeOSActions()
+  'core_options_handler.cc',  # see AddWebUIActions()
+  'browser_render_process_host.cc'  # see AddRendererActions()
 )
 
 # Language codes used in Chrome. The list should be updated when a new
@@ -159,6 +164,7 @@ def AddClosedSourceActions(actions):
   actions.add('PDF.FitToWidthButton')
   actions.add('PDF.LoadFailure')
   actions.add('PDF.LoadSuccess')
+  actions.add('PDF.PreviewDocumentLoadFailure')
   actions.add('PDF.ZoomFromBrowser')
   actions.add('PDF.ZoomOutButton')
   actions.add('PDF.ZoomInButton')
@@ -210,6 +216,24 @@ def AddChromeOSActions(actions):
   actions.add('Accel_BrightnessDown_F6')
   actions.add('Accel_BrightnessUp_F7')
 
+  # Actions sent by Chrome OS update engine.
+  actions.add('Updater.ServerCertificateChanged')
+  actions.add('Updater.ServerCertificateFailed')
+
+  # Actions sent by Chrome OS cryptohome.
+  actions.add('Cryptohome.PKCS11InitFail')
+
+def AddExtensionActions(actions):
+  """Add actions reported by extensions via chrome.metricsPrivate API.
+
+  Arguments:
+    actions: set of actions to add to.
+  """
+  # Actions sent by Chrome OS File Browser.
+  actions.add('FileBrowser.CreateNewFolder')
+  actions.add('FileBrowser.PhotoEditor.Edit')
+  actions.add('FileBrowser.PhotoEditor.View')
+
 def GrepForActions(path, actions):
   """Grep a source file for calls to UserMetrics functions.
 
@@ -221,28 +245,155 @@ def GrepForActions(path, actions):
   number_of_files_total = number_of_files_total + 1
   # we look for the UserMetricsAction structure constructor
   # this should be on one line
-  action_re = re.compile(r'UserMetricsAction\("([^"]*)')
-  computed_action_re = re.compile(r'UserMetrics::RecordComputedAction')
+  action_re = re.compile(r'[^a-zA-Z]UserMetricsAction\("([^"]*)')
+  malformed_action_re = re.compile(r'[^a-zA-Z]UserMetricsAction\([^"]')
+  computed_action_re = re.compile(r'RecordComputedAction')
   line_number = 0
   for line in open(path):
     line_number = line_number + 1
     match = action_re.search(line)
     if match:  # Plain call to RecordAction
       actions.add(match.group(1))
+    elif malformed_action_re.search(line):
+      # Warn if this line is using RecordAction incorrectly.
+      print >>sys.stderr, ('WARNING: %s has malformed call to RecordAction'
+                           ' at %d' % (path, line_number))
     elif computed_action_re.search(line):
       # Warn if this file shouldn't be calling RecordComputedAction.
       if os.path.basename(path) not in KNOWN_COMPUTED_USERS:
-        print >>sys.stderr, 'WARNING: {0} has RecordComputedAction at {1}'.\
-                             format(path, line_number)
+        print >>sys.stderr, ('WARNING: %s has RecordComputedAction at %d' %
+                             (path, line_number))
 
-def WalkDirectory(root_path, actions):
+class WebUIActionsParser(HTMLParser):
+  """Parses an HTML file, looking for all tags with a 'metric' attribute.
+  Adds user actions corresponding to any metrics found.
+
+  Arguments:
+    actions: set of actions to add to
+  """
+  def __init__(self, actions):
+    HTMLParser.__init__(self)
+    self.actions = actions
+
+  def handle_starttag(self, tag, attrs):
+    # We only care to examine tags that have a 'metric' attribute.
+    attrs = dict(attrs)
+    if not 'metric' in attrs:
+      return
+
+    # Boolean metrics have two corresponding actions.  All other metrics have
+    # just one corresponding action.  By default, we check the 'dataType'
+    # attribute.
+    is_boolean = ('dataType' in attrs and attrs['dataType'] == 'boolean')
+    if 'type' in attrs and attrs['type'] in ('checkbox', 'radio'):
+      if attrs['type'] == 'checkbox':
+        # Checkboxes are boolean by default.  However, their 'value-type' can
+        # instead be set to 'integer'.
+        if 'value-type' not in attrs or attrs['value-type'] in ['', 'boolean']:
+          is_boolean = True
+      else:
+        # Radio buttons are boolean if and only if their values are 'true' or
+        # 'false'.
+        assert(attrs['type'] == 'radio')
+        if 'value' in attrs and attrs['value'] in ['true', 'false']:
+          is_boolean = True
+
+    if is_boolean:
+      self.actions.add(attrs['metric'] + '_Enable')
+      self.actions.add(attrs['metric'] + '_Disable')
+    else:
+      self.actions.add(attrs['metric'])
+
+def GrepForWebUIActions(path, actions):
+  """Grep a WebUI source file for elements with associated metrics.
+
+  Arguments:
+    path: path to the file
+    actions: set of actions to add to
+  """
+  try:
+    parser = WebUIActionsParser(actions)
+    parser.feed(open(path).read())
+  except Exception, e:
+    print "Error encountered for path %s" % path
+    raise e
+  finally:
+    parser.close()
+
+def WalkDirectory(root_path, actions, extensions, callback):
   for path, dirs, files in os.walk(root_path):
     if '.svn' in dirs:
       dirs.remove('.svn')
+    if '.git' in dirs:
+      dirs.remove('.git')
     for file in files:
       ext = os.path.splitext(file)[1]
-      if ext in ('.cc', '.mm', '.c', '.m'):
-        GrepForActions(os.path.join(path, file), actions)
+      if ext in extensions:
+        callback(os.path.join(path, file), actions)
+
+def GrepForRendererActions(path, actions):
+  """Grep a source file for calls to RenderThread::RecordUserMetrics.
+
+  Arguments:
+    path: path to the file
+    actions: set of actions to add to
+  """
+  # We look for the ViewHostMsg_UserMetricsRecordAction constructor.
+  # This should be on one line.
+  action_re = re.compile(
+      r'[^a-zA-Z]RenderThread::RecordUserMetrics\("([^"]*)')
+  line_number = 0
+  for line in open(path):
+    match = action_re.search(line)
+    if match:  # Plain call to RecordAction
+      actions.add(match.group(1))
+
+def AddLiteralActions(actions):
+  """Add literal actions specified via calls to UserMetrics functions.
+
+  Arguments:
+    actions: set of actions to add to.
+  """
+  EXTENSIONS = ('.cc', '.mm', '.c', '.m')
+
+  # Walk the source tree to process all .cc files.
+  chrome_root = os.path.normpath(os.path.join(path_utils.ScriptDir(), '..'))
+  WalkDirectory(chrome_root, actions, EXTENSIONS, GrepForActions)
+  content_root = os.path.normpath(os.path.join(path_utils.ScriptDir(),
+                                               '..', '..', 'content'))
+  WalkDirectory(content_root, actions, EXTENSIONS, GrepForActions)
+  webkit_root = os.path.normpath(os.path.join(path_utils.ScriptDir(),
+                                              '..', '..', 'webkit'))
+  WalkDirectory(os.path.join(webkit_root, 'glue'), actions, EXTENSIONS,
+                GrepForActions)
+  WalkDirectory(os.path.join(webkit_root, 'port'), actions, EXTENSIONS,
+                GrepForActions)
+
+def AddWebUIActions(actions):
+  """Add user actions defined in WebUI files.
+
+  Arguments:
+    actions: set of actions to add to.
+  """
+  resources_root = os.path.join(path_utils.ScriptDir(), '..', 'browser',
+                                'resources')
+  WalkDirectory(resources_root, actions, ('.html'), GrepForWebUIActions)
+
+def AddRendererActions(actions):
+  """Add user actions sent via calls to RenderThread::RecordUserMetrics.
+
+  Arguments:
+    actions: set of actions to add to.
+  """
+  EXTENSIONS = ('.cc', '.mm', '.c', '.m')
+
+  chrome_renderer_root = os.path.join(path_utils.ScriptDir(), '..', 'renderer')
+  content_renderer_root = os.path.join(path_utils.ScriptDir(), '..', '..',
+      'content', 'renderer')
+  WalkDirectory(chrome_renderer_root, actions, EXTENSIONS,
+                GrepForRendererActions)
+  WalkDirectory(content_renderer_root, actions, EXTENSIONS,
+                GrepForRendererActions)
 
 def main(argv):
   if '--hash' in argv:
@@ -270,21 +421,17 @@ def main(argv):
   # TODO(fmantek): bring back webkit editor actions.
   # AddWebKitEditorActions(actions)
   AddAboutFlagsActions(actions)
+  AddWebUIActions(actions)
+  AddRendererActions(actions)
 
-  # Walk the source tree to process all .cc files.
-  chrome_root = os.path.join(path_utils.ScriptDir(), '..')
-  WalkDirectory(chrome_root, actions)
-  content_root = os.path.join(path_utils.ScriptDir(), '..', '..', 'content')
-  WalkDirectory(content_root, actions)
-  webkit_root = os.path.join(path_utils.ScriptDir(), '..', '..', 'webkit')
-  WalkDirectory(os.path.join(webkit_root, 'glue'), actions)
-  WalkDirectory(os.path.join(webkit_root, 'port'), actions)
+  AddLiteralActions(actions)
 
   # print "Scanned {0} number of files".format(number_of_files_total)
   # print "Found {0} entries".format(len(actions))
 
   AddClosedSourceActions(actions)
   AddChromeOSActions(actions)
+  AddExtensionActions(actions)
 
   if hash_output:
     f = open(chromeactions_path, "w")
@@ -301,6 +448,8 @@ def main(argv):
 
   if hash_output:
     print "Done. Do not forget to add chromeactions.txt to your changelist"
+  return 0
+
 
 if '__main__' == __name__:
-  main(sys.argv)
+  sys.exit(main(sys.argv))

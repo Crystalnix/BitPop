@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 namespace policy {
 
 class AsynchronousPolicyLoader;
+class PolicyMap;
 
 // Policy provider that loads policy asynchronously. Providers should subclass
 // from this class if loading the policy requires disk access or must for some
@@ -29,7 +30,9 @@ class AsynchronousPolicyProvider
    public:
     virtual ~Delegate() {}
 
-    virtual DictionaryValue* Load() = 0;
+    // Load policy from the delegate's source, and return a PolicyMap. Ownership
+    // is transferred to the caller.
+    virtual PolicyMap* Load() = 0;
   };
 
   // Assumes ownership of |loader|.
@@ -39,19 +42,29 @@ class AsynchronousPolicyProvider
   virtual ~AsynchronousPolicyProvider();
 
   // ConfigurationPolicyProvider implementation.
-  virtual bool Provide(ConfigurationPolicyStoreInterface* store);
+  virtual bool ProvideInternal(PolicyMap* map) OVERRIDE;
+  virtual void RefreshPolicies() OVERRIDE;
 
-  // For tests to trigger reloads.
-  scoped_refptr<AsynchronousPolicyLoader> loader();
+ private:
+  // Used to trigger a Reload on |loader| on the FILE thread.
+  static void PostReloadOnFileThread(AsynchronousPolicyLoader* loader);
 
- protected:
+  // Used to notify UI that a reload task has been submitted.
+  void OnReloadPosted();
+
+  // Callback from the loader. This is invoked whenever the loader has completed
+  // a reload of the policies.
+  void OnLoaderReloaded();
+
   // The loader object used internally.
   scoped_refptr<AsynchronousPolicyLoader> loader_;
 
- private:
-  // ConfigurationPolicyProvider overrides:
-  virtual void AddObserver(ConfigurationPolicyProvider::Observer* observer);
-  virtual void RemoveObserver(ConfigurationPolicyProvider::Observer* observer);
+  // Number of refreshes requested whose reload is still pending. Used to only
+  // fire notifications when all pending refreshes are done.
+  int pending_refreshes_;
+
+  // Used to post tasks to self on UI.
+  base::WeakPtrFactory<AsynchronousPolicyProvider> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AsynchronousPolicyProvider);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
 #pragma once
 
 #include "chrome/browser/chromeos/frame/bubble_window.h"
-#include "views/controls/button/button.h"
-#include "views/window/non_client_view.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/window/non_client_view.h"
 
 namespace gfx {
 class Insets;
@@ -21,7 +21,8 @@ class Size;
 namespace views {
 class ImageButton;
 class Label;
-class Window;
+class Throbber;
+class Widget;
 }
 
 namespace chromeos {
@@ -30,9 +31,8 @@ namespace chromeos {
 class BubbleFrameView : public views::NonClientFrameView,
                         public views::ButtonListener {
  public:
-  BubbleFrameView(views::Window* frame,
-                  views::WindowDelegate* window_delegate,
-                  BubbleWindow::Style style);
+  BubbleFrameView(views::WidgetDelegate* widget_delegate,
+                  DialogStyle style);
   virtual ~BubbleFrameView();
 
   // Overridden from views::NonClientFrameView:
@@ -42,7 +42,6 @@ class BubbleFrameView : public views::NonClientFrameView,
   virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
   virtual void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask)
       OVERRIDE;
-  virtual void EnableClose(bool enable) OVERRIDE;
   virtual void ResetWindowControls() OVERRIDE;
   virtual void UpdateWindowIcon() OVERRIDE;
 
@@ -60,11 +59,8 @@ class BubbleFrameView : public views::NonClientFrameView,
   void StopThrobber();
 
  private:
-  // The window that owns this view.
-  views::Window* frame_;
-
   // Allows to tweak appearance of the view.
-  BubbleWindow::Style style_;
+  DialogStyle style_;
 
   // Title label
   views::Label* title_;
@@ -84,4 +80,3 @@ class BubbleFrameView : public views::NonClientFrameView,
 }  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_FRAME_BUBBLE_FRAME_VIEW_H_
-

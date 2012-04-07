@@ -4,7 +4,8 @@
 
 #include "chrome_frame/test/automation_client_mock.h"
 
-#include "base/callback.h"
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome_frame/custom_sync_call_context.h"
 #include "chrome_frame/navigation_constraints.h"
@@ -18,10 +19,6 @@ using testing::_;
 using testing::CreateFunctor;
 using testing::Return;
 
-DISABLE_RUNNABLE_METHOD_REFCOUNT(LaunchDelegate);
-DISABLE_RUNNABLE_METHOD_REFCOUNT(ChromeFrameAutomationClient);
-DISABLE_RUNNABLE_METHOD_REFCOUNT(chrome_frame_test::TimedMsgLoop);
-
 MATCHER_P(LaunchParamProfileEq, profile_name, "Check for profile name") {
   return arg->profile_name().compare(profile_name) == 0;
 }
@@ -33,9 +30,9 @@ void MockProxyFactory::GetServerImpl(ChromeFrameAutomationProxy* pxy,
                                      ChromeFrameLaunchParams* params,
                                      void** automation_server_id) {
   *automation_server_id = proxy_id;
-  Task* task = NewRunnableMethod(d,
-      &LaunchDelegate::LaunchComplete, pxy, result);
-  loop_->PostDelayedTask(FROM_HERE, task,
+  loop_->PostDelayedTask(FROM_HERE,
+                         base::Bind(&LaunchDelegate::LaunchComplete,
+                                    base::Unretained(d), pxy, result),
                          params->launch_timeout() / 2);
 }
 
@@ -109,7 +106,7 @@ TEST(CFACWithChrome, CreateTooFast) {
 
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path, profile_path.BaseName().value(), L"", L"",
+      empty, empty, profile_path, profile_path.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(timeout);
   clp->set_version_check(false);
@@ -141,7 +138,7 @@ TEST(CFACWithChrome, CreateNotSoFast) {
 
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path, profile_path.BaseName().value(), L"", L"",
+      empty, empty, profile_path, profile_path.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(timeout);
   clp->set_version_check(false);
@@ -190,7 +187,7 @@ TEST(CFACWithChrome, NavigateOk) {
 
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path, profile_path.BaseName().value(), L"", L"",
+      empty, empty, profile_path, profile_path.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(timeout);
   clp->set_version_check(false);
@@ -237,7 +234,7 @@ TEST(CFACWithChrome, NavigateFailed) {
 
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path, profile_path.BaseName().value(), L"", L"",
+      empty, empty, profile_path, profile_path.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(10000);
   clp->set_version_check(false);
@@ -275,7 +272,7 @@ TEST_F(CFACMockTest, MockedCreateTabOk) {
   // Here we go!
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path_, profile_path_.BaseName().value(), L"", L"",
+      empty, empty, profile_path_, profile_path_.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(timeout);
   clp->set_version_check(false);
@@ -308,7 +305,7 @@ TEST_F(CFACMockTest, MockedCreateTabFailed) {
   // Here we go!
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path_, profile_path_.BaseName().value(), L"", L"",
+      empty, empty, profile_path_, profile_path_.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(timeout_);
   clp->set_version_check(false);
@@ -349,7 +346,7 @@ TEST_F(CFACMockTest, OnChannelError) {
 
   GURL empty;
   scoped_refptr<ChromeFrameLaunchParams> clp(new ChromeFrameLaunchParams(
-      empty, empty, profile_path_, profile_path_.BaseName().value(), L"", L"",
+      empty, empty, profile_path_, profile_path_.BaseName().value(), L"",
       false, false, false));
   clp->set_launch_timeout(1);  // Unneeded timeout, but can't be 0.
   clp->set_version_check(false);
@@ -470,7 +467,7 @@ TEST_F(CFACMockTest, NavigateTwiceAfterInitToSameUrl) {
   scoped_refptr<ChromeFrameLaunchParams> launch_params(
       new ChromeFrameLaunchParams(
           GURL("http://www.nonexistent.com"), empty, profile_path_,
-          profile_path_.BaseName().value(), L"", L"", false, false, false));
+          profile_path_.BaseName().value(), L"", false, false, false));
   launch_params->set_launch_timeout(timeout);
   launch_params->set_version_check(false);
   EXPECT_TRUE(client_->Initialize(&cfd_, launch_params));

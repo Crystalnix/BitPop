@@ -13,10 +13,10 @@
 #include "base/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_source.h"
-#include "content/common/notification_type.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_source.h"
+#include "content/public/browser/notification_types.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace base {
@@ -24,13 +24,14 @@ class Thread;
 }
 
 ACTION_P(Notify, type) {
-  NotificationService::current()->Notify(type,
-                                         NotificationService::AllSources(),
-                                         NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      type,
+      content::NotificationService::AllSources(),
+      content::NotificationService::NoDetails());
 }
 
 ACTION(QuitUIMessageLoop) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   MessageLoop::current()->Quit();
 }
 
@@ -59,7 +60,7 @@ class ThreadNotificationService
 
   base::WaitableEvent done_event_;
   base::Thread* notification_thread_;
-  scoped_ptr<NotificationService> service_;
+  scoped_ptr<content::NotificationService> service_;
 };
 
 class ThreadNotifier :  // NOLINT
@@ -67,19 +68,19 @@ class ThreadNotifier :  // NOLINT
  public:
   explicit ThreadNotifier(base::Thread* notify_thread);
 
-  void Notify(NotificationType type, const NotificationDetails& details);
+  void Notify(int type, const content::NotificationDetails& details);
 
-  void Notify(NotificationType type,
-              const NotificationSource& source,
-              const NotificationDetails& details);
+  void Notify(int type,
+              const content::NotificationSource& source,
+              const content::NotificationDetails& details);
 
  private:
   friend class base::RefCountedThreadSafe<ThreadNotifier>;
   virtual ~ThreadNotifier();
 
-  void NotifyTask(NotificationType type,
-                  const NotificationSource& source,
-                  const NotificationDetails& details);
+  void NotifyTask(int type,
+                  const content::NotificationSource& source,
+                  const content::NotificationDetails& details);
 
   base::WaitableEvent done_event_;
   base::Thread* notify_thread_;

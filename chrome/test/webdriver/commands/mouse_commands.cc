@@ -6,12 +6,13 @@
 
 #include "base/values.h"
 #include "chrome/common/automation_constants.h"
+#include "chrome/test/automation/value_conversion_util.h"
 #include "chrome/test/webdriver/commands/response.h"
-#include "chrome/test/webdriver/session.h"
-#include "chrome/test/webdriver/web_element_id.h"
+#include "chrome/test/webdriver/webdriver_basic_types.h"
+#include "chrome/test/webdriver/webdriver_element_id.h"
 #include "chrome/test/webdriver/webdriver_error.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/size.h"
+#include "chrome/test/webdriver/webdriver_session.h"
+#include "chrome/test/webdriver/webdriver_util.h"
 
 namespace {
 
@@ -23,75 +24,99 @@ const int kRightButton = 2;
 
 namespace webdriver {
 
-ElementMouseCommand::ElementMouseCommand(
+MoveAndClickCommand::MoveAndClickCommand(
     const std::vector<std::string>& path_segments,
     const DictionaryValue* const parameters)
     : WebElementCommand(path_segments, parameters) {}
 
-ElementMouseCommand::~ElementMouseCommand() {}
+MoveAndClickCommand::~MoveAndClickCommand() {}
 
-bool ElementMouseCommand::DoesPost() {
+bool MoveAndClickCommand::DoesPost() {
   return true;
 }
 
-void ElementMouseCommand::ExecutePost(Response* response) {
-  Error* error = session_->CheckElementPreconditionsForClicking(element);
+void MoveAndClickCommand::ExecutePost(Response* response) {
+  std::string tag_name;
+  Error* error = session_->GetElementTagName(
+      session_->current_target(), element, &tag_name);
   if (error) {
     response->SetError(error);
     return;
   }
 
-  gfx::Point location;
-  error = session_->GetElementLocationInView(element, &location);
+  if (tag_name == "option") {
+    const char* kCanOptionBeToggledScript =
+        "function(option) {"
+        "  for (var parent = option.parentElement;"
+        "       parent;"
+        "       parent = parent.parentElement) {"
+        "    if (parent.tagName.toLowerCase() == 'select') {"
+        "      return parent.multiple;"
+        "    }"
+        "  }"
+        "  throw new Error('Option element is not in a select');"
+        "}";
+    bool can_be_toggled;
+    error = session_->ExecuteScriptAndParse(
+        session_->current_target(),
+        kCanOptionBeToggledScript,
+        "canOptionBeToggled",
+        CreateListValueFrom(element),
+        CreateDirectValueParser(&can_be_toggled));
+    if (error) {
+      response->SetError(error);
+      return;
+    }
+
+    if (can_be_toggled) {
+      error = session_->ToggleOptionElement(
+          session_->current_target(), element);
+    } else {
+      error = session_->SetOptionElementSelected(
+          session_->current_target(), element, true);
+    }
+  } else {
+    Point location;
+    error = session_->GetClickableLocation(element, &location);
+    if (!error)
+      error = session_->MouseMoveAndClick(location, automation::kLeftButton);
+  }
   if (error) {
     response->SetError(error);
     return;
   }
-
-  gfx::Size size;
-  error = session_->GetElementSize(session_->current_target(), element, &size);
-  if (error) {
-    response->SetError(error);
-    return;
-  }
-
-  location.Offset(size.width() / 2, size.height() / 2);
-  error = Action(location);
-  if (error) {
-    response->SetError(error);
-    return;
-  }
-}
-
-MoveAndClickCommand::MoveAndClickCommand(
-    const std::vector<std::string>& path_segments,
-    const DictionaryValue* const parameters)
-    : ElementMouseCommand(path_segments, parameters) {}
-
-MoveAndClickCommand::~MoveAndClickCommand() {}
-
-Error* MoveAndClickCommand::Action(const gfx::Point& location) {
-  return session_->MouseMoveAndClick(location, automation::kLeftButton);
 }
 
 HoverCommand::HoverCommand(const std::vector<std::string>& path_segments,
                            const DictionaryValue* const parameters)
-    : ElementMouseCommand(path_segments, parameters) {}
+    : WebElementCommand(path_segments, parameters) {}
 
 HoverCommand::~HoverCommand() {}
 
-Error* HoverCommand::Action(const gfx::Point& location) {
-  return session_->MouseMove(location);
+bool HoverCommand::DoesPost() {
+  return true;
+}
+
+void HoverCommand::ExecutePost(Response* response) {
+  Error* error = NULL;
+  Point location;
+  error = session_->GetClickableLocation(element, &location);
+  if (!error)
+    error = session_->MouseMove(location);
+  if (error) {
+    response->SetError(error);
+    return;
+  }
 }
 
 DragCommand::DragCommand(const std::vector<std::string>& path_segments,
                          const DictionaryValue* const parameters)
-    : ElementMouseCommand(path_segments, parameters) {}
+    : WebElementCommand(path_segments, parameters) {}
 
 DragCommand::~DragCommand() {}
 
 bool DragCommand::Init(Response* const response) {
-  if (!ElementMouseCommand::Init(response))
+  if (!WebElementCommand::Init(response))
     return false;
 
   if (!GetIntegerParameter("x", &drag_x_) ||
@@ -103,14 +128,30 @@ bool DragCommand::Init(Response* const response) {
   return true;
 }
 
-Error* DragCommand::Action(const gfx::Point& location) {
-  gfx::Point drag_from(location);
-  gfx::Point drag_to(drag_from);
+bool DragCommand::DoesPost() {
+  return true;
+}
+
+void DragCommand::ExecutePost(Response* response) {
+  Error* error = NULL;
+  Point drag_from;
+  error = session_->GetClickableLocation(element, &drag_from);
+  if (error) {
+    response->SetError(error);
+    return;
+  }
+
+  Point drag_to(drag_from);
   drag_to.Offset(drag_x_, drag_y_);
   if (drag_to.x() < 0 || drag_to.y() < 0)
-    return new Error(kBadRequest, "Invalid (x,y) coordinates");
+    error = new Error(kBadRequest, "Invalid (x,y) coordinates");
+  if (!error)
+    error = session_->MouseDrag(drag_from, drag_to);
 
-  return session_->MouseDrag(location, drag_to);
+  if (error) {
+    response->SetError(error);
+    return;
+  }
 }
 
 AdvancedMouseCommand::AdvancedMouseCommand(
@@ -140,7 +181,7 @@ bool MoveToCommand::Init(Response* const response) {
   has_element_ = GetStringParameter("element", &element_name);
 
   if (has_element_) {
-    element_ = WebElementId(element_name);
+    element_ = ElementId(element_name);
   }
 
   has_offset_ = GetIntegerParameter("xoffset", &x_offset_) &&
@@ -156,16 +197,11 @@ bool MoveToCommand::Init(Response* const response) {
 }
 
 void MoveToCommand::ExecutePost(Response* const response) {
-  gfx::Point location;
+  Point location;
+  Error* error;
 
   if (has_element_) {
     // If an element is specified, calculate the coordinate.
-    Error* error = session_->CheckElementPreconditionsForClicking(element_);
-    if (error) {
-      response->SetError(error);
-      return;
-    }
-
     error = session_->GetElementLocationInView(element_, &location);
     if (error) {
       response->SetError(error);
@@ -183,9 +219,9 @@ void MoveToCommand::ExecutePost(Response* const response) {
     DCHECK(has_element_);
 
     // If not, calculate the half of the element size and translate by it.
-    gfx::Size size;
-    Error* error = session_->GetElementSize(session_->current_target(),
-                                            element_, &size);
+    Size size;
+    error = session_->GetElementSize(session_->current_target(),
+                                     element_, &size);
     if (error) {
       response->SetError(error);
       return;
@@ -194,7 +230,7 @@ void MoveToCommand::ExecutePost(Response* const response) {
     location.Offset(size.width() / 2, size.height() / 2);
   }
 
-  Error* error = session_->MouseMove(location);
+  error = session_->MouseMove(location);
   if (error) {
     response->SetError(error);
     return;

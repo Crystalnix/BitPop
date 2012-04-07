@@ -6,16 +6,16 @@
 #define CHROME_BROWSER_UI_WEBUI_CONFLICTS_UI_H_
 #pragma once
 
-#include "content/browser/webui/web_ui.h"
+#include "content/public/browser/web_ui_controller.h"
 
 #if defined(OS_WIN)
 
 class RefCountedMemory;
 
 // The Web UI handler for about:conflicts.
-class ConflictsUI : public WebUI {
+class ConflictsUI : public content::WebUIController {
  public:
-  explicit ConflictsUI(TabContents* contents);
+  explicit ConflictsUI(content::WebUI* web_ui);
 
   static RefCountedMemory* GetFaviconResourceBytes();
 

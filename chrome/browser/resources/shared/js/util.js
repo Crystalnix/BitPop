@@ -8,9 +8,6 @@
  */
 const global = this;
 
-// TODO(estade): This should be removed and calls replaced with cr.isMac
-const IS_MAC = /^Mac/.test(navigator.platform);
-
 /**
  * Alias for document.getElementById.
  * @param {string} id The ID of the element to find.
@@ -108,6 +105,59 @@ function swapDomNodes(a, b) {
   aParent.insertBefore(b, afterA);
 }
 
+/**
+ * Disables text selection and dragging.
+ */
+function disableTextSelectAndDrag() {
+  // Disable text selection.
+  document.onselectstart = function(e) {
+    e.preventDefault();
+  }
+
+  // Disable dragging.
+  document.ondragstart = function(e) {
+    e.preventDefault();
+  }
+}
+
+/**
+ * Check the directionality of the page.
+ * @return {boolean} True if Chrome is running an RTL UI.
+ */
+function isRTL() {
+  return document.documentElement.dir == 'rtl';
+}
+
+/**
+ * Simple common assertion API
+ * @param {*} condition The condition to test.  Note that this may be used to
+ *     test whether a value is defined or not, and we don't want to force a
+ *     cast to Boolean.
+ * @param {string=} opt_message A message to use in any error.
+ */
+function assert(condition, opt_message) {
+  'use strict';
+  if (!condition) {
+    var msg = 'Assertion failed';
+    if (opt_message)
+      msg = msg + ': ' + opt_message;
+    throw new Error(msg);
+  }
+}
+
+/**
+ * Get an element that's known to exist by its ID. We use this instead of just
+ * calling getElementById and not checking the result because this lets us
+ * satisfy the JSCompiler type system.
+ * @param {string} id The identifier name.
+ * @return {!Element} the Element.
+ */
+function getRequiredElement(id) {
+  var element = $(id);
+  assert(element, 'Missing required element: ' + id);
+  return element;
+}
+
 // Handle click on a link. If the link points to a chrome: or file: url, then
 // call into the browser to do the navigation.
 document.addEventListener('click', function(e) {
@@ -137,3 +187,19 @@ document.addEventListener('click', function(e) {
     }
   }
 });
+
+/**
+ * Creates a new URL which is the old URL with a GET param of key=value.
+ * @param {string} url The base URL. There is not sanity checking on the URL so
+ *     it must be passed in a proper format.
+ * @param {string} key The key of the param.
+ * @param {string} value The value of the param.
+ * @return {string}
+ */
+function appendParam(url, key, value) {
+  var param = encodeURIComponent(key) + '=' + encodeURIComponent(value);
+
+  if (url.indexOf('?') == -1)
+    return url + '?' + param;
+  return url + '&' + param;
+}

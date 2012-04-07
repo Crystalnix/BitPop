@@ -6,9 +6,11 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_TAKE_PHOTO_VIEW_H_
 #pragma once
 
-#include "views/controls/button/button.h"
-#include "views/view.h"
+#include "base/compiler_specific.h"
+#include "ui/views/controls/button/button.h"
+#include "ui/views/view.h"
 
+class PhotoCaptureObserver;
 class SkBitmap;
 
 namespace views {
@@ -63,10 +65,11 @@ class TakePhotoView : public views::View,
   void CaptureImage();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize();
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
 
   // Overridden from views::ButtonListener.
-  virtual void ButtonPressed(views::Button* sender, const views::Event& event);
+  virtual void ButtonPressed(views::Button* sender,
+                             const views::Event& event) OVERRIDE;
 
   bool is_capturing() const { return is_capturing_; }
 
@@ -75,6 +78,10 @@ class TakePhotoView : public views::View,
  private:
   // Initializes layout manager for this view.
   void InitLayout();
+
+  // For automation purposes.
+  friend class ::PhotoCaptureObserver;
+  void FlipCapturingState();
 
   views::Label* title_label_;
   views::ImageButton* snapshot_button_;

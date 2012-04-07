@@ -5,13 +5,16 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_HOST_H_
 #define CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_HOST_H_
 
+#include "content/common/content_export.h"
 #include "content/common/p2p_sockets.h"
 
 #include "ipc/ipc_message.h"
 #include "net/base/ip_endpoint.h"
 
+namespace content {
+
 // Base class for P2P sockets.
-class P2PSocketHost {
+class CONTENT_EXPORT P2PSocketHost {
  public:
   // Creates P2PSocketHost of the specific type.
   static P2PSocketHost* Create(IPC::Message::Sender* message_sender,
@@ -56,12 +59,22 @@ class P2PSocketHost {
     STATE_ERROR,
   };
 
+  // Maximum size of send buffers. Must be big enough to fit data for
+  // one data burst. Send buffers size needs to be limited to prevent
+  // from consuming too much memory with misbehaving renderer process.
+  //
+  // TODO(sergeyu): Consider implementing congestion notifications to
+  // minimize buffering. This will require some fixes in libjingle,
+  // see crbug.com/91495 .
+  static const int kMaxSendBufferSize = 256 * 1024;
+
   P2PSocketHost(IPC::Message::Sender* message_sender, int routing_id, int id);
 
   // Verifies that the packet |data| has a valid STUN header. In case
   // of success stores type of the message in |type|.
   static bool GetStunPacketType(const char* data, int data_size,
                                 StunMessageType* type);
+  static bool IsRequestOrResponse(StunMessageType type);
 
   IPC::Message::Sender* message_sender_;
   int routing_id_;
@@ -70,5 +83,7 @@ class P2PSocketHost {
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketHost);
 };
+
+}  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_P2P_SOCKET_HOST_H_

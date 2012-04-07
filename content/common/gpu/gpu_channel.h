@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,47 +6,44 @@
 #define CONTENT_COMMON_GPU_GPU_CHANNEL_H_
 #pragma once
 
-#include <set>
+#include <deque>
 #include <string>
-#include <vector>
 
 #include "base/id_map.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/process.h"
 #include "build/build_config.h"
-#include "gpu/command_buffer/service/surface_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
-#include "content/common/gpu/gpu_surface_stub.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_sync_channel.h"
+#include "ui/gfx/gl/gl_share_group.h"
+#include "ui/gfx/gl/gpu_preference.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 
 class GpuChannelManager;
 struct GPUCreateCommandBufferConfig;
 class GpuWatchdog;
-class TransportTexture;
 
 namespace base {
 class MessageLoopProxy;
 class WaitableEvent;
 }
 
-namespace gfx {
-class GLSurface;
-}
-
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
 class GpuChannel : public IPC::Channel::Listener,
                    public IPC::Message::Sender,
-                   public gpu::SurfaceManager,
                    public base::RefCountedThreadSafe<GpuChannel> {
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
              GpuWatchdog* watchdog,
-             int renderer_id);
+             gfx::GLShareGroup* share_group,
+             int client_id,
+             bool software);
   virtual ~GpuChannel();
 
   bool Init(base::MessageLoopProxy* io_message_loop,
@@ -61,7 +58,7 @@ class GpuChannel : public IPC::Channel::Listener,
   std::string GetChannelName();
 
 #if defined(OS_POSIX)
-  int GetRendererFileDescriptor();
+  int TakeRendererFileDescriptor();
 #endif  // defined(OS_POSIX)
 
   base::ProcessHandle renderer_process() const {
@@ -69,72 +66,72 @@ class GpuChannel : public IPC::Channel::Listener,
   }
 
   // IPC::Channel::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg);
-  virtual void OnChannelError();
-  virtual void OnChannelConnected(int32 peer_pid);
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // IPC::Message::Sender implementation:
-  virtual bool Send(IPC::Message* msg);
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+
+  // Whether this channel is able to handle IPC messages.
+  bool IsScheduled();
+
+  // This is called when a command buffer transitions from the unscheduled
+  // state to the scheduled state, which potentially means the channel
+  // transitions from the unscheduled to the scheduled state. When this occurs
+  // deferred IPC messaged are handled.
+  void OnScheduled();
 
   void CreateViewCommandBuffer(
       gfx::PluginWindowHandle window,
-      int32 render_view_id,
+      int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
       int32* route_id);
 
-  void ViewResized(int32 command_buffer_route_id);
+  gfx::GLShareGroup* share_group() const { return share_group_.get(); }
 
-#if defined(OS_MACOSX)
-  virtual void AcceleratedSurfaceBuffersSwapped(
-      int32 route_id, uint64 swap_buffers_count);
-  void DestroyCommandBufferByViewId(int32 render_view_id);
-#endif
+  GpuCommandBufferStub* LookupCommandBuffer(int32 route_id);
 
   void LoseAllContexts();
 
   // Destroy channel and all contained contexts.
   void DestroySoon();
 
-  // Look up a GLSurface by ID. In this case the ID is the IPC routing ID.
-  virtual gfx::GLSurface* LookupSurface(int surface_id);
+  // Generate a route ID guaranteed to be unique for this channel.
+  int GenerateRouteID();
 
-  // Get the TransportTexture by ID.
-  TransportTexture* GetTransportTexture(int32 route_id);
+  // Called to add/remove a listener for a particular message routing ID.
+  void AddRoute(int32 route_id, IPC::Channel::Listener* listener);
+  void RemoveRoute(int32 route_id);
 
-  // Destroy the TransportTexture by ID. This method is only called by
-  // TransportTexture to delete and detach itself.
-  void DestroyTransportTexture(int32 route_id);
-
-  // A callback which is called after a Set/WaitLatch command is processed.
-  // The bool parameter will be true for SetLatch, and false for a WaitLatch
-  // that is blocked. An unblocked WaitLatch will not trigger a callback.
-  void OnLatchCallback(int route_id, bool is_set_latch);
+  // Indicates whether newly created contexts should prefer the
+  // discrete GPU even if they would otherwise use the integrated GPU.
+  bool ShouldPreferDiscreteGpu() const;
 
  private:
   void OnDestroy();
 
   bool OnControlMessageReceived(const IPC::Message& msg);
 
-  int GenerateRouteID();
+  void HandleMessage();
 
   // Message handlers.
   void OnInitialize(base::ProcessHandle renderer_process);
   void OnCreateOffscreenCommandBuffer(
-      int32 parent_route_id,
       const gfx::Size& size,
       const GPUCreateCommandBufferConfig& init_params,
-      uint32 parent_texture_id,
-      int32* route_id);
-  void OnDestroyCommandBuffer(int32 route_id);
+      IPC::Message* reply_message);
+  void OnDestroyCommandBuffer(int32 route_id, IPC::Message* reply_message);
 
-  void OnCreateOffscreenSurface(const gfx::Size& size,
-                                int* route_id);
-  void OnDestroySurface(int route_id);
+  void OnEcho(const IPC::Message& message);
 
-  void OnCreateVideoDecoder(int32 decoder_host_id,
-                            const std::vector<uint32>& configs);
-  void OnDestroyVideoDecoder(int32 decoder_id);
-  void OnCreateTransportTexture(int32 context_route_id, int32 host_id);
+  void OnWillGpuSwitchOccur(bool is_creating_context,
+                            gfx::GpuPreference gpu_preference,
+                            IPC::Message* reply_message);
+  void OnCloseChannel();
+
+  void WillCreateCommandBuffer(gfx::GpuPreference gpu_preference);
+  void DidDestroyCommandBuffer(gfx::GpuPreference gpu_preference);
 
   // The lifetime of objects of this class is managed by a GpuChannelManager.
   // The GpuChannelManager destroy all the GpuChannels that they own when they
@@ -143,8 +140,13 @@ class GpuChannel : public IPC::Channel::Listener,
 
   scoped_ptr<IPC::SyncChannel> channel_;
 
-  // The id of the renderer who is on the other side of the channel.
-  int renderer_id_;
+  std::deque<IPC::Message*> deferred_messages_;
+
+  // The id of the client who is on the other side of the channel.
+  int client_id_;
+
+  // Uniquely identifies the channel within this GPU process.
+  int channel_id_;
 
   // Handle to the renderer process that is on the other side of the channel.
   base::ProcessHandle renderer_process_;
@@ -155,23 +157,24 @@ class GpuChannel : public IPC::Channel::Listener,
   // Used to implement message routing functionality to CommandBuffer objects
   MessageRouter router_;
 
+  // The share group that all contexts associated with a particular renderer
+  // process use.
+  scoped_refptr<gfx::GLShareGroup> share_group_;
+
 #if defined(ENABLE_GPU)
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;
-
-  typedef IDMap<GpuSurfaceStub, IDMapOwnPointer> SurfaceMap;
-  SurfaceMap surfaces_;
-
-  std::set<int32> latched_routes_;
 #endif  // defined (ENABLE_GPU)
 
-  // A collection of transport textures created.
-  typedef IDMap<TransportTexture, IDMapOwnPointer> TransportTextureMap;
-  TransportTextureMap transport_textures_;
-
   bool log_messages_;  // True if we should log sent and received messages.
-  gpu::gles2::DisallowedExtensions disallowed_extensions_;
+  gpu::gles2::DisallowedFeatures disallowed_features_;
   GpuWatchdog* watchdog_;
+  bool software_;
+  bool handle_messages_scheduled_;
+  bool processed_get_state_fast_;
+  int32 num_contexts_preferring_discrete_gpu_;
+
+  base::WeakPtrFactory<GpuChannel> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuChannel);
 };

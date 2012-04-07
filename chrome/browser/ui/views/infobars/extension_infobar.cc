@@ -8,7 +8,6 @@
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/ui/views/infobars/infobar_background.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_icon_set.h"
@@ -17,44 +16,40 @@
 #include "ui/base/animation/slide_animation.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia.h"
-#include "views/controls/button/menu_button.h"
-#include "views/controls/menu/menu_2.h"
-#include "views/widget/widget.h"
+#include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/widget/widget.h"
 
-// ExtensionInfoBarDelegate ---------------------------------------------------
+// ExtensionInfoBarDelegate ----------------------------------------------------
 
-InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(TabContentsWrapper* owner) {
-  return new ExtensionInfoBar(owner, this);
+InfoBar* ExtensionInfoBarDelegate::CreateInfoBar(InfoBarTabHelper* owner) {
+  return new ExtensionInfoBar(browser_, owner, this);
 }
 
-// ExtensionInfoBar -----------------------------------------------------------
+// ExtensionInfoBar ------------------------------------------------------------
 
 namespace {
 // The horizontal margin between the menu and the Extension (HTML) view.
-static const int kMenuHorizontalMargin = 1;
-};
+const int kMenuHorizontalMargin = 1;
+}  // namespace
 
-ExtensionInfoBar::ExtensionInfoBar(TabContentsWrapper* owner,
+ExtensionInfoBar::ExtensionInfoBar(Browser* browser,
+                                   InfoBarTabHelper* owner,
                                    ExtensionInfoBarDelegate* delegate)
     : InfoBarView(owner, delegate),
       delegate_(delegate),
+      browser_(browser),
       menu_(NULL),
       ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)) {
   delegate->set_observer(this);
 
-  ExtensionView* extension_view = delegate->extension_host()->view();
-  int height = extension_view->GetPreferredSize().height();
+  int height = delegate->height();
   SetBarTargetHeight((height > 0) ? (height + kSeparatorLineHeight) : 0);
-
-  // Get notified of resize events for the ExtensionView.
-  extension_view->SetContainer(this);
 }
 
 ExtensionInfoBar::~ExtensionInfoBar() {
-  if (GetDelegate()) {
-    GetDelegate()->extension_host()->view()->SetContainer(NULL);
+  if (GetDelegate())
     GetDelegate()->set_observer(NULL);
-  }
 }
 
 void ExtensionInfoBar::Layout() {
@@ -65,8 +60,10 @@ void ExtensionInfoBar::Layout() {
                    menu_size.height());
 
   GetDelegate()->extension_host()->view()->SetBounds(
-      menu_->bounds().right() + kMenuHorizontalMargin, 0,
-      std::max(0, EndX() - StartX() - ContentMinimumWidth()), height());
+      menu_->bounds().right() + kMenuHorizontalMargin,
+      arrow_height(),
+      std::max(0, EndX() - StartX() - ContentMinimumWidth()),
+      height() - arrow_height() - 1);
 }
 
 void ExtensionInfoBar::ViewHierarchyChanged(bool is_add,
@@ -77,8 +74,9 @@ void ExtensionInfoBar::ViewHierarchyChanged(bool is_add,
     return;
   }
 
-  menu_ = new views::MenuButton(NULL, std::wstring(), this, false);
+  menu_ = new views::MenuButton(NULL, string16(), this, false);
   menu_->SetVisible(false);
+  menu_->set_focusable(true);
   AddChildView(menu_);
 
   ExtensionHost* extension_host = GetDelegate()->extension_host();
@@ -107,35 +105,6 @@ int ExtensionInfoBar::ContentMinimumWidth() const {
   return menu_->GetPreferredSize().width() + kMenuHorizontalMargin;
 }
 
-void ExtensionInfoBar::OnExtensionMouseMove(ExtensionView* view) {
-}
-
-void ExtensionInfoBar::OnExtensionMouseLeave(ExtensionView* view) {
-}
-
-void ExtensionInfoBar::OnExtensionPreferredSizeChanged(ExtensionView* view) {
-  ExtensionInfoBarDelegate* delegate = GetDelegate();
-  DCHECK_EQ(delegate->extension_host()->view(), view);
-
-  // When the infobar is closed, it animates to 0 vertical height. We'll
-  // continue to get size changed notifications from the ExtensionView, but we
-  // need to ignore them otherwise we'll try to re-animate open (and leak the
-  // infobar view).
-  if (delegate->closing())
-    return;
-
-  view->SetVisible(true);
-
-  if (height() == 0)
-    animation()->Reset(0.0);
-
-  // Clamp height to a min and a max size of between 1 and 2 InfoBars.
-  SetBarTargetHeight(std::min(2 * kDefaultBarTargetHeight,
-      std::max(kDefaultBarTargetHeight, view->GetPreferredSize().height())));
-
-  animation()->Show();
-}
-
 void ExtensionInfoBar::OnImageLoaded(SkBitmap* image,
                                      const ExtensionResource& resource,
                                      int index) {
@@ -154,7 +123,8 @@ void ExtensionInfoBar::OnImageLoaded(SkBitmap* image,
   // The margin between the extension icon and the drop-down arrow bitmap.
   static const int kDropArrowLeftMargin = 3;
   scoped_ptr<gfx::CanvasSkia> canvas(new gfx::CanvasSkia(
-      image_size + kDropArrowLeftMargin + drop_image->width(), image_size,
+      gfx::Size(image_size + kDropArrowLeftMargin + drop_image->width(),
+                image_size),
       false));
   canvas->DrawBitmapInt(*icon, 0, 0, icon->width(), icon->height(), 0, 0,
                         image_size, image_size, false);
@@ -167,25 +137,20 @@ void ExtensionInfoBar::OnImageLoaded(SkBitmap* image,
 }
 
 void ExtensionInfoBar::OnDelegateDeleted() {
-  GetDelegate()->extension_host()->view()->SetContainer(NULL);
   delegate_ = NULL;
 }
 
 void ExtensionInfoBar::RunMenu(View* source, const gfx::Point& pt) {
+  if (!owned())
+    return;  // We're closing; don't call anything, it might access the owner.
   const Extension* extension = GetDelegate()->extension_host()->extension();
   if (!extension->ShowConfigureContextMenus())
     return;
 
-  if (!options_menu_contents_.get()) {
-    Browser* browser = BrowserView::GetBrowserViewForNativeWindow(
-        platform_util::GetTopLevel(source->GetWidget()->GetNativeView()))->
-            browser();
-    options_menu_contents_ = new ExtensionContextMenuModel(extension, browser,
-                                                           NULL);
-  }
-
-  options_menu_menu_.reset(new views::Menu2(options_menu_contents_.get()));
-  options_menu_menu_->RunMenuAt(pt, views::Menu2::ALIGN_TOPLEFT);
+  scoped_refptr<ExtensionContextMenuModel> options_menu_contents =
+      new ExtensionContextMenuModel(extension, browser_, NULL);
+  DCHECK_EQ(source, menu_);
+  RunMenuAt(options_menu_contents.get(), menu_, views::MenuItemView::TOPLEFT);
 }
 
 ExtensionInfoBarDelegate* ExtensionInfoBar::GetDelegate() {

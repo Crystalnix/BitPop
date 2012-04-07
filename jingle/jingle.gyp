@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -23,6 +23,8 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../net/net.gyp:net',
         '../third_party/libjingle/libjingle.gyp:libjingle',
         '../third_party/libjingle/libjingle.gyp:libjingle_p2p',
       ],
@@ -102,6 +104,7 @@
       ],
       'dependencies': [
         '../base/base.gyp:base',
+        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../net/net.gyp:net',
         '../third_party/expat/expat.gyp:expat',
         '../third_party/libjingle/libjingle.gyp:libjingle',
@@ -123,6 +126,8 @@
       'sources': [
         'notifier/base/fake_base_task.cc',
         'notifier/base/fake_base_task.h',
+        'notifier/base/mock_task.cc',
+        'notifier/base/mock_task.h',
       ],
       'dependencies': [
         'notifier',
@@ -151,11 +156,13 @@
         'glue/channel_socket_adapter_unittest.cc',
         'glue/jingle_glue_mock_objects.cc',
         'glue/jingle_glue_mock_objects.h',
+        'glue/logging_unittest.cc',
         'glue/pseudotcp_adapter_unittest.cc',
         'glue/thread_wrapper_unittest.cc',
         'notifier/base/chrome_async_socket_unittest.cc',
         'notifier/base/fake_ssl_client_socket_unittest.cc',
         'notifier/base/proxy_resolving_client_socket_unittest.cc',
+        'notifier/base/task_pump_unittest.cc',
         'notifier/base/xmpp_connection_unittest.cc',
         'notifier/base/weak_xmpp_client_unittest.cc',
         'notifier/communicator/xmpp_connection_generator_unittest.cc',
@@ -168,6 +175,16 @@
         'notifier/listener/xml_element_util_unittest.cc',
         'run_all_unittests.cc',
       ],
+      'conditions': [
+        ['OS=="android"', {
+          'sources!': [
+            # TODO(jrg):
+            # EXPECT_DEBUG_DEATH() uses features not enabled.
+            # Should we -std=c++0x or -std=gnu++0x?
+            'notifier/base/chrome_async_socket_unittest.cc',
+            'notifier/base/xmpp_connection_unittest.cc',
+          ],
+        }]],
       'include_dirs': [
         '..',
       ],
@@ -187,9 +204,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

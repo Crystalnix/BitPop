@@ -1,5 +1,4 @@
-#!/usr/bin/python
-
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -38,7 +37,6 @@ class DatasetConverter(object):
     u'ADDRESS_HOME_ZIP',
     u'ADDRESS_HOME_COUNTRY',
     u'PHONE_HOME_WHOLE_NUMBER',
-    u'PHONE_FAX_WHOLE_NUMBER',
   ]
   _record_length = len(_fields)
   _output_pattern = u'{'
@@ -59,16 +57,14 @@ class DatasetConverter(object):
       (?P<EMAIL_ADDRESS>.*?)\|(?P<COMPANY_NAME>.*?)\|(?P<ADDRESS_HOME_LINE1>.*?)
       \|(?P<ADDRESS_HOME_LINE2>.*?)\|(?P<ADDRESS_HOME_CITY>.*?)\|
       (?P<ADDRESS_HOME_STATE>.*?)\|(?P<ADDRESS_HOME_ZIP>.*?)\|
-      (?P<ADDRESS_HOME_COUNTRY>.*?)\|
-      (?P<PHONE_HOME_WHOLE_NUMBER>.*?)\|(?P<PHONE_FAX_WHOLE_NUMBER>.*?)$'
+      (?P<ADDRESS_HOME_COUNTRY>.*?)\|(?P<PHONE_HOME_WHOLE_NUMBER>.*?)$'
 
     Full ouput pattern:
       "{u'NAME_FIRST': u'%s', u'NAME_MIDDLE': u'%s', u'NAME_LAST': u'%s',
       u'EMAIL_ADDRESS': u'%s', u'COMPANY_NAME': u'%s', u'ADDRESS_HOME_LINE1':
       u'%s', u'ADDRESS_HOME_LINE2': u'%s', u'ADDRESS_HOME_CITY': u'%s',
       u'ADDRESS_HOME_STATE': u'%s', u'ADDRESS_HOME_ZIP': u'%s',
-      u'ADDRESS_HOME_COUNTRY': u'%s', u'PHONE_HOME_WHOLE_NUMBER': u'%s',
-      u'PHONE_FAX_WHOLE_NUMBER': u'%s',},"
+      u'ADDRESS_HOME_COUNTRY': u'%s', u'PHONE_HOME_WHOLE_NUMBER': u'%s',},"
 
     Args:
       input_filename: name and path of the input dataset.
@@ -170,10 +166,8 @@ class DatasetConverter(object):
           if output_file:
             output_file.write(output_line)
             output_file.write(os.linesep)
-          self._logger.info('%d: %s' % (i, line.encode(sys.stdout.encoding,
-                                                       'ignore')))
-          self._logger.info('\tconverted to: %s' %
-                            output_line.encode(sys.stdout.encoding, 'ignore'))
+          self._logger.info('%d: %s' % (i, line.encode('UTF-8')))
+          self._logger.info('\tconverted to: %s' % output_line.encode('UTF-8'))
       if output_file:
         output_file.write(']')
         output_file.write(os.linesep)
@@ -186,7 +180,6 @@ class DatasetConverter(object):
 
 
 def main():
-  # Command line options.
   from optparse import OptionParser
   input_filename = os.path.join('..', 'data', 'autofill', 'dataset.txt')
   output_filename = os.path.join('..', 'data', 'autofill',
@@ -211,7 +204,7 @@ def main():
   (options, args) = parser.parse_args()
   if args:
     parser.print_help()
-    sys.exit(1)
+    return 1
   if not options.verbose:
     options.logging_level = None
   if options.verbose and not options.logging_level:
@@ -227,6 +220,8 @@ def main():
   c = DatasetConverter(options.input_filename, options.output_filename,
                        options.logging_level)
   c.Convert()
+  return 0
+
 
 if __name__ == '__main__':
-  main()
+  sys.exit(main())

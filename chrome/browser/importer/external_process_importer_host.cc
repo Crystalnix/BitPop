@@ -27,7 +27,10 @@ void ExternalProcessImporterHost::StartImportSettings(
     uint16 items,
     ProfileWriter* writer,
     bool first_run) {
+  // We really only support importing from one host at a time.
   DCHECK(!profile_);
+  DCHECK(target_profile);
+
   profile_ = target_profile;
   writer_ = writer;
   source_profile_ = &source_profile;
@@ -59,7 +62,8 @@ void ExternalProcessImporterHost::InvokeTaskIfDone() {
   client_->Start();
 }
 
-void ExternalProcessImporterHost::Loaded(BookmarkModel* model) {
+void ExternalProcessImporterHost::Loaded(BookmarkModel* model,
+                                         bool ids_reassigned) {
   DCHECK(model->IsLoaded());
   model->RemoveObserver(this);
   waiting_for_bookmarkbar_model_ = false;

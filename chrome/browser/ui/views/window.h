@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,23 +6,32 @@
 #define CHROME_BROWSER_UI_VIEWS_WINDOW_H_
 #pragma once
 
+#include "chrome/browser/ui/dialog_style.h"
 #include "ui/gfx/native_widget_types.h"
 
-namespace gfx {
-class Rect;
-}
-
 namespace views {
-class Window;
-class WindowDelegate;
+class BubbleDelegateView;
+class Widget;
+class WidgetDelegate;
 }
 
 namespace browser {
 
 // Create a window for given |delegate| using default frame view.
-views::Window* CreateViewsWindow(gfx::NativeWindow parent,
-                                 const gfx::Rect& bounds,
-                                 views::WindowDelegate* delegate);
+views::Widget* CreateViewsWindow(gfx::NativeWindow parent,
+                                 views::WidgetDelegate* delegate,
+                                 DialogStyle style);
+
+// Create a bubble for a given |delegate|. Takes care of chromeos
+// specific window type setting if needed.
+views::Widget* CreateViewsBubble(views::BubbleDelegateView* delegate);
+
+// Create a bubble that will show even when chromeos screen is locked,
+// for a given |delegate|. Takes care of chromeos specific window
+// type setting. For bubbles that do not need to be shown when screen
+// is locked, use CreateViewsBubble instead.
+views::Widget* CreateViewsBubbleAboveLockScreen(
+    views::BubbleDelegateView* delegate);
 
 }  // namespace browser
 

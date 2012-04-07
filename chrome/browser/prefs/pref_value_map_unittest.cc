@@ -23,6 +23,19 @@ TEST_F(PrefValueMapTest, SetValue) {
   EXPECT_TRUE(StringValue("hi mom!").Equals(result));
 }
 
+TEST_F(PrefValueMapTest, GetAndSetIntegerValue) {
+  PrefValueMap map;
+  ASSERT_TRUE(map.SetValue("key", Value::CreateIntegerValue(5)));
+
+  int int_value = 0;
+  EXPECT_TRUE(map.GetInteger("key", &int_value));
+  EXPECT_EQ(5, int_value);
+
+  map.SetInteger("key", -14);
+  EXPECT_TRUE(map.GetInteger("key", &int_value));
+  EXPECT_EQ(-14, int_value);
+}
+
 TEST_F(PrefValueMapTest, RemoveValue) {
   PrefValueMap map;
   EXPECT_FALSE(map.RemoveValue("key"));
@@ -73,4 +86,26 @@ TEST_F(PrefValueMapTest, GetDifferingKeys) {
   expected_differing_paths.push_back("d");
   expected_differing_paths.push_back("e");
   EXPECT_EQ(expected_differing_paths, differing_paths);
+}
+
+TEST_F(PrefValueMapTest, SwapTwoMaps) {
+  PrefValueMap first_map;
+  EXPECT_TRUE(first_map.SetValue("a", Value::CreateStringValue("test")));
+  EXPECT_TRUE(first_map.SetValue("b", Value::CreateStringValue("test")));
+  EXPECT_TRUE(first_map.SetValue("c", Value::CreateStringValue("test")));
+
+  PrefValueMap second_map;
+  EXPECT_TRUE(second_map.SetValue("d", Value::CreateStringValue("test")));
+  EXPECT_TRUE(second_map.SetValue("e", Value::CreateStringValue("test")));
+  EXPECT_TRUE(second_map.SetValue("f", Value::CreateStringValue("test")));
+
+  first_map.Swap(&second_map);
+
+  EXPECT_TRUE(first_map.GetValue("d", NULL));
+  EXPECT_TRUE(first_map.GetValue("e", NULL));
+  EXPECT_TRUE(first_map.GetValue("f", NULL));
+
+  EXPECT_TRUE(second_map.GetValue("a", NULL));
+  EXPECT_TRUE(second_map.GetValue("b", NULL));
+  EXPECT_TRUE(second_map.GetValue("c", NULL));
 }

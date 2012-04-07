@@ -1,21 +1,22 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "chrome/browser/ui/cocoa/about_window_controller.h"
 
 #include "base/logging.h"
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/string_number_conversions.h"
 #include "base/string_util.h"
 #include "base/sys_string_conversions.h"
-#import "chrome/browser/cocoa/keystone_glue.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/platform_util.h"
+#import "chrome/browser/mac/keystone_glue.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/background_tile_view.h"
 #include "chrome/browser/ui/cocoa/restart_browser.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -25,7 +26,10 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
+
+using content::OpenURLParams;
+using content::Referrer;
 
 namespace {
 
@@ -102,8 +106,8 @@ void AttributedStringAppendHyperlink(NSMutableAttributedString* attr_str,
 @implementation AboutWindowController
 
 - (id)initWithProfile:(Profile*)profile {
-  NSString* nibPath = [base::mac::MainAppBundle() pathForResource:@"About"
-                                                          ofType:@"nib"];
+  NSString* nibPath = [base::mac::FrameworkBundle() pathForResource:@"About"
+                                                             ofType:@"nib"];
   if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
     profile_ = profile;
     NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
@@ -130,27 +134,11 @@ void AttributedStringAppendHyperlink(NSMutableAttributedString* attr_str,
 static BOOL recentShownUserActionFailedStatus = NO;
 
 - (void)awakeFromNib {
-  NSBundle* bundle = base::mac::MainAppBundle();
-  NSString* chromeVersion =
-      [bundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-
-  NSString* versionModifier = @"";
-  NSString* svnRevision = @"";
-  std::string modifier = platform_util::GetVersionStringModifier();
-  if (!modifier.empty())
-    versionModifier = [NSString stringWithFormat:@" %@",
-                                base::SysUTF8ToNSString(modifier)];
-
-#if !defined(GOOGLE_CHROME_BUILD)
-  svnRevision = [NSString stringWithFormat:@" (%@)",
-                          [bundle objectForInfoDictionaryKey:@"SVNRevision"]];
-#endif
   // The format string is not localized, but this is how the displayed version
   // is built on Windows too.
+  chrome::VersionInfo version_info;
   NSString* version =
-    [NSString stringWithFormat:@"%@%@%@",
-              chromeVersion, svnRevision, versionModifier];
-
+      base::SysUTF8ToNSString(version_info.CreateVersionString());
   [version_ setStringValue:version];
 
   // Put the two images into the UI.
@@ -198,6 +186,7 @@ static BOOL recentShownUserActionFailedStatus = NO;
     AutoupdateStatus recentStatus = [keystoneGlue recentStatus];
     if ([keystoneGlue asyncOperationPending] ||
         recentStatus == kAutoupdateRegisterFailed ||
+        recentStatus == kAutoupdateNeedsPromotion ||
         ((recentStatus == kAutoupdateInstallFailed ||
           recentStatus == kAutoupdatePromoteFailed) &&
          !recentShownUserActionFailedStatus)) {
@@ -264,8 +253,9 @@ static BOOL recentShownUserActionFailedStatus = NO;
       allowUpdate = true;
       allowPromotion = true;
     } else {
-      // Show the update block only if a promotion is not absolutely required.
-      allowUpdate = ![keystoneGlue needsPromotion];
+      // Show the update block even when promotion is absolutely required,
+      // because the promotion button is contained within it.
+      allowUpdate = true;
 
       // Show the promotion block if promotion is a possibility.
       allowPromotion = [keystoneGlue wantsPromotion];
@@ -472,15 +462,13 @@ static BOOL recentShownUserActionFailedStatus = NO;
       imageID = IDR_UPDATE_UPTODATE;
       message = l10n_util::GetNSStringFWithFixup(
           IDS_UPGRADE_ALREADY_UP_TO_DATE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
           base::SysNSStringToUTF16(version));
 
       break;
 
     case kAutoupdateAvailable:
       imageID = IDR_UPDATE_AVAILABLE;
-      message = l10n_util::GetNSStringFWithFixup(
-          IDS_UPGRADE_AVAILABLE, l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
+      message = l10n_util::GetNSStringWithFixup(IDS_UPGRADE_AVAILABLE);
       enableUpdateButton = true;
 
       break;
@@ -495,15 +483,13 @@ static BOOL recentShownUserActionFailedStatus = NO;
     case kAutoupdateInstalled:
       {
         imageID = IDR_UPDATE_UPTODATE;
-        string16 productName = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
         if (version) {
           message = l10n_util::GetNSStringFWithFixup(
               IDS_UPGRADE_SUCCESSFUL,
-              productName,
               base::SysNSStringToUTF16(version));
         } else {
-          message = l10n_util::GetNSStringFWithFixup(
-              IDS_UPGRADE_SUCCESSFUL_NOVERSION, productName);
+          message = l10n_util::GetNSStringWithFixup(
+              IDS_UPGRADE_SUCCESSFUL_NOVERSION);
         }
 
         // TODO(mark): Turn the button in the dialog into a restart button
@@ -595,6 +581,16 @@ static BOOL recentShownUserActionFailedStatus = NO;
 
       break;
 
+    case kAutoupdateNeedsPromotion:
+      {
+        imageID = IDR_UPDATE_FAIL;
+        string16 productName = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+        message = l10n_util::GetNSStringFWithFixup(IDS_PROMOTE_INFOBAR_TEXT,
+                                                   productName);
+      }
+
+      break;
+
     default:
       NOTREACHED();
 
@@ -623,8 +619,10 @@ static BOOL recentShownUserActionFailedStatus = NO;
   // We always create a new window, so there's no need to try to re-use
   // an existing one just to pass in the NEW_WINDOW disposition.
   Browser* browser = Browser::Create(profile_);
-  browser->OpenURL(GURL([link UTF8String]), GURL(), NEW_FOREGROUND_TAB,
-                   PageTransition::LINK);
+  OpenURLParams params(
+      GURL([link UTF8String]), Referrer(), NEW_FOREGROUND_TAB,
+      content::PAGE_TRANSITION_LINK, false);
+  browser->OpenURL(params);
   browser->window()->Show();
   return YES;
 }
@@ -667,7 +665,7 @@ static BOOL recentShownUserActionFailedStatus = NO;
   NSString* kChromiumProject = base::SysUTF8ToNSString(url.spec());
   // The OSS link should go to here
   NSString* kAcknowledgements =
-      [NSString stringWithUTF8String:chrome::kAboutCreditsURL];
+      [NSString stringWithUTF8String:chrome::kChromeUICreditsURL];
 
   // Now fetch the license string and deal with the markers
 
@@ -731,7 +729,7 @@ static BOOL recentShownUserActionFailedStatus = NO;
   // Terms of service is only valid for Google Chrome
 
   // The url within terms should point here:
-  NSString* kTOS = [NSString stringWithUTF8String:chrome::kAboutTermsURL];
+  NSString* kTOS = [NSString stringWithUTF8String:chrome::kChromeUITermsURL];
   // Following Windows. There is one marker in the string for where the terms
   // link goes, but the text of the link comes from a second string resources.
   std::vector<size_t> url_offsets;

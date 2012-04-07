@@ -17,6 +17,7 @@
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_layer.h"
+#include "net/http/http_server_properties_impl.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/socket_test_util.h"
@@ -157,6 +158,10 @@ int ConstructSpdyReplyString(const char* const extra_headers[],
 // |settings| are the settings to set.
 // Returns the constructed frame.  The caller takes ownership of the frame.
 spdy::SpdyFrame* ConstructSpdySettings(spdy::SpdySettings settings);
+
+// Construct a SPDY PING frame.
+// Returns the constructed frame.  The caller takes ownership of the frame.
+spdy::SpdyFrame* ConstructSpdyPing();
 
 // Construct a SPDY GOAWAY frame.
 // Returns the constructed frame.  The caller takes ownership of the frame.
@@ -355,6 +360,7 @@ class SpdySessionDependencies {
   scoped_ptr<MockClientSocketFactory> socket_factory;
   scoped_ptr<DeterministicMockClientSocketFactory> deterministic_socket_factory;
   scoped_ptr<HttpAuthHandlerFactory> http_auth_handler_factory;
+  HttpServerPropertiesImpl http_server_properties;
 };
 
 class SpdyURLRequestContext : public URLRequestContext {
@@ -371,7 +377,7 @@ class SpdyURLRequestContext : public URLRequestContext {
   net::URLRequestContextStorage storage_;
 };
 
-const SpdyHeaderInfo make_spdy_header(spdy::SpdyControlType type);
+const SpdyHeaderInfo MakeSpdyHeader(spdy::SpdyControlType type);
 
 class SpdySessionPoolPeer {
  public:
@@ -384,6 +390,10 @@ class SpdySessionPoolPeer {
 
   void RemoveSpdySession(const scoped_refptr<SpdySession>& session) {
     pool_->Remove(session);
+  }
+
+  void DisableDomainAuthenticationVerification() {
+    pool_->verify_domain_authentication_ = false;
   }
 
  private:

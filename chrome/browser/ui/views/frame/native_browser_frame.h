@@ -6,7 +6,12 @@
 #define CHROME_BROWSER_UI_VIEWS_FRAME_NATIVE_BROWSER_FRAME_H_
 #pragma once
 
+class BrowserFrame;
 class BrowserView;
+
+namespace views {
+class NativeWidget;
+}
 
 class NativeBrowserFrame {
  public:
@@ -17,8 +22,8 @@ class NativeBrowserFrame {
       BrowserFrame* browser_frame,
       BrowserView* browser_view);
 
-  virtual views::NativeWindow* AsNativeWindow() = 0;
-  virtual const views::NativeWindow* AsNativeWindow() const = 0;
+  virtual views::NativeWidget* AsNativeWidget() = 0;
+  virtual const views::NativeWidget* AsNativeWidget() const = 0;
 
  protected:
   friend class BrowserFrame;

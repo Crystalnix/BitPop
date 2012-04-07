@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,46 +9,50 @@
 #include <string>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/webui/cookies_tree_model_adapter.h"
 #include "chrome/browser/ui/webui/html_dialog_ui.h"
 #include "chrome/common/content_settings.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/web_ui_message_handler.h"
 
 class GURL;
 class TabContents;
+class TabContentsWrapper;
 
 namespace gfx {
 class Size;
 }
 
 class CollectedCookiesUIDelegate : public HtmlDialogUIDelegate,
-                                          WebUIMessageHandler,
-                                          NotificationObserver {
+                                   content::WebUIMessageHandler,
+                                   content::NotificationObserver {
  public:
   virtual ~CollectedCookiesUIDelegate();
 
   // static factory method that shows CollectedCookiesUI for |tab_contents|.
-  static void Show(TabContents* tab_contents);
+  static void Show(TabContentsWrapper* wrapper);
 
   // HtmlDialogUIDelegate implementation:
-  virtual bool IsDialogModal() const;
-  virtual std::wstring GetDialogTitle() const;
-  virtual GURL GetDialogContentURL() const;
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
-      std::vector<WebUIMessageHandler*>* handlers) const;
-  virtual void GetDialogSize(gfx::Size* size) const;
-  virtual std::string GetDialogArgs() const;
-  virtual void OnDialogClosed(const std::string& json_retval);
-  virtual void OnCloseContents(TabContents* source, bool* out_close_dialog) {}
-  virtual bool ShouldShowDialogTitle() const;
+      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
+  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
+  virtual std::string GetDialogArgs() const OVERRIDE;
+  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnCloseContents(content::WebContents* source,
+                               bool* out_close_dialog) OVERRIDE {}
+  virtual bool ShouldShowDialogTitle() const OVERRIDE;
 
   // WebUIMessageHandler implementation:
-  virtual void RegisterMessages();
+  virtual void RegisterMessages() OVERRIDE;
 
  private:
-  explicit CollectedCookiesUIDelegate(TabContents* tab_contents);
+  explicit CollectedCookiesUIDelegate(TabContentsWrapper* wrapper);
 
   // Closes the dialog from javascript.
   void CloseDialog();
@@ -61,20 +65,20 @@ class CollectedCookiesUIDelegate : public HtmlDialogUIDelegate,
                            ContentSetting setting);
 
   // Notification Observer implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // JS callback to bind cookies tree models with JS trees.
-  void BindCookiesTreeModel(const ListValue* args);
+  void BindCookiesTreeModel(const base::ListValue* args);
 
   // JS callback to block/allow cookies from given site.
-  void Block(const ListValue* args);
-  void Allow(const ListValue* args);
-  void AllowThisSession(const ListValue* args);
+  void Block(const base::ListValue* args);
+  void Allow(const base::ListValue* args);
+  void AllowThisSession(const base::ListValue* args);
 
-  NotificationRegistrar registrar_;
-  TabContents* tab_contents_;
+  content::NotificationRegistrar registrar_;
+  TabContentsWrapper* wrapper_;
   bool closed_;
 
   scoped_ptr<CookiesTreeModel> allowed_cookies_tree_model_;

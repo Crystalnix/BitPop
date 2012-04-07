@@ -1,21 +1,21 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/history/starred_url_database.h"
 
-#include "app/sql/statement.h"
 #include "base/file_util.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/bookmarks/bookmark_codec.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/history/history.h"
+#include "sql/statement.h"
 
 // The following table is used to store star (aka bookmark) information. This
 // class derives from URLDatabase, which has its own schema.
@@ -81,9 +81,45 @@ void FillInStarredEntry(const sql::Statement& s, StarredEntry* entry) {
   entry->date_folder_modified = base::Time::FromInternalValue(s.ColumnInt64(9));
 }
 
+// Resets the properties of |node| from the supplied |entry|.
+void ResetBookmarkNode(const history::StarredEntry& entry,
+                       BookmarkNode* node) {
+  DCHECK(entry.type != history::StarredEntry::URL ||
+         entry.url == node->url());
+
+  node->set_date_added(entry.date_added);
+  node->set_date_folder_modified(entry.date_folder_modified);
+  node->SetTitle(entry.title);
+
+  switch (entry.type) {
+    case history::StarredEntry::URL:
+      node->set_type(BookmarkNode::URL);
+      break;
+    case history::StarredEntry::USER_FOLDER:
+      node->set_type(BookmarkNode::FOLDER);
+      break;
+    case history::StarredEntry::BOOKMARK_BAR:
+      node->set_type(BookmarkNode::BOOKMARK_BAR);
+      break;
+    case history::StarredEntry::OTHER:
+      node->set_type(BookmarkNode::OTHER_NODE);
+      break;
+    case history::StarredEntry::MOBILE:
+      node->set_type(BookmarkNode::MOBILE);
+      break;
+    default:
+      NOTREACHED();
+      break;
+  }
+}
+
 }  // namespace
 
-StarredURLDatabase::StarredURLDatabase() {
+// static
+const int64 StarredURLDatabase::kBookmarkBarID = 1;
+
+StarredURLDatabase::StarredURLDatabase(sql::Connection* db)
+    : db_(db) {
 }
 
 StarredURLDatabase::~StarredURLDatabase() {
@@ -114,10 +150,8 @@ bool StarredURLDatabase::GetAllStarredEntries(
   sql += "ORDER BY parent_id, visual_order";
 
   sql::Statement s(GetDB().GetUniqueStatement(sql.c_str()));
-  if (!s) {
-    NOTREACHED() << "Statement prepare failed";
+  if (!s.is_valid())
     return false;
-  }
 
   history::StarredEntry entry;
   while (s.Step()) {
@@ -129,6 +163,10 @@ bool StarredURLDatabase::GetAllStarredEntries(
     entries->push_back(entry);
   }
   return true;
+}
+
+sql::Connection& StarredURLDatabase::GetDB() {
+  return *db_;
 }
 
 bool StarredURLDatabase::EnsureStarredIntegrity() {
@@ -159,14 +197,12 @@ bool StarredURLDatabase::UpdateStarredEntryRow(StarID star_id,
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "UPDATE starred SET title=?, parent_id=?, visual_order=?, "
       "date_modified=? WHERE id=?"));
-  if (!statement)
-    return 0;
-
   statement.BindString16(0, title);
   statement.BindInt64(1, parent_folder_id);
   statement.BindInt(2, visual_order);
   statement.BindInt64(3, date_modified.ToInternalValue());
   statement.BindInt64(4, star_id);
+
   return statement.Run();
 }
 
@@ -177,12 +213,10 @@ bool StarredURLDatabase::AdjustStarredVisualOrder(UIStarID parent_folder_id,
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "UPDATE starred SET visual_order=visual_order+? "
       "WHERE parent_id=? AND visual_order >= ?"));
-  if (!statement)
-    return false;
-
   statement.BindInt(0, delta);
   statement.BindInt64(1, parent_folder_id);
   statement.BindInt(2, start_visual_order);
+
   return statement.Run();
 }
 
@@ -199,8 +233,6 @@ StarID StarredURLDatabase::CreateStarredEntryRow(URLID url_id,
       "INSERT INTO starred "
       "(type, url_id, group_id, title, date_added, visual_order, parent_id, "
       "date_modified) VALUES (?,?,?,?,?,?,?,?)"));
-  if (!statement)
-    return 0;
 
   switch (type) {
     case history::StarredEntry::URL:
@@ -225,6 +257,7 @@ StarID StarredURLDatabase::CreateStarredEntryRow(URLID url_id,
   statement.BindInt(5, visual_order);
   statement.BindInt64(6, parent_folder_id);
   statement.BindInt64(7, base::Time().ToInternalValue());
+
   if (statement.Run())
     return GetDB().GetLastInsertRowId();
   return 0;
@@ -233,10 +266,8 @@ StarID StarredURLDatabase::CreateStarredEntryRow(URLID url_id,
 bool StarredURLDatabase::DeleteStarredEntryRow(StarID star_id) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM starred WHERE id=?"));
-  if (!statement)
-    return false;
-
   statement.BindInt64(0, star_id);
+
   return statement.Run();
 }
 
@@ -245,9 +276,6 @@ bool StarredURLDatabase::GetStarredEntry(StarID star_id, StarredEntry* entry) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT" STAR_FIELDS "FROM starred LEFT JOIN urls ON "
       "starred.url_id = urls.id WHERE starred.id=?"));
-  if (!statement)
-    return false;
-
   statement.BindInt64(0, star_id);
 
   if (statement.Step()) {
@@ -305,12 +333,8 @@ StarID StarredURLDatabase::CreateStarredEntry(StarredEntry* entry) {
 UIStarID StarredURLDatabase::GetMaxFolderID() {
   sql::Statement max_folder_id_statement(GetDB().GetUniqueStatement(
       "SELECT MAX(group_id) FROM starred"));
-  if (!max_folder_id_statement) {
-    NOTREACHED() << GetDB().GetErrorMessage();
-    return 0;
-  }
+
   if (!max_folder_id_statement.Step()) {
-    NOTREACHED() << GetDB().GetErrorMessage();
     return 0;
   }
   return max_folder_id_statement.ColumnInt64(0);
@@ -543,16 +567,16 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
   history::StarredEntry entry;
   entry.type = history::StarredEntry::BOOKMARK_BAR;
   BookmarkNode bookmark_bar_node(0, GURL());
-  bookmark_bar_node.Reset(entry);
+  ResetBookmarkNode(entry, &bookmark_bar_node);
   entry.type = history::StarredEntry::OTHER;
   BookmarkNode other_node(0, GURL());
-  other_node.Reset(entry);
-  // NOTE(yfriedman): We don't do anything with the synced star node because it
-  // won't ever exist in the starred node DB. We only need to create it to pass
-  // to "encode".
-  entry.type = history::StarredEntry::SYNCED;
-  BookmarkNode synced_node(0, GURL());
-  synced_node.Reset(entry);
+  ResetBookmarkNode(entry, &other_node);
+  // NOTE(yfriedman): We don't do anything with the mobile node because it won't
+  // ever exist in the starred node DB. We only need to create it to pass to
+  // "encode".
+  entry.type = history::StarredEntry::MOBILE;
+  BookmarkNode mobile_node(0, GURL());
+  ResetBookmarkNode(entry, &mobile_node);
 
   std::map<history::UIStarID, history::StarID> folder_id_to_id_map;
   typedef std::map<history::StarID, BookmarkNode*> IDToNodeMap;
@@ -574,9 +598,8 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
   }
 
   // Register the bookmark bar and other folder nodes in the maps.
-  id_to_node_map[HistoryService::kBookmarkBarID] = &bookmark_bar_node;
-  folder_id_to_id_map[HistoryService::kBookmarkBarID] =
-      HistoryService::kBookmarkBarID;
+  id_to_node_map[kBookmarkBarID] = &bookmark_bar_node;
+  folder_id_to_id_map[kBookmarkBarID] = kBookmarkBarID;
   if (other_folder_folder_id) {
     id_to_node_map[other_folder_id] = &other_node;
     folder_id_to_id_map[other_folder_folder_id] = other_folder_id;
@@ -587,7 +610,7 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
        i != entries.end(); ++i) {
     if (!i->parent_folder_id) {
       DCHECK(i->type == history::StarredEntry::BOOKMARK_BAR ||
-             i->type == history::StarredEntry::SYNCED ||
+             i->type == history::StarredEntry::MOBILE ||
              i->type == history::StarredEntry::OTHER);
       // Only entries with no parent should be the bookmark bar and other
       // bookmarks folders.
@@ -601,10 +624,10 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
       // encountering the details.
 
       // The created nodes are owned by the root node.
-      node = new BookmarkNode(0, i->url);
+      node = new BookmarkNode(i->url);
       id_to_node_map[i->id] = node;
     }
-    node->Reset(*i);
+    ResetBookmarkNode(*i, node);
 
     DCHECK(folder_id_to_id_map.find(i->parent_folder_id) !=
            folder_id_to_id_map.end());
@@ -612,7 +635,7 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
     BookmarkNode* parent = id_to_node_map[parent_id];
     if (!parent) {
       // Haven't encountered the parent yet, create it now.
-      parent = new BookmarkNode(0, GURL());
+      parent = new BookmarkNode(GURL());
       id_to_node_map[parent_id] = parent;
     }
 
@@ -625,7 +648,7 @@ bool StarredURLDatabase::MigrateBookmarksToFileImpl(const FilePath& path) {
   // Save to file.
   BookmarkCodec encoder;
   scoped_ptr<Value> encoded_bookmarks(
-      encoder.Encode(&bookmark_bar_node, &other_node, &synced_node));
+      encoder.Encode(&bookmark_bar_node, &other_node, &mobile_node));
   std::string content;
   base::JSONWriter::Write(encoded_bookmarks.get(), true, &content);
 

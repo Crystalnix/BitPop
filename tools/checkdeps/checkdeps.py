@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # Copyright (c) 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -90,6 +90,7 @@ BASE_DIRECTORY = ""
 
 # The directories which contain the sources managed by git.
 GIT_SOURCE_DIRECTORY = set()
+
 
 # Specifies a single rule for an include, which can be either allow or disallow.
 class Rule(object):
@@ -243,8 +244,11 @@ def ApplyDirectoryRules(existing_rules, dir_name):
   # Check the DEPS file in this directory.
   if VERBOSE:
     print "Applying rules from", dir_name
-  def FromImpl(unused):
+  def FromImpl(unused, unused2):
     pass  # NOP function so "From" doesn't fail.
+
+  def FileImpl(unused):
+    pass  # NOP function so "File" doesn't fail.
 
   class _VarImpl:
     def __init__(self, local_scope):
@@ -257,7 +261,11 @@ def ApplyDirectoryRules(existing_rules, dir_name):
       raise Error("Var is not defined: %s" % var_name)
 
   local_scope = {}
-  global_scope = {"From": FromImpl, "Var": _VarImpl(local_scope).Lookup}
+  global_scope = {
+      "File": FileImpl,
+      "From": FromImpl,
+      "Var": _VarImpl(local_scope).Lookup,
+      }
   deps_file = os.path.join(dir_name, "DEPS")
 
   if os.path.isfile(deps_file):
@@ -416,7 +424,10 @@ def GetGitSourceDirectory(root):
                        pipes.quote(root))
   for line in popen_out.readlines():
     dir_name = os.path.join(root, os.path.dirname(line))
-    git_source_directory.add(dir_name)
+    # Add the directory as well as all the parent directories.
+    while dir_name != root:
+      git_source_directory.add(dir_name)
+      dir_name = os.path.dirname(dir_name)
   git_source_directory.add(root)
   return git_source_directory
 
@@ -435,7 +446,8 @@ Examples:
   python checkdeps.py
   python checkdeps.py --root c:\\source chrome"""
 
-def main(options, args):
+
+def checkdeps(options, args):
   global VERBOSE
   if options.verbose:
     VERBOSE = True
@@ -459,7 +471,7 @@ def main(options, args):
   else:
     # More than one argument, we don't handle this.
     PrintUsage()
-    sys.exit(1)
+    return 1
 
   print "Using base directory:", BASE_DIRECTORY
   print "Checking:", start_dir
@@ -481,11 +493,12 @@ def main(options, args):
   success = CheckDirectory(base_rules, start_dir)
   if not success:
     print "\nFAILED\n"
-    sys.exit(1)
+    return 1
   print "\nSUCCESS\n"
-  sys.exit(0)
+  return 0
 
-if '__main__' == __name__:
+
+def main():
   option_parser = optparse.OptionParser()
   option_parser.add_option("", "--root", default="", dest="base_directory",
                            help='Specifies the repository root. This defaults '
@@ -494,4 +507,8 @@ if '__main__' == __name__:
   option_parser.add_option("-v", "--verbose", action="store_true",
                            default=False, help="Print debug logging")
   options, args = option_parser.parse_args()
-  main(options, args)
+  return checkdeps(options, args)
+
+
+if '__main__' == __name__:
+  sys.exit(main())

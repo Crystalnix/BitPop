@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "chrome/browser/sync/engine/model_changing_syncer_command.h"
 #include "chrome/browser/sync/engine/model_safe_worker.h"
 
@@ -16,7 +17,6 @@ namespace syncable {
 class BaseTransaction;
 class Entry;
 class Id;
-class MutableEntry;
 class WriteTransaction;
 }  // namespace syncable
 
@@ -35,29 +35,17 @@ class BuildAndProcessConflictSetsCommand : public ModelChangingSyncerCommand {
   BuildAndProcessConflictSetsCommand();
   virtual ~BuildAndProcessConflictSetsCommand();
 
+ protected:
   // ModelChangingSyncerCommand implementation.
-  virtual void ModelChangingExecuteImpl(sessions::SyncSession* session);
+  virtual std::set<ModelSafeGroup> GetGroupsToChange(
+      const sessions::SyncSession& session) const OVERRIDE;
+  virtual SyncerError ModelChangingExecuteImpl(
+      sessions::SyncSession* session) OVERRIDE;
 
  private:
-  bool BuildAndProcessConflictSets(sessions::SyncSession* session);
-
-  bool ProcessSingleDirectionConflictSets(
-      syncable::WriteTransaction* trans, ConflictResolver* resolver,
-      Cryptographer* cryptographer, sessions::StatusController* status,
-      const ModelSafeRoutingInfo& routes);
-  bool ApplyUpdatesTransactionally(
-      syncable::WriteTransaction* trans,
-      const std::vector<syncable::Id>* const update_set,
-      ConflictResolver* resolver,
-      Cryptographer* cryptographer,
-      const ModelSafeRoutingInfo& routes,
-      sessions::StatusController* status);
   void BuildConflictSets(syncable::BaseTransaction* trans,
                          sessions::ConflictProgress* conflict_progress);
 
-  void MergeSetsForNameClash(syncable::BaseTransaction* trans,
-                             syncable::Entry* entry,
-                             sessions::ConflictProgress* conflict_progress);
   void MergeSetsForIntroducedLoops(syncable::BaseTransaction* trans,
       syncable::Entry* entry,
       sessions::ConflictProgress* conflict_progress);

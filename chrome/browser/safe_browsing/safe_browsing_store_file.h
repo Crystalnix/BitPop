@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 
 #include "chrome/browser/safe_browsing/safe_browsing_store.h"
 
-#include "base/callback_old.h"
+#include "base/callback.h"
 #include "base/file_util.h"
 
 // Implement SafeBrowsingStore in terms of a flat file.  The file
@@ -110,46 +110,48 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   virtual ~SafeBrowsingStoreFile();
 
   virtual void Init(const FilePath& filename,
-                    Callback0::Type* corruption_callback);
+                    const base::Closure& corruption_callback) OVERRIDE;
 
   // Delete any on-disk files, including the permanent storage.
-  virtual bool Delete();
+  virtual bool Delete() OVERRIDE;
 
   // Get all add hash prefixes and full-length hashes, respectively, from
   // the store.
-  virtual bool GetAddPrefixes(std::vector<SBAddPrefix>* add_prefixes);
-  virtual bool GetAddFullHashes(std::vector<SBAddFullHash>* add_full_hashes);
+  virtual bool GetAddPrefixes(SBAddPrefixes* add_prefixes) OVERRIDE;
+  virtual bool GetAddFullHashes(
+      std::vector<SBAddFullHash>* add_full_hashes) OVERRIDE;
 
-  virtual bool BeginChunk();
+  virtual bool BeginChunk() OVERRIDE;
 
-  virtual bool WriteAddPrefix(int32 chunk_id, SBPrefix prefix);
+  virtual bool WriteAddPrefix(int32 chunk_id, SBPrefix prefix) OVERRIDE;
   virtual bool WriteAddHash(int32 chunk_id,
                             base::Time receive_time,
-                            const SBFullHash& full_hash);
+                            const SBFullHash& full_hash) OVERRIDE;
   virtual bool WriteSubPrefix(int32 chunk_id,
-                              int32 add_chunk_id, SBPrefix prefix);
+                              int32 add_chunk_id, SBPrefix prefix) OVERRIDE;
   virtual bool WriteSubHash(int32 chunk_id, int32 add_chunk_id,
-                            const SBFullHash& full_hash);
-  virtual bool FinishChunk();
+                            const SBFullHash& full_hash) OVERRIDE;
+  virtual bool FinishChunk() OVERRIDE;
 
-  virtual bool BeginUpdate();
+  virtual bool BeginUpdate() OVERRIDE;
   // Store updates with pending add full hashes in file store and
   // return |add_prefixes_result| and |add_full_hashes_result|.
-  virtual bool FinishUpdate(const std::vector<SBAddFullHash>& pending_adds,
-                            const std::set<SBPrefix>& prefix_misses,
-                            std::vector<SBAddPrefix>* add_prefixes_result,
-                            std::vector<SBAddFullHash>* add_full_hashes_result);
-  virtual bool CancelUpdate();
+  virtual bool FinishUpdate(
+      const std::vector<SBAddFullHash>& pending_adds,
+      const std::set<SBPrefix>& prefix_misses,
+      SBAddPrefixes* add_prefixes_result,
+      std::vector<SBAddFullHash>* add_full_hashes_result) OVERRIDE;
+  virtual bool CancelUpdate() OVERRIDE;
 
-  virtual void SetAddChunk(int32 chunk_id);
-  virtual bool CheckAddChunk(int32 chunk_id);
-  virtual void GetAddChunks(std::vector<int32>* out);
-  virtual void SetSubChunk(int32 chunk_id);
-  virtual bool CheckSubChunk(int32 chunk_id);
-  virtual void GetSubChunks(std::vector<int32>* out);
+  virtual void SetAddChunk(int32 chunk_id) OVERRIDE;
+  virtual bool CheckAddChunk(int32 chunk_id) OVERRIDE;
+  virtual void GetAddChunks(std::vector<int32>* out) OVERRIDE;
+  virtual void SetSubChunk(int32 chunk_id) OVERRIDE;
+  virtual bool CheckSubChunk(int32 chunk_id) OVERRIDE;
+  virtual void GetSubChunks(std::vector<int32>* out) OVERRIDE;
 
-  virtual void DeleteAddChunk(int32 chunk_id);
-  virtual void DeleteSubChunk(int32 chunk_id);
+  virtual void DeleteAddChunk(int32 chunk_id) OVERRIDE;
+  virtual void DeleteSubChunk(int32 chunk_id) OVERRIDE;
 
   // Returns the name of the temporary file used to buffer data for
   // |filename|.  Exported for unit tests.
@@ -161,7 +163,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   // Update store file with pending full hashes.
   virtual bool DoUpdate(const std::vector<SBAddFullHash>& pending_adds,
                         const std::set<SBPrefix>& prefix_misses,
-                        std::vector<SBAddPrefix>* add_prefixes_result,
+                        SBAddPrefixes* add_prefixes_result,
                         std::vector<SBAddFullHash>* add_full_hashes_result);
 
   // Enumerate different format-change events for histogramming
@@ -221,7 +223,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
     // TODO(shess): Figure out if this is overkill.  Some amount of
     // pre-reserved space is probably reasonable between each chunk
     // collected.
-    std::vector<SBAddPrefix>().swap(add_prefixes_);
+    SBAddPrefixes().swap(add_prefixes_);
     std::vector<SBSubPrefix>().swap(sub_prefixes_);
     std::vector<SBAddFullHash>().swap(add_hashes_);
     std::vector<SBSubFullHash>().swap(sub_hashes_);
@@ -240,7 +242,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
 
   // Buffers for collecting data between BeginChunk() and
   // FinishChunk().
-  std::vector<SBAddPrefix> add_prefixes_;
+  SBAddPrefixes add_prefixes_;
   std::vector<SBSubPrefix> sub_prefixes_;
   std::vector<SBAddFullHash> add_hashes_;
   std::vector<SBSubFullHash> sub_hashes_;
@@ -270,7 +272,7 @@ class SafeBrowsingStoreFile : public SafeBrowsingStore {
   base::hash_set<int32> add_del_cache_;
   base::hash_set<int32> sub_del_cache_;
 
-  scoped_ptr<Callback0::Type> corruption_callback_;
+  base::Closure corruption_callback_;
 
   // Tracks whether corruption has already been seen in the current
   // update, so that only one instance is recorded in the stats.

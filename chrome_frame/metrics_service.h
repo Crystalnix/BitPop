@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_local.h"
-#include "chrome/common/metrics_helpers.h"
+#include "chrome/common/metrics/metrics_service_base.h"
 
 // TODO(ananta)
 // Refactor more common code from chrome/browser/metrics/metrics_service.h into
@@ -102,9 +102,6 @@ class MetricsService : public MetricsServiceBase {
   bool reporting_active() const {
     return reporting_active_;
   }
-
-  // Convert pending_log_ to XML in pending_log_text_ for transmission.
-  std::string PrepareLogSubmissionString();
 
   // Upload pending data to the server by converting it to XML and compressing
   // it. Returns true on success.

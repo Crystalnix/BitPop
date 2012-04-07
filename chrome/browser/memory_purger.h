@@ -5,6 +5,10 @@
 // MemoryPurger provides static APIs to purge as much memory as possible from
 // all processes.  These can be hooked to various signals to try and balance
 // memory consumption, speed, page swapping, etc.
+//
+// This was implemented in an attempt to speed up suspend-to-disk by throwing
+// away any cached data that can be recomputed.  Memory use will rapidly
+// re-expand after this purge is run.
 
 #ifndef CHROME_BROWSER_MEMORY_PURGER_H_
 #define CHROME_BROWSER_MEMORY_PURGER_H_
@@ -12,7 +16,9 @@
 
 #include "base/basictypes.h"
 
+namespace content {
 class RenderProcessHost;
+}
 
 class MemoryPurger {
  public:
@@ -20,7 +26,7 @@ class MemoryPurger {
   static void PurgeAll();
   static void PurgeBrowser();
   static void PurgeRenderers();
-  static void PurgeRendererForHost(RenderProcessHost* host);
+  static void PurgeRendererForHost(content::RenderProcessHost* host);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(MemoryPurger);

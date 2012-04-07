@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,9 @@
 
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "ui/gfx/size.h"
-#include "views/view.h"
+#include "ui/views/view.h"
 
 namespace gfx {
 class Font;
@@ -34,20 +35,18 @@ class KeywordHintView : public views::View {
 
   void SetFont(const gfx::Font& font);
 
-  void SetColor(const SkColor& color);
-
   void SetKeyword(const string16& keyword);
   string16 keyword() const { return keyword_; }
 
-  virtual void OnPaint(gfx::Canvas* canvas);
-  virtual gfx::Size GetPreferredSize();
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
   // The minimum size is just big enough to show the tab.
-  virtual gfx::Size GetMinimumSize();
-  virtual void Layout();
-
-  void set_profile(Profile* profile) { profile_ = profile; }
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual void Layout() OVERRIDE;
 
  private:
+  views::Label* CreateLabel();
+
   views::Label* leading_label_;
   views::Label* trailing_label_;
 

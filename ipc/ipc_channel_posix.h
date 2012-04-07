@@ -57,11 +57,17 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   void Close();
   void set_listener(Listener* listener) { listener_ = listener; }
   bool Send(Message* message);
-  int GetClientFileDescriptor() const;
+  int GetClientFileDescriptor();
+  int TakeClientFileDescriptor();
+  void CloseClientFileDescriptor();
   bool AcceptsConnections() const;
   bool HasAcceptedConnection() const;
   bool GetClientEuid(uid_t* client_euid) const;
   void ResetToAcceptingConnectionState();
+  static bool IsNamedServerInitialized(const std::string& channel_id);
+#if defined(OS_LINUX)
+  static void SetGlobalPid(int pid);
+#endif  // OS_LINUX
 
  private:
   bool CreatePipe(const IPC::ChannelHandle& channel_handle);
@@ -71,12 +77,13 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
 
   bool AcceptConnection();
   void ClosePipeOnError();
+  int GetHelloMessageProcId();
   void QueueHelloMessage();
   bool IsHelloMessage(const Message* m) const;
 
   // MessageLoopForIO::Watcher implementation.
-  virtual void OnFileCanReadWithoutBlocking(int fd);
-  virtual void OnFileCanWriteWithoutBlocking(int fd);
+  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
+  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
 
   Mode mode_;
 
@@ -104,6 +111,7 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   // For a server, the client end of our socketpair() -- the other end of our
   // pipe_ that is passed to the client.
   int client_pipe_;
+  base::Lock client_pipe_lock_;  // Lock that protects |client_pipe_|.
 
 #if defined(IPC_USES_READWRITE)
   // Linux/BSD use a dedicated socketpair() for passing file descriptors.
@@ -123,19 +131,18 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
   // We read from the pipe into this buffer
   char input_buf_[Channel::kReadBufferSize];
 
-  enum {
-    // We assume a worst case: kReadBufferSize bytes of messages, where each
-    // message has no payload and a full complement of descriptors.
-    MAX_READ_FDS = (Channel::kReadBufferSize / sizeof(IPC::Message::Header)) *
-                   FileDescriptorSet::MAX_DESCRIPTORS_PER_MESSAGE,
-  };
+  // We assume a worst case: kReadBufferSize bytes of messages, where each
+  // message has no payload and a full complement of descriptors.
+  static const size_t kMaxReadFDs =
+      (Channel::kReadBufferSize / sizeof(IPC::Message::Header)) *
+      FileDescriptorSet::kMaxDescriptorsPerMessage;
 
   // This is a control message buffer large enough to hold kMaxReadFDs
 #if defined(OS_MACOSX)
   // TODO(agl): OSX appears to have non-constant CMSG macros!
   char input_cmsg_buf_[1024];
 #else
-  char input_cmsg_buf_[CMSG_SPACE(sizeof(int) * MAX_READ_FDS)];
+  char input_cmsg_buf_[CMSG_SPACE(sizeof(int) * kMaxReadFDs)];
 #endif
 
   // Large messages that span multiple pipe buffers, get built-up using
@@ -145,6 +152,11 @@ class Channel::ChannelImpl : public MessageLoopForIO::Watcher {
 
   // True if we are responsible for unlinking the unix domain socket file.
   bool must_unlink_;
+
+#if defined(OS_LINUX)
+  // If non-zero, overrides the process ID sent in the hello message.
+  static int global_pid_;
+#endif  // OS_LINUX
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(ChannelImpl);
 };

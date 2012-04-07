@@ -1,8 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This file is auto-generated. DO NOT EDIT!
+// This file is auto-generated from
+// gpu/command_buffer/build_gles2_cmd_buffer.py
+// DO NOT EDIT!
 
 #ifndef GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_VALIDATION_IMPLEMENTATION_AUTOGEN_H_  // NOLINT
 #define GPU_COMMAND_BUFFER_SERVICE_GLES2_CMD_VALIDATION_IMPLEMENTATION_AUTOGEN_H_  // NOLINT
@@ -209,6 +211,16 @@ static GLenum valid_get_max_index_type_table[] = {
   GL_UNSIGNED_INT,
 };
 
+static GLenum valid_get_tex_param_target_table[] = {
+  GL_TEXTURE_2D,
+  GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+  GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+  GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+  GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+  GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+  GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+};
+
 static GLenum valid_hint_mode_table[] = {
   GL_FASTEST,
   GL_NICEST,
@@ -291,6 +303,7 @@ static GLenum valid_shader_parameter_table[] = {
   GL_COMPILE_STATUS,
   GL_INFO_LOG_LENGTH,
   GL_SHADER_SOURCE_LENGTH,
+  GL_TRANSLATED_SHADER_SOURCE_LENGTH_ANGLE,
 };
 
 static GLenum valid_shader_precision_table[] = {
@@ -369,6 +382,17 @@ static GLenum valid_texture_internal_format_table[] = {
   GL_RGBA,
 };
 
+static GLenum valid_texture_internal_format_storage_table[] = {
+  GL_RGB565,
+  GL_RGBA4,
+  GL_RGB5_A1,
+  GL_ALPHA8_EXT,
+  GL_LUMINANCE8_EXT,
+  GL_LUMINANCE8_ALPHA8_EXT,
+  GL_RGB8_OES,
+  GL_RGBA8_OES,
+};
+
 static GLenum valid_texture_mag_filter_mode_table[] = {
   GL_NEAREST,
   GL_LINEAR,
@@ -398,6 +422,11 @@ static GLenum valid_texture_target_table[] = {
   GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
   GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
   GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+};
+
+static GLenum valid_texture_usage_table[] = {
+  GL_NONE,
+  GL_FRAMEBUFFER_ATTACHMENT_ANGLE,
 };
 
 static GLenum valid_texture_wrap_mode_table[] = {
@@ -480,6 +509,9 @@ Validators::Validators()
       get_max_index_type(
           valid_get_max_index_type_table, arraysize(
               valid_get_max_index_type_table)),
+      get_tex_param_target(
+          valid_get_tex_param_target_table, arraysize(
+              valid_get_tex_param_target_table)),
       hint_mode(
           valid_hint_mode_table, arraysize(valid_hint_mode_table)),
       hint_target(
@@ -508,6 +540,7 @@ Validators::Validators()
       render_buffer_target(
           valid_render_buffer_target_table, arraysize(
               valid_render_buffer_target_table)),
+      shader_binary_format(),
       shader_parameter(
           valid_shader_parameter_table, arraysize(
               valid_shader_parameter_table)),
@@ -533,6 +566,9 @@ Validators::Validators()
       texture_internal_format(
           valid_texture_internal_format_table, arraysize(
               valid_texture_internal_format_table)),
+      texture_internal_format_storage(
+          valid_texture_internal_format_storage_table, arraysize(
+              valid_texture_internal_format_storage_table)),
       texture_mag_filter_mode(
           valid_texture_mag_filter_mode_table, arraysize(
               valid_texture_mag_filter_mode_table)),
@@ -544,6 +580,8 @@ Validators::Validators()
               valid_texture_parameter_table)),
       texture_target(
           valid_texture_target_table, arraysize(valid_texture_target_table)),
+      texture_usage(
+          valid_texture_usage_table, arraysize(valid_texture_usage_table)),
       texture_wrap_mode(
           valid_texture_wrap_mode_table, arraysize(
               valid_texture_wrap_mode_table)),

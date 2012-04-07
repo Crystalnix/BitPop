@@ -9,32 +9,20 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
-#include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/browser/extensions/extension_webrequest_api.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "content/browser/appcache/chrome_appcache_service.h"
-#include "content/browser/chrome_blob_storage_context.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/fileapi/file_system_context.h"
 
 class ChromeURLDataManagerBackend;
 class ChromeURLRequestContextFactory;
 class IOThread;
-class PrefService;
 class Profile;
 class ProfileIOData;
 namespace base {
 class WaitableEvent;
-}
-namespace net {
-class NetworkDelegate;
 }
 
 // Subclass of net::URLRequestContext which can be used to store extra
@@ -49,60 +37,20 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   // Copies the state from |other| into this context.
   void CopyFrom(ChromeURLRequestContext* other);
 
-  // Gets the path to the directory user scripts are stored in.
-  FilePath user_script_dir_path() const {
-    return user_script_dir_path_;
-  }
-
-  // Gets the appcache service to be used for requests in this context.
-  // May be NULL if requests for this context aren't subject to appcaching.
-  ChromeAppCacheService* appcache_service() const {
-    return appcache_service_.get();
-  }
-
-  // Gets the blob storage context associated with this context's profile.
-  ChromeBlobStorageContext* blob_storage_context() const {
-    return blob_storage_context_.get();
-  }
-
-  // Gets the file system host context with this context's profile.
-  fileapi::FileSystemContext* file_system_context() const {
-    return file_system_context_.get();
-  }
-
   bool is_incognito() const {
     return is_incognito_;
   }
 
-  virtual const std::string& GetUserAgent(const GURL& url) const;
-
-  const ExtensionInfoMap* extension_info_map() const {
-    return extension_info_map_;
-  }
+  virtual const std::string& GetUserAgent(const GURL& url) const OVERRIDE;
 
   // TODO(willchan): Get rid of the need for this accessor. Really, this should
   // move completely to ProfileIOData.
   ChromeURLDataManagerBackend* chrome_url_data_manager_backend() const;
 
-  // Setters to simplify initializing from factory objects.
-  void set_user_script_dir_path(const FilePath& path) {
-    user_script_dir_path_ = path;
-  }
   void set_is_incognito(bool is_incognito) {
     is_incognito_ = is_incognito;
   }
-  void set_appcache_service(ChromeAppCacheService* service) {
-    appcache_service_ = service;
-  }
-  void set_blob_storage_context(ChromeBlobStorageContext* context) {
-    blob_storage_context_ = context;
-  }
-  void set_file_system_context(fileapi::FileSystemContext* context) {
-    file_system_context_ = context;
-  }
-  void set_extension_info_map(ExtensionInfoMap* map) {
-    extension_info_map_ = map;
-  }
+
   void set_chrome_url_data_manager_backend(
       ChromeURLDataManagerBackend* backend);
 
@@ -120,16 +68,6 @@ class ChromeURLRequestContext : public net::URLRequestContext {
   // Important: When adding any new members below, consider whether they need to
   // be added to CopyFrom.
   // ---------------------------------------------------------------------------
-
-  // Path to the directory user scripts are stored in.
-  FilePath user_script_dir_path_;
-
-  // TODO(willchan): Make these non-refcounted.
-  scoped_refptr<ChromeAppCacheService> appcache_service_;
-  scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-  // TODO(aa): This should use chrome/common/extensions/extension_set.h.
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
 
   ChromeURLDataManagerBackend* chrome_url_data_manager_backend_;
   bool is_incognito_;
@@ -149,7 +87,7 @@ class ChromeURLRequestContext : public net::URLRequestContext {
 // Most methods are expected to be called on the UI thread, except for
 // the destructor and GetURLRequestContext().
 class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
-                                      public NotificationObserver {
+                                      public content::NotificationObserver {
  public:
   // Constructs a ChromeURLRequestContextGetter that will use |factory| to
   // create the ChromeURLRequestContext. If |profile| is non-NULL, then the
@@ -164,13 +102,10 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
   // GetIOMessageLoopProxy however can be called from any thread.
   //
   // net::URLRequestContextGetter implementation.
-  virtual net::URLRequestContext* GetURLRequestContext();
-  virtual net::CookieStore* DONTUSEME_GetCookieStore();
-  virtual scoped_refptr<base::MessageLoopProxy> GetIOMessageLoopProxy() const;
-
-  // Releases |url_request_context_|.  It's invalid to call
-  // GetURLRequestContext() after this point.
-  void ReleaseURLRequestContext();
+  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE;
+  virtual net::CookieStore* DONTUSEME_GetCookieStore() OVERRIDE;
+  virtual scoped_refptr<base::MessageLoopProxy>
+      GetIOMessageLoopProxy() const OVERRIDE;
 
   // Convenience overload of GetURLRequestContext() that returns a
   // ChromeURLRequestContext* rather than a net::URLRequestContext*.
@@ -222,10 +157,10 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
   // thread before the instance is deleted on the IO thread.
   void CleanupOnUIThread();
 
-  // NotificationObserver implementation.
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver implementation.
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   // Must be called on the IO thread.
@@ -247,18 +182,14 @@ class ChromeURLRequestContextGetter : public net::URLRequestContextGetter,
 
   PrefChangeRegistrar registrar_;
 
-  // |io_thread_| is always valid during the lifetime of |this| since |this| is
-  // deleted on the IO thread.
-  IOThread* const io_thread_;
-
   // Deferred logic for creating a ChromeURLRequestContext.
   // Access only from the IO thread.
   scoped_ptr<ChromeURLRequestContextFactory> factory_;
 
   // NULL if not yet initialized. Otherwise, it is the net::URLRequestContext
-  // instance that was lazilly created by GetURLRequestContext.
+  // instance that was lazily created by GetURLRequestContext().
   // Access only from the IO thread.
-  scoped_refptr<net::URLRequestContext> url_request_context_;
+  base::WeakPtr<net::URLRequestContext> url_request_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeURLRequestContextGetter);
 };

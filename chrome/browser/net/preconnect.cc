@@ -1,13 +1,13 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/net/preconnect.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/profiles/profile.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/net_log.h"
 #include "net/base/ssl_config_service.h"
 #include "net/http/http_network_session.h"
@@ -17,18 +17,21 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
+using content::BrowserThread;
+
 namespace chrome_browser_net {
 
 void PreconnectOnUIThread(
     const GURL& url,
     UrlInfo::ResolutionMotivation motivation,
-    int count) {
+    int count,
+    net::URLRequestContextGetter* getter) {
   // Prewarm connection to Search URL.
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      NewRunnableFunction(PreconnectOnIOThread, url, motivation,
-                          count));
+      base::Bind(&PreconnectOnIOThread, url, motivation, count,
+                 make_scoped_refptr(getter)));
   return;
 }
 
@@ -36,15 +39,14 @@ void PreconnectOnUIThread(
 void PreconnectOnIOThread(
     const GURL& url,
     UrlInfo::ResolutionMotivation motivation,
-    int count) {
-  net::URLRequestContextGetter* getter = Profile::GetDefaultRequestContext();
-  if (!getter)
-    return;
+    int count,
+    net::URLRequestContextGetter* getter) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
     LOG(DFATAL) << "This must be run only on the IO thread.";
     return;
   }
-
+  if (!getter)
+    return;
   // We are now commited to doing the async preconnection call.
   UMA_HISTOGRAM_ENUMERATION("Net.PreconnectMotivation", motivation,
                             UrlInfo::MAX_MOTIVATED);
@@ -93,15 +95,15 @@ void PreconnectOnIOThread(
   // Setup the SSL Configuration.
   net::SSLConfig ssl_config;
   session->ssl_config_service()->GetSSLConfig(&ssl_config);
-  if (session->http_stream_factory()->next_protos())
-    ssl_config.next_protos = *session->http_stream_factory()->next_protos();
+  if (session->http_stream_factory()->has_next_protos())
+    ssl_config.next_protos = session->http_stream_factory()->next_protos();
 
   // All preconnects should perform EV certificate verification.
   ssl_config.verify_ev_cert = true;
 
   net::HttpStreamFactory* http_stream_factory = session->http_stream_factory();
-  http_stream_factory->PreconnectStreams(
-      count, request_info, ssl_config, net::BoundNetLog());
+  http_stream_factory->PreconnectStreams(count, request_info, ssl_config,
+                                         ssl_config);
 }
 
 }  // namespace chrome_browser_net

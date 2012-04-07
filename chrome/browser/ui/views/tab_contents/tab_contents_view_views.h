@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,17 @@
 #define CHROME_BROWSER_UI_VIEWS_TAB_CONTENTS_TAB_CONTENTS_VIEW_VIEWS_H_
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer.h"
 #include "chrome/browser/ui/views/tab_contents/native_tab_contents_view_delegate.h"
-#include "content/browser/tab_contents/tab_contents_view.h"
-#include "views/widget/widget.h"
+#include "content/browser/tab_contents/tab_contents_view_helper.h"
+#include "content/public/browser/web_contents_view.h"
+#include "ui/views/widget/widget.h"
 
+class ConstrainedWindowGtk;
 class NativeTabContentsView;
 class RenderViewContextMenuViews;
-class SadTabView;
 class SkBitmap;
 struct WebDropData;
 namespace gfx {
@@ -25,18 +27,21 @@ namespace views {
 class Widget;
 }
 
-// Views-specific implementation of the TabContentsView.
-// TODO(beng): Remove last remnants of Windows-specificity, and make this
-//             subclass Widget.
+// Views-specific implementation of the WebContentsView.
 class TabContentsViewViews : public views::Widget,
-                             public TabContentsView,
+                             public content::WebContentsView,
                              public internal::NativeTabContentsViewDelegate {
  public:
-  // The corresponding TabContents is passed in the constructor, and manages our
+  // The corresponding WebContents is passed in the constructor, and manages our
   // lifetime. This doesn't need to be the case, but is this way currently
   // because that's what was easiest when they were split.
-  explicit TabContentsViewViews(TabContents* tab_contents);
+  explicit TabContentsViewViews(content::WebContents* web_contents);
   virtual ~TabContentsViewViews();
+
+  // Intermediate code to pass comiplation. This will be removed as a
+  // part of ConstraintWindow change (http://codereview.chromium.org/7631049).
+  void AttachConstrainedWindow(ConstrainedWindowGtk* constrained_window);
+  void RemoveConstrainedWindow(ConstrainedWindowGtk* constrained_window);
 
   // Reset the native parent of this view to NULL.  Unparented windows should
   // not receive any messages.
@@ -46,7 +51,7 @@ class TabContentsViewViews : public views::Widget,
     return native_tab_contents_view_;
   }
 
-  // Overridden from TabContentsView:
+  // Overridden from WebContentsView:
   virtual void CreateView(const gfx::Size& initial_size) OVERRIDE;
   virtual RenderWidgetHostView* CreateViewForWidget(
       RenderWidgetHost* render_widget_host) OVERRIDE;
@@ -54,17 +59,37 @@ class TabContentsViewViews : public views::Widget,
   virtual gfx::NativeView GetContentNativeView() const OVERRIDE;
   virtual gfx::NativeWindow GetTopLevelNativeWindow() const OVERRIDE;
   virtual void GetContainerBounds(gfx::Rect* out) const OVERRIDE;
-  virtual void SetPageTitle(const std::wstring& title) OVERRIDE;
+  virtual void SetPageTitle(const string16& title) OVERRIDE;
   virtual void OnTabCrashed(base::TerminationStatus status,
                             int error_code) OVERRIDE;
   virtual void SizeContents(const gfx::Size& size) OVERRIDE;
+  virtual void RenderViewCreated(RenderViewHost* host) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void SetInitialFocus() OVERRIDE;
   virtual void StoreFocus() OVERRIDE;
   virtual void RestoreFocus() OVERRIDE;
   virtual bool IsDoingDrag() const OVERRIDE;
   virtual void CancelDragAndCloseTab() OVERRIDE;
+  virtual bool IsEventTracking() const OVERRIDE;
+  virtual void CloseTabAfterEventTracking() OVERRIDE;
   virtual void GetViewBounds(gfx::Rect* out) const OVERRIDE;
+  virtual void InstallOverlayView(gfx::NativeView view) OVERRIDE;
+  virtual void RemoveOverlayView() OVERRIDE;
+
+  // Implementation of RenderViewHostDelegate::View.
+  virtual void CreateNewWindow(
+      int route_id,
+      const ViewHostMsg_CreateWindow_Params& params) OVERRIDE;
+  virtual void CreateNewWidget(int route_id,
+                               WebKit::WebPopupType popup_type) OVERRIDE;
+  virtual void CreateNewFullscreenWidget(int route_id) OVERRIDE;
+  virtual void ShowCreatedWindow(int route_id,
+                                 WindowOpenDisposition disposition,
+                                 const gfx::Rect& initial_pos,
+                                 bool user_gesture) OVERRIDE;
+  virtual void ShowCreatedWidget(int route_id,
+                                 const gfx::Rect& initial_pos) OVERRIDE;
+  virtual void ShowCreatedFullscreenWidget(int route_id) OVERRIDE;
   virtual void ShowContextMenu(const ContextMenuParams& params) OVERRIDE;
   virtual void ShowPopupMenu(const gfx::Rect& bounds,
                              int item_height,
@@ -82,7 +107,7 @@ class TabContentsViewViews : public views::Widget,
 
  private:
   // Overridden from internal::NativeTabContentsViewDelegate:
-  virtual TabContents* GetTabContents() OVERRIDE;
+  virtual content::WebContents* GetWebContents() OVERRIDE;
   virtual bool IsShowingSadTab() const OVERRIDE;
   virtual void OnNativeTabContentsViewShown() OVERRIDE;
   virtual void OnNativeTabContentsViewHidden() OVERRIDE;
@@ -91,11 +116,14 @@ class TabContentsViewViews : public views::Widget,
   virtual void OnNativeTabContentsViewMouseDown() OVERRIDE;
   virtual void OnNativeTabContentsViewMouseMove(bool motion) OVERRIDE;
   virtual void OnNativeTabContentsViewDraggingEnded() OVERRIDE;
-  virtual views::internal::NativeWidgetDelegate* AsNativeWidgetDelegate()
-      OVERRIDE;
+  virtual views::internal::NativeWidgetDelegate*
+      AsNativeWidgetDelegate() OVERRIDE;
 
   // Overridden from views::Widget:
   virtual views::FocusManager* GetFocusManager() OVERRIDE;
+  virtual const views::FocusManager* GetFocusManager() const OVERRIDE;
+  virtual void OnNativeWidgetVisibilityChanged(bool visible) OVERRIDE;
+  virtual void OnNativeWidgetSizeChanged(const gfx::Size& new_size) OVERRIDE;
 
   // A helper method for closing the tab.
   void CloseTab();
@@ -116,11 +144,13 @@ class TabContentsViewViews : public views::Widget,
 
   // ---------------------------------------------------------------------------
 
-  NativeTabContentsView* native_tab_contents_view_;
+  // The WebContents whose contents we display.
+  content::WebContents* web_contents_;
 
-  // Used to render the sad tab. This will be non-NULL only when the sad tab is
-  // visible.
-  SadTabView* sad_tab_;
+  // Common implementations of some WebContentsView methods.
+  TabContentsViewHelper tab_contents_view_helper_;
+
+  NativeTabContentsView* native_tab_contents_view_;
 
   // The id used in the ViewStorage to store the last focused view.
   int last_focused_view_storage_id_;
@@ -137,7 +167,11 @@ class TabContentsViewViews : public views::Widget,
 
   // The FocusManager associated with this tab.  Stored as it is not directly
   // accessible when un-parented.
-  views::FocusManager* focus_manager_;
+  mutable const views::FocusManager* focus_manager_;
+
+  // The overlaid view. Owned by the caller of |InstallOverlayView|; this is a
+  // weak reference.
+  views::Widget* overlaid_view_;
 
   DISALLOW_COPY_AND_ASSIGN(TabContentsViewViews);
 };

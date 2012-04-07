@@ -10,13 +10,16 @@
 #pragma once
 
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/ui/tab_contents/tab_contents_wrapper.h"
 #include "googleurl/src/gurl.h"
-#include "views/controls/native/native_view_host.h"
-#include "views/events/event.h"
+#include "ui/views/controls/native/native_view_host.h"
+#include "ui/views/events/event.h"
 
 class Profile;
+
+namespace content {
 class SiteInstance;
-class TabContents;
+};
 
 class DOMView : public views::NativeViewHost {
  public:
@@ -34,13 +37,13 @@ class DOMView : public views::NativeViewHost {
   //
   // If |instance| is not null, then the view will be loaded in the same
   // process as the given instance.
-  bool Init(Profile* profile, SiteInstance* instance);
+  bool Init(Profile* profile, content::SiteInstance* instance);
 
   // Loads the given URL into the page. You must have previously called Init().
   void LoadURL(const GURL& url);
 
-  // The tab contents displaying the actual contents.
-  TabContents* tab_contents() const { return tab_contents_.get(); }
+  // The TabContents displaying the DOM contents; may be null.
+  TabContentsWrapper* dom_contents() const { return dom_contents_.get(); }
 
  protected:
   // Overridden from View.
@@ -56,10 +59,10 @@ class DOMView : public views::NativeViewHost {
 
   // Returns new allocated TabContents instance, caller is responsible deleting.
   // Override in derived classes to replace TabContents with derivative.
-  virtual TabContents* CreateTabContents(Profile* profile,
-                                         SiteInstance* instance);
+  virtual content::WebContents* CreateTabContents(
+    Profile* profile, content::SiteInstance* instance);
 
-  scoped_ptr<TabContents> tab_contents_;
+  scoped_ptr<TabContentsWrapper> dom_contents_;
 
  private:
   bool initialized_;

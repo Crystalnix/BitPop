@@ -6,24 +6,20 @@
 #define PPAPI_PROXY_PPP_GRAPHICS_3D_PROXY_H_
 
 #include "ppapi/c/pp_instance.h"
-#include "ppapi/proxy/host_resource.h"
 #include "ppapi/proxy/interface_proxy.h"
+#include "ppapi/shared_impl/host_resource.h"
 
-struct PPP_Graphics3D_Dev;
+struct PPP_Graphics3D;
 
-namespace pp {
+namespace ppapi {
 namespace proxy {
 
 class PPP_Graphics3D_Proxy : public InterfaceProxy {
  public:
-  PPP_Graphics3D_Proxy(Dispatcher* dispatcher, const void* target_interface);
+  PPP_Graphics3D_Proxy(Dispatcher* dispatcher);
   virtual ~PPP_Graphics3D_Proxy();
 
   static const Info* GetInfo();
-
-  const PPP_Graphics3D_Dev* ppp_graphics_3d_target() const {
-    return reinterpret_cast<const PPP_Graphics3D_Dev*>(target_interface());
-  }
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
@@ -31,9 +27,16 @@ class PPP_Graphics3D_Proxy : public InterfaceProxy {
  private:
   // Message handlers.
   void OnMsgContextLost(PP_Instance instance);
+
+  // When this proxy is in the plugin side, this value caches the interface
+  // pointer so we don't have to retrieve it from the dispatcher each time.
+  // In the host, this value is always NULL.
+  const PPP_Graphics3D* ppp_graphics_3d_impl_;
+
+  DISALLOW_COPY_AND_ASSIGN(PPP_Graphics3D_Proxy);
 };
 
 }  // namespace proxy
-}  // namespace pp
+}  // namespace ppapi
 
 #endif  // PPAPI_PROXY_PPP_GRAPHICS_3D_PROXY_H_

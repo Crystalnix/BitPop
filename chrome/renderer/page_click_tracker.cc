@@ -6,13 +6,12 @@
 
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/page_click_listener.h"
-#include "content/common/view_messages.h"
-#include "content/renderer/render_view.h"
+#include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebDOMMouseEvent.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebInputElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 #include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 
 using WebKit::WebDOMEvent;
@@ -45,10 +44,21 @@ const WebInputElement GetTextWebInputElement(const WebNode& node) {
   return element.toConst<WebInputElement>();
 }
 
+// Checks to see if a text field was the previously selected node and is now
+// losing its focus.
+bool DidSelectedTextFieldLoseFocus(const WebNode& newly_clicked_node) {
+  WebKit::WebNode focused_node = newly_clicked_node.document().focusedNode();
+
+  if (focused_node.isNull() || GetTextWebInputElement(focused_node).isNull())
+    return false;
+
+  return focused_node != newly_clicked_node;
+}
+
 }  // namespace
 
-PageClickTracker::PageClickTracker(RenderView* render_view)
-    : RenderViewObserver(render_view),
+PageClickTracker::PageClickTracker(content::RenderView* render_view)
+    : content::RenderViewObserver(render_view),
       was_focused_(false) {
 }
 
@@ -73,15 +83,13 @@ void PageClickTracker::DidHandleMouseEvent(const WebMouseEvent& event) {
   if (input_element.isNull())
     return;
 
-  bool is_focused = (last_node_clicked_ == GetFocusedNode());
+  bool is_focused = (last_node_clicked_ == render_view()->GetFocusedNode());
   ObserverListBase<PageClickListener>::Iterator it(listeners_);
   PageClickListener* listener;
   while ((listener = it.GetNext()) != NULL) {
     if (listener->InputElementClicked(input_element, was_focused_, is_focused))
       break;
   }
-
-  last_node_clicked_.reset();
 }
 
 void PageClickTracker::AddListener(PageClickListener* listener) {
@@ -90,21 +98,6 @@ void PageClickTracker::AddListener(PageClickListener* listener) {
 
 void PageClickTracker::RemoveListener(PageClickListener* listener) {
   listeners_.RemoveObserver(listener);
-}
-
-bool PageClickTracker::OnMessageReceived(const IPC::Message& message) {
-  if (message.type() == ViewMsg_HandleInputEvent::ID) {
-    void* iter = NULL;
-    const char* data;
-    int data_length;
-    if (message.ReadData(&iter, &data, &data_length)) {
-      const WebInputEvent* input_event =
-          reinterpret_cast<const WebInputEvent*>(data);
-      if (WebInputEvent::isMouseEventType(input_event->type))
-        DidHandleMouseEvent(*(static_cast<const WebMouseEvent*>(input_event)));
-    }
-  }
-  return false;
 }
 
 void PageClickTracker::DidFinishDocumentLoad(WebKit::WebFrame* frame) {
@@ -139,22 +132,26 @@ void PageClickTracker::handleEvent(const WebDOMEvent& event) {
   // We'll get a notification once the mouse event has been processed
   // (DidHandleMouseEvent), we'll notify the listener at that point.
   WebNode node = mouse_event.target();
+
+  HandleTextFieldMaybeLosingFocus(node);
+
   // We are only interested in text field clicks.
   if (GetTextWebInputElement(node).isNull())
     return;
 
   last_node_clicked_ = node;
-  was_focused_ = (GetFocusedNode() == last_node_clicked_);
+  was_focused_ = (node.document().focusedNode() == last_node_clicked_);
 }
 
-WebNode PageClickTracker::GetFocusedNode() {
-  WebView* web_view = render_view()->webview();
-  if (!web_view)
-    return WebNode();
+void PageClickTracker::HandleTextFieldMaybeLosingFocus(
+    const WebNode& newly_clicked_node) {
+  if (!DidSelectedTextFieldLoseFocus(newly_clicked_node))
+    return;
 
-  WebFrame* web_frame = web_view->focusedFrame();
-  if (!web_frame)
-    return WebNode();
-
-  return web_frame->document().focusedNode();
+  ObserverListBase<PageClickListener>::Iterator it(listeners_);
+  PageClickListener* listener;
+  while ((listener = it.GetNext()) != NULL) {
+    if (listener->InputElementLostFocus())
+      break;
+  }
 }

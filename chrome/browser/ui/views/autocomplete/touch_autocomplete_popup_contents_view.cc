@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "touch_autocomplete_popup_contents_view.h"
+#include "chrome/browser/ui/views/autocomplete/touch_autocomplete_popup_contents_view.h"
 
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "ui/gfx/canvas.h"
@@ -13,7 +12,7 @@
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
-#include "views/view.h"
+#include "ui/views/view.h"
 
 
 // TouchAutocompleteResultView ------------------------------------------------
@@ -57,9 +56,8 @@ TouchAutocompletePopupContentsView::TouchAutocompletePopupContentsView(
     const gfx::Font& font,
     OmniboxView* omnibox_view,
     AutocompleteEditModel* edit_model,
-    Profile* profile,
-    const views::View* location_bar)
-    : AutocompletePopupContentsView(font, omnibox_view, edit_model, profile,
+    views::View* location_bar)
+    : AutocompletePopupContentsView(font, omnibox_view, edit_model,
                                     location_bar) {
 }
 
@@ -107,7 +105,7 @@ int TouchAutocompletePopupContentsView::CalculatePopupHeight() {
   int popup_height = 0;
   for (size_t i = 0; i < model_->result().size(); ++i) {
     popup_height = std::max(popup_height,
-                            GetChildViewAt(i)->GetPreferredSize().height());
+                            child_at(i)->GetPreferredSize().height());
   }
   popup_height = std::max(popup_height, opt_in_view_ ?
       opt_in_view_->GetPreferredSize().height() : 0);
@@ -126,8 +124,8 @@ std::vector<views::View*>
     TouchAutocompletePopupContentsView::GetVisibleChildren() {
   std::vector<View*> visible_children;
   for (int i = 0; i < child_count(); ++i) {
-    View* v = GetChildViewAt(i);
-    if (GetChildViewAt(i)->IsVisible())
+    View* v = child_at(i);
+    if (child_at(i)->visible())
       visible_children.push_back(v);
   }
   return visible_children;

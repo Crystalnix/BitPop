@@ -11,59 +11,52 @@
 #include "base/memory/scoped_ptr.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/trusted/ppb_url_loader_trusted.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebURLLoaderClient.h"
-#include "webkit/plugins/ppapi/callbacks.h"
+#include "ppapi/shared_impl/ppb_url_request_info_shared.h"
+#include "ppapi/shared_impl/resource.h"
+#include "ppapi/shared_impl/tracked_callback.h"
+#include "ppapi/thunk/ppb_url_loader_api.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURLLoaderClient.h"
 #include "webkit/plugins/ppapi/ppapi_plugin_instance.h"
-#include "webkit/plugins/ppapi/resource.h"
-
-struct PPB_URLLoader;
-struct PPB_URLLoaderTrusted;
 
 namespace WebKit {
-class WebFrame;
 class WebURL;
 }
 
 namespace webkit {
 namespace ppapi {
 
-class PluginInstance;
-class PPB_URLRequestInfo_Impl;
 class PPB_URLResponseInfo_Impl;
 
-class PPB_URLLoader_Impl : public Resource, public WebKit::WebURLLoaderClient {
+class PPB_URLLoader_Impl : public ::ppapi::Resource,
+                           public ::ppapi::thunk::PPB_URLLoader_API,
+                           public WebKit::WebURLLoaderClient {
  public:
-  PPB_URLLoader_Impl(PluginInstance* instance, bool main_document_loader);
+  PPB_URLLoader_Impl(PP_Instance instance, bool main_document_loader);
   virtual ~PPB_URLLoader_Impl();
 
-  // Returns a pointer to the interface implementing PPB_URLLoader that is
-  // exposed to the plugin.
-  static const PPB_URLLoader* GetInterface();
-
-  // Returns a pointer to the interface implementing PPB_URLLoaderTrusted that
-  // is exposed to the plugin.
-  static const PPB_URLLoaderTrusted* GetTrustedInterface();
-
   // Resource overrides.
-  virtual PPB_URLLoader_Impl* AsPPB_URLLoader_Impl();
-  virtual void ClearInstance();
+  virtual ::ppapi::thunk::PPB_URLLoader_API* AsPPB_URLLoader_API() OVERRIDE;
+  virtual void InstanceWasDeleted() OVERRIDE;
 
-  // PPB_URLLoader implementation.
-  int32_t Open(PPB_URLRequestInfo_Impl* request,
-               PP_CompletionCallback callback);
-  int32_t FollowRedirect(PP_CompletionCallback callback);
-  bool GetUploadProgress(int64_t* bytes_sent,
-                         int64_t* total_bytes_to_be_sent);
-  bool GetDownloadProgress(int64_t* bytes_received,
-                           int64_t* total_bytes_to_be_received);
-  int32_t ReadResponseBody(void* buffer, int32_t bytes_to_read,
-                           PP_CompletionCallback callback);
-  int32_t FinishStreamingToFile(PP_CompletionCallback callback);
-  void Close();
-
-  // PPB_URLLoaderTrusted implementation.
-  void GrantUniversalAccess();
-  void SetStatusCallback(PP_URLLoaderTrusted_StatusCallback cb);
+  // PPB_URLLoader_API implementation.
+  virtual int32_t Open(PP_Resource request_id,
+                       PP_CompletionCallback callback) OVERRIDE;
+  virtual int32_t FollowRedirect(PP_CompletionCallback callback) OVERRIDE;
+  virtual PP_Bool GetUploadProgress(int64_t* bytes_sent,
+                                    int64_t* total_bytes_to_be_sent) OVERRIDE;
+  virtual PP_Bool GetDownloadProgress(
+      int64_t* bytes_received,
+      int64_t* total_bytes_to_be_received) OVERRIDE;
+  virtual PP_Resource GetResponseInfo() OVERRIDE;
+  virtual int32_t ReadResponseBody(void* buffer,
+                                   int32_t bytes_to_read,
+                                   PP_CompletionCallback callback) OVERRIDE;
+  virtual int32_t FinishStreamingToFile(
+      PP_CompletionCallback callback) OVERRIDE;
+  virtual void Close() OVERRIDE;
+  virtual void GrantUniversalAccess() OVERRIDE;
+  virtual void SetStatusCallback(
+      PP_URLLoaderTrusted_StatusCallback cb) OVERRIDE;
 
   // WebKit::WebURLLoaderClient implementation.
   virtual void willSendRequest(WebKit::WebURLLoader* loader,
@@ -122,13 +115,32 @@ class PPB_URLLoader_Impl : public Resource, public WebKit::WebURLLoaderClient {
   bool RecordDownloadProgress() const;
   bool RecordUploadProgress() const;
 
+  // Calls SetDefersLoading on the current load. This encapsulates the logic
+  // differences between document loads and regular ones.
+  void SetDefersLoading(bool defers_loading);
+
+  void FinishLoading(int32_t done_status);
+
   // If true, then the plugin instance is a full-frame plugin and we're just
   // wrapping the main document's loader (i.e. loader_ is null).
   bool main_document_loader_;
+
+  // Keep a copy of the request data. We specifically do this instead of
+  // keeping a reference to the request resource, because the plugin might
+  // change the request info resource out from under us.
+  ::ppapi::PPB_URLRequestInfo_Data request_data_;
+
+  // The loader associated with this request. MAY BE NULL.
+  //
+  // This will be NULL if the load hasn't been opened yet, or if this is a main
+  // document loader (when registered as a mime type). Therefore, you should
+  // always NULL check this value before using it. In the case of a main
+  // document load, you would call the functions on the document to cancel the
+  // load, etc. since there is no loader.
   scoped_ptr<WebKit::WebURLLoader> loader_;
-  scoped_refptr<PPB_URLRequestInfo_Impl> request_info_;
+
   scoped_refptr<PPB_URLResponseInfo_Impl> response_info_;
-  scoped_refptr<TrackedCompletionCallback> pending_callback_;
+  scoped_refptr< ::ppapi::TrackedCallback> pending_callback_;
   std::deque<char> buffer_;
   int64_t bytes_sent_;
   int64_t total_bytes_to_be_sent_;

@@ -6,7 +6,7 @@
 
 #include <vector>
 
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "chrome/browser/password_manager/password_form_manager.h"
@@ -15,12 +15,14 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/autofill_messages.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/view_messages.h"
+#include "content/public/browser/user_metrics.h"
+#include "content/public/common/frame_navigate_params.h"
 #include "grit/generated_resources.h"
 
-using webkit_glue::PasswordForm;
-using webkit_glue::PasswordFormMap;
+using content::UserMetricsAction;
+using content::WebContents;
+using webkit::forms::PasswordForm;
+using webkit::forms::PasswordFormMap;
 
 // static
 void PasswordManager::RegisterUserPrefs(PrefService* prefs) {
@@ -49,14 +51,14 @@ static void ReportMetrics(bool password_manager_enabled) {
   ran_once = true;
 
   if (password_manager_enabled)
-    UserMetrics::RecordAction(UserMetricsAction("PasswordManager_Enabled"));
+    content::RecordAction(UserMetricsAction("PasswordManager_Enabled"));
   else
-    UserMetrics::RecordAction(UserMetricsAction("PasswordManager_Disabled"));
+    content::RecordAction(UserMetricsAction("PasswordManager_Disabled"));
 }
 
-PasswordManager::PasswordManager(TabContents* tab_contents,
+PasswordManager::PasswordManager(WebContents* web_contents,
                                  PasswordManagerDelegate* delegate)
-    : TabContentsObserver(tab_contents),
+    : content::WebContentsObserver(web_contents),
       login_managers_deleter_(&pending_login_managers_),
       delegate_(delegate),
       observer_(NULL) {
@@ -157,9 +159,9 @@ void PasswordManager::DidStopLoading() {
   }
 }
 
-void PasswordManager::DidNavigateAnyFramePostCommit(
+void PasswordManager::DidNavigateAnyFrame(
       const content::LoadCommittedDetails& details,
-      const ViewHostMsg_FrameNavigate_Params& params) {
+      const content::FrameNavigateParams& params) {
   if (params.password_form.origin.is_valid())
     ProvisionallySavePassword(params.password_form);
 }
@@ -225,8 +227,8 @@ void PasswordManager::Autofill(
     case PasswordForm::SCHEME_HTML: {
       // Note the check above is required because the observer_ for a non-HTML
       // schemed password form may have been freed, so we need to distinguish.
-      webkit_glue::PasswordFormFillData fill_data;
-      webkit_glue::PasswordFormDomManager::InitFillData(form_for_autofill,
+      webkit::forms::PasswordFormFillData fill_data;
+      webkit::forms::PasswordFormDomManager::InitFillData(form_for_autofill,
                                                         best_matches,
                                                         preferred_match,
                                                         wait_for_username,
@@ -236,9 +238,8 @@ void PasswordManager::Autofill(
     }
     default:
       if (observer_) {
-        observer_->OnAutofillDataAvailable(
-            UTF16ToWideHack(preferred_match->username_value),
-            UTF16ToWideHack(preferred_match->password_value));
+        observer_->OnAutofillDataAvailable(preferred_match->username_value,
+                                           preferred_match->password_value);
       }
   }
 }

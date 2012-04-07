@@ -4,93 +4,36 @@
 
 #include "chrome/browser/automation/automation_resource_message_filter.h"
 
-#include "base/path_service.h"
+#include "base/bind.h"
 #include "base/metrics/histogram.h"
-#include "base/stl_util-inl.h"
+#include "base/path_service.h"
+#include "base/stl_util.h"
 #include "chrome/browser/automation/url_request_automation_job.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/net/url_request_failed_dns_job.h"
-#include "chrome/browser/net/url_request_mock_http_job.h"
 #include "chrome/browser/net/url_request_mock_util.h"
-#include "chrome/browser/net/url_request_slow_download_job.h"
-#include "chrome/browser/net/url_request_slow_http_job.h"
 #include "chrome/common/automation_messages.h"
 #include "chrome/common/chrome_paths.h"
-#include "content/browser/browser_message_filter.h"
-#include "content/browser/browser_thread.h"
-#include "content/common/view_messages.h"
+#include "chrome/common/render_messages.h"
+#include "content/public/browser/browser_message_filter.h"
+#include "content/public/browser/browser_thread.h"
 #include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_filter.h"
 
+using content::BrowserMessageFilter;
+using content::BrowserThread;
+
 base::LazyInstance<AutomationResourceMessageFilter::RenderViewMap>
-    AutomationResourceMessageFilter::filtered_render_views_(
-        base::LINKER_INITIALIZED);
+    AutomationResourceMessageFilter::filtered_render_views_ =
+        LAZY_INSTANCE_INITIALIZER;
 
 base::LazyInstance<AutomationResourceMessageFilter::CompletionCallbackMap>
-    AutomationResourceMessageFilter::completion_callback_map_(
-        base::LINKER_INITIALIZED);
+    AutomationResourceMessageFilter::completion_callback_map_ =
+        LAZY_INSTANCE_INITIALIZER;
 
 int AutomationResourceMessageFilter::unique_request_id_ = 1;
 int AutomationResourceMessageFilter::next_completion_callback_id_ = 0;
-
-// CookieStore specialization to enable fetching and setting cookies over the
-// automation channel. This cookie store is transient i.e. it maintains cookies
-// for the duration of the current request to set or get cookies from the
-// renderer.
-class AutomationCookieStore : public net::CookieStore {
- public:
-  AutomationCookieStore(AutomationResourceMessageFilter* automation_client,
-                        int tab_handle)
-      : automation_client_(automation_client),
-        tab_handle_(tab_handle) {
-  }
-
-  virtual ~AutomationCookieStore() {
-    DVLOG(1) << "In " << __FUNCTION__;
-  }
-
-  // CookieStore implementation.
-  virtual bool SetCookieWithOptions(const GURL& url,
-                                    const std::string& cookie_line,
-                                    const net::CookieOptions& options) {
-    // The cookie_string_ is available only once, i.e. once it is read by
-    // it is invalidated.
-    cookie_string_ = cookie_line;
-    return true;
-  }
-
-  virtual std::string GetCookiesWithOptions(const GURL& url,
-                                            const net::CookieOptions& options) {
-    return cookie_string_;
-  }
-
-  virtual void GetCookiesWithInfo(const GURL& url,
-                                  const net::CookieOptions& options,
-                                  std::string* cookie_line,
-                                  std::vector<CookieInfo>* cookie_infos) {
-    NOTREACHED() << "Should not get called for an automation profile";
-  }
-
-  virtual void DeleteCookie(const GURL& url,
-                            const std::string& cookie_name) {
-    NOTREACHED() << "Should not get called for an automation profile";
-  }
-
-  virtual net::CookieMonster* GetCookieMonster() {
-    NOTREACHED() << "Should not get called for an automation profile";
-    return NULL;
-  }
-
- protected:
-  scoped_refptr<AutomationResourceMessageFilter> automation_client_;
-  int tab_handle_;
-  std::string cookie_string_;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(AutomationCookieStore);
-};
 
 AutomationResourceMessageFilter::AutomationDetails::AutomationDetails()
     : tab_handle(0),
@@ -113,7 +56,7 @@ struct AutomationResourceMessageFilter::CookieCompletionInfo {
   scoped_refptr<net::URLRequestContext> context;
   int render_process_id;
   IPC::Message* reply_msg;
-  scoped_refptr<net::CookieStore> cookie_store;
+  scoped_refptr<AutomationResourceMessageFilter> automation_message_filter;
 };
 
 AutomationResourceMessageFilter::AutomationResourceMessageFilter()
@@ -125,8 +68,7 @@ AutomationResourceMessageFilter::AutomationResourceMessageFilter()
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(
-          URLRequestAutomationJob::EnsureProtocolFactoryRegistered));
+      base::Bind(&URLRequestAutomationJob::EnsureProtocolFactoryRegistered));
 }
 
 AutomationResourceMessageFilter::~AutomationResourceMessageFilter() {
@@ -162,6 +104,18 @@ void AutomationResourceMessageFilter::OnChannelClosing() {
       index++;
     }
   }
+
+  CompletionCallbackMap::iterator callback_index =
+      completion_callback_map_.Get().begin();
+  while (callback_index != completion_callback_map_.Get().end()) {
+    const CookieCompletionInfo& cookie_completion_info =
+        (*callback_index).second;
+    if (cookie_completion_info.automation_message_filter.get() == this) {
+      completion_callback_map_.Get().erase(callback_index++);
+    } else {
+      callback_index++;
+    }
+  }
 }
 
 // Called on the IPC thread:
@@ -187,7 +141,10 @@ bool AutomationResourceMessageFilter::OnMessageReceived(
   }
 
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP(AutomationResourceMessageFilter, message)
+  bool deserialize_success = true;
+  IPC_BEGIN_MESSAGE_MAP_EX(AutomationResourceMessageFilter,
+                           message,
+                           deserialize_success)
     IPC_MESSAGE_HANDLER(AutomationMsg_SetFilteredInet,
                         OnSetFilteredInet)
     IPC_MESSAGE_HANDLER(AutomationMsg_GetFilteredInetHitCount,
@@ -197,7 +154,13 @@ bool AutomationResourceMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(AutomationMsg_GetCookiesHostResponse,
                         OnGetCookiesHostResponse)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
+  IPC_END_MESSAGE_MAP_EX()
+
+  if (!deserialize_success) {
+    LOG(ERROR) << "Failed to deserialize IPC message. "
+               << "Closing the automation channel.";
+    channel_->Close();
+  }
 
   return handled;
 }
@@ -263,13 +226,9 @@ bool AutomationResourceMessageFilter::RegisterRenderView(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(
-          AutomationResourceMessageFilter::RegisterRenderViewInIOThread,
-          renderer_pid,
-          renderer_id,
-          tab_handle,
-          make_scoped_refptr(filter),
-          pending_view));
+      base::Bind(&AutomationResourceMessageFilter::RegisterRenderViewInIOThread,
+                 renderer_pid, renderer_id, tab_handle,
+                 make_scoped_refptr(filter), pending_view));
   return true;
 }
 
@@ -277,8 +236,8 @@ void AutomationResourceMessageFilter::UnRegisterRenderView(
     int renderer_pid, int renderer_id) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(
-          AutomationResourceMessageFilter::UnRegisterRenderViewInIOThread,
+      base::Bind(
+          &AutomationResourceMessageFilter::UnRegisterRenderViewInIOThread,
           renderer_pid, renderer_id));
 }
 
@@ -292,12 +251,9 @@ bool AutomationResourceMessageFilter::ResumePendingRenderView(
 
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      NewRunnableFunction(
-          AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread,
-          renderer_pid,
-          renderer_id,
-          tab_handle,
-          make_scoped_refptr(filter)));
+      base::Bind(
+          &AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread,
+          renderer_pid, renderer_id, tab_handle, make_scoped_refptr(filter)));
   return true;
 }
 
@@ -307,20 +263,30 @@ void AutomationResourceMessageFilter::RegisterRenderViewInIOThread(
     bool pending_view) {
   RendererId renderer_key(renderer_pid, renderer_id);
 
-  scoped_refptr<net::CookieStore> cookie_store(
-      new AutomationCookieStore(filter, tab_handle));
-
   RenderViewMap::iterator automation_details_iter(
       filtered_render_views_.Get().find(renderer_key));
-  if (automation_details_iter != filtered_render_views_.Get().end()) {
-    DCHECK(automation_details_iter->second.ref_count > 0);
+  // We need to match the renderer key and the AutomationResourceMessageFilter
+  // instances. If the filter instances are different it means that a new
+  // automation channel (External host process) was created for this tab.
+  if (automation_details_iter != filtered_render_views_.Get().end() &&
+      automation_details_iter->second.filter == filter) {
+    DCHECK_GT(automation_details_iter->second.ref_count, 0);
     automation_details_iter->second.ref_count++;
+    // The tab handle and the pending status may have changed:-
+    // 1.A external tab container is being destroyed and a new one is being
+    //   created.
+    // 2.The external tab container being destroyed receives a RVH created
+    //   notification for the new RVH created to host the newly created tab.
+    //   In this case the tab handle in the AutomationDetails structure would
+    //   be invalid as it points to a destroyed tab.
+    // We need to replace the handle of the external tab being destroyed with
+    // the new one that is being created."
+    automation_details_iter->second.tab_handle = tab_handle;
+    automation_details_iter->second.is_pending_render_view = pending_view;
   } else {
     filtered_render_views_.Get()[renderer_key] =
         AutomationDetails(tab_handle, filter, pending_view);
   }
-
-  filtered_render_views_.Get()[renderer_key].set_cookie_store(cookie_store);
 }
 
 // static
@@ -344,7 +310,7 @@ void AutomationResourceMessageFilter::UnRegisterRenderViewInIOThread(
 }
 
 // static
-bool AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread(
+void AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread(
     int renderer_pid, int renderer_id, int tab_handle,
     AutomationResourceMessageFilter* filter) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -354,18 +320,11 @@ bool AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread(
   RenderViewMap::iterator automation_details_iter(
       filtered_render_views_.Get().find(renderer_key));
 
-  if (automation_details_iter == filtered_render_views_.Get().end()) {
-    NOTREACHED() << "Failed to find pending view for renderer pid:"
-                 << renderer_pid
-                 << ", render view id:"
-                 << renderer_id;
-    return false;
-  }
+  DCHECK(automation_details_iter != filtered_render_views_.Get().end())
+      << "Failed to find pending view for renderer pid:"
+      << renderer_pid << ", render view id:" << renderer_id;
 
   DCHECK(automation_details_iter->second.is_pending_render_view);
-
-  scoped_refptr<net::CookieStore> cookie_store(
-      new AutomationCookieStore(filter, tab_handle));
 
   AutomationResourceMessageFilter* old_filter =
       automation_details_iter->second.filter;
@@ -374,10 +333,7 @@ bool AutomationResourceMessageFilter::ResumePendingRenderViewInIOThread(
   filtered_render_views_.Get()[renderer_key] =
       AutomationDetails(tab_handle, filter, false);
 
-  filtered_render_views_.Get()[renderer_key].set_cookie_store(cookie_store);
-
   ResumeJobsForPendingView(tab_handle, old_filter, filter);
-  return true;
 }
 
 bool AutomationResourceMessageFilter::LookupRegisteredRenderView(
@@ -461,7 +417,6 @@ void AutomationResourceMessageFilter::GetCookiesForUrl(
 
   DCHECK(automation_details_iter != filtered_render_views_.Get().end());
   DCHECK(automation_details_iter->second.filter != NULL);
-  DCHECK(automation_details_iter->second.cookie_store_.get() != NULL);
 
   int completion_callback_id = GetNextCompletionCallbackId();
   DCHECK(!ContainsKey(completion_callback_map_.Get(), completion_callback_id));
@@ -471,7 +426,8 @@ void AutomationResourceMessageFilter::GetCookiesForUrl(
   cookie_info.context = context;
   cookie_info.render_process_id = render_process_id;
   cookie_info.reply_msg = reply_msg;
-  cookie_info.cookie_store = automation_details_iter->second.cookie_store_;
+  cookie_info.automation_message_filter =
+      automation_details_iter->second.filter;
 
   completion_callback_map_.Get()[completion_callback_id] = cookie_info;
 
@@ -496,26 +452,10 @@ void AutomationResourceMessageFilter::OnGetCookiesHostResponse(
     return;
   }
 
-  scoped_refptr<net::CookieStore> cookie_store = index->second.cookie_store;
-  DCHECK(cookie_store.get() != NULL);
-  cookie_store->SetCookieWithOptions(url, cookies, net::CookieOptions());
-
-  int render_view_id = index->second.reply_msg->routing_id();
-  ViewHostMsg_GetCookies::WriteReplyParams(index->second.reply_msg, cookies);
+  ChromeViewHostMsg_GetCookies::WriteReplyParams(index->second.reply_msg,
+                                                 cookies);
   index->second.filter->Send(index->second.reply_msg);
-  net::CookieMonster* cookie_monster = index->second.context->cookie_store()->
-      GetCookieMonster();
-  net::CookieList cookie_list = cookie_monster->GetAllCookiesForURLWithOptions(
-      url, net::CookieOptions());
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      NewRunnableFunction(
-          &TabSpecificContentSettings::CookiesRead,
-          index->second.render_process_id, render_view_id, url, cookie_list,
-          !success));
 
-  // The cookie for this URL is only valid until it is read by the callback.
-  cookie_store->SetCookieWithOptions(url, "", net::CookieOptions());
   completion_callback_map_.Get().erase(index);
 }
 
@@ -546,15 +486,14 @@ void AutomationResourceMessageFilter::ResumeJobsForPendingView(
   DCHECK(new_filter != NULL);
 
   RequestMap pending_requests = old_filter->pending_request_map_;
+  old_filter->pending_request_map_.clear();
 
-  for (RequestMap::iterator index = old_filter->pending_request_map_.begin();
-          index != old_filter->pending_request_map_.end(); index++) {
+  for (RequestMap::iterator index = pending_requests.begin();
+       index != pending_requests.end(); index++) {
     URLRequestAutomationJob* job = (*index).second;
     DCHECK_EQ(job->message_filter(), old_filter);
     DCHECK(job->is_pending());
     // StartPendingJob will register the job with the new filter.
     job->StartPendingJob(tab_handle, new_filter);
   }
-
-  old_filter->pending_request_map_.clear();
 }

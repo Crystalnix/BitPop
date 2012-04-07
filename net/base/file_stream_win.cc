@@ -11,6 +11,7 @@
 #include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/threading/thread_restrictions.h"
+#include "net/base/file_stream_metrics.h"
 #include "net/base/net_errors.h"
 
 namespace net {
@@ -33,35 +34,36 @@ static void IncrementOffset(OVERLAPPED* overlapped, DWORD count) {
   SetOffset(overlapped, offset);
 }
 
-static int MapErrorCode(DWORD err) {
-  switch (err) {
-    case ERROR_FILE_NOT_FOUND:
-    case ERROR_PATH_NOT_FOUND:
-      return ERR_FILE_NOT_FOUND;
-    case ERROR_ACCESS_DENIED:
-      return ERR_ACCESS_DENIED;
-    case ERROR_SUCCESS:
-      return OK;
-    default:
-      LOG(WARNING) << "Unknown error " << err << " mapped to net::ERR_FAILED";
-      return ERR_FAILED;
-  }
+namespace {
+
+int RecordAndMapError(int error, FileErrorSource source, bool record_uma) {
+  RecordFileError(error, source, record_uma);
+  return MapSystemError(error);
 }
+
+}  // namespace
 
 // FileStream::AsyncContext ----------------------------------------------
 
 class FileStream::AsyncContext : public MessageLoopForIO::IOHandler {
  public:
   AsyncContext(FileStream* owner)
-      : owner_(owner), context_(), callback_(NULL), is_closing_(false) {
+      : owner_(owner), context_(), is_closing_(false),
+        record_uma_(false), error_source_(FILE_ERROR_SOURCE_COUNT) {
     context_.handler = this;
   }
   ~AsyncContext();
 
-  void IOCompletionIsPending(CompletionCallback* callback);
+  void IOCompletionIsPending(const CompletionCallback& callback);
 
   OVERLAPPED* overlapped() { return &context_.overlapped; }
-  CompletionCallback* callback() const { return callback_; }
+  const CompletionCallback& callback() const { return callback_; }
+
+  void set_error_source(FileErrorSource source) { error_source_ = source; }
+
+  void EnableErrorStatistics() {
+    record_uma_ = true;
+  }
 
  private:
   virtual void OnIOCompleted(MessageLoopForIO::IOContext* context,
@@ -69,15 +71,17 @@ class FileStream::AsyncContext : public MessageLoopForIO::IOHandler {
 
   FileStream* owner_;
   MessageLoopForIO::IOContext context_;
-  CompletionCallback* callback_;
+  CompletionCallback callback_;
   bool is_closing_;
+  bool record_uma_;
+  FileErrorSource error_source_;
 };
 
 FileStream::AsyncContext::~AsyncContext() {
   is_closing_ = true;
   bool waited = false;
   base::TimeTicks start = base::TimeTicks::Now();
-  while (callback_) {
+  while (!callback_.is_null()) {
     waited = true;
     MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
@@ -89,31 +93,31 @@ FileStream::AsyncContext::~AsyncContext() {
 }
 
 void FileStream::AsyncContext::IOCompletionIsPending(
-    CompletionCallback* callback) {
-  DCHECK(!callback_);
+    const CompletionCallback& callback) {
+  DCHECK(callback_.is_null());
   callback_ = callback;
 }
 
 void FileStream::AsyncContext::OnIOCompleted(
     MessageLoopForIO::IOContext* context, DWORD bytes_read, DWORD error) {
   DCHECK_EQ(&context_, context);
-  DCHECK(callback_);
+  DCHECK(!callback_.is_null());
 
   if (is_closing_) {
-    callback_ = NULL;
+    callback_.Reset();
     return;
   }
 
   int result = static_cast<int>(bytes_read);
   if (error && error != ERROR_HANDLE_EOF)
-    result = MapErrorCode(error);
+    result = RecordAndMapError(error, error_source_, record_uma_);
 
   if (bytes_read)
     IncrementOffset(&context->overlapped, bytes_read);
 
-  CompletionCallback* temp = NULL;
+  CompletionCallback temp;
   std::swap(temp, callback_);
-  temp->Run(result);
+  temp.Run(result);
 }
 
 // FileStream ------------------------------------------------------------
@@ -121,13 +125,15 @@ void FileStream::AsyncContext::OnIOCompleted(
 FileStream::FileStream()
     : file_(INVALID_HANDLE_VALUE),
       open_flags_(0),
-      auto_closed_(true) {
+      auto_closed_(true),
+      record_uma_(false) {
 }
 
 FileStream::FileStream(base::PlatformFile file, int flags)
     : file_(file),
       open_flags_(flags),
-      auto_closed_(false) {
+      auto_closed_(false),
+      record_uma_(false) {
   // If the file handle is opened with base::PLATFORM_FILE_ASYNC, we need to
   // make sure we will perform asynchronous File IO to it.
   if (flags & base::PLATFORM_FILE_ASYNC) {
@@ -164,11 +170,13 @@ int FileStream::Open(const FilePath& path, int open_flags) {
   if (file_ == INVALID_HANDLE_VALUE) {
     DWORD error = GetLastError();
     LOG(WARNING) << "Failed to open file: " << error;
-    return MapErrorCode(error);
+    return RecordAndMapError(error, FILE_ERROR_SOURCE_OPEN, record_uma_);
   }
 
   if (open_flags_ & base::PLATFORM_FILE_ASYNC) {
     async_context_.reset(new AsyncContext(this));
+    if (record_uma_)
+      async_context_->EnableErrorStatistics();
     MessageLoopForIO::current()->RegisterIOHandler(file_,
                                                    async_context_.get());
   }
@@ -183,7 +191,8 @@ bool FileStream::IsOpen() const {
 int64 FileStream::Seek(Whence whence, int64 offset) {
   if (!IsOpen())
     return ERR_UNEXPECTED;
-  DCHECK(!async_context_.get() || !async_context_->callback());
+
+  DCHECK(!async_context_.get() || async_context_->callback().is_null());
 
   LARGE_INTEGER distance, result;
   distance.QuadPart = offset;
@@ -191,10 +200,12 @@ int64 FileStream::Seek(Whence whence, int64 offset) {
   if (!SetFilePointerEx(file_, distance, &result, move_method)) {
     DWORD error = GetLastError();
     LOG(WARNING) << "SetFilePointerEx failed: " << error;
-    return MapErrorCode(error);
+    return RecordAndMapError(error, FILE_ERROR_SOURCE_SEEK, record_uma_);
   }
-  if (async_context_.get())
+  if (async_context_.get()) {
+    async_context_->set_error_source(FILE_ERROR_SOURCE_SEEK);
     SetOffset(async_context_->overlapped(), result);
+  }
   return result.QuadPart;
 }
 
@@ -212,25 +223,27 @@ int64 FileStream::Available() {
   if (!GetFileSizeEx(file_, &file_size)) {
     DWORD error = GetLastError();
     LOG(WARNING) << "GetFileSizeEx failed: " << error;
-    return MapErrorCode(error);
+    return RecordAndMapError(error, FILE_ERROR_SOURCE_GET_SIZE, record_uma_);
   }
 
   return file_size.QuadPart - cur_pos;
 }
 
 int FileStream::Read(
-    char* buf, int buf_len, CompletionCallback* callback) {
+    char* buf, int buf_len, const CompletionCallback& callback) {
   if (!IsOpen())
     return ERR_UNEXPECTED;
+
   DCHECK(open_flags_ & base::PLATFORM_FILE_READ);
 
   OVERLAPPED* overlapped = NULL;
   if (async_context_.get()) {
-    DCHECK(callback);
-    DCHECK(!async_context_->callback());
+    DCHECK(!callback.is_null());
+    DCHECK(async_context_->callback().is_null());
     overlapped = async_context_->overlapped();
+    async_context_->set_error_source(FILE_ERROR_SOURCE_READ);
   } else {
-    DCHECK(!callback);
+    DCHECK(callback.is_null());
     base::ThreadRestrictions::AssertIOAllowed();
   }
 
@@ -246,7 +259,7 @@ int FileStream::Read(
       rv = 0;  // Report EOF by returning 0 bytes read.
     } else {
       LOG(WARNING) << "ReadFile failed: " << error;
-      rv = MapErrorCode(error);
+      rv = RecordAndMapError(error, FILE_ERROR_SOURCE_READ, record_uma_);
     }
   } else if (overlapped) {
     async_context_->IOCompletionIsPending(callback);
@@ -262,7 +275,7 @@ int FileStream::ReadUntilComplete(char *buf, int buf_len) {
   int bytes_total = 0;
 
   do {
-    int bytes_read = Read(buf, to_read, NULL);
+    int bytes_read = Read(buf, to_read, CompletionCallback());
     if (bytes_read <= 0) {
       if (bytes_total == 0)
         return bytes_read;
@@ -279,18 +292,20 @@ int FileStream::ReadUntilComplete(char *buf, int buf_len) {
 }
 
 int FileStream::Write(
-    const char* buf, int buf_len, CompletionCallback* callback) {
+    const char* buf, int buf_len, const CompletionCallback& callback) {
   if (!IsOpen())
     return ERR_UNEXPECTED;
+
   DCHECK(open_flags_ & base::PLATFORM_FILE_WRITE);
 
   OVERLAPPED* overlapped = NULL;
   if (async_context_.get()) {
-    DCHECK(callback);
-    DCHECK(!async_context_->callback());
+    DCHECK(!callback.is_null());
+    DCHECK(async_context_->callback().is_null());
     overlapped = async_context_->overlapped();
+    async_context_->set_error_source(FILE_ERROR_SOURCE_WRITE);
   } else {
-    DCHECK(!callback);
+    DCHECK(callback.is_null());
     base::ThreadRestrictions::AssertIOAllowed();
   }
 
@@ -303,7 +318,7 @@ int FileStream::Write(
       rv = ERR_IO_PENDING;
     } else {
       LOG(WARNING) << "WriteFile failed: " << error;
-      rv = MapErrorCode(error);
+      rv = RecordAndMapError(error, FILE_ERROR_SOURCE_WRITE, record_uma_);
     }
   } else if (overlapped) {
     async_context_->IOCompletionIsPending(callback);
@@ -325,10 +340,9 @@ int FileStream::Flush() {
     return OK;
   }
 
-  int rv;
-  DWORD error = GetLastError();
-  rv = MapErrorCode(error);
-  return rv;
+  return RecordAndMapError(GetLastError(),
+                           FILE_ERROR_SOURCE_FLUSH,
+                           record_uma_);
 }
 
 int64 FileStream::Truncate(int64 bytes) {
@@ -350,11 +364,18 @@ int64 FileStream::Truncate(int64 bytes) {
   if (!result) {
     DWORD error = GetLastError();
     LOG(WARNING) << "SetEndOfFile failed: " << error;
-    return MapErrorCode(error);
+    return RecordAndMapError(error, FILE_ERROR_SOURCE_SET_EOF, record_uma_);
   }
 
   // Success.
   return seek_position;
+}
+
+void FileStream::EnableErrorStatistics() {
+  record_uma_ = true;
+
+  if (async_context_.get())
+    async_context_->EnableErrorStatistics();
 }
 
 }  // namespace net

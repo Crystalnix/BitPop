@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,10 @@
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/cpp/resource.h"
 
-struct PP_InputEvent;
-
 namespace pp {
 
 class ImageData;
-class Instance;
+class InputEvent;
 class Rect;
 
 // This is the base class for widget elements.  As such, it can't be created
@@ -28,7 +26,7 @@ class Widget_Dev : public Resource {
 
   // PPB_Widget methods:
   bool Paint(const Rect& rect, ImageData* image);
-  bool HandleEvent(const PP_InputEvent& event);
+  bool HandleEvent(const InputEvent& event);
   bool GetLocation(Rect* location);
   void SetLocation(const Rect& location);
 };

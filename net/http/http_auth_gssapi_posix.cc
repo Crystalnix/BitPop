@@ -55,6 +55,16 @@ static gss_OID_desc GSS_C_NT_EXPORT_NAME_VAL = {
 
 }  // namespace
 
+// Heimdal >= 1.4 will define the following as preprocessor macros.
+// To avoid conflicting declarations, we have to undefine these.
+#undef GSS_C_NT_USER_NAME
+#undef GSS_C_NT_MACHINE_UID_NAME
+#undef GSS_C_NT_STRING_UID_NAME
+#undef GSS_C_NT_HOSTBASED_SERVICE_X
+#undef GSS_C_NT_HOSTBASED_SERVICE
+#undef GSS_C_NT_ANONYMOUS
+#undef GSS_C_NT_EXPORT_NAME
+
 gss_OID GSS_C_NT_USER_NAME = &GSS_C_NT_USER_NAME_VAL;
 gss_OID GSS_C_NT_MACHINE_UID_NAME = &GSS_C_NT_MACHINE_UID_NAME_VAL;
 gss_OID GSS_C_NT_STRING_UID_NAME = &GSS_C_NT_STRING_UID_NAME_VAL;
@@ -244,15 +254,10 @@ std::string DescribeOid(GSSAPILibrary* gssapi_lib, const gss_OID oid) {
     // Check if the first |kMaxCharsToPrint| characters
     // contain only printable characters and are NULL terminated.
     const char* str = reinterpret_cast<const char*>(oid);
-    bool is_printable = true;
     size_t str_length = 0;
     for ( ; str_length < kMaxCharsToPrint; ++str_length) {
-      if (!str[str_length])
+      if (!str[str_length] || !isprint(str[str_length]))
         break;
-      if (!isprint(str[str_length])) {
-        is_printable = false;
-        break;
-      }
     }
     if (!str[str_length]) {
       output += base::StringPrintf("\"%s\"", str);
@@ -415,9 +420,11 @@ bool GSSAPISharedLibrary::Init() {
 
 bool GSSAPISharedLibrary::InitImpl() {
   DCHECK(!initialized_);
+#if defined(DLOPEN_KERBEROS)
   gssapi_library_ = LoadSharedLibrary();
   if (gssapi_library_ == NULL)
     return false;
+#endif  // defined(DLOPEN_KERBEROS)
   initialized_ = true;
   return true;
 }
@@ -434,6 +441,8 @@ base::NativeLibrary GSSAPISharedLibrary::LoadSharedLibrary() {
     static const char* kDefaultLibraryNames[] = {
 #if defined(OS_MACOSX)
       "libgssapi_krb5.dylib"  // MIT Kerberos
+#elif defined(OS_OPENBSD)
+      "libgssapi.so"          // Heimdal - OpenBSD
 #else
       "libgssapi_krb5.so.2",  // MIT Kerberos - FC, Suse10, Debian
       "libgssapi.so.4",       // Heimdal - Suse10, MDK
@@ -464,17 +473,20 @@ base::NativeLibrary GSSAPISharedLibrary::LoadSharedLibrary() {
   return NULL;
 }
 
+#if defined(DLOPEN_KERBEROS)
 #define BIND(lib, x)                                                    \
+  DCHECK(lib);                                                          \
   gss_##x##_type x = reinterpret_cast<gss_##x##_type>(                  \
       base::GetFunctionPointerFromNativeLibrary(lib, "gss_" #x));       \
   if (x == NULL) {                                                      \
     LOG(WARNING) << "Unable to bind function \"" << "gss_" #x << "\"";  \
     return false;                                                       \
   }
+#else
+#define BIND(lib, x) gss_##x##_type x = gss_##x
+#endif
 
 bool GSSAPISharedLibrary::BindMethods(base::NativeLibrary lib) {
-  DCHECK(lib != NULL);
-
   BIND(lib, import_name);
   BIND(lib, release_name);
   BIND(lib, release_buffer);
@@ -674,6 +686,10 @@ bool HttpAuthGSSAPI::NeedsIdentity() const {
   return decoded_server_auth_token_.empty();
 }
 
+bool HttpAuthGSSAPI::AllowsExplicitCredentials() const {
+  return false;
+}
+
 void HttpAuthGSSAPI::Delegate() {
   can_delegate_ = true;
 }
@@ -709,12 +725,10 @@ HttpAuth::AuthorizationResult HttpAuthGSSAPI::ParseChallenge(
   return HttpAuth::AUTHORIZATION_RESULT_ACCEPT;
 }
 
-int HttpAuthGSSAPI::GenerateAuthToken(const string16* username,
-                                      const string16* password,
+int HttpAuthGSSAPI::GenerateAuthToken(const AuthCredentials* credentials,
                                       const std::wstring& spn,
                                       std::string* auth_token) {
   DCHECK(auth_token);
-  DCHECK(username == NULL && password == NULL);
 
   gss_buffer_desc input_token = GSS_C_EMPTY_BUFFER;
   input_token.length = decoded_server_auth_token_.length();

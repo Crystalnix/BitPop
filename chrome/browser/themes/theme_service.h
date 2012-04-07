@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,12 @@
 #include <set>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/threading/non_thread_safe.h"
 #include "chrome/browser/profiles/profile_keyed_service.h"
-#include "content/common/notification_observer.h"
-#include "content/common/notification_registrar.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/theme_provider.h"
 
 class BrowserThemePack;
@@ -25,6 +26,10 @@ class Profile;
 
 namespace color_utils {
 struct HSL;
+}
+
+namespace gfx {
+class Image;
 }
 
 namespace ui {
@@ -40,7 +45,7 @@ extern "C" NSString* const kBrowserThemeDidChangeNotification;
 #endif  // __OBJC__
 
 class ThemeService : public base::NonThreadSafe,
-                     public NotificationObserver,
+                     public content::NotificationObserver,
                      public ProfileKeyedService,
                      public ui::ThemeProvider {
  public:
@@ -123,41 +128,53 @@ class ThemeService : public base::NonThreadSafe,
   };
 
   // A bitfield mask for alignments.
-  typedef enum {
-    ALIGN_CENTER = 0x0,
-    ALIGN_LEFT = 0x1,
-    ALIGN_TOP = 0x2,
-    ALIGN_RIGHT = 0x4,
-    ALIGN_BOTTOM = 0x8,
-  } AlignmentMasks;
+  enum Alignment {
+    ALIGN_CENTER = 0,
+    ALIGN_LEFT   = 1 << 0,
+    ALIGN_TOP    = 1 << 1,
+    ALIGN_RIGHT  = 1 << 2,
+    ALIGN_BOTTOM = 1 << 3,
+  };
 
   // Background tiling choices.
-  typedef enum {
+  enum Tiling {
     NO_REPEAT = 0,
     REPEAT_X = 1,
     REPEAT_Y = 2,
     REPEAT = 3
-  } Tiling;
+  };
+
+  // Returns a cross platform image for an id.
+  //
+  // TODO(erg): Make this part of the ui::ThemeProvider and the main way to get
+  // theme properties out of the theme provider since it's cross platform.
+  virtual const gfx::Image* GetImageNamed(int id) const;
 
   // ui::ThemeProvider implementation.
-  virtual void Init(Profile* profile);
-  virtual SkBitmap* GetBitmapNamed(int id) const;
-  virtual SkColor GetColor(int id) const;
-  virtual bool GetDisplayProperty(int id, int* result) const;
-  virtual bool ShouldUseNativeFrame() const;
-  virtual bool HasCustomImage(int id) const;
-  virtual RefCountedMemory* GetRawData(int id) const;
-#if defined(TOOLKIT_USES_GTK)
+  virtual void Init(Profile* profile) OVERRIDE;
+  virtual SkBitmap* GetBitmapNamed(int id) const OVERRIDE;
+  virtual SkColor GetColor(int id) const OVERRIDE;
+  virtual bool GetDisplayProperty(int id, int* result) const OVERRIDE;
+  virtual bool ShouldUseNativeFrame() const OVERRIDE;
+  virtual bool HasCustomImage(int id) const OVERRIDE;
+  virtual RefCountedMemory* GetRawData(int id) const OVERRIDE;
+#if defined(OS_MACOSX)
+  virtual NSImage* GetNSImageNamed(int id, bool allow_default) const OVERRIDE;
+  virtual NSColor* GetNSImageColorNamed(int id,
+                                        bool allow_default) const OVERRIDE;
+  virtual NSColor* GetNSColor(int id, bool allow_default) const OVERRIDE;
+  virtual NSColor* GetNSColorTint(int id, bool allow_default) const OVERRIDE;
+  virtual NSGradient* GetNSGradient(int id) const OVERRIDE;
+#elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
+  // This mismatch between what this class defines and whether or not it
+  // overrides ui::ThemeProvider is http://crbug.com/105040 .
   // GdkPixbufs returned by GetPixbufNamed and GetRTLEnabledPixbufNamed are
   // shared instances owned by the theme provider and should not be freed.
-  virtual GdkPixbuf* GetPixbufNamed(int id) const;
+  virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const OVERRIDE;
+#elif defined(TOOLKIT_USES_GTK)
+  // GdkPixbufs returned by GetPixbufNamed and GetRTLEnabledPixbufNamed are
+  // shared instances owned by the theme provider and should not be freed.
   virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const;
-#elif defined(OS_MACOSX)
-  virtual NSImage* GetNSImageNamed(int id, bool allow_default) const;
-  virtual NSColor* GetNSImageColorNamed(int id, bool allow_default) const;
-  virtual NSColor* GetNSColor(int id, bool allow_default) const;
-  virtual NSColor* GetNSColorTint(int id, bool allow_default) const;
-  virtual NSGradient* GetNSGradient(int id) const;
 #endif
 
   // Set the current theme to the theme defined in |extension|.
@@ -191,11 +208,11 @@ class ThemeService : public base::NonThreadSafe,
   void OnInfobarDestroyed();
 
   // Convert a bitfield alignment into a string like "top left". Public so that
-  // it can be used to generate CSS values. Takes a bitfield of AlignmentMasks.
+  // it can be used to generate CSS values. Takes a bitmask of Alignment.
   static std::string AlignmentToString(int alignment);
 
-  // Parse alignments from something like "top left" into a bitfield of
-  // AlignmentMasks
+  // Parse alignments from something like "top left" into a bitmask of
+  // Alignment.
   static int StringToAlignment(const std::string& alignment);
 
   // Convert a tiling value into a string like "no-repeat". Public
@@ -248,10 +265,10 @@ class ThemeService : public base::NonThreadSafe,
 
   Profile* profile() { return profile_; }
 
-  // NotificationObserver:
-  virtual void Observe(NotificationType type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details);
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   friend class ThemeServiceTest;
@@ -294,7 +311,7 @@ class ThemeService : public base::NonThreadSafe,
   // The number of infobars currently displayed.
   int number_of_infobars_;
 
-  NotificationRegistrar registrar_;
+  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeService);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2009 The Chromium Authors. All rights reserved.
+// Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,16 +17,15 @@
 class ListenerLeakTest : public TestShellTest {
 };
 
-static const v8::HeapGraphNode* GetChild(
-    const v8::HeapGraphNode* node,
-    v8::HeapGraphNode::Type type,
-    const char* name) {
+static const v8::HeapGraphNode* GetProperty(const v8::HeapGraphNode* node,
+                                            v8::HeapGraphEdge::Type type,
+                                            const char* name) {
   for (int i = 0, count = node->GetChildrenCount(); i < count; ++i) {
     const v8::HeapGraphEdge* prop = node->GetChild(i);
-    const v8::HeapGraphNode* child = prop->GetToNode();
-    v8::String::AsciiValue child_name(child->GetName());
-    if (child->GetType() == type && strcmp(name, *child_name) == 0)
-      return child;
+    if (prop->GetType() == type) {
+      v8::String::AsciiValue prop_name(prop->GetName());
+      if (strcmp(name, *prop_name) == 0) return prop->GetToNode();
+    }
   }
   return NULL;
 }
@@ -34,13 +33,26 @@ static const v8::HeapGraphNode* GetChild(
 static int GetNumObjects(const char* constructor) {
   v8::HandleScope scope;
   const v8::HeapSnapshot* snapshot =
-      v8::HeapProfiler::TakeSnapshot(v8::String::New(""),
-                                     v8::HeapSnapshot::kAggregated);
+    v8::HeapProfiler::TakeSnapshot(v8::String::New(""),
+                                   v8::HeapSnapshot::kFull);
   CHECK(snapshot);
-  const v8::HeapGraphNode* node = GetChild(snapshot->GetRoot(),
-                                           v8::HeapGraphNode::kObject,
-                                           constructor);
-  return node != NULL ? node->GetInstancesCount() : 0;
+  int count = 0;
+  for (int i = 0; i < snapshot->GetNodesCount(); ++i) {
+    const v8::HeapGraphNode* node = snapshot->GetNode(i);
+    if (node->GetType() != v8::HeapGraphNode::kObject) continue;
+    v8::String::AsciiValue node_name(node->GetName());
+    if (strcmp(constructor, *node_name) == 0) {
+      const v8::HeapGraphNode* constructor_prop =
+        GetProperty(node, v8::HeapGraphEdge::kProperty, "constructor");
+      // Skip an Object instance named after the constructor.
+      if (constructor_prop != NULL) {
+        v8::String::AsciiValue constructor_name(constructor_prop->GetName());
+        if (strcmp(constructor, *constructor_name) == 0) continue;
+      }
+      ++count;
+    }
+  }
+  return count;
 }
 
 // This test tries to create a reference cycle between node and its listener.

@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// TODO(yusukes): Remove the #if once the ARM bot (crbug.com/84694) is fixed.
-#if defined(HAVE_XINPUT2)
-
 #include "chrome/browser/chromeos/xinput_hierarchy_changed_event_listener.h"
 
-#include <gdk/gdkx.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
+#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/xkeyboard.h"
+#include "ui/base/x/x11_util.h"
 
 namespace {
 
@@ -22,8 +20,8 @@ int GetXInputOpCode() {
   int event;
   int error;
 
-  Display* display = MessageLoopForUI::current()->GetDisplay();
-  if (!XQueryExtension(display, kExtensionName, &xi_opcode, &event, &error)) {
+  if (!XQueryExtension(
+          ui::GetXDisplay(), kExtensionName, &xi_opcode, &event, &error)) {
     VLOG(1) << "X Input extension not available: error=" << error;
     return -1;
   }
@@ -33,25 +31,31 @@ int GetXInputOpCode() {
 // Starts listening to the XI_HierarchyChanged events.
 void SelectXInputEvents() {
   XIEventMask evmask;
-  unsigned char mask[XIMaskLen(XI_LASTEVENT)] = {0};
+  unsigned char mask[XIMaskLen(XI_LASTEVENT)] = {};
   XISetMask(mask, XI_HierarchyChanged);
 
   evmask.deviceid = XIAllDevices;
   evmask.mask_len = sizeof(mask);
   evmask.mask = mask;
 
-  Display* display = MessageLoopForUI::current()->GetDisplay();
+  Display* display = ui::GetXDisplay();
   XISelectEvents(display, DefaultRootWindow(display), &evmask, 1);
 }
 
 // Checks the |event| and asynchronously sets the XKB layout when necessary.
 void HandleHierarchyChangedEvent(XIHierarchyEvent* event) {
+  if (!(event->flags & XISlaveAdded))
+    return;
+
   for (int i = 0; i < event->num_info; ++i) {
     XIHierarchyInfo* info = &event->info[i];
-    if ((event->flags & XISlaveAdded) &&
-        (info->use == XIFloatingSlave) &&
-        (info->flags & XISlaveAdded)) {
-      chromeos::input_method::ReapplyCurrentKeyboardLayout();
+    if ((info->flags & XISlaveAdded) && (info->use == XIFloatingSlave)) {
+      chromeos::input_method::InputMethodManager* input_method_manager =
+          chromeos::input_method::InputMethodManager::GetInstance();
+      chromeos::input_method::XKeyboard* xkeyboard =
+          input_method_manager->GetXKeyboard();
+      xkeyboard->ReapplyCurrentModifierLockStatus();
+      xkeyboard->ReapplyCurrentKeyboardLayout();
       break;
     }
   }
@@ -71,12 +75,7 @@ XInputHierarchyChangedEventListener::XInputHierarchyChangedEventListener()
     : stopped_(false),
       xiopcode_(GetXInputOpCode()) {
   SelectXInputEvents();
-
-#if defined(TOUCH_UI)
-  MessageLoopForUI::current()->AddObserver(this);
-#else
-  gdk_window_add_filter(NULL, GdkEventFilter, this);
-#endif
+  Init();
 }
 
 XInputHierarchyChangedEventListener::~XInputHierarchyChangedEventListener() {
@@ -87,46 +86,44 @@ void XInputHierarchyChangedEventListener::Stop() {
   if (stopped_)
     return;
 
-#if defined(TOUCH_UI)
-  MessageLoopForUI::current()->RemoveObserver(this);
-#else
-  gdk_window_remove_filter(NULL, GdkEventFilter, this);
-#endif
+  StopImpl();
   stopped_ = true;
   xiopcode_ = -1;
 }
 
-// static
-GdkFilterReturn XInputHierarchyChangedEventListener::GdkEventFilter(
-    GdkXEvent* gxevent, GdkEvent* gevent, gpointer data) {
-  XInputHierarchyChangedEventListener* listener =
-      static_cast<XInputHierarchyChangedEventListener*>(data);
-  XEvent* xevent = static_cast<XEvent*>(gxevent);
-
-  return listener->WillProcessXEvent(xevent) ? GDK_FILTER_REMOVE
-                                             : GDK_FILTER_CONTINUE;
+void XInputHierarchyChangedEventListener::AddObserver(
+    DeviceHierarchyObserver* observer) {
+  observer_list_.AddObserver(observer);
 }
 
-bool XInputHierarchyChangedEventListener::WillProcessXEvent(XEvent* xevent) {
+void XInputHierarchyChangedEventListener::RemoveObserver(
+    DeviceHierarchyObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+bool XInputHierarchyChangedEventListener::ProcessedXEvent(XEvent* xevent) {
   if ((xevent->xcookie.type != GenericEvent) ||
       (xevent->xcookie.extension != xiopcode_)) {
     return false;
   }
-  if (!XGetEventData(xevent->xgeneric.display, &xevent->xcookie)) {
-    VLOG(1) << "XGetEventData failed";
-    return false;
-  }
 
   XGenericEventCookie* cookie = &(xevent->xcookie);
-  const bool should_consume = (cookie->evtype == XI_HierarchyChanged);
-  if (should_consume) {
-    HandleHierarchyChangedEvent(static_cast<XIHierarchyEvent*>(cookie->data));
-  }
-  XFreeEventData(xevent->xgeneric.display, cookie);
+  const bool hierarchy_changed = (cookie->evtype == XI_HierarchyChanged);
 
-  return should_consume;
+  if (hierarchy_changed) {
+    XIHierarchyEvent* event = static_cast<XIHierarchyEvent*>(cookie->data);
+    HandleHierarchyChangedEvent(event);
+    if (event->flags & XIDeviceEnabled || event->flags & XIDeviceDisabled)
+      NotifyDeviceHierarchyChanged();
+  }
+
+  return hierarchy_changed;
+}
+
+void XInputHierarchyChangedEventListener::NotifyDeviceHierarchyChanged() {
+  FOR_EACH_OBSERVER(DeviceHierarchyObserver,
+                    observer_list_,
+                    DeviceHierarchyChanged());
 }
 
 }  // namespace chromeos
-
-#endif

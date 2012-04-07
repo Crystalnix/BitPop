@@ -5,6 +5,7 @@
 #include "base/base_paths.h"
 #include "base/file_path.h"
 #include "base/logging.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/mac/foundation_util.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
@@ -17,12 +18,24 @@ const char kOpenGLFrameworkPath[] =
     "/System/Library/Frameworks/OpenGL.framework/Versions/Current/OpenGL";
 }  // namespace anonymous
 
+void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
+  impls->push_back(kGLImplementationDesktopGL);
+  impls->push_back(kGLImplementationAppleGL);
+  impls->push_back(kGLImplementationOSMesaGL);
+}
+
 bool InitializeGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
   if (GetGLImplementation() != kGLImplementationNone)
     return true;
+
+  // Allow the main thread or another to initialize these bindings
+  // after instituting restrictions on I/O. Going forward they will
+  // likely be used in the browser process on most platforms. The
+  // one-time initialization cost is small, between 2 and 5 ms.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
 
   switch (implementation) {
     case kGLImplementationOSMesaGL: {
@@ -62,7 +75,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       InitializeGLBindingsOSMESA();
       break;
     }
-    case kGLImplementationDesktopGL: {
+    case kGLImplementationDesktopGL:
+    case kGLImplementationAppleGL: {
       base::NativeLibrary library = base::LoadNativeLibrary(
           FilePath(kOpenGLFrameworkPath), NULL);
       if (!library) {
@@ -71,7 +85,7 @@ bool InitializeGLBindings(GLImplementation implementation) {
       }
 
       AddGLNativeLibrary(library);
-      SetGLImplementation(kGLImplementationDesktopGL);
+      SetGLImplementation(implementation);
 
       InitializeGLBindingsGL();
       break;
@@ -89,9 +103,38 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
+bool InitializeGLExtensionBindings(GLImplementation implementation,
+    GLContext* context) {
+  switch (implementation) {
+    case kGLImplementationOSMesaGL:
+      InitializeGLExtensionBindingsGL(context);
+      InitializeGLExtensionBindingsOSMESA(context);
+      break;
+    case kGLImplementationDesktopGL:
+    case kGLImplementationAppleGL:
+      InitializeGLExtensionBindingsGL(context);
+      break;
+    case kGLImplementationMockGL:
+      InitializeGLExtensionBindingsGL(context);
+      break;
+    default:
+      return false;
+  }
+
+  return true;
+}
+
 void InitializeDebugGLBindings() {
   InitializeDebugGLBindingsGL();
   InitializeDebugGLBindingsOSMESA();
+}
+
+void ClearGLBindings() {
+  ClearGLBindingsGL();
+  ClearGLBindingsOSMESA();
+  SetGLImplementation(kGLImplementationNone);
+
+  UnloadGLNativeLibraries();
 }
 
 }  // namespace gfx

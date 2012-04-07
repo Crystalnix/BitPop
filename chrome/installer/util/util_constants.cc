@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,8 @@ namespace installer {
 
 namespace switches {
 
-// Install CEEE.
-const char kCeee[] = "ceee";
+// Whether to set Chrome to launch at computer startup.
+const char kAutoLaunchChrome[] = "auto-launch-chrome";
 
 // Install Chrome.
 // Currently this is only required when used in combination with kMultiInstall.
@@ -41,6 +41,10 @@ const char kChromeSxS[] = "chrome-sxs";
 
 // Create Desktop and QuickLaunch shortcuts
 const char kCreateAllShortcuts[] = "create-all-shortcuts";
+
+// The version number of an update containing critical fixes, for which an
+// in-use Chrome should be restarted ASAP.
+const char kCriticalUpdateVersion[] = "critical-update-version";
 
 // Delete user profile data. This param is useful only when specified with
 // kUninstall, otherwise it is silently ignored.
@@ -91,7 +95,7 @@ const char kMakeChromeDefault[] = "make-chrome-default";
 const char kMsi[] = "msi";
 
 // Tells installer to install multiple products specified on the command line.
-// (e.g. Chrome Frame, CEEE, Chrome)
+// (e.g. Chrome Frame, Chrome)
 const char kMultiInstall[] = "multi-install";
 
 // Useful only when used with --update-setup-exe, otherwise ignored. It
@@ -164,7 +168,6 @@ const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";
 const wchar_t kChromeFrameHelperWndClass[] = L"ChromeFrameHelperWindowClass";
 const wchar_t kChromeFrameReadyModeField[] = L"ChromeFrameReadyMode";
 const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
-const wchar_t kChromeNaCl64Dll[] = L"nacl64.dll";
 const wchar_t kChromeNewExe[] = L"new_chrome.exe";
 const wchar_t kChromeOldExe[] = L"old_chrome.exe";
 const wchar_t kCmdQuickEnableCf[] = L"quick-enable-cf";
@@ -182,14 +185,26 @@ const wchar_t kUninstallArgumentsField[] = L"UninstallArguments";
 const wchar_t kUninstallDisplayNameField[] = L"DisplayName";
 const char kUninstallMetricsName[] = "uninstall_metrics";
 const wchar_t kUninstallInstallationDate[] = L"installation_date";
-const wchar_t kInstallerResult[] = L"InstallerResult";
 const wchar_t kInstallerError[] = L"InstallerError";
+const wchar_t kInstallerExtraCode1[] = L"InstallerExtraCode1";
+const wchar_t kInstallerResult[] = L"InstallerResult";
 const wchar_t kInstallerResultUIString[] = L"InstallerResultUIString";
 const wchar_t kInstallerSuccessLaunchCmdLine[] =
     L"InstallerSuccessLaunchCmdLine";
 
-const wchar_t kOptionCeee[] = L"ceee";
+// The presence of this environment variable with a value of 1 implies that
+// we should run as a system installation regardless of what is on the
+// command line.
+const char kGoogleUpdateIsMachineEnvVar[] = "GoogleUpdateIsMachine";
+
 const wchar_t kOptionMultiInstall[] = L"multi-install";
 const wchar_t kOptionReadyMode[] = L"ready-mode";
+
+// Chrome channel display names.
+extern const wchar_t kChromeChannelUnknown[] = L"unknown";
+extern const wchar_t kChromeChannelCanary[] = L"canary";
+extern const wchar_t kChromeChannelDev[] = L"dev";
+extern const wchar_t kChromeChannelBeta[] = L"beta";
+extern const wchar_t kChromeChannelStable[] = L"";
 
 }  // namespace installer

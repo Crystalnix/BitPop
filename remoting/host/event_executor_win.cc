@@ -6,9 +6,9 @@
 
 #include <windows.h>
 
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop.h"
-#include "media/base/callback.h"
 #include "remoting/host/capturer.h"
 #include "remoting/proto/event.pb.h"
 #include "ui/base/keycodes/keyboard_codes.h"
@@ -26,12 +26,12 @@ class EventExecutorWin : public EventExecutor {
   EventExecutorWin(MessageLoop* message_loop, Capturer* capturer);
   virtual ~EventExecutorWin() {}
 
-  virtual void InjectKeyEvent(const KeyEvent* event, Task* done) OVERRIDE;
-  virtual void InjectMouseEvent(const MouseEvent* event, Task* done) OVERRIDE;
+  virtual void InjectKeyEvent(const KeyEvent& event) OVERRIDE;
+  virtual void InjectMouseEvent(const MouseEvent& event) OVERRIDE;
 
  private:
-  void HandleKey(const KeyEvent* event);
-  void HandleMouse(const MouseEvent* event);
+  void HandleKey(const KeyEvent& event);
+  void HandleMouse(const MouseEvent& event);
 
   MessageLoop* message_loop_;
   Capturer* capturer_;
@@ -45,37 +45,33 @@ EventExecutorWin::EventExecutorWin(MessageLoop* message_loop,
       capturer_(capturer) {
 }
 
-void EventExecutorWin::InjectKeyEvent(const KeyEvent* event, Task* done) {
-  base::ScopedTaskRunner done_runner(done);
-
+void EventExecutorWin::InjectKeyEvent(const KeyEvent& event) {
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &EventExecutorWin::InjectKeyEvent,
-                          event, done_runner.Release()));
+        base::Bind(&EventExecutorWin::InjectKeyEvent, base::Unretained(this),
+                   event));
     return;
   }
 
   HandleKey(event);
 }
 
-void EventExecutorWin::InjectMouseEvent(const MouseEvent* event, Task* done) {
-  base::ScopedTaskRunner done_runner(done);
-
+void EventExecutorWin::InjectMouseEvent(const MouseEvent& event) {
   if (MessageLoop::current() != message_loop_) {
     message_loop_->PostTask(
         FROM_HERE,
-        NewRunnableMethod(this, &EventExecutorWin::InjectMouseEvent,
-                          event, done_runner.Release()));
+        base::Bind(&EventExecutorWin::InjectMouseEvent, base::Unretained(this),
+                   event));
     return;
   }
 
   HandleMouse(event);
 }
 
-void EventExecutorWin::HandleKey(const KeyEvent* event) {
-  int key = event->keycode();
-  bool down = event->pressed();
+void EventExecutorWin::HandleKey(const KeyEvent& event) {
+  int key = event.keycode();
+  bool down = event.pressed();
 
   // Calculate scan code from virtual key.
   HKL hkl = GetKeyboardLayout(0);
@@ -103,54 +99,54 @@ void EventExecutorWin::HandleKey(const KeyEvent* event) {
   SendInput(1, &input, sizeof(INPUT));
 }
 
-void EventExecutorWin::HandleMouse(const MouseEvent* event) {
+void EventExecutorWin::HandleMouse(const MouseEvent& event) {
   // TODO(garykac) Collapse mouse (x,y) and button events into a single
   // input event when possible.
-  if (event->has_x() && event->has_y()) {
-    int x = event->x();
-    int y = event->y();
+  if (event.has_x() && event.has_y()) {
+    int x = event.x();
+    int y = event.y();
 
     INPUT input;
     input.type = INPUT_MOUSE;
     input.mi.time = 0;
-    gfx::Size screen_size = capturer_->size_most_recent();
-    if ((screen_size.width() > 0) && (screen_size.height() > 0)) {
-      input.mi.dx = static_cast<int>((x * 65535) / screen_size.width());
-      input.mi.dy = static_cast<int>((y * 65535) / screen_size.height());
+    SkISize screen_size = capturer_->size_most_recent();
+    if ((screen_size.width() > 1) && (screen_size.height() > 1)) {
+      input.mi.dx = static_cast<int>((x * 65535) / (screen_size.width() - 1));
+      input.mi.dy = static_cast<int>((y * 65535) / (screen_size.height() - 1));
       input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
       SendInput(1, &input, sizeof(INPUT));
     }
   }
 
-  if (event->has_wheel_offset_x() && event->has_wheel_offset_y()) {
+  if (event.has_wheel_offset_x() && event.has_wheel_offset_y()) {
     INPUT wheel;
     wheel.type = INPUT_MOUSE;
     wheel.mi.time = 0;
 
-    int dx = event->wheel_offset_x();
-    int dy = event->wheel_offset_y();
+    int dx = event.wheel_offset_x();
+    int dy = event.wheel_offset_y();
 
     if (dx != 0) {
-      wheel.mi.mouseData = dx;
+      wheel.mi.mouseData = dx * WHEEL_DELTA;
       wheel.mi.dwFlags = MOUSEEVENTF_HWHEEL;
       SendInput(1, &wheel, sizeof(INPUT));
     }
     if (dy != 0) {
-      wheel.mi.mouseData = dy;
+      wheel.mi.mouseData = dy * WHEEL_DELTA;
       wheel.mi.dwFlags = MOUSEEVENTF_WHEEL;
       SendInput(1, &wheel, sizeof(INPUT));
     }
   }
 
-  if (event->has_button() && event->has_button_down()) {
+  if (event.has_button() && event.has_button_down()) {
     INPUT button_event;
     button_event.type = INPUT_MOUSE;
     button_event.mi.time = 0;
     button_event.mi.dx = 0;
     button_event.mi.dy = 0;
 
-    MouseEvent::MouseButton button = event->button();
-    bool down = event->button_down();
+    MouseEvent::MouseButton button = event.button();
+    bool down = event.button_down();
     if (button == MouseEvent::BUTTON_LEFT) {
       button_event.mi.dwFlags =
           down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
@@ -177,5 +173,3 @@ EventExecutor* EventExecutor::Create(MessageLoop* message_loop,
 }
 
 }  // namespace remoting
-
-DISABLE_RUNNABLE_METHOD_REFCOUNT(remoting::EventExecutorWin);

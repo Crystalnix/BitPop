@@ -5,17 +5,20 @@
 #ifndef PPAPI_THUNK_PPB_FILE_IO_API_H_
 #define PPAPI_THUNK_PPB_FILE_IO_API_H_
 
-#include "ppapi/c/dev/ppb_file_io_dev.h"
+#include "ppapi/c/ppb_file_io.h"
+#include "ppapi/thunk/ppapi_thunk_export.h"
 
 namespace ppapi {
 namespace thunk {
 
-class PPB_FileIO_API {
+class PPAPI_THUNK_EXPORT PPB_FileIO_API {
  public:
+  virtual ~PPB_FileIO_API() {}
+
   virtual int32_t Open(PP_Resource file_ref,
                        int32_t open_flags,
                        PP_CompletionCallback callback) = 0;
-  virtual int32_t Query(PP_FileInfo_Dev* info,
+  virtual int32_t Query(PP_FileInfo* info,
                         PP_CompletionCallback callback) = 0;
   virtual int32_t Touch(PP_Time last_access_time,
                         PP_Time last_modified_time,

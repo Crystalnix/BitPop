@@ -35,7 +35,7 @@ class HttpResponseHeadersTest : public testing::Test {
 // Transform "normal"-looking headers (\n-separated) to the appropriate
 // input format for ParseRawHeaders (\0-separated).
 void HeadersToRaw(std::string* headers) {
-  replace(headers->begin(), headers->end(), '\n', '\0');
+  std::replace(headers->begin(), headers->end(), '\n', '\0');
   if (!headers->empty())
     *headers += '\0';
 }
@@ -51,10 +51,10 @@ void TestCommon(const TestData& test) {
   parsed->GetNormalizedHeaders(&headers);
 
   // Transform to readable output format (so it's easier to see diffs).
-  replace(headers.begin(), headers.end(), ' ', '_');
-  replace(headers.begin(), headers.end(), '\n', '\\');
-  replace(expected_headers.begin(), expected_headers.end(), ' ', '_');
-  replace(expected_headers.begin(), expected_headers.end(), '\n', '\\');
+  std::replace(headers.begin(), headers.end(), ' ', '_');
+  std::replace(headers.begin(), headers.end(), '\n', '\\');
+  std::replace(expected_headers.begin(), expected_headers.end(), ' ', '_');
+  std::replace(expected_headers.begin(), expected_headers.end(), '\n', '\\');
 
   EXPECT_EQ(expected_headers, headers);
 
@@ -184,6 +184,19 @@ TEST(HttpResponseHeadersTest, NormalizeHeadersBadStatus) {
     200,
     net::HttpVersion(0,0), // Parse error
     net::HttpVersion(1,0)
+  };
+  TestCommon(test);
+}
+
+TEST(HttpResponseHeadersTest, NormalizeHeadersInvalidStatusCode) {
+  TestData test = {
+    "HTTP/1.1 -1  Unknown\n",
+
+    "HTTP/1.1 200 OK\n",
+
+    200,
+    net::HttpVersion(1,1),
+    net::HttpVersion(1,1)
   };
   TestCommon(test);
 }
@@ -799,9 +812,9 @@ TEST(HttpResponseHeadersTest, RequiresValidation) {
     // TODO(darin): add many many more tests here
   };
   base::Time request_time, response_time, current_time;
-  base::Time::FromString(L"Wed, 28 Nov 2007 00:40:09 GMT", &request_time);
-  base::Time::FromString(L"Wed, 28 Nov 2007 00:40:12 GMT", &response_time);
-  base::Time::FromString(L"Wed, 28 Nov 2007 00:45:20 GMT", &current_time);
+  base::Time::FromString("Wed, 28 Nov 2007 00:40:09 GMT", &request_time);
+  base::Time::FromString("Wed, 28 Nov 2007 00:40:12 GMT", &response_time);
+  base::Time::FromString("Wed, 28 Nov 2007 00:45:20 GMT", &current_time);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     std::string headers(tests[i].headers);
@@ -1604,6 +1617,72 @@ TEST(HttpResponseHeadersTest, RemoveHeader) {
 
     std::string name(tests[i].to_remove);
     parsed->RemoveHeader(name);
+
+    std::string resulting_headers;
+    parsed->GetNormalizedHeaders(&resulting_headers);
+    EXPECT_EQ(std::string(tests[i].expected_headers), resulting_headers);
+  }
+}
+
+TEST(HttpResponseHeadersTest, RemoveIndividualHeader) {
+  const struct {
+    const char* orig_headers;
+    const char* to_remove_name;
+    const char* to_remove_value;
+    const char* expected_headers;
+  } tests[] = {
+    { "HTTP/1.1 200 OK\n"
+      "connection: keep-alive\n"
+      "Cache-control: max-age=10000\n"
+      "Content-Length: 450\n",
+
+      "Content-Length",
+
+      "450",
+
+      "HTTP/1.1 200 OK\n"
+      "connection: keep-alive\n"
+      "Cache-control: max-age=10000\n"
+    },
+    { "HTTP/1.1 200 OK\n"
+      "connection: keep-alive  \n"
+      "Content-Length  : 450  \n"
+      "Cache-control: max-age=10000\n",
+
+      "Content-Length",
+
+      "450",
+
+      "HTTP/1.1 200 OK\n"
+      "connection: keep-alive\n"
+      "Cache-control: max-age=10000\n"
+    },
+    { "HTTP/1.1 200 OK\n"
+      "connection: keep-alive  \n"
+      "Content-Length: 450\n"
+      "Cache-control: max-age=10000\n",
+
+      "Content-Length",  // Matching name.
+
+      "999",  // Mismatching value.
+
+      "HTTP/1.1 200 OK\n"
+      "connection: keep-alive\n"
+      "Content-Length: 450\n"
+      "Cache-control: max-age=10000\n"
+    },
+
+  };
+
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+    std::string orig_headers(tests[i].orig_headers);
+    HeadersToRaw(&orig_headers);
+    scoped_refptr<net::HttpResponseHeaders> parsed(
+        new net::HttpResponseHeaders(orig_headers));
+
+    std::string name(tests[i].to_remove_name);
+    std::string value(tests[i].to_remove_value);
+    parsed->RemoveHeaderWithValue(name, value);
 
     std::string resulting_headers;
     parsed->GetNormalizedHeaders(&resulting_headers);

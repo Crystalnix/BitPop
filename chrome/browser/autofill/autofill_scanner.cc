@@ -6,11 +6,12 @@
 
 #include "base/logging.h"
 #include "chrome/browser/autofill/autofill_field.h"
-#include "unicode/regex.h"
 
 AutofillScanner::AutofillScanner(
     const std::vector<const AutofillField*>& fields)
     : cursor_(fields.begin()),
+      saved_cursor_(fields.begin()),
+      begin_(fields.begin()),
       end_(fields.end()) {
 }
 
@@ -36,29 +37,18 @@ bool AutofillScanner::IsEnd() const {
 }
 
 void AutofillScanner::Rewind() {
-  DCHECK(!saved_cursors_.empty());
-  cursor_ = saved_cursors_.back();
-  saved_cursors_.pop_back();
+  DCHECK(saved_cursor_ != end_);
+  cursor_ = saved_cursor_;
+  saved_cursor_ = end_;
 }
 
-void AutofillScanner::SaveCursor() {
-  saved_cursors_.push_back(cursor_);
+void AutofillScanner::RewindTo(size_t index) {
+  DCHECK(index < static_cast<size_t>(end_ - begin_));
+  cursor_ = begin_ + index;
+  saved_cursor_ = end_;
 }
 
-namespace autofill {
-
-bool MatchString(const string16& input, const string16& pattern) {
-  UErrorCode status = U_ZERO_ERROR;
-  icu::UnicodeString icu_pattern(pattern.data(), pattern.length());
-  icu::UnicodeString icu_input(input.data(), input.length());
-  icu::RegexMatcher matcher(icu_pattern, icu_input,
-                            UREGEX_CASE_INSENSITIVE, status);
-  DCHECK(U_SUCCESS(status));
-
-  UBool match = matcher.find(0, status);
-  DCHECK(U_SUCCESS(status));
-  return !!match;
+size_t AutofillScanner::SaveCursor() {
+  saved_cursor_ = cursor_;
+  return static_cast<size_t>(cursor_ - begin_);
 }
-
-}  // namespace autofill
-

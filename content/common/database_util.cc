@@ -8,12 +8,12 @@
 #include "content/common/database_messages.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebString.h"
+#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
 
-using WebKit::WebKitClient;
+using WebKit::WebKitPlatformSupport;
 using WebKit::WebString;
 
-WebKitClient::FileHandle DatabaseUtil::DatabaseOpenFile(
+WebKitPlatformSupport::FileHandle DatabaseUtil::DatabaseOpenFile(
     const WebString& vfs_file_name, int desired_flags) {
   IPC::PlatformFileForTransit file_handle =
       IPC::InvalidPlatformFileForTransit();

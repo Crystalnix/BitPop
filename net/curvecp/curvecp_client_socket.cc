@@ -21,7 +21,7 @@ CurveCPClientSocket::CurveCPClientSocket(const AddressList& addresses,
 CurveCPClientSocket::~CurveCPClientSocket() {
 }
 
-int CurveCPClientSocket::Connect(CompletionCallback* callback) {
+int CurveCPClientSocket::Connect(const CompletionCallback& callback) {
   return packetizer_.Connect(addresses_, &messenger_, callback);
 }
 
@@ -88,15 +88,23 @@ bool CurveCPClientSocket::UsingTCPFastOpen() const {
   return false;
 }
 
+int64 CurveCPClientSocket::NumBytesRead() const {
+  return -1;
+}
+
+base::TimeDelta CurveCPClientSocket::GetConnectTimeMicros() const {
+  return base::TimeDelta::FromMicroseconds(-1);
+}
+
 int CurveCPClientSocket::Read(IOBuffer* buf,
                               int buf_len,
-                              CompletionCallback* callback) {
+                              const CompletionCallback& callback) {
   return messenger_.Read(buf, buf_len, callback);
 }
 
 int CurveCPClientSocket::Write(IOBuffer* buf,
                                int buf_len,
-                               CompletionCallback* callback) {
+                               const CompletionCallback& callback) {
   return messenger_.Write(buf, buf_len, callback);
 }
 

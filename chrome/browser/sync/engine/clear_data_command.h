@@ -1,4 +1,4 @@
-// Copyright (c) 2006-2010 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,6 @@
 #include "chrome/browser/sync/engine/syncer_command.h"
 #include "chrome/browser/sync/syncable/model_type.h"
 
-namespace sync_pb {
-class EntitySpecifics;
-}
-
 namespace browser_sync {
 
 // Clears server data associated with this user's account
@@ -24,7 +20,7 @@ class ClearDataCommand : public SyncerCommand {
   virtual ~ClearDataCommand();
 
   // SyncerCommand implementation.
-  virtual void ExecuteImpl(sessions::SyncSession* session);
+  virtual SyncerError ExecuteImpl(sessions::SyncSession* session) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ClearDataCommand);
@@ -33,4 +29,3 @@ class ClearDataCommand : public SyncerCommand {
 }  // namespace browser_sync
 
 #endif  // CHROME_BROWSER_SYNC_ENGINE_CLEAR_DATA_COMMAND_H_
-

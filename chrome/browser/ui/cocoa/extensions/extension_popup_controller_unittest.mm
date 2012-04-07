@@ -3,15 +3,16 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_nsobject.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop.h"
 #include "chrome/browser/extensions/extension_pref_value_map.h"
 #include "chrome/browser/extensions/extension_prefs.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/ui/cocoa/browser_test_helper.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_popup_controller.h"
-#include "chrome/test/testing_profile.h"
+#include "chrome/test/base/testing_profile.h"
 
 namespace {
 
@@ -32,6 +33,7 @@ class ExtensionTestingProfile : public TestingProfile {
     extension_prefs_.reset(new ExtensionPrefs(GetPrefs(),
                                               GetExtensionsInstallDir(),
                                               extension_pref_value_map_.get()));
+    extension_prefs_->Init(false);
     service_.reset(new ExtensionService(this,
                                         CommandLine::ForCurrentProcess(),
                                         GetExtensionsInstallDir(),

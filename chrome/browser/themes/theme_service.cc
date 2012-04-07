@@ -1,9 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/themes/theme_service.h"
 
+#include "base/bind.h"
 #include "base/string_split.h"
 #include "base/string_util.h"
 #include "base/utf_string_conversions.h"
@@ -11,18 +12,21 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/browser_theme_pack.h"
 #include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/browser/user_metrics.h"
-#include "content/common/notification_service.h"
-#include "content/common/notification_type.h"
-#include "grit/app_resources.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/user_metrics.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if defined(OS_WIN)
-#include "views/widget/native_widget_win.h"
+#if defined(OS_WIN) && !defined(USE_AURA)
+#include "ui/views/widget/native_widget_win.h"
 #endif
+
+using content::BrowserThread;
+using content::UserMetricsAction;
 
 // Strings used in alignment properties.
 const char* ThemeService::kAlignmentTop = "top";
@@ -60,8 +64,15 @@ SkColor IncreaseLightness(SkColor color, double percent) {
 }
 
 // Default colors.
+#if defined(USE_AURA)
+// TODO(jamescook): Revert this when Aura is using its own window frame
+// implementation by default, specifically BrowserNonClientFrameViewAura.
+const SkColor kDefaultColorFrame = SkColorSetRGB(109, 109, 109);
+const SkColor kDefaultColorFrameInactive = SkColorSetRGB(176, 176, 176);
+#else
 const SkColor kDefaultColorFrame = SkColorSetRGB(66, 116, 201);
 const SkColor kDefaultColorFrameInactive = SkColorSetRGB(161, 182, 228);
+#endif  // USE_AURA
 const SkColor kDefaultColorFrameIncognito = SkColorSetRGB(83, 106, 139);
 const SkColor kDefaultColorFrameIncognitoInactive =
     SkColorSetRGB(126, 139, 156);
@@ -73,11 +84,10 @@ const SkColor kDefaultColorToolbar = SkColorSetRGB(223, 223, 223);
 const SkColor kDefaultColorTabText = SK_ColorBLACK;
 #if defined(OS_MACOSX)
 const SkColor kDefaultColorBackgroundTabText = SK_ColorBLACK;
-const SkColor kDefaultColorBookmarkText = SK_ColorBLACK;
 #else
 const SkColor kDefaultColorBackgroundTabText = SkColorSetRGB(64, 64, 64);
-const SkColor kDefaultColorBookmarkText = SkColorSetRGB(18, 50, 114);
 #endif
+const SkColor kDefaultColorBookmarkText = SK_ColorBLACK;
 #if defined(OS_WIN)
 const SkColor kDefaultColorNTPBackground =
     color_utils::GetSysSkColor(COLOR_WINDOW);
@@ -144,7 +154,7 @@ const int kThemeableImages[] = {
 };
 
 bool HasThemeableImage(int themeable_image_id) {
-  static std::set<int> themeable_images;
+  CR_DEFINE_STATIC_LOCAL(std::set<int>, themeable_images, ());
   if (themeable_images.empty()) {
     themeable_images.insert(
         kThemeableImages, kThemeableImages + arraysize(kThemeableImages));
@@ -172,21 +182,10 @@ const int kToolbarButtonIDs[] = {
 };
 
 // Writes the theme pack to disk on a separate thread.
-class WritePackToDiskTask : public Task {
- public:
-  WritePackToDiskTask(BrowserThemePack* pack, const FilePath& path)
-      : theme_pack_(pack), pack_path_(path) {}
-
-  virtual void Run() {
-    if (!theme_pack_->WriteToDisk(pack_path_)) {
-      NOTREACHED() << "Could not write theme pack to disk";
-    }
-  }
-
- private:
-  scoped_refptr<BrowserThemePack> theme_pack_;
-  FilePath pack_path_;
-};
+void WritePackToDiskCallback(BrowserThemePack* pack, const FilePath& path) {
+  if (!pack->WriteToDisk(path))
+    NOTREACHED() << "Could not write theme pack to disk";
+}
 
 }  // namespace
 
@@ -215,10 +214,24 @@ void ThemeService::Init(Profile* profile) {
   // installed but not loaded (which may confuse listeners to
   // BROWSER_THEME_CHANGED).
   registrar_.Add(this,
-                 NotificationType::EXTENSION_LOADED,
-                 Source<Profile>(profile_));
+                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 content::Source<Profile>(profile_));
 
   LoadThemePrefs();
+}
+
+const gfx::Image* ThemeService::GetImageNamed(int id) const {
+  DCHECK(CalledOnValidThread());
+
+  const gfx::Image* image = NULL;
+
+  if (theme_pack_.get())
+    image = theme_pack_->GetImageNamed(id);
+
+  if (!image)
+    image = &rb_.GetNativeImageNamed(id);
+
+  return image;
 }
 
 SkBitmap* ThemeService::GetBitmapNamed(int id) const {
@@ -270,7 +283,7 @@ bool ThemeService::GetDisplayProperty(int id, int* result) const {
 bool ThemeService::ShouldUseNativeFrame() const {
   if (HasCustomImage(IDR_THEME_FRAME))
     return false;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(USE_AURA)
   return views::NativeWidgetWin::IsAeroGlassEnabled();
 #else
   return false;
@@ -314,7 +327,7 @@ void ThemeService::SetTheme(const Extension* extension) {
   SaveThemeID(extension->id());
 
   NotifyThemeChanged();
-  UserMetrics::RecordAction(UserMetricsAction("Themes_Installed"));
+  content::RecordAction(UserMetricsAction("Themes_Installed"));
 }
 
 void ThemeService::RemoveUnusedThemes() {
@@ -325,8 +338,8 @@ void ThemeService::RemoveUnusedThemes() {
     return;
   std::string current_theme = GetThemeID();
   std::vector<std::string> remove_list;
-  const ExtensionList* extensions = service->extensions();
-  for (ExtensionList::const_iterator it = extensions->begin();
+  const ExtensionSet* extensions = service->extensions();
+  for (ExtensionSet::const_iterator it = extensions->begin();
        it != extensions->end(); ++it) {
     if ((*it)->is_theme() && (*it)->id() != current_theme) {
       remove_list.push_back((*it)->id());
@@ -339,7 +352,7 @@ void ThemeService::RemoveUnusedThemes() {
 void ThemeService::UseDefaultTheme() {
   ClearAllThemeData();
   NotifyThemeChanged();
-  UserMetrics::RecordAction(UserMetricsAction("Themes_Reset"));
+  content::RecordAction(UserMetricsAction("Themes_Reset"));
 }
 
 void ThemeService::SetNativeTheme() {
@@ -385,23 +398,19 @@ std::string ThemeService::AlignmentToString(int alignment) {
 
 // static
 int ThemeService::StringToAlignment(const std::string& alignment) {
-  std::vector<std::wstring> split;
-  base::SplitStringAlongWhitespace(UTF8ToWide(alignment), &split);
+  std::vector<std::string> split;
+  base::SplitStringAlongWhitespace(alignment, &split);
 
   int alignment_mask = 0;
-  for (std::vector<std::wstring>::iterator alignments(split.begin());
-       alignments != split.end(); ++alignments) {
-    std::string comp = WideToUTF8(*alignments);
-    const char* component = comp.c_str();
-
-    if (base::strcasecmp(component, kAlignmentTop) == 0)
+  for (std::vector<std::string>::iterator component(split.begin());
+       component != split.end(); ++component) {
+    if (LowerCaseEqualsASCII(*component, kAlignmentTop))
       alignment_mask |= ThemeService::ALIGN_TOP;
-    else if (base::strcasecmp(component, kAlignmentBottom) == 0)
+    else if (LowerCaseEqualsASCII(*component, kAlignmentBottom))
       alignment_mask |= ThemeService::ALIGN_BOTTOM;
-
-    if (base::strcasecmp(component, kAlignmentLeft) == 0)
+    else if (LowerCaseEqualsASCII(*component, kAlignmentLeft))
       alignment_mask |= ThemeService::ALIGN_LEFT;
-    else if (base::strcasecmp(component, kAlignmentRight) == 0)
+    else if (LowerCaseEqualsASCII(*component, kAlignmentRight))
       alignment_mask |= ThemeService::ALIGN_RIGHT;
   }
   return alignment_mask;
@@ -532,7 +541,7 @@ bool ThemeService::GetDefaultDisplayProperty(int id, int* result) {
 
 // static
 const std::set<int>& ThemeService::GetTintableToolbarButtons() {
-  static std::set<int> button_set;
+  CR_DEFINE_STATIC_LOCAL(std::set<int>, button_set, ());
   if (button_set.empty()) {
     button_set = std::set<int>(
         kToolbarButtonIDs,
@@ -576,7 +585,7 @@ void ThemeService::LoadThemePrefs() {
     }
 
     if (loaded_pack) {
-      UserMetrics::RecordAction(UserMetricsAction("Themes.Loaded"));
+      content::RecordAction(UserMetricsAction("Themes.Loaded"));
     } else {
       // TODO(erg): We need to pop up a dialog informing the user that their
       // theme is being migrated.
@@ -587,11 +596,11 @@ void ThemeService::LoadThemePrefs() {
         if (extension) {
           DLOG(ERROR) << "Migrating theme";
           BuildFromExtension(extension);
-          UserMetrics::RecordAction(UserMetricsAction("Themes.Migrated"));
+          content::RecordAction(UserMetricsAction("Themes.Migrated"));
         } else {
           DLOG(ERROR) << "Theme is mysteriously gone.";
           ClearAllThemeData();
-          UserMetrics::RecordAction(UserMetricsAction("Themes.Gone"));
+          content::RecordAction(UserMetricsAction("Themes.Gone"));
         }
       }
     }
@@ -599,28 +608,29 @@ void ThemeService::LoadThemePrefs() {
 }
 
 void ThemeService::NotifyThemeChanged() {
-  VLOG(1) << "Sending BROWSER_THEME_CHANGED";
+  DVLOG(1) << "Sending BROWSER_THEME_CHANGED";
   // Redraw!
-  NotificationService* service = NotificationService::current();
-  service->Notify(NotificationType::BROWSER_THEME_CHANGED,
-                  Source<ThemeService>(this),
-                  NotificationService::NoDetails());
+  content::NotificationService* service =
+      content::NotificationService::current();
+  service->Notify(chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+                  content::Source<ThemeService>(this),
+                  content::NotificationService::NoDetails());
 #if defined(OS_MACOSX)
   NotifyPlatformThemeChanged();
 #endif  // OS_MACOSX
 }
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) || defined(USE_AURA)
 void ThemeService::FreePlatformCaches() {
   // Views (Skia) has no platform image cache to clear.
 }
 #endif
 
-void ThemeService::Observe(NotificationType type,
-                           const NotificationSource& source,
-                           const NotificationDetails& details) {
-  DCHECK(type == NotificationType::EXTENSION_LOADED);
-  const Extension* extension = Details<const Extension>(details).ptr();
+void ThemeService::Observe(int type,
+                           const content::NotificationSource& source,
+                           const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED);
+  const Extension* extension = content::Details<const Extension>(details).ptr();
   if (!extension->is_theme()) {
     return;
   }
@@ -648,8 +658,9 @@ void ThemeService::BuildFromExtension(const Extension* extension) {
 
   // Write the packed file to disk.
   FilePath pack_path = extension->path().Append(chrome::kThemePackFilename);
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-                          new WritePackToDiskTask(pack, pack_path));
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(&WritePackToDiskCallback, pack, pack_path));
 
   SavePackName(pack_path);
   theme_pack_ = pack;

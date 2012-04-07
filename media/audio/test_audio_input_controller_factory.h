@@ -45,6 +45,7 @@ class TestAudioInputControllerFactory;
 class TestAudioInputController : public AudioInputController {
  public:
   TestAudioInputController(TestAudioInputControllerFactory* factory,
+                           AudioManager* audio_manager,
                            EventHandler* event_handler,
                            SyncWriter* sync_writer);
   virtual ~TestAudioInputController();
@@ -54,8 +55,8 @@ class TestAudioInputController : public AudioInputController {
 
   // Overriden to do nothing. It is assumed the caller will notify the event
   // handler with recorded data and other events.
-  virtual void Record() {}
-  virtual void Close() {}
+  virtual void Record() OVERRIDE {}
+  virtual void Close() OVERRIDE {}
 
  private:
   // These are not owned by us and expected to be valid for this object's
@@ -74,8 +75,9 @@ class TestAudioInputControllerFactory : public AudioInputController::Factory {
 
   // AudioInputController::Factory methods.
   virtual AudioInputController* Create(
+      AudioManager* audio_manager,
       AudioInputController::EventHandler* event_handler,
-      AudioParameters params);
+      AudioParameters params) OVERRIDE;
 
   TestAudioInputController* controller() const { return controller_; }
 

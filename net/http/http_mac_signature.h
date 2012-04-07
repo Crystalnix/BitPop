@@ -12,7 +12,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/time.h"
 #include "crypto/hmac.h"
-#include "net/base/net_api.h"
+#include "net/base/net_export.h"
 
 namespace net {
 
@@ -22,7 +22,7 @@ namespace net {
 //
 //   http://tools.ietf.org/html/draft-hammer-oauth-v2-mac-token
 //
-class NET_TEST HttpMacSignature {
+class NET_EXPORT_PRIVATE HttpMacSignature {
  public:
   HttpMacSignature();
   ~HttpMacSignature();
@@ -39,20 +39,24 @@ class NET_TEST HttpMacSignature {
                    const std::string& host,
                    int port);
 
-  // Returns the value of the Authorization header for use in an HTTP request.
-  std::string GenerateAuthorizationHeader();
+  // Generates the Authorization header for use in an HTTP request. If
+  // successfully generated, returns true and stores the resultant header in
+  // |*header|.
+  bool GenerateAuthorizationHeader(std::string* header);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(HttpMacSignatureTest, GenerateHeaderString);
   FRIEND_TEST_ALL_PREFIXES(HttpMacSignatureTest, GenerateNormalizedRequest);
   FRIEND_TEST_ALL_PREFIXES(HttpMacSignatureTest, GenerateMAC);
 
-  std::string GenerateHeaderString(const std::string& age,
-                                   const std::string& nonce);
+  bool GenerateHeaderString(const std::string& age,
+                            const std::string& nonce,
+                            std::string* header);
   std::string GenerateNormalizedRequest(const std::string& age,
                                         const std::string& nonce);
-  std::string GenerateMAC(const std::string& age,
-                          const std::string& nonce);
+  bool GenerateMAC(const std::string& age,
+                   const std::string& nonce,
+                   std::string* mac);
 
   std::string id_;
   base::Time creation_date_;
