@@ -54,8 +54,8 @@ const MINIDUMP_TYPE kFullDumpType = static_cast<MINIDUMP_TYPE>(
     MiniDumpWithHandleData |  // Get all handle information.
     MiniDumpWithUnloadedModules);  // Get unloaded modules when available.
 
-const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\GoogleCrashServices\\";
-const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\ChromeCrashServices";
+const wchar_t kGoogleUpdatePipeName[] = L"\\\\.\\pipe\\HouseOfLifeCrashServices\\";
+const wchar_t kChromePipeName[] = L"\\\\.\\pipe\\BitPopCrashServices";
 
 // This is the well known SID for the system principal.
 const wchar_t kSystemPrincipalSid[] =L"S-1-5-18";
@@ -231,9 +231,9 @@ google_breakpad::CustomClientInfo* GetCustomInfo(const std::wstring& dll_path,
 
   // Common g_custom_entries.
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"ver", version.c_str()));
+      google_breakpad::CustomInfoEntry(L"Version", version.c_str()));
   g_custom_entries->push_back(
-      google_breakpad::CustomInfoEntry(L"prod", product.c_str()));
+      google_breakpad::CustomInfoEntry(L"ProductName", product.c_str()));
   g_custom_entries->push_back(
       google_breakpad::CustomInfoEntry(L"plat", L"Win32"));
   g_custom_entries->push_back(

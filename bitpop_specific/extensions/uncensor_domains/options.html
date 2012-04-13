@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Uncensor Filter Options</title>
+  <meta name="Content-type" http-equiv="text/html; charset=utf-8" />
+  <script type="text/javascript" src="options.js"></script>
+  <link rel="stylesheet" media="all" href="options.css" />
+</head>
+<body style="font-family: Arial, sans-serif; ">
+  <div id="mainview-content"><div id="toplevel-page-container">
+    <div id="uncensorPage" class="page">
+      <h1 id="uncensorPageHeader">Uncensor Options</h1>
+      <h3 id="uncensorPageDescription">Uncensor Filter will redirect you to new locations of unlawfully censored sites.</h3>
+      <section>
+        <h3 id="uncensorFilterControl">Filter control</h3>
+        <div>
+          <div class="radio">
+            <label><input type="radio" id="uncensor_always_redirect" name="shouldRedirect" value="1">
+              <span id="uncensorAlwaysRedirectOn">Always redirect / ON</span></label>
+          </div>
+          <div class="radio">
+            <label><input type="radio" id="uncensor_never_redirect" name="shouldRedirect" value="0">
+              <span id="uncensorNeverRedirectOff">Never redirect / OFF</span></label>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h3 id="uncensorNotices">Notices</h3>
+        <div>
+          <div class="checkbox">
+            <label><input type="checkbox" id="uncensor_show_message" name="showMessage">
+              <span id="uncensorShowMessage">Show message when redirected</span></label>
+          </div>
+          <div class="checkbox">
+            <label><input type="checkbox" id="uncensor_notify_update" name="notifyUpdate">
+              <span id="uncensorNotifyUpdates">Be notified when list updates</span></label>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h3 id="uncensorTheFilter">The filter</h3>
+        <div>
+          <table id="domain_filter_table">
+            <thead><tr>
+              <th>&nbsp;</th>
+              <th id="uncensorOriginalDomain">Original domain</th>
+              <th id="uncensorNewLocation">New location</th>
+            </tr></thead>
+          </table>
+        </div>
+      </section>
+      <section>
+        <h3 id="uncensorExceptions">Exceptions</h3>
+        <div>
+          <table id="domain_exceptions_table">
+            <thead><tr>
+              <th>&nbsp;</th>
+              <th id="uncensorOriginalDomainExceptions">Original domain</th>
+              <th id="uncensorNewLocationExceptions">New location</th>
+            </tr></thead>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div></div>
+</body>
+</html>

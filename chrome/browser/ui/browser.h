@@ -646,6 +646,7 @@ class Browser : public TabHandlerDelegate,
   void ToggleSpeechInput();
 
   virtual void UpdateDownloadShelfVisibility(bool visible);
+  virtual void UpdateFriendsSidebarVisibility();
 
   /////////////////////////////////////////////////////////////////////////////
 
@@ -1444,6 +1445,8 @@ class Browser : public TabHandlerDelegate,
 
   // True if the browser window has been shown at least once.
   bool window_has_shown_;
+
+  TabContentsWrapper* friends_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(Browser);
 };

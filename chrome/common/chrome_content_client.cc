@@ -352,9 +352,11 @@ std::string ChromeContentClient::GetUserAgent(bool* overriding) const {
   } else {
     *overriding = false;
     chrome::VersionInfo version_info;
-    std::string product("Chrome/");
-    product += version_info.is_valid() ? version_info.Version() : "0.0.0.0";
-    return webkit_glue::BuildUserAgentFromProduct(product);
+    std::string bitpopProduct("BitPop/");
+    bitpopProduct += version_info.is_valid() ? version_info.Version() : "0.0.0.0";
+    bitpopProduct += " Chrome/";
+    bitpopProduct += version_info.is_valid() ? version_info.ChromiumReleaseVersion() : "0.0.0.0";
+    return webkit_glue::BuildUserAgentFromProduct(bitpopProduct);
   }
 }
 

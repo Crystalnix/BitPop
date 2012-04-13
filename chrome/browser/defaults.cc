@@ -58,7 +58,7 @@ const bool kShowCancelButtonInTaskManager = false;
 #if !defined(OS_CHROMEOS)
 
 const SessionStartupPref::Type kDefaultSessionStartupType =
-    SessionStartupPref::DEFAULT;
+    SessionStartupPref::LAST;
 const int kMiniTabWidth = 56;
 const bool kRestorePopups = false;
 const bool kShowImportOnBookmarkBar = true;

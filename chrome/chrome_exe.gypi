@@ -245,9 +245,11 @@
             'infoplist_strings_tool',
             'interpose_dependency_shim',
             'chrome_manifest_bundle',
+            'default_extensions',
           ],
           'mac_bundle_resources': [
             '<(PRODUCT_DIR)/<(mac_bundle_id).manifest',
+            'app/resources/dsa_pub.pem',
           ],
           'actions': [
             {
@@ -299,6 +301,19 @@
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
                 '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
+              ],
+            },
+            {
+              'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Extensions',
+              'files': [
+                '<(PRODUCT_DIR)/extensions/external_extensions.json',
+                '<(PRODUCT_DIR)/extensions/dropdown_most_visited.crx',
+                '<(PRODUCT_DIR)/extensions/docsviewer-extension.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_controller.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_friends.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_messages.crx',
+                '<(PRODUCT_DIR)/extensions/facebook_notifications.crx',
+                '<(PRODUCT_DIR)/extensions/uncensor_proxy.crx',
               ],
             },
           ],

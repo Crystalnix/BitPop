@@ -14,6 +14,9 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
+// Generated header
+#include "chrome/common/chrome_release_version_info.h"
+
 namespace chrome {
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -129,6 +132,10 @@ std::string VersionInfo::OSType() const {
 #else
   return "Unknown";
 #endif
+}
+
+std::string VersionInfo::ChromiumReleaseVersion() const {
+  return CHROMIUM_RELEASE_VERSION;
 }
 
 }  // namespace chrome

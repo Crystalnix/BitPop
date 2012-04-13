@@ -12,6 +12,11 @@
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/download/download_shelf.h"
+#include "chrome/browser/facebook_chat/facebook_chatbar.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
+#include "chrome/browser/facebook_chat/facebook_chat_item.h"
+#include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -24,6 +29,7 @@
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
 #import "chrome/browser/ui/cocoa/content_settings/collected_cookies_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #import "chrome/browser/ui/cocoa/html_dialog_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
@@ -80,6 +86,15 @@ BrowserWindowCocoa::BrowserWindowCocoa(Browser* browser,
 
   pref_change_registrar_.Init(browser_->profile()->GetPrefs());
   pref_change_registrar_.Add(prefs::kShowBookmarkBar, this);
+
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
+                 Source<Profile>(browser_->profile()));
+  registrar_.Add(this, NotificationType::FACEBOOK_SESSION_LOGGED_IN,
+                 Source<Profile>(browser_->profile()));
 
   initial_show_state_ = browser_->GetSavedWindowShowState();
 }
@@ -233,6 +248,10 @@ void BrowserWindowCocoa::UpdateDevTools() {
 
 void BrowserWindowCocoa::SetDevToolsDockSide(DevToolsDockSide side) {
   [controller_ setDevToolsDockToRight:side == DEVTOOLS_DOCK_SIDE_RIGHT];
+}
+
+void BrowserWindowCocoa::UpdateFriendsSidebarForContents(WebContents *contents) {
+  [controller_ updateFriendsForContents: contents];
 }
 
 void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
@@ -449,6 +468,23 @@ DownloadShelf* BrowserWindowCocoa::GetDownloadShelf() {
   return [shelfController bridge];
 }
 
+bool BrowserWindowCocoa::IsChatbarVisible() const {
+  return [controller_ isChatbarVisible] != NO;
+}
+
+FacebookChatbar* BrowserWindowCocoa::GetChatbar() {
+  FacebookChatbarController *chatbarController = [controller_ facebookChatbar];
+  return [chatbarController bridge];
+}
+
+bool BrowserWindowCocoa::IsFriendsSidebarVisible() const {
+  return [controller_ isFriendsSidebarVisible] != NO;
+}
+
+void BrowserWindowCocoa::CreateFriendsSidebarIfNeeded() {
+  //[controller_ createFriendsSidebarIfNeeded];
+}
+
 void BrowserWindowCocoa::ShowCollectedCookiesDialog(
     TabContentsWrapper* wrapper) {
   // Deletes itself on close.
@@ -599,6 +635,43 @@ void BrowserWindowCocoa::Observe(int type,
       [controller_ updateBookmarkBarVisibilityWithAnimation:YES];
       break;
     }
+    case NotificationType::FACEBOOK_CHATBAR_ADD_CHAT: {
+        if (browser_->is_type_tabbed()) {
+          Details<FacebookChatCreateInfo> chat_info(details);
+          FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
+          // the next call returns the found element if jid's equal
+          FacebookChatItem *newItem = mgr->CreateFacebookChat(*(chat_info.ptr()));
+          if (IsActive())
+            newItem->set_needs_activation(true);
+          else
+            newItem->set_needs_activation(false);
+          GetChatbar()->AddChatItem(newItem);
+          //mgr->StartChat(newItem->jid());
+        }
+      }
+      break;
+    case NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+        if (browser_->is_type_tabbed()) {
+          Details<ReceivedMessageInfo> msg_info(details);
+          FacebookChatManager *mgr =
+              browser_->profile()->GetFacebookChatManager();
+          FacebookChatItem *item = mgr->GetItem(msg_info->chatCreateInfo->jid);
+          item->set_needs_activation(false);
+          GetChatbar()->AddChatItem(item);
+        }
+      }
+      break;
+    case NotificationType::FACEBOOK_SESSION_LOGGED_OUT:
+      if (browser_->is_type_tabbed()) {
+        GetChatbar()->RemoveAll();
+        [[[controller_ toolbarController] browserActionsController] hideFacebookExtensions];
+      }
+      break;
+    case NotificationType::FACEBOOK_SESSION_LOGGED_IN:
+      if (browser_->is_type_tabbed()) {
+        [[[controller_ toolbarController] browserActionsController] showFacebookExtensions];
+      }
+      break;
     default:
       NOTREACHED();  // we don't ask for anything else!
       break;

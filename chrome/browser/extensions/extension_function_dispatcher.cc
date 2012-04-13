@@ -31,6 +31,7 @@
 #include "chrome/browser/extensions/extension_context_menu_api.h"
 #include "chrome/browser/extensions/extension_cookies_api.h"
 #include "chrome/browser/extensions/extension_debugger_api.h"
+#include "chrome/browser/extensions/extension_facebook_chat_api.h"
 #include "chrome/browser/extensions/extension_function.h"
 #include "chrome/browser/extensions/extension_i18n_api.h"
 #include "chrome/browser/extensions/extension_idle_api.h"
@@ -501,6 +502,14 @@ void FactoryRegistry::ResetFunctions() {
   // System
   RegisterFunction<extensions::GetIncognitoModeAvailabilityFunction>();
   RegisterFunction<extensions::GetUpdateStatusFunction>();
+
+  // Facebook chat
+  RegisterFunction<GetFriendsSidebarVisibleFunction>();
+  RegisterFunction<SetFriendsSidebarVisibleFunction>();
+  RegisterFunction<AddChatFunction>();
+  RegisterFunction<NewIncomingMessageFunction>();
+  RegisterFunction<LoggedOutFacebookSessionFunction>();
+  RegisterFunction<LoggedInFacebookSessionFunction>();
 }
 
 void FactoryRegistry::GetAllNames(std::vector<std::string>* names) {

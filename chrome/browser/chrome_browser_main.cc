@@ -1056,14 +1056,14 @@ bool ChromeBrowserMainParts::IsMetricsReportingEnabled() {
   // prefs, we turn on recording.  We disable metrics completely for
   // non-official builds.
   bool enabled = false;
-#if defined(GOOGLE_CHROME_BUILD)
+//#if defined(GOOGLE_CHROME_BUILD)
 #if defined(OS_CHROMEOS)
   chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
                                             &enabled);
 #else
   enabled = local_state_->GetBoolean(prefs::kMetricsReportingEnabled);
 #endif  // #if defined(OS_CHROMEOS)
-#endif  // defined(GOOGLE_CHROME_BUILD)
+//#endif  // defined(GOOGLE_CHROME_BUILD)
   return enabled;
 }
 

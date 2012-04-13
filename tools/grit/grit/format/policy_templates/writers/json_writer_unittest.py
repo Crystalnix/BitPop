@@ -107,7 +107,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example String Policy\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example String Policy\n\n'
         '  //"StringPolicy": "hello, world!"\n\n'
         '}')
@@ -134,7 +134,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example Int Policy\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example Int Policy\n\n'
         '  //"IntPolicy": 15\n\n'
         '}')
@@ -165,7 +165,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example Int Enum\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example Int Enum\n\n'
         '  //"EnumPolicy": 1\n\n'
         '}')
@@ -198,7 +198,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example String Enum\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example String Enum\n\n'
         '  //"EnumPolicy": "one"\n\n'
         '}')
@@ -225,7 +225,7 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Example List\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Example List\n\n'
         '  //"ListPolicy": ["foo", "bar"]\n\n'
         '}')
@@ -287,11 +287,11 @@ class JsonWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected_output = (
         TEMPLATE_HEADER +
         '  // Policy One\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Policy One\n\n'
         '  //"Policy1": ["a", "b"],\n\n'
         '  // Policy Two\n' +
-        HEADER_DELIMETER + 
+        HEADER_DELIMETER +
         '  // Policy Two\n\n'
         '  //"Policy2": "c"\n\n'
         '}')

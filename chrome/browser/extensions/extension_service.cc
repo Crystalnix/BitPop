@@ -122,6 +122,10 @@
 #include "chrome/browser/extensions/extension_input_ui_api.h"
 #endif
 
+#if defined(OS_MACOSX)
+#include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
+#endif
+
 using base::Time;
 using content::BrowserThread;
 using content::DevToolsAgentHost;
@@ -414,6 +418,9 @@ ExtensionService::ExtensionService(Profile* profile,
                  content::NotificationService::AllBrowserContextsAndSources());
   registrar_.Add(this, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
                  content::NotificationService::AllBrowserContextsAndSources());
+  registrar_.Add(this, content::NOTIFICATION_APP_ACTIVATED,
+                 content::NotificationService::AllBrowserContextsAndSources());
+
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(prefs::kExtensionInstallAllowList, this);
   pref_change_registrar_.Add(prefs::kExtensionInstallDenyList, this);
@@ -2526,6 +2533,12 @@ void ExtensionService::Observe(int type,
       InitAfterImport();
       break;
     }
+#if defined(OS_MACOSX)
+    case content::NOTIFICATION_APP_ACTIVATED: {
+      profile_->GetFacebookBitpopNotification()->ClearNotification();
+      break;
+    }
+#endif
 
     default:
       NOTREACHED() << "Unexpected notification type.";

@@ -1,0 +1,20 @@
+/*
+// Add your own style rules here, not in css/main.css
+// or css/setting.css for easy updating reasons.
+*/
+
+.the-combo-table {
+  border-collapse: collapse;
+}
+
+.the-combo-table td, .the-combo-table th {
+  border: solid 1px #ccc;
+}
+
+.the-combo-table thead {
+  background-color: #aaa;
+}
+
+.the-combo-table .even-row {
+  background-color: #eee;
+}

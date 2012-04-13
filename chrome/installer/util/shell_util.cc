@@ -533,8 +533,8 @@ bool ShellUtil::AdminNeededForRegistryCleanup(BrowserDistribution* dist,
   bool cleanup_needed = false;
   std::list<RegistryEntry*> entries;
   STLElementDeleter<std::list<RegistryEntry*> > entries_deleter(&entries);
-  RegistryEntry::GetProgIdEntries(dist, L"chrome.exe", suffix, &entries);
-  RegistryEntry::GetSystemEntries(dist, L"chrome.exe", suffix, &entries);
+  RegistryEntry::GetProgIdEntries(dist, L"bitpop.exe", suffix, &entries);
+  RegistryEntry::GetSystemEntries(dist, L"bitpop.exe", suffix, &entries);
   for (std::list<RegistryEntry*>::const_iterator itr = entries.begin();
        itr != entries.end() && !cleanup_needed; ++itr) {
     cleanup_needed = (*itr)->NameExistsInHKLM();
@@ -683,7 +683,7 @@ bool ShellUtil::GetQuickLaunchPath(bool system_level, std::wstring* path) {
   wchar_t qlaunch[MAX_PATH];
   if (system_level) {
     // We are accessing GetDefaultUserProfileDirectory this way so that we do
-    // not have to declare dependency to Userenv.lib for chrome.exe
+    // not have to declare dependency to Userenv.lib for bitpop.exe
     typedef BOOL (WINAPI *PROFILE_FUNC)(LPWSTR, LPDWORD);
     HMODULE module = LoadLibrary(L"Userenv.dll");
     PROFILE_FUNC p = reinterpret_cast<PROFILE_FUNC>(GetProcAddress(module,

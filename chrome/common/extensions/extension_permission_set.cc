@@ -361,6 +361,12 @@ void ExtensionAPIPermission::RegisterAllPermissions(
   // Register aliases.
   info->RegisterAlias("unlimitedStorage", kOldUnlimitedStoragePermission);
   info->RegisterAlias("tabs", kWindowsPermission);
+
+  // Register BitPop specific permissions
+  ExtensionAPIPermission* bitpopFacebookChatPermission = info->RegisterPermission(
+      kBitpopFacebookChat, "bitpop.facebookChat",
+      0, ExtensionPermissionMessage::kNone,
+      kFlagNone, kTypeDefault);
 }
 
 bool ExtensionAPIPermission::HasWhitelist() const {

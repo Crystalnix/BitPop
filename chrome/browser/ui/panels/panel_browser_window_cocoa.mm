@@ -376,3 +376,16 @@ bool NativePanelTestingCocoa::IsWindowSizeKnown() const {
 bool NativePanelTestingCocoa::IsAnimatingBounds() const {
   return [native_panel_window_->controller_ isAnimatingBounds];
 }
+<<<<<<< HEAD
+=======
+
+bool PanelBrowserWindowCocoa::IsChatbarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+FacebookChatbar* PanelBrowserWindowCocoa::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+>>>>>>> master

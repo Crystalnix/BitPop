@@ -100,6 +100,9 @@ class BrowserActionButton : public views::MenuButton,
   virtual bool OnMousePressed(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const views::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseEntered(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseMoved(const views::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseCaptureLost() OVERRIDE;
   virtual bool OnKeyReleased(const views::KeyEvent& event) OVERRIDE;
   virtual void ShowContextMenu(const gfx::Point& p,
                                bool is_mouse_gesture) OVERRIDE;
@@ -117,6 +120,8 @@ class BrowserActionButton : public views::MenuButton,
 
  private:
   virtual ~BrowserActionButton();
+
+  void set_should_draw_as_pushed(bool flag);
 
   // The browser action this view represents. The ExtensionAction is not owned
   // by this class.
@@ -142,6 +147,9 @@ class BrowserActionButton : public views::MenuButton,
   content::NotificationRegistrar registrar_;
 
   friend class base::DeleteHelper<BrowserActionButton>;
+
+  bool should_draw_as_pushed_;
+  bool is_custom_extension_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionButton);
 };
@@ -382,6 +390,12 @@ class BrowserActionsContainer
   // so that the bar resizes instantly, instead of having to poll it while it
   // animates to open/closed status.
   static bool disable_animations_during_testing_;
+
+  // Toggling the extensions depending on online/offline status of our facebook connection
+  void ShowFacebookExtensions();
+  void HideFacebookExtensions();
+
+  void SetFacebookExtensionsVisibility(bool visible);
 
  protected:
   // Overridden from views::View:

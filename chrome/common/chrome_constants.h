@@ -118,6 +118,12 @@ extern const int kHighestRendererOomScore;
 extern const char kPreReadEnvironmentVariable[];
 #endif
 
+extern const char kFacebookChatExtensionId[];
+extern const char kFacebookControllerExtensionId[];
+extern const char kFacebookMessagesExtensionId[];
+extern const char kFacebookNotificationsExtensionId[];
+extern const char kUncensorISPExtensionId[];
+
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_CHROME_CONSTANTS_H_

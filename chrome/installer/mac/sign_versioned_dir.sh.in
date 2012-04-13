@@ -41,18 +41,25 @@ versioned_dir="${app_path}/Contents/Versions/@VERSION@"
 # signed directly. See copy_framework_unversioned.
 
 framework="${versioned_dir}/@MAC_PRODUCT_NAME@ Framework.framework"
+sparkle_framework="${framework}/Frameworks/Sparkle.framework/Sparkle"
 helper_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper.app"
 helper_eh_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper EH.app"
 helper_np_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper NP.app"
 
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" "${framework}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" "${helper_app}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${helper_eh_app}"
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${helper_np_app}"
+codesign -v "${sparkle_framework}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${sparkle_framework}"
+codesign -v "${framework}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${framework}"
+codesign -v "${helper_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_app}"
+codesign -v "${helper_eh_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_eh_app}"
+codesign -v "${helper_np_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    --signature-size 9400 "${helper_np_app}"
+
 
 # Verify everything.
+codesign -v "${sparkle_framework}"
 codesign -v "${framework}"
 codesign -v "${helper_app}"
 codesign -v "${helper_eh_app}"

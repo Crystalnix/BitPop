@@ -21,6 +21,7 @@
 #include "chrome/installer/util/google_chrome_distribution.h"
 #include "chrome/installer/util/google_chrome_binaries_distribution.h"
 #include "chrome/installer/util/google_chrome_sxs_distribution.h"
+#include "chrome/installer/util/bitpop_distribution.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/l10n_string_util.h"
 #include "chrome/installer/util/master_preferences.h"
@@ -106,7 +107,9 @@ BrowserDistribution* BrowserDistribution::GetSpecificDistribution(
             &g_browser_distribution);
       }
 #else
-      dist = GetOrCreateBrowserDistribution<BrowserDistribution>(
+      //dist = GetOrCreateBrowserDistribution<BrowserDistribution>(
+      //    &g_browser_distribution);
+      dist = GetOrCreateBrowserDistribution<BitpopDistribution>(
           &g_browser_distribution);
 #endif
       break;

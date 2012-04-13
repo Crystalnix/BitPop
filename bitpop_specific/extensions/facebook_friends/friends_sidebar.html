@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Facebook Chat Sidebar</title>
+  <link rel="stylesheet" href="css/sidebar.css" type="text/css" media="screen" charset="utf-8">
+  <link rel="stylesheet" href="css/antiscroll.css" type="text/css" media="screen" charset="utf-8">
+  <script type="text/javascript" src="js/jquery.min.js"></script>
+  <script type="text/javascript" src="js/jquery-mousewheel.js"></script>
+  <script type="text/javascript" src="js/antiscroll.js"></script>
+  <script type="text/javascript" src="js/common.js"></script>
+  <script type="text/javascript" src="js/friends_sidebar.js"></script>
+  <script type="text/javascript">
+    function setAntiscrollHeight() {
+      $('.box, .box .antiscroll-inner').height(
+        $('body').height() - $('.box-wrap').offset().top
+      );
+      $('.antiscroll-inner').width($('body').width());
+    }
+
+    $(document).ready(function() {
+      //console.log('onReady 1 START');
+      setAntiscrollHeight();
+      $('.box-wrap').antiscroll();
+      //console.log('onReady 1 END');
+    });
+    $(window).resize(function() {
+      //console.log('onResize START');
+      setAntiscrollHeight();
+      if ($('.box-wrap').data('antiscroll')) {
+        $('.box-wrap').data('antiscroll').rebuild();
+        }
+      //console.log('onResize END');
+    });
+  </script>
+</head>
+<body>
+  <div id="slide-wrap">
+    <div id="inner-wrap">
+      <div class="content-item" id="chat-content">
+        <p id="unavail" style="display:none"></p>
+        <p id="logout"><a href="#">Logout</a></p>
+
+        <div id="search-wrap">
+          <input id="search" type="search" placeholder="Search..." name="s" />
+        </div>
+
+        <div class="box-wrap antiscroll-wrap">
+          <div class="box">
+            <div class="antiscroll-inner">
+              <div class="box-inner" id="scrollable-area">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="content-item" id="login-content">
+        <div id="login-centered">
+          <img src="images/facebook_login_bitpop.png" alt="Facebook chat login" />
+          <p>Chat with your friends<br />while surfing</p>
+          <button class="btn">Login</button>
+          <p class="error" style="display:none">
+            The login data is already present. Check your internet connection. You will be connected
+            as soon as possible.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+

@@ -1,0 +1,38 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <link rel="stylesheet" href="css/chat_popup.css" type="text/css" media="screen" charset="utf-8">
+  <script src='js/jquery.min.js'></script>
+  <script src="js/autolink-min.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/chat_popup.js"></script>
+  <script type="text/javascript">
+    $(document).ready(function() {
+        bitpop.chat.init();
+
+        function setHeadTextCallback(uname) {
+          $('#head').text(uname);
+        }
+
+        chrome.extension.sendRequest(bitpop.CONTROLLER_EXTENSION_ID,
+          { type: 'getFBUserNameByUid',
+            uid: window.location.hash.substr(1) },
+          function (response) {
+            setHeadTextCallback(response.uname);
+          }
+        );
+    });
+  </script>
+</head>
+<body>
+  <div id="head">
+  </div>
+  <div id="chat">
+  </div>
+  <form id="msgForm">
+    <input type="text" id="msg" />
+    <input id="pastePageLink" type="button" value="+" />
+    <input type="submit" style="visibility:hidden; height: 0" />
+  </form>
+</body>
+</html>

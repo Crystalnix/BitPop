@@ -244,6 +244,10 @@ void Panel::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
+void Panel::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
+  NOTIMPLEMENTED();
+}
+
 void Panel::SetDevToolsDockSide(DevToolsDockSide side) {
   NOTIMPLEMENTED();
 }
@@ -474,6 +478,15 @@ DownloadShelf* Panel::GetDownloadShelf() {
   return tabbed_browser->window()->GetDownloadShelf();
 }
 
+bool Panel::IsFriendsSidebarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+void Panel::CreateFriendsSidebarIfNeeded() {
+	NOTIMPLEMENTED();
+}
+
 void Panel::ShowCollectedCookiesDialog(TabContentsWrapper* wrapper) {
   NOTIMPLEMENTED();
 }
@@ -665,4 +678,14 @@ void Panel::OnWindowSizeAvailable() {
 
 void Panel::DestroyBrowser() {
   native_panel_->DestroyPanelBrowser();
+}
+
+bool Panel::IsChatbarVisible() const {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+FacebookChatbar* Panel::GetChatbar() {
+  NOTIMPLEMENTED();
+  return NULL;
 }

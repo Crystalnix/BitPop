@@ -77,6 +77,8 @@ using content::BrowserThread;
 using content::DownloadManager;
 using content::UserMetricsAction;
 
+#import "SUUpdater.h"
+
 // 10.6 adds a public API for the Spotlight-backed search menu item in the Help
 // menu.  Provide the declaration so it can be called below when building with
 // the 10.5 SDK.
@@ -569,6 +571,14 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 #endif
 }
 
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
+{
+  if (object == [NSUserDefaults standardUserDefaults] && [keyPath isEqualToString:@"SUAutomaticallyUpdate"]) {
+    PrefService* prefService = [self defaultProfile]->GetPrefs();
+    prefService->SetBoolean(prefs::kAutomaticUpdatesEnabled, [[change objectForKey:NSKeyValueChangeNewKey] boolValue]);
+  }
+}
+
 // This is called after profiles have been loaded and preferences registered.
 // It is safe to access the default profile here.
 - (void)applicationDidFinishLaunching:(NSNotification*)notify {
@@ -614,6 +624,8 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
   if (!parsed_command_line.HasSwitch(switches::kEnableExposeForTabs)) {
     [tabposeMenuItem_ setHidden:YES];
   }
+
+  [[NSUserDefaults standardUserDefaults] addObserver:self forKeyPath:@"SUAutomaticallyUpdate" options:NSKeyValueObservingOptionNew context:NULL];
 }
 
 // This is called after profiles have been loaded and preferences registered.

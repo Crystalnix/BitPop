@@ -325,7 +325,8 @@ Browser::Browser(Type type, Profile* profile)
           synced_window_delegate_(
               new BrowserSyncedWindowDelegate(this))),
       bookmark_bar_state_(BookmarkBar::HIDDEN),
-      window_has_shown_(false) {
+      window_has_shown_(false),
+      friends_contents_(NULL) {
   registrar_.Add(this, content::NOTIFICATION_SSL_VISIBLE_STATE_CHANGED,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED,
@@ -361,6 +362,7 @@ Browser::Browser(Type type, Profile* profile)
   profile_pref_registrar_.Add(prefs::kInstantEnabled, this);
   profile_pref_registrar_.Add(prefs::kIncognitoModeAvailability, this);
   profile_pref_registrar_.Add(prefs::kSearchSuggestEnabled, this);
+  profile_pref_registrar_.Add(prefs::kFacebookShowFriendsList, this);
 
   InitCommandState();
   BrowserList::AddBrowser(this);
@@ -389,8 +391,18 @@ Browser::Browser(Type type, Profile* profile)
 
   UpdateBookmarkBarState(BOOKMARK_BAR_STATE_CHANGE_INIT);
 
+  if (!profile_->IsOffTheRecord()) {
+    // Create TabContents with friends sidebar.
+    friends_contents_ =
+        Browser::TabContentsFactory(profile, NULL, MSG_ROUTING_NONE, NULL, NULL);
+    friends_contents_->tab_contents()->
+        render_view_host()->AllowBindings(BindingsPolicy::EXTENSION);
+    friends_contents_->tab_contents()->set_delegate(this);
+  }
+
   FilePath profile_path = profile->GetPath();
   ProfileMetrics::LogProfileLaunch(profile_path);
+
 }
 
 Browser::~Browser() {
@@ -444,6 +456,9 @@ Browser::~Browser() {
     select_file_dialog_->ListenerDestroyed();
 
   TabRestoreServiceDestroyed(tab_restore_service_);
+
+  if (friends_contents_)
+    delete friends_contents_;
 }
 
 bool Browser::IsFullscreenForTab() const {
@@ -545,6 +560,19 @@ void Browser::InitBrowserWindow() {
       chrome::NOTIFICATION_BROWSER_WINDOW_READY,
       content::Source<Browser>(this),
       content::NotificationService::NoDetails());
+
+  if (!profile_->IsOffTheRecord() && is_type_tabbed()) {
+    if (profile()->GetExtensionService()->GetInstalledExtension(
+          "engefnlnhcgeegefndkhijjfdfbpbeah") != NULL) {
+      friends_contents_->controller().LoadURL(
+              GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+                chrome::kFacebookChatExtensionSidebarPage),
+              GURL(),
+              PageTransition::START_PAGE);
+    }
+    window_->CreateFriendsSidebarIfNeeded();
+    UpdateFriendsSidebarVisibility();
+  }
 
   PrefService* local_state = g_browser_process->local_state();
   if (local_state && local_state->FindPreference(
@@ -2567,6 +2595,9 @@ void Browser::RegisterUserPrefs(PrefService* prefs) {
   prefs->RegisterIntegerPref(prefs::kMediaCacheSize,
                              0,
                              PrefService::UNSYNCABLE_PREF);
+  prefs->RegisterBooleanPref(prefs::kAutomaticUpdatesEnabled,
+                             true,
+                             PrefService::SYNCABLE_PREF);
 }
 
 // static
@@ -3501,6 +3532,9 @@ void Browser::TabStripEmpty() {
 
 WebContents* Browser::OpenURLFromTab(WebContents* source,
                                      const OpenURLParams& params) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   browser::NavigateParams nav_params(this, params.url, params.transition);
   nav_params.source_contents = GetTabContentsWrapperAt(
       tab_handler_->GetTabStripModel()->GetWrapperIndex(source));
@@ -3521,6 +3555,9 @@ WebContents* Browser::OpenURLFromTab(WebContents* source,
 
 void Browser::NavigationStateChanged(const WebContents* source,
                                      unsigned changed_flags) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   // Only update the UI when something visible has changed.
   if (changed_flags)
     ScheduleUIUpdate(source, changed_flags);
@@ -3539,6 +3576,9 @@ void Browser::AddNewContents(WebContents* source,
                              WindowOpenDisposition disposition,
                              const gfx::Rect& initial_pos,
                              bool user_gesture) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   // No code for this yet.
   DCHECK(disposition != SAVE_TO_DISK);
   // Can't create a new contents for the current tab - invalid case.
@@ -3593,6 +3633,8 @@ void Browser::AddNewContents(WebContents* source,
 }
 
 void Browser::ActivateContents(WebContents* contents) {
+  if (friends_contents_ && contents == friends_contents_->tab_contents())
+    return;
   ActivateTabAt(tab_handler_->GetTabStripModel()->GetWrapperIndex(contents),
                 false);
   window_->Activate();
@@ -3603,6 +3645,9 @@ void Browser::DeactivateContents(WebContents* contents) {
 }
 
 void Browser::LoadingStateChanged(WebContents* source) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   window_->UpdateLoadingAnimations(
       tab_handler_->GetTabStripModel()->TabsAreLoading());
   window_->UpdateTitleBar();
@@ -3633,6 +3678,9 @@ void Browser::LoadingStateChanged(WebContents* source) {
 }
 
 void Browser::CloseContents(WebContents* source) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   if (is_attempting_to_close_browser_) {
     // If we're trying to close the browser, just clear the state related to
     // waiting for unload to fire. Don't actually try to close the tab as it
@@ -3653,6 +3701,9 @@ void Browser::CloseContents(WebContents* source) {
 }
 
 void Browser::MoveContents(WebContents* source, const gfx::Rect& pos) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   if (!IsPopupOrPanel(source)) {
     NOTREACHED() << "moving invalid browser type";
     return;
@@ -3661,6 +3712,9 @@ void Browser::MoveContents(WebContents* source, const gfx::Rect& pos) {
 }
 
 void Browser::DetachContents(WebContents* source) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   int index = tab_handler_->GetTabStripModel()->GetWrapperIndex(source);
   if (index >= 0)
     tab_handler_->GetTabStripModel()->DetachTabContentsAt(index);
@@ -3673,6 +3727,9 @@ bool Browser::IsPopupOrPanel(const WebContents* source) const {
 
 void Browser::ContentsMouseEvent(
     WebContents* source, const gfx::Point& location, bool motion) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   if (!GetStatusBubble())
     return;
 
@@ -3685,6 +3742,9 @@ void Browser::ContentsMouseEvent(
 
 void Browser::UpdateTargetURL(WebContents* source, int32 page_id,
                               const GURL& url) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   Browser::UpdateTargetURLHelper(source, page_id, url);
 
   if (!GetStatusBubble())
@@ -3699,6 +3759,15 @@ void Browser::UpdateTargetURL(WebContents* source, int32 page_id,
 void Browser::UpdateDownloadShelfVisibility(bool visible) {
   if (GetStatusBubble())
     GetStatusBubble()->UpdateDownloadShelfVisibility(visible);
+}
+
+void Browser::UpdateFriendsSidebarVisibility() {
+  if (friends_contents_) {
+    bool visible = profile()->GetPrefs()->GetBoolean(
+        prefs::kFacebookShowFriendsList);
+    window_->UpdateFriendsSidebarForContents(visible ?
+        friends_contents_->tab_contents() : NULL);
+  }
 }
 
 void Browser::ContentsZoomChange(bool zoom_in) {
@@ -3722,6 +3791,9 @@ bool Browser::IsApplication() const {
 }
 
 void Browser::ConvertContentsToApplication(WebContents* contents) {
+  if (friends_contents_ && contents == friends_contents_->tab_contents())
+    return;
+
   const GURL& url = contents->GetController().GetActiveEntry()->GetURL();
   std::string app_name = web_app::GenerateApplicationNameFromURL(url);
 
@@ -3746,6 +3818,9 @@ gfx::Rect Browser::GetRootWindowResizerRect() const {
 void Browser::BeforeUnloadFired(WebContents* tab,
                                 bool proceed,
                                 bool* proceed_to_fire_unload) {
+  if (friends_contents_ && tab == friends_contents_->tab_contents())
+    return;
+
   if (!is_attempting_to_close_browser_) {
     *proceed_to_fire_unload = proceed;
     if (!proceed)
@@ -3857,6 +3932,9 @@ void Browser::ShowPageInfo(content::BrowserContext* browser_context,
 }
 
 void Browser::ViewSourceForTab(WebContents* source, const GURL& page_url) {
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   DCHECK(source);
   TabContentsWrapper* wrapper = GetTabContentsWrapperAt(
       tab_handler_->GetTabStripModel()->GetWrapperIndex(source));
@@ -3866,6 +3944,10 @@ void Browser::ViewSourceForTab(WebContents* source, const GURL& page_url) {
 void Browser::ViewSourceForFrame(WebContents* source,
                                  const GURL& frame_url,
                                  const std::string& frame_content_state) {
+
+  if (friends_contents_ && source == friends_contents_->tab_contents())
+    return;
+
   DCHECK(source);
   TabContentsWrapper* wrapper = GetTabContentsWrapperAt(
       tab_handler_->GetTabStripModel()->GetWrapperIndex(source));
@@ -3888,6 +3970,9 @@ void Browser::HandleKeyboardEvent(const NativeWebKeyboardEvent& event) {
 }
 
 void Browser::ShowRepostFormWarningDialog(WebContents* source) {
+  if (friends_contents_ && tab_contents == friends_contents_->tab_contents())
+    return;
+
   browser::ShowTabModalConfirmDialog(
       new RepostFormWarningController(source),
       TabContentsWrapper::GetCurrentWrapperForContents(source));
@@ -3900,6 +3985,9 @@ void Browser::ShowContentSettingsPage(ContentSettingsType content_type) {
 }
 
 void Browser::ShowCollectedCookiesDialog(TabContentsWrapper* wrapper) {
+  if (friends_contents_ && wrapper == friends_contents_)
+    return;
+
   window()->ShowCollectedCookiesDialog(wrapper);
 }
 
@@ -4277,6 +4365,14 @@ void Browser::Observe(int type,
     }
 
     case chrome::NOTIFICATION_EXTENSION_UNINSTALLED:
+      // During window creation on Windows we may end up calling into
+      // SHAppBarMessage, which internally spawns a nested message loop. This
+      // makes it possible for us to end up here before window creation has
+      // completed,at which point window_ is NULL. See 94752 for details.
+      if (window() && window()->GetLocationBar())
+        window()->GetLocationBar()->UpdatePageActions();
+      break;
+
     case chrome::NOTIFICATION_EXTENSION_LOADED:
       // During window creation on Windows we may end up calling into
       // SHAppBarMessage, which internally spawns a nested message loop. This
@@ -4284,6 +4380,18 @@ void Browser::Observe(int type,
       // completed,at which point window_ is NULL. See 94752 for details.
       if (window() && window()->GetLocationBar())
         window()->GetLocationBar()->UpdatePageActions();
+
+      const Extension* extension = Details<const Extension>(details).ptr();
+
+      if (friends_contents_ && is_type_tabbed() &&
+          extension->id() == "engefnlnhcgeegefndkhijjfdfbpbeah") {
+        friends_contents_->controller().LoadURL(
+          GURL(std::string(chrome::kFacebookChatExtensionPrefixURL) +
+            chrome::kFacebookChatExtensionSidebarPage),
+          GURL(),
+          PageTransition::START_PAGE);
+      }
+
       break;
 
     case chrome::NOTIFICATION_BROWSER_THEME_CHANGED:
@@ -4324,6 +4432,9 @@ void Browser::Observe(int type,
       } else if (pref_name == prefs::kAllowFileSelectionDialogs) {
         UpdateSaveAsState(GetContentRestrictionsForSelectedTab());
         UpdateOpenFileState();
+      } else if (pref_name == prefs::kFacebookShowFriendsList &&
+                  is_type_tabbed()) {
+        UpdateFriendsSidebarVisibility();
       } else {
         NOTREACHED();
       }

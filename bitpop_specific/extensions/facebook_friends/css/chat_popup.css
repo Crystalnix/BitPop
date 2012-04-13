@@ -1,0 +1,110 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 203px;
+  height: 350px;
+  font-family: "lucida grande",tahoma,verdana,arial,sans-serif;
+  color: #333;
+  line-height: 1.28;
+  font-size: 11px;
+}
+p {
+  margin: 5px;
+}
+#head {
+  background-color: #6D84B4;
+  border: 1px solig rgba(0, 39, 121, .76);
+  border-bottom: none;
+  border-top-left-radius: 1px;
+  border-top-right-radius: 1px;
+  color: white;
+  font-weight: bold;
+  line-height: 18px;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 7px 4px;
+}
+#msgForm {
+  position: absolute;
+  bottom: 0;
+  left:0;
+  width: 193px;
+  margin: 0;
+  padding: 0;
+  height: 30px;
+}
+#msg {
+  border: 1px solid #ccc;
+  width: 160px;
+  outline: none;
+  float: left;
+  clear: left;
+}
+
+.clearfix::after {
+  clear: both;
+  content: ".";
+  display: block;
+  font-size: 0;
+  height: 0;
+  line-height: 0;
+  visibility: hidden;
+}
+
+#chat {
+  margin: 0;
+  padding: 0;
+  height: 282px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#chat .error-message {
+  color: red;
+  font-size: 11px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+#chat .message-group, #chat .error-message {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #eee;
+  margin-left: 5px;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  padding-top: 5px;
+}
+  #chat .message-group .profile-link {
+    float: left;
+  }
+    #chat .message-group .profile-link .profile-photo {
+      width: 32px;
+      height: 32px;
+      display: block;
+      border: 0;
+    }
+  #chat .message-group .messages {
+    margin-left: 40px;
+  }
+    #chat .message-group .messages .chat-message {
+      font-size: 11px;
+      word-wrap: break-word;
+      max-width: 193px;
+      margin-bottom: 3px;
+      white-space: pre-wrap;
+    }
+#chat li.time {
+  text-align: center;
+  color: silver;
+  border-bottom: solid 1px silver;
+}
+#pastePageLink {
+  width: 25px;
+  height: 30px;
+  float: right;
+  clear:right;
+}
+

@@ -22,12 +22,15 @@
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/pref_names.h"
 #include "content/browser/renderer_host/render_view_host.h"
 #include "content/browser/renderer_host/render_widget_host_view.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -71,15 +74,26 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
       extension_(extension),
       ALLOW_THIS_IN_INITIALIZER_LIST(tracker_(this)),
       panel_(panel),
-      context_menu_(NULL) {
+      context_menu_(NULL),
+      should_draw_as_pushed_(false),
+      is_custom_extension_(false) {
   set_border(NULL);
   set_alignment(TextButton::ALIGN_CENTER);
+
+  if (extension->id() == chrome::kFacebookChatExtensionId) {
+    is_custom_extension_ = true;
+
+    PrefService *prefService = panel->profile()->GetPrefs();
+    set_should_draw_as_pushed(prefService->GetBoolean(prefs::kFacebookShowFriendsList));
+  }
 
   // No UpdateState() here because View hierarchy not setup yet. Our parent
   // should call UpdateState() after creation.
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
                  content::Source<ExtensionAction>(browser_action_));
+  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+                 content::NotificationService::AllSources());
 }
 
 void BrowserActionButton::Destroy() {
@@ -191,11 +205,18 @@ GURL BrowserActionButton::GetPopupUrl() {
 void BrowserActionButton::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED);
-  UpdateState();
-  // The browser action may have become visible/hidden so we need to make
-  // sure the state gets updated.
-  panel_->OnBrowserActionVisibilityChanged();
+  if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED) {
+    UpdateState();
+    // The browser action may have become visible/hidden so we need to make
+    // sure the state gets updated.
+    panel_->OnBrowserActionVisibilityChanged();
+  } else if (type == chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+    if (is_custom_extension_) {
+      content::Details<bool> detailsBool(details);
+      set_should_draw_as_pushed(*detailsBool.ptr());
+    }
+  } else
+    NOTREACHED();
 }
 
 bool BrowserActionButton::Activate() {
@@ -232,13 +253,40 @@ void BrowserActionButton::OnMouseReleased(const views::MouseEvent& event) {
   } else {
     TextButton::OnMouseReleased(event);
   }
+
+  if (should_draw_as_pushed_)
+    SetState(views::CustomButton::BS_PUSHED);
 }
 
 void BrowserActionButton::OnMouseExited(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+
   if (IsPopup() || context_menu_)
     MenuButton::OnMouseExited(event);
   else
     TextButton::OnMouseExited(event);
+}
+
+void BrowserActionButton::OnMouseEntered(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseEntered(event);
+}
+
+void BrowserActionButton::OnMouseMoved(const views::MouseEvent& event) {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseMoved(event);
+}
+
+void BrowserActionButton::OnMouseCaptureLost() {
+  if (should_draw_as_pushed_)
+    return;
+  else
+    MenuButton::OnMouseCaptureLost();
 }
 
 bool BrowserActionButton::OnKeyReleased(const views::KeyEvent& event) {
@@ -284,6 +332,13 @@ void BrowserActionButton::SetButtonNotPushed() {
 BrowserActionButton::~BrowserActionButton() {
 }
 
+void BrowserActionButton::set_should_draw_as_pushed(bool flag) {
+  should_draw_as_pushed_ = flag;
+  if (flag)
+    SetState(views::CustomButton::BS_PUSHED);
+  else
+    SetState(views::CustomButton::BS_NORMAL);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // BrowserActionView
@@ -444,6 +499,24 @@ void BrowserActionsContainer::CreateBrowserActionViews() {
   DCHECK(browser_action_views_.empty());
   if (!model_)
     return;
+
+  if (model_->size() != 0) {
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service) {
+      const Extension* extension = service->GetExtensionById(chrome::kFacebookChatExtensionId, false);
+      model_->MoveBrowserAction(extension, 0);
+
+      if (!profile_->should_show_additional_extensions()) {
+        extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
+        if (extension)
+          service->SetBrowserActionVisibility(extension, false);
+
+        extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
+        if (extension)
+          service->SetBrowserActionVisibility(extension, false);
+      }
+    }
+  }
 
   for (ExtensionList::iterator iter = model_->begin(); iter != model_->end();
        ++iter) {
@@ -740,6 +813,12 @@ int BrowserActionsContainer::GetDragOperationsForView(View* sender,
 bool BrowserActionsContainer::CanStartDragForView(View* sender,
                                                   const gfx::Point& press_pt,
                                                   const gfx::Point& p) {
+  BrowserActionButton *b = static_cast<BrowserActionButton*>(sender);
+  if ((b->extension()->id() == chrome::kFacebookChatExtensionId) ||
+      (b->extension()->id() == chrome::kFacebookMessagesExtensionId) ||
+      (b->extension()->id() == chrome::kFacebookNotificationsExtensionId))
+    return false;
+
   return true;
 }
 
@@ -925,6 +1004,15 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
     // Just redraw the (possibly modified) visible icon set.
     OnBrowserActionVisibilityChanged();
   }
+
+  if (!profile_->should_show_additional_extensions() &&
+      (extension->id() == chrome::kFacebookMessagesExtensionId ||
+       extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+
+    ExtensionService* service = profile_->GetExtensionService();
+    if (service)
+      service->SetBrowserActionVisibility(extension, false);
+  }
 }
 
 void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
@@ -965,7 +1053,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
 
 void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
                                                  int index) {
-  if (!ShouldDisplayBrowserAction(extension))
+  if (!ShouldDisplayBrowserAction(extension) || browser_action_views_.size() == 0)
     return;
 
   if (profile_->IsOffTheRecord())
@@ -1100,4 +1188,31 @@ bool BrowserActionsContainer::ShouldDisplayBrowserAction(
   return
       (!profile_->IsOffTheRecord() ||
        profile_->GetExtensionService()->IsIncognitoEnabled(extension->id()));
+}
+
+void BrowserActionsContainer::ShowFacebookExtensions() {
+  SetFacebookExtensionsVisibility(true);
+}
+
+void BrowserActionsContainer::HideFacebookExtensions() {
+  SetFacebookExtensionsVisibility(false);
+}
+
+void BrowserActionsContainer::SetFacebookExtensionsVisibility(bool visible) {
+  profile_->set_should_show_additional_extensions(visible);
+
+  ExtensionService* service = profile_->GetExtensionService();
+
+  const Extension* extension = service->GetExtensionById(chrome::kFacebookMessagesExtensionId, false);
+  if (extension)
+    service->SetBrowserActionVisibility(extension, visible);
+
+  extension = service->GetExtensionById(chrome::kFacebookNotificationsExtensionId, false);
+  if (extension)
+    service->SetBrowserActionVisibility(extension, visible);
+
+  if (visible) {
+    MoveBrowserAction(chrome::kFacebookMessagesExtensionId, 1);
+    MoveBrowserAction(chrome::kFacebookNotificationsExtensionId, 2);
+  }
 }

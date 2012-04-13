@@ -95,6 +95,7 @@ class Panel : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(WebContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -144,6 +145,10 @@ class Panel : public BrowserWindow,
       const GURL& url, bool already_bookmarked) OVERRIDE;
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
   virtual void ShowCollectedCookiesDialog(TabContentsWrapper* wrapper) OVERRIDE;
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;

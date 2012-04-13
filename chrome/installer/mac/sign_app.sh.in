@@ -41,15 +41,19 @@ versioned_dir="${app_path}/Contents/Versions/@VERSION@"
 
 browser_app="${app_path}"
 framework="${versioned_dir}/@MAC_PRODUCT_NAME@ Framework.framework"
+sparkle_framework="${framework}/Frameworks/Sparkle.framework/Sparkle"
 helper_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper.app"
 helper_eh_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper EH.app"
 helper_np_app="${versioned_dir}/@MAC_PRODUCT_NAME@ Helper NP.app"
 
-codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
-    "${browser_app}" --resource-rules "${browser_app_rules}"
+
+codesign -v "${browser_app}" || codesign -s "${codesign_id}" --keychain "${codesign_keychain}" \
+    "${browser_app}" --resource-rules "${browser_app_rules}" \
+    --signature-size 9400
 
 # Verify everything. Check the framework and helper apps to make sure that the
 # signatures are present and weren't altered by the signing process.
+codesign -v "${sparkle_framework}"
 codesign -v "${framework}"
 codesign -v "${helper_app}"
 codesign -v "${helper_eh_app}"

@@ -1753,4 +1753,7 @@ const char kRecoveryComponentVersion[] = "recovery_component.version";
 // troubleshooting.
 const char kComponentUpdaterState[] = "component_updater.state";
 
+const char kAutomaticUpdatesEnabled[] = "automatic_updates.enabled";
+const char kFacebookShowFriendsList[] = "facebook.showFriendsList";
+
 }  // namespace prefs

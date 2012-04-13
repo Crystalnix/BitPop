@@ -11,6 +11,7 @@
 #import "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/gradient_button_cell.h"
+#import "chrome/browser/ui/cocoa/image_button_cell.h"
 
 class Extension;
 class ExtensionAction;
@@ -54,6 +55,10 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
   // this is the only button moving if it ends up being dragged. This is set to
   // YES upon |mouseDown:|.
   BOOL dragCouldStart_;
+
+  BOOL shouldDrawAsPushed_;
+
+  BOOL isCustomExtension_;
 }
 
 - (id)initWithFrame:(NSRect)frame
@@ -78,7 +83,12 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
 @property(readonly, nonatomic) BOOL isBeingDragged;
 @property(readonly, nonatomic) const Extension* extension;
 @property(readwrite, nonatomic) int tabId;
+@property(readwrite, nonatomic) BOOL shouldDrawAsPushed;
+@property(readonly, nonatomic) BOOL isCustomExtension;
 
+@end
+
+@interface CustomActionButton : BrowserActionButton
 @end
 
 @interface BrowserActionCell : GradientButtonCell {
@@ -87,6 +97,17 @@ extern NSString* const kBrowserActionButtonDragEndNotification;
   int tabId_;
 
   // The action we're drawing the cell for. Weak.
+  ExtensionAction* extensionAction_;
+}
+
+@property(readwrite, nonatomic) int tabId;
+@property(readwrite, nonatomic) ExtensionAction* extensionAction;
+
+@end
+
+@interface CustomActionCell : ImageButtonCell {
+ @private
+  int tabId_;
   ExtensionAction* extensionAction_;
 }
 

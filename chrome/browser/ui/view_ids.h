@@ -73,6 +73,12 @@ enum ViewID {
   // The Download shelf.
   VIEW_ID_DOWNLOAD_SHELF,
 
+  // The facebook friends sidebar
+  VIEW_ID_FACEBOOK_FRIENDS_SIDE_BAR_CONTAINER,
+
+  // The facebook chatbar view
+  VIEW_ID_FACEBOOK_CHATBAR,
+
   // Used in chrome/browser/ui/gtk/view_id_util_browsertests.cc
   // If you add new ids, make sure the above test passes.
   VIEW_ID_PREDEFINED_COUNT

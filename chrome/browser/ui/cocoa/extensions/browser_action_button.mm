@@ -10,14 +10,18 @@
 #include "base/logging.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/extensions/image_loading_tracker.h"
+#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
@@ -25,6 +29,8 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size.h"
+#include "grit/theme_resources.h"
+#include "grit/theme_resources_standard.h"
 
 NSString* const kBrowserActionButtonUpdatedNotification =
     @"BrowserActionButtonUpdatedNotification";
@@ -61,6 +67,9 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
     registrar_.Add(
         this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
         content::Source<ExtensionAction>(extension->browser_action()));
+    registrar_.Add(
+        this, chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+        content::NotificationService::AllSources());
   }
 
   ~ExtensionImageTrackerBridge() {}
@@ -79,7 +88,12 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
                const content::NotificationDetails& details) {
     if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
-    else
+    else if (type == NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+      if (owner_.isCustomExtension) {
+        content::Details<bool> detailsBool(details);
+        owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;
+      }
+    } else
       NOTREACHED();
   }
 
@@ -100,6 +114,10 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
 - (void)drawBadgeWithinFrame:(NSRect)frame;
 @end
 
+@interface CustomActionCell (Internals)
+- (void)drawBadgeWithinFrame:(NSRect)frame;
+@end
+
 @interface BrowserActionButton (Private)
 - (void)endDrag;
 @end
@@ -109,6 +127,8 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
 @synthesize isBeingDragged = isBeingDragged_;
 @synthesize extension = extension_;
 @synthesize tabId = tabId_;
+@synthesize shouldDrawAsPushed = shouldDrawAsPushed_;
+@synthesize isCustomExtension = isCustomExtension_;
 
 + (Class)cellClass {
   return [BrowserActionCell class];
@@ -119,18 +139,43 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
             profile:(Profile*)profile
               tabId:(int)tabId {
   if ((self = [super initWithFrame:frame])) {
-    BrowserActionCell* cell = [[[BrowserActionCell alloc] init] autorelease];
-    // [NSButton setCell:] warns to NOT use setCell: other than in the
-    // initializer of a control.  However, we are using a basic
-    // NSButton whose initializer does not take an NSCell as an
-    // object.  To honor the assumed semantics, we do nothing with
-    // NSButton between alloc/init and setCell:.
-    [self setCell:cell];
-    [cell setTabId:tabId];
-    [cell setExtensionAction:extension->browser_action()];
-    [cell
-        accessibilitySetOverrideValue:base::SysUTF8ToNSString(extension->name())
-        forAttribute:NSAccessibilityDescriptionAttribute];
+    if (extension->id() != chrome::kFacebookChatExtensionId) {
+      isCustomExtension_ = NO;
+      BrowserActionCell* cell = [[[BrowserActionCell alloc] init] autorelease];
+      // [NSButton setCell:] warns to NOT use setCell: other than in the
+      // initializer of a control.  However, we are using a basic
+      // NSButton whose initializer does not take an NSCell as an
+      // object.  To honor the assumed semantics, we do nothing with
+      // NSButton between alloc/init and setCell:.
+      [self setCell:cell];
+      [cell setTabId:tabId];
+      [cell setExtensionAction:extension->browser_action()];
+      [cell
+          accessibilitySetOverrideValue:base::SysUTF8ToNSString(extension->name())
+          forAttribute:NSAccessibilityDescriptionAttribute];
+    } else {
+      isCustomExtension_ = YES;
+
+      CustomActionCell* cell = [[[CustomActionCell alloc] init] autorelease];
+      // [NSButton setCell:] warns to NOT use setCell: other than in the
+      // initializer of a control.  However, we are using a basic
+      // NSButton whose initializer does not take an NSCell as an
+      // object.  To honor the assumed semantics, we do nothing with
+      // NSButton between alloc/init and setCell:.
+      [self setCell:cell];
+      [cell setTabId:tabId];
+      [cell setExtensionAction:extension->browser_action()];
+      [cell
+          accessibilitySetOverrideValue:base::SysUTF8ToNSString(extension->name())
+          forAttribute:NSAccessibilityDescriptionAttribute];
+
+      [cell setImageID:IDR_FACEBOOK_CHAT_ACTION
+        forButtonState:image_button_cell::kDefaultState];
+      [cell setImageID:IDR_FACEBOOK_CHAT_ACTION_H
+        forButtonState:image_button_cell::kHoverState];
+      [cell setImageID:IDR_FACEBOOK_CHAT_ACTION_P
+        forButtonState:image_button_cell::kPressedState];
+    }
 
     [self setTitle:@""];
     [self setButtonType:NSMomentaryChangeButton];
@@ -140,6 +185,12 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
         initWithExtension:extension
                   profile:profile
           extensionAction:extension->browser_action()] autorelease]];
+
+    if (isCustomExtension_) {
+      PrefService *prefService = profile->GetPrefs();
+      [self setShouldDrawAsPushed:
+          prefService->GetBoolean(prefs::kFacebookShowFriendsList)];
+    }
 
     tabId_ = tabId;
     extension_ = extension;
@@ -161,8 +212,15 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
 }
 
 - (void)mouseDown:(NSEvent*)theEvent {
-  [[self cell] setHighlighted:YES];
-  dragCouldStart_ = YES;
+  if (extension_->id() != chrome::kFacebookChatExtensionId &&
+      extension_->id() != chrome::kFacebookMessagesExtensionId &&
+      extension_->id() != chrome::kFacebookNotificationsExtensionId) {
+    [[self cell] setHighlighted:YES];
+    dragCouldStart_ = YES;
+  }
+
+  if (extension_->id() == chrome::kFacebookChatExtensionId)
+    [[self cell] setHighlighted:YES];
 }
 
 - (void)mouseDragged:(NSEvent*)theEvent {
@@ -195,6 +253,10 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
   if (NSPointInRect(location, [self bounds]) && !isBeingDragged_) {
     // Only perform the click if we didn't drag the button.
     [self performClick:self];
+    if (isCustomExtension_) {
+      ImageButtonCell *imageCell = (ImageButtonCell*)[self cell];
+      [imageCell setIsMouseInside:NO];
+    }
   } else {
     // Make sure an ESC to end a drag doesn't trigger 2 endDrags.
     if (isBeingDragged_) {
@@ -210,7 +272,8 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
   [[NSNotificationCenter defaultCenter]
       postNotificationName:kBrowserActionButtonDragEndNotification
                     object:self];
-  [[self cell] setHighlighted:NO];
+  if (!shouldDrawAsPushed_)
+    [[self cell] setHighlighted:NO];
 }
 
 - (void)setFrame:(NSRect)frameRect animate:(BOOL)animate {
@@ -299,6 +362,19 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
   return image;
 }
 
+- (void)setShouldDrawAsPushed:(BOOL)pushed {
+  [[self cell] setHighlighted:pushed];
+  shouldDrawAsPushed_ = pushed;
+}
+
+@end
+
+@implementation CustomActionButton
+
++ (Class)cellClass {
+  return [CustomActionCell class];
+}
+
 @end
 
 @implementation BrowserActionCell
@@ -321,3 +397,26 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
 }
 
 @end
+
+// used for facebook extension button
+@implementation CustomActionCell
+
+@synthesize tabId = tabId_;
+@synthesize extensionAction = extensionAction_;
+
+- (void)drawBadgeWithinFrame:(NSRect)frame {
+  gfx::CanvasSkiaPaint canvas(frame, false);
+  canvas.set_composite_alpha(true);
+  gfx::Rect boundingRect(NSRectToCGRect(frame));
+  extensionAction_->PaintBadge(&canvas, boundingRect, tabId_);
+}
+
+- (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
+  gfx::ScopedNSGraphicsContextSaveGState scopedGState;
+  [super drawInteriorWithFrame:cellFrame inView:controlView];
+  cellFrame.origin.y += kBrowserActionBadgeOriginYOffset;
+  [self drawBadgeWithinFrame:cellFrame];
+}
+
+@end
+

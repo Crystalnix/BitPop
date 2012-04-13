@@ -190,7 +190,7 @@ HMODULE LoadChromeWithDirectory(std::wstring* dir) {
     // TODO(chrisha): This path should not be ChromeFrame specific, and it
     //     should not be hard-coded with 'Google' in the path. Rather, it should
     //     use the product name.
-    base::win::RegKey key(HKEY_CURRENT_USER, L"Software\\Google\\ChromeFrame",
+    base::win::RegKey key(HKEY_CURRENT_USER, L"Software\\HouseOfLife\\ChromeFrame",
                           KEY_QUERY_VALUE);
     if (key.Valid()) {
       key.ReadValueDW(L"PreReadSize", &pre_read_size);

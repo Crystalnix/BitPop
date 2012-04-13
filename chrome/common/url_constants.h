@@ -349,6 +349,18 @@ void RegisterChromeSchemes();
 extern const char kCloudPrintLearnMoreURL[];
 #endif
 
+// BitPop specific URLs ==================================
+// Facebook chat component extension URL
+
+// The root URL of facebook chat extension
+extern const char kFacebookChatExtensionPrefixURL[];
+
+// Page which shows in a friends list sidebar
+extern const char kFacebookChatExtensionSidebarPage[];
+
+// Page which shows in a chat window popup
+extern const char kFacebookChatExtensionChatPage[];
+
 }  // namespace chrome
 
 #endif  // CHROME_COMMON_URL_CONSTANTS_H_

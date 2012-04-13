@@ -1,0 +1,18 @@
+{
+  "name": "__MSG_extName__",
+  "version": "1.0",
+  "description": "__MSG_extDesc__",
+  "default_locale": "en",
+  "background_page": "background.html",
+  "options_page": "options.html",
+
+  "permissions" : [
+    "tabs",
+    "notifications",
+    "http://tools.bitpop.com/*"
+  ],
+  "icons" : {
+    "48" : "48uncensor.png",
+    "128" : "128uncensor.png"
+  }
+}

@@ -21,6 +21,7 @@
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/tabs/abstract_tab_strip_view.h"
 #include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/views/controls/single_split_view_listener.h"
@@ -40,10 +41,13 @@ class BookmarkBarView;
 class Browser;
 class BrowserViewLayout;
 class BrowserWindowMoveObserver;
+class ChatbarView;
 class ContentsContainer;
 class DownloadShelfView;
 class EncodingMenuModel;
 class Extension;
+class FacebookChatbar;
+class FriendsSidebarView;
 class FullscreenExitBubbleViews;
 class InfoBarContainerView;
 class LocationBarView;
@@ -81,6 +85,7 @@ class Menu;
 //
 class BrowserView : public BrowserWindow,
                     public BrowserWindowTesting,
+                    public NotificationObserver,
                     public TabStripModelObserver,
                     public ui::SimpleMenuModel::Delegate,
                     public views::WidgetDelegate,
@@ -242,6 +247,7 @@ class BrowserView : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(WebContents *friends_contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -293,6 +299,13 @@ class BrowserView : public BrowserWindow,
   void SetDownloadShelfVisible(bool visible);
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+
+  void SetChatbarVisible(bool visible);
+  virtual bool IsChatbarVisible() const OVERRIDE;
+  virtual FacebookChatbar* GetChatbar() OVERRIDE;
+  void SetFriendsSidebarVisible(bool visible);
+  virtual bool IsFriendsSidebarVisible() const OVERRIDE;
+  virtual void CreateFriendsSidebarIfNeeded() OVERRIDE;
   virtual void ShowCollectedCookiesDialog(TabContentsWrapper* wrapper) OVERRIDE;
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;
@@ -638,6 +651,12 @@ class BrowserView : public BrowserWindow,
   // Split view containing the contents container and devtools container.
   views::SingleSplitView* contents_split_;
 
+  // The view that contains facebook friends list with names, photo and status
+  scoped_ptr<FriendsSidebarView> fb_friend_list_sidebar_;
+
+  // The view containing different chat buddies' buttons, laid out on bottom of browser view
+  scoped_ptr<ChatbarView> fb_chatbar_;
+
   // Side to dock devtools to
   DevToolsDockSide devtools_dock_side_;
 
@@ -698,6 +717,8 @@ class BrowserView : public BrowserWindow,
 
   UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
+  NotificationRegistrar registrar_;
+
   // Used to measure the loading spinner animation rate.
   base::TimeTicks last_animation_time_;
 
@@ -713,3 +734,4 @@ class BrowserView : public BrowserWindow,
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_VIEW_H_
+2

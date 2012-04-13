@@ -9,6 +9,7 @@
 #include "base/memory/scoped_nsobject.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/bookmarks/bookmark_model.h"
+#include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/prefs/pref_change_registrar.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "content/public/browser/notification_registrar.h"
@@ -50,6 +51,7 @@ class BrowserWindowCocoa : public BrowserWindow,
       BookmarkBar::AnimateChangeType change_type) OVERRIDE;
   virtual void UpdateDevTools() OVERRIDE;
   virtual void SetDevToolsDockSide(DevToolsDockSide side) OVERRIDE;
+  virtual void UpdateFriendsSidebarForContents(WebContents *contents) OVERRIDE;
   virtual void UpdateLoadingAnimations(bool should_animate) OVERRIDE;
   virtual void SetStarredState(bool is_starred) OVERRIDE;
   virtual gfx::Rect GetRestoredBounds() const OVERRIDE;
@@ -94,6 +96,10 @@ class BrowserWindowCocoa : public BrowserWindow,
                                   bool already_bookmarked) OVERRIDE;
   virtual bool IsDownloadShelfVisible() const OVERRIDE;
   virtual DownloadShelf* GetDownloadShelf() OVERRIDE;
+  virtual bool IsChatbarVisible() const;
+  virtual FacebookChatbar* GetChatbar();
+  virtual bool IsFriendsSidebarVisible() const;
+  virtual void CreateFriendsSidebarIfNeeded();
   virtual void ShowCollectedCookiesDialog(TabContentsWrapper* wrapper) OVERRIDE;
   virtual void ConfirmBrowserCloseWithPendingDownloads() OVERRIDE;
   virtual void UserChangedTheme() OVERRIDE;

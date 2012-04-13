@@ -423,4 +423,11 @@ void RegisterChromeSchemes() {
   RegisterContentSchemes(kSavableSchemes);
 }
 
+const char kFacebookChatExtensionPrefixURL[] =
+    //"chrome-extension://gbldbegolgpdenofnibkpmffbpnmgppc/";
+    "chrome-extension://engefnlnhcgeegefndkhijjfdfbpbeah/";
+
+const char kFacebookChatExtensionSidebarPage[] = "friends_sidebar.html";
+
+const char kFacebookChatExtensionChatPage[] = "chat.html";
 }  // namespace chrome

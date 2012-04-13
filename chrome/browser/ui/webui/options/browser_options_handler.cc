@@ -89,6 +89,8 @@ void BrowserOptionsHandler::GetLocalizedValues(
     { "instantConfirmTitle", IDS_INSTANT_OPT_IN_TITLE },
     { "instantConfirmMessage", IDS_INSTANT_OPT_IN_MESSAGE },
     { "defaultBrowserGroupName", IDS_OPTIONS_DEFAULTBROWSER_GROUP_NAME },
+    { "checkForUpdateGroupName", IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME },
+    { "updatesAutoCheckDaily", IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -142,10 +144,15 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getInstantFieldTrialStatus",
       base::Bind(&BrowserOptionsHandler::GetInstantFieldTrialStatus,
                  base::Unretained(this)));
+  web_ui_->RegisterMessageCallback("toggleAutomaticUpdates",
+      base::Bind(&BrowserOptionsHandler::ToggleAutomaticUpdates,
+                 base::Unretained(this)));
 }
 
 void BrowserOptionsHandler::Initialize() {
   Profile* profile = Profile::FromWebUI(web_ui());
+
+  profile->GetPrefs()->SetBoolean(prefs::kAutomaticUpdatesEnabled, platform_util::getUseAutomaticUpdates());
 
   // Create our favicon data source.
   profile->GetChromeURLDataManager()->AddDataSource(
@@ -543,6 +550,11 @@ void BrowserOptionsHandler::GetInstantFieldTrialStatus(const ListValue* args) {
       !InstantFieldTrial::IsHiddenExperiment(profile));
   web_ui()->CallJavascriptFunction("BrowserOptions.setInstantFieldTrialStatus",
                                    enabled);
+}
+
+void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
+  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
+  platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 
 void BrowserOptionsHandler::OnResultChanged(bool default_match_changed) {

@@ -764,17 +764,17 @@
           ['branding=="Chrome"', {
             'mac_product_name%': 'Google Chrome',
           }, { # else: branding!="Chrome"
-            'mac_product_name%': 'Chromium',
+            'mac_product_name%': 'BitPop',
           }],
 
-          ['branding=="Chrome" and buildtype=="Official"', {
+          [buildtype=="Official"', {
             # Enable uploading crash dumps.
             'mac_breakpad_uploads%': 1,
             # Enable dumping symbols at build time for use by Mac Breakpad.
             'mac_breakpad%': 1,
-            # Enable Keystone auto-update support.
-            'mac_keystone%': 1,
-          }, { # else: branding!="Chrome" or buildtype!="Official"
+            # Disable Keystone auto-update support.
+            'mac_keystone%': 0,
+          }, { # else: buildtype!="Official"
             'mac_breakpad_uploads%': 0,
             'mac_breakpad%': 0,
             'mac_keystone%': 0,

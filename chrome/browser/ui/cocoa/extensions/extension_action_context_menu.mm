@@ -19,6 +19,7 @@
 #include "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #include "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
@@ -180,9 +181,18 @@ int CurrentTabId() {
         l10n_util::GetNSStringWithFixup(IDS_MANAGE_EXTENSIONS),
         nil];
 
+    int separatorNumber = 1;
     for (id item in menuItems) {
       if ([item isKindOfClass:[NSMenuItem class]]) {
+        if (separatorNumber == 2 && (
+            extension->id() == chrome::kFacebookChatExtensionId ||
+            extension->id() == chrome::kFacebookMessagesExtensionId ||
+            extension->id() == chrome::kFacebookNotificationsExtensionId
+            )) {
+          [item setHidden:YES];
+        }
         [self addItem:item];
+        separatorNumber++;
       } else if ([item isKindOfClass:[NSString class]]) {
         NSMenuItem* itemObj = [self addItemWithTitle:item
                                               action:@selector(dispatch:)
@@ -190,6 +200,28 @@ int CurrentTabId() {
         // The tag should correspond to the enum above.
         // NOTE: The enum and the order of the menu items MUST be in sync.
         [itemObj setTag:[self indexOfItem:itemObj]];
+
+        if (([itemObj tag] == kExtensionContextDisable ||
+            [itemObj tag] == kExtensionContextUninstall ||
+            [itemObj tag] == kExtensionContextHide) && (
+              extension->id() == chrome::kFacebookChatExtensionId ||
+              extension->id() == chrome::kFacebookMessagesExtensionId ||
+              extension->id() == chrome::kFacebookNotificationsExtensionId)) {
+          [itemObj setTarget:nil];
+          [itemObj setHidden:YES];
+        } else {
+          [itemObj setTarget:self];
+        }
+
+        // Disable the 'Options' item if there are no options to set.
+        if ([itemObj tag] == kExtensionContextOptions &&
+            extension_->options_url().spec().length() <= 0) {
+          // Setting the target to nil will disable the item. For some reason
+          // setEnabled:NO does not work.
+          [itemObj setTarget:nil];
+        } else {
+          [itemObj setTarget:self];
+        }
 
         // Only browser actions can have their button hidden. Page actions
         // should never show the "Hide" menu item.

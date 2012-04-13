@@ -74,6 +74,7 @@ void ExtensionAPI::LoadSchemaFromResource(int resource_id) {
 
 ExtensionAPI::ExtensionAPI() {
   static int kJsonApiResourceIds[] = {
+    IDR_EXTENSION_API_JSON_BITPOP,
     IDR_EXTENSION_API_JSON_BOOKMARKS,
     IDR_EXTENSION_API_JSON_BROWSERACTION,
     IDR_EXTENSION_API_JSON_CHROMEAUTHPRIVATE,

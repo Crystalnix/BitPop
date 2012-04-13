@@ -1168,6 +1168,9 @@ are declared in build/common.gypi.
         <message name="IDS_EXIT" desc="The text label of the Exit menu item">
           E&amp;xit
         </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="Title of menu item starting update check.">
+          Check for updates...
+        </message>
       </if>
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_SHOW_HISTORY" desc="In Title Case: The show history menu in the app menu">
@@ -1208,6 +1211,9 @@ are declared in build/common.gypi.
         </message>
         <message name="IDS_EXIT" desc="In Title Case: The text label of the Exit menu item">
           E&amp;xit
+        </message>
+        <message name="IDS_CHECK_FOR_UPDATES" desc="In Title Case: Title of menu item starting update check.">
+          Check For Updates...
         </message>
       </if>
       <if expr="pp_ifdef('chromeos')">
@@ -7986,6 +7992,9 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
       <message name="IDS_OPTIONS2_ADVANCED_TAB_LABEL" desc="The title of the Advanced settings tab">
         Advanced Settings
       </message>
+      <message name="IDS_OPTIONS_UNCENSOR_TAB_LABEL" desc="The title of the Uncensor filter extension settings tab">
+        Uncensor Filter
+      </message>
       <message name="IDS_OPTIONS_TAB_TITLE" desc="The format of the title on the browser tab for an options subpage, e.g. Settings - Basics">
         <ph name="OPTIONS_TITLE">$1<ex>Settings</ex></ph> - <ph name="SUBPAGE_TITLE">$2<ex>Under the Hood</ex></ph>
       </message>
@@ -8200,6 +8209,22 @@ Would you like to start <ph name="CONTROL_PANEL_APPLET_NAME">$1<ex>Add/Remove Pr
           Advanced Settings...
         </message>
       </if>
+
+      <!-- Tree of life browser additions -->
+      <if expr="not pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="The title of the check for update group">
+          Check for update
+        </message>
+      </if>
+      <if expr="pp_ifdef('use_titlecase')">
+        <message name="IDS_OPTIONS_CHECKFORUPDATE_GROUP_NAME" desc="In Title Case: The title of the check for update group">
+          Check For Update
+        </message>
+      </if>
+      <message name="IDS_OPTIONS_UPDATES_AUTOCHECK_LABEL" desc="The label for automatic updates checkbox">
+        Automatically check daily
+      </message>
+      <!-- end of Tree of life browser options -->
 
       <if expr="pp_ifdef('use_titlecase')">
         <message name="IDS_OPTIONS_DEFAULTBROWSER_USEASDEFAULT" desc="In Title Case: The label of the 'Use Chrome as default' browser button">
@@ -8711,6 +8736,41 @@ experiment id: "<ph name="EXPERIMENT_ID">$5<ex>ar1</ex></ph>"
       <!-- Misc advanced option description strings. -->
       <message name="IDS_NETWORK_PREDICTION_ENABLED_DESCRIPTION" desc="In the advanced options tab, the text next to the checkbox that enables prediction of network actions.  Actions include DNS prefetching, TCP and SSL preconnection, and prerendering of webpages.">
         Predict network actions to improve page load performance
+      </message>
+
+      <!-- Uncensor filter option strings -->
+      <message name="IDS_OPTIONS_UNCENSOR_PAGE_DESCRIPTION" desc="Second level header for uncensor filter options page">
+        BitPop will redirect you to new locations of unlawfully censored sites
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_FILTER_CONTROL" desc="Heading for first option group of Uncensor filter extension">
+        Filter Control
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_REDIRECT_ON" desc="Allow redirect radio label">
+        Always redirect / ON
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_REDIRECT_OFF" desc="Deny redirect radio label">
+        Never redirect / OFF
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NOTICES" desc="Heading for second option group of Uncensor filter extension">
+        Notices
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_SHOW_MESSAGE" desc="Label for checkbox toggling showing messages when redirected">
+        Show message when redirected
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NOTIFY_UPDATES" desc="Label for checkbox toggling filter list update notifications">
+        Be notified when list updates
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_THE_FILTER" desc="Heading for third option group of Uncensor filter extension">
+        The Filter
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_ORIGINAL_DOMAIN" desc="Table header for original domain column">
+        Original domain
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_NEW_LOCATION" desc="Table header for new location column">
+        New location
+      </message>
+      <message name="IDS_OPTIONS_UNCENSOR_EXCEPTIONS" desc="Heading for the fourth option group of Uncensor filter extension (domain extensions)">
+        Exceptions
       </message>
 
       <!-- Collected cookies window -->
