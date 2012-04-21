@@ -14,10 +14,12 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
 #import "chrome/browser/ui/cocoa/image_utils.h"
+#include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_action.h"
 #include "chrome/common/extensions/extension_resource.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -68,7 +70,7 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
         this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
         content::Source<ExtensionAction>(extension->browser_action()));
     registrar_.Add(
-        this, chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+        this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
         content::NotificationService::AllSources());
   }
 
@@ -88,7 +90,7 @@ class ExtensionImageTrackerBridge : public content::NotificationObserver,
                const content::NotificationDetails& details) {
     if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
-    else if (type == NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+    else if (type == content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
       if (owner_.isCustomExtension) {
         content::Details<bool> detailsBool(details);
         owner_.shouldDrawAsPushed = (*detailsBool.ptr()) ? YES : NO;

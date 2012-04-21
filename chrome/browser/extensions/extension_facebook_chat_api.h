@@ -10,7 +10,6 @@
 #include "chrome/browser/extensions/extension_function.h"
 
 class TabContents;
-class DictionaryValue;
 
 // Base class for facebook chat function APIs.
 // class FacebookChatFunction : public SyncExtensionFunction {
@@ -24,44 +23,44 @@ class DictionaryValue;
 
 class SetFriendsSidebarVisibleFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
  private:
-  DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.setFriendsSidebarVisible");
+  DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.setFriendsSidebarVisible");
 };
 
 class GetFriendsSidebarVisibleFunction : public SyncExtensionFunction {
  public:
-  virtual bool RunImpl();
+  virtual bool RunImpl() OVERRIDE;
  private:
-  DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.getFriendsSidebarVisible");
+  DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.getFriendsSidebarVisible");
 };
 
 class AddChatFunction : public SyncExtensionFunction {
   public:
-    virtual bool RunImpl();
+    virtual bool RunImpl() OVERRIDE;
   private:
-    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.addChat");
+    DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.addChat");
 };
 
 class NewIncomingMessageFunction: public SyncExtensionFunction {
   public:
-    virtual bool RunImpl();
+    virtual bool RunImpl() OVERRIDE;
   private:
-    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.newIncomingMessage");
+    DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.newIncomingMessage");
 };
 
 class LoggedOutFacebookSessionFunction: public SyncExtensionFunction {
   public:
-    virtual bool RunImpl();
+    virtual bool RunImpl() OVERRIDE;
   private:
-    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.loggedOutFacebookSession");
+    DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.loggedOutFacebookSession");
 };
 
 class LoggedInFacebookSessionFunction: public SyncExtensionFunction {
   public:
-    virtual bool RunImpl();
+    virtual bool RunImpl() OVERRIDE;
   private:
-    DECLARE_EXTENSION_FUNCTION_NAME("chromePrivate.loggedInFacebookSession");
+    DECLARE_EXTENSION_FUNCTION_NAME("bitpop.facebookChat.loggedInFacebookSession");
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_FACEBOOK_CHAT_API_H_

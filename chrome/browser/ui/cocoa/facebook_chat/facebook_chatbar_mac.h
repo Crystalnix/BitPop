@@ -9,6 +9,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 
@@ -19,13 +20,13 @@ class FacebookChatbarMac : public FacebookChatbar {
   public:
     explicit FacebookChatbarMac(Browser *browser,
                                 FacebookChatbarController *controller);
-    virtual void AddChatItem(FacebookChatItem *chat_item);
-    virtual void RemoveAll();
+    virtual void AddChatItem(FacebookChatItem *chat_item) OVERRIDE;
+    virtual void RemoveAll() OVERRIDE;
 
-    virtual void Show();
-    virtual void Hide();
+    virtual void Show() OVERRIDE;
+    virtual void Hide() OVERRIDE;
 
-    virtual Browser *browser() const;
+    virtual Browser *browser() const OVERRIDE;
 
     void SwitchParentWindow(NSWindow *window);
   private:

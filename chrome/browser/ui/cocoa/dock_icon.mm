@@ -158,49 +158,49 @@ static const float kProfileImageFrameFraction = 0.6f;
       [badgeEdge stroke];
     }
 
-  // Download count
-  scoped_nsobject<NSNumberFormatter> formatter(
-      [[NSNumberFormatter alloc] init]);
-  NSString* countString =
-      [formatter stringFromNumber:[NSNumber numberWithInt:downloads_]];
+    // Download count
+    scoped_nsobject<NSNumberFormatter> formatter(
+        [[NSNumberFormatter alloc] init]);
+    NSString* countString =
+        [formatter stringFromNumber:[NSNumber numberWithInt:downloads_]];
 
-  scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
-  [countShadow setShadowBlurRadius:3.0];
-  [countShadow.get() setShadowColor:[NSColor whiteColor]];
-  [countShadow.get() setShadowOffset:NSMakeSize(0.0, 0.0)];
-  NSMutableDictionary* countAttrsDict =
-      [NSMutableDictionary dictionaryWithObjectsAndKeys:
-          [NSColor blackColor], NSForegroundColorAttributeName,
-          countShadow.get(), NSShadowAttributeName,
-          nil];
-  CGFloat countFontSize = badgeRadius;
-  NSSize countSize = NSZeroSize;
-  scoped_nsobject<NSAttributedString> countAttrString;
-  while (1) {
-    NSFont* countFont = [NSFont fontWithName:@"Helvetica-Bold"
-                                        size:countFontSize];
+    scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
+    [countShadow setShadowBlurRadius:3.0];
+    [countShadow.get() setShadowColor:[NSColor whiteColor]];
+    [countShadow.get() setShadowOffset:NSMakeSize(0.0, 0.0)];
+    NSMutableDictionary* countAttrsDict =
+        [NSMutableDictionary dictionaryWithObjectsAndKeys:
+            [NSColor blackColor], NSForegroundColorAttributeName,
+            countShadow.get(), NSShadowAttributeName,
+            nil];
+    CGFloat countFontSize = badgeRadius;
+    NSSize countSize = NSZeroSize;
+    scoped_nsobject<NSAttributedString> countAttrString;
+    while (1) {
+      NSFont* countFont = [NSFont fontWithName:@"Helvetica-Bold"
+                                          size:countFontSize];
 
-    // This will generally be plain Helvetica.
-    if (!countFont)
-      countFont = [NSFont userFontOfSize:countFontSize];
+      // This will generally be plain Helvetica.
+      if (!countFont)
+        countFont = [NSFont userFontOfSize:countFontSize];
 
-    // Continued failure would generate an NSException.
-    if (!countFont)
-      break;
+      // Continued failure would generate an NSException.
+      if (!countFont)
+        break;
 
-    [countAttrsDict setObject:countFont forKey:NSFontAttributeName];
-    countAttrString.reset(
-        [[NSAttributedString alloc] initWithString:countString
-                                        attributes:countAttrsDict]);
-    countSize = [countAttrString size];
-    if (countSize.width > badgeRadius * 1.5) {
-      countFontSize -= 1.0;
-    } else {
-      break;
+      [countAttrsDict setObject:countFont forKey:NSFontAttributeName];
+      countAttrString.reset(
+          [[NSAttributedString alloc] initWithString:countString
+                                          attributes:countAttrsDict]);
+      countSize = [countAttrString size];
+      if (countSize.width > badgeRadius * 1.5) {
+        countFontSize -= 1.0;
+      } else {
+        break;
+      }
     }
 
-    NSPoint countOrigin =
-        NSMakePoint(NSMidX(badgeFrameRect), NSMidY(badgeFrameRect));
+    NSPoint countOrigin = badgeCenter;
     countOrigin.x -= countSize.width / 2;
     countOrigin.y -= countSize.height / 2.2;  // tweak; otherwise too low
 
@@ -323,3 +323,4 @@ static const float kProfileImageFrameFraction = 0.6f;
 }
 
 @end
+

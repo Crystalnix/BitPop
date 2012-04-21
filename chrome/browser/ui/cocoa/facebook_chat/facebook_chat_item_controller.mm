@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/sys_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
@@ -20,10 +21,10 @@
 #include "chrome/common/badge_util.h"
 #include "chrome/common/url_constants.h"
 #include "googleurl/src/gurl.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPaint.h"
@@ -32,7 +33,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/canvas_skia.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/skia_util.h"
 
 namespace {
@@ -117,7 +118,7 @@ void TileImageInt(SkCanvas& canvas, const SkBitmap& bitmap,
 - (id)initWithModel:(FacebookChatItem*)downloadModel
             chatbar:(FacebookChatbarController*)chatbar {
   if ((self = [super initWithNibName:@"FacebookChatItem"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     bridge_.reset(new FacebookChatItemMac(downloadModel, self));
 
     chatbarController_ = chatbar;

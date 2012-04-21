@@ -5,6 +5,7 @@
 
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
 
+#include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_mac.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chat_item_controller.h"
@@ -63,7 +64,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 - (id)initWithBrowser:(Browser*)browser
        resizeDelegate:(id<ViewResizer>)resizeDelegate {
   if ((self = [super initWithNibName:@"FacebookChatbar"
-                              bundle:base::mac::MainAppBundle()])) {
+                              bundle:base::mac::FrameworkBundle()])) {
     resizeDelegate_ = resizeDelegate;
     maxBarHeight_ = NSHeight([[self view] bounds]);
     //currentShelfHeight_ = maxShelfHeight_;
@@ -189,7 +190,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseIn]);
   [addAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [addAnimation_ setDelegate:self];
-  [addAnimation_ setChatbarController:self];
+  [(LayoutChildWindowsAnimation*)addAnimation_ setChatbarController:self];
   [addAnimation_ startAnimation];
 
   // Insert new item at the left.
@@ -250,7 +251,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseOut]);
   [removeAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [removeAnimation_ setDelegate:self];
-  [removeAnimation_ setChatbarController:self];
+  [(LayoutChildWindowsAnimation*)removeAnimation_ setChatbarController:self];
   [removeAnimation_ startAnimation];
 
   [self layoutItems];
@@ -291,7 +292,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
         animationCurve:NSAnimationEaseIn]);
   [placeFirstAnimation_ setAnimationBlockingMode:NSAnimationNonblocking];
   [placeFirstAnimation_ setDelegate:self];
-  [placeFirstAnimation_ setChatbarController:self];
+  [(LayoutChildWindowsAnimation*)placeFirstAnimation_ setChatbarController:self];
   [placeFirstAnimation_ startAnimation];
 
   // find active item

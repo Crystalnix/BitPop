@@ -1,6 +1,6 @@
 // SAMPLE
 this.manifest = {
-    "name": "BitPop Facebook Chat Sidebar",
+    "name": "Uncensor ISP extension options",
     "icon": "icon.png",
     "settings": [
       {

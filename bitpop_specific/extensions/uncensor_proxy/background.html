@@ -41,7 +41,7 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
     })();
 
     chrome.tabs.onUpdated.addListener(onTabUpdated);
-    chrome.experimental.webRequest.onBeforeRequest.addListener(
+    chrome.webRequest.onBeforeRequest.addListener(
       onBeforeRequestListener,
       {
         types: [ "main_frame" ],
@@ -172,6 +172,8 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
           case 'ask_me': {
             var updatedListener = function(tabId, changeInfo, tab) {
               if (changeInfo.status == 'complete' && tabId == details.tabId) {
+                clearTimeout(siteLoadTimeout);
+
                 chrome.tabs.insertCSS(tab.id, { file: 'infobar.css' });
                 chrome.tabs.executeScript(tab.id, {
                   code: 'var bitpop_uncensor_proxy_options = {' +
@@ -187,9 +189,15 @@ Copyright (c) 2012 Crystalnix <vgachkaylo@crystalnix.com>
               }
             };
 
+            var siteLoadTimeout = setTimeout(function() {
+                updatedListener(details.tabId, { status: 'complete' }, { id: details.tabId });
+              },
+              5000);
+
             chrome.tabs.onUpdated.addListener(updatedListener);
             chrome.tabs.onRemoved.addListener(function(tabId, removeInfo) {
               if (tabId == details.tabId) {
+                clearTimeout(siteLoadTimeout);
                 chrome.tabs.onUpdated.removeListener(updatedListener);
                 chrome.tabs.onRemoved.removeListener(arguments.callee);
               }

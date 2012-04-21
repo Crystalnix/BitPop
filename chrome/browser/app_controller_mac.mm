@@ -574,7 +574,7 @@ const AEEventClass kAECloudPrintUninstallClass = 'GCPu';
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context
 {
   if (object == [NSUserDefaults standardUserDefaults] && [keyPath isEqualToString:@"SUAutomaticallyUpdate"]) {
-    PrefService* prefService = [self defaultProfile]->GetPrefs();
+    PrefService* prefService = self.lastProfile->GetPrefs();
     prefService->SetBoolean(prefs::kAutomaticUpdatesEnabled, [[change objectForKey:NSKeyValueChangeNewKey] boolValue]);
   }
 }

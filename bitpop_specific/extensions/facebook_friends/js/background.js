@@ -11,8 +11,8 @@ var inboxData = null;
 (function () {
   if (chrome.browserAction)
     chrome.browserAction.onClicked.addListener(function (tab) {
-      bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
-        bitpop.facebookChat.setFriendsSidebarVisible(!is_visible);
+      chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
+        chrome.bitpop.facebookChat.setFriendsSidebarVisible(!is_visible);
         onSuppressChatChanged();
       });
     });
@@ -38,7 +38,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
   } else if (request.type == 'userStatusChanged') {
     // send change status message: empty message body signals to only check
     // for status change
-    bitpop.facebookChat.newIncomingMessage(request.uid, "",
+    chrome.bitpop.facebookChat.newIncomingMessage(request.uid, "",
         request.status, "");
 
     // set global variable storing each user status, reported by XMPP
@@ -77,7 +77,7 @@ chrome.extension.onRequestExternal.addListener(function (request, sender, sendRe
           else
             status = 'offline';
 
-          bitpop.facebookChat.newIncomingMessage(
+          chrome.bitpop.facebookChat.newIncomingMessage(
                              friendList[i].uid.toString(),
                              friendList[i].name,
                              status,
@@ -220,7 +220,7 @@ function addFbFunctionality( )
                                 };
                             sendResponseToContentScript(sendResponse, data, "ok", response);
                         } else {
-                            bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
+                            chrome.bitpop.facebookChat.getFriendsSidebarVisible(function(is_visible) {
                               var response = null;
                               if (is_visible) {
                                 response = {

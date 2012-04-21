@@ -529,7 +529,7 @@ enum {
                           withProfile:browser_->profile()];
 }
 
-- (void)updateFriendsForContents:(TabContents*)contents {
+- (void)updateFriendsForContents:(WebContents*)contents {
   //bool initialized = facebookSidebarController_.get() != NULL;
   FacebookSidebarController *fsController = [self friendsSidebar];
   //BOOL hadTabContents = (fsController.tabContents != NULL);
@@ -542,7 +542,7 @@ enum {
 //        ([fsController maxWidth] + 1)];
 //  }
 
-  [fsController ensureContentsVisible];
+  //[fsController ensureContentsVisible];
   [self layoutSubviews];
 }
 
@@ -1600,7 +1600,7 @@ enum {
 - (FacebookSidebarController*)friendsSidebar {
   if (!facebookSidebarController_.get()) {
     facebookSidebarController_.reset([[FacebookSidebarController alloc]
-      initWithDelegate:self]);
+      initWithContents:NULL]);
     [[[self window] contentView]
         addSubview:[facebookSidebarController_ view]
         positioned:NSWindowBelow
@@ -1899,6 +1899,11 @@ enum {
 
   if (facebookChatbarController_.get())
     [facebookChatbarController_ layoutItemsChildWindows];
+
+  if (facebookSidebarController_.get() &&
+      [facebookSidebarController_ isSidebarVisible]) {
+    [facebookSidebarController_ sizeUpdated];
+  }
 }
 
 // Handle the openLearnMoreAboutCrashLink: action from SadTabController when

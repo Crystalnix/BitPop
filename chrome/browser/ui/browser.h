@@ -47,6 +47,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents_delegate.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/page_zoom.h"
 #include "ui/base/ui_base_types.h"
@@ -92,7 +93,8 @@ class Browser : public TabHandlerDelegate,
                 public SelectFileDialog::Listener,
                 public TabRestoreServiceObserver,
                 public ProfileSyncServiceObserver,
-                public InstantDelegate {
+                public InstantDelegate,
+                public content::WebContentsObserver { // to observe sidebar view load
  public:
   // SessionService::WindowType mirrors these values.  If you add to this
   // enum, look at SessionService::WindowType to see if it needs to be
@@ -1087,6 +1089,14 @@ class Browser : public TabHandlerDelegate,
   virtual void SetSuggestedText(const string16& text,
                                 InstantCompleteBehavior behavior) OVERRIDE;
   virtual gfx::Rect GetInstantBounds() OVERRIDE;
+
+  // Overriden for content::WebContentsObserver
+  virtual void RenderViewReady() OVERRIDE;
+  virtual void DidOpenURL(const GURL& url,
+                          const content::Referrer& referrer,
+                          WindowOpenDisposition disposition,
+                          content::PageTransition transition) OVERRIDE;
+
 
   // Command and state updating ///////////////////////////////////////////////
 

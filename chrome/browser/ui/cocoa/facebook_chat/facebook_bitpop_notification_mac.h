@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "base/compiler_specific.h"
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
 
 class FacebookProfileImageFetcherDelegate;
@@ -20,9 +21,9 @@ public:
 
   Profile* profile() const { return profile_; }
 
-  virtual void ClearNotification();
+  virtual void ClearNotification() OVERRIDE;
   virtual void NotifyUnreadMessagesWithLastUser(int num_unread,
-                                                std::string user_id);
+                                                std::string user_id) OVERRIDE;
 
 private:
   Profile* const profile_;

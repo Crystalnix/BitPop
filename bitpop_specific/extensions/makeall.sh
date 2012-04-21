@@ -4,7 +4,7 @@ EXT_DIR="../../chrome/browser/extensions/default_extensions"
 EXT_DEFS="$EXT_DIR/external_extensions.json"
 
 # extension names list
-EXT_NAMES="dropdown_most_visited facebook_controller facebook_friends facebook_messages facebook_notifications uncensor_proxy"
+EXT_NAMES="dropdown_most_visited facebook_controller facebook_friends facebook_messages facebook_notifications uncensor_domains uncensor_proxy"
 
 echo "=== Started ==="
 echo

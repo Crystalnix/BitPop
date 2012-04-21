@@ -8,16 +8,17 @@
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/timer.h"
-#include "grit/app_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources_standard.h"
+#include "grit/ui_resources.h"
+#include "grit/ui_resources_standard.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_view.h"
 #import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/image.h"
+#include "ui/gfx/image/image.h"
 
 namespace {
 const NSTimeInterval kBubbleMessageTimeoutSec = 10.0;
@@ -82,15 +83,15 @@ const CGFloat kCloseButtonTopYOffset = 7.0;
   NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_H);
   NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_P);
 
-  [hoverCloseButton_ setDefaultImage:defaultImage];
-  [hoverCloseButton_ setHoverImage:hoverImage];
-  [hoverCloseButton_ setPressedImage:pressedImage];
+  [(HoverImageButton*)hoverCloseButton_ setDefaultImage:defaultImage];
+  [(HoverImageButton*)hoverCloseButton_ setHoverImage:hoverImage];
+  [(HoverImageButton*)hoverCloseButton_ setPressedImage:pressedImage];
 
-  [hoverCloseButton_ setDefaultOpacity:1.0];
-  [hoverCloseButton_ setHoverOpacity:1.0];
-  [hoverCloseButton_ setPressedOpacity:1.0];
+  [(HoverImageButton*)hoverCloseButton_ setDefaultOpacity:1.0];
+  [(HoverImageButton*)hoverCloseButton_ setHoverOpacity:1.0];
+  [(HoverImageButton*)hoverCloseButton_ setPressedOpacity:1.0];
 
-  [hoverCloseButton_ setBordered:NO];
+  [(HoverImageButton*)hoverCloseButton_ setBordered:NO];
 
   [bubble_ addSubview:hoverCloseButton_];
 

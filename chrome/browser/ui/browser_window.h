@@ -123,7 +123,7 @@ class BrowserWindow {
   // Requests that the docked dev tools window changes its dock mode.
   virtual void SetDevToolsDockSide(DevToolsDockSide side) = 0;
 
-  virtual void UpdateFriendsSidebarForContents(WebContents *friends_contents) = 0;
+  virtual void UpdateFriendsSidebarForContents(content::WebContents *friends_contents) = 0;
 
   // Update any loading animations running in the window. |should_animate| is
   // true if there are tabs loading and the animations should continue, false

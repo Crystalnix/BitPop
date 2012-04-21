@@ -170,7 +170,7 @@ bitpop.FriendsSidebar = (function() {
 
       $('#friend_list li span').click(function() {
         var parent = $(this).parent();
-        bitpop.facebookChat.addChat(
+        chrome.bitpop.facebookChat.addChat(
           parent.prop('jid'),
           parent.prop('username'),
           parent.prop('online_status')

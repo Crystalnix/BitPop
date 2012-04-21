@@ -209,3 +209,4 @@ bitpop_specific/extensions/dropdown.pem
 bitpop_specific/extensions/dropdown_most_visited.pem
 bitpop_specific/extensions/dropdown_most_visited.pem
 bitpop_specific/extensions/uncensor_proxy.pem
+bitpop_specific/extensions/uncensor_domains.pem

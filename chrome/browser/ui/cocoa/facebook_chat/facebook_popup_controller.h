@@ -21,7 +21,10 @@ class Browser;
 class DevtoolsNotificationBridge;
 class ExtensionHost;
 @class InfoBubbleWindow;
+
+namespace content {
 class NotificationRegistrar;
+}
 
 // This controller manages a single browser action popup that can appear once a
 // user has clicked on a browser action button. It instantiates the extension
@@ -51,7 +54,7 @@ class NotificationRegistrar;
   // The extension host object.
   scoped_ptr<ExtensionHost> host_;
 
-  scoped_ptr<NotificationRegistrar> registrar_;
+  scoped_ptr<content::NotificationRegistrar> registrar_;
   scoped_ptr<DevtoolsNotificationBridge> notificationBridge_;
 
   // Whether the popup has a devtools window attached to it.

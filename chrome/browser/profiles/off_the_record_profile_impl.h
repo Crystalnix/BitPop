@@ -66,6 +66,8 @@ class OffTheRecordProfileImpl : public Profile,
   virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
   virtual TemplateURLFetcher* GetTemplateURLFetcher() OVERRIDE;
   virtual content::DownloadManager* GetDownloadManager() OVERRIDE;
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
   virtual fileapi::FileSystemContext* GetFileSystemContext() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual quota::QuotaManager* GetQuotaManager() OVERRIDE;
@@ -131,6 +133,8 @@ class OffTheRecordProfileImpl : public Profile,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
+
  private:
   void CreateQuotaManagerAndClients();
 
@@ -184,6 +188,10 @@ class OffTheRecordProfileImpl : public Profile,
   scoped_ptr<ChromeURLDataManager> chrome_url_data_manager_;
 
   scoped_refptr<quota::QuotaManager> quota_manager_;
+
+  scoped_refptr<FacebookChatManager> facebook_chat_manager_;
+
+  scoped_ptr<FacebookBitpopNotification> facebook_bitpop_notification_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

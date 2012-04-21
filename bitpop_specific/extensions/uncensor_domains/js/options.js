@@ -60,7 +60,7 @@ var insertRow = function(dst, domainPair)
   }
 
   var oCell = newRow.insertCell(-1);
-  oCell.innerHTML = "<img src='web.png' width='16' height='16' alt='' />";
+  oCell.innerHTML = "<img src='images/web.png' width='16' height='16' alt='' />";
   oCell.vAlign = "middle";
   oCell.style.width = "20px";
 
@@ -78,7 +78,7 @@ var insertRow = function(dst, domainPair)
   anchor.title = anchorTitle;
   anchor.domainPair = domainPair;
   icon = document.createElement('img');
-  icon.src = "delete.png";
+  icon.src = "images/delete.png";
   icon.vAlign = "middle";
   icon.width = "16";
   icon.height = "16";
@@ -159,8 +159,8 @@ var initUncensorOptions = function(prefs) {
 var updateTables = function() {
   var prefs = JSON.parse(localStorage.prefs);
 
-  temp = function(a) {
-    var table = (a == prefs.domainFilter) ? document.getElementById('domain_filter_table') :
+  fillTable = function(data) {
+    var table = (data == prefs.domainFilter) ? document.getElementById('domain_filter_table') :
                                             document.getElementById('domain_exceptions_table');
     var tbody = table.getElementsByTagName('tbody').length ? table.getElementsByTagName('tbody')[0] : undefined;
     if (tbody == undefined) {
@@ -174,16 +174,16 @@ var updateTables = function() {
       }
     }
 
-    for (var originalDomain in a) {
-      if (a == prefs.domainExceptions || !(originalDomain in prefs.domainExceptions)) {
+    for (var originalDomain in data) {
+      if (data == prefs.domainExceptions || !(originalDomain in prefs.domainExceptions)) {
         insertRow(table, { originalDomain: originalDomain,
-                              newLocation: a[originalDomain] });
+                              newLocation: data[originalDomain] });
       }
     }
   };
 
-  temp(prefs.domainFilter);
-  temp(prefs.domainExceptions);
+  fillTable(prefs.domainFilter);
+  fillTable(prefs.domainExceptions);
 };
 
 var updatePageControlStates_ = function(e) {
@@ -213,4 +213,9 @@ window.addEventListener('load', function() {
   $('uncensorExceptions').innerText               = _('exceptions');
 
   updatePageControlStates_({key: 'prefs', newValue: localStorage.prefs ? localStorage.prefs : ''});
+
+  $('navToSettings').addEventListener('click', function(e) {
+    chrome.tabs.update(null, { url: 'chrome://settings' });
+    e.preventDefault();
+  });
 }, false);

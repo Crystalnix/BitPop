@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/browser/avatar_button_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_controller.h"
+#import "chrome/browser/ui/cocoa/facebook_chat/facebook_sidebar_controller.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
 #import "chrome/browser/ui/cocoa/find_bar/find_bar_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/floating_bar_backing_view.h"
@@ -531,6 +532,7 @@ willPositionSheet:(NSWindow*)sheet
     sidebarFrame.origin.y = minY;
     sidebarFrame.size.height = maxY - minY;
     [sidebarView setFrame:sidebarFrame];
+    [facebookSidebarController_ sizeUpdated];
     maxX -= sidebarFrame.size.width;
   }
   return maxX;

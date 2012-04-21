@@ -1,6 +1,6 @@
 {
   "name": "Facebook Friends Sidebar",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "description": "Shows a sidebar with a list of Facebook friends to the right of current web page.",
   "background_page": "background.html",
   "options_page": "fancy-settings/source/index.html",
@@ -22,7 +22,7 @@
   } ],
   "permissions": [
     "tabs",
-    "bitpop.facebookChat",
+    "bitpop",
     "*.facebook.com/*",
     "https://api.facebook.com/*",
     "https://graph.facebook.com/*"

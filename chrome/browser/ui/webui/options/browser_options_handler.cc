@@ -21,6 +21,7 @@
 #include "chrome/browser/instant/instant_controller.h"
 #include "chrome/browser/instant/instant_field_trial.h"
 #include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/platform_util.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
@@ -144,7 +145,7 @@ void BrowserOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("getInstantFieldTrialStatus",
       base::Bind(&BrowserOptionsHandler::GetInstantFieldTrialStatus,
                  base::Unretained(this)));
-  web_ui_->RegisterMessageCallback("toggleAutomaticUpdates",
+  web_ui()->RegisterMessageCallback("toggleAutomaticUpdates",
       base::Bind(&BrowserOptionsHandler::ToggleAutomaticUpdates,
                  base::Unretained(this)));
 }
@@ -553,7 +554,7 @@ void BrowserOptionsHandler::GetInstantFieldTrialStatus(const ListValue* args) {
 }
 
 void BrowserOptionsHandler::ToggleAutomaticUpdates(const ListValue* args) {
-  PrefService* prefService = web_ui_->GetProfile()->GetPrefs();
+  PrefService* prefService = Profile::FromWebUI(web_ui())->GetPrefs();
   platform_util::setUseAutomaticUpdates(prefService->GetBoolean(prefs::kAutomaticUpdatesEnabled));
 }
 

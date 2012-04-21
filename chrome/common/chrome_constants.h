@@ -123,6 +123,7 @@ extern const char kFacebookControllerExtensionId[];
 extern const char kFacebookMessagesExtensionId[];
 extern const char kFacebookNotificationsExtensionId[];
 extern const char kUncensorISPExtensionId[];
+extern const char kUncensorFilterExtensionId[];
 
 }  // namespace chrome
 

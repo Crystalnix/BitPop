@@ -9,8 +9,6 @@
 #include "chrome/common/extensions/extension_error_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "content/browser/tab_contents/tab_contents.h"
-#include "content/common/notification_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
@@ -18,6 +16,10 @@
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/received_message_info.h"
+#include "chrome/browser/profiles/profile.h"
+//#include "content/browser/tab_contents/tab_contents.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/browser/notification_types.h"
 
 
 namespace {
@@ -63,10 +65,10 @@ bool SetFriendsSidebarVisibleFunction::RunImpl() {
   PrefService *prefService = browser->profile()->GetPrefs();
   prefService->SetBoolean(prefs::kFacebookShowFriendsList, is_visible);
 
-  NotificationService::current()->Notify(
-             NotificationType::FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
-             NotificationService::AllSources(),
-             Details<bool>(&is_visible));
+  content::NotificationService::current()->Notify(
+             content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+             content::NotificationService::AllSources(),
+             content::Details<bool>(&is_visible));
   return true;
 }
 
@@ -110,10 +112,10 @@ bool AddChatFunction::RunImpl() {
     return false;
   }
 
-  NotificationService::current()->Notify(
-      NotificationType::FACEBOOK_CHATBAR_ADD_CHAT,
-      Source<Profile>(browser->profile()),
-      Details<FacebookChatCreateInfo>(
+  content::NotificationService::current()->Notify(
+      content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
+      content::Source<Profile>(browser->profile()),
+      content::Details<FacebookChatCreateInfo>(
         new FacebookChatCreateInfo(jid, username, status)));
 
   return true;
@@ -154,10 +156,10 @@ bool NewIncomingMessageFunction::RunImpl() {
     browser->profile()->GetFacebookBitpopNotification()->
         NotifyUnreadMessagesWithLastUser(mgr->total_unread(), jid);
 
-    NotificationService::current()->Notify(
-      NotificationType::FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
-      Source<Profile>(browser->profile()),
-      Details<ReceivedMessageInfo>(
+    content::NotificationService::current()->Notify(
+      content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+      content::Source<Profile>(browser->profile()),
+      content::Details<ReceivedMessageInfo>(
         new ReceivedMessageInfo(jid, username, status, message)));
   } else
     mgr->ChangeItemStatus(jid, status);
@@ -172,10 +174,10 @@ bool LoggedOutFacebookSessionFunction::RunImpl() {
     return false;
   }
 
-  NotificationService::current()->Notify(
-      NotificationType::FACEBOOK_SESSION_LOGGED_OUT,
-      Source<Profile>(browser->profile()),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
+      content::Source<Profile>(browser->profile()),
+      content::NotificationService::NoDetails());
 
   return true;
 }
@@ -187,10 +189,10 @@ bool LoggedInFacebookSessionFunction::RunImpl() {
     return false;
   }
 
-  NotificationService::current()->Notify(
-      NotificationType::FACEBOOK_SESSION_LOGGED_IN,
-      Source<Profile>(browser->profile()),
-      NotificationService::NoDetails());
+  content::NotificationService::current()->Notify(
+      content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
+      content::Source<Profile>(browser->profile()),
+      content::NotificationService::NoDetails());
 
   return true;
 }

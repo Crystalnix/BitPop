@@ -4634,9 +4634,6 @@
           ],
         }],
         ['OS=="mac"', {
-          'dependencies': [
-            '../third_party/Sparkle/Sparkle_custom.gyp:Sparkle',
-          ],
           'sources!': [
             'browser/automation/automation_provider_list_generic.cc',
             'browser/bookmarks/bookmark_drop_info.cc',
@@ -4725,6 +4722,7 @@
             ],
           },
           'dependencies': [
+            '../third_party/Sparkle/Sparkle_custom.gyp:Sparkle',
             '../content/content.gyp:closure_blocks_leopard_compat',
           ],
           'actions': [

@@ -9,12 +9,24 @@ var bitpop;
 //  throw new Error('Chat dependencies not loaded.');
 
 bitpop.chat = (function() {
+  function setMsgValue(val) {
+    //$('#msg').focus();
+    $('#msg').val('');
+    setTimeout(function() {
+      $('#msg').val(val);
+    }, 1);
+  }
+
   var public = {
     init: function() {
       friendUid = window.location.hash.slice(1);
       lastMessageUid = null;
 
-      $('#msg').focus();
+      $(window).bind('focus', function() {
+        initChat();
+      });
+
+      //setMsgValue($('#msg').val());
 
       function appendFromLocalStorage() {
         var lsKey = chrome.extension.getBackgroundPage().myUid + ':' + friendUid;
@@ -50,18 +62,20 @@ bitpop.chat = (function() {
       }
       */
 
-      (function initChat() {
+      function initChat() {
 
         appendFromLocalStorage();
 
         var myUid = chrome.extension.getBackgroundPage().myUid;
         var msgText = localStorage.getItem('msg:' + myUid + ':' + friendUid);
         if (msgText) {
-          $('#msg').val(msgText);
+          setMsgValue(msgText);
+        } else {
+          setMsgValue('');
         }
 
         //setInterval(fetchThread, 30000);
-      })();
+      };
 
       chrome.extension.onRequestExternal.addListener(function (request, sender, sendResponse) {
         if (request.type == 'newMessage') {
@@ -93,8 +107,7 @@ bitpop.chat = (function() {
         //$('#chat').append('<li class="me">' + escMsg + '</li>');
         appendMessage(escMsg, new Date(), true);
 
-        $('#msg').val('');
-        $('#msg').focus();
+        setMsgValue('');
       }
 
       $('#msgForm').submit(function () {
@@ -146,7 +159,7 @@ bitpop.chat = (function() {
       var profileUrl = 'http://www.facebook.com/profile.php?id=' + uid.toString();
       $('#chat').append(
           '<div class="message-group clearfix">' +
-            '<a class="profile-link" href="' + profileUrl + '">' +
+            '<a class="profile-link" tabIndex="-1" href="' + profileUrl + '">' +
             '<img class="profile-photo" src="http://graph.facebook.com/' +
               uid.toString() + '/picture" alt="">' +
             '</a>' +

@@ -3,6 +3,7 @@ body {
   font-size: 13px;
   background-color: white;
   color: black;
+  display: -webkit-box;
   margin: 10px 0;
 }
 #mainview-content {
@@ -17,22 +18,23 @@ body {
 }
 
 #uncensorPage h1 {
+  -webkit-padding-end: 24px;
   -webkit-user-select: none;
-  color: #53637d;
+  color: #333;
   font-size: 200%;
   font-weight: normal;
   margin: 0;
-  padding-top: 13px;
   padding-bottom: 4px;
+  padding-top: 13px;
   text-shadow: white 0 1px 2px;
   border: none;
 }
 
 #uncensorPage > h3 {
   -webkit-padding-end: 24px;
-  border-bottom: 1px solid #eeeeee;
+  border-bottom: 1px solid #EEE;
   font-size: 100%;
-  color: #53637d;
+  color: #444;
   font-weight: normal;
   margin: 0;
   padding-bottom: 4px;
@@ -43,6 +45,10 @@ body {
   border-collapse: collapse;
   border: 1px solid #ccc;
   width: 500px;
+}
+
+#uncensorPage table thead {
+  background-color: #ccc;
 }
 
 #uncensorPage table th {
@@ -56,8 +62,9 @@ body {
 }
 
 #uncensorPage table td {
-  padding: 2px 3px;
+  padding: 3px 3px;
   text-align: left;
+  color: #444;
 }
 
 #uncensorPage table thead tr {
@@ -70,6 +77,10 @@ body {
   width:100%;
   height:200px;
   overflow:auto;
+}
+
+#uncensorPage table tbody tr:nth-child(even) {
+  background-color: #eee;
 }
 
 .highlight {
@@ -85,6 +96,49 @@ body {
   display: block;
 }
 
-.uncensor-even-row {
-  background-color: #eee;
+.delete-icon img {
+  opacity: 0.7;
 }
+
+.delete-icon:hover img {
+  opacity: 1.0;
+}
+
+/***************/
+section {
+  -webkit-box-orient: horizontal;
+  border-bottom: 1px solid #eeeeee;
+  display: -webkit-box;
+  margin-top: 17px;
+  padding-bottom: 20px;
+}
+
+div.page section:last-child {
+  border-bottom: none;
+}
+
+h3 {
+  font-size: 105%;
+  font-weight: bold;
+  margin: 20px 0 10px 0;
+}
+
+section > h3 {
+  margin: 0;
+  vertical-align: middle;
+  width: 130px;
+  -webkit-padding-end: 10px;
+}
+
+section > div:only-of-type {
+  -webkit-box-flex: 1;
+}
+
+/* Don't allow edge margin on the first/last child of a section. */
+section > h3 + * > *:last-child {
+  margin-bottom: 0;
+}
+section > h3 + * > *:first-child {
+  margin-top: 0;
+}
+

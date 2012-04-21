@@ -498,6 +498,8 @@ class ExtensionServiceObserverBridge : public content::NotificationObserver,
   if (!toolbarModel_)
     return;
 
+  [self positionCustomExtensionActions];
+
   NSUInteger i = 0;
   for (ExtensionList::iterator iter = toolbarModel_->begin();
        iter != toolbarModel_->end(); ++iter) {

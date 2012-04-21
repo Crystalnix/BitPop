@@ -244,7 +244,7 @@ void Panel::UpdateDevTools() {
   NOTIMPLEMENTED();
 }
 
-void Panel::UpdateFriendsSidebarForContents(TabContents *friends_contents) {
+void Panel::UpdateFriendsSidebarForContents(WebContents *friends_contents) {
   NOTIMPLEMENTED();
 }
 

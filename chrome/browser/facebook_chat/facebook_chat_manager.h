@@ -14,7 +14,7 @@
 #include "base/hash_tables.h"
 #include "base/observer_list.h"
 #include "base/memory/ref_counted.h"
-#include "content/browser/browser_thread.h"
+#include "content/public/browser/browser_thread.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
 
@@ -22,7 +22,7 @@ class Browser;
 class Profile;
 
 class FacebookChatManager : public base::RefCountedThreadSafe<FacebookChatManager,
-                                        BrowserThread::DeleteOnUIThread> {
+                                        content::BrowserThread::DeleteOnUIThread> {
   public:
     FacebookChatManager();
     virtual ~FacebookChatManager();

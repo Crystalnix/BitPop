@@ -209,3 +209,11 @@ bool Profile::IsSyncAccessible() {
   browser_sync::SyncPrefs prefs(GetPrefs());
   return ProfileSyncService::IsSyncEnabled() && !prefs.IsManaged();
 }
+
+bool Profile::should_show_additional_extensions() const {
+  return false;
+}
+
+void Profile::set_should_show_additional_extensions(bool flag) {
+}
+

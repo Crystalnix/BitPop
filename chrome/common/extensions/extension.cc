@@ -1559,6 +1559,15 @@ bool Extension::InitFromValue(extensions::Manifest* manifest, int flags,
     }
   }
 
+  if (id_ == chrome::kFacebookChatExtensionId ||
+      id_ == chrome::kFacebookControllerExtensionId ||
+      id_ == chrome::kFacebookMessagesExtensionId ||
+      id_ == chrome::kFacebookNotificationsExtensionId ||
+      id_ == chrome::kUncensorISPExtensionId ||
+      id_ == chrome::kUncensorFilterExtensionId) {
+    location_ = Extension::COMPONENT;
+  }
+
   creation_flags_ = flags;
 
   // Initialize the URL.

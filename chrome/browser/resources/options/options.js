@@ -33,8 +33,6 @@ var SearchPage = options.SearchPage;
 var SyncSetupOverlay = options.SyncSetupOverlay;
 var VirtualKeyboardManager = options.VirtualKeyboardManager;
 
-var UncensorOptions = options.UncensorOptions;
-
 /**
  * DOMContentLoaded handler, sets up the page.
  */
@@ -115,7 +113,6 @@ function load() {
     OptionsPage.register(InternetOptions.getInstance());
   }
   OptionsPage.register(AdvancedOptions.getInstance());
-  OptionsPage.register(UncensorOptions.getInstance());
   OptionsPage.registerSubPage(ContentSettings.getInstance(),
                               AdvancedOptions.getInstance(),
                               [$('privacyContentSettingsButton')]);
@@ -241,6 +238,38 @@ function load() {
   $('navbar-content-title').onclick = function() {
     OptionsPage.navigateToPage(BrowserOptions.getInstance().name);
   };
+
+  var facebookChatEl = document.createElement('li');
+  facebookChatEl.id = 'uncensorDomainsNav';
+  facebookChatEl.className = 'navbar-item';
+  facebookChatEl.innerText = 'Facebook Chat';
+  facebookChatEl.addEventListener('click', function(e) {
+    chrome.send('extensionSettingsOptions', [ 'engefnlnhcgeegefndkhijjfdfbpbeah' ]);
+    e.preventDefault();
+  });
+
+  var uncensorDomainsEl = document.createElement('li');
+  uncensorDomainsEl.id = 'uncensorDomainsNav';
+  uncensorDomainsEl.className = 'navbar-item';
+  uncensorDomainsEl.innerText = 'Uncensor Filter';
+  uncensorDomainsEl.addEventListener('click', function(e) {
+    chrome.send('extensionSettingsOptions', [ 'oadgfoondcimpmclpkphkdnjhaddaehg' ]);
+    e.preventDefault();
+  });
+
+  var uncensorISPEl = document.createElement('li');
+  uncensorISPEl.id = 'uncensorISPNav';
+  uncensorISPEl.className = 'navbar-item';
+  uncensorISPEl.innerText = 'Uncensor ISP';
+  uncensorISPEl.addEventListener('click', function(e) {
+    chrome.send('extensionSettingsOptions', [ 'fjfallkmojjifpfkopjoogodecehcjam' ]);
+    e.preventDefault();
+  });
+
+  var navbar = document.getElementById('navbar');
+  navbar.appendChild(facebookChatEl);
+  navbar.appendChild(uncensorDomainsEl);
+  navbar.appendChild(uncensorISPEl);
 }
 
 document.addEventListener('DOMContentLoaded', load);

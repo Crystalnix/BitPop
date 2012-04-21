@@ -92,7 +92,7 @@ BrowserActionButton::BrowserActionButton(const Extension* extension,
 
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
                  content::Source<ExtensionAction>(browser_action_));
-  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED,
                  content::NotificationService::AllSources());
 }
 
@@ -210,7 +210,7 @@ void BrowserActionButton::Observe(int type,
     // The browser action may have become visible/hidden so we need to make
     // sure the state gets updated.
     panel_->OnBrowserActionVisibilityChanged();
-  } else if (type == chrome::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
+  } else if (type == content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
     if (is_custom_extension_) {
       content::Details<bool> detailsBool(details);
       set_should_draw_as_pushed(*detailsBool.ptr());

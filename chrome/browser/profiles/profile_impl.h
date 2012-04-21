@@ -52,8 +52,8 @@ class ProfileImpl : public Profile,
   virtual SSLHostState* GetSSLHostState() OVERRIDE;
   virtual content::DownloadManager* GetDownloadManager() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
-  virtual FacebookChatManager* GetFacebookChatManager();
-  virtual bool HasCreatedFacebookChatManager() const;
+  virtual FacebookChatManager* GetFacebookChatManager() OVERRIDE;
+  virtual bool HasCreatedFacebookChatManager() const OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForMedia() OVERRIDE;
@@ -148,10 +148,10 @@ class ProfileImpl : public Profile,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  virtual bool should_show_additional_extensions() const;
-  virtual void set_should_show_additional_extensions(bool flag);
+  virtual bool should_show_additional_extensions() const OVERRIDE;
+  virtual void set_should_show_additional_extensions(bool flag) OVERRIDE;
 
-  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const;
+  virtual FacebookBitpopNotification* GetFacebookBitpopNotification() const OVERRIDE;
  private:
   friend class Profile;
 
@@ -253,7 +253,6 @@ class ProfileImpl : public Profile,
   scoped_refptr<SpeechInputPreferences> speech_input_preferences_;
   scoped_refptr<UserStyleSheetWatcher> user_style_sheet_watcher_;
   scoped_ptr<GAIAInfoUpdateService> gaia_info_update_service_;
-  scoped_refptr<DownloadManager> download_manager_;
   scoped_refptr<FacebookChatManager> facebook_chat_manager_;
   scoped_refptr<HistoryService> history_service_;
   scoped_ptr<FaviconService> favicon_service_;

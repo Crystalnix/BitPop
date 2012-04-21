@@ -335,7 +335,7 @@ bitpop.FacebookController = (function() {
         localStorage.removeItem('myUid');
         notifyObservingExtensions({ type: 'loggedOut' });
         connection.disconnect();
-        bitpop.facebookChat.loggedOutFacebookSession();
+        chrome.bitpop.facebookChat.loggedOutFacebookSession();
       } else if (!localStorage.accessToken || need_more_permissions) {
         var accessToken = accessTokenFromSuccessURL(changeInfo.url);
         if (!accessToken)
@@ -625,7 +625,7 @@ bitpop.FacebookController = (function() {
 
     connectToFacebookChat();
 
-    bitpop.facebookChat.loggedInFacebookSession();
+    chrome.bitpop.facebookChat.loggedInFacebookSession();
   }
 
   function onSendInvite(request, sendResponse) {

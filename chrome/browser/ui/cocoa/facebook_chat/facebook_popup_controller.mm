@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-#include "chrome/browser/debugger/devtools_manager.h"
+#include "chrome/browser/debugger/devtools_window.h"
 #include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_process_manager.h"
 #include "chrome/browser/profiles/profile.h"
@@ -15,9 +15,11 @@
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
-#include "content/common/notification_details.h"
-#include "content/common/notification_registrar.h"
-#include "content/common/notification_source.h"
+#include "chrome/common/chrome_notification_types.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/notification_source.h"
+
 
 namespace {
 // The duration for any animations that might be invoked by this controller.
@@ -34,23 +36,25 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 
 }  // namespace
 
-class DevtoolsNotificationBridge : public NotificationObserver {
+class DevtoolsNotificationBridge : public content::NotificationObserver {
  public:
   explicit DevtoolsNotificationBridge(FacebookPopupController* controller)
     : controller_(controller) {}
 
-  void Observe(NotificationType type,
-               const NotificationSource& source,
-               const NotificationDetails& details) {
-    switch (type.value) {
-      case NotificationType::EXTENSION_HOST_DID_STOP_LOADING: {
-        if (Details<ExtensionHost>([controller_ extensionHost]) == details)
+  void Observe(int type,
+               const content::NotificationSource& source,
+               const content::NotificationDetails& details) {
+    switch (type) {
+      case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING: {
+        if (content::Details<ExtensionHost>([controller_ extensionHost]) ==
+                details) {
           [controller_ showDevTools];
+        }
         break;
       }
-      case NotificationType::DEVTOOLS_WINDOW_CLOSING: {
+      case content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING: {
         RenderViewHost* rvh = [controller_ extensionHost]->render_view_host();
-        if (Details<RenderViewHost>(rvh) == details)
+        if (content::Details<RenderViewHost>(rvh) == details)
           // Allow the devtools to finish detaching before we close the popup
           [controller_ performSelector:@selector(close)
                             withObject:nil
@@ -102,8 +106,6 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   [view setArrowLocation:arrowLocation];
   [view setBackgroundColor:[NSColor whiteColor]];
 
-  host->view()->set_is_toolstrip(NO);
-
   extensionView_ = host->view()->native_view();
   NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
   [center addObserver:self
@@ -133,20 +135,19 @@ class DevtoolsNotificationBridge : public NotificationObserver {
   if (beingInspected_) {
     // Listen for the the devtools window closing.
     notificationBridge_.reset(new DevtoolsNotificationBridge(self));
-    registrar_.reset(new NotificationRegistrar);
+    registrar_.reset(new content::NotificationRegistrar);
     registrar_->Add(notificationBridge_.get(),
-                    NotificationType::DEVTOOLS_WINDOW_CLOSING,
-                    Source<Profile>(host->profile()));
+                    content::NOTIFICATION_DEVTOOLS_WINDOW_CLOSING,
+                    content::Source<content::BrowserContext>(host->profile()));
     registrar_->Add(notificationBridge_.get(),
-                    NotificationType::EXTENSION_HOST_DID_STOP_LOADING,
-                    Source<Profile>(host->profile()));
+                    chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
+                    content::Source<Profile>(host->profile()));
   }
-  [self setShouldCascadeWindows:NO];
   return self;
 }
 
 - (void)showDevTools {
-  DevToolsManager::GetInstance()->OpenDevToolsWindow(host_->render_view_host());
+  DevToolsWindow::OpenDevToolsWindow(host_->render_view_host());
 }
 
 - (void)dealloc {
@@ -167,25 +168,15 @@ class DevtoolsNotificationBridge : public NotificationObserver {
 - (void)windowDidResignKey:(NSNotification *)notification {
   NSWindow* window = [self window];
   DCHECK_EQ([notification object], window);
-
   // If the window isn't visible, it is already closed, and this notification
   // has been sent as part of the closing operation, so no need to close.
-  if ([[NSApplication sharedApplication] keyWindow] != nil &&
-      [window isVisible] && ![self beingInspected]) {
+  if ([window isVisible] && !beingInspected_) {
     [self close];
   }
 }
 
 - (void)close {
-  [parentWindow_ removeChildWindow:[self window]];
-
-  // No longer have a parent window, so nil out the pointer and deregister for
-  // notifications.
-  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-  [center removeObserver:self
-                    name:NSWindowWillCloseNotification
-                  object:parentWindow_];
-  parentWindow_ = nil;
+  [[[self window] parentWindow] removeChildWindow:[self window]];
   [super close];
 }
 

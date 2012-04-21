@@ -312,7 +312,7 @@ class WebContents;
 
 // Displays the facebook friends sidebar with |contents| being the extension
 // tab contents.
-- (void)updateFriendsForContents:(TabContents*)contents;
+- (void)updateFriendsForContents:(content::WebContents*)contents;
 
 // Gets the current theme provider.
 - (ui::ThemeProvider*)themeProvider;

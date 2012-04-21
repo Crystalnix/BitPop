@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/profiles/profile.h"
-#include "base/stl_util-inl.h"
+#include "base/stl_util.h"
 
 namespace {
   const char kOfflineStatus[] = "offline";

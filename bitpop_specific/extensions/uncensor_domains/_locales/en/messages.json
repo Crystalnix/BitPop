@@ -1,13 +1,13 @@
 {
-	"extName": {
-		"message": "Uncensor Filter",
-		"description": "Extension name"
-	},
-	"extDesc": {
-		"message": "Uncensor Filter will redirect you to new locations of unlawfully censored sites.",
-		"description": "Extension description"
-	},
-	"redirectedMsg": {
+  "extName": {
+    "message": "Uncensor Filter",
+    "description": "Extension name"
+  },
+  "extDesc": {
+    "message": "Uncensor Filter will redirect you to new locations of unlawfully censored sites.",
+    "description": "Extension description"
+  },
+  "redirectedMsg": {
     "message": "You are being redirected to {0}",
     "description": "Message in popup appearing after redirect. {0} is substituted with a URL like http://www.google.com/"
   },

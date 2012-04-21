@@ -767,7 +767,7 @@
             'mac_product_name%': 'BitPop',
           }],
 
-          [buildtype=="Official"', {
+          ['buildtype=="Official"', {
             # Enable uploading crash dumps.
             'mac_breakpad_uploads%': 1,
             # Enable dumping symbols at build time for use by Mac Breakpad.

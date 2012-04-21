@@ -2,7 +2,9 @@
    "background_page": "background.html",
    "description": "Displays a list of sites you visited the most in a dropdown list",
    "icons": {
-      "48": "icon48.png"
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
    },
    "name": "Dropdown List of Most Visited Links",
    "options_page": "options.html",
@@ -11,5 +13,5 @@
       "default_popup": "popup.html"
    },
    "permissions": [ "tabs", "history", "bookmarks", "chrome://favicon/" ],
-   "version": "0.12"
+   "version": "0.13"
 }

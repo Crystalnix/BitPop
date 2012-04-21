@@ -7,7 +7,7 @@
   <script src="js/common.js"></script>
   <script src="js/chat_popup.js"></script>
   <script type="text/javascript">
-    $(document).ready(function() {
+    $(function() {
         bitpop.chat.init();
 
         function setHeadTextCallback(uname) {
@@ -30,7 +30,7 @@
   <div id="chat">
   </div>
   <form id="msgForm">
-    <input type="text" id="msg" />
+    <input type="text" id="msg" autofocus />
     <input id="pastePageLink" type="button" value="+" />
     <input type="submit" style="visibility:hidden; height: 0" />
   </form>

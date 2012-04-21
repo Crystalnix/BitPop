@@ -18,7 +18,7 @@ public:
                       FacebookChatItemController *controller);
   virtual ~FacebookChatItemMac();
 
-  virtual void OnChatUpdated(FacebookChatItem *source);
+  virtual void OnChatUpdated(FacebookChatItem *source) OVERRIDE;
 
   FacebookChatItem* chat() const;
 private:

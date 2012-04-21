@@ -340,13 +340,13 @@ BrowserView::BrowserView(Browser* browser)
       move_observer_(NULL) {
   browser_->tabstrip_model()->AddObserver(this);
 
-  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT,
                  content::Source<Profile>(browser_->profile()));
-  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE,
                  content::Source<Profile>(browser_->profile()));
-  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT,
                  content::Source<Profile>(browser_->profile()));
-  registrar_.Add(this, chrome::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
+  registrar_.Add(this, content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN,
                  content::Source<Profile>(browser_->profile()));
 }
 
@@ -1421,7 +1421,7 @@ void BrowserView::Observe(int type,
                           const content::NotificationDetails& details) {
   switch (type.value) {
     // TODO: remove code duplication (here and in cocoa/browser_window_cocoa.mm)
-    case chrome::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_ADD_CHAT: {
         if (browser_->is_type_tabbed()) {
           content::Details<FacebookChatCreateInfo> chat_info(details);
           FacebookChatManager *mgr = browser_->profile()->GetFacebookChatManager();
@@ -1437,7 +1437,7 @@ void BrowserView::Observe(int type,
       }
       break;
 
-    case chrome::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
+    case content::NOTIFICATION_FACEBOOK_CHATBAR_NEW_INCOMING_MESSAGE: {
         if (browser_->is_type_tabbed()) {
           content::Details<ReceivedMessageInfo> msg_info(details);
           FacebookChatManager *mgr =
@@ -1449,7 +1449,7 @@ void BrowserView::Observe(int type,
       }
       break;
 
-    case chrome::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_OUT:
       if (browser_->is_type_tabbed()) {
         GetChatbar()->RemoveAll();
       }
@@ -1458,7 +1458,7 @@ void BrowserView::Observe(int type,
       }
       break;
 
-    case chrome::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
+    case content::NOTIFICATION_FACEBOOK_SESSION_LOGGED_IN:
       if (toolbar_ && toolbar_->browser_actions()) {
         toolbar_->browser_actions()->ShowFacebookExtensions();
       }

@@ -7,37 +7,31 @@
 #define CHROME_BROWSER_UI_COCOA_FACEBOOK_SIDEBAR_CONTROLLER_H_
 #pragma once
 
-#import <Foundation/Foundation.h>
+#import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-
-@class NSSplitView;
-@class NSView;
-
-class TabContents;
+namespace content {
+  class WebContents;
+}
 
 // A class that handles updates of the sidebar view within a browser window.
 // It swaps in the relevant sidebar contents for a given TabContents or removes
 // the vew, if there's no sidebar contents to show.
-@interface FacebookSidebarController : TabContentsController {
+@interface FacebookSidebarController : NSViewController {
  @private
-  // A view hosting sidebar contents.
-  scoped_nsobject<NSSplitView> splitView_;
-
-  // Manages currently displayed sidebar contents.
-  scoped_nsobject<TabContentsController> contentsController_;
+  content::WebContents* web_contents_;
 
   BOOL sidebarVisible_;
 }
 
-- (id)initWithDelegate:(id<TabContentsControllerDelegate>)delegate;
+- (id)initWithContents:(content::WebContents*)contents;
 
 // Depending on |contents|'s state, decides whether the sidebar
 // should be shown or hidden and adjusts its width (|delegate_| handles
 // the actual resize).
-- (void)updateFriendsForTabContents:(TabContents*)contents;
+- (void)updateFriendsForTabContents:(content::WebContents*)contents;
 // - (void)showSidebarContents:(TabContents*)sidebarContents;
+
+- (void)sizeUpdated;
 
 - (BOOL)isSidebarVisible;
 

@@ -286,8 +286,7 @@ class Extension : public base::RefCountedThreadSafe<Extension> {
   // be disabled by the user. The same applies for internal components.
   static inline bool UserMayDisable(Location location) {
     return location != Extension::EXTERNAL_POLICY_DOWNLOAD &&
-           location != Extension::COMPONENT &&
-           location != Extension::INTERNAL;
+           location != Extension::COMPONENT;
   }
 
   // Whether extensions with |location| should be loaded with strict
