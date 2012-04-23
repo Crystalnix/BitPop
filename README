@@ -22,7 +22,7 @@ Build instructions:
 - install the depot_tools using
   http://dev.chromium.org/developers/how-tos/install-depot-tools
   as a reference
-- $ gclient config http://src.chromium.org/svn/releases/15.0.1025.151
+- $ gclient config http://src.chromium.org/svn/releases/18.0.1025.151
 - Optionally: edit .gclient file replacing "custom_deps" entry with
   "custom_deps": {
     "src/third_party/WebKit/LayoutTests": None,
